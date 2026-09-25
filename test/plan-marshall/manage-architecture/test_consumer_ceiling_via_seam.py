@@ -21,7 +21,7 @@ a consumer hard-codes the number instead of going through the seam.
 
 The op's allowed ``status: no-op`` response (a target enforcing no ceiling) must
 also be honoured: the bound name becomes ``None``, no stamp ever exceeds it, and
-the CI-wait clamp loses its upper bound.
+the CI-wait clamp falls back to its finite bound (never unbounded).
 """
 
 from __future__ import annotations
@@ -167,8 +167,15 @@ def test_arch_never_exceeds_a_nonexistent_ceiling(monkeypatch):
     assert fields['execution_tier'] == 'per_task'
 
 
-def test_ci_wait_clamp_disabled_when_target_has_no_ceiling(monkeypatch):
-    """A ``no-op`` ceiling disables the upper clamp; the lower bound stays."""
+def test_ci_wait_clamp_bounded_when_target_has_no_ceiling(monkeypatch):
+    """A ``no-op`` ceiling bounds the upper clamp at the finite fallback.
+
+    The seam bindings are unchanged (both names are ``None``); what changed
+    is the clamp's ``None`` branch — it now applies the finite
+    ``NO_CEILING_FALLBACK_INNER_SECONDS`` bound instead of disabling the
+    upper clamp, so a still-running CI terminates as ``deadline_exceeded``
+    rather than waiting unboundedly. The lower bound stays.
+    """
     mod = _patched_module(
         monkeypatch,
         'plan-marshall',
@@ -179,5 +186,5 @@ def test_ci_wait_clamp_disabled_when_target_has_no_ceiling(monkeypatch):
     )
     assert mod.HARNESS_BASH_CEILING_SECONDS is None
     assert mod._MAX_INNER_WAIT_SECONDS is None
-    assert mod._clamp_wait_ceiling(999999) == 999999
+    assert mod._clamp_wait_ceiling(999999) == mod.NO_CEILING_FALLBACK_INNER_SECONDS
     assert mod._clamp_wait_ceiling(0) == 1

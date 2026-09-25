@@ -568,27 +568,37 @@ def _resolve_notation_by_target(notation: str) -> str | None:
 '''
 
 # Template for the OpenCode target-aware resolver.
-# Resolves ``{bundle}:{skill}:{script}`` by walking 7 standard OpenCode roots,
-# using the dash-namespaced ``{bundle}-{skill}`` directory layout emitted by the
-# OpenCode build target. Paths are always converted to absolute form before
-# return to sidestep cwd ambiguity (anomalyco/opencode#9077).
+# Resolves ``{bundle}:{skill}:{script}`` tree-first, then by walking 7 standard
+# OpenCode roots, using the dash-namespaced ``{bundle}-{skill}`` directory
+# layout emitted by the OpenCode build target. Paths are always converted to
+# absolute form before return to sidestep cwd ambiguity (anomalyco/opencode#9077).
+# User-global roots stay in the walk but behind the live tree, so a stale
+# user-global copy can never shadow tree code.
 _OPENCODE_RESOLVER_TEMPLATE = '''\
 def _resolve_notation_by_target(notation: str) -> str | None:
-    """OpenCode target: resolve notation via 7-root walk.
+    """OpenCode target: resolve notation tree-first, then via 7-root walk.
 
-    Searches each OpenCode skill discovery root in priority order for
-    ``{bundle}-{skill}/scripts/{script}.py`` (dash-namespaced layout per
-    OpenCode dual-emit convention).  The first match is returned as an
-    absolute path (anomalyco/opencode#9077).
+    A live ``marketplace/bundles`` checkout above THIS executor file wins
+    over every deployed copy: the tree probe runs BEFORE the OpenCode skill
+    discovery roots, so a regen on an OpenCode machine resolves every
+    notation to tree code with a stale cache present.  Anchoring on the
+    executor file (rather than cwd) ties the tree to the artifact being run —
+    an executor generated into ``<checkout>/.plan/`` always sees its own
+    checkout — while a deployed executor with no checkout above it falls
+    through to the dash-namespaced ``{bundle}-{skill}/scripts/{script}.py``
+    roots below (project-local first, user-global last — the user-global
+    roots are deprioritised behind the tree, never ahead of it).  The first
+    match is returned as an absolute path (anomalyco/opencode#9077).
 
     Roots searched in order:
+      0. marketplace/bundles tree above this executor file (tree-first probe)
       1. $OPENCODE_CONFIG_DIR/skills/     (env-var override)
       2. .opencode/skills/               (project-local)
       3. .claude/skills/                 (project-local cross-compat)
       4. .agents/skills/                 (project-local)
-      5. ~/.config/opencode/skills/      (user-global)
-      6. ~/.claude/skills/               (user-global cross-compat)
-      7. ~/.agents/skills/               (user-global)
+      5. ~/.config/opencode/skills/      (user-global, deprioritised)
+      6. ~/.claude/skills/               (user-global cross-compat, deprioritised)
+      7. ~/.agents/skills/               (user-global, deprioritised)
 
     Args:
         notation: Three-part notation ``{bundle}:{skill}:{script}``.
@@ -602,6 +612,23 @@ def _resolve_notation_by_target(notation: str) -> str | None:
     bundle, skill, script = parts
     dir_name = f'{bundle}-{skill}'
     script_file = f'{script}.py'
+
+    try:
+        _executor_file = Path(__file__).resolve()
+    except (OSError, ValueError, NameError):
+        _executor_file = None
+    if _executor_file is not None:
+        _rel = Path('marketplace') / 'bundles' / bundle / 'skills' / skill / 'scripts' / script_file
+        try:
+            for _parent in [_executor_file.parent, *_executor_file.parents]:
+                try:
+                    _candidate = _parent / _rel
+                    if _candidate.is_file():
+                        return str(_candidate.resolve())
+                except (OSError, ValueError):
+                    continue
+        except (OSError, ValueError):
+            pass
 
     try:
         home = Path.home()
@@ -776,9 +803,18 @@ def generate_target_aware_resolver_code(target: str) -> str:
 
 
 def generate_mappings_code(mappings: dict[str, str]) -> str:
-    """Generate Python code for script mappings dict."""
+    """Generate Python code for script mappings dict.
+
+    Tree-first ordering: entries whose path lives in the marketplace source
+    tree (``/marketplace/bundles/``) emit before deployed-cache copies, each
+    family alphabetical by notation. A single alphabetical ``sorted()`` puts a
+    deployed copy ahead of the tree, so a stale cache entry shadows the live
+    source in every consumer that reads the emission in order.
+    """
     lines = []
-    for notation, path in sorted(mappings.items()):
+    tree_items = sorted((n, p) for n, p in mappings.items() if _is_tree_script_dir(p))
+    cache_items = sorted((n, p) for n, p in mappings.items() if not _is_tree_script_dir(p))
+    for notation, path in tree_items + cache_items:
         lines.append(f'    "{notation}": "{path}",')
     return '\n'.join(lines)
 
@@ -1374,6 +1410,74 @@ def _sort_script_dirs_tree_first(dirs: list[str]) -> list[str]:
     return tree + cache
 
 
+def _resolve_tree_bases(base_path: Path) -> list[Path]:
+    """Resolve marketplace-tree bundles roots usable as the single generation source.
+
+    Two candidates, in priority order: ``base_path`` itself when it already
+    carries a ``plan-marshall/skills`` tree (i.e. generation runs against the
+    live marketplace checkout), then the shared ``marketplace`` bundles root
+    (the cwd-anchored checkout the shared resolver finds). An empty list means
+    no tree is resolvable — the caller retains the cache entrypoint, cache
+    import paths, and cache surface dependencies together.
+    """
+    candidates: list[Path] = []
+    try:
+        if (base_path / 'plan-marshall' / 'skills').is_dir():
+            candidates.append(base_path)
+    except (OSError, ValueError):
+        pass
+    try:
+        candidates.append(_shared_get_base_path('marketplace'))
+    except (FileNotFoundError, ValueError):
+        pass
+    return candidates
+
+
+def _rewrite_mappings_to_tree(mappings: dict[str, str], base_path: Path) -> dict[str, str]:
+    """Rewrite discovered mappings to marketplace tree paths where they exist.
+
+    A regen on an OpenCode machine runs with a stale deployed cache present, so
+    cache-first discovery hands back cache paths for notations the live tree
+    also carries. Rewriting each non-tree value to its tree equivalent (when
+    that file exists) makes the emitted executor resolve every notation to
+    tree code. Notations with no tree equivalent (project-local
+    ``default-bundle`` entries, genuinely cache-only scripts) keep their
+    discovered path. Never raises: an unresolvable tree base returns the
+    input unchanged.
+    """
+    candidates = _resolve_tree_bases(base_path)
+
+    if not candidates:
+        return dict(mappings)
+
+    rewritten: dict[str, str] = {}
+    for notation, path in mappings.items():
+        if _is_tree_script_dir(path):
+            rewritten[notation] = path
+            continue
+        parts = notation.split(':')
+        if len(parts) != 3:
+            rewritten[notation] = path
+            continue
+        bundle, skill, script = parts
+        if bundle == 'default-bundle':
+            rewritten[notation] = path
+            continue
+        replaced = False
+        for tree_base in candidates:
+            candidate = tree_base / bundle / 'skills' / skill / 'scripts' / f'{script}.py'
+            try:
+                if candidate.is_file():
+                    rewritten[notation] = candidate.resolve().as_posix()
+                    replaced = True
+                    break
+            except (OSError, ValueError):
+                continue
+        if not replaced:
+            rewritten[notation] = path
+    return rewritten
+
+
 def parse_template_format_version(template: str) -> int | None:
     """Parse the ``# TEMPLATE_FORMAT_VERSION: N`` marker from template text.
 
@@ -1477,21 +1581,35 @@ def generate_executor(
         return {'status': 'error', 'error': f'Template not found: {executor_template}'}
 
     template = executor_template.read_text()
+    # Tree-first emission: prefer the live marketplace tree over a stale
+    # deployed cache for every notation the tree carries, so a regen on an
+    # OpenCode machine emits tree code even when discovery hit the cache.
+    mappings = _rewrite_mappings_to_tree(mappings, base_path)
     mappings_code = generate_mappings_code(mappings)
+
+    # Single-source-tree rule: the entrypoint rewrite above sources entrypoints
+    # from the tree whenever one resolves, so the import paths (logging dir,
+    # shared module dirs, collected script dirs) and the surface-dependency
+    # digests (hashed from those same shared dirs downstream) must follow the
+    # SAME tree together — otherwise a tree entrypoint imports older cache
+    # modules. With no resolvable tree the cache entrypoint is retained above,
+    # and the cache import paths below match it.
+    tree_bases = _resolve_tree_bases(base_path)
+    import_base = tree_bases[0] if tree_bases else base_path
 
     # Resolve platform target for target-aware resolver injection.
     resolved_target = target if target is not None else read_marshal_target()
     resolver_code = generate_target_aware_resolver_code(resolved_target)
 
     # logging module location (unified logging skill)
-    logging_scripts_dir = get_logging_scripts_dir(base_path)
+    logging_scripts_dir = get_logging_scripts_dir(import_base)
     logging_dir = logging_scripts_dir.resolve().as_posix()
 
     # Shared module directories (must be on sys.path before executor-level imports).
     # Emitted as ``(skill, pinned_dir)`` pairs so the template bootstrap can self-heal a
     # GC-pruned pinned version to the newest surviving plugin-cache version dir. The skill
     # name is the parent dir name of each resolved ``.../skills/{skill}/scripts`` path.
-    shared_dirs = get_shared_module_dirs(base_path)
+    shared_dirs = get_shared_module_dirs(import_base)
     shared_module_lines = (
         '\n'.join(f"    ('{d.parent.name}', '{d.as_posix()}')," for d in shared_dirs)
         if shared_dirs
@@ -1515,7 +1633,8 @@ def generate_executor(
     # that have no registered scripts but contain importable modules).
     # These are injected as extra PYTHONPATH entries so subprocess-invoked scripts can
     # import from organized subdirectory layouts (e.g., script-shared/scripts/build/).
-    all_script_dirs = collect_script_dirs(base_path)
+    # Sourced from the same single tree as the entrypoints and shared dirs above.
+    all_script_dirs = collect_script_dirs(import_base)
     resolved_dirs = [Path(d).resolve().as_posix() for d in all_script_dirs]
     extra_dirs_code = ', '.join(f"'{d}'" for d in _sort_script_dirs_tree_first(sorted(set(resolved_dirs))))
 

@@ -121,6 +121,8 @@ The table below records the canonical argument form for each in-scope script aft
 
 The cross-cutting `--plan-id` and `--audit-plan-id` flags are accepted by virtually every `manage-*` script and are not enumerated row-by-row.
 
+**Shorthand resolution.** The first token in each row is a script shorthand that the drift rule resolves to a registered executor notation by third-segment match. The generated `default-bundle:` mirror duplicates every marketplace script for the OpenCode target; the rule ignores the mirror when a marketplace-native candidate exists, per the executor resolver-root priority (tree code wins). A row therefore names the marketplace-native script even when a mirror with the same short name is registered.
+
 ### `manage-*` scripts
 
 | Script | Operation | Canonical form |

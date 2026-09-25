@@ -990,3 +990,131 @@ def test_build_class_notation_gate_scopes_the_ledger_boundary():
     assert module._is_build_class_notation('plan-marshall:build-npm:npm', 'run') is True
     assert module._is_build_class_notation('plan-marshall:manage-status:manage-status', 'run') is False
     assert module._is_build_class_notation('plan-marshall:manage-change-ledger:manage-change-ledger', 'run') is False
+
+
+# =============================================================================
+# D0 tree-first emission — marketplace tree wins over stale cache / user-global
+# =============================================================================
+#
+# Regression coverage for the OpenCode-regen gap: with a stale deployed cache
+# present, every emitted notation must resolve to tree code. Tree-first holds
+# in two places — the emitted mappings (ordered tree-first, with stale cache
+# paths rewritten to their live tree equivalent) and the OpenCode resolver
+# (an executor-file-anchored tree probe ahead of the dash-namespaced root
+# walk, user-global roots deprioritised behind the tree but kept as fallback).
+
+
+def test_generate_mappings_code_orders_tree_dirs_first():
+    """Tree paths emit before deployed-cache copies, each family alphabetical."""
+    mappings = {
+        'b:z:zeta': '/home/u/.config/opencode/skills/b-z/scripts/zeta.py',
+        'a:m:alpha': '/repo/marketplace/bundles/a/skills/m/scripts/alpha.py',
+        'a:a:aaa': '/repo/marketplace/bundles/a/skills/a/scripts/aaa.py',
+    }
+
+    code = _gen.generate_mappings_code(mappings)
+
+    lines = code.splitlines()
+    assert len(lines) == 3
+    # Tree family first, alphabetical within the family ...
+    assert '"a:a:aaa"' in lines[0]
+    assert '"a:m:alpha"' in lines[1]
+    # ... then the deployed copy.
+    assert '"b:z:zeta"' in lines[2]
+
+
+def test_rewrite_mappings_to_tree_prefers_live_tree(tmp_path):
+    """A stale cache path rewrites to its live tree equivalent when it exists."""
+    base_path = tmp_path / 'tree' / 'marketplace' / 'bundles'
+    (base_path / 'plan-marshall' / 'skills').mkdir(parents=True)
+    script = base_path / 'probe-bundle' / 'skills' / 'probe-skill' / 'scripts' / 'probe_script.py'
+    script.parent.mkdir(parents=True)
+    script.write_text('# tree', encoding='utf-8')
+
+    stale = {
+        'probe-bundle:probe-skill:probe_script': '/stale/cache/0.1.1/skills/probe-skill/scripts/probe_script.py',
+        'default-bundle:my-skill:do_thing': '/proj/.opencode/skills/my-skill/scripts/do_thing.py',
+    }
+
+    rewritten = _gen._rewrite_mappings_to_tree(stale, base_path)
+
+    assert rewritten['probe-bundle:probe-skill:probe_script'] == str(script.resolve().as_posix())
+    # Project-local pseudo-bundle entries have no tree equivalent and are kept.
+    assert rewritten['default-bundle:my-skill:do_thing'] == stale['default-bundle:my-skill:do_thing']
+
+
+def test_rewrite_mappings_to_tree_without_tree_base_returns_input_unchanged(tmp_path, monkeypatch):
+    """No resolvable tree base means no comparison — the input is kept verbatim."""
+
+    def _no_tree(*args, **kwargs):
+        raise FileNotFoundError('no marketplace tree')
+
+    monkeypatch.setattr(_gen, '_shared_get_base_path', _no_tree)
+    base_path = tmp_path / 'bundles'
+    base_path.mkdir()
+    mappings = {
+        'plan-marshall:manage-status:manage-status': '/stale/cache/0.1.1/skills/manage-status/scripts/manage-status.py',
+    }
+
+    assert _gen._rewrite_mappings_to_tree(mappings, base_path) == mappings
+
+
+def test_opencode_resolver_code_carries_tree_first_probe():
+    """The emitted OpenCode resolver probes the tree before the root walk."""
+    code = _gen.generate_target_aware_resolver_code('opencode')
+
+    assert 'def _resolve_notation_by_target(' in code
+    assert 'marketplace' in code and 'bundles' in code
+
+
+def _exec_opencode_resolver_with_executor_file(fake_file):
+    """Exec the OpenCode resolver with ``__file__`` pinned to a fake executor."""
+    code = _gen.generate_target_aware_resolver_code('opencode')
+    ns = types.ModuleType('opencode_resolver_tree_first')
+    ns.__dict__['Path'] = Path
+    ns.__dict__['os'] = os
+    ns.__dict__['__file__'] = fake_file
+    exec(compile(code, '<resolver>', 'exec'), ns.__dict__)
+    return ns
+
+
+def test_opencode_resolver_prefers_tree_over_user_global_stale_copy(tmp_path, monkeypatch):
+    """Tree above the executor file beats a stale user-global copy of the same notation.
+
+    The fake ``d0-bundle`` exists nowhere in the real source tree, so the only
+    tree that can answer is the synthetic checkout — a stale user-global copy
+    must not shadow it.
+    """
+    checkout = tmp_path / 'checkout'
+    tree_script = (
+        checkout / 'marketplace' / 'bundles' / 'd0-bundle' / 'skills' / 'd0-skill' / 'scripts' / 'd0_script.py'
+    )
+    tree_script.parent.mkdir(parents=True)
+    tree_script.write_text('# tree', encoding='utf-8')
+
+    home = tmp_path / 'home'
+    stale = home / '.config' / 'opencode' / 'skills' / 'd0-bundle-d0-skill' / 'scripts' / 'd0_script.py'
+    stale.parent.mkdir(parents=True)
+    stale.write_text('# stale user-global copy', encoding='utf-8')
+
+    monkeypatch.setenv('HOME', str(home))
+    monkeypatch.delenv('OPENCODE_CONFIG_DIR', raising=False)
+
+    ns = _exec_opencode_resolver_with_executor_file(str(checkout / '.plan' / 'execute-script.py'))
+
+    assert ns._resolve_notation_by_target('d0-bundle:d0-skill:d0_script') == str(tree_script.resolve())
+
+
+def test_opencode_resolver_user_global_still_serves_without_tree(tmp_path, monkeypatch):
+    """User-global roots are deprioritised, not removed — no tree, still found."""
+    home = tmp_path / 'home'
+    stale = home / '.config' / 'opencode' / 'skills' / 'd0-bundle-d0-skill' / 'scripts' / 'd0_script.py'
+    stale.parent.mkdir(parents=True)
+    stale.write_text('# user-global fallback', encoding='utf-8')
+
+    monkeypatch.setenv('HOME', str(home))
+    monkeypatch.delenv('OPENCODE_CONFIG_DIR', raising=False)
+
+    ns = _exec_opencode_resolver_with_executor_file(str(tmp_path / 'elsewhere' / 'execute-script.py'))
+
+    assert ns._resolve_notation_by_target('d0-bundle:d0-skill:d0_script') == str(stale.resolve())
