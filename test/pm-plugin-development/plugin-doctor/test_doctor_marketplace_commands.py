@@ -270,6 +270,64 @@ def test_cmd_quality_gate_paths_scope_excludes_unrelated_finding(tmp_path):
     assert result['status'] == 'pass', 'a scope with no in-scope findings must pass'
 
 
+def _patch_skill_root_resolvers(monkeypatch, project_roots, cache_roots):
+    """Point the skill-root resolvers at a controlled set, hermetically.
+
+    The patch is applied through ``excluded_deployed_cache_roots.__globals__``
+    rather than through a separately-loaded ``_doctor_shared``: ``doctor-marketplace``
+    imported that module through the normal import system, so a second
+    ``load_script_module`` call yields a DIFFERENT module object and a patch on it
+    would silently never reach the resolver the gate actually calls. Going
+    through the function's own globals namespace cannot miss.
+
+    Both resolvers are pinned. Patching only the cache roots would let the
+    host's real skill roots leak in and make the assertions machine-dependent.
+    """
+    namespace = _doctor.excluded_deployed_cache_roots.__globals__
+    monkeypatch.setitem(namespace, 'get_project_skill_roots', lambda: tuple(project_roots))
+    monkeypatch.setitem(namespace, 'get_bundle_cache_roots', lambda: tuple(cache_roots))
+
+
+def test_cmd_quality_gate_publishes_excluded_deployed_cache_roots(tmp_path, monkeypatch):
+    """A narrowing of scope must be visible in the gate payload.
+
+    Excluding a deployed-cache tree is a reduction in coverage. If the payload
+    does not say so, ``pass`` is indistinguishable from a run that never looked
+    there — and a reader has no way to tell a clean tree from a narrowed one.
+    """
+    _build_clean_marketplace(tmp_path)
+    cache = tmp_path / 'home' / 'cache'
+    cache.mkdir(parents=True)
+    project = tmp_path / '.claude' / 'skills'
+    project.mkdir(parents=True)
+    _patch_skill_root_resolvers(monkeypatch, (str(cache), str(project)), (str(cache),))
+
+    args = _ns(marketplace_root=str(tmp_path / 'marketplace'))
+    result = _doctor.cmd_quality_gate(args)
+
+    assert result['excluded_deployed_cache_root_count'] == 1
+    assert result['excluded_deployed_cache_roots'] == [str(cache)]
+
+
+def test_cmd_quality_gate_omits_the_excluded_key_when_nothing_is_excluded(tmp_path, monkeypatch):
+    """No exclusion means no key — the field states an omission, so an empty
+    one would be a claim that something was left out when nothing was.
+
+    Emitting an empty list unconditionally would train a reader to see the key
+    and stop reading it.
+    """
+    _build_clean_marketplace(tmp_path)
+    project = tmp_path / '.claude' / 'skills'
+    project.mkdir(parents=True)
+    _patch_skill_root_resolvers(monkeypatch, (str(project),), ())
+
+    args = _ns(marketplace_root=str(tmp_path / 'marketplace'))
+    result = _doctor.cmd_quality_gate(args)
+
+    assert 'excluded_deployed_cache_roots' not in result
+    assert 'excluded_deployed_cache_root_count' not in result
+
+
 # =============================================================================
 # cmd_report
 # =============================================================================

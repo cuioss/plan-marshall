@@ -68,6 +68,7 @@ from _doctor_shared import (
     categorize_all_issues,
     discover_components,
     ensure_report_dir,
+    excluded_deployed_cache_roots,
     find_bundle_for_file,
     find_bundles,
     find_marketplace_root,
@@ -896,12 +897,27 @@ def cmd_quality_gate(args) -> dict:
     # is too expensive for the build gate. Invoke via
     # ``analyze --rules script_call_drift`` for explicit drift sweeps.
 
-    return {
+    payload = {
         'status': 'fail' if all_issues else 'pass',
         'total_issues': len(all_issues),
         'rules_run': rule_summaries,
         'issues': all_issues,
     }
+
+    # Publish the scope this run did NOT scan.
+    #
+    # Deployed-cache trees are excluded from project-skill analysis (see
+    # ``_doctor_shared.resolve_project_skill_trees``), which is a narrowing of
+    # coverage. A narrowing that is not shown is indistinguishable from a clean
+    # run, so the excluded roots ride in the gate payload: a reader can see what
+    # was omitted and why, rather than having to trust that ``pass`` meant
+    # "nothing to find" rather than "not looked at here".
+    excluded = [str(p) for p in excluded_deployed_cache_roots(marketplace_root)]
+    if excluded:
+        payload['excluded_deployed_cache_roots'] = excluded
+        payload['excluded_deployed_cache_root_count'] = len(excluded)
+
+    return payload
 
 
 def _load_validator_registry(registry_path: str | None) -> list[dict]:
