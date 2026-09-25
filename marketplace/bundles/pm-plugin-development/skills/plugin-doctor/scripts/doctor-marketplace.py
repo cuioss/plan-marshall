@@ -33,6 +33,8 @@ Usage:
 import argparse
 import json
 import sys
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -982,28 +984,30 @@ def cmd_test_conventions(args) -> dict:
     all_issues: list[dict] = []
     rule_summaries: list[dict] = []
 
-    rule1_findings = analyze_unique_fixture_basenames(test_root)
-    all_issues.extend(rule1_findings)
-    rule_summaries.append({'rule': 'unique-fixture-basenames', 'findings': len(rule1_findings)})
-
-    rule2_findings = analyze_subprocess_pythonpath(test_root)
-    all_issues.extend(rule2_findings)
-    rule_summaries.append({'rule': 'subprocess-pythonpath', 'findings': len(rule2_findings)})
-
     registry = _load_validator_registry(getattr(args, 'registry', None))
-    rule3_findings = analyze_validator_regex_vs_corpus(registry, project_root=project_root)
-    all_issues.extend(rule3_findings)
-    rule_summaries.append({'rule': 'identifier-validator-corpus', 'findings': len(rule3_findings)})
 
-    # Warning-severity structural rules. They report their counts but do not
-    # drive the exit code — see the status derivation below.
-    for rule_id, analyzer in (
-        ('test-module-line-budget', analyze_test_module_line_budget),
-        ('test-helper-module-misnamed', analyze_test_helper_module_misnamed),
-        ('test-module-preamble-boilerplate', analyze_test_module_preamble),
-        ('test-docstring-historical-prose', analyze_test_docstring_prose),
-    ):
-        findings = analyzer(test_root)
+    # The rules are independent read-only scans of the same test root. Run them
+    # concurrently so the whole-tree sweep overlaps their file I/O instead of
+    # draining one complete tree walk per rule. Results are consumed in the
+    # declared rule order, so finding order and per-rule counts remain exactly
+    # the same as the serial implementation.
+    rule_runs: list[tuple[str, Callable[[], list[dict]]]] = [
+        ('unique-fixture-basenames', lambda: analyze_unique_fixture_basenames(test_root)),
+        ('subprocess-pythonpath', lambda: analyze_subprocess_pythonpath(test_root)),
+        (
+            'identifier-validator-corpus',
+            lambda: analyze_validator_regex_vs_corpus(registry, project_root=project_root),
+        ),
+        ('test-module-line-budget', lambda: analyze_test_module_line_budget(test_root)),
+        ('test-helper-module-misnamed', lambda: analyze_test_helper_module_misnamed(test_root)),
+        ('test-module-preamble-boilerplate', lambda: analyze_test_module_preamble(test_root)),
+        ('test-docstring-historical-prose', lambda: analyze_test_docstring_prose(test_root)),
+    ]
+
+    with ThreadPoolExecutor(max_workers=len(rule_runs)) as executor:
+        rule_findings = list(executor.map(lambda rule_run: rule_run[1](), rule_runs))
+
+    for (rule_id, _), findings in zip(rule_runs, rule_findings, strict=True):
         all_issues.extend(findings)
         rule_summaries.append({'rule': rule_id, 'findings': len(findings)})
 
