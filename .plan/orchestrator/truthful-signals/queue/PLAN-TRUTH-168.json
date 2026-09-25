@@ -1,0 +1,11 @@
+{
+  "id": "PLAN-TRUTH-168",
+  "slug": "sync-defaults-reports-added-while-silently-reverting-a-deliberate-remove-step",
+  "workstream": "WS-01",
+  "status": "staged",
+  "plan_marshall_plan_id": "",
+  "pr": "",
+  "landing": "",
+  "seq": 20,
+  "superseded_by": ""
+}

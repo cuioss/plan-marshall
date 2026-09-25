@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-TRUTH-179",
+  "slug": "opencode-target-detection-landed-three-gaps-it-exposed-still-stand",
+  "workstream": "WS-01",
+  "status": "shipped",
+  "plan_marshall_plan_id": "truth-179-opencode-target-detection-landed",
+  "pr": "1619",
+  "landing": "landings/PLAN-TRUTH-179.md",
+  "seq": 46
+}

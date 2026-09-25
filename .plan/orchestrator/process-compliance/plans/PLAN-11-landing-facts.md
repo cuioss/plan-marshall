@@ -34,19 +34,19 @@ completeness, and records the CI-wait suppression hints that landed alongside th
 ## Claim Labels
 
 - OBSERVED: both PLAN-180 carve-1 landings carried narrative only; `landing-check` returned complete:false with 9-of-9 missing keys on each — read at `.plan/orchestrator/process-compliance/inbox/test-quality-001.md` § What was observed
-  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite (test-quality-001 What was observed) unchanged; landing bodies still not opened this pass
+  - verdict: unverifiable | checked_at: e995df45ce86e76575106d323602e1d58906bda8 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite landing bodies not opened
 - OBSERVED: the drain corroborated merge facts independently (the hand-recovery the block exists to remove); same pre-fix class as two earlier landings — read at `.plan/orchestrator/process-compliance/inbox/test-quality-001.md` § Cost paid
-  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite (test-quality-001 Cost paid) unchanged; history premise still needs plan-store read
+  - verdict: unverifiable | checked_at: e995df45ce86e76575106d323602e1d58906bda8 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite history needs plan-store read
 - OBSERVED: the emit-landing step writes narrative but not facts on this path; a file-time complete:false is currently silent — read at `.plan/orchestrator/process-compliance/inbox/test-quality-001.md` § Suggested direction
-  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite (test-quality-001 Suggested direction) unchanged; path behavior still needs outline
+  - verdict: unverifiable | checked_at: e995df45ce86e76575106d323602e1d58906bda8 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite path behavior needs outline
 - OBSERVED: 9 of this epic's 13 drained landings were narrative-only (4 complete) — drain-proposal tally, corroborated by two inline `landing-check complete: true` spot checks
-  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: drain-proposal tally plus spot checks unchanged; drain population still not re-opened this pass
+  - verdict: unverifiable | checked_at: e995df45ce86e76575106d323602e1d58906bda8 | by: process-compliance/cleanup | rescoped: n/a | evidence: tally plus spot checks population not reopened
 - OBSERVED: 2 identical `[ci_timeout]` findings suppressed after the terminal precondition showed green (recurrence 2/2) — read at `.plan/orchestrator/process-compliance/inbox/phase-gates-010.md` § body
-  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite (phase-gates-010 inbox, archived) unchanged; suppression history still not re-opened
+  - verdict: unverifiable | checked_at: e995df45ce86e76575106d323602e1d58906bda8 | by: process-compliance/cleanup | rescoped: n/a | evidence: ledger cite suppression history not reopened
 - HYPOTHESIS: the wait-budget lapse on a live-pending finalize is the same wait-artifact class — confirm/refute at `marketplace/bundles/plan-marshall/skills/phase-6-finalize/` § wait-budget seam (verify-at-outline; folded lead from `compliant-paths-006.md`)
-  - verdict: corroborated | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: branch-cleanup.md unchanged since 93bda90; merge_queue_wait_budget_seconds still present at :581-606; re-confirmed
+  - verdict: corroborated | checked_at: e995df45ce86e76575106d323602e1d58906bda8 | by: process-compliance/cleanup | rescoped: n/a | evidence: wait budget key read default present
 - Verify-first clause: the consuming phase settles the HYPOTHESIS clause against the implementing source before scoping — refutation loops back to re-scope
-  - verdict: unverifiable | checked_at: 7d82d5d906c62312c708ac8993dc5f8f4d46bfa6 | by: process-compliance/cleanup | rescoped: n/a | evidence: procedural instruction to the consuming phase, not a checkable world premise; no implementing-source check applies
+  - verdict: unverifiable | checked_at: e995df45ce86e76575106d323602e1d58906bda8 | by: process-compliance/cleanup | rescoped: n/a | evidence: procedural instruction no source check
 
 ## Expected Surface
 

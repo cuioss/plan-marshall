@@ -1,0 +1,1 @@
+2026-09-25 cleanup ran: 47/47 reconciled, 8 verdicts persisted, 221 left staged, restart NOT_READY (26 uncommitted paths). Next: operator decides commit scope; then emit (149 first unless live-colliding) or await 147-follow-up lesson.

@@ -48,20 +48,24 @@ enum.
 - OBSERVED: `scope_creep_check.py:180` passes `finding_type='scope_creep_warning'` to
   `add_qgate_finding` (in-process primitive, `scope_creep_check.py:55,176-185) — re-verify at
   outline that the call site still hardcodes the string.
+  - verdict: corroborated | checked_at: e995df45c | by: truthful-signals/cleanup | rescoped: n/a | evidence: scope_creep_check.py:180 still hardcodes finding_type scope_creep_warning at this HEAD (re-read in cleanup pass)
   - Corroborated 2026-09-22 at HEAD (`1bd5c6a3`) by the staging session; re-ground at outline per standing rule.
 - OBSERVED: `FINDING_TYPES` (`tools-file-ops/scripts/constants.py:96-121`, 14-type taxonomy) has no
   `scope_creep_warning` member; `add_qgate_finding` returns an error status for unlisted types
   (`_findings_core.py` validation), which `_emit_finding` surfaces as a failure descriptor and
   `cmd_check` exits as `finding_persist_failed` — re-verify at outline.
+  - verdict: corroborated | checked_at: e995df45c | by: truthful-signals/cleanup | rescoped: n/a | evidence: FINDING_TYPES still 14 members with no scope_creep_warning at this HEAD; constants.py untouched by #1619 per its stat, add_qgate_finding still rejects unlisted types
   - Corroborated 2026-09-22 at HEAD by the staging session; re-ground at outline per standing rule.
 - OBSERVED (report provenance, mechanism corrected): the report's "CLI `qgate add --type` exits 1"
   and "`check` reports `finding_emitted: true`" describe a pre-fail-loud revision. At HEAD the call
   is in-process and the failure is loud (`finding_persist_failed` with the rejected content inline,
   exit 1) — never silent prose, never a false `finding_emitted: true`. The root type gap is
   unaffected by the correction.
+  - verdict: corroborated | checked_at: e995df45c | by: truthful-signals/cleanup | rescoped: n/a | evidence: fail-loud finding_persist_failed path still the only outcome at HEAD (cmd_check returns 1, no success payload on rejection); report-incidental correction stands
   - Corroborated-with-correction 2026-09-22 at HEAD by the staging session.
 - ⚠ HYPOTHESIS: no other hardcoded producer type is outside the taxonomy — ⛔ asserted by nobody;
   D2 owns the sweep (verify-at-outline).
+  - verdict: unverifiable | checked_at: e995df45c | by: truthful-signals/cleanup | rescoped: n/a | evidence: No other hardcoded producer type swept at cleanup time; D2 owns the taxonomy-membership sweep per the spec itself
 
 ## Expected Surface
 
