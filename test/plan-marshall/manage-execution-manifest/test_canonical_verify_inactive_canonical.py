@@ -1,0 +1,142 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+from _manage_execution_manifest_canonical_verify_inactive_fixtures import (
+    _PLAN_ID,
+    _apply_canonical_verify_inactive,
+    _patch_footprint,
+)
+
+
+class TestCanonicalVerifyInactiveDrop:
+    """Footprint-gated canonical-verify steps drop when their role is absent."""
+
+    def test_integration_step_dropped_when_footprint_lacks_integration_paths(self, monkeypatch):
+        """``default:verify:integration-tests`` drops when the non-empty footprint
+        has no integration-role path."""
+        _patch_footprint(monkeypatch, ['src/main/Foo.java', 'README.md'])
+        kept, dropped = _apply_canonical_verify_inactive(['default:verify:integration-tests'], _PLAN_ID, {})
+        assert kept == []
+        assert dropped == ['default:verify:integration-tests']
+
+    def test_e2e_step_dropped_when_footprint_lacks_e2e_paths(self, monkeypatch):
+        """``default:verify:e2e`` drops when the non-empty footprint has no e2e path."""
+        _patch_footprint(monkeypatch, ['src/main/app.py', 'docs/guide.md'])
+        kept, dropped = _apply_canonical_verify_inactive(['default:verify:e2e'], _PLAN_ID, {})
+        assert kept == []
+        assert dropped == ['default:verify:e2e']
+
+    def test_bare_canonical_verify_form_is_also_gated(self, monkeypatch):
+        """The bare ``verify:{canonical}`` form is gated identically to the prefixed form."""
+        _patch_footprint(monkeypatch, ['src/main/Foo.java'])
+        kept, dropped = _apply_canonical_verify_inactive(['verify:integration-tests'], _PLAN_ID, {})
+        assert kept == []
+        assert dropped == ['verify:integration-tests']
+
+    def test_only_gated_step_dropped_others_kept(self, monkeypatch):
+        """Among mixed steps, only the footprint-gated canonical with no matching
+        path is dropped; core canonical-verify steps survive."""
+        _patch_footprint(monkeypatch, ['src/main/Foo.java'])
+        steps = [
+            'default:verify:quality-gate',
+            'default:verify:integration-tests',
+            'default:verify:module-tests',
+        ]
+        kept, dropped = _apply_canonical_verify_inactive(steps, _PLAN_ID, {})
+        assert dropped == ['default:verify:integration-tests']
+        assert kept == ['default:verify:quality-gate', 'default:verify:module-tests']
+
+
+
+class TestCanonicalVerifyInactiveKeep:
+    """Steps survive the pre-filter when the gate does not fire."""
+
+    def test_integration_step_kept_when_footprint_has_integration_path(self, monkeypatch):
+        """A non-empty footprint WITH an integration-role path keeps the step."""
+        _patch_footprint(monkeypatch, ['src/test/java/FooIT.java'])
+        kept, dropped = _apply_canonical_verify_inactive(['default:verify:integration-tests'], _PLAN_ID, {})
+        assert kept == ['default:verify:integration-tests']
+        assert dropped == []
+
+    def test_resolvable_empty_footprint_is_a_noop_every_canonical_survives(self, monkeypatch):
+        """A resolvable-but-empty footprint keeps all steps.
+
+        Nothing changed, so no role's paths are present — but "no paths at all"
+        is not evidence that the GATING role specifically has none, so the gate
+        stays silent rather than subtracting on a technicality.
+        """
+        _patch_footprint(monkeypatch, [])
+        steps = ['default:verify:integration-tests', 'default:verify:e2e']
+        kept, dropped = _apply_canonical_verify_inactive(steps, _PLAN_ID, {})
+        assert kept == steps
+        assert dropped == []
+
+    def test_unresolvable_footprint_is_a_noop_every_canonical_survives(self, monkeypatch):
+        """An UNRESOLVABLE footprint (early compose, pre-materialisation) keeps all steps.
+
+        The no-evidence safety contract: at phase-4-plan the worktree does not
+        exist, so the resolver reports ``None``. The gate must NOT fire against
+        it, otherwise a still-unmaterialised plan would lose its integration/e2e
+        gate before there was anything to look at. Treating the unresolvable state
+        as "no paths of that role" is exactly the absence-of-evidence-as-
+        evidence-of-absence read that silently dropped gates elsewhere.
+        """
+        _patch_footprint(monkeypatch, None)
+        steps = ['default:verify:integration-tests', 'default:verify:e2e']
+        kept, dropped = _apply_canonical_verify_inactive(steps, _PLAN_ID, {})
+        assert kept == steps
+        assert dropped == []
+
+    def test_unresolvable_and_non_empty_footprint_diverge(self, monkeypatch):
+        """The paired opposite: only a REAL footprint lacking the role drops a step.
+
+        Asserting the two against each other is what proves the ``None`` no-op is
+        a genuine guard rather than an inert pre-filter — a gate that never fired
+        would satisfy the unresolvable case on its own.
+        """
+        steps = ['default:verify:integration-tests']
+
+        _patch_footprint(monkeypatch, None)
+        kept_unresolvable, dropped_unresolvable = _apply_canonical_verify_inactive(steps, _PLAN_ID, {})
+
+        _patch_footprint(monkeypatch, ['src/main/java/Foo.java'])
+        kept_real, dropped_real = _apply_canonical_verify_inactive(steps, _PLAN_ID, {})
+
+        assert kept_unresolvable == steps and dropped_unresolvable == []
+        assert kept_real == [] and dropped_real == steps
+
+    def test_core_roles_never_footprint_gated(self, monkeypatch):
+        """``quality-gate`` / ``module-tests`` / ``coverage`` canonicals are NEVER
+        footprint-gated — they survive even when the footprint lacks their paths."""
+        _patch_footprint(monkeypatch, ['unrelated/path.txt'])
+        steps = [
+            'default:verify:quality-gate',
+            'default:verify:module-tests',
+            'default:verify:coverage',
+        ]
+        kept, dropped = _apply_canonical_verify_inactive(steps, _PLAN_ID, {})
+        assert kept == steps
+        assert dropped == []
+
+    def test_non_canonical_and_external_steps_pass_through_untouched(self, monkeypatch):
+        """Non-canonical-verify default steps and external (project:/bundle:skill)
+        steps are passed through verbatim — only ``verify:{canonical}`` integration
+        / e2e steps are footprint-gated."""
+        _patch_footprint(monkeypatch, ['src/main/Foo.java'])
+        steps = [
+            'default:some-non-verify-step',
+            'another-bare-step',
+            'project:finalize-step-plugin-doctor',
+            'my-bundle:my-verify-step',
+        ]
+        kept, dropped = _apply_canonical_verify_inactive(steps, _PLAN_ID, {})
+        assert kept == steps
+        assert dropped == []
+
+    def test_unknown_canonical_passes_through(self, monkeypatch):
+        """A ``default:verify:{unknown}`` whose canonical is not in the table has
+        role None → not footprint-gated → survives untouched."""
+        _patch_footprint(monkeypatch, ['src/main/Foo.java'])
+        kept, dropped = _apply_canonical_verify_inactive(['default:verify:not-a-canonical'], _PLAN_ID, {})
+        assert kept == ['default:verify:not-a-canonical']
+        assert dropped == []

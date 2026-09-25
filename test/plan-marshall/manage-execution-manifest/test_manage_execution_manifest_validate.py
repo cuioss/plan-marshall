@@ -1,92 +1,20 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""Behavior-cluster tests carved from test_manage_execution_manifest_validate.py: validate."""
+
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the ``validate`` subcommand of manage-execution-manifest.py.
-
-Split from test_manage_execution_manifest.py — tier 2 direct-import tests for
-the validate path plus the CLI happy-path roundtrip.
-"""
-
-import json
-from argparse import Namespace
-from pathlib import Path
-
-from conftest import get_script_path, load_script_module, run_script
-
-# Script path for subprocess (CLI plumbing) tests.
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py')
-
-# Tier 2 direct imports, resolved by (bundle, skill, script).
-
-
-_mem = load_script_module(
-    'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', module_name='_mem_script'
+from _manage_execution_manifest_manage_execution_manifest_validate_fixtures import (
+    VALID_STEP_OWNERS,
+    Namespace,
+    _compose_ns,
+    _mem,
+    _seed_keyed_map_marshal,
+    _validate_ns,
+    cmd_compose,
+    cmd_validate,
+    get_manifest_path,
+    validate_step_owner,
 )
-cmd_compose = _mem.cmd_compose
-cmd_validate = _mem.cmd_validate
-cmd_step_params_get = _mem.cmd_step_params_get
-get_manifest_path = _mem.get_manifest_path
-read_manifest = _mem.read_manifest
-DEFAULT_PHASE_5_STEPS = _mem.DEFAULT_PHASE_5_STEPS
-DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
-
-# Step-owner schema primitives live in _manifest_core (loaded directly; the
-# hyphenated entry does not re-export them). See _manifest_core.py § "Step
-# ownership".
-_core = load_script_module('plan-marshall', 'manage-execution-manifest', '_manifest_core.py', module_name='_mem_core')
-VALID_STEP_OWNERS = _core.VALID_STEP_OWNERS
-validate_step_owner = _core.validate_step_owner
-owner_of = _core.owner_of
-ORCHESTRATOR_OWNED_STEPS = _core.ORCHESTRATOR_OWNED_STEPS
-
-# Ascending-order barrier primitives live in _manifest_validation (loaded
-# directly following the _manifest_core convention above). _check_ascending_order
-# asserts the composed phase_6.steps hold non-decreasing frontmatter order;
-# _resolve_step_order yields a step's frontmatter order (or None when unresolvable).
-_validation = load_script_module(
-    'plan-marshall', 'manage-execution-manifest', '_manifest_validation.py', module_name='_mem_validation'
-)
-_check_ascending_order = _validation._check_ascending_order
-_resolve_step_order = _validation._resolve_step_order
-
-# Quiet down the best-effort decision-log subprocess.
-_mem._log_decision = lambda *a, **kw: None
-
-# =============================================================================
-# Namespace Helpers
-# =============================================================================
-
-
-def _compose_ns(
-    plan_id: str = 'test-plan',
-    change_type: str = 'feature',
-    track: str = 'complex',
-    scope_estimate: str = 'multi_module',
-    recipe_key: str | None = None,
-    affected_files_count: int = 5,
-    phase_5_steps: str | None = 'quality-gate,module-tests',
-    phase_6_steps: str | None = ','.join(DEFAULT_PHASE_6_STEPS),
-    commit_and_push: str | None = None,
-) -> Namespace:
-    return Namespace(
-        plan_id=plan_id,
-        change_type=change_type,
-        track=track,
-        scope_estimate=scope_estimate,
-        recipe_key=recipe_key,
-        affected_files_count=affected_files_count,
-        phase_5_steps=phase_5_steps,
-        phase_6_steps=phase_6_steps,
-        commit_and_push=commit_and_push,
-    )
-
-
-def _validate_ns(
-    plan_id: str = 'test-plan',
-    phase_5_steps: str | None = 'quality-gate,module-tests,coverage',
-    phase_6_steps: str | None = ','.join(DEFAULT_PHASE_6_STEPS),
-) -> Namespace:
-    return Namespace(plan_id=plan_id, phase_5_steps=phase_5_steps, phase_6_steps=phase_6_steps)
-
 
 # =============================================================================
 # validate subcommand tests
@@ -100,6 +28,7 @@ def test_validate_happy_path(plan_context):
     assert result['valid'] is True
     assert result['phase_5_unknown_steps_count'] == 0
     assert result['phase_6_unknown_steps_count'] == 0
+
 
 
 def test_validate_succeeds_on_manifest_with_step_params_block(plan_context):
@@ -121,11 +50,13 @@ def test_validate_succeeds_on_manifest_with_step_params_block(plan_context):
     assert result['valid'] is True
 
 
+
 def test_validate_missing_manifest_returns_none(plan_context, capsys):
     result = cmd_validate(_validate_ns(plan_id='val-missing'))
     assert result is None
     captured = capsys.readouterr()
     assert 'file_not_found' in captured.out
+
 
 
 def test_validate_unknown_phase_5_step_flagged(plan_context):
@@ -148,6 +79,7 @@ def test_validate_unknown_phase_5_step_flagged(plan_context):
     assert 'module-tests' in result['phase_5_unknown_steps']
 
 
+
 def test_validate_without_candidate_sets_skips_step_id_check(plan_context):
     """validate succeeds (status=success) when candidate sets aren't supplied."""
     cmd_compose(_compose_ns(plan_id='val-no-candidates'))
@@ -160,6 +92,7 @@ def test_validate_without_candidate_sets_skips_step_id_check(plan_context):
     )
     assert result is not None and result['status'] == 'success'
     assert result['valid'] is True
+
 
 
 def test_validate_unknown_phase_6_step_flagged(plan_context):
@@ -187,6 +120,7 @@ def test_validate_unknown_phase_6_step_flagged(plan_context):
     assert 'create-pr' in result['phase_6_unknown_steps']
 
 
+
 def test_validate_detects_corrupt_manifest_version(plan_context):
     """validate flags a manifest_version mismatch from a tampered file."""
     cmd_compose(_compose_ns(plan_id='val-bad-version'))
@@ -203,6 +137,7 @@ def test_validate_detects_corrupt_manifest_version(plan_context):
     assert 'manifest_version mismatch' in result['message']
 
 
+
 def test_validate_detects_plan_id_mismatch(plan_context):
     """validate flags a plan_id mismatch from a tampered file."""
     cmd_compose(_compose_ns(plan_id='val-bad-pid'))
@@ -215,73 +150,6 @@ def test_validate_detects_plan_id_mismatch(plan_context):
     assert result['error'] == 'invalid_manifest'
     assert 'plan_id mismatch' in result['message']
 
-
-# =============================================================================
-# Keyed-map marshal.json -> DICT manifest step_params snapshot bridge
-# =============================================================================
-#
-# marshal.json persists `verification_steps` / `steps` in the canonical keyed-map
-# form (`{}` for config-less steps). The composer reads that keyed map through
-# `_read_marshal_phase_step_map` and snapshots the per-step params into the
-# manifest as an id-keyed DICT (`body[phase].step_params`) — the plan-local
-# override surface that `step-params get/set` resolve against. These tests lock
-# that bridge: a keyed-map marshal.json composes to a DICT manifest snapshot, the
-# params survive, validate succeeds against it, and `step-params get` resolves the
-# DICT snapshot.
-
-
-def _seed_keyed_map_marshal(fixture_dir: Path) -> None:
-    """Write a marshal.json whose phase-6-finalize steps are the canonical keyed map.
-
-    Config-less steps map to {}; param-bearing steps carry their nested param
-    object — the on-disk serial form every config write verb persists.
-    """
-    marshal_path = fixture_dir / 'marshal.json'
-    data = {
-        'plan': {
-            'phase-6-finalize': {
-                'steps': {
-                    'default:push': {},
-                    'default:create-pr': {},
-                    'plan-marshall:automatic-review': {'review_bot_buffer_seconds': 240},
-                    'default:sonar-roundtrip': {},
-                    'default:lessons-capture': {},
-                    'default:branch-cleanup': {
-                        'pr_merge_strategy': 'squash',
-                        'final_merge_without_asking': False,
-                    },
-                    'default:record-metrics': {},
-                    'default:archive-plan': {},
-                }
-            }
-        }
-    }
-    marshal_path.write_text(json.dumps(data), encoding='utf-8')
-
-
-def test_compose_from_keyed_map_marshal_snapshots_dict_step_params(plan_context):
-    """A keyed-map marshal.json composes to a DICT (id-keyed) manifest step_params snapshot.
-
-    The composer reads the keyed-map steps and writes the per-step params into the
-    manifest as an id-keyed DICT. This locks the "manifest snapshot stays a DICT"
-    contract.
-    """
-    _seed_keyed_map_marshal(plan_context.fixture_dir)
-    cmd_compose(_compose_ns(plan_id='val-keyed-snapshot'))
-
-    manifest = read_manifest('val-keyed-snapshot')
-    assert manifest is not None
-    snapshot = manifest['phase_6']['step_params']
-    # The manifest snapshot is an id-keyed DICT.
-    assert isinstance(snapshot, dict)
-    # The param-bearing step's params survive (snapshot is keyed by the bare step
-    # id — the default: prefix is stripped).
-    assert snapshot['branch-cleanup'] == {
-        'pr_merge_strategy': 'squash',
-        'final_merge_without_asking': False,
-    }
-    # A config-less step reads back as the empty dict (no params).
-    assert snapshot['push'] == {}
 
 
 def test_validate_succeeds_against_keyed_map_sourced_manifest(plan_context):
@@ -305,72 +173,6 @@ def test_validate_succeeds_against_keyed_map_sourced_manifest(plan_context):
     assert result['valid'] is True
 
 
-def test_step_params_get_resolves_dict_snapshot_from_keyed_map_marshal(plan_context):
-    """step-params get resolves against the DICT manifest snapshot sourced from keyed-map marshal.
-
-    The snapshot is the id-keyed DICT the composer wrote from the keyed-map
-    marshal.json; `step-params get` returns the full param object for a step in a
-    single call, resolving the bare-keyed DICT entry.
-    """
-    _seed_keyed_map_marshal(plan_context.fixture_dir)
-    cmd_compose(_compose_ns(plan_id='val-keyed-sp-get'))
-
-    result = cmd_step_params_get(Namespace(plan_id='val-keyed-sp-get', phase='6-finalize', step_id='branch-cleanup'))
-
-    assert result is not None and result['status'] == 'success'
-    assert result['params'] == {
-        'pr_merge_strategy': 'squash',
-        'final_merge_without_asking': False,
-    }
-
-
-# =============================================================================
-# CLI plumbing (subprocess) tests for validate
-# =============================================================================
-
-
-def test_cli_validate_happy_path(plan_context):
-    """validate via CLI returns status=success TOON."""
-    compose = run_script(
-        SCRIPT_PATH,
-        'compose',
-        '--plan-id',
-        'cli-val-ok',
-        '--plan-change-type',
-        'feature',
-        '--track',
-        'complex',
-        '--scope-estimate',
-        'multi_module',
-    )
-    assert compose.success
-
-    result = run_script(
-        SCRIPT_PATH,
-        'validate',
-        '--plan-id',
-        'cli-val-ok',
-        '--phase-5-steps',
-        ','.join(DEFAULT_PHASE_5_STEPS),
-        '--phase-6-steps',
-        ','.join(DEFAULT_PHASE_6_STEPS),
-    )
-    assert result.success
-    data = result.toon()
-    assert data['status'] == 'success'
-    # TOON parser may coerce booleans — accept both shapes defensively.
-    assert data['valid'] in (True, 'true', 1)
-
-
-# =============================================================================
-# Per-step owner schema field (orchestrator-owned | leaf-dispatchable)
-# =============================================================================
-
-
-def test_step_owner_schema_vocabulary_is_closed():
-    """The owner schema vocabulary is the closed two-value tuple."""
-    assert VALID_STEP_OWNERS == ('orchestrator-owned', 'leaf-dispatchable')
-
 
 def test_validate_step_owner_is_a_membership_predicate_over_the_schema():
     """validate_step_owner accepts exactly the declared schema values."""
@@ -378,154 +180,3 @@ def test_validate_step_owner_is_a_membership_predicate_over_the_schema():
         assert validate_step_owner(owner) is True
     for bogus in ('main-owned', 'ORCHESTRATOR-OWNED', 'leaf', '', 'dispatchable'):
         assert validate_step_owner(bogus) is False
-
-
-def test_owner_of_yields_a_schema_valid_owner_for_every_step():
-    """owner_of always returns a value that passes the schema validator.
-
-    Schema-integrity invariant: the classifier never emits an owner outside the
-    declared vocabulary, for both registry and non-registry steps.
-    """
-    for step in (
-        *ORCHESTRATOR_OWNED_STEPS,
-        'push',
-        'create-pr',
-        'ci-verify',
-        'verify:quality-gate',
-        'project:finalize-step-plugin-doctor',
-        'default:finalize-step-simplify',
-    ):
-        assert validate_step_owner(owner_of(step)) is True
-
-
-def test_orchestrator_owned_registry_steps_all_resolve_orchestrator_owned():
-    """Every registry member classifies as orchestrator-owned (schema field consistency)."""
-    for step in ORCHESTRATOR_OWNED_STEPS:
-        assert owner_of(step) == 'orchestrator-owned', step
-
-
-# =============================================================================
-# Ascending-order barrier invariant (general regression, order-independent)
-#
-# Distinct verification scope from the single-case reproduction
-# (test_manage_execution_manifest_compose.py :: test_compose_sorts_phase_6_steps
-# _by_frontmatter_order, which pins one archive-plan/preference-emitter pair):
-# this drives cmd_compose across SEVERAL shuffled seed orderings of the SAME
-# order-resolvable candidate set and asserts the barrier invariant holds for
-# EVERY seed regardless of input order. The invariant is checked structurally via
-# _check_ascending_order + _resolve_step_order — no order magnitudes are hardcoded
-# beyond archive-plan being the highest-order finalize step.
-# =============================================================================
-
-# Order-resolvable phase-6 steps spanning the full frontmatter-order range, from
-# the earliest finalize step to the archive-plan barrier. Every entry resolves to
-# a non-None frontmatter order, so all participate in the ascending assertion.
-_ORDER_RESOLVABLE_CANDIDATES = [
-    'finalize-step-sync-baseline',  # order 3
-    'architecture-refresh',  # order 10
-    'push',  # order 11
-    'ci-verify',  # order 22
-    'branch-cleanup',  # order 70
-    'finalize-step-preference-emitter',  # order 992
-    'record-metrics',  # order 998
-    'finalize-step-print-phase-breakdown',  # order 999
-    'archive-plan',  # order 1100 — the plan-mutating barrier, highest order (terminus)
-]
-
-# Several arbitrary/shuffled seed orderings of the SAME candidate set. Each is a
-# permutation of _ORDER_RESOLVABLE_CANDIDATES (self-checked in the test body).
-# Includes orders that place archive-plan early and orders that interleave
-# multiple order-resolvable steps around it.
-_SHUFFLED_SEED_ORDERINGS = [
-    # archive-plan placed FIRST (the extreme early-placement case).
-    [
-        'archive-plan',
-        'finalize-step-preference-emitter',
-        'push',
-        'record-metrics',
-        'ci-verify',
-        'finalize-step-print-phase-breakdown',
-        'architecture-refresh',
-        'finalize-step-sync-baseline',
-        'branch-cleanup',
-    ],
-    # Fully reverse-sorted: archive-plan first, every step in descending order.
-    [
-        'archive-plan',  # 1100
-        'finalize-step-print-phase-breakdown',  # 999
-        'record-metrics',  # 998
-        'finalize-step-preference-emitter',  # 992
-        'branch-cleanup',  # 70
-        'ci-verify',  # 22
-        'push',  # 11
-        'architecture-refresh',  # 10
-        'finalize-step-sync-baseline',  # 3
-    ],
-    # High/low interleave: archive-plan mid-list, high-order steps scattered
-    # among low-order ones.
-    [
-        'record-metrics',
-        'push',
-        'archive-plan',
-        'ci-verify',
-        'finalize-step-print-phase-breakdown',
-        'architecture-refresh',
-        'finalize-step-preference-emitter',
-        'finalize-step-sync-baseline',
-        'branch-cleanup',
-    ],
-    # Another arbitrary shuffle with archive-plan near the front.
-    [
-        'branch-cleanup',
-        'archive-plan',
-        'finalize-step-sync-baseline',
-        'finalize-step-print-phase-breakdown',
-        'push',
-        'finalize-step-preference-emitter',
-        'record-metrics',
-        'ci-verify',
-        'architecture-refresh',
-    ],
-]
-
-
-def test_composed_phase_6_steps_hold_ascending_order_barrier_for_every_seed(plan_context):
-    """The ascending-order barrier holds for every shuffled seed of the same set.
-
-    General invariant regression (order-independent): whatever order the candidate
-    steps are fed to cmd_compose, the composed phase_6.steps must (a) survive
-    _check_ascending_order with no inversion, and (b) place no order-resolvable
-    step whose resolved order is below archive-plan's after archive-plan. Because
-    archive-plan carries the highest resolvable order among finalize steps, this
-    is the plan-mutating barrier: nothing order-resolvable may follow it.
-    """
-    archive_order = _resolve_step_order('archive-plan')
-    assert archive_order is not None, 'archive-plan must resolve to a frontmatter order'
-
-    for seed_index, seed in enumerate(_SHUFFLED_SEED_ORDERINGS):
-        # Self-check: every seed is a permutation of the same candidate set, so
-        # differences in the composed output are attributable to compose-time
-        # sorting alone, not to a differing input set.
-        assert sorted(seed) == sorted(_ORDER_RESOLVABLE_CANDIDATES), (
-            f'seed {seed_index} is not a permutation of the candidate set'
-        )
-
-        plan_id = f'order-barrier-seed-{seed_index}'
-        result = cmd_compose(_compose_ns(plan_id=plan_id, phase_6_steps=','.join(seed)))
-        assert result is not None and result['status'] == 'success', f'compose failed for seed {seed_index}: {result}'
-
-        manifest = read_manifest(plan_id)
-        assert manifest is not None
-        composed = manifest['phase_6']['steps']
-
-        # (a) No inversion survives — the resolvable subsequence is non-decreasing.
-        assert _check_ascending_order(composed) is None, f'inversion survived for seed {seed_index}: {composed}'
-
-        # (b) No order-resolvable step below archive-plan's order appears after it.
-        archive_idx = composed.index('archive-plan')
-        for later in composed[archive_idx + 1 :]:
-            later_order = _resolve_step_order(later)
-            assert not (later_order is not None and later_order < archive_order), (
-                f'seed {seed_index}: `{later}` (order={later_order}) follows '
-                f'archive-plan (order={archive_order}) — barrier violated in {composed}'
-            )
