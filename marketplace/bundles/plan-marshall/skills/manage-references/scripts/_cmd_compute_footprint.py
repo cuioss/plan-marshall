@@ -7,8 +7,12 @@ union of the three-dot ``{base_ref}...HEAD`` diff and the porcelain working-tree
 state — without consulting any persisted ledger. The footprint is computed
 on-demand from the worktree, which is the single source of truth.
 
-This handler is read-only: it never mutates ``references.json``. It reads
-``references.json`` only to resolve ``base_branch`` for the diff range.
+This handler is read-only with respect to ``references.json``: it never mutates
+it. It reads ``references.json`` only to resolve ``base_branch`` for the diff
+range. The one opt-in write it performs is ``--files-out``, which writes the
+computed list to a caller-named file and nothing else — the faithful hand-off
+for a consumer that takes the footprint as a file rather than as a
+hand-composed command-line string.
 
 Resolution rule:
     files = sorted live footprint set
@@ -19,13 +23,16 @@ Where ``live`` is the union of:
 """
 
 import argparse
+import os
 import subprocess
+import tempfile
 from pathlib import Path
 
 from _references_core import (
     _ref_resolves_in_worktree,
     _run_git,
     compute_plan_branch_diff,
+    get_references_path,
     read_references,
     resolve_base_ref,
     write_references,
@@ -95,7 +102,7 @@ def cmd_compute_footprint(args: argparse.Namespace) -> dict:
         }
     files = sorted(live_set)
 
-    return {
+    payload = {
         'status': 'success',
         'plan_id': args.plan_id,
         'base_ref': base_ref,
@@ -103,6 +110,95 @@ def cmd_compute_footprint(args: argparse.Namespace) -> dict:
         'files': files,
         'live_count': len(files),
     }
+
+    files_out = getattr(args, 'files_out', None)
+    if files_out:
+        try:
+            out_path = _write_footprint_files(args.plan_id, files_out, files)
+        except ValueError as exc:
+            # A refused destination is not a write failure: it is a request this
+            # verb declines. It gets its own code so a caller can tell "you
+            # asked for something I will not do" from "the disk said no".
+            return {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'files_out_refused',
+                'message': str(exc),
+            }
+        except OSError as exc:
+            return {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'files_out_unwritable',
+                'message': f'Failed to write the footprint to {files_out}: {exc}',
+            }
+        payload['files_out'] = str(out_path)
+        payload['files_out_count'] = len(files)
+
+    return payload
+
+
+def _write_footprint_files(plan_id: str, files_out: str, files: list[str]) -> Path:
+    """Write the footprint list to ``files_out`` atomically, refusing the plan record.
+
+    Three properties, each closing a distinct way this write could betray its
+    stated contract:
+
+    * **It never replaces the plan record.** ``compute-footprint`` is read-only
+      with respect to ``references.json``, and a caller naming that path as the
+      export target would silently break the promise — the footprint would
+      overwrite the plan's own state. The destination is compared against the
+      real references path by *resolved* identity, not by string, so a
+      differently-spelled or symlinked path is caught too.
+    * **It is atomic.** The bytes go to a temporary sibling that is renamed into
+      place, so a reader never observes a truncated list. A directly-written
+      file that failed partway is still *readable* — and a partial footprint
+      derives a narrower bundle set that reads as a clean gate, which is the
+      false green this hand-off exists to eliminate. A same-directory temp keeps
+      the rename on one filesystem, so it is a rename and not an interruptible
+      copy.
+    * **It creates the parent directory**, so the documented
+      ``.plan/temp/{plan_id}-footprint.txt`` form needs no separate step.
+
+    Args:
+        plan_id: Owning plan id, used to resolve the references path to refuse.
+        files_out: Caller-named destination path.
+        files: The computed footprint, already sorted.
+
+    Returns:
+        The destination path that was written.
+
+    Raises:
+        ValueError: The destination resolves to the plan's ``references.json``.
+        OSError: The destination could not be created or written.
+    """
+    out_path = Path(files_out).expanduser()
+    if out_path.resolve() == get_references_path(plan_id).resolve():
+        raise ValueError(
+            f'Refusing to write the footprint over the plan record: {out_path} is '
+            f"this plan's references.json. compute-footprint is read-only with "
+            f'respect to it; choose a different --files-out path.'
+        )
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        mode='w',
+        encoding='utf-8',
+        dir=out_path.parent,
+        prefix=f'.{out_path.name}.',
+        suffix='.tmp',
+        delete=False,
+    ) as handle:
+        handle.write(''.join(f'{path}\n' for path in files))
+        handle.flush()
+        os.fsync(handle.fileno())
+        tmp_path = Path(handle.name)
+    try:
+        os.replace(tmp_path, out_path)
+    except OSError:
+        tmp_path.unlink(missing_ok=True)
+        raise
+    return out_path
 
 
 def cmd_capture_footprint(args: argparse.Namespace) -> dict:

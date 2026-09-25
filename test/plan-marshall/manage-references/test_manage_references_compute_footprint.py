@@ -287,6 +287,224 @@ def test_footprint_is_read_only(tmp_path):
 
 
 # =============================================================================
+# --files-out — the faithful hand-off to a consumer that reads a file
+# =============================================================================
+
+
+def test_files_out_writes_the_computed_footprint_exactly(tmp_path):
+    """The written file must carry the SAME list the TOON returned.
+
+    That equality is the whole point of the option: it exists so a consumer can
+    read the producer's bytes instead of a retyped copy, which is only faithful
+    if the two are the same list.
+    """
+    repo = tmp_path / 'worktree'
+    _build_absorb_scenario(repo)
+    base_dir = tmp_path / 'plan-base'
+    _write_references(base_dir, FOOTPRINT_PLAN_ID, {'base_branch': 'main'})
+    out = tmp_path / 'nested' / 'footprint.txt'
+
+    result = _run_footprint(base_dir, FOOTPRINT_PLAN_ID, repo, '--files-out', str(out))
+    data = result.toon()
+
+    assert data['status'] == 'success', result.stderr
+    assert out.exists(), '--files-out must create the (parent-)file it was given'
+    written = out.read_text().splitlines()
+    assert written == data['files']
+    assert data['files_out_count'] == len(written)
+    assert data['live_count'] == len(written)
+
+
+def test_files_out_omitted_writes_nothing_and_reports_no_path(tmp_path):
+    """Without the flag there is no file and no files_out key — the default
+    stays a pure read whose only observable output is the TOON."""
+    repo = tmp_path / 'worktree'
+    _build_absorb_scenario(repo)
+    base_dir = tmp_path / 'plan-base'
+    _write_references(base_dir, FOOTPRINT_PLAN_ID, {'base_branch': 'main'})
+
+    result = _run_footprint(base_dir, FOOTPRINT_PLAN_ID, repo)
+    data = result.toon()
+
+    assert data['status'] == 'success'
+    assert 'files_out' not in data
+    assert 'files_out_count' not in data
+
+
+def test_files_out_does_not_touch_references_json(tmp_path):
+    """The opt-in write is scoped to the caller-named file.
+
+    ``compute-footprint`` is documented as read-only with respect to
+    ``references.json``; adding a write option must not quietly weaken that
+    claim for the one verb that others rely on to be a pure read.
+    """
+    repo = tmp_path / 'worktree'
+    _build_absorb_scenario(repo)
+    base_dir = tmp_path / 'plan-base'
+    original = {'base_branch': 'main'}
+    _write_references(base_dir, FOOTPRINT_PLAN_ID, dict(original))
+
+    before = _read_references(base_dir, FOOTPRINT_PLAN_ID)
+    result = _run_footprint(
+        base_dir,
+        FOOTPRINT_PLAN_ID,
+        repo,
+        '--files-out',
+        str(tmp_path / 'footprint.txt'),
+    )
+    after = _read_references(base_dir, FOOTPRINT_PLAN_ID)
+
+    assert result.toon()['status'] == 'success'
+    assert before == after
+
+
+def test_files_out_unwritable_reports_a_typed_error_and_no_success_payload(tmp_path):
+    """A failed export is an error, not a success with a missing file.
+
+    A ``status: success`` whose file was never written is precisely the
+    half-hand-off the option exists to prevent, so the failure must be visible
+    at the call site.
+    """
+    repo = tmp_path / 'worktree'
+    _build_absorb_scenario(repo)
+    base_dir = tmp_path / 'plan-base'
+    _write_references(base_dir, FOOTPRINT_PLAN_ID, {'base_branch': 'main'})
+    # A path whose parent is an existing FILE cannot be created as a directory.
+    blocker = tmp_path / 'blocker'
+    blocker.write_text('not a directory')
+
+    result = _run_footprint(
+        base_dir,
+        FOOTPRINT_PLAN_ID,
+        repo,
+        '--files-out',
+        str(blocker / 'sub' / 'footprint.txt'),
+    )
+    data = result.toon()
+
+    assert data['status'] == 'error'
+    assert data['error'] == 'files_out_unwritable'
+    assert 'files' not in data
+
+
+def test_files_out_refuses_to_overwrite_the_plan_record(tmp_path):
+    """Naming the plan's references.json as the export target must be refused.
+
+    The verb is read-only with respect to ``references.json``; an opt-in write
+    that silently clobbered it would break the promise the read-only contract
+    and every caller relying on it. The comparison is on resolved identity, so a
+    differently-spelled or symlinked route to the same file is caught too.
+    """
+    repo = tmp_path / 'worktree'
+    _build_absorb_scenario(repo)
+    base_dir = tmp_path / 'plan-base'
+    original = {'base_branch': 'main', 'affected_files': ['keep/me.py']}
+    refs_path = _write_references(base_dir, FOOTPRINT_PLAN_ID, dict(original))
+
+    result = _run_footprint(
+        base_dir,
+        FOOTPRINT_PLAN_ID,
+        repo,
+        '--files-out',
+        str(refs_path),
+    )
+    data = result.toon()
+
+    assert data['status'] == 'error'
+    assert data['error'] == 'files_out_refused'
+    assert 'files' not in data
+    # The plan record is intact, not merely unreported.
+    assert _read_references(base_dir, FOOTPRINT_PLAN_ID) == original
+
+
+def test_files_out_refuses_the_plan_record_reached_by_an_indirect_path(tmp_path):
+    """The refusal compares resolved paths, not the string it was handed.
+
+    A caller reaching the same file through a symlinked directory is naming the
+    plan record just as surely as one naming it directly, and a string
+    comparison would let that through.
+    """
+    repo = tmp_path / 'worktree'
+    _build_absorb_scenario(repo)
+    base_dir = tmp_path / 'plan-base'
+    original = {'base_branch': 'main'}
+    refs_path = _write_references(base_dir, FOOTPRINT_PLAN_ID, dict(original))
+
+    # A symlinked route to the same plan directory, then a path under it whose
+    # resolved identity IS references.json.
+    linked = tmp_path / 'alias'
+    linked.symlink_to(refs_path.parent, target_is_directory=True)
+    indirect = linked / refs_path.name
+
+    result = _run_footprint(
+        base_dir,
+        FOOTPRINT_PLAN_ID,
+        repo,
+        '--files-out',
+        str(indirect),
+    )
+    data = result.toon()
+
+    assert data['status'] == 'error'
+    assert data['error'] == 'files_out_refused'
+    assert _read_references(base_dir, FOOTPRINT_PLAN_ID) == original
+
+
+def test_files_out_is_atomic_and_leaves_no_temp_file_behind(tmp_path):
+    """The write must not expose a truncated list to the consumer.
+
+    A directly-written file that failed partway is still readable, and a
+    partial footprint derives a NARROWER bundle set — which reads as a clean
+    gate. The bytes therefore go to a temp sibling and are renamed into place,
+    so the destination only ever holds a complete list, and the temp file does
+    not survive the call.
+    """
+    repo = tmp_path / 'worktree'
+    _build_absorb_scenario(repo)
+    base_dir = tmp_path / 'plan-base'
+    _write_references(base_dir, FOOTPRINT_PLAN_ID, {'base_branch': 'main'})
+    out_dir = tmp_path / 'out'
+    out = out_dir / 'footprint.txt'
+
+    result = _run_footprint(base_dir, FOOTPRINT_PLAN_ID, repo, '--files-out', str(out))
+
+    assert result.toon()['status'] == 'success'
+    assert out.read_text().splitlines() == result.toon()['files']
+    leftovers = [p.name for p in out_dir.iterdir() if p.name != out.name]
+    assert leftovers == [], f'temporary write artifacts must not survive: {leftovers}'
+
+
+def test_files_out_replaces_a_previous_export_wholesale(tmp_path):
+    """A re-run over the same destination must not append or concatenate.
+
+    The consumer reads the destination as the whole population, so a leftover
+    line from a previous, larger footprint would silently gate a bundle the
+    current run no longer touches. The atomic replace is also what guarantees
+    the destination is the new list and nothing else.
+    """
+    repo = tmp_path / 'worktree'
+    _build_absorb_scenario(repo)
+    base_dir = tmp_path / 'plan-base'
+    _write_references(base_dir, FOOTPRINT_PLAN_ID, {'base_branch': 'main'})
+    out = tmp_path / 'footprint.txt'
+    out.write_text('stale/leftover.py\nstale/another.py\n', encoding='utf-8')
+
+    result = _run_footprint(base_dir, FOOTPRINT_PLAN_ID, repo, '--files-out', str(out))
+
+    assert result.toon()['status'] == 'success'
+    written = out.read_text().splitlines()
+    assert written == result.toon()['files']
+    assert 'stale/leftover.py' not in written
+
+
+def test_compute_footprint_help_declares_files_out():
+    """The option must be discoverable from --help, or no caller will find it."""
+    result = run_script(SCRIPT_PATH, 'compute-footprint', '--help')
+    assert result.success, f'--help failed: {result.stderr}'
+    assert '--files-out' in result.stdout
+
+
+# =============================================================================
 # Error contract
 # =============================================================================
 

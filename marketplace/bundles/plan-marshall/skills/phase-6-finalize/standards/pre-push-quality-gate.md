@@ -187,12 +187,19 @@ Failing toward inclusion on `unknown` is required, not cautious: ADR-009 forbids
 
 ### Read the live footprint
 
+Write the footprint to a file as part of the read, so the list this step gates over is the producer's own bytes rather than a retyped copy of them:
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-references:manage-references \
-  compute-footprint --plan-id {plan_id} --worktree-path {worktree_path}
+  compute-footprint --plan-id {plan_id} --worktree-path {worktree_path} \
+  --files-out {worktree_path}/.plan/temp/{plan_id}-footprint.txt
 ```
 
-Extract the `files` array from the TOON output. This is the live footprint derived from the worktree — the union of the three-dot `{base_ref}...HEAD` diff and the porcelain working-tree state — so it already reflects only what is actually modified now. A file that was touched then reverted does not appear, so it forces no redundant `quality-gate` run against a bundle with no actual changes.
+This is the live footprint derived from the worktree — the union of the three-dot `{base_ref}...HEAD` diff and the porcelain working-tree state — so it already reflects only what is actually modified now. A file that was touched then reverted does not appear, so it forces no redundant `quality-gate` run against a bundle with no actual changes.
+
+`--files-out` writes one repo-relative path per line and reports `files_out` / `files_out_count`; it writes that one file and nothing else (`references.json` is never touched by this verb). On `status: error, error: files_out_unwritable` nothing was written — STOP the step per § "Exit-code convention for every script call", because a hand-off that silently lost its file is the case the file form exists to prevent.
+
+**Why the footprint travels as a file.** This step's footprint is routinely hundreds of paths. A list that crosses into the next command as a hand-composed string is not transcribed faithfully at that size — a caller substitutes plausible-looking path names for real ones, and a wrong list is not detectable from the outside: it derives a *narrower* bundle set, the per-bundle loop below gates fewer bundles, and the run reads as green over a population it never saw. So the footprint is written to a file by its producer and read back by the consumer. The returned `files` array in the same TOON remains the authoritative read of what was computed; the file is the same list in the form the next call can consume.
 
 ### Read the build_map globs
 
@@ -205,13 +212,16 @@ Extract `build_map` (the domain-keyed `{glob, role, build_class}` map) from the 
 
 ### Derive unique bundle set
 
-The derivation rule lives in exactly one place — the deterministic `derive_gate_bundles` seam. Do NOT restate it here. Pass the live footprint `files`, the collected build_map `globs`, and the worktree root; the seam returns the sorted, de-duplicated `bundles` set plus an `unresolved` list of footprint paths that matched a build_map glob but resolved to no real bundle (e.g. a `test/marketplace/**` path, which is never a bundle and never a silent drop):
+The derivation rule lives in exactly one place — the deterministic `derive_gate_bundles` seam. Do NOT restate it here. Pass the footprint file written above, the collected build_map `globs`, and the worktree root; the seam returns the sorted, de-duplicated `bundles` set plus an `unresolved` list of footprint paths that matched a build_map glob but resolved to no real bundle (e.g. a `test/marketplace/**` path, which is never a bundle and never a silent drop):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:phase-6-finalize:derive_gate_bundles \
-  derive --files "{comma_separated_files}" --globs "{comma_separated_globs}" \
+  derive --files-file {worktree_path}/.plan/temp/{plan_id}-footprint.txt \
+  --globs "{comma_separated_globs}" \
   --marketplace-root {worktree_path}
 ```
+
+`--files` (the inline CSV form) remains available for a small footprint and is mutually exclusive with `--files-file`; it is not the prescribed form, because the gate's correctness depends on the derivation population being exactly the footprint. A footprint too large to pass as a file is a reason to STOP the step and report, never to pass a hand-picked subset — a narrowed list is indistinguishable from a clean gate once it is inside the loop.
 
 Parse `bundles` and `unresolved` from the TOON output. Let `N = len(bundles)`.
 
