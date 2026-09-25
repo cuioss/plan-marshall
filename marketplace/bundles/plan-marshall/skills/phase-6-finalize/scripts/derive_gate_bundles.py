@@ -153,10 +153,10 @@ def read_files_file(path: Path) -> list[str]:
 
     The file is the transport, so the reader is deliberately permissive about
     what it accepts — blank lines and ``#`` comments are skipped, and each
-    remaining line is stripped — and deliberately strict about one thing: an
-    unreadable or absent file is an error, never an empty list. An empty list
-    would derive no bundles, the per-bundle loop would iterate zero times, and
-    the gate would report green over a population it never saw.
+    remaining line is stripped — and deliberately strict about one thing: a
+    file that cannot be read or decoded is an error, never an empty list. An
+    empty list would derive no bundles, the per-bundle loop would iterate zero
+    times, and the gate would report green over a population it never saw.
 
     Args:
         path: File holding one repo-relative footprint path per line.
@@ -168,6 +168,7 @@ def read_files_file(path: Path) -> list[str]:
 
     Raises:
         OSError: The file does not exist or cannot be read.
+        UnicodeError: The file is not valid UTF-8.
     """
     lines = path.read_text(encoding='utf-8').splitlines()
     return [stripped for line in lines if (stripped := line.strip()) and not stripped.startswith('#')]
@@ -190,11 +191,15 @@ def cmd_derive(args: argparse.Namespace) -> int:
     bundles_root = marketplace_root / _BUNDLES_SUBPATH
     try:
         files = _resolve_files(args)
-    except OSError as exc:
-        # An unreadable footprint file is reported, never degraded to an empty
-        # list. The caller is a gate: a bare traceback would leave the failure
-        # legible only to a reader of stderr, while a typed envelope lets it be
-        # branched on and named in the step's own record.
+    except (OSError, UnicodeError) as exc:
+        # An unreadable or undecodable footprint file is reported, never
+        # degraded to an empty list. The caller is a gate: a bare traceback
+        # would leave the failure legible only to a reader of stderr, while a
+        # typed envelope lets it be branched on and named in the step's own
+        # record. ``UnicodeError`` is in the tuple because a truncated or
+        # non-UTF-8 file raises ``UnicodeDecodeError`` — a ``ValueError``
+        # subclass, not an ``OSError`` — and it is the same failure from the
+        # gate's point of view: the list could not be read.
         print(
             serialize_toon(
                 {

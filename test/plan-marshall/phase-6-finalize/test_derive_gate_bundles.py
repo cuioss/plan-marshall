@@ -396,6 +396,35 @@ def test_cli_reports_an_unreadable_files_file_as_a_typed_error(tmp_path):
     assert 'bundles' not in data
 
 
+def test_cli_reports_invalid_utf8_as_the_same_typed_error(tmp_path):
+    """A non-UTF-8 file is the same failure as an absent one.
+
+    ``UnicodeDecodeError`` is a ``ValueError`` subclass, so an ``except OSError``
+    handler lets it escape as a traceback. From the gate's side the two are
+    indistinguishable — the list could not be read — so they must return the
+    same code rather than one of them crashing.
+    """
+    script = get_script_path('plan-marshall', 'phase-6-finalize', 'derive_gate_bundles.py')
+    listed = tmp_path / 'footprint.txt'
+    listed.write_bytes(b'test/plan-marshall/test_bar.py\n\xff\xfe not utf-8\n')
+
+    result = run_script(
+        script,
+        'derive',
+        '--files-file',
+        str(listed),
+        '--globs',
+        'test/*',
+        '--marketplace-root',
+        str(PROJECT_ROOT),
+    )
+
+    data = result.toon()
+    assert data['status'] == 'error'
+    assert data['error'] == 'files_file_unreadable'
+    assert 'bundles' not in data
+
+
 def test_cli_accepts_files_file(tmp_path):
     script = get_script_path('plan-marshall', 'phase-6-finalize', 'derive_gate_bundles.py')
     listed = tmp_path / 'footprint.txt'
