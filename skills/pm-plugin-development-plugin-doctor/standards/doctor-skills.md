@@ -1,0 +1,175 @@
+# Doctor Skills Workflow
+
+Follows the common workflow pattern (see SKILL.md). Reference guide: `skills-guide.md`.
+
+## Parameters
+
+- `scope` (optional, default: "marketplace"): "marketplace" | "global" | "project"
+- `skill-name` (optional): Analyze specific skill
+- `--no-fix` (optional): Diagnosis only, no fixes
+
+## Skill-Specific Checks
+
+### Validate Foundation Skill Loading
+
+Skills with workflows load foundation skills.
+
+**Required foundation skills**:
+```text
+Skill: pm-plugin-development:plugin-architecture
+Skill: plan-marshall:persona-plan-marshall-agent
+```
+
+**Check criteria**:
+1. Search SKILL.md for `Skill: pm-plugin-development:plugin-architecture`
+2. Search SKILL.md for `Skill: plan-marshall:persona-plan-marshall-agent`
+3. **Exempt skills** (skip check):
+   - `plugin-architecture` (is itself the architecture skill)
+   - `marketplace-inventory` (pure Pattern 1 script automation, no component operations)
+   - Skills with `allowed-tools: Read` only (pure reference libraries)
+
+**If missing**: Flag as safe fix (auto-apply).
+
+### Validate workflow-explicit-script-calls
+
+Workflow steps that perform script operations have explicit bash code blocks.
+
+**Detection logic**:
+1. Find workflow steps (### Step N: ...)
+2. For each step, check if it contains action verbs: "read", "write", "display", "check", "validate", "get", "list", "create", "update", "delete"
+3. If action verb present WITHOUT a bash code block containing `execute-script.py`, flag as violation
+
+**Exempt patterns**:
+- Steps that use `Task:` (agent delegation)
+- Steps that use `Skill:` (skill loading)
+- Steps that use `Read:` or `Glob:` (assistant tools)
+- Steps with explicit bash blocks containing `execute-script.py`
+
+**If violation found**: Flag as risky fix (requires manual intervention to add proper script call).
+
+### Validate skill-enforcement-block-required
+
+Script-bearing skills have a single `## Enforcement` block at the top of the SKILL.md (after frontmatter and title/description, before workflow content).
+
+**Detection logic**:
+1. Check if skill has a `scripts/` directory (use Glob)
+2. If scripts exist, search SKILL.md for `## Enforcement` heading
+3. Verify the enforcement block appears before any `## Workflow` or `## Step` headings
+
+**Enforcement block contents** (validate presence of these subsections):
+- `**Execution mode**:` — how the skill operates
+- `**Prohibited actions:**` — what the skill must not do
+- `**Constraints:**` — rules governing execution
+
+**Exempt skills** (skip check):
+- Skills without a `scripts/` directory (pure reference/knowledge skills)
+- Skills with `allowed-tools: Read` only (pure reference libraries)
+
+**If missing**: Flag as risky fix (requires manual creation of enforcement block with skill-specific rules).
+
+### Validate skill-naming-noun-suffix
+
+Skill directory names must not end with a noun suffix reserved for spawnable marketplace agents. Verb-first names align with the marketplace convention that skills describe actions while agents use the `-agent` suffix.
+
+**Reserved suffixes** (singular and plural):
+
+| Suffix | Plural |
+|--------|--------|
+| `-executor` | `-executors` |
+| `-manager` | `-managers` |
+| `-runner` | `-runners` |
+| `-handler` | `-handlers` |
+| `-orchestrator` | `-orchestrators` |
+
+**Detection logic**:
+1. Extract the skill directory basename (last path segment).
+2. Check whether it ends with any reserved suffix listed above.
+3. Detection is case-sensitive against the literal directory name as it appears on disk.
+
+**Rationale**: Noun-suffix skill names (e.g. `task-executor`) cause the LLM to treat the skill as a spawnable agent and invoke it directly rather than through its dispatching `execution-context`. See `pm-plugin-development:plugin-architecture` `references/skill-design.md` "Skill Naming Convention" for the full rationale.
+
+**If violation found**: Flag as unfixable (`fixable: false`). Renaming a skill directory is a cross-cutting change that also requires updating `plugin.json`, every inbound `Skill:` reference, script notations, and the executor — all of which must happen outside this auto-fix loop.
+
+### Validate plan-marshall-plugin Manifest
+
+**Conditional**: Only execute if skill name is `plan-marshall-plugin`.
+
+⛔ **A manifest validator exists but nothing reaches it, and no CLI verb may be
+documented as invoking it.** `_cmd_extension.py`'s `validate_extension` /
+`scan_extensions` check the manifest's structure, but they sit behind the
+unregistered, underscore-prefixed `_validate.py` and have no automatic caller. See
+[extension-contract.md § Validation](../../../../plan-marshall/skills/extension-api/standards/extension-contract.md#validation)
+for the coverage and the reason no invocation is written down.
+
+⛔ **The wired verb measures a different population.** `validate-contracts`
+(`_cmd_extension.py::validate_extension_contracts` — a distinct function from the
+two above, despite the name) selects implementors by **directory-name prefix**:
+`ext-triage-`, `ext-outline-`, `recipe-`, `build-` (excluding `build-server`),
+plus `*_provider.py` provider scripts. A `plan-marshall-plugin` directory matches
+none of them, so `validate-contracts --skill {bundle}:plan-marshall-plugin`
+returns `total_checked: 0` with `status: success` — a well-formed invocation over
+an empty population, which is a false green rather than a check. Measured: `0` for
+that filter, `1` for the control `--skill pm-dev-java:ext-triage-java`, `28`
+unfiltered. The manifest's `implements:` field does not bring it into scope — the
+validator checks that field, it does not select on it.
+
+At **runtime** the hooks are reached from a varying number of places, and the
+failure handling is not uniform across them. All of these shapes occur somewhere
+in the set: a WARNING through `log_entry`, a bare `except Exception: pass`, a
+silent `continue`, a stderr print, and collection into a `results['errors']` list
+that does surface. Which one a given failure gets depends on the hook and on
+which verb reached it, so a broken method may or may not announce itself.
+`discover_all_extensions()` itself calls none of them. It delegates to
+`load_extension_module()`, whose single `try` spans the spec load, the module
+exec, AND the `Extension()` instantiation — so a manifest whose `__init__` raises
+is swallowed on the same path as an unparseable one, and the bundle is omitted
+rather than failed. The absence of a diagnostic is therefore not evidence that
+the manifest is sound; see
+[plan-marshall-guide.md § plan-marshall-plugin Extension Validation](../../../../plan-marshall/skills/plan-marshall-plugin/references/plan-marshall-guide.md#plan-marshall-plugin-extension-validation)
+for the worked call-site detail. So review the manifest by reading it against the
+domain-bundle contract, and categorise findings as: schema/structure → safe fix;
+missing extension skills → risky fix; invalid skill references → risky fix.
+
+### Validate Sub-Document Quality
+
+All `.md` files in `references/`, `standards/`, `workflow/`, and `templates/` are checked for content quality.
+
+**Checks performed** (automated via `analyze` subcommand):
+- **Bloat classification**: Sub-documents use `subdoc` thresholds (LARGE >400, BLOATED >600, CRITICAL >800 lines)
+- **Forbidden metadata sections**: Version History, Changelog, Author, etc.
+- **Hardcoded script paths**: invocation patterns that embed the scripts-subdirectory name directly (e.g., `python3 .../scr[ipts]/foo.py`) instead of the executor notation
+
+**Checks performed** (LLM Phase 1.5):
+- **LLM optimization**: Review sub-document content for low-value patterns per `llm-optimization-guide.md`
+
+**Issue types**:
+- `subdoc-bloat` (BLOATED/CRITICAL) → Unfixable (requires human judgment to split/trim)
+- `subdoc-forbidden-metadata` → Safe fix (remove forbidden sections)
+- `subdoc-hardcoded-script-path` → Risky fix (requires conversion to executor notation)
+
+## Skill-Specific Fix Categories
+
+**Safe fixes** (auto-apply):
+- Missing foundation skill loading (add Step 0 to each workflow)
+
+**Risky fixes** (require confirmation):
+- workflow-explicit-script-calls violations (missing explicit script calls in workflows)
+- skill-enforcement-block-required violations (missing enforcement block in script-bearing skills)
+
+**Unfixable** (report only — require human-led refactor):
+- skill-naming-noun-suffix violations (renaming a skill directory affects plugin.json, inbound `Skill:` references, script notations, and executor mappings)
+
+### Auto-fix: Missing Foundation Skills
+
+```markdown
+#### Step 0: Load Foundation Skills
+
+```
+Skill: pm-plugin-development:plugin-architecture
+Skill: plan-marshall:persona-plan-marshall-agent
+```text
+
+These provide architecture principles and non-prompting tool usage patterns.
+```
+
+Insert this before the first step of each workflow section (after `### Steps` line).

@@ -1,0 +1,39 @@
+package ${PACKAGE};
+
+import static org.junit.jupiter.api.Assertions.*;
+
+import jakarta.inject.Inject;
+import io.quarkus.test.junit.QuarkusTest;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+
+/**
+ * Quarkus integration tests for {@link ${CLASS_UNDER_TEST}}.
+ */
+@QuarkusTest
+@DisplayName("Tests for ${CLASS_UNDER_TEST}")
+class ${CLASS_UNDER_TEST}Test {
+
+    @Inject
+    ${CLASS_UNDER_TEST} underTest;
+
+    @Test
+    @DisplayName("Should be injectable")
+    void shouldBeInjectable() {
+        assertNotNull(underTest);
+    }
+
+    @Nested
+    @DisplayName("${METHOD_1}")
+    class ${Method1}Tests {
+
+        @Test
+        @DisplayName("Should ${EXPECTED_BEHAVIOR} when ${CONDITION}")
+        void should${ExpectedBehavior}When${Condition}() {
+            var result = underTest.${METHOD_1}(/* input */);
+
+            assertNotNull(result);
+        }
+    }
+}
