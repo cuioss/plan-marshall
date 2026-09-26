@@ -1,0 +1,136 @@
+= Installation (OpenCode)
+:nofooter:
+:toc: left
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[User Guide]
+
+Plan Marshall installs into OpenCode as native skills, agents, and commands. Installation is performed directly from the published `dist-opencode` distribution branch or immutable release tags (`opencode/v*`), either via a one-line installer script or manual clone.
+
+== Prerequisites
+
+[IMPORTANT]
+====
+Python 3 must be available as `python3` in your PATH.
+
+[source,bash]
+----
+python3 --version
+----
+====
+
+=== Supported platforms
+
+The platform requirement is assistant-independent and stated once in xref:install-claude.adoc[Installation (Claude Code) › Supported platforms]: a single POSIX runtime, macOS and Linux native, Windows exclusively inside WSL2. On Windows, install OpenCode inside the WSL distro alongside the rest of the runtime.
+
+== Fast Installation (Recommended)
+
+Run the one-line installer script directly in your terminal:
+
+[source,bash]
+----
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-opencode/install.sh | bash
+----
+
+This script automatically downloads the latest snapshot from `dist-opencode` and deploys the components into the standard OpenCode configuration directory:
+`~/.config/opencode/{skills,agents,commands}/`
+
+The installer performs the necessary singular-to-plural mapping (`skill/` -> `skills/`, `agent/` -> `agents/`, `command/` -> `commands/`) and only manages `plan-marshall-*` components. Any custom, non-Plan Marshall components already present in your OpenCode configuration are safely preserved.
+
+Restart OpenCode or open a new session. OpenCode automatically discovers the installed skills and agents.
+
+== Pinned Release (Specific Version)
+
+For reproducible installations, download the installer directly from the desired immutable release tag:
+
+[source,bash]
+----
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/opencode/v0.1.0/install.sh | bash -s -- --ref opencode/v0.1.0
+----
+
+== Workspace-Scoped Installation
+
+To install Plan Marshall into a specific project repository rather than globally, pass `--workspace` (or `-w`):
+
+[source,bash]
+----
+cd /path/to/my-project
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-opencode/install.sh | bash -s -- --workspace
+----
+
+This installs into `<project-root>/.opencode/{skills,agents,commands}/`.
+
+== Manual Installation (Clone or Download)
+
+If you prefer to inspect the files before installing:
+
+[source,bash]
+----
+git clone -b dist-opencode https://github.com/cuioss/plan-marshall.git /tmp/plan-marshall-opencode
+/tmp/plan-marshall-opencode/install.sh
+rm -rf /tmp/plan-marshall-opencode
+----
+
+== Updating
+
+=== Snapshot Users
+
+Re-run the installer script:
+
+[source,bash]
+----
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-opencode/install.sh | bash
+----
+
+=== Pinned Users
+
+Run the installer directly from the new release tag:
+
+[source,bash]
+----
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/opencode/v0.1.1/install.sh | bash -s -- --ref opencode/v0.1.1
+----
+
+== Uninstallation
+
+To remove Plan Marshall components while keeping your other custom OpenCode skills and commands untouched, pass `--uninstall`:
+
+[source,bash]
+----
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-opencode/install.sh | bash -s -- --uninstall
+----
+
+For a workspace-scoped install:
+
+[source,bash]
+----
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-opencode/install.sh | bash -s -- --workspace --uninstall
+----
+
+Or if you have the local installation file:
+
+[source,bash]
+----
+~/.config/opencode/plan-marshall-install.sh --uninstall
+----
+
+== Execution Context & Model Selection
+
+Plan Marshall uses dynamic execution context variants (`execution-context-level-1` through `level-7`) for subagent dispatches across project phases.
+
+In OpenCode:
+
+* **Session model inheritance**: All subagents run using your currently active OpenCode session model (`inherit` behavior). Level variants do not switch models automatically across tiers in this release.
+* **Architecture**: Subagents are static markdown files deployed under `~/.config/opencode/agent/`. They omit hardcoded model pins so they work reliably across whichever model provider (Anthropic, OpenAI, local Ollama, etc.) you have configured in OpenCode.
+* **Future custom ladders**: Machine-local effort ladder customization for OpenCode via `.plan/local/effort-ladder.json` will be supported in an upcoming update with a local in-place rewriter.
+
+== Next Step
+
+Run xref:getting-started.adoc[`/marshall-steward`] to wire the planning system into your project.
+
+== Distribution Contract
+
+Publish triggers, source-vs-dist tag semantics, and the multi-target architecture are documented under xref:../developer/distribution.adoc[Developer Guide › Distribution].
