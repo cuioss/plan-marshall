@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-#!/usr/bin/env python3
-# SPDX-License-Identifier: FSL-1.1-ALv2
+
 from _manage_execution_manifest_subtraction_visibility_population_fixtures import (
     _derive_matrix_rule_keys,
     _drive_decision_matrix,

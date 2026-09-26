@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Behavior-cluster tests carved from test_ceremony_finalize_selection.py: ceremony finalize auto."""
 
-#!/usr/bin/env python3
-# SPDX-License-Identifier: FSL-1.1-ALv2
 from _manage_execution_manifest_ceremony_finalize_selection_fixtures import (
     _FOOTPRINT,
     _bare,

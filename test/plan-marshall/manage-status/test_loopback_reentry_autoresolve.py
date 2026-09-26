@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Behavior-cluster tests carved from test_loopback_reentry_autoresolve.py: handshake."""
 
-#!/usr/bin/env python3
-# SPDX-License-Identifier: FSL-1.1-ALv2
 from _manage_status_loopback_reentry_autoresolve_fixtures import _cmds, _inv, _store, sys
 
 # =============================================================================

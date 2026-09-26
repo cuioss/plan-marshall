@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-#!/usr/bin/env python3
-# SPDX-License-Identifier: FSL-1.1-ALv2
+
 from _manage_execution_manifest_manage_execution_manifest_compose_fixtures import (
     _SUBTRACTION_RECORD_FIELDS,
     _compose_ns,

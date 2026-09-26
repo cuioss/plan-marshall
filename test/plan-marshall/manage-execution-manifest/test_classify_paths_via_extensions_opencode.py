@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-#!/usr/bin/env python3
-# SPDX-License-Identifier: FSL-1.1-ALv2
+
 from _manage_execution_manifest_classify_paths_via_extensions_fixtures import (
     _OPENCODE_CONFIG_JSON,
     _OPENCODE_CONFIG_JSONC,

@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-from _manage_execution_manifest_ceremony_finalize_selection_fixtures import Namespace, _phase_6_with_ceremony_steps
+from _manage_execution_manifest_ceremony_finalize_selection_fixtures import Namespace
+from _manage_execution_manifest_ceremony_finalize_selection_fixtures_surface_module import (
+    _phase_6_with_ceremony_steps,
+)
 
 
 def _compose_ns(

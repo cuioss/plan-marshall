@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Behavior-cluster tests carved from test_orchestrator_ledger.py: path."""
 
-#!/usr/bin/env python3
-# SPDX-License-Identifier: FSL-1.1-ALv2
 from _manage_status_orchestrator_ledger_fixtures import _ledger, pytest, root
 
 # =============================================================================

@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Behavior-cluster tests carved from test_decision_rules.py: pre."""
 
-#!/usr/bin/env python3
-# SPDX-License-Identifier: FSL-1.1-ALv2
 from _manage_execution_manifest_decision_rules_fixtures import (
     DEFAULT_PHASE_6_STEPS,
     _compose_ns,

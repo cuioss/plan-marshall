@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Behavior-cluster tests carved from test_orchestrator_store_orchestrator.py: orchestrator create."""
 
-#!/usr/bin/env python3
-# SPDX-License-Identifier: FSL-1.1-ALv2
 from _manage_status_orchestrator_store_orchestrator_fixtures import (
     _create_args,
     _orchestrator_anchor_file,

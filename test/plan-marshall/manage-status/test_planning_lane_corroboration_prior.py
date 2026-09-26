@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-#!/usr/bin/env python3
-# SPDX-License-Identifier: FSL-1.1-ALv2
+
 from _manage_status_planning_lane_corroboration_fixtures import evaluate_signals_pure
 
 # =============================================================================

@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Behavior-cluster tests carved from test_status_read_sibling_worktree.py: sibling."""
 
-#!/usr/bin/env python3
-# SPDX-License-Identifier: FSL-1.1-ALv2
 from _manage_status_status_read_sibling_worktree_fixtures import (
     PLAN_ID,
     Path,

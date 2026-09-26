@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Behavior-cluster tests carved from test_manage_execution_manifest_compose.py: default."""
 
-#!/usr/bin/env python3
-# SPDX-License-Identifier: FSL-1.1-ALv2
 from _manage_execution_manifest_manage_execution_manifest_compose_fixtures import (
     DEFAULT_PHASE_6_STEPS,
     _compose_ns,

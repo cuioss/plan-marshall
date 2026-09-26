@@ -15,6 +15,9 @@ from _manage_files_open_in_ide_fixtures import (
     detect_ide,
 )
 
+assert len(MACOS_JETBRAINS_BUNDLE_IDS) > 0, 'JetBrains bundle-id table must not be empty'
+assert len(LINUX_LAUNCHER_PRIORITY) > 0, 'Linux launcher priority table must not be empty'
+
 # =============================================================================
 # detect_ide — macOS branches
 # =============================================================================

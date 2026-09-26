@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Behavior-cluster tests carved from test_planning_lane_corroboration.py: d3a."""
 
-#!/usr/bin/env python3
-# SPDX-License-Identifier: FSL-1.1-ALv2
 from _manage_status_planning_lane_corroboration_fixtures import (
     _MEASURED_MIDDLE_BAND,
     _RECORDED_VECTOR,

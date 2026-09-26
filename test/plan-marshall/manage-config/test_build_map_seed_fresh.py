@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-#!/usr/bin/env python3
-# SPDX-License-Identifier: FSL-1.1-ALv2
+
 from _manage_config_build_map_seed_fixtures import Namespace, _cmd_init_mod, json
 
 # =============================================================================

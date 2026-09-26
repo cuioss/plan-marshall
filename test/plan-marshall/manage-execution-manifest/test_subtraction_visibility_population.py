@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Behavior-cluster tests carved from test_subtraction_visibility_population.py: derived."""
 
-#!/usr/bin/env python3
-# SPDX-License-Identifier: FSL-1.1-ALv2
 from _manage_execution_manifest_subtraction_visibility_population_fixtures import (
     _OUTLINE_DERIVED_SITE_COUNT,
     _REMOVED_VACUOUS_EMITTER,

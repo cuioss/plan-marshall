@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Behavior-cluster tests carved from test_archive_unexaminable_phases.py: the."""
 
-#!/usr/bin/env python3
-# SPDX-License-Identifier: FSL-1.1-ALv2
 from _manage_status_archive_unexaminable_phases_fixtures import (
     _EXAMINABLE_SHAPES,
     _EXPECTED_EXAMINABLE_SIZE,

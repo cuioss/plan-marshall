@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-#!/usr/bin/env python3
-# SPDX-License-Identifier: FSL-1.1-ALv2
+
 from _manage_execution_manifest_manage_execution_manifest_compose_fixtures import (
     _RECIPE_PROVENANCE_CASES,
     _compose_ns,
@@ -9,6 +8,8 @@ from _manage_execution_manifest_manage_execution_manifest_compose_fixtures impor
     pytest,
     re,
 )
+
+assert len(_RECIPE_PROVENANCE_CASES) > 0, 'recipe-provenance cases must not derive empty'
 
 
 @pytest.mark.parametrize(

@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Behavior-cluster tests carved from test_build_map_seed.py: merge."""
 
-#!/usr/bin/env python3
-# SPDX-License-Identifier: FSL-1.1-ALv2
 from _manage_config_build_map_seed_fixtures import _FAKE_AGGREGATED, _config_core_mod, pytest
 
 # =============================================================================

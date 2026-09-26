@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Behavior-cluster tests carved from test_lane_class_off_immunity.py: fixture."""
 
-#!/usr/bin/env python3
-# SPDX-License-Identifier: FSL-1.1-ALv2
 from _manage_execution_manifest_lane_class_off_immunity_fixtures import (
     _FLOOR_STEPS,
     _IMMUNE_TO_OFF_CLASSES,

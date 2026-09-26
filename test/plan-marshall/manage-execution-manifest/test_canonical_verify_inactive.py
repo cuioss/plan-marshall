@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Behavior-cluster tests carved from test_canonical_verify_inactive.py: footprint."""
 
-#!/usr/bin/env python3
-# SPDX-License-Identifier: FSL-1.1-ALv2
 from _manage_execution_manifest_canonical_verify_inactive_fixtures import (
     _FOOTPRINT_GATED_CANONICAL_ROLES,
     _footprint_has_role,

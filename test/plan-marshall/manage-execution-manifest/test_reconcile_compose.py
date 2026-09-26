@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-#!/usr/bin/env python3
-# SPDX-License-Identifier: FSL-1.1-ALv2
+
 from _manage_execution_manifest_reconcile_fixtures import (
     DEFAULT_PHASE_5_STEPS,
     DEFAULT_PHASE_6_STEPS,

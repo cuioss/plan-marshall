@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-#!/usr/bin/env python3
-# SPDX-License-Identifier: FSL-1.1-ALv2
+
 from _manage_status_mark_step_done_fixtures import _args, _make_plan, cmd_mark_step_done, pytest
 
 

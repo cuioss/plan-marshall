@@ -4,8 +4,10 @@ from _manage_execution_manifest_ceremony_finalize_selection_fixtures import (
     _CEREMONY_LANE_GATES,
     _GATE_OWNER_STEP,
     Path,
-    _phase_6_with_ceremony_steps,
     json,
+)
+from _manage_execution_manifest_ceremony_finalize_selection_fixtures_surface_module import (
+    _phase_6_with_ceremony_steps,
 )
 
 

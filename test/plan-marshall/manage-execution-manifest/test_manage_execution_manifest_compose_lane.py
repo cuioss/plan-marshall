@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-#!/usr/bin/env python3
-# SPDX-License-Identifier: FSL-1.1-ALv2
+
 from _manage_execution_manifest_manage_execution_manifest_compose_fixtures import (
     _LANE_OVERRIDE_DECISIONS,
     _LANE_REPORT_MARSHAL_STEPS,
@@ -31,6 +30,9 @@ def test_lane_keep_decision_cutoff(lane, posture, expected_keep):
     keep, warning = _lane_keep_decision(lane, None, posture)
     assert keep is expected_keep
     assert warning is None
+
+
+assert len(_LANE_OVERRIDE_DECISIONS) > 0, 'lane-override decisions must not derive empty'
 
 
 @pytest.mark.parametrize(

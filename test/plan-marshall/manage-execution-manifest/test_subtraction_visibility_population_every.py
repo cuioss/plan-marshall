@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-#!/usr/bin/env python3
-# SPDX-License-Identifier: FSL-1.1-ALv2
+
 from _manage_execution_manifest_subtraction_visibility_population_fixtures import _SITE_INVOCATIONS, pytest
+
+assert len(_SITE_INVOCATIONS) > 0, 'the site population must not derive empty, or every case below disappears'
 
 # =============================================================================
 # The invariant — every site reports exactly what it removed

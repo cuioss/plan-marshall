@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Behavior-cluster tests carved from test_security_class_gate_regression.py: large."""
 
-#!/usr/bin/env python3
-# SPDX-License-Identifier: FSL-1.1-ALv2
 from _manage_execution_manifest_security_class_gate_regression_fixtures import (
     _LARGE_FOOTPRINT,
     _SECURITY_STEP,
@@ -18,6 +16,9 @@ from _manage_execution_manifest_security_class_gate_regression_fixtures import (
 # =============================================================================
 # (a) A large multi-file change with an excluded change_type keeps the sweep
 # =============================================================================
+
+
+assert len(_mem.VALID_CHANGE_TYPES) > 0, 'VALID_CHANGE_TYPES must not be empty, or this sweep covers nothing'
 
 
 @pytest.mark.parametrize('change_type', sorted(_mem.VALID_CHANGE_TYPES))
