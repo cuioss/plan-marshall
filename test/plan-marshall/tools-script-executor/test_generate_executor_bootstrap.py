@@ -328,12 +328,13 @@ def _run_executor(executor: Path, home: Path) -> subprocess.CompletedProcess:
     exits right after the module-load bootstrap, so a self-heal failure surfaces as a
     non-zero exit with a ``ModuleNotFoundError`` before ``main`` runs.
     """
-    return run_clean_python_subprocess(
+    result: subprocess.CompletedProcess[str] = run_clean_python_subprocess(
         [executor, '--list'],
         text=True,
         timeout=60,
         env_overrides={'HOME': str(home)},
     )
+    return result
 
 
 class TestTemplateBootstrapSelfHeal:

@@ -60,6 +60,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from _banner_attribution_policy import _STOPWORDS
 from _fidelity_diff import list_python_files_at_ref, read_file_at_ref
 
 #: The definition this instrument applies, printed verbatim in every report.
@@ -94,8 +95,6 @@ _RULE_ONLY = re.compile(r'^#\s*[-=~_*]{4,}\s*$')
 #: construct beneath it and injects its words into the distinctive-token set, so
 #: it can fabricate a misattribution or destroy a real heading's distinctiveness.
 _INLINE_HEADING = re.compile(r'^#\s*(?P<rule>[-=~_*])(?P=rule){2,}\s*(?P<text>.*?)\s*[-=~_*]*\s*$')
-
-from _banner_attribution_policy import _STOPWORDS
 
 
 @dataclass(frozen=True)

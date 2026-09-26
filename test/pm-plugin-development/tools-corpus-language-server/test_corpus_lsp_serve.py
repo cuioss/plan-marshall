@@ -41,11 +41,12 @@ def _handshake(project_path: Path) -> subprocess.CompletedProcess[bytes]:
     stdin = _framed({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}}) + _framed(
         {'jsonrpc': '2.0', 'method': 'exit'}
     )
-    return run_clean_python_subprocess(
+    result: subprocess.CompletedProcess[bytes] = run_clean_python_subprocess(
         [SCRIPT, 'serve', '--project-path', str(project_path)],
         input=stdin,
         timeout=120,
     )
+    return result
 
 
 def _capabilities(stdout: bytes) -> dict:

@@ -122,12 +122,18 @@ _GUARD_UNRELATED = "\n\nif __name__ == '__not_main__':\n    main()\n"
 
 def test_owned_entry_scripts_includes_nested_entry_script(tmp_path: Path) -> None:
     """Nested entry scripts are part of the same documented-verb population."""
-    skill_dir = _materialize(
-        tmp_path,
-        {
-            'bundles/demo/skills/demo/scripts/nested/entry.py': _script_under_guard(_GUARD_CANONICAL),
-        },
-    ) / 'bundles' / 'demo' / 'skills' / 'demo'
+    skill_dir = (
+        _materialize(
+            tmp_path,
+            {
+                'bundles/demo/skills/demo/scripts/nested/entry.py': _script_under_guard(_GUARD_CANONICAL),
+            },
+        )
+        / 'bundles'
+        / 'demo'
+        / 'skills'
+        / 'demo'
+    )
 
     entries = _mod.owned_entry_scripts(skill_dir)
 
