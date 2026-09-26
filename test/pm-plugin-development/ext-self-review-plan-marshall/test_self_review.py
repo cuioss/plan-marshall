@@ -3882,7 +3882,7 @@ class TestSkillDocDeltaCoverageSchemaMatchesTheRegistry:
 
 
 class TestUpstreamAnchoring:
-    """The surfacing anchor prefers origin/main and refuses a behind base."""
+    """The surfacing anchor prefers origin/main and reports (never refuses) a behind base."""
 
     def _init_repo(self, tmp_path):
         repo = tmp_path / 'worktree'
@@ -4024,6 +4024,47 @@ class TestUpstreamAnchoring:
             check=True,
         )
         assert is_behind_upstream(repo, 'main', 'origin/main') is True
+
+    def test_surface_proceeds_when_local_base_behind_but_branch_contains_upstream(self, tmp_path):
+        """A stale local main is reported, never refused, when the anchor is origin/main.
+
+        Control for the false block: sync-baseline has rebased the plan branch onto
+        origin/main (the branch contains the upstream tip) while the local ``main``
+        ref still lags. The surface reads through origin/main, so it must run, scope
+        only the plan's own change, and report the lagging local base as a field.
+        """
+        from conftest import get_script_path, run_script
+
+        repo = self._init_repo(tmp_path)
+        self._commit(repo, 'base', {'base.txt': 'base\n'})
+        self._commit(repo, 'upstream ahead', {'ahead.txt': 'ahead\n'})
+        upstream_sha = subprocess.run(
+            ['git', '-C', str(repo), 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True
+        ).stdout.strip()
+        subprocess.run(
+            ['git', '-C', str(repo), 'update-ref', 'refs/remotes/origin/main', upstream_sha],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        subprocess.run(
+            ['git', '-C', str(repo), 'checkout', '-b', 'feature/plan'], capture_output=True, text=True, check=True
+        )
+        self._commit(repo, 'plan change', {'plan.txt': 'plan\n'})
+        subprocess.run(
+            ['git', '-C', str(repo), 'branch', '-f', 'main', 'HEAD~2'], capture_output=True, text=True, check=True
+        )
+
+        script = get_script_path('pm-plugin-development', 'ext-self-review-plan-marshall', 'self_review.py')
+        result = run_script(
+            script, 'surface', '--plan-id', 'behind-plan', '--project-dir', str(repo), '--base-branch', 'main'
+        )
+
+        assert result.success, f'surface refused a stale local base: stdout={result.stdout} stderr={result.stderr}'
+        data = result.toon()
+        assert data['base_branch'] == 'origin/main'
+        assert data['local_base_behind_upstream'] is True
+        assert int(data['files_in_scope']) == 1
 
 
 class TestHoistedBindingShadows:
