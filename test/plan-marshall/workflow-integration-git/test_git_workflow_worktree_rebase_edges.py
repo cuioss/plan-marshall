@@ -328,6 +328,39 @@ class TestRebaseToStaleLocalBaseRegression:
         assert (rebase_env['worktree'] / 'feature.txt').exists()
 
 
+class TestRebaseToMergeSyncedBranch:
+    """A branch that already contains ``origin/{base}`` via a merge commit is never rebased.
+
+    Reproduces the defect: an execute-time ``merge origin/main`` (with a resolved
+    conflict) leaves the branch ahead N / behind 0. ``git rebase`` over it drops
+    the merge, linearizes, and replays the branch's own commit onto a base that
+    already carries the conflicting upstream change — a manufactured conflict on
+    content that had landed upstream.
+    """
+
+    def test_merge_synced_branch_is_a_noop_not_a_linearizing_rebase(
+        self, rebase_env: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        worktree = rebase_env['worktree']
+        _create_branch_worktree(rebase_env['main_repo'], worktree, 'feature/merge-synced')
+        _commit_file(worktree, 'file.txt', 'feature edit\n', 'feat: edit file')
+        _advance_origin_main(rebase_env['main_repo'], 'file.txt', 'upstream edit\n', 'feat: upstream edit')
+        _git(worktree, 'fetch', '-q', 'origin', 'main')
+        _git(worktree, 'merge', '-q', 'origin/main', check=False)
+        (worktree / 'file.txt').write_text('resolved\n')
+        _git(worktree, 'add', 'file.txt')
+        _git(worktree, 'commit', '-q', '--no-edit')
+        head_before = _git(worktree, 'rev-parse', 'HEAD').stdout.strip()
+
+        result = _invoke_rebase(rebase_env, monkeypatch)
+
+        assert result['status'] == 'success', result
+        assert result['action'] == 'noop'
+        assert _git(worktree, 'rev-parse', 'HEAD').stdout.strip() == head_before
+        assert not (worktree / '.git' / 'rebase-merge').exists()
+        assert (worktree / 'file.txt').read_text() == 'resolved\n'
+
+
 # ---------------------------------------------------------------------------
 # No-origin fallback to the local {base} ref
 # ---------------------------------------------------------------------------

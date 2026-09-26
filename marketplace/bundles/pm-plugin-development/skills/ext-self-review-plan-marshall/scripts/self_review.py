@@ -314,13 +314,12 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         return 1
 
     anchor, anchor_source = resolve_upstream_base(project_dir, base_branch)
-    if is_behind_upstream(project_dir, base_branch, anchor):
-        output_toon_error(
-            'behind_upstream',
-            f'local base {base_branch!r} sits behind {anchor!r} — refusing to surface '
-            'a stale scope; advance the local base past upstream first',
-        )
-        return 1
+    # A local base behind its upstream is REPORTED, never refused: the footprint
+    # and the hunks both read through ``anchor`` (the upstream when it resolves),
+    # so a stale local ref cannot stale the scope. Refusing here false-blocked
+    # every plan whose main checkout lagged origin, after sync-baseline had
+    # already confirmed the branch contains the upstream tip.
+    local_base_behind_upstream = is_behind_upstream(project_dir, base_branch, anchor)
 
     modified_files = _resolve_footprint(project_dir, anchor)
 
@@ -418,6 +417,7 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         'project_dir': str(project_dir),
         'base_branch': anchor,
         'base_ref_source': anchor_source,
+        'local_base_behind_upstream': local_base_behind_upstream,
         'since_ref': since_ref or '',
         'surface_scope': surface_scope,
         'files_in_scope': files_in_scope,

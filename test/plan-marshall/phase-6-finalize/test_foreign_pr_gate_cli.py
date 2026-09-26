@@ -333,3 +333,43 @@ def test_the_real_parser_and_column_feed_the_gate_the_narrowed_population(monkey
         {'deliverable': 1, 'path': '/foreign/repo/src/Reference.java'},
         {'deliverable': 2, 'path': '/foreign/pool/Surveyed.java'},
     ]
+
+
+# --------------------------------------------------------------------------- #
+# The foreign repo is classified on the PLAN's branch, not its ambient HEAD
+# --------------------------------------------------------------------------- #
+
+
+def test_landing_state_is_requested_for_the_plan_branch_not_the_checked_out_one(monkeypatch):
+    # After branch cleanup the foreign checkout sits on `main`; classifying that
+    # ambient HEAD read `pushed_no_pr` for a plan branch that had already merged
+    # (PLAN-PR-066, cuioss-organization #288). The constructed argv must name the
+    # plan's own branch explicitly.
+    captured = {}
+
+    class _Completed:
+        returncode = 0
+        stdout = 'status: success\nlanding_state: merged\n'
+        stderr = ''
+
+    def fake_run(cmd, **_kwargs):
+        captured['cmd'] = cmd
+        return _Completed()
+
+    monkeypatch.setattr(gate.subprocess, 'run', fake_run)
+    result = gate._resolve_landing_state('/repos/foreign', gate.plan_branch_for('my-plan'))
+
+    assert result['landing_state'] == 'merged'
+    cmd = captured['cmd']
+    assert cmd[cmd.index('--branch') + 1] == 'feature/my-plan'
+    assert cmd[cmd.index('--project-dir') + 1] == '/repos/foreign'
+
+
+def test_the_gate_result_names_the_branch_it_classified():
+    result = gate.check(
+        'my-plan',
+        deliverables_loader=lambda _p: _listed([]),
+        root_resolver=lambda _p: None,
+        landing_resolver=lambda _r: {'landing_state': 'merged'},
+    )
+    assert result['plan_branch'] == 'feature/my-plan'
