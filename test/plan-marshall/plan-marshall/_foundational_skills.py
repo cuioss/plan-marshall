@@ -35,7 +35,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT, PROJECT_ROOT
+from conftest import MARKETPLACE_ROOT as _CONFTEST_MARKETPLACE_ROOT
+from conftest import PROJECT_ROOT as _CONFTEST_PROJECT_ROOT
 
 #: The block whose ``Skill:`` / ``name:`` entries declare a body's
 #: non-negotiable skills. Bodies without this block declare no foundational
@@ -54,13 +55,18 @@ _FOUNDATIONAL_PRACTICES_RE = re.compile(r'^## Foundational Practices[ \t]*$', re
 #: ships is a directory under ``marketplace/bundles/{bundle}/skills/{skill}/``.
 #: Re-read per call, so a skill added or removed after this module was written is
 #: reflected without a second edit.
-MARKETPLACE_ROOT = Path(MARKETPLACE_ROOT)
+#:
+#: Bound through :class:`~pathlib.Path` rather than reused straight from conftest:
+#: the conftest constant is untyped, so reusing the NAME would leave the
+#: re-binding as ``Any`` under ``mypy --strict`` and take the ``bool`` every
+#: ``is_file()``-returning helper promises down to ``Any`` with it.
+MARKETPLACE_ROOT = Path(_CONFTEST_MARKETPLACE_ROOT)
 
 #: The repository-relative root of the GENERATED target trees — the deployment
 #: surface the freshness guard reads. It is the generator's own output
 #: (``./pw generate``), not a hand-maintained copy, so what the guard reads is
 #: what the deploy step publishes.
-TARGET_ROOT = Path(PROJECT_ROOT) / 'target'
+TARGET_ROOT = Path(_CONFTEST_PROJECT_ROOT) / 'target'
 
 #: The block a ``## Foundational Practices`` section runs until. A body's next
 #: same-or-higher heading ends it; ``##`` is the level this section is authored
