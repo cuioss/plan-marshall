@@ -69,14 +69,35 @@ def test_cmd_generate_catches_systemexit_and_falls_back_to_glob(tmp_path, monkey
         calls['fallback_used'] = True
         return {'sentinel:demo:x': '/p/x.py'}
 
-    def _fake_generate(mappings, _base_path, dry_run=False, target=None):
+    def _fake_generate(mappings, _base_path, dry_run=False, target=None, coverage=None):
         calls['mappings'] = mappings
         return {'status': 'success', 'surface_stats': {}}
 
-    monkeypatch.setattr(_gen, 'get_base_path', lambda use_marketplace=False, marketplace_root=None: tmp_path)
+    # ``target`` is part of the call: the verb resolves its target through the
+    # shared resolver and forwards it here, so a base-path stub that does not
+    # accept it would make this case fail on the signature rather than on the
+    # SystemExit-to-fallback path it is about.
+    monkeypatch.setattr(
+        _gen, 'get_base_path', lambda use_marketplace=False, marketplace_root=None, target=None: tmp_path
+    )
     monkeypatch.setattr(_gen, 'discover_scripts', _raise_systemexit)
     monkeypatch.setattr(_gen, 'discover_scripts_fallback', _fallback)
     monkeypatch.setattr(_gen, 'discover_local_scripts', lambda: {})
+    # The fallback's result is a sentinel notation, and the coverage verdict is
+    # what decides whether that reaches the writer. Pinned as PASSING so this
+    # case measures the fallback and not the coverage guard, which has its own.
+    monkeypatch.setattr(
+        _gen,
+        'assess_discovery_coverage',
+        lambda base, discovered: {
+            'coverage_ok': True,
+            'scripts_enumerated': len(discovered),
+            'scripts_expected': len(discovered),
+            'scripts_discovered': len(discovered),
+            'exclusions': {},
+            'missing_notations': [],
+        },
+    )
     monkeypatch.setattr(_gen, 'generate_executor', _fake_generate)
 
     args = types.SimpleNamespace(marketplace=False, marketplace_root=None, target='claude', dry_run=True)

@@ -9,6 +9,12 @@ flow in ``get_plugin_root``, the resolve helper, and the command handlers plus
 ``main()`` dispatch — so those branches are covered. Plugin-root probing is
 driven with monkeypatched ``Path.home`` / tmp directory layouts so no real
 plugin cache is consulted, and state writes are redirected into ``tmp_path``.
+
+The resolve-helper cases at the end build REAL flat deployed trees. The two
+cases that preceded them could not: the flat legs they exercised gated on one
+target manifest each and looked for a skill root whose name the deployed
+OpenCode tree does not carry, so the shape a target actually ships had no case
+in the suite at all.
 """
 
 import argparse
@@ -409,6 +415,155 @@ def test_resolve_bundle_path_none_when_subpath_missing(tmp_path: Path):
     (root / 'plan-marshall' / '1.0.0').mkdir(parents=True)
 
     assert bp.resolve_bundle_path(root, 'plan-marshall', 'skills/missing/SKILL.md') is None
+
+
+# =============================================================================
+# resolve_bundle_path — the flat deployed shape
+# =============================================================================
+#
+# Real trees, not constructed paths. The two former flat legs differed only in
+# which target manifest gated them and whether the skill root was spelled
+# ``skills/`` or ``skill/``, and the second pair could never fire: the deployed
+# OpenCode root carries the PLURAL spelling, because the emitter writes a
+# singular ``skill/`` tree and ``install.sh`` maps it to the plural at install
+# time. Every case below is a shape at least one of those two legs missed.
+
+
+def _flat_plugin_root(root: Path, *, root_name: str = 'skills', manifest: str | None = 'opencode.json') -> Path:
+    """Build a real flat deployed plugin root and return the skill directory.
+
+    The manifest is written AFTER the skill tree, so the root directory exists
+    before the file lands in it.
+    """
+    skill_dir = root / root_name / 'plan-marshall-manage-status'
+    (skill_dir / 'scripts').mkdir(parents=True)
+    (skill_dir / 'SKILL.md').write_text('# skill')
+    (skill_dir / 'scripts' / 'manage-status.py').write_text('# script')
+    if manifest is not None:
+        (root / manifest).write_text('{}')
+    return skill_dir
+
+
+@pytest.mark.parametrize(
+    ('root_name', 'manifest'),
+    [
+        ('skills', 'opencode.json'),
+        ('skills', 'plugin.json'),
+        ('skills', None),
+        ('skill', 'opencode.json'),
+        ('skill', None),
+    ],
+    ids=[
+        'deployed-plural-opencode-manifest',
+        'deployed-plural-claude-manifest',
+        'deployed-plural-no-manifest',
+        'generated-singular-opencode-manifest',
+        'generated-singular-no-manifest',
+    ],
+)
+def test_flat_root_resolves_every_shape_a_target_deploys(tmp_path: Path, root_name: str, manifest):
+    """Every root shape a target produces resolves, and resolves to a real file.
+
+    The manifest rows are the discrimination: the former legs gated the plural
+    root on ``plugin.json`` and the singular one on ``opencode.json``, so each
+    spelling resolved under exactly one of the two manifests. A reader that kept
+    that split fails the complementary rows.
+    """
+    root = tmp_path / f'root-{root_name}-{manifest}'
+    skill_dir = _flat_plugin_root(root, root_name=root_name, manifest=manifest)
+
+    resolved = bp.resolve_bundle_path(root, 'plan-marshall', 'skills/manage-status/SKILL.md')
+
+    assert resolved == skill_dir / 'SKILL.md'
+    assert resolved.is_file()
+
+
+def test_flat_root_resolves_a_script_below_the_skill(tmp_path: Path):
+    """``skills/{skill}/scripts/{script}.py`` resolves, not only the skill root.
+
+    This is the shape the executor's own path helpers ask for, so a resolver that
+    handled only the bare skill directory would still leave the executor unable
+    to find a script on a flat deployment.
+    """
+    root = tmp_path / 'root-script'
+    skill_dir = _flat_plugin_root(root, root_name='skills')
+
+    resolved = bp.resolve_bundle_path(root, 'plan-marshall', 'skills/manage-status/scripts/manage-status.py')
+
+    assert resolved == skill_dir / 'scripts' / 'manage-status.py'
+
+
+def test_flat_root_prefers_the_deployed_plural_spelling(tmp_path: Path):
+    """With both spellings present, the deployed one answers.
+
+    Each spelling carries a DIFFERENT file, so a reader probing singular-first
+    would resolve against the wrong root and fail here.
+    """
+    root = tmp_path / 'root-both'
+    plural = root / 'skills' / 'plan-marshall-plural-skill'
+    singular = root / 'skill' / 'plan-marshall-singular-skill'
+    for skill_dir in (plural, singular):
+        skill_dir.mkdir(parents=True)
+        (skill_dir / 'SKILL.md').write_text('# skill')
+    (root / 'opencode.json').write_text('{}')
+
+    assert bp.resolve_bundle_path(root, 'plan-marshall', 'skills/plural-skill/SKILL.md') == plural / 'SKILL.md'
+    assert bp.resolve_bundle_path(root, 'plan-marshall', 'skills/singular-skill/SKILL.md') == singular / 'SKILL.md'
+
+
+def test_flat_root_still_resolves_a_root_anchored_path(tmp_path: Path):
+    """A non-skill-anchored subpath resolves against the root, as it always did.
+
+    Both former legs carried this ``elif`` beside the flat probe, so it is a
+    shape that resolved before this deliverable and must keep resolving: a
+    consumer pointing at ``agents/foo.md`` is not asking about a skill at all.
+    """
+    root = tmp_path / 'root-anchored'
+    _flat_plugin_root(root, root_name='skills')
+    agent = root / 'agents' / 'an-agent.md'
+    agent.parent.mkdir(parents=True)
+    agent.write_text('# agent')
+
+    assert bp.resolve_bundle_path(root, 'plan-marshall', 'agents/an-agent.md') == agent
+
+
+def test_flat_root_reports_a_miss_as_none_rather_than_a_constructed_path(tmp_path: Path):
+    """A flat root with no matching skill yields ``None``.
+
+    This verb's contract is ``None`` for a miss. A resolver that returned the
+    nested-shaped construction on a flat root would make every diagnostic name a
+    path that was never there, and the caller could not tell it apart from a hit.
+    """
+    root = tmp_path / 'root-miss'
+    _flat_plugin_root(root, root_name='skills')
+
+    assert bp.resolve_bundle_path(root, 'plan-marshall', 'skills/absent-skill/SKILL.md') is None
+
+
+def test_the_two_former_flat_legs_are_gone(tmp_path: Path, monkeypatch):
+    """``resolve_bundle_path`` holds ONE flat leg, not two near-duplicates.
+
+    Asserted on behaviour rather than on the source text: the two legs differed
+    only in the manifest that gated them and the skill-root spelling they
+    probed, and a body carrying both would satisfy every case above by
+    construction. Counting the flat probes through the shared resolver is what
+    makes the collapse observable — a body that re-probed per manifest would
+    call the shared resolver more than once for a single lookup.
+    """
+    calls: list[tuple[str, str]] = []
+    real = bp.resolve_skill_path
+
+    def _recording(plugin_root, bundle, relative_path):
+        calls.append((bundle, relative_path))
+        return real(plugin_root, bundle, relative_path)
+
+    monkeypatch.setattr(bp, 'resolve_skill_path', _recording)
+
+    root = tmp_path / 'root-once'
+    _flat_plugin_root(root, root_name='skills', manifest=None)
+    bp.resolve_bundle_path(root, 'plan-marshall', 'skills/manage-status/SKILL.md')
+
+    assert len(calls) == 1, f'one lookup must probe the shared resolver once, not once per former leg: {calls}'
 
 
 # =============================================================================

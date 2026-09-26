@@ -1,9 +1,19 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for marketplace_bundles shared module."""
+"""Tests for marketplace_bundles shared module.
+
+Both DEPLOYED shapes are exercised against real trees. The nested cases (the
+marketplace source layout and the versioned plugin cache) are the historical
+population and are unchanged; the flat cases at the end cover the shape the
+OpenCode and Antigravity targets actually deploy, which no case here modelled
+before ``deployed_layout`` existed — so ``collect_script_dirs`` returned an empty
+list against a real deployment and every consumer of it inherited that.
+"""
 
 from pathlib import Path
 
 import pytest
+from deployed_layout import FLAT_DIR_SEPARATOR as _FLAT_DIR_SEPARATOR
+from deployed_layout import SKILL_ROOT_NAMES, flat_skill_dir_name
 from marketplace_bundles import (
     build_pythonpath,
     collect_script_dirs,
@@ -16,6 +26,26 @@ from marketplace_bundles import (
 )
 
 SUBPATH = 'skills/skill-x/scripts/bar.py'
+
+#: The bundle the flat fixtures publish under, matching the real deployment.
+BUNDLE = 'plan-marshall'
+
+
+def _make_flat_tree(root: Path, *, root_name: str = 'skills', skills: tuple[str, ...] = ('skill-x',)) -> Path:
+    """Build a real flat deployed tree under ``root`` and return its skill root.
+
+    ``root_name`` selects the skill-root spelling, so the same builder produces
+    the deployed plural ``skills/`` and the generated singular ``skill/``. The
+    script file is named after the module-level :data:`SUBPATH` requests
+    (``bar.py``), so the fixtures carry the path the resolver is asked for rather
+    than a convenient one of their own.
+    """
+    skills_root = root / root_name
+    for skill in skills:
+        scripts = skills_root / flat_skill_dir_name(BUNDLE, skill) / 'scripts'
+        scripts.mkdir(parents=True)
+        (scripts / 'bar.py').write_text('# script')
+    return skills_root
 
 
 def _create_bundle(base: Path, name: str, version: str | None = None, orphaned: bool = False) -> Path:
@@ -449,3 +479,198 @@ class TestBuildPythonpath:
         scripts.mkdir(parents=True)
         result = build_pythonpath(tmp_path)
         assert str(scripts) in result
+
+
+class TestFlatDeployedShape:
+    """The shape the OpenCode and Antigravity targets actually deploy.
+
+    Every case builds a real flat tree. The nested population above cannot reach
+    these: ``collect_script_dirs``' nested loop iterates a root's bundle
+    directories, and a flat root has none — its children are the ``skills/``
+    directory — so it contributed nothing while reporting success, and
+    ``resolve_bundle_path``'s nested leg constructed a path under a ``{bundle}/``
+    directory that does not exist on such a root.
+    """
+
+    def test_resolve_bundle_path_reads_the_deployed_plural_root(self, tmp_path):
+        """A flat root resolves the nested-layout subpath against its own spelling."""
+        skills_root = _make_flat_tree(tmp_path)
+
+        result = resolve_bundle_path(tmp_path, BUNDLE, SUBPATH)
+
+        assert result == skills_root / f'{BUNDLE}-skill-x' / 'scripts' / 'bar.py'
+        assert result.is_file(), 'the resolved path must be one that exists, not one that was constructed'
+
+    def test_resolve_bundle_path_reads_the_singular_generated_root(self, tmp_path):
+        """The generated singular tree resolves through the same call.
+
+        The emitter writes ``skill/`` and ``install.sh`` maps it to ``skills/``,
+        so both spellings are trees a reader meets in the field.
+        """
+        skills_root = _make_flat_tree(tmp_path, root_name='skill')
+
+        assert (
+            resolve_bundle_path(tmp_path, BUNDLE, SUBPATH) == skills_root / f'{BUNDLE}-skill-x' / 'scripts' / 'bar.py'
+        )
+
+    def test_resolve_bundle_path_prefers_the_deployed_plural_over_singular(self, tmp_path):
+        """With both spellings present, the deployed one is the one that resolves.
+
+        Each spelling carries a DIFFERENT file, so a reader that probed singular
+        first would answer with the other root's path.
+        """
+        plural = _make_flat_tree(tmp_path, root_name='skills')
+        singular = _make_flat_tree(tmp_path, root_name='skill')
+
+        assert resolve_bundle_path(tmp_path, BUNDLE, SUBPATH) == plural / f'{BUNDLE}-skill-x' / 'scripts' / 'bar.py'
+        assert plural != singular
+
+    def test_resolve_bundle_path_returns_the_constructed_path_when_a_flat_root_misses(self, tmp_path):
+        """A miss on a flat root still returns a deterministic path, never ``None``.
+
+        The never-``None`` contract belongs to this function — its callers want a
+        reportable path, not a probe outcome — so the flat leg is consulted only
+        for an EXISTING candidate and a miss falls back to the nested
+        construction. A resolver returning ``None`` here would break every caller
+        that formats the result into a diagnostic.
+        """
+        _make_flat_tree(tmp_path, skills=('skill-x',))
+
+        result = resolve_bundle_path(tmp_path, BUNDLE, 'skills/absent-skill/scripts/x.py')
+
+        assert result == tmp_path / BUNDLE / 'skills' / 'absent-skill' / 'scripts' / 'x.py'
+
+    def test_resolve_bundle_path_does_not_touch_a_nested_root_with_the_flat_leg(self, tmp_path):
+        """A nested root is answered by the nested leg, unchanged.
+
+        The flat leg is a FALLBACK, so a nested root that happens to carry a
+        ``skills/`` directory at its own top level (a bundles root with a
+        ``skills/`` sibling) must still resolve through its own bundle subtree.
+        """
+        nested_target = tmp_path / BUNDLE / SUBPATH
+        nested_target.parent.mkdir(parents=True)
+        nested_target.write_text('nested')
+
+        assert resolve_bundle_path(tmp_path, BUNDLE, SUBPATH) == nested_target
+
+    def test_collect_script_dirs_is_non_empty_on_a_flat_root(self, tmp_path):
+        """The headline property: script-dir collection is no longer empty on a deployment.
+
+        This is the deliverable in one assertion. Before the shared resolver this
+        returned ``[]`` against the real ``~/.config/opencode`` tree, and every
+        consumer inherited it: the executor's ``build_pythonpath``, its
+        shared-module set and its generated ``EXTRA_SCRIPT_DIRS`` were all empty
+        while generation reported success.
+        """
+        skills_root = _make_flat_tree(tmp_path, skills=('skill-x', 'skill-y'))
+
+        result = collect_script_dirs(tmp_path)
+
+        assert str(skills_root / f'{BUNDLE}-skill-x' / 'scripts') in result
+        assert str(skills_root / f'{BUNDLE}-skill-y' / 'scripts') in result
+        assert result, 'script-dir collection must not be empty against a flat deployment'
+
+    def test_collect_script_dirs_reads_the_singular_root_too(self, tmp_path):
+        """The singular generated tree enumerates identically."""
+        skills_root = _make_flat_tree(tmp_path, root_name='skill', skills=('skill-x',))
+
+        assert str(skills_root / f'{BUNDLE}-skill-x' / 'scripts') in collect_script_dirs(tmp_path)
+
+    def test_collect_script_dirs_includes_flat_skill_subdirs(self, tmp_path):
+        """A flat skill's ``scripts/`` sub-directories are collected, as nested ones are.
+
+        ``script-shared/scripts/build/`` is an organised layout that exists in the
+        real tree, and the extra entries are what let a subprocess import from it.
+        """
+        skills_root = _make_flat_tree(tmp_path, skills=('script-shared',))
+        subdir = skills_root / f'{BUNDLE}-script-shared' / 'scripts' / 'build'
+        subdir.mkdir()
+
+        result = collect_script_dirs(tmp_path)
+
+        assert str(subdir) in result
+
+    def test_collect_script_dirs_counts_each_directory_once_across_both_spellings(self, tmp_path):
+        """The skill-root directories are not re-walked by the nested loop.
+
+        A flat root's children include ``skills/``, and the nested loop would
+        otherwise descend into it a second time — under a different owner — and
+        double every entry on the PYTHONPATH the executor hands its subprocesses.
+        """
+        _make_flat_tree(tmp_path, skills=('skill-x',))
+
+        result = collect_script_dirs(tmp_path)
+
+        assert len(result) == len(set(result)), f'a directory was collected twice: {result}'
+
+    def test_collect_script_dirs_reads_a_root_carrying_both_shapes(self, tmp_path):
+        """A root with a nested bundle AND a flat skill root yields both.
+
+        The two shapes are complementary, not exclusive, and a consumer that can
+        only read one loses whichever it cannot see.
+        """
+        nested_scripts = tmp_path / 'bundle-a' / 'skills' / 'nested-skill' / 'scripts'
+        nested_scripts.mkdir(parents=True)
+        flat_scripts = _make_flat_tree(tmp_path, skills=('flat-skill',)) / f'{BUNDLE}-flat-skill' / 'scripts'
+
+        result = collect_script_dirs(tmp_path)
+
+        assert str(nested_scripts) in result
+        assert str(flat_scripts) in result
+
+    def test_collect_script_dirs_excludes_pycache_on_a_flat_root(self, tmp_path):
+        """The build-artefact exclusion holds for the flat shape too.
+
+        A real deployed root carries ``__pycache__`` directories next to live
+        scripts, and adding one to PYTHONPATH shadows the live module with a
+        stale compiled copy.
+        """
+        skills_root = _make_flat_tree(tmp_path, skills=('skill-x',))
+        pycache = skills_root / f'{BUNDLE}-skill-x' / 'scripts' / '__pycache__'
+        pycache.mkdir()
+
+        assert str(pycache) not in collect_script_dirs(tmp_path)
+
+    def test_build_pythonpath_carries_flat_script_dirs(self, tmp_path):
+        """PYTHONPATH is populated from a flat root, which is what makes the tree usable.
+
+        The join is the last step before a subprocess can import anything at all,
+        so a non-empty ``collect_script_dirs`` that never reaches this output
+        would leave the defect in place for the one consumer that matters most.
+        """
+        skills_root = _make_flat_tree(tmp_path, skills=('skill-x',))
+        scripts = str(skills_root / f'{BUNDLE}-skill-x' / 'scripts')
+
+        joined = build_pythonpath(tmp_path).split(':')
+
+        assert scripts in joined
+
+    def test_the_nested_population_is_unchanged(self, tmp_path):
+        """A nested root answers exactly as it did before the flat leg existed.
+
+        The flat leg is a fallback, and this is the assertion that keeps it one:
+        a root that resolves through the nested path must not be diverted by a
+        sibling skill root.
+        """
+        nested_target = tmp_path / 'bundle-a' / SUBPATH
+        nested_target.parent.mkdir(parents=True)
+        nested_target.write_text('# nested')
+        # A sibling skill root whose dash-joined name would satisfy the flat leg
+        # for a DIFFERENT bundle, so a reader that probed flat first would answer
+        # with this root's other directory.
+        _make_flat_tree(tmp_path, skills=('skill-x',))
+
+        assert collect_script_dirs(tmp_path)
+        assert str(nested_target.parent) in collect_script_dirs(tmp_path)
+        assert resolve_bundle_path(tmp_path, 'bundle-a', SUBPATH) == nested_target
+
+    def test_the_declared_vocabulary_is_what_both_shapes_are_read_through(self):
+        """The fixtures build from the shared vocabulary, so a renamed spelling fails here.
+
+        ``SKILL_ROOT_NAMES`` and ``flat_skill_dir_name`` are read rather than
+        restated: if either moves, every fixture above follows it, and a resolver
+        still hardcoding the old spelling fails the case that exercises it rather
+        than passing on a fixture that agrees with it by construction.
+        """
+        assert SKILL_ROOT_NAMES == ('skills', 'skill')
+        assert flat_skill_dir_name('b', 's') == 'b' + _FLAT_DIR_SEPARATOR + 's'

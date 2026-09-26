@@ -5,12 +5,21 @@ Shared marketplace bundle discovery and resolution.
 Provides bundle discovery, name extraction, path resolution, and PYTHONPATH
 building for marketplace scripts. Used by generate_executor.py,
 scan-marketplace-inventory.py, and other scripts that work with bundles.
+
+The module owns BUNDLE discovery and the version-dir selection that goes with
+it. Deployed-LAYOUT knowledge — which of the two shapes a root carries, and the
+singular-vs-plural skill-root spelling that tells them apart — belongs to
+``deployed_layout``, the single home for it. ``resolve_bundle_path`` and
+``collect_script_dirs`` consume that module rather than re-encoding either shape,
+so a root that deploys the flat shape resolves here exactly as a nested one does.
 """
 
 import os
 import re
 from collections.abc import Callable
 from pathlib import Path
+
+import deployed_layout
 
 
 def select_live_version_dir(bundle_dir: Path, is_candidate: Callable[[Path], bool]) -> Path | None:
@@ -118,10 +127,23 @@ def extract_bundle_name(bundle_dir: Path) -> str:
 def resolve_bundle_path(base_path: Path, bundle_name: str, subpath: str) -> Path:
     """Resolve path within a bundle, handling versioned cache structure.
 
-    Tries versioned path first (plugin-cache with version dir), then non-versioned (marketplace).
+    Both deployed shapes are probed, through ``deployed_layout`` so the layout is
+    not re-spelled here: the NESTED shape (``{base}/{bundle}/{subpath}``, with
+    newest-version-dir selection) first, and the FLAT deployed shape
+    (``{base}/skills/{bundle}-{skill}/…``) when the nested one does not exist. A
+    flat root has no ``{bundle}/`` directory at all, so before this the nested
+    probe alone yielded a path that could never exist on a machine whose only
+    deployment is OpenCode or Antigravity.
+
+    Never returns ``None``: when neither shape carries the subpath the NESTED
+    path is returned as the deterministic path to report, which is the contract
+    the executor generator's callers rely on for a "resolvable, not present"
+    answer. The flat leg is consulted only for an EXISTING candidate, so it can
+    never turn a reportable miss into a wrong hit.
 
     Args:
-        base_path: Path to bundles directory (plugin-cache or marketplace)
+        base_path: Path to bundles directory (plugin-cache, marketplace, or a
+            flat deployed root)
         bundle_name: Name of the bundle (e.g., 'plan-marshall')
         subpath: Path within the bundle (e.g., 'skills/foo/scripts/bar.py')
     """
@@ -129,12 +151,18 @@ def resolve_bundle_path(base_path: Path, bundle_name: str, subpath: str) -> Path
 
     if bundle_dir.is_dir():
         # Eligibility only: "this version dir carries the requested subpath".
-        # Ordering (newest-eligible wins) is decided by select_live_version_dir,
+        # Ordering (newest-eligible wins) is decided in select_live_version_dir,
         # so this leg resolves to the same version dir as find_bundles and
         # collect_script_dirs.
         selected = select_live_version_dir(bundle_dir, lambda d: (d / subpath).exists())
         if selected is not None:
             return selected / subpath
+        if (bundle_dir / subpath).exists():
+            return bundle_dir / subpath
+
+    flat = deployed_layout.resolve_skill_path(base_path, bundle_name, subpath)
+    if flat is not None:
+        return flat
 
     return bundle_dir / subpath
 
@@ -155,16 +183,34 @@ def collect_script_dirs(base_path: Path) -> list[str]:
     Discovers script directories and their immediate subdirectories,
     enabling cross-skill imports for scripts organized in subdirectory trees.
 
+    Both deployed shapes are enumerated. The FLAT one comes first and through
+    ``deployed_layout``: a flat root's immediate children are the ``skills/``
+    directory, not bundle directories, so the nested loop below contributes
+    NOTHING on such a root — which is why discovery over a flat deployment
+    previously found no scripts at all and every consumer of the result (the
+    executor's ``build_pythonpath``, its shared-module set, its generated
+    ``EXTRA_SCRIPT_DIRS``) silently carried an empty list.
+
+    The nested leg's version-dir selection is unchanged and stays here: choosing
+    among sibling version directories is a different concern from choosing a
+    shape, and the flat tree is unversioned so the two never apply to the same
+    subtree.
+
     Args:
-        base_path: Path to bundles directory (plugin-cache or marketplace)
+        base_path: Path to bundles directory (plugin-cache, marketplace, or a
+            flat deployed root)
 
     Returns:
         List of script directory paths (parent dirs first, then subdirs)
     """
-    script_dirs: list[str] = []
+    script_dirs: list[str] = [str(d) for d in deployed_layout.flat_script_dirs(base_path)]
 
     for bundle_dir in base_path.iterdir():
         if not bundle_dir.is_dir() or bundle_dir.name.startswith('.'):
+            continue
+        if bundle_dir.name in deployed_layout.SKILL_ROOT_NAMES:
+            # Already enumerated through the flat leg above; a nested walk from
+            # here would re-add the same directories under a different owner.
             continue
 
         # Determine base directories to scan for skills:
@@ -244,17 +290,26 @@ def resolve_bundles_root(script_file: Path) -> Path:
 def resolve_skills_root(script_file: Path) -> Path:
     """Resolve the skills directory anchor by walking up from a script file.
 
-    Walks parents of ``script_file`` and returns the first ancestor named
-    ``skills`` or ``skill`` whose parent contains a bundle or target manifest
+    Walks parents of ``script_file`` and returns the first ancestor whose name is
+    a declared skill-root name (:data:`deployed_layout.SKILL_ROOT_NAMES` — the
+    deployed plural ``skills`` and the generated singular ``skill``) and whose
+    parent carries a bundle or target manifest
     (``.claude-plugin/plugin.json``, ``plugin.json``, or ``opencode.json``).
     Uses identity walking (no index arithmetic). Raises ``RuntimeError`` with
     the full walked parent chain if no such ancestor exists.
+
+    The root names are read from the shared vocabulary rather than listed here,
+    so this walk cannot disagree with :func:`resolve_bundle_path` and
+    :func:`collect_script_dirs` about which spellings exist — a second list is a
+    second answer waiting to diverge, and the divergence is invisible until a
+    machine carries the spelling the second list omitted.
 
     Args:
         script_file: Path to the calling script (typically ``Path(__file__)``).
 
     Returns:
-        The ``skills`` or ``skill`` directory inside the owning bundle or target.
+        The skills-root directory (``skills`` or ``skill``) inside the owning
+        bundle or target.
 
     Raises:
         RuntimeError: If no skills ancestor with a bundle/target manifest is found.
@@ -263,7 +318,7 @@ def resolve_skills_root(script_file: Path) -> Path:
     walked: list[Path] = []
     for ancestor in start.parents:
         walked.append(ancestor)
-        if ancestor.name not in ('skills', 'skill'):
+        if ancestor.name not in deployed_layout.SKILL_ROOT_NAMES:
             continue
         parent = ancestor.parent
         if (
@@ -272,9 +327,10 @@ def resolve_skills_root(script_file: Path) -> Path:
             or (parent / 'opencode.json').is_file()
         ):
             return ancestor
+    spellings = ' or '.join(repr(name) for name in deployed_layout.SKILL_ROOT_NAMES)
     chain = '\n  '.join(str(p) for p in walked)
     raise RuntimeError(
-        f"resolve_skills_root: could not locate a 'skills' or 'skill' directory inside "
+        f'resolve_skills_root: could not locate a {spellings} directory inside '
         f'a bundle or target above {start}. Walked parents:\n  {chain}'
     )
 
