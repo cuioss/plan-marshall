@@ -511,6 +511,28 @@ another ledger). Both are restated in § Standing Constraints, which is where th
 
 ## Open Defects
 
+### ⛔⛔⛔ 2026-09-26 — THE WHOLE STAGED QUEUE IS PARKED: `plan-marshall-mcp` supersedes it
+
+**Operator decision.** `plan-marshall-mcp` (PM-MCP, `/Users/oliver/git/plan-marshall-mcp`) replaces BOTH the
+process prose AND the Python scripts of plan-marshall. **Nothing Python-bound carries**; what carries is the
+implementation-independent content — rules, invariants, classifications, data, real-corpus fixtures. The
+operator's first framing (PM-MCP's own PM-TEST-1 Ported/Redesigned split, which would have kept store and
+integration scripts live) was **explicitly withdrawn** in favour of this one — do not re-derive it.
+
+- **All ten staged plans `PLAN-PR-068` … `-077` → `parked`**, each spec bannered `SUPERSEDED BY PM-MCP`.
+  `PLAN-PR-070` had been EMITTED but never launched — ⛔ the emitted command is VOID, do not launch it.
+- **Extraction:** [`findings/2026-09-26-pm-mcp-carry-over.md`](findings/2026-09-26-pm-mcp-carry-over.md) —
+  77 deliverables, 71 carry content, 6 none; mapped to PM-MCP requirement ids: 51 full/partial `gap`, 7
+  already covered. Its three ⛔ contradictions (PM-MCP's `completed + 0 findings → merge-gate` edge encodes
+  the zero-findings = clean collapse; PM-MCP's bot roster omits Sourcery and cuioss-review-bot; "Review
+  skipped: No new commits" is a refusal in `PLAN-PR-043` and not in `PLAN-PR-070`) are the first thing to
+  carry into PM-MCP.
+- **Untouched:** `PLAN-PR-002` (parked on foreign cuioss-organization#235) and `PLAN-PR-039` (successor
+  `PLAN-PR-066` shipped) — foreign org CI config, independent of PM-MCP.
+- The carry-over is **input**, not a PM-MCP edit: PM-MCP's CLAUDE.md forbids new documents there without
+  asking, so the operator carries it over. The 2026-09-24 pre-consumption finding below is moot for
+  emission but remains true as history.
+
 ### ⛔⛔ NEW 2026-09-24 (`PLAN-PR-067` landing) — a 24-file undeclared-surface expansion pre-consumed two staged specs to 50%/43%
 
 `PLAN-PR-067` shipped (`plan-marshall#1616`, `93f5d7dbd91fea8aa59ebb158f5fa796b181e1e9`) realizing

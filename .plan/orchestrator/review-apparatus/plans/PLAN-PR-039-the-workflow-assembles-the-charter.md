@@ -1,5 +1,8 @@
 # PLAN-PR-039: The reusable workflow assembles the charter, and the repo only declares keys
 
+> ✅ **RETIRED 2026-09-26 — delivered through `PLAN-PR-066`** (plan-marshall#1611; the foreign half landed in
+> cuioss-organization#288 + #290, both re-read first-party as merged). See `landings/PLAN-PR-066.md`.
+
 > ⛔⛔ **SUPERSEDED 2026-09-14 by `PLAN-PR-066` — do NOT emit this spec.** Its six deliverables are
 > carried there as D1–D6, and `PLAN-PR-066` adds the per-repository enablement half the operator
 > directed (an `enabled` flag in `.github/project.yml`; absent means disabled) plus the derived fleet
