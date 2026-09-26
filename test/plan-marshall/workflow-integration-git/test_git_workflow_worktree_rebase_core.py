@@ -280,7 +280,7 @@ class TestRebaseToAhead:
         assert result['action'] == 'noop'
         assert result['ahead'] == 1
         assert result['behind'] == 0
-        assert 'replayed no commits' in result['message']
+        assert 'no rebase needed' in result['message']
         # The branch's own commit must survive the no-op rebase.
         assert (rebase_env['worktree'] / 'feature.txt').exists()
 
