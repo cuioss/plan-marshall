@@ -2,9 +2,9 @@
   "id": "PLAN-PR-039",
   "slug": "the-workflow-assembles-the-charter",
   "workstream": "WS-02",
-  "status": "parked",
+  "status": "retired",
   "plan_marshall_plan_id": "",
   "pr": "",
-  "landing": "",
+  "landing": "landings/PLAN-PR-066.md",
   "seq": 10
 }

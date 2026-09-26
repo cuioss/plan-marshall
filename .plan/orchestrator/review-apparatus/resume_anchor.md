@@ -1,3 +1,17 @@
+=== 2026-09-26 PLAN-PR-002 EMITTED (re-scoped), PLAN-PR-039 RETIRED ===
+039 retired: delivered via PLAN-PR-066 (plan-marshall#1611; cuioss-organization#288+#290 merged, read first-party).
+002 parked->staged and EMITTED. #235 (merged 2026-08-09) had already shipped the original narrowing; spec re-scoped to #235's residual R3 only (no-files / ignore-filtered empty diff still fails the guard, observed API-Sheriff#340) - skip upstream via #280's changes pre-job, fail-open, gate exit 1 untouched.
+It is now the epic's ONLY live plan. R = 0 of N = 2 until operator confirms launch.
+NEXT ACTION: once operator confirms 002 started, stamp queue --transition PLAN-PR-002 --status launched. On landing, corroborate against the FOREIGN PR (cuioss-organization), never the local lifecycle alone. After 002 lands the epic has no live work -> candidate for close.
+
+=== 2026-09-26 WHOLE STAGED QUEUE PARKED — plan-marshall-mcp SUPERSEDES IT (operator decision) ===
+PM-MCP replaces BOTH process prose AND Python scripts; nothing Python-bound carries. PLAN-PR-068..077 all -> parked, specs bannered.
+PLAN-PR-070's earlier emitted command is VOID - do NOT launch it. Queue now has ZERO staged rows; `next` has nothing to emit, by design.
+Carry-over (rules/invariants/data/fixtures, mapped to PM-MCP req ids): findings/2026-09-26-pm-mcp-carry-over.md - 77 deliverables, 71 carry, 51 gap, 7 covered, 3 CONTRADICTIONS to raise in PM-MCP first.
+PLAN-PR-002 (foreign #235) and PLAN-PR-039 untouched. Un-park only by explicit operator decision.
+NEXT ACTION: operator carries the findings file into plan-marshall-mcp requirements/spec; this epic then decides close vs keep-open for foreign WS-02 work.
+Everything below this block predates the supersession and is HISTORY for emission purposes.
+
 === 2026-09-24 PLAN-PR-067 SHIPPED (#1616, 93f5d7dbd). R = 0 of N = 2 — BOTH SLOTS OPEN (070 already emitted, awaiting launch). ===
 ⛔⛔ DOMINANT FINDING, MUCH LARGER THAN 066's: 24 of 31 realized files undeclared (066 had 2). PLAN-PR-071 now 50% pre-consumed (3/6 declared files), PLAN-PR-073 43% (3/7) — DO NOT EMIT EITHER without re-grounding against 93f5d7dbd first, full table in the Open Defect / Queue annotation. PLAN-PR-068's known 3-file overlap with 067 has now FULLY LANDED (sequencing risk -> realized fact) - needs full re-grounding before it next runs, not just sequencing. Smaller pre-consumption on 069/074/076/077 (1-2 files each). 12 further files declared by NO spec at all (new tools-integration-ci verb surface + merge-queue/refusal tests) - Open Defect filed, no new spec staged this pass.
 The earlier 066/067 collision (previous anchor block) DISCHARGED CLEANLY - 067 merged past #1611's additive changes to github_ops.py/SKILL.md with no reported conflict. Epic.md entry marked RESOLVED, superseded by this much larger finding.
@@ -103,3 +117,5 @@ PLAN-PR-002 PARKED: cuioss-organization#235 OPEN - corroborate against the FOREI
 ⛔ A pre-existing macOS test defect is OPERATOR-ASSIGNED to a separate plan: test_qgate_closure.py::test_a_declared_glob_escaping_the_repo_is_unmeasured_not_empty asserts == Path(/etc) against a path resolving to /private/etc. Also a pollution-guard teardown flake in test_comments_stage.py under xdist.
 ⚠ The build wrapper reported status: timeout on a run that COMPLETED (17877 passed in 467s). Read the LOG layer, never the outer status.
 ENVIRONMENT (SUPERSEDED 2026-09-22, kept for history): this line claimed the epic tree was GITIGNORED, LOCAL-ONLY. FALSE since the tracked-store migration (#1558-#1578) -- the tree is git-tracked. See the header block above.
+
+
