@@ -1,6 +1,7 @@
 ---
 name: sync-antigravity
 description: Deploy the generated Antigravity tree into the Antigravity plugin directory. Use when syncing or deploying plan-marshall bundles to Antigravity.
+mode: script-executor
 ---
 
 # Sync Antigravity
