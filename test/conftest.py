@@ -2394,26 +2394,22 @@ def _restore_footprint_seams():
     """
     import sys
 
+    seams: list[tuple[Any, str, Any]] = []
+    for module in list(sys.modules.values()):
+        if module is not None and hasattr(module, '_resolve_footprint'):
+            seams.append((module, '_resolve_footprint', module._resolve_footprint))
     try:
         import extension_base
     except ImportError:
-        extension_base = None
-
-    composer_originals = {
-        name: module._resolve_footprint
-        for name, module in list(sys.modules.items())
-        if module is not None and hasattr(module, '_resolve_footprint')
-    }
-    extension_original = getattr(extension_base, '_resolve_plan_footprint', None) if extension_base else None
+        pass
+    else:
+        if hasattr(extension_base, '_resolve_plan_footprint'):
+            seams.append((extension_base, '_resolve_plan_footprint', extension_base._resolve_plan_footprint))
 
     yield
 
-    for name, original in composer_originals.items():
-        module = sys.modules.get(name)
-        if module is not None:
-            module._resolve_footprint = original
-    if extension_base is not None and extension_original is not None:
-        extension_base._resolve_plan_footprint = extension_original
+    for module, attribute, original in seams:
+        setattr(module, attribute, original)
 
 
 @pytest.fixture(autouse=True)
