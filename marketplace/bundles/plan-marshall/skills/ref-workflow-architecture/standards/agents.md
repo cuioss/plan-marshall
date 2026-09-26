@@ -179,6 +179,24 @@ This mirrors the escalation-envelope pattern of the other leaf-cannot-do-it case
 
 ---
 
+## Foundational Skills: load or fail closed
+
+A skill named in a body's `## Foundational Practices` block is a **precondition of running that body**, not a suggestion. When a declared foundational skill cannot be loaded, the phase **aborts with an error**. It is never skipped, never downgraded to a warning, and never proceeded-with-absent.
+
+> **Load-or-fail-closed.** A foundational skill that fails to load MUST abort the phase with a structured error naming the skill and the load failure. The two forbidden alternatives are the two that read as success: skipping the load silently, and logging a warning and continuing. Either one turns a body whose rules are now half-applied into a run that reports itself as a completed phase.
+
+**Why fail closed, specifically.** Every rule a foundational skill carries is a rule the calling body has deliberately delegated. A body that proceeds without it does not become a smaller version of itself; it becomes a body whose own steps are followed by a set of constraints nobody is applying — the tool-usage discipline, the refusal to improvise script subcommands, the enforcement block. Each of those has a failure mode that produces *plausible output*. A phase that skipped its foundational skill and then improvised a `manage-*` subcommand can emit a complete-looking task list built on an invented verb. A warning makes that indistinguishable on the run's face: the phase advanced, artifacts were written, and the one signal that the rules were not in force has been filed alongside ordinary noise. Failing closed costs a re-dispatch; proceeding costs a wrong artifact that every later gate reads as real.
+
+**This document owns the rule.** The six lifecycle bodies that gate phase progression carry the directive in their `## Foundational Practices` block and **point here** — `phase-1-init`, `phase-2-refine`, `phase-3-outline`, `phase-4-plan`, `phase-5-execute` and `plan-orchestrator`. They do not restate the rule, because six restatements of one rule is six documents free to drift, and a drift between two phases means the same run enforces the same requirement in one place and not the other.
+
+**The coverage rule.** Every marketplace `SKILL.md` or agent body carrying a `## Foundational Practices` block is in scope for this rule. A body that gains the block after this rule landed MUST carry the directive in the same change — the enforcing test re-derives its own population on every run, so a new block is a red build rather than an uncovered surface discovered later. Bodies that do not declare a foundational skill are outside the rule: there is nothing to fail to load.
+
+**Not a catalogue addition.** This rule is a *rule about loading*, not an entry in the skill index, and is deliberately not added to the always-loaded index. The always-loaded index is a catalogue of what exists; the staleness question this rule answers — does a deployed tree still name a skill the marketplace retired — is a **query over the generated target trees**, and belongs with the query that asks it, not with a list that is loaded on every dispatch.
+
+**Retired notation is a fail-closed trigger too.** A foundational-skill name the marketplace has retired cannot be loaded, so it lands in this rule's own case. Retired vocabulary is not resurrected by a body that names it: the discipline is to delete the name from the body, not to author a new skill so the name resolves. `plan-marshall:dev-agent-behavior-rules` is the canonical worked example — retired, present in no `marketplace/bundles/**` source, and pinned as such by `test/plan-marshall/manage-architecture/test_skills_by_profile_staleness_guard.py`. A body that names it is naming something that does not exist, and the correct repair is on the naming side.
+
+---
+
 ## Agent Inventory
 
 ```text

@@ -26,6 +26,8 @@ The exit-code contract for every `python3 .plan/execute-script.py` call in this 
 Skill: plan-marshall:persona-plan-marshall-agent
 ```
 
+A foundational skill that cannot be loaded **aborts this phase** with a structured error — never skipped, never downgraded to a warning. The rule and its rationale live in [`ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md) § "Foundational Skills: load or fail closed".
+
 ## Enforcement
 
 > **Shared lifecycle patterns**: See [phase-lifecycle.md](../ref-workflow-architecture/standards/phase-lifecycle.md) for entry protocol, completion protocol, and error handling convention.
