@@ -49,7 +49,13 @@ for _ancestor in Path(__file__).resolve().parents:
 import session_binding  # noqa: E402
 from manage_terminal_title import _compose_body, compose, title_token_state  # noqa: E402,F401
 from marketplace_paths import resolve_home  # noqa: E402
-from runtime_base import Runtime, toon_error, toon_noop, toon_success  # noqa: E402,F401
+from runtime_base import (  # noqa: E402,F401
+    Runtime,
+    extract_project_steps,
+    toon_error,
+    toon_noop,
+    toon_success,
+)
 from toon_parser import parse_toon  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -2888,7 +2894,9 @@ def _render_permission_intent(intent: Any) -> tuple[list[str] | None, str | None
 
 
 # Phases in marshal.json that may carry ``project:{skill}`` step references.
-_PROJECT_STEP_PHASES = ('phase-5-execute', 'phase-6-finalize')
+# The roster and the ``steps`` shape both live in ``runtime_base`` — this module
+# re-exports the shared reader rather than naming either, so the Claude, OpenCode
+# and Antigravity readers cannot drift apart on a target-neutral file.
 
 
 def _load_marshal_config(path: str) -> tuple[dict[str, Any], str | None]:
@@ -2914,26 +2922,18 @@ def _load_marshal_config(path: str) -> tuple[dict[str, Any], str | None]:
 def _extract_project_steps(marshal_config: dict[str, Any]) -> list[dict[str, str]]:
     """Enumerate ``project:{skill}`` step references from marshal.json.
 
-    Scans the phases in ``_PROJECT_STEP_PHASES`` under ``plan.{phase}.steps`` and
-    returns one ``{skill, step, phase}`` dict per ``project:``-prefixed entry.
-    Relocated from ``permission_doctor`` (single home in the runtime).
+    Thin delegator over :func:`runtime_base.extract_project_steps` — the single
+    home for the phase roster and the ``steps`` shape. Relocated from
+    ``permission_doctor``; kept as a module-level name because the Claude call
+    sites below address it as ``claude_runtime._extract_project_steps``.
+
+    This module previously carried its own roster tuple and guarded with
+    ``isinstance(steps, list)``. Against a real marshal.json — where ``steps``
+    is a keyed map, because a step carries parameters — that guard made the scan
+    return an empty list, which read exactly like a marshal.json with no
+    ``project:`` steps in it.
     """
-    plan = marshal_config.get('plan', {})
-    if not isinstance(plan, dict):
-        return []
-    project_steps: list[dict[str, str]] = []
-    for phase in _PROJECT_STEP_PHASES:
-        phase_config = plan.get(phase, {})
-        if not isinstance(phase_config, dict):
-            continue
-        steps = phase_config.get('steps', [])
-        if not isinstance(steps, list):
-            continue
-        for step in steps:
-            if isinstance(step, str) and step.startswith('project:'):
-                skill = step[len('project:') :]
-                project_steps.append({'skill': skill, 'step': step, 'phase': phase})
-    return project_steps
+    return extract_project_steps(marshal_config)
 
 
 # ---------------------------------------------------------------------------

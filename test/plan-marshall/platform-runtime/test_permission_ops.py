@@ -32,6 +32,7 @@ import platform_runtime
 import permission_doctor
 import permission_fix
 import permission_web
+from _method_code import method_code
 from claude_runtime import (
     _claude_global_settings_path,
     _claude_project_settings_path,
@@ -207,6 +208,42 @@ class TestRuntimeOwnsSettingsIO:
         assert err is None
         steps = _extract_project_steps(config)
         assert steps == [{'skill': 'my-step', 'step': 'project:my-step', 'phase': 'phase-6-finalize'}]
+
+    def test_marshal_step_extraction_reads_the_keyed_map_the_live_file_writes(self, tmp_path: Path) -> None:
+        """The permission ops read a marshal.json, not the shape it used to have.
+
+        A step carries parameters, so the live file writes ``steps`` as a keyed
+        map. The list-only reader this replaced returned an empty scan against
+        that file, and an empty scan reads exactly like a marshal.json with no
+        project steps — so the missing-steps check reported a clean coverage
+        scan having read nothing. The full reader contract is governed in
+        ``test_project_steps_extraction.py``; this pins the Claude call site's
+        own entry point onto it.
+        """
+        marshal = tmp_path / 'marshal.json'
+        marshal.write_text(
+            json.dumps({'plan': {'phase-6-finalize': {'steps': {'project:my-step': {'lane': 'minimal'}, 'push': {}}}}}),
+            encoding='utf-8',
+        )
+        config, err = _load_marshal_config(str(marshal))
+        assert err is None
+        assert _extract_project_steps(config) == [
+            {'skill': 'my-step', 'step': 'project:my-step', 'phase': 'phase-6-finalize'}
+        ]
+
+    def test_marshal_step_extraction_delegates_to_the_shared_reader(self) -> None:
+        """This module names neither the phase roster nor the ``steps`` shape.
+
+        marshal.json is shared and target-neutral, so a reader that re-derives
+        either can report an empty scan for a step that exists. The scan reads
+        the method BODY only: the docstring quotes the retired guard on purpose,
+        to say what the delegation replaced, so a whole-function text match would
+        read that explanation as the code reintroducing the guard.
+        """
+        body = method_code('plan-marshall', 'platform-runtime', 'claude_runtime.py', '_extract_project_steps')
+        assert 'extract_project_steps(' in body
+        assert "'phase-5-execute'" not in body
+        assert 'isinstance(steps, list)' not in body
 
     def test_marshal_config_reports_error_for_missing_file(self, tmp_path: Path) -> None:
         """_load_marshal_config returns an error string for an absent marshal.json."""

@@ -13,7 +13,7 @@ ad-hoc parsing or serialization in this module.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from typing import Any
 
 from toon_parser import serialize_toon
@@ -41,6 +41,77 @@ def has_session_identity(session_id: str | None) -> bool:
     if not session_id.strip():
         return False
     return session_id != NO_SESSION_IDENTITY
+
+
+#: The marshal.json phases that may carry ``project:{skill}`` step references,
+#: published once so no runtime names the roster independently.
+#:
+#: The roster was spelled out in two runtimes and inlined in a third, and the
+#: copies could not disagree visibly: a phase added to one reader left the other
+#: readers reporting "no project steps" for a step that exists, which is a clean
+#: measurement of the wrong thing. marshal.json is a shared, target-neutral file,
+#: so the roster is one fact with one home.
+PROJECT_STEP_PHASES: tuple[str, ...] = ('phase-5-execute', 'phase-6-finalize')
+
+#: The step-notation prefix naming a project-local skill step.
+PROJECT_STEP_PREFIX: str = 'project:'
+
+
+def extract_project_steps(marshal_config: dict[str, Any]) -> list[dict[str, str]]:
+    """Enumerate ``project:{skill}`` step references from a parsed marshal.json.
+
+    The single reader every runtime delegates to. It scans
+    ``plan.{phase}.steps`` for each phase in :data:`PROJECT_STEP_PHASES` and
+    returns one ``{skill, step, phase}`` dict per ``project:``-prefixed entry,
+    in phase-roster order.
+
+    **Both ``steps`` shapes are accepted.** The live marshal.json writes
+    ``steps`` as a KEYED MAP — ``{step-notation: {params}}`` — because a step
+    carries parameters, and a bare list cannot hold them. The earlier readers
+    only understood the bare list and guarded with ``isinstance(steps, list)``,
+    so against a real marshal.json they returned an empty scan: indistinguishable
+    from "scanned, found no project steps", which is how a reader that never read
+    the roster came to look like a clean result. The legacy list of notation
+    strings is still accepted so a hand-written or pre-parameters marshal.json
+    keeps working.
+
+    A malformed phase or ``steps`` value is skipped rather than raised: the
+    reader is a scanner over a shared file that other targets also edit, so one
+    unexpected shape must not take down every permission op on every runtime.
+
+    Args:
+        marshal_config: A parsed marshal.json mapping. A mapping carrying an
+            ``error`` key (a failed load) simply has no ``plan`` section and so
+            yields no steps.
+
+    Returns:
+        Dicts with keys ``skill``, ``step`` and ``phase``, in phase-roster
+        order. An entry whose ``project:`` prefix is followed by nothing is
+        skipped — it names no skill, so there is nothing to grant.
+    """
+    plan = marshal_config.get('plan', {})
+    if not isinstance(plan, dict):
+        return []
+    project_steps: list[dict[str, str]] = []
+    for phase in PROJECT_STEP_PHASES:
+        phase_config = plan.get(phase, {})
+        if not isinstance(phase_config, dict):
+            continue
+        steps = phase_config.get('steps', {})
+        if isinstance(steps, dict):
+            notations: Iterable[Any] = steps.keys()
+        elif isinstance(steps, list):
+            notations = steps
+        else:
+            continue
+        for notation in notations:
+            if not isinstance(notation, str) or not notation.startswith(PROJECT_STEP_PREFIX):
+                continue
+            skill = notation[len(PROJECT_STEP_PREFIX) :]
+            if not skill:
+                continue
+            project_steps.append({'skill': skill, 'step': notation, 'phase': phase})
+    return project_steps
 
 
 #: The `permission fix` operation set, published once so no site restates it.
@@ -899,6 +970,12 @@ class Runtime(ABC):
     @abstractmethod
     def permission_extract_project_steps(self, marshal_config: dict[str, Any]) -> list[dict[str, Any]]:
         """Enumerate ``project:{skill}`` step references from marshal config.
+
+        Every runtime delegates to :func:`extract_project_steps` rather than
+        reading the roster or the ``steps`` shape itself: the roster and the
+        shape are facts about the shared, target-neutral marshal.json, and a
+        runtime that re-derives either can report an empty scan for a step that
+        exists.
 
         Args:
             marshal_config: The parsed marshal.json dictionary.

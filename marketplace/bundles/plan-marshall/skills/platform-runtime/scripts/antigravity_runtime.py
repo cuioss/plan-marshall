@@ -25,6 +25,7 @@ import runtime_info
 from runtime_base import (
     PERMISSION_FIX_OPERATIONS,
     Runtime,
+    extract_project_steps,
     marshal_shape_error,
     toon_error,
     toon_noop,
@@ -837,8 +838,15 @@ class AntigravityRuntime(Runtime):
             return {'error': str(exc)}
 
     def permission_extract_project_steps(self, marshal_config: dict[str, Any]) -> list[dict[str, Any]]:
-        """Enumerate project:{skill} step references."""
-        return []
+        """Enumerate project:{skill} step references — target-neutral.
+
+        Delegates to :func:`runtime_base.extract_project_steps`, the same reader
+        every other runtime uses. This method previously returned a hardcoded
+        empty list, so an Antigravity run reported "zero project steps scanned"
+        without reading anything: an empty scan result and a scan that never
+        happened were the same value.
+        """
+        return extract_project_steps(marshal_config)
 
     # ------------------------------------------------------------------
     # Metrics operations

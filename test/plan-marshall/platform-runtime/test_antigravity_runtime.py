@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _method_code import method_code
 from antigravity_runtime import AntigravityRuntime
 from platform_runtime import _make_runtime
 from toon_parser import parse_toon
@@ -235,6 +236,66 @@ def test_permission_ensure_defaults(runtime: AntigravityRuntime, tmp_path: Path)
     result2 = runtime.permission_ensure_defaults(saved_data, str(project_file), dry_run=False)
     assert result2['defaults_added_count'] == 0
     assert result2['applied'] is False
+
+
+# =============================================================================
+# Project-Step Extraction
+# =============================================================================
+
+
+def test_extract_project_steps_evaluates_its_input(runtime: AntigravityRuntime):
+    """The reader returns what marshal.json declares — not a constant.
+
+    This method returned a hardcoded empty list, so an Antigravity run reported
+    "zero project steps scanned" on every input: an empty scan result and a scan
+    that never happened were the same value, and the missing-steps permission
+    check could report clean coverage without having read anything.
+    """
+    declared = runtime.permission_extract_project_steps(
+        {'plan': {'phase-6-finalize': {'steps': {'project:finalize-step-deploy-target': {'lane': 'minimal'}}}}}
+    )
+    assert declared == [
+        {
+            'skill': 'finalize-step-deploy-target',
+            'step': 'project:finalize-step-deploy-target',
+            'phase': 'phase-6-finalize',
+        }
+    ]
+
+
+def test_extract_project_steps_returns_empty_only_when_nothing_is_declared(runtime: AntigravityRuntime):
+    """An empty result means an empty roster, not an unread one.
+
+    Pinned as a distinct case so a regression to the constant cannot be
+    satisfied by the declaration case alone.
+    """
+    assert (
+        runtime.permission_extract_project_steps(
+            {'plan': {'phase-6-finalize': {'steps': {'default:archive-plan': {'lane': 'minimal'}}}}}
+        )
+        == []
+    )
+
+
+def test_extract_project_steps_reads_the_legacy_list_shape_too(runtime: AntigravityRuntime):
+    """Both marshal.json ``steps`` shapes read identically on every target."""
+    assert runtime.permission_extract_project_steps(
+        {'plan': {'phase-6-finalize': {'steps': ['project:finalize-step-deploy-target']}}}
+    ) == runtime.permission_extract_project_steps(
+        {'plan': {'phase-6-finalize': {'steps': {'project:finalize-step-deploy-target': {}}}}}
+    )
+
+
+def test_extract_project_steps_delegates_to_the_shared_reader() -> None:
+    """This module names neither the phase roster nor the ``steps`` shape.
+
+    Asserted over the method's CODE, docstring excluded — see ``_method_code``.
+    """
+    body = method_code(
+        'plan-marshall', 'platform-runtime', 'antigravity_runtime.py', 'permission_extract_project_steps'
+    )
+    assert 'extract_project_steps(' in body
+    assert "'phase-5-execute'" not in body
 
 
 def test_permission_ensure_defaults_dry_run(runtime: AntigravityRuntime, tmp_path: Path):

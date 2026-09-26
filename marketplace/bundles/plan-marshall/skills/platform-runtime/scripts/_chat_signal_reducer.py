@@ -43,6 +43,13 @@ via ``FileNotFoundError`` at the lower-level entry point
 (:func:`read_transcript_lines`) so the operation can map it to its
 ``transcript_not_found`` no-op.
 
+The rendered reduction is opaque foreign text on its way out, so
+:func:`reduce_chat_signal` marks it with ``BlockScalar`` — the reduced transcript
+is the one field here that is multi-line by construction, and a plain multi-line
+string cannot cross the TOON boundary without a payload line being read as a
+sibling key of the envelope. See :func:`reduce_chat_signal` and the
+``BlockScalar`` contract in ``toon_parser.py``.
+
 Transcript shape:
     Each JSONL line is one event. A conversational turn carries a ``message``
     object with a ``role`` and ``content``. Content is either a plain string
@@ -66,6 +73,7 @@ from _chat_gate_decisions import (
     extract_gate_decision_hits,
 )
 from _chat_provenance import is_operator_authored
+from toon_parser import BlockScalar
 
 # The established plan-marshall decision-marker set. An assistant turn is
 # signal-bearing when its text contains at least one of these substrings. The
@@ -365,6 +373,26 @@ def reduce_chat_signal(transcript_path: Path) -> dict[str, Any]:
     reported so the caller can own its read-budget decision; the reduction is
     never truncated here.
 
+    ``reduced_transcript`` is a :class:`~toon_parser.BlockScalar`, not a plain
+    ``str``. The rendered reduction is multi-line whenever more than one turn
+    survives, and a plain multi-line ``str`` cannot cross the TOON boundary at
+    all: the serializer quotes it without escaping anything, so every line after
+    the first lands at column zero, where ``parse_toon`` reads it as a SIBLING
+    TOP-LEVEL KEY. A transcript line that happens to read ``status: blocked``
+    therefore does not merely get lost — it overwrites the envelope's own
+    ``status``. Marking the field here, at the single producer-side choke point
+    every target runtime's record passes through, is what makes the payload inert
+    at the boundary. The two runtimes that decline the operation never reach
+    this function, so one edit covers every producer rather than one per target.
+    ``BlockScalar`` is a ``str``, so in-process consumers compare, slice and
+    write the field exactly as before.
+
+    ``reduced_bytes`` deliberately measures the plain reduced text, not the
+    marked value. It is a measurement OF the reduction, and the consumer's
+    ``reduced_transcript_delivered_bytes`` measures the same text after a
+    verbatim block-scalar round-trip; the two agree, which is what makes their
+    comparison meaningful. Marking the field does not change the bytes.
+
     Raises:
         FileNotFoundError: No file exists at *transcript_path*; the operation
             maps this to its ``transcript_not_found`` no-op.
@@ -375,7 +403,7 @@ def reduce_chat_signal(transcript_path: Path) -> dict[str, Any]:
     reduction = reduce_transcript(lines)
     reduced_text = render_reduced(reduction.turns)
     return {
-        'reduced_transcript': reduced_text,
+        'reduced_transcript': BlockScalar(reduced_text),
         'raw_turn_count': reduction.raw_turn_count,
         'kept_raw_count': reduction.kept_raw_count,
         'operator_turn_count': reduction.operator_turn_count,

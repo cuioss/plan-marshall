@@ -18,6 +18,7 @@ import pathlib
 import pytest
 
 # conftest.py sets up PYTHONPATH so imports resolve without manual sys.path work.
+from _method_code import method_code
 from opencode_runtime import OpenCodeRuntime, to_opencode_grant
 from runtime_base import PERMISSION_FIX_OPERATIONS
 from toon_parser import parse_toon
@@ -610,6 +611,38 @@ def test_extract_project_steps_rejects_empty_project_prefix(
         {'plan': {'phase-5-execute': {'steps': ['project:', 'project:real-skill']}}}
     )
     assert steps == [{'skill': 'real-skill', 'step': 'project:real-skill', 'phase': 'phase-5-execute'}]
+
+
+def test_extract_project_steps_reads_the_keyed_map_shape(
+    runtime: OpenCodeRuntime,
+) -> None:
+    """The keyed map is the shape the live marshal.json writes.
+
+    The inlined reader this replaced guarded on ``isinstance(entries, list)`` and
+    so returned an empty scan against a real marshal.json — a value
+    indistinguishable from "this marshal.json declares no project steps". The
+    shared reader accepts both shapes; the cross-runtime agreement cases live in
+    ``test_project_steps_extraction.py``.
+    """
+    steps = runtime.permission_extract_project_steps(
+        {
+            'plan': {
+                'phase-5-execute': {'steps': {'default:push': {}, 'project:real-skill': {'lane': 'minimal'}}},
+            }
+        }
+    )
+    assert steps == [{'skill': 'real-skill', 'step': 'project:real-skill', 'phase': 'phase-5-execute'}]
+
+
+def test_extract_project_steps_delegates_to_the_shared_reader() -> None:
+    """This module names neither the phase roster nor the ``steps`` shape.
+
+    Asserted over the method's CODE, docstring excluded — see ``_method_code``.
+    """
+    body = method_code('plan-marshall', 'platform-runtime', 'opencode_runtime.py', 'permission_extract_project_steps')
+    assert 'extract_project_steps(' in body
+    assert "'phase-5-execute'" not in body
+    assert 'isinstance(entries, list)' not in body
 
 
 # 10. permission_web_analyze & permission_web_apply
