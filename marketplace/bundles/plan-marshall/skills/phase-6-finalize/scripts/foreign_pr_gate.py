@@ -343,6 +343,7 @@ def check(
         return {
             'status': 'error',
             'plan_id': plan_id,
+            'plan_branch': plan_branch,
             'error': 'project_root_unresolvable',
             'message': f'Could not resolve the project root for foreign classification: {exc}',
         }
@@ -353,6 +354,7 @@ def check(
         return {
             'status': 'error',
             'plan_id': plan_id,
+            'plan_branch': plan_branch,
             'error': 'deliverables_unavailable',
             'message': str(message),
         }
@@ -370,6 +372,7 @@ def check(
         return {
             'status': 'clear',
             'plan_id': plan_id,
+            'plan_branch': plan_branch,
             'project_root': project_root,
             'foreign_deliverable_count': 0,
             **exclusions,
