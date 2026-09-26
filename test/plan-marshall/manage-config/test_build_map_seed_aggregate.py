@@ -38,7 +38,6 @@ def test_aggregate_build_map_collects_route_matching_out_of_scripts_production_p
     )
 
 
-
 def test_aggregate_build_map_stamps_each_entry_with_a_build_class(monkeypatch):
     """Each collected (glob, role) route is stamped with its domain's build_class.
 
@@ -61,7 +60,6 @@ def test_aggregate_build_map_stamps_each_entry_with_a_build_class(monkeypatch):
     assert by_role['test'] == 'module-tests'
 
 
-
 def test_aggregate_build_map_omits_domain_with_no_routes(monkeypatch):
     """A domain whose extension declares no routes is omitted entirely.
 
@@ -77,7 +75,6 @@ def test_aggregate_build_map_omits_domain_with_no_routes(monkeypatch):
 
     # the python domain contributed nothing and is omitted.
     assert 'python' not in aggregated
-
 
 
 def test_aggregate_includes_applicable_domain(monkeypatch):
@@ -99,7 +96,6 @@ def test_aggregate_includes_applicable_domain(monkeypatch):
     assert by_role['test'] == 'module-tests'
 
 
-
 def test_aggregate_excludes_non_applicable_domain_with_routes(monkeypatch):
     """An installed domain that applies to no discovered module is excluded.
 
@@ -118,7 +114,6 @@ def test_aggregate_excludes_non_applicable_domain_with_routes(monkeypatch):
     assert aggregated == {}
 
 
-
 def test_aggregate_empty_when_no_modules_discovered(monkeypatch):
     """An empty discovered-module set yields an empty aggregation.
 
@@ -133,7 +128,6 @@ def test_aggregate_empty_when_no_modules_discovered(monkeypatch):
 
     # no modules → empty aggregation regardless of declared routes.
     assert aggregated == {}
-
 
 
 def test_aggregate_tolerates_raising_applies_to_module(monkeypatch):

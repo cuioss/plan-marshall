@@ -81,7 +81,6 @@ def test_adr_propose_in_default_phase_6_steps():
     )
 
 
-
 def test_adr_propose_kept_in_rule_1_early_terminate_minimal_set(plan_context):
     """Rule 1 (early_terminate_analysis) keeps adr-propose alongside
     lessons-capture and archive-plan when it is in the candidate set."""
@@ -97,7 +96,6 @@ def test_adr_propose_kept_in_rule_1_early_terminate_minimal_set(plan_context):
     manifest = read_manifest('adr-rule-1')
     assert manifest is not None
     assert set(manifest['phase_6']['steps']) == {'lessons-capture', 'adr-propose', 'archive-plan'}
-
 
 
 def test_adr_propose_kept_in_rule_6_verification_no_files_minimal_set(plan_context):
@@ -117,7 +115,6 @@ def test_adr_propose_kept_in_rule_6_verification_no_files_minimal_set(plan_conte
     assert set(manifest['phase_6']['steps']) == {'lessons-capture', 'adr-propose', 'archive-plan'}
 
 
-
 def test_adr_propose_present_in_default_feature_phase_6(plan_context):
     """A default feature plan (Rule 7) carries adr-propose in its phase-6 set
     — the docs-only and surgical pre-filters pass it through unless explicitly
@@ -134,7 +131,6 @@ def test_adr_propose_present_in_default_feature_phase_6(plan_context):
     manifest = read_manifest('adr-default-feature')
     assert manifest is not None
     assert 'adr-propose' in manifest['phase_6']['steps']
-
 
 
 def test_adr_propose_kept_in_surgical_tech_debt_phase_6(plan_context):

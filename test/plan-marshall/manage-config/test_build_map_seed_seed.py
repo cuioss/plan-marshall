@@ -43,7 +43,6 @@ def test_seed_never_writes_retired_override_keys(plan_context, monkeypatch):
     assert 'activation_globs' not in build_map
 
 
-
 def test_seed_cli_persists_route_for_out_of_scripts_glob(plan_context, monkeypatch):
     """The seed CLI persists the out-of-scripts route under build.map.
 
@@ -75,7 +74,6 @@ def test_seed_cli_persists_route_for_out_of_scripts_glob(plan_context, monkeypat
     assert any(fnmatch.fnmatchcase('marketplace/targets/generate.py', g) for g in prod_globs), (
         f'seeded build_map missing a glob for the out-of-scripts file; globs={prod_globs}'
     )
-
 
 
 def test_seed_persists_live_glob_and_prunes_dead_glob(plan_context, monkeypatch):

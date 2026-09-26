@@ -40,7 +40,6 @@ def test_lanes_preview_resolves_all_three_postures(plan_context, monkeypatch):
     assert lanes['minimal']['cost_sum_tokens'] == 15000
 
 
-
 def test_lanes_preview_membership_agrees_with_apply_lane_resolution(plan_context, monkeypatch):
     """The preview MEMBERSHIP is the same projection compose applies.
 
@@ -56,7 +55,6 @@ def test_lanes_preview_membership_agrees_with_apply_lane_resolution(plan_context
     for posture in ('minimal', 'standard', 'full'):
         kept, _dropped, _warnings = _apply_lane_resolution(_LANE_STEPS, posture, None)
         assert set(result['lanes'][posture]['phase_6_steps']) == set(kept)
-
 
 
 def test_lanes_preview_applies_the_composer_ordering_authority(plan_context, monkeypatch):
@@ -81,7 +79,6 @@ def test_lanes_preview_applies_the_composer_ordering_authority(plan_context, mon
     # candidate list had archive-plan second.
     full_steps = result['lanes']['full']['phase_6_steps']
     assert full_steps.index('project:finalize-step-deploy-target') < full_steps.index('archive-plan')
-
 
 
 def test_lanes_preview_names_plan_input_dependent_steps(plan_context, monkeypatch):
@@ -110,7 +107,6 @@ def test_lanes_preview_names_plan_input_dependent_steps(plan_context, monkeypatc
     assert 'sonar-roundtrip' not in result['plan_input_dependent_steps']
 
 
-
 def test_lanes_preview_reports_empty_advisory_when_nothing_is_plan_input_dependent(plan_context, monkeypatch):
     """An empty ``plan_input_dependent_steps`` means preview and compose agree outright.
 
@@ -124,7 +120,6 @@ def test_lanes_preview_reports_empty_advisory_when_nothing_is_plan_input_depende
 
     assert result is not None
     assert result['plan_input_dependent_steps'] == []
-
 
 
 def test_lanes_preview_surfaces_each_postures_drops_beside_its_kept_set(plan_context, monkeypatch):

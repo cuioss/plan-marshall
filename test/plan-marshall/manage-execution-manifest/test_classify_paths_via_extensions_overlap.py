@@ -26,7 +26,6 @@ def test_overlap_resolution_higher_specificity_wins_across_roles():
     assert bucket == 'documentation_only'
 
 
-
 def test_overlap_resolution_alphabetical_tiebreak_on_equal_specificity():
     """When two extensions tie on specificity, the alphabetically earlier
     domain key wins."""
@@ -44,7 +43,6 @@ def test_overlap_resolution_alphabetical_tiebreak_on_equal_specificity():
     bucket, _ = _classify_paths_via_extensions([path], extensions=[a_ext, z_ext])
     # alpha wins alphabetically → production → production_only
     assert bucket == 'production_only'
-
 
 
 def test_overlap_resolution_is_extension_order_independent():

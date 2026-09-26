@@ -67,7 +67,6 @@ def test_simplify_inactive_gate(plan_context, change_type, affected_files_count,
         assert 'finalize-step-simplify' not in manifest['phase_6']['steps']
 
 
-
 def test_simplify_inactive_noop_when_step_absent_from_candidates(plan_context):
     """When finalize-step-simplify is not a candidate, the pre-filter is a no-op even on a failing gate."""
     candidates_without_simplify = [s for s in DEFAULT_PHASE_6_STEPS if s != 'finalize-step-simplify']
@@ -86,7 +85,6 @@ def test_simplify_inactive_noop_when_step_absent_from_candidates(plan_context):
     manifest = read_manifest('matrix-simplify-absent')
     assert manifest is not None
     assert 'finalize-step-simplify' not in manifest['phase_6']['steps']
-
 
 
 def test_simplify_inactive_emits_decision_log_only_on_drop(plan_context):
@@ -119,7 +117,6 @@ def test_simplify_inactive_emits_decision_log_only_on_drop(plan_context):
         '(plan-marshall:manage-execution-manifest:compose) finalize-step-simplify omitted — '
         'change_type=analysis affected_files_count=3'
     )
-
 
 
 def test_simplify_inactive_no_decision_log_on_kept_branch(plan_context):

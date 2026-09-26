@@ -14,7 +14,6 @@ def test_empty_phase_returns_invalid_argument(plan_context):
     assert result['error'] == 'invalid_argument'
 
 
-
 def test_empty_step_returns_invalid_argument(plan_context):
     """Empty step is rejected with invalid_argument before reading metadata."""
     plan_id = 'assert-empty-step'

@@ -45,7 +45,6 @@ def test_record_executed_appends_row_with_token_attribution(plan_context):
     assert 'timestamp' in result
 
 
-
 def test_record_executed_persists_row_to_manifest(plan_context):
     """The appended row is persisted into the manifest's execution_log section."""
     _compose('rec-persist')
@@ -74,7 +73,6 @@ def test_record_executed_persists_row_to_manifest(plan_context):
     assert 'timestamp' in entry
 
 
-
 def test_record_skipped_appends_row(plan_context):
     """A skipped step records a row with the skipped outcome."""
     _compose('rec-skip')
@@ -88,7 +86,6 @@ def test_record_skipped_appends_row(plan_context):
     assert manifest[EXECUTION_LOG_KEY][0]['outcome'] == 'skipped'
 
 
-
 def test_record_error_outcome_appends_row(plan_context):
     """An error step records a row with the error outcome."""
     _compose('rec-error')
@@ -98,7 +95,6 @@ def test_record_error_outcome_appends_row(plan_context):
     assert result is not None and result['status'] == 'success'
     assert result['outcome'] == 'error'
     assert result['phase'] == '6-finalize'
-
 
 
 def test_record_negative_token_values_clamped_to_zero(plan_context):
@@ -119,7 +115,6 @@ def test_record_negative_token_values_clamped_to_zero(plan_context):
     assert result['total_tokens'] == 0
     assert result['tool_uses'] == 0
     assert result['duration_ms'] == 0
-
 
 
 # =============================================================================
@@ -146,10 +141,6 @@ def test_record_appends_in_order_and_count_increments(plan_context):
     assert [e['outcome'] for e in log] == ['executed', 'executed', 'skipped']
 
 
-
-
-
-
 # =============================================================================
 # Canonical step-key: --step-id is canonicalized before the row is appended
 # =============================================================================
@@ -173,6 +164,7 @@ def test_record_step_id_containing_any_line_separator_rejected(plan_context):
 
     assert EXECUTION_LOG_KEY not in (read_manifest('rec-step-id-sep') or {})
 
+
 def test_record_same_step_twice_appends_two_rows(plan_context):
     """The log is an ordered append log, not a keyed map — repeats append."""
     _compose('rec-dup')
@@ -185,7 +177,6 @@ def test_record_same_step_twice_appends_two_rows(plan_context):
     assert len(log) == 2
     assert log[0]['outcome'] == 'error'
     assert log[1]['outcome'] == 'executed'
-
 
 
 def test_record_default_prefixed_step_id_stored_canonicalized(plan_context):
@@ -212,7 +203,6 @@ def test_record_default_prefixed_step_id_stored_canonicalized(plan_context):
     assert entry['step_id'] == 'push'
 
 
-
 def test_record_promoted_alias_step_id_stored_bare(plan_context):
     """A promoted ``plan-marshall:automatic-review`` --step-id stores as bare ``automatic-review``."""
     _compose('rec-canon-promoted')
@@ -230,7 +220,6 @@ def test_record_promoted_alias_step_id_stored_bare(plan_context):
     assert result['step_id'] == 'automatic-review'
     entry = read_manifest('rec-canon-promoted')[EXECUTION_LOG_KEY][0]
     assert entry['step_id'] == 'automatic-review'
-
 
 
 def test_record_project_prefixed_step_id_preserved(plan_context):
@@ -252,7 +241,6 @@ def test_record_project_prefixed_step_id_preserved(plan_context):
     assert entry['step_id'] == 'project:finalize-step-plugin-doctor'
 
 
-
 # =============================================================================
 # Error / validation paths
 # =============================================================================
@@ -268,7 +256,6 @@ def test_record_missing_manifest_returns_none_with_toon_error(plan_context, caps
     assert 'file_not_found' in captured.out
 
 
-
 def test_record_invalid_phase_returns_error(plan_context):
     """An unknown phase is rejected with an invalid_phase error dict."""
     _compose('rec-bad-phase')
@@ -280,7 +267,6 @@ def test_record_invalid_phase_returns_error(plan_context):
     assert result['error'] == 'invalid_phase'
     # No row written.
     assert EXECUTION_LOG_KEY not in (read_manifest('rec-bad-phase') or {})
-
 
 
 def test_record_invalid_outcome_returns_error(plan_context):
@@ -295,7 +281,6 @@ def test_record_invalid_outcome_returns_error(plan_context):
     assert EXECUTION_LOG_KEY not in (read_manifest('rec-bad-outcome') or {})
 
 
-
 def test_record_step_id_containing_comma_rejected_before_any_write(plan_context):
     """The join key must reconcile with the positional-CSV boundary row: a comma is refused."""
     _compose('rec-step-id-comma')
@@ -306,10 +291,6 @@ def test_record_step_id_containing_comma_rejected_before_any_write(plan_context)
     assert result['status'] == 'error'
     assert result['error'] == 'invalid_step_id'
     assert EXECUTION_LOG_KEY not in (read_manifest('rec-step-id-comma') or {})
-
-
-
-
 
 
 def test_record_phase_validated_before_manifest_read(plan_context):

@@ -38,7 +38,6 @@ def test_an_empty_mailbox_and_an_absent_one_are_different_zeros(plan_context):
     assert absent['state'] in _inbox.MAILBOX_COULD_NOT_LOOK_STATES
 
 
-
 def test_an_unreadable_mailbox_degrades_the_block_and_never_the_transition(plan_context):
     """A mailbox that cannot be listed still lets the phase advance.
 
@@ -59,7 +58,6 @@ def test_an_unreadable_mailbox_degrades_the_block_and_never_the_transition(plan_
     assert result['mailbox']['probe'] == _lifecycle.MAILBOX_PROBE_READ
     assert result['mailbox']['state'] == _inbox.MAILBOX_STATE_UNREADABLE
     assert result['mailbox']['count'] == 0
-
 
 
 def test_an_unreadable_request_md_reports_unresolved_and_publishes_no_counts(plan_context):

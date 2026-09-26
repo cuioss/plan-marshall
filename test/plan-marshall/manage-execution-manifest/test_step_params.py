@@ -36,7 +36,6 @@ def test_step_params_get_returns_complete_param_object(plan_context):
     }
 
 
-
 def test_step_params_get_returns_empty_for_ownerless_step(plan_context):
     """step-params get returns the empty param object for a step that owns no params."""
     _seed_marshal_with_branch_cleanup_params(plan_context.fixture_dir)
@@ -46,7 +45,6 @@ def test_step_params_get_returns_empty_for_ownerless_step(plan_context):
 
     assert result is not None and result['status'] == 'success'
     assert result['params'] == {}
-
 
 
 def test_step_params_get_resolves_default_prefixed_step_id(plan_context):
@@ -76,7 +74,6 @@ def test_step_params_get_resolves_default_prefixed_step_id(plan_context):
     }
 
 
-
 def test_step_params_set_resolves_default_prefixed_step_id(plan_context):
     """step-params set is prefix-agnostic: a write via the ``default:``-prefixed
     id targets the same bare-keyed snapshot entry a bare get reads back."""
@@ -94,7 +91,6 @@ def test_step_params_set_resolves_default_prefixed_step_id(plan_context):
     assert get_result['params']['pr_merge_strategy'] == 'rebase'
 
 
-
 def test_step_params_get_absent_step_id_errors(plan_context):
     """step-params get errors when the step id has no snapshotted params."""
     _seed_marshal_with_branch_cleanup_params(plan_context.fixture_dir)
@@ -104,7 +100,6 @@ def test_step_params_get_absent_step_id_errors(plan_context):
 
     assert result is not None and result['status'] == 'error'
     assert result['error'] == 'step_not_found'
-
 
 
 def test_step_params_get_invalid_phase_errors(plan_context):
@@ -118,7 +113,6 @@ def test_step_params_get_invalid_phase_errors(plan_context):
     assert result['error'] == 'invalid_phase'
 
 
-
 def test_step_params_get_missing_manifest_returns_none(plan_context, capsys):
     """step-params get on a plan with no composed manifest emits file_not_found."""
     result = cmd_step_params_get(_get_ns('sp-get-no-manifest', '6-finalize', 'branch-cleanup'))
@@ -126,7 +120,6 @@ def test_step_params_get_missing_manifest_returns_none(plan_context, capsys):
     assert result is None
     captured = capsys.readouterr()
     assert 'file_not_found' in captured.out
-
 
 
 # =============================================================================
@@ -150,7 +143,6 @@ def test_step_params_set_writes_override_and_round_trips(plan_context):
     assert get_result['params']['pr_merge_strategy'] == 'rebase'
 
 
-
 def test_step_params_set_override_wins_over_marshal_default(plan_context):
     """A step-params set override wins over the marshal.json compose-time default."""
     _seed_marshal_with_branch_cleanup_params(plan_context.fixture_dir)
@@ -170,7 +162,6 @@ def test_step_params_set_override_wins_over_marshal_default(plan_context):
     assert after['params']['pr_merge_strategy'] == 'merge'
 
 
-
 def test_step_params_set_preserves_other_params(plan_context):
     """step-params set writing one param leaves the step's other params untouched."""
     _seed_marshal_with_branch_cleanup_params(plan_context.fixture_dir)
@@ -187,7 +178,6 @@ def test_step_params_set_preserves_other_params(plan_context):
     assert result['params']['auto_rebase_threshold'] == 'no_overlap_only'
 
 
-
 def test_step_params_set_coerces_int_value(plan_context):
     """step-params set coerces an integer-literal value to int."""
     _seed_marshal_with_branch_cleanup_params(plan_context.fixture_dir)
@@ -197,7 +187,6 @@ def test_step_params_set_coerces_int_value(plan_context):
 
     assert result is not None and result['status'] == 'success'
     assert result['params']['ce_wait_timeout_seconds'] == 720
-
 
 
 def test_step_params_set_absent_step_id_errors(plan_context):
@@ -213,7 +202,6 @@ def test_step_params_set_absent_step_id_errors(plan_context):
     assert result['error'] == 'step_not_found'
 
 
-
 def test_step_params_set_invalid_phase_errors(plan_context):
     """step-params set errors on a phase outside the record vocabulary."""
     _seed_marshal_with_branch_cleanup_params(plan_context.fixture_dir)
@@ -223,7 +211,6 @@ def test_step_params_set_invalid_phase_errors(plan_context):
 
     assert result is not None and result['status'] == 'error'
     assert result['error'] == 'invalid_phase'
-
 
 
 def test_step_params_set_missing_manifest_returns_none(plan_context, capsys):

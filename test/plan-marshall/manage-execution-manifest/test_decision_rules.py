@@ -125,7 +125,6 @@ class TestPreSubmissionSelfReviewSurvivesCompose:
         assert result['commit_push_dropped'] == []
 
 
-
 # =============================================================================
 # Test: pre_push_quality_gate_inactive pre-filter (build-decision consumer site)
 # =============================================================================

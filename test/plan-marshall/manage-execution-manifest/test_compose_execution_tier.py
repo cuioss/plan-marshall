@@ -39,7 +39,6 @@ class TestStampTotalityAndOrdering:
         assert _stamp('X', []) == []
 
 
-
 class TestStampTotalityInvariantLock:
     """Regression lock: the stamp is TOTAL over ``verification_steps``.
 
@@ -111,7 +110,6 @@ class TestStampTotalityInvariantLock:
         # No step is left without a tier across either read.
         assert all(r['tier'] for r in first)
         assert all(r['tier'] for r in second)
-
 
 
 class TestStampReflectsALiveResolvedCeilingVerdict:

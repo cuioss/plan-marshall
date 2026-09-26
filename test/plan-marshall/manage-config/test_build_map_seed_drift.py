@@ -32,7 +32,6 @@ def test_drift_in_sync_when_persisted_equals_derived(plan_context, monkeypatch):
     assert result['drift'] == {}
 
 
-
 def test_drift_surfaces_added_globs(plan_context, monkeypatch):
     """drift surfaces added_globs for a glob in the derivation but absent from persisted.
 
@@ -57,7 +56,6 @@ def test_drift_surfaces_added_globs(plan_context, monkeypatch):
     assert result['drift']['python']['removed_globs'] == []
 
 
-
 def test_drift_surfaces_removed_globs(plan_context, monkeypatch):
     """drift surfaces removed_globs for a glob in persisted but absent from derivation.
 
@@ -80,7 +78,6 @@ def test_drift_surfaces_removed_globs(plan_context, monkeypatch):
     assert result['in_sync'] is False
     assert result['drift']['python']['removed_globs'] == ['test/**/*.py']
     assert result['drift']['python']['added_globs'] == []
-
 
 
 def test_drift_is_read_only_marshal_json_byte_identical(plan_context, monkeypatch):

@@ -43,7 +43,6 @@ def test_normalize_keys_rewrites_build_before_plan_to_canonical_order(plan_conte
     )
 
 
-
 def test_normalize_keys_is_idempotent(plan_context):
     """normalize-keys is idempotent — a second run rewrites the same bytes.
 

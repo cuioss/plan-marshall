@@ -43,7 +43,6 @@ def test_recipe_path_retains_review_gates_drops_only_legacy_ci_wait(plan_context
     assert 'push' in manifest['phase_6']['steps']
 
 
-
 def test_recipe_wins_over_the_scope_row_when_both_match(plan_context):
     """The recipe row evaluates first — recipe_key short-circuits the scope row."""
     result = cmd_compose(
@@ -58,7 +57,6 @@ def test_recipe_wins_over_the_scope_row_when_both_match(plan_context):
         )
     )
     assert result is not None and result['rule_fired'] == 'recipe'
-
 
 
 def test_recipe_with_partial_phase_5_candidates_filters_to_known_steps(plan_context):

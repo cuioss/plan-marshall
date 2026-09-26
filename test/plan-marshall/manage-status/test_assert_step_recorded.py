@@ -19,7 +19,6 @@ def test_phase_absent_returns_not_recorded(plan_context):
     assert result['outcome'] is None
 
 
-
 def test_phase_absent_with_require_terminal_returns_error(plan_context):
     """--require-terminal on a phase with no steps escalates to step_record_missing."""
     plan_id = 'assert-absent-phase-require'

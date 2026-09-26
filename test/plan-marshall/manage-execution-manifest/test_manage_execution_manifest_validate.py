@@ -30,7 +30,6 @@ def test_validate_happy_path(plan_context):
     assert result['phase_6_unknown_steps_count'] == 0
 
 
-
 def test_validate_succeeds_on_manifest_with_step_params_block(plan_context):
     """validate succeeds against a composed manifest carrying the step_params snapshot.
 
@@ -50,13 +49,11 @@ def test_validate_succeeds_on_manifest_with_step_params_block(plan_context):
     assert result['valid'] is True
 
 
-
 def test_validate_missing_manifest_returns_none(plan_context, capsys):
     result = cmd_validate(_validate_ns(plan_id='val-missing'))
     assert result is None
     captured = capsys.readouterr()
     assert 'file_not_found' in captured.out
-
 
 
 def test_validate_unknown_phase_5_step_flagged(plan_context):
@@ -79,7 +76,6 @@ def test_validate_unknown_phase_5_step_flagged(plan_context):
     assert 'module-tests' in result['phase_5_unknown_steps']
 
 
-
 def test_validate_without_candidate_sets_skips_step_id_check(plan_context):
     """validate succeeds (status=success) when candidate sets aren't supplied."""
     cmd_compose(_compose_ns(plan_id='val-no-candidates'))
@@ -92,7 +88,6 @@ def test_validate_without_candidate_sets_skips_step_id_check(plan_context):
     )
     assert result is not None and result['status'] == 'success'
     assert result['valid'] is True
-
 
 
 def test_validate_unknown_phase_6_step_flagged(plan_context):
@@ -120,7 +115,6 @@ def test_validate_unknown_phase_6_step_flagged(plan_context):
     assert 'create-pr' in result['phase_6_unknown_steps']
 
 
-
 def test_validate_detects_corrupt_manifest_version(plan_context):
     """validate flags a manifest_version mismatch from a tampered file."""
     cmd_compose(_compose_ns(plan_id='val-bad-version'))
@@ -137,7 +131,6 @@ def test_validate_detects_corrupt_manifest_version(plan_context):
     assert 'manifest_version mismatch' in result['message']
 
 
-
 def test_validate_detects_plan_id_mismatch(plan_context):
     """validate flags a plan_id mismatch from a tampered file."""
     cmd_compose(_compose_ns(plan_id='val-bad-pid'))
@@ -149,7 +142,6 @@ def test_validate_detects_plan_id_mismatch(plan_context):
     assert result is not None and result['status'] == 'error'
     assert result['error'] == 'invalid_manifest'
     assert 'plan_id mismatch' in result['message']
-
 
 
 def test_validate_succeeds_against_keyed_map_sourced_manifest(plan_context):
@@ -171,7 +163,6 @@ def test_validate_succeeds_against_keyed_map_sourced_manifest(plan_context):
     )
     assert result is not None and result['status'] == 'success'
     assert result['valid'] is True
-
 
 
 def test_validate_step_owner_is_a_membership_predicate_over_the_schema():

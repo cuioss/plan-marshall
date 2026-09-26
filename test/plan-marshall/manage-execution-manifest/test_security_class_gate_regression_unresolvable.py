@@ -37,7 +37,6 @@ def test_unresolvable_footprint_keeps_the_step(plan_context):
     assert [msg for pid, msg in captured if 'security_class_inactive' in msg] == []
 
 
-
 def test_unresolvable_and_resolvable_empty_footprints_diverge(plan_context):
     """The paired opposite: identical inputs but for the footprint STATE.
 

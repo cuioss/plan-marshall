@@ -164,7 +164,6 @@ class TestCheckSeedMode:
         assert result['error'] == 'invalid_arguments'
 
 
-
 class TestCheckEmittedStepsAscendingOrder:
     """The post-compose gate over the FINAL composed ``phase_6.steps``."""
 

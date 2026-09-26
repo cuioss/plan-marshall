@@ -47,7 +47,6 @@ class TestCanonicalVerifyInactiveDrop:
         assert kept == ['default:verify:quality-gate', 'default:verify:module-tests']
 
 
-
 class TestCanonicalVerifyInactiveKeep:
     """Steps survive the pre-filter when the gate does not fire."""
 

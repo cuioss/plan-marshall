@@ -59,7 +59,6 @@ def test_archive_gate_fires_when_finalize_is_open_but_not_current(plan_context, 
     assert 'archived_to' not in result, result
 
 
-
 def test_archive_gate_stays_silent_when_the_open_phase_is_not_finalize(plan_context, monkeypatch):
     """Matched control: an open phase that is NOT 6-finalize must not arm the gate.
 

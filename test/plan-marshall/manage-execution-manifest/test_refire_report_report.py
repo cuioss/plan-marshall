@@ -31,7 +31,6 @@ def test_report_over_recorded_rows(plan_context):
     assert result['steps'][0]['refires'] == 2
 
 
-
 def test_report_names_its_token_population(plan_context):
     """A bare number that merely looks comparable is worse than none."""
     cmd_compose(_compose_ns('refire-pop'))
@@ -42,7 +41,6 @@ def test_report_names_its_token_population(plan_context):
     assert result is not None
     assert 'FLOOR' in result['token_population']
     assert 'inline' in result['token_population']
-
 
 
 def test_report_on_a_manifest_with_no_execution_log(plan_context):
@@ -58,7 +56,6 @@ def test_report_on_a_manifest_with_no_execution_log(plan_context):
     assert result['totals']['refires'] == 0
 
 
-
 def test_report_rejects_an_unknown_phase(plan_context):
     cmd_compose(_compose_ns('refire-badphase'))
 
@@ -67,7 +64,6 @@ def test_report_rejects_an_unknown_phase(plan_context):
     assert result is not None
     assert result['status'] == 'error'
     assert result['error'] == 'invalid_phase'
-
 
 
 def test_report_without_a_phase_covers_every_phase(plan_context):

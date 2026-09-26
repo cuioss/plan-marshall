@@ -17,7 +17,6 @@ def test_review_bot_descriptors_are_recognized_by_basename():
         assert _is_infrastructure_config_path(path), path
 
 
-
 def test_review_bot_recognition_is_an_enumeration_not_a_toml_suffix_rule():
     """The negative control for the widening.
 

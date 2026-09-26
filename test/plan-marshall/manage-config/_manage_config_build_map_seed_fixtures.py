@@ -2,14 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 
 
-
-
-
-
-
-
-
-
 """Tests for the marshal.json build_map seed under the top-level build block.
 
 Covers the relocated, required build_map cluster and the three behaviours the
@@ -188,4 +180,3 @@ from _manage_config_build_map_seed_fixtures_surface_raisingapplicabilityextensio
 from _manage_config_build_map_seed_fixtures_surface_liveanddeadrouteextension import _MultiModuleSubdirConfigExtension
 
 from _manage_config_build_map_seed_fixtures_surface_multimodulesubdirconfigextension import _seed_with
-

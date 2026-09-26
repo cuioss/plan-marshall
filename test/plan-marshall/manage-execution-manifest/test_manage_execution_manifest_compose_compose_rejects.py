@@ -22,8 +22,6 @@ from _manage_execution_manifest_manage_execution_manifest_compose_fixtures impor
     ],
 )
 
-
-
 # =============================================================================
 # Compose-time step-resolution gate
 #
@@ -43,7 +41,6 @@ def test_compose_rejects_invalid_enum_values(plan_context, field, value, error_c
     result = cmd_compose(_compose_ns(plan_id='val-enum', **kwargs))
     assert result is not None and result['status'] == 'error'
     assert result['error'] == error_code
-
 
 
 def test_compose_rejects_unresolvable_bundle_skill_step(plan_context):
@@ -80,7 +77,6 @@ def test_compose_rejects_unresolvable_bundle_skill_step(plan_context):
     assert read_manifest('resolve-gate-ghost-bundle') is None
 
 
-
 def test_compose_rejects_unresolvable_builtin_step(plan_context):
     """A never-existed bare built-in step fails compose loud (no standards/workflow doc)."""
     candidates = ('push', 'create-pr', 'ghost-builtin-step', 'archive-plan')
@@ -100,7 +96,6 @@ def test_compose_rejects_unresolvable_builtin_step(plan_context):
     assert 'ghost-builtin-step' in result['message']
 
 
-
 def test_compose_rejects_unresolvable_project_step(plan_context):
     """A never-existed project: finalize step fails compose loud (no project-local SKILL.md)."""
     candidates = ('push', 'create-pr', 'project:finalize-step-ghost', 'archive-plan')
@@ -118,7 +113,6 @@ def test_compose_rejects_unresolvable_project_step(plan_context):
     assert result['phase'] == 'phase_6'
     assert result['step_id'] == 'project:finalize-step-ghost'
     assert 'project:finalize-step-ghost' in result['message']
-
 
 
 def test_compose_rejects_unresolvable_phase_5_canonical(plan_context):

@@ -57,7 +57,6 @@ def test_infra_config_family_is_location_or_basename_anchored_never_bare_suffix(
         assert not _is_infrastructure_config_path(path), path
 
 
-
 def test_each_infra_config_family_resolves_to_a_non_unknown_bucket():
     """Each anchoring group is recognized generically — no extension needed."""
     for path in (
@@ -74,7 +73,6 @@ def test_each_infra_config_family_resolves_to_a_non_unknown_bucket():
         assert unclaimed == [], path
 
 
-
 def test_infra_only_footprint_resolves_documentation_only():
     """An infra-only footprint collapses to documentation_only.
 
@@ -87,7 +85,6 @@ def test_infra_only_footprint_resolves_documentation_only():
     )
     assert bucket == 'documentation_only'
     assert unclaimed == []
-
 
 
 def test_infra_config_neither_inflates_nor_dilutes_the_code_bucket():
@@ -104,7 +101,6 @@ def test_infra_config_neither_inflates_nor_dilutes_the_code_bucket():
     bucket, unclaimed = _classify_paths_via_extensions(['scripts/foo.py', _CI_WORKFLOW_YAML], extensions=[py_ext])
     assert bucket == 'production_only'
     assert unclaimed == []
-
 
 
 def test_infra_fallback_narrows_unknown_without_eliminating_it():

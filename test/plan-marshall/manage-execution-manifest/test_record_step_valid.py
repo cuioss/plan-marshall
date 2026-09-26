@@ -15,7 +15,6 @@ def test_valid_record_enums_are_the_documented_sets(plan_context):
     assert VALID_RECORD_OUTCOMES == ('executed', 'skipped', 'loop_back', 'failed', 'error')
 
 
-
 # =============================================================================
 # Step-ownership routing (orchestrator-owned vs leaf-dispatchable)
 # =============================================================================

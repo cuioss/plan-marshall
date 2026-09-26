@@ -56,7 +56,6 @@ def test_compose_reads_keyed_map_marshal_preserves_prefixes(plan_context):
     assert keyed_manifest['phase_5']['verification_steps'] == phase_5
 
 
-
 def test_compose_reads_keyed_map_phase_5_verification_steps(plan_context):
     """The keyed-map read-through applies to phase-5 verification_steps as well.
 

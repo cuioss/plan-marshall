@@ -44,7 +44,6 @@ class TestNoRemovedSelfReviewSymbols:
         assert 'pre_submission_self_review_omitted' not in result
 
 
-
 # =============================================================================
 # Test: no bot-enforcement guard — automatic-review governed by candidacy/lane
 # =============================================================================

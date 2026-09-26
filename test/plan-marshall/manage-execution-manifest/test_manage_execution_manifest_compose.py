@@ -16,9 +16,6 @@ from _manage_execution_manifest_manage_execution_manifest_compose_fixtures impor
 # =============================================================================
 
 
-
-
-
 # =============================================================================
 # Default phase-6 ordering — finalize-step-simplify precedes the push barrier
 #
@@ -43,7 +40,6 @@ def test_default_code_shaped_feature_runs_full_phases(plan_context):
     assert result['phase_5']['early_terminate'] is False
     assert result['phase_5']['verification_steps_count'] == 2  # quality-gate + module-tests
     assert result['phase_6']['steps_count'] == len(DEFAULT_PHASE_6_STEPS)
-
 
 
 class TestDefaultPhase6Ordering:

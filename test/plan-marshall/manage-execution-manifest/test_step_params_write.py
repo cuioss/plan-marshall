@@ -28,7 +28,6 @@ def test_write_manifest_serializes_no_empty_dict_for_ownerless_steps(plan_contex
     assert parsed['phase_6']['step_params']['branch-cleanup'] == {'pr_merge_strategy': 'squash'}
 
 
-
 def test_write_then_read_manifest_round_trips_ownerless_step_to_empty_dict(plan_context):
     """An ownerless step written via write_manifest reads back as {} via read_manifest.
 

@@ -52,7 +52,6 @@ def test_commit_and_push_pre_filter(plan_context, commit_and_push, expect_commit
         assert 'push' not in manifest['phase_6']['steps']
 
 
-
 def test_commit_and_push_false_emits_one_decision_log_call_per_dropped_step(plan_context):
     """The emitter fires ONCE PER dropped step, not once per fired pre-filter.
 
@@ -83,7 +82,6 @@ def test_commit_and_push_false_emits_one_decision_log_call_per_dropped_step(plan
     assert {plan_id for plan_id, _step, _reason in captured} == {'matrix-cap-log'}
     assert {step for _pid, step, _reason in captured} == _COMMIT_PUSH_DROP_SET
     assert all(reason for _pid, _step, reason in captured)
-
 
 
 def test_commit_and_push_false_decision_log_message_matches_contract(plan_context):
@@ -121,7 +119,6 @@ def test_commit_and_push_false_decision_log_message_matches_contract(plan_contex
         assert msg.split(' from phase_6.steps: ', 1)[1]
 
 
-
 def test_commit_and_push_default_does_not_emit_omission_log(plan_context):
     """When commit_and_push is absent (defaults to true), no omission log fires."""
     captured: list[tuple[str, str, str]] = []
@@ -146,7 +143,6 @@ def test_commit_and_push_default_does_not_emit_omission_log(plan_context):
     assert captured == []
 
 
-
 def test_commit_and_push_invalid_value_rejected(plan_context):
     """Invalid commit_and_push values produce a structured error response."""
     result = cmd_compose(
@@ -160,7 +156,6 @@ def test_commit_and_push_invalid_value_rejected(plan_context):
     )
     assert result is not None and result['status'] == 'error'
     assert result['error'] == 'invalid_commit_and_push'
-
 
 
 def test_commit_and_push_false_with_recipe_still_drops_commit_push(plan_context):
@@ -179,7 +174,6 @@ def test_commit_and_push_false_with_recipe_still_drops_commit_push(plan_context)
     manifest = read_manifest('matrix-cap-recipe')
     assert manifest is not None
     assert 'push' not in manifest['phase_6']['steps']
-
 
 
 def test_commit_and_push_false_with_prefixed_input_drops_commit_push_and_pre_push(plan_context):

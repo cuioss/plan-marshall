@@ -78,7 +78,6 @@ def test_archive_consumes_an_open_marker_and_records_it_never_completed(
     assert outcome['consumed_at'], 'The outcome must say when the marker was consumed.'
 
 
-
 def test_archive_without_an_open_marker_records_no_outcome(plan_context, _stubbed_invariants, _stub_metadata):
     """Matched control: no marker at archive time ⇒ no outcome key at all.
 

@@ -54,7 +54,6 @@ def test_delete_plan_destination_claim_does_not_rely_on_an_exists_probe(plan_con
     assert (plan_dir / 'lesson-2025-08-08-008.md').exists()
 
 
-
 def test_delete_plan_writes_through_the_claim_instead_of_reopening_by_path(plan_context, monkeypatch):
     """The claimed destination is written THROUGH its fd, never reopened by path.
 

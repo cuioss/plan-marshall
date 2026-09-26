@@ -23,7 +23,6 @@ def test_unknown_bucket_for_partially_unclaimed():
     assert unclaimed == ['mystery.xyz']
 
 
-
 # =============================================================================
 # Unclaimed-path warning emission
 # =============================================================================

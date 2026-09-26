@@ -80,7 +80,6 @@ class TestScopeGatedFinalizeDeclaredLaneImmunity:
         assert candidates == [_RETROSPECTIVE, 'push']
 
 
-
 class TestScopeGatedFinalizeImmunityThroughCompose:
     """End-to-end: the immunity survives a real ``single_module`` compose."""
 

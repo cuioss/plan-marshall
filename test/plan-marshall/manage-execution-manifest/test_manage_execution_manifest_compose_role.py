@@ -88,7 +88,6 @@ class TestRoleLoader:
         assert second == 'mutated-sentinel'
 
 
-
 class TestRoleBasedIntersection:
     """Rows 2, 4, and 5 intersect by ``role:`` rather than by literal step ID."""
 

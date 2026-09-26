@@ -32,13 +32,11 @@ def test_read_recipe_source_unit(plan_context):
     assert read_recipe_source('rrs-blank') is None
 
 
-
 def test_read_recipe_source_malformed_status_degrades_to_none(plan_context):
     """A corrupt-but-present status.json degrades to None instead of crashing."""
     plan_dir = plan_context.plan_dir_for('rrs-malformed')
     (plan_dir / 'status.json').write_text('{ this is not: valid json', encoding='utf-8')
     assert _mem._read_recipe_source('rrs-malformed') is None
-
 
 
 # =============================================================================
@@ -58,12 +56,10 @@ def test_read_ci_provider_resolves_github_from_providers_no_ci_block(plan_contex
     assert _mem._read_ci_provider() == 'github'
 
 
-
 def test_read_ci_provider_resolves_gitlab_from_providers_no_ci_block(plan_context):
     """``providers[]`` gitlab entry resolves to 'gitlab' with NO ci block present."""
     _write_marshal_with_ci(plan_context.fixture_dir, provider='gitlab')
     assert _mem._read_ci_provider() == 'gitlab'
-
 
 
 def test_read_ci_provider_ignores_legacy_ci_provider_block(plan_context):
@@ -79,7 +75,6 @@ def test_read_ci_provider_ignores_legacy_ci_provider_block(plan_context):
     assert _mem._read_ci_provider() is None
 
 
-
 def test_read_ci_provider_returns_none_when_no_providers(plan_context):
     """No ``providers[]`` and no ci block -> None (the no-CI baseline)."""
     marshal_path = plan_context.fixture_dir / 'marshal.json'
@@ -87,11 +82,9 @@ def test_read_ci_provider_returns_none_when_no_providers(plan_context):
     assert _mem._read_ci_provider() is None
 
 
-
 def test_read_execution_profile_defaults_full_when_absent(plan_context):
     """_read_execution_profile returns full when status.json is absent."""
     assert _read_execution_profile('no-such-plan') == 'full'
-
 
 
 def test_read_execution_profile_reads_persisted_posture(plan_context):

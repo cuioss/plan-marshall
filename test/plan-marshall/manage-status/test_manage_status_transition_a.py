@@ -33,7 +33,6 @@ def test_a_plan_with_no_epic_reports_not_orchestrated_and_publishes_no_counts(pl
     assert 'state' not in mailbox
 
 
-
 def test_a_probe_that_raises_is_contained_and_named(plan_context, monkeypatch):
     """An unanticipated probe failure degrades the block, never the transition.
 
@@ -59,7 +58,6 @@ def test_a_probe_that_raises_is_contained_and_named(plan_context, monkeypatch):
     assert mailbox['probe'] == _lifecycle.MAILBOX_PROBE_UNRESOLVED
     assert 'RuntimeError' in mailbox['reason']
     assert 'the reader blew up' in mailbox['reason']
-
 
 
 def test_a_refused_transition_carries_no_mailbox_block(plan_context):

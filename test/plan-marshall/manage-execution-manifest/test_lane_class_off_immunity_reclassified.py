@@ -54,7 +54,6 @@ def test_reclassified_lessons_capture_is_dropped_by_an_explicit_off(plan_context
     assert _RECLASSIFIED_STEP not in _warnings_by_step(result)
 
 
-
 def test_reclassified_lessons_capture_falls_outside_the_minimal_posture_with_no_override(plan_context):
     """Route 2 — the accepted side effect: a ``minimal`` plan stops running it.
 

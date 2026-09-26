@@ -3,8 +3,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 
 
-
-
 # =============================================================================
 # Regression: project: steps resolve via the cwd-relative working-tree root, not
 # the Path(__file__)-derived _REPO_ROOT. When the executor runs the deployed

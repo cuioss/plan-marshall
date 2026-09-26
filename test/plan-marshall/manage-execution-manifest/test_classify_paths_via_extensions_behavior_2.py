@@ -21,7 +21,6 @@ def test_mixed_code_bucket():
     assert bucket == 'mixed_code'
 
 
-
 def test_mixed_with_docs_bucket():
     """A production .py (extension-claimed) plus a generic .md doc yields
     mixed_with_docs — the doc role comes from the generic suffix rule, not an
@@ -37,7 +36,6 @@ def test_mixed_with_docs_bucket():
     )
     bucket, _ = _classify_paths_via_extensions(['scripts/foo.py', 'README.md'], extensions=[py_ext])
     assert bucket == 'mixed_with_docs'
-
 
 
 def test_mixed_with_docs_includes_test_role():

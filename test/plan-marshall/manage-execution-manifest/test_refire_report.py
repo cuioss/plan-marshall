@@ -18,7 +18,6 @@ def test_a_single_firing_reports_no_refire():
     assert totals['refires'] == 0
 
 
-
 def test_a_completed_run_reports_zero_in_all_three_columns():
     """The matched control — a reader that counted every row would pass alone."""
     steps, totals = summarize_refires([_row('gate')])
@@ -26,7 +25,6 @@ def test_a_completed_run_reports_zero_in_all_three_columns():
     assert steps[0]['firings'] == 1
     assert (steps[0]['loop_backs'], steps[0]['failures'], steps[0]['errors']) == (0, 0, 0)
     assert (totals['loop_backs'], totals['failures'], totals['errors']) == (0, 0, 0)
-
 
 
 def test_a_fully_measured_row_reports_no_unmeasured_columns():
@@ -38,7 +36,6 @@ def test_a_fully_measured_row_reports_no_unmeasured_columns():
     assert steps[0]['unmeasured_columns'] == 0
     assert steps[0]['unrecognised_columns'] == 0
     assert totals['unmeasured_columns'] == 0
-
 
 
 def test_a_boolean_cell_is_unrecognised_and_contributes_nothing():
@@ -64,7 +61,6 @@ def test_a_boolean_cell_is_unrecognised_and_contributes_nothing():
     assert steps[0]['unmeasured_columns'] == 0
     assert steps[0]['total_tokens'] == 0
     assert totals['total_tokens'] == 0
-
 
 
 def test_a_bad_metric_does_not_suppress_a_good_row():

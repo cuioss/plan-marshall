@@ -47,7 +47,6 @@ def test_a_measured_zero_and_an_omitted_flag_differ_in_the_file_bytes(plan_conte
     assert UNMEASURED_COLUMN_TOKEN in omitted_line
 
 
-
 def test_a_productive_loop_back_is_recordable_as_itself(plan_context):
     """⛔ A findings-bearing return is a loop-back, not an error.
 
@@ -71,7 +70,6 @@ def test_a_productive_loop_back_is_recordable_as_itself(plan_context):
     assert read_manifest('rec-loop-back')[EXECUTION_LOG_KEY][0]['outcome'] == 'loop_back'
 
 
-
 def test_a_clean_run_with_a_negative_verdict_is_recordable_as_failed(plan_context):
     """`failed` stays reachable, and separably so, for a red gate.
 
@@ -92,7 +90,6 @@ def test_a_clean_run_with_a_negative_verdict_is_recordable_as_failed(plan_contex
 
     assert result is not None and result['status'] == 'success'
     assert result['outcome'] == 'failed'
-
 
 
 @pytest.mark.parametrize('outcome', ['skipped', 'loop_back', 'failed'])

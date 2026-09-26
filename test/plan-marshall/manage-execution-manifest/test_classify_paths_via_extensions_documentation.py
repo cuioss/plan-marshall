@@ -15,7 +15,6 @@ def test_documentation_only_bucket_recognized_generically():
     assert unclaimed == []
 
 
-
 def test_documentation_suffixes_all_recognized_generically():
     """Every documentation suffix (.md / .adoc / .asciidoc) is recognized
     generically without any extension."""
@@ -23,7 +22,6 @@ def test_documentation_suffixes_all_recognized_generically():
         bucket, unclaimed = _classify_paths_via_extensions([path], extensions=[])
         assert bucket == 'documentation_only'
         assert unclaimed == []
-
 
 
 def test_documentation_render_target_wins_by_delegation():

@@ -30,7 +30,6 @@ def test_step_params_get_resolves_dict_snapshot_from_keyed_map_marshal(plan_cont
     }
 
 
-
 # =============================================================================
 # Per-step owner schema field (orchestrator-owned | leaf-dispatchable)
 # =============================================================================

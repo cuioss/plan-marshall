@@ -22,7 +22,6 @@ def test_an_unmeasured_column_is_counted_not_summed_as_zero():
     assert totals['unmeasured_columns'] == 1
 
 
-
 def test_an_unreadable_cell_is_counted_as_unrecognised_not_unmeasured():
     """The third state is reported as itself rather than folded into a neighbour."""
     rows = [_row('push', total_tokens='12x', tool_uses=0, duration_ms=0)]

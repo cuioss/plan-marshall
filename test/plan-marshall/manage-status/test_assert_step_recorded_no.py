@@ -26,7 +26,6 @@ def test_no_phase_steps_metadata_returns_not_recorded(plan_context):
     assert result['outcome'] is None
 
 
-
 def test_no_phase_steps_metadata_with_require_terminal_returns_error(plan_context):
     """--require-terminal with no phase_steps metadata escalates to step_record_missing."""
     plan_id = 'assert-no-steps-require'
@@ -38,7 +37,6 @@ def test_no_phase_steps_metadata_with_require_terminal_returns_error(plan_contex
     assert result['error'] == 'step_record_missing'
     assert result['recorded'] is False
     assert result['outcome'] is None
-
 
 
 def test_no_record_at_all_returns_missing_not_mismatched(plan_context):

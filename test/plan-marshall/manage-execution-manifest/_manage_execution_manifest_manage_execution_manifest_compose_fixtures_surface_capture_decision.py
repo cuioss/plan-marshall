@@ -5,7 +5,10 @@ from argparse import Namespace
 from conftest import load_script_module
 
 _surface_mem = load_script_module(
-    'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', module_name='_surface_mem_capture_decision'
+    'plan-marshall',
+    'manage-execution-manifest',
+    'manage-execution-manifest.py',
+    module_name='_surface_mem_capture_decision',
 )
 DEFAULT_PHASE_6_STEPS = _surface_mem.DEFAULT_PHASE_6_STEPS
 

@@ -31,7 +31,6 @@ def test_envelope_count_persisted_when_supplied(plan_context):
     assert manifest['phase_5']['envelope_count'] == 4
 
 
-
 def test_envelope_count_defaults_when_absent(plan_context):
     """Omitting --envelope-count defaults to DEFAULT_ENVELOPE_COUNT (backward compat).
 
@@ -53,7 +52,6 @@ def test_envelope_count_defaults_when_absent(plan_context):
     manifest = read_manifest('envelope-absent')
     assert manifest is not None
     assert manifest['phase_5']['envelope_count'] == DEFAULT_ENVELOPE_COUNT
-
 
 
 def test_envelope_count_none_value_defaults(plan_context):
@@ -79,7 +77,6 @@ def test_envelope_count_none_value_defaults(plan_context):
     assert manifest['phase_5']['envelope_count'] == DEFAULT_ENVELOPE_COUNT
 
 
-
 @pytest.mark.parametrize('raw,expected', [(0, 1), (-3, 1)])
 def test_envelope_count_non_positive_clamped_to_default(plan_context, raw, expected):
     """Non-positive envelope_count is clamped — the orchestrator always plans at least one envelope."""
@@ -98,7 +95,6 @@ def test_envelope_count_non_positive_clamped_to_default(plan_context, raw, expec
     manifest = read_manifest(plan_id)
     assert manifest is not None
     assert manifest['phase_5']['envelope_count'] == expected
-
 
 
 def test_envelope_count_written_on_early_terminate_rule(plan_context):
@@ -125,7 +121,6 @@ def test_envelope_count_written_on_early_terminate_rule(plan_context):
     assert manifest['phase_5']['envelope_count'] == 3
 
 
-
 def test_envelope_count_round_trip_read(plan_context):
     """compose → read round-trip: the read subcommand surfaces envelope_count.
 
@@ -144,7 +139,6 @@ def test_envelope_count_round_trip_read(plan_context):
     read_result = _mem.cmd_read(Namespace(plan_id='envelope-round-trip'))
     assert read_result is not None and read_result['status'] == 'success'
     assert read_result['phase_5']['envelope_count'] == 5
-
 
 
 def test_envelope_count_absent_reads_cleanly_round_trip(plan_context):

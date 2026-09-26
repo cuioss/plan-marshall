@@ -34,7 +34,6 @@ def test_near_miss_orphan_outcome_preserved(plan_context, orphan_outcome):
     assert result['orphan_outcome'] == orphan_outcome
 
 
-
 def test_near_miss_message_names_both_keys(plan_context):
     """The mismatched-key message must name both the queried step_id and the
     near-miss orphan key so the dispatcher can report the mis-keying."""

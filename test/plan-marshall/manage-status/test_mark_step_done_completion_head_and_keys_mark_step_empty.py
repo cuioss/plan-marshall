@@ -14,7 +14,6 @@ def test_mark_step_empty_phase(plan_context):
     assert result['error'] == 'invalid_argument'
 
 
-
 def test_mark_step_empty_step(plan_context):
     """Empty step is rejected with invalid_argument."""
     plan_id = 'mark-step-empty-step'

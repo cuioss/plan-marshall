@@ -38,7 +38,6 @@ def test_canonical_key_present_is_recorded_terminal(plan_context):
     assert result['outcome'] == 'done'
 
 
-
 # =============================================================================
 # Legacy-vs-canonical duplicate: the fresher canonical write must win over a
 # stale legacy (``default:``-prefixed) key inserted earlier in the dict.

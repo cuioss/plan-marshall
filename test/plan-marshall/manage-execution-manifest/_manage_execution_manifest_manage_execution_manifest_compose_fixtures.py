@@ -1,24 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+# ruff: noqa: E402
 
 
 """Tests for the ``compose`` subcommand of manage-execution-manifest.py.
@@ -313,4 +295,3 @@ from _manage_execution_manifest_manage_execution_manifest_compose_fixtures_surfa
     _phase_6_with_every_commit_push_gate,
 )
 from _manage_execution_manifest_manage_execution_manifest_compose_fixtures_surface_write_task import _read_task
-

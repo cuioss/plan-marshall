@@ -10,12 +10,10 @@ def test_get_build_map_returns_empty_when_absent():
     assert _config_core_mod.get_build_map({'build': {}}) == {}
 
 
-
 def test_get_build_map_returns_relocated_block():
     """get_build_map locates the relocated build_map under the top-level build block."""
     config = {'build': {'map': _FAKE_AGGREGATED}}
     assert _config_core_mod.get_build_map(config) == _FAKE_AGGREGATED
-
 
 
 def test_get_default_config_has_skill_domains_without_build_map():

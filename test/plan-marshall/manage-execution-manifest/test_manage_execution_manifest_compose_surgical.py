@@ -39,7 +39,6 @@ def test_surgical_bug_fix_retains_review_gates(plan_context):
     assert 'lessons-capture' in manifest['phase_6']['steps']
 
 
-
 def test_surgical_tech_debt_retains_review_gates(plan_context):
     """Row 5 — surgical+tech_debt: review gates RETAINED, legacy ci-wait dropped defensively.
 
@@ -69,7 +68,6 @@ def test_surgical_tech_debt_retains_review_gates(plan_context):
         assert retained in manifest['phase_6']['steps']
     # Legacy ci-wait dropped defensively.
     assert 'ci-wait' not in manifest['phase_6']['steps']
-
 
 
 def test_surgical_tech_debt_with_prefixed_candidates(plan_context):
@@ -104,7 +102,6 @@ def test_surgical_tech_debt_with_prefixed_candidates(plan_context):
     assert 'lessons-capture' in steps
 
 
-
 def test_surgical_enhancement_with_code_candidates_falls_to_default(plan_context):
     """The scope row only matches bug_fix/tech_debt; surgical+enhancement → default."""
     result = cmd_compose(
@@ -124,7 +121,6 @@ def test_surgical_enhancement_with_code_candidates_falls_to_default(plan_context
     # that simplify_inactive gates on, and with affected_files_count > 0 the
     # security_class_inactive gate keeps its step too, so both survive.
     assert manifest['phase_6']['steps'] == list(DEFAULT_PHASE_6_STEPS)
-
 
 
 def test_surgical_enhancement_with_docs_candidates_falls_to_default(plan_context):

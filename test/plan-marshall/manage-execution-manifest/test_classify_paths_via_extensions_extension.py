@@ -30,7 +30,6 @@ def test_extension_raising_in_classify_paths_is_skipped():
     assert bucket == 'production_only'
 
 
-
 def test_extension_claim_on_a_marshal_json_path_is_never_stolen_by_the_new_entry():
     """A ``marshal.json`` that a build extension claims keeps its claim.
 
@@ -48,7 +47,6 @@ def test_extension_claim_on_a_marshal_json_path_is_never_stolen_by_the_new_entry
     )
 
     assert _resolved_role(claimed_marshal, extensions=[claiming_ext]) == 'test'
-
 
 
 def test_extension_claim_on_a_template_path_is_never_stolen_by_stage_3b():

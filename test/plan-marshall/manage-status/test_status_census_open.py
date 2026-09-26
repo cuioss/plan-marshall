@@ -88,7 +88,6 @@ class TestOpenPhaseRecords:
         )
 
 
-
 class TestOpenPhaseCountNamesPhasesNotPlans:
     """``open_phase_count`` is a phase total, and each cohort sums it independently.
 

@@ -48,7 +48,6 @@ def test_opencode_config_files_resolve_to_the_config_role_through_the_full_aggre
         assert _resolved_role(path, extensions=extensions) == 'config'
 
 
-
 def test_opencode_recognition_is_root_anchored_not_basenamed():
     """A nested ``opencode.json`` is not tool configuration.
 
@@ -59,7 +58,6 @@ def test_opencode_recognition_is_root_anchored_not_basenamed():
     """
     assert not _is_infrastructure_config_path('fixtures/opencode.json')
     assert not _is_infrastructure_config_path('fixtures/opencode.jsonc')
-
 
 
 def test_opencode_recognition_is_a_basename_rule_not_a_json_suffix_rule():

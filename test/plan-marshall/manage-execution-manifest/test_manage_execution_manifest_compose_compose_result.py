@@ -21,7 +21,6 @@ def test_compose_result_exposes_every_subtraction_record_field(plan_context):
             assert record['step'] and record['reason']
 
 
-
 def test_compose_result_drops_the_retired_self_review_key(plan_context):
     """The always-``False`` ``pre_submission_self_review_omitted`` key is gone.
 
@@ -32,7 +31,6 @@ def test_compose_result_drops_the_retired_self_review_key(plan_context):
 
     assert result is not None
     assert 'pre_submission_self_review_omitted' not in result
-
 
 
 def test_compose_result_drops_the_retired_commit_push_scalar(plan_context):

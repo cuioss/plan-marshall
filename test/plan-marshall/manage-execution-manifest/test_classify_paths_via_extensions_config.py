@@ -23,7 +23,6 @@ def test_config_only_collapses_to_documentation_only():
     assert bucket == 'documentation_only'
 
 
-
 def test_config_combined_with_production_yields_production_only():
     py_ext = _FakeExtension(
         'python',

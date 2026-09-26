@@ -47,7 +47,6 @@ def test_force_reseed_clears_and_rederives_existing_block(plan_context, monkeypa
     assert config['build']['map'] == _FAKE_AGGREGATED
 
 
-
 def test_force_reseed_overwrites_user_correction(plan_context, monkeypatch):
     """A user correction is overwritten by `--force` (NOT write-once).
 

@@ -34,7 +34,6 @@ def test_cli_compose_then_read_roundtrip(plan_context):
     assert read_data['manifest_version'] == 1
 
 
-
 def test_cli_compose_invalid_change_type_emits_toon_error(plan_context):
     result = run_script(
         SCRIPT_PATH,
@@ -53,7 +52,6 @@ def test_cli_compose_invalid_change_type_emits_toon_error(plan_context):
     data = result.toon()
     assert data['status'] == 'error'
     assert data['error'] == 'invalid_change_type'
-
 
 
 def test_cli_compose_with_all_optional_flags_roundtrips(plan_context):
@@ -82,7 +80,6 @@ def test_cli_compose_with_all_optional_flags_roundtrips(plan_context):
     data = result.toon()
     assert data['status'] == 'success'
     assert data['rule_fired'] == 'recipe'
-
 
 
 def test_cli_compose_commit_and_push_false_omits_commit_push(plan_context):

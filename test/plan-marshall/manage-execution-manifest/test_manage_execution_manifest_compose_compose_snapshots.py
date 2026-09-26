@@ -72,7 +72,6 @@ def test_compose_snapshots_resolved_step_params_from_keyed_map(plan_context):
     assert set(step_params.keys()) == set(manifest['phase_6']['steps'])
 
 
-
 def test_compose_snapshots_step_params_from_keyed_map(plan_context):
     """compose snapshots resolved params from a keyed-map marshal.json.
 

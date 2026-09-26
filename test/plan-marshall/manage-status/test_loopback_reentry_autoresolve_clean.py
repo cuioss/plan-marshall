@@ -52,7 +52,6 @@ def test_clean_verify_with_marker_consumes_marker_without_recapture(plan_context
     )
 
 
-
 def test_clean_tree_refusal_with_explicit_none_metadata():
     """_clean_tree_refusal must not raise AttributeError when
     status['metadata'] is explicitly None — no worktree means no refusal."""

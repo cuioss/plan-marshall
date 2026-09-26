@@ -60,7 +60,6 @@ def test_archive_of_an_early_abandoned_plan_leaves_pending_phases_pending(plan_c
     )
 
 
-
 def test_archive_of_the_same_two_open_state_proceeds_when_a_reason_is_supplied(plan_context, monkeypatch):
     """POSITIVE control: the identical state with --reason is a deliberate abandonment.
 
@@ -77,7 +76,6 @@ def test_archive_of_the_same_two_open_state_proceeds_when_a_reason_is_supplied(p
         f'A --reason archive is a deliberate abandonment and must not be blocked by pending findings: {result!r}.'
     )
     assert 'archived_to' in result, result
-
 
 
 def test_archive_of_already_complete_plan_not_blocked_by_pending_finding(plan_context, monkeypatch):

@@ -33,7 +33,6 @@ def test_lane_keep_decision_cutoff(lane, posture, expected_keep):
     assert warning is None
 
 
-
 @pytest.mark.parametrize(
     ('lane', 'override', 'posture', 'expected_keep', 'warning_fragments'),
     _LANE_OVERRIDE_DECISIONS,
@@ -63,7 +62,6 @@ def test_lane_keep_decision_honours_override(lane, override, posture, expected_k
         assert warning is None
 
 
-
 def test_lane_report_names_an_inert_off_with_its_reason(plan_context, monkeypatch):
     """A stored ``off`` a floor class neutralizes is reported as stored AND inert.
 
@@ -85,7 +83,6 @@ def test_lane_report_names_an_inert_off_with_its_reason(plan_context, monkeypatc
     assert row['binds'] is False
     assert 'immune' in row['reason']
     assert 'derived-state' in row['reason']
-
 
 
 def test_lane_report_reports_binds_true_for_a_live_off(plan_context, monkeypatch):
@@ -110,7 +107,6 @@ def test_lane_report_reports_binds_true_for_a_live_off(plan_context, monkeypatch
     assert row['reason'] == ''
 
 
-
 def test_lane_report_distinguishes_no_declaration_from_a_neutralized_one(plan_context, monkeypatch):
     """A step nobody spoke for reports ``-``, not a fabricated value.
 
@@ -130,7 +126,6 @@ def test_lane_report_distinguishes_no_declaration_from_a_neutralized_one(plan_co
     assert row['effective'] == 'minimal'
     assert row['binds'] is False
     assert row['reason'] == ''
-
 
 
 def test_lane_report_sees_a_plan_local_declaration(plan_context, monkeypatch):
@@ -160,7 +155,6 @@ def test_lane_report_sees_a_plan_local_declaration(plan_context, monkeypatch):
     assert _lane_report_row(project_only, 'finalize-step-security-audit')['declared'] == '-'
 
 
-
 def test_lane_report_channels_covered_states_which_sweep_ran(plan_context, monkeypatch):
     """``channels_covered`` names the sweep, so one channel is never read as both.
 
@@ -182,7 +176,6 @@ def test_lane_report_channels_covered_states_which_sweep_ran(plan_context, monke
     # report never carries a plan id it was not given.
     assert 'plan_id' not in project_only
     assert both['plan_id'] == 'lane-report-channels'
-
 
 
 def test_lane_report_covers_every_lane_participating_candidate_and_no_other(plan_context, monkeypatch):

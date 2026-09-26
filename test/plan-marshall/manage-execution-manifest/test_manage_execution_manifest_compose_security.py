@@ -69,7 +69,6 @@ def test_security_class_inactive_gate(
     assert ('finalize-step-security-audit' in manifest['phase_6']['steps']) is expect_in_manifest
 
 
-
 def test_security_class_inactive_noop_when_step_absent_from_candidates(plan_context):
     """When no security-class step is a candidate, the pre-filter is a no-op even on a failing gate."""
     candidates_without_secaudit = [s for s in DEFAULT_PHASE_6_STEPS if s != 'finalize-step-security-audit']
@@ -89,7 +88,6 @@ def test_security_class_inactive_noop_when_step_absent_from_candidates(plan_cont
     manifest = read_manifest('matrix-secaudit-absent')
     assert manifest is not None
     assert 'finalize-step-security-audit' not in manifest['phase_6']['steps']
-
 
 
 def test_security_class_inactive_emits_status_decision_log_only_on_drop(plan_context):
@@ -124,7 +122,6 @@ def test_security_class_inactive_emits_status_decision_log_only_on_drop(plan_con
         'dropped finalize-step-security-audit from phase_6.steps: '
         'no declared affected files and empty live footprint'
     )
-
 
 
 def test_security_class_inactive_no_decision_log_on_kept_branch(plan_context):

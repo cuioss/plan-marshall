@@ -45,7 +45,6 @@ def test_a_legacy_stored_inert_off_still_produces_the_compose_time_warning(plan_
     assert _FLOOR_STEPS[0] in _composed_steps(plan_id)
 
 
-
 def test_a_legacy_stored_inert_off_is_silent_under_the_full_posture(plan_context):
     """The caveat on the arm above: ``full`` reports nothing, because it resolves nothing.
 

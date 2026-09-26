@@ -39,7 +39,6 @@ def test_archive_dry_run_leaves_status_unchanged(plan_context):
     )
 
 
-
 def test_archive_dry_run_with_reason_does_not_mutate_status(plan_context):
     """--dry-run with --reason must NOT mutate live status.json or archive."""
     plan_id = 'archive-reason-dry-run'
@@ -59,7 +58,6 @@ def test_archive_dry_run_with_reason_does_not_mutate_status(plan_context):
         'dry-run with --reason mutated live status.json — the metadata '
         'write block leaked past the dry-run early-return.'
     )
-
 
 
 def test_archive_dry_run_does_not_fire_findings_gate(plan_context, monkeypatch):

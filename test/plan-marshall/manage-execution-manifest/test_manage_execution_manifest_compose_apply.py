@@ -20,7 +20,6 @@ def test_apply_lane_resolution_full_is_noop(monkeypatch):
     assert warnings == []
 
 
-
 def test_apply_lane_resolution_minimal_keeps_only_floor(monkeypatch):
     """Minimal keeps only the tier-minimal floor; standard/full-tier elements drop."""
     _patch_element_lane(monkeypatch)
@@ -34,7 +33,6 @@ def test_apply_lane_resolution_minimal_keeps_only_floor(monkeypatch):
     }
 
 
-
 def test_apply_lane_resolution_standard_drops_only_full_tier(monkeypatch):
     """Standard keeps minimal + standard tiers and drops the two full-tier elements."""
     _patch_element_lane(monkeypatch)
@@ -46,7 +44,6 @@ def test_apply_lane_resolution_standard_drops_only_full_tier(monkeypatch):
     }
     assert 'sonar-roundtrip' in kept
     assert 'project:finalize-step-deploy-target' in kept
-
 
 
 def test_apply_lane_resolution_every_drop_carries_a_reason(monkeypatch):
@@ -68,7 +65,6 @@ def test_apply_lane_resolution_every_drop_carries_a_reason(monkeypatch):
         assert 'posture cutoff' in record['reason']
 
 
-
 def test_apply_lane_resolution_off_override_reason_names_the_opt_out(monkeypatch):
     """An explicit ``off`` override is reported as an opt-out, not a tier cutoff.
 
@@ -85,7 +81,6 @@ def test_apply_lane_resolution_off_override_reason_names_the_opt_out(monkeypatch
     assert 'posture cutoff' not in reason
 
 
-
 def test_apply_lane_resolution_keeps_unblocked_elements(monkeypatch):
     """An element with no lane: block is not lane-participating and is always kept."""
     monkeypatch.setattr(_mem, '_resolve_element_lane', lambda step: None)
@@ -93,7 +88,6 @@ def test_apply_lane_resolution_keeps_unblocked_elements(monkeypatch):
 
     assert kept == ['no-block-step']
     assert dropped == []
-
 
 
 def test_apply_lane_resolution_derived_state_off_override_is_immune(monkeypatch):
@@ -107,7 +101,6 @@ def test_apply_lane_resolution_derived_state_off_override_is_immune(monkeypatch)
     assert kept == ['push', 'archive-plan', 'project:finalize-step-deploy-target']
     assert 'project:finalize-step-deploy-target' not in _dropped_steps(dropped)
     assert any(step == 'project:finalize-step-deploy-target' and 'immune' in warning for step, warning in warnings)
-
 
 
 def test_apply_lane_resolution_adversarial_off_override_drops_cleanly(monkeypatch):

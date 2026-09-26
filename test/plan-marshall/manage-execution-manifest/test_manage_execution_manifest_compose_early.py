@@ -23,7 +23,6 @@ def test_early_terminate_analysis_with_empty_files(plan_context):
     assert result['phase_6']['steps_count'] == 3
 
 
-
 def test_early_terminate_analysis_falls_through_when_task_queue_pending(plan_context):
     """Row 1 task-queue guard — analysis + 0 files + pending task → Rule 7 default.
 
@@ -45,7 +44,6 @@ def test_early_terminate_analysis_falls_through_when_task_queue_pending(plan_con
     )
     assert result is not None and result['rule_fired'] == 'default'
     assert result['phase_5']['early_terminate'] is False
-
 
 
 # =============================================================================

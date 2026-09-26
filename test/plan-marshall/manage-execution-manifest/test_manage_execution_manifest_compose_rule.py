@@ -33,7 +33,6 @@ def test_rule_1_early_terminate_analysis_with_prefixed_candidates(plan_context):
         assert excluded not in steps
 
 
-
 def test_rule_2_recipe_with_prefixed_candidates(plan_context):
     """Rule 2 (recipe) — prefixed candidates: review gates RETAINED, legacy ci-wait dropped (bare output)."""
     prefixed_with_review_and_legacy = _PREFIXED_PHASE_6 + (
@@ -67,7 +66,6 @@ def test_rule_2_recipe_with_prefixed_candidates(plan_context):
     assert 'lessons-capture' in steps
 
 
-
 def test_rule_5_surgical_bug_fix_with_prefixed_candidates(plan_context):
     """Rule 5 (surgical_bug_fix) — prefixed candidates: review gates RETAINED, legacy ci-wait dropped (bare output)."""
     prefixed_with_review_and_legacy = _PREFIXED_PHASE_6 + (
@@ -95,7 +93,6 @@ def test_rule_5_surgical_bug_fix_with_prefixed_candidates(plan_context):
     assert 'ci-wait' not in steps
     assert 'lessons-capture' in steps
     assert 'push' in steps
-
 
 
 def test_rule_5_surgical_tech_debt_with_prefixed_candidates(plan_context):
@@ -127,7 +124,6 @@ def test_rule_5_surgical_tech_debt_with_prefixed_candidates(plan_context):
     # Legacy ci-wait dropped defensively.
     assert 'ci-wait' not in steps
     assert 'push' in steps
-
 
 
 def test_rule_6_verification_no_files_with_prefixed_candidates(plan_context):

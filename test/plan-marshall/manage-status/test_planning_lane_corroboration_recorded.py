@@ -31,7 +31,6 @@ def test_recorded_vector_is_light_when_s7_does_not_fire():
     assert result['suppressed_signals'] == []
 
 
-
 def test_recorded_vector_without_a_measured_band_keeps_the_lane():
     """No band rule supplied means nothing was measured — S7 keeps the lane.
 
@@ -45,7 +44,6 @@ def test_recorded_vector_without_a_measured_band_keeps_the_lane():
     assert result['lane'] == 'deep'
     assert result['fired_signals'] == ['S7:risk_prose']
     assert result['suppressed_signals'] == []
-
 
 
 # =============================================================================

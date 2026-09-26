@@ -58,7 +58,6 @@ def test_cli_record_step_roundtrip(plan_context):
     assert data['execution_log_count'] == 1
 
 
-
 def test_cli_record_step_missing_manifest_emits_toon_error(plan_context):
     """record-step over the CLI without a manifest emits file_not_found via TOON."""
     result = run_script(

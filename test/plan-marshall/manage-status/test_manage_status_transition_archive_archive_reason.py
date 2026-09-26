@@ -39,7 +39,6 @@ def test_archive_with_reason_persists_archived_reason_metadata(plan_context):
     )
 
 
-
 def test_archive_without_reason_omits_archived_reason_field(plan_context):
     """cmd_archive without --reason must NOT introduce an archived_reason field."""
     plan_id = 'archive-reason-omitted'
@@ -59,7 +58,6 @@ def test_archive_without_reason_omits_archived_reason_field(plan_context):
     )
 
 
-
 def test_archive_reason_attribute_missing_does_not_raise(plan_context):
     """cmd_archive must tolerate Namespace without a ``reason`` attribute."""
     plan_id = 'archive-reason-attr-missing'
@@ -72,7 +70,6 @@ def test_archive_reason_attribute_missing_does_not_raise(plan_context):
     archived_status = json.loads(archived_status_path.read_text(encoding='utf-8'))
     metadata = archived_status.get('metadata', {})
     assert 'archived_reason' not in metadata, f'Legacy Namespace path leaked an archived_reason key: {metadata!r}'
-
 
 
 def test_archive_reason_cli_round_trip_persists_to_archive(plan_context):
@@ -103,7 +100,6 @@ def test_archive_reason_cli_round_trip_persists_to_archive(plan_context):
     assert archived_status.get('metadata', {}).get('archived_reason') == 'orphan_directory', (
         f'CLI --reason did not round-trip into archived status.json: {archived_status.get("metadata")!r}'
     )
-
 
 
 def test_archive_with_reason_bypasses_findings_gate(plan_context, monkeypatch):

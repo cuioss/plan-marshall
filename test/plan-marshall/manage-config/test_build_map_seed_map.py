@@ -38,7 +38,6 @@ def test_build_map_seed_writes_aggregated_structure_under_build_block(plan_conte
     assert 'build_map' not in config.get('skill_domains', {})
 
 
-
 def test_build_map_seed_is_write_once(plan_context, monkeypatch):
     """A re-seed preserves an existing seed (write-once) — never clobbers it."""
     # first seed writes the fake map (init no longer pre-seeds)
@@ -63,7 +62,6 @@ def test_build_map_seed_is_write_once(plan_context, monkeypatch):
     assert after['build']['map']['python'][0]['build_class'] == 'none'
 
 
-
 def test_build_map_read_returns_seed(plan_context, monkeypatch):
     """build-map read returns the seed from build.map unchanged."""
     _cmd_init_mod.cmd_init(Namespace(force=False))
@@ -75,7 +73,6 @@ def test_build_map_read_returns_seed(plan_context, monkeypatch):
     assert result['status'] == 'success'
     assert result['build_map'] == _FAKE_AGGREGATED
     assert result['domain_count'] == 1
-
 
 
 def test_build_map_read_fails_closed_when_seed_absent(plan_context):

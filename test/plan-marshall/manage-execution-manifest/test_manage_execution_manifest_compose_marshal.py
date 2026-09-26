@@ -75,7 +75,6 @@ def test_marshal_json_preferred_over_csv_preserves_project_prefixes(plan_context
     assert 'default:push' not in steps
 
 
-
 def test_marshal_json_phase_5_steps_also_preferred(plan_context):
     """The marshal.json source-of-truth path applies to phase-5 steps as well as phase-6."""
     custom_phase_5 = ['quality-gate', 'module-tests']

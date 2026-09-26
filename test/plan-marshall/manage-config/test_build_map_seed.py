@@ -23,7 +23,6 @@ def test_merge_build_map_returns_seed_from_build_block():
     assert config['build']['map']['python'][0]['build_class'] == 'compile'
 
 
-
 def test_merge_build_map_fails_closed_when_build_map_absent():
     """merge_build_map raises BuildMapMissingError when build.map is absent.
 
@@ -34,12 +33,10 @@ def test_merge_build_map_fails_closed_when_build_map_absent():
         _config_core_mod.merge_build_map({})
 
 
-
 def test_merge_build_map_fails_closed_when_build_block_lacks_map():
     """A build block without a map key still fails closed."""
     with pytest.raises(_config_core_mod.BuildMapMissingError):
         _config_core_mod.merge_build_map({'build': {'other': {}}})
-
 
 
 @pytest.mark.parametrize(

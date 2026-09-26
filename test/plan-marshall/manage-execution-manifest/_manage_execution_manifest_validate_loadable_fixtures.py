@@ -48,8 +48,6 @@ def _validate_loadable_ns(
     return Namespace(plan_id=plan_id, step_id=step_id, all=use_all, check_seed=check_seed)
 
 
-
-
 # =============================================================================
 # record-metrics order regression — must trail every token-consuming step
 # =============================================================================
@@ -107,7 +105,6 @@ def _compose_ns(
         phase_6_steps=phase_6_steps if phase_6_steps is not None else ','.join(DEFAULT_PHASE_6_STEPS),
         commit_and_push=None,
     )
-
 
 
 _EMITTER = 'finalize-step-preference-emitter'

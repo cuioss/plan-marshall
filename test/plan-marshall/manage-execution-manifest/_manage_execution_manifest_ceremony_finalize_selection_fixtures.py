@@ -1,14 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-
-
-
-
-
-
-
-
-
+# ruff: noqa: E402
 
 
 """Tests for the ``ceremony_finalize_selection`` post-matrix transform.
@@ -195,4 +187,3 @@ from _manage_execution_manifest_ceremony_finalize_selection_fixtures_surface_stu
     _manifest_phase_6_steps,
 )
 from _manage_execution_manifest_ceremony_finalize_selection_fixtures_surface_write_plan import _patch_immune_off_lanes
-
