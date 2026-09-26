@@ -261,6 +261,34 @@ def test_prune_retires_sessions_that_breach_the_entry_budget(tmp_path, monkeypat
     )
 
 
+def test_prune_never_retires_an_unmeasurable_newest_session(tmp_path, monkeypatch):
+    """The newest session survives even when it alone breaches the entry budget.
+
+    A live session is the newest dir in the root, and a session whose scratch has
+    outgrown ``max_entries`` is precisely the one that cannot be measured — the
+    walk gives up at the budget. A prune that broke out of its retention loop on
+    that ``None`` retained nothing and handed the entire list to the removal
+    loop, so it deleted the running session's own basetemp. Every later
+    ``tmp_path`` in the outer suite then raised ``FileNotFoundError``, which reads
+    as a whole-suite outage attributed to whichever tests ran next.
+    """
+    root = tmp_path / 'pytest-basetemp'
+    root.mkdir()
+    _seed_session(root, 'stale', files=2, mtime=1)
+    _seed_session(root, 'live', files=40, mtime=2)
+    monkeypatch.setattr(build, 'PYTEST_BASETEMP_ROOT', root)
+
+    build._prune_basetemp_roots(keep=3, max_entries=9)
+
+    assert _child_dirs(root) == ['live'], (
+        'the newest session is the one a concurrent run is writing into, so it '
+        'must survive a prune that cannot measure it'
+    )
+    assert len(list((root / 'live').iterdir())) == 40, (
+        'the surviving session must keep its contents, not merely its directory'
+    )
+
+
 def test_prune_leaves_a_root_within_both_bounds_untouched(tmp_path, monkeypatch):
     """Matched negative control: nothing is removed when both bounds already hold.
 
