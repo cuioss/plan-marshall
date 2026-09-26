@@ -1,5 +1,12 @@
 # PLAN-10: `land` and `land-all` — monitored, never-remove ledger landing
 
+> ✅ **RE-STAGED 2026-09-26 by explicit operator decision** — exempted from the PM-MCP supersession that parked
+> the rest of this epic's queue the same day. **RE-SCOPED the same day, operator direction: ONE fixed worktree
+> for ALL epic changes**, replacing the earlier one-worktree-per-epic design. Objective, Deliverables and
+> Non-Goals below are rewritten for that; Claim Labels are unchanged research (their per-epic phrasing is
+> historical). Implementation-independent content is also carried in
+> `plan-marshall-mcp/doc/known-defects/orchestrator-refactor-carry-over.md`.
+
 epic: orchestrator-refactor
 workstream: WS-05
 
@@ -13,80 +20,51 @@ workstream: WS-05
 
 ## Objective
 
-PLAN-09 gives each epic a fixed-name, long-lived worktree; this plan gives the orchestrator
-the two verbs to LAND that worktree's changes onto `main` in a controlled, monitored way —
-replacing today's ad hoc `git commit`/`git push` with an explicit `land` (this epic's own
-pending `.plan/orchestrator/{slug}/**` changes) and `land-all` (every active epic's pending
-changes, one sweep). Both create-or-reuse a branch, open-or-update a PR, wait for CI via the
-existing bounded `ci checks wait` primitive, merge, and pull the result into BOTH `main` and
-the worktree — never deleting the worktree, the one constraint stated twice by the operator
-who proposed this mechanism.
+PLAN-09 gives ALL epics one shared, long-lived worktree on a fixed branch; this plan gives the orchestrator the
+verb to LAND that worktree's pending ledger changes onto `main` in a controlled, monitored way — replacing
+today's ad hoc `git commit`/`git push`. Because every epic writes into the same worktree, one `land` lands
+everything pending there in ONE PR: create-or-reuse the PR, wait for CI via the bounded `ci checks wait`
+primitive, merge through the queue, confirm the merge from the PR's own state, and resync both `main` and the
+worktree — never deleting the worktree (the constraint the operator stated twice). The earlier per-epic
+`land-all` sweep and its concurrent-PRs-into-one-merge-queue collision disappear with the shared worktree.
 
 ## Deliverables
 
-1. **D1 — `land`: stage, commit, push.** Within the epic's worktree (from PLAN-09), stage
-   and commit only the epic's OWN dirty paths (`.plan/orchestrator/{slug}/**` — scoped even
-   though a per-epic worktree makes cross-epic leakage structurally impossible, so the
-   discipline survives if the worktree model changes later), push the worktree's branch.
-2. **D2 — `land`: PR create-or-update.** Call the `ci` abstraction's PR primitives DIRECTLY
-   with `--project-dir {worktree_path}` (confirmed generic, not plan-bound —
-   `tools-integration-ci:ci pr create/view/prepare-body` all support this addressing) rather
-   than reusing `phase-6-finalize`'s `create-pr` workflow doc (confirmed plan-bound: it reads
-   PR title/body from plan-only sources — `manage-status metadata --plan-id`,
-   `manage-plan-documents request read --plan-id` — that an orchestrator epic does not have).
-   Reuse an existing open PR for the same branch rather than opening a duplicate on a second
-   `land` call before the first merges.
-3. **D3 — the monitor, WITH AN EXPLICIT POST-ENQUEUE SETTLE LOOP.** Wait for CI via
-   `ci checks wait --pr-number N --project-dir {worktree_path}` — already a bounded,
-   self-timing-out primitive (`ci_complete_precondition.py`'s pattern: a `--timeout` ceiling,
-   `status: timeout` on expiry meaning "re-poll on re-entry", never a foreground busy-loop).
-   On green, call `ci pr merge-queue` to enqueue — but that call returns immediately once
-   `gh pr merge --auto` succeeds (`workflow-integration-github/scripts/_github_pr.py:2265`
-   `cmd_pr_merge_queue`, confirmed live: it now corroborates that a queue is actually
-   configured before enqueueing, but nothing in that path polls for the entry to actually
-   settle — an ejection on rebase after checks went green is still possible). `land` MUST
-   NOT treat `enqueued: true` as "merged": follow the enqueue with an explicit settle loop —
-   reuse `ci pr landing-state` (poll until it reports a terminal outcome) rather than
-   assuming `merge-queue` + `checks wait` alone suffices. Only after that settle loop
-   confirms a terminal merged state does `land` stamp the landed PR number, and it does so
-   from the PR's OWN state at that point, never from the `merge-queue` call's own return
-   message (this epic's own memory already records an incident,
-   `project_ci_pr_merge_false_green.md`, where a merge call returned `merged: true` and
-   deleted the branch without actually merging — `land` must not repeat it).
-4. **D4 — pull main AND resync the worktree, without removing it.** On confirmed merge:
-   fast-forward the PRIMARY checkout's `main` (so a session working there sees the landed
-   state), and separately reset/resync the WORKTREE's own branch onto the new `main` so it
-   is ready for the next round of writes — both steps leave the worktree directory in place;
-   decide at outline whether the worktree's branch is reset-in-place (`git reset --hard
-   origin/main` after a fresh fetch) or deleted-and-recreated fresh each cycle while only
-   the DIRECTORY persists — either satisfies "the worktree is never removed", but they are
-   different mechanisms with different failure modes, so pick one deliberately rather than
-   by accident.
-5. **D5 — `land-all`.** Enumerate active epics via `orchestrator corpus epics` (no `--slug`,
-   partitions `active[]`/`archived[]` across both store roots — confirmed the correct,
-   already-proven substrate). For each active epic whose worktree carries dirty or
-   unpushed-but-committed `.plan/orchestrator/{slug}/**` state, run D1-D4's sequence.
-   Decide at outline whether epics land sequentially or bounded-parallel — concurrent PRs
-   landing through the SAME merge queue against the SAME `main` is a real collision surface
-   this decision must account for, not wave past.
-6. **D6 — failure/timeout leaves the worktree recoverable, never silently discarded.** A CI
-   failure, a merge-queue ejection, or a `ci checks wait` timeout is reported (returned
-   error / Open Defect on the calling epic) and the LAND ATTEMPT stops there — the
-   worktree's own uncommitted or unpushed-but-committed state is left exactly as it was,
-   never force-reset or discarded, so a retry (an operator re-invoking `land`) picks up
-   where the failed attempt left off.
+1. **D1 — `land`: snapshot, commit, push, serialized.** In the shared worktree, stage and commit ONLY
+   orchestrator ledger paths (`.plan/orchestrator/**`, `.plan/archived-orchestrators/**`, minus the git-ignored
+   `logs/`) — never anything else a stray process left there — and push the fixed branch. Several epic sessions
+   can call `land` concurrently and all touch one git index, so `land` holds a repository-wide lock for its git
+   steps (reuse `manage-locks` rather than a second primitive; decide the exact lock at outline). A second
+   caller either waits or finds the open PR and returns it — never commits over a land in progress.
+2. **D2 — PR create-or-update with an epic-native title/body.** Call the `ci` PR primitives directly with
+   `--project-dir {worktree_path}` (not `phase-6-finalize`'s plan-bound `create-pr` doc). Reuse the open PR for
+   the branch on a repeat `land` rather than opening a duplicate. Title/body are composed from the landed diff
+   itself: which epics changed, and per epic which ledger files (rows, specs, anchor, landings, inbox) — no
+   plan-only source (`pr_title`, `request.md`) exists for a ledger landing.
+3. **D3 — monitor WITH an explicit post-enqueue settle loop.** Wait for CI via `ci checks wait --pr-number N
+   --project-dir {worktree_path}` (bounded; `status: timeout` means re-poll on re-entry, never a foreground busy
+   loop). On green, `ci pr merge-queue` enqueues and returns immediately (`_github_pr.py:2265`
+   `cmd_pr_merge_queue`) — `enqueued: true` is NOT merged: poll `ci pr landing-state` until a terminal
+   outcome, and stamp the landed PR only from the PR's own state then, never from the merge call's return
+   (incident `project_ci_pr_merge_false_green`: `merged: true` with the branch deleted and nothing merged).
+4. **D4 — resync main and the worktree without losing post-snapshot writes.** On confirmed merge, fast-forward
+   the primary checkout's `main`, and bring the worktree's branch onto the new `main`. Other epic sessions may
+   have written into the worktree AFTER D1's snapshot, so the resync MUST NOT discard them — a blind `reset
+   --hard origin/main` is forbidden; choose a mechanism that carries uncommitted and not-yet-landed committed
+   changes across (e.g. stash-and-reapply, or rebase that drops the squash-merged commits) and decide it at
+   outline, stating its failure mode. The worktree directory persists either way.
+5. **D5 — failure/timeout leaves the worktree recoverable.** CI failure, merge-queue ejection or a wait timeout
+   is reported and the land attempt stops there; the worktree's uncommitted or committed-but-unlanded state is
+   left exactly as it was, and the lock released, so a re-invoked `land` resumes.
 
 ## Non-Goals
 
-- No change to review-bot participation policy — `.plan/**` is already excluded from
-  CodeRabbit/PR-Agent review org-wide (`project_plan_excluded_from_bot_review`, shipped),
-  and the whole-tree build's `skip-on-docs-only` footprint gate already fast-paths a
-  non-buildable ledger-only diff. `land` relies on both; changes neither.
-- No worktree teardown/removal — PLAN-09's D3 already places that out of scope; this plan
-  inherits the same boundary and does not add a removal path either.
-- No change to the PLAN lifecycle's own `phase-6-finalize` create-pr/branch-cleanup
-  workflow docs — this plan calls the underlying `ci` primitives directly instead of
-  reusing those plan-bound docs, per D2's finding; the docs themselves are untouched.
+- No change to review-bot participation — `.plan/**` is already excluded from CodeRabbit/PR-Agent review
+  org-wide, and `skip-on-docs-only` fast-paths a non-buildable ledger-only diff. `land` relies on both and must
+  NOT route through the plan pre-merge barrier (it requires bot participation a ledger PR never gets).
+- No worktree teardown/removal (PLAN-09 D3).
+- No change to `phase-6-finalize`'s create-pr / branch-cleanup docs.
+- No per-epic `land-all` sweep — superseded by the one-shared-worktree direction (2026-09-26).
 
 ## Claim Labels
 
@@ -149,9 +127,9 @@ who proposed this mechanism.
   the epic — this plan adds real new verbs to the same file, so PLAN-07's line-attribution
   research must be re-derived AFTER this plan lands, exactly as PLAN-07 already states for
   every other plan touching the same file).
-- Adjacent to: `manage-locks`' existing merge mutex / FIFO admission queue — D5's
-  sequential-vs-parallel decision for `land-all` may end up reusing it rather than building
-  a second coordination primitive; not committed to here, flagged for outline.
+- Adjacent to: `manage-locks` — D1's repository-wide land lock reuses it rather than building a second
+  coordination primitive; the exact lock is decided at outline.
+- Overlaps with: PLAN-11 (`orchestrator.py`, `test/plan-marshall/plan-orchestrator/**`) — sequence.
 
 ## Hand-Off Command
 

@@ -1,5 +1,11 @@
 # PLAN-TRUTH-151: Early-phase gates, the outline parser, and the plan-tier claim write-back
 
+> ⛔⛔ **SUPERSEDED BY PM-MCP (2026-09-26, operator decision; row status `parked`).** `plan-marshall-mcp` replaces both the
+> process prose and the Python scripts this plan edits, so implementing it here is legacy work. Its
+> implementation-independent content (rules, invariants, classifications, data, fixtures) was extracted to
+> `plan-marshall-mcp/doc/known-defects/truthful-signals-carry-over.md` as PM-MCP input.
+> **Do NOT emit; un-park only by explicit operator decision.** The spec body below stays intact as the evidence chain.
+
 ## Objective
 
 The early phases decide what the rest of a run believes, and three of their surfaces cannot be told apart

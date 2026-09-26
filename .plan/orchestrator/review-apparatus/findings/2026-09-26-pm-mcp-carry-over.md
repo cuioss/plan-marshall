@@ -142,3 +142,9 @@ PM-MCP-superseded (see `epic.md` § 2026-09-26 and `logs/decision.log`).
 | 077.D2 | Refuse to enter the bot wait region when the diff exceeds a bot's structural cap; name the cap. Sourcery 150,000 chars / 300 files; GitHub 65536-char comment. 69.2% of one finalize's script wall time polled two bots unable to review a 4028-file diff. | data + invariant | **gap** |
 | 077.D3 | If test/ and rest each clear the cap, name the test/ split as remedy. n=1: 179,695 = 129,556 test/ + 50,139 rest. | data + fixture | **gap** |
 | 077.D4 | Under every cap ⇒ unchanged; the gate adds only a refusal path. | invariant | **gap** |
+
+## Published
+
+Consolidated with a 129-row Part B sweep of the 27 superseded specs into
+`plan-marshall-mcp/doc/known-defects/review-apparatus-carry-over.md` (2026-09-26). That file is the
+current, fuller version; this one stays as the Part A source.

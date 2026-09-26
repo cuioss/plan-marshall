@@ -38,6 +38,13 @@ wave: 5xx landed-corpus remediation
 
 # Measurement and cost integrity — every published figure states the population it measured
 
+> ⛔⛔ **SUPERSEDED BY PM-MCP (2026-09-26, operator decision; row status `parked`).** `plan-marshall-mcp` replaces both
+> the process prose and the Python scripts this plan edits, so implementing it here is legacy work. Its
+> implementation-independent content (rules, invariants, classifications, data, fixtures) was extracted as PM-MCP
+> input to `/Users/oliver/git/plan-marshall-mcp/doc/known-defects/code-intelligence-substrate-carry-over.md`
+> (rows `050.*`). **Do NOT emit; un-park only by explicit operator decision.** The body below is kept intact as the
+> evidence chain.
+
 > ⚠ **RE-CUT 2026-09-12.** This spec now carries ELEVEN deliverables (D1–D7 plus **D8–D11**). It
 > absorbed the retired `PLAN-CIS-057` (the measurement residue a local corpus unblocks) on the
 > operator's direction to build larger plans (ceiling twelve) grouped by shared target. The grouping

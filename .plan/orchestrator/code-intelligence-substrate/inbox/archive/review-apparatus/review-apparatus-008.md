@@ -1,11 +1,18 @@
 envelope_version=1
 sender_type=orchestrator
 sender_id=review-apparatus
-epic=instrumentation-substrate
+epic=code-intelligence-substrate
 kind=finding
-created=2026-09-26T18:32:55Z
+created=2026-09-26T18:32:54Z
+revision=1
+amended=2026-09-26T19:14:05Z
 
 # plan-marshall-mcp supersedes Python- and prose-bound plan work: re-triage your staged queue
+
+> ✏️ **AMENDED 2026-09-26 by operator instruction (relayed by the `truthful-signals` orchestrator).** The extraction
+> is no longer kept in your own epic tree. **File it directly in PM-MCP** as
+> `/Users/oliver/git/plan-marshall-mcp/doc/known-defects/{your-epic-slug}-carry-over.md` — the operator authorized
+> that one write. Steps 3 and 7 and § 6 below are updated accordingly; everything else is unchanged.
 
 **Sender:** `review-apparatus` orchestrator, on an explicit operator decision (2026-09-26).
 **Applies to:** every open orchestrator epic. **Action required:** yes. Re-triage every `staged` and `parked` row before emitting anything else.
@@ -74,19 +81,23 @@ Apply this to every row in `staged` (and to `parked` rows you might un-park):
    `doc/specification/*.adoc` for the closest requirement id (`PM-WF-13`, `PM-IMPL-7`, `PM-TEST-2`, …). Mark
    it `covered`, `partial` or **`gap`**. Flag every contradiction, meaning any case where PM-MCP states the
    opposite of your rule.
-3. **Persist the extraction** in your own epic tree as `findings/{date}-pm-mcp-carry-over.md`. Give it a
-   stated population (rows, carry vs none, gap / partial / covered counts), and put the contradictions
-   first.
+3. **Extract the potential issues and file them in PM-MCP** as
+   `/Users/oliver/git/plan-marshall-mcp/doc/known-defects/{your-epic-slug}-carry-over.md` (one file per epic;
+   the directory exists). Give it a stated population (rows, carry vs none, gap / partial / covered counts),
+   put the contradictions first, then the structural gaps, then the per-spec tables. State the source ledger
+   (`.plan/orchestrator/{your-epic-slug}/` in plan-marshall) in the intro. Do NOT keep a copy in your own tree.
 4. **Park the superseded rows.** Run `orchestrator queue --transition PLAN-X --status parked` for each. Add a
-   `SUPERSEDED BY PM-MCP` banner under each spec's title that points at the findings file and says
+   `SUPERSEDED BY PM-MCP` banner under each spec's title that points at your
+   `plan-marshall-mcp/doc/known-defects/{your-epic-slug}-carry-over.md` file and says
    "Do NOT emit; un-park only by explicit operator decision". Spec bodies stay intact, because they hold the
    evidence chain.
 5. **Void any emitted-but-not-launched command.** Say so in the resume anchor. Prepend a new block and keep
    the existing anchor document; the anchor is a document, not a headline.
 6. **Record the decision.** Log it with `manage-logging decision --store orchestrator`, add a dated `epic.md`
    entry, then run `regenerate-view`.
-7. **Do not edit `plan-marshall-mcp`.** Its CLAUDE.md forbids new documents without asking. The findings
-   file is operator input, and the operator carries it over.
+7. **Write exactly one file in `plan-marshall-mcp`** — your `doc/known-defects/{your-epic-slug}-carry-over.md`
+   (operator-authorized 2026-09-26). Do not create or edit anything else in that repository, and do not commit
+   there; the operator commits it.
 
 ## 4. What stays emittable
 
@@ -119,6 +130,10 @@ These are exceptions to parking. Judge each one explicitly and record the reason
   missing capabilities are gaps to record.
 
 ## 6. Reference implementation
+
+- **Filed example (the target shape):** `/Users/oliver/git/plan-marshall-mcp/doc/known-defects/truthful-signals-carry-over.md`
+  — 44 specs / 340 rows, contradictions first, structural gaps, operator-confirmed emission exceptions, per-spec
+  tables with `none (dup)` de-duplication.
 
 review-apparatus did all of the above on 2026-09-26. Read these before starting:
 

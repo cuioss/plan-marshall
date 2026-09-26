@@ -1,5 +1,10 @@
 # PLAN-TRUTH-172: The lane transition lacks an arrival path for one verdict shape, and the artifacts its own entry gate requires
 
+> ⛔ **NARROWED BY PM-MCP (2026-09-26, operator decision; row status `staged`).** `plan-marshall-mcp` replaces both the
+> process prose and the Python scripts this plan edits. The operator kept this spec emittable **only for D2**,
+> because that defect breaks current delivery (every light-lane plan hits `pr_title_missing` at the 2-refine capture). Every other deliverable below is superseded: do NOT implement it.
+> The invariants of ALL deliverables, including the kept ones, were extracted to `plan-marshall-mcp/doc/known-defects/truthful-signals-carry-over.md` as PM-MCP input.
+
 epic: truthful-signals
 workstream: WS-01
 
@@ -62,18 +67,18 @@ distinct outcomes with a matched negative control; a light-lane plan reaches cap
 
 - HYPOTHESIS: every scoping premise carried from `PLAN-TRUTH-104` still holds at HEAD — confirm/refute at
   that spec's `## Claim Labels` (verify-at-outline)
-  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer at PLAN-TRUTH-104 Claim Labels: 11 verdicts, 8 unverifiable, none contradicted.
+  - verdict: unverifiable | checked_at: a8862630661404aeb132f95ad00b413e2493bfb9 | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer claim at PLAN-TRUTH-104 Claim Labels; D0 owns the re-grounding; not recursed into the superseded spec.
 - HYPOTHESIS: every scoping premise carried from `PLAN-TRUTH-141` still holds at HEAD — confirm/refute at
   that spec's `## Claim Labels` (verify-at-outline)
-  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer at PLAN-TRUTH-141 Claim Labels: 7 top-level bullets, ZERO persisted verdicts - never re-grounded (same gap PLAN-TRUTH-147 c3 has).
+  - verdict: unverifiable | checked_at: a8862630661404aeb132f95ad00b413e2493bfb9 | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer claim at PLAN-TRUTH-141 Claim Labels; D0 owns the re-grounding; not recursed into the superseded spec.
 - OBSERVED: the light-lane `pr_title` defect was re-confirmed first-party on 2026-09-17 —
   `pr_title_missing` is raised by `plan-marshall/scripts/_handshake_commands.py` line 470 (invariant
   documented at `_invariants.py` line 321), and neither `planning.md` nor `light-lane.md` mentions
   `pr_title`.
-  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: All three limbs confirmed at HEAD: pr_title_missing raised at _handshake_commands.py:470 (and again 610); the invariant documented at _invariants.py:314-332; and a whole-file probe for pr_title returns ZERO hits in both planning.md and light-lane.md.
+  - verdict: corroborated | checked_at: a8862630661404aeb132f95ad00b413e2493bfb9 | by: truthful-signals/cleanup | rescoped: n/a | evidence: _handshake_commands.py:467-474 returns pr_title_missing (:470); _invariants.py:313-333 PrTitleMissing names phase-2-refine Step 13 as sole producer; zero pr_title hits in planning.md and light-lane.md.
 - OBSERVED: this spec carries no deliverable of its own invention — all four are `PLAN-TRUTH-147`'s D8–D11
   and their gate, moved without rewording. The split changed the owner, not the work.
-  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: PLAN-TRUTH-147's deliverable list marks D8, D9 and D10 MOVED OUT 2026-09-18 to PLAN-TRUTH-172 and reassigns the -104/-141 control sets to -172 D3; -172's D0-D3 map onto exactly those members plus their gate.
+  - verdict: corroborated | checked_at: a8862630661404aeb132f95ad00b413e2493bfb9 | by: truthful-signals/cleanup | rescoped: n/a | evidence: PLAN-TRUTH-147 :23-26 marks D8/D9/D10 MOVED OUT 2026-09-18 to PLAN-TRUTH-172 and moves -104/-141 control sets to 172 D3.
 
 ## Expected Surface
 

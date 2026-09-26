@@ -1,5 +1,11 @@
 # PLAN-13: Finalize-mechanism structural defects
 
+> ✅ **UN-PARKED 2026-09-26 by explicit operator decision ("stage 12 and 13").** Staged and emittable as an
+> operator-confirmed exception to the PM-MCP supersession (originally parked per inbox `review-apparatus-001`). The implementation-independent content of this spec
+> (rules, invariants, fixtures) is still extracted to
+> `/Users/oliver/git/plan-marshall-mcp/doc/known-defects/process-compliance-carry-over.md`. The body below is kept
+> intact as the evidence chain.
+
 epic: process-compliance
 workstream: WS-07
 

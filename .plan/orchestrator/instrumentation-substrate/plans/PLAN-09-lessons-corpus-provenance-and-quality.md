@@ -1,3 +1,5 @@
+> ⛔⛔ **SUPERSEDED BY PM-MCP (2026-09-26, operator decision relayed by `review-apparatus-001`; row status `parked`).** `plan-marshall-mcp` replaces both the process prose and the Python scripts this plan edits. Its implementation-independent content was extracted as rows `09.*` to `/Users/oliver/git/plan-marshall-mcp/doc/known-defects/instrumentation-substrate-carry-over.md`. The transfer notice below still stands. **Do NOT emit; un-park only by explicit operator decision.**
+
 > ⛔ **TRANSFERRED OUT 2026-09-17 — this spec is RETIRED and must not be launched from here.**
 > Its substance now lives at
 > `.plan/local/orchestrator/post-run-quality/plans/PLAN-PRQ-05-lessons-corpus-provenance-and-quality.md`

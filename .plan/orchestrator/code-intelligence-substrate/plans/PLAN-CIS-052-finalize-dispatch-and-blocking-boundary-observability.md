@@ -38,6 +38,13 @@ wave: 5xx landed-corpus remediation
 
 # The finalize phase records every dispatch it makes, its blocking boundaries refuse audibly, and a dispatch that stops with work left is recorded as a stall
 
+> ⛔⛔ **SUPERSEDED BY PM-MCP (2026-09-26, operator decision; row status `parked`).** `plan-marshall-mcp` replaces both
+> the process prose and the Python scripts this plan edits, so implementing it here is legacy work. Its
+> implementation-independent content (rules, invariants, classifications, data, fixtures) was extracted as PM-MCP
+> input to `/Users/oliver/git/plan-marshall-mcp/doc/known-defects/code-intelligence-substrate-carry-over.md`
+> (rows `052.*`). **Do NOT emit; un-park only by explicit operator decision.** The body below is kept intact as the
+> evidence chain.
+
 > ⚠ **RE-CUT 2026-09-12.** This spec now carries TEN deliverables (D1–D6 plus **D7–D10**). It absorbed
 > the retired `PLAN-CIS-061` (`voluntary_checkpoint` is the modal dispatch termination, and it is a
 > stall) on the operator's direction to build larger plans (ceiling twelve) grouped by shared target.

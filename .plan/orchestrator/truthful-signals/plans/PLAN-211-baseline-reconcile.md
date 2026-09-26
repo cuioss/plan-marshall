@@ -1,5 +1,10 @@
 # PLAN-08: Localized-git parsing and drift routing
 
+> ⛔ **NARROWED BY PM-MCP (2026-09-26, operator decision; row status `staged`).** `plan-marshall-mcp` replaces both the
+> process prose and the Python scripts this plan edits. The operator kept this spec emittable **only for D1, D4, D6 and D7**,
+> because that defect breaks current delivery (localized merge-tree prose parsed as conflict paths aborts phase-5). Every other deliverable below is superseded: do NOT implement it.
+> The invariants of ALL deliverables, including the kept ones, were extracted to `plan-marshall-mcp/doc/known-defects/truthful-signals-carry-over.md` as PM-MCP input.
+
 epic: truthful-signals
 workstream: WS-04
 
@@ -28,8 +33,11 @@ canonical keys, and the YAML-frontmatter corpus split closed. G09 (8 lessons).
 ## Claim Labels
 
 - OBSERVED: baseline-reconcile reported 5 conflicts for a 1-file drift, filing German merge prose as paths — read at `lessons-archive/2026-09-03-19-001.md` § What happened.
+  - verdict: corroborated | checked_at: a8862630661404aeb132f95ad00b413e2493bfb9 | by: truthful-signals/cleanup | rescoped: n/a | evidence: _cmd_baseline_reconcile.py:411-414 treats every stdout line after the tree SHA as a path; no stop at the blank separator before the informational messages, no --no-messages; git_provider.run_git pins no locale.
 - OBSERVED: 10–12 lessons YAML-frontmatter, listable but unaddressable by every id verb, population growing — read at `lessons-archive/2026-09-03-22-002.md` § What happened + Recurrence.
+  - verdict: unverifiable | checked_at: a8862630661404aeb132f95ad00b413e2493bfb9 | by: truthful-signals/cleanup | rescoped: n/a | evidence: lessons-archive/2026-09-03-22-002.md not in the repo inventory; claim belongs to D3, superseded by the PM-MCP narrowing.
 - HYPOTHESIS: locale-pinned parsing plus canonical dedup keys plus header normalization closes the class — confirm/refute at `marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/` § baseline-reconcile (verify-at-outline).
+  - verdict: unverifiable | checked_at: a8862630661404aeb132f95ad00b413e2493bfb9 | by: truthful-signals/cleanup | rescoped: n/a | evidence: Fix hypothesis; caveat at _cmd_baseline_reconcile.py:411-414: locale pinning alone does not close D1/D4/D6 (English 'Auto-merging'/'CONFLICT' lines still parsed as paths); structural fix = stop at the section separator or --no-messages.
 
 ## Expected Surface
 

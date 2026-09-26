@@ -1,5 +1,12 @@
 # PLAN-CIS-039: Half Of Every Tool-Result Byte Is Plan-Marshall Reading Plan-Marshall
 
+> ⛔⛔ **SUPERSEDED BY PM-MCP (2026-09-26, operator decision; row status `parked`).** `plan-marshall-mcp` replaces both
+> the process prose and the Python scripts this plan edits, so implementing it here is legacy work. Its
+> implementation-independent content (rules, invariants, classifications, data, fixtures) was extracted as PM-MCP
+> input to `/Users/oliver/git/plan-marshall-mcp/doc/known-defects/code-intelligence-substrate-carry-over.md`
+> (rows `039.*`). **Do NOT emit; un-park only by explicit operator decision.** The body below is kept intact as the
+> evidence chain.
+
 epic: code-intelligence-substrate
 workstream: WS-06
 

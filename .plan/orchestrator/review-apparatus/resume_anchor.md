@@ -1,3 +1,15 @@
+=== 2026-09-26 CLEANUP: corpus clean, restart not_ready (PLAN-PR-002 running; uncommitted work) ===
+PLAN-PR-002 plan_marshall_plan_id stamped = org-empty-review-guard-too-broad (found via corpus cross-check source_origin). 41/41 reconcile; no staged specs; relocation deferred to close.
+NEXT ACTION: commit the ledger changes; wait for PLAN-PR-002 to land -> corroborate against the foreign cuioss-organization PR -> landing record -> close.
+
+=== 2026-09-26 PLAN-PR-002 RUNNING (operator-confirmed). R = 1 of N = 2. Queue has NOTHING else to emit. ===
+plan_marshall_plan_id still EMPTY - no plan dir found at confirmation; on next status, resolve it via manage-status list + request.md source_id and stamp with queue --set-row PLAN-PR-002 --field plan_marshall_plan_id.
+On landing: corroborate against the FOREIGN cuioss-organization PR (merged? R3 closed? gate exit 1 intact?) - never the local lifecycle alone. Then stamp pr/landing, write landings/PLAN-PR-002.md, and CLOSE the epic.
+
+=== 2026-09-26 LEDGER TRUE: 37 stand-in rows parked -> superseded; inbox drained ===
+All 37 superseded specs (026..055, 056..064, PM-MCP 068..077) now carry terminal `superseded`. Inbox empty (ledger-decomposition-and-row-vocabulary-001 applied + archived).
+Live queue = PLAN-PR-002 ONLY (staged, emitted, re-scoped to #235 residual R3). After it lands and is corroborated against the foreign PR, the epic has no live work -> close.
+
 === 2026-09-26 PLAN-PR-002 EMITTED (re-scoped), PLAN-PR-039 RETIRED ===
 039 retired: delivered via PLAN-PR-066 (plan-marshall#1611; cuioss-organization#288+#290 merged, read first-party).
 002 parked->staged and EMITTED. #235 (merged 2026-08-09) had already shipped the original narrowing; spec re-scoped to #235's residual R3 only (no-files / ignore-filtered empty diff still fails the guard, observed API-Sheriff#340) - skip upstream via #280's changes pre-job, fail-open, gate exit 1 untouched.
@@ -117,5 +129,8 @@ PLAN-PR-002 PARKED: cuioss-organization#235 OPEN - corroborate against the FOREI
 ⛔ A pre-existing macOS test defect is OPERATOR-ASSIGNED to a separate plan: test_qgate_closure.py::test_a_declared_glob_escaping_the_repo_is_unmeasured_not_empty asserts == Path(/etc) against a path resolving to /private/etc. Also a pollution-guard teardown flake in test_comments_stage.py under xdist.
 ⚠ The build wrapper reported status: timeout on a run that COMPLETED (17877 passed in 467s). Read the LOG layer, never the outer status.
 ENVIRONMENT (SUPERSEDED 2026-09-22, kept for history): this line claimed the epic tree was GITIGNORED, LOCAL-ONLY. FALSE since the tracked-store migration (#1558-#1578) -- the tree is git-tracked. See the header block above.
+
+
+
 
 

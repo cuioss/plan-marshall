@@ -1,5 +1,12 @@
 # PLAN-CIS-036: D3's Split Says The Substrate Can Remove 7% — Measured On One Phase, And That Phase Is The Worst Case
 
+> ⛔⛔ **SUPERSEDED BY PM-MCP (2026-09-26, operator decision; row status `parked`).** `plan-marshall-mcp` replaces both
+> the process prose and the Python scripts this plan edits, so implementing it here is legacy work. Its
+> implementation-independent content (rules, invariants, classifications, data, fixtures) was extracted as PM-MCP
+> input to `/Users/oliver/git/plan-marshall-mcp/doc/known-defects/code-intelligence-substrate-carry-over.md`
+> (rows `036.*`). **Do NOT emit; un-park only by explicit operator decision.** The body below is kept intact as the
+> evidence chain.
+
 epic: code-intelligence-substrate
 workstream: WS-04
 

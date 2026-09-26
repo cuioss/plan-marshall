@@ -151,8 +151,11 @@ things fold in that are NOT in the handover summary:
 
 ## Expected Surface
 
-- OBSERVED: `cuioss-organization` → `.github/workflows/reusable-pr-agent-review.yml` — the
-  empty-`REVIEW_OUTPUT` guard step and the job-level `if:` guards.
+- OBSERVED (re-grounded 2026-09-26 at `2a2fa2e`): `cuioss-organization` → `.github/workflows/reusable-cuioss-review-bot.yml`
+  (renamed from `reusable-pr-agent-review.yml` by #288) — the `changes` pre-job, the `review` job's `if:`,
+  and the empty-`REVIEW_OUTPUT` guard step with its `EXCLUDED` block.
+- OBSERVED: `cuioss-organization` → `test/workflow/` — regression tests.
+- OBSERVED: `cuioss-organization` → `docs/Workflows.adoc` — updated in lockstep.
 - HYPOTHESIS: `cuioss-organization` → `docs/automatic-review/pr-agent.md` — a doc update if that
   document states the guard's semantics (verify-at-outline).
 - OBSERVED (absence): NO file inside `plan-marshall` is touched by this plan. This is what makes it
