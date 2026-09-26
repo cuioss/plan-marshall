@@ -1,5 +1,14 @@
 # PLAN-TRUTH-168: `sync-defaults` reports `added` while silently reverting a deliberate `remove-step`
 
+> ✅ **RE-OPENED BY OPERATOR (2026-09-26; row status `staged`).** Parked earlier the same day as PM-MCP-superseded,
+> then explicitly un-parked by the operator: `/marshall-steward upgrade` blindly overwrites operator adaptations
+> (e.g. re-adding a removed `default:verify:coverage`, TokenSheriff#745) in every consumer repo TODAY, and PM-MCP's
+> ConfigReconciler currently reproduces the defect (contradiction 2 in
+> `plan-marshall-mcp/doc/known-defects/truthful-signals-carry-over.md`), so the fix is needed on both sides.
+> **Scope amendment:** the operator names the steward UPGRADE path, not only `manage-config sync-defaults`. The
+> outline MUST settle the (still `unverifiable`) upgrade-path claim below against the live `marshall-steward`
+> upgrade flow and widen `## Expected Surface` to it if upgrade reaches the back-fill by another route.
+
 epic: truthful-signals
 workstream: WS-01
 
@@ -72,23 +81,23 @@ control (a genuinely new default step IS back-filled), for both `verification_st
   docstring states an absent `steps` / `verification_steps` step id is back-filled —
   `marketplace/bundles/plan-marshall/skills/manage-config/scripts/_cmd_sync_defaults.py` lines 255–294, read
   at `7a028157e`.
-  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: _cmd_sync_defaults.py:254-297 _deep_merge_missing recurses into dicts and back-fills every key absent from live; its docstring states verbatim that an absent steps/verification_steps step id is back-filled (line range moved from 255-294).
+  - verdict: corroborated | checked_at: a8862630661404aeb132f95ad00b413e2493bfb9 | by: truthful-signals/cleanup | rescoped: n/a | evidence: _cmd_sync_defaults.py:254-297 _deep_merge_missing copies every key absent from live (:292-294) and recurses into dicts; docstring :271-275 states absent steps/verification_steps ids are back-filled.
 - OBSERVED: `_seed_verify_steps()` exists as the verify-step seed —
   `marketplace/bundles/plan-marshall/skills/manage-config/scripts/_config_defaults.py` line 747, read at
   `7a028157e`.
-  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: _seed_verify_steps exists in _config_defaults.py (3 references; line number has moved off 747, which now holds the BUILD_VERIFY_STEP_EXT_POINT comment block).
+  - verdict: corroborated | checked_at: a8862630661404aeb132f95ad00b413e2493bfb9 | by: truthful-signals/cleanup | rescoped: n/a | evidence: _config_defaults.py:782-794 _seed_verify_steps returns {step_id: {} for every built-in verify step} (:775-779), no default_on/applicability filter.
 - OBSERVED: `remove-step` is a registered verb on keyed step phases —
   `marketplace/bundles/plan-marshall/skills/manage-config/scripts/_cmd_quality_phases.py` line 492, read at
   `7a028157e`.
-  - verdict: corroborated | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: _cmd_quality_phases.py:577 dispatches elif args.verb == remove-step and phase_section in STEP_PHASES - a registered verb on keyed step phases (line moved from 492).
+  - verdict: corroborated | checked_at: a8862630661404aeb132f95ad00b413e2493bfb9 | by: truthful-signals/cleanup | rescoped: n/a | evidence: _cmd_quality_phases.py:577-590 remove-step deletes the key (:584) and records no opt-out; no opt_out/excluded/removed_steps token in manage-config scripts.
 - HYPOTHESIS: `/marshall-steward upgrade` Stage 2 runs `sync-defaults` before any operator-intent
   preservation — confirm/refute at `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/upgrade.py`
   § the Stage-2 `sub_steps` and `marshall-steward/standards/upgrade-flow.md` (verify-at-outline).
-  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: The claim's own confirm-at target is GONE: marshall-steward/standards/upgrade-flow.md does not exist (that standards dir holds only effort-menu.md and pin-provisioning.md), and upgrade.py carries no sync-defaults token at all. Not settled.
+  - verdict: corroborated | checked_at: a8862630661404aeb132f95ad00b413e2493bfb9 | by: truthful-signals/cleanup | rescoped: n/a | evidence: upgrade.py:146-158 Stage 2 first sub_step reconcile-marshal-json; upgrade-flow.md:338-343 runs sync-defaults first; no operator-intent step before it. Second route: marshall-steward/SKILL.md:638-648 re-run remediation.
 - HYPOTHESIS: the observed byte-for-byte revert (sender-observed on Token-Sheriff) reproduces at HEAD —
   confirm/refute with a D3 fixture against `_cmd_sync_defaults.py` § `_deep_merge_missing`
   (verify-at-outline).
-  - verdict: unverifiable | checked_at: 74153664d | by: truthful-signals/cleanup | rescoped: n/a | evidence: Reproducing the byte-for-byte revert requires running the D3 fixture; not executed in a read-only pass.
+  - verdict: unverifiable | checked_at: a8862630661404aeb132f95ad00b413e2493bfb9 | by: truthful-signals/cleanup | rescoped: n/a | evidence: Needs the D3 fixture run; static read supports the revert (remove-step deletes :584, sync-defaults re-adds :292-294); byte-for-byte equality open (docstring says None, seed value is {}).
 
 ## Expected Surface
 
@@ -97,6 +106,10 @@ control (a genuinely new default step IS back-filled), for both `verification_st
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-config/scripts/_config_defaults.py` — the seeds (D0)
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/manage-config/SKILL.md` — the documented `sync-defaults` / `remove-step` contract (verify-at-outline)
 - HYPOTHESIS: `test/plan-marshall/manage-config/` — D3 controls (verify-at-outline)
+- OBSERVED (2026-09-26 sweep): `marketplace/bundles/plan-marshall/skills/marshall-steward/references/upgrade-flow.md` — the upgrade flow invokes `manage-config sync-defaults` at line 339–342 (`sync-defaults` then `steps-sort` then `normalize-keys`); the upgrade report wording and any operator-intent step live here
+- HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/marshall-steward/SKILL.md` — the upgrade verb's documented contract (verify-at-outline)
+- HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/upgrade.py` — `_STAGE_SPECS` (:146-158) changes if the ask-before-add becomes its own Stage-2 sub-step (cleanup 2026-09-26, understated) (verify-at-outline)
+- OBSERVED: `test/plan-marshall/marshall-steward/` — `test_upgrade_flow_stage2.py` pins Stage-2 order sync-defaults -> steps-sort -> normalize-keys; any operator-intent step breaks it (cleanup 2026-09-26, understated)
 
 ## Dependencies and Sequencing
 

@@ -1,5 +1,12 @@
 # PLAN-09: A fixed-name, long-lived worktree for each orchestrator epic's own tree
 
+> ✅ **RE-STAGED 2026-09-26 by explicit operator decision** — exempted from the PM-MCP supersession that parked
+> the rest of this epic's queue the same day. **RE-SCOPED the same day, operator direction: ONE fixed worktree
+> for ALL epic changes**, replacing the earlier one-worktree-per-epic design. Objective, Deliverables and
+> Non-Goals below are rewritten for that; Claim Labels are unchanged research (their per-epic phrasing is
+> historical). Implementation-independent content is also carried in
+> `plan-marshall-mcp/doc/known-defects/orchestrator-refactor-carry-over.md`.
+
 epic: orchestrator-refactor
 workstream: WS-05
 
@@ -13,66 +20,65 @@ workstream: WS-05
 
 ## Objective
 
-The orchestrator today reads and writes `.plan/orchestrator/{slug}/` directly against
-whatever checkout the session runs in — normally the primary checkout on `main` — with no
-dedicated commit/push mechanism at all (confirmed: no `git commit`/`git push` anywhere in
-`orchestrator.py` or its workflow docs; it is ad hoc LLM-run `git` under the small-ops
-carve-out). Give each epic a FIXED-NAME, long-lived git worktree — created once, reused
-forever, never auto-removed — and route the orchestrator's store-resolution seam through it
-when an `orchestrator.use_worktree` config knob is on, so an epic's ledger reads/writes land
-in a dedicated worktree instead of directly touching the primary checkout. This plan builds
-the substrate only; landing the worktree's changes onto `main` is PLAN-10's job.
+The orchestrator today reads and writes `.plan/orchestrator/**` directly against whatever checkout the session
+runs in — normally the primary checkout on `main` — with no dedicated commit/push mechanism (no `git
+commit`/`git push` in `orchestrator.py` or its workflow docs; ledger commits are ad hoc LLM-run `git`). Every
+epic session therefore leaves dirty ledger files on `main`'s working tree, and they accumulate across epics.
+
+Give the orchestrator store ONE fixed-name, long-lived git worktree shared by ALL epics — created once, reused
+forever, never auto-removed — and route the single store-resolution seam through it when an
+`orchestrator.use_worktree` knob is on, so every epic's ledger reads and writes land in that worktree instead of
+the primary checkout. The per-concern ledger layout (one file per row, append-only inbox and landings) already
+makes concurrent epic sessions write disjoint files, so one shared working tree is safe for writes; only git
+operations need serializing, which is PLAN-10's concern. This plan builds the substrate only; landing the
+worktree's changes onto `main` is PLAN-10.
 
 ## Deliverables
 
-1. **D1 — `orchestrator.use_worktree` config knob.** Extend the orchestrator config block's
-   CLOSED key-set and validator (`manage-config/standards/data-model.md`, currently
-   `{effort, parallelization_scope, auto_emit}` only) with a fourth key, `use_worktree`
-   (bool). Decide and document the default at outline — `false` (opt-in rollout, matches how
-   `parallelization_scope`/`auto_emit` were introduced) is the safer starting point absent a
-   stated reason to default `true`.
-2. **D2 — fixed-name per-epic worktree creation/attach, THIN TRIO ONLY.** Extend
-   `workflow-integration-git`'s `git-workflow.py worktree-create` / `worktree-path` /
-   `worktree-list` (currently hard-required `--plan-id`-only per its own in-source
-   assertion) to also address an orchestrator epic — either a sibling
-   `--store orchestrator --slug {slug}` addressing mode on the SAME verbs, or a thin
-   orchestrator-side wrapper that reuses the same underlying `get_worktree_root() / {key}`
-   path-join primitive these three verbs share. **Re-scoped 2026-09-23 (cleanup A1):** the
-   ORIGINAL framing ("reuses the same underlying atomic create/attach primitive") pointed at
-   `prepare_execute.py`/`integrate_into_main.py`'s move-in/move-back layer, which is
-   confirmed plan-shaped by construction (relocates `.plan/local/plans/{plan_id}`, writes a
-   plan `status.json`, generates a per-plan executor, takes a `plan_id`-keyed `merge_lock`)
-   — an epic tree has none of those, so that layer is explicitly EXCLUDED from this
-   deliverable, not merely deferred. Only the thin trio's own path-join logic is generic.
-   Decide the addressing-mode question at outline; either way the path convention is fixed
-   and deterministic (e.g. `.plan/local/worktrees/orchestrator-{slug}/`), mirroring the
-   existing `.plan/local/worktrees/{plan_id}/` convention exactly, one level up.
-3. **D3 — idempotent, non-destructive lifecycle.** First use creates the worktree (a fresh
-   branch off the epic's current tracking base); every subsequent use reuses it as-is. No
-   normal orchestrator operation — including this workstream's own `land` (PLAN-10) — ever
-   removes it; only an explicit, separate, operator-invoked teardown (out of THIS plan's
-   scope; not designed here) may.
-4. **D4 — resolver routing.** When `orchestrator.use_worktree` is on for an epic, route
-   `get_store_dir('orchestrator', slug)` / `get_tracked_config_dir()` (`tools-file-ops`, the
-   same resolver PLAN-01 introduced) through the worktree's path instead of the primary
-   checkout's, for every consumer that reaches it — `manage-status --store orchestrator`,
-   `manage-logging --store orchestrator`, `orchestrator.py`'s own file reads/writes
-   (`epic.md`, `plans/`, `workstreams/`, `landings/`, `inbox/`), and `corpus`'s reads.
-   Falls back to today's primary-checkout path when the knob is off (default, so this
-   plan's own landing changes nothing for an epic that hasn't opted in).
-5. **D5 — audit the terminal-title/session-binding seam.** `platform_runtime session
-   push-title-token --store orchestrator --slug {slug}` (`bind_orchestrator`) is called by
-   every epic-scoped verb; confirm/refute whether it depends on the store resolving to the
-   PRIMARY checkout's cwd in any way that a worktree-resolved path would break
-   (verify-at-outline).
+1. **D1 — `orchestrator.use_worktree` config knob.** Extend the orchestrator config block's CLOSED key-set and
+   validator (`manage-config/standards/data-model.md`, currently `{effort, parallelization_scope, auto_emit}`)
+   with `use_worktree` (bool). It is REPOSITORY-wide, not per epic: one worktree serves every epic, so a
+   per-epic switch would split the ledger across two copies. Default `false` (opt-in rollout) unless the
+   outline states a reason for `true`.
+2. **D2 — the one fixed worktree.** A single deterministic location under the existing worktree root
+   (`get_worktree_root()`), with a key that CANNOT collide with any plan id — choose a key outside the plan-id
+   grammar (e.g. a leading underscore or another character the grammar rejects), decided and documented at
+   outline. A fixed long-lived branch name within the closed prefix set (`chore/…`), since ledger landings are
+   maintenance. Addressing: a non-plan-keyed mode on `git-workflow.py`'s thin worktree trio
+   (`worktree-create` / `worktree-path` / `worktree-list`) or a thin orchestrator-side wrapper over the same
+   `get_worktree_root() / {key}` path-join — decide at outline. The plan-shaped move-in/move-back layer
+   (`prepare_execute.py`, `integrate_into_main.py`) is EXCLUDED (see Claim Labels).
+3. **D3 — idempotent, non-destructive lifecycle.** First use creates the worktree on the fixed branch off
+   `origin/main`; every later use reuses it as-is. No normal operation — including PLAN-10's `land` — removes
+   it; only an explicit, separate operator teardown (out of scope) may. `worktree-list` and any plan-worktree
+   sweep must recognise and skip it, never treat it as an orphaned plan worktree.
+4. **D4 — one seam, every consumer.** When the knob is on, route `get_store_dir('orchestrator', …)` /
+   `get_tracked_config_dir()` (`tools-file-ops`, PLAN-01's resolver) — for BOTH `.plan/orchestrator/` and
+   `.plan/archived-orchestrators/` — through the worktree, for every consumer: `manage-status` /
+   `manage-logging --store orchestrator`, `orchestrator.py`'s own reads and writes (incl. `archive`, which moves
+   a tree between the two roots), `corpus` reads, and the PLAN-SIDE consumers that run from a plan's own
+   worktree: `inbox write` (landing / finding messages), `inbox read` (mailbox), `inbox detect`, and
+   `phase-1-init`'s read of a spec by `source_id`. A spec staged in the worktree and not yet landed is invisible
+   on `main`, so init must resolve it through the same seam or the emit must require the spec landed — decide
+   at outline, never silently read a stale `main` copy. Also audit
+   `platform_runtime session push-title-token --store orchestrator` (`bind_orchestrator`) for any dependence on
+   the primary checkout's cwd. Knob off → today's primary-checkout path unchanged.
+5. **D5 — cutover guard.** Enabling the knob while the primary checkout still holds uncommitted or unlanded
+   `.plan/orchestrator/**` / `.plan/archived-orchestrators/**` changes would strand them on `main` while every
+   reader moves to the worktree. The switch-on path detects that state (naming the dirty paths) and refuses, or
+   carries them into the worktree deliberately — decide at outline; never silently leave two diverging copies.
+
+Scope-bloat note: 5 deliverables, below the ~6 split threshold; D4's plan-side consumer list is the widest
+surface and is the one to split out if the outline finds it larger than stated.
 
 ## Non-Goals
 
-- No `land`/`land-all` verb — that is PLAN-10, strictly dependent on this plan.
-- No change to the PLAN-lifecycle's own worktree machinery or its `--plan-id` addressing —
-  extended/reused, never redesigned.
-- No teardown/removal mechanism for the orchestrator worktree — explicitly out of scope per
-  D3; "never removed by normal operation" is the whole point.
+- No `land` verb — that is PLAN-10, strictly dependent on this plan.
+- No change to the plan lifecycle's own worktree machinery or its `--plan-id` addressing — extended/reused,
+  never redesigned.
+- No teardown/removal mechanism for the orchestrator worktree — "never removed by normal operation" is the
+  point.
+- No per-epic worktree — superseded by the operator's one-shared-worktree direction (2026-09-26).
 
 ## Claim Labels
 
@@ -136,13 +142,16 @@ the substrate only; landing the worktree's changes onto `main` is PLAN-10's job.
 - OBSERVED: `test/plan-marshall/manage-config/**`
 - OBSERVED: `test/plan-marshall/workflow-integration-git/**`
 - OBSERVED: `test/plan-marshall/plan-orchestrator/**`
+- HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/phase-1-init/**` — D4's spec-by-`source_id` read (verify-at-outline)
+- HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/_orchestrator_inbox.py` — D4's plan-side `inbox write` / `read` / `detect` (verify-at-outline)
+- HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/platform-runtime/**` — D4's `bind_orchestrator` audit, only if it needs a change (verify-at-outline)
+- HYPOTHESIS: `test/plan-marshall/phase-1-init/**` (verify-at-outline)
 
 ## Dependencies and Sequencing
 
 - Depends on: none directly (net-new capability).
-- Overlaps with: PLAN-02 (also touches `orchestrator.py`'s status/store surface — sequence,
-  do not parallelize, since D4's resolver-routing change and PLAN-02's row-vocabulary work
-  both touch the same read/write paths), PLAN-06 (also `orchestrator.py`).
+- Overlaps with: PLAN-11 (`orchestrator.py` and `test/plan-marshall/plan-orchestrator/**`) — sequence, do not
+  parallelize. PLAN-02 / PLAN-06 overlaps recorded earlier are moot (PLAN-02 shipped, PLAN-06 parked).
 - **PLAN-10 strictly depends on this plan** — there is nothing to land until the worktree
   and its resolver routing exist.
 - Adjacent to: the PLAN-lifecycle's own `--plan-id`-addressed worktree verbs, which this

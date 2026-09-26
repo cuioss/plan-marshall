@@ -163,6 +163,38 @@ own PLAN-LR-NN queue.
 > its 6 destination epics, and retired all 44 lessons; no longer live working material. (Cleanup,
 > 2026-09-24, operator-confirmed relocation.)
 
+### 2026-09-26 — PM-MCP carry-over sweep (43 lessons; nothing routed to sibling epics)
+
+Driven by `review-apparatus-001` (PM-MCP supersedes Python- and prose-bound plan work; § 5: "a lesson whose
+remedy is a Python or prose change routes to the carry-over as a rule or fixture, not to a staged plan").
+**Deviation from the lessons-handling Step 4 routing, deliberate:** every cluster's owning sibling epic has
+itself parked its queue under the same ruling, so routing a cluster there would only file a message whose
+plans cannot be emitted. Every cluster went to ONE destination instead:
+`/Users/oliver/git/plan-marshall-mcp/doc/known-defects/lessons-routing-carry-over.md` (the full per-lesson
+rows, clusters, PM-MCP mapping, contradictions). `clusters_routed: 0` (inbox), `exception_plans_staged: 0`.
+
+Population: 43 active lessons (`manage-lessons list` at `a88626306`), 42 read, 1 unreadable. Verdicts:
+**36 superseded-by-pm-mcp** (carried or dup of TS/RA carry-over), **5 legacy-blocking**, **1 stale**,
+**1 unreadable**. 100 lesson rows → 57 carried (32 gap / 18 partial / 7 covered), 43 none (mostly dup of TS).
+
+| Disposition | Lessons |
+|---|---|
+| clustered-into L-SET | 22-07-001, 22-07-002 |
+| clustered-into L-ROSTER | 22-07-004, 22-07-006 |
+| clustered-into L-VACUOUS | 22-07-007, 22-08-003, 22-08-004 |
+| clustered-into L-SIBLING | 22-07-005, 22-08-002, 22-07-008 |
+| clustered-into L-SC (scope_creep finding type / base) | 22-12-001 (unreadable header), 22-15-001, 23-16-001, 24-09-001 |
+| clustered-into L-BASE (**legacy-blocking**) | 24-09-003, 24-12-006 |
+| clustered-into L-REFIRE | 23-05-003, 23-07-001, 24-09-005, 24-09-008 |
+| clustered-into L-SCOPE | 24-12-002, 24-12-003, 24-12-004, 24-12-005 |
+| clustered-into L-RETRO | 23-05-001, 23-05-002, 23-05-004, 23-05-005, 23-05-007, 23-05-008 |
+| standalone (**legacy-blocking**) | 24-12-001 (foreign_pr_gate ambient branch), 24-05-001 (sync-baseline rebases behind=0), 23-23-001 (local ruff isort churn) |
+| standalone | 22-07-003, 22-08-001, 23-05-006, 23-07-002, 23-15-001, 24-09-004, 24-09-006, 24-09-007, 24-16-001 |
+| stale | 24-12-007 (fixed forward, #1603 / cuioss-organization 0.30.0) |
+
+(Lesson ids abbreviated: `22-07-001` = `2026-09-22-07-001`.) No lesson was removed from the corpus — removal is
+destructive and awaits the operator (see Decisions 2026-09-26).
+
 ## START HERE
 
 ### Annotations
@@ -256,6 +288,22 @@ own PLAN-LR-NN queue.
   the safe default. Ledger compacted, idempotent. `restart_verdict: not_ready` — 3 new inbox messages
   (sender `api-sheriff-deployment-configurability`) arrived mid-pass, unanalyzed, and this pass's own
   spec edits left 29 uncommitted paths; neither blocks, both are routine follow-ups.
+- 2026-09-26 — **THE WHOLE STAGED QUEUE IS PARKED — superseded by PM-MCP** (operator decision relayed by
+  `review-apparatus-001`, amended same day). `PLAN-LR-01`…`-05` → `parked`, each spec bannered "Do NOT emit".
+  Extraction: 5 specs / 22 rows → 17 carried (12 gap / 5 partial / 0 covered), filed in PM-MCP as
+  `doc/known-defects/lessons-routing-carry-over.md` (the one operator-authorized write; operator commits it).
+  No emission exception applies (none is foreign-repo config, a PM-MIG enabler, or delivery-breaking). No
+  emitted-but-not-launched command existed to void.
+  **Is this epic still valid at all?** Its *queue* — no: every plan is Python/prose on `manage-lessons` and the
+  lessons workflow, both replaced. Its *subject* — yes, and PM-MCP does not yet own it: PM-MCP covers lesson
+  capture and consumption, but places no lesson store, defines no lesson schema, and has no audience /
+  upstream route / version provenance / promotion provenance. Those are recorded as structural gaps in the
+  carry-over, plus contradiction 1 (`manage-lessons` "Ported" under differential equivalence would port the
+  `wrong_store` predicate this epic declared wrong). The lesson SWEEP is also no longer worth running as
+  outward inbox routing: its destinations have parked their queues under the same ruling; new lessons belong
+  in the PM-MCP carry-over directly. Open operator decisions: (a) retire the 36 carried + 1 stale lessons
+  from the corpus; (b) fix the 5 legacy-blocking lessons in legacy under the narrow exception, or accept them;
+  (c) the unreadable `2026-09-22-12-001`; (d) close this epic.
 
 ## Open Defects
 

@@ -59,6 +59,7 @@ touches instruction wording.
 
 <!-- ANNOTATION ZONE — hand-written, and deliberately OUTSIDE the generated table markers. -->
 
+- ⛔ **2026-09-26 — every row is parked (superseded by PM-MCP); the per-row sequencing notes below are historical.**
 - PLAN-01 — the seam every other conformance deliverable sits on. Nothing in WS-01 may run before it.
 - PLAN-02 — depends on PLAN-01's fixture format. Surfaces overlap with PLAN-01 by construction, so
   the two are sequenced, never paired.
@@ -164,6 +165,26 @@ human-facing VIEW; the authoritative append-only record is `logs/decision.log`.}
   `truthful-signals`' inbox as `instrumentation-substrate-001.md` rather than named as a destination,
   per this epic's own 2026-09-14 precedent (message 003 → `code-intelligence-substrate`).
 
+- 2026-09-26 — **THE WHOLE QUEUE IS PARKED — superseded by PM-MCP (operator decision relayed by `review-apparatus-001`).**
+  `plan-marshall-mcp` replaces both plan-marshall's process prose and its Python scripts; nothing bound to either
+  carries. All 9 specs were classified per deliverable (117 rows: 81 carried, 36 none; of the carried 50 `gap`,
+  28 `partial`, 3 `covered`; 1 contradiction — PM-MIG-5 rolls back on a single occurrence of a probabilistic
+  signal — plus 9 tensions) and filed as
+  `/Users/oliver/git/plan-marshall-mcp/doc/known-defects/instrumentation-substrate-carry-over.md` (PM-MCP HEAD
+  `09d2f26`; operator-authorized single write, uncommitted there — the operator commits it). PLAN-01…08
+  transitioned `staged → parked`; PLAN-09 was already parked. Every spec carries a `SUPERSEDED BY PM-MCP` banner;
+  bodies stay intact as the evidence chain. **Emission exceptions: none** — no spec is foreign-repo config, no spec
+  is a PM-MIG-2/-3 enabler, and none fixes a defect that breaks delivery today (PLAN-05 and PLAN-07 are real defects
+  but block nothing). ⭐ The epic's *subject* is not retired, it moved: PM-MCP ships model-facing content to five
+  client profiles with zero model-in-the-loop verification, so the conformance / cross-model eval / calibration-axis
+  / resident-surface / post-compaction-pointer rules are PM-MCP requirements gaps, now recorded there. Rows were
+  extracted by three read-only sub-agents and not re-verified line by line. No emitted-but-not-launched command
+  existed to void (no row was `launched`; the prior anchor's next action was a `next` read, never run).
+- 2026-09-26 — **`other-approaches-001` discarded here, carried to PM-MCP.** Its three simplify-step wording
+  candidates (ordered restraint ladder, never-simplify list, corner-cut marker) are process prose PM-MCP replaces;
+  their rules went into the carry-over file's § Inbox-routed items (all three `gap`: PM-MCP names the `simplify`
+  step but states no criteria). No staged spec may absorb them — the whole queue is parked.
+
 ## Open Defects
 
 {Known defects surfaced by landings or observations that are not yet owned by a staged plan.}
@@ -179,6 +200,12 @@ human-facing VIEW; the authoritative append-only record is `logs/decision.log`.}
   source or test file and in no dependency declaration — the standard reads as binding with its own
   stated precondition unmet. — source: absorbed inbox message `truthful-signals-010` finding 4;
   re-verified in this session; **owned by PLAN-07**.
+
+- ⛔ **2026-09-26 — THE WHOLE QUEUE IS PARKED (superseded by PM-MCP).** All 9 rows are `parked` with a
+  `SUPERSEDED BY PM-MCP` banner; nothing is emittable. Un-park only by explicit operator decision. The three
+  `owned by PLAN-NN` defects above are therefore unowned in plan-marshall; their rules live in
+  `plan-marshall-mcp/doc/known-defects/instrumentation-substrate-carry-over.md` (rows 03.*, 04.*, 07.*). The epic is a
+  `close` candidate once the operator confirms no row will be un-parked.
 
 ## Watches
 

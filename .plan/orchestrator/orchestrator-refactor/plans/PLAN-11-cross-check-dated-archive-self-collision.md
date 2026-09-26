@@ -1,5 +1,10 @@
 # PLAN-11: `corpus cross-check`'s sibling-epic enumeration double-counts a live epic against its own dated archive snapshot
 
+> ✅ **RE-STAGED 2026-09-26 by explicit operator decision** — exempted from the PM-MCP supersession that parked
+> the rest of this epic's queue the same day. Emittable. Its implementation-independent content is ALSO carried
+> in `plan-marshall-mcp/doc/known-defects/orchestrator-refactor-carry-over.md` § PLAN-11 — the PM-MCP rule
+> (an epic's own archive is never its sibling; indeterminacy is per candidate) stands regardless of this fix.
+
 epic: orchestrator-refactor
 workstream: WS-04
 

@@ -205,8 +205,33 @@ the machinery that grades us.
   landing. The old `.plan/local/orchestrator/post-run-quality/` tree is now ORPHANED — do not read or
   write it going forward.
 
+- 2026-09-26 — **THE WHOLE STAGED QUEUE IS PARKED — superseded by PM-MCP.** Inbox `review-apparatus-001.md`
+  (rev 1, relaying a binding operator ruling): `plan-marshall-mcp` replaces both the Python scripts and the
+  process prose, so every Python- or prose-bound plan is legacy work. All 10 staged rows (`PLAN-PRQ-01`, `-03`,
+  `-04`, `-05`, `-07`, `-08`, `-09`, `-10`, `-11`, `-12`) were classified per deliverable by four read-only
+  sub-agents and mapped against PM-MCP `7e13ea1`: **148 rows, 116 carry, 32 none; 52 gap, 58 partial, 6
+  covered; 14 contradictions** (6 hard, 5 tensions, 3 weak/internal — e.g. assessments merged into findings,
+  `FIX|SUPPRESS|ACCEPT` losing "refuted", a clean delta self-review round allowed to close, the retrospective
+  ordered before `record-metrics`). Counts re-derived from the filed tables. **No emission exception applied**
+  to any spec (no foreign-repo config, no coexistence enabler, no delivery-breaking defect). Filed as
+  `/Users/oliver/git/plan-marshall-mcp/doc/known-defects/post-run-quality-carry-over.md` (the one
+  operator-authorized write there; NOT committed — the operator commits it). No copy kept in this tree. Each
+  spec carries a SUPERSEDED BY PM-MCP banner; bodies intact as the evidence chain. Un-park only by explicit
+  operator decision. ⚠ The message's coexistence framing (`co-exist.lock`, cross-runtime `flock`) is refuted by
+  PM-MCP itself: PM-MIG-2 is a hard per-machine cutover and PM-MIG-3 needs no cross-runtime locking
+  (`11-migration.adoc:16/25/37`); recorded in the carry-over intro.
+- 2026-09-26 — **Inbox `lessons-routing-001.md` → discarded.** Lead verified: `2026-09-21-10-008` was promoted
+  by `truthful-signals` (2026-09-21) and re-promoted here as `2026-09-22-08-003` (2026-09-22), which tombstoned
+  the original — the corpus holds one copy, so no live duplicate. Rule carried as Part B row 1 of the carry-over.
+- 2026-09-26 — **Inbox `lessons-routing-002.md` → discarded.** `scope_creep_check` / `scope_creep_warning` is
+  owned by `truthful-signals` PLAN-TRUTH-178 (parked, superseded) and already carried as its 178.D0; recorded
+  here as a `none (dup)` row.
+
 ## Open Defects
 
+- **2026-09-26 — Whole queue parked (see Decisions).** Every row but the two shipped ones is `parked`; nothing
+  is emittable. The Open Defects below are now each owned by a parked spec, i.e. by the PM-MCP carry-over, not
+  by pending plan-marshall work.
 - **The census does not census itself.** `audit-archived-plan-retrospectives` SKILL.md:231-236 states it
   outright — the suspect-zero census is excluded from its own population, "the detector-inside-its-own-
   population failure mode, standing unresolved in the instrument built to surface it." — source: inventory
@@ -400,17 +425,5 @@ this epic's.
   provenance-of-retirement, worth folding into PLAN-PRQ-05 D3's design at outline. No spec edit applied
   this pass (informational, no ship semantics, PLAN-PRQ-05 not yet launched) — re-read at PLAN-PRQ-05's
   outline.
-- **Two NEW staged `truthful-signals` specs materially overlap PLAN-PRQ-08 and PLAN-PRQ-01, invisible to
-  either ledger.** Found 2026-09-22 during A1 re-grounding corroboration. `PLAN-TRUTH-175-dispatch-and-
-  phase-boundary-measurement-integrity` (staged) declares D2/D3 = the same dispatch-boundary token
-  recording and four component token columns PLAN-PRQ-08 claims 5/7 own, with the OPPOSITE stated root
-  cause (-175: "the recorder does not capture them, fix the recorder" vs PLAN-PRQ-08/`truthful-signals`
-  PLAN-TRUTH-160: "the recorder declares all four flags, the call sites pass nothing, fix the call
-  sites"), and D5 = the identical `manage-change-ledger`/build-time-oracle investigation PLAN-PRQ-08 claim
-  6 owns. `PLAN-TRUTH-175` itself records "Overlaps with: none known against the current live queue" —
-  that statement is made against its own ledger only, so the sole-ownership reading on either side is not
-  safe. `PLAN-TRUTH-174-plan-retrospective-measurement-integrity` (staged, same-source sibling) is an
-  adjacent candidate collision with PLAN-PRQ-01's `plan-retrospective/**` surface, not yet corroborated in
-  detail. — resolve before either PLAN-PRQ-01 or PLAN-PRQ-08 is emitted: read `truthful-signals`'
-  PLAN-TRUTH-174/-175 spec bodies in full and either fold/cross-reference or explicitly partition the
-  overlapping deliverables between the two epics.
+> ↪ Relocated to `settled.md` § "Cross-epic collision: PLAN-TRUTH-175/174 vs PLAN-PRQ-08/01" — settled 2026-09-26: PLAN-PRQ-01 and PLAN-PRQ-08 are parked (superseded by PM-MCP) and
+> truthful-signals PLAN-TRUTH-174/-175 are parked there too, so neither side can be emitted; the overlap is moot.

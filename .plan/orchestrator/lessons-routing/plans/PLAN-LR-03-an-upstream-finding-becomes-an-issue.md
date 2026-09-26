@@ -1,5 +1,11 @@
 # PLAN-LR-03: An upstream finding becomes an issue
 
+> ⛔⛔ **SUPERSEDED BY PM-MCP (2026-09-26, operator decision; row status `parked`).** `plan-marshall-mcp` replaces both the
+> process prose and the Python scripts this plan edits, so implementing it here is legacy work. Its
+> implementation-independent content (rules, invariants, classifications, data, fixtures) was extracted to
+> `/Users/oliver/git/plan-marshall-mcp/doc/known-defects/lessons-routing-carry-over.md` as PM-MCP input.
+> Do NOT emit; un-park only by explicit operator decision.
+
 epic: lessons-routing
 workstream: WS-02
 

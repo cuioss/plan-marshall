@@ -2448,20 +2448,31 @@ def cmd_worktree_rebase_to(args):
             'message': 'branch is already at base; no rebase needed',
         }
 
-    # ``ahead`` and ``behind`` both attempt a rebase. The detected state
+    # A branch that already CONTAINS ``rebase_base`` (the base tip is an ancestor
+    # of HEAD, i.e. ``behind == 0``) is up to date and is never rebased. Running
+    # ``git rebase`` over it is not a no-op when the branch carries merge commits
+    # from the base (an execute-time ``merge origin/main``): the rebase drops the
+    # merges, linearizes the branch, and replays commits whose content is already
+    # upstream — manufacturing conflicts on work that landed on the base. The
+    # ancestry check is authoritative; the ``behind`` count is not consulted for it.
+    _rc_pre, pre_sha, _pre_err = run_git(['-C', str(target), 'rev-parse', 'HEAD'])
+    rc_anc, _anc_out, _anc_err = run_git(['-C', str(target), 'merge-base', '--is-ancestor', rebase_base, 'HEAD'])
+    if rc_anc == 0:
+        return {
+            **base_payload,
+            'status': 'success',
+            'action': 'noop',
+            'pre_sha': pre_sha,
+            'post_sha': pre_sha,
+            **_EXECUTOR_REFRESH_NOT_REPLAYED,
+            'message': f'branch already contains {rebase_base}; no rebase needed',
+        }
+
+    # ``ahead`` (diverged) and ``behind`` attempt a rebase. The detected state
     # is preserved in the response so callers can distinguish. Rebase onto the
     # resolved ``rebase_base`` (``origin/{base}`` when present, else local
     # ``{base}``) so a single invocation lands the branch on the remote tip.
-    #
-    # ``pre_sha`` is captured immediately before the rebase so the post-rebase
-    # verdict rests on evidence that history changed, rather than on an inference
-    # from the ``behind`` count. A strictly-``ahead`` branch (``behind == 0``)
-    # already contains ``rebase_base``, so the rebase replays nothing and leaves
-    # HEAD untouched; the diverged case (``ahead > 0 AND behind > 0``, which
-    # ``_detect_worktree_state`` also labels ``ahead``) genuinely replays and does
-    # move HEAD. Comparing the SHAs distinguishes the two without special-casing
-    # either.
-    _rc_pre, pre_sha, _pre_err = run_git(['-C', str(target), 'rev-parse', 'HEAD'])
+    # ``pre_sha`` / ``post_sha`` substantiate whether history actually changed.
     rc, _stdout, stderr = run_git(['-C', str(target), 'rebase', rebase_base])
     if rc == 0:
         _rc_post, post_sha, _post_err = run_git(['-C', str(target), 'rev-parse', 'HEAD'])

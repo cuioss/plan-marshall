@@ -31,6 +31,7 @@ Return shape (CLI emits TOON; programmatic callers consume the dict directly)::
 
     status: clear | blocked | error
     plan_id: <id>
+    plan_branch: feature/<id>                             # the branch every foreign repo is classified on
     foreign_deliverable_count: <int>
     excluded_read_only_count: <int>                       # count of excluded_read_only rows
     excluded_read_only[E]{deliverable,path}: ...          # one row per (deliverable, excluded path)
@@ -165,13 +166,22 @@ def _resolve_repo_root(path: str) -> str | None:
     return root or None
 
 
-def _resolve_landing_state(repo_root: str) -> dict:
-    """Return the parsed ``ci pr landing-state --project-dir {repo_root}`` TOON.
+def plan_branch_for(plan_id: str) -> str:
+    """Return the branch a plan's changes are committed on: ``feature/{plan_id}``."""
+    return f'feature/{plan_id}'
+
+
+def _resolve_landing_state(repo_root: str, branch: str) -> dict:
+    """Return the parsed ``ci pr landing-state --project-dir {repo_root} --branch {branch}`` TOON.
 
     Routes the landing-state verb at the foreign repository's checkout via the
     router-level ``--project-dir`` flag, so the verb answers "did THIS
-    repository's change land?" for the foreign tree. Returns the parsed dict
-    verbatim; the caller reads ``landing_state``.
+    repository's change land?" for the foreign tree. ``branch`` is the PLAN's
+    branch, passed explicitly: the foreign checkout's ambient HEAD is whatever
+    that tree happens to have checked out (typically ``main`` after branch
+    cleanup), and classifying it reads ``pushed_no_pr`` for a change whose plan
+    branch already merged. Returns the parsed dict verbatim; the caller reads
+    ``landing_state``.
     """
     executor = get_executor_path()
     cmd = [
@@ -182,6 +192,8 @@ def _resolve_landing_state(repo_root: str) -> dict:
         repo_root,
         'pr',
         'landing-state',
+        '--branch',
+        branch,
     ]
     completed = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=120)
     stdout = completed.stdout or ''
@@ -308,7 +320,8 @@ def check(
         root_resolver: Optional test seam in place of :func:`_resolve_repo_root`.
             Signature: ``(path) -> str | None``.
         landing_resolver: Optional test seam in place of
-            :func:`_resolve_landing_state`. Signature: ``(repo_root) -> dict``.
+            :func:`_resolve_landing_state` bound to the plan's branch.
+            Signature: ``(repo_root) -> dict``.
 
     Returns:
         The gate result dict (see the module docstring for the shape and the
@@ -316,7 +329,8 @@ def check(
     """
     load = deliverables_loader or _list_deliverables
     resolve_root = root_resolver or _resolve_repo_root
-    resolve_landing = landing_resolver or _resolve_landing_state
+    plan_branch = plan_branch_for(plan_id)
+    resolve_landing = landing_resolver or (lambda root: _resolve_landing_state(root, plan_branch))
 
     # The project root is the substrate the foreign classification rests on. When
     # it cannot be resolved, the advisory `foreign` column fails open (stamps
@@ -329,6 +343,7 @@ def check(
         return {
             'status': 'error',
             'plan_id': plan_id,
+            'plan_branch': plan_branch,
             'error': 'project_root_unresolvable',
             'message': f'Could not resolve the project root for foreign classification: {exc}',
         }
@@ -339,6 +354,7 @@ def check(
         return {
             'status': 'error',
             'plan_id': plan_id,
+            'plan_branch': plan_branch,
             'error': 'deliverables_unavailable',
             'message': str(message),
         }
@@ -356,6 +372,7 @@ def check(
         return {
             'status': 'clear',
             'plan_id': plan_id,
+            'plan_branch': plan_branch,
             'project_root': project_root,
             'foreign_deliverable_count': 0,
             **exclusions,
@@ -417,6 +434,7 @@ def check(
         'status': status,
         'plan_id': plan_id,
         'project_root': project_root,
+        'plan_branch': plan_branch,
         'foreign_deliverable_count': len(foreign),
         **exclusions,
         'repos': repos,

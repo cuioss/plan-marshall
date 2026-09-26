@@ -1,5 +1,10 @@
 # PLAN-TRUTH-167: `pre-submission-self-review` on a diff no resolvable surfacer applies to loops to the ceiling instead of reporting "not covered"
 
+> ⛔ **NARROWED BY PM-MCP (2026-09-26, operator decision; row status `staged`).** `plan-marshall-mcp` replaces both the
+> process prose and the Python scripts this plan edits. The operator kept this spec emittable **only for D1 and D2**,
+> because that defect breaks current delivery (self-review on a consumer diff loops to `max_iterations` and blocks push). Every other deliverable below is superseded: do NOT implement it.
+> The invariants of ALL deliverables, including the kept ones, were extracted to `plan-marshall-mcp/doc/known-defects/truthful-signals-carry-over.md` as PM-MCP input.
+
 epic: truthful-signals
 workstream: WS-01
 
@@ -72,29 +77,29 @@ surfacer applied" from "reviewed clean" without reading `may_close=no` from a st
 - OBSERVED: Step 1 selects "the first implementor whose notation **resolves in the current executor**" —
   `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md` line 115,
   read at `7a028157e`.
-  - verdict: corroborated | checked_at: 7d82d5d90 | by: truthful-signals/cleanup | rescoped: n/a | evidence: pre-submission-self-review.md:119 still reads 'Select the first implementor whose notation resolves in the current executor' (unchanged since PR #1559).
+  - verdict: corroborated | checked_at: a8862630661404aeb132f95ad00b413e2493bfb9 | by: truthful-signals/cleanup | rescoped: n/a | evidence: pre-submission-self-review.md:119 still 'Select the first implementor whose notation resolves in the current executor'; only #1599 (85e6e2133) touched the file since fca06c4ca, and only Branch A.
 - OBSERVED: the zero-generator fallback and its not-run verdict exist but are reached only when NO
   implementor resolves — `pre-submission-self-review.md` lines 177–179 and 395, read at `7a028157e`.
-  - verdict: corroborated | checked_at: 7d82d5d90 | by: truthful-signals/cleanup | rescoped: n/a | evidence: pre-submission-self-review.md:181-183 still carries the zero-generator fallback and the not-run verdict string, gated on when NO discovered implementor resolves (unchanged since PR #1559).
+  - verdict: corroborated | checked_at: a8862630661404aeb132f95ad00b413e2493bfb9 | by: truthful-signals/cleanup | rescoped: n/a | evidence: pre-submission-self-review.md:181-183 zero-generator fallback verdict reached only when NO implementor resolves; same at ext-point-self-review-surfacing.md:24.
 - OBSERVED: `verdict_refused`, `further_round_owed`, and `verifier_unavailable` all map to `loop_back` —
   `pre-submission-self-review.md` lines 503–505, read at `7a028157e`.
-  - verdict: corroborated | checked_at: 7d82d5d90 | by: truthful-signals/cleanup | rescoped: n/a | evidence: pre-submission-self-review.md:505-509 still maps verdict_refused, further_round_owed and verifier_unavailable all to loop_back (unchanged since PR #1559).
+  - verdict: corroborated | checked_at: a8862630661404aeb132f95ad00b413e2493bfb9 | by: truthful-signals/cleanup | rescoped: n/a | evidence: pre-submission-self-review.md:503-511 maps verdict_refused, further_round_owed, verifier_unavailable all to loop_back; :520 'Every non-closing state above records loop_back'.
 - OBSERVED: the plan-marshall surfacer defaults its base to local `main` —
   `marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/scripts/self_review.py`
   line 285 (`base_branch = args.base_branch or 'main'`), read at `7a028157e`.
-  - verdict: corroborated | checked_at: 7d82d5d90 | by: truthful-signals/cleanup | rescoped: n/a | evidence: self_review.py:292 is exactly base_branch = args.base_branch or 'main' - unchanged text, line moved from 285 by PR #1559.
+  - verdict: corroborated | checked_at: a8862630661404aeb132f95ad00b413e2493bfb9 | by: truthful-signals/cleanup | rescoped: n/a | evidence: self_review.py:292 base_branch = args.base_branch or 'main' persists, but since #1559 the footprint anchor is resolve_upstream_base (:316) with a behind_upstream refusal (:317-323).
 - OBSERVED: `ext-self-review-plan-marshall` is the only surfacer implementor; no detector reads Java (per the
   sender's `git ls-tree` sweep at `7a028157e`, corroborated by directory listing at staging).
-  - verdict: corroborated | checked_at: 7d82d5d90 | by: truthful-signals/cleanup | rescoped: n/a | evidence: grep across marketplace/bundles/*/skills/*/SKILL.md for the ext-point-self-review-surfacing implements line still returns exactly one bundle, pm-plugin-development:ext-self-review-plan-marshall; no Java/other-domain surfacer added by PR #1559.
+  - verdict: corroborated | checked_at: a8862630661404aeb132f95ad00b413e2493bfb9 | by: truthful-signals/cleanup | rescoped: n/a | evidence: implements: sweep hits only pm-plugin-development/ext-self-review-plan-marshall/SKILL.md; no other ext-self-review-* skill exists.
 - HYPOTHESIS: `manage-references compute-footprint` resolves `--base-ref` to local `{base}` after a rebase
   onto `origin/{base}` — confirm/refute at
   `marketplace/bundles/plan-marshall/skills/manage-references/scripts/_cmd_compute_footprint.py` § the base-ref
   default (verify-at-outline).
-  - verdict: contradicted | checked_at: 7d82d5d90 | by: truthful-signals/cleanup | rescoped: no | evidence: REFUTED by PR #1559 (fca06c4ca). resolve_base_ref (_references_core.py:220-250) now PREFERS origin/{base_branch} with fully-qualified remote-tracking verification before falling back to the local base_branch/main. The 'never origin/{base}' finding no longer holds. D3's premise needs re-scoping; the narrower surviving residue (capture never re-derived against the MERGE commit specifically, only against upstream base) is recorded in this spec's own FOLDED 2026-09-22 section. Not yet re-scoped.
+  - verdict: contradicted | checked_at: a8862630661404aeb132f95ad00b413e2493bfb9 | by: truthful-signals/cleanup | rescoped: no | evidence: _cmd_compute_footprint.py:77 -> _references_core.py:259-263 returns origin/{base} when it resolves; local base only a fallback (:264-266). #1628 added only --files-out.
 - HYPOTHESIS: the extension point declares no content-class domain an implementor could be matched on —
   confirm/refute at `marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md`
   § the implementor contract (verify-at-outline).
-  - verdict: corroborated | checked_at: 7d82d5d90 | by: truthful-signals/cleanup | rescoped: n/a | evidence: ext-point-self-review-surfacing.md still declares an implementor via implements: frontmatter plus a CLI contract only; no content-class/domain declaration for selection exists. delta_coverage per-content-class (line 70) remains an OUTPUT field, not an applicability input. Unchanged by PR #1559.
+  - verdict: corroborated | checked_at: a8862630661404aeb132f95ad00b413e2493bfb9 | by: truthful-signals/cleanup | rescoped: n/a | evidence: ext-point-self-review-surfacing.md:30-34 frontmatter is implements: only; extension_discovery.py _IMPLEMENTOR_FRONTMATTER_KEYS (:894-902) has no content-class/domain key; delta_coverage.by_class is output-only.
 
 ## Expected Surface
 
@@ -105,6 +110,7 @@ surfacer applied" from "reviewed clean" without reading `may_close=no` from a st
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-references/scripts/_references_core.py` — `resolve_base_ref` (line 171-176) and `compute_plan_branch_diff` (line 241) plus its docstring guarantee (D3, folded 2026-09-17)
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/plan-orchestrator/standards/landing-payload-spec.md` — the not-covered fact key (D4) (verify-at-outline)
 - HYPOTHESIS: `test/plan-marshall/phase-6-finalize/` and `test/pm-plugin-development/ext-self-review-plan-marshall/` — coverage (verify-at-outline)
+- HYPOTHESIS: `marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/SKILL.md` — D1's applicability needs the surfacer's declared domain, which per the ext-point contract lives in implementor frontmatter (cleanup 2026-09-26, understated) (verify-at-outline)
 
 ## Dependencies and Sequencing
 

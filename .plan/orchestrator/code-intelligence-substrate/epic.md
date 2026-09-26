@@ -786,6 +786,58 @@ are relocated **with their reasoning** to [`settled.md`](settled.md) § "Relocat
 The pre-ingest section is relocated verbatim to [`settled.md`](settled.md) § "Relocated: Open Defects as they stood before the ingest". This section is re-authored against the ingest's evidence. **Resolved items are named as
 resolved rather than silently dropped.**
 
+### ⛔⛔⛔ 2026-09-26: THE WHOLE LIVE QUEUE IS PARKED because `plan-marshall-mcp` supersedes it
+
+**Operator decision**, relayed by the `review-apparatus` orchestrator in inbox `review-apparatus-008.md` (rev 1,
+amended by operator instruction). `plan-marshall-mcp` (PM-MCP, `/Users/oliver/git/plan-marshall-mcp`) replaces BOTH
+the process prose AND the Python scripts of plan-marshall.
+
+- **Nothing Python-bound or prose-bound carries over.** What carries is implementation-independent content: rules,
+  invariants, classifications, data and real-corpus fixtures.
+- PM-MCP's own PM-TEST-1 Ported/Redesigned split was **withdrawn** as the framing. Do not re-derive it.
+
+**What changed in this ledger:**
+
+- **`PLAN-CIS-052`, `-050`, `-054`: `staged` → `parked`.** Specs are bannered `SUPERSEDED BY PM-MCP`, with bodies
+  intact.
+- **`PLAN-CIS-036`, `-039`: already parked, now bannered too.** Their pre-existing blocks (036's contradicted title
+  premise, and 039's two owed re-scopes) stand. PM-MCP overlap:
+  - PM-SKILL-1..3 (progressive, server-delivered skills) supersede most of 039.
+  - PM-SVC-2 `pm_lsp` and PM-EXT-3 `pm://architecture/*` cover the Tier 1/2 codebase side.
+- **Live queue is now 0 staged / 5 parked / 4 superseded.** Nothing is emittable.
+- **Emitted-but-not-launched commands: none to void.** The last emit, `PLAN-CIS-049`, shipped as #1489.
+
+**Emission exceptions: none, each judged explicitly.** The three exceptions are (a) foreign-repo config, (b) a
+PM-MIG-2/3 coexistence enabler, and (c) a defect that breaks delivery today.
+
+- `050` D1(a) changes a `.toon` cell vocabulary, but that is not the `.toon`→JSON conversion.
+- `050` D3(a) needs a clean foreign checkout to trigger.
+- `052`'s stranded Phase-6 finding (N1) and its canonical-blind freshness gate (F-001(1)) weaken signal truth, but CI
+  and PR review still gate every merge.
+
+**Extraction:** filed in PM-MCP (operator-authorized single write, NOT committed there; the operator commits it) as
+`/Users/oliver/git/plan-marshall-mcp/doc/known-defects/code-intelligence-substrate-carry-over.md`. Per message
+step 3, no copy is kept in this tree.
+
+- **Population:** 306 rows. Part A has 225 rows over the 5 live specs (171 carry over, 54 none). Part B has 81 rows
+  from the epic narrative, `settled.md`, the 7 WS charters and inbox `other-approaches-001`.
+- **Mapping at PM-MCP `09d2f26`:** 116 gap, 107 partial, 29 covered. Rows were extracted by read-only sub-agents and
+  not re-verified line by line.
+- **11 contradictions**, each re-verified at the cited line. The headline family is C1–C4: PM-MCP records a single
+  `token_usage` / `total_tokens` with no cache split and no turns. Its own PM-MIG-5 rollback trigger ("resident context
+  billing weight, tokens × turns") is therefore **unmeasurable**. `token_usage` has `minimum: 1` against `int[0..]`,
+  so a measured zero is rejected. Its 10K envelope budget prices entry, never residency.
+- Also filed:
+  - Phase-6 and archive are not gated on pending findings (C5).
+  - Predicate 1 excludes `self_review` / `qgate` / … origins (C6).
+  - A scalar `client_session_id` (C7).
+  - A scalar `verification_command` (C8).
+  - An unmarked empty profile (C9).
+  - `key_packages:list<text>` (C10).
+  - A per-commit module cache (C11, soft).
+
+**Un-park only by explicit operator decision.** The epic has no live work. Its remaining value is the carry-over.
+
 ### Resolved by the wave
 
 - ✅ **D-a (generator fail-open) is CLOSED** by `PLAN-CIS-045` — the guard exists and is
@@ -1316,6 +1368,26 @@ resolved rather than silently dropped.**
   surface this residual extends. **Un-owned — no staged spec in this corpus declares the executor's
   rejection-diagnostics path.** Not staged here for the same reason as D32; routes to whichever spec
   next touches executor rejection handling.
+
+### 2026-09-26 Inbox drain: 2 of 2 consumed, 0 staged, 1 observed, 1 discarded
+
+- ✅ **Observed and applied: `review-apparatus-008.md`** (orchestrator finding, rev 1, amended). This is the PM-MCP
+  supersession directive. Its procedure was applied in full: see the Open Defects entry "2026-09-26: THE WHOLE LIVE
+  QUEUE IS PARKED". There were 3 rows parked, 5 specs bannered, and one carry-over file filed in PM-MCP. No CIS-side
+  spec was created for it.
+- ✅ **Discarded as local work, with its content carried to PM-MCP: `other-approaches-001.md`** (orchestrator
+  finding, 2026-09-23). It routed three WS-06 context-economics ideas:
+  - progressive, index-first loading of the system's own corpus;
+  - mandatory elision markers with a retrieval handle;
+  - shrinking only early-entering, long-lived bytes while keeping the cached prefix byte-stable.
+
+  It also recorded three unrouted ideas (holdout measurement, a fallback-to-read uptake metric, and a metrics-vs-session-log
+  cross-check) and one anti-goal ("never lower effort").
+  - Its WS-06 target is superseded by PM-MCP. Staging a Python/prose lever here would be legacy work.
+  - All seven items are rows in the carry-over's Part B (`inbox other-approaches-001 …`). The elision-marker rule,
+    holdout measurement and the fallback-to-read metric map as `gap`.
+- **Drain state:** `live_count 0`, `closed_senders` empty, `invalid 0`. This is the EMPTY zero: a later message from
+  any sender is still possible.
 
 ### 2026-09-22 Inbox drain — 3 of 3 consumed, 0 staged, 1 folded, 1 promoted, 1 refuted
 

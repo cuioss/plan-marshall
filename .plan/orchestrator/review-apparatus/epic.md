@@ -158,7 +158,7 @@ preserves this zone verbatim.
   construction, not by measurement. Do not cite one as evidence. ⚠ PR-037 still collides with a live
   plan on `_findings_core.py`, so this was a FOLD, not an emit.
 - ⛔⛔ **PLAN-PR-025 IS RETIRED AND SUPERSEDED (2026-08-29) — the mandatory split is DONE.** Do not
-  re-split it and do not emit it. Its row rides the live queue only because `retired` is not terminal.
+  re-split it and do not emit it. `retired` is terminal, so the row is not in the live queue.
   **Amend the successors, never it.**
   - **PLAN-PR-025A** (D0–D6, *the record*) — **EMITTED 2026-08-29**, awaiting operator-confirmed launch.
     It inherited 025's first-staged queue position.
@@ -184,8 +184,9 @@ preserves this zone verbatim.
   (`manage-solution-outline.py`, `_orchestrator_inbox.py`) and by its own mandatory 540a/540b split.
 - **PLAN-PR-032 is free to run now** — nothing else in the epic may touch `cloud-plan-lane/SKILL.md`.
 - **PLAN-PR-033 is operator-gated by construction**: its D0 is an `AskUserQuestion`, not an edit.
-- PLAN-PR-018 and PLAN-PR-004 are retired; PLAN-PR-002 is parked on an open foreign PR
-  (`cuioss-organization#235`). All three ride the live queue because they are not terminal.
+- PLAN-PR-018 and PLAN-PR-004 are retired (terminal, not in the live queue). PLAN-PR-002: its original
+  foreign PR `cuioss-organization#235` MERGED 2026-08-09; the spec was re-scoped 2026-09-26 to #235's
+  residual R3 and re-staged (see the spec's `RE-SCOPED` block).
 
 ### Sequencing constraints (the only ones that bind)
 
@@ -519,7 +520,8 @@ implementation-independent content — rules, invariants, classifications, data,
 operator's first framing (PM-MCP's own PM-TEST-1 Ported/Redesigned split, which would have kept store and
 integration scripts live) was **explicitly withdrawn** in favour of this one — do not re-derive it.
 
-- **All ten staged plans `PLAN-PR-068` … `-077` → `parked`**, each spec bannered `SUPERSEDED BY PM-MCP`.
+- **All ten staged plans `PLAN-PR-068` … `-077` → `parked`, then the same day → `superseded`** (terminal),
+  each spec bannered `SUPERSEDED BY PM-MCP`.
   `PLAN-PR-070` had been EMITTED but never launched — ⛔ the emitted command is VOID, do not launch it.
 - **Extraction:** [`findings/2026-09-26-pm-mcp-carry-over.md`](findings/2026-09-26-pm-mcp-carry-over.md) —
   77 deliverables, 71 carry content, 6 none; mapped to PM-MCP requirement ids: 51 full/partial `gap`, 7
@@ -2269,7 +2271,15 @@ D3 + 3a → `PLAN-PR-057` D10 (one subject stated twice — the mutable refusal 
 as a live-wait problem); `PLAN-PR-026` D1 + `PLAN-PR-047` D0 → `PLAN-PR-061` D1 (the same artifact from
 the producing and the consuming side). ⛔ Both are NUMBERING changes: every *Done when* clause stands.
 
-⛔⛔ **THE 18 SUPERSEDED ROWS ARE RECORDED `parked`, AND THAT IS NOT WHAT THEY ARE.** The queue cannot
+✅ **RESOLVED 2026-09-26 — the rows are now TRUE, not just SAFE.** The vocabulary landed via PLAN-TRUTH-143
+(#1539): `superseded` / `transferred` / `retired` / `resolved` are writable and terminal. All 37 stand-in
+rows (the 18 below, the 9 theme specs `PLAN-PR-056`…`-064`, and the 10 PM-MCP-superseded `-068`…`-077`)
+were transitioned `parked → superseded`, one `queue --transition` per row. The four `retired` rows are
+valid. Drained from inbox `ledger-decomposition-and-row-vocabulary-001.md`. The paragraph below is kept
+as history and no longer describes the ledger.
+
+~~⛔⛔ **THE 18 SUPERSEDED ROWS ARE RECORDED `parked`, AND THAT IS NOT WHAT THEY ARE.**~~ The queue could
+not, at that time,
 express `retired`: `orchestrator.py`'s `VALID_STATUS_VOCABULARY` is
 `{staged, launched, running, parked, shipped, landed}` and `--transition` refuses `retired` with
 `invalid_field` — **while four rows in this very ledger already carry it** (`PLAN-PR-004`, `-018`,

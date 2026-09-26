@@ -51,6 +51,10 @@ ad hoc commits directly against `main`.
 status, workstream, and surface are in `queue-view.md`; this zone carries only what it
 cannot express.}
 
+- PLAN-09 / PLAN-10 / PLAN-11 (2026-09-26) — the only staged rows after the PM-MCP park. All three share
+  `orchestrator.py` and `test/plan-marshall/plan-orchestrator/**`, so they run one at a time, never paired.
+  PLAN-10 strictly follows PLAN-09. Queue order puts PLAN-09 first; PLAN-11 is the smallest and may go first by
+  operator choice.
 - PLAN-01 — **SHIPPED 2026-09-21** (#1557/#1558/#1561; #1555 closed unmerged, split
   executed). See `landings/PLAN-01.md`. Landed WITHOUT a redirect — see the new Open Defect
   on `_orchestrator_inbox.py`'s path-prefix gap, folded into PLAN-03.
@@ -287,6 +291,45 @@ cannot express.}
   holds. Reconsider at outline time if the executing plan finds D5 adds unwanted coupling.
 
 ## Open Defects
+
+### ⛔⛔⛔ 2026-09-26 — THE WHOLE STAGED QUEUE IS PARKED: `plan-marshall-mcp` supersedes it
+
+**Operator decision** (relayed by the `review-apparatus` inbox message `review-apparatus-001.md`, amended rev 1;
+drained 2026-09-26 on operator instruction "drain and restructure according to the review-apparatus
+message"). `plan-marshall-mcp` (PM-MCP, `/Users/oliver/git/plan-marshall-mcp`) replaces BOTH the process prose
+AND the Python scripts of plan-marshall. **Nothing Python- or prose-bound carries**; only
+implementation-independent content does. PM-MCP's PM-TEST-1 Ported/Redesigned reading was explicitly withdrawn
+by the operator — do not re-derive it.
+
+- **All six staged rows `PLAN-03`, `-05`, `-06`, `-09`, `-10`, `-11` → `parked`**; `PLAN-07` was already
+  parked. All seven specs carry a `SUPERSEDED BY PM-MCP` banner; bodies intact as the evidence chain. **Do NOT
+  emit; un-park only by explicit operator decision.** No emitted-but-unlaunched command existed to void.
+- **Emission exceptions: none.** No spec is foreign-repo config, none is a PM-MIG-2/3 enabler, none fixes a
+  defect blocking delivery today. `PLAN-11`'s self-collision is live at `a88626306`, but landing it alone cannot
+  flip `candidate_comparison_determinate` (only ~half of the 94 indeterminate sibling candidates are
+  self-collisions).
+- **Extraction filed in PM-MCP** (the one operator-authorized write, uncommitted there — the operator commits):
+  `plan-marshall-mcp/doc/known-defects/orchestrator-refactor-carry-over.md`. Population: 7 specs / 41
+  deliverables, 26 carry / 15 none; 78 carry rows (58 spec + 20 `epic.md`): 25 gap, 38 partial, 15 covered;
+  mapped at PM-MCP `4e9cca1`, headline contradictions re-read at `7e13ea1`. Eight contradictions, first three
+  verified by direct read: (1) PM-MCP commits the epic ledger on the primary checkout
+  (`workflow-dsl.adoc:714-718`) against its own PM-ARCH-5 b3 worktree rule; (2) `queue/<PLAN-ID>` vs
+  lowercase `plan_id` — the two-vocabulary defect PLAN-05 D6 reproduced; (3) the 10-state queue vocabulary has
+  no `parked` / `retired`. Extractors could not content-search PM-MCP, so `gap` = "not found in the files read".
+- **Consequence for this epic:** the live queue is empty of emittable work. The epic's remaining purpose is
+  historical; closing it (`close` → `archive`) is an operator decision.
+- **Same day, operator override: `PLAN-11` re-staged** (`parked` → `staged`) as an explicit operator-confirmed
+  exception. Its banner now records the re-staging; its carry-over rows stay in the PM-MCP file.
+- **Same day, operator override: `PLAN-09` and `PLAN-10` re-staged AND RE-SCOPED — one fixed worktree for ALL
+  epic changes** (operator: "the idea is to create a fixed worktree for all epic changes"), replacing the
+  per-epic worktree design. PLAN-09 → 5 deliverables: repository-wide knob, one worktree with a key outside the
+  plan-id grammar on a fixed `chore/` branch, never-removed lifecycle, one resolver seam for both store roots
+  incl. the plan-side consumers (`inbox write/read/detect`, `phase-1-init`'s spec read — an unlanded spec is
+  invisible on `main`), and a cutover guard against stranding dirty ledger files on `main`. PLAN-10 → 5
+  deliverables: one `land` for everything pending in the worktree (ledger paths only) under a repository-wide
+  lock, epic-native PR title/body, post-enqueue settle loop, a resync that never discards writes made after
+  the land snapshot, recoverable failure. The per-epic `land-all` sweep and its merge-queue collision are gone.
+  Remaining parked: `PLAN-03`, `-05`, `-06`, `-07`.
 
 - **NEW, from PLAN-02's landing (2026-09-24) — 24 other epic ledgers are now unreadable by
   every orchestrator verb (`legacy_layout`, no read-fallback), and migrating them is

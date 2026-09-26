@@ -92,6 +92,34 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
   session-identity hard-block (telemetry-only input gating the shipping pipeline)
   is owned by finalize-machinery PLAN-07 (the resolver itself); this epic
   references that plan and never re-stages it. No spec here takes it.
+- **2026-09-26 — PM-MCP supersedes Python- and prose-bound plan work (operator
+  decision, relayed by review-apparatus inbox `review-apparatus-001`, amended).**
+  `plan-marshall-mcp` replaces both the process prose and the Python scripts; only
+  implementation-independent content (rules, invariants, classifications, data,
+  fixtures) carries. All 7 staged rows (PLAN-08 … PLAN-14) were re-triaged per
+  deliverable and **parked**, each with a `SUPERSEDED BY PM-MCP` banner; bodies kept
+  as the evidence chain. The extraction is filed (operator-authorized single write,
+  uncommitted — the operator commits it) at
+  `/Users/oliver/git/plan-marshall-mcp/doc/known-defects/process-compliance-carry-over.md`
+  against PM-MCP HEAD `7e13ea1`: 104 spec rows → 50 carried (10 gap / 30 partial /
+  10 covered), plus 25 inbox-routed rows → 20 carried. Contradictions: 10.C-dirt
+  (Clean Main Checkout Guard is absolute and its recovery reverts foreign dirt),
+  08.D5 (PM-EXT-7 re-composes an in-flight manifest), 13.D4 (`pr_title` fixed at
+  refine); plus 14.D5 as a cross-epic duplicate of review-apparatus's zero-findings
+  contradiction. Quotes re-verified at `7e13ea1`; rows are sub-agent derivation, not
+  re-verified line by line. **No emission exception confirmed.** Candidates held for
+  operator decision only: PLAN-12 D3 (merge-lock `--hold-start` float vs instant —
+  would block merges if a real reclaim fails) and PLAN-13 D3 (forked-finalize cwd,
+  unverifiable, finalize runs inline today). No emitted-but-not-launched command
+  existed, so nothing was voided. ⛔ Consequence for this ledger: every "candidate
+  future staging" Open Defect below is no longer stageable as Python/prose work —
+  its knowledge routes to the carry-over, not to a new spec.
+- **2026-09-26 — PLAN-12 and PLAN-13 un-parked (operator: "stage 12 and 13").**
+  Both re-staged in full as operator-confirmed exceptions under the
+  delivery-breaking class (candidates PLAN-12 D3 merge-lock `--hold-start`,
+  PLAN-13 D3 forked-finalize cwd); banners rewritten to UN-PARKED, the carry-over's
+  emission-exception section updated. Staged whole, not narrowed to D3 — the
+  operator's instruction named the plans. PLAN-08/-09/-10/-11/-14 stay parked.
 
 ## Inherited Material — the decompose input
 
@@ -219,6 +247,24 @@ recipe-fix-argparse-rejection remediation carrier.
 
 ## Open Defects
 
+- **2026-09-26 — THE STAGED QUEUE IS PARKED (PM-MCP supersession, see
+  Decisions).** PLAN-08/-09/-10/-11/-14 parked; PLAN-12 and PLAN-13 re-staged by
+  operator decision the same day. Un-park the rest only by explicit operator
+  decision. Owed follow-up: the unowned "candidate future
+  staging" defects in this section were NOT part of the extracted population
+  (the procedure covered staged/parked rows); route their invariants into the
+  carry-over file as an addendum, or record them as `none`, before this epic
+  closes.
+- **Six invalid inbox messages (drain 2026-09-26,
+  `module-budget-campaign-completion-006` … `-011`, open).** Each fails
+  `revision_not_monotonic` (`revision=1` with no `amended=` stamp — a
+  hand-set revision), so the drain may not consume them and they stay
+  un-archived. Content was read and extracted anyway (carry-over rows
+  MB06–MB11: absolute `WORKTREE` refusal, re-fired step cannot record
+  `failed`, opencode emitter drops `workflow/`, non-durable `cd`, 271-item
+  `uncertain` prompt, 434-path hand-transcribed footprint). Recovery is
+  operator-side: correct the envelopes or retire the files; `inbox amend`
+  refuses an already-invalid message.
 - **Self-review verifier close-out has no contract exit (drain 2026-09-18,
   `git-branch-mechanics-001` items 4+5, unowned).** Two identical accepted-clean
   rounds on an unchanged HEAD still answer `may_close: no` on incurable grounds;
@@ -419,6 +465,15 @@ recipe-fix-argparse-rejection remediation carrier.
 
 ## Watches
 
+- **Process findings routed to the PM-MCP carry-over (drain 2026-09-26,
+  observed, no staging).** `opencode-bootstrap-executor-fix-001` (5 violations:
+  foundational-skill load failed twice as `ripgrep execution failed` and the run
+  continued; direct-path generator recovery; incomplete init; stale
+  `comments-stage` invocation; direct `.plan/` reads) → rows OB.1–OB.5.
+  `truth-179-opencode-target-detection-landed-005` (whole-tree gate red on
+  pristine main; cache class closed in-run, gate source-scoping shipped as
+  #1632; residual 26 canonical-forms errors on correct prose) → rows
+  T179.1–T179.6, with T179.1 (baseline-vs-plan attribution) a full PM-MCP gap.
 - **The inherited set will grow.** finalize-machinery still has PLAN-04 running and
   PLAN-05/06/07 staged; their landings may surface further rule-following material.
   Re-gather at decompose if new landings have arrived — do not treat the set above
