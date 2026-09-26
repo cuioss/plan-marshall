@@ -9,6 +9,7 @@ from _manage_execution_manifest_ceremony_finalize_selection_fixtures import (
     _lane_dropped_reasons,
     _manifest_phase_6_steps,
     _patch_immune_off_lanes,
+    _restore_footprint_resolver,
     _seed_marshal_lane_overrides,
     _stub_footprint,
     _write_execution_profile,

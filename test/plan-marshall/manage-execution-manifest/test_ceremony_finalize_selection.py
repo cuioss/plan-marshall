@@ -6,6 +6,7 @@ from _manage_execution_manifest_ceremony_finalize_selection_fixtures import (
     _bare,
     _compose_ns,
     _manifest_phase_6_steps,
+    _restore_footprint_resolver,
     _seed_marshal,
     _stub_footprint,
     cmd_compose,

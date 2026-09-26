@@ -21,10 +21,19 @@ class TestPrePushQualityGatePreFilter:
     decision-log line presence/absence. The decision-log emitter is patched on
     ``_mem._emit_decision_log`` and entries are captured into a list per test.
     The live plan footprint is injected via ``_stub_footprint`` (which replaces
-    ``_mem._resolve_footprint``); the root conftest's autouse
-    ``_restore_footprint_seams`` restores both seams after every test so the
-    stub never leaks.
+    ``_mem._resolve_footprint``); the autouse fixture below restores the original
+    resolver after every test so the stub never leaks.
     """
+
+    @pytest.fixture(autouse=True)
+    def _restore_footprint_resolver(self):
+        import extension_base
+
+        original = _mem._resolve_footprint
+        original_plan_footprint = extension_base._resolve_plan_footprint
+        yield
+        _mem._resolve_footprint = original
+        extension_base._resolve_plan_footprint = original_plan_footprint
 
     # The emitter no longer composes a reason of its own — it forwards the
     # build-decision verdict's OWN reason text, which varies by which
