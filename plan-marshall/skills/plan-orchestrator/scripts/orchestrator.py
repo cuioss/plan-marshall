@@ -1,0 +1,6243 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""Thin scaffolding script for the plan-orchestrator skill.
+
+Deliberately lean, per the orchestrator's lean posture: everything that
+requires judgement stays LLM-workflow; this script owns the deterministic
+operation groups below against the git-tracked orchestrator store
+(``.plan/orchestrator/{slug}/``, resolved via
+``file_ops.get_store_dir('orchestrator', slug)``). Every read and write of the
+epic LEDGER — the header ``status.json``, the ``resume_anchor.md`` text and the
+one-file-per-row ``queue/{PLAN-ID}.json`` queue — goes through
+``manage-status``'s ``_orchestrator_ledger`` module, the single owner of that
+per-concern layout; no code path here opens a queue row or the anchor itself.
+
+- ``scaffold --slug S`` — create the epic directory tree (idempotent).
+- ``queue --slug S [--transition PLAN-NN --status X | --set-row PLAN-NN
+  --field F --value V | --add-row PLAN-NN --slug-value SLUG --workstream WS-NN
+  [--status X]]`` — a four-way surface over the plan queue's row files: read
+  the whole queue, transition one plan's ``status``, set one result field
+  (:data:`PLAN_ROW_FIELDS`) of one plan row, or stage one new plan row. The two
+  row-locating forms read-modify-write ONE row file, and ``--add-row`` creates
+  ONE new row file atomically (a duplicate id is refused by the exclusive
+  create), so staging one plan never touches another plan's row.
+- ``resume-summary --slug S`` — a READ that writes nothing: render the START
+  HERE block (``summary``) and the Ordered Queue table (``ordered_queue``)
+  through :func:`render_queue_view`'s renderers, and report ``view_current`` —
+  whether the committed ``queue-view.md`` equals a fresh render. Four detectors
+  run on the RENDERED START-HERE block and ride the same payload:
+  ``count_divergences[]`` (a claimed count that does not match its derivation),
+  ``contradictions[]`` (two mutually-exclusive claims inside one rendering),
+  ``shared_slugs[]`` (N queued rows sharing one slug), and
+  ``epic_slug_matches[]`` (any queued row whose slug equals the epic slug).
+  All four report and none rewrites.
+- ``regenerate-view --slug S`` — write the generated, git-tracked
+  ``queue-view.md`` atomically from :func:`render_queue_view`. It is also the
+  remedy for a merge conflict in that file: it never reads the file it writes,
+  and it refuses — writing nothing — when a source file it renders from cannot
+  be read, so regeneration cannot paper over a genuine source conflict.
+- ``migrate-layout --slug S`` — convert a monolithic-layout ledger (active or
+  archived) into the per-concern files, preserving every value, strip the two
+  generated blocks out of ``epic.md`` leaving every hand-written byte in place,
+  and write a fresh ``queue-view.md``. Idempotent (``already_migrated``).
+- ``archive --slug S`` — relocate a *closed* epic tree to
+  ``.plan/archived-orchestrators/{slug}/`` (a mechanical, post-close
+  directory move that requires no judgement; refuses a non-closed epic).
+- ``compact --slug S`` — the ledger-compaction stage ``workflow/cleanup.md``
+  Phase B calls: verify the invariants (bidirectional queue reconciliation and
+  relocation-pointer reachability), then regenerate ``queue-view.md`` through
+  the SAME writer ``regenerate-view`` uses, and report every abstention. It
+  makes no ``epic.md`` write. Refuses a closed epic (``refused_closed``):
+  compaction is a live-epic operation only. The narrative-versus-settled
+  RELOCATION judgement is NOT here; it stays LLM.
+- ``corpus {epics,enumerate,read,cross-check,surfaces,declaration-currency,verdicts,set-verdict}`` — the
+  epic population and the epic's staged
+  spec corpus: enumerate every epic slug in the store (``epics`` — the one
+  slug-free verb, partitioned into active and archived, publishing the roots it
+  walked and the population size so a zero names the directory it came from),
+  reconcile the queue rows against the
+  ``plans/PLAN-*.md`` spec files in BOTH directions, return one staged spec
+  file body through the sanctioned script-mediated read path (``read`` — the
+  compliant alternative to a direct ``Read`` of the ledger tree), cross-check those specs
+  against sibling epics and live plans for duplicate work (the arm a single
+  ledger structurally cannot perform, scored on ``manage-status
+  sibling-collision-check``'s two classes), publish every spec's DECLARED
+  ``## Expected Surface`` with its derivation status and the population the
+  comparison was drawn from (``surfaces`` — the read verb the disjointness gate
+  decides on, so that verdict is a parser decision rather than a reader's
+  judgement over a rendered cell), reconcile a landed footprint against OTHER
+  staged specs' declared surfaces by symmetric difference with containment
+  (``declaration-currency`` — the cross-spec direction with its own unevaluated
+  state and reported footprint base anchor), and read/write the re-grounding
+  verdict field defined once in
+  ``persona-plan-orchestrator/standards/orchestration-model.md``
+  § Re-Grounding Verdict Field. ``set-verdict`` is the group's single write
+  action and the ONLY code path that formats a ``verdict:`` line; ``verdicts``
+  is the only one that interprets one.
+- ``cleanup restart-check --slug S`` — the restart-readiness verdict: one row
+  per observed signal, each carrying its own three-valued verdict, its own
+  evidence, and the population it was derived from, plus the floor over the
+  participating rows and the sample instant. An unreadable or disagreeing
+  observation resolves to ``indeterminate`` and never to ``not_ready``.
+- ``inbox {write,amend,supersede,close-stream,validate,list,read,archive,
+  migrate-archive,detect,landing-check}`` — the epic's plan-writable channel and
+  its orchestrator-side drain: append one ``inbox/{sender_id}-{NNN}.md`` message
+  to the epic queue — or, when ``--target-plan`` names a plan that is currently
+  RUNNING, DELIVER it to that plan's mailbox at ``inbox/to/{plan_id}/`` instead,
+  correct a filed message body in place (``amend`` — preserves ``created``,
+  stamps a monotonic ``revision``), retire a message in favour of a successor
+  (``supersede`` — tombstone-style), mark a sender's stream ended
+  (``close-stream``), validate an existing message against the envelope schema,
+  enumerate the queued messages with their validation verdicts and lifecycle,
+  read the messages DELIVERED to one plan's mailbox (``read --plan-id`` —
+  fail-open: an absent epic, an absent or unlistable mailbox, an unreadable
+  message and a malformed envelope all return ``status: success``, with
+  ``mailbox_state`` naming which kind of zero, so an advisory that could not be
+  read never blocks the reading plan and never renders as a confident empty),
+  retire a consumed message to ``inbox/archive/{sender}/``, fold a flat archive
+  into that per-sender layout (``migrate-archive``), classify a plan's
+  ``source_id`` pointer as orchestrated, or report whether a landing message
+  carries its required machine-readable facts (``landing-check``). Backed by
+  :mod:`_orchestrator_inbox`;
+  the write boundary is enforced by construction there (no caller-supplied
+  output path exists). ``landing-check`` additionally carries the drain-time
+  surface-expansion delta as a first-class field: the landing's realized
+  footprint (``--realized-paths``, from the merged diff) reconciled against
+  its declared surface (``--declared-paths``) with the footprint base anchor
+  reported beside the counts, so an in-flight expansion is detectable at
+  drain time with no manual diff. The owed-landing verdict
+  (``classify_owed_landing`` / ``reconcile_queue_vs_landings``) rides the
+  existing ``list`` payload through the same handler — no new verb, same
+  CLI shape — so the drain distinguishes owed (a live plan with an
+  unconsumed landing message) from no-news from drain state alone.
+  (``landing-check`` carries only the surface-expansion delta; the
+  queue-wide owed verdict is a ``list``-payload field.)
+- ``preflight --plan-id ID`` — invoke ``platform_runtime runtime-info`` and
+  write the returned payload as the per-plan ``client.toon`` pre-flight
+  artifact, settling the plan's title state best-effort on the way.
+  Best-effort throughout: a collector failure degrades (drop, report
+  ``degraded: true``) and never blocks plan start.
+
+The ``kind=orchestrator`` ledger schema is owned by
+``manage-status/standards/status-lifecycle.md``; the header and the anchor are
+created via ``manage-status create --store orchestrator``, never by this script.
+A ledger still in the monolithic layout (a ``status.json`` carrying the queue
+or the anchor) is REFUSED with ``legacy_layout`` by every verb that reads the
+queue, naming ``migrate-layout`` as the remedy — it is never read as an empty
+ledger. No implementation-side capability (no build/CI/source verbs) exists here.
+"""
+
+import argparse
+import importlib.util
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+from collections import Counter
+from collections.abc import Callable, Collection
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from _cmd_sibling_collision import (
+    _OVERLAP_JOIN,
+    _iter_active_plan_dirs,
+    _read_affected_files,
+    _read_request_source,
+)
+from _orchestrator_inbox import (
+    INBOX_SUBDIR,
+    KINDS,
+    RUNNING_STATUS,
+    SENDER_TYPES,
+    InboxCounts,
+    cmd_inbox_amend,
+    cmd_inbox_archive,
+    cmd_inbox_close_stream,
+    cmd_inbox_detect,
+    cmd_inbox_landing_check,
+    cmd_inbox_list,
+    cmd_inbox_migrate_archive,
+    cmd_inbox_read,
+    cmd_inbox_supersede,
+    cmd_inbox_validate,
+    cmd_inbox_write,
+    inbox_counts,
+)
+from _orchestrator_ledger import (
+    LEDGER_ABSENT,
+    LEDGER_LEGACY,
+    LEDGER_OK,
+    LEDGER_UNREADABLE,
+    ROW_FIELDS,
+    LedgerRead,
+    assemble_view,
+    create_row,
+    legacy_layout_error,
+    migrate_document,
+    mutate_row,
+    probe_header,
+    queue_order_key,
+    read_header,
+    read_rows,
+    view_path,
+    write_layout,
+)
+from epic_spec_parser import (
+    PLAN_ID_SEGMENT,
+    SpecClaim,
+    UnclassifiableSpecError,
+    classify_spec,
+)
+from file_ops import (
+    cwd_checkout_root,
+    get_archived_orchestrator_dir,
+    get_store_dir,
+    now_utc_iso,
+    output_toon,
+    safe_main,
+)
+from input_validation import validate_plan_id
+from toon_parser import parse_toon, serialize_toon
+
+ORCHESTRATOR_STORE = 'orchestrator'
+
+# Epic subdirectories per the layout contract in
+# persona-plan-orchestrator/standards/orchestration-model.md.
+EPIC_SUBDIRS = ('workstreams', 'plans', 'landings', 'logs', INBOX_SUBDIR)
+
+FILE_STATUS = 'status.json'
+
+# The per-row RESULT fields ``queue --set-row`` may write. Deliberately narrow:
+# ``status`` stays outside the set (a status change and a landing stamp are
+# independent events, so a status is written by ``--transition`` or seeded once
+# by ``--add-row``, never patched as a result), and ``id``/``slug``/
+# ``workstream`` are row identity, not result, so they are seeded at row
+# creation — by ``decompose`` or by ``--add-row`` — and never patched.
+PLAN_ROW_FIELDS = frozenset({'plan_marshall_plan_id', 'pr', 'landing'})
+
+# --- the plan-queue status vocabulary ---------------------------------------
+#
+# The three sets below are the DECLARING sources. Every other status set in this
+# module is derived from them by construction, so a status added to one of them
+# cannot be legal in one place and unknown in another. Which statuses are legal
+# at all is an operator-level decision settled against the live ledger and
+# recorded in ``persona-plan-orchestrator/standards/orchestration-model.md``
+# § Plan-Status Vocabulary; this module enacts that decision and does not take it.
+
+#: The statuses at which a plan row is still LIVE — its work is unfinished, so
+#: the row belongs in the Ordered Queue and may still transition. ``parked`` is
+#: live by the same reading: paused work is unfinished work, and a parked plan
+#: resumes onto the surface it declared.
+LIVE_PLAN_STATUSES = ('staged', 'launched', 'running', 'parked')
+
+#: The terminal statuses at which a row SHIPPED. These and ONLY these owe the
+#: result links :data:`SHIPPED_REQUIRED_FIELDS`, so they alone drive the
+#: completeness gap marker — a row that closed without shipping has no PR and no
+#: landing record to point at, and marking one incomplete would report a gap that
+#: cannot exist. ``analyze`` writes ``shipped``; ``landed`` is the legal
+#: alternative spelling a landing-stamped row may carry. Nothing is asserted here
+#: about which of the two the live corpus currently holds: such a claim goes stale
+#: the moment a row is written, and the tally is derivable from the ledger itself.
+SHIPPED_PLAN_STATUSES = ('shipped', 'landed')
+
+#: The terminal statuses at which a row closed WITHOUT shipping. Four distinct end
+#: states, each owing its reader a different remedy and none expressible by any
+#: other member: ``superseded`` — the work was absorbed by a named successor row;
+#: ``transferred`` — it moved to another epic's ledger; ``retired`` — it was
+#: withdrawn and no successor carries it; ``resolved`` — the defect closed with no
+#: plan work at all. Recording one of these as ``parked`` keeps the row clear of
+#: ``next`` while saying something untrue about it, and that substitution is what
+#: this set exists to remove.
+CLOSED_UNSHIPPED_PLAN_STATUSES = ('superseded', 'transferred', 'retired', 'resolved')
+
+#: Statuses at which a plan row is FINISHED, by union of the two terminal sets
+#: above so neither can be omitted from it. A terminal row never returns to the
+#: live queue; whether it additionally owes result links is
+#: :data:`SHIPPED_PLAN_STATUSES`' question, not this one.
+TERMINAL_PLAN_STATUSES = (*SHIPPED_PLAN_STATUSES, *CLOSED_UNSHIPPED_PLAN_STATUSES)
+
+#: The closed status vocabulary ``queue --transition --status`` may write and
+#: ``queue --add-row --status`` may seed. DERIVED by union from the live and
+#: terminal sets rather than re-listed, so a status added to either is legal here
+#: by construction. Declared as a ``frozenset`` (membership, no order) like
+#: :data:`PLAN_ROW_FIELDS`, published in ``plan-orchestrator/SKILL.md`` under the
+#: machine-locatable status-vocabulary anchor, and validated by :func:`cmd_queue`
+#: with the ``invalid_field`` error.
+VALID_STATUS_VOCABULARY = frozenset((*LIVE_PLAN_STATUSES, *TERMINAL_PLAN_STATUSES))
+
+#: The result links a SHIPPED row must carry, in the fixed order the gap marker
+#: names them.
+SHIPPED_REQUIRED_FIELDS = ('pr', 'landing')
+
+#: The three declaring sets, named so the construction check below can report
+#: WHICH ones it compared rather than only that they disagreed.
+_DECLARED_STATUS_SETS = {
+    'LIVE_PLAN_STATUSES': LIVE_PLAN_STATUSES,
+    'SHIPPED_PLAN_STATUSES': SHIPPED_PLAN_STATUSES,
+    'CLOSED_UNSHIPPED_PLAN_STATUSES': CLOSED_UNSHIPPED_PLAN_STATUSES,
+}
+_DECLARED_STATUS_COUNT = sum(len(members) for members in _DECLARED_STATUS_SETS.values())
+
+# The three declaring sets must be pairwise disjoint and free of repeats, and
+# NOTHING above derives that: the union that builds VALID_STATUS_VOCABULARY is a
+# frozenset, so a status listed twice — in one set or across two — is absorbed
+# silently and the vocabulary still reads correct. The damage lands downstream,
+# where one token would be simultaneously live and excluded from the live queue,
+# or simultaneously owe result links and be exempt from them. Comparing the
+# summed membership against the distinct union catches BOTH shapes in one check,
+# because either drops the union's size. Checked at construction for the same
+# reason the GENERATED_BLOCKS pair below is: neither direction can pass silently.
+assert _DECLARED_STATUS_COUNT == len(VALID_STATUS_VOCABULARY), (
+    f'the declaring status sets {_DECLARED_STATUS_SETS} carry {_DECLARED_STATUS_COUNT} '
+    f'member(s) but resolve to {len(VALID_STATUS_VOCABULARY)} distinct status(es): a status '
+    'is repeated within one set or shared between two, and the frozenset union absorbs the '
+    'difference silently'
+)
+
+#: The fields one staged row file is seeded with, in the order ``--add-row``
+#: writes them: the three identity fields the caller supplies, the status it
+#: starts at, the three RESULT fields (:data:`PLAN_ROW_FIELDS`) seeded EMPTY
+#: because a staged row has landed nothing yet, and ``seq`` — the queue-order
+#: key the ledger module allocates at create time as the local maximum plus one,
+#: so the rendered order reproduces staging order. A seeded row carries every
+#: field of a row file, so the order is NOT re-listed here: it is the ledger
+#: module's :data:`_orchestrator_ledger.ROW_FIELDS`, the single definition of the
+#: row field order, and a field added there is seeded here by construction.
+#: :data:`PLAN_ROW_FIELDS` and :func:`_set_row_field` are untouched by the append
+#: path, which writes a whole row rather than patching a field of one.
+ADD_ROW_SEED_FIELDS = ROW_FIELDS
+
+#: The status an appended row starts at when the caller names none. ``--status``
+#: is OPTIONAL on the append form precisely because this default is the
+#: overwhelmingly common case: a row is staged first and transitioned later.
+ADD_ROW_DEFAULT_STATUS = 'staged'
+
+#: The plan-id grammar ``--add-row`` accepts, ANCHORED to the whole argument.
+#: The segment itself is owned by ``epic_spec_parser`` and imported rather than
+#: re-spelled — a fourth hand-rolled plan-id regex is exactly the drift that
+#: single definition exists to prevent. The anchoring is added HERE because the
+#: shared segment is deliberately unanchored so a prose scan can match one
+#: mid-sentence; an unanchored ``search`` would accept ``PLAN-01 and friends``.
+#:
+#: The tail anchor is ``\Z``, NOT ``$``. Python's ``$`` also matches immediately
+#: before a trailing newline, so ``^…$`` would accept ``PLAN-01\n`` — and the
+#: newline would then ride into ``row['id']``. Because ``_append_plan_row``
+#: compares ids by exact string, that newline-bearing id never collides with the
+#: clean row already queued, so the same logical plan appends twice and the
+#: ``duplicate_plan_id`` guard below is evaded by one trailing byte. ``\Z``
+#: matches only at the true end of the string and closes that hole.
+_ADD_ROW_PLAN_ID_RE = re.compile(rf'^{PLAN_ID_SEGMENT}\Z')
+
+#: The three-valued verdict of the appended row's spec-presence probe. ``absent``
+#: and ``unlistable`` are held apart because they are two DIFFERENT zeros:
+#: ``absent`` is a measured negative — the plans directory was listed and holds
+#: no spec for this id, a staging gap the caller closes by writing one — while
+#: ``unlistable`` is no observation at all, because the directory could not be
+#: read. Folding the second into the first would report an unmeasured tree as a
+#: confidently empty one (ADR-019).
+SPEC_PRESENCE_PRESENT = 'present'
+SPEC_PRESENCE_ABSENT = 'absent'
+SPEC_PRESENCE_UNLISTABLE = 'unlistable'
+
+#: The four-valued verdict of the queue-write header probe
+#: (:func:`_probe_status_document`), held apart for the same ADR-019 reason the
+#: spec-presence vocabulary above is: a header that is NOT THERE, one that IS
+#: there but cannot be read as a JSON object, and one still in the monolithic
+#: layout are different facts, and they owe the operator different remedies.
+#: :data:`STATUS_DOC_OBJECT` deliberately includes the EMPTY document ``{}`` — a
+#: valid, if bare, per-concern header. :data:`STATUS_DOC_LEGACY` is a header that
+#: still carries the queue or the anchor: it is refused with ``legacy_layout``
+#: and never written into, because a row file staged beside a legacy ``plans[]``
+#: would split one queue across two representations.
+STATUS_DOC_ABSENT = 'absent'
+STATUS_DOC_NON_OBJECT = 'non_object'
+STATUS_DOC_OBJECT = 'object'
+STATUS_DOC_LEGACY = 'legacy_layout'
+
+#: The ledger header read states (``_orchestrator_ledger``) mapped onto the
+#: write-side vocabulary above. An unreadable header — unreadable bytes, bytes
+#: that do not parse, or a non-object — is one write-side fact: not an object.
+_HEADER_STATE_TO_STATUS_DOC = {
+    LEDGER_ABSENT: STATUS_DOC_ABSENT,
+    LEDGER_UNREADABLE: STATUS_DOC_NON_OBJECT,
+    LEDGER_LEGACY: STATUS_DOC_LEGACY,
+    LEDGER_OK: STATUS_DOC_OBJECT,
+}
+
+# --- corpus group ----------------------------------------------------------
+
+# The epic subdirectory holding the staged plan specs, and the filename shape
+# the layout contract gives them (``plans/PLAN-NN-{plan_slug}.md``).
+PLANS_SUBDIR = 'plans'
+SPEC_GLOB = 'PLAN-*.md'
+
+#: The two homes one epic tree can occupy, named once so the enumeration's
+#: partition keys and its per-root ``scope`` columns cannot drift apart. An epic
+#: is ACTIVE while ``orchestrator/{slug}`` holds it and ARCHIVED once ``archive``
+#: has relocated it to ``archived-orchestrators/{slug}``. The same slug can
+#: legitimately appear in BOTH — a partially relocated epic — which is why the
+#: partitions are reported separately and the distinct population is derived
+#: from their union rather than assumed to be their sum.
+SCOPE_ACTIVE = 'active'
+SCOPE_ARCHIVED = 'archived'
+
+#: A syntactically valid entry id that names no real epic, used ONLY to resolve
+#: the two store ROOTS as the PARENT of a resolved entry. Taking the parent of an
+#: entry resolved through the existing store resolvers keeps the
+#: directory names (``orchestrator/``, ``archived-orchestrators/``) owned solely
+#: by ``file_ops``: this module holds no second copy of them, so a layout change
+#: moves this walk with it instead of leaving it pointing at a stale directory.
+#: The probe is never joined onto anything that is read, written or created.
+_ROOT_PROBE_ENTRY = 'root-probe'
+
+# ``RUNNING_STATUS`` — a row at this status is enumerated but carries
+# ``excluded_reason`` so a caller cannot re-scope it: re-scoping a spec
+# mid-execution changes the brief under a running plan (orchestration-model.md
+# § Cleanup Contract, running-row exclusion). The token is defined once, in
+# ``_orchestrator_inbox`` (which also needs it for the inbox deliverability
+# guard), and imported above so the two modules cannot drift.
+
+# The re-grounding verdict field. The grammar is defined ONCE, in
+# ``persona-plan-orchestrator/standards/orchestration-model.md``
+# § Re-Grounding Verdict Field; these constants are its only implementation.
+VERDICT_KEYS = ('verdict', 'checked_at', 'by', 'rescoped', 'evidence')
+VERDICT_VALUES = ('corroborated', 'contradicted', 'unverifiable')
+RESCOPED_VALUES = ('yes', 'no', 'n/a')
+VERDICT_SEPARATOR = ' | '
+# At most four splits, so ``evidence`` is the whole remainder of the line and a
+# ``' | '`` inside the evidence text survives intact.
+VERDICT_MAX_SPLITS = len(VERDICT_KEYS) - 1
+VERDICT_PREFIX = f'{VERDICT_KEYS[0]}:'
+# The verdict reported for a bullet that does not parse. Never a fourth member of
+# VERDICT_VALUES: it is a parse outcome, not a settlement. Named apart from the
+# readiness vocabulary's :data:`READINESS_INDETERMINATE` even though the two share
+# a spelling — they are independent vocabularies, and one binding for both would
+# let a change to either silently move the other.
+VERDICT_INDETERMINATE = 'indeterminate'
+BLOCKING_RESCOPED = 'no'
+CONTRADICTED = 'contradicted'
+NOT_APPLICABLE = 'n/a'
+
+#: The claim-section PARSE-COVERAGE vocabulary: how much of one spec's
+#: ``## Claim Labels`` section the parser could read. It is INDEPENDENT of
+#: :data:`VERDICT_VALUES` (a settlement reached about one claim) and of
+#: :data:`READINESS_ORDER` (a restart signal), so it carries its own bindings for
+#: the same reason :data:`READINESS_INDETERMINATE` does — one binding shared
+#: across two vocabularies lets a change to either silently move the other. The
+#: one point of contact is deliberate and one-way: an ``unreadable`` section with
+#: no section-scoped verdict is reported as :data:`VERDICT_INDETERMINATE`, which
+#: is a parse outcome in both vocabularies and a settlement in neither.
+CLAIM_SECTION_ABSENT = 'absent'
+CLAIM_SECTION_EMPTY = 'empty'
+CLAIM_SECTION_UNREADABLE = 'unreadable'
+CLAIM_SECTION_PARSED = 'parsed'
+#: The WHOLE vocabulary, ordered from least to most read. ``claim_section_states``
+#: is derived from this tuple rather than from the states actually observed, so a
+#: state no spec is in publishes a stated zero instead of vanishing from the tally.
+CLAIM_SECTION_STATES = (
+    CLAIM_SECTION_ABSENT,
+    CLAIM_SECTION_EMPTY,
+    CLAIM_SECTION_UNREADABLE,
+    CLAIM_SECTION_PARSED,
+)
+
+#: The DECLARED-SURFACE derivation vocabulary: what one spec's
+#: ``## Expected Surface`` resolved to, and therefore whether the disjointness
+#: gate may compare it at all. The first three are the single reader's own
+#: three-class verdict (``epic_spec_parser``); the last two are the states that
+#: reader signals by refusing to classify, kept apart here because they are two
+#: different zeros and collapsing them is the defect this vocabulary exists to
+#: remove — a spec whose section is ABSENT is not a spec that declared an EMPTY
+#: surface, and neither is a spec that could not be READ.
+SURFACE_DECLARATIVE = 'declarative'
+SURFACE_DERIVED = 'derived'
+SURFACE_PROSE = 'prose'
+SURFACE_ABSENT = 'absent'
+SURFACE_UNREADABLE = 'unreadable'
+
+#: The WHOLE vocabulary, ordered from most to least resolved. The class tally is
+#: derived from this tuple rather than from the states actually observed, so a
+#: state no spec is in publishes a stated zero instead of vanishing from the
+#: tally (ADR-014: an aggregation names its producers and suppresses no element
+#: silently).
+SURFACE_STATES = (
+    SURFACE_DECLARATIVE,
+    SURFACE_DERIVED,
+    SURFACE_PROSE,
+    SURFACE_ABSENT,
+    SURFACE_UNREADABLE,
+)
+
+#: The states that CANNOT substantiate a disjointness verdict. Everything except
+#: ``declarative`` is here: a ``derived`` surface is a function of other plans'
+#: and names no paths of its own, a ``prose`` one resolves to none, and
+#: ``absent`` / ``unreadable`` produce no declaration to compare. An overlap
+#: check over any of them returns ``indeterminate``, NEVER ``disjoint`` — a spec
+#: contributing no rows is INVISIBLE to the file-overlap matcher, so its clean
+#: reading is silence rather than a checked negative. Governing authority:
+#: ADR-019 (a surface that measures reports coverage alongside its result, and
+#: reserves the clean verdict for "evaluated, nothing found").
+SURFACE_INDETERMINATE_STATES = frozenset(SURFACE_STATES) - {SURFACE_DECLARATIVE}
+
+#: Named once so the payload states its governing authority rather than leaving a
+#: reader to infer the rule from the field names.
+SURFACE_GOVERNING_AUTHORITY = (
+    'ADR-019 — an absent or unresolvable declaration resolves to indeterminate, never to disjoint'
+)
+
+# --- verdict staleness (content-scoped derivation) ---------------------------
+#
+# A re-grounding verdict's ``stale`` flag answers *may this claim's grounding be
+# outdated?*, and the only evidence that can answer it is whether the spec's own
+# DECLARED surface moved between ``checked_at`` and HEAD. A bare
+# ``checked_at != HEAD`` inequality answers a DIFFERENT question — *did anything,
+# from any epic, land?* — and since the orchestrator ledger is itself git-tracked,
+# a sibling epic's ``.plan/orchestrator/**`` commit makes that inequality true
+# almost always, degenerating the flag into a constant that discriminates nothing.
+#
+# The six bases below are the CLOSED vocabulary every row's ``staleness_basis`` is
+# drawn from, so a conservative fallback is legible AS a fallback rather than
+# hiding inside a bare boolean. The technique mirrors ``phase-6-finalize``'s
+# ``verdict_currency`` (its ``REASON_*`` tokens plus ``_REASON_DETAIL`` map): an
+# equal-SHA short-circuit decided before anything is resolved, a two-tree
+# ``git diff`` rather than a commit walk, and fail-closed on every uncertainty.
+
+#: The two shas name the same tree, so nothing beneath the claim can have moved.
+#: Decided FIRST, before any surface resolution and before any diff, mirroring the
+#: precedent's equal-SHA short-circuit that consults none of them.
+STALENESS_HEAD_UNCHANGED = 'head_unchanged'
+
+#: The spec's declared surface WAS compared against the tree difference and no
+#: declared entry was touched — a checked negative, the only clean reading.
+STALENESS_SURFACE_UNCHANGED = 'declared_surface_unchanged'
+
+#: At least one changed path matched a declared entry, by exact match or by
+#: ``/``-boundary containment. The matched paths ride the row as the evidence.
+STALENESS_SURFACE_TOUCHED = 'declared_surface_touched'
+
+#: The spec's ``## Expected Surface`` is in some :data:`SURFACE_INDETERMINATE_STATES`
+#: member, so it contributes no comparable path set at all. Fail-closed to
+#: ``stale: true``: a surface that could not be compared is not an unchanged one.
+STALENESS_SURFACE_NOT_DECLARATIVE = 'surface_not_declarative'
+
+#: The two-tree diff could not be computed — an unreadable HEAD, a ``checked_at``
+#: git can no longer resolve, or a git failure. Fail-closed for the same reason:
+#: an empty difference read off a command that failed is not a measured zero.
+STALENESS_DIFF_UNAVAILABLE = 'tree_diff_unavailable'
+
+#: The verdict bullet did not parse, so it carries no ``checked_at`` to anchor a
+#: comparison to. The row is already :data:`VERDICT_INDETERMINATE` with
+#: ``admits: false``; its ``stale`` stays false because no staleness was ever
+#: computed, and THIS basis is what says so rather than a bare boolean.
+STALENESS_VERDICT_UNPARSED = 'verdict_unparsed'
+
+#: The WHOLE vocabulary, in reporting order. ``staleness_basis_tally`` is derived
+#: from this tuple rather than from the bases actually observed, so a basis no row
+#: is in publishes a stated zero instead of vanishing from the tally (ADR-014).
+STALENESS_BASES = (
+    STALENESS_HEAD_UNCHANGED,
+    STALENESS_SURFACE_UNCHANGED,
+    STALENESS_SURFACE_TOUCHED,
+    STALENESS_SURFACE_NOT_DECLARATIVE,
+    STALENESS_DIFF_UNAVAILABLE,
+    STALENESS_VERDICT_UNPARSED,
+)
+
+#: Human phrasing per basis, keyed by the token so the two cannot drift — the
+#: shape ``verdict_currency._REASON_DETAIL`` established. Published beside each
+#: tally row, so every basis states what it MEANS exactly once per payload rather
+#: than leaving a reader to infer it from the token spelling.
+_STALENESS_BASIS_DETAIL: dict[str, str] = {
+    STALENESS_HEAD_UNCHANGED: (
+        'the anchor sha names the current HEAD so the claim is still grounded in this very tree'
+    ),
+    STALENESS_SURFACE_UNCHANGED: (
+        'the tree difference between the anchor sha and HEAD touches no path the spec declares '
+        'so the grounding this claim rests on did not move'
+    ),
+    STALENESS_SURFACE_TOUCHED: (
+        'the tree difference touches at least one path the spec declares so the grounding may no longer hold'
+    ),
+    STALENESS_SURFACE_NOT_DECLARATIVE: (
+        'the spec declares no comparable surface so no advance can be proven non-invalidating — '
+        'reporting stale is the fail-closed answer'
+    ),
+    STALENESS_DIFF_UNAVAILABLE: (
+        'the tree difference between the anchor sha and HEAD could not be computed so nothing was compared'
+    ),
+    STALENESS_VERDICT_UNPARSED: (
+        'the verdict bullet does not parse so it carries no anchor sha and no staleness was computed for it'
+    ),
+}
+
+#: Named once so the payload states its governing authority rather than leaving a
+#: reader to infer the rule from the field names, exactly as the sibling corpus
+#: verbs already do.
+STALENESS_GOVERNING_AUTHORITY = (
+    'ADR-019 — a surface that could not be compared names the fallback basis it fell back to '
+    'and fails closed, never a bare stale flag indistinguishable from a checked one'
+)
+
+# --- the CANDIDATE side of the cross-check comparison ------------------------
+#
+# ``SURFACE_STATES`` above measures the SPEC side of ``corpus cross-check``: every
+# own spec is tallied over the whole derivation vocabulary, so a class no spec is
+# in publishes a stated zero. The two constants below give the OTHER half of the
+# comparison the same treatment. Without them a ``file_overlap_match_count: 0``
+# cannot distinguish *every candidate was compared and none overlapped* from *no
+# candidate surface was derivable and nothing was compared* — an unchecked
+# negative wearing a clean verdict's clothes.
+
+#: The three CANDIDATE classes one spec is scored against, named once and in
+#: reporting order. ``sibling_epic_spec`` and ``corpus_spec`` are spec candidates
+#: resolved through :func:`_spec_record`; ``live_plan`` is the cross-ledger
+#: candidate whose surface is an active plan's ``references.json``
+#: ``affected_files``. The per-kind tally is derived from this tuple rather than
+#: from the kinds a given corpus happens to hold, so a kind with no candidates
+#: publishes stated zeros instead of vanishing from the breakdown.
+CANDIDATE_KIND_SIBLING_EPIC_SPEC = 'sibling_epic_spec'
+CANDIDATE_KIND_LIVE_PLAN = 'live_plan'
+CANDIDATE_KIND_CORPUS_SPEC = 'corpus_spec'
+CANDIDATE_KINDS = (
+    CANDIDATE_KIND_SIBLING_EPIC_SPEC,
+    CANDIDATE_KIND_LIVE_PLAN,
+    CANDIDATE_KIND_CORPUS_SPEC,
+)
+
+#: The CANDIDATE-side derivation vocabulary: whether one candidate contributed a
+#: comparable surface to the file-overlap matcher, and — when it did not — which
+#: of the two different zeros it is. ``indeterminate`` is a candidate that WAS
+#: read and declared nothing comparable (a spec in any
+#: :data:`SURFACE_INDETERMINATE_STATES` state, or a live plan with no captured
+#: footprint); ``unreadable`` is a candidate nothing could read at all. Collapsing
+#: them would report an unread candidate as a read-and-empty one.
+#:
+#: This vocabulary is INDEPENDENT of :data:`SURFACE_STATES` — it measures
+#: contribution to the matcher, not how a declaration was authored — so it
+#: carries its own bindings for the same reason :data:`READINESS_INDETERMINATE`
+#: does: one binding shared across two vocabularies lets a change to either
+#: silently move the other.
+CANDIDATE_COMPARABLE = 'comparable'
+CANDIDATE_INDETERMINATE = 'indeterminate'
+CANDIDATE_UNREADABLE = 'unreadable'
+
+#: The WHOLE vocabulary, ordered from most to least resolved. The per-kind tally
+#: is derived from this tuple rather than from the states actually observed,
+#: mirroring the :data:`SURFACE_STATES` / :data:`CLAIM_SECTION_STATES`
+#: construction (ADR-014: an aggregation names its producers and suppresses no
+#: element silently).
+CANDIDATE_DERIVATION_STATES = (
+    CANDIDATE_COMPARABLE,
+    CANDIDATE_INDETERMINATE,
+    CANDIDATE_UNREADABLE,
+)
+
+#: The candidate states that contributed NO row to the file-overlap matcher.
+#: Derived by subtraction so a state added to the vocabulary later is
+#: non-contributing unless it is explicitly ``comparable`` — a new class cannot
+#: default into counting as checked by being forgotten here.
+CANDIDATE_NON_CONTRIBUTING_STATES = frozenset(CANDIDATE_DERIVATION_STATES) - {CANDIDATE_COMPARABLE}
+
+#: Named once so the candidate-side payload states its governing authority rather
+#: than leaving a reader to infer the rule from the field names, exactly as the
+#: surface side already does.
+CANDIDATE_GOVERNING_AUTHORITY = (
+    'ADR-019 — a file-overlap count of 0 beside a non-zero candidate-indeterminate '
+    'count is an unchecked negative, never a clean pass'
+)
+
+# --- declaration-currency (cross-spec reconciliation) -----------------------
+#
+# The per-spec comparison states for ``corpus declaration-currency``. They mirror
+# the three-way ``_cmd_reconcile_scope`` pair vocabulary (agree / disagree /
+# vacuous) plus the distinct unevaluated state a spec whose surface cannot be
+# evaluated reports. An unevaluated spec never reads as disjointness — it is
+# named in ``could_not_check`` and counted apart from the checked-and-clean set,
+# per ADR-019. Consumed read-only as the comparison-half pattern; the
+# manage-references CLI surface is untouched.
+
+#: Both sides established, at least one non-empty, neither difference carries a member.
+CURRENCY_AGREE = 'agree'
+
+#: Both sides established and at least one difference carries a member.
+CURRENCY_DISAGREE = 'disagree'
+
+#: Both sides established and both empty — nothing was compared, never an agreement.
+CURRENCY_VACUOUS = 'vacuous'
+
+#: The spec side could not be evaluated (any SURFACE_INDETERMINATE_STATES member
+#: or an unreadable spec file). No comparison was made; no difference keys are
+#: published for the pair beyond the state marker.
+CURRENCY_UNEVALUATED = 'unevaluated'
+
+#: The whole per-spec state vocabulary, in reporting order.
+CURRENCY_STATES: tuple[str, ...] = (
+    CURRENCY_AGREE,
+    CURRENCY_DISAGREE,
+    CURRENCY_VACUOUS,
+    CURRENCY_UNEVALUATED,
+)
+
+#: The default footprint base anchor: the remote-tracking ref the footprint is
+#: resolved against so a stale local base never silently inflates it.
+CURRENCY_DEFAULT_BASE = 'origin/main'
+
+#: A base ref is caller-supplied text that reaches ``git rev-parse``. Only this
+#: closed shape is accepted — letters, digits and the ref punctuation — so no
+#: shell metacharacter, option flag or command substitution can ride into argv.
+_CURRENCY_BASE_RE = re.compile(r'^[A-Za-z0-9_./-]+$')
+
+#: A resolved base must be exactly one commit SHA — full hex, single line —
+#: so a revision range or option-like ref can never ride into the reported
+#: ``footprint_base_sha`` as multi-line output.
+_CURRENCY_SHA_RE = re.compile(r'^[0-9a-f]{40,64}$')
+
+#: What one verdict row is ADDRESSED BY. A ``claim``-scoped row carries its real
+#: zero-based ordinal; a ``section``-scoped row settles the section as a whole and
+#: carries ``claim_index: -1``, this module's not-applicable marker (mirroring
+#: ``verdict_line: -1``), never an addressable ordinal.
+SCOPE_CLAIM = 'claim'
+SCOPE_SECTION = 'section'
+#: The ``claim_index`` a section-scoped row and a section-scoped stamp report.
+NO_CLAIM_INDEX = -1
+
+# --- resume-summary self-validation ----------------------------------------
+
+#: The count claims a rendered START-HERE block can assert about the plan queue,
+#: each paired with the derivation it is checked against. ``row``/``plan`` are
+#: the whole population; the rest are per-status tallies read from ``plans[]``.
+#:
+#: The per-status members are DERIVED from :data:`VALID_STATUS_VOCABULARY` rather
+#: than re-listed, so the detector's population is exactly the set of statuses a
+#: row may legally carry. A status legal in the vocabulary but absent from this
+#: tuple would yield no divergence check for it — a claim about it would pass
+#: unexamined — and the sorted order keeps the derived alternation stable across
+#: runs rather than riding the ``frozenset`` iteration order.
+COUNT_CLAIM_NOUNS = ('rows', 'plans', *sorted(VALID_STATUS_VOCABULARY))
+
+#: The noun alternation, DERIVED from :data:`COUNT_CLAIM_NOUNS` so that tuple is the
+#: single source defining the population. A noun that is already plural (ends in
+#: ``s``) contributes an optional-``s`` form matching both numbers; every other noun
+#: is a status name that does not pluralise and contributes itself literally. The
+#: derivation rule reads the noun's own spelling, so it introduces no second list to
+#: keep in step. Deriving matters because :func:`_derive_counts` builds its keys from
+#: ``COUNT_CLAIM_NOUNS`` alone: a noun present in a hand-written alternation but absent
+#: from the tuple would make :func:`_count_divergences` raise ``KeyError`` at
+#: ``derived[key]``.
+_COUNT_CLAIM_ALTERNATION = '|'.join(f'{noun[:-1]}s?' if noun.endswith('s') else noun for noun in COUNT_CLAIM_NOUNS)
+
+#: One count claim plus the short tail that follows it. The tail is captured in a
+#: LOOKAHEAD so a SCOPED claim can be recognised (see :data:`_SCOPED_CLAIM_RE`)
+#: without the scan consuming it: a consuming tail would advance the cursor past
+#: the next claim, so a sentence asserting two counts would only ever have its
+#: first one checked.
+_COUNT_CLAIM_RE = re.compile(
+    r'(?<![\w.])(?P<value>\d+)\s+(?P<noun>' + _COUNT_CLAIM_ALTERNATION + r')\b'
+    r'(?=(?P<tail>.{0,12}))',
+    re.IGNORECASE,
+)
+
+#: A qualifier immediately after a count claim scopes it to a SUB-population, so
+#: the claim is not comparable to the whole-epic derivation. This is the
+#: denominator trap: "12 rows in WS-01" is correctly different from the epic's
+#: 30 rows, and reporting that as a divergence is the false positive that would
+#: teach every reader to ignore the detector.
+#: The leading ``^\s*`` anchors at the start of the twelve-character tail
+#: :data:`_COUNT_CLAIM_RE` captured mid-line, NOT at the start of a document
+#: line, so it is a token separator and not an indentation rule — see the
+#: markdown-line-scanner block below for the regexes that do carry one.
+_SCOPED_CLAIM_RE = re.compile(r'^\s*(in|of|for|under|within|across|from)\b', re.IGNORECASE)
+
+#: A capacity claim of the recorded ``R = N of M`` shape. Two such claims over
+#: the SAME denominator that disagree on the numerator cannot both hold in one
+#: rendering, and each half is individually plausible — which is why the
+#: contradiction is only visible by reading the rendering as a whole.
+_RATIO_CLAIM_RE = re.compile(r'R\s*=\s*(?P<numerator>\d+)\s+of\s+(?P<denominator>\d+)', re.IGNORECASE)
+
+# --- cleanup group ---------------------------------------------------------
+
+#: The readiness vocabulary, ordered WORST-FIRST. The order IS the floor: the
+#: overall verdict is ``min`` over the participating signals under this order,
+#: so a single unobservable signal degrades the report to ``indeterminate`` and
+#: only a definite hazard reaches ``not_ready``. Keeping the two apart is the
+#: point — collapsing an unobservable signal into a failing one is the
+#: confident-signal defect this verb exists to remove.
+READINESS_ORDER = ('not_ready', 'indeterminate', 'ready')
+READY = 'ready'
+NOT_READY = 'not_ready'
+#: The readiness verdict for an arm whose surface could not be observed. Distinct
+#: from :data:`VERDICT_INDETERMINATE`, which is a re-grounding PARSE outcome — the
+#: two vocabularies coincide in spelling only, so each carries its own binding.
+READINESS_INDETERMINATE = 'indeterminate'
+
+#: The verdict an arm reports when the surface it would observe is owned by
+#: another component. It is deliberately NOT a member of
+#: :data:`READINESS_ORDER`: such an arm is neither ready nor not-ready, so it is
+#: excluded from the floor — a floor over an unowned surface would let another
+#: component's gap veto this one's verdict.
+NOT_AVAILABLE = 'not_available'
+
+#: The spec that owns the registry/executor parity surface. Named in the
+#: ``registry_parity`` arm's evidence so the report points at the owner rather
+#: than leaving a silent gap. This component observes that surface not at all.
+REGISTRY_PARITY_OWNER = 'PLAN-TRUTH-059'
+
+# --- the generated view and the compact stage -------------------------------
+#
+# START HERE and the Ordered Queue are DERIVED surfaces. They are rendered by ONE
+# pure function, :func:`render_queue_view`, and persisted in ONE generated,
+# git-tracked file, ``queue-view.md``, written by ONE writer,
+# :func:`_write_queue_view` — which ``regenerate-view``, ``compact`` and
+# ``migrate-layout`` all call. ``epic.md`` holds hand-written narrative only, so a
+# regeneration never touches a hand-written byte and a hand edit never collides
+# with a regeneration. The narrative-versus-settled RELOCATION judgement is NOT
+# here — it stays with the orchestrator (``workflow/cleanup.md`` Step 8).
+
+FILE_EPIC = 'epic.md'
+FILE_SETTLED = 'settled.md'
+
+#: The phase at which the epic is frozen. The compact stage WRITES
+#: ``queue-view.md``, so it refuses a closed epic — that tree is the frozen audit
+#: record ``close`` already sealed, and compaction is a live-epic operation only.
+CLOSED_PHASE = 'closed'
+
+#: Plan statuses whose row no longer belongs in the LIVE Ordered Queue — a
+#: shipped row belongs in its landing record, and a row that closed without
+#: shipping is finished either way. Shares :data:`TERMINAL_PLAN_STATUSES`'
+#: membership by construction so the two never drift; named apart to document the
+#: queue-exclusion intent. The alias is deliberately over the FINISHED set rather
+#: than the shipped one: exclusion asks whether the work is done, never whether
+#: it produced a PR. The renderer excludes these rows BY CONSTRUCTION, so no
+#: post-render invariant re-checks the table.
+LIVE_QUEUE_EXCLUDED_STATUSES = TERMINAL_PLAN_STATUSES
+
+#: The two GENERATED marker pairs a monolithic-layout ``epic.md`` carried, keyed
+#: by the block name that rides in the marker comment, in emission order. They
+#: are no longer written anywhere: ``migrate-layout`` is their only reader, and
+#: it REMOVES them (with the generated-block guidance comment above each) so the
+#: converted ``epic.md`` keeps every hand-written byte and nothing generated.
+GENERATED_BLOCKS = ('resume-summary', 'ordered-queue')
+
+#: The opening of the guidance comment the monolithic template placed above each
+#: generated block. ``migrate-layout`` removes that comment together with the
+#: block it described, and only a comment opening with exactly this text: any
+#: other comment is hand-written and stays.
+_GENERATED_GUIDANCE_OPENER = '<!-- GENERATED BLOCK'
+
+#: The ``abstained[]`` treatment ``compact`` reports for every ``##`` section of
+#: ``epic.md``. The stage makes no ``epic.md`` write at all, so every section is
+#: preserved verbatim — and it is still NAMED, because a report that lists only
+#: what changed cannot be told apart from one that silently dropped something.
+TREATMENT_PRESERVED = 'preserved_verbatim'
+
+#: The fixed header comment every rendered ``queue-view.md`` opens with. It is the
+#: whole operating instruction for a reader who meets the file on a plain clone
+#: or in a merge conflict, and it carries no timestamp and no machine-local path,
+#: so two machines rendering the same ledger state write byte-identical files.
+_VIEW_HEADER = (
+    "<!-- GENERATED FILE — never hand-edit. Rendered from this epic's ledger (status.json, "
+    'resume_anchor.md, queue/*.json) by `orchestrator regenerate-view --slug {slug}`. '
+    'On a merge conflict in this file, do not merge it by hand: merge the source files, run '
+    '`orchestrator regenerate-view --slug {slug}`, and `git add` the result. -->'
+)
+
+
+def _begin_marker(name: str) -> str:
+    return f'<!-- BEGIN GENERATED: {name} -->'
+
+
+def _end_marker(name: str) -> str:
+    return f'<!-- END GENERATED: {name} -->'
+
+
+#: A settled-narrative relocation pointer left at a section's origin in
+#: ``epic.md``. It names the destination heading in ``settled.md`` in double
+#: quotes, so the compact stage can verify the pointer RESOLVES — a reader
+#: following the old path must land on the content, not on absence. The
+#: relocation itself is the orchestrator's judgement act; this regex is only the
+#: reachability check's parser.
+_RELOCATION_POINTER_RE = re.compile(r'settled\.md[^"\n]*§\s*"(?P<heading>[^"]+)"')
+
+#: Cell separator for a rendered Ordered Queue row's Surface list. A markdown
+#: table cell cannot carry a bare pipe, so the joiner is a semicolon and any
+#: pipe inside a path is escaped by :func:`_queue_cell` before it is emitted.
+_SURFACE_JOIN = '; '
+
+# --- markdown line scanners -------------------------------------------------
+#
+# The four regexes in this block are markdown construct models, and every
+# line-wise scan that runs through this block runs against the mask
+# :func:`_fenced_mask` builds. They are grouped here, each stating which
+# CommonMark clauses it honours and which it deliberately does not, because
+# three successive review rounds found the same defect class in a different
+# clause of the same scanners: a line matcher that reads correctly in isolation
+# while parsing a document the spec author does not see rendered.
+#
+# No count of the module's regexes is stated here, deliberately. Two successive
+# enumerations were wrong in the same direction — each omitted a binding added
+# after it was written — and a corrected count would go stale the same way on the
+# next one. What matters for a reader of this block is the CommonMark contract
+# below, which is a property of each scanner rather than of how many exist. A
+# regex that models a markdown construct honours it; one that matches a token
+# within a line (there are several elsewhere in this module) models no construct,
+# so no block-indentation clause applies to it.
+#
+# Honoured by EVERY scanner in this block: CommonMark bounds block-level leading
+# indentation to 0-3 SPACES (spec sections 2.2, 4.2 and 4.5); a fourth column of
+# indentation starts an indented code block instead, so the construct is body
+# text. A tab counts as four columns under the tab-stop rule, so a tab-indented
+# delimiter or heading is never one. That is why the bound below is written over
+# the literal space character as ``{0,3}`` and never over ``\s``: ``\s`` would
+# readmit both the fourth space and the tab.
+#
+# NOT honoured by ANY scanner in this block, deliberately: container context.
+# The scan is line-wise and tracks no block structure, so a construct nested
+# inside a block quote or carried as list-item content is not recognised at its
+# container-relative column, and a setext heading (a ``===`` or ``---``
+# underline beneath a paragraph) does not terminate a section. Recognising
+# either requires a block parser, which this module does not carry; the
+# spec-authoring convention is column-0 ATX headings and top-level fences. The
+# failure direction is stated at each scanner it affects.
+
+#: The one section heading the corpus verbs ADDRESS, and the generic ATX
+#: heading that TERMINATES a section body.
+#:
+#: ``## Expected Surface`` is deliberately NOT here. Its grammar and its reader
+#: both live in ``plan-marshall:script-shared``'s :mod:`epic_spec_parser`, the
+#: marketplace's single reader of that section; this module CONSUMES that reader
+#: (see :func:`_spec_record` and :func:`_row_surface`) and carries no second
+#: model of the heading. ``CLAIM_LABELS_HEADING_RE`` stays because it parses a
+#: different section that is not relocated and retains its in-module consumer,
+#: :func:`_parse_claim_section`.
+#:
+#: Honoured: the 0-3 space indent bound; the 1-6 character ``#`` run; the rule
+#: that the run must be followed by a space, a tab, or the end of the line — so
+#: ``#hashtag`` is not a heading, a seven-``#`` run is not one, and a bare
+#: ``##`` line IS one; the optional trailing closing ``#`` sequence on the
+#: addressed heading; and the CASE of the addressed heading title — it is
+#: matched case-insensitively, so ``## claim labels`` and ``## CLAIM LABELS``
+#: are recognized exactly as ``## Claim Labels`` is. A case variant is a
+#: spelling of the same heading, not a different section, and treating it as
+#: absent would report a confident empty section for a document that declared
+#: one.
+#: NOT honoured: setext headings, per the block note above. A setext underline
+#: therefore fails to terminate a section, which OVER-extends the body rather
+#: than truncating it — the direction that admits extra claims rather than
+#: silently dropping declared ones.
+CLAIM_LABELS_HEADING_RE = re.compile(r'^ {0,3}##[ \t]+Claim Labels(?:[ \t]+#+)?[ \t]*$', re.IGNORECASE)
+_HEADING_RE = re.compile(r'^ {0,3}#{1,6}(?:[ \t]|$)')
+
+#: A ``- `` list bullet, with its leading whitespace captured as ``indent``.
+#:
+#: NOT honoured, and this is the one DELIBERATE indentation deviation in the
+#: block: CommonMark's 0-3 space allowance for a top-level list item is not
+#: applied, because ``indent`` here is a NESTING PROXY rather than a block
+#: position. :func:`_parse_claims` reads an empty ``indent`` as "top-level
+#: claim" and any non-empty one as "child of the preceding claim", under the
+#: spec-authoring convention that a claim starts at column 0 and its
+#: ``verdict:`` bullet is indented beneath it. Admitting a 1-3 space indent as
+#: top-level would reclassify that two-space-indented ``verdict:`` child as a
+#: SECOND claim, shifting every later ``--claim-index`` — strictly worse than
+#: the deviation it would remove.
+#: ALSO not honoured: the ``*`` and ``+`` bullet markers and ordered list items
+#: (the convention is ``-``), empty list items (a ``-`` with no content carries
+#: no claim), and CommonMark's content-column rule for nesting depth. The
+#: marker must be followed by a space or a tab specifically, never by ``\s`` at
+#: large, so a ``---`` thematic break is not read as a bullet.
+_BULLET_RE = re.compile(r'^(?P<indent>[ \t]*)-[ \t]+(?P<text>.*)$')
+
+#: A fenced-code-block delimiter line: three-or-more backticks or tildes, with
+#: any info string. Group ``fence`` carries the WHOLE RUN — both the character
+#: and its length — because CommonMark closes a block only on a run of the same
+#: character that is AT LEAST AS LONG as the opener: a ``~~~`` line inside a
+#: backtick fence is body text, and so is a three-backtick line inside a
+#: four-backtick block. Group ``info`` carries whatever follows the run, because
+#: only the OPENING fence may carry an info string; a delimiter with one is body
+#: text, never a close.
+#:
+#: Honoured: the 0-3 space indent bound on BOTH the opening and the closing
+#: delimiter, independently of each other (a four-space-indented delimiter
+#: inside a block is body text, not a close — spec example 99); the tab
+#: exclusion that follows from the same clause; the same-character rule; the
+#: at-least-as-long rule; the no-info-string-on-a-close rule; the
+#: trailing-whitespace-only allowance on a close; and — enforced in
+#: :func:`_fenced_mask` rather than here, because it governs only an OPENING
+#: backtick fence — the rule that a backtick fence's info string may not itself
+#: contain a backtick.
+#: NOT honoured: container context, per the block note above. The opening
+#: fence's indentation is also not stripped from the body, because the mask is
+#: per-line and never reproduces block content.
+#:
+#: Every line-wise markdown scan below runs against the mask this builds,
+#: because a ``# comment`` inside a fence is not a heading and a ``- item``
+#: inside one is not a bullet. This mirrors the fence suppression the sibling
+#: detector in ``pm-plugin-development:ext-self-review-plan-marshall`` already
+#: applies for the same reason.
+_FENCE_DELIMITER_RE = re.compile(r'^ {0,3}(?P<fence>`{3,}|~{3,})(?P<info>.*)$')
+
+#: The backtick fence character, bound once so :func:`_fenced_mask` can name the
+#: info-string clause it enforces instead of repeating a bare literal twice.
+_BACKTICK = '`'
+
+# --- token matchers (no markdown construct modelled) ------------------------
+
+# The orchestrator spec pointer a launched plan's ``source_id`` carries, and the
+# shape a spec uses to name a sibling spec. Normalized to the root-agnostic key
+# ``{epic_slug}/plans/{spec_name}`` so the active and archived homes of the same
+# epic yield the same origin id. Deliberately NARROW: a lesson path or an
+# arbitrary repo file cited as background is NOT an origin pointer, which is what
+# keeps "two specs citing the same lesson" a silent near-miss rather than a match.
+SPEC_POINTER_RE = re.compile(
+    r'\.plan/(?:orchestrator|archived-orchestrators)/'
+    r'(?P<slug>[A-Za-z0-9_.\-]+)/plans/(?P<spec>PLAN-[A-Za-z0-9_.\-]+\.md)'
+)
+_CHECKED_AT_RE = re.compile(r'^[0-9a-f]{7,40}$')
+
+
+def _error(slug: str, error: str, message: str, **extra: Any) -> dict[str, Any]:
+    """Build the standard TOON error envelope for this script."""
+    result: dict[str, Any] = {
+        'status': 'error',
+        'slug': slug,
+        'store': ORCHESTRATOR_STORE,
+        'error': error,
+        'message': message,
+    }
+    result.update(extra)
+    return result
+
+
+def _validate_slug(slug: str) -> str | None:
+    """Validate the epic slug (kebab-case, same shape as a plan id).
+
+    Returns an error message string when invalid, ``None`` when valid.
+    The validation is load-bearing: the slug becomes a directory name under
+    the orchestrator store, so a malformed value (path separators, ``..``)
+    must never reach ``get_store_dir``.
+    """
+    try:
+        validate_plan_id(slug)
+    except ValueError as exc:
+        return str(exc)
+    return None
+
+
+def _epic_root(slug: str, allow_archived: bool = False) -> Path:
+    """Resolve the epic's store root directory.
+
+    ``allow_archived`` threads straight into
+    :func:`file_ops.get_store_dir`'s read-fallback: when ``True`` and the active
+    ``orchestrator/{slug}`` tree is absent, the archived home
+    ``archived-orchestrators/{slug}`` is resolved instead (when it exists).
+    READ verbs pass ``True``; ``scaffold``, every ``queue`` WRITE form
+    (``--transition``, ``--set-row``, ``--add-row``), and the ``archive`` source
+    resolution stay strict (default ``False``) so a frozen archived epic is
+    never mutated at the active path.
+    """
+    return get_store_dir(ORCHESTRATOR_STORE, slug, allow_archived=allow_archived)
+
+
+def _read_ledger(slug: str, allow_archived: bool = False) -> LedgerRead:
+    """Assemble the epic ledger through the layout module — the ONE read path.
+
+    Every reader of the queue or the anchor in this script comes through here, so
+    no code path opens ``status.json`` for its queue, a row file, or the anchor
+    file itself. ``allow_archived`` threads into :func:`_epic_root` so READ verbs
+    resolve an archived epic transparently when its active tree is absent.
+    """
+    return assemble_view(_epic_root(slug, allow_archived=allow_archived))
+
+
+def _ledger_refusal(slug: str, ledger: LedgerRead) -> dict[str, Any] | None:
+    """The error envelope for a ledger read that did not assemble, else ``None``.
+
+    Each non-``ok`` state keeps its own error, because they owe different
+    remedies (ADR-019): an absent header is ``file_not_found``; a header still in
+    the monolithic layout is ``legacy_layout`` naming ``migrate-layout``, and is
+    never read as an empty ledger; a header, anchor or queue directory that could
+    not be read is ``ledger_unreadable`` with the evidence.
+    """
+    if ledger.state == LEDGER_OK:
+        return None
+    if ledger.state == LEDGER_ABSENT:
+        return _error(slug, 'file_not_found', 'status.json not found in orchestrator store')
+    if ledger.state == LEDGER_LEGACY:
+        return _error(slug, **legacy_layout_error(slug))
+    return _error(
+        slug,
+        'ledger_unreadable',
+        f'the epic ledger could not be read: {ledger.detail}; nothing was written',
+        detail=ledger.detail,
+    )
+
+
+def _read_status(slug: str, allow_archived: bool = False) -> dict[str, Any]:
+    """The assembled ledger view, or ``{}`` when the ledger did not assemble.
+
+    A convenience for the readers that only need the view and report their own
+    could-not-read outcome on an empty dict. A caller that must tell the
+    non-``ok`` states apart — every verb that returns an error for them — reads
+    :func:`_read_ledger` and maps it through :func:`_ledger_refusal` instead, so a
+    legacy ledger is refused by name rather than read as an empty one.
+    """
+    ledger = _read_ledger(slug, allow_archived=allow_archived)
+    return dict(ledger.document) if ledger.state == LEDGER_OK else {}
+
+
+def _unreadable_row_names(ledger: LedgerRead) -> list[str]:
+    """The file names of every row file the assembled read could not read."""
+    return [str(row.get('file', '')) for row in ledger.unreadable_rows]
+
+
+def _probe_status_document(slug: str) -> dict[str, str]:
+    """Classify the epic header four ways for the queue WRITE path.
+
+    The write-side counterpart to :func:`_read_ledger`. The header is probed
+    before any row file is created or mutated, because a row write under a
+    header that is absent, not a JSON object, or still in the monolithic layout
+    would each leave the ledger in a state no reader can interpret: a row beside
+    no header, a row beside a corrupt one, or a row file beside a legacy
+    ``plans[]`` that still holds the queue.
+
+    Returns ``state`` (one of :data:`STATUS_DOC_ABSENT`,
+    :data:`STATUS_DOC_NON_OBJECT`, :data:`STATUS_DOC_LEGACY` and
+    :data:`STATUS_DOC_OBJECT`), ``observed_type`` (the top-level JSON type name,
+    or ``unparseable`` / ``unreadable`` when no type could be read at all) and
+    ``detail`` (the evidence behind the verdict, so the operator sees what is in
+    the file).
+
+    The file is read through :func:`_orchestrator_ledger.probe_header`; this
+    function only maps the ledger read states onto the write-side vocabulary. An
+    EMPTY object maps to :data:`STATUS_DOC_OBJECT` deliberately: ``{}`` is a
+    valid, if bare, per-concern header, so a write proceeds against it.
+    """
+    probe = probe_header(_epic_root(slug))
+    return {
+        'state': _HEADER_STATE_TO_STATUS_DOC[probe.state],
+        'observed_type': probe.observed_type,
+        'detail': probe.detail,
+    }
+
+
+def _header_refusal(slug: str, probe: dict[str, str]) -> dict[str, Any] | None:
+    """The error envelope a queue write returns for a header it must not write under."""
+    if probe['state'] == STATUS_DOC_ABSENT:
+        return _error(slug, 'file_not_found', 'status.json not found in orchestrator store')
+    if probe['state'] == STATUS_DOC_LEGACY:
+        return _error(slug, **legacy_layout_error(slug))
+    if probe['state'] == STATUS_DOC_NON_OBJECT:
+        return _error(
+            slug,
+            'invalid_status_document',
+            f'status.json is present but is not a JSON object ({probe["detail"]}); '
+            'the queue write was refused and NOTHING was written — repair the document '
+            'before writing, so whatever it holds is not silently discarded',
+            observed_type=probe['observed_type'],
+        )
+    return None
+
+
+def _set_row_field(row: dict[str, Any], field: str, value: str) -> dict[str, Any]:
+    """Set one field of a plan row, returning the previous and new values."""
+    previous = row.get(field, '')
+    row[field] = value
+    return {'previous': previous, 'new': value}
+
+
+def _mutate_plan_row(slug: str, plan_id: str, apply: Callable[[dict[str, Any]], dict[str, Any]]) -> dict[str, Any]:
+    """Apply ``apply`` to one queue row inside that row file's own critical section.
+
+    The row-LOCATING write path for the plan queue: ``--transition`` and
+    ``--set-row`` route through here. It is a one-row-file operation through the
+    ledger module's :func:`_orchestrator_ledger.mutate_row`, which runs the
+    shared ``O_EXCL``-guarded read-modify-write over ``queue/{plan_id}.json``
+    alone — so a concurrent session stamping a DIFFERENT row writes a different
+    file and cannot collide with this one at all, and one stamping the same row
+    is serialized rather than clobbered. No write stamps a shared ``updated``
+    field: a stamp every write restamps is the collision line the per-concern
+    layout exists to remove.
+
+    Returns the module's outcome dict, carrying exactly one of ``result`` (the
+    value ``apply`` returned for the located row), ``invalid_id`` (the id does
+    not match the plan-id grammar), ``available_plans`` (no row file exists for
+    the id; every readable row id in queue order) or ``unreadable`` (the row file
+    exists but could not be read, so it was refused rather than overwritten).
+    """
+    return mutate_row(_epic_root(slug), plan_id, apply)
+
+
+def _append_plan_row(slug: str, row: dict[str, Any]) -> dict[str, Any]:
+    """Stage one row as ONE new row file, created atomically.
+
+    The append counterpart to :func:`_mutate_plan_row`, routed through the ledger
+    module's :func:`_orchestrator_ledger.create_row`. Staging a plan creates
+    ``queue/{PLAN-ID}.json`` and touches no other row, so two sessions staging
+    two DIFFERENT plans write two different files and both land — on one machine
+    and across machines alike.
+
+    The check-then-act window the staging opens (the id and slug checks, then the
+    create) is closed by the module, per the TOCTOU / check-then-act menu in
+    ``ref-code-quality/standards/code-organization.md``: a duplicate ID is refused
+    by the atomic exclusive publish of the row file itself, and the duplicate-slug
+    scan, the ``seq`` allocation and the publish share one critical section scoped
+    to the queue. The epic-slug refusal is decided before any lock, because its
+    verdict depends on nothing in the queue.
+
+    Returns the module's outcome dict, carrying exactly one of ``row`` (the row
+    written, ``seq`` included), ``invalid_id``, ``epic_slug``, ``duplicate`` (the
+    already-queued row bearing that id), ``duplicate_slug`` (the already-queued
+    row bearing that slug) or ``queue_unlistable`` (the queue directory could not
+    be listed, so the slug check could not run and nothing was written).
+    """
+    return create_row(_epic_root(slug), row, epic_slug=slug)
+
+
+def _spec_presence(root: Path, plan_id: str) -> dict[str, Any]:
+    """Probe whether ``plan_id``'s staged spec exists, in three values.
+
+    Reports one of :data:`SPEC_PRESENCE_PRESENT`, :data:`SPEC_PRESENCE_ABSENT`
+    and :data:`SPEC_PRESENCE_UNLISTABLE`, plus the evidence behind it: the
+    directory that was probed, the spec that matched, and the error that stopped
+    the probe. The three states are held apart because two of them are
+    zeros that mean opposite things — ``absent`` is a MEASURED negative (the
+    directory was listed and holds no spec for this id, which is a staging gap
+    the caller closes by writing one), while ``unlistable`` is NO OBSERVATION
+    (the directory could not be read, so nothing is known either way). Folding
+    the second into the first would publish an unmeasured tree as a confidently
+    empty one, which is the reading ADR-019 exists to forbid.
+
+    The match reuses :data:`SPEC_GLOB` and :func:`_spec_matches_row` — the
+    module's existing corpus enumeration pattern and its existing row-to-spec
+    matcher — rather than hand-rolling a ``{plan_id}-*.md`` pattern here. That
+    matters beyond tidiness: the shared matcher carries the load-bearing hyphen
+    rule that stops ``PLAN-1`` from claiming ``PLAN-10-foo.md``, and a second
+    pattern written here would reintroduce exactly that bug.
+
+    The listing goes through :meth:`Path.iterdir` and NOT through
+    :meth:`Path.glob`, even though :func:`_spec_paths` uses the latter. ``glob``
+    swallows a :class:`PermissionError` internally and yields nothing, so an
+    unreadable directory would come back through it as an empty listing —
+    indistinguishable from a readable directory holding no spec, and reported as
+    ``absent``. That is precisely the fold this probe exists to avoid, so the
+    listing is done with the call that RAISES and the two failures are separated
+    here: a missing directory is a derived ``absent``, and every other
+    :class:`OSError` is ``unlistable``.
+
+    The probe never blocks the append and never fails it — a plan is routinely
+    queued before its spec is written, so the verdict RIDES the payload as a
+    reported fact rather than gating the row.
+    """
+    plans_dir = root / PLANS_SUBDIR
+    verdict: dict[str, Any] = {
+        'spec_presence': SPEC_PRESENCE_ABSENT,
+        'spec': '',
+        'spec_probed_dir': str(plans_dir),
+        'spec_probe_error': '',
+        'spec_absent_warning': '',
+    }
+    try:
+        listed = sorted(path for path in plans_dir.iterdir() if path.match(SPEC_GLOB) and path.is_file())
+    except FileNotFoundError:
+        # A derived absence: the directory that would hold the spec does not
+        # exist, so it holds no spec for any id. The warning names the directory
+        # the zero was derived from rather than asserting a bare absence.
+        verdict['spec_absent_warning'] = f'no spec staged for {plan_id}: {plans_dir} does not exist'
+        return verdict
+    except OSError as exc:
+        # Something occupies the path but could not be walked (permissions, not
+        # a directory, I/O). Nothing was observed, so no absence may be claimed.
+        verdict['spec_presence'] = SPEC_PRESENCE_UNLISTABLE
+        verdict['spec_probe_error'] = str(exc)
+        return verdict
+    match = next((path for path in listed if _spec_matches_row(path, plan_id)), None)
+    if match is None:
+        verdict['spec_absent_warning'] = (
+            f'no spec staged for {plan_id}: {plans_dir} holds {len(listed)} spec(s), none matching'
+        )
+        return verdict
+    verdict['spec_presence'] = SPEC_PRESENCE_PRESENT
+    verdict['spec'] = match.name
+    return verdict
+
+
+def cmd_scaffold(args: argparse.Namespace) -> dict[str, Any]:
+    """Create the ``.plan/orchestrator/{slug}/`` directory tree.
+
+    Idempotent: existing directories are left untouched, re-running against
+    an already-scaffolded epic succeeds and reports ``already_existed: true``.
+    Does NOT create ``status.json`` — that is
+    ``manage-status create --store orchestrator``'s job.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    root = _epic_root(args.slug)
+    already_existed = root.is_dir()
+    root.mkdir(parents=True, exist_ok=True)
+    for sub in EPIC_SUBDIRS:
+        (root / sub).mkdir(exist_ok=True)
+    return {
+        'status': 'success',
+        'operation': 'scaffold',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'root': str(root),
+        'already_existed': already_existed,
+        'directories': list(EPIC_SUBDIRS),
+    }
+
+
+def _queue_add_row(args: argparse.Namespace) -> dict[str, Any]:
+    """Append one plan row, reporting it with its spec-presence verdict.
+
+    The ``--add-row`` branch of :func:`cmd_queue`, split out so each write form
+    reads as one path instead of three interleaved branches of one body.
+
+    The opening guard discriminates the header FOUR ways through
+    :func:`_probe_status_document` and refuses — writing nothing — every state a
+    row file must not be created under:
+
+    - ABSENT — ``file_not_found``: a row beside no header belongs to no epic.
+    - PRESENT but not a JSON object — ``invalid_status_document``, with the
+      observed type named.
+    - still in the monolithic layout — ``legacy_layout``, naming
+      ``migrate-layout``: a row file staged beside a legacy ``plans[]`` would
+      split one queue across two representations.
+    - a per-concern header, INCLUDING the empty document ``{}`` — proceed.
+
+    The guard is deliberately NOT the duplicate check: that is the ledger
+    module's atomic create inside :func:`_append_plan_row`, because a duplicate
+    decided from a pre-create snapshot could be overtaken by a competing session
+    between the read and the write. Its outcome is discriminated key by key; the
+    slug refusals (``duplicate_slug``, ``epic_slug``) use the ``invalid_field``
+    family, and every refusal writes NOTHING.
+    """
+    refusal = _header_refusal(args.slug, _probe_status_document(args.slug))
+    if refusal is not None:
+        return refusal
+    # Seeded from the declared field tuple so the row's key ORDER is the declared
+    # order, and the three result fields start empty: a staged row has landed
+    # nothing yet. ``seq`` is allocated by the ledger module at create time.
+    row: dict[str, Any] = dict.fromkeys(ADD_ROW_SEED_FIELDS, '')
+    row['id'] = args.add_row
+    row['slug'] = args.slug_value
+    row['workstream'] = args.workstream
+    row['status'] = args.status if args.status is not None else ADD_ROW_DEFAULT_STATUS
+    outcome = _append_plan_row(args.slug, row)
+    if 'invalid_id' in outcome:
+        return _error(
+            args.slug,
+            'invalid_plan_id',
+            f'--add-row must be a plan id ({PLAN_ID_SEGMENT}), got: {args.add_row}',
+        )
+    if 'queue_unlistable' in outcome:
+        return _error(
+            args.slug,
+            'ledger_unreadable',
+            f'the queue directory could not be listed ({outcome["queue_unlistable"]}), so the '
+            'duplicate-slug check could not run; the row was refused and NOTHING was written',
+            detail=str(outcome['queue_unlistable']),
+        )
+    if 'duplicate_slug' in outcome:
+        duplicate = outcome['duplicate_slug']
+        return _error(
+            args.slug,
+            'invalid_field',
+            f'plan slug {args.slug_value!r} duplicates queued plan '
+            f'{duplicate.get("id", "")!r}; the row was refused and NOTHING was written — '
+            'use a plan-short slug unique within the queue, never the epic slug',
+            existing_plan=str(duplicate.get('id', '')),
+            existing_status=str(duplicate.get('status', '')),
+        )
+    if 'epic_slug' in outcome:
+        return _error(
+            args.slug,
+            'invalid_field',
+            f'plan slug {args.slug_value!r} equals the epic slug; the row was refused and '
+            'NOTHING was written — the slug field carries the plan short slug, '
+            'unique within the queue, never the epic slug',
+            epic_slug=str(outcome['epic_slug']),
+        )
+    if 'row' not in outcome:
+        duplicate = outcome['duplicate']
+        return _error(
+            args.slug,
+            'duplicate_plan_id',
+            f'plan {args.add_row!r} is already queued; use --transition or --set-row to update the existing row',
+            existing_status=str(duplicate.get('status', '')),
+        )
+    return {
+        'status': 'success',
+        'operation': 'queue-add-row',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'plan': args.add_row,
+        'row': outcome['row'],
+        **_spec_presence(_epic_root(args.slug), args.add_row),
+    }
+
+
+def cmd_queue(args: argparse.Namespace) -> dict[str, Any]:
+    """Read the plan queue, transition a status, set a row field, or append a row.
+
+    Four-way surface over the queue's row files (``queue/{PLAN-ID}.json``):
+
+    - **read** (no write flags): returns ``phase``, ``resume_anchor``, and the
+      full queue as ``plans`` in ``(seq, id)`` order, plus every row file that
+      could not be read (``unreadable_rows``) so an unread row is never mistaken
+      for an absent one.
+    - **transition** (``--transition PLAN-NN --status X``): sets that plan's
+      ``status``. ``X`` must be a member of :data:`VALID_STATUS_VOCABULARY`;
+      any other token is refused with ``invalid_field`` and nothing is written.
+    - **set-row** (``--set-row PLAN-NN --field F --value V``): sets one result
+      field of that plan's row, where ``F`` is one of :data:`PLAN_ROW_FIELDS`.
+      This is the sanctioned way to stamp a landing (``pr``, ``landing``,
+      ``plan_marshall_plan_id``), and it writes that one row file only.
+    - **add-row** (``--add-row PLAN-NN --slug-value SLUG --workstream WS-NN
+      [--status X]``): stages ONE new row file seeded with
+      :data:`ADD_ROW_SEED_FIELDS`, defaulting its status to
+      :data:`ADD_ROW_DEFAULT_STATUS` and allocating its ``seq``. A duplicate id
+      is refused by the atomic create with ``duplicate_plan_id``.
+
+    The three write forms are mutually exclusive and each must be supplied
+    complete. Every write form probes the header first and refuses — writing
+    nothing — a header that is absent, not a JSON object, or still in the
+    monolithic layout (``legacy_layout``). ``--transition`` and ``--set-row`` then
+    go through :func:`_mutate_plan_row`, which LOCATES a row file, and
+    ``--add-row`` through :func:`_append_plan_row`, which CREATES one.
+
+    ``--status`` is shared between two forms and its obligation differs by form:
+    it is REQUIRED with ``--transition`` (a transition with no target status is
+    meaningless) and OPTIONAL with ``--add-row`` (an appended row defaults to
+    ``staged``). It therefore no longer marks the transition form on its own,
+    which is why the transition/status pairing below is conditional on
+    ``--add-row`` being absent rather than unconditional.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    set_row_args = (args.set_row, args.field, args.value)
+    add_row_args = (args.add_row, args.slug_value, args.workstream)
+    set_row_given = any(arg is not None for arg in set_row_args)
+    add_row_given = any(arg is not None for arg in add_row_args)
+    # ``--status`` names the transition form ONLY when --add-row is absent,
+    # because the append form legitimately carries it as the seed status. Without
+    # that carve-out every `--add-row ... --status X` call would read as two
+    # write forms at once and be rejected by the mutual-exclusion guard below.
+    transition_given = args.transition is not None or (args.status is not None and not add_row_given)
+    if sum((transition_given, set_row_given, add_row_given)) > 1:
+        return _error(
+            args.slug,
+            'wrong_parameters',
+            '--transition/--status, --set-row/--field/--value and '
+            '--add-row/--slug-value/--workstream are mutually exclusive',
+        )
+    if set_row_given and not all(arg is not None for arg in set_row_args):
+        return _error(
+            args.slug,
+            'wrong_parameters',
+            '--set-row, --field and --value must be supplied together',
+        )
+    if add_row_given and not all(arg is not None for arg in add_row_args):
+        return _error(
+            args.slug,
+            'wrong_parameters',
+            '--add-row, --slug-value and --workstream must be supplied together',
+        )
+    if not add_row_given and (args.transition is None) != (args.status is None):
+        return _error(
+            args.slug,
+            'wrong_parameters',
+            '--transition and --status must be supplied together',
+        )
+    if set_row_given and args.field not in PLAN_ROW_FIELDS:
+        return _error(
+            args.slug,
+            'invalid_field',
+            f'--field must be one of {sorted(PLAN_ROW_FIELDS)}, got: {args.field}',
+        )
+    if args.status is not None and args.status not in VALID_STATUS_VOCABULARY:
+        return _error(
+            args.slug,
+            'invalid_field',
+            f'--status must be one of {sorted(VALID_STATUS_VOCABULARY)}, got: {args.status}',
+        )
+    if add_row_given and not _ADD_ROW_PLAN_ID_RE.match(args.add_row):
+        return _error(
+            args.slug,
+            'invalid_plan_id',
+            f'--add-row must be a plan id ({PLAN_ID_SEGMENT}), got: {args.add_row}',
+        )
+    if add_row_given:
+        return _queue_add_row(args)
+    # Read-path resolves an archived epic transparently; every write-path stays
+    # strict so an archived epic is never mutated at the active path.
+    is_read = not set_row_given and not transition_given
+    if is_read:
+        ledger = _read_ledger(args.slug, allow_archived=True)
+        refusal = _ledger_refusal(args.slug, ledger)
+        if refusal is not None:
+            return refusal
+        view = ledger.document
+        unreadable = _unreadable_row_names(ledger)
+        return {
+            'status': 'success',
+            'operation': 'queue',
+            'slug': args.slug,
+            'store': ORCHESTRATOR_STORE,
+            'phase': view.get('phase', ''),
+            'resume_anchor': view.get('resume_anchor', ''),
+            'plans': view.get('plans', []),
+            'unreadable_row_count': len(unreadable),
+            'unreadable_rows': unreadable,
+        }
+    refusal = _header_refusal(args.slug, _probe_status_document(args.slug))
+    if refusal is not None:
+        return refusal
+    plan_id = args.set_row if set_row_given else args.transition
+    field = args.field if set_row_given else 'status'
+    value = args.value if set_row_given else args.status
+    outcome = _mutate_plan_row(args.slug, plan_id, lambda row: _set_row_field(row, field, value))
+    if 'unreadable' in outcome:
+        return _error(
+            args.slug,
+            'row_unreadable',
+            f'the row file of plan {plan_id!r} could not be read ({outcome["unreadable"]}); '
+            'it was refused rather than overwritten and NOTHING was written',
+            plan=plan_id,
+            detail=str(outcome['unreadable']),
+        )
+    if 'result' not in outcome:
+        return _error(
+            args.slug,
+            'plan_not_found',
+            f'plan {plan_id!r} not found in the queue',
+            available_plans=outcome.get(
+                'available_plans', [str(row.get('id', '')) for row in read_rows(_epic_root(args.slug)).rows]
+            ),
+        )
+    result = outcome['result']
+    if set_row_given:
+        return {
+            'status': 'success',
+            'operation': 'queue-set-row',
+            'slug': args.slug,
+            'store': ORCHESTRATOR_STORE,
+            'plan': plan_id,
+            'field': field,
+            'previous_value': result['previous'],
+            'new_value': result['new'],
+        }
+    return {
+        'status': 'success',
+        'operation': 'queue-transition',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'plan': plan_id,
+        'previous_status': result['previous'],
+        'new_status': result['new'],
+    }
+
+
+def _format_plan_line(plan: dict[str, Any]) -> str:
+    """Render one plan as a summary line, appending the non-empty link fields.
+
+    A row whose status is in :data:`SHIPPED_PLAN_STATUSES` and that is missing
+    any of :data:`SHIPPED_REQUIRED_FIELDS` also carries a deterministic ASCII
+    gap marker — ``(!) missing: pr, landing`` — naming the absent fields in that
+    fixed order. The marker is a SHIPPED-status signal, not a general emptiness
+    signal and not a terminal-status one: a staged or running row with empty
+    links is mid-flight, not incomplete, and a
+    :data:`CLOSED_UNSHIPPED_PLAN_STATUSES` row never had a PR or a landing record
+    to point at — marking either would report a gap that cannot exist. A
+    fully-stamped shipped row also renders no marker, so correct data renders
+    exactly as it did before the marker existed.
+    """
+    parts = [f'{plan.get("id", "?")} ({plan.get("workstream", "?")})']
+    if plan.get('plan_marshall_plan_id'):
+        parts.append(f'plan={plan["plan_marshall_plan_id"]}')
+    if plan.get('pr'):
+        parts.append(f'PR {plan["pr"]}')
+    if plan.get('landing'):
+        parts.append(f'landing={plan["landing"]}')
+    if plan.get('status') in SHIPPED_PLAN_STATUSES:
+        missing = [field for field in SHIPPED_REQUIRED_FIELDS if not plan.get(field)]
+        if missing:
+            parts.append(f'(!) missing: {", ".join(missing)}')
+    return ' — '.join(parts)
+
+
+def _format_inbox_line(counts: InboxCounts) -> str:
+    """Render the derived inbox line for the START-HERE block.
+
+    Kept a separate line from ``**Resume anchor**`` on purpose: the anchor is
+    the operator's prose and the inbox line is the live filesystem count, so a
+    stale narrative count sits VISIBLY BESIDE the derived one instead of
+    outranking it. An absent ``inbox/`` renders that fact explicitly rather
+    than rendering ``0 queued`` — the same *which zero is this* rule
+    ``inbox list``'s ``inbox_state`` enforces.
+    """
+    if not counts.present:
+        return '**Inbox (derived)**: no inbox directory (nothing to drain from)'
+    return f'**Inbox (derived)**: {counts.queued} queued, {counts.archived} archived'
+
+
+def _ordered_plans(view: dict[str, Any]) -> list[dict[str, Any]]:
+    """The view's queue rows, mapping rows only, in ``(seq, id)`` order.
+
+    The assembled view already arrives in this order; the renderers re-sort
+    anyway so their output is a function of the rows alone, never of the order a
+    caller happened to hand them in.
+    """
+    plans = view.get('plans', [])
+    rows = [row for row in plans if isinstance(row, dict)] if isinstance(plans, list) else []
+    return sorted(rows, key=queue_order_key)
+
+
+def _build_summary(status_doc: dict[str, Any], counts: InboxCounts | None = None) -> str:
+    """Build the START-HERE markdown block, derived purely from the ledger view.
+
+    Renders the resume anchor, the epic phase, the running/parked plans, the
+    staged queue (in ``(seq, id)`` order), and a residual per-status listing for
+    every other status value — so no plan is ever invisible in the summary.
+
+    Terminal rows that are missing a result link carry the gap marker
+    :func:`_format_plan_line` appends, so an unreconciled landing is visible in
+    the generated block rather than only in the raw row file.
+
+    ``resume_anchor`` is rendered VERBATIM. The fix for a narrative count that
+    has gone stale is derivation beside the prose (the
+    :func:`_format_inbox_line` line), never silent rewriting of what the
+    operator wrote.
+
+    Args:
+        status_doc: The epic's assembled ledger view — the machine authority.
+        counts: The filesystem-derived inbox tallies from :func:`inbox_counts`,
+            rendered as the derived inbox line when supplied. The committed
+            ``queue-view.md`` omits it (``None``): the view renders from the
+            ledger alone, so an inbox drain — which is not a queue change —
+            never makes the committed view stale. ``resume-summary`` supplies
+            the live counts for its own read.
+    """
+    plans = _ordered_plans(status_doc)
+    lines = [
+        f'**Resume anchor**: {status_doc.get("resume_anchor") or "(not set)"}',
+        f'**Phase**: {status_doc.get("phase", "")}',
+    ]
+    if counts is not None:
+        lines.append(_format_inbox_line(counts))
+    running = [p for p in plans if p.get('status') == 'running']
+    parked = [p for p in plans if p.get('status') == 'parked']
+    staged = [p for p in plans if p.get('status') == 'staged']
+    other = [p for p in plans if p.get('status') not in ('running', 'parked', 'staged')]
+    for label, group in (('Running', running), ('Parked', parked)):
+        if group:
+            lines.append(f'**{label}**:')
+            lines.extend(f'- {_format_plan_line(plan)}' for plan in group)
+    lines.append('**Queue** (staged, in order):')
+    if staged:
+        lines.extend(f'{position}. {_format_plan_line(plan)}' for position, plan in enumerate(staged, start=1))
+    else:
+        lines.append('- (empty)')
+    for plan in other:
+        lines.append(f'- {_format_plan_line(plan)} — status: {plan.get("status", "")}')
+    return '\n'.join(lines)
+
+
+def _derive_counts(status_doc: dict[str, Any]) -> dict[str, int]:
+    """Re-derive, from ``status.json``, every count a rendered block can claim."""
+    raw_plans = status_doc.get('plans', [])
+    plans = [plan for plan in raw_plans if isinstance(plan, dict)] if isinstance(raw_plans, list) else []
+    tally = Counter(str(plan.get('status', '')) for plan in plans)
+    derived = {'rows': len(plans), 'plans': len(plans)}
+    for noun in COUNT_CLAIM_NOUNS:
+        if noun not in derived:
+            derived[noun] = tally.get(noun, 0)
+    return derived
+
+
+def _claim_key(noun: str) -> str:
+    """Normalize a claim noun to its derivation key (``row``/``rows`` collapse)."""
+    lowered = noun.lower()
+    if lowered in ('row', 'rows'):
+        return 'rows'
+    if lowered in ('plan', 'plans'):
+        return 'plans'
+    return lowered
+
+
+def _shared_slug_rows(status_doc: dict[str, Any]) -> tuple[list[dict[str, Any]], int, str]:
+    """Report queued rows sharing one slug, by exact string equality.
+
+    Scans every queued row with no shape filter and groups by the ``slug``
+    value using the same exact-equality comparison the queue-write
+    duplicate-slug lint uses — no second divergent comparison lives here.
+    Each finding names the shared value plus the row identities carrying it
+    (``{slug, plans, count}``), so a future slug mis-fill is reported rather
+    than rendered into agreement.
+
+    Returns ``(findings, slugs_scanned, state)`` so a zero states which zero
+    it is. An unscannable queue (a present-but-non-list ``plans`` value)
+    resolves to ``indeterminate``, never to a checked negative, per ADR-019.
+    REPORTS only — the caller never rewrites the block.
+    """
+    plans = status_doc.get('plans', [])
+    if not isinstance(plans, list):
+        return [], 0, 'indeterminate'
+    by_slug: dict[Any, list[str]] = {}
+    scanned = 0
+    for row in plans:
+        if not isinstance(row, dict):
+            continue
+        scanned += 1
+        slug_value = row.get('slug', '')
+        if not isinstance(slug_value, str):
+            return [], 0, 'indeterminate'
+        by_slug.setdefault(slug_value, []).append(str(row.get('id', '')))
+    findings = [
+        {'slug': slug_value, 'plans': ids, 'count': len(ids)}
+        for slug_value, ids in sorted(by_slug.items(), key=lambda item: str(item[0]))
+        if len(ids) > 1
+    ]
+    return findings, scanned, 'measured'
+
+
+def _count_divergences(summary: str, status_doc: dict[str, Any]) -> tuple[list[dict[str, Any]], int]:
+    """Compare every count the RENDERED block claims against its derivation.
+
+    Runs on the rendering rather than on the inputs, because in every recorded
+    divergence the inputs were individually fine and the rendering combined them
+    wrongly — a narrated anchor sentence and the generator's own enumeration
+    disagreeing inside one emission.
+
+    Returns ``(divergences, claims_scanned)`` so a zero divergence count always
+    rides with the population it was computed over.
+    """
+    derived = _derive_counts(status_doc)
+    divergences: list[dict[str, Any]] = []
+    scanned = 0
+    for match in _COUNT_CLAIM_RE.finditer(summary):
+        if _SCOPED_CLAIM_RE.match(match.group('tail')):
+            continue
+        scanned += 1
+        key = _claim_key(match.group('noun'))
+        narrated = int(match.group('value'))
+        if narrated != derived[key]:
+            divergences.append(
+                {
+                    'claim': f'{match.group("value")} {match.group("noun")}',
+                    'narrated': narrated,
+                    'derived': derived[key],
+                }
+            )
+    return divergences, scanned
+
+
+def _rendering_contradictions(summary: str) -> tuple[list[dict[str, Any]], int]:
+    """Detect mutually-exclusive claims INSIDE one rendering.
+
+    Two ``R = N of M`` claims sharing a denominator but disagreeing on the
+    numerator cannot both hold, yet each is individually plausible — so the
+    contradiction exists only in the rendering as a whole. Both claim sites are
+    named, in the order they appear.
+
+    Returns ``(contradictions, claims_scanned)``.
+    """
+    claims: list[tuple[int, int, str]] = [
+        (int(match.group('denominator')), int(match.group('numerator')), match.group(0).strip())
+        for match in _RATIO_CLAIM_RE.finditer(summary)
+    ]
+    contradictions: list[dict[str, Any]] = []
+    for index, (denominator, numerator, text) in enumerate(claims):
+        for other_denominator, other_numerator, other_text in claims[index + 1 :]:
+            if denominator == other_denominator and numerator != other_numerator:
+                contradictions.append(
+                    {
+                        'denominator': denominator,
+                        'left': text,
+                        'right': other_text,
+                    }
+                )
+    return contradictions, len(claims)
+
+
+# --- bypass-enforcement registry (PLAN-08 D4) ---------------------------------
+
+#: Where a bypass's enforcement point lives. ``in_epic`` means this epic's own
+#: queue/instrumentation machinery — the row ships a working gate here.
+#: ``out_of_epic`` means plan-lifecycle core — the row ships a specified
+#: proposal routed to its owner, never a wording.
+BYPASS_SCOPE_IN_EPIC = 'in_epic'
+BYPASS_SCOPE_OUT_OF_EPIC = 'out_of_epic'
+BYPASS_SCOPES = (BYPASS_SCOPE_IN_EPIC, BYPASS_SCOPE_OUT_OF_EPIC)
+
+#: What the enforcement point does to the bypass shape. In-epic rows refuse
+#: (at the write path), redirect (report at the render path), or both; an
+#: out-of-epic row proposes (the owner's fix is specified, not shipped).
+BYPASS_BEHAVIOR_REFUSE = 'refuse'
+BYPASS_BEHAVIOR_REDIRECT = 'redirect'
+BYPASS_BEHAVIOR_REFUSE_AND_REDIRECT = 'refuse+redirect'
+BYPASS_BEHAVIOR_PROPOSE = 'propose'
+BYPASS_BEHAVIORS = (
+    BYPASS_BEHAVIOR_REFUSE,
+    BYPASS_BEHAVIOR_REDIRECT,
+    BYPASS_BEHAVIOR_REFUSE_AND_REDIRECT,
+    BYPASS_BEHAVIOR_PROPOSE,
+)
+
+#: Every recorded Muse plan-lifecycle bypass mapped to its named enforcement
+#: point. Each row carries ``bypass_id``, the recorded ``occurrence`` (with
+#: its decision-log anchor, so the row is traceable rather than asserted),
+#: ``scope``, the enforcing ``gates`` (function names resolvable in this
+#: module for in-epic rows, empty for out-of-epic ones), the ``seam``,
+#: ``behavior``, the owning ``owner``, and a ``test_predicate`` stating what
+#: test at what seam would fail before the fix and pass after. An in-epic row
+#: with no resolvable gate, or an out-of-epic row with no owner plus concrete
+#: predicate, is a prose-only row — the shape the epic's mechanism-only bar
+#: refuses — and the registry's shape tests reject it as such.
+BYPASS_ENFORCEMENT_POINTS = (
+    {
+        'bypass_id': 'lifecycle-skip-01',
+        'occurrence': (
+            'First self-reported plan-lifecycle skip by a Muse Spark 1.3 agent; '
+            'recorded as the prior occurrence behind tooling-truthfulness decision '
+            'abe498 (2026-09-11T20:50:30Z), which counts the PLAN-04 report as the '
+            '2nd occurrence. Cost-benefit shortcut shape, self-reported on challenge.'
+        ),
+        'scope': BYPASS_SCOPE_OUT_OF_EPIC,
+        'gates': (),
+        'seam': 'plan-lifecycle core: phase_handshake verify --strict',
+        'behavior': BYPASS_BEHAVIOR_PROPOSE,
+        'owner': 'plan-marshall:plan-marshall',
+        'test_predicate': (
+            'phase_handshake verify --phase 5-execute --strict run against a plan '
+            'directory advanced without its 4-plan artifacts must refuse; '
+            'red = the handshake admits, green = it refuses.'
+        ),
+    },
+    {
+        'bypass_id': 'lifecycle-skip-02',
+        'occurrence': (
+            'PLAN-04 agent self-reported skipping the plan lifecycle '
+            '(tooling-truthfulness decision abe498, 2026-09-11T20:50:30Z); the '
+            'prevention analysis folded into the process-compliance Watch as items '
+            '1-3, fail-closed gates owned by lifecycle machinery (decision 9678cd). '
+            'Cost-benefit shortcut shape, self-reported on challenge.'
+        ),
+        'scope': BYPASS_SCOPE_OUT_OF_EPIC,
+        'gates': (),
+        'seam': 'plan-lifecycle core: manage-status transition guard (loop-exit-guard + pre-commit-verify-freshness)',
+        'behavior': BYPASS_BEHAVIOR_PROPOSE,
+        'owner': 'plan-marshall:plan-marshall',
+        'test_predicate': (
+            'manage-status transition --completed 5-execute run with pending tasks '
+            'or an unverified tree must refuse with the pending/freshness cause '
+            'named; red = the transition proceeds, green = it refuses.'
+        ),
+    },
+    {
+        'bypass_id': 'epic-slug-fill-03',
+        'occurrence': (
+            'model-provisioning decompose filled every plan-row slug with the epic '
+            'slug; all writes succeeded and every structural check agreed (inbox '
+            'model-provisioning-001.md; tooling-truthfulness decision d40c56, '
+            '2026-09-13T17:24:53Z, third-occurrence finding absorbed as Open Defect); '
+            'caught only by human reading.'
+        ),
+        'scope': BYPASS_SCOPE_IN_EPIC,
+        'gates': ('_append_plan_row', '_shared_slug_rows', '_epic_slug_rows'),
+        'seam': 'plan-orchestrator queue --add-row + resume-summary',
+        'behavior': BYPASS_BEHAVIOR_REFUSE_AND_REDIRECT,
+        'owner': 'plan-marshall:plan-orchestrator',
+        'test_predicate': (
+            'test_bypass_instrumentation.py::TestEpicSlugGate: a row whose slug '
+            'equals the epic slug is refused at queue-write with NOTHING written '
+            'and reported at resume-summary; the matched control with plan-short '
+            'slugs admits and stays silent; red = admits/silent, green = '
+            'refuses/reports.'
+        ),
+    },
+)
+
+
+def _epic_slug_rows(status_doc: dict[str, Any], epic_slug: str) -> tuple[list[dict[str, Any]], int, str]:
+    """Report queued rows whose slug equals the epic slug.
+
+    The case the N-sharing :func:`_shared_slug_rows` check misses: a single
+    epic-slug row in an otherwise distinct queue shares nothing yet is exactly
+    the model-provisioning mis-fill shape (every row filled with the epic slug
+    starts as one such row). Scans every queued row with no shape filter using
+    the same exact-equality slug comparison the queue-write lint uses — no
+    second divergent comparison lives here. Each finding names the row identity
+    plus the shared value.
+
+    Returns ``(findings, slugs_scanned, state)`` so a zero states which zero
+    it is. An unscannable queue (a present-but-non-list ``plans`` value)
+    resolves to ``indeterminate``, never to a checked negative, per ADR-019.
+    REPORTS only — the caller never rewrites the block.
+    """
+    plans = status_doc.get('plans', [])
+    if not isinstance(plans, list):
+        return [], 0, 'indeterminate'
+    findings: list[dict[str, Any]] = []
+    scanned = 0
+    for row in plans:
+        if not isinstance(row, dict):
+            continue
+        scanned += 1
+        slug_value = row.get('slug', '')
+        if not isinstance(slug_value, str):
+            return [], 0, 'indeterminate'
+        if slug_value == epic_slug:
+            findings.append({'id': str(row.get('id', '')), 'slug': slug_value})
+    return findings, scanned, 'measured'
+
+
+def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
+    """Render START HERE and the Ordered Queue from the ledger. A READ: writes nothing.
+
+    The returned ``summary`` field is the START-HERE block and ``ordered_queue``
+    is the Ordered Queue table — both rendered by the SAME renderers
+    :func:`render_queue_view` composes the committed ``queue-view.md`` from, and
+    both derived purely from the assembled ledger view (the machine authority)
+    and the staged specs. Nothing is pasted anywhere: the committed view is
+    written only by ``regenerate-view`` (and ``compact``), so this verb stays a
+    query (command-query separation) and a reconciling workflow calls
+    ``regenerate-view`` when it means to persist.
+
+    ``view_current`` says whether the committed ``queue-view.md`` is
+    byte-identical to a fresh render of the current ledger. An absent
+    ``queue-view.md`` reports ``false``: there is nothing current to point at.
+
+    The inbox counts are the one part NOT read out of the ledger: they are
+    derived at render time from the epic's ``inbox/`` directory via
+    :func:`inbox_counts`, they are AUTHORITATIVE over any count sentence in
+    ``resume_anchor``, and they appear in ``summary`` only — the committed view
+    renders from the ledger alone. ``inbox_queued`` / ``inbox_archived`` /
+    ``inbox_state`` ride the payload as top-level fields so a caller can
+    reconcile them against ``inbox list`` without parsing the markdown block.
+
+    Four detectors run on the RENDERED START-HERE block and ride the same payload
+    beside ``summary``: ``count_divergences[]`` (a count the block claims that
+    does not match its derivation from the ledger), ``contradictions[]`` (two
+    mutually-exclusive claims inside one rendering), ``shared_slugs[]`` (N
+    queued rows sharing one slug, with row identities plus the shared value;
+    across machines this is also where a duplicate slug staged on two machines
+    surfaces), and ``epic_slug_matches[]`` (any queued row whose slug equals the
+    epic slug — the single-row mis-fill the N-sharing check misses). All four
+    REPORT and none mutates. Each list rides with the population it was computed
+    over, so a zero states which zero it is. An unscannable queue resolves each
+    slug arm to ``indeterminate``, never to a checked negative.
+
+    A ledger in the monolithic layout is refused with ``legacy_layout``; a row
+    file that could not be read is named in ``unreadable_rows`` rather than
+    silently absent from the rendering.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    ledger = _read_ledger(args.slug, allow_archived=True)
+    refusal = _ledger_refusal(args.slug, ledger)
+    if refusal is not None:
+        return refusal
+    status_doc = ledger.document
+    root = _epic_root(args.slug, allow_archived=True)
+    counts = inbox_counts(root / INBOX_SUBDIR)
+    surfaces = _resolve_row_surfaces(status_doc, root)
+    summary = _build_summary(status_doc, counts)
+    ordered_queue = _build_ordered_queue(status_doc, surfaces)
+    view_current = _committed_view_matches(root, render_queue_view(status_doc, surfaces, slug=args.slug))
+    unreadable = _unreadable_row_names(ledger)
+    divergences, count_claims_scanned = _count_divergences(summary, status_doc)
+    contradictions, ratio_claims_scanned = _rendering_contradictions(summary)
+    shared_slugs, slugs_scanned, slug_scan_state = _shared_slug_rows(status_doc)
+    epic_slug_matches, epic_slug_scanned, epic_slug_scan_state = _epic_slug_rows(status_doc, args.slug)
+    return {
+        'status': 'success',
+        'operation': 'resume-summary',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'inbox_queued': counts.queued,
+        'inbox_archived': counts.archived,
+        'inbox_state': 'present' if counts.present else 'missing',
+        'count_claims_scanned': count_claims_scanned,
+        'count_divergences_count': len(divergences),
+        'count_divergences': divergences,
+        'ratio_claims_scanned': ratio_claims_scanned,
+        'contradictions_count': len(contradictions),
+        'contradictions': contradictions,
+        'slugs_scanned': slugs_scanned,
+        'slug_scan_state': slug_scan_state,
+        'shared_slugs_count': len(shared_slugs),
+        'shared_slugs': shared_slugs,
+        'epic_slug_scanned': epic_slug_scanned,
+        'epic_slug_scan_state': epic_slug_scan_state,
+        'epic_slug_matches_count': len(epic_slug_matches),
+        'epic_slug_matches': epic_slug_matches,
+        'unreadable_row_count': len(unreadable),
+        'unreadable_rows': unreadable,
+        'view_current': view_current,
+        'summary': summary,
+        'ordered_queue': ordered_queue,
+    }
+
+
+#: Wall-clock bound on the ``git mv`` relocation below. A tree rename is a
+#: handful of syscalls, so this is a hang guard rather than a budget — and it is
+#: stated because an unbounded ``subprocess.run`` would let a wedged git hold the
+#: archive verb open indefinitely.
+_GIT_MV_TIMEOUT_SECONDS = 120
+
+
+def _relocate_epic_tree(source: Path, dest: Path) -> None:
+    """Move an epic tree, preferring ``git mv`` so the move lands as a rename.
+
+    The orchestrator corpus is git-tracked, so a plain filesystem move leaves
+    the index holding a whole-tree deletion beside a whole-tree addition — the
+    same bytes, with the relocation no longer readable as one. ``git mv`` stages
+    the rename instead.
+
+    The filesystem fallback is NOT optional, because three ordinary conditions
+    leave ``git mv`` unable to run at all: no git executable on PATH; a
+    ``source`` outside any repository, which is every ``PLAN_BASE_DIR`` fixture
+    since those resolve into a tmp directory; and an untracked tree, which an
+    epic created before the corpus became tracked state is. git moves nothing in
+    each of those, so the fallback carries the whole relocation rather than
+    completing a half-done one.
+
+    The TIMEOUT arm is the exception, and it is why the fallback probes instead
+    of moving unconditionally: a ``git mv`` killed at
+    :data:`_GIT_MV_TIMEOUT_SECONDS` may already have renamed the tree on disk
+    and only failed to write the index, so the source can be gone and the
+    destination already in place. Moving blindly there would raise
+    ``FileNotFoundError`` over a tree that is exactly where it belongs.
+    """
+    try:
+        completed = subprocess.run(  # argv list, never a shell string; 'git' resolves via PATH by design
+            ['git', '-C', str(source.parent), 'mv', str(source), str(dest)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=_GIT_MV_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError):
+        # git could not be launched, or was killed before it finished. The
+        # launch failures performed no rename at all; a TimeoutExpired is
+        # different — the on-disk rename may already have landed — so the
+        # fallback below establishes the state rather than assuming it.
+        pass
+    else:
+        if completed.returncode == 0:
+            return
+    if dest.exists() and not source.exists():
+        # ALREADY relocated: the tree is at the destination and nothing remains
+        # at the source, which is the post-condition this function exists to
+        # reach. Returning cleanly here is the completed move, not a swallowed
+        # failure — the caller already refused a pre-existing ``dest``, so this
+        # state can only have been produced by the relocation just attempted.
+        return
+    shutil.move(str(source), str(dest))
+
+
+def cmd_archive(args: argparse.Namespace) -> dict[str, Any]:
+    """Relocate a *closed* epic tree to ``archived-orchestrators/{slug}/``.
+
+    A mechanical, post-close directory move (the fourth deterministic
+    operation this script owns) — never a judgement call. Order of checks:
+
+    - source absent, dest present → idempotent success (``already_archived``).
+    - source absent, dest absent → ``error: not_found``.
+    - source present, epic phase is not ``closed`` → ``error: not_closed`` with
+      an actionable message; NO move is performed.
+    - source present AND dest present → ``error: archive_conflict`` (never
+      clobber the frozen audit record).
+    - otherwise → create the archived parent and relocate the tree via
+      :func:`_relocate_epic_tree` (``git mv`` where it can run, a filesystem
+      move otherwise), returning ``archived_to``.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    source = _epic_root(args.slug)
+    dest = get_archived_orchestrator_dir(args.slug)
+    if not source.exists():
+        if dest.exists():
+            return {
+                'status': 'success',
+                'operation': 'archive',
+                'slug': args.slug,
+                'store': ORCHESTRATOR_STORE,
+                'already_archived': True,
+                'archived_to': str(dest),
+            }
+        return _error(
+            args.slug,
+            'not_found',
+            f'epic {args.slug!r} has no active or archived tree to archive',
+        )
+    # The phase is a HEADER field, so it is read through the header probe alone:
+    # archive is a format-agnostic directory move, and it relocates a closed epic
+    # whichever ledger layout its tree is in (the queue/, the anchor and the
+    # generated view travel with the tree).
+    phase = read_header(source)[1].get('phase', '')
+    if phase != 'closed':
+        return _error(
+            args.slug,
+            'not_closed',
+            f'epic {args.slug} is phase={phase}; run close first, then archive',
+            phase=phase,
+        )
+    if dest.exists():
+        return _error(
+            args.slug,
+            'archive_conflict',
+            f'epic {args.slug!r} already has an archived tree at {dest}; refusing to clobber the audit record',
+            archived_to=str(dest),
+        )
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    _relocate_epic_tree(source, dest)
+    return {
+        'status': 'success',
+        'operation': 'archive',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'already_archived': False,
+        'archived_to': str(dest),
+    }
+
+
+def _spec_paths(root: Path) -> list[Path]:
+    """Enumerate the epic's staged spec files, sorted for determinism."""
+    plans_dir = root / PLANS_SUBDIR
+    if not plans_dir.is_dir():
+        return []
+    return sorted(path for path in plans_dir.glob(SPEC_GLOB) if path.is_file())
+
+
+def _spec_matches_row(path: Path, plan_id: str) -> bool:
+    """True when ``path`` is the spec file of the queue row ``plan_id``.
+
+    The layout contract names specs ``plans/PLAN-NN-{plan_slug}.md`` while the
+    row id is the bare ``PLAN-NN`` prefix, so the match is exact-or-prefix on the
+    stem WITH the separating hyphen. The hyphen is load-bearing: without it
+    ``PLAN-1`` would claim ``PLAN-10-foo.md``.
+    """
+    return path.stem == plan_id or path.stem.startswith(f'{plan_id}-')
+
+
+def _read_spec(path: Path) -> tuple[str | None, str]:
+    """Read one spec file, returning ``(text, error_code)``.
+
+    A file that cannot be read is REPORTED, never silently dropped — the same
+    report-never-skip rule ``inbox list`` applies. ``error_code`` is the empty
+    string on success.
+    """
+    try:
+        return path.read_text(encoding='utf-8'), ''
+    except (OSError, UnicodeDecodeError):
+        return None, 'unreadable'
+
+
+#: Wall-clock budget for a single read-only git call. A hung git degrades the
+#: readiness report to ``indeterminate`` rather than stalling the verb outright.
+_GIT_READ_TIMEOUT_SECONDS = 30
+
+#: The CLOSED set of read-only git operations this script may run, each mapped to
+#: the exact argv it expands to. This table is the single authority: a caller
+#: names an OPERATION and never supplies git arguments, so the argv reaching
+#: :func:`subprocess.run` is always a constant selected from here rather than
+#: anything a caller composed. That is what keeps ``cleanup restart-check`` a
+#: pure readiness PROBE — an unrestricted argv seam would let a later caller
+#: route a mutating command through a verb whose entire contract is that it
+#: observes without writing, and no amount of care at the call sites would make
+#: that unreachable. Adding a read is a one-line addition here; adding a WRITE
+#: is a visible change to a table that says it holds only reads.
+#:
+#: The table holds every ARGUMENT-FREE read. Three reads in this module take a
+#: caller-supplied REVISION and therefore cannot be a constant argv at all —
+#: :func:`_resolve_footprint_base`, :func:`_git_tree_diff` and
+#: :func:`_resolve_anchor_sha`. Each validates its revision against a closed regex
+#: before it reaches argv, so the caller still contributes no git ARGUMENT, only a
+#: ref or sha of a shape that was checked; all three remain read-only. They are
+#: named here so this table is read as the argument-free registry it is rather
+#: than as a claim that no other git call exists.
+_GIT_READ_OPERATIONS: dict[str, tuple[str, ...]] = {
+    'head-sha': ('rev-parse', 'HEAD'),
+    'worktree-status': ('status', '--porcelain'),
+}
+
+
+def _git_read(operation: str) -> tuple[str | None, str]:
+    """Run one read-only git operation BY NAME, returning ``(stdout, error)``.
+
+    The single ARGUMENT-FREE git seam in this script. ``operation`` selects an
+    entry of :data:`_GIT_READ_OPERATIONS`; the argv is never caller-composed.
+    ``(None, reason)`` is returned whenever the command could not be observed —
+    git unreachable, a timeout, or a non-zero exit — and the reason names which.
+    Callers translate that into an *unobservable* outcome, never into a failing
+    one.
+
+    An operation absent from the table raises :class:`KeyError` rather than
+    degrading to unobservable. That is deliberate: an unknown operation is a
+    defect in THIS module, and reporting it as "git is not readable" would dress
+    a coding error up as an environmental one — the confident-signal-hides-a-
+    caveat shape this verb exists to remove. The table is closed and its only
+    callers are in this file, so no input can reach that branch.
+
+    The timeout is what keeps "unobservable" reachable at all. Without it a hung
+    git — a stale index lock, or a very large worktree — blocks forever, and
+    because :func:`_worktree_signal` calls this seam twice, ``cleanup
+    restart-check`` would stall with no verdict rather than degrading to
+    ``indeterminate``. A hang is therefore mapped onto the existing unobservable
+    path instead of being allowed to consume the caller.
+    """
+    argv = _GIT_READ_OPERATIONS[operation]
+    try:
+        completed = subprocess.run(
+            ['git', *argv], capture_output=True, text=True, check=False, timeout=_GIT_READ_TIMEOUT_SECONDS
+        )
+    except subprocess.TimeoutExpired:
+        return None, f'git {" ".join(argv)} timed out after {_GIT_READ_TIMEOUT_SECONDS}s'
+    except OSError as exc:
+        return None, f'git could not be run ({exc.__class__.__name__})'
+    if completed.returncode != 0:
+        return None, f'git {" ".join(argv)} exited {completed.returncode}'
+    return completed.stdout.strip(), ''
+
+
+def _current_head_sha() -> str:
+    """Return the current HEAD sha, or the empty string when it cannot be read.
+
+    The tip half of the staleness comparison, and the value echoed in the
+    ``head_sha`` payload field. An unresolvable HEAD is NOT read as "nothing
+    moved": the empty string matches no ``checked_at`` prefix and resolves no tree
+    diff, so any row that reaches the diff branch — a parsed verdict on a
+    ``declarative`` surface whose comparison ``head_unchanged`` did not already
+    settle — falls through to :data:`STALENESS_DIFF_UNAVAILABLE` and reports
+    ``stale: true`` with that basis named. A row that never reaches the diff
+    branch is unaffected: an unparsed verdict keeps
+    :data:`STALENESS_VERDICT_UNPARSED` with ``stale: false``, and a
+    non-``declarative`` surface resolves :data:`STALENESS_SURFACE_NOT_DECLARATIVE`
+    first. The "not stale" versus "staleness was not computable" distinction a
+    caller needs is therefore carried explicitly by ``staleness_basis`` rather
+    than inferred from an empty echo.
+    """
+    output, _ = _git_read('head-sha')
+    return output or ''
+
+
+def _git_tree_diff(base: str, head: str) -> list[str] | None:
+    """Repo-relative paths differing between two TREES, or ``None`` when unanswerable.
+
+    ``git diff --name-only {base} {head}`` is a two-tree comparison, not a walk of
+    the commits between them, so the answer is identical whether the two shas are
+    related by a fast-forward, a rebase or a force-push, and a change plus its
+    revert cancels out instead of counting as a difference. This is the technique
+    ``phase-6-finalize``'s ``verdict_currency.resolve_changed_paths`` established;
+    it is mirrored rather than imported, because this skill cannot import across
+    bundle boundaries.
+
+    Both revisions are caller-supplied text — ``base`` comes off a verdict bullet
+    authored in a spec file — so each is validated against a closed hex shape
+    before it reaches argv: ``base`` against :data:`_CHECKED_AT_RE` (the same
+    7-40 hex prefix the grammar admits) and ``head`` against
+    :data:`_CURRENCY_SHA_RE` (a full sha). Nothing option-like, and no shell
+    metacharacter, can ride into the command.
+
+    ``None`` is returned on EVERY unanswerable path — a revision of the wrong
+    shape, a sha git can no longer resolve, a timeout, a git that could not run —
+    and the caller MUST treat it as *not compared*, never as an empty difference.
+    """
+    if not _CHECKED_AT_RE.match(base) or not _CURRENCY_SHA_RE.match(head):
+        return None
+    try:
+        completed = subprocess.run(
+            ['git', 'diff', '--name-only', base, head, '--'],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_GIT_READ_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+    return [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+
+
+def _resolve_anchor_sha(anchor: str) -> str | None:
+    """Resolve one verdict anchor to a FULL commit sha, or ``None`` when it resolves to none.
+
+    The caller-side half of the staleness derivation's purity split, and the
+    reason :func:`classify_staleness` and :func:`_head_unchanged` can stay pure.
+    The grammar admits a 7-39 character ABBREVIATION (:data:`_CHECKED_AT_RE`), so
+    an anchor abbreviating some OTHER commit that happens to share a prefix with
+    HEAD satisfied :func:`_head_unchanged`'s prefix test — and because that branch
+    is decided FIRST, git never got the chance to report the abbreviation as
+    ambiguous or unknown. The error direction was ``stale: false``, a fail-OPEN
+    reading inside a classifier that fails CLOSED on every other uncertainty.
+    Resolving the anchor HERE removes the abbreviation before the classifier ever
+    sees it, without putting git inside a function whose contract is that it has
+    none.
+
+    ``None`` is returned on EVERY unresolved path — an anchor of the wrong shape,
+    an abbreviation git reports as ambiguous, a sha git can no longer resolve, a
+    timeout, a git that could not run, or output that is not a single commit sha.
+    The caller treats every one of them as an unresolved anchor and lets the row
+    report :data:`STALENESS_DIFF_UNAVAILABLE`, the basis that already means
+    *nothing was compared* — so no seventh member joins :data:`STALENESS_BASES`
+    and the vocabulary stays a closed six.
+
+    The argv mirrors :func:`_resolve_footprint_base`: ``rev-parse --verify
+    --end-of-options`` with a ``^{commit}`` suffix, so the anchor contributes only
+    a hex token of a shape already checked — nothing option-like or range-like can
+    ride into the command — and the answer is exactly one commit object rather
+    than a tag object or a multi-line list.
+    """
+    if not _CHECKED_AT_RE.match(anchor):
+        return None
+    try:
+        completed = subprocess.run(
+            ['git', 'rev-parse', '--verify', '--end-of-options', f'{anchor}^{{commit}}'],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_GIT_READ_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+    sha = completed.stdout.strip()
+    return sha if _CURRENCY_SHA_RE.match(sha) else None
+
+
+def _fenced_mask(lines: list[str]) -> list[bool]:
+    """Return a per-line mask marking every line that belongs to a fenced block.
+
+    Delimiter lines are masked along with the body, so a caller can test one
+    index without also testing its neighbours. BOTH decisions — whether a line
+    OPENS a block and whether it CLOSES one — are taken against the CommonMark
+    clauses enumerated at :data:`_FENCE_DELIMITER_RE`, so the mask agrees with
+    what the spec author sees rendered. A block opens only on a delimiter
+    indented at most three spaces whose info string is admissible for its fence
+    character, and closes only on a delimiter indented at most three spaces,
+    built from the SAME character as the opener, AT LEAST AS LONG as the opener,
+    and carrying no info string. The opening run's LENGTH is therefore retained,
+    not just its character — a four-backtick block that contains a
+    three-backtick example stays open across that example instead of ending at
+    it. An unterminated fence runs to the end of the document.
+
+    The property held here is FIDELITY to the rendered document, not a uniform
+    bias toward one reading. The two are not the same, and an earlier revision
+    of this docstring claimed the latter: that every branch treats text which
+    may be code as code, never the reverse. That claim was false in the opening
+    direction and is withdrawn — declining to CLOSE on a four-space-indented
+    delimiter widens the masked run, while declining to OPEN on one narrows it,
+    and both are the CommonMark reading. Both error directions are real damage:
+    an over-wide mask hides a genuine heading, and an over-narrow one admits a
+    fenced look-alike as one.
+
+    Every line-wise scan in this module consumes this mask. Without it a
+    ``# comment`` inside a fenced example matches :data:`_HEADING_RE` and
+    truncates the enclosing section, which silently narrows a population while
+    the count that rides beside it still reports the full denominator.
+    """
+    mask = [False] * len(lines)
+    open_char = ''
+    open_length = 0
+    for index, line in enumerate(lines):
+        match = _FENCE_DELIMITER_RE.match(line)
+        if match is None:
+            mask[index] = bool(open_char)
+            continue
+        run = match.group('fence')
+        info = match.group('info')
+        if open_char:
+            mask[index] = True
+            if run[0] == open_char and len(run) >= open_length and not info.strip():
+                open_char, open_length = '', 0
+            continue
+        if run[0] == _BACKTICK and _BACKTICK in info:
+            # Not an opening fence: a backtick fence's info string may not carry
+            # a backtick, so this is an ordinary paragraph line — the shape a
+            # sentence takes when it opens with the fence marker and then quotes
+            # inline code. Masking it would swallow the rest of the document.
+            continue
+        mask[index] = True
+        open_char, open_length = run[0], len(run)
+    return mask
+
+
+def _section_span(lines: list[str], heading_re: re.Pattern[str], fenced: list[bool] | None = None) -> tuple[int, int]:
+    """Return the ``[start, end)`` line span of one section's body.
+
+    ``(-1, -1)`` when the document carries no matching heading. The body ends at
+    the next heading of any level, so a subsection never leaks into the parent.
+
+    Both heading scans — the one that OPENS the section and the one that closes
+    it — skip fenced lines, per :func:`_fenced_mask`. ``fenced`` is computed from
+    ``lines`` when not supplied, so a caller that already holds the mask passes
+    it rather than rebuilding it.
+    """
+    if fenced is None:
+        fenced = _fenced_mask(lines)
+    start = -1
+    for index, line in enumerate(lines):
+        if not fenced[index] and heading_re.match(line):
+            start = index + 1
+            break
+    if start < 0:
+        return (-1, -1)
+    for index in range(start, len(lines)):
+        if not fenced[index] and _HEADING_RE.match(lines[index]):
+            return (start, index)
+    return (start, len(lines))
+
+
+def _spec_claim(path: Path, repo_root: Path) -> SpecClaim | None:
+    """Classify one spec through the single reader, or ``None`` when it declares no surface.
+
+    The spec-side entry point for the file-overlap collision class and for the
+    Ordered Queue's Surface cell: a staged spec carries its surface in
+    ``## Expected Surface``, where a launched plan carries it in
+    ``references.json`` ``affected_files``.
+
+    ``None`` means the spec carries NO ``## Expected Surface`` section — a
+    distinct state from a section that resolves to no path, which comes back as
+    a ``prose`` claim. Callers keep the two apart; collapsing them is the defect
+    that made an undeclared surface read as a clean disjoint pass.
+
+    A caller that has NOT already established the file is readable folds the
+    reader's other :class:`UnclassifiableSpecError` cause into this same ``None``,
+    which is why no caller may infer ``absent`` from ``None`` alone: ``absent``
+    and ``unreadable`` are told apart by re-reading the file, as
+    :func:`_surface_state` does.
+    """
+    try:
+        return classify_spec(path, repo_root)
+    except UnclassifiableSpecError:
+        return None
+
+
+def _claimed_paths(claim: SpecClaim | None) -> set[str]:
+    """The resolved claimed entries of one classification, as a comparable set."""
+    if claim is None:
+        return set()
+    return {entry.path for entry in claim.claimed}
+
+
+def _surface_state(path: Path, repo_root: Path) -> tuple[str, SpecClaim | None]:
+    """Classify one spec into the :data:`SURFACE_STATES` vocabulary.
+
+    Returns the state and the classification behind it, or ``None`` for the two
+    states in which the reader produced none. The two refusal causes are told
+    apart HERE — by re-reading the file — rather than folded into one, because
+    ``absent`` (a spec that declared no surface) and ``unreadable`` (a spec
+    nothing could read) are different facts about the corpus and only the first
+    is a spec-authoring gap.
+    """
+    try:
+        claim = classify_spec(path, repo_root)
+    except UnclassifiableSpecError:
+        text, _ = _read_spec(path)
+        return (SURFACE_ABSENT if text is not None else SURFACE_UNREADABLE, None)
+    return (claim.spec_class, claim)
+
+
+def cmd_corpus_surfaces(args: argparse.Namespace) -> dict[str, Any]:
+    """Publish every spec's DECLARED surface, its derivation status, and the population.
+
+    The read verb the disjointness gate decides on. It exists so that verdict is
+    a PARSER decision with a stated population rather than a reader's judgement
+    over a rendered table cell — symmetric with ``corpus verdicts``, which backs
+    the prep-ready test the same way.
+
+    Every count rides with the population it was computed over, and the class
+    tally spans the WHOLE :data:`SURFACE_STATES` vocabulary so a class no spec is
+    in publishes a stated zero (ADR-014). ``admits_disjointness_check`` is the
+    field the gate keys on: it is true ONLY for a ``declarative`` surface, so an
+    absent or unresolvable declaration is ``indeterminate`` and can never render
+    as a clean pass (ADR-019, named in the payload as
+    :data:`SURFACE_GOVERNING_AUTHORITY`).
+
+    Read-only: no spec is written, and no verdict is stamped.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    root = _epic_root(args.slug, allow_archived=True)
+    if not root.is_dir():
+        return _error(args.slug, 'not_found', f'epic {args.slug!r} has no store tree')
+
+    repo_root = Path(cwd_checkout_root())
+    spec_paths = _spec_paths(root)
+    rows: list[dict[str, Any]] = []
+    claimed: list[dict[str, str]] = []
+    excluded: list[dict[str, str]] = []
+    unresolved: list[dict[str, str]] = []
+    tally = dict.fromkeys(SURFACE_STATES, 0)
+
+    for path in spec_paths:
+        state, claim = _surface_state(path, repo_root)
+        tally[state] += 1
+        plan_id = claim.plan_id if claim is not None else path.name
+        rows.append(
+            {
+                'plan_id': plan_id,
+                'spec': path.name,
+                'derivation_status': state,
+                'admits_disjointness_check': state not in SURFACE_INDETERMINATE_STATES,
+                'claimed_count': len(claim.claimed) if claim is not None else 0,
+                'excluded_count': len(claim.excluded) if claim is not None else 0,
+                'unresolved_count': len(claim.unresolved) if claim is not None else 0,
+                'evidence': claim.evidence if claim is not None else f'no classification: {state}',
+            }
+        )
+        if claim is None:
+            continue
+        claimed.extend({'plan_id': plan_id, 'path': e.path, 'kind': e.kind} for e in claim.claimed)
+        excluded.extend({'plan_id': plan_id, 'path': e.path, 'kind': e.kind} for e in claim.excluded)
+        unresolved.extend({'plan_id': plan_id, 'raw': raw} for raw in claim.unresolved)
+
+    indeterminate = sum(tally[state] for state in SURFACE_INDETERMINATE_STATES)
+    return {
+        'status': 'success',
+        'operation': 'corpus-surfaces',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'governing_authority': SURFACE_GOVERNING_AUTHORITY,
+        'specs_total': len(spec_paths),
+        'specs_scanned': len(rows),
+        'unreadable_count': tally[SURFACE_UNREADABLE],
+        'indeterminate_count': indeterminate,
+        'admitting_count': tally[SURFACE_DECLARATIVE],
+        'class_tally': [{'derivation_status': s, 'count': tally[s]} for s in SURFACE_STATES],
+        'specs': rows,
+        'claimed_count': len(claimed),
+        'claimed': claimed,
+        'excluded_count': len(excluded),
+        'excluded': excluded,
+        'unresolved_count': len(unresolved),
+        'unresolved': unresolved,
+    }
+
+
+def _parse_footprint_paths(raw: str | None) -> frozenset[str]:
+    """Normalize the ``--footprint-paths`` CSV into a comparable set.
+
+    Entries are stripped and blank entries are dropped, mirroring
+    ``_cmd_reconcile_scope._path_set`` so the two halves of the comparison
+    cannot disagree about what a declaration means. A ``None`` or blank input
+    establishes an EMPTY footprint — a measured landing that touched nothing —
+    never an unmeasured one.
+    """
+    if not raw:
+        return frozenset()
+    return frozenset(text for text in (part.strip() for part in raw.split(',')) if text)
+
+
+def _resolve_footprint_base(base_ref: str) -> dict[str, Any]:
+    """Resolve the footprint base anchor to a reported sha without trusting a stale local.
+
+    The base is a remote-tracking ref by default (:data:`CURRENCY_DEFAULT_BASE`).
+    A local ref whose ``origin/`` counterpart exists at a different sha is stale:
+    the local tip lags the remote, so a footprint diffed against it would silently
+    inflate with upstream files. That case reports ``stale: True`` and publishes
+    both shas so the caller sees which anchor the counts ride on.
+
+    The ref shape is validated against :data:`_CURRENCY_BASE_RE` before it
+    reaches ``git rev-parse`` — resolved ``--verify --end-of-options`` with a
+    ``^{commit}`` suffix so the reported sha is exactly one commit object: a
+    revision range, an option-like ref, or a non-commit object (such as an
+    annotated tag) reports an error rather than multi-line or tag-object
+    output. The argv is read-only
+    (``rev-parse`` of one or two refs) and never caller-composed beyond the
+    validated ref token.
+    An unresolvable ref reports an empty sha rather than failing the verb: a
+    base that could not be observed is reported, never substituted silently.
+    """
+    result: dict[str, Any] = {
+        'footprint_base_ref': base_ref,
+        'footprint_base_sha': '',
+        'footprint_base_kind': 'remote-tracking' if base_ref.startswith('origin/') else 'local',
+        'footprint_base_stale': False,
+    }
+    if not _CURRENCY_BASE_RE.match(base_ref):
+        result['footprint_base_error'] = f'invalid base ref shape: {base_ref!r}'
+        return result
+    try:
+        completed = subprocess.run(
+            ['git', 'rev-parse', '--verify', '--end-of-options', f'{base_ref}^{{commit}}'],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_GIT_READ_TIMEOUT_SECONDS,
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        result['footprint_base_error'] = f'base ref unresolvable: {exc.__class__.__name__}'
+        return result
+    if completed.returncode != 0:
+        result['footprint_base_error'] = f'git rev-parse {base_ref} exited {completed.returncode}'
+        return result
+    sha = completed.stdout.strip()
+    if not _CURRENCY_SHA_RE.match(sha):
+        result['footprint_base_error'] = f'base ref did not resolve to a single commit SHA: {base_ref!r}'
+        return result
+    result['footprint_base_sha'] = sha
+    if not base_ref.startswith('origin/'):
+        counterpart = f'origin/{base_ref}'
+        try:
+            other = subprocess.run(
+                ['git', 'rev-parse', '--verify', '--end-of-options', f'{counterpart}^{{commit}}'],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=_GIT_READ_TIMEOUT_SECONDS,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            return result
+        if other.returncode == 0:
+            other_sha = other.stdout.strip()
+            if _CURRENCY_SHA_RE.match(other_sha) and other_sha != sha:
+                result['footprint_base_stale'] = True
+                result['footprint_base_remote_sha'] = other_sha
+                result['footprint_base_remote_ref'] = counterpart
+    return result
+
+
+def _currency_compare(footprint: frozenset[str], spec_paths: set[str]) -> dict[str, Any]:
+    """Compare one spec's declared paths against the landed footprint by symmetric difference.
+
+    Corpus twin surface: consumes the one shared containment rule hosted in
+    ``plan-retrospective/_footprint_resolver.py`` (``declaration_contains`` /
+    ``declaration_covers`` / ``symmetric_difference_with_containment``) —
+    mirrored here as :func:`_contains` because the orchestrator skill cannot
+    import across bundle boundaries, so the body below grades identically
+    rather than importing. The ``_cmd_reconcile_scope._compare_pair`` pattern,
+    consumed read-only:
+    both difference directions are published as named lists with their own
+    sizes alongside the pair's symmetric-difference size, and the verdict is
+    never inferred from cardinality — an equal-sized but disjoint pair scores
+    fully disagreeing. Directory and recursive-glob entries
+    resolve by containment with a ``/`` boundary via :func:`_contains` — a
+    ``test/`` claim overlaps everything beneath it — so a directory-claiming
+    spec is evaluated, never dropped to silence.
+
+    Overlap (the collision signal) is published beside the differences: the
+    footprint files the spec covers, by exact match or containment. A landed
+    footprint overlapping another spec's declaration reports a collision even
+    when the entry-level differences are empty (a footprint file inside a
+    directory claim), and an untouched spec reports no overlap (clean) even
+    though its sets differ.
+
+    The entry-covering rule itself is :func:`_covers`, shared with the verdict
+    staleness derivation so the two surfaces resolve a ``directory`` or
+    ``recursive_glob`` claim identically rather than each carrying its own copy.
+    """
+    overlapping = sorted(path for path in footprint if any(_covers(entry, path) for entry in spec_paths))
+    footprint_not_spec = sorted(path for path in footprint if not any(_covers(entry, path) for entry in spec_paths))
+    spec_not_footprint = sorted(entry for entry in spec_paths if not any(_covers(entry, path) for path in footprint))
+    symmetric_difference_count = len(footprint_not_spec) + len(spec_not_footprint)
+    if not footprint and not spec_paths:
+        state = CURRENCY_VACUOUS
+    elif symmetric_difference_count == 0:
+        state = CURRENCY_AGREE
+    else:
+        state = CURRENCY_DISAGREE
+    return {
+        'state': state,
+        'footprint_not_spec_count': len(footprint_not_spec),
+        'spec_not_footprint_count': len(spec_not_footprint),
+        'symmetric_difference_count': symmetric_difference_count,
+        'footprint_not_spec': footprint_not_spec,
+        'spec_not_footprint': spec_not_footprint,
+        'overlap_count': len(overlapping),
+        'overlapping_files': overlapping,
+        'collision': bool(overlapping),
+    }
+
+
+def cmd_corpus_declaration_currency(args: argparse.Namespace) -> dict[str, Any]:
+    """Reconcile a landed footprint against OTHER staged specs' declared surfaces.
+
+    The cross-spec direction the single-ledger verbs cannot perform: the landed
+    plan's realized footprint (supplied via ``--footprint-paths``, resolved
+    upstream through the shared footprint resolver) is compared against every
+    OTHER staged spec's declared ``## Expected Surface`` paths by symmetric
+    difference in both directions — never by cardinality — with directory and
+    recursive-glob claims resolved by containment. Per-spec differences are
+    published with the named populations they were computed over (ADR-019).
+
+    A spec whose surface cannot be evaluated (any
+    :data:`SURFACE_INDETERMINATE_STATES` member, or an unreadable spec file)
+    reports :data:`CURRENCY_UNEVALUATED`: no difference keys and no overlap
+    keys are published for it, so it never reads as disjointness. The landed
+    plan's own spec is excluded via ``--exclude-spec`` so the verb compares
+    against OTHER specs only. The footprint base anchor
+    (``--footprint-base``, default :data:`CURRENCY_DEFAULT_BASE`) is resolved
+    and reported alongside the counts; a stale local base is flagged, never
+    silently trusted.
+
+    Read-only: no spec is written, no verdict is stamped, and the
+    manage-references CLI surface is untouched — the comparison half mirrors
+    ``_cmd_reconcile_scope`` without calling it.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    root = _epic_root(args.slug, allow_archived=True)
+    if not root.is_dir():
+        return _error(args.slug, 'not_found', f'epic {args.slug!r} has no store tree')
+    footprint = _parse_footprint_paths(getattr(args, 'footprint_paths', None))
+    base = getattr(args, 'footprint_base', None) or CURRENCY_DEFAULT_BASE
+    base_report = _resolve_footprint_base(str(base))
+    repo_root = Path(cwd_checkout_root())
+    spec_paths = _spec_paths(root)
+    exclude = (getattr(args, 'exclude_spec', None) or '').strip()
+    rows: list[dict[str, Any]] = []
+    collisions: list[dict[str, Any]] = []
+    checked_and_clean: list[str] = []
+    could_not_check: list[str] = []
+    tally = dict.fromkeys(CURRENCY_STATES, 0)
+    specs_excluded_count = 0
+    for path in spec_paths:
+        if exclude and path.name == exclude:
+            specs_excluded_count += 1
+            continue
+        state, claim = _surface_state(path, repo_root)
+        plan_id = claim.plan_id if claim is not None else path.name
+        if claim is None or state in SURFACE_INDETERMINATE_STATES:
+            tally[CURRENCY_UNEVALUATED] += 1
+            could_not_check.append(path.name)
+            rows.append(
+                {
+                    'spec': path.name,
+                    'plan_id': plan_id,
+                    'derivation_status': state,
+                    'state': CURRENCY_UNEVALUATED,
+                    'admits_check': False,
+                    'footprint_count': len(footprint),
+                    'spec_claimed_count': 0,
+                }
+            )
+            continue
+        declared = {entry.path for entry in claim.claimed}
+        compared = _currency_compare(footprint, declared)
+        tally[compared['state']] += 1
+        row: dict[str, Any] = {
+            'spec': path.name,
+            'plan_id': plan_id,
+            'derivation_status': state,
+            'state': compared['state'],
+            'admits_check': True,
+            'footprint_count': len(footprint),
+            'spec_claimed_count': len(declared),
+            'footprint_not_spec_count': compared['footprint_not_spec_count'],
+            'spec_not_footprint_count': compared['spec_not_footprint_count'],
+            'symmetric_difference_count': compared['symmetric_difference_count'],
+            'footprint_not_spec': compared['footprint_not_spec'],
+            'spec_not_footprint': compared['spec_not_footprint'],
+            'overlap_count': compared['overlap_count'],
+            'overlapping_files': compared['overlapping_files'],
+            'collision': compared['collision'],
+        }
+        rows.append(row)
+        if compared['collision']:
+            collisions.append(
+                {
+                    'spec': path.name,
+                    'overlap_count': compared['overlap_count'],
+                    'overlapping_files': compared['overlapping_files'],
+                }
+            )
+        else:
+            checked_and_clean.append(path.name)
+    compared_count = sum(tally[s] for s in (CURRENCY_AGREE, CURRENCY_DISAGREE, CURRENCY_VACUOUS))
+    result: dict[str, Any] = {
+        'status': 'success',
+        'operation': 'corpus-declaration-currency',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'governing_authority': SURFACE_GOVERNING_AUTHORITY,
+        'footprint_count': len(footprint),
+        'footprint_paths': sorted(footprint),
+        'specs_total': len(spec_paths),
+        'specs_excluded': specs_excluded_count,
+        'specs_scanned': len(rows),
+        'specs_compared': compared_count,
+        'specs_unevaluated': tally[CURRENCY_UNEVALUATED],
+        'state_tally': [{'state': s, 'count': tally[s]} for s in CURRENCY_STATES],
+        'specs': rows,
+        'collision_detected': bool(collisions),
+        'collision_count': len(collisions),
+        'collisions': collisions,
+        'checked_and_clean_count': len(checked_and_clean),
+        'checked_and_clean': sorted(checked_and_clean),
+        'could_not_check_count': len(could_not_check),
+        'could_not_check': sorted(could_not_check),
+    }
+    result.update(base_report)
+    return result
+
+
+def _spec_pointers(text: str) -> set[str]:
+    """Extract the normalized orchestrator spec pointers named in ``text``."""
+    return {f'{match.group("slug")}/plans/{match.group("spec")}' for match in SPEC_POINTER_RE.finditer(text)}
+
+
+def _own_pointer(slug: str, spec_name: str) -> str:
+    """The root-agnostic origin id of one spec in one epic."""
+    return f'{slug}/plans/{spec_name}'
+
+
+def _parse_claim_section(lines: list[str]) -> dict[str, Any]:
+    """Read the ``## Claim Labels`` section in ONE walk: its state AND its claims.
+
+    Returns ``state`` (a member of :data:`CLAIM_SECTION_STATES`), ``claims`` (the
+    top-level claim bullets), ``first_line`` (the section body's first non-blank
+    unfenced line, quoted), ``section_verdict_line`` / ``section_verdict_text``
+    (the SECTION-scoped verdict bullet, else ``-1`` / ``''``) and ``body_start``
+    (the line index immediately after the heading — the section-scoped insertion
+    point — else ``-1``).
+
+    Both readings come out of the SAME :func:`_fenced_mask` + :func:`_section_span`
+    walk, so the state and the claim list cannot disagree and the corpus is never
+    walked twice. Reporting the state is what separates the two structurally
+    different documents that a bare zero-length claim list used to collapse: a
+    spec carrying no claim section at all, and a spec whose section is present but
+    authored as a table or as prose. Collapsed, the second one reads as a
+    legitimately empty population — a vacuous pass at every consumer.
+
+    The discrimination rule is deliberately conservative:
+
+    * ``absent`` — :func:`_section_span` finds no heading.
+    * ``empty`` — the body carries no non-blank UNFENCED line.
+    * ``unreadable`` — the body carries non-blank unfenced content but yields zero
+      top-level claim bullets.
+    * ``parsed`` — at least one claim bullet was found.
+
+    A body whose only non-blank content sits inside a fence is therefore ``empty``
+    and not ``unreadable``, because the parser deliberately never reads a fenced
+    ``- item`` as a claim; that residue is measured from outside this function
+    rather than guessed at here.
+
+    A claim is a TOP-LEVEL ``- `` bullet. Its verdict is the NESTED child bullet
+    whose text begins with :data:`VERDICT_PREFIX` — association is by nesting,
+    never by ordinal position, so inserting or reordering a claim never re-binds
+    an existing verdict to a different claim. Each claim carries ``block_end``:
+    the insertion point for a new verdict bullet, one past the claim's own wrapped
+    text lines and before any further bullet, trailing blank lines excluded.
+
+    A TOP-LEVEL bullet beginning with :data:`VERDICT_PREFIX` is NOT a claim — it
+    is the section-scoped verdict, recorded apart and excluded from ``claims``, so
+    ``--claim-index`` ordinals are unaffected by its presence. A top-level bullet
+    whose text starts with ``⚙️`` is likewise NOT a claim — it is an operational
+    note, excluded from ``claims`` so interleaved operational bullets do not shift
+    later claim ordinals. ``first_line`` is
+    the body's first line AS AUTHORED, so after a section-scoped stamp it quotes
+    that verdict bullet rather than the offending prose: by then the diagnostic
+    value has moved to the section verdict being present.
+
+    Fenced lines are skipped on every scan: a ``- item`` inside a fenced example is
+    not a claim, and a ``#`` comment inside one does not end the section.
+    Admitting either would shift every later ``--claim-index`` and understate
+    ``claims_total``.
+    """
+    fenced = _fenced_mask(lines)
+    start, end = _section_span(lines, CLAIM_LABELS_HEADING_RE, fenced)
+    if start < 0:
+        return {
+            'state': CLAIM_SECTION_ABSENT,
+            'claims': [],
+            'first_line': '',
+            'section_verdict_line': -1,
+            'section_verdict_text': '',
+            'body_start': -1,
+        }
+    claims: list[dict[str, Any]] = []
+    first_line = ''
+    has_content = False
+    section_verdict_line = -1
+    section_verdict_text = ''
+    for index in range(start, end):
+        if fenced[index] or not lines[index].strip():
+            continue
+        if not has_content:
+            first_line = lines[index].strip()
+        has_content = True
+        match = _BULLET_RE.match(lines[index])
+        if match is None:
+            continue
+        indent = match.group('indent')
+        text = match.group('text').strip()
+        if not indent:
+            if text.startswith(VERDICT_PREFIX):
+                if section_verdict_line < 0:
+                    section_verdict_line = index
+                    section_verdict_text = text
+                continue
+            if text.startswith('⚙️'):
+                continue
+            claims.append(
+                {
+                    'index': len(claims),
+                    'line': index,
+                    'indent': indent,
+                    'text': text,
+                    'block_end': _claim_block_end(lines, index, end, fenced),
+                    'verdict_line': -1,
+                    'verdict_text': '',
+                }
+            )
+        elif claims and text.startswith(VERDICT_PREFIX) and claims[-1]['verdict_line'] < 0:
+            claims[-1]['verdict_line'] = index
+            claims[-1]['verdict_text'] = text
+    if claims:
+        state = CLAIM_SECTION_PARSED
+    elif has_content:
+        state = CLAIM_SECTION_UNREADABLE
+    else:
+        state = CLAIM_SECTION_EMPTY
+    return {
+        'state': state,
+        'claims': claims,
+        'first_line': first_line,
+        'section_verdict_line': section_verdict_line,
+        'section_verdict_text': section_verdict_text,
+        'body_start': start,
+    }
+
+
+def _claim_block_end(lines: list[str], claim_line: int, section_end: int, fenced: list[bool] | None = None) -> int:
+    """One past the claim bullet's own text block — the verdict insertion point.
+
+    The bullet/heading terminators are tested against the fence mask, so a fenced
+    example nested under a claim does not end the claim's block early and place
+    the verdict bullet inside the fence.
+    """
+    if fenced is None:
+        fenced = _fenced_mask(lines)
+    end = claim_line + 1
+    while end < section_end:
+        if not fenced[end] and (_BULLET_RE.match(lines[end]) or _HEADING_RE.match(lines[end])):
+            break
+        end += 1
+    while end > claim_line + 1 and not lines[end - 1].strip():
+        end -= 1
+    return end
+
+
+def _parse_verdict_text(text: str) -> dict[str, str] | None:
+    """Parse one ``verdict:`` bullet body, or ``None`` when it does not conform.
+
+    The parse rule both sides use: split on ``' | '`` with at most four splits,
+    yielding five parts, so ``evidence`` is the fifth part and therefore the
+    whole remainder of the line. Returning ``None`` is what makes a malformed
+    bullet ``indeterminate`` at the caller instead of silently admitting it.
+    """
+    parts = text.split(VERDICT_SEPARATOR, VERDICT_MAX_SPLITS)
+    if len(parts) != len(VERDICT_KEYS):
+        return None
+    parsed: dict[str, str] = {}
+    for key, part in zip(VERDICT_KEYS, parts, strict=True):
+        prefix = f'{key}:'
+        if not part.startswith(prefix):
+            return None
+        parsed[key] = part[len(prefix) :].strip()
+    if _invalid_verdict_values(parsed):
+        return None
+    return parsed
+
+
+def _invalid_verdict_values(parsed: dict[str, str]) -> bool:
+    """True when a parsed verdict violates the grammar's value rules."""
+    return (
+        parsed['verdict'] not in VERDICT_VALUES
+        or parsed['rescoped'] not in RESCOPED_VALUES
+        or (parsed['verdict'] != CONTRADICTED and parsed['rescoped'] != NOT_APPLICABLE)
+        or not _CHECKED_AT_RE.match(parsed['checked_at'])
+        or not parsed['by']
+        or not parsed['evidence']
+    )
+
+
+def _format_verdict_line(values: dict[str, str]) -> str:
+    """Format the verdict body. The ONLY formatter of this line in the tree."""
+    return VERDICT_SEPARATOR.join(f'{key}: {values[key]}' for key in VERDICT_KEYS)
+
+
+def _admits(verdict: str, rescoped: str) -> bool:
+    """The admission predicate: block iff ``contradicted`` AND ``rescoped: no``.
+
+    Every other settled state admits — an absent field is an open clause, and an
+    ``unverifiable`` verdict is an unreached population, not a refutation.
+    """
+    return not (verdict == CONTRADICTED and rescoped == BLOCKING_RESCOPED)
+
+
+def _head_unchanged(head: str, checked_at: str) -> bool:
+    """Whether the verdict's anchor names the tree HEAD currently points at.
+
+    Pure, and deliberately so. The anchor reaching this test has ALREADY been
+    resolved to a full sha by :func:`_row_staleness` through
+    :func:`_resolve_anchor_sha`, so on the production path this prefix match IS an
+    equality. The prefix form survives only because the function is pure and must
+    accept whatever its caller hands it — a unit-test caller legitimately passes a
+    grammar-shaped abbreviation, and narrowing the comparison here would push the
+    resolution into a function that is defined by having no git.
+
+    The hazard that resolution closes was fail-OPEN, which is why it is closed at
+    the caller rather than tolerated: an anchor abbreviating a DIFFERENT commit
+    that shares a prefix with HEAD passed this test, and because
+    :func:`classify_staleness` consults it FIRST, nothing downstream ever got to
+    report the abbreviation as ambiguous.
+
+    An unreadable HEAD and an UNRESOLVED anchor are both the empty string, and
+    neither is a match. Nothing was observed, so nothing is proven unchanged, and
+    the caller falls through to the fail-closed branches rather than reading an
+    unobservable tip — or an anchor git refused — as a quiet "still current".
+    """
+    return bool(head) and bool(checked_at) and head.startswith(checked_at)
+
+
+def _needs_tree_diff(head: str, checked_at: str, derivation_status: str) -> bool:
+    """Whether the two branches ABOVE the diff both decline to settle the basis.
+
+    :func:`classify_staleness` consults ``changed_paths`` only past those two
+    gates, so a caller resolves the diff lazily behind this same predicate and the
+    git call is never issued for a row whose basis is already decided. Derived
+    from the classifier's own two conditions rather than restated, so the lazy
+    gate cannot drift out of step with the order the classifier applies.
+    """
+    return not _head_unchanged(head, checked_at) and derivation_status not in SURFACE_INDETERMINATE_STATES
+
+
+def classify_staleness(
+    head: str,
+    checked_at: str,
+    derivation_status: str,
+    declared_paths: Collection[str],
+    changed_paths: Collection[str] | None,
+) -> tuple[bool, str, list[str]]:
+    """Classify one verdict's staleness against its spec's DECLARED surface.
+
+    Pure: no git, no filesystem, no spec read. The caller supplies the resolved
+    anchor sha, the resolved derivation status, the resolved declaration and the
+    resolved tree difference; this function owns only the stale-or-not decision,
+    so it is unit-testable without a worktree — the
+    ``verdict_currency.classify_advance`` split. The anchor is on that list
+    because the grammar admits an ABBREVIATION, and only git can say which commit
+    one names: :func:`_row_staleness` resolves it through
+    :func:`_resolve_anchor_sha` before this function is called, so the
+    ``head_unchanged`` branch below compares two full shas rather than testing a
+    prefix that a different commit could satisfy.
+
+    The branch order is the contract. ``head_unchanged`` is decided FIRST, before
+    the declaration or the difference is consulted at all, so an unmoved HEAD
+    settles correctly even for a spec whose surface could not be resolved.
+    Everything past it fails CLOSED: an uncomparable surface and an uncomputable
+    difference both report ``stale: true``, because neither is evidence that
+    nothing moved.
+
+    Args:
+        head: The current HEAD sha, or the empty string when it could not be read.
+        checked_at: The verdict's anchor, ALREADY RESOLVED by the caller to a full
+            sha — or the empty string when it could not be resolved at all (an
+            ambiguous abbreviation, an object git does not know, an unobservable
+            git). The empty string matches no HEAD, so an unresolved anchor falls
+            through to the fail-closed branches instead of settling
+            ``head_unchanged``. A direct caller may still pass a grammar-shaped
+            7-40 hex prefix; this function issues no git either way.
+        derivation_status: The spec's :data:`SURFACE_STATES` member, resolved
+            through the single sanctioned reader via :func:`_surface_state`.
+        declared_paths: The entries that spec's ``## Expected Surface`` resolves
+            to. Consulted only when ``derivation_status`` admits comparison.
+        changed_paths: Repo-relative paths differing between the ``checked_at``
+            tree and the HEAD tree. ``None`` means the difference could NOT be
+            computed, which is not an empty difference and never reads as one.
+
+    Returns:
+        A ``(stale, basis, matched_paths)`` triple. ``basis`` is a member of
+        :data:`STALENESS_BASES`; ``matched_paths`` is non-empty only on
+        :data:`STALENESS_SURFACE_TOUCHED`, where it names the evidence for the
+        stale reading so the verdict is substantiated rather than asserted.
+    """
+    if _head_unchanged(head, checked_at):
+        return False, STALENESS_HEAD_UNCHANGED, []
+    if derivation_status in SURFACE_INDETERMINATE_STATES:
+        return True, STALENESS_SURFACE_NOT_DECLARATIVE, []
+    if changed_paths is None:
+        return True, STALENESS_DIFF_UNAVAILABLE, []
+    matched = sorted({path for path in changed_paths if any(_covers(entry, path) for entry in declared_paths)})
+    if matched:
+        return True, STALENESS_SURFACE_TOUCHED, matched
+    return False, STALENESS_SURFACE_UNCHANGED, []
+
+
+@dataclass
+class _StalenessContext:
+    """One spec's staleness inputs, resolved ONCE and shared by all its rows.
+
+    ``cmd_corpus_verdicts`` walks every spec times every claim, so resolving the
+    declared surface per ROW would re-run ``classify_spec`` once per claim, and
+    resolving the anchor or the tree difference per row would issue one git
+    subprocess per claim. The surface is therefore resolved once per SPEC in
+    :func:`_spec_staleness_context`, and BOTH git caches are shared across the
+    WHOLE run keyed by the anchor — so each of the two reads is issued at most
+    once per DISTINCT anchor, however many rows cite it.
+
+    The two caches are separate mappings because they answer different questions
+    and hold different value types: ``anchor_cache`` maps an anchor AS WRITTEN to
+    the full sha it names (or ``None``), and ``diff_cache`` maps a RESOLVED sha to
+    the tree difference against HEAD (or ``None``). Keying the second on the
+    resolved sha is what makes two specs abbreviating the same commit differently
+    share one diff rather than issue two.
+
+    Both are deliberately mutable mappings owned by the caller rather than
+    per-context fields: specs routinely share an anchor (one re-grounding pass
+    stamps the corpus at one commit), and a per-spec cache would re-issue that one
+    resolution and that one diff for every spec in the corpus.
+    """
+
+    head: str
+    derivation_status: str
+    declared_paths: frozenset[str]
+    diff_cache: dict[str, list[str] | None]
+    anchor_cache: dict[str, str | None]
+
+    def resolved_anchor(self, checked_at: str) -> str | None:
+        """The memoized FULL sha one anchor names, or ``None`` when it names none.
+
+        Keyed by the anchor AS WRITTEN, because that is what varies across rows;
+        the resolution itself is :func:`_resolve_anchor_sha`. The ``None`` is
+        cached alongside a real answer for the same reason the diff's is: an
+        anchor git refuses is refused for every row that cites it, so re-issuing
+        the failing command per row would buy nothing but subprocesses.
+        """
+        if checked_at not in self.anchor_cache:
+            self.anchor_cache[checked_at] = _resolve_anchor_sha(checked_at)
+        return self.anchor_cache[checked_at]
+
+    def changed_paths(self, checked_at: str) -> list[str] | None:
+        """The memoized tree difference for one RESOLVED anchor, or ``None`` if unanswerable.
+
+        The ``None`` is cached alongside a real answer on purpose: a sha git
+        cannot diff fails for every row that cites it, so re-issuing the failing
+        command per row would buy nothing but subprocesses.
+        """
+        if checked_at not in self.diff_cache:
+            self.diff_cache[checked_at] = _git_tree_diff(checked_at, self.head)
+        return self.diff_cache[checked_at]
+
+
+def _spec_staleness_context(
+    spec_path: Path,
+    repo_root: Path,
+    head: str,
+    diff_cache: dict[str, list[str] | None],
+    anchor_cache: dict[str, str | None],
+) -> _StalenessContext:
+    """Resolve ONE spec's declared surface once, for every row that spec contributes.
+
+    Routes through the existing :func:`_surface_state` seam — and therefore through
+    ``epic_spec_parser.classify_spec``, the marketplace's single reader of
+    ``## Expected Surface`` — so the verdicts path introduces no second parse of
+    that section and reports the same ``derivation_status`` vocabulary
+    ``corpus surfaces`` and ``corpus declaration-currency`` already publish.
+    """
+    state, claim = _surface_state(spec_path, repo_root)
+    return _StalenessContext(
+        head=head,
+        derivation_status=state,
+        declared_paths=frozenset(_claimed_paths(claim)),
+        diff_cache=diff_cache,
+        anchor_cache=anchor_cache,
+    )
+
+
+def _row_staleness(context: _StalenessContext, checked_at: str) -> tuple[bool, str, list[str]]:
+    """Resolve the anchor, then the tree difference lazily, then classify.
+
+    Mirrors ``verdict_currency.classify_step``: the impure resolution lives here
+    and the decision lives in the pure :func:`classify_staleness`, so the decision
+    stays testable without a worktree and each git call is issued only when the
+    classifier would actually consult it. The anchor is resolved to a full sha
+    FIRST — before ``_needs_tree_diff`` is even consulted — because an
+    unresolved anchor must never reach ``changed_paths``: diffing against an
+    anchor git itself refused would issue a git call with no base to diff from.
+    An unresolved anchor (``None``) becomes the empty string, which
+    ``_head_unchanged`` and ``classify_staleness`` both already treat as "not a
+    match" / "nothing was compared".
+    """
+    resolved_at = context.resolved_anchor(checked_at)
+    changed = (
+        context.changed_paths(resolved_at)
+        if resolved_at and _needs_tree_diff(context.head, resolved_at, context.derivation_status)
+        else None
+    )
+    return classify_staleness(
+        context.head,
+        resolved_at or '',
+        context.derivation_status,
+        context.declared_paths,
+        changed,
+    )
+
+
+def _verdict_row(
+    spec_name: str,
+    claim: dict[str, Any],
+    line: str,
+    context: _StalenessContext,
+    scope: str = SCOPE_CLAIM,
+    synthesised: bool = False,
+) -> dict[str, Any]:
+    """Build one ``verdicts`` payload row. The SOLE row constructor.
+
+    ``scope`` says what the row is addressed by (:data:`SCOPE_CLAIM` or
+    :data:`SCOPE_SECTION`) and ``synthesised`` whether the row stands in for a
+    verdict that was never written. Every row carries both keys, so a consumer
+    reads provenance from ``synthesised`` rather than inferring it from a
+    sentinel elsewhere in the row.
+
+    The indeterminate shape is the base: a ``verdict_text`` that does not parse —
+    including the empty one a synthesised row passes — leaves the five grammar
+    keys blank, ``verdict`` at :data:`VERDICT_INDETERMINATE` and ``admits``
+    false, so an unparseable bullet is never silently admitted and never dropped.
+    Its ``staleness_basis`` is seeded :data:`STALENESS_VERDICT_UNPARSED` in that
+    same base shape rather than left to default: the row has no anchor sha, so no
+    staleness was computed for it, and a bare ``stale: false`` beside every
+    computed one would be indistinguishable from a checked negative.
+
+    ``context`` carries the spec's once-resolved declared surface and the run's
+    shared tree-diff cache (:class:`_StalenessContext`); ``stale`` is derived from
+    THAT rather than from a bare HEAD inequality, and the basis it was derived on
+    rides beside it. ``admits`` is untouched by any of this — staleness stays
+    reported-only and never reaches the admission predicate.
+    """
+    row = {
+        'spec': spec_name,
+        'claim_index': claim['index'],
+        'scope': scope,
+        'synthesised': synthesised,
+        'verdict': VERDICT_INDETERMINATE,
+        'checked_at': '',
+        'by': '',
+        'rescoped': '',
+        'evidence': '',
+        'admits': False,
+        'stale': False,
+        'staleness_basis': STALENESS_VERDICT_UNPARSED,
+        'staleness_matched_paths': '',
+        'line': line,
+    }
+    parsed = _parse_verdict_text(str(claim['verdict_text']))
+    if parsed is None:
+        return row
+    row.update(parsed)
+    row['admits'] = _admits(parsed['verdict'], parsed['rescoped'])
+    stale, basis, matched = _row_staleness(context, parsed['checked_at'])
+    row['stale'] = stale
+    row['staleness_basis'] = basis
+    row['staleness_matched_paths'] = _OVERLAP_JOIN.join(matched)
+    return row
+
+
+def _spec_verdict_rows(
+    spec_name: str,
+    lines: list[str],
+    section: dict[str, Any],
+    context: _StalenessContext,
+) -> list[dict[str, Any]]:
+    """Every payload row one spec contributes: its claim rows, then AT MOST one section row.
+
+    The section row has two mutually exclusive causes, which is what makes "at
+    most one" structural rather than asserted. A section carrying a top-level
+    verdict bullet contributes that bullet, read through the SAME
+    :func:`_verdict_row` path as any claim so the admission table applies to it
+    unchanged. An ``unreadable`` section carrying NO such bullet instead
+    contributes one SYNTHESISED row — the only row in the payload not derived
+    from a verdict bullet on disk — which comes out
+    :data:`VERDICT_INDETERMINATE` with ``admits: false`` and therefore counts
+    into ``blocking_count``, so a section the parser could not read can no longer
+    pass a gate by contributing nothing at all. That synthesised row carries the
+    section's ``first_line`` in its ``line`` field, so a shortfall reason naming
+    the unreadable section is derivable from the blocking row alone — without
+    joining the sibling ``unreadable_claim_sections[]`` list and without an
+    author hand-typing the quoted line.
+
+    An ``empty`` or ``absent`` section contributes no section row: it is a
+    legitimately empty population, not an unread one, and blocking it would make
+    the gate fire on every spec that declares no claims.
+
+    Every row this spec contributes shares ONE :class:`_StalenessContext`, so the
+    spec's declared surface is resolved once no matter how many claims it carries.
+    """
+    rows = [
+        _verdict_row(spec_name, claim, lines[claim['verdict_line']].strip(), context)
+        for claim in section['claims']
+        if claim['verdict_line'] >= 0
+    ]
+    verdict_line = int(section['section_verdict_line'])
+    if verdict_line >= 0:
+        rows.append(
+            _verdict_row(
+                spec_name,
+                {'index': NO_CLAIM_INDEX, 'verdict_text': section['section_verdict_text']},
+                lines[verdict_line].strip(),
+                context,
+                scope=SCOPE_SECTION,
+            )
+        )
+    elif section['state'] == CLAIM_SECTION_UNREADABLE:
+        rows.append(
+            _verdict_row(
+                spec_name,
+                {'index': NO_CLAIM_INDEX, 'verdict_text': ''},
+                str(section['first_line']),
+                context,
+                scope=SCOPE_SECTION,
+                synthesised=True,
+            )
+        )
+    return rows
+
+
+def cmd_corpus_enumerate(args: argparse.Namespace) -> dict[str, Any]:
+    """Reconcile the queue rows against the spec files, in BOTH directions.
+
+    The enumeration authority is the queue as the ledger module assembles it
+    from ``queue/{PLAN-ID}.json`` — never a ``plans/`` directory glob, which
+    would return a different set the moment a spec is staged without a row (or a
+    row recorded without a spec). The two directions are separate fields with
+    separate causes: ``rows_without_spec`` (a queue row whose spec file is
+    absent) and ``specs_without_row`` (a spec file with no queue row) are never
+    collapsed into one symmetric-difference count. A row file that could not be
+    read is named in ``unreadable_rows`` and counted in ``unreadable_row_count``,
+    because an unread row is neither reconciled nor orphaned.
+
+    Every count rides with the population it was computed over, so no figure is
+    publishable without its denominator. Read-only: resolves through the
+    archived read-fallback and writes nothing. A monolithic-layout ledger is
+    refused with ``legacy_layout``.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    ledger = _read_ledger(args.slug, allow_archived=True)
+    refusal = _ledger_refusal(args.slug, ledger)
+    if refusal is not None:
+        return refusal
+    unreadable_rows = _unreadable_row_names(ledger)
+    root = _epic_root(args.slug, allow_archived=True)
+    rows = _ordered_plans(ledger.document)
+    specs = _spec_paths(root)
+    matched: set[Path] = set()
+    row_records: list[dict[str, Any]] = []
+    rows_without_spec: list[dict[str, str]] = []
+    for row in rows:
+        plan_id = str(row.get('id', ''))
+        row_status = str(row.get('status', ''))
+        spec = next((path for path in specs if _spec_matches_row(path, plan_id)), None) if plan_id else None
+        if spec is not None:
+            matched.add(spec)
+        else:
+            rows_without_spec.append({'id': plan_id, 'status': row_status})
+        row_records.append(
+            {
+                'id': plan_id,
+                'status': row_status,
+                'spec': spec.name if spec is not None else '',
+                'excluded_reason': RUNNING_STATUS if row_status == RUNNING_STATUS else '',
+            }
+        )
+    unreadable = [
+        {'spec': spec.name, 'error': error} for spec, error in ((spec, _read_spec(spec)[1]) for spec in specs) if error
+    ]
+    tally = Counter(record['status'] for record in row_records)
+    return {
+        'status': 'success',
+        'operation': 'corpus-enumerate',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'rows_total': len(rows),
+        'rows_scanned': sum(1 for record in row_records if record['id']),
+        'specs_total': len(specs),
+        'specs_scanned': len(specs) - len(unreadable),
+        'status_tally': [{'status': name, 'count': count} for name, count in sorted(tally.items())],
+        'rows': row_records,
+        'rows_without_spec_count': len(rows_without_spec),
+        'rows_without_spec': rows_without_spec,
+        'specs_without_row_count': sum(1 for spec in specs if spec not in matched),
+        'specs_without_row': [spec.name for spec in specs if spec not in matched],
+        'unreadable_count': len(unreadable),
+        'unreadable': unreadable,
+        'unreadable_row_count': len(unreadable_rows),
+        'unreadable_rows': unreadable_rows,
+    }
+
+
+def _spec_within_corpus(path: Path, plans_dir: Path) -> bool:
+    """Report whether ``path`` resolves to a location under ``plans_dir``.
+
+    ``_spec_paths`` accepts symlinks to regular files and ``_read_spec``
+    follows them, so without this check a ``plans/PLAN-01.md`` symlink could
+    win selection and return an arbitrary readable file in the read body
+    (CWE-22). ``False`` when the link escapes the corpus or cannot be resolved
+    at all.
+    """
+    try:
+        resolved = path.resolve()
+    except (OSError, RuntimeError):
+        return False
+    try:
+        resolved.relative_to(plans_dir)
+    except ValueError:
+        return False
+    return True
+
+
+def cmd_corpus_read(args: argparse.Namespace) -> dict[str, Any]:
+    """Return one staged spec's body through the sanctioned read path.
+
+    The script-mediated alternative to a direct ``Read`` of
+    ``.plan/orchestrator/{slug}/plans/PLAN-NN-*.md`` — the use case the
+    ``.plan/`` scripts-only rule did not cover, forcing five independent
+    direct-read violations before this verb existed. Read-only: resolves
+    through the same tracked-config-tier store resolver every per-epic path
+    uses (cwd-relative — a worktree reads its own branch's copy, not main's),
+    reads the single matching spec file, and writes nothing.
+
+    The match reuses :func:`_spec_matches_row` (exact-or-prefix on the stem
+    with the separating hyphen), so ``--plan PLAN-03`` resolves
+    ``PLAN-03-compliant-paths.md``. The ``--plan`` value itself is validated
+    against the anchored settled plan-id grammar
+    (:data:`_ADD_ROW_PLAN_ID_RE`) — a bare ``PLAN`` without its digits never
+    reaches matching. An exact stem match wins outright; a single prefix
+    match resolves; zero matches return ``spec_not_found`` carrying
+    ``available_specs``; several prefix matches return ``ambiguous_spec``
+    carrying ``candidates`` rather than silently returning the first file.
+    A match resolving outside ``plans/`` (symlink escape) returns
+    ``spec_escapes_corpus`` naming the spec.
+    An unreadable file returns ``unreadable``; an unsafe slug returns
+    ``invalid_slug``; a slug with no store tree returns ``not_found``. An
+    absent spec is never rendered as an empty body.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    plan = args.plan
+    if not _ADD_ROW_PLAN_ID_RE.match(plan):
+        return _error(args.slug, 'invalid_plan', f'--plan must be a plan id ({PLAN_ID_SEGMENT}), got: {plan!r}')
+    root = _epic_root(args.slug, allow_archived=True)
+    if not root.is_dir():
+        return _error(args.slug, 'not_found', f'epic {args.slug!r} has no store tree')
+    specs = _spec_paths(root)
+    try:
+        plans_dir = (root / PLANS_SUBDIR).resolve()
+    except (OSError, RuntimeError):
+        return _error(args.slug, 'not_found', f'epic {args.slug!r} has no resolvable plans tree')
+    candidates: list[Path] = []
+    for path in specs:
+        if not _spec_matches_row(path, plan):
+            continue
+        if not _spec_within_corpus(path, plans_dir):
+            try:
+                path.resolve()
+            except (OSError, RuntimeError):
+                return _error(args.slug, 'unreadable', f'spec {path.name!r} could not be read', spec=path.name)
+            return _error(
+                args.slug,
+                'spec_escapes_corpus',
+                f'spec {path.name!r} resolves outside {PLANS_SUBDIR}/ and is refused',
+                spec=path.name,
+            )
+        candidates.append(path)
+    matches = sorted(candidates)
+    exact = next((path for path in matches if path.stem == plan), None)
+    if exact is not None:
+        spec = exact
+    elif len(matches) == 1:
+        spec = matches[0]
+    elif not matches:
+        return _error(
+            args.slug,
+            'spec_not_found',
+            f'no spec file for plan {plan!r} in {PLANS_SUBDIR}/',
+            available_specs=[path.name for path in specs],
+        )
+    else:
+        return _error(
+            args.slug,
+            'ambiguous_spec',
+            f'plan {plan!r} matches several spec files; pass the exact spec stem',
+            candidates=[path.name for path in matches],
+        )
+    text, error = _read_spec(spec)
+    if text is None:
+        return _error(args.slug, error, f'spec {spec.name!r} could not be read', spec=spec.name)
+    lines = text.splitlines()
+    return {
+        'status': 'success',
+        'operation': 'corpus-read',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'plan': plan,
+        'spec': spec.name,
+        'size_bytes': len(text.encode('utf-8')),
+        'line_count': len(lines),
+        'body': text,
+    }
+
+
+def cmd_corpus_verdicts(args: argparse.Namespace) -> dict[str, Any]:
+    """Parse every re-grounding verdict bullet across the corpus. Read-only.
+
+    The ONLY interpreter of the verdict line in the tree. One row per claim that
+    carries a verdict bullet, with the five parsed keys plus the derived
+    ``admits`` boolean and the ``stale`` / ``staleness_basis`` pair. A bullet that
+    does not parse is returned with ``verdict: indeterminate``, ``admits: false``
+    and the offending line quoted verbatim — never dropped. ``specs_scanned`` and
+    ``claims_scanned`` ride the payload so a ``count: 0`` states which zero it is.
+
+    ``stale`` is derived from CONTENT, not from a bare HEAD inequality: the spec's
+    declared ``## Expected Surface`` is resolved once per spec through the single
+    sanctioned reader, and the two-tree difference between the verdict's anchor
+    sha and HEAD is matched against it. The rule is defined once in
+    ``persona-plan-orchestrator/standards/orchestration-model.md`` § Re-Grounding
+    Verdict Field; :func:`classify_staleness` enacts it. Every row publishes the
+    ``staleness_basis`` its value was computed on — a member of
+    :data:`STALENESS_BASES`, including the indeterminate rows — so a conservative
+    fallback is legible as a fallback rather than as a checked reading, and
+    ``staleness_basis_tally`` spans the WHOLE vocabulary with stated zeros beside
+    ``stale_count``. Staleness stays REPORTED-ONLY: :func:`_admits` reads neither
+    field, so no admission outcome moves with it.
+
+    Rows are addressed at two scopes (see :func:`_spec_verdict_rows`), so ``count``
+    and ``blocking_count`` span claim-scoped AND section-scoped rows while
+    ``claims_scanned`` continues to count claims only — the two denominators are
+    deliberately not the same population.
+
+    Parse coverage rides the payload beside them: ``claim_section_states`` tallies
+    every spec over the WHOLE :data:`CLAIM_SECTION_STATES` vocabulary, and
+    ``unreadable_claim_sections`` names each spec whose claim section could not be
+    read, quoting its ``first_line`` and reporting whether a ``section_verdict`` is
+    already ``present`` or still ``absent`` — the second being exactly the set that
+    contributes a blocking row. Both are computed over ``specs_scanned``, never
+    over ``specs_total``: a spec whose file could not be read at all is counted in
+    ``unreadable`` instead and is in no parse state.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    root = _epic_root(args.slug, allow_archived=True)
+    if not root.is_dir():
+        return _error(args.slug, 'not_found', f'epic {args.slug!r} has no store tree')
+    specs = _spec_paths(root)
+    repo_root = Path(cwd_checkout_root())
+    head = _current_head_sha()
+    # Shared across the WHOLE run, keyed by ``checked_at``: one re-grounding pass
+    # routinely stamps the whole corpus at one commit, so a per-spec cache would
+    # re-issue that single tree diff once per spec.
+    diff_cache: dict[str, list[str] | None] = {}
+    # Shared across the WHOLE run, keyed by the anchor AS WRITTEN: specs
+    # routinely share one re-grounding anchor, so a per-spec cache would
+    # re-issue that single resolution once per spec.
+    anchor_cache: dict[str, str | None] = {}
+    rows: list[dict[str, Any]] = []
+    unreadable: list[dict[str, str]] = []
+    unreadable_sections: list[dict[str, str]] = []
+    state_counts = dict.fromkeys(CLAIM_SECTION_STATES, 0)
+    specs_scanned = 0
+    claims_scanned = 0
+    for spec in specs:
+        text, error = _read_spec(spec)
+        if text is None:
+            unreadable.append({'spec': spec.name, 'error': error})
+            continue
+        specs_scanned += 1
+        lines = text.splitlines()
+        section = _parse_claim_section(lines)
+        state_counts[section['state']] += 1
+        claims_scanned += len(section['claims'])
+        context = _spec_staleness_context(spec, repo_root, head, diff_cache, anchor_cache)
+        rows.extend(_spec_verdict_rows(spec.name, lines, section, context))
+        if section['state'] == CLAIM_SECTION_UNREADABLE:
+            unreadable_sections.append(
+                {
+                    'spec': spec.name,
+                    'first_line': section['first_line'],
+                    'section_verdict': ('present' if section['section_verdict_line'] >= 0 else 'absent'),
+                }
+            )
+    # Derived from the WHOLE :data:`STALENESS_BASES` vocabulary rather than from
+    # the bases the corpus happens to be in, so a basis no row reached publishes a
+    # stated zero — the same construction ``claim_section_states`` uses, and the
+    # reason the tally's counts always sum to ``count``.
+    basis_counts = dict.fromkeys(STALENESS_BASES, 0)
+    for row in rows:
+        basis_counts[row['staleness_basis']] += 1
+    return {
+        'status': 'success',
+        'operation': 'corpus-verdicts',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'governing_authority': STALENESS_GOVERNING_AUTHORITY,
+        'head_sha': head,
+        'specs_total': len(specs),
+        'specs_scanned': specs_scanned,
+        'claims_scanned': claims_scanned,
+        'claim_section_states': [{'state': state, 'count': state_counts[state]} for state in CLAIM_SECTION_STATES],
+        'unreadable_claim_section_count': len(unreadable_sections),
+        'unreadable_claim_sections': unreadable_sections,
+        'count': len(rows),
+        'blocking_count': sum(1 for row in rows if not row['admits']),
+        'stale_count': sum(1 for row in rows if row['stale']),
+        'staleness_basis_tally': [
+            {'staleness_basis': basis, 'count': basis_counts[basis], 'detail': _STALENESS_BASIS_DETAIL[basis]}
+            for basis in STALENESS_BASES
+        ],
+        'claims': rows,
+        'unreadable_count': len(unreadable),
+        'unreadable': unreadable,
+    }
+
+
+def _epic_store_roots() -> tuple[tuple[str, Path], ...]:
+    """Resolve the two epic store roots, each paired with its scope name.
+
+    The single place this module derives the store ROOTS. Both are taken as the
+    PARENT of an entry resolved through the existing store resolvers
+    (:func:`_epic_root` and :func:`file_ops.get_archived_orchestrator_dir`), so a
+    root resolves for exactly the same reason every per-epic path does — the walk
+    inherits whatever tier those resolvers place the store on — and no
+    path-resolution rule is restated here. Both consumers share it: the sibling
+    walk below and the ``corpus epics`` enumeration.
+    """
+    return (
+        (SCOPE_ACTIVE, _epic_root(_ROOT_PROBE_ENTRY).parent),
+        (SCOPE_ARCHIVED, get_archived_orchestrator_dir(_ROOT_PROBE_ENTRY).parent),
+    )
+
+
+def _scan_epic_store_root(scope: str, root: Path) -> dict[str, Any]:
+    """Walk ONE epic store root, reporting what it holds AND what it could not read.
+
+    Returns the root's own row (``root``) plus the three populations its entries
+    partition into: ``slugs`` (a directory entry — one epic each),
+    ``non_directory`` (an entry that is present but is not an epic tree), and
+    ``unreadable`` (an entry whose type could not be determined). Every entry
+    ``iterdir`` yields lands in exactly one of the three, so the row's
+    ``entries_scanned`` is their sum and a consumer can check that identity
+    rather than take the partition on trust. Nothing is silently dropped.
+
+    The row distinguishes the two ways a root yields no slugs, because they mean
+    opposite things. ``exists: false`` with an empty ``error`` is a DERIVED zero
+    — the store has simply never been scaffolded in this checkout. A non-empty
+    ``error`` means the root is THERE but could not be listed (permissions, not a
+    directory, I/O), and ``listed`` stays false so an unreadable store is never
+    published as an empty one. ``exists`` is false ONLY when the listing failed
+    with :class:`FileNotFoundError`; any other failure reports ``exists: true``,
+    because something occupies the path.
+    """
+    row: dict[str, Any] = {
+        'scope': scope,
+        'path': str(root),
+        'exists': False,
+        'listed': False,
+        'entries_scanned': 0,
+        'error': '',
+    }
+    slugs: list[str] = []
+    non_directory: list[dict[str, str]] = []
+    unreadable: list[dict[str, str]] = []
+    result: dict[str, Any] = {
+        'root': row,
+        'slugs': slugs,
+        'non_directory': non_directory,
+        'unreadable': unreadable,
+    }
+    try:
+        entries = sorted(root.iterdir())
+    except FileNotFoundError:
+        return result
+    except OSError as exc:
+        row['exists'] = True
+        row['error'] = str(exc)
+        return result
+    row['exists'] = True
+    row['listed'] = True
+    row['entries_scanned'] = len(entries)
+    for entry in entries:
+        try:
+            is_dir = entry.is_dir()
+        except OSError as exc:
+            unreadable.append({'scope': scope, 'entry': entry.name, 'error': str(exc)})
+            continue
+        if is_dir:
+            slugs.append(entry.name)
+        else:
+            non_directory.append({'scope': scope, 'entry': entry.name})
+    return result
+
+
+def cmd_corpus_epics(args: argparse.Namespace) -> dict[str, Any]:
+    """Enumerate every epic slug in the store, partitioned into active and archived.
+
+    The DERIVED substrate for any question whose subject is the WHOLE epic
+    corpus: a consumer that needs the epic population reads it from here instead
+    of hand-assembling or sampling one. Read-only, and slug-free by construction
+    — it walks the store roots themselves rather than one epic's tree, so it is
+    the only verb in the group that takes no ``--slug``.
+
+    Every count carries the population it was derived from. The roots walked are
+    published beside the slug lists, so a zero is a DERIVED zero naming the
+    directory that was walked rather than a bare absence; ``entries_scanned``
+    states how much was looked at; and every entry the walk saw is accounted for
+    as an epic, a non-directory entry, or an unreadable one.
+
+    A slug present in BOTH homes (a partially relocated epic) appears in both
+    partitions: ``total_count`` is the row population and ``distinct_count`` the
+    union, so the two together state whether such an overlap exists rather than
+    hiding it inside one number.
+    """
+    del args  # slug-free: the whole store is the subject, so there is nothing to address
+    roots: list[dict[str, Any]] = []
+    by_scope: dict[str, list[str]] = {}
+    non_directory: list[dict[str, str]] = []
+    unreadable: list[dict[str, str]] = []
+    for scope, root in _epic_store_roots():
+        scan = _scan_epic_store_root(scope, root)
+        roots.append(scan['root'])
+        by_scope[scope] = scan['slugs']
+        non_directory.extend(scan['non_directory'])
+        unreadable.extend(scan['unreadable'])
+    active = by_scope[SCOPE_ACTIVE]
+    archived = by_scope[SCOPE_ARCHIVED]
+    return {
+        'status': 'success',
+        'operation': 'corpus-epics',
+        'store': ORCHESTRATOR_STORE,
+        'roots': roots,
+        'entries_scanned': sum(row['entries_scanned'] for row in roots),
+        'active_count': len(active),
+        'archived_count': len(archived),
+        'total_count': len(active) + len(archived),
+        'distinct_count': len(set(active) | set(archived)),
+        'active': active,
+        'archived': archived,
+        'non_directory_count': len(non_directory),
+        'non_directory': non_directory,
+        'unreadable_count': len(unreadable),
+        'unreadable': unreadable,
+    }
+
+
+def _sibling_epic_roots(slug: str) -> list[Path]:
+    """Enumerate the OTHER epics' store roots — active and archived alike.
+
+    Mirrors the on-query store scan the read verbs document: both
+    ``.plan/orchestrator/`` and ``.plan/archived-orchestrators/`` are walked, so
+    an archived sibling stays visible to the duplication check. An epic present
+    in both homes is yielded once.
+    """
+    roots: dict[str, Path] = {}
+    bases = [base for _, base in _epic_store_roots()]
+    for base in bases:
+        if not base.is_dir():
+            continue
+        for child in sorted(base.iterdir()):
+            if child.is_dir() and child.name != slug and child.name not in roots:
+                roots[child.name] = child
+    return [roots[name] for name in sorted(roots)]
+
+
+def _spec_record(epic_slug: str, path: Path, repo_root: Path) -> dict[str, Any] | None:
+    """Build one comparable record for a spec file, or ``None`` when unreadable.
+
+    The surface is resolved through :func:`_spec_claim` — the single reader — so
+    no consumer can resolve a DIFFERENT surface for the same spec. What each
+    consumer then PROJECTS from that one resolution is its own contract, and this
+    record's is stated below: it is the comparison population, not the resolved
+    set, and the two differ for a spec the gate does not admit.
+
+    ``derivation_status`` rides with the paths so a caller can tell an EMPTY
+    comparison from an UNCOMPARABLE one: a spec in any
+    :data:`SURFACE_INDETERMINATE_STATES` state contributes no rows to the overlap
+    matcher, and without the status its absence from the match list is
+    indistinguishable from a checked negative.
+
+    That contract is enforced HERE rather than at each consumer, so the two verbs
+    reading this record cannot disagree about one spec. ``classify_spec`` assigns
+    :data:`SURFACE_DERIVED` whenever the DERIVED token appears in the section, and
+    such a spec may still RESOLVE entries — so a consumer that decided
+    comparability from a non-empty ``paths`` set alone would count it comparable
+    while ``corpus surfaces`` reported ``admits_disjointness_check: false`` for the
+    same spec. Withholding the paths at the source makes ``paths`` mean *"the set
+    this spec contributes to the overlap matcher"* rather than *"the set it
+    resolves"*, so both verbs derive one answer from one predicate. The resolved
+    set is still reachable through ``corpus surfaces``; it is only the
+    comparison-population view that is gated.
+    """
+    text, _ = _read_spec(path)
+    if text is None:
+        return None
+    claim = _spec_claim(path, repo_root)
+    status = claim.spec_class if claim is not None else SURFACE_ABSENT
+    admits = status not in SURFACE_INDETERMINATE_STATES
+    return {
+        'name': path.name,
+        'pointers': _spec_pointers(text) | {_own_pointer(epic_slug, path.name)},
+        'paths': _claimed_paths(claim) if admits else set(),
+        'derivation_status': status,
+    }
+
+
+def _live_plan_records() -> list[dict[str, Any]]:
+    """Build one comparable record per ACTIVE plan — the cross-ledger direction.
+
+    A single ledger structurally cannot see a duplicate held in another ledger,
+    so the live plan set is enumerated through ``_cmd_sibling_collision``'s own
+    active-plan walk and each plan contributes its ``source_id`` origin and its
+    ``references.json`` ``affected_files`` surface.
+
+    A live plan with an empty path set declares no comparable surface (before
+    footprint capture it has nothing to compare), so it is flagged
+    ``comparable: False`` — the live-side analog of a spec in any
+    :data:`SURFACE_INDETERMINATE_STATES` state. An empty set contributes no
+    overlap row at all, so without the flag its absence from the match list is
+    indistinguishable from a checked negative.
+    """
+    records: list[dict[str, Any]] = []
+    for plan_id, plan_dir in sorted(_iter_active_plan_dirs().items()):
+        _, source_id = _read_request_source(plan_dir)
+        pointers = _spec_pointers(source_id) if source_id else set()
+        paths = _read_affected_files(plan_dir)
+        records.append(
+            {
+                'name': plan_id,
+                'pointers': pointers,
+                'paths': paths,
+                'comparable': bool(paths),
+            }
+        )
+    return records
+
+
+def _glob_stem(container: str) -> str:
+    """The stem of a recursive-glob entry, without the trailing ``**``.
+
+    ``test/plan-marshall/**`` stems to ``test/plan-marshall``; the root glob
+    ``**`` stems to ``''``. The caller guarantees ``container`` ends with
+    ``**`` — the ``recursive_glob`` kind :func:`epic_spec_parser._entry_kind`
+    resolves, consulted read-only with no claim-membership change.
+    """
+    return container[:-2].rstrip('/')
+
+
+def _contains(container: str, contained: str) -> bool:
+    """Whether ``container`` contains ``contained`` under the stated rule.
+
+    Mirror of the shared containment rule hosted in
+    ``plan-retrospective/_footprint_resolver.py`` (``declaration_contains``):
+    kept as a local mirror because the orchestrator skill cannot import across
+    bundle boundaries. The two bodies grade identically by construction — a
+    ``recursive_glob`` entry (path ending in ``**``) contains another
+    entry's normalized path when that path equals the glob stem or starts
+    with ``stem + '/'``. A ``directory`` entry (path ending in ``'/'``)
+    contains another entry when that entry equals the directory or starts
+    with it. Every other kind — ``file`` and ``filename_glob`` — never
+    contains: a ``filename_glob`` with no ``'/'`` never contains across
+    directories, and matching without a ``'/'`` boundary (bare
+    substring/prefix) never counts, so the matcher does not loosen into
+    serializing non-colliding plans.
+    """
+    if not container or not contained or container == contained:
+        return False
+    if container.endswith('**'):
+        stem = _glob_stem(container)
+        if not stem:
+            return True
+        if contained.endswith('**'):
+            other = _glob_stem(contained)
+        elif contained.endswith('/'):
+            other = contained.rstrip('/')
+        else:
+            other = contained
+        return other == stem or other.startswith(stem + '/')
+    if container.endswith('/'):
+        if contained.rstrip('/') == container.rstrip('/'):
+            return True
+        return contained.startswith(container)
+    return False
+
+
+def _covers(left: str, right: str) -> bool:
+    """Whether two entries cover each other by exact match or containment.
+
+    Containment runs in BOTH directions: a directory claim covers the files
+    beneath it (``_contains(entry, path)``) AND a file beneath a directory covers
+    that directory claim (``_contains(path, entry)``) — so ``{'src/'}`` against
+    ``{'src/a.py'}`` scores covered in either argument order, matching how the
+    shared resolver treats the pair.
+
+    Module-level, and deliberately so: :func:`_currency_compare` and
+    :func:`classify_staleness` both decide whether a changed or landed path falls
+    inside a declared entry, and two copies of that rule would let a
+    ``directory`` or ``recursive_glob`` claim resolve one way for the
+    declaration-currency surface and another for the staleness surface.
+    """
+    return left == right or _contains(left, right) or _contains(right, left)
+
+
+def _collision_rows(
+    spec: dict[str, Any], candidate: dict[str, Any], kind: str
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Score one spec/candidate pair on the two collision classes.
+
+    The classes are ``_cmd_sibling_collision``'s, unchanged — a shared
+    source-origin id (primary) and a normalized file-path overlap
+    (secondary) that is exact equality plus the stated containment
+    extension: a ``recursive_glob`` (or ``directory``) entry contains
+    another entry's normalized path under :func:`_contains`. No third
+    similarity notion is introduced, and neither row is
+    ever a bare score: each names the overlapping surface.
+    """
+    shared_origin = sorted(spec['pointers'] & candidate['pointers'])
+    exact = spec['paths'] & candidate['paths']
+    contained: set[str] = set()
+    for left in spec['paths']:
+        for right in candidate['paths']:
+            if left == right:
+                continue
+            if _contains(left, right):
+                contained.add(right)
+            elif _contains(right, left):
+                contained.add(left)
+    overlap = sorted(exact | contained)
+    origin_row = (
+        {
+            'spec': spec['name'],
+            'candidate_kind': kind,
+            'candidate': candidate['name'],
+            'shared_origin': _OVERLAP_JOIN.join(shared_origin),
+        }
+        if shared_origin
+        else None
+    )
+    overlap_row = (
+        {
+            'spec': spec['name'],
+            'candidate_kind': kind,
+            'candidate': candidate['name'],
+            'overlap_count': len(overlap),
+            'overlapping_files': _OVERLAP_JOIN.join(overlap),
+        }
+        if overlap
+        else None
+    )
+    return origin_row, overlap_row
+
+
+def _spec_candidate_state(record: dict[str, Any] | None) -> str:
+    """Classify one SPEC candidate into :data:`CANDIDATE_DERIVATION_STATES`.
+
+    ``None`` is :func:`_spec_record`'s unreadable return, so it maps to
+    :data:`CANDIDATE_UNREADABLE` — the state held apart from
+    :data:`CANDIDATE_INDETERMINATE` because a candidate nothing could READ and a
+    candidate that was read and declared nothing comparable are different facts.
+
+    Comparability is decided from the record's ``derivation_status`` and NOT from
+    the truthiness of its ``paths`` set, so this classification agrees with
+    ``corpus surfaces``' published ``admits_disjointness_check`` for the same
+    spec. A ``declarative`` spec that happens to resolve zero entries is
+    ``comparable`` — it was compared and matched nothing, which is a checked
+    negative rather than an unchecked one.
+    """
+    if record is None:
+        return CANDIDATE_UNREADABLE
+    if record['derivation_status'] in SURFACE_INDETERMINATE_STATES:
+        return CANDIDATE_INDETERMINATE
+    return CANDIDATE_COMPARABLE
+
+
+def _live_candidate_state(record: dict[str, Any]) -> str:
+    """Classify one LIVE-PLAN candidate into the same vocabulary.
+
+    Reads the ``comparable`` flag :func:`_live_plan_records` already derives, so
+    the live side's contribution rule lives in one place. ``unreadable`` is
+    structurally unreachable here — that walk degrades an unreadable plan
+    directory to an empty surface rather than to no record — which is exactly why
+    the tally is derived from the whole vocabulary: the live kind's ``unreadable``
+    row is a STATED zero rather than a missing row a reader must interpret.
+    """
+    return CANDIDATE_COMPARABLE if record.get('comparable', bool(record['paths'])) else CANDIDATE_INDETERMINATE
+
+
+def _candidate_indeterminate_reason(tally: dict[str, dict[str, int]]) -> str:
+    """The shortfall reason a blocked ``next`` admission names, derived from the tally.
+
+    The empty string when every candidate declared a comparable surface. A
+    non-empty reason is the enforcement point's evidence: it names which kinds
+    contributed which non-contributing state, so a refused admission says WHY
+    rather than only refusing.
+
+    Derived rather than composed by its reader — the enforcement site is a
+    workflow doc, and a reason an LLM assembles from a count is a reason that
+    can be wrong about its own payload. Both loops walk the DECLARED
+    vocabularies in declared order (the state loop filtering on
+    :data:`CANDIDATE_NON_CONTRIBUTING_STATES`, which is itself derived by
+    subtraction), so a kind or state added later is named here with no edit and
+    a zero cell contributes nothing.
+    """
+    parts = [
+        f'{kind} {state}: {tally[kind][state]}'
+        for kind in CANDIDATE_KINDS
+        for state in CANDIDATE_DERIVATION_STATES
+        if state in CANDIDATE_NON_CONTRIBUTING_STATES and tally[kind][state]
+    ]
+    if not parts:
+        return ''
+    return f'candidate comparison indeterminate — {", ".join(parts)}'
+
+
+def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
+    """Cross-check this epic's specs against sibling epics and live plans.
+
+    The arm a single ledger structurally cannot perform. Three populations are
+    enumerated and each is NAMED in the payload — sibling epics (active and
+    archived), the live plan set, and this epic's own corpus for the
+    within-corpus direction — so a ``count: 0`` states which zero it is.
+
+    BOTH sides of the comparison publish a derivation-status tally over their
+    whole state vocabulary. The spec side is ``spec_surface_states`` over
+    :data:`SURFACE_STATES`; the candidate side is ``candidate_derivation_states``
+    over the cross-product of :data:`CANDIDATE_KINDS` and
+    :data:`CANDIDATE_DERIVATION_STATES`, with ``candidate_population`` stating
+    what each kind's tally was computed over. Both are derived from the declared
+    tuples rather than from the kinds and states actually observed, so a kind
+    holding no candidate — and a state no candidate is in — publishes a stated
+    zero instead of vanishing. That is what makes ``file_overlap_match_count: 0``
+    readable: beside a non-zero ``candidates_indeterminate`` it is an UNCHECKED
+    negative, and the payload names that rule in
+    ``candidate_governing_authority``.
+
+    That reading is published as a VERDICT rather than left to its reader:
+    ``candidate_comparison_determinate`` is true only when the whole candidate
+    population was comparable, and ``candidate_indeterminate_reason`` names what
+    was not. The ``next`` admission rule consumes the verdict as a third
+    conjunct alongside the candidate's own declarative surface and the absence
+    of an overlap row, so an indeterminate comparison refuses rather than
+    admitting on an unexamined population.
+
+    Reports candidates and applies nothing: superseding is the workflow doc's
+    inline, ledger-writing act, and no spec file is ever deleted.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    root = _epic_root(args.slug, allow_archived=True)
+    if not root.is_dir():
+        return _error(args.slug, 'not_found', f'epic {args.slug!r} has no store tree')
+    repo_root = Path(cwd_checkout_root())
+    # The candidate-side tally and the population each kind's tally was computed
+    # over, both keyed by the WHOLE :data:`CANDIDATE_KINDS` vocabulary and seeded
+    # with the WHOLE :data:`CANDIDATE_DERIVATION_STATES` vocabulary, so a kind
+    # this corpus holds no candidate of publishes stated zeros rather than
+    # vanishing from the breakdown.
+    candidate_tally: dict[str, dict[str, int]] = {
+        kind: dict.fromkeys(CANDIDATE_DERIVATION_STATES, 0) for kind in CANDIDATE_KINDS
+    }
+    candidate_population = dict.fromkeys(CANDIDATE_KINDS, 0)
+    own_paths = _spec_paths(root)
+    own: list[dict[str, Any]] = []
+    unreadable: list[dict[str, str]] = []
+    for path in own_paths:
+        record = _spec_record(args.slug, path, repo_root)
+        # Every own spec is a corpus_spec CANDIDATE for the other own specs, so
+        # the population is counted here — over ``own_paths``, including the
+        # unreadable ones, which is the population the tally must reconcile with.
+        # The figure states how many own specs DECLARED a comparable surface, not
+        # how many pairs formed: a single-spec corpus reports population 1 while
+        # forming no pair at all, because self-comparison is excluded below.
+        candidate_population[CANDIDATE_KIND_CORPUS_SPEC] += 1
+        candidate_tally[CANDIDATE_KIND_CORPUS_SPEC][_spec_candidate_state(record)] += 1
+        if record is None:
+            unreadable.append({'spec': path.name, 'error': 'unreadable'})
+        else:
+            own.append(record)
+    sibling_roots = _sibling_epic_roots(args.slug)
+    candidates: list[tuple[str, dict[str, Any]]] = []
+    for sibling_root in sibling_roots:
+        for path in _spec_paths(sibling_root):
+            record = _spec_record(sibling_root.name, path, repo_root)
+            candidate_population[CANDIDATE_KIND_SIBLING_EPIC_SPEC] += 1
+            candidate_tally[CANDIDATE_KIND_SIBLING_EPIC_SPEC][_spec_candidate_state(record)] += 1
+            if record is None:
+                unreadable.append({'spec': f'{sibling_root.name}/{path.name}', 'error': 'unreadable'})
+            else:
+                candidates.append(
+                    (
+                        CANDIDATE_KIND_SIBLING_EPIC_SPEC,
+                        {**record, 'name': f'{sibling_root.name}/{path.name}'},
+                    )
+                )
+    live = _live_plan_records()
+    for record in live:
+        candidate_population[CANDIDATE_KIND_LIVE_PLAN] += 1
+        candidate_tally[CANDIDATE_KIND_LIVE_PLAN][_live_candidate_state(record)] += 1
+    candidates.extend((CANDIDATE_KIND_LIVE_PLAN, record) for record in live)
+    origin_matches: list[dict[str, Any]] = []
+    overlap_matches: list[dict[str, Any]] = []
+    for spec in own:
+        pairs = [
+            *candidates,
+            *((CANDIDATE_KIND_CORPUS_SPEC, other) for other in own if other['name'] != spec['name']),
+        ]
+        for kind, candidate in pairs:
+            origin_row, overlap_row = _collision_rows(spec, candidate, kind)
+            if origin_row is not None:
+                origin_matches.append(origin_row)
+            if overlap_row is not None:
+                overlap_matches.append(overlap_row)
+    # The population the file-overlap class actually COMPARED. A spec in any
+    # indeterminate state declares no comparable path, so it can form no overlap
+    # row at all — and without these counts a ``file_overlap_match_count: 0``
+    # cannot state which zero it is: nothing collided, or nothing was comparable.
+    own_surfaces = [{'spec': record['name'], 'derivation_status': record['derivation_status']} for record in own]
+    own_tally = dict.fromkeys(SURFACE_STATES, 0)
+    for record in own:
+        own_tally[record['derivation_status']] += 1
+    # Derive the OWN unreadable count from the own population, never from the
+    # shared ``unreadable`` list: that list also accumulates every SIBLING epic's
+    # unreadable spec above, so reading its length here would inflate this epic's
+    # own tally — and ``spec_surface_states`` with it — by the sibling count.
+    # ``own_paths`` minus the records that parsed IS the own-unreadable count, and
+    # it is derived from the same population the rest of the tally counts.
+    own_unreadable_count = len(own_paths) - len(own)
+    own_tally[SURFACE_UNREADABLE] += own_unreadable_count
+    comparable = [record for record in own if record['paths']]
+    # The live-side population the file-overlap class actually COMPARED. A live
+    # plan with an empty path set declares no comparable surface, so it can form
+    # no overlap row at all — the live-side analog of a spec in any
+    # SURFACE_INDETERMINATE_STATES state. Without these keys a
+    # ``file_overlap_match_count: 0`` over live candidates cannot state which
+    # zero it is: nothing collided, or nothing was comparable. An indeterminate
+    # live plan never renders as disjoint: it is named in
+    # ``live_indeterminate_plans`` and counted in ``live_could_not_check_count``,
+    # never in the checked-and-clean count.
+    live_plan_surfaces = [
+        {'plan': record['name'], 'comparable': bool(record.get('comparable', bool(record['paths'])))} for record in live
+    ]
+    live_indeterminate_plans = sorted(
+        record['name'] for record in live if not record.get('comparable', bool(record['paths']))
+    )
+    live_comparable_records = [record for record in live if record.get('comparable', bool(record['paths']))]
+    live_matched_names = {
+        row['candidate'] for row in origin_matches if row.get('candidate_kind') == CANDIDATE_KIND_LIVE_PLAN
+    } | {row['candidate'] for row in overlap_matches if row.get('candidate_kind') == CANDIDATE_KIND_LIVE_PLAN}
+    live_checked_and_clean = sorted(
+        record['name'] for record in live_comparable_records if record['name'] not in live_matched_names
+    )
+    # Hoisted out of the payload literal because the determinacy VERDICT and the
+    # shortfall REASON are both derived from the same count, and the ``next``
+    # admission rule consults the verdict rather than re-deriving the comparison
+    # from the tally. Publishing it as a named field is what lets that rule be a
+    # field read instead of arithmetic performed at the enforcement site.
+    candidates_indeterminate = sum(
+        candidate_tally[kind][state] for kind in CANDIDATE_KINDS for state in CANDIDATE_NON_CONTRIBUTING_STATES
+    )
+    return {
+        'status': 'success',
+        'operation': 'corpus-cross-check',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'governing_authority': SURFACE_GOVERNING_AUTHORITY,
+        'epics_scanned': len(sibling_roots),
+        'plans_scanned': len(live),
+        'specs_total': len(own_paths),
+        'specs_scanned': len(own),
+        'candidates_scanned': len(candidates),
+        # The comparison's own population, beside the counts derived from it.
+        'specs_comparable': len(comparable),
+        'specs_indeterminate': len(own_paths) - len(comparable),
+        'compared_path_count': sum(len(record['paths']) for record in own),
+        'spec_surface_states': [{'derivation_status': state, 'count': own_tally[state]} for state in SURFACE_STATES],
+        'spec_surfaces': own_surfaces,
+        # The comparison's live population: checked-and-clean (compared, no
+        # overlap and no shared origin) versus could-not-check (no comparable
+        # surface), so a zero overlap over live candidates states which zero it
+        # is. The indeterminate names are the population that was not checked.
+        'live_plans_comparable': len(live_comparable_records),
+        'live_plans_indeterminate': len(live_indeterminate_plans),
+        'live_indeterminate_plans': live_indeterminate_plans,
+        'live_plan_surfaces': live_plan_surfaces,
+        'live_checked_and_clean_count': len(live_checked_and_clean),
+        'live_checked_and_clean': live_checked_and_clean,
+        'live_could_not_check_count': len(live_indeterminate_plans),
+        # The CANDIDATE side of the same disclosure, broken down per
+        # candidate_kind and derived from the whole state vocabulary — so a kind
+        # holding no candidate, and a state no candidate is in, publish stated
+        # zeros. ``candidate_population`` states what each kind's tally was
+        # computed over, so every count is readable beside its denominator.
+        # ``candidates_indeterminate > 0`` beside ``file_overlap_match_count: 0``
+        # is an unchecked negative, never a clean pass — the rule the payload
+        # names in ``candidate_governing_authority``.
+        #
+        # ``candidates_total`` is NOT ``candidates_scanned`` under another name,
+        # and the two are deliberately both published. ``candidates_scanned``
+        # counts the sibling and live candidates that were successfully READ and
+        # entered the matcher's pair list; ``candidates_total`` is the whole
+        # candidate population the tally was computed over — all three kinds,
+        # this epic's own corpus included, and an unreadable candidate counted
+        # rather than dropped. A reader comparing them sees how much of the
+        # candidate population never reached the comparison.
+        'candidate_governing_authority': CANDIDATE_GOVERNING_AUTHORITY,
+        'candidate_kinds': list(CANDIDATE_KINDS),
+        'candidate_population': [
+            {'candidate_kind': kind, 'population': candidate_population[kind]} for kind in CANDIDATE_KINDS
+        ],
+        'candidate_derivation_states': [
+            {'candidate_kind': kind, 'derivation_status': state, 'count': candidate_tally[kind][state]}
+            for kind in CANDIDATE_KINDS
+            for state in CANDIDATE_DERIVATION_STATES
+        ],
+        'candidates_total': sum(candidate_population.values()),
+        'candidates_comparable': sum(candidate_tally[kind][CANDIDATE_COMPARABLE] for kind in CANDIDATE_KINDS),
+        'candidates_indeterminate': candidates_indeterminate,
+        # The ``next`` admission rule's third conjunct, published as a VERDICT so
+        # the enforcement site reads a field instead of re-deriving it. Without
+        # it a declarative spec with no overlap row was admitted while another
+        # candidate had never been comparable at all — admission on an
+        # unexamined population, the measured-zero-versus-unmeasured conflation
+        # the rest of this payload exists to prevent. Fails closed: the verdict
+        # is true only when the whole candidate population was comparable.
+        'candidate_comparison_determinate': candidates_indeterminate == 0,
+        'candidate_indeterminate_reason': _candidate_indeterminate_reason(candidate_tally),
+        'source_origin_match_count': len(origin_matches),
+        'source_origin_matches': origin_matches,
+        'file_overlap_match_count': len(overlap_matches),
+        'file_overlap_matches': overlap_matches,
+        'collision_detected': bool(origin_matches or overlap_matches),
+        'unreadable_count': len(unreadable),
+        'unreadable': unreadable,
+    }
+
+
+def _validate_set_verdict_args(args: argparse.Namespace) -> dict[str, Any] | None:
+    """Return the rejection envelope for an invalid ``set-verdict`` call, else ``None``.
+
+    Every grammar rule is enforced HERE, at the sole emitter, so an invalid
+    combination cannot reach disk. In particular ``rescoped`` must be ``n/a``
+    whenever the verdict is not ``contradicted``: allowing ``no`` there would
+    manufacture a blocking state out of a corroboration.
+    """
+    if args.verdict not in VERDICT_VALUES:
+        return _error(
+            args.slug,
+            'invalid_verdict',
+            f'--verdict must be one of {sorted(VERDICT_VALUES)}, got: {args.verdict}',
+        )
+    if args.rescoped not in RESCOPED_VALUES:
+        return _error(
+            args.slug,
+            'invalid_rescoped',
+            f'--rescoped must be one of {sorted(RESCOPED_VALUES)}, got: {args.rescoped}',
+        )
+    if args.verdict != CONTRADICTED and args.rescoped != NOT_APPLICABLE:
+        return _error(
+            args.slug,
+            'invalid_rescoped_combination',
+            f'--rescoped must be {NOT_APPLICABLE!r} when --verdict is not {CONTRADICTED!r}, got: {args.rescoped}',
+        )
+    if not _CHECKED_AT_RE.match(args.checked_at):
+        return _error(
+            args.slug,
+            'invalid_checked_at',
+            f'--checked-at must be 7-40 lowercase hex characters, got: {args.checked_at}',
+        )
+    if not args.by.strip() or not args.evidence.strip():
+        return _error(args.slug, 'wrong_parameters', '--by and --evidence must both be non-empty')
+    if VERDICT_SEPARATOR in args.by or VERDICT_SEPARATOR in args.checked_at:
+        return _error(
+            args.slug,
+            'wrong_parameters',
+            f'--by and --checked-at must not contain the {VERDICT_SEPARATOR!r} separator',
+        )
+    # The verdict is formatted as ONE line by ``_format_verdict_line`` and read
+    # back from a single ``lines[claim['verdict_line']]`` — the grammar states
+    # ``evidence`` runs "to end of line". An embedded break silently violates all
+    # three: ``corpus verdicts`` would return a TRUNCATED ``evidence``, the
+    # trailing fragment would become stray body text under ``## Claim Labels``,
+    # and a re-stamp replacing only ``verdict_line`` would leave that fragment
+    # behind — so the idempotent replace stops being idempotent. ``checked_at``
+    # needs no check: ``_CHECKED_AT_RE`` already admits hex only.
+    #
+    # The guard is phrased as ``value.splitlines() != [value]`` so it asks the
+    # SAME question the reader asks. ``cmd_corpus_verdicts`` splits the spec with
+    # ``str.splitlines``, which breaks on considerably more than CR/LF — ``\v``,
+    # ``\f``, ``\x1c``-``\x1e``, ``\x85``, ``\u2028``, ``\u2029``. Enumerating a
+    # subset of those here would admit the rest past a guard whose whole purpose
+    # is to keep the value on ONE of the reader's lines, so the guard defers to
+    # the same splitter rather than maintaining a second, narrower list of what
+    # counts as a break.
+    if any(value.splitlines() != [value] for value in (args.by, args.evidence)):
+        return _error(
+            args.slug,
+            'wrong_parameters',
+            '--by and --evidence must not contain a line separator: the verdict is one line',
+        )
+    return None
+
+
+def _section_scope_rejection(slug: str, spec_name: str, section: dict[str, Any]) -> dict[str, Any]:
+    """The rejection envelope for a ``--section-scope`` stamp that does not apply.
+
+    Called only once the state is known NOT to be ``unreadable``, so it always
+    returns an envelope. The two refusals are kept apart because their remedies
+    differ: an ``absent`` section has nowhere to write and the spec must gain the
+    heading first, while an ``empty`` or ``parsed`` one is readable and already has
+    its correct address. Both name the observed ``claim_section_state``, so the
+    caller never has to re-derive why it was refused.
+    """
+    state = str(section['state'])
+    if state == CLAIM_SECTION_ABSENT:
+        return _error(
+            slug,
+            'claim_section_absent',
+            f'spec {spec_name!r} carries no ## Claim Labels heading to stamp',
+            spec=spec_name,
+            claim_section_state=state,
+        )
+    return _error(
+        slug,
+        'section_scope_not_applicable',
+        f'--section-scope applies only to an {CLAIM_SECTION_UNREADABLE!r} claim section; '
+        f'spec {spec_name!r} is {state!r}',
+        spec=spec_name,
+        claim_section_state=state,
+        claims_total=len(section['claims']),
+    )
+
+
+def cmd_corpus_set_verdict(args: argparse.Namespace) -> dict[str, Any]:
+    """Stamp one re-grounding verdict. The group's single write.
+
+    The ONLY formatter of the verdict line in the tree. Exactly one addressing
+    mode is always supplied, argparse-enforced as a required mutually exclusive
+    pair:
+
+    * ``--claim-index N`` — the ordinary address. Writes one NESTED bullet under
+      the addressed claim.
+    * ``--section-scope`` — the recovery address for a section the claim parser
+      could not read. Writes one TOP-LEVEL bullet immediately after the heading,
+      settling the SECTION rather than any one claim, and touching none of the
+      claim prose. It applies ONLY to an ``unreadable`` section: an ``absent``
+      one is refused with ``claim_section_absent`` and an ``empty`` or ``parsed``
+      one with ``section_scope_not_applicable``, because an empty section already
+      admits and a parsed one has the per-claim form as its correct address.
+
+    Either way the write REPLACES an existing verdict bullet in place rather than
+    appending a second, so re-stamping is idempotent by construction and neither
+    a claim nor a section can ever carry two verdicts.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    rejection = _validate_set_verdict_args(args)
+    if rejection is not None:
+        return rejection
+    specs = _spec_paths(_epic_root(args.slug))
+    spec = next((path for path in specs if _spec_matches_row(path, args.plan)), None)
+    if spec is None:
+        return _error(
+            args.slug,
+            'spec_not_found',
+            f'no spec file for plan {args.plan!r} in {PLANS_SUBDIR}/',
+            available_specs=[path.name for path in specs],
+        )
+    text, error = _read_spec(spec)
+    if text is None:
+        return _error(args.slug, error, f'spec {spec.name!r} could not be read', spec=spec.name)
+    lines = text.splitlines()
+    section = _parse_claim_section(lines)
+    claims = section['claims']
+    state = str(section['state'])
+    body = _format_verdict_line(
+        {
+            'verdict': args.verdict,
+            'checked_at': args.checked_at,
+            'by': args.by,
+            'rescoped': args.rescoped,
+            'evidence': args.evidence,
+        }
+    )
+    if args.section_scope:
+        if state != CLAIM_SECTION_UNREADABLE:
+            return _section_scope_rejection(args.slug, spec.name, section)
+        scope = SCOPE_SECTION
+        claim_index = NO_CLAIM_INDEX
+        bullet = f'- {body}'
+        verdict_line = int(section['section_verdict_line'])
+        insert_at = int(section['body_start'])
+    else:
+        if not 0 <= args.claim_index < len(claims):
+            return _error(
+                args.slug,
+                'claim_index_out_of_range',
+                f'--claim-index {args.claim_index} is outside the parsed claim list',
+                spec=spec.name,
+                claims_total=len(claims),
+                claim_section_state=state,
+                recovery=(
+                    f'--section-scope stamps the section itself, and applies when '
+                    f'claim_section_state is {CLAIM_SECTION_UNREADABLE!r}'
+                ),
+            )
+        claim = claims[args.claim_index]
+        scope = SCOPE_CLAIM
+        claim_index = int(args.claim_index)
+        bullet = f'{claim["indent"]}  - {body}'
+        verdict_line = int(claim['verdict_line'])
+        insert_at = int(claim['block_end'])
+    replaced = verdict_line >= 0
+    previous_line = lines[verdict_line].strip() if replaced else ''
+    if replaced:
+        lines[verdict_line] = bullet
+    else:
+        lines.insert(insert_at, bullet)
+    spec.write_text('\n'.join(lines) + ('\n' if text.endswith('\n') else ''), encoding='utf-8')
+    return {
+        'status': 'success',
+        'operation': 'corpus-set-verdict',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'plan': args.plan,
+        'spec': spec.name,
+        'scope': scope,
+        'claim_index': claim_index,
+        'claims_total': len(claims),
+        'claim_section_state': state,
+        'replaced': replaced,
+        'previous_line': previous_line,
+        'line': bullet.strip(),
+    }
+
+
+def _signal(name: str, verdict: str, evidence: str, population: str) -> dict[str, Any]:
+    """Build one restart-readiness signal row.
+
+    The four-field shape is uniform across every arm on purpose: a verdict a
+    reader cannot trace back to what was observed, and to how large the observed
+    set was, is exactly the confident-signal shape this verb refuses to emit.
+    Field values carry no commas, so each row stays one well-formed TOON record.
+    """
+    return {
+        'signal': name,
+        'verdict': verdict,
+        'evidence': evidence,
+        'population': population,
+    }
+
+
+def _readiness_floor(verdicts: list[str]) -> str:
+    """The floor over the PARTICIPATING verdicts, under :data:`READINESS_ORDER`.
+
+    An empty participating set yields ``indeterminate`` rather than ``ready``:
+    nothing was observed, which is not the same as everything being fine.
+    """
+    if not verdicts:
+        return READINESS_INDETERMINATE
+    return min(verdicts, key=READINESS_ORDER.index)
+
+
+def _phase_signal(status_doc: dict[str, Any]) -> dict[str, Any]:
+    """The epic's own phase. Never ``not_ready`` — a phase is a fact, not a hazard."""
+    phase = str(status_doc.get('phase', '')).strip()
+    if not phase:
+        return _signal(
+            'phase',
+            READINESS_INDETERMINATE,
+            'status.json carries no readable phase',
+            'status.json: 0 phase field read',
+        )
+    return _signal('phase', READY, f'phase={phase}', 'status.json: 1 phase field read')
+
+
+def _running_plans_signal(
+    status_doc: dict[str, Any],
+    unreadable_rows: Collection[str],
+    unread_reason: str,
+) -> dict[str, Any]:
+    """In-flight plans. A restart mid-run loses the run's context, so it blocks.
+
+    ``status_doc`` is the assembled ledger view, or ``{}`` when the ledger did not
+    assemble — in which case ``unread_reason`` names why and the arm is
+    ``indeterminate``. ``unreadable_rows`` names every row file the read could
+    not open: a running row among the readable ones still blocks, but a queue
+    with an unread row and no readable running row is ``indeterminate``, never
+    ``ready`` — the unread row may be the running one.
+    """
+    raw = status_doc.get('plans')
+    if not status_doc or not isinstance(raw, list):
+        return _signal(
+            'running_plans',
+            READINESS_INDETERMINATE,
+            unread_reason,
+            'queue rows: not readable',
+        )
+    rows = [row for row in raw if isinstance(row, dict)]
+    population = f'queue rows: {len(rows)} row(s) scanned and {len(unreadable_rows)} unreadable'
+    running = sorted(str(row.get('id', '')) for row in rows if str(row.get('status', '')) == RUNNING_STATUS)
+    if running:
+        return _signal(
+            'running_plans',
+            NOT_READY,
+            f'{len(running)} plan row(s) still running: {_OVERLAP_JOIN.join(running)}',
+            population,
+        )
+    if unreadable_rows:
+        return _signal(
+            'running_plans',
+            READINESS_INDETERMINATE,
+            f'no readable row is running but {len(unreadable_rows)} row file(s) could not be read: '
+            f'{_OVERLAP_JOIN.join(sorted(unreadable_rows))}',
+            population,
+        )
+    return _signal('running_plans', READY, 'no plan row is running', population)
+
+
+#: The neutral outcome states of the bidirectional queue<->spec reconciliation
+#: read. They are deliberately NOT the readiness vocabulary and NOT the invariant
+#: vocabulary: :func:`_read_queue_spec_reconciliation` is shared by two callers
+#: that grade the same facts into different words, so the shared seam names the
+#: STATE and each caller owns the translation.
+RECONCILE_NOT_ENUMERABLE = 'not_enumerable'
+RECONCILE_UNREADABLE = 'unreadable'
+RECONCILE_ORPHANED = 'orphaned'
+RECONCILE_RECONCILED = 'reconciled'
+
+
+def _read_queue_spec_reconciliation(slug: str) -> tuple[str, str, str]:
+    """Read the bidirectional queue<->spec reconciliation as a neutral triple.
+
+    The one branch body behind both :func:`_invariant_queue_spec` (the compact
+    stage's invariant) and :func:`_corpus_signal` (the restart-check's readiness
+    signal). Consumes ``corpus enumerate`` rather than re-deriving the corpus.
+
+    The check that BITES: a count match alone passes with a mismatched pair, so
+    both directions are read — no row without a spec AND no spec without a row.
+    An unreadable spec OUTRANKS an orphan: a corpus that could not be fully read
+    is unobservable, not reconciled-badly, so it yields
+    :data:`RECONCILE_UNREADABLE` even when the readable part also reconciles
+    badly.
+
+    Returns:
+        ``(state, evidence, population)``. ``state`` is one of
+        :data:`RECONCILE_NOT_ENUMERABLE`, :data:`RECONCILE_UNREADABLE`,
+        :data:`RECONCILE_ORPHANED` or :data:`RECONCILE_RECONCILED`; the other two
+        elements are the caller-agnostic prose each caller passes through
+        unchanged.
+    """
+    result = cmd_corpus_enumerate(argparse.Namespace(slug=slug))
+    if result.get('status') != 'success':
+        return (
+            RECONCILE_NOT_ENUMERABLE,
+            f'corpus enumerate could not run: {result.get("error", "unknown")}',
+            'queue rows and spec files: not enumerable',
+        )
+    population = f'{result["rows_total"]} queue row(s) and {result["specs_total"]} spec file(s)'
+    if result['unreadable_row_count']:
+        return (
+            RECONCILE_UNREADABLE,
+            f'{result["unreadable_row_count"]} queue row file(s) could not be read',
+            population,
+        )
+    if result['unreadable_count']:
+        return (
+            RECONCILE_UNREADABLE,
+            f'{result["unreadable_count"]} spec file(s) could not be read',
+            population,
+        )
+    orphan_rows = result['rows_without_spec_count']
+    orphan_specs = result['specs_without_row_count']
+    if orphan_rows or orphan_specs:
+        return (
+            RECONCILE_ORPHANED,
+            f'{orphan_rows} row(s) without a spec and {orphan_specs} spec(s) without a row',
+            population,
+        )
+    return RECONCILE_RECONCILED, 'queue and specs reconcile both ways', population
+
+
+def _corpus_signal(slug: str) -> dict[str, Any]:
+    """Corpus reconciliation as a restart-readiness signal.
+
+    Maps :func:`_read_queue_spec_reconciliation`'s neutral state into the
+    readiness vocabulary: an unobservable corpus (not enumerable, or not fully
+    readable) is ``indeterminate`` rather than ``not_ready`` — the *unobserved is
+    not failed* rule the other readiness signals hold.
+    """
+    state, evidence, population = _read_queue_spec_reconciliation(slug)
+    verdict = {
+        RECONCILE_NOT_ENUMERABLE: READINESS_INDETERMINATE,
+        RECONCILE_UNREADABLE: READINESS_INDETERMINATE,
+        RECONCILE_ORPHANED: NOT_READY,
+        RECONCILE_RECONCILED: READY,
+    }[state]
+    return _signal('corpus_reconciliation', verdict, evidence, population)
+
+
+def _inbox_signal(slug: str) -> dict[str, Any]:
+    """Inbox drain state, reusing :func:`inbox_counts`'s two-kinds-of-zero discriminator.
+
+    An absent ``inbox/`` is *could not look*, not *nothing queued* — it renders
+    as ``missing`` and yields ``indeterminate``, never a confident ``ready``.
+    """
+    counts = inbox_counts(_epic_root(slug, allow_archived=True) / INBOX_SUBDIR)
+    if not counts.present:
+        return _signal(
+            'inbox',
+            READINESS_INDETERMINATE,
+            'inbox/ is absent so the queue could not be looked at',
+            'inbox/: missing',
+        )
+    population = f'inbox/: {counts.queued} queued and {counts.archived} archived'
+    if counts.queued:
+        return _signal('inbox', NOT_READY, f'{counts.queued} message(s) still queued', population)
+    return _signal('inbox', READY, 'no queued message', population)
+
+
+def _worktree_signal() -> dict[str, Any]:
+    """Repository HEAD plus worktree cleanliness — one signal, since the sha
+    without the cleanliness is not an observation a restart decision can use."""
+    head, head_error = _git_read('head-sha')
+    if head is None:
+        return _signal('worktree', READINESS_INDETERMINATE, head_error, 'git: not readable')
+    porcelain, porcelain_error = _git_read('worktree-status')
+    if porcelain is None:
+        return _signal('worktree', READINESS_INDETERMINATE, porcelain_error, 'git: not readable')
+    changed = [line for line in porcelain.splitlines() if line.strip()]
+    population = f'git status --porcelain: {len(changed)} changed path(s) at {head}'
+    if changed:
+        return _signal('worktree', NOT_READY, f'{len(changed)} uncommitted path(s) at {head}', population)
+    return _signal('worktree', READY, f'clean worktree at {head}', population)
+
+
+def _registry_parity_signal() -> dict[str, Any]:
+    """The one arm whose surface this component does not own.
+
+    Reported in a three-part unowned-surface shape — the field is present, its
+    value is ``not_available``, and it names the spec that owns the surface — so
+    a real signal this component does not own is disclosed rather than dropped.
+    Being outside :data:`READINESS_ORDER`, it never reaches the floor.
+    """
+    return _signal(
+        'registry_parity',
+        NOT_AVAILABLE,
+        f'this component observes no parity surface; it is owned by {REGISTRY_PARITY_OWNER}',
+        'not_applicable — the surface belongs to another component',
+    )
+
+
+def cmd_cleanup_restart_check(args: argparse.Namespace) -> dict[str, Any]:
+    """Report whether the session is safe to restart. Read-only.
+
+    One row per signal, each carrying its own verdict, its own evidence, and the
+    population it was derived from, plus the sample instant. The overall verdict
+    is the floor over the rows whose verdict is a member of
+    :data:`READINESS_ORDER`; a ``not_available`` arm is excluded, so an unowned
+    surface cannot veto a verdict this component CAN reach. Every unreadable or
+    unobservable arm resolves to ``indeterminate`` and never to ``not_ready``.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    root = _epic_root(args.slug, allow_archived=True)
+    if not root.is_dir():
+        return _error(args.slug, 'not_found', f'epic {args.slug!r} has no store tree')
+    ledger = assemble_view(root)
+    status_doc = dict(ledger.document) if ledger.state == LEDGER_OK else {}
+    # The phase is a HEADER fact, readable on the monolithic layout too; only the
+    # queue is refused there, and it resolves to indeterminate naming why.
+    header_state, header, _ = read_header(root)
+    phase_doc = header if header_state in (LEDGER_OK, LEDGER_LEGACY) else {}
+    # Signal field values carry no commas (see :func:`_signal`), and a parse
+    # error's detail can, so the evidence folds them.
+    unread_reason = (
+        'the plan queue could not be read'
+        if ledger.state == LEDGER_OK
+        else f'the plan queue could not be read (ledger {ledger.state}: {ledger.detail})'.replace(',', ';')
+    )
+    signals = [
+        _phase_signal(phase_doc),
+        _running_plans_signal(status_doc, _unreadable_row_names(ledger), unread_reason),
+        _corpus_signal(args.slug),
+        _inbox_signal(args.slug),
+        _worktree_signal(),
+        _registry_parity_signal(),
+    ]
+    scored = [row['verdict'] for row in signals if row['verdict'] in READINESS_ORDER]
+    return {
+        'status': 'success',
+        'operation': 'cleanup-restart-check',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'sampled_at': now_utc_iso(),
+        'verdict': _readiness_floor(scored),
+        'signals_total': len(signals),
+        'signals_scored': len(scored),
+        'signals': signals,
+    }
+
+
+def _queue_cell(value: str) -> str:
+    """Escape one value for a markdown table cell.
+
+    A bare pipe would open a spurious column and a newline would end the row, so
+    both are neutralised — the pipe escaped, the newline folded to a space. File
+    paths carry neither, so this only ever fires on a pathological surface entry.
+    """
+    return value.replace('|', r'\|').replace('\n', ' ').strip()
+
+
+def _row_surface(spec: Path | None, repo_root: Path) -> str:
+    """Resolve one row's Surface cell from its spec's ``## Expected Surface``.
+
+    The Surface column is derivable — from the FILESYSTEM, not ``status.json`` —
+    so it is regenerated like the rest. Resolved through :func:`_spec_claim`, the
+    single reader, so this cell and ``corpus cross-check``'s collision input
+    cannot resolve a DIFFERENT surface for the same spec. They can still PROJECT
+    that one resolution differently, and for a ``derived`` spec that resolves
+    entries they do: this cell renders the resolved paths, while the collision
+    input withholds them behind :func:`_spec_record`'s admits gate. Same
+    resolution, two projections — the property the single reader buys is the
+    first, never the second.
+
+    Each *which zero is this* case is a named marker rather than an empty cell,
+    and the empty cases are told apart by the reader's own derivation class
+    rather than collapsed into one ``(no expected surface)`` string that read as
+    "collides with nothing":
+
+    * ``(spec missing)`` — the row names a spec that is not on disk.
+    * ``(spec unreadable)`` — the spec is present but could not be read.
+    * ``(no expected surface section)`` — the spec declares no such section at
+      all. This is the state a candidate is INDETERMINATE on, never disjoint.
+    * ``(prose)`` / ``(derived)`` — a section IS present; the reader resolved no
+      path entry from it, or the spec declares its surface a function of other
+      plans'. Both are stated, so a reader can tell an unresolvable declaration
+      from an absent one.
+    """
+    if spec is None:
+        return '(spec missing)'
+    text, _ = _read_spec(spec)
+    if text is None:
+        return '(spec unreadable)'
+    claim = _spec_claim(spec, repo_root)
+    if claim is None:
+        return '(no expected surface section)'
+    paths = sorted(_claimed_paths(claim))
+    if not paths:
+        return f'({claim.spec_class})'
+    return _queue_cell(_SURFACE_JOIN.join(paths))
+
+
+def _live_rows(view: dict[str, Any]) -> list[dict[str, Any]]:
+    """The queue rows that belong in the LIVE Ordered Queue, in ``(seq, id)`` order."""
+    return [row for row in _ordered_plans(view) if str(row.get('status', '')) not in LIVE_QUEUE_EXCLUDED_STATUSES]
+
+
+def _resolve_row_surfaces(view: dict[str, Any], root: Path) -> dict[str, str]:
+    """Resolve the Surface cell of every LIVE row from its staged spec.
+
+    The impure half of the render: it lists ``plans/`` and reads each live row's
+    spec through the single reader, so :func:`render_queue_view` can stay a pure
+    function of already-resolved inputs. Keyed by the row's own ``id``. Only live
+    rows are resolved, because only live rows are rendered.
+    """
+    specs = _spec_paths(root)
+    repo_root = Path(cwd_checkout_root())
+    surfaces: dict[str, str] = {}
+    for row in _live_rows(view):
+        plan_id = str(row.get('id', ''))
+        spec = next((path for path in specs if plan_id and _spec_matches_row(path, plan_id)), None)
+        surfaces[plan_id] = _row_surface(spec, repo_root)
+    return surfaces
+
+
+def _build_ordered_queue(status_doc: dict[str, Any], surfaces: dict[str, str]) -> str:
+    """Render the LIVE Ordered Queue table from the ledger view and resolved surfaces.
+
+    Only non-terminal rows appear, BY CONSTRUCTION: a shipped row belongs in its
+    landing record and a row that closed without shipping is finished either
+    way, so neither is live (:data:`LIVE_QUEUE_EXCLUDED_STATUSES`). Rows render in
+    ``(seq, id)`` order. The five columns are all derivable — order, plan id,
+    workstream and status from the row file; the surface from each row's spec,
+    resolved by :func:`_resolve_row_surfaces`. Per-row narrative (a sequencing
+    caveat, a park reason) is NOT here — it lives in ``epic.md``'s hand-written
+    queue annotations, which no regeneration touches.
+
+    ⛔ The Plan cell is the ROW's own ``id``, never a re-derivation from the
+    matched spec's filename. The row carries the exact id string as data, so
+    re-deriving one from the file the row matched is both unnecessary and the
+    source of the suffixed-id collapse: a filename-derived identity is read back
+    through the plan-id grammar, where a letter-suffixed id has no legal form and
+    is absorbed onto its unsuffixed sibling. Reading the field the queue already
+    holds cannot conflate two rows whatever their ids look like.
+    """
+    header = '| # | Plan | Workstream | Status | Surface (expected) |'
+    divider = '|---|------|------------|--------|--------------------|'
+    lines = [header, divider]
+    live = _live_rows(status_doc)
+    if not live:
+        lines.append('| — | (empty) | — | — | — |')
+        return '\n'.join(lines)
+    for position, row in enumerate(live, start=1):
+        plan_id = str(row.get('id', ''))
+        plan_cell = _queue_cell(plan_id or '?')
+        workstream = _queue_cell(str(row.get('workstream', '') or '?'))
+        status_cell = _queue_cell(str(row.get('status', '') or '?'))
+        surface = surfaces.get(plan_id, '(spec missing)')
+        lines.append(f'| {position} | {plan_cell} | {workstream} | {status_cell} | {surface} |')
+    return '\n'.join(lines)
+
+
+def render_queue_view(view: dict[str, Any], specs: dict[str, str], *, slug: str) -> str:
+    """Render the full ``queue-view.md`` text. PURE and DETERMINISTIC.
+
+    The one renderer of the generated view: START HERE and the Ordered Queue,
+    under a fixed header comment that says the file is generated, is never
+    hand-edited, and is resolved on a merge conflict by running
+    ``orchestrator regenerate-view --slug {slug}`` and ``git add``. It reads no
+    file, no clock and no environment, so two machines rendering the same ledger
+    state produce byte-identical text — which is what makes a merge conflict in
+    the committed view carry no information, and regeneration its complete
+    remedy.
+
+    Args:
+        view: The epic's assembled ledger view (:func:`_read_ledger`).
+        specs: The staged-spec Surface cell of every live row, keyed by plan id,
+            as :func:`_resolve_row_surfaces` resolves it.
+        slug: The epic slug the header comment's remedy names.
+    """
+    title = str(view.get('title', '') or slug)
+    parts = [
+        _VIEW_HEADER.format(slug=slug),
+        '',
+        f'# Queue view: {title}',
+        '',
+        '## START HERE',
+        '',
+        _build_summary(view),
+        '',
+        '## Ordered Queue',
+        '',
+        _build_ordered_queue(view, specs),
+        '',
+    ]
+    return '\n'.join(parts)
+
+
+def _committed_view_matches(root: Path, rendered: str) -> bool:
+    """Whether the committed ``queue-view.md`` is byte-identical to ``rendered``.
+
+    A read for ``resume-summary``'s ``view_current``. An absent or unreadable
+    file is ``False``: there is no current view to point at.
+    """
+    try:
+        return view_path(root).read_bytes() == rendered.encode('utf-8')
+    except OSError:
+        return False
+
+
+@dataclass(frozen=True)
+class _ViewWrite:
+    """The outcome of one :func:`_write_queue_view` call.
+
+    ``refusal`` is the error envelope when the view could not be rendered from a
+    fully-readable ledger (nothing was written); otherwise ``written`` says
+    whether the file changed.
+    """
+
+    written: bool = False
+    refusal: dict[str, Any] | None = None
+
+
+def _write_queue_view(slug: str, root: Path) -> _ViewWrite:
+    """Render the ledger at ``root`` and write ``queue-view.md`` atomically. The ONE writer.
+
+    ``regenerate-view``, ``compact`` and ``migrate-layout`` all write the view
+    through here, so there is exactly one code path that writes it.
+
+    The render input is the assembled ledger alone — the existing view's CONTENT
+    never feeds it, so conflict markers a merge left in ``queue-view.md`` are
+    simply overwritten. The existing bytes are compared only to report
+    ``written: false`` for a no-op rewrite.
+
+    Refuses, writing NOTHING, when the ledger is absent, in the monolithic layout,
+    or not fully readable — including a single row file that could not be read.
+    A row file holding git conflict markers from a genuine duplicate id is the
+    case this protects: regenerating around it would publish a view that hides
+    the source conflict, so the conflict stays visible and is resolved first.
+    """
+    ledger = assemble_view(root)
+    refusal = _ledger_refusal(slug, ledger)
+    if refusal is not None:
+        return _ViewWrite(refusal=refusal)
+    unreadable = _unreadable_row_names(ledger)
+    if unreadable:
+        reasons = '; '.join(f'{row.get("file", "")}: {row.get("reason", "")}' for row in ledger.unreadable_rows)
+        return _ViewWrite(
+            refusal=_error(
+                slug,
+                'row_unreadable',
+                f'{len(unreadable)} queue row file(s) could not be read ({reasons}); resolve the source file(s) '
+                'first — queue-view.md was NOT written, so a genuine source conflict is not hidden behind a render',
+                unreadable_rows=unreadable,
+            )
+        )
+    rendered = render_queue_view(ledger.document, _resolve_row_surfaces(ledger.document, root), slug=slug)
+    if _committed_view_matches(root, rendered):
+        return _ViewWrite(written=False)
+    target = view_path(root)
+    tmp_path = target.with_name(f'.{target.name}.{os.getpid()}.tmp')
+    tmp_path.write_text(rendered, encoding='utf-8')
+    os.replace(str(tmp_path), str(target))
+    return _ViewWrite(written=True)
+
+
+def cmd_regenerate_view(args: argparse.Namespace) -> dict[str, Any]:
+    """Write the generated ``queue-view.md`` from the ledger. The regenerate-on-conflict verb.
+
+    ``queue-view.md`` is derived, so a merge conflict in it carries no
+    information: the rule is never to merge it by hand, but to merge the source
+    files, run this verb on the merged tree, and ``git add`` the result. It
+    writes atomically through :func:`_write_queue_view` and returns ``written``
+    — ``false`` when the file was already byte-identical to a fresh render.
+
+    It refuses an unsafe slug (``invalid_slug``), an absent active tree
+    (``not_found``), a monolithic-layout ledger (``legacy_layout``), and a ledger
+    whose header or any row file cannot be read (``ledger_unreadable`` /
+    ``row_unreadable``, naming the file) — writing nothing in every case, so a
+    genuine source conflict is never papered over by a regeneration.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    root = _epic_root(args.slug)
+    if not root.is_dir():
+        return _error(args.slug, 'not_found', f'epic {args.slug!r} has no active store tree')
+    outcome = _write_queue_view(args.slug, root)
+    if outcome.refusal is not None:
+        return outcome.refusal
+    return {
+        'status': 'success',
+        'operation': 'regenerate-view',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'view': view_path(root).name,
+        'written': outcome.written,
+    }
+
+
+def _marker_indices(lines: list[str], name: str) -> tuple[int, int]:
+    """Return the ``(begin, end)`` line indices of one GENERATED block's markers.
+
+    Two shapes are returned when the block is not fully delimited: ``(-1, -1)``
+    when the begin marker is absent, and ``(begin_idx, -1)`` when a begin marker
+    is present but no matching end marker follows it. The end is only ever
+    searched for AFTER the begin, so an end marker that precedes the begin is not
+    a distinct case — it is simply not seen. The match is the WHOLE stripped line
+    equalling the marker, so a marker quoted mid-sentence is never mistaken for
+    the real one.
+    """
+    begin = _begin_marker(name)
+    end = _end_marker(name)
+    begin_idx = next((index for index, line in enumerate(lines) if line.strip() == begin), -1)
+    if begin_idx < 0:
+        return (-1, -1)
+    end_idx = next((index for index in range(begin_idx + 1, len(lines)) if lines[index].strip() == end), -1)
+    return (begin_idx, end_idx)
+
+
+#: The per-block outcomes :func:`_strip_generated_block` reports. ``removed`` —
+#: the marker pair (and its guidance comment) was cut out; ``absent`` — the
+#: epic.md carries no begin marker for the block, so there was nothing to cut;
+#: ``incomplete`` — a begin marker with no end marker after it. An incomplete
+#: pair is left untouched and reported: guessing where the block ends would risk
+#: cutting hand-written text.
+STRIP_REMOVED = 'removed'
+STRIP_ABSENT = 'absent'
+STRIP_INCOMPLETE = 'incomplete'
+
+
+def _guidance_comment_start(lines: list[str], begin_idx: int) -> int:
+    """The first line of the generated-block guidance comment above ``begin_idx``, or ``-1``.
+
+    Walks back over blank lines to the nearest non-blank line; when that line
+    closes an HTML comment, walks back to the comment's opening line, and
+    accepts it only when that opening line starts with
+    :data:`_GENERATED_GUIDANCE_OPENER`. Any other comment — or none — yields
+    ``-1``, so a hand-written comment above a block is never removed.
+    """
+    index = begin_idx - 1
+    while index >= 0 and not lines[index].strip():
+        index -= 1
+    if index < 0 or not lines[index].rstrip().endswith('-->'):
+        return -1
+    while index >= 0:
+        stripped = lines[index].lstrip()
+        if stripped.startswith('<!--'):
+            return index if stripped.startswith(_GENERATED_GUIDANCE_OPENER) else -1
+        index -= 1
+    return -1
+
+
+def _strip_generated_block(lines: list[str], name: str) -> tuple[list[str], str]:
+    """Cut one GENERATED block, and the guidance comment above it, out of ``lines``.
+
+    The cut span runs from the guidance comment (when present) or the begin
+    marker, through the end marker, plus ONE following blank line — the
+    separator that belonged to the block — so the surrounding hand-written text
+    is rejoined with the spacing it had on either side. Every line outside that
+    span is returned byte-identical.
+    """
+    begin_idx, end_idx = _marker_indices(lines, name)
+    if begin_idx < 0:
+        return lines, STRIP_ABSENT
+    if end_idx < 0:
+        return lines, STRIP_INCOMPLETE
+    comment_idx = _guidance_comment_start(lines, begin_idx)
+    start = comment_idx if comment_idx >= 0 else begin_idx
+    stop = end_idx + 1
+    if stop < len(lines) and not lines[stop].strip() and stop + 1 < len(lines):
+        stop += 1
+    return lines[:start] + lines[stop:], STRIP_REMOVED
+
+
+def _strip_generated_blocks(text: str) -> tuple[str, list[dict[str, str]]]:
+    """Remove every :data:`GENERATED_BLOCKS` block from an ``epic.md`` text.
+
+    Returns the new text and one ``{block, outcome}`` row per block, in
+    :data:`GENERATED_BLOCKS` order. Splitting on ``\\n`` keeps a trailing newline
+    as a trailing element, so the re-joined text is byte-identical when no block
+    was removed.
+    """
+    lines = text.split('\n')
+    outcomes: list[dict[str, str]] = []
+    for name in GENERATED_BLOCKS:
+        lines, outcome = _strip_generated_block(lines, name)
+        outcomes.append({'block': name, 'outcome': outcome})
+    return '\n'.join(lines), outcomes
+
+
+def _invariant(name: str, verdict: str, evidence: str, population: str) -> dict[str, Any]:
+    """Build one compact-stage invariant row, in the restart-check signal shape.
+
+    ``verdict`` is ``ok`` | ``violated`` | ``indeterminate``. An unobservable
+    check resolves to ``indeterminate`` and never to ``violated`` — the same
+    *unobserved is not failed* rule the readiness signals hold.
+    """
+    return {'invariant': name, 'verdict': verdict, 'evidence': evidence, 'population': population}
+
+
+def _invariant_queue_spec(slug: str) -> dict[str, Any]:
+    """Bidirectional queue <-> spec reconciliation as a compact-stage invariant.
+
+    Maps :func:`_read_queue_spec_reconciliation`'s neutral state into the
+    invariant vocabulary: an unobservable corpus (not enumerable, or not fully
+    readable) is ``indeterminate`` rather than ``violated`` — a corpus that could
+    not be fully read is unobserved, not reconciled-badly.
+    """
+    state, evidence, population = _read_queue_spec_reconciliation(slug)
+    verdict = {
+        RECONCILE_NOT_ENUMERABLE: 'indeterminate',
+        RECONCILE_UNREADABLE: 'indeterminate',
+        RECONCILE_ORPHANED: 'violated',
+        RECONCILE_RECONCILED: 'ok',
+    }[state]
+    return _invariant('queue_spec_bidirectional', verdict, evidence, population)
+
+
+def _settled_headings(text: str) -> set[str]:
+    """Extract the heading texts of ``settled.md``, fence-aware.
+
+    A relocation pointer names its destination heading in double quotes; this is
+    the set that pointer is resolved against.
+    """
+    lines = text.split('\n')
+    fenced = _fenced_mask(lines)
+    return {
+        line.strip().strip('#').strip()
+        for index, line in enumerate(lines)
+        if not fenced[index] and _HEADING_RE.match(line)
+    }
+
+
+def _invariant_pointers_reachable(epic_text: str, root: Path) -> dict[str, Any]:
+    """Assert every settled-narrative relocation pointer RESOLVES.
+
+    A reader following the old path must land on the content, not on absence, so
+    each pointer's named heading must exist in ``settled.md``. No pointer is the
+    common case (nothing relocated yet) and resolves to ``ok``; a pointer whose
+    target is missing is ``violated``; an unreadable ``settled.md`` is
+    ``indeterminate``.
+    """
+    wanted = [match.group('heading') for match in _RELOCATION_POINTER_RE.finditer(epic_text)]
+    population = f'{len(wanted)} relocation pointer(s) in epic.md'
+    if not wanted:
+        return _invariant(
+            'relocated_pointer_reachable',
+            'ok',
+            'no settled-narrative relocation pointer to resolve',
+            population,
+        )
+    settled_path = root / FILE_SETTLED
+    if not settled_path.is_file():
+        return _invariant(
+            'relocated_pointer_reachable',
+            'violated',
+            f'{len(wanted)} pointer(s) but settled.md is absent',
+            population,
+        )
+    settled_text, _ = _read_spec(settled_path)
+    if settled_text is None:
+        return _invariant('relocated_pointer_reachable', 'indeterminate', 'settled.md could not be read', population)
+    present = _settled_headings(settled_text)
+    unreachable = sorted({heading for heading in wanted if heading not in present})
+    if unreachable:
+        return _invariant(
+            'relocated_pointer_reachable',
+            'violated',
+            f'{len(unreachable)} pointer(s) resolve to no settled.md heading: {", ".join(unreachable)}',
+            population,
+        )
+    return _invariant(
+        'relocated_pointer_reachable',
+        'ok',
+        'every relocation pointer resolves to a settled.md heading',
+        population,
+    )
+
+
+#: A top-level (``##``) section heading, used to enumerate the narrative
+#: sections the compact stage abstains from. ``##`` followed by ``#`` is a
+#: level-3 heading and does not match, so annotation subsections are folded into
+#: their parent rather than listed apart.
+_SECTION_HEADING_RE = re.compile(r'^ {0,3}##[ \t]+(?P<title>.+?)[ \t]*#*[ \t]*$')
+
+
+def _abstained_sections(text: str) -> list[dict[str, str]]:
+    """Name every ``##`` section of ``epic.md``, each preserved verbatim.
+
+    ``compact`` makes no ``epic.md`` write, so every section is an abstention —
+    and every one is still NAMED, because a report that lists only what changed
+    cannot be told apart from one that silently dropped something. Headings
+    inside a fenced block are not sections and are not listed.
+    """
+    lines = text.split('\n')
+    fenced = _fenced_mask(lines)
+    return [
+        {'section': match.group('title').strip(), 'treatment': TREATMENT_PRESERVED}
+        for index, line in enumerate(lines)
+        if not fenced[index] and (match := _SECTION_HEADING_RE.match(line))
+    ]
+
+
+def cmd_compact(args: argparse.Namespace) -> dict[str, Any]:
+    """Compact the epic ledger: verify the invariants, regenerate the view, report.
+
+    The ledger-compaction stage ``workflow/cleanup.md`` Phase B calls. It verifies
+    the invariants — ``queue_spec_bidirectional`` (the queue rows and the staged
+    specs reconcile in both directions) and ``relocated_pointer_reachable`` (every
+    settled-narrative pointer in ``epic.md`` resolves to a ``settled.md``
+    heading) — and then regenerates ``queue-view.md`` through
+    :func:`_write_queue_view`, the SAME writer ``regenerate-view`` uses. It makes
+    NO ``epic.md`` write: ``epic.md`` is hand-written narrative, so a retraction,
+    a refutation, a do-not-re-derive note, or an operator-confirmed running note
+    survives a pass verbatim because nothing here writes that file at all. The
+    narrative-versus-settled RELOCATION judgement is NOT here — it stays with the
+    orchestrator; this stage only VERIFIES that whatever was relocated is
+    reachable from its pointer.
+
+    No invariant guards the rendered table against a terminal row: the renderer
+    excludes terminal rows by construction (:func:`_build_ordered_queue`), which a
+    renderer test pins.
+
+    Refuses a closed epic (``refused_closed``): that tree is the frozen audit
+    record, and compaction is a live-epic operation only. Resolves the store
+    strictly (never the archived read-fallback), so an archived tree is never
+    mutated at the active path. Refuses a monolithic-layout ledger with
+    ``legacy_layout`` and an unreadable one — header, anchor, queue directory or
+    a single row file — writing nothing.
+
+    The report names ``view_written`` (whether ``queue-view.md`` changed — a
+    second run over an unchanged ledger reports ``false``), ``invariants[]`` (each
+    with its verdict, evidence, and population), and ``abstained[]`` (every
+    ``##`` section of ``epic.md``, each preserved verbatim).
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    root = _epic_root(args.slug)
+    if not root.is_dir():
+        return _error(args.slug, 'not_found', f'epic {args.slug!r} has no active store tree')
+    epic_path = root / FILE_EPIC
+    if not epic_path.is_file():
+        return _error(args.slug, 'file_not_found', 'epic.md not found in orchestrator store')
+    ledger = assemble_view(root)
+    refusal = _ledger_refusal(args.slug, ledger)
+    if refusal is not None:
+        return refusal
+    phase = str(ledger.document.get('phase', '')).strip()
+    if phase == CLOSED_PHASE:
+        return _error(
+            args.slug,
+            'refused_closed',
+            f'epic {args.slug} is phase=closed; compaction is a live-epic operation only — '
+            'the frozen record is never mutated',
+            phase=phase,
+        )
+    epic_text = epic_path.read_text(encoding='utf-8')
+    invariants = [
+        _invariant_queue_spec(args.slug),
+        _invariant_pointers_reachable(epic_text, root),
+    ]
+    view = _write_queue_view(args.slug, root)
+    if view.refusal is not None:
+        return view.refusal
+    abstained = _abstained_sections(epic_text)
+    return {
+        'status': 'success',
+        'operation': 'compact',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'relocation_target': FILE_SETTLED,
+        'view': view_path(root).name,
+        'view_written': view.written,
+        'invariants': invariants,
+        'abstained_count': len(abstained),
+        'abstained': abstained,
+    }
+
+
+def _migration_rejection(slug: str, rejected: tuple[dict[str, Any], ...]) -> dict[str, Any]:
+    """The refusal for a legacy document holding a row that cannot become a row file."""
+    names = '; '.join(
+        f'index {row.get("index", "")} ({row.get("id", "")}): {row.get("reason", "")}' for row in rejected
+    )
+    return _error(
+        slug,
+        'unmigratable_rows',
+        f'{len(rejected)} plans[] entr(y/ies) cannot become a row file ({names}); repair them in status.json and '
+        're-run migrate-layout — NOTHING was written, so no value is lost',
+        rejected_rows=[dict(row) for row in rejected],
+    )
+
+
+def _epic_carries_generated_block(epic_path: Path) -> bool:
+    """Whether ``epic.md`` still holds a GENERATED block the migration tail would cut.
+
+    An absent ``epic.md``, or one whose blocks are all ``absent`` or
+    ``incomplete``, holds nothing the tail would remove.
+    """
+    if not epic_path.is_file():
+        return False
+    _, blocks = _strip_generated_blocks(epic_path.read_text(encoding='utf-8'))
+    return any(block['outcome'] == STRIP_REMOVED for block in blocks)
+
+
+def _migration_tail(slug: str, root: Path) -> tuple[_ViewWrite, list[dict[str, str]]]:
+    """Write ``queue-view.md``, THEN strip the GENERATED blocks out of ``epic.md``.
+
+    The tail runs after the header commit, so it must be re-runnable on its own:
+    :func:`cmd_migrate_layout` re-runs it over an already-migrated ledger whose
+    ``queue-view.md`` is absent or whose ``epic.md`` still carries a GENERATED
+    block. The view render reads the ledger files and the
+    staged specs, never ``epic.md``, so writing it first changes nothing it
+    renders. Returns the view outcome and the per-block strip report — empty when
+    the view write was refused, in which case ``epic.md`` is not touched.
+    """
+    view = _write_queue_view(slug, root)
+    if view.refusal is not None:
+        return view, []
+    epic_path = root / FILE_EPIC
+    blocks: list[dict[str, str]] = []
+    if epic_path.is_file():
+        original = epic_path.read_text(encoding='utf-8')
+        stripped, blocks = _strip_generated_blocks(original)
+        if stripped != original:
+            epic_path.write_text(stripped, encoding='utf-8')
+    return view, blocks
+
+
+def cmd_migrate_layout(args: argparse.Namespace) -> dict[str, Any]:
+    """Convert a monolithic-layout epic ledger into the per-concern files.
+
+    A format-only rewrite that preserves every value, so it resolves an ARCHIVED
+    epic too (through the read-fallback): every ``plans[]`` row becomes one
+    ``queue/{PLAN-ID}.json`` carrying every field it held plus a ``seq`` taken
+    from its array position (so the rendered order reproduces the old one), the
+    ``resume_anchor`` text moves to ``resume_anchor.md``, and the header keeps
+    every other field verbatim and loses ``updated``. The header is written last
+    of the ledger files, so a conversion interrupted before it leaves the legacy
+    document intact.
+
+    The tail (:func:`_migration_tail`) then writes a fresh ``queue-view.md``
+    through the renderer rather than copying the old pasted text, which may be
+    stale, and strips the two GENERATED marker blocks and the guidance comment
+    above each (:data:`GENERATED_BLOCKS`) out of ``epic.md`` — every hand-written
+    byte, both annotation zones included, stays exactly where it was.
+
+    Idempotent: a ledger already in the per-concern layout returns
+    ``already_migrated: true``. When ``queue-view.md`` is absent or ``epic.md``
+    still carries a GENERATED block, it runs the tail and reports
+    ``tail_completed: true`` with the tail's outcome; otherwise it writes
+    nothing. Refuses an unsafe slug
+    (``invalid_slug``), an absent tree (``not_found``), an absent header
+    (``file_not_found``), a header that is not a JSON object
+    (``invalid_status_document``), and a ``plans[]`` entry that cannot become a
+    row file (``unmigratable_rows``) — writing nothing. A refusal from the
+    tail's view write (``row_unreadable`` / ``ledger_unreadable``) can arrive
+    after the per-concern files were written; a re-run finishes the tail.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    root = _epic_root(args.slug, allow_archived=True)
+    if not root.is_dir():
+        return _error(args.slug, 'not_found', f'epic {args.slug!r} has no active or archived store tree')
+    archived = root != _epic_root(args.slug)
+    state, header, detail = read_header(root)
+    if state == LEDGER_ABSENT:
+        return _error(args.slug, 'file_not_found', 'status.json not found in orchestrator store')
+    epic_path = root / FILE_EPIC
+    if state == LEDGER_OK:
+        already: dict[str, Any] = {
+            'status': 'success',
+            'operation': 'migrate-layout',
+            'slug': args.slug,
+            'store': ORCHESTRATOR_STORE,
+            'archived': archived,
+            'already_migrated': True,
+            'tail_completed': False,
+        }
+        if view_path(root).is_file() and not _epic_carries_generated_block(epic_path):
+            return already
+        view, blocks = _migration_tail(args.slug, root)
+        if view.refusal is not None:
+            return view.refusal
+        return {
+            **already,
+            'tail_completed': True,
+            'epic_blocks': blocks,
+            'view': view_path(root).name,
+            'view_written': view.written,
+        }
+    if state != LEDGER_LEGACY:
+        return _error(
+            args.slug,
+            'invalid_status_document',
+            f'status.json could not be read as a JSON object ({detail}); NOTHING was written',
+            detail=detail,
+        )
+    migrated = migrate_document(header)
+    if migrated.rejected_rows:
+        return _migration_rejection(args.slug, migrated.rejected_rows)
+    write_layout(root, migrated.header, migrated.anchor, migrated.rows)
+    view, blocks = _migration_tail(args.slug, root)
+    if view.refusal is not None:
+        return view.refusal
+    return {
+        'status': 'success',
+        'operation': 'migrate-layout',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'archived': archived,
+        'already_migrated': False,
+        'rows_migrated': len(migrated.rows),
+        'anchor_migrated': bool(migrated.anchor),
+        'epic_present': epic_path.is_file(),
+        'epic_blocks': blocks,
+        'view': view_path(root).name,
+        'view_written': view.written,
+    }
+
+
+def _add_slug_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument('--slug', required=True, help='Epic slug (kebab-case)')
+
+
+def _best_effort_plan_title(plan_id: str) -> None:
+    """Settle the plan's title state at plan start (best-effort, never raises).
+
+    The plan-scoped form of the terminal-title repaint obligation: with no
+    epic slug in scope the hook settles the plan's own title state rather
+    than the epic push. Failures are swallowed — title settling never blocks
+    plan start.
+    """
+    try:
+        subprocess.run(
+            [
+                sys.executable,
+                '.plan/execute-script.py',
+                'plan-marshall:platform-runtime:platform_runtime',
+                'session',
+                'push-title-token',
+                '--plan-id',
+                plan_id,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except Exception:
+        pass
+
+
+def _merge_client_toon_text(existing_text: str | None, payload: str) -> str | None:
+    """Merge a runtime-info payload into timestamp-keyed client.toon text.
+
+    Read-merge-write: the existing artifact (when present and parseable) keeps
+    every timestamped entry and the new payload appends under a fresh
+    human-readable datetime stamp; nothing is ever overwritten. A legacy flat
+    artifact migrates under the ``legacy`` entry key so its data survives.
+
+    Returns the merged text, or None when an EXISTING artifact is present but
+    unparseable or wrong-shaped: the caller must then degrade without writing
+    rather than replacing history it could not read. A missing artifact (None)
+    always merges fresh. A payload that itself fails to parse degrades the same
+    way — there is no well-formed entry to append.
+    The canonical ``toon_parser`` import above is deliberately unguarded: a
+    missing parser must fail loudly at import time, never degrade into a
+    hand-rolled serialization that drifts from the canonical form.
+    """
+    try:
+        parsed_payload = parse_toon(payload)
+    except Exception:
+        return None
+    if not isinstance(parsed_payload, dict):
+        return None
+    existing_doc: dict[str, Any] | None = None
+    if existing_text:
+        try:
+            parsed_existing = parse_toon(existing_text)
+        except Exception:
+            return None
+        if not isinstance(parsed_existing, dict):
+            return None
+        existing_doc = parsed_existing
+    try:
+        from runtime_info import append_client_entry
+
+        merged = append_client_entry(existing_doc, parsed_payload)
+    except ValueError:
+        return None
+    except Exception:
+        info = {
+            key: value
+            for key, value in parsed_payload.items()
+            if key not in ('status', 'operation', 'schema_version', 'entries')
+        }
+        entries: dict[str, Any] = {}
+        if isinstance(existing_doc, dict):
+            current = existing_doc.get('entries')
+            if isinstance(current, dict):
+                entries.update({str(key): value for key, value in current.items()})
+            elif 'entries' in existing_doc:
+                return None
+            else:
+                legacy = {
+                    key: value
+                    for key, value in existing_doc.items()
+                    if key not in ('status', 'operation', 'schema_version', 'entries')
+                }
+                if legacy:
+                    entries['legacy'] = legacy
+        # No raw datetime call here: the stamp derives from the shared
+        # ``now_utc_iso`` helper (already imported from file_ops) via string
+        # reshaping, so this module keeps reaching timestamps only through
+        # shared helpers per the display-timezone guard.
+        stamp = now_utc_iso().replace('T', ' ').replace(':', '-')
+        if stamp.endswith('Z'):
+            stamp = stamp[:-1] + ' UTC'
+        else:
+            stamp = f'{stamp} UTC'
+        key = stamp
+        suffix = 2
+        while key in entries:
+            key = f'{stamp} ({suffix})'
+            suffix += 1
+        entries[key] = info
+        merged = {'schema_version': 1, 'entries': entries}
+    try:
+        return serialize_toon(merged)
+    except Exception:
+        return None
+
+
+def _write_client_toon_locked(artifact_path: Path, payload: str) -> None:
+    """Read-merge-write client.toon under an exclusive lock.
+
+    The read, the ``_merge_client_toon_text`` merge, and the write all happen
+    while holding the lock, so concurrent preflights serialise instead of
+    racing: each one merges against the previous writer's output, preserving
+    append-never-overwrite semantics.
+
+    Best-effort but never-blocking: the lock is acquired non-blocking with a
+    bounded retry budget (2s); platforms without ``fcntl`` or an unacquirable
+    lock raise ``OSError`` so the caller degrades without writing rather than
+    racing unlocked or stalling plan start. Availability is probed via
+    ``importlib.util.find_spec`` (no ``try/except ImportError`` fallback shape)
+    so the toon-import canonical-guard does not misread this revert path as a
+    swallowed parser import.
+    """
+    if importlib.util.find_spec('fcntl') is None:
+        raise OSError('no process lock available on this platform')
+    import fcntl
+
+    lock_path = artifact_path.parent / (artifact_path.name + '.lock')
+    fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        deadline = time.monotonic() + 2.0
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise OSError('client.toon lock unavailable within 2s') from None
+                time.sleep(0.05)
+        try:
+            try:
+                existing_text = artifact_path.read_text(encoding='utf-8')
+            except FileNotFoundError:
+                existing_text = None
+            merged = _merge_client_toon_text(existing_text, payload)
+            if merged is None:
+                raise OSError('existing client.toon is unparseable; refusing to overwrite')
+            artifact_path.write_text(merged + '\n', encoding='utf-8')
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
+
+def cmd_preflight(args: argparse.Namespace) -> dict[str, Any]:
+    """Invoke runtime-info and append to the per-plan client.toon artifact.
+
+    Read-merge-write: each run appends a new timestamp-keyed entry and never
+    overwrites prior entries.
+
+    Best-effort by contract: any collector, resolution, or write failure
+    degrades to ``degraded: true`` with ``artifact_written: false`` and still
+    returns ``status: success`` — a pre-flight probe never blocks plan start.
+    """
+    try:
+        validate_plan_id(args.plan_id)
+    except ValueError as exc:
+        return {
+            'status': 'success',
+            'operation': 'preflight',
+            'plan_id': args.plan_id,
+            'degraded': True,
+            'degrade_reason': f'invalid plan id: {exc}',
+            'artifact_written': False,
+        }
+    _best_effort_plan_title(args.plan_id)
+    try:
+        plan_dir = get_store_dir('plans', args.plan_id)
+    except Exception as exc:
+        return {
+            'status': 'success',
+            'operation': 'preflight',
+            'plan_id': args.plan_id,
+            'degraded': True,
+            'degrade_reason': f'plan directory unresolvable: {exc}',
+            'artifact_written': False,
+        }
+    try:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                '.plan/execute-script.py',
+                'plan-marshall:platform-runtime:platform_runtime',
+                'runtime-info',
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except Exception as exc:
+        return {
+            'status': 'success',
+            'operation': 'preflight',
+            'plan_id': args.plan_id,
+            'degraded': True,
+            'degrade_reason': f'runtime-info invocation failed: {exc}',
+            'artifact_written': False,
+        }
+    payload = completed.stdout.strip()
+    if completed.returncode != 0 or not payload or 'status: success' not in payload.splitlines()[0]:
+        return {
+            'status': 'success',
+            'operation': 'preflight',
+            'plan_id': args.plan_id,
+            'degraded': True,
+            'degrade_reason': 'runtime-info returned no success payload',
+            'artifact_written': False,
+        }
+    try:
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        artifact_path = plan_dir / 'client.toon'
+        if artifact_path.exists() and not os.access(artifact_path, os.R_OK):
+            return {
+                'status': 'success',
+                'operation': 'preflight',
+                'plan_id': args.plan_id,
+                'degraded': True,
+                'degrade_reason': f'client.toon exists but is unreadable: {artifact_path}',
+                'artifact_written': False,
+            }
+        _write_client_toon_locked(artifact_path, payload)
+    except OSError as exc:
+        return {
+            'status': 'success',
+            'operation': 'preflight',
+            'plan_id': args.plan_id,
+            'degraded': True,
+            'degrade_reason': f'client.toon unwritable: {exc}',
+            'artifact_written': False,
+        }
+    return {
+        'status': 'success',
+        'operation': 'preflight',
+        'plan_id': args.plan_id,
+        'degraded': False,
+        'artifact_written': True,
+        'artifact': 'client.toon',
+    }
+
+
+def _build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog='orchestrator',
+        description=(
+            'Thin scaffolding for plan-orchestrator epics: scaffold the '
+            'epic tree, read/transition/stamp/stage the plan queue, render '
+            'the START-HERE resume summary, regenerate the generated queue '
+            'view, migrate a monolithic ledger, archive a closed epic, reconcile '
+            'the staged spec corpus and its re-grounding verdicts, report the '
+            'restart-readiness verdict, drive the plan-writable inbox '
+            'OUTBOX, its drain and the plan-side mailbox read, and write the '
+            'per-plan client.toon pre-flight artifact.'
+        ),
+        allow_abbrev=False,
+    )
+    subparsers = parser.add_subparsers(dest='command', required=True)
+
+    scaffold = subparsers.add_parser(
+        'scaffold',
+        help='Create the .plan/orchestrator/{slug}/ directory tree (idempotent).',
+        allow_abbrev=False,
+    )
+    _add_slug_arg(scaffold)
+    scaffold.set_defaults(handler=cmd_scaffold)
+
+    queue = subparsers.add_parser(
+        'queue',
+        help=(
+            'Read the plan queue from its row files, transition one plan status, '
+            'set one plan row field, or stage one new plan row file.'
+        ),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(queue)
+    queue.add_argument(
+        '--transition',
+        default=None,
+        metavar='PLAN-NN',
+        help='Plan id to transition (requires --status).',
+    )
+    queue.add_argument(
+        '--status',
+        default=None,
+        metavar='STATUS',
+        help=(
+            'Status value: REQUIRED with --transition (the new status of that '
+            'plan); OPTIONAL with --add-row (the seed status of the appended '
+            f'row, default {ADD_ROW_DEFAULT_STATUS}).'
+        ),
+    )
+    queue.add_argument(
+        '--set-row',
+        default=None,
+        metavar='PLAN-NN',
+        help=(
+            'Plan id whose row field to set (requires --field and --value; '
+            'mutually exclusive with the --transition and --add-row forms).'
+        ),
+    )
+    queue.add_argument(
+        '--add-row',
+        default=None,
+        metavar='PLAN-NN',
+        help=(
+            'Plan id to append as a new queue row (requires --slug-value and '
+            '--workstream; --status optional; mutually exclusive with the '
+            '--transition and --set-row forms).'
+        ),
+    )
+    queue.add_argument(
+        '--slug-value',
+        default=None,
+        metavar='SLUG',
+        help='Plan slug for the appended row (requires --add-row).',
+    )
+    queue.add_argument(
+        '--workstream',
+        default=None,
+        metavar='WS-NN',
+        help='Workstream id for the appended row (requires --add-row).',
+    )
+    queue.add_argument(
+        '--field',
+        default=None,
+        metavar='FIELD',
+        help=f'Row field to set: one of {sorted(PLAN_ROW_FIELDS)} (requires --set-row).',
+    )
+    queue.add_argument(
+        '--value',
+        default=None,
+        metavar='VALUE',
+        help='New value for the field named by --field (requires --set-row).',
+    )
+    queue.set_defaults(handler=cmd_queue)
+
+    resume = subparsers.add_parser(
+        'resume-summary',
+        help=(
+            'Render START HERE and the Ordered Queue from the ledger and report whether the '
+            'committed queue-view.md is current (read-only; writes nothing).'
+        ),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(resume)
+    resume.set_defaults(handler=cmd_resume_summary)
+
+    regenerate = subparsers.add_parser(
+        'regenerate-view',
+        help=(
+            'Write the generated queue-view.md from the ledger (also the remedy for a merge '
+            'conflict in it); refuses and writes nothing when a source file is unreadable.'
+        ),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(regenerate)
+    regenerate.set_defaults(handler=cmd_regenerate_view)
+
+    migrate = subparsers.add_parser(
+        'migrate-layout',
+        help=(
+            'Convert a monolithic-layout epic ledger (active or archived) into the per-concern '
+            'files, strip the generated blocks from epic.md, and write queue-view.md (idempotent).'
+        ),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(migrate)
+    migrate.set_defaults(handler=cmd_migrate_layout)
+
+    archive = subparsers.add_parser(
+        'archive',
+        help='Relocate a closed epic tree to archived-orchestrators/{slug}/ (post-close, mechanical).',
+        allow_abbrev=False,
+    )
+    _add_slug_arg(archive)
+    archive.set_defaults(handler=cmd_archive)
+
+    compact = subparsers.add_parser(
+        'compact',
+        help=(
+            'Verify the ledger invariants and regenerate queue-view.md, making no '
+            'epic.md write, and report (live-epic only; refuses a closed epic).'
+        ),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(compact)
+    compact.set_defaults(handler=cmd_compact)
+
+    preflight = subparsers.add_parser(
+        'preflight',
+        help='Invoke runtime-info and write the per-plan client.toon artifact (best-effort, never blocks).',
+        allow_abbrev=False,
+    )
+    preflight.add_argument(
+        '--plan-id',
+        required=True,
+        help='Plan identifier the client.toon artifact is written for.',
+    )
+    preflight.set_defaults(handler=cmd_preflight)
+
+    _add_corpus_group(subparsers)
+    _add_cleanup_group(subparsers)
+    _add_inbox_group(subparsers)
+
+    return parser
+
+
+def _add_corpus_group(subparsers: Any) -> None:
+    """Register the ``corpus`` verb group.
+
+    Sub-verbs: ``epics``, ``enumerate``, ``read``, ``cross-check``, ``surfaces``,
+    ``declaration-currency``, ``verdicts``, ``set-verdict``. The first seven are
+    read-only; ``set-verdict``
+    is the group's single write action, and the only surface in the tree that
+    formats a ``verdict:`` line. ``epics`` is the only one that takes no
+    ``--slug``: its subject is the whole store rather than one epic in it.
+    """
+    corpus = subparsers.add_parser(
+        'corpus',
+        help=(
+            'Epic spec corpus: enumerate the epic population, reconcile the queue '
+            "against the plans/ specs in both directions, publish every spec's "
+            'declared surface and derivation status, and read or stamp the '
+            're-grounding verdict field.'
+        ),
+        allow_abbrev=False,
+    )
+    actions = corpus.add_subparsers(dest='corpus_action', required=True)
+
+    epics = actions.add_parser(
+        'epics',
+        help=(
+            'Enumerate every epic slug in the store, partitioned into active and '
+            'archived, naming the roots walked and the population size (read-only; '
+            'takes no --slug).'
+        ),
+        allow_abbrev=False,
+    )
+    epics.set_defaults(handler=cmd_corpus_epics)
+
+    enumerate_specs = actions.add_parser(
+        'enumerate',
+        help=(
+            'Reconcile the queue row files against plans/PLAN-*.md in both '
+            'directions, every count carrying its population (read-only).'
+        ),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(enumerate_specs)
+    enumerate_specs.set_defaults(handler=cmd_corpus_enumerate)
+
+    read_spec = actions.add_parser(
+        'read',
+        help=('Return one staged spec file body through the sanctioned script-mediated read path (read-only).'),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(read_spec)
+    read_spec.add_argument('--plan', required=True, metavar='PLAN-NN', help='Plan id whose spec body is returned.')
+    read_spec.set_defaults(handler=cmd_corpus_read)
+
+    cross_check = actions.add_parser(
+        'cross-check',
+        help=(
+            "Cross-check this epic's specs against sibling epics and live plans "
+            'for duplicate work, on the two sibling-collision-check classes (read-only).'
+        ),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(cross_check)
+    cross_check.set_defaults(handler=cmd_corpus_cross_check)
+
+    surfaces = actions.add_parser(
+        'surfaces',
+        help=(
+            "Publish every spec's declared Expected Surface, its derivation status "
+            'and the population, so the disjointness gate is a parser decision '
+            '(read-only).'
+        ),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(surfaces)
+    surfaces.set_defaults(handler=cmd_corpus_surfaces)
+
+    currency = actions.add_parser(
+        'declaration-currency',
+        help=(
+            "Reconcile a landed footprint against OTHER staged specs' declared "
+            'surfaces by symmetric difference with containment, reporting the '
+            'footprint base anchor (read-only).'
+        ),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(currency)
+    currency.add_argument(
+        '--footprint-paths',
+        required=True,
+        help='Comma-separated repo-relative paths of the landed realized footprint.',
+    )
+    currency.add_argument(
+        '--exclude-spec',
+        required=False,
+        default=None,
+        help='Bare spec filename to exclude as the landed plans own spec (OTHER specs only).',
+    )
+    currency.add_argument(
+        '--footprint-base',
+        required=False,
+        default=CURRENCY_DEFAULT_BASE,
+        help=f'Footprint base anchor ref (default {CURRENCY_DEFAULT_BASE}).',
+    )
+    currency.set_defaults(handler=cmd_corpus_declaration_currency)
+
+    verdicts = actions.add_parser(
+        'verdicts',
+        help='Parse every re-grounding verdict bullet across the corpus (read-only).',
+        allow_abbrev=False,
+    )
+    _add_slug_arg(verdicts)
+    verdicts.set_defaults(handler=cmd_corpus_verdicts)
+
+    set_verdict = actions.add_parser(
+        'set-verdict',
+        help='Stamp one re-grounding verdict onto one claim or one section (replaces in place).',
+        allow_abbrev=False,
+    )
+    _add_slug_arg(set_verdict)
+    set_verdict.add_argument('--plan', required=True, metavar='PLAN-NN', help='Plan id whose spec carries the claim.')
+    # Exactly one addressing mode, always. Making the pair required keeps
+    # ``--claim-index`` a pure zero-based ordinal — the section address is its own
+    # flag rather than a negative sentinel smuggled through the ordinal.
+    address = set_verdict.add_mutually_exclusive_group(required=True)
+    address.add_argument(
+        '--claim-index',
+        type=int,
+        default=None,
+        metavar='N',
+        help="Zero-based index of the claim bullet within the spec's ## Claim Labels section.",
+    )
+    address.add_argument(
+        '--section-scope',
+        action='store_true',
+        help=(
+            'Stamp the ## Claim Labels section itself, for a section the claim parser '
+            'could not read; refused for an absent, empty or parsed one.'
+        ),
+    )
+    set_verdict.add_argument('--verdict', required=True, help=f'One of {sorted(VERDICT_VALUES)}.')
+    set_verdict.add_argument(
+        '--checked-at', required=True, metavar='SHA', help='The 7-40 hex HEAD sha the check ran against.'
+    )
+    set_verdict.add_argument(
+        '--by', required=True, metavar='PRODUCER', help='Producer that wrote it, as {slug}/{verb}.'
+    )
+    set_verdict.add_argument(
+        '--rescoped',
+        required=True,
+        help=f'One of {sorted(RESCOPED_VALUES)}; must be {NOT_APPLICABLE!r} unless the verdict is {CONTRADICTED!r}.',
+    )
+    set_verdict.add_argument(
+        '--evidence', required=True, metavar='TEXT', help='Non-empty evidence text (may contain the separator).'
+    )
+    set_verdict.set_defaults(handler=cmd_corpus_set_verdict)
+
+
+def _add_cleanup_group(subparsers: Any) -> None:
+    """Register the ``cleanup`` verb group.
+
+    Sub-verb: ``restart-check``, read-only. The cleanup verb's judgement half
+    lives in ``workflow/cleanup.md``; this group carries only the deterministic
+    readiness enumeration that doc calls.
+    """
+    cleanup = subparsers.add_parser(
+        'cleanup',
+        help='Cleanup-stage deterministic seams: report whether the session is safe to restart.',
+        allow_abbrev=False,
+    )
+    actions = cleanup.add_subparsers(dest='cleanup_action', required=True)
+
+    restart_check = actions.add_parser(
+        'restart-check',
+        help=(
+            'Report one readiness verdict per signal — each with its evidence and '
+            'its population — plus the floor over them (read-only).'
+        ),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(restart_check)
+    restart_check.set_defaults(handler=cmd_cleanup_restart_check)
+
+
+def _add_inbox_group(subparsers: Any) -> None:
+    """Register the ``inbox`` verb group.
+
+    Sub-verbs, in registration order: ``write``, ``amend``, ``supersede``,
+    ``close-stream``, ``validate``, ``list``, ``read``, ``archive``,
+    ``migrate-archive``, ``detect``, ``landing-check``. The handlers live in
+    :mod:`_orchestrator_inbox`; this function only wires argv to them. Note what
+    the surface deliberately does NOT expose: no output path, no sequence
+    number, and no inbox directory — the write, correction and read
+    targets are derived from ``--slug`` plus ``--sender-id`` / a validated
+    ``--target-plan`` / a validated ``--plan-id`` / a bare ``--message``
+    filename alone, which is what makes
+    the ledger write-boundary carve-out enforced by construction.
+    ``--target-plan`` does not widen it either: it selects BETWEEN the epic
+    queue and the addressee mailbox ``inbox/to/{plan_id}/``, and its value is a
+    validated identifier that becomes one path component, never a path.
+    ``read --plan-id`` is the same construction on the read side — it composes
+    the one mailbox address and reaches no other path in the epic tree, so the
+    plan-side read stays a read of messages addressed to that plan rather than
+    of the epic's own state. ``archive --as-name`` does not widen
+    that carve-out: it is still a bare filename joined onto
+    ``inbox/archive/{sender}/``, never a caller-supplied path, and it is
+    additionally sender-constrained, so the archived name's sender provenance is
+    preserved.
+    """
+    inbox = subparsers.add_parser(
+        'inbox',
+        help=(
+            'Epic inbox channel and drain: append (queued, or delivered to a '
+            'running target plan), correct (amend/supersede), end a sender '
+            "stream, validate, list, read a plan's delivered mailbox, archive "
+            "or fold the archive per sender, detect a plan's orchestration "
+            "context, or check a landing's required facts."
+        ),
+        allow_abbrev=False,
+    )
+    actions = inbox.add_subparsers(dest='inbox_action', required=True)
+
+    write = actions.add_parser(
+        'write',
+        help=("Append one {sender_id}-{NNN}.md message — to the epic queue, or to a running --target-plan's mailbox."),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(write)
+    write.add_argument(
+        '--sender-type',
+        required=True,
+        help=f'Sender class: one of {sorted(SENDER_TYPES)}.',
+    )
+    write.add_argument(
+        '--sender-id',
+        required=True,
+        help="Sender identifier (a plan id); also the message filename's sender segment.",
+    )
+    write.add_argument('--kind', required=True, help=f'Payload kind: one of {sorted(KINDS)}.')
+    write.add_argument(
+        '--payload-file',
+        required=True,
+        help='Path to the staged markdown payload body (never inline text).',
+    )
+    write.add_argument(
+        '--target-plan',
+        required=False,
+        default=None,
+        help=(
+            'Optional plan id the message is aimed at. When it names a plan that '
+            'is currently RUNNING, the message is DELIVERED to that plan mailbox '
+            'at inbox/to/{plan_id}/ (destination: mailbox) rather than queued, '
+            'because the epic queue is drained between plans. Any other value — '
+            'a landed, parked or unqueued plan, or the flag omitted — queues the '
+            'message for the epic drain (destination: queue).'
+        ),
+    )
+    write.set_defaults(handler=cmd_inbox_write)
+
+    amend = actions.add_parser(
+        'amend',
+        help='Correct a filed message body in place, preserving created, stamping amended + a monotonic revision.',
+        allow_abbrev=False,
+    )
+    _add_slug_arg(amend)
+    amend.add_argument(
+        '--message',
+        required=True,
+        metavar='NAME',
+        help='Bare message filename inside the epic inbox/ directory.',
+    )
+    amend.add_argument(
+        '--payload-file',
+        required=True,
+        help='Path to the staged markdown correction body (never inline text).',
+    )
+    amend.set_defaults(handler=cmd_inbox_amend)
+
+    supersede = actions.add_parser(
+        'supersede',
+        help='Retire a filed message in favour of a named successor '
+        '(tombstone-style: stays resolvable, stops presenting as live).',
+        allow_abbrev=False,
+    )
+    _add_slug_arg(supersede)
+    supersede.add_argument(
+        '--message',
+        required=True,
+        metavar='NAME',
+        help='Bare message filename to retire, inside the epic inbox/ directory.',
+    )
+    supersede.add_argument(
+        '--by',
+        required=True,
+        metavar='NAME',
+        help='Bare successor message filename; must resolve in the epic inbox/ or inbox/archive/.',
+    )
+    supersede.set_defaults(handler=cmd_inbox_supersede)
+
+    close_stream = actions.add_parser(
+        'close-stream',
+        help="File a terminal lifecycle=stream-end marker declaring the sender's stream ended.",
+        allow_abbrev=False,
+    )
+    _add_slug_arg(close_stream)
+    close_stream.add_argument(
+        '--sender-type',
+        default='plan',
+        help=f'Sender class: one of {sorted(SENDER_TYPES)} (default: plan).',
+    )
+    close_stream.add_argument(
+        '--sender-id',
+        required=True,
+        help="Sender identifier whose stream is ending; the marker's sender segment.",
+    )
+    close_stream.add_argument(
+        '--reason',
+        default=None,
+        help='Optional closing note; a default sentence is used when omitted.',
+    )
+    close_stream.set_defaults(handler=cmd_inbox_close_stream)
+
+    validate = actions.add_parser(
+        'validate',
+        help='Validate one existing inbox message against the envelope schema.',
+        allow_abbrev=False,
+    )
+    _add_slug_arg(validate)
+    validate.add_argument(
+        '--message',
+        required=True,
+        metavar='NAME',
+        help='Bare message filename inside the epic inbox/ directory.',
+    )
+    validate.set_defaults(handler=cmd_inbox_validate)
+
+    list_messages = actions.add_parser(
+        'list',
+        help='Enumerate the queued inbox messages with their validation verdicts.',
+        allow_abbrev=False,
+    )
+    _add_slug_arg(list_messages)
+    list_messages.set_defaults(handler=cmd_inbox_list)
+
+    read = actions.add_parser(
+        'read',
+        help=(
+            "Read the messages delivered to one plan's mailbox at "
+            'inbox/to/{plan-id}/ (fail-open: never faults, and names which kind '
+            'of zero it returned).'
+        ),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(read)
+    read.add_argument(
+        '--plan-id',
+        required=True,
+        help=(
+            'Plan id whose mailbox is read. Resolves the SAME (epic, plan) '
+            'address inbox write delivers to, and becomes one validated path '
+            'component — never a path.'
+        ),
+    )
+    read.set_defaults(handler=cmd_inbox_read)
+
+    archive_message = actions.add_parser(
+        'archive',
+        help='Retire one consumed message to inbox/archive/ (idempotent).',
+        allow_abbrev=False,
+    )
+    _add_slug_arg(archive_message)
+    archive_message.add_argument(
+        '--message',
+        required=True,
+        metavar='NAME',
+        help='Bare message filename inside the epic inbox/ directory.',
+    )
+    archive_message.add_argument(
+        '--as-name',
+        default=None,
+        metavar='NAME',
+        help=(
+            'Recovery override for the archived destination filename, for a '
+            'message stranded by a pre-fix sequence collision. Must still '
+            "match {sender_id}-* for the source message's sender, or the "
+            'call is refused with as_name_sender_mismatch.'
+        ),
+    )
+    archive_message.set_defaults(handler=cmd_inbox_archive)
+
+    migrate_archive = actions.add_parser(
+        'migrate-archive',
+        help='Fold a flat inbox/archive/ into per-sender subdirectories, reporting the count moved per sender.',
+        allow_abbrev=False,
+    )
+    _add_slug_arg(migrate_archive)
+    migrate_archive.set_defaults(handler=cmd_inbox_migrate_archive)
+
+    detect = actions.add_parser(
+        'detect',
+        help="Classify a plan's request source_id as an orchestrated plan pointer.",
+        allow_abbrev=False,
+    )
+    detect.add_argument(
+        '--source-id',
+        required=True,
+        help='The request.md source_id value recorded by phase-1-init.',
+    )
+    detect.set_defaults(handler=cmd_inbox_detect)
+
+    landing_check = actions.add_parser(
+        'landing-check',
+        help='Report whether a landing message carries the required '
+        'machine-readable facts (the drain-completeness check).',
+        allow_abbrev=False,
+    )
+    _add_slug_arg(landing_check)
+    landing_check.add_argument(
+        '--message',
+        required=True,
+        metavar='NAME',
+        help='Bare landing message filename inside the epic inbox/ directory.',
+    )
+    landing_check.add_argument(
+        '--declared-paths',
+        required=False,
+        default=None,
+        help='Comma-separated repo-relative paths of the plan declared surface.',
+    )
+    landing_check.add_argument(
+        '--realized-paths',
+        required=False,
+        default=None,
+        help='Comma-separated repo-relative paths of the landing realized footprint.',
+    )
+    landing_check.add_argument(
+        '--footprint-base',
+        required=False,
+        default=None,
+        help='Footprint base anchor ref (defaults to the remote-tracking origin/main).',
+    )
+    landing_check.set_defaults(handler=cmd_inbox_landing_check)
+
+
+@safe_main
+def main() -> int:
+    args = _build_arg_parser().parse_args()
+    output_toon(args.handler(args))
+    return 0
+
+
+if __name__ == '__main__':
+    main()
