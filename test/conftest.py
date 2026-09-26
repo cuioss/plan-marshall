@@ -2372,6 +2372,51 @@ def plan_context(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _restore_footprint_seams():
+    """Restore BOTH footprint resolver seams after every test in the suite.
+
+    ``_stub_footprint`` replaces two module attributes in place: the composer's
+    own ``_resolve_footprint`` and ``extension_base._resolve_plan_footprint``.
+    Callers that pass ``monkeypatch`` get restoration for free. The ones that do
+    not leave the replacement installed for the rest of the worker process, so
+    every LATER test in that worker reads a stub instead of the real resolver —
+    an unresolvable footprint comes back non-empty, and the build verdict flips
+    from ``unknown`` to the positive ``not_necessary``.
+
+    A per-module autouse fixture cannot close this: pytest only auto-discovers
+    autouse fixtures from ``conftest.py``, so one declared in an imported
+    fixtures module is inert. The guard therefore lives here, at the root, where
+    it covers every test regardless of which directory declares the stub.
+
+    Both seams are snapshotted and restored symmetrically, because restoring one
+    leaves the other pinned — and ``extension_base`` is shared across skills, so
+    the leak reaches test modules that never touched the stub at all.
+    """
+    import sys
+
+    try:
+        import extension_base
+    except ImportError:
+        extension_base = None
+
+    composer_originals = {
+        name: module._resolve_footprint
+        for name, module in list(sys.modules.items())
+        if module is not None and hasattr(module, '_resolve_footprint')
+    }
+    extension_original = getattr(extension_base, '_resolve_plan_footprint', None) if extension_base else None
+
+    yield
+
+    for name, original in composer_originals.items():
+        module = sys.modules.get(name)
+        if module is not None:
+            module._resolve_footprint = original
+    if extension_base is not None and extension_original is not None:
+        extension_base._resolve_plan_footprint = extension_original
+
+
+@pytest.fixture(autouse=True)
 def _materialize_declared_plan_dirs(request):
     """Create ``plans/{plan_id}/`` for every id the module under test DECLARES.
 
