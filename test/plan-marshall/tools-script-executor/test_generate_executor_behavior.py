@@ -12,6 +12,7 @@ handlers / main() dispatch — all paths the existing subprocess-and-fixture sui
 leaves untouched.
 """
 
+import json
 import os
 import subprocess
 import sys
@@ -19,6 +20,7 @@ import types
 from pathlib import Path
 
 import pytest
+import target_context
 
 from conftest import _MARKETPLACE_SCRIPT_DIRS, PROJECT_ROOT, load_script_module
 
@@ -107,18 +109,59 @@ def _load_template_module() -> types.ModuleType:
 
 
 # =============================================================================
-# read_marshal_target — walk-up resolution of runtime.target from marshal.json
+# Shared target resolution — the cascade the generator's verbs all read through
 # =============================================================================
+#
+# The old reader these cases replace was ``generate_executor.read_marshal_target``:
+# a marshal.json-ONLY walk that answered 'claude' for an absent file, an
+# unreadable one, a malformed one and one carrying no ``runtime.target`` alike.
+# The cases below therefore pin the TIER, not just the value — a reader that
+# returned 'claude' for everything would satisfy a value-only assertion and
+# would be the defect again.
 
 
 @pytest.mark.parametrize(
-    ('marshal_body', 'expected_target'),
+    ('env_signal', 'expected_target', 'expected_source'),
     [
-        ('{"runtime": {"target": "opencode"}}', 'opencode'),
-        (None, 'claude'),
-        ('{not valid json', 'claude'),
-        ('{"other": {"target": "opencode"}}', 'claude'),
-        ('{"runtime": "opencode"}', 'claude'),
+        ('ANTIGRAVITY_AGENT', 'antigravity', 'env'),
+        ('OPENCODE', 'opencode', 'env'),
+        ('OPENCODE_PID', 'opencode', 'env'),
+        ('CLAUDE_CODE_SESSION_ID', 'claude', 'env'),
+    ],
+    ids=['antigravity-signal', 'opencode-signal', 'opencode-pid-signal', 'claude-signal'],
+)
+def test_env_tier_outranks_marshal_json(monkeypatch, tmp_path, env_signal, expected_target, expected_source):
+    """A platform env signal decides the target even when marshal.json disagrees.
+
+    The env leg is the one the removed reader never had: it read config only, so
+    a machine whose only deployment is OpenCode was told ``claude`` no matter
+    what its runtime injected. Each row writes a CONTRADICTING ``runtime.target``
+    so a reader that consulted marshal.json first would answer wrongly.
+    """
+    for name in ('ANTIGRAVITY_AGENT', 'OPENCODE', 'OPENCODE_PID', 'CLAUDE_CODE_SESSION_ID'):
+        monkeypatch.delenv(name, raising=False)
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    (plan_dir / 'marshal.json').write_text(
+        json.dumps({'runtime': {'target': 'claude' if expected_target != 'claude' else 'opencode'}}),
+        encoding='utf-8',
+    )
+    monkeypatch.setenv(env_signal, '1')
+
+    resolved = target_context.resolve_target(cwd=tmp_path)
+
+    assert resolved['target'] == expected_target
+    assert resolved['target_source'] == expected_source
+
+
+@pytest.mark.parametrize(
+    ('marshal_body', 'expected_target', 'expected_source', 'expected_reason'),
+    [
+        ('{"runtime": {"target": "opencode"}}', 'opencode', 'marshal_json', ''),
+        (None, target_context.default_target(), 'fallback', 'marshal_json_absent'),
+        ('{not valid json', target_context.default_target(), 'fallback', 'marshal_json_malformed'),
+        ('{"other": {"target": "opencode"}}', target_context.default_target(), 'fallback', 'runtime_target_absent'),
+        ('{"runtime": "opencode"}', target_context.default_target(), 'fallback', 'runtime_target_absent'),
     ],
     ids=[
         'declared-target-is-returned-verbatim',
@@ -128,26 +171,45 @@ def _load_template_module() -> types.ModuleType:
         'runtime-is-a-scalar-not-a-mapping',
     ],
 )
-def test_read_marshal_target(tmp_path, marshal_body, expected_target):
-    """A declared runtime.target is returned; every unusable shape reads 'claude'.
+def test_config_tier_reports_its_own_fall_through_reason(
+    monkeypatch, outside_repo_dir, marshal_body, expected_target, expected_source, expected_reason
+):
+    """A declared target resolves; each unusable shape names its OWN condition.
 
     ``marshal_body`` of ``None`` writes no file at all, so the walk reaches the
-    filesystem root without a hit. The remaining defaulting rows are the ways a
-    file that DOES exist can fail to name a target: unparseable JSON, no
-    ``runtime`` key, and a ``runtime`` that is a scalar rather than a mapping.
-    The first row is their matched control — a reader that always answered
-    'claude' would fail on it rather than satisfy every defaulting row.
+    filesystem root without a hit. The first row is the matched positive control
+    for the rest: a reader that always answered the fallback would fail on it
+    rather than satisfy every defaulting row.
 
-    The scalar row's value is deliberately NOT 'claude': a scalar equal to the
-    fallback would let a reader that dropped the mapping check and returned the
-    scalar verbatim pass anyway.
+    The root is OUTSIDE the repo because pytest's basetemp is repo-local, and a
+    ``tmp_path`` root would find the real ``.plan/marshal.json`` above it — the
+    absent-config row would then measure the developer's checkout.
+
+    The scalar row's value is deliberately NOT the fallback: a reader that
+    dropped the mapping check and returned the scalar verbatim would pass every
+    value-only assertion in this file.
     """
+    for name in ('ANTIGRAVITY_AGENT', 'OPENCODE', 'OPENCODE_PID', 'CLAUDE_CODE_SESSION_ID'):
+        monkeypatch.delenv(name, raising=False)
+    root = outside_repo_dir / 'project'
+    root.mkdir()
     if marshal_body is not None:
-        plan_dir = tmp_path / '.plan'
+        plan_dir = root / '.plan'
         plan_dir.mkdir()
         (plan_dir / 'marshal.json').write_text(marshal_body, encoding='utf-8')
 
-    assert _gen.read_marshal_target(cwd=tmp_path) == expected_target
+    resolved = target_context.resolve_target(cwd=root)
+
+    assert resolved['target'] == expected_target
+    assert resolved['target_source'] == expected_source
+    assert resolved['reason'] == expected_reason
+
+
+def test_the_generator_reads_its_target_from_the_shared_resolver():
+    """The module binds the shared resolver, not a private marshal.json walk."""
+    assert _gen.resolve_target is target_context.resolve_target
+    assert _gen.resolve_context is target_context.resolve_context
+    assert not hasattr(_gen, 'read_marshal_target')
 
 
 # =============================================================================
@@ -270,6 +332,12 @@ def test_discover_local_scripts_empty_when_target_resolves_no_roots(monkeypatch,
 # written as a literal: a hard-coded version turns this fixture into a
 # permanent format skew the moment the real version is bumped, and the failure
 # then reads as "generation broke" instead of "the fixture is stale".
+#
+# ``{{SHARED_MODULE_DIRS}}`` sits inside a collection literal for the same reason
+# the real template puts it there: the generator emits that placeholder's lines
+# INDENTED, so a fixture with the slot at column 0 only ever compiled because the
+# substituted content was the ``# (none detected)`` comment, where indentation is
+# free. Modelling the real shape is what lets this fixture carry real shared dirs.
 _TEMPLATE_BODY = (
     f'# TEMPLATE_FORMAT_VERSION: {_gen._SUPPORTED_TEMPLATE_FORMAT_VERSION}\n'
     'SCRIPTS = {\n'
@@ -279,7 +347,9 @@ _TEMPLATE_BODY = (
     '{{SCRIPT_SURFACES}}\n'
     '}\n'
     'LOGGING_DIR = "{{LOGGING_DIR}}"\n'
+    '_BOOTSTRAP_SKILL_DIRS = [\n'
     '{{SHARED_MODULE_DIRS}}\n'
+    ']\n'
     'EXTRA = [{{EXTRA_SCRIPT_DIRS}}]\n'
     'PLAN_DIR_NAME = "{{PLAN_DIR_NAME}}"\n'
     'EXECUTOR_TARGET = "{{EXECUTOR_TARGET}}"\n'
@@ -292,14 +362,32 @@ def _build_synthetic_base(tmp_path: Path) -> Path:
 
     ``generate_executor`` resolves the template via
     ``get_templates_dir(base)`` → ``<base>/plan-marshall/skills/
-    tools-script-executor/templates/execute-script.py.template``. Only that file
-    is required for the writer to run; the logging/shared dirs resolve to
-    non-existent paths and degrade gracefully.
+    tools-script-executor/templates/execute-script.py.template``.
+
+    The tree ALSO carries the logging-module directory and the five shared-module
+    directories the writer refuses to fabricate. Generation is fail-closed on
+    both: a missing logging directory fails the run rather than emitting an
+    executor that cannot import ``plan_logging``, and an empty shared-module set
+    may only be emitted as ``# (none detected)`` when script-discovery coverage
+    was established. A synthetic base carrying neither would therefore be refused
+    for its own emptiness, and every writer test would measure that refusal
+    instead of the substitution it is about. The negative cases for both guards
+    live beside their own tests and stub these resolvers directly.
     """
-    templates = tmp_path / 'base' / 'plan-marshall' / 'skills' / 'tools-script-executor' / 'templates'
+    base = tmp_path / 'base'
+    templates = base / 'plan-marshall' / 'skills' / 'tools-script-executor' / 'templates'
     templates.mkdir(parents=True)
     (templates / 'execute-script.py.template').write_text(_TEMPLATE_BODY, encoding='utf-8')
-    return tmp_path / 'base'
+    (base / 'plan-marshall' / 'skills' / 'manage-logging' / 'scripts').mkdir(parents=True)
+    for shared in (
+        'tools-file-ops',
+        'tools-input-validation',
+        'ref-toon-format',
+        'script-shared',
+        'manage-change-ledger',
+    ):
+        (base / 'plan-marshall' / 'skills' / shared / 'scripts').mkdir(parents=True)
+    return base
 
 
 def test_generate_executor_dry_run_does_not_write(tmp_path, monkeypatch, capsys):
@@ -675,7 +763,7 @@ def test_cmd_generate_flattens_stats_into_fail_open_error(tmp_path, monkeypatch)
     monkeypatch.setattr(_gen, 'get_base_path', lambda **k: tmp_path)
     monkeypatch.setattr(_gen, 'discover_scripts', lambda base: {'a:b:c': '/p/c.py'})
     monkeypatch.setattr(_gen, 'discover_local_scripts', lambda: {})
-    monkeypatch.setattr(_gen, 'read_marshal_target', lambda: 'claude')
+    monkeypatch.setattr(_gen, 'assess_discovery_coverage', lambda base, discovered: _passing_coverage())
     monkeypatch.setattr(
         _gen,
         'generate_executor',
@@ -696,6 +784,485 @@ def test_cmd_generate_flattens_stats_into_fail_open_error(tmp_path, monkeypatch)
     assert result['surfaces_not_derivable'] == 3
     # The nested block is flattened away, not left as a sub-mapping.
     assert 'surface_stats' not in result
+
+
+# =============================================================================
+# Discovery coverage — the guard that stops a resolver failure being laundered
+# into a fact about the world
+# =============================================================================
+
+
+def _passing_coverage(discovered: int = 1) -> dict:
+    """A coverage verdict that established full coverage over ``discovered`` notations."""
+    return {
+        'coverage_ok': True,
+        'scripts_enumerated': discovered,
+        'scripts_expected': discovered,
+        'scripts_discovered': discovered,
+        'exclusions': dict.fromkeys(_gen.DISCOVERY_EXCLUSION_RULES, 0),
+        'missing_notations': [],
+    }
+
+
+def _failing_coverage(enumerated: int, discovered: int, missing: list[str]) -> dict:
+    """A coverage verdict for a scan short of the tree by ``enumerated - discovered``."""
+    return {
+        'coverage_ok': False,
+        'scripts_enumerated': enumerated,
+        'scripts_expected': enumerated,
+        'scripts_discovered': discovered,
+        'exclusions': dict.fromkeys(_gen.DISCOVERY_EXCLUSION_RULES, 0),
+        'missing_notations': missing,
+    }
+
+
+def _stub_discovery(monkeypatch, base: Path, mappings: dict[str, str] | Exception):
+    """Pin the base path and the discovery result ``cmd_generate`` will read.
+
+    ``mappings`` may be an exception instance, which is how the ``SystemExit``
+    the inventory raises on an unavailable scan is injected: it is a
+    ``BaseException``, so a stub returning a mapping cannot stand in for it.
+    """
+    monkeypatch.setattr(_gen, 'get_base_path', lambda **k: base)
+    monkeypatch.setattr(_gen, 'discover_scripts_fallback', lambda b: {})
+    monkeypatch.setattr(_gen, 'discover_local_scripts', lambda: {})
+    if isinstance(mappings, BaseException):
+        monkeypatch.setattr(_gen, 'discover_scripts', lambda b: (_ for _ in ()).throw(mappings))
+    else:
+        monkeypatch.setattr(_gen, 'discover_scripts', lambda b: mappings)
+
+
+def _generate_args() -> types.SimpleNamespace:
+    """The argv namespace ``generate`` parses, as a verb's own call site supplies it."""
+    return types.SimpleNamespace(marketplace=False, marketplace_root=None, dry_run=False, target=None)
+
+
+def test_enumeration_excludes_named_categories_and_reports_their_counts(tmp_path):
+    """The declared exclusions are named rules with counts, not an unstated tolerance.
+
+    A tree of two public scripts, one private module and one ``__pycache__``
+    artefact. The private module must appear under its NAMED category — a
+    threshold that silently absorbed it would let a genuinely truncated scan pass
+    with the same numbers a complete one produces.
+    """
+    scripts = tmp_path / 'demo' / 'skills' / 'demo-skill' / 'scripts'
+    scripts.mkdir(parents=True)
+    (tmp_path / 'demo' / '.claude-plugin').mkdir(parents=True)
+    (tmp_path / 'demo' / '.claude-plugin' / 'plugin.json').write_text('{}', encoding='utf-8')
+    (scripts / 'entry.py').write_text('# public', encoding='utf-8')
+    (scripts / 'other.py').write_text('# public', encoding='utf-8')
+    (scripts / '_internal.py').write_text('# private', encoding='utf-8')
+    pycache = scripts / '__pycache__'
+    pycache.mkdir()
+    (pycache / 'entry.cpython-312.pyc').write_bytes(b'\x00')
+
+    notations, excluded, counts = _gen.enumerate_script_notations(tmp_path)
+
+    assert notations == {'demo:demo-skill:entry', 'demo:demo-skill:other'}
+    assert counts == {'private_module': 1}
+    assert len(excluded) == 1
+
+
+def test_every_exclusion_rule_is_reachable_from_the_candidate_set(tmp_path):
+    """A rule naming a condition the enumeration cannot reach is a rule excluding nothing.
+
+    The candidate set is ``*.py``/``*.sh`` under a ``scripts/`` directory, so a
+    ``__pycache__`` artefact is never a candidate and a rule naming it would
+    document a condition that does not exist — indistinguishable from a rule that
+    was forgotten. This row drives every declared category and requires it to
+    fire, so adding an unreachable rule is a red test rather than a comment.
+    """
+    bundle = tmp_path / 'demo'
+    (bundle / '.claude-plugin').mkdir(parents=True)
+    (bundle / '.claude-plugin' / 'plugin.json').write_text('{}', encoding='utf-8')
+    scripts = bundle / 'skills' / 'demo-skill' / 'scripts'
+    scripts.mkdir(parents=True)
+    (scripts / 'entry.py').write_text('# public', encoding='utf-8')
+    (scripts / '_private.py').write_text('# private', encoding='utf-8')
+
+    _notations, _excluded, counts = _gen.enumerate_script_notations(tmp_path)
+
+    assert set(counts) == set(_gen.DISCOVERY_EXCLUSION_RULES)
+    assert all(count > 0 for count in counts.values()), f'a declared rule never fired: {counts}'
+
+
+def test_enumeration_ignores_scripts_outside_a_skills_tree(tmp_path):
+    """A script file that is not under ``skills/**/scripts/**`` is not a notation.
+
+    The predicate is the LAYOUT, not the file extension: a stray ``.py`` at a
+    bundle root would otherwise inflate the expected count and fail every
+    generation on a tree that carries one.
+    """
+    bundle = tmp_path / 'demo'
+    (bundle / '.claude-plugin').mkdir(parents=True)
+    (bundle / '.claude-plugin' / 'plugin.json').write_text('{}', encoding='utf-8')
+    (bundle / 'build.py').write_text('# stray', encoding='utf-8')
+    (bundle / 'skills' / 'demo-skill').mkdir(parents=True)
+    (bundle / 'skills' / 'demo-skill' / 'build.py').write_text('# beside scripts', encoding='utf-8')
+
+    notations, _excluded, _counts = _gen.enumerate_script_notations(tmp_path)
+
+    assert notations == set()
+
+
+def test_enumeration_attributes_a_subdirectory_script_to_its_skill(tmp_path):
+    """``scripts/build/x.py`` belongs to the skill that OWNS ``scripts/``.
+
+    The inventory derives the skill name the same way, so a sub-directory script
+    must land on the same notation here or the coverage guard would report every
+    organised layout as a shortfall.
+    """
+    bundle = tmp_path / 'demo'
+    (bundle / '.claude-plugin').mkdir(parents=True)
+    (bundle / '.claude-plugin' / 'plugin.json').write_text('{}', encoding='utf-8')
+    sub = bundle / 'skills' / 'demo-skill' / 'scripts' / 'build'
+    sub.mkdir(parents=True)
+    (sub / 'shared.py').write_text('# organised', encoding='utf-8')
+
+    notations, _excluded, _counts = _gen.enumerate_script_notations(tmp_path)
+
+    assert notations == {'demo:demo-skill:shared'}
+
+
+def test_enumeration_counts_each_notation_once_for_a_colliding_stem(tmp_path):
+    """Two files sharing a stem are ONE expected notation, because the map is keyed by notation.
+
+    ``foo.py`` and ``foo.sh`` in one skill both derive ``{bundle}:{skill}:foo``,
+    and the discovered mapping holds a single entry for it. Counting FILES would
+    report a shortfall of one against a tree that is in fact fully covered, and
+    fail every generation on it.
+    """
+    bundle = tmp_path / 'demo'
+    (bundle / '.claude-plugin').mkdir(parents=True)
+    (bundle / '.claude-plugin' / 'plugin.json').write_text('{}', encoding='utf-8')
+    scripts = bundle / 'skills' / 'demo-skill' / 'scripts'
+    scripts.mkdir(parents=True)
+    (scripts / 'entry.py').write_text('# python', encoding='utf-8')
+    (scripts / 'entry.sh').write_text('# shell', encoding='utf-8')
+
+    notations, _excluded, _counts = _gen.enumerate_script_notations(tmp_path)
+
+    assert notations == {'demo:demo-skill:entry'}
+
+
+def test_assess_coverage_passes_when_nothing_is_missing(tmp_path):
+    """A scan that reported everything the tree holds establishes coverage."""
+    bundle = tmp_path / 'demo'
+    (bundle / '.claude-plugin').mkdir(parents=True)
+    (bundle / '.claude-plugin' / 'plugin.json').write_text('{}', encoding='utf-8')
+    scripts = bundle / 'skills' / 'demo-skill' / 'scripts'
+    scripts.mkdir(parents=True)
+    (scripts / 'entry.py').write_text('# public', encoding='utf-8')
+
+    coverage = _gen.assess_discovery_coverage(tmp_path, {'demo:demo-skill:entry': '/p/entry.py'})
+
+    assert coverage['coverage_ok'] is True
+    assert coverage['missing_notations'] == []
+    assert coverage['scripts_enumerated'] == coverage['scripts_discovered'] == 1
+
+
+def test_assess_coverage_passes_on_a_genuinely_empty_tree(tmp_path):
+    """An empty tree AND an empty scan is a measurement, not a shortfall.
+
+    This is the third of ``drift``'s three outcomes, and it is only honest
+    because the counts travel with it: the same two zeros appear when a scan
+    silently found nothing, and only ``coverage_ok`` separates them.
+    """
+    coverage = _gen.assess_discovery_coverage(tmp_path, {})
+
+    assert coverage['coverage_ok'] is True
+    assert coverage['scripts_enumerated'] == 0
+    assert coverage['scripts_discovered'] == 0
+
+
+def test_assess_coverage_fails_and_names_the_shortfall(tmp_path):
+    """A scan that dropped a notation fails, and the payload names what it dropped."""
+    bundle = tmp_path / 'demo'
+    (bundle / '.claude-plugin').mkdir(parents=True)
+    (bundle / '.claude-plugin' / 'plugin.json').write_text('{}', encoding='utf-8')
+    scripts = bundle / 'skills' / 'demo-skill' / 'scripts'
+    scripts.mkdir(parents=True)
+    (scripts / 'kept.py').write_text('# kept', encoding='utf-8')
+    (scripts / 'dropped.py').write_text('# dropped', encoding='utf-8')
+
+    coverage = _gen.assess_discovery_coverage(tmp_path, {'demo:demo-skill:kept': '/p/kept.py'})
+
+    assert coverage['coverage_ok'] is False
+    assert coverage['missing_notations'] == ['demo:demo-skill:dropped']
+    assert coverage['scripts_enumerated'] == 2
+    assert coverage['scripts_discovered'] == 1
+
+
+def test_assess_coverage_caps_the_missing_sample(tmp_path):
+    """A wholly empty scan against a large tree cannot turn the payload into a second report."""
+    bundle = tmp_path / 'demo'
+    (bundle / '.claude-plugin').mkdir(parents=True)
+    (bundle / '.claude-plugin' / 'plugin.json').write_text('{}', encoding='utf-8')
+    scripts = bundle / 'skills' / 'demo-skill' / 'scripts'
+    scripts.mkdir(parents=True)
+    for index in range(_gen._MISSING_NOTATION_SAMPLE + 10):
+        (scripts / f'script_{index:03d}.py').write_text('# many', encoding='utf-8')
+
+    coverage = _gen.assess_discovery_coverage(tmp_path, {})
+
+    assert coverage['coverage_ok'] is False
+    assert len(coverage['missing_notations']) == _gen._MISSING_NOTATION_SAMPLE
+    # The COUNTS are not capped — only the sample is, so the magnitude survives.
+    assert coverage['scripts_enumerated'] == _gen._MISSING_NOTATION_SAMPLE + 10
+
+
+def test_cmd_generate_refuses_an_under_covered_scan(tmp_path, monkeypatch):
+    """A truncated scan fails generation, with the discrepancy in the payload.
+
+    The generator is stubbed to prove the refusal happens BEFORE any write: a
+    guard that ran after the write would still produce an executor, and the
+    ``generate_executor`` stub would never be reached with a green result.
+    """
+    _stub_discovery(monkeypatch, tmp_path, {'a:b:c': '/p/c.py'})
+    monkeypatch.setattr(_gen, 'assess_discovery_coverage', lambda base, discovered: _failing_coverage(5, 1, ['x:y:z']))
+    monkeypatch.setattr(
+        _gen,
+        'generate_executor',
+        lambda *a, **k: pytest.fail('generation must not run on an under-covered scan'),
+    )
+
+    result = _gen.cmd_generate(_generate_args())
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'discovery_coverage_incomplete'
+    assert result['scripts_enumerated'] == 5
+    assert result['scripts_discovered'] == 1
+    assert result['missing_notations'] == ['x:y:z']
+    assert set(result['exclusion_rules']) == set(_gen.DISCOVERY_EXCLUSION_RULES)
+
+
+def test_cmd_generate_refuses_an_empty_scan_against_a_non_empty_tree(tmp_path, monkeypatch):
+    """An empty scan fails identically to a truncated one — they are one defect class."""
+    _stub_discovery(monkeypatch, tmp_path, {})
+    monkeypatch.setattr(_gen, 'assess_discovery_coverage', lambda base, discovered: _failing_coverage(9, 0, []))
+    monkeypatch.setattr(
+        _gen,
+        'generate_executor',
+        lambda *a, **k: pytest.fail('generation must not run on an empty scan'),
+    )
+
+    result = _gen.cmd_generate(_generate_args())
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'discovery_coverage_incomplete'
+    assert result['scripts_discovered'] == 0
+    assert result['scripts_enumerated'] == 9
+
+
+def test_cmd_generate_falls_back_then_fails_closed_on_the_fallback(tmp_path, monkeypatch):
+    """The glob fallback is attempted, and its known-truncation is what fails.
+
+    The fallback's globbing rules are narrower than the inventory's (``.py``
+    only, top level only, tests dropped), so on any real tree it cannot reach
+    full coverage. The point of this case is that the fallback is still TRIED —
+    a tree where it happens to suffice must generate — and that a shortfall it
+    does produce is refused rather than accepted.
+    """
+    _stub_discovery(monkeypatch, tmp_path, SystemExit(2))
+    monkeypatch.setattr(_gen, 'discover_scripts_fallback', lambda b: {'a:b:c': '/p/c.py'})
+    monkeypatch.setattr(_gen, 'assess_discovery_coverage', lambda base, discovered: _failing_coverage(4, 1, ['q:r:s']))
+    monkeypatch.setattr(
+        _gen,
+        'generate_executor',
+        lambda *a, **k: pytest.fail('generation must not run on a truncated fallback scan'),
+    )
+
+    result = _gen.cmd_generate(_generate_args())
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'discovery_coverage_incomplete'
+    assert result['scripts_discovered'] == 1
+
+
+def test_cmd_generate_refuses_an_unusable_context(tmp_path, monkeypatch):
+    """A ``--marketplace-root`` that is not a usable path is refused at the resolver.
+
+    The refusal is reported as a structured error rather than raised out of the
+    verb, so the TOON contract (``status:`` on every expected failure) holds for
+    caller-input rejections too.
+    """
+    monkeypatch.setattr(_gen, 'get_base_path', lambda **k: pytest.fail('no base resolution may run'))
+    args = types.SimpleNamespace(marketplace=False, marketplace_root=Path('..') / 'escape', dry_run=False, target=None)
+
+    result = _gen.cmd_generate(args)
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_context'
+    assert 'traversal' in result['detail']
+
+
+def test_marketplace_root_for_base_names_the_containing_directory(tmp_path):
+    """The anchor handed to a subprocess is the directory CONTAINING ``marketplace/``.
+
+    ``find_marketplace_path`` joins ``marketplace/bundles`` onto whatever anchor
+    it is given, so handing it ``.../marketplace`` would make it look for
+    ``.../marketplace/marketplace/bundles`` and resolve nothing. A cache base
+    has no marketplace anchor at all and must yield ``None`` rather than a guess.
+    """
+    bundles = tmp_path / 'marketplace' / 'bundles'
+    bundles.mkdir(parents=True)
+
+    assert _gen.marketplace_root_for_base(bundles) == tmp_path
+    assert _gen.marketplace_root_for_base(Path('/Users/x/.claude/plugins/cache/plan-marshall/0.1.1')) is None
+
+
+def test_cmd_drift_reports_a_resolver_failure_as_an_error(tmp_path, monkeypatch):
+    """A discovery failure is an error, never a removal list.
+
+    The pre-fix verb substituted ``{}`` for the current set, so
+    ``removed = executor_set - set()`` reported EVERY executor mapping as removed
+    under ``status: success``. This case pins the opposite: an error, naming the
+    failure and the coverage it could still establish.
+    """
+    monkeypatch.setattr(_gen, 'get_executor_mappings', lambda: {'a:b:c': '/p/c.py', 'd:e:f': '/p/f.py'})
+    _stub_discovery(monkeypatch, tmp_path, SystemExit(2))
+    monkeypatch.setattr(_gen, 'assess_discovery_coverage', lambda base, discovered: _failing_coverage(3, 0, []))
+
+    result = _gen.cmd_drift(_generate_args())
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'bundles_state_unresolvable'
+    assert 'removed' not in result, 'a resolver failure must never be reported as a removal list'
+    assert result['executor_scripts'] == 2
+    assert result['scripts_enumerated'] == 3
+    assert 'SystemExit' in result['detail']
+
+
+def test_cmd_drift_reports_an_under_covered_scan_as_an_error(tmp_path, monkeypatch):
+    """A scan that returned but is short of the tree is an error too.
+
+    The distinct second refusal path: ``discover_scripts`` SUCCEEDED, so the
+    ``SystemExit`` handler never fired, and only the coverage verdict can catch
+    it. Without this case a verb that handled the exception but not the
+    truncation would pass the row above.
+    """
+    monkeypatch.setattr(_gen, 'get_executor_mappings', lambda: {'a:b:c': '/p/c.py'})
+    _stub_discovery(monkeypatch, tmp_path, {'x:y:z': '/p/z.py'})
+    monkeypatch.setattr(_gen, 'assess_discovery_coverage', lambda base, discovered: _failing_coverage(7, 1, ['x:y:z']))
+
+    result = _gen.cmd_drift(_generate_args())
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'bundles_state_under_covered'
+    assert 'removed' not in result
+    assert result['missing_notations'] == ['x:y:z']
+
+
+def test_cmd_drift_claims_an_empty_set_only_when_coverage_supports_it(tmp_path, monkeypatch):
+    """A genuinely empty current set succeeds AND carries the counts that prove it.
+
+    The third outcome. ``removed: 1`` here is the honest reading of a populated
+    executor against a tree that carries nothing — what the two error paths used
+    to produce by laundering a failure. What separates the three outcomes is
+    ``status`` plus the enumerated count beside the zero, not ``drift_status``.
+    """
+    monkeypatch.setattr(_gen, 'get_executor_mappings', lambda: {'a:b:c': '/p/c.py'})
+    _stub_discovery(monkeypatch, tmp_path, {})
+    monkeypatch.setattr(_gen, 'assess_discovery_coverage', lambda base, discovered: _passing_coverage(0))
+    monkeypatch.setattr(_gen, '_detect_notation_drift', lambda registered, base: [])
+
+    result = _gen.cmd_drift(_generate_args())
+
+    assert result['status'] == 'success'
+    assert result['bundles_scripts'] == 0
+    assert result['scripts_enumerated'] == 0
+    assert result['scripts_discovered'] == 0
+    # The counts are what a reader needs to tell this from a truncated scan: the
+    # same two zeros, on a run that failed to establish coverage.
+    assert 'error' not in result
+
+
+def test_cmd_drift_reports_a_real_comparison_with_the_counts(tmp_path, monkeypatch):
+    """The success path is unchanged apart from the counts it now carries."""
+    monkeypatch.setattr(_gen, 'get_executor_mappings', lambda: {'a:b:c': '/old/c.py', 'gone:e:f': '/p/f.py'})
+    _stub_discovery(monkeypatch, tmp_path, {'a:b:c': '/new/c.py'})
+    monkeypatch.setattr(_gen, 'assess_discovery_coverage', lambda base, discovered: _passing_coverage(1))
+    monkeypatch.setattr(_gen, '_detect_notation_drift', lambda registered, base: [])
+
+    result = _gen.cmd_drift(_generate_args())
+
+    assert result['status'] == 'success'
+    assert result['changed'] == 1
+    assert result['removed'] == 1
+    assert result['scripts_enumerated'] == 1
+    assert result['scripts_discovered'] == 1
+
+
+def test_generate_executor_refuses_a_missing_logging_module_directory(tmp_path, monkeypatch):
+    """A logging dir that does not exist fails generation instead of being substituted.
+
+    The generated executor imports ``plan_logging`` from this path before it can
+    log anything, so emitting one against a missing directory produces a file
+    whose very first operation fails — with a green ``status: success``.
+    """
+    monkeypatch.setattr(_gen, 'get_logging_scripts_dir', lambda base: tmp_path / 'nowhere' / 'scripts')
+    monkeypatch.setattr(_gen, 'get_shared_module_dirs', lambda base: [tmp_path])
+
+    result = _gen.generate_executor({'a:b:c': '/p/c.py'}, tmp_path, dry_run=True, coverage=_passing_coverage(1))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'logging_module_dir_missing'
+    assert 'nowhere' in result['logging_dir']
+
+
+def test_generate_executor_refuses_the_none_detected_degradation_unless_coverage_holds(tmp_path, monkeypatch):
+    """``# (none detected)`` is a claim about the world, so coverage must back it.
+
+    With shared-module resolution empty AND no established coverage, the emitted
+    comment would be indistinguishable from a genuine "this tree has no shared
+    modules", so the generation is refused and the payload says coverage was not
+    established.
+    """
+    monkeypatch.setattr(_gen, 'get_logging_scripts_dir', lambda base: tmp_path)
+    monkeypatch.setattr(_gen, 'get_shared_module_dirs', lambda base: [])
+
+    result = _gen.generate_executor({'a:b:c': '/p/c.py'}, tmp_path, dry_run=True, coverage=None)
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'shared_module_dirs_unresolved'
+    assert result['scripts_enumerated'] == 0
+    assert result['scripts_discovered'] == 0
+
+
+def test_generate_executor_refuses_the_degradation_on_a_failing_verdict(tmp_path, monkeypatch):
+    """An ASSESSED-but-failing verdict refuses too, with the discrepancy attached."""
+    monkeypatch.setattr(_gen, 'get_logging_scripts_dir', lambda base: tmp_path)
+    monkeypatch.setattr(_gen, 'get_shared_module_dirs', lambda base: [])
+
+    result = _gen.generate_executor(
+        {'a:b:c': '/p/c.py'},
+        tmp_path,
+        dry_run=True,
+        coverage=_failing_coverage(6, 1, ['x:y:z']),
+    )
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'shared_module_dirs_unresolved'
+    assert result['scripts_enumerated'] == 6
+    assert result['missing_notations'] == ['x:y:z']
+
+
+def test_generate_executor_emits_the_degradation_when_coverage_holds(tmp_path, monkeypatch):
+    """The matched positive control: with coverage established, the zero is a measurement.
+
+    Without this row the three rows above would also pass on a generator that
+    simply refused EVERY empty shared-module set — which would break generation
+    on any tree that genuinely has none. The assertion is that the run gets PAST
+    the guard: the guard's only output is an error dict, so a success verdict is
+    the observable that it declined to fire.
+    """
+    monkeypatch.setattr(_gen, 'get_logging_scripts_dir', lambda base: tmp_path)
+    monkeypatch.setattr(_gen, 'get_shared_module_dirs', lambda base: [])
+
+    result = _gen.generate_executor({'a:b:c': '/p/c.py'}, tmp_path, dry_run=True, coverage=_passing_coverage(1))
+
+    assert result['status'] == 'success', result
+    assert result['dry_run'] is True
 
 
 # =============================================================================

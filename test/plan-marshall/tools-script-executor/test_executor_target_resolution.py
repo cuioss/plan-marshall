@@ -3,10 +3,11 @@
 """Tests for target-aware executor resolution in generate_executor.py.
 
 Covers:
-  - read_marshal_target: marshal.json upward walk and target extraction
+  - the six-verb propagation matrix: every target-resolving verb reaches the
+    same answer under each of the three cascade tiers
   - generate_target_aware_resolver_code: emits correct resolver per target
-  - Claude resolver (_resolve_notation_by_target): plugin-cache glob walk
-  - OpenCode resolver (_resolve_notation_by_target): 7-root walk
+  - Claude resolver (_resolve_notation_by_target): tree-first, then plugin-cache
+  - OpenCode resolver (_resolve_notation_by_target): tree-first, then 7-root walk
   - Absolute-path conversion for both targets
   - Integration: resolver round-trip for a real notation on each target
 """
@@ -19,11 +20,29 @@ import types
 from pathlib import Path
 
 import pytest
-
+import target_context
 from conftest import MARKETPLACE_ROOT, _MARKETPLACE_SCRIPT_DIRS, get_scripts_dir
+from target_context import SOURCE_ENV, SOURCE_FALLBACK, SOURCE_MARSHAL_JSON
 
 SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'tools-script-executor')
 GENERATE_SCRIPT = SCRIPTS_DIR / 'generate_executor.py'
+
+#: The six verbs that resolve a target. Derived from the module's own parser
+#: rather than restated, so a verb that gains or loses ``--target`` shows up
+#: here as a roster change instead of silently escaping the matrix.
+TARGET_RESOLVING_VERBS = ('generate', 'verify', 'bootstrap', 'drift', 'preflight', 'paths')
+
+#: Every platform env signal the cascade reads. Cleared before each tier case so
+#: the developer's own runtime cannot decide the outcome.
+PLATFORM_ENV_SIGNALS = ('ANTIGRAVITY_AGENT', 'OPENCODE', 'OPENCODE_PID', 'CLAUDE_CODE_SESSION_ID')
+
+
+@pytest.fixture()
+def no_platform_signal(monkeypatch):
+    """Clear every platform env signal so the cascade tier under test is the only input."""
+    for name in PLATFORM_ENV_SIGNALS:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.delenv(target_context.MARKETPLACE_ROOT_ENV, raising=False)
 
 
 def _load_generate_executor() -> types.ModuleType:
@@ -49,61 +68,294 @@ def _exec_resolver(resolver_code: str) -> types.ModuleType:
     return ns
 
 
-class TestReadMarshalTarget:
-    """Tests for the marshal.json target extractor."""
+class TestTargetFlagIsRegisteredOnEveryVerb:
+    """``--target`` is registered on all six verbs, from ONE shared definition.
+
+    The roster and the accept-set are read back out of the production parser
+    rather than restated, so a verb that dropped the flag, or a list that
+    drifted from its siblings', fails here instead of in a user's terminal.
+    """
+
+    def test_roster_matches_the_parser(self):
+        """The constant above is the parser's own roster, not a copy of it."""
+        module = _load_generate_executor()
+        subparsers = module.build_parser()._subparsers._group_actions[0].choices
+        verbs_with_target = [
+            verb
+            for verb in subparsers
+            if '--target' in {opt for action in subparsers[verb]._actions for opt in action.option_strings}
+        ]
+
+        assert tuple(sorted(verbs_with_target)) == tuple(sorted(TARGET_RESOLVING_VERBS))
+
+    @pytest.mark.parametrize('verb', TARGET_RESOLVING_VERBS, ids=TARGET_RESOLVING_VERBS)
+    def test_each_verb_accepts_the_shared_choice_list(self, verb):
+        """Every verb's ``--target`` carries the same accept-set object."""
+        module = _load_generate_executor()
+        parser = module.build_parser()
+        subparser = parser._subparsers._group_actions[0].choices[verb]
+
+        flag = next(action for action in subparser._actions if '--target' in action.option_strings)
+
+        assert flag.choices == module.TARGET_CHOICES
+        assert flag.choices == ['claude', 'opencode', 'antigravity']
+
+    @pytest.mark.parametrize('verb', TARGET_RESOLVING_VERBS, ids=TARGET_RESOLVING_VERBS)
+    def test_each_verb_documents_the_flag_identically(self, verb):
+        """All six carry the SAME help text, so ``--help`` cannot disagree with itself."""
+        module = _load_generate_executor()
+        subparser = module.build_parser()._subparsers._group_actions[0].choices[verb]
+
+        flag = next(action for action in subparser._actions if '--target' in action.option_strings)
+
+        assert flag.help == module.TARGET_FLAG_HELP
+
+    @pytest.mark.parametrize('verb', TARGET_RESOLVING_VERBS, ids=TARGET_RESOLVING_VERBS)
+    def test_each_verb_parses_an_explicit_target(self, verb):
+        """The flag is not merely registered — it binds the value the verb reads."""
+        module = _load_generate_executor()
+
+        args = module.build_parser().parse_args([verb, '--target', 'opencode'])
+
+        assert args.target == 'opencode'
+        assert module.resolve_verb_context(args)['target'] == 'opencode'
+
+    def test_an_unregistered_target_is_refused_by_every_verb(self):
+        """The shared accept-set rejects an unknown target on each verb alike."""
+        module = _load_generate_executor()
+        parser = module.build_parser()
+
+        for verb in TARGET_RESOLVING_VERBS:
+            with pytest.raises(SystemExit):
+                parser.parse_args([verb, '--target', 'not-a-target'])
+
+
+class TestVerbTargetPropagationMatrix:
+    """The propagation matrix: six verbs × three cascade tiers.
+
+    The requirement is not that each verb resolves correctly but that they
+    resolve IDENTICALLY — a machine with an OpenCode-only deployment must not
+    have one verb reading the env tier while another reads ``marshal.json``.
+    Every case is driven through the production parser and the production
+    ``resolve_verb_context`` a verb calls, so the row measures the shipped path
+    rather than a re-implementation of it.
+    """
+
+    @staticmethod
+    def _resolve_all(module, verb_flags: dict[str, str]) -> dict[str, str]:
+        """Resolve the target for every verb with the given per-verb flags."""
+        parser = module.build_parser()
+        answers: dict[str, str] = {}
+        for verb in TARGET_RESOLVING_VERBS:
+            args = parser.parse_args([verb, *verb_flags.get(verb, ())])
+            answers[verb] = module.resolve_verb_context(args)['target']
+        return answers
+
+    def test_env_tier_reaches_every_verb(self, no_platform_signal, monkeypatch):
+        """With a platform env signal, all six verbs answer that target."""
+        module = _load_generate_executor()
+        monkeypatch.setenv('OPENCODE', '1')
+
+        answers = self._resolve_all(module, {})
+
+        assert set(answers.values()) == {'opencode'}, answers
+
+    def test_marshal_json_tier_reaches_every_verb(self, no_platform_signal, monkeypatch, tmp_path):
+        """With a declared ``runtime.target`` and no env signal, all six answer it."""
+        module = _load_generate_executor()
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / '.plan').mkdir()
+        (tmp_path / '.plan' / 'marshal.json').write_text(
+            json.dumps({'runtime': {'target': 'antigravity'}}), encoding='utf-8'
+        )
+
+        answers = self._resolve_all(module, {})
+
+        assert set(answers.values()) == {'antigravity'}, answers
+
+    def test_fallback_tier_reaches_every_verb(self, no_platform_signal, monkeypatch, outside_repo_dir):
+        """With neither signal, all six answer the same reported fallback."""
+        module = _load_generate_executor()
+        bare = outside_repo_dir / 'bare'
+        bare.mkdir()
+        monkeypatch.chdir(bare)
+
+        answers = self._resolve_all(module, {})
+
+        assert set(answers.values()) == {target_context.default_target()}, answers
 
     @pytest.mark.parametrize(
-        ('marshal_body', 'expected_target'),
+        ('env_signal', 'expected'),
         [
-            (json.dumps({'runtime': {'target': 'opencode'}}), 'opencode'),
-            (json.dumps({'runtime': {'target': 'claude'}}), 'claude'),
-            (None, 'claude'),
-            ('{}', 'claude'),
-            (json.dumps({'runtime': {'target': ''}}), 'claude'),
-            ('not json {{{', 'claude'),
+            ('ANTIGRAVITY_AGENT', 'antigravity'),
+            ('OPENCODE', 'opencode'),
+            ('OPENCODE_PID', 'opencode'),
+            ('CLAUDE_CODE_SESSION_ID', 'claude'),
         ],
-        ids=[
-            'explicit-opencode-target',
-            'explicit-claude-target',
-            'no-marshal-file',
-            'no-runtime-key',
-            'empty-target-string',
-            'malformed-json',
-        ],
+        ids=['antigravity-signal', 'opencode-signal', 'opencode-pid-signal', 'claude-signal'],
     )
-    def test_target_is_read_or_defaults_to_claude(self, tmp_path, marshal_body, expected_target):
-        """A declared target is returned; every unusable declaration reads 'claude'.
+    def test_every_env_signal_reaches_every_verb(self, no_platform_signal, monkeypatch, env_signal, expected):
+        """The tier is not one signal's privilege — all four reach all six verbs.
 
-        ``marshal_body`` of ``None`` writes no file at all — the absent-config
-        case. The remaining defaulting rows enumerate the ways a file that DOES
-        exist can fail to name a target: no ``runtime`` key, an empty target
-        string, and a body that is not JSON. The two explicit rows are their
-        matched positive controls, so a reader that always answered 'claude'
-        would fail here rather than satisfy every defaulting row.
+        Without this row the matrix above would pass on a resolver that read only
+        ``OPENCODE``, which is the exact config-only-plus-one-signal shape the
+        shared resolver replaced.
+        """
+        module = _load_generate_executor()
+        monkeypatch.setenv(env_signal, '1')
+
+        answers = self._resolve_all(module, {})
+
+        assert set(answers.values()) == {expected}, answers
+
+    def test_explicit_flag_reaches_every_verb(self, no_platform_signal, monkeypatch, tmp_path):
+        """``--target`` outranks the cascade on every verb, not only on ``generate``."""
+        module = _load_generate_executor()
+        monkeypatch.setenv('OPENCODE', '1')
+        flags = dict.fromkeys(TARGET_RESOLVING_VERBS, ('--target', 'antigravity'))
+
+        answers = self._resolve_all(module, flags)
+
+        assert set(answers.values()) == {'antigravity'}, answers
+
+    def test_no_verb_reaches_a_different_answer_than_another(self, no_platform_signal, monkeypatch, tmp_path):
+        """The pairwise guarantee, asserted as a set collapse over all three tiers.
+
+        One row per tier would fail on a disagreement in that tier alone; this
+        one asserts the invariant that makes all of them true — at every tier,
+        the six answers are ONE answer.
+        """
+        module = _load_generate_executor()
+        tiers = {}
+
+        monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', '1')
+        tiers['env'] = set(self._resolve_all(module, {}).values())
+        monkeypatch.delenv('CLAUDE_CODE_SESSION_ID')
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / '.plan').mkdir(exist_ok=True)
+        (tmp_path / '.plan' / 'marshal.json').write_text(
+            json.dumps({'runtime': {'target': 'opencode'}}), encoding='utf-8'
+        )
+        tiers['marshal_json'] = set(self._resolve_all(module, {}).values())
+        (tmp_path / '.plan' / 'marshal.json').unlink()
+        tiers['fallback'] = set(self._resolve_all(module, {}).values())
+
+        for tier, answers in tiers.items():
+            assert len(answers) == 1, f'{tier} tier: verbs disagreed — {answers}'
+
+    def test_tier_is_reported_identically_for_every_verb(self, no_platform_signal, monkeypatch, tmp_path):
+        """The reported ``target_source`` agrees across verbs too, not only the value.
+
+        Two verbs can agree on the string and disagree on WHY: one read the env
+        tier, the other fell back. That disagreement is invisible to a
+        value-only assertion and is exactly what a consumer branching on
+        ``target_source`` would act on.
+        """
+        module = _load_generate_executor()
+        parser = module.build_parser()
+        monkeypatch.setenv('OPENCODE', '1')
+
+        sources = {
+            module.resolve_verb_context(parser.parse_args([verb]))['target_source'] for verb in TARGET_RESOLVING_VERBS
+        }
+
+        assert sources == {SOURCE_ENV}
+
+    def test_fallback_tier_is_reported_not_silently_assumed(self, no_platform_signal, monkeypatch, outside_repo_dir):
+        """With no signal anywhere, every verb reports the FALLBACK tier.
+
+        The value alone cannot tell a fallback apart from a real ``claude``
+        env-tier resolution; the reported source can, and a consumer branching
+        on it needs all six verbs to report it.
+        """
+        module = _load_generate_executor()
+        parser = module.build_parser()
+        bare = outside_repo_dir / 'bare'
+        bare.mkdir()
+        monkeypatch.chdir(bare)
+
+        sources = {
+            module.resolve_verb_context(parser.parse_args([verb]))['target_source'] for verb in TARGET_RESOLVING_VERBS
+        }
+
+        assert sources == {SOURCE_FALLBACK}
+
+    def test_marshal_tier_is_reported_by_every_verb(self, no_platform_signal, monkeypatch, tmp_path):
+        """A declared ``runtime.target`` is reported as the ``marshal_json`` tier everywhere."""
+        module = _load_generate_executor()
+        parser = module.build_parser()
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / '.plan').mkdir()
+        (tmp_path / '.plan' / 'marshal.json').write_text(
+            json.dumps({'runtime': {'target': 'opencode'}}), encoding='utf-8'
+        )
+
+        sources = {
+            module.resolve_verb_context(parser.parse_args([verb]))['target_source'] for verb in TARGET_RESOLVING_VERBS
+        }
+
+        assert sources == {SOURCE_MARSHAL_JSON}
+
+
+class TestSharedResolverIsTheOnlyReader:
+    """The config-only reader is gone and nothing re-introduces one."""
+
+    def test_generate_executor_exposes_no_private_target_reader(self):
+        """``read_marshal_target`` is removed, not wrapped.
+
+        Wrapping it would have left the config-only walk in the tree as the
+        implementation the wrapper delegates to, which is the duplication the
+        deliverable set out to remove.
         """
         module = _load_generate_executor()
 
-        if marshal_body is not None:
-            plan_dir = tmp_path / '.plan'
-            plan_dir.mkdir()
-            (plan_dir / 'marshal.json').write_text(marshal_body, encoding='utf-8')
+        assert not hasattr(module, 'read_marshal_target')
+        assert not [name for name in dir(module) if 'marshal_target' in name]
 
-        assert module.read_marshal_target(cwd=tmp_path) == expected_target
+    def test_generate_executor_routes_its_fallback_through_the_shared_resolver(self):
+        """Every target read the module binds IS the shared resolver's function.
 
-    def test_walks_up_from_subdir(self, tmp_path):
-        """Finds marshal.json when cwd is a subdirectory of the project root."""
+        Identity, not equality: a locally re-defined copy with the same behaviour
+        would pass an equality check and would be the duplication the deliverable
+        set out to remove.
+        """
         module = _load_generate_executor()
 
-        plan_dir = tmp_path / '.plan'
-        plan_dir.mkdir()
-        marshal = {'runtime': {'target': 'opencode'}}
-        (plan_dir / 'marshal.json').write_text(json.dumps(marshal), encoding='utf-8')
+        assert module.resolve_target is target_context.resolve_target
+        assert module.resolve_context is target_context.resolve_context
 
-        subdir = tmp_path / 'a' / 'b' / 'c'
-        subdir.mkdir(parents=True)
+    @pytest.mark.parametrize('verb', TARGET_RESOLVING_VERBS, ids=TARGET_RESOLVING_VERBS)
+    def test_each_verb_context_goes_through_the_shared_resolver(self, verb, no_platform_signal, monkeypatch):
+        """A verb's own resolution reaches ``resolve_context`` and reports its source.
 
-        result = module.read_marshal_target(cwd=subdir)
-        assert result == 'opencode'
+        Driven through the production parser, so the row covers the flags the
+        verb actually registers — including the three (``verify``, ``drift``,
+        ``paths``) that register ``--target`` but not ``--marketplace-root``, and
+        must therefore still resolve rather than fail on a missing attribute.
+        """
+        module = _load_generate_executor()
+        monkeypatch.setenv('OPENCODE', '1')
+        args = module.build_parser().parse_args([verb, '--target', 'opencode'])
+
+        ctx = module.resolve_verb_context(args)
+
+        assert ctx['target'] == 'opencode'
+        assert ctx['target_source'] == target_context.SOURCE_EXPLICIT
+
+    def test_a_verb_that_registers_no_marketplace_root_flag_still_resolves(self, no_platform_signal, monkeypatch):
+        """``paths`` registers only ``--target``, and still produces a full context.
+
+        The three verbs without ``--marketplace-root`` reach the resolver through
+        the same ``getattr``-with-default seam. A resolver that read the
+        attribute unconditionally would raise ``AttributeError`` here, which is
+        why this row names a verb rather than a generic namespace.
+        """
+        module = _load_generate_executor()
+        args = module.build_parser().parse_args(['paths'])
+
+        assert not hasattr(args, 'marketplace_root')
+        assert module.resolve_verb_context(args)['marketplace_root'] is None
 
 
 class TestGenerateTargetAwareResolverCode:

@@ -82,9 +82,15 @@ import sys
 import time
 from pathlib import Path
 
-from generate_executor import read_installed_manifest, read_marshal_target
+# ``read_marshal_target`` is deliberately absent from this import: it was a
+# config-only reader that answered ``'claude'`` for an absent, unreadable or
+# malformed ``marshal.json`` alike, so the retention sweep resolved its target
+# through a different cascade than every other surface. The shared resolver
+# carries the env tier this verb never had.
+from generate_executor import read_installed_manifest
 from marketplace_bundles import _version_sort_key
 from marketplace_paths import get_plugin_cache_path
+from target_context import resolve_target
 
 # A cache version directory (``.../plan-marshall/0.1.1180/``).
 _VERSION_DIR_RE = re.compile(r'^\d+\.\d+')
@@ -286,7 +292,11 @@ def sweep(
             'summary_message': 'plugin-cache root could not be resolved; nothing was swept',
         }
 
-    target = read_marshal_target(project_root)
+    # The active target comes from the shared resolver, so the ``KEEP_MANIFEST``
+    # reason below compares against the manifest THIS target published rather
+    # than one resolved from a config-only reader. ``project_root`` anchors the
+    # ``marshal.json`` walk, matching the knob resolution above it.
+    target = resolve_target(cwd=project_root)['target']
     manifest_version = str(read_installed_manifest(cache_root, target=target).get('version', '') or '')
     provisioned_version = read_provisioned_version(project_root)
     executing_dir = _executing_version_dir()

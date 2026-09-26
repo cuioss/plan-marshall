@@ -74,14 +74,19 @@ import sys
 from pathlib import Path
 
 # The PLAN-08 manifest-resolution order, imported rather than re-implemented.
+# ``read_marshal_target`` is deliberately NOT among these imports: it was a
+# config-only reader that returned ``'claude'`` for an absent, unreadable or
+# malformed ``marshal.json`` alike, so this verb resolved its target from a
+# different cascade than every other surface. The shared resolver carries the
+# env tier this verb never had.
 from generate_executor import (
     _version_tuple,
     find_installed_manifest_path,
     read_installed_manifest,
-    read_marshal_target,
 )
 from marketplace_bundles import _version_sort_key
 from marketplace_paths import get_plugin_cache_path
+from target_context import resolve_target
 
 # A cache version directory (``.../plan-marshall/0.1.1180/``).
 _VERSION_DIR_RE = re.compile(r'^\d+\.\d+')
@@ -211,7 +216,13 @@ def check_freshness(cache_root: Path | None) -> dict:
             '',
         )
 
-    target = read_marshal_target()
+    # The active target comes from the shared resolver, so this verb inherits
+    # the env tier it never had: on a machine whose only deployment is OpenCode
+    # the manifest lookup below addresses that target's published
+    # ``dist-manifest.json`` instead of falling back to claude's. The tier that
+    # produced the answer is available from the same call; the verdict's own
+    # shape is unchanged, so no consumer has to learn a new field to read it.
+    target = resolve_target()['target']
     manifest_path = find_installed_manifest_path(cache_root, target=target)
     manifest = read_installed_manifest(cache_root, target=target)
     manifest_version = str(manifest.get('version', '') or '')
