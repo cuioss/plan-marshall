@@ -9,7 +9,7 @@ permissions:
 jobs:
   auto-merge:
     if: github.actor == 'dependabot[bot]'
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependabot-auto-merge.yml@2a2fa2e4ab28e13772cae2a2cfbb2b8bfb85a286 # v0.31.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-dependabot-auto-merge.yml@5fb6e07834411caa78a0eefe6e6a0554c9a957e6 # v0.32.0
     permissions:
       contents: write
       pull-requests: write
