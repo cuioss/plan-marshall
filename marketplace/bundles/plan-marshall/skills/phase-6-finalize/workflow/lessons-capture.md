@@ -50,7 +50,7 @@ See also `standards/lessons-integration.md` for conceptual guidance on when and 
 
 **Gate counts and orchestration context as runtime inputs**: The dispatcher forwards the three observed counts AND the once-per-run orchestration verdict on the prompt body so the body never re-issues the signal queries and never re-issues the orchestration detection. The available runtime inputs are:
 
-- `orchestrated` — bool; `true` when this plan was launched from an epic's staged plan spec. Resolved once per finalize run by the dispatcher (`phase-6-finalize/SKILL.md` Step 3 item 4b.a0) via `manage-plan-documents request read --section source_id` then `orchestrator inbox detect`. The body MUST NOT re-issue either call.
+- `orchestrated` — bool; `true` when this plan was launched from an epic's staged plan spec. Resolved once per finalize entry by the dispatcher at Step 3 entry (`phase-6-finalize/SKILL.md` Step 3 § "a0. Resolve orchestration context (Step 3 entry)", before the step loop) via `manage-plan-documents request read --section source_id` then `orchestrator inbox detect`. The body MUST NOT re-issue either call.
 - `epic` — string; the epic slug when `orchestrated` is `true`, the empty string otherwise. Same must-not-recompute obligation.
 
 - `signal_qgate_pending_count` — integer; sum across `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-finalize`.

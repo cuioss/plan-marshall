@@ -47,7 +47,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 In orchestration context — a plan launched from an epic's staged plan spec — the three-gate policy and the global-store write below are **not applicable at all**, at any write-site. The plan makes zero `manage-lessons add` calls from any finalize step and routes every emitted item to its epic's `inbox/` OUTBOX instead. Classification is deferred to the orchestrator-side pickup, because only the orchestrator holds the cross-plan context that judgement needs.
 
-The **lesson** write-site set is **three**. The dispatcher forwards the same orchestration verdict to these three plus the `emit-landing` terminal step — which writes the run's one `kind: landing` message rather than lesson-shaped output — at [`../SKILL.md`](../SKILL.md) Step 3 item 4b.a0 (four epic-inbox writers in all), and that item carries the matching "MUST be added to this list" obligation for the runtime-input forwarding. A new lesson write-site must be added in BOTH places:
+The **lesson** write-site set is **three**. The dispatcher forwards the same orchestration verdict to these three plus the `emit-landing` terminal step — which writes the run's one `kind: landing` message rather than lesson-shaped output — from the verdict it resolves at [`../SKILL.md`](../SKILL.md) Step 3 entry, § "a0. Resolve orchestration context (Step 3 entry)" (four epic-inbox writers in all), and that block carries the matching "MUST be added to this list" obligation for the runtime-input forwarding. A new lesson write-site must be added in BOTH places:
 
 | Write-site | Orchestrated branch |
 |------------|---------------------|
@@ -59,7 +59,7 @@ The envelope schema is owned by [`../../plan-orchestrator/standards/inbox-envelo
 
 ### Single-point orchestration-context resolution
 
-Orchestration context is resolved once at the finalize dispatcher Step 3 item 4b.a0 before forwarding to plan-retrospective. The dispatcher runs the `classify_source_id` verdict a single time and forwards the same verdict to the three lesson write-sites plus the `emit-landing` terminal step. Each downstream consumer uses the forwarded verdict verbatim — zero `manage-lessons add` in orchestration context, inbox routing per the table above — and none re-resolves it: no write-site runs its own source-id classification, and no second verdict is derived at the lesson or landing surface. A divergence between the forwarded verdict and a locally re-derived one is a defect in the forwarder, never a signal to prefer the local read.
+Orchestration context is resolved once per finalize entry at the dispatcher's Step 3 entry (§ "a0. Resolve orchestration context (Step 3 entry)" in [`../SKILL.md`](../SKILL.md)) — before the step loop, independent of any step's resumable skip, and therefore before forwarding to plan-retrospective. The dispatcher runs the `classify_source_id` verdict a single time and forwards the same verdict to the three lesson write-sites plus the `emit-landing` terminal step. Each downstream consumer uses the forwarded verdict verbatim — zero `manage-lessons add` in orchestration context, inbox routing per the table above — and none re-resolves it: no write-site runs its own source-id classification, and no second verdict is derived at the lesson or landing surface. A divergence between the forwarded verdict and a locally re-derived one is a defect in the forwarder, never a signal to prefer the local read.
 
 ### Drain-time dedup and created-count seams
 

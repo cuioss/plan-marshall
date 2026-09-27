@@ -652,6 +652,48 @@ The 5-field prompt-body contract (`name`, `plan_id`, `skills[]`, exactly one of 
 
 Per-step agent `<usage>` totals are persisted on disk by `manage-metrics accumulate-agent-usage` (called from step 5b below). The on-disk file `.plan/plans/{plan_id}/work/metrics-accumulator-6-finalize.toon` survives context compaction and is read by `default:record-metrics` at `end-phase` time. Do NOT maintain a parallel tally in model context — the on-disk file is authoritative.
 
+#### a0. Resolve orchestration context (Step 3 entry)
+
+**This block runs ONCE per finalize entry, here at Step 3 entry — BEFORE the `FOR each step_id` loop below and independent of every step's resumable skip.** Run it on the first finalize entry and on every re-entry alike, whatever item 1's resumable check will later decide for any individual step. The position is load-bearing: item 1 SKIPs an already-`done` step before any of that step's per-step blocks run, and a manifest that omits `lessons-capture` never reaches that step's gate at all, so a verdict resolved inside one step's gate is absent on exactly the re-entries that need it — including the `loop_back` re-entry `default:emit-landing`'s own failure branches trigger. Resolved here, the verdict is held for the whole run and reaches every consumer on every entry.
+
+An orchestrated plan — one launched from an epic's staged plan spec — routes its epic-bound output to the epic's `inbox/` OUTBOX instead of the global lessons store. The held verdict is consumed by EVERY step whose body writes to the epic inbox, and all of them receive it on every finalize entry, re-entries included. That set is currently **four** steps: `default:lessons-capture`, `plan-marshall:plan-retrospective` (Step 5b), and `default:finalize-step-preference-emitter` (Step 4) route lesson-shaped output as `kind: candidate-lesson`; `default:emit-landing` (the terminal step at `order: 1000`) writes the run's one `kind: landing` message. A future step that gains a `manage-lessons add` call site OR writes to the epic inbox MUST be added to this list and receive the same two runtime inputs.
+
+The dispatched consumers receive the held verdict as prompt-body runtime inputs (item 4b.c below, and the `plan-marshall:plan-retrospective` dispatch it names); the inline consumers — `default:finalize-step-preference-emitter` and `default:emit-landing` — read the values the dispatcher already holds and MUST NOT re-issue either resolution call. Because this block precedes the loop, the verdict is in hand before any consumer is reached, whatever its `order:`.
+
+**`orchestrator inbox detect` is the sole classifier for the held verdict.** The `manage-status transition` mailbox probe's `probe:` classification is never an input to it — the two are known to disagree on orchestrator spec-pointer `source_id` values, so a verdict read off the probe, alone or combined with the seam's, is not the verdict this block resolved and MUST NOT reach any consumer.
+
+Read the plan's spec pointer through its canonical owner:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents \
+  request read --plan-id {plan_id} --section source_id
+```
+
+Classify it through the single detection seam (no second detector, no new persisted metadata field):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator inbox detect \
+  --source-id "{source_id}"
+```
+
+Parse `orchestrated`, `epic`, and `detection` from the TOON output. `detection` names WHY the verdict came out the way it did, over the seam's closed four-token vocabulary (`orchestrated`, `not_orchestrator_pointer`, `unrecognised_id`, `unsafe_slug`). Log the verdict:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-6-finalize) Orchestration context: orchestrated={orchestrated} epic={epic} detection={detection}"
+```
+
+When `detection == unrecognised_id`, ALSO emit one work-log WARNING naming the pointer. That token means the `source_id` IS an orchestrator plan-spec path but its id segment matched none of the accepted forms — the plan looks orchestrated, yet no inbox message will be written for it:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level WARNING \
+  --message "[VERIFY] (plan-marshall:phase-6-finalize) Unrecognised orchestrator pointer {source_id} - the plan looks orchestrated but its id segment was not recognised, so no inbox message will be written"
+```
+
+The WARNING changes the SILENCE, not the branch: the verdict stays `orchestrated: false` and the run proceeds down the non-orchestrated path exactly as before. The three lesson-emitting consumers (`default:lessons-capture`, `plan-marshall:plan-retrospective` Step 5b, and `default:finalize-step-preference-emitter` Step 4) keep receiving `orchestrated` and `epic` unchanged — `detection` is read here and is not added to their runtime inputs. The fourth consumer, `default:emit-landing`, is not among them on this path: an `orchestrated: false` verdict means the compose gate dropped it, so it is absent from a non-orchestrated plan and receives nothing. Emit the WARNING for `unrecognised_id` only: `orchestrated` and `not_orchestrator_pointer` are the ordinary paths and stay quiet.
+
 **Read the persisted `loop_back_iteration` count BEFORE entering the FOR loop** (i.e., here, at the start of Step 3 — outside the loop body). The count lives in `status.metadata.loop_back_iteration`, so it survives FOR-loop re-entries from the loop-back continuation hook (step 7b below), phase re-entries, session restarts, AND the halt-and-prompt cycle of the default `loop_back_without_asking: false` configuration. That durability is what makes the `max_iterations` ceiling enforceable across the plan's whole review chain rather than across one uninterrupted dispatch:
 
 ```bash
@@ -765,35 +807,7 @@ FOR each step_id in manifest.phase_6.steps:
 
       The deterministic three-signal Signal Gate is evaluated at dispatcher level so the envelope spawn cost is avoided when all three signals are zero. The dispatcher computes the precondition; the LLM workflow body is the recording loop only. When all three signals are zero, short-circuit and record `outcome=skipped` — **regardless of orchestration**. This step no longer carries an orchestration carve-out: the one `kind: landing` message an orchestrated run owes its epic is the dedicated `default:emit-landing` terminal step's (`order: 1000`), not lessons-capture's, so an orchestrated run at zero signals has nothing for lessons-capture to emit and skips exactly as a non-orchestrated one does (item 4b.b below).
 
-      a0. Resolve orchestration context (runs BEFORE the three-zero short-circuit):
-
-         An orchestrated plan — one launched from an epic's staged plan spec — routes its epic-bound output to the epic's `inbox/` OUTBOX instead of the global lessons store. The verdict is resolved ONCE per finalize run, here, and consumed by EVERY step whose body writes to the epic inbox. That set is currently **four** steps: `default:lessons-capture`, `plan-marshall:plan-retrospective` (Step 5b), and `default:finalize-step-preference-emitter` (Step 4) route lesson-shaped output as `kind: candidate-lesson`; `default:emit-landing` (the terminal step at `order: 1000`) writes the run's one `kind: landing` message. A future step that gains a `manage-lessons add` call site OR writes to the epic inbox MUST be added to this list and receive the same two runtime inputs.
-
-         The dispatched consumers receive the verdict as prompt-body runtime inputs (item c below); the inline consumers — `default:finalize-step-preference-emitter` and `default:emit-landing` — read the values the dispatcher already holds and MUST NOT re-issue either resolution call. All four run at or after `order: 991`, so the verdict resolved here is available to each of them.
-
-         Read the plan's spec pointer through its canonical owner:
-
-            python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents \
-              request read --plan-id {plan_id} --section source_id
-
-         Classify it through the single detection seam (no second detector, no new persisted metadata field):
-
-            python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator inbox detect \
-              --source-id "{source_id}"
-
-         Parse `orchestrated`, `epic`, and `detection` from the TOON output. `detection` names WHY the verdict came out the way it did, over the seam's closed four-token vocabulary (`orchestrated`, `not_orchestrator_pointer`, `unrecognised_id`, `unsafe_slug`). Log the verdict, mirroring the Signal-Gate skip log line:
-
-            python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-              decision --plan-id {plan_id} --level INFO \
-              --message "(plan-marshall:phase-6-finalize:lessons-capture) Orchestration context: orchestrated={orchestrated} epic={epic} detection={detection}"
-
-         When `detection == unrecognised_id`, ALSO emit one work-log WARNING naming the pointer. That token means the `source_id` IS an orchestrator plan-spec path but its id segment matched none of the accepted forms — the plan looks orchestrated, yet no inbox message will be written for it:
-
-            python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-              work --plan-id {plan_id} --level WARNING \
-              --message "[VERIFY] (plan-marshall:phase-6-finalize:lessons-capture) Unrecognised orchestrator pointer {source_id} - the plan looks orchestrated but its id segment was not recognised, so no inbox message will be written"
-
-         The WARNING changes the SILENCE, not the branch: the verdict stays `orchestrated: false` and the run proceeds down the non-orchestrated path exactly as before. The three lesson-emitting consumers (`default:lessons-capture`, `plan-marshall:plan-retrospective` Step 5b, and `default:finalize-step-preference-emitter` Step 4) keep receiving `orchestrated` and `epic` unchanged — `detection` is read here and is not added to their runtime inputs. The fourth consumer, `default:emit-landing`, is not among them on this path: an `orchestrated: false` verdict means the compose gate dropped it, so it is absent from a non-orchestrated plan and receives nothing. Emit the WARNING for `unrecognised_id` only: `orchestrated` and `not_orchestrator_pointer` are the ordinary paths and stay quiet.
+      This gate issues no resolution call of its own. It reads the orchestration verdict the Step 3 entry block (the `a0` block above the FOR loop) already holds, and that resolution runs BEFORE the three-zero short-circuit — before this gate is reached at all — so the verdict item c forwards is in hand whether the short-circuit below fires or not.
 
       a. Compute three signal counts:
 
@@ -845,7 +859,7 @@ FOR each step_id in manifest.phase_6.steps:
 
       b. Three-zero short-circuit:
 
-         The short-circuit fires on zero signals **regardless of orchestration** — this step no longer carries an orchestration carve-out. lessons-capture no longer owes its epic a landing at zero signals: the one `kind: landing` message an orchestrated run owes is the dedicated `default:emit-landing` terminal step's (`order: 1000`), emitted unconditionally there and composed OUT of a non-orchestrated plan at compose time. So an orchestrated run at zero signals has nothing for lessons-capture to emit and skips exactly as a non-orchestrated one does. The a0 orchestration verdict is still resolved above (before this short-circuit) because the LATER consumers — `plan-retrospective`, `finalize-step-preference-emitter`, and `emit-landing` — need it whether or not lessons-capture itself skips.
+         The short-circuit fires on zero signals **regardless of orchestration** — this step no longer carries an orchestration carve-out. lessons-capture no longer owes its epic a landing at zero signals: the one `kind: landing` message an orchestrated run owes is the dedicated `default:emit-landing` terminal step's (`order: 1000`), emitted unconditionally there and composed OUT of a non-orchestrated plan at compose time. So an orchestrated run at zero signals has nothing for lessons-capture to emit and skips exactly as a non-orchestrated one does. The orchestration verdict is resolved at Step 3 entry, before this short-circuit and independent of it, because the LATER consumers — `plan-retrospective`, `finalize-step-preference-emitter`, and `emit-landing` — need it whether or not lessons-capture itself skips, and whether or not lessons-capture is reached at all.
 
          When `signal_1_count == 0 AND signal_2_count == 0 AND signal_3_count == 0`:
             - Mark the step done with `outcome=skipped` directly from the dispatcher (do NOT dispatch the envelope):
@@ -867,7 +881,7 @@ FOR each step_id in manifest.phase_6.steps:
 
       c. Forward gate counts and orchestration context on dispatch (reached only when at least one signal is non-zero — item b skipped the step otherwise):
 
-         The envelope no longer re-computes the three signals — the dispatcher forwards them as runtime inputs so the body skips its (now-removed) Signal Gate step. It likewise forwards the a0 orchestration verdict so no body re-issues the detection. Add all five fields verbatim into the prompt body's runtime-inputs block alongside `plan_id` (see item 5 below):
+         The envelope no longer re-computes the three signals — the dispatcher forwards them as runtime inputs so the body skips its (now-removed) Signal Gate step. It likewise forwards the orchestration verdict held since Step 3 entry so no body re-issues the detection. Add all five fields verbatim into the prompt body's runtime-inputs block alongside `plan_id` (see item 5 below):
 
             signal_qgate_pending_count: {signal_1_count}
             signal_automated_review_count: {signal_2_count}

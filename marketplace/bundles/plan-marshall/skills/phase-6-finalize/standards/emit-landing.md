@@ -73,10 +73,11 @@ below are the dispatcher's already-resolved verdict, carried in so the body neve
 
 **Orchestration context (resolved once by the dispatcher, never re-derived here)**: this step writes to
 the epic inbox, so it consumes the same once-per-run orchestration verdict `lessons-capture`,
-`plan-retrospective`, and `finalize-step-preference-emitter` consume. The dispatcher resolves it at
-`phase-6-finalize/SKILL.md` Step 3 item 4b.a0 (`manage-plan-documents request read --section source_id`,
-then `orchestrator inbox detect`) and still holds it when this inline step runs at `order: 1000`, after
-`lessons-capture` (991) and `record-metrics` (998).
+`plan-retrospective`, and `finalize-step-preference-emitter` consume. The dispatcher resolves it once
+at Step 3 entry — `phase-6-finalize/SKILL.md` Step 3 § "a0. Resolve orchestration context (Step 3
+entry)" (`manage-plan-documents request read --section source_id`, then `orchestrator inbox detect`) —
+before the step loop and independent of any step's resumable skip, so it holds the verdict when this
+inline step runs at `order: 1000` on every finalize entry, a re-entry included.
 
 - `orchestrated` — bool; `true` by construction when this step runs (see above). This step MUST NOT
   re-issue either resolution call.
@@ -115,26 +116,37 @@ the degraded-value vocabulary of [§ Which degraded token a field gets](#which-d
 
 ### Step 0: Defensive orchestration guard
 
-The compose gate guarantees this step is absent from a non-orchestrated plan, so reaching this body proves
-the plan is orchestrated. As a fail-closed diagnostic against a mis-configured plan that hand-registered
-this step without being orchestrated, check the `epic` input: when `epic` is empty (or `orchestrated` is
-false), do NOT write a landing to nowhere — record a diagnosable skip and a WARNING naming the
-misconfiguration, then return:
+The compose gate guarantees this step is absent from a non-orchestrated plan, so reaching this body means
+the compose gate classified the plan orchestrated. Check the `epic` input against that: when `epic` is
+empty (or `orchestrated` is false), the two verdicts contradict each other — the compose gate classified
+the plan orchestrated, and the dispatcher supplied no epic. Do NOT write a landing to nowhere, and do NOT
+record a skip. Log a WARNING naming the contradiction, then record a `loop_back` to `6-finalize` carrying
+`work_performed=false`, and return:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level WARNING \
-  --message "[VERIFY] (plan-marshall:phase-6-finalize:emit-landing) present in a non-orchestrated plan (empty epic) - the compose-time orchestration gate should have dropped it; emitting no landing"
+  --message "[VERIFY] (plan-marshall:phase-6-finalize:emit-landing) orchestration verdict contradiction - the compose gate classified this plan orchestrated (emit-landing is in the manifest) but the dispatcher supplied no epic (orchestrated={orchestrated}); emitting no landing and looping back so archive-plan is not reached"
 ```
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step emit-landing --outcome skipped \
-  --display-detail "not orchestrated, no landing emitted"
+  --plan-id {plan_id} --phase 6-finalize --step emit-landing --outcome loop_back \
+  --loop-back-target 6-finalize \
+  --fact work_performed=false \
+  --display-detail "no epic supplied, landing not emitted"
 ```
 
-This is a diagnosable skip (it names why), NOT a silent no-op — the compose gate remains the sanctioned
-decision, and this guard only makes a compose-gate escape visible instead of writing a malformed message.
+**Why `loop_back` and not a skip.** A skip here is the same fail-open shape the failed-write branch
+rejects (see § Error Handling): a `skipped` record does not stop the FOR loop, so `default:archive-plan`
+(order 1100, `destroys: [plan-directory]`) runs next in the same pass and destroys the only copy of the
+run's facts, while the one step that should have written the landing reports a clean skip. There is no
+later entry on which the landing could still be written. `loop_back` keeps the run recoverable: it stops
+the loop advancing past this step so `archive-plan` is never reached, and the re-entry re-fires this step
+with the verdict the dispatcher resolves at Step 3 entry (see [`../SKILL.md`](../SKILL.md) Step 3 § "a0.
+Resolve orchestration context (Step 3 entry)"). The `max_iterations` ceiling bounds the retry, so a
+persistently contradictory verdict halts the run for the operator instead of spinning — and a halted,
+un-archived plan is the recoverable end state, a destroyed one is not.
 
 ### Step 1: Read the run's facts
 
@@ -281,8 +293,8 @@ The `display_detail` string appears in the renderer's per-step `[OK]` row.
 
 `work_performed=true` records that a landing message actually reached the inbox on this path. The
 step declares `records_facts: [work_performed]` because its terminal call sites disagree about whether
-the characteristic work happened: this one emitted a landing, and the failed-write branch below records
-`work_performed=false` having emitted none. `records_facts` is the union over terminal call sites, and
+the characteristic work happened: this one emitted a landing, while the Step 0 contradiction guard and
+the failed-write branch below each record `work_performed=false` having emitted none. `records_facts` is the union over terminal call sites, and
 a `loop_back` is a terminal call site, so the declaration covers both.
 
 A consumer asking *"did this run actually emit a landing?"* reads the fact rather than the outcome.
@@ -297,10 +309,11 @@ what survives a future branch that reintroduces a work-free `done`.
 | A fact read (`manage-status` / `manage-solution-outline` / `manage-execution-manifest`) returns an error, or the fact is absent for a reason this step cannot establish | Write that field as `unknown` in the fenced block (key still present) and continue — a degraded field never blocks the emission or archive, and `unknown` records the gap at every key instead of claiming an end state at the three where `n/a` is exempt |
 | A fact has no value to read: its step did not run (the manifest excluded it), or there is no such thing (no PR was ever created) | Write that field as `n/a` in the fenced block (key still present) and continue — the absence was observed, so at `pr`, `merge_state` and `cleanup_owed` it IS the answer |
 | `orchestrator inbox write` returns an error | Log the failure, then mark **`loop_back`** to `6-finalize` recording `work_performed=false` (the call is spelled out below). This does NOT silently continue: the landing is the plan's only machine-readable hand-off to the orchestrator, and `default:archive-plan` (order 1100) destroys the plan directory immediately after this step |
-| `epic` is empty / plan not orchestrated | Step 0's diagnosable skip fires — no landing is written and the misconfiguration is surfaced as a WARNING |
+| `epic` is empty / `orchestrated` is false while the step is in the manifest | Step 0 fires — no landing is written, a WARNING names the contradiction (compose gate classified the plan orchestrated, dispatcher supplied no epic), and the step records **`loop_back`** to `6-finalize` with `work_performed=false`, never `skipped`, so `default:archive-plan` is not reached |
 
 The failed-write branch terminates with this call — spelled out rather than left to prose, because it
-is the one terminal branch on which no landing was emitted:
+is, with the Step 0 contradiction guard, one of the two terminal branches on which no landing was
+emitted:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
