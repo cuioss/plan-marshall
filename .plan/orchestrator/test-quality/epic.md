@@ -425,6 +425,14 @@ it verbatim and never regenerates it.}
   remaining additive deliverable (a tree-wide seam-coverage guard, measured at 0.3 s over 113 scripts), or
   retire it — is an operator decision, and the refutation is stamped on the claim either way.
 
+- **2026-09-27 — inbox `review-apparatus-001` (PM-MCP supersession relay) DISCARDED
+  by operator directive.** The message asked this epic to park every Python- or
+  prose-bound staged row and file a PM-MCP carry-over. Operator directive
+  2026-09-27: "issues about current problems are to be fixed, not relayed to
+  PM-MCP". The staged queue is therefore NOT parked and no carry-over is filed;
+  rows stay emittable on their own merits. Note: this ledger is still in the
+  monolithic layout — `migrate-layout` is owed before the next `queue` write.
+
 ## Open Defects
 
 {Known defects surfaced by landings or observations that are not yet owned by a staged

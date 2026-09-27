@@ -121,6 +121,19 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
   emission-exception section updated. Staged whole, not narrowed to D3 — the
   operator's instruction named the plans. PLAN-08/-09/-10/-11/-14 stay parked.
 
+- **2026-09-27 — operator directive: current problems are FIXED, not relayed to
+  PM-MCP.** Supersedes the 2026-09-26 practice of routing process findings to the
+  carry-over only. Drain of 6 messages (plan-12-tool-triage-001..005,
+  plan-13-finalize-mechanism-defects-001): PLAN-10 UN-PARKED (parked→staged) and
+  folded the mailbox-probe mis-parse (root cause confirmed at HEAD) and the
+  file-pointer `--request-text` gap; PLAN-16 `init-lane-fidelity` STAGED for posture
+  prose / lane_report, session_ids at init, scope-estimate provenance, domain-detect
+  provenance, and the absent Grep/Glob fallback. Late arrival
+  plan-13-finalize-mechanism-defects-002: item 1 folded into PLAN-10; items 2-3
+  STAGED as PLAN-17 `concurrent-plan-isolation` (clean-main assertions trip on
+  sibling/orchestrator writes; shared `.plan/temp/module_mapping.toon`). PLAN-10,
+  PLAN-16, PLAN-17 pairwise overlap — sequence, do not parallelize.
+
 ## Inherited Material — the decompose input
 
 ⛔ **This is a hand-off record, not a queue.** Nothing below is staged. Every item is
@@ -467,6 +480,16 @@ recipe-fix-argparse-rejection remediation carrier.
   queue reconciliation is that epic's drain business.
 
 ## Watches
+
+- **PLAN-13 run's "not orchestrated" report — cause REFUTED, symptom CONFIRMED
+  (drain 2026-09-27).** The run blamed the `PLAN-13-…` filename lacking a code
+  segment; `inbox detect` returns `orchestrated: true` for PLAN-12 and PLAN-13
+  (`PLAN-{DIGITS}` is an accepted form), so no rename is owed and `emit-landing`
+  (which uses the detector directly) should still file a landing. But the
+  phase-transition mailbox probe IS a false negative for every orchestrated plan:
+  `_cmd_lifecycle.py` parses request.md with the `key=value` metadata parser,
+  which returns `{}` for it. Fix staged in PLAN-10 deliverable 2. Verify at
+  PLAN-12/PLAN-13 landing that a `kind: landing` message actually arrives.
 
 - **Process findings routed to the PM-MCP carry-over (drain 2026-09-26,
   observed, no staging).** `opencode-bootstrap-executor-fix-001` (5 violations:

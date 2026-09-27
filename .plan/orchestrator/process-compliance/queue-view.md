@@ -4,7 +4,7 @@
 
 ## START HERE
 
-**Resume anchor**: 2026-09-27 PLAN-12 + PLAN-13 RUNNING (operator-confirmed start); inbox EMPTY (6 module-budget messages recovered + drained). Next: await landings / inbox messages, then /plan-orchestrator analyze slug=process-compliance; stamp plan_marshall_plan_id per row at landing. Owed: commit ledger; commit PM-MCP carry-over; carry-over addendum for unowned Open Defects. | PRIOR: 2026-09-27 emitted PLAN-12 + PLAN-13 under operator override of the indeterminate-comparison gate. | PRIOR: 2026-09-26 PM-MCP supersession: rest of queue parked, carry-over filed. | PRIOR: Cleanup done at e995df45 (44 re-grounded, compacted); restart not_ready.
+**Resume anchor**: 2026-09-27 drain (7 msgs) under operator directive 'current problems are FIXED, not relayed to PM-MCP': PLAN-10 un-parked->staged (mailbox-probe mis-parse confirmed at HEAD, file-input gap); PLAN-16 init-lane-fidelity + PLAN-17 concurrent-plan-isolation STAGED. PLAN-12 + PLAN-13 still RUNNING. PLAN-10/16/17 pairwise overlap (phase-1-init/, planning.md) — emit one at a time. Next: /plan-orchestrator next slug=process-compliance; on landings, analyze. Owed: commit ledger. | PRIOR: 2026-09-27 PLAN-12 + PLAN-13 RUNNING (operator-confirmed start); inbox EMPTY (6 module-budget messages recovered + drained). Next: await landings / inbox messages, then /plan-orchestrator analyze slug=process-compliance; stamp plan_marshall_plan_id per row at landing. Owed: commit ledger; commit PM-MCP carry-over; carry-over addendum for unowned Open Defects. | PRIOR: 2026-09-27 emitted PLAN-12 + PLAN-13 under operator override of the indeterminate-comparison gate. | PRIOR: 2026-09-26 PM-MCP supersession: rest of queue parked, carry-over filed. | PRIOR: Cleanup done at e995df45 (44 re-grounded, compacted); restart not_ready.
 **Phase**: orchestrating
 **Running**:
 - PLAN-12 (WS-05)
@@ -12,11 +12,12 @@
 **Parked**:
 - PLAN-08 (WS-03)
 - PLAN-09 (WS-03)
-- PLAN-10 (WS-01)
 - PLAN-11 (WS-06)
 - PLAN-14 (WS-04)
 **Queue** (staged, in order):
-- (empty)
+1. PLAN-10 (WS-01)
+2. PLAN-16 (WS-01)
+3. PLAN-17 (WS-01)
 - PLAN-01 (WS-01) — plan=phase-gates — PR 1540 — landing=landings/PLAN-01.md — status: shipped
 - PLAN-02 (WS-02) — plan=plan-02-worktree-discipline — PR 1547 — landing=landings/PLAN-02.md — status: shipped
 - PLAN-03 (WS-03) — plan=compliant-paths — PR 1542 — landing=landings/PLAN-03.md — status: shipped
@@ -32,8 +33,10 @@
 |---|------|------------|--------|--------------------|
 | 1 | PLAN-08 | WS-03 | parked | marketplace/bundles/plan-marshall/skills/tools-integration-ci/; marketplace/bundles/plan-marshall/skills/workflow-integration-github/ |
 | 2 | PLAN-09 | WS-03 | parked | AGENTS.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/SKILL.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py; test/plan-marshall/plan-orchestrator/ |
-| 3 | PLAN-10 | WS-01 | parked | marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_lifecycle.py; marketplace/bundles/plan-marshall/skills/phase-1-init/; marketplace/bundles/plan-marshall/skills/plan-marshall/; marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/planning.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/_orchestrator_inbox.py; test/plan-marshall/plan-marshall/; test/plan-marshall/plan-orchestrator/ |
+| 3 | PLAN-10 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_lifecycle.py; marketplace/bundles/plan-marshall/skills/phase-1-init/; marketplace/bundles/plan-marshall/skills/plan-marshall/; marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/planning.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/_orchestrator_inbox.py; test/plan-marshall/plan-marshall/; test/plan-marshall/plan-orchestrator/ |
 | 4 | PLAN-11 | WS-06 | parked | marketplace/bundles/plan-marshall/skills/phase-6-finalize/; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py; test/plan-marshall/phase-5-execute/; test/plan-marshall/plan-orchestrator/ |
 | 5 | PLAN-12 | WS-05 | running | marketplace/bundles/plan-marshall/skills/manage-locks/scripts/merge_lock.py; marketplace/bundles/plan-marshall/skills/manage-status/scripts/manage-status.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/branch-cleanup.md; marketplace/bundles/plan-marshall/skills/plan-retrospective/; marketplace/bundles/plan-marshall/skills/tools-integration-ci/scripts/ci.py; marketplace/bundles/plan-marshall/skills/tools-integration-ci/standards/pr-review-operations.md; test/plan-marshall/manage-status/ |
 | 6 | PLAN-13 | WS-07 | running | marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/archive-plan.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/dispatch-inline-split.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/emit-landing.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/create-pr.md; marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/session_binding.py; test/plan-marshall/phase-6-finalize/ |
 | 7 | PLAN-14 | WS-04 | parked | marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/; test/plan-marshall/persona-plan-marshall-agent/ |
+| 8 | PLAN-16 | WS-01 | staged | CLAUDE.md; marketplace/bundles/plan-marshall/skills/manage-config/scripts/_cmd_domain_detect.py; marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/manage-execution-manifest.py; marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_planning_lane.py; marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/; marketplace/bundles/plan-marshall/skills/phase-1-init/; marketplace/bundles/plan-marshall/skills/plan-marshall/SKILL.md; test/plan-marshall/manage-config/; test/plan-marshall/manage-execution-manifest/; test/plan-marshall/manage-status/ |
+| 9 | PLAN-17 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/phase-2-refine/; marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md; marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/_git_helpers.py; marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/_invariants.py; marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/planning.md; test/plan-marshall/plan-marshall/ |
