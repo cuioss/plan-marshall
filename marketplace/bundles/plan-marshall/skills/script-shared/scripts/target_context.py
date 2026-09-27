@@ -267,9 +267,11 @@ def resolve_target(cwd: Path | None = None) -> ResolvedTarget:
 def resolve_marketplace_root(marketplace_root: str | Path | None) -> Path | None:
     """Validate and normalise a marketplace anchor, or return ``None``.
 
-    Containment lives here (ADR-016): the executor verbs each accept a
-    ``--marketplace-root`` and each would otherwise have to re-decide what a
-    usable anchor is, and the six copies would eventually disagree about it.
+    Containment lives here (ADR-016): the executor verbs that register a
+    ``--marketplace-root`` each would otherwise have to re-decide what a
+    usable anchor is, and the four copies would eventually disagree about it.
+    The two verbs without the flag have nothing to re-decide and pass a
+    validated ``None`` through.
 
     The boundary is the anchor's own well-formedness, not a sandbox the anchor
     must sit inside. An operator legitimately pins an absolute checkout
