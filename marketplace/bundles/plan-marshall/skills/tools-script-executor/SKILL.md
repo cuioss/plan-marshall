@@ -476,8 +476,9 @@ stale embedded path is never returned blindly:
    `~/.claude/plugins/cache/plan-marshall/*/skills/…`, the OpenCode config roots,
    the Antigravity roots). Every target's template carries this leg — but it runs
    at this position, after the embedded checks, so on a target other than OpenCode
-   a live embedded or cache path still wins. Only leg 0 (OpenCode-only) promotes
-   tree code ahead of it.
+   a live embedded or cache path still wins. Only the OpenCode executor, whose own
+   tree-first probe runs *before* the embedded checks, promotes tree code ahead of
+   them.
 4. **cwd upward walk** — walks up from `Path.cwd()` to the same live tree, for
    the case where the executor file's own ancestors hold no checkout.
 
