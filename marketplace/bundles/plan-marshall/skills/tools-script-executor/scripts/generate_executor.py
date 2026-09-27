@@ -1110,12 +1110,14 @@ def generate_target_aware_resolver_code(target: str) -> str:
 
     The body of the generated executor's ``resolve_notation`` function calls
     ``_resolve_notation_by_target`` as a dynamic fallback when a notation is
-    absent from the embedded SCRIPTS dict.  Every implementation probes the
-    same TWO shapes in the same order — the NESTED
-    ``{bundle}/skills/{skill}/scripts/{script}.py`` (a live checkout, plus the
-    Claude plugin cache) first, then the target's own deployed roots — so the
-    emitted resolver agrees with whichever layout the target actually ships.
-    They differ only in the roots that shape two is searched through:
+    absent from the embedded SCRIPTS dict.  Every implementation opens with the
+    NESTED ``{bundle}/skills/{skill}/scripts/{script}.py`` tree-first probe (a
+    live checkout at or above the executor file), then diverges: the two flat
+    targets add their own dash-namespaced deployed roots, while ``claude`` stops
+    at the nested plugin cache because a Claude installation has no flat root to
+    find.  The emitted resolver therefore agrees with whichever layout the
+    target actually ships.  They differ only in the roots searched after the
+    shared tree-first leg:
 
     - ``claude``:  the plugin-cache newest-version-dir walk
       (``~/.claude/plugins/cache/plan-marshall/*/skills/{skill}/scripts/{script}.py``).

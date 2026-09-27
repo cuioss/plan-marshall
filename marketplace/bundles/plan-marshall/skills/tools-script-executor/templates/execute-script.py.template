@@ -1449,8 +1449,11 @@ def resolve_notation(notation: str) -> str | None:
        returns an absolute path discovered by walking up from THIS executor
        file's own location to a live ``marketplace/bundles`` tree, then, failing
        that, from the target-specific skill discovery roots (Claude plugin
-       cache, OpenCode config roots, Antigravity roots). The tree-first leg is
-       present in EVERY target's template, not OpenCode alone.
+       cache, OpenCode config roots, Antigravity roots). That tree-first leg is
+       present in EVERY target's template, but it runs at this position — after
+       the embedded checks above — so on a target other than OpenCode a live
+       embedded or cache path still wins; only leg 0 promotes tree code ahead of
+       it, and leg 0 is OpenCode-only.
     4. cwd upward walk to a live ``marketplace/bundles`` tree
        (_resolve_notation_by_cwd_walk) — reached when the executor file's own
        ancestors hold no checkout.

@@ -474,8 +474,10 @@ stale embedded path is never returned blindly:
    first, so a checkout above the executor wins; failing that it probes the
    target's deployed skill roots (Claude plugin cache
    `~/.claude/plugins/cache/plan-marshall/*/skills/…`, the OpenCode config roots,
-   the Antigravity roots). Every target's template carries the tree-first leg,
-   not OpenCode alone.
+   the Antigravity roots). Every target's template carries this leg — but it runs
+   at this position, after the embedded checks, so on a target other than OpenCode
+   a live embedded or cache path still wins. Only leg 0 (OpenCode-only) promotes
+   tree code ahead of it.
 4. **cwd upward walk** — walks up from `Path.cwd()` to the same live tree, for
    the case where the executor file's own ancestors hold no checkout.
 
