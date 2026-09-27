@@ -4,7 +4,6 @@ sender_id=module-budget-campaign-completion
 epic=process-compliance
 kind=finding
 created=2026-09-25T13:55:00Z
-revision=1
 
 # Process-rule issue: finalize dispatch templates forward an ABSOLUTE `WORKTREE`, but the execution-context contract mandates repo-relative — every dispatched finalize step is refused
 

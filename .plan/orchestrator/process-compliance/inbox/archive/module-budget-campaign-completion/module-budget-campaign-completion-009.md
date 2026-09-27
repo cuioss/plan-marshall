@@ -4,7 +4,6 @@ sender_id=module-budget-campaign-completion
 epic=process-compliance
 kind=finding
 created=2026-09-25T13:58:00Z
-revision=1
 
 # Process-rule issue: the documented cwd re-anchor (`cd {worktree_path}`) is not durable on the opencode target, so every `.plan/` call needs an explicit per-call cwd
 

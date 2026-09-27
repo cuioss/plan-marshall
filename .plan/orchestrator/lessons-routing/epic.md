@@ -163,37 +163,7 @@ own PLAN-LR-NN queue.
 > its 6 destination epics, and retired all 44 lessons; no longer live working material. (Cleanup,
 > 2026-09-24, operator-confirmed relocation.)
 
-### 2026-09-26 — PM-MCP carry-over sweep (43 lessons; nothing routed to sibling epics)
-
-Driven by `review-apparatus-001` (PM-MCP supersedes Python- and prose-bound plan work; § 5: "a lesson whose
-remedy is a Python or prose change routes to the carry-over as a rule or fixture, not to a staged plan").
-**Deviation from the lessons-handling Step 4 routing, deliberate:** every cluster's owning sibling epic has
-itself parked its queue under the same ruling, so routing a cluster there would only file a message whose
-plans cannot be emitted. Every cluster went to ONE destination instead:
-`/Users/oliver/git/plan-marshall-mcp/doc/known-defects/lessons-routing-carry-over.md` (the full per-lesson
-rows, clusters, PM-MCP mapping, contradictions). `clusters_routed: 0` (inbox), `exception_plans_staged: 0`.
-
-Population: 43 active lessons (`manage-lessons list` at `a88626306`), 42 read, 1 unreadable. Verdicts:
-**36 superseded-by-pm-mcp** (carried or dup of TS/RA carry-over), **5 legacy-blocking**, **1 stale**,
-**1 unreadable**. 100 lesson rows → 57 carried (32 gap / 18 partial / 7 covered), 43 none (mostly dup of TS).
-
-| Disposition | Lessons |
-|---|---|
-| clustered-into L-SET | 22-07-001, 22-07-002 |
-| clustered-into L-ROSTER | 22-07-004, 22-07-006 |
-| clustered-into L-VACUOUS | 22-07-007, 22-08-003, 22-08-004 |
-| clustered-into L-SIBLING | 22-07-005, 22-08-002, 22-07-008 |
-| clustered-into L-SC (scope_creep finding type / base) | 22-12-001 (unreadable header), 22-15-001, 23-16-001, 24-09-001 |
-| clustered-into L-BASE (**legacy-blocking**) | 24-09-003, 24-12-006 |
-| clustered-into L-REFIRE | 23-05-003, 23-07-001, 24-09-005, 24-09-008 |
-| clustered-into L-SCOPE | 24-12-002, 24-12-003, 24-12-004, 24-12-005 |
-| clustered-into L-RETRO | 23-05-001, 23-05-002, 23-05-004, 23-05-005, 23-05-007, 23-05-008 |
-| standalone (**legacy-blocking**) | 24-12-001 (foreign_pr_gate ambient branch), 24-05-001 (sync-baseline rebases behind=0), 23-23-001 (local ruff isort churn) |
-| standalone | 22-07-003, 22-08-001, 23-05-006, 23-07-002, 23-15-001, 24-09-004, 24-09-006, 24-09-007, 24-16-001 |
-| stale | 24-12-007 (fixed forward, #1603 / cuioss-organization 0.30.0) |
-
-(Lesson ids abbreviated: `22-07-001` = `2026-09-22-07-001`.) No lesson was removed from the corpus — removal is
-destructive and awaits the operator (see Decisions 2026-09-26).
+> ↪ Relocated to `settled.md` § "Lesson Sweeps — 2026-09-26" — closed: every swept lesson was retired (2026-09-27) and its content carried to PM-MCP.
 
 ## START HERE
 
@@ -304,33 +274,15 @@ destructive and awaits the operator (see Decisions 2026-09-26).
   in the PM-MCP carry-over directly. Open operator decisions: (a) retire the 36 carried + 1 stale lessons
   from the corpus; (b) fix the 5 legacy-blocking lessons in legacy under the narrow exception, or accept them;
   (c) the unreadable `2026-09-22-12-001`; (d) close this epic.
+- 2026-09-27 — **Operator decisions (a)–(d) settled.** (a)+(c) all 43 swept lessons retired with tombstones;
+  (b) the legacy-blocking defects fixed in #1636 (`075ffbb68`), `2026-09-23-23-001` re-verified stale;
+  (d) epic stays OPEN — the `lessons` verb resolves to this fixed slug for future sweeps. Cleanup relocated
+  the 2026-09-26 sweep record, Open Defects and Watches to `settled.md` (operator-confirmed).
 
 ## Open Defects
 
-- ⛔⛔ **Three stranded upstream lessons exist RIGHT NOW** in `cui-jsf-test-basic` — `plan-marshall:recipe-refactor-to-profile-standards`, `plan-marshall:build-maven`, `plan-marshall:workflow-integration-sonar` — in a git-ignored directory, unread by this project. *(source: first-party sample, 2026-08-24. Owned by PLAN-LR-01 (b), routed by PLAN-LR-04.)*
-- ⛔ **The `wrong_store` ownership predicate mis-classifies a client's OWN prefixed component as foreign**, because it tests for `marketplace/bundles/{prefix}` which no consumer repo has. Verified against `API-Sheriff` (`api-sheriff:maven-build`, no `marketplace/` directory). *(source: first-party, 2026-08-24. Owned by PLAN-LR-02.)*
-- ⚠ **`--allow-foreign-store` is the only escape and it launders the distinction it bypasses** — a lesson filed with it is indistinguishable afterwards from a genuinely local one. *(source: first-party read of `manage-lessons/SKILL.md:108`. Owned by PLAN-LR-02.)*
-- ⛔⛔ **A lesson sweep has no way to detect it is re-routing content a destination epic already owns —
-  confirmed, not hypothetical.** The 2026-09-22 sweep routed 7 of `truthful-signals`' own 2026-09-21
-  promotions (`2026-09-21-10-002,003,005,006,007,009,011`) back to `truthful-signals` as new candidates,
-  then deleted the corpus copies once queued; 4 more from the same promoted range went to 3 OTHER epics
-  undetected. Root cause: no field on a lesson records which epic (if any) already promoted/dispositioned
-  it, so even a same-sender "is this a boomerang" check has no field to read. *(source: `truthful-signals`
-  inbox forward, drained 2026-09-22, archived at `inbox/archive/truthful-signals/truthful-signals-002.md`.
-  Not yet owned by a staged plan — candidate for a PLAN-LR-07 D6 or a new PLAN-LR-08; do not fold into
-  PLAN-LR-07 while it is running, per the operator's parallel launch.)*
-- ⚠ **Two consumer repos independently reached OPPOSITE conclusions about the `wrong_store` guard's
-  right axis** (Token-Sheriff: refuse harder, treat the override as operator-only; API-Sheriff: file
-  locally whenever THIS repo pays the recurring cost, regardless of bundle ownership) — both coherent,
-  because "who can fix it" and "who keeps paying for it" are different populations a single store can
-  serve only one of. Token-Sheriff's override also RECURRED after a first relocation (PLAN-08 routed
-  correctly, PLAN-09 filed two more locally). *(source: `truthful-signals` inbox forward dated
-  2026-09-11, drained 2026-09-22 — leads, not independently corroborated from this checkout. Owned by
-  PLAN-LR-01 D1/D4 and PLAN-LR-02 D0/D1; PLAN-LR-04 should not assume one-time migration is sufficient
-  given the recurrence.)*
+> ↪ Relocated to `settled.md` § "Open Defects — superseded by PM-MCP" — every defect was owned by a now-parked plan and is carried to PM-MCP `lessons-routing-carry-over.md`.
 
 ## Watches
 
-- ⚠ **How the three stranded lessons were filed at all is UNESTABLISHED** — with `--allow-foreign-store`, or before the guard existed. The answer changes whether the guard is being routinely bypassed in practice or was simply added later. *(re-check: PLAN-LR-01 (b), which reads them.)*
-- ⚠ **Cross-org issue creation permissions are unverified.** WS-02 assumes a client repo can open an issue on `cuioss/plan-marshall`. The `ci issue` surface exists, but whether a client developer's token can write to a foreign repo is not established. *(re-check: PLAN-LR-03's gate, before any transport is built.)*
-- ⚠ **Consumer-repo count is unknown.** Four are named in project memory (`nifi-extensions`, `cui-jsf-test-basic`, `TokenSheriff`, `API-Sheriff`); two were sampled here. The real population bounds how much stranded corpus exists. *(re-check: PLAN-LR-01 (b).)*
+> ↪ Relocated to `settled.md` § "Watches — superseded by PM-MCP" — every watch re-checked on a now-parked plan; carried to PM-MCP.

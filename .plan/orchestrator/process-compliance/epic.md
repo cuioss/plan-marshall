@@ -256,7 +256,10 @@ recipe-fix-argparse-rejection remediation carrier.
   carry-over file as an addendum, or record them as `none`, before this epic
   closes.
 - **Six invalid inbox messages (drain 2026-09-26,
-  `module-budget-campaign-completion-006` … `-011`, open).** Each fails
+  `module-budget-campaign-completion-006` … `-011`) — RESOLVED 2026-09-27.**
+  Stray `revision=1` header line removed on operator instruction (git shows no
+  amendment ever happened); all six then validated, drained as `observed`
+  (content already in carry-over MB06–MB11) and archived. Original record: Each fails
   `revision_not_monotonic` (`revision=1` with no `amended=` stamp — a
   hand-set revision), so the drain may not consume them and they stay
   un-archived. Content was read and extracted anyway (carry-over rows

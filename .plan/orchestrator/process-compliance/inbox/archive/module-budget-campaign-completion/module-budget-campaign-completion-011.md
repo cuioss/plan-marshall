@@ -4,7 +4,6 @@ sender_id=module-budget-campaign-completion
 epic=process-compliance
 kind=finding
 created=2026-09-25T14:46:00Z
-revision=1
 
 # Process-rule issue: the pre-push gate's only input path is a hand-transcribed footprint CSV, so at 434 paths the caller feeds it a fabricated path set
 
