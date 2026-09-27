@@ -35,7 +35,8 @@ Mirrors ``_analyze_role_field.py`` and ``_analyze_test_conventions.py``:
 - stdlib-only dependencies
 - no mutation of any file
 - path-scoped: only files under
-  ``marketplace_root/{bundle}/skills/{skill}/scripts/*.py`` are inspected
+  ``marketplace_root/{bundle}/skills/{skill}/scripts/**/*.py`` are inspected,
+  recursively, so a nested script package is walked as well as a top-level one
 
 Detection — Production side
 ---------------------------
