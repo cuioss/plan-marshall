@@ -467,12 +467,15 @@ class TestSingleImplementation:
         assert marketplace_paths.PLAN_DIR_NAME == target_context.PLAN_DIR_NAME
 
     def test_marketplace_paths_resolves_through_the_shared_resolver(self, tmp_path, monkeypatch):
-        """``marketplace_paths._read_runtime_target`` delegates rather than re-deriving.
+        """``marketplace_paths._read_runtime_target`` reaches the ENV tier.
 
-        The assertion is on the TIER, not the value: the two readers returned the
-        same string for every well-formed input and disagreed only on which
-        inputs they collapsed, so a value-only assertion would not have caught a
-        re-derived copy.
+        This is a value-only assertion, and that is what the projection permits:
+        ``_read_runtime_target`` is ``resolve_target()['target']``, so the tier
+        is discarded before it returns. What the row buys is the env leg — the
+        env signal answers here at all, which the config-only reader this
+        delegation replaced could not do. The tier itself is asserted where it
+        is observable, in ``test_target_context``'s own rows and in
+        ``test_executor_target_resolution``'s per-verb ``target_source`` check.
         """
         import marketplace_paths
 

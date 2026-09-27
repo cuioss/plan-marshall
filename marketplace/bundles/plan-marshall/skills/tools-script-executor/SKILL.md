@@ -479,8 +479,8 @@ stale embedded path is never returned blindly:
    a live embedded or cache path still wins. Only the OpenCode executor, whose own
    tree-first probe runs *before* the embedded checks, promotes tree code ahead of
    them.
-4. **cwd upward walk** — walks up from `Path.cwd()` to the same live tree, for
-   the case where the executor file's own ancestors hold no checkout.
+4. **cwd upward walk** — walks up from `Path.cwd()`, and from the executor
+   file's own location, to the same live tree.
 
 Because of this, `PM_MARKETPLACE_ROOT` is **not required** to recover from a
 stale/relocated embedded path — it remains only as an intentional explicit

@@ -25,6 +25,13 @@ render identically: a green run over the registered targets and a green run over
 none of them are different findings, and collapsing them is how a deployment goes
 unexamined for months. The absent case is stated in the failure message of the
 aggregate test below, so a reader is told which trees were looked at.
+
+**The boundary this module can and cannot draw.** A directory under the target
+root that carries no markdown is not a tree: the discovery filter excludes it, so
+a HALF-WRITTEN tree is indistinguishable from an absent one here. What the
+aggregate assertion does catch is the case that matters operationally — a target
+root with no trees at all, which reads as "unevaluated" rather than as a clean
+sweep over nothing.
 """
 
 from __future__ import annotations
@@ -81,16 +88,6 @@ class TestTheSweepIsReal:
             'Reported as unevaluated rather than passing, so a deployment that was never '
             'generated does not read as a clean sweep.'
         )
-
-    def test_every_examined_tree_was_swept(self, trees: dict[str, Path]) -> None:
-        """Each named tree contributes at least one body to the sweep.
-
-        A tree that is present but empty contributes no findings, so a clean run
-        over a half-written tree is indistinguishable from a clean run over a
-        complete one unless the per-tree contribution is asserted.
-        """
-        for name, tree in trees.items():
-            assert any(tree.rglob('*.md')), f'target tree {name!r} contains no markdown body'
 
     def test_no_tree_names_a_skill_the_marketplace_does_not_ship(self, trees: dict[str, Path]) -> None:
         """The gate: no deployed body names a skill the marketplace does not ship.

@@ -2919,7 +2919,8 @@ def _extract_project_steps(marshal_config: dict[str, Any]) -> list[dict[str, str
     Thin delegator over :func:`runtime_base.extract_project_steps` — the single
     home for the phase roster and the ``steps`` shape. Relocated from
     ``permission_doctor``; kept as a module-level name because the Claude call
-    sites below address it as ``claude_runtime._extract_project_steps``.
+    sites in ``_claude_runtime_impl.py`` address it as
+    ``claude_runtime._extract_project_steps``.
 
     This module previously carried its own roster tuple and guarded with
     ``isinstance(steps, list)``. Against a real marshal.json — where ``steps``

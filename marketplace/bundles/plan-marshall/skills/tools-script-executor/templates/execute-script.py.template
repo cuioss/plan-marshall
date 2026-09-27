@@ -1454,9 +1454,9 @@ def resolve_notation(notation: str) -> str | None:
        the embedded checks above — so on a target other than OpenCode a live
        embedded or cache path still wins; only leg 0 promotes tree code ahead of
        it, and leg 0 is OpenCode-only.
-    4. cwd upward walk to a live ``marketplace/bundles`` tree
-       (_resolve_notation_by_cwd_walk) — reached when the executor file's own
-       ancestors hold no checkout.
+    4. cwd/executor-file upward walk to a live ``marketplace/bundles`` tree
+       (_resolve_notation_by_cwd_walk) — walks up from both ``Path.cwd()`` and
+       this executor file's own location.
     """
     # 0. OpenCode tree-first probe — only for OpenCode executors; every other
     # target falls through to the embedded checks below unchanged.
