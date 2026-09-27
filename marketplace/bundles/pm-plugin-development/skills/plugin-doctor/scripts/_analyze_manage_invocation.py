@@ -306,7 +306,9 @@ def discover_in_scope_scripts(
                 if not _script_declares_argparse(script_file):
                     continue
                 notation = f'{bundle}:{skill}:{stem}'
-                script_relpath = f'bundles/{bundle}/skills/{skill}/scripts/{script_file.relative_to(scripts_dir)}'
+                script_relpath = (
+                    f'bundles/{bundle}/skills/{skill}/scripts/{script_file.relative_to(scripts_dir).as_posix()}'
+                )
                 skill_dir_relpath = f'bundles/{bundle}/skills/{skill}'
                 descriptors.append(
                     _ScriptDescriptor(
