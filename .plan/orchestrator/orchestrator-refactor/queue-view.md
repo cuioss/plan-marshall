@@ -4,11 +4,11 @@
 
 ## START HERE
 
-**Resume anchor**: 2026-09-26 (latest) — THREE ROWS STAGED after the PM-MCP park, all by explicit operator decision: PLAN-09 (one shared worktree for ALL epic changes — re-scoped from per-epic), PLAN-10 (land verb for that worktree — re-scoped, land-all dropped), PLAN-11 (cross-check self-collision). All three share orchestrator.py + test/plan-marshall/plan-orchestrator/** -> run one at a time; PLAN-10 strictly after PLAN-09. Next: operator picks the first to emit (queue order: PLAN-09; PLAN-11 is smallest). Still parked, do NOT emit: PLAN-03/05/06/07. Ledger + PM-MCP carry-over edits of this session are uncommitted.
+**Resume anchor**: 2026-09-27 — LEDGER LANDED: PR #1636 merged (075ffbb68, verified from PR state; verify/conclusion green). It carries this epic's PM-MCP park + PLAN-09/10 re-scope + PLAN-11 re-stage, together with the legacy delivery false-block fixes. Staged: PLAN-09 (one shared worktree for ALL epic changes), PLAN-10 (land verb, strictly after 09), PLAN-11 (cross-check self-collision) — all share orchestrator.py, run one at a time. Next: operator picks the first to emit (queue order PLAN-09; PLAN-11 smallest). Parked, do NOT emit: PLAN-03/05/06/07. PM-MCP carry-over file still awaits operator commit in plan-marshall-mcp.
 
-2026-09-26 — QUEUE PARKED, PM-MCP SUPERSEDES IT (review-apparatus-001 drained). All 7 non-shipped rows were parked with SUPERSEDED BY PM-MCP banners; un-park only by explicit operator decision. Carry-over filed at plan-marshall-mcp/doc/known-defects/orchestrator-refactor-carry-over.md (uncommitted there; the operator commits). No emitted-unlaunched command existed to void.
+2026-09-26 — QUEUE PARKED, PM-MCP SUPERSEDES IT (review-apparatus-001 drained); PLAN-09/10/11 later re-staged by operator decision.
 
-PREVIOUS ANCHOR (kept): Cleanup pass shipped (PR #1621, merge 54b4bb525): 30 A1 verdicts re-grounded, PLAN-10/PLAN-11 re-scoped. restart-check: ready. Next: resume normal orchestration (status/next) or pick up an operator-authorized cross-epic migrate-layout sweep (Open Defect, not yet authorized beyond the epics already migrated).
+PREVIOUS ANCHOR (kept): Cleanup pass shipped (PR #1621, merge 54b4bb525): 30 A1 verdicts re-grounded, PLAN-10/PLAN-11 re-scoped. restart-check: ready.
 **Phase**: orchestrating
 **Parked**:
 - PLAN-03 (WS-02)
