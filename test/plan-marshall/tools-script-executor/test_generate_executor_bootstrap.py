@@ -13,9 +13,7 @@ subprocess that pre-seeds ``sys.path`` and then imports the real generator by
 file path — asserting on the resulting ``sys.path`` ordering.
 """
 
-import os
 import subprocess
-import sys
 import textwrap
 from pathlib import Path
 
@@ -26,6 +24,7 @@ from conftest import (
     ExecutorBootstrapError,
     _ensure_executor_present,
     get_scripts_dir,
+    run_clean_python_subprocess,
 )
 
 # The shared-module skills the executor template bootstraps onto sys.path before
@@ -76,16 +75,7 @@ def _run_bootstrap_probe(seed_lines: str) -> tuple[int, int, int, str]:
     # Clean environment: drop PYTHONPATH so the subprocess sys.path starts minimal
     # and the seed lines are the only script-dir entries. The generator resolves
     # its own imports via the bootstrap guard, so no inherited PYTHONPATH is needed.
-    import os
-
-    env = {k: v for k, v in os.environ.items() if k != 'PYTHONPATH'}
-    result = subprocess.run(
-        [sys.executable, '-c', driver],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        env=env,
-    )
+    result = run_clean_python_subprocess(['-c', driver], text=True, timeout=60)
     lines = result.stdout.strip().splitlines()
     real_idx = int(lines[0]) if len(lines) >= 1 else -1
     injected_idx = int(lines[1]) if len(lines) >= 2 else -1
@@ -338,15 +328,13 @@ def _run_executor(executor: Path, home: Path) -> subprocess.CompletedProcess:
     exits right after the module-load bootstrap, so a self-heal failure surfaces as a
     non-zero exit with a ``ModuleNotFoundError`` before ``main`` runs.
     """
-    env = {k: v for k, v in os.environ.items() if k != 'PYTHONPATH'}
-    env['HOME'] = str(home)
-    return subprocess.run(
-        [sys.executable, str(executor), '--list'],
-        capture_output=True,
+    result: subprocess.CompletedProcess[str] = run_clean_python_subprocess(
+        [executor, '--list'],
         text=True,
         timeout=60,
-        env=env,
+        env_overrides={'HOME': str(home)},
     )
+    return result
 
 
 class TestTemplateBootstrapSelfHeal:

@@ -35,7 +35,8 @@ Mirrors ``_analyze_role_field.py`` and ``_analyze_test_conventions.py``:
 - stdlib-only dependencies
 - no mutation of any file
 - path-scoped: only files under
-  ``marketplace_root/{bundle}/skills/{skill}/scripts/*.py`` are inspected
+  ``marketplace_root/{bundle}/skills/{skill}/scripts/**/*.py`` are inspected,
+  recursively, so a nested script package is walked as well as a top-level one
 
 Detection — Production side
 ---------------------------
@@ -428,7 +429,7 @@ def _build_finding(
 
 
 def _iter_script_files(marketplace_root: Path) -> list[Path]:
-    """Yield every ``*.py`` file under ``marketplace_root/{bundle}/skills/{skill}/scripts/``."""
+    """Yield every ``*.py`` file under each skill's ``scripts/`` directory."""
     if not marketplace_root.is_dir():
         return []
     results: list[Path] = []
@@ -444,7 +445,7 @@ def _iter_script_files(marketplace_root: Path) -> list[Path]:
             scripts_dir = skill_dir / 'scripts'
             if not scripts_dir.is_dir():
                 continue
-            for script_path in sorted(scripts_dir.glob('*.py')):
+            for script_path in sorted(scripts_dir.rglob('*.py')):
                 if script_path.is_file():
                     results.append(script_path)
     return results

@@ -504,7 +504,9 @@ def owned_entry_scripts(skill_dir: Path) -> dict[str, Path]:
 
     An entry script is discriminated structurally, by the
     ``if __name__ == '__main__':`` guard the script-architecture standard requires
-    of every entry point. A leading-underscore filter would not do: this tree
+    of every entry point. Entry scripts may live below a skill's ``scripts/``
+    directory, so the discovery walk is recursive rather than limited to its
+    immediate children. A leading-underscore filter would not do: this tree
     carries non-underscore helper MODULES that are imported, never invoked
     (``toon_parser.py``, ``retro_sections.py``), and admitting them would report a
     derivation skip for every one. A file that cannot be read or parsed is
@@ -518,7 +520,7 @@ def owned_entry_scripts(skill_dir: Path) -> dict[str, Path]:
     skill_name = skill_dir.name
     return {
         f'{bundle_name}:{skill_name}:{path.stem}': path
-        for path in sorted(scripts_dir.glob('*.py'))
+        for path in sorted(scripts_dir.rglob('*.py'))
         if _declares_main_guard(path) is not False
     }
 

@@ -60,6 +60,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from _banner_attribution_policy import _STOPWORDS
 from _fidelity_diff import list_python_files_at_ref, read_file_at_ref
 
 #: The definition this instrument applies, printed verbatim in every report.
@@ -94,79 +95,6 @@ _RULE_ONLY = re.compile(r'^#\s*[-=~_*]{4,}\s*$')
 #: construct beneath it and injects its words into the distinctive-token set, so
 #: it can fabricate a misattribution or destroy a real heading's distinctiveness.
 _INLINE_HEADING = re.compile(r'^#\s*(?P<rule>[-=~_*])(?P=rule){2,}\s*(?P<text>.*?)\s*[-=~_*]*\s*$')
-
-#: Tokens too generic to attribute anything by. A banner whose only tokens are
-#: these names no subject, and a construct matching only on one of them would
-#: match nearly every heading.
-_STOPWORDS = frozenset(
-    {
-        'and',
-        'the',
-        'for',
-        'not',
-        'with',
-        'from',
-        'into',
-        'this',
-        'that',
-        'rule',
-        'rules',
-        'helper',
-        'helpers',
-        'shared',
-        'common',
-        'util',
-        'utils',
-        'test',
-        'tests',
-        'main',
-        # Structural section vocabulary. Nearly every module carries several of
-        # these across several headings, so they attribute nothing on their own —
-        # and leaving them in is what turns the check into a false-positive machine.
-        'entry',
-        'point',
-        'points',
-        'public',
-        'private',
-        'internal',
-        'scanner',
-        'scan',
-        'parsing',
-        'parser',
-        'derivation',
-        'detection',
-        'data',
-        'class',
-        'classes',
-        'form',
-        'file',
-        'files',
-        'source',
-        'population',
-        'finding',
-        'findings',
-        'construction',
-        'pattern',
-        'patterns',
-        'check',
-        'checks',
-        'side',
-        'state',
-        'states',
-        'line',
-        'lines',
-        'per',
-        'model',
-        'output',
-        'input',
-        'result',
-        'results',
-        'config',
-        'configuration',
-        'module',
-        'modules',
-    }
-)
 
 
 @dataclass(frozen=True)

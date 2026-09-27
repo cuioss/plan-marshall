@@ -194,12 +194,16 @@ def _prune_basetemp_roots(
     """Retire per-session basetemp dirs until the root satisfies BOTH bounds.
 
     On return the root holds at most ``keep`` per-session dirs AND at most
-    ``max_entries`` filesystem entries across them. Retention walks newest-first
-    and stops at the first dir that would breach either bound, so removal is
-    oldest-first and the newest session's scratch is the last thing given up. A
-    dir whose size could not be established exactly is retired rather than
-    retained — admitting an unmeasured dir as free is how a count-only bound came
-    to permit a 1.0 GB root in the first place.
+    ``max_entries`` filesystem entries across them — with ONE deliberate
+    exception: the newest dir is never removed even when it cannot be measured,
+    so a root whose newest session alone exceeds ``max_entries`` is returned
+    over budget rather than emptied. Retention walks newest-first and stops at
+    the first dir that would breach either bound, so removal is oldest-first and
+    the newest session's scratch is the last thing given up. A dir whose size
+    could not be established exactly is retired rather than retained — admitting
+    an unmeasured dir as free is how a count-only bound came to permit a 1.0 GB
+    root in the first place. The newest dir is the single exception, and only
+    when it is the unmeasurable one.
 
     Best-effort: a prune failure (a dir vanishing mid-scan, a permission error,
     an unreadable subtree) never aborts the build — retention is a housekeeping
@@ -226,9 +230,23 @@ def _prune_basetemp_roots(
 
     retained = 0
     retained_entries = 0
-    for session in session_dirs[:keep]:
+    for index, session in enumerate(session_dirs[:keep]):
         counted = _count_entries_within(session, max_entries - retained_entries)
         if counted is None:
+            if index == 0:
+                # The NEWEST dir is never a removal candidate. It is either the
+                # session running right now — a concurrent worktree, or the outer
+                # suite whose own workers are writing into it — or the one this
+                # call is about to supersede. A live session that outgrew the
+                # budget is exactly the case that measures as None, and breaking
+                # here with retained=0 hands the WHOLE list to the removal loop
+                # and rmtree's the live root out from under the run using it. The
+                # observed symptom is a whole-suite FileNotFoundError cascade on
+                # .plan/temp/pytest-basetemp/<session>/popen-gwN, attributed to
+                # whichever tests happened to run next. Bounding the newest dir is
+                # the dimension that caused the outage, so it is given up instead
+                # of the run it belongs to.
+                retained = 1
             break
         retained_entries += counted
         retained += 1

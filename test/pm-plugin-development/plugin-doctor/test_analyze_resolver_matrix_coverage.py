@@ -78,6 +78,26 @@ def _make_synth_marketplace(
     return marketplace_root, project_root
 
 
+def test_nested_script_is_included_in_resolver_scan(tmp_path: Path) -> None:
+    """The resolver sweep walks nested script packages as well as top-level scripts."""
+    marketplace_root, project_root = _make_synth_marketplace(
+        tmp_path,
+        'demo',
+        'resolver-skill',
+        'resolver',
+        _THREE_TIER_RESOLVER_SOURCE,
+        None,
+    )
+    direct = marketplace_root / 'demo' / 'skills' / 'resolver-skill' / 'scripts' / 'resolver.py'
+    nested = direct.with_name('nested')
+    nested.mkdir()
+    direct.rename(nested / 'resolver.py')
+
+    findings = analyze_resolver_matrix_coverage(marketplace_root, project_root)
+
+    assert any(f['rule_id'] == RULE_ID for f in findings)
+
+
 # Source for a 3-tier skip-on-miss resolver: 3 guarded returns + a final
 # fallback return. Mirrors the post-Deliverable-2 ``session_render_title``
 # control-flow shape but kept minimal for unit testing.

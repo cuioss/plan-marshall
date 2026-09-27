@@ -1111,6 +1111,29 @@ class TestDiscoverInScopeScripts:
         thirds = {d.notation.split(':')[-1] for d in descriptors}
         assert '_internal' not in thirds
 
+    def test_nested_entry_scripts_are_in_scope(self, tmp_path: Path) -> None:
+        marketplace_root = _build_synthetic_marketplace(tmp_path)
+        nested = (
+            marketplace_root
+            / 'marketplace'
+            / 'bundles'
+            / 'plan-marshall'
+            / 'skills'
+            / 'manage-status'
+            / 'scripts'
+            / 'nested'
+            / 'manage-nested.py'
+        )
+        nested.parent.mkdir(parents=True)
+        nested.write_text(_minimal_argparse_source(), encoding='utf-8')
+
+        by_notation = {d.notation: d for d in discover_in_scope_scripts(marketplace_root)}
+
+        assert 'plan-marshall:manage-status:manage-nested' in by_notation
+        assert by_notation['plan-marshall:manage-status:manage-nested'].script_relpath.endswith(
+            'scripts/nested/manage-nested.py'
+        )
+
     def test_non_argparse_scripts_are_skipped(self, tmp_path: Path) -> None:
         marketplace_root = _build_synthetic_marketplace(tmp_path)
         descriptors = discover_in_scope_scripts(marketplace_root)
