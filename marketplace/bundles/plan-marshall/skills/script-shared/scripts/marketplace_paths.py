@@ -943,8 +943,11 @@ def get_base_path(scope: str = 'auto', marketplace_root: Path | None = None, tar
             :func:`target_context.resolve_context` — passes it here so those legs
             resolve for THAT target instead of the ambient cascade's answer.
             ``None`` keeps the ambient resolution every pre-existing caller
-            means. It is also what demotes the ``PM_MARKETPLACE_ROOT`` anchor
-            to a last-resort override; see :func:`_env_anchor_is_last_resort`.
+            means. Passing a target is also what demotes the
+            ``PM_MARKETPLACE_ROOT`` anchor to a last-resort override — an
+            already-resolved target is a declared context, so a configured
+            machine no longer lets the env var pin the marketplace scope ahead
+            of the cache; see :func:`_env_anchor_is_last_resort`.
 
     Returns:
         Path to the bundles directory (or .claude for global/project scope)

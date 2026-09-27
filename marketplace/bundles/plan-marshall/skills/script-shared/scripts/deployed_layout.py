@@ -21,8 +21,10 @@ the deployed tree, singular ``skill/`` in the generated tree — and that
 one-character difference was re-probed at every call site, so the readers
 disagreed about it too: ``bootstrap_plugin`` grew a ``plugin.json`` + plural
 ``skills/`` leg and, beside it, an ``opencode.json`` + singular ``skill/`` leg
-that could never fire, because the deployed OpenCode root carries ``skills/``
-and not ``skill/``.
+that could never fire ON A DEPLOYED ROOT, because a deployed root carries
+``skills/`` and not ``skill/``. The singular spelling is not dead — it is what
+a freshly generated, not-yet-installed tree carries, and the resolver probes both
+for exactly that reason.
 
 This module expresses the whole distinction ONCE, as data, and answers three
 questions behind one interface:

@@ -27,9 +27,10 @@ from target_context import SOURCE_ENV, SOURCE_FALLBACK, SOURCE_MARSHAL_JSON
 SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'tools-script-executor')
 GENERATE_SCRIPT = SCRIPTS_DIR / 'generate_executor.py'
 
-#: The six verbs that resolve a target. Derived from the module's own parser
-#: rather than restated, so a verb that gains or loses ``--target`` shows up
-#: here as a roster change instead of silently escaping the matrix.
+#: The six verbs that resolve a target. Restated here so the parametrised matrix
+#: has a roster to iterate, and compared against the module's own parser by
+#: ``test_roster_matches_the_parser`` — so a verb that gains or loses
+#: ``--target`` fails that comparison instead of silently escaping the matrix.
 TARGET_RESOLVING_VERBS = ('generate', 'verify', 'bootstrap', 'drift', 'preflight', 'paths')
 
 #: Every platform env signal the cascade reads. Cleared before each tier case so
@@ -71,9 +72,11 @@ def _exec_resolver(resolver_code: str) -> types.ModuleType:
 class TestTargetFlagIsRegisteredOnEveryVerb:
     """``--target`` is registered on all six verbs, from ONE shared definition.
 
-    The roster and the accept-set are read back out of the production parser
-    rather than restated, so a verb that dropped the flag, or a list that
-    drifted from its siblings', fails here instead of in a user's terminal.
+    The accept-set is read back out of the production parser rather than
+    restated, and the restated roster is compared against it by
+    ``test_roster_matches_the_parser``. So a verb that dropped the flag, or a
+    list that drifted from its siblings', fails here instead of in a user's
+    terminal.
     """
 
     def test_roster_matches_the_parser(self):
