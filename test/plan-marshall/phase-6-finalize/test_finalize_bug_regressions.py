@@ -57,5 +57,74 @@ class TestCreatePrTitleAndBodyGrounding:
         )
 
 
+_STEP_3_5_HEADING = '#### Step 3.5:'
+_STEP_3_6_HEADING = '#### Step 3.6:'
+_STEP_4_HEADING = '#### Step 4:'
+
+
+def _section(text: str, start_heading: str, end_heading: str) -> str:
+    """Return the span of ``text`` from ``start_heading`` up to ``end_heading``.
+
+    Both headings must be present and ordered, so a renamed or reordered
+    heading fails the pin loudly instead of silently yielding an empty span.
+    """
+    start = text.find(start_heading)
+    assert start != -1, f'create-pr.md is missing the {start_heading!r} heading.'
+    end = text.find(end_heading, start + len(start_heading))
+    assert end != -1, f'create-pr.md is missing the {end_heading!r} heading after {start_heading!r}.'
+    return text[start:end]
+
+
+class TestCreatePrTitleStalenessCheck:
+    """Regression pins for the Step 3.5 pr_title staleness check.
+
+    ``pr_title`` is authored once at phase-2-refine, before execute runs. Before
+    this fix Step 3.5 bound it verbatim, so a PR whose scope shrank during
+    execute shipped under a title naming work it no longer contained. These pins
+    lock the re-read of the executed scope, the persisted re-derivation, and the
+    audit line into Step 3.5 itself — the step that binds the title — so the
+    check cannot drift to a later step that runs after the title was consumed.
+    """
+
+    def _step_3_5(self) -> str:
+        return _section(_CREATE_PR_DOC.read_text(encoding='utf-8'), _STEP_3_5_HEADING, _STEP_3_6_HEADING)
+
+    def test_step_3_5_reads_executed_deliverables(self):
+        step = self._step_3_5()
+        assert 'manage-solution-outline list-deliverables' in step, (
+            'create-pr.md Step 3.5 must read the executed deliverable set via '
+            'manage-solution-outline list-deliverables before trusting the refine-time pr_title.'
+        )
+
+    def test_step_3_5_compares_against_changed_files(self):
+        step = self._step_3_5()
+        assert '{changed_files}' in step, (
+            'create-pr.md Step 3.5 must compare the title against the Step 1 {changed_files} diff scope.'
+        )
+
+    def test_step_3_5_persists_re_derived_title(self):
+        step = self._step_3_5()
+        assert '--set --field pr_title --value "{new_title}"' in step, (
+            'create-pr.md Step 3.5 must persist a re-derived title via '
+            'manage-status metadata --set --field pr_title so later readers see the shipped title.'
+        )
+
+    def test_step_3_5_logs_stale_title_decision(self):
+        step = self._step_3_5()
+        assert 'Stale pr_title re-derived' in step, (
+            'create-pr.md Step 3.5 must record a decision-log line when the title is re-derived.'
+        )
+        assert 'old: {pr_title}' in step and 'new: {new_title}' in step, (
+            'The stale-title decision-log line must name both the old and the new title.'
+        )
+
+    def test_step_4_still_passes_bound_pr_title(self):
+        text = _CREATE_PR_DOC.read_text(encoding='utf-8')
+        step_4 = _section(text, _STEP_4_HEADING, '### Log PR creation')
+        assert '--title "{pr_title}"' in step_4, (
+            'create-pr.md Step 4 must still pass --title "{pr_title}" — the (possibly re-derived) bound title.'
+        )
+
+
 if __name__ == '__main__':
     raise SystemExit(pytest.main([__file__, '-v']))
