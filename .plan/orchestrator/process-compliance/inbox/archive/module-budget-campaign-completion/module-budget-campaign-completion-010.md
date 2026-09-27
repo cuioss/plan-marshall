@@ -4,7 +4,6 @@ sender_id=module-budget-campaign-completion
 epic=process-compliance
 kind=finding
 created=2026-09-25T13:59:00Z
-revision=1
 
 # Process-rule issue: `detect-artifacts` routes the entire tracked test-fixture corpus to `uncertain`, making the pre-commit confirmation step unactionable
 

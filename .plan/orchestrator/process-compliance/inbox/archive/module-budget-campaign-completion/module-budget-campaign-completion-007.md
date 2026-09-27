@@ -4,7 +4,6 @@ sender_id=module-budget-campaign-completion
 epic=process-compliance
 kind=finding
 created=2026-09-25T13:56:00Z
-revision=1
 
 # Process-rule issue: `mark-step-done` refuses the documented `failed` write on a re-fired step, so "a red gate aborts before push" is structurally unreachable on re-entry
 
