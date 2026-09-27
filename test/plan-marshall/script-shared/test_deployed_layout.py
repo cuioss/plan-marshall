@@ -106,9 +106,19 @@ def _emitted_import_paths(emitted: str) -> list[str]:
     Parsed with ``ast`` rather than by scanning for quote characters, because the
     file also carries a script MAPPING whose values are FILES — a text scan would
     report those as missing directories and the assertion would then pass for the
-    wrong reason. Only the three placeholders the generator fills with
-    directories are read: ``LOGGING_DIR``, the ``_BOOTSTRAP_SKILL_DIRS`` pairs,
-    and the ``_ALL_SCRIPT_DIRS`` list.
+    wrong reason. Read the three placeholder sites the generator fills with
+    directories, in the shapes the template actually emits them:
+
+    - ``_BOOTSTRAP_LOGGING_DIR`` — a ``(skill, path)`` tuple, so the path is
+      element 1, not the whole value;
+    - ``_BOOTSTRAP_SKILL_DIRS`` — ``(skill, path)`` pairs, same shape;
+    - ``_ALL_SCRIPT_DIRS`` — a flat list of paths.
+
+    A branch keyed on a name the template does not emit would leave the logging
+    path unchecked while the sweep still reported a non-empty population, so
+    the shapes are asserted rather than assumed: a shape this parser does not
+    recognise is simply absent from ``declared``, and the caller's
+    ``assert declared`` is per-shape, not just overall.
     """
     import ast
 
@@ -118,16 +128,21 @@ def _emitted_import_paths(emitted: str) -> list[str]:
         if not isinstance(node, ast.Assign):
             continue
         name = node.targets[0].id if isinstance(node.targets[0], ast.Name) else ''
-        if name == 'LOGGING_DIR' and isinstance(node.value, ast.Constant):
-            declared.append(str(node.value.value))
-        elif name == '_ALL_SCRIPT_DIRS' and isinstance(node.value, (ast.List, ast.Tuple)):
+        if not isinstance(node.value, (ast.List, ast.Tuple)):
+            continue
+        if name == '_ALL_SCRIPT_DIRS':
             declared.extend(str(el.value) for el in node.value.elts if isinstance(el, ast.Constant))
-        elif name == '_BOOTSTRAP_SKILL_DIRS' and isinstance(node.value, (ast.List, ast.Tuple)):
-            for element in node.value.elts:
+        elif name in ('_BOOTSTRAP_LOGGING_DIR', '_BOOTSTRAP_SKILL_DIRS'):
+            elements = node.value.elts
+            if name == '_BOOTSTRAP_LOGGING_DIR':
+                elements = elements[-1:]
+            for element in elements:
                 if isinstance(element, (ast.List, ast.Tuple)) and len(element.elts) == 2:
                     pinned = element.elts[1]
                     if isinstance(pinned, ast.Constant):
                         declared.append(str(pinned.value))
+                elif name == '_BOOTSTRAP_LOGGING_DIR' and isinstance(element, ast.Constant):
+                    declared.append(str(element.value))
     return declared
 
 

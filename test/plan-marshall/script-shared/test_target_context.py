@@ -153,9 +153,10 @@ class TestFallbackReasonsAreDistinguishable:
         """Each unusable-config condition carries its OWN reason.
 
         A reader that collapsed them would answer ``fallback`` for all three with
-        one empty reason, and this test fails on the third. The pairwise check at
-        the end is what makes the discrimination mechanical rather than a matter
-        of reading three literals side by side.
+        one shared reason, and this test fails on the FIRST of the three that
+        disagrees with it. The pairwise check at the end is what makes the
+        discrimination mechanical rather than a matter of reading three literals
+        side by side.
         """
         plan_dir = project / '.plan'
         plan_dir.mkdir()

@@ -20,10 +20,10 @@ could otherwise pass while proving nothing:
 
 - **The population is re-derived every run, AND pinned.** The bodies are
   discovered from the tree and compared against a named roster, so the two must
-  agree in BOTH directions: a seventeenth body carrying the block is not a silent
-  addition, it is a red build that names itself and demands a roster edit. A
-  discovery alone would let a new body in unreviewed; a roster alone would go
-  stale in the direction that hides.
+  agree in BOTH directions: a body beyond the named roster that carries the block
+  is not a silent addition, it is a red build that names itself and demands a
+  roster edit. A discovery alone would let a new body in unreviewed; a roster
+  alone would go stale in the direction that hides.
 - **An unresolvable notation FAILS — it does not skip, and it does not fall back
   to a default.** A guard that skips what it cannot check reports the same green
   for "everything resolves" and "the check could not run".
@@ -50,10 +50,13 @@ from _foundational_skills import (
 #: empty walk satisfies "every body resolves" vacuously, which is the same
 #: silent-green this module exists to prevent.
 #:
-#: SOURCE, not deployment: three further bodies carry the block in a generated
-#: target tree without carrying it here, and reading the deployed copies into this
-#: list would make the guard's population a function of whether somebody last ran
-#: the generator. A body that gains the block in SOURCE lands in the
+#: SOURCE, not deployment: every body that carries the block in a generated
+#: target tree is a mirror of one that carries it here, so reading the deployed
+#: copies into this list would make the guard's population a function of whether
+#: somebody last ran the generator. (The reverse is not symmetric: a target may
+#: legitimately omit a body — the antigravity and opencode trees carry no
+#: ``recipe-surgical-fix`` — which is why the deployed trees are swept by their
+#: own module.) A body that gains the block in SOURCE lands in the
 #: ``found - expected`` direction of the drift assertion below, which is the
 #: direction that matters — that is a new surface nobody has assessed yet.
 EXPECTED_FOUNDATIONAL_BODIES: tuple[str, ...] = (

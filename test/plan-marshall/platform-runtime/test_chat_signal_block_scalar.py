@@ -3,10 +3,15 @@
 
 Governs the ``chat extract-signal`` record's crossing of the TOON boundary. The
 reduced transcript is the one field in the record that is multi-line BY
-CONSTRUCTION — two surviving turns render as two paragraphs — and an unmarked
-multi-line string cannot cross that boundary: the serializer quotes it without
-escaping anything, so every line after the first is read back by ``parse_toon``
-as a SIBLING TOP-LEVEL KEY of the envelope.
+CONSTRUCTION — the renderer joins surviving turns with a blank line — and an
+unmarked multi-line string cannot cross that boundary: the serializer quotes it
+without escaping anything, so every line after the first is read back by
+``parse_toon`` as a SIBLING TOP-LEVEL KEY of the envelope.
+
+The hazard is the field's own newlines, not the TURN COUNT. A single surviving
+turn whose text carries interior newlines is already multi-line — which is why
+the corruption fixture below is a one-turn, three-line turn — so "only one turn"
+is not a degenerate case the marking can be excused from.
 
 Two distinct consequences, and they fail independently, so both are asserted
 here:
@@ -161,10 +166,12 @@ class TestEnvelopeIsNotCorrupted:
 
 
 class TestSingleTurnReduction:
-    """A one-turn reduction is single-line, so the hazard is absent anyway.
+    """A one-turn reduction still round-trips when the turn itself is multi-line.
 
     Present so the suite states that the marking costs nothing on the degenerate
-    case, rather than leaving a reader to wonder whether it broke it.
+    case, rather than leaving a reader to wonder whether it broke it. The turn
+    carries interior newlines, so this row is NOT the single-line case — it is
+    the narrowest case the hazard reaches, and the marking has to hold on it.
     """
 
     def test_single_surviving_turn_round_trips_and_keeps_its_bytes(self, tmp_path: Path) -> None:
