@@ -11,7 +11,7 @@ Applies when `scope: planning` is specified. These checks supplement the base ve
 
 **CRITICAL**: Execute the **Post-Phase Verification Protocol** after EVERY phase transition (1-init→3-outline, 4-plan→5-execute, 5-execute→6-finalize, 6-finalize completion). This is NOT optional.
 
-**6-finalize ORDERING**: For 6-finalize, run the verification protocol **between** the phase transition (Step 9: `manage-status transition --completed 6-finalize`) and the archive (Step 10: `manage-status archive`). The archive moves plan files to `.plan/archived-plans/`, making `manage-status read` fail with `file_not_found`. Always verify before archiving.
+**6-finalize ORDERING**: For 6-finalize, run the verification protocol **between** the phase transition (Step 9: `manage-status transition --completed 6-finalize`) and the archive (Step 10: `manage-status archive`). The archive moves plan files from `.plan/local/plans/{plan_id}/` to `.plan/local/archived-plans/`, making `manage-status read` fail with `file_not_found`. Always verify before archiving.
 
 Load and follow the protocol from `standards/planning-compliance.md`:
 

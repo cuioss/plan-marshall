@@ -1648,7 +1648,7 @@ The guard is scoped to dispatched (Task-agent) steps only, and within that scope
 
 #### Pre-Archive Snapshot Hook
 
-When the NEXT step to dispatch is `default:archive-plan` (always the last CONFIGURED step), capture a snapshot of plan state BEFORE dispatching archive-plan. The archive step moves `.plan/plans/{plan_id}/` to `.plan/archived-plans/{date}-{plan_id}/` and invalidates subsequent `manage-status read` calls against the live path, so the renderer (Step 4) would be unable to read state after archive returns.
+When the NEXT step to dispatch is `default:archive-plan` (always the last CONFIGURED step), capture a snapshot of plan state BEFORE dispatching archive-plan. The archive step moves `.plan/local/plans/{plan_id}/` to `.plan/local/archived-plans/{date}-{plan_id}/` and invalidates subsequent `manage-status read` calls against the live path, so the renderer (Step 4) would be unable to read state after archive returns.
 
 The snapshot is held in **model context (in-memory)** — do NOT write a work file to disk. It flows directly from this hook into Step 4's render procedure.
 
@@ -1772,7 +1772,7 @@ Finalize steps (9/9 done)
   [OK]  adr-propose                       no ADRs proposed
   [OK]  record-metrics                    1591s / 209327 tokens
   [OK]  branch-cleanup                    main pulled, branch deleted (local+remote), worktree removed
-  [OK]  archive-plan                      -> .plan/archived-plans/2026-04-17-lesson-2026-04-17-005
+  [OK]  archive-plan                      -> .plan/local/archived-plans/2026-04-17-lesson-2026-04-17-005
 
 Repository: main up-to-date | worktree removed | working tree clean
 ```
@@ -1782,7 +1782,7 @@ Repository: main up-to-date | worktree removed | working tree clean
 ```toon
 status: success
 plan_id: {plan_id}
-archive_path: .plan/archived-plans/{date}-{plan_id}
+archive_path: .plan/local/archived-plans/{date}-{plan_id}
 next_state: complete
 ```
 

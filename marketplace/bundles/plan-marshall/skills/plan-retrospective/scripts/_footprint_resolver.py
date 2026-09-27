@@ -361,7 +361,7 @@ def resolve_merge_commit_footprint(plan_dir: Path, refs: dict[str, Any]) -> set[
     """Tier 3: the realized path set of the recorded landing commit, or ``None``.
 
     Uses ``git -C {plan_dir} diff --name-only {sha}^1 {sha}``. ``plan_dir`` is inside
-    the repository (``.plan/archived-plans/…`` sits under the repo root even though
+    the repository (``.plan/local/archived-plans/…`` sits under the repo root even though
     it is git-ignored), so ``git -C`` resolves the enclosing repo and the landed
     commit in its history.
 

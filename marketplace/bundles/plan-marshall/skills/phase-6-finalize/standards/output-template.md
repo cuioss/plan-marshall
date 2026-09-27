@@ -112,7 +112,7 @@ Icons are uppercase, wrapped in literal square brackets. Unknown outcomes render
 
 ## Snapshot Procedure
 
-The snapshot MUST run BEFORE `default:archive-plan`, because archive moves `.plan/plans/{plan_id}/` to `.plan/archived-plans/{date}-{plan_id}/` and invalidates subsequent `manage-status read` calls against the live path.
+The snapshot MUST run BEFORE `default:archive-plan`, because archive moves `.plan/local/plans/{plan_id}/` to `.plan/local/archived-plans/{date}-{plan_id}/` and invalidates subsequent `manage-status read` calls against the live path.
 
 Capture the following into in-memory state (no work file is written):
 
@@ -424,7 +424,7 @@ Each row ILLUSTRATES the contract its own step doc declares; that doc, not this 
 | `branch-cleanup` | Local-only mode | `local-only: switched to main` |
 | `branch-cleanup` | Declined by user | `declined by user` |
 | `record-metrics` | Metrics recorded | `{total_wall_formatted} / {total_tokens_formatted} tokens` (e.g. `1h46m / 599K tokens`) |
-| `archive-plan` | Archived successfully | `-> .plan/archived-plans/2026-04-17-jwt-auth/` |
+| `archive-plan` | Archived successfully | `-> .plan/local/archived-plans/2026-04-17-jwt-auth/` |
 
 ## Repository Trailer Rules
 

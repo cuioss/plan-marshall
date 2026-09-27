@@ -208,7 +208,7 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragmen
 ## Out of Scope
 
 - **Markdown documentation outside `logs/`** — `dispatch-logging.md`, `dispatch-walkthrough.md`, this rule-set, and other standards docs reference `Task: general-purpose` and the canonical `[DISPATCH]` shape inside fenced code blocks and prose for instructional purposes. Those mentions are not dispatch evidence and are excluded by scoping the audit to `logs/work.log` and `logs/decision.log` only.
-- **Archived plans** (`.plan/archived-plans/**`) — the audit reads only the active plan's `logs/` directory. Archived plans are inspected by the archived-mode invocation of the retrospective skill against their own scoped paths, never by a live plan's audit run.
+- **Archived plans** (`.plan/local/archived-plans/**`) — the audit reads only the active plan's `logs/` directory. Archived plans are inspected by the archived-mode invocation of the retrospective skill against their own scoped paths, never by a live plan's audit run.
 - **Sonar / PR-review / external-tool finding loops** — those dispatches use their own envelope (`workflow-integration-sonar`, `workflow-integration-github`, etc.) and are audited by separate aspects (`direct-gh-glab-usage`, `script-failure-analysis`). The execution-context dispatch audit narrowly covers the `plan-marshall:execution-context-{level}` envelope only.
 - **Automated remediation** — this aspect reports only; fixes are proposed as lessons in the report and applied in a separate plan.
 

@@ -62,7 +62,7 @@ This workflow dispatches under `--phase phase-6-finalize --role post-run-review`
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `--plan-id` | string | Yes | Plan identifier. Required in every mode — it keys the report, the fragment bundle, and the synthetic archived fallback. |
-| `--archived-plan-path` | string | No | Absolute path to an archived plan directory (`.plan/archived-plans/{date}-{plan_id}/`). Optional override honoured in archived mode only; when omitted, archived mode falls back to the synthetic per-plan directory. Never a substitute for `--plan-id`. |
+| `--archived-plan-path` | string | No | Absolute path to an archived plan directory (`.plan/local/archived-plans/{date}-{plan_id}/`). Optional override honoured in archived mode only; when omitted, archived mode falls back to the synthetic per-plan directory. Never a substitute for `--plan-id`. |
 | `--session-id` | string | No | Optional session identifier. When present, the chat-history aspect is dispatched; otherwise it is skipped. |
 | `--iteration` | integer | No | Finalize-step iteration counter. Forwarded by `phase-6-finalize`; ignored by user-invocable and archived modes. |
 | `orchestrated` | bool | No | `true` when this plan was launched from an epic's staged plan spec, so Step 5b routes every proposal to the epic inbox instead of the global lessons store. In finalize-step mode the dispatcher forwards it (resolved once per finalize entry at `phase-6-finalize/SKILL.md` Step 3 entry, § "a0. Resolve orchestration context (Step 3 entry)"); this body MUST NOT recompute it. |

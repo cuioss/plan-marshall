@@ -18,7 +18,7 @@ implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 
 # Archive Plan
 
-Pure executor for the `archive-plan` finalize step. Archives the completed plan to `.plan/archived-plans/`.
+Pure executor for the `archive-plan` finalize step. Archives the completed plan to `.plan/local/archived-plans/`.
 
 ## Exit-code convention for every script call
 
@@ -49,9 +49,9 @@ Parse the returned TOON `status`. The gate CLEARS only when it has positively re
 
 ## Mark Step Complete
 
-Record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time. This MUST happen BEFORE the archive call below, because archive moves `status.json` out of `.plan/plans/{plan_id}/` and any subsequent `mark-step-done` call would fail to locate the plan.
+Record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time. This MUST happen BEFORE the archive call below, because archive moves `status.json` out of `.plan/local/plans/{plan_id}/` and any subsequent `mark-step-done` call would fail to locate the plan.
 
-Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the archive destination. `{archive_path}` is the canonical archive location `.plan/archived-plans/{date}-{plan_id}` (the same path `manage-status archive` will move the plan directory to in the next call):
+Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the archive destination. `{archive_path}` is the canonical archive location `.plan/local/archived-plans/{date}-{plan_id}` (the same path `manage-status archive` will move the plan directory to in the next call):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \

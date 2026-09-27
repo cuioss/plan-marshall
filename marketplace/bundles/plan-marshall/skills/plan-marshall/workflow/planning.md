@@ -1022,13 +1022,13 @@ Script: `plan-marshall:manage-status:manage-status`
 Status is stored in the plan directory:
 
 ```text
-.plan/plans/{plan_id}/status.json
+.plan/local/plans/{plan_id}/status.json
 ```
 
 Archived plans:
 
 ```text
-.plan/archived-plans/{yyyy-mm-dd}-{plan-name}/
+.plan/local/archived-plans/{yyyy-mm-dd}-{plan-name}/
 ```
 
 ---

@@ -51,7 +51,7 @@ create ──→ [phases 1-6] ──→ archive
 
 ### Archive
 
-- Moves plan directory to `.plan/archived-plans/YYYY-MM-DD-{plan_id}/`
+- Moves plan directory `.plan/local/plans/{plan_id}/` to `.plan/local/archived-plans/YYYY-MM-DD-{plan_id}/`
 - Supports `--dry-run` preview
 - Archived plans subject to retention cleanup (default: 5 days)
 
