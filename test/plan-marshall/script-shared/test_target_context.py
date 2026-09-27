@@ -367,7 +367,7 @@ class TestResolveContext:
     def test_verb_argv_needing_no_context_still_resolves(self, tmp_path):
         """A call with neither a target nor an anchor resolves rather than raising.
 
-        ``verify``/``drift``/``paths`` register ``--target`` but not
+        ``verify`` and ``paths`` register ``--target`` but not
         ``--marketplace-root``, so the pair is routinely absent together.
         """
         _write_marshal(tmp_path, json.dumps({'runtime': {'target': 'opencode'}}))

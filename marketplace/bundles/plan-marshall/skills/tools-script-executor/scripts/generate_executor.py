@@ -275,9 +275,10 @@ def resolve_verb_context(args: argparse.Namespace) -> TargetContext:
     ``verify``, ``bootstrap``, ``drift``, ``preflight``, ``paths``) read the
     same flags through the same cascade and reach the same conclusion on the
     same machine. ``getattr`` with a ``None`` default is deliberate: a verb
-    that registers ``--target`` but not ``--marketplace-root`` (``verify``,
-    ``drift``, ``paths``) must still reach this function rather than growing its
-    own bespoke resolution.
+    that registers ``--target`` but not ``--marketplace-root`` (``verify`` and
+    ``paths``) must still reach this function rather than growing its own
+    bespoke resolution. Read a verb's own ``--help`` for the flag set it
+    actually registers.
 
     Args:
         args: The parsed verb namespace.
@@ -430,8 +431,8 @@ def discover_scripts(base_path: Path) -> dict[str, str]:
     tree. Without that, the subprocess resolved its own base from its own
     environment and cwd, so a run with ``--marketplace-root <worktree>``
     scanned whatever tree the ambient resolution found while the caller
-    believed it had scanned the worktree — and the coverage verdict added by
-    this plan would then be comparing two different trees. The plugin-cache leg
+    believed it had scanned the worktree — and the discovery-coverage verdict
+    would then be comparing two different trees. The plugin-cache leg
     has no equivalent anchor: ``get_base_path('plugin-cache')`` inside the
     subprocess resolves the AMBIENT target's cache, which is the same target
     the shared resolver derived unless an explicit ``--target`` overrode it.

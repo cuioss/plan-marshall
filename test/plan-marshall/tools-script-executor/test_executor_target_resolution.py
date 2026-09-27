@@ -330,9 +330,9 @@ class TestSharedResolverIsTheOnlyReader:
         """A verb's own resolution reaches ``resolve_context`` and reports its source.
 
         Driven through the production parser, so the row covers the flags the
-        verb actually registers — including the three (``verify``, ``drift``,
-        ``paths``) that register ``--target`` but not ``--marketplace-root``, and
-        must therefore still resolve rather than fail on a missing attribute.
+        verb actually registers — including the two (``verify`` and ``paths``)
+        that register ``--target`` but not ``--marketplace-root``, and must
+        therefore still resolve rather than fail on a missing attribute.
         """
         module = _load_generate_executor()
         monkeypatch.setenv('OPENCODE', '1')
@@ -346,7 +346,7 @@ class TestSharedResolverIsTheOnlyReader:
     def test_a_verb_that_registers_no_marketplace_root_flag_still_resolves(self, no_platform_signal, monkeypatch):
         """``paths`` registers only ``--target``, and still produces a full context.
 
-        The three verbs without ``--marketplace-root`` reach the resolver through
+        The two verbs without ``--marketplace-root`` reach the resolver through
         the same ``getattr``-with-default seam. A resolver that read the
         attribute unconditionally would raise ``AttributeError`` here, which is
         why this row names a verb rather than a generic namespace.

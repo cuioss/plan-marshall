@@ -746,7 +746,8 @@ python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_exe
 ### generate_executor — verify
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor verify
+python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor verify \
+  [--target TARGET]
 ```
 
 ### generate_executor — bootstrap
@@ -762,13 +763,14 @@ A sanctioned direct-path entry point for fresh-clone / stale-cache cases. Genera
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor drift \
-  [--marketplace] [--marketplace-root PATH]
+  [--marketplace] [--marketplace-root PATH] [--target TARGET]
 ```
 
 ### generate_executor — paths
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor paths
+python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor paths \
+  [--target TARGET]
 ```
 
 ### generate_executor — cleanup

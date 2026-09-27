@@ -36,7 +36,9 @@ Two exports carry the contract:
     The ``{target, marketplace_root}`` pair the executor verbs share, plus the
     ``target_source`` that produced the target. The caller-supplied
     ``marketplace_root`` is validated HERE, at the shared resolver, rather than
-    at each of the six entry points that accept one (ADR-016: containment of a
+    at each of the six entry points that route one through it — four of them
+    register a ``--marketplace-root`` flag, and the other two reach the pair
+    through the same ``None``-defaulted attribute (ADR-016: containment of a
     caller-supplied identifier belongs at the shared resolver, not at each entry
     point).
 
