@@ -1,10 +1,9 @@
 # PLAN-10: Dispatch-entry capture gaps
 
-> ⛔ **SUPERSEDED BY PM-MCP (2026-09-26, operator decision relayed in inbox `review-apparatus-001`).** Parked.
-> Do NOT emit; un-park only by explicit operator decision. The implementation-independent content of this spec
-> (rules, invariants, fixtures) is extracted to
-> `/Users/oliver/git/plan-marshall-mcp/doc/known-defects/process-compliance-carry-over.md`. The body below is kept
-> intact as the evidence chain.
+> ✅ **UN-PARKED 2026-09-27 by explicit operator directive ("issues about current problems are to be fixed, not
+> relayed to PM-MCP").** Staged and emittable as an operator-confirmed exception to the PM-MCP supersession
+> (originally parked per inbox `review-apparatus-001`). Deliverable 2 is no longer a confirmation exercise: the
+> reader mis-parse is CONFIRMED at HEAD (see the 2026-09-27 folds below) and is a live delivery defect.
 
 epic: process-compliance
 workstream: WS-01
@@ -93,7 +92,7 @@ plan makes the entry lane decidable so the exemption stops recurring.
 - `ledger-joins-002.md` (finding): pr_title capture gap — head of this spec
 - `plan-09-outline-sweep-001.md` (finding): file-input parity — staged into this spec
 - `plan-09-outline-sweep-002.md` (finding): mailbox probe — staged into this spec
-- `plan-09-outline-sweep-003.md` (finding): dirt assertion — staged into this spec
+- `plan-09-outline-sweep-003.md` (finding): dirt assertion — originally staged into this spec with no deliverable; MOVED to PLAN-17 deliverable 1 (2026-09-27)
 - `plan-09-outline-sweep-005.md` (finding): steps parser — staged into this spec
 - `plan-09-outline-sweep-004.md` (finding): pr_title capture recurrence — folded; expected surface unchanged by this fold (recurrence note, adds no file surface — recorded explicitly)
 - `test-fidelity-rules-follow-up-003.md` (finding): handshake captures — staged into this spec
@@ -106,6 +105,10 @@ plan makes the entry lane decidable so the exemption stops recurring.
 - `truth-147-lane-reports-green-001.md` item 2 (finding): same `--body-file` gap, `--request-file`/`--stdin` request — folded into deliverable 3 scope as recurrence; expected surface unchanged (recorded explicitly)
 - `truth-179-opencode-target-detection-landed-001.md` (finding): same gap, sharpest statement (three binding rules, no compliant spelling) — folded into deliverable 3 scope as recurrence; expected surface unchanged (recorded explicitly)
 - `truth-147-lane-reports-green-003.md` + `truth-179-opencode-target-detection-landed-002.md` + `carried-defects-and-watches-closure-001.md` item 1 (findings): mailbox-probe vs detect disagreement recurrences — folded into deliverable 2 mechanism note; expected surface unchanged (recorded explicitly)
+- `plan-12-tool-triage-001.md` (finding): mailbox probe reports `not_orchestrated` for every orchestrated plan — root cause CONFIRMED by the orchestrator at HEAD 2026-09-27: `_cmd_lifecycle.py` feeds raw request.md to `file_ops.parse_markdown_metadata`, which parses `key=value` and stops at the first heading; request.md opens with an HTML comment then `# Request:` then `key: value` lines, so the parse is always `{}` and `classify_source_id('')` returns `not_orchestrator_pointer`. Fix: read `source_id` through the request-document schema (`manage-plan-documents request read`'s parser) and add a transition regression test asserting `probe != not_orchestrated` for an orchestrator pointer. Folded into deliverable 2 (now a fix, not a confirmation); expected surface unchanged (`_cmd_lifecycle.py` already declared — recorded explicitly)
+- `plan-13-finalize-mechanism-defects-001.md` item 1 (finding): same probe false negative, mis-attributed to the `PLAN-13-…` filename lacking a code segment — attribution REFUTED (`inbox detect` returns `orchestrated: true`; `PLAN-{DIGITS}` is an accepted form), symptom real, same root cause as above. Folded into deliverable 2 as recurrence; expected surface unchanged (recorded explicitly)
+- `plan-12-tool-triage-002.md` + `plan-13-finalize-mechanism-defects-001.md` item 2 (findings): file-pointer rebind unsatisfiable — `recipe-match`/`aspect-classify` take only `--request-text`, forcing a lossy flattening of a multi-line spec. Folded into deliverable 3 as recurrence (preferred shape: `--plan-id`, reading the persisted request.md body); expected surface unchanged (`phase-1-init/` already declared — recorded explicitly)
+- `plan-13-finalize-mechanism-defects-002.md` item 1 (finding): the run's own correction — filename theory withdrawn, transition probe and `inbox detect` disagree on the same input; must share one classifier path. Folded into deliverable 2 as recurrence; expected surface unchanged (recorded explicitly)
 
 ## Hand-Off Command
 
