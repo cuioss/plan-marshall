@@ -424,7 +424,7 @@ class TestResolutionAtStep3Entry:
     def test_block_states_it_runs_on_every_entry_independent_of_resumable_skip(self):
         block = _a0_block(_read(_FINALIZE_SKILL))
 
-        assert 'independent of every step\'s resumable skip' in block
+        assert "independent of every step's resumable skip" in block
         assert 'every re-entry' in block
 
     def test_block_names_the_detect_seam_as_the_sole_classifier(self):
@@ -532,7 +532,7 @@ class TestEmitLandingEmptyEpicFailsClosed:
         assert isinstance(landing_order, int) and isinstance(archive_order, int)
         assert archive_order > landing_order, (
             f'archive-plan (order {archive_order}) must run after emit-landing (order '
-            f'{landing_order}); only then is emit-landing\'s loop_back record what keeps '
+            f"{landing_order}); only then is emit-landing's loop_back record what keeps "
             'the destroying archive step unreached.'
         )
 
