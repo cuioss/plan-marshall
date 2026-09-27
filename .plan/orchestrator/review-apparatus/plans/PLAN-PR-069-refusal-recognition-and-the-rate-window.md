@@ -1,11 +1,5 @@
 # PLAN-PR-069: Refusal recognition, and the rate window that governs the retry
 
-> ⛔⛔ **SUPERSEDED BY PM-MCP (2026-09-26, operator decision; row status `superseded`).** `plan-marshall-mcp` replaces both the
-> process prose and the Python scripts this plan edits, so implementing it here is legacy work. Its
-> implementation-independent content (rules, invariants, classifications, data, fixtures) was extracted to
-> [`findings/2026-09-26-pm-mcp-carry-over.md`](../findings/2026-09-26-pm-mcp-carry-over.md) as PM-MCP input.
-> Do NOT emit. `superseded` is terminal; re-staging needs an explicit operator decision.
-
 epic: review-apparatus
 workstream: WS-01
 

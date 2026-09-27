@@ -92,34 +92,6 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
   session-identity hard-block (telemetry-only input gating the shipping pipeline)
   is owned by finalize-machinery PLAN-07 (the resolver itself); this epic
   references that plan and never re-stages it. No spec here takes it.
-- **2026-09-26 — PM-MCP supersedes Python- and prose-bound plan work (operator
-  decision, relayed by review-apparatus inbox `review-apparatus-001`, amended).**
-  `plan-marshall-mcp` replaces both the process prose and the Python scripts; only
-  implementation-independent content (rules, invariants, classifications, data,
-  fixtures) carries. All 7 staged rows (PLAN-08 … PLAN-14) were re-triaged per
-  deliverable and **parked**, each with a `SUPERSEDED BY PM-MCP` banner; bodies kept
-  as the evidence chain. The extraction is filed (operator-authorized single write,
-  uncommitted — the operator commits it) at
-  `/Users/oliver/git/plan-marshall-mcp/doc/known-defects/process-compliance-carry-over.md`
-  against PM-MCP HEAD `7e13ea1`: 104 spec rows → 50 carried (10 gap / 30 partial /
-  10 covered), plus 25 inbox-routed rows → 20 carried. Contradictions: 10.C-dirt
-  (Clean Main Checkout Guard is absolute and its recovery reverts foreign dirt),
-  08.D5 (PM-EXT-7 re-composes an in-flight manifest), 13.D4 (`pr_title` fixed at
-  refine); plus 14.D5 as a cross-epic duplicate of review-apparatus's zero-findings
-  contradiction. Quotes re-verified at `7e13ea1`; rows are sub-agent derivation, not
-  re-verified line by line. **No emission exception confirmed.** Candidates held for
-  operator decision only: PLAN-12 D3 (merge-lock `--hold-start` float vs instant —
-  would block merges if a real reclaim fails) and PLAN-13 D3 (forked-finalize cwd,
-  unverifiable, finalize runs inline today). No emitted-but-not-launched command
-  existed, so nothing was voided. ⛔ Consequence for this ledger: every "candidate
-  future staging" Open Defect below is no longer stageable as Python/prose work —
-  its knowledge routes to the carry-over, not to a new spec.
-- **2026-09-26 — PLAN-12 and PLAN-13 un-parked (operator: "stage 12 and 13").**
-  Both re-staged in full as operator-confirmed exceptions under the
-  delivery-breaking class (candidates PLAN-12 D3 merge-lock `--hold-start`,
-  PLAN-13 D3 forked-finalize cwd); banners rewritten to UN-PARKED, the carry-over's
-  emission-exception section updated. Staged whole, not narrowed to D3 — the
-  operator's instruction named the plans. PLAN-08/-09/-10/-11/-14 stay parked.
 
 - **2026-09-27 — operator directive: current problems are FIXED, not relayed to
   PM-MCP.** Supersedes the 2026-09-26 practice of routing process findings to the

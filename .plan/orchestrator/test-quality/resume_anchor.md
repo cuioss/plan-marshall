@@ -1,0 +1,1 @@
+PLAN-182 slice 2 landed (analyze 2026-09-25): #1640 merged (fe2ec69), whole-tree zero reported, B3 flip outstanding — PLAN-182 stays running; ledger migrated to queue/ layout. CORRECTION: 2 claimed pipeline defects NOT in compliance inbox (verified absent tree-wide); gist preserved in landings/PLAN-182-slice-2.md. Open: B3 flip emission; 7 settled.md refs.

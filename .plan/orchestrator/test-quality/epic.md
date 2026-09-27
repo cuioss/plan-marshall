@@ -62,27 +62,6 @@ Re-derive before using. See [`landings/PLAN-110.md`](landings/PLAN-110.md).
 
 ## START HERE
 
-<!-- GENERATED BLOCK — never hand-write or hand-edit this section.
-     Regenerate after every queue-touching state change via:
-     python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator resume-summary --slug test-quality
-     Paste the returned `summary` block verbatim between the markers (the same
-     invocation also emits `ordered_queue` for the Ordered Queue section below).
-     Anything a reader wants to add BY HAND goes in the annotation zone below,
-     outside the markers — never inside them. -->
-
-<!-- BEGIN GENERATED: resume-summary -->
-**Resume anchor**: PLAN-183 shipped (analyze 2026-09-24): #1602 merged (4ef2efd), D1-D8 closed, landing landings/PLAN-183.md, inbox 5/5 archived; both overrulings ruled (pull-skip upheld, 002 re-allocation sound). PLAN-182 running (slices 2+). Open carried: 7 settled.md dangling landings refs (orchestrator-owned); operator commit-scope decision on uncommitted paths.
-**Phase**: orchestrating
-**Inbox (derived)**: 0 queued, 150 archived
-**Running**:
-- PLAN-182 (WS-04) — PR #1593 — landing=landings/PLAN-182.md
-**Queue** (staged, in order):
-- (empty)
-- PLAN-140 (WS-04) — PR #1552 — status: superseded
-- PLAN-181 (WS-04) — plan=run-3-carve-2-tools-permission-fix — PR #1582 — landing=landings/PLAN-181.md — status: shipped
-- PLAN-183 (WS-03) — plan=carried-defects-and-watches-closure — PR #1602 — landing=landings/PLAN-183.md — status: shipped
-<!-- END GENERATED: resume-summary -->
-
 ### Annotations
 
 <!-- ANNOTATION ZONE — hand-written, and deliberately OUTSIDE the generated markers.
@@ -93,20 +72,6 @@ Re-derive before using. See [`landings/PLAN-110.md`](landings/PLAN-110.md).
      verbatim paste does not destroy. -->
 
 ## Ordered Queue
-
-<!-- GENERATED BLOCK — never hand-write or hand-edit the table between the markers.
-     Regenerated from status.json and the staged specs: emitted as `ordered_queue` by
-     orchestrator.py resume-summary --slug test-quality (paste it verbatim after a queue change),
-     and rewritten in place by the compact stage (orchestrator.py compact --slug test-quality) at
-     cleanup. Only the LIVE queue is rendered here — a shipped/landed row belongs in its
-     landing record, not in the live queue. Per-row notes a reader wants to ADD go in the
-     annotation zone below, outside the markers — never inside them. -->
-
-<!-- BEGIN GENERATED: ordered-queue -->
-| # | Plan | Workstream | Status | Surface (expected) |
-|---|------|------------|--------|--------------------|
-| 1 | PLAN-182 | WS-04 | running | (prose) |
-<!-- END GENERATED: ordered-queue -->
 
 ### Queue annotations
 
