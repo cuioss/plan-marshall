@@ -543,24 +543,26 @@ class TestFlatDeployedShape:
     def test_resolve_bundle_path_does_not_touch_a_nested_root_with_the_flat_leg(self, tmp_path):
         """A nested root is answered by the nested leg, unchanged.
 
-        The flat leg is a FALLBACK, so a nested root that happens to carry a
-        ``skills/`` directory at its own top level (a bundles root with a
-        ``skills/`` sibling) must still resolve through its own bundle subtree.
+        The flat leg is a FALLBACK, so a nested root that ALSO carries a
+        ``skills/`` directory at its own top level — a bundles root with a
+        ``skills/`` sibling, which is what makes it a flat root by the shared
+        resolver's own predicate — must still resolve through its own bundle
+        subtree rather than being answered by the flat sibling.
         """
         nested_target = tmp_path / BUNDLE / SUBPATH
         nested_target.parent.mkdir(parents=True)
         nested_target.write_text('nested')
+        _make_flat_tree(tmp_path, skills=(f'{BUNDLE}-{SUBPATH.split("/")[0]}',))
 
         assert resolve_bundle_path(tmp_path, BUNDLE, SUBPATH) == nested_target
 
     def test_collect_script_dirs_is_non_empty_on_a_flat_root(self, tmp_path):
-        """The headline property: script-dir collection is no longer empty on a deployment.
+        """The headline property: script-dir collection is non-empty on a deployment.
 
-        This is the deliverable in one assertion. Before the shared resolver this
-        returned ``[]`` against the real ``~/.config/opencode`` tree, and every
-        consumer inherited it: the executor's ``build_pythonpath``, its
-        shared-module set and its generated ``EXTRA_SCRIPT_DIRS`` were all empty
-        while generation reported success.
+        This is the one assertion a flat root had no answer to: every consumer of
+        the collected list — the executor's ``build_pythonpath``, its shared-module
+        set and its generated ``EXTRA_SCRIPT_DIRS`` — inherits an empty list while
+        generation still reports success.
         """
         skills_root = _make_flat_tree(tmp_path, skills=('skill-x', 'skill-y'))
 

@@ -87,8 +87,8 @@ def _make_flat_plugin_root(root: Path, *, root_name: str = 'skills', manifest: s
     """Build a real flat deployed plugin root and return its skill root.
 
     ``root_name`` selects the skill-root spelling, and ``manifest`` the target
-    marker, so the fixtures cover every combination the two former flat legs
-    used to gate on separately — including the one that could never fire. The
+    marker, so the fixtures cover every combination — including the singular
+    spelling, which only a not-yet-installed generated root carries. The
     manifest is written AFTER the skill tree so the root directory exists first.
     """
     skills_root = root / root_name

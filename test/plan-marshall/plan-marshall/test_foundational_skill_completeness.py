@@ -18,9 +18,12 @@ marketplace does not ship.
 Three properties are load-bearing, and each closes a specific way the check
 could otherwise pass while proving nothing:
 
-- **The population is re-derived every run.** The bodies are discovered from the
-  tree, not listed. A list is a snapshot: a seventeenth body carrying the block
-  is invisible to it, which is precisely the surface a new body would introduce.
+- **The population is re-derived every run, AND pinned.** The bodies are
+  discovered from the tree and compared against a named roster, so the two must
+  agree in BOTH directions: a seventeenth body carrying the block is not a silent
+  addition, it is a red build that names itself and demands a roster edit. A
+  discovery alone would let a new body in unreviewed; a roster alone would go
+  stale in the direction that hides.
 - **An unresolvable notation FAILS — it does not skip, and it does not fall back
   to a default.** A guard that skips what it cannot check reports the same green
   for "everything resolves" and "the check could not run".
@@ -79,7 +82,9 @@ def discover_foundational_bodies() -> dict[str, str]:
     """Map every marketplace body carrying the block to its source text.
 
     Discovered from the tree, never listed, so a body that gains the block after
-    this module was written is picked up on the next run without an edit here.
+    this module was written is PICKED UP on the next run — and then fails the
+    two-directional comparison against :data:`EXPECTED_FOUNDATIONAL_BODIES`,
+    naming itself and demanding the roster edit that assesses it.
     """
     bodies: dict[str, str] = {}
     for path in sorted(MARKETPLACE_ROOT.rglob('*.md')):

@@ -68,8 +68,9 @@ FLAT_DIR_SEPARATOR: Final[str] = '-'
 #: Manifests whose presence marks a directory as a target/plugin ROOT. A layout
 #: fact (which files identify a root) rather than a shape fact, so it is data
 #: too: ``bootstrap_plugin`` gated its two flat legs on one manifest each, and
-#: the second leg could never fire because the deployed OpenCode root carries
-#: plural ``skills/``, not singular ``skill/`` — see the module docstring.
+#: the second leg could never fire ON A DEPLOYED ROOT, because a deployed root
+#: carries plural ``skills/``, not singular ``skill/`` — see the module docstring
+#: for why the singular spelling is still probed.
 TARGET_MANIFEST_NAMES: Final[tuple[str, ...]] = ('plugin.json', 'opencode.json')
 
 

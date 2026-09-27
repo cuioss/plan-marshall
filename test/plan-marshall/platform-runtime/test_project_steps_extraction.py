@@ -27,8 +27,8 @@ from runtime_base import PROJECT_STEP_PHASES, extract_project_steps
 
 from conftest import PROJECT_ROOT
 
-# ⛔ Vacuity guard — the roster is production's, so an empty one would collect
-# zero cases at every parametrize below and still report green.
+# ⛔ Vacuity guard — the roster is production's, so an empty one would make the
+# roster assertions below vacuous and `assert declared` unreachable.
 assert PROJECT_STEP_PHASES, 'runtime_base.PROJECT_STEP_PHASES is empty'
 
 
