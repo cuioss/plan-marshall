@@ -67,10 +67,12 @@ Context Detection:
 
     The ``--marketplace-root PATH`` flag pins marketplace discovery to an
     explicit anchor directory, overriding the ``PM_MARKETPLACE_ROOT`` env var
-    and the cwd-based fallback. Every subcommand that performs marketplace discovery
-    — each verb that regenerates the executor or re-scans the bundle tree —
-    declares it; run a subcommand's ``--help`` for the flag set that verb
-    actually accepts, rather than reading a verb list from here.
+    and the cwd-based fallback. It is declared on the four verbs that ANCHOR a
+    discovery (``generate``, ``bootstrap``, ``drift``, ``preflight``); the verbs
+    that read a discovered tree without choosing where to look (``verify``,
+    ``paths``) inherit the anchor from their environment and cwd. Run a
+    subcommand's ``--help`` for the flag set that verb actually accepts, rather
+    than reading a verb list from here.
 
     ``--target`` is registered on ALL SIX target-resolving verbs (``generate``,
     ``verify``, ``bootstrap``, ``drift``, ``preflight``, ``paths``) with one

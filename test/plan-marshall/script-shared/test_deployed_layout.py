@@ -389,7 +389,7 @@ class TestSkillScriptsSubpath:
 
 
 class TestFlatEnumeration:
-    """Enumeration over a flat root is non-empty — the property this deliverable restores."""
+    """Enumeration over a flat root is non-empty, in probe order."""
 
     def test_flat_skill_dirs_lists_every_skill(self, tmp_path):
         """Every flat skill directory is enumerated, in sorted order."""
@@ -563,8 +563,10 @@ class TestLayoutKnowledgeLivesHereOnly:
         A consumer that joins a root name must take it from
         :data:`SKILL_ROOT_NAMES`, so the literal in executable code is the tell
         that it re-encoded the vocabulary. Prose is exempt by construction: the
-        scan skips string literals and comments, so a module docstring may name
-        the shape while only the shared module may DECIDE it.
+        scan exempts comments and docstring expressions, so a module docstring
+        may name the shape while only the shared module may DECIDE it — and a
+        VALUE spelled with string literals stays in scope, because a collection
+        of root names is code.
 
         The match is quote-agnostic on purpose. The repository formats with single
         quotes, so a single-quote-only scan would pass today and silently stop

@@ -77,7 +77,7 @@ class TestTargetFlagIsRegisteredOnEveryVerb:
     """
 
     def test_roster_matches_the_parser(self):
-        """The constant above is the parser's own roster, not a copy of it."""
+        """The hardcoded roster still equals the one the production parser builds."""
         module = _load_generate_executor()
         subparsers = module.build_parser()._subparsers._group_actions[0].choices
         verbs_with_target = [
@@ -302,11 +302,11 @@ class TestSharedResolverIsTheOnlyReader:
     """The config-only reader is gone and nothing re-introduces one."""
 
     def test_generate_executor_exposes_no_private_target_reader(self):
-        """``read_marshal_target`` is removed, not wrapped.
+        """``read_marshal_target`` is absent, not wrapped.
 
-        Wrapping it would have left the config-only walk in the tree as the
-        implementation the wrapper delegates to, which is the duplication the
-        deliverable set out to remove.
+        A wrapper would have left the config-only walk in the tree as the
+        implementation the wrapper delegates to — a second reader with its own
+        answer to the same question.
         """
         module = _load_generate_executor()
 
@@ -317,8 +317,8 @@ class TestSharedResolverIsTheOnlyReader:
         """Every target read the module binds IS the shared resolver's function.
 
         Identity, not equality: a locally re-defined copy with the same behaviour
-        would pass an equality check and would be the duplication the deliverable
-        set out to remove.
+        would pass an equality check and would be a second reader with its own
+        answer to the same question.
         """
         module = _load_generate_executor()
 

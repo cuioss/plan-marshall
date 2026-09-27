@@ -512,11 +512,11 @@ def test_flat_root_prefers_the_deployed_plural_spelling(tmp_path: Path):
 
 
 def test_flat_root_still_resolves_a_root_anchored_path(tmp_path: Path):
-    """A non-skill-anchored subpath resolves against the root, as it always did.
+    """A non-skill-anchored subpath resolves against the root.
 
-    Both former legs carried this ``elif`` beside the flat probe, so it is a
-    shape that resolved before this deliverable and must keep resolving: a
-    consumer pointing at ``agents/foo.md`` is not asking about a skill at all.
+    A consumer pointing at ``agents/foo.md`` is not asking about a skill at all,
+    so the root-anchored shape has to keep resolving alongside the flat
+    skill-anchored one.
     """
     root = tmp_path / 'root-anchored'
     _flat_plugin_root(root, root_name='skills')

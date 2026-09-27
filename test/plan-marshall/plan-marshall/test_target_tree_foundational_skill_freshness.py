@@ -21,10 +21,10 @@ does not: that guard asks whether a CONFIG names a retired skill, and this one a
 whether a DEPLOYED TREE does.
 
 **An absent tree is reported as unevaluated, never as a pass.** The two must not
-render identically: a green run over three targets and a green run over zero are
-different findings, and collapsing them is how a deployment goes unexamined for
-months. The absent case is stated in the failure message of the aggregate test
-below, so a reader is told which trees were looked at.
+render identically: a green run over the registered targets and a green run over
+none of them are different findings, and collapsing them is how a deployment goes
+unexamined for months. The absent case is stated in the failure message of the
+aggregate test below, so a reader is told which trees were looked at.
 """
 
 from __future__ import annotations
