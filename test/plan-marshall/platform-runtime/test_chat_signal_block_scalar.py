@@ -166,12 +166,14 @@ class TestEnvelopeIsNotCorrupted:
 
 
 class TestSingleTurnReduction:
-    """A one-turn reduction still round-trips when the turn itself is multi-line.
+    """A one-turn reduction is single-line, and the marking is a no-op on it.
 
     Present so the suite states that the marking costs nothing on the degenerate
     case, rather than leaving a reader to wonder whether it broke it. The turn
-    carries interior newlines, so this row is NOT the single-line case — it is
-    the narrowest case the hazard reaches, and the marking has to hold on it.
+    carries no interior newline, so ``reduced_transcript`` has none either — which
+    is exactly why this row is the SINGLE-LINE case and not the narrowest case
+    the hazard reaches. The hazard needs interior newlines, and the corruption
+    rows above supply them.
     """
 
     def test_single_surviving_turn_round_trips_and_keeps_its_bytes(self, tmp_path: Path) -> None:

@@ -111,3 +111,46 @@ class TestTheSweepIsReal:
             f'generated target trees name foundational skills the marketplace does not ship; '
             f'regenerate with `./pw generate`. Offending trees: {stale}'
         )
+
+    def test_a_retired_FLAT_notation_is_reported_not_dropped(self, tmp_path: Path) -> None:
+        """The gate sees a retired name in the spelling the flat trees emit.
+
+        The OpenCode and Antigravity trees write ``{bundle}-{skill}``, not the
+        ``{bundle}:{skill}`` source spelling, so a guard that only reached the
+        source spelling would be blind in exactly the shape these trees carry.
+        This is the positive control for that reachability: a body naming a flat
+        pair whose BUNDLE ships and whose SKILL does not must be reported.
+
+        It is also why the extractor cannot filter flat candidates on resolution
+        alone — dropping them here would leave this assertion unreachable and the
+        gate green over a retired skill.
+        """
+        tree = tmp_path / 'opencode'
+        body = tree / 'skills' / 'plan-marshall-execute-task' / 'SKILL.md'
+        body.parent.mkdir(parents=True)
+        body.write_text(
+            '## Foundational Practices\n\nLoad `plan-marshall-dev-agent-behavior-rules` before anything else.\n',
+            encoding='utf-8',
+        )
+
+        assert stale_named_skills(tree) == {
+            'skills/plan-marshall-execute-task/SKILL.md': ['plan-marshall-dev-agent-behavior-rules']
+        }
+
+    def test_a_bare_skill_name_in_prose_is_not_read_as_a_notation(self, tmp_path: Path) -> None:
+        """A hyphenated skill NAME is not a ``{bundle}-{skill}`` pair.
+
+        The mirror of the reachability control above, and the reason the extractor
+        filters on a real bundle rather than collecting every hyphenated word:
+        ``ref-workflow-architecture`` is one shipped skill, and reporting it as an
+        unresolvable notation would make the gate permanently red for prose.
+        """
+        tree = tmp_path / 'opencode'
+        body = tree / 'skills' / 'plan-marshall-execute-task' / 'SKILL.md'
+        body.parent.mkdir(parents=True)
+        body.write_text(
+            '## Foundational Practices\n\nLoad `ref-workflow-architecture` before anything else.\n',
+            encoding='utf-8',
+        )
+
+        assert stale_named_skills(tree) == {}

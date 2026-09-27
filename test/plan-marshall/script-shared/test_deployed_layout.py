@@ -639,11 +639,15 @@ class TestLayoutKnowledgeLivesHereOnly:
         assert flagged == [1, 2], f'the scan must flag both code lines and neither docstring line: {flagged}'
 
     def test_the_exemptions_are_still_exempt_for_the_stated_reason(self):
-        """The exemptions are declared, so a new consumer is scanned by default.
+        """The exemptions are declared, so a dropped consumer is visible.
 
         An exemption nobody re-checks is an exemption that grows. This asserts
         each declared path still exists, so deleting a consumer — and so dropping
-        its need for an exemption — is visible rather than silent.
+        its need for an exemption — is visible rather than silent. The companion
+        assertion that a NEW consumer is scanned lives in
+        ``test_the_scanned_consumers_import_the_shared_vocabulary``: the scan
+        iterates ``SCANNED_CONSUMERS`` and never consults this map, so a consumer
+        added there is not scanned until it is added to the scanned set.
         """
         from conftest import PROJECT_ROOT
 

@@ -136,6 +136,34 @@ def resolve_notation(notation: str) -> tuple[str, str] | None:
     return None
 
 
+def bundle_exists(bundle: str) -> bool:
+    """Whether ``{bundle}`` is a bundle the marketplace actually ships."""
+    return (MARKETPLACE_ROOT / bundle / 'skills').is_dir()
+
+
+def looks_like_flat_notation(candidate: str) -> bool:
+    """Whether ``candidate`` is spelled as ``{bundle}-{skill}`` rather than a bare name.
+
+    The flat spelling is ambiguous against a bare skill name: ``ref-workflow-architecture``
+    is one skill, while ``plan-marshall-ref-workflow-architecture`` is a
+    ``{bundle}-{skill}`` pair, and both match the same hyphenated pattern. The
+    discriminator is the BUNDLE: a flat notation splits at some hyphen onto a
+    bundle the marketplace ships, and a bare skill name does not, because no
+    split of it lands on a real bundle.
+
+    This is what makes a RETIRED flat name detectable. A candidate whose bundle
+    exists but whose skill does not is a notation for a skill that is gone —
+    the exact condition the deployed-tree freshness gate exists for — and it
+    must reach the caller rather than be dropped for failing to resolve. A
+    candidate with no real bundle at any split is prose, and the guard reads it
+    as nothing.
+    """
+    for split in range(len(candidate) - 1, 0, -1):
+        if candidate[split] == '-' and bundle_exists(candidate[:split]):
+            return True
+    return False
+
+
 def extract_foundational_notations(body: str) -> set[str]:
     """Return every skill notation the body's foundational block names.
 
@@ -144,6 +172,16 @@ def extract_foundational_notations(body: str) -> set[str]:
     declaration. Every spelling the targets emit is collected, and the caller
     resolves each one, because a body that mixes spellings is not a defect worth
     failing on while the resolution question is still open.
+
+    Flat candidates are kept when they RESOLVE or when they are shaped like a
+    flat notation (:func:`looks_like_flat_notation`). Resolvable ones are the
+    ordinary case. The second clause is what keeps a RETIRED flat name visible:
+    filtering on resolution alone would drop ``{bundle}-{retired-skill}`` before
+    the caller could see it, and the deployed-tree gate — which sweeps exactly
+    the flat spelling the OpenCode and Antigravity trees emit — would report a
+    clean run over a population it had already emptied. Dropping only the
+    candidates with no real bundle at any hyphen split is what keeps a bare
+    skill name in prose out of the set.
     """
     section = foundational_section(body)
     if section is None:
@@ -156,6 +194,7 @@ def extract_foundational_notations(body: str) -> set[str]:
     found |= {
         joined
         for bundle, skill in _FLAT_NOTATION.findall(section)
-        if (joined := f'{bundle}-{skill}') and resolve_notation(joined) is not None
+        if (joined := f'{bundle}-{skill}')
+        and (resolve_notation(joined) is not None or looks_like_flat_notation(joined))
     }
     return found
