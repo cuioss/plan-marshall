@@ -897,16 +897,13 @@ def _resolve_notation_by_target(notation: str) -> str | None:
         _executor_file = None
     if _executor_file is not None:
         _rel = Path('marketplace') / 'bundles' / bundle / 'skills' / skill / 'scripts' / f'{script}.py'
-        try:
-            for _parent in [_executor_file.parent, *_executor_file.parents]:
-                try:
-                    _candidate = _parent / _rel
-                    if _candidate.is_file():
-                        return str(_candidate.resolve())
-                except (OSError, ValueError):
-                    continue
-        except (OSError, ValueError):
-            pass
+        for _parent in [_executor_file.parent, *_executor_file.parents]:
+            try:
+                _candidate = _parent / _rel
+                if _candidate.is_file():
+                    return str(_candidate.resolve())
+            except (OSError, ValueError):
+                continue
 
     try:
         cache_root = Path.home() / '.claude' / 'plugins' / 'cache' / 'plan-marshall'
@@ -980,16 +977,13 @@ def _resolve_notation_by_target(notation: str) -> str | None:
         _executor_file = None
     if _executor_file is not None:
         _rel = Path('marketplace') / 'bundles' / bundle / 'skills' / skill / 'scripts' / script_file
-        try:
-            for _parent in [_executor_file.parent, *_executor_file.parents]:
-                try:
-                    _candidate = _parent / _rel
-                    if _candidate.is_file():
-                        return str(_candidate.resolve())
-                except (OSError, ValueError):
-                    continue
-        except (OSError, ValueError):
-            pass
+        for _parent in [_executor_file.parent, *_executor_file.parents]:
+            try:
+                _candidate = _parent / _rel
+                if _candidate.is_file():
+                    return str(_candidate.resolve())
+            except (OSError, ValueError):
+                continue
 
     try:
         home = Path.home()
@@ -1071,16 +1065,13 @@ def _resolve_notation_by_target(notation: str) -> str | None:
         _executor_file = None
     if _executor_file is not None:
         _rel = Path('marketplace') / 'bundles' / bundle / 'skills' / skill / 'scripts' / script_file
-        try:
-            for _parent in [_executor_file.parent, *_executor_file.parents]:
-                try:
-                    _candidate = _parent / _rel
-                    if _candidate.is_file():
-                        return str(_candidate.resolve())
-                except (OSError, ValueError):
-                    continue
-        except (OSError, ValueError):
-            pass
+        for _parent in [_executor_file.parent, *_executor_file.parents]:
+            try:
+                _candidate = _parent / _rel
+                if _candidate.is_file():
+                    return str(_candidate.resolve())
+            except (OSError, ValueError):
+                continue
 
     try:
         home = Path.home()

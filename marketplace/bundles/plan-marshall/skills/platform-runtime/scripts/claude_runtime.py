@@ -2893,12 +2893,6 @@ def _render_permission_intent(intent: Any) -> tuple[list[str] | None, str | None
     return None, f'unknown permission intent kind: {kind!r}'
 
 
-# Phases in marshal.json that may carry ``project:{skill}`` step references.
-# The roster and the ``steps`` shape both live in ``runtime_base`` — this module
-# re-exports the shared reader rather than naming either, so the Claude, OpenCode
-# and Antigravity readers cannot drift apart on a target-neutral file.
-
-
 def _load_marshal_config(path: str) -> tuple[dict[str, Any], str | None]:
     """Load marshal.json, returning ``(config, error)``.
 
