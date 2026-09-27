@@ -100,7 +100,7 @@ def _make_singular_and_plural_roots(root: Path) -> tuple[Path, Path]:
     return plural, singular
 
 
-def _emitted_import_paths(emitted: str) -> list[str]:
+def _emitted_import_paths(emitted: str) -> dict[str, list[str]]:
     """Extract every absolute directory path a generated executor declares.
 
     Parsed with ``ast`` rather than by scanning for quote characters, because the
@@ -114,16 +114,19 @@ def _emitted_import_paths(emitted: str) -> list[str]:
     - ``_BOOTSTRAP_SKILL_DIRS`` — ``(skill, path)`` pairs, same shape;
     - ``_ALL_SCRIPT_DIRS`` — a flat list of paths.
 
-    A branch keyed on a name the template does not emit would leave the logging
-    path unchecked while the sweep still reported a non-empty population, so
-    the shapes are asserted rather than assumed: a shape this parser does not
-    recognise is simply absent from ``declared``, and the caller's
-    ``assert declared`` is per-shape, not just overall.
+    The result is keyed BY PLACEHOLDER, not flattened, because a branch keyed on
+    a name the template does not emit would leave that shape's paths unchecked
+    while the sweep still reported a non-empty population overall. Keying per
+    shape is what lets the caller assert each one is present rather than
+    asserting only that the union is — a shape this parser does not recognise is
+    simply an absent key, and an absent key is a red assertion, not a silently
+    thinner sweep.
     """
     import ast
 
     tree = ast.parse(emitted)
-    declared: list[str] = []
+    shapes = ('_BOOTSTRAP_LOGGING_DIR', '_BOOTSTRAP_SKILL_DIRS', '_ALL_SCRIPT_DIRS')
+    declared: dict[str, list[str]] = {shape: [] for shape in shapes}
     for node in ast.walk(tree):
         if not isinstance(node, ast.Assign):
             continue
@@ -131,7 +134,7 @@ def _emitted_import_paths(emitted: str) -> list[str]:
         if not isinstance(node.value, (ast.List, ast.Tuple)):
             continue
         if name == '_ALL_SCRIPT_DIRS':
-            declared.extend(str(el.value) for el in node.value.elts if isinstance(el, ast.Constant))
+            declared[name].extend(str(el.value) for el in node.value.elts if isinstance(el, ast.Constant))
         elif name in ('_BOOTSTRAP_LOGGING_DIR', '_BOOTSTRAP_SKILL_DIRS'):
             elements = node.value.elts
             if name == '_BOOTSTRAP_LOGGING_DIR':
@@ -140,9 +143,9 @@ def _emitted_import_paths(emitted: str) -> list[str]:
                 if isinstance(element, (ast.List, ast.Tuple)) and len(element.elts) == 2:
                     pinned = element.elts[1]
                     if isinstance(pinned, ast.Constant):
-                        declared.append(str(pinned.value))
+                        declared[name].append(str(pinned.value))
                 elif name == '_BOOTSTRAP_LOGGING_DIR' and isinstance(element, ast.Constant):
-                    declared.append(str(element.value))
+                    declared[name].append(str(element.value))
     return declared
 
 
@@ -792,8 +795,10 @@ class TestConsumersOnAFlatTree:
         assert flat_root_is_the_import_base, 'the fixture must have pinned the import base'
         emitted = (plan_dir / 'execute-script.py').read_text(encoding='utf-8')
 
-        declared = _emitted_import_paths(emitted)
-        assert declared, 'the generated executor must declare the paths it imports from'
+        by_shape = _emitted_import_paths(emitted)
+        empty = sorted(shape for shape, paths in by_shape.items() if not paths)
+        assert not empty, f'the generated executor declares no path for: {empty}'
+        declared = [path for paths in by_shape.values() for path in paths]
         missing = [p for p in declared if not Path(p).is_dir()]
         assert missing == [], f'the generated executor names directories that do not exist: {missing}'
         outside = [p for p in declared if not p.startswith(str(tmp_path))]
