@@ -236,15 +236,15 @@ def _read_runtime_target() -> str:
     2. **Config** — ``runtime.target`` from the nearest ``.plan/marshal.json``.
     3. **Default** — :func:`default_target` (``'claude'``).
 
-    What changed is not the cascade but the FAILURE HANDLING. The two
-    ``except (OSError, ValueError): return _default_runtime_target()`` returns
-    this function used to carry collapsed an unreadable ``marshal.json``, a
-    malformed one and one carrying no ``runtime.target`` into a single
-    indistinguishable answer. The resolver reports which of the four
-    fall-through conditions applied, so a caller that needs to tell "there is
-    no config" from "the config could not be read" reads
-    :func:`target_context.resolve_target` directly instead of this
-    answer-only projection of it.
+    What changed is not the cascade but the FAILURE HANDLING. The single
+    ``except (OSError, ValueError): return _default_runtime_target()`` this
+    function used to carry answered a parse failure with the very same default
+    its no-``runtime.target`` and no-``marshal.json`` paths returned, so an
+    unreadable ``marshal.json`` and an absent one were indistinguishable. The
+    resolver reports which of the four fall-through conditions applied, so a
+    caller that needs to tell "there is no config" from "the config could not
+    be read" reads :func:`target_context.resolve_target` directly instead of
+    this answer-only projection of it.
     """
     return resolve_target()['target']
 

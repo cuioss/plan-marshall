@@ -10,8 +10,8 @@ active", and they disagreed:
   a malformed file and a missing ``runtime.target`` key alike — four distinct
   conditions collapsed into one indistinguishable answer.
 * ``marketplace_paths._read_runtime_target`` implemented a wider cascade
-  (env → config → default) but collapsed its own parse failures into the
-  default at the same two return sites.
+  (env → config → default) but answered its own parse failures with the very
+  default its no-``runtime.target`` and no-``marshal.json`` paths returned.
 
 On a repository whose ``marshal.json`` carries no ``runtime.target``, both
 readers answer ``claude`` on a machine whose only deployment is OpenCode, so
@@ -28,7 +28,7 @@ Two exports carry the contract:
     (ADR-015: an absent identity is a stated sentinel, never an assumed one).
     When the tier is ``fallback``, ``reason`` names WHICH absence it was
     (``marshal_json_absent`` / ``marshal_json_unreadable`` /
-    ``marshal_json_malformed`` / ``runtime_target_absent``), so three
+    ``marshal_json_malformed`` / ``runtime_target_absent``), so four
     previously indistinguishable conditions stay distinguishable here rather
     than being re-collapsed downstream.
 
