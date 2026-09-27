@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-181",
+  "slug": "run-3-carve-2-tools-permission-fix",
+  "workstream": "WS-04",
+  "status": "shipped",
+  "plan_marshall_plan_id": "run-3-carve-2-tools-permission-fix",
+  "pr": "#1582",
+  "landing": "landings/PLAN-181.md",
+  "seq": 2
+}

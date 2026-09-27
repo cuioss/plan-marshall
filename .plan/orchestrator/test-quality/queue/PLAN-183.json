@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-183",
+  "slug": "carried-defects-and-watches-closure",
+  "workstream": "WS-03",
+  "status": "shipped",
+  "plan_marshall_plan_id": "carried-defects-and-watches-closure",
+  "pr": "#1602",
+  "landing": "landings/PLAN-183.md",
+  "seq": 4
+}
