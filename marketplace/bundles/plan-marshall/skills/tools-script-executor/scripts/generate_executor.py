@@ -808,9 +808,9 @@ def discover_local_scripts(cwd: Path | None = None) -> dict[str, str]:
 # ============================================================================
 # The generated executor resolves a notation it has no embedded mapping for by
 # walking the layout ITS TARGET actually deploys. There are exactly TWO such
-# shapes, and all three templates below probe BOTH, in the same order, so the
-# emitted resolver agrees with the deployed tree whichever of the two a machine
-# carries:
+# shapes, and the template below for each target probes every one of them that
+# target can encounter, so the emitted resolver agrees with the deployed tree
+# whichever of the two the machine carries:
 #
 # 1. The NESTED shape — ``{bundle}/skills/{skill}/scripts/{script}.py``. This is
 #    the marketplace source tree (``marketplace/bundles/{bundle}/skills/...``)
@@ -827,7 +827,9 @@ def discover_local_scripts(cwd: Path | None = None) -> dict[str, str]:
 # for the embedded mapping. The Claude template used to walk the plugin cache
 # only, and the Antigravity template the flat roots only, so on a machine whose
 # deployment was the shape the template did not model, the resolver found
-# nothing at all while reporting no error.
+# nothing at all while reporting no error. Each template carries the NESTED
+# tree-first leg; the FLAT leg is carried only by the two targets that deploy
+# it, because a Claude installation has no flat root to find.
 
 # Template for the Claude target-aware resolver.
 # Resolves ``{bundle}:{skill}:{script}`` tree-first against a live

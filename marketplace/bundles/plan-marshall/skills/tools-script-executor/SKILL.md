@@ -469,13 +469,15 @@ stale embedded path is never returned blindly:
 1. **Direct embedded hit** — returned only when the embedded path still exists
    on disk. A missing path is skipped, not returned.
 2. **Prefix/substring shim** — same existence guard.
-3. **Target-aware resolver** — discovers the script under the target's skill
-   roots (Claude plugin cache `~/.claude/plugins/cache/plan-marshall/*/skills/…`,
-   or the OpenCode config roots).
-4. **cwd / executor-file upward walk** — walks up from both `Path.cwd()` and the
-   executor file's own location looking for a live
-   `marketplace/bundles/{bundle}/skills/{skill}/scripts/{script}.py` (covers the
-   dev-checkout case).
+3. **Target-aware resolver** — walks up from the executor file's own location to
+   a live `marketplace/bundles/{bundle}/skills/{skill}/scripts/{script}.py`
+   first, so a checkout above the executor wins; failing that it probes the
+   target's deployed skill roots (Claude plugin cache
+   `~/.claude/plugins/cache/plan-marshall/*/skills/…`, the OpenCode config roots,
+   the Antigravity roots). Every target's template carries the tree-first leg,
+   not OpenCode alone.
+4. **cwd upward walk** — walks up from `Path.cwd()` to the same live tree, for
+   the case where the executor file's own ancestors hold no checkout.
 
 Because of this, `PM_MARKETPLACE_ROOT` is **not required** to recover from a
 stale/relocated embedded path — it remains only as an intentional explicit

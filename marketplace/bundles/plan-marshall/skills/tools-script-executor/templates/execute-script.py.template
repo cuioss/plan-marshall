@@ -1446,11 +1446,14 @@ def resolve_notation(notation: str) -> str | None:
     2. Prefix/substring fallback in SCRIPTS (compatibility shim) — same
        existence guard applies.
     3. Target-aware dynamic resolver (_resolve_notation_by_target) —
-       returns an absolute path discovered from the target-specific skill
-       discovery roots (Claude plugin cache or OpenCode config roots).
-    4. cwd/executor-file upward walk to a live ``marketplace/bundles`` tree
-       (_resolve_notation_by_cwd_walk) — covers the dev-checkout case where the
-       target-aware roots are absent.
+       returns an absolute path discovered by walking up from THIS executor
+       file's own location to a live ``marketplace/bundles`` tree, then, failing
+       that, from the target-specific skill discovery roots (Claude plugin
+       cache, OpenCode config roots, Antigravity roots). The tree-first leg is
+       present in EVERY target's template, not OpenCode alone.
+    4. cwd upward walk to a live ``marketplace/bundles`` tree
+       (_resolve_notation_by_cwd_walk) — reached when the executor file's own
+       ancestors hold no checkout.
     """
     # 0. OpenCode tree-first probe — only for OpenCode executors; every other
     # target falls through to the embedded checks below unchanged.
