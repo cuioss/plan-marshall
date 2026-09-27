@@ -469,13 +469,15 @@ def test_with_population_entry_points_agree_with_the_plain_ones():
 # =============================================================================
 
 
-# Same cost profile as the marked siblings above: each consumes the shared
-# whole-tree gate AND re-runs whole-marketplace analyzer sweeps, so both contend
-# with the lint leg under `verify` and can exceed the global 300s hang detector
-# there while passing comfortably standalone (~45s each). Without a per-test
-# bound they flake the whole suite red on a loaded machine — observed as
-# `verify` failing on exactly these two tests and passing on retry, with the
-# build log reporting `Timeout (>300.0s) from pytest-timeout`. See
+# The first consumer of the lru_cached `_real_tree_summaries()` on a given xdist
+# worker pays for the shared whole-tree gate and the whole-marketplace analyzer
+# sweeps; the rest reuse that cached result, which is why they are cheap
+# standalone. The cost lands unevenly because xdist scheduling decides which
+# worker sees the first cache miss, so a worker that takes it while also running
+# the lint leg under `verify` can exceed the global 300s hang detector there.
+# Without a per-test bound that flakes the whole suite red on a loaded machine —
+# observed as `verify` failing on exactly these two tests and passing on retry,
+# with the build log reporting `Timeout (>300.0s) from pytest-timeout`. See
 # `test_population_publishing_rules_report_their_size_on_a_clean_tree` for why
 # 900 rather than a higher bound.
 @pytest.mark.timeout(900)
@@ -496,9 +498,9 @@ def test_blind_spots_is_omitted_for_rules_that_derive_none():
     assert all('blind_spots' not in summaries[label] for label in non_publishing)
 
 
-# Marked for the same reason and at the same bound as its sibling above: same
-# shared whole-tree gate, same analyzer sweeps, same contention with the lint leg
-# under `verify`.
+# Marked for the same reason and at the same bound as its sibling above: both are
+# consumers of the same cached whole-tree gate, so both can be the first cache
+# miss on their worker and contend with the lint leg under `verify`.
 @pytest.mark.timeout(900)
 def test_argument_naming_blind_spots_are_a_share_of_its_own_population():
     """The two figures are one unit, so the undecided part cannot exceed the whole.
