@@ -87,6 +87,15 @@ _TERMINAL_PHASES: frozenset[str] = frozenset({'complete', 'archived'})
 # exemption below is state-driven and must never be expressed as elapsed time.
 _DELIVERED_MARKER = 'title_delivered'
 
+# Non-session index directories that sit under the cache root beside the
+# per-session directories. ``by-cwd`` holds the ``by-cwd/{sha256(cwd)}``
+# session-id index an earlier terminal-title hook generation wrote; no current
+# producer writes or reads it, but the directory survives on machines that ran
+# that generation. Its name is a safe single path segment, so it passes
+# ``_valid_session_id`` — the scan recognises it positively here instead of
+# reading it as an orphan session directory.
+_NON_SESSION_INDEX_DIRS: frozenset[str] = frozenset({'by-cwd'})
+
 
 # ---------------------------------------------------------------------------
 # Shape validators
@@ -406,8 +415,10 @@ def _scan_session_dirs() -> tuple[list[tuple[str, str]], list[str]]:
     slot but a live epic binding) is NEITHER a plan slot NOR an orphan: it is a
     live orchestrator binding, kind-disjoint from the plan reverse-index, so it is
     excluded from both lists and the GC never touches it. A directory with a
-    malformed name is skipped from both. Best-effort — a scan error yields two
-    empty lists.
+    malformed name is skipped from both, and so is a recognised non-session
+    index directory (:data:`_NON_SESSION_INDEX_DIRS`) — it carries no session
+    binding, so it is neither a slot nor an orphan. Best-effort — a scan error
+    yields two empty lists.
     """
     slots: list[tuple[str, str]] = []
     orphans: list[str] = []
@@ -422,6 +433,8 @@ def _scan_session_dirs() -> tuple[list[tuple[str, str]], list[str]]:
         except OSError:
             continue
         session_id = session_dir.name
+        if session_id in _NON_SESSION_INDEX_DIRS:
+            continue
         if not _valid_session_id(session_id):
             continue
         plan_id = resolve_plan(session_id)
@@ -434,6 +447,19 @@ def _scan_session_dirs() -> tuple[list[tuple[str, str]], list[str]]:
         else:
             orphans.append(session_id)
     return slots, orphans
+
+
+def _session_dir_is_gone(session_id: str) -> bool:
+    """Return True when ``session_id``'s cache directory no longer exists.
+
+    The post-condition read the doctor's orphan count is taken from. An error
+    while probing the directory is not evidence of deletion, so it yields False
+    (the directory is not counted as removed). Never raises.
+    """
+    try:
+        return not (_SESSION_CACHE_BASE / session_id).exists()
+    except OSError:
+        return False
 
 
 def _gc_slot(session_id: str) -> bool:
@@ -475,12 +501,17 @@ def doctor(fix: bool = False) -> dict[str, Any]:
           ],
           "gc_removed": int,              # stale slots removed (0 unless fix)
           "orphans": [session_id, ...],   # dirs yielding no live slot
-          "orphans_removed": int,         # orphan dirs pruned (0 unless fix)
+          "orphans_removed": int,         # orphan dirs actually deleted (0 unless fix)
           "fix": bool,
         }
 
     ``scanned`` keeps its existing meaning — the count of live slots scanned —
     and does NOT include orphan directories.
+
+    ``orphans_removed`` counts orphan directories actually deleted, read from the
+    filesystem after the prune ran. The prune only removes an EMPTY directory, so
+    a non-empty orphan directory the best-effort prune leaves behind stays listed
+    in ``orphans`` but is not counted in ``orphans_removed``.
 
     Best-effort: an unreadable slot is skipped; never raises.
     """
@@ -507,7 +538,12 @@ def doctor(fix: bool = False) -> dict[str, Any]:
             if _gc_slot(slot['session_id']):
                 gc_removed += 1
         for orphan_id in orphans:
-            if _remove_slot_and_prune(_active_plan_path(orphan_id)):
+            # The prune's return is NOT the deletion verdict: it answers "is the
+            # slot gone", and a non-empty orphan dir survives its best-effort
+            # rmdir while the helper still returns True. Count only a directory
+            # the filesystem confirms is gone after the prune ran.
+            _remove_slot_and_prune(_active_plan_path(orphan_id))
+            if _session_dir_is_gone(orphan_id):
                 orphans_removed += 1
 
     return {
