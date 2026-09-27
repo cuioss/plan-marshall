@@ -831,9 +831,8 @@ def find_marketplace_path(marketplace_root: Path | None = None) -> Path | None:
 
     Args:
         marketplace_root: Optional explicit override. When provided, takes
-            precedence over the env var, script-relative walk, and cwd
-            discovery. Must point at a directory that contains
-            ``marketplace/bundles``.
+            precedence over the env var and cwd discovery. Must point at a
+            directory that contains ``marketplace/bundles``.
 
     Returns:
         Path to ``marketplace/bundles`` if any branch resolves, otherwise None.

@@ -64,8 +64,8 @@ Context Detection:
     Use --marketplace flag for marketplace development context (marketplace/bundles/).
 
     The ``--marketplace-root PATH`` flag pins marketplace discovery to an
-    explicit anchor directory, overriding the script-relative walk and
-    cwd-based fallback. Every subcommand that performs marketplace discovery
+    explicit anchor directory, overriding the ``PM_MARKETPLACE_ROOT`` env var
+    and the cwd-based fallback. Every subcommand that performs marketplace discovery
     — each verb that regenerates the executor or re-scans the bundle tree —
     declares it; run a subcommand's ``--help`` for the flag set that verb
     actually accepts, rather than reading a verb list from here.
@@ -1031,10 +1031,12 @@ def _resolve_notation_by_target(notation: str) -> str | None:
 
       0. ``marketplace/bundles/{bundle}/skills/{skill}/scripts/{script}.py``
          in a live checkout at or above THIS executor file (the NESTED shape).
-         A live tree wins over every deployed copy, so a regen on an Antigravity
-         machine resolves every notation to tree code with a stale deployment
-         present — the same rule the OpenCode resolver applies, and the same
-         rule the embedded mapping is emitted under.
+         This is the FIRST leg of this function, and this function runs at
+         position 3 of ``resolve_notation`` — after the embedded direct hit and
+         the prefix shim. So on an Antigravity executor a live embedded path
+         still wins, exactly as on Claude; only the OpenCode executor promotes
+         tree code ahead of the embedded checks, via its own leg-0 probe
+         outside this function.
       1. ``{bundle}-{skill}/scripts/{script}.py`` under the Antigravity skill
          discovery roots (the deployed FLAT shape). The first match is returned
          as an absolute path.
@@ -3468,7 +3470,7 @@ def build_parser() -> argparse.ArgumentParser:
         metavar='PATH',
         help=(
             'Explicit marketplace anchor directory (must contain marketplace/bundles). '
-            'Overrides PM_MARKETPLACE_ROOT, the script-relative walk, and cwd-based discovery.'
+            'Overrides PM_MARKETPLACE_ROOT and cwd-based discovery.'
         ),
     )
     add_target_argument(gen_parser)
@@ -3496,7 +3498,7 @@ def build_parser() -> argparse.ArgumentParser:
         metavar='PATH',
         help=(
             'Explicit marketplace anchor directory (must contain marketplace/bundles). '
-            'Overrides PM_MARKETPLACE_ROOT, the script-relative walk, and cwd-based discovery.'
+            'Overrides PM_MARKETPLACE_ROOT and cwd-based discovery.'
         ),
     )
     add_target_argument(bootstrap_parser)
@@ -3519,7 +3521,7 @@ def build_parser() -> argparse.ArgumentParser:
         metavar='PATH',
         help=(
             'Explicit marketplace anchor directory (must contain marketplace/bundles). '
-            'Overrides PM_MARKETPLACE_ROOT, the script-relative walk, and cwd-based discovery.'
+            'Overrides PM_MARKETPLACE_ROOT and cwd-based discovery.'
         ),
     )
     add_target_argument(drift_parser)
@@ -3554,7 +3556,7 @@ def build_parser() -> argparse.ArgumentParser:
         metavar='PATH',
         help=(
             'Explicit marketplace anchor directory (must contain marketplace/bundles). '
-            'Overrides PM_MARKETPLACE_ROOT, the script-relative walk, and cwd-based discovery.'
+            'Overrides PM_MARKETPLACE_ROOT and cwd-based discovery.'
         ),
     )
     add_target_argument(preflight_parser)
