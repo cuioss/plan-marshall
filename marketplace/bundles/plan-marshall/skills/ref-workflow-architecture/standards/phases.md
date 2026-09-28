@@ -56,7 +56,7 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 │  │  INPUT                           OUTPUT                             │   │
 │  │  ═════                           ══════                             │   │
 │  │                                                                     │   │
-│  │  • description                   .plan/plans/{plan_id}/             │   │
+│  │  • description                   .plan/local/plans/{plan_id}/       │   │
 │  │  • lesson_id                       ├── status.json                  │   │
 │  │  • issue URL                       ├── request.md                   │   │
 │  │                                    └── references.json              │   │

@@ -158,7 +158,7 @@ python3 .plan/execute-script.py {bundle}:{skill} {subcommand} --help
 ```python
 def cmd_get(args):
     """Handle 'get' subcommand."""
-    plan_path = Path(f'.plan/plans/{args.plan_id}')
+    plan_path = get_plan_dir(args.plan_id)  # file_ops resolver, never a hard-coded .plan path
 
     # Validate plan exists — return error dict, exit 0 (expected error)
     if not plan_path.exists():

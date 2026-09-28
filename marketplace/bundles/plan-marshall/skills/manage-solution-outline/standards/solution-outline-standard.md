@@ -7,7 +7,7 @@ This document defines the complete specification for `solution_outline.md` docum
 ### File Location
 
 ```text
-.plan/plans/{plan_id}/solution_outline.md
+.plan/local/plans/{plan_id}/solution_outline.md
 ```
 
 ### Required Sections

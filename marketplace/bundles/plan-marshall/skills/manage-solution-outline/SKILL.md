@@ -280,7 +280,7 @@ See also [standards/solution-outline-standard.md](standards/solution-outline-sta
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `resolve-path` | `--plan-id` | Get target file path (returns `path: .plan/plans/{plan_id}/solution_outline.md`) |
+| `resolve-path` | `--plan-id` | Get target file path (returns `path: .plan/local/plans/{plan_id}/solution_outline.md`) |
 | `write` | `--plan-id` | Validate newly created solution on disk; sets `action: created`. Returns `file_exists` error if file was already validated via `write` before — use `update` instead. |
 | `update` | `--plan-id` | Validate updated solution on disk; sets `action: updated`. Returns `document_not_found` if file doesn't exist — use `write` for initial creation. |
 | `validate` | `--plan-id` | Validate structure |

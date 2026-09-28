@@ -12,7 +12,7 @@ The plan-marshall findings pipeline routes every quality signal — PR review co
 │  ┌──────────────────────┐  add  ┌──────────────────────┐  list   ┌────────┐ │
 │  │      PRODUCERS       │──────▶│    manage-findings   │◀────────│CONSUMER│ │
 │  │                      │       │                      │ resolve │   S    │ │
-│  │ workflow-integration-│       │  .plan/plans/{id}/   │────────▶│        │ │
+│  │ workflow-integration-│       │  local/plans/{id}/   │────────▶│        │ │
 │  │  github (PR review)  │       │  artifacts/findings/ │         │ phase- │ │
 │  │ workflow-integration-│       │   ├─ pr-comment.jsonl│         │ 6-fin- │ │
 │  │  gitlab (MR review)  │       │   ├─ pr-comment-     │         │ alize: │ │
@@ -145,7 +145,7 @@ Every producer reports `count_fetched` vs `count_stored` mismatches as a `qgate`
 
 **Quarantine + ingestion.** Untrusted external free-text (a PR-comment body, a Sonar message) is filed under a quarantined `raw_input.{field}` sub-object, capped per field at `plan.finding_raw_input_max_bytes` (default 64 KiB, `[truncated]` marker on overflow). The `ingest` verb runs one batched `validate_struct` pass over every pending finding's `raw_input.{field}` values and promotes only the validated, clamped output to the clean top-level fields — the containment boundary that keeps triage's read surface clean (`raw_input.*` = audit-only quarantine; top-level = clean-by-construction). See [`manage-findings/standards/jsonl-format.md`](../../manage-findings/standards/jsonl-format.md) § "`raw_input` quarantine namespace" and [`untrusted-ingestion/SKILL.md`](../../untrusted-ingestion/SKILL.md) § "Application to the findings ledger".
 
-Storage layout (under `.plan/plans/{plan_id}/artifacts/findings/`):
+Storage layout (under `.plan/local/plans/{plan_id}/artifacts/findings/`):
 
 | File | Contents |
 |---|---|

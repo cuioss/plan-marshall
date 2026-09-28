@@ -55,7 +55,7 @@ After the solution outline agent completes, the `/plan-marshall` command MUST:
 ```markdown
 ## Solution Outline Created
 
-**Review your solution outline**: .plan/plans/{plan_id}/solution_outline.md
+**Review your solution outline**: .plan/local/plans/{plan_id}/solution_outline.md
 
 Please review the deliverables and architecture before proceeding.
 ```
@@ -101,7 +101,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 ### Example Interaction
 
 ```text
-Command: "Solution outline created with 5 deliverables. Review .plan/plans/auth-feature/solution_outline.md"
+Command: "Solution outline created with 5 deliverables. Review .plan/local/plans/auth-feature/solution_outline.md"
 User: "Deliverable 3 should use CDI instead of Spring - please update"
 
 Command: Writes Q-Gate finding: "User: Use CDI instead of Spring for Deliverable 3"

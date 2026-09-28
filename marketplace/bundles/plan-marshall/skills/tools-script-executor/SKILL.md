@@ -372,7 +372,7 @@ The executor provides two-tier logging:
 
 When a plan ID is provided, logs to:
 ```text
-.plan/plans/{plan-id}/script-execution.log
+.plan/local/plans/{plan-id}/logs/script-execution.log
 ```
 
 **Two ways to enable plan-scoped logging:**
@@ -404,7 +404,7 @@ The `--audit-plan-id` parameter is audit-only — it is removed before the scrip
 
 Fallback when no plan context:
 ```text
-.plan/logs/script-execution-YYYY-MM-DD.log
+.plan/local/logs/script-execution-YYYY-MM-DD.log
 ```
 
 **Benefits**:

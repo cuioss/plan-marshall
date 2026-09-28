@@ -33,7 +33,7 @@ retrospectives run, immune to GitHub's 90-day log retention window.
 ## Storage Location
 
 ```text
-.plan/plans/{plan_id}/
+.plan/local/plans/{plan_id}/
   artifacts/
     ci-runs/
       {run_id}/

@@ -357,7 +357,7 @@ Then display:
 ```text
 ## Solution Outline Created
 
-**Review your solution outline**: .plan/plans/{plan_id}/solution_outline.md
+**Review your solution outline**: .plan/local/plans/{plan_id}/solution_outline.md
 
 Please review the deliverables and architecture before proceeding.
 ```

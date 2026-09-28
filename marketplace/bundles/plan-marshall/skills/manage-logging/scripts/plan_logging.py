@@ -13,7 +13,7 @@ Log file locations:
 - Orchestrator-scoped (store='orchestrator'): .plan/orchestrator/{slug}/logs/{decision,work}.log
   (via get_store_dir, which composes onto the git-tracked config tier; the epic
   tree is committed, while this logs/ subtree stays git-ignored)
-- Global fallback: .plan/logs/{type}-YYYY-MM-DD.log
+- Global fallback: .plan/local/logs/{type}-YYYY-MM-DD.log
 
 Configuration via environment variables:
 - PLAN_BASE_DIR: Base directory for .plan structure (default: .plan)
