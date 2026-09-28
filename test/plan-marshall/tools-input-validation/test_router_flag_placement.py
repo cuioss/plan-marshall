@@ -311,6 +311,44 @@ def test_every_misplaced_router_flag_is_named_and_moved(monkeypatch, capsys):
     )
 
 
+# ---------------------------------------------------------------------------
+# A misplaced value-taking router flag written with no value gets no command.
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    'tail',
+    [['--plan-id'], ['--plan-id', '--project-dir', '/repo']],
+    ids=['last-token', 'followed-by-a-flag'],
+)
+def test_valueless_router_flag_reports_the_missing_value_and_no_command(monkeypatch, capsys, tail):
+    """Moved as written, ``--plan-id`` would consume the verb as its value, so no command is shown."""
+    monkeypatch.setattr('sys.argv', ['architecture', 'find', '--pattern', 'x', *tail])
+    with pytest.raises(SystemExit) as excinfo:
+        parse_args_with_toon_errors(_build_parser(), notation='plan-marshall:manage-architecture:architecture')
+
+    assert excinfo.value.code == 2
+    captured = capsys.readouterr()
+    payload = parse_toon(captured.out)
+    assert payload['error'] == 'misplaced_router_flag'
+    assert payload['missing_value'] == ['--plan-id']
+    assert 'takes a value' in payload['message']
+    assert 'execute-script.py' not in payload['message']
+    assert 'takes a value' in captured.err
+    assert 'e.g. `' not in captured.err
+
+
+def test_boolean_router_flag_with_nothing_after_it_still_gets_the_corrected_command(monkeypatch, capsys):
+    """Control: a ``store_true`` router flag carries no value, so a bare occurrence is complete."""
+    parser = _build_parser()
+    parser.add_argument('--verbose', action='store_true')
+    monkeypatch.setattr('sys.argv', ['architecture', 'find', '--pattern', 'x', '--verbose'])
+    with pytest.raises(SystemExit):
+        parse_args_with_toon_errors(parser)
+
+    payload = parse_toon(capsys.readouterr().out)
+    assert 'missing_value' not in payload
+    assert payload['message'] == 'architecture --verbose find --pattern x'
+
+
 def test_genuinely_unknown_flag_after_verb_prints_no_toon(monkeypatch, capsys):
     """Control: an unrecognized flag that is not a router flag keeps stdout empty."""
     monkeypatch.setattr('sys.argv', ['architecture', 'find', '--pattern', '*.py', '--nope', 'x'])
