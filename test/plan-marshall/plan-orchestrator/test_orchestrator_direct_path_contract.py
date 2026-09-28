@@ -165,14 +165,13 @@ def _affirms(clause: str, start: int | None) -> bool:
     return start is not None and not _NEGATION_RE.search(clause[:start])
 
 
-def _ledger_token_start(clause: str) -> int | None:
-    starts = [clause.find(token) for token in _LEDGER_DOC_TOKENS if token in clause]
-    return min(starts, default=None)
+def _first_start(text: str, needles: tuple[str, ...]) -> int | None:
+    return min((text.find(needle) for needle in needles if needle in text), default=None)
 
 
 def _rule1_triggers(paragraph: str) -> bool:
     return bool(_FILE_TOOL_RE.search(paragraph)) and any(
-        _affirms(clause, _ledger_token_start(clause)) for clause in _clauses(paragraph)
+        _affirms(clause, _first_start(clause, _LEDGER_DOC_TOKENS)) for clause in _clauses(paragraph)
     )
 
 
@@ -187,9 +186,9 @@ def _rule2_literal_clauses(paragraph: str) -> list[tuple[str, int]]:
     found = []
     for clause in _clauses(paragraph):
         stripped = _HANDOFF_POINTER_RE.sub('', clause)
-        starts = [stripped.find(prefix) for prefix in _LITERAL_PREFIXES if prefix in stripped]
-        if starts:
-            found.append((stripped, min(starts)))
+        start = _first_start(stripped, _LITERAL_PREFIXES)
+        if start is not None:
+            found.append((stripped, start))
     return found
 
 
