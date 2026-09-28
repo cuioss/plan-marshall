@@ -96,10 +96,43 @@ class TestCreatePrTitleStalenessCheck:
             'manage-solution-outline list-deliverables before trusting the refine-time pr_title.'
         )
 
-    def test_step_3_5_compares_against_changed_files(self):
+    def test_step_3_5_behaviour_claims_need_executed_deliverables(self):
         step = self._step_3_5()
-        assert '{changed_files}' in step, (
-            'create-pr.md Step 3.5 must compare the title against the Step 1 {changed_files} diff scope.'
+        assert '**Behaviour claims**' in step, 'create-pr.md Step 3.5 must name behaviour claims as a claim kind.'
+        assert 'supported ONLY by the returned executed deliverable titles' in step, (
+            'create-pr.md Step 3.5 must back a behaviour claim with the executed deliverables alone.'
+        )
+        assert '`{changed_files}` can NEVER vouch for a behaviour claim' in step, (
+            'create-pr.md Step 3.5 must forbid {changed_files} from supporting a behaviour claim — '
+            'a changed file does not prove every behaviour tied to it shipped.'
+        )
+
+    def test_step_3_5_changed_files_back_only_location_claims(self):
+        step = self._step_3_5()
+        assert '**File, component, or area claims**' in step, (
+            'create-pr.md Step 3.5 must name file/component/area claims as a separate claim kind.'
+        )
+        assert 'EITHER an executed deliverable title OR the Step 1 `{changed_files}`' in step, (
+            'create-pr.md Step 3.5 must let {changed_files} support file/component/area claims.'
+        )
+
+    @pytest.mark.parametrize(
+        'retired_form',
+        [
+            'against BOTH the returned deliverable titles AND the Step 1 `{changed_files}`',
+            'a component, behaviour, or area that no executed deliverable covers and no changed file touches',
+        ],
+        ids=['either-source-comparison', 'either-source-staleness-rule'],
+    )
+    def test_step_3_5_drops_the_unsplit_predicate(self, retired_form):
+        assert retired_form not in self._step_3_5(), (
+            'create-pr.md Step 3.5 must not keep the unsplit "deliverable titles OR changed files" '
+            'predicate, which lets a changed file vouch for a dropped behaviour.'
+        )
+
+    def test_step_3_5_keeps_terse_title_is_not_stale_rule(self):
+        assert 'terser or more general than the deliverable list is NOT stale' in self._step_3_5(), (
+            'create-pr.md Step 3.5 must keep the rule that a terser or more general title is not stale.'
         )
 
     def test_step_3_5_persists_re_derived_title(self):

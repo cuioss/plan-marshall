@@ -269,10 +269,15 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
   --plan-id {plan_id}
 ```
 
-Compare the scope `{pr_title}` describes against BOTH the returned deliverable titles AND the Step 1 `{changed_files}`. The title is **stale** only when it names scope that appears in neither — a component, behaviour, or area that no executed deliverable covers and no changed file touches. A title that is terser or more general than the deliverable list is NOT stale; the check asks whether the title claims something that did not ship, not whether it enumerates everything that did.
+Split every claim `{pr_title}` makes by kind, and check each kind against the evidence that can actually support it:
+
+- **Behaviour claims** — what the change *does* (a fix, a new capability, a guard, a removed behaviour) — are supported ONLY by the returned executed deliverable titles. `{changed_files}` can NEVER vouch for a behaviour claim: a changed file proves the file was touched, not that every behaviour tied to it shipped — a deliverable dropped during execute can leave its file changed by unrelated work.
+- **File, component, or area claims** — *where* the change lands (a named file, skill, bundle, or subsystem) — are supported by EITHER an executed deliverable title OR the Step 1 `{changed_files}`.
+
+The title is **stale** when any behaviour claim has no executed deliverable backing it, or any file/component/area claim appears in neither source. A title that is terser or more general than the deliverable list is NOT stale; the check asks whether the title claims something that did not ship, not whether it enumerates everything that did.
 
 - **Still describes the shipped scope** → log nothing, keep `{pr_title}` as bound, and proceed to Step 3.6.
-- **Stale** → re-derive the title under the phase-2-refine title-authoring rules — see [`phase-2-refine/standards/refine-workflow-detail.md` § "Author and persist the PR title"](../../phase-2-refine/standards/refine-workflow-detail.md#author-and-persist-the-pr-title) for the rules; they are not restated here — grounding it in the executed deliverables and `{changed_files}` rather than the clarified request. Persist the re-derived value so every later reader sees the title the PR actually carries:
+- **Stale** → re-derive the title under the phase-2-refine title-authoring rules — see [`phase-2-refine/standards/refine-workflow-detail.md` § "Author and persist the PR title"](../../phase-2-refine/standards/refine-workflow-detail.md#author-and-persist-the-pr-title) for the rules; they are not restated here — grounding its behaviour claims in the executed deliverables alone and its file/component/area claims in the executed deliverables or `{changed_files}`, rather than in the clarified request. Persist the re-derived value so every later reader sees the title the PR actually carries:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
