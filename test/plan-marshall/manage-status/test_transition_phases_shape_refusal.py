@@ -42,9 +42,12 @@ from _manage_status_main_dispatch_fixtures import _PHASES, _parse, _run
 from _manage_status_transition_fixtures import cmd_create, cmd_transition
 
 #: The malformed-shape names, bound once. Guarded at module level — an assertion
-#: inside the parametrized test body never runs when the set is empty.
+#: inside the parametrized test body never runs when the set is empty. The
+#: truthiness conjunct is the non-vacuity guarantee on its own: the size pin
+#: compares against an imported name, which an empty population satisfies too
+#: whenever that expected size is itself zero.
 _SHAPE_NAMES: list[str] = sorted(_UNEXAMINABLE_SHAPES)
-assert len(_SHAPE_NAMES) == _EXPECTED_UNEXAMINABLE_SIZE, (
+assert _SHAPE_NAMES and len(_SHAPE_NAMES) == _EXPECTED_UNEXAMINABLE_SIZE, (
     f'expected {_EXPECTED_UNEXAMINABLE_SIZE} unexaminable phases shapes, derived {len(_SHAPE_NAMES)}: {_SHAPE_NAMES}'
 )
 
