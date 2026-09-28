@@ -105,11 +105,6 @@ def _coerce_bool(raw_value: object) -> bool | None:
     return None
 
 
-def _same_file(left: Path, right: Path) -> bool:
-    """Return whether two paths name the same file, resolving symlinks and ``..``."""
-    return left.resolve() == right.resolve()
-
-
 def _main_anchored_use_worktree_is_set(knob_path: Path | None) -> bool:
     """Return whether the main-anchored ``marshal.json`` carries ``orchestrator.use_worktree``.
 
@@ -137,7 +132,7 @@ def _use_worktree_anchor_refusal() -> dict | None:
     """
     write_path = Path(_config_core.MARSHAL_PATH)
     knob_path = orchestrator_knob_config_path()
-    if knob_path is not None and _same_file(write_path, knob_path):
+    if knob_path is not None and write_path.resolve() == knob_path.resolve():
         return None
     return error_exit(
         'use_worktree_requires_main_checkout',
