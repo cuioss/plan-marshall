@@ -183,7 +183,7 @@ def clean_temp(dry_run: bool = False) -> tuple[int, int]:
 
 def clean_logs(max_age_days: int, dry_run: bool = False) -> tuple[int, int]:
     """
-    Clean old log files from .plan/logs.
+    Clean old log files from .plan/local/logs.
 
     Returns:
         (files_deleted, bytes_freed)
