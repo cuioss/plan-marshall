@@ -2,9 +2,9 @@
   "id": "PLAN-13",
   "slug": "finalize-mechanism-defects",
   "workstream": "WS-07",
-  "status": "running",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "plan_marshall_plan_id": "plan-13-finalize-mechanism-defects",
+  "pr": "1651",
+  "landing": "landings/PLAN-13.md",
   "seq": 13
 }

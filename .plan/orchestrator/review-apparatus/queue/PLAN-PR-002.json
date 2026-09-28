@@ -2,9 +2,9 @@
   "id": "PLAN-PR-002",
   "slug": "org-empty-review-guard-too-broad",
   "workstream": "WS-02",
-  "status": "parked",
+  "status": "shipped",
   "plan_marshall_plan_id": "org-empty-review-guard-too-broad",
-  "pr": "cuioss-organization#235",
+  "pr": "cuioss-organization#297",
   "landing": "landings/PLAN-PR-002.md",
   "seq": 1
 }
