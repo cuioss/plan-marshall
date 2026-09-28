@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pytest
 from _orchestrator_worktree_fixtures import build_ledger_repo, git, use_real_resolver, write_marshal
+from orchestrator_worktree import LEDGER_PATHSPECS as _LEDGER_PATHSPECS
 from toon_parser import parse_toon
 
 from conftest import get_script_path, run_script
@@ -33,7 +34,6 @@ ORCHESTRATOR = get_script_path('plan-marshall', 'plan-orchestrator', 'orchestrat
 _SLUG = 'epic-alpha'
 _SENDER = 'plan-sender'
 _POINTER = '.plan/orchestrator/epic-alpha/plans/PLAN-01-alpha.md'
-_LEDGER_PATHSPECS = ('.plan/orchestrator', '.plan/archived-orchestrators')
 
 
 def _sandbox(tmp_path: Path, monkeypatch, *, knob: bool):
