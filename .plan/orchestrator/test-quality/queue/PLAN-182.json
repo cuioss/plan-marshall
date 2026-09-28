@@ -2,9 +2,9 @@
   "id": "PLAN-182",
   "slug": "module-budget-campaign-completion",
   "workstream": "WS-04",
-  "status": "running",
+  "status": "shipped",
   "plan_marshall_plan_id": "",
   "pr": "#1640",
-  "landing": "landings/PLAN-182-slice-2.md",
+  "landing": "landings/PLAN-182-completion.md",
   "seq": 3
 }

@@ -1,1 +1,1 @@
-Cleanup 2026-09-28: corpus 5/5 reconciled, A1 declined for terminal rows, 184 declarative verified, A4 shipped-inheritance only, compact idempotent, restart not_ready (PLAN-182 running). Next: land cleanup dirt, then emit PLAN-184 on operator word.
+PLAN-184 un-emitted to parked (operator order 2026-09-28): staged row held off the launch path, spec retained. Live queue empty (182/183 shipped, 140 superseded). Next: cleanup + land.
