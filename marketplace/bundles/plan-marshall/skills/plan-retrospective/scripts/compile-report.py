@@ -1095,16 +1095,21 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
 
     plan_id = args.plan_id or plan_dir.name
     fragments_path = Path(args.fragments_file)
-    if not fragments_path.exists():
+    if not fragments_path.is_file():
         # A missing bundle is a caller-visible outcome, not a crash: refuse
-        # before any report is written, naming the path that was looked at.
+        # before any report is written, naming the path that was looked at. A
+        # directory at the path is refused the same way — reading it would
+        # raise instead of returning this result.
+        path_state = 'not_a_file' if fragments_path.exists() else 'absent'
+        state_clause = 'is not a regular file' if path_state == 'not_a_file' else 'does not exist'
         return {
             'status': 'error',
             'error': 'fragments_file_missing',
             'plan_id': plan_id,
             'mode': args.mode,
             'fragments_file': str(fragments_path),
-            'message': f'Fragments bundle does not exist: {fragments_path}. No report was written.',
+            'path_state': path_state,
+            'message': f'Fragments bundle {state_clause}: {fragments_path}. No report was written.',
         }
 
     fragments = load_fragments(fragments_path)

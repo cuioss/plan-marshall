@@ -35,7 +35,7 @@ implements:
 - Never write to archived plan directories. Archived mode writes the report next to the archived plan, but the plan state itself is read-only.
 - Never call `mark-step-done` in archived mode or user-invocable live mode — only the finalize-step mode emits the handshake tail.
 - Never call `manage-lessons add` in orchestration context (`orchestrated: true`). Step 5b routes every proposal to the epic inbox on that branch, and the `already_closed` deletion path does not run — deleting a global lesson is a corpus mutation the orchestrator owns.
-- Never silently skip aspect dispatch. If a script fails, record the failure in the report under "Script failure analysis" and continue.
+- Never silently skip aspect dispatch. If an aspect script fails, record the aspect as not captured — an `aspects_skipped` row with `reason: script_failed` in the Step 7 return, plus the Step 3 work-log line in live modes — and continue. The compiled report is not that record: it renders only the fragments the bundle holds.
 - Never treat a `compile-report` warning as a clean pass. A non-empty `sections_dropped` MUST be surfaced in the report and carried into the Step 5 lessons proposal — a dropped fragment may have carried a live finding.
 - Do not modify any .plan/ files directly — all plan state access goes through `manage-*` scripts and the scripts in this skill.
 
@@ -168,20 +168,32 @@ reconcile in archived mode entirely.
 
 ### Step 3: Dispatch Aspects (in order)
 
-Before dispatching aspects, initialize the fragment bundle. `collect-fragments init` creates an empty TOON bundle file at the mode-appropriate path: live mode writes to `{plan_dir}/work/retro-fragments.toon`; archived mode writes to an OS tmp directory so the archived plan stays read-only. Capture the returned `bundle_path` for use in Step 4. The mode is persisted into the bundle by `init`, so subsequent register and finalize calls read it back automatically and accept only `--plan-id` and the fragment inputs.
+Before dispatching aspects, initialize the fragment bundle. `collect-fragments init` creates an empty TOON bundle file at the mode-appropriate path: live mode writes to `{plan_dir}/work/retro-fragments.toon`; archived mode ALWAYS writes to a synthetic per-plan directory under the OS tmpdir (`<tmp>/plan-retrospective/plan-{plan_id}/work/retro-fragments.toon`), never into the archived plan, which stays read-only. The archived plan directory is the audit's input — the aspect scripts and `compile-report` read it through their own `--archived-plan-path` — and `collect-fragments` takes no path override: the bundle is keyed on `--plan-id` and the mode alone. Capture the returned `bundle_path` for use in Step 4. The mode is persisted into the bundle by `init`, so subsequent add, register and finalize calls read it back automatically, locate the bundle from `--plan-id` alone, and accept only `--plan-id` and the fragment inputs.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments \
-  init --plan-id {plan_id} --mode {live|archived} [--archived-plan-path {path}]
+  init --plan-id {plan_id} --mode {live|archived}
 ```
 
 Parse `bundle_path` from the TOON output.
 
-**`{fragment_dir}`** is the directory of that `bundle_path` — an absolute path, equal to `<plan_dir>/work` in live mode and to the bundle's own directory in archived mode. Every fragment capture below writes to `{fragment_dir}/fragment-{aspect}.toon` and registers that same path: the stdout redirect, the `Write`-tool target, and the paired `add --fragment-file` all name it. A fragment path relative to the cwd lands under whatever directory the caller runs from, while `collect-fragments` anchors a relative path to the plan directory — so the registered file would not be the written one.
+**`{fragment_dir}`** is the directory of that `bundle_path` — an absolute path, equal to `<plan_dir>/work` in live mode and to the synthetic tmp directory's `work` directory in archived mode, so no fragment is ever written into the archived plan. Every fragment capture below writes to `{fragment_dir}/fragment-{aspect}.toon` and registers that same path: the stdout redirect, the `Write`-tool target, and the paired `add --fragment-file` all name it. A fragment path relative to the cwd lands under whatever directory the caller runs from, while `collect-fragments` anchors a relative path to the plan directory — so the registered file would not be the written one.
 
 For each aspect below, produce a TOON fragment on disk at `{fragment_dir}/fragment-{aspect}.toon`, then register it via `collect-fragments add`. Fragments are persisted to disk so that `compile-report` in Step 4 can consume them from a single bundle file assembled by `collect-fragments`.
 
-**A missing fragment is a recorded skip, never a stop.** When `collect-fragments add` (or `register`) returns `error: fragment_missing` — the aspect produced no file at the resolved `fragment_path` the result names — record the aspect under "Script failure analysis" in the report, naming that path, and continue with the next aspect. A `register` refusal rejects the whole batch, so first re-issue the `register` call without the missing item. This is the structured skip the "Never silently skip aspect dispatch" rule prescribes: the aspect is reported as not captured, and the remaining aspects still run.
+**A missing fragment is a recorded skip, never a stop.** When `collect-fragments add` (or `register`) returns `error: fragment_missing` — the aspect produced no regular file at the resolved `fragment_path` the result names (its `path_state` says whether the path is `absent` or holds a directory or other `not_a_file` entry) — record the skip and continue with the next aspect. A `register` refusal rejects the whole batch, so first re-issue the `register` call without the missing item.
+
+The skip is NOT written into the compiled report: a refused `add` / `register` leaves the bundle untouched, `compile-report` renders only what the bundle holds, and the `script-failure-analysis` aspect reads the script log, not the bundle — so no report section can carry it. The skip's records are these two, and only these:
+
+- **The Step 7 return** — add an `{aspect, reason, fragment_path, path_state}` row to `aspects_skipped` for every refused aspect, with `reason: fragment_missing`. This is the record in every mode.
+- **The work log (live modes only)** — one line per refused aspect; archived mode skips it because the archived plan's logs are write-frozen:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    work --plan-id {plan_id} --level WARNING --message "[STATUS] (plan-marshall:plan-retrospective) Aspect {aspect} not captured: {reason} ({path_state}) at {fragment_path}"
+  ```
+
+This is the structured skip the "Never silently skip aspect dispatch" rule prescribes: the aspect is reported as not captured, and the remaining aspects still run.
 
 **Key** is the canonical registry key — the exact literal `collect-fragments add --aspect` validates against, and the one `compile-report` looks the fragment up under. It is NOT the aspect's prose name and NOT its reference-document basename: four rows differ from their reference basename (`invariant-summary`, `manifest-decisions`, `routing-decisions`, `dispatch_boundaries`), so a key guessed from either column is rejected on first attempt. The keys are declared in [`scripts/retro_sections.py`](scripts/retro_sections.py) (`SECTION_SPEC`) — that module is the source of truth and this column restates it. `test/plan-marshall/plan-retrospective/test_registered_aspects_render.py` checks the restatement in **both** directions, and each direction is a separate assertion in `TestAspectTableKeysMatchTheRegistry`: every Key cell names a registered key (`_scan_aspect_table_keys()` ⊆ the registry), and every registerable key has a row (`valid_aspect_keys() - set(_scan_aspect_table_keys())` is empty). A sibling pair of assertions in the same class (`test_scan_finds_a_key_for_every_numbered_row`, `test_reverse_assertion_populations_are_non_empty`) publishes both populations' sizes and fails on an empty one, so neither direction can pass vacuously over an empty table scan or an empty registry. A registry row added without a table row therefore fails a test rather than shipping unnoticed. Read a key from here to save the lookup; settle any dispute at the registry.
 
@@ -319,14 +331,16 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragmen
   finalize --plan-id {plan_id}
 ```
 
-Parse `bundle_path` from the TOON output, then:
+When the bundle is absent — or its path names a directory rather than a regular file — `finalize` returns `error: bundle_missing` at exit 0, naming the `bundle_path` it looked at and its `path_state` (`absent` | `not_a_file`). Do NOT run `compile-report` on that path: no report is written, and the Step 7 return is the refusal's only record — carry it there as the retrospective's error.
+
+Otherwise parse `bundle_path` from the TOON output, then:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:compile-report \
   run --plan-id {plan_id} --mode {live|archived} --fragments-file {bundle_path}
 ```
 
-When the bundle is absent, `compile-report` returns `error: fragments_file_missing` naming the `fragments_file` it looked at, and writes no report. The Step 7 return is its only record: carry it there as the retrospective's error.
+When the `--fragments-file` path names no regular file by the time `compile-report` reads it, `compile-report` returns `error: fragments_file_missing` at exit 0, naming the `fragments_file` it looked at and its `path_state`, and writes no report. Carry it to Step 7 the same way.
 
 The script returns the report's absolute path and a three-valued section outcome. `sections_written` names every section the report carries, and every section it names has a non-empty body — the partition invariant is *written implies non-empty*, so a section whose body would be only a placeholder is NOT written (it takes the omitted or dropped branch like any other). `sections_omitted` is the BENIGN half of the non-emit path — the section's trigger fragment was absent or carried nothing renderable, so there was nothing to lose. `sections_dropped` is the LOUD half — a registered fragment that was present and carried payload but still did not render. When `sections_dropped` is non-empty the script returns `status: warning` (never `success`) and a `message` naming the dropped headings; the process exit code stays `0` because the report itself was written. Section order follows `references/report-structure.md`.
 
@@ -459,7 +473,11 @@ report_path: {absolute path to report}
 aspects_dispatched: N
 lessons_proposed: M
 lessons_recorded: K
+aspects_skipped[S]{aspect,reason,fragment_path,path_state}:
+  {one row per aspect that was not captured — reason fragment_missing (registration refused) or script_failed (the aspect script exited non-zero; fragment_path and path_state are "-"); S is 0 when every aspect was captured}
 ```
+
+`aspects_skipped` is the only record of a Step 3 recorded skip that survives into the return — the compiled report cannot carry it (see Step 3 "A missing fragment is a recorded skip").
 
 On error:
 
@@ -588,23 +606,21 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:direct-gh-glab-
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments init \
-  --plan-id PLAN_ID --mode {live,archived} [--archived-plan-path ARCHIVED_PLAN_PATH]
+  --plan-id PLAN_ID --mode {live,archived}
 ```
 
 ### collect-fragments — add
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments add \
-  --plan-id PLAN_ID --aspect ASPECT --fragment-file FRAGMENT_FILE \
-  [--archived-plan-path ARCHIVED_PLAN_PATH] [--overwrite]
+  --plan-id PLAN_ID --aspect ASPECT --fragment-file FRAGMENT_FILE [--overwrite]
 ```
 
 ### collect-fragments — register
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments register \
-  --plan-id PLAN_ID --item ASPECT=FRAGMENT_FILE [--item ASPECT=FRAGMENT_FILE ...] \
-  [--archived-plan-path ARCHIVED_PLAN_PATH] [--overwrite]
+  --plan-id PLAN_ID --item ASPECT=FRAGMENT_FILE [--item ASPECT=FRAGMENT_FILE ...] [--overwrite]
 ```
 
 One batch replaces N `add` calls: the aspect-key registry resolves once, every
@@ -618,8 +634,10 @@ for the compile-report conservation check. Each `PATH` resolves exactly as
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments finalize \
-  --plan-id PLAN_ID [--archived-plan-path ARCHIVED_PLAN_PATH]
+  --plan-id PLAN_ID
 ```
+
+A bundle path naming no regular file returns `error: bundle_missing` naming the `bundle_path` and its `path_state`, at exit 0.
 
 ## Related
 

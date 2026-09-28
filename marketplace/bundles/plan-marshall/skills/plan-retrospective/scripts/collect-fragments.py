@@ -14,15 +14,17 @@ Subcommands:
               aspect keys with counts.
     finalize  Report the bundle path and its registered aspects.
 
-Bundle location:
+Bundle location (the bundle root is keyed on ``--plan-id`` and the mode alone):
     live      ``<plan_dir>/work/retro-fragments.toon`` where ``plan_dir`` is
               ``base_path('plans', plan_id)`` (honours ``PLAN_BASE_DIR``).
-    archived  ``<archived_plan_path>/work/retro-fragments.toon`` when the
-              caller passes ``--archived-plan-path``; otherwise a synthetic
-              per-plan dir under the OS tmpdir
-              (``<tmp>/plan-retrospective/plan-<plan_id>/work/retro-fragments.toon``)
-              so audits without an explicit archive path never mutate any
-              real archived plan directory.
+    archived  ``<tmp>/plan-retrospective/plan-<plan_id>/work/retro-fragments.toon``
+              — a synthetic per-plan dir under the OS tmpdir, ALWAYS. The
+              archived plan directory is the audit's read-only INPUT (read by
+              ``compile-report`` and the aspect scripts through their own
+              ``--archived-plan-path``); it is never this script's OUTPUT, so
+              neither the bundle nor the ``{fragment_dir}`` fragments land in
+              it, and ``add`` / ``register`` / ``finalize`` locate the bundle
+              ``init`` created from ``--plan-id`` alone.
 
 Path resolution rules:
     ``add --fragment-file`` and every ``register --item ASPECT=PATH`` resolve
@@ -30,15 +32,23 @@ Path resolution rules:
     caller form is ``{fragment_dir}/fragment-<aspect>.toon``, where
     ``{fragment_dir}`` is the directory of the ``bundle_path`` that ``init``
     returns — an absolute path, used verbatim. A relative path that already
-    resolves from the cwd to a location inside the plan directory is used as
-    that location rather than re-anchored (which would double the plan
-    directory); any other relative path is anchored to the plan directory.
+    resolves from the cwd to a location inside the bundle root is used as
+    that location rather than re-anchored (which would double the bundle
+    root); any other relative path is anchored to the bundle root.
 
 Missing fragment:
-    A fragment path that resolves to no file returns ``status: error`` with
-    ``error: fragment_missing``, the ``aspect`` and the resolved
-    ``fragment_path`` — exit code 0, bundle untouched. ``register`` aborts the
-    whole batch on the first missing fragment, before any fragment is merged.
+    A fragment path that resolves to no regular file — absent, or a directory
+    or other non-file entry — returns ``status: error`` with
+    ``error: fragment_missing``, the ``aspect``, the resolved ``fragment_path``
+    and its ``path_state`` (``absent`` | ``not_a_file``) — exit code 0, bundle
+    untouched. ``register`` aborts the whole batch on the first missing
+    fragment, before any fragment is merged.
+
+Missing bundle:
+    ``finalize`` against a bundle path that names no regular file returns
+    ``status: error`` with ``error: bundle_missing``, the ``bundle_path`` it
+    looked at and its ``path_state`` — exit code 0, so the caller can carry the
+    refusal forward instead of stopping on a crash.
 
 All subcommands emit TOON output via ``serialize_toon`` and follow the
 execute-script executor contract (@safe_main, ``--help`` on every subparser,
@@ -70,23 +80,24 @@ _META_KEY = '_meta'
 _BUNDLE_RELATIVE = ('work', 'retro-fragments.toon')
 
 
-def _resolve_plan_dir(mode: str, plan_id: str, archived_plan_path: str | None) -> Path:
-    """Return the canonical plan directory for the given mode.
+def _resolve_bundle_root(mode: str, plan_id: str) -> Path:
+    """Return the directory the bundle and its fragments live under for ``mode``.
 
     This is the single source of truth used by both ``resolve_bundle_path``
     (to locate the bundle file) and ``_resolve_fragment_path`` (to anchor
     relative fragment paths). Keeping the resolution in one place guarantees
     that ``init``/``add``/``register``/``finalize`` agree on the bundle root.
 
+    Live mode roots at the plan directory. Archived mode roots at a synthetic
+    per-plan directory under the OS tmpdir — never at the archived plan
+    directory, which is the audit's read-only input.
+
     Args:
         mode: Either ``'live'`` or ``'archived'``.
         plan_id: Plan identifier. Required for both modes.
-        archived_plan_path: Caller-supplied archived plan root. Honoured in
-            ``archived`` mode; ignored in ``live`` mode (live mode reads
-            ``PLAN_BASE_DIR`` via ``base_path``).
 
     Returns:
-        Absolute path to the plan directory.
+        Absolute path to the bundle root.
 
     Raises:
         ValueError: On unknown ``mode`` or missing ``plan_id``.
@@ -96,27 +107,20 @@ def _resolve_plan_dir(mode: str, plan_id: str, archived_plan_path: str | None) -
     if mode == 'live':
         return base_path('plans', plan_id).resolve()
     if mode == 'archived':
-        if archived_plan_path:
-            return Path(archived_plan_path).resolve()
         return (Path(tempfile.gettempdir()) / _ARCHIVED_TMP_SUBDIR / f'plan-{plan_id}').resolve()
     raise ValueError(f'Unknown mode: {mode!r}')
 
 
-def resolve_bundle_path(mode: str, plan_id: str, archived_plan_path: str | None = None) -> Path:
+def resolve_bundle_path(mode: str, plan_id: str) -> Path:
     """Return the bundle path for the given mode.
 
-    Both modes resolve to ``<plan_dir>/work/retro-fragments.toon``. The
-    plan_dir comes from :func:`_resolve_plan_dir`, so ``init``, ``add``, and
-    ``finalize`` agree on the bundle root by construction.
+    Both modes resolve to ``<bundle_root>/work/retro-fragments.toon``. The
+    bundle root comes from :func:`_resolve_bundle_root`, so ``init``, ``add``,
+    ``register`` and ``finalize`` agree on it by construction.
 
     Args:
         mode: Either ``'live'`` or ``'archived'``.
         plan_id: Plan identifier. Required for both modes.
-        archived_plan_path: Caller-supplied archived plan root for archived
-            mode (e.g. an archived-plan copy on tmp_path during integration
-            tests). When omitted, archived mode falls back to a synthetic
-            per-plan tmp directory so production audits without an explicit
-            archive path never write into a real archived plan.
 
     Returns:
         Absolute path to the bundle file.
@@ -124,10 +128,10 @@ def resolve_bundle_path(mode: str, plan_id: str, archived_plan_path: str | None 
     Raises:
         ValueError: On unknown ``mode`` or missing ``plan_id``.
     """
-    return _resolve_plan_dir(mode, plan_id, archived_plan_path).joinpath(*_BUNDLE_RELATIVE)
+    return _resolve_bundle_root(mode, plan_id).joinpath(*_BUNDLE_RELATIVE)
 
 
-def _resolve_fragment_path(raw_path: str, plan_dir: Path) -> Path:
+def _resolve_fragment_path(raw_path: str, bundle_root: Path) -> Path:
     """Resolve one fragment path — the only fragment-path resolver ``add`` and ``register`` use.
 
     The documented caller form is ``{fragment_dir}/fragment-<aspect>.toon``,
@@ -135,14 +139,14 @@ def _resolve_fragment_path(raw_path: str, plan_dir: Path) -> Path:
     ``init`` returns; it is absolute and is returned verbatim.
 
     A relative path is resolved in two steps. When it already resolves from
-    the cwd to a location inside ``plan_dir`` (the ``.plan/local/plans/<id>/...``
+    the cwd to a location inside ``bundle_root`` (the ``.plan/local/plans/<id>/...``
     form a caller in the repository root spells out), that location is used
-    as-is: anchoring it to ``plan_dir`` again would double the plan directory.
-    Any other relative path is anchored to ``plan_dir``.
+    as-is: anchoring it to ``bundle_root`` again would double the directory.
+    Any other relative path is anchored to ``bundle_root``.
 
     Args:
         raw_path: The caller-supplied fragment path.
-        plan_dir: The resolved plan directory of the bundle's persisted mode.
+        bundle_root: The resolved bundle root of the bundle's persisted mode.
 
     Returns:
         The path the fragment is read from. Existence is not checked here.
@@ -151,19 +155,35 @@ def _resolve_fragment_path(raw_path: str, plan_dir: Path) -> Path:
     if raw.is_absolute():
         return raw
     from_cwd = raw.resolve()
-    if from_cwd.is_relative_to(plan_dir):
+    if from_cwd.is_relative_to(bundle_root):
         return from_cwd
-    return plan_dir / raw
+    return bundle_root / raw
+
+
+def _path_state(path: Path) -> str:
+    """Classify a path that is required to name a regular file but does not.
+
+    ``absent`` when nothing is at the path; ``not_a_file`` when something is —
+    a directory or another non-regular entry — so ``read_text`` would raise.
+    """
+    return 'not_a_file' if path.exists() else 'absent'
+
+
+def _describe_path_state(path_state: str) -> str:
+    """Render a ``_path_state`` value as the clause a refusal message carries."""
+    return 'is not a regular file' if path_state == 'not_a_file' else 'does not exist'
 
 
 def _fragment_missing(operation: str, plan_id: str, aspect: str, fragment_path: Path) -> dict[str, Any]:
-    """Return the structured refusal for a fragment path that names no file.
+    """Return the structured refusal for a fragment path that names no regular file.
 
     A missing fragment is a caller-visible outcome, not a crash: the aspect
     that produced no file is named so the caller can record it and move on to
     the next aspect, and the resolved path is named so a wrong-path capture is
-    diagnosable from the result alone.
+    diagnosable from the result alone. A directory at the path is refused the
+    same way — reading it would raise instead of returning this result.
     """
+    path_state = _path_state(fragment_path)
     return {
         'status': 'error',
         'operation': operation,
@@ -171,7 +191,29 @@ def _fragment_missing(operation: str, plan_id: str, aspect: str, fragment_path: 
         'error': 'fragment_missing',
         'aspect': aspect,
         'fragment_path': str(fragment_path),
-        'message': f'Fragment file for aspect {aspect!r} does not exist: {fragment_path}. The bundle was not modified.',
+        'path_state': path_state,
+        'message': (
+            f'Fragment file for aspect {aspect!r} {_describe_path_state(path_state)}: {fragment_path}. '
+            'The bundle was not modified.'
+        ),
+    }
+
+
+def _bundle_missing(operation: str, plan_id: str, bundle_path: Path) -> dict[str, Any]:
+    """Return the structured refusal for a bundle path that names no regular file.
+
+    The bundle path is named so the caller can carry the refusal forward as the
+    retrospective's error rather than stopping on an uncaught exception.
+    """
+    path_state = _path_state(bundle_path)
+    return {
+        'status': 'error',
+        'operation': operation,
+        'plan_id': plan_id,
+        'error': 'bundle_missing',
+        'bundle_path': str(bundle_path),
+        'path_state': path_state,
+        'message': f'Fragments bundle {_describe_path_state(path_state)}: {bundle_path}. Run init first.',
     }
 
 
@@ -185,10 +227,11 @@ def _read_bundle(bundle_path: Path) -> dict[str, Any]:
         Parsed bundle dict. Empty dict when file is empty.
 
     Raises:
-        ValueError: When the bundle file is missing or not a top-level dict.
+        ValueError: When the bundle path names no regular file or the bundle is
+            not a top-level dict.
     """
-    if not bundle_path.exists():
-        raise ValueError(f'Bundle file does not exist: {bundle_path}')
+    if not bundle_path.is_file():
+        raise ValueError(f'Bundle file {_describe_path_state(_path_state(bundle_path))}: {bundle_path}')
     content = bundle_path.read_text(encoding='utf-8')
     if not content.strip():
         return {}
@@ -211,10 +254,11 @@ def _read_fragment(fragment_path: Path) -> Any:
         Parsed fragment value (typically a dict).
 
     Raises:
-        ValueError: When the fragment is missing or fails to parse.
+        ValueError: When the fragment path names no regular file or the
+            fragment fails to parse.
     """
-    if not fragment_path.exists():
-        raise ValueError(f'Fragment file does not exist: {fragment_path}')
+    if not fragment_path.is_file():
+        raise ValueError(f'Fragment file {_describe_path_state(_path_state(fragment_path))}: {fragment_path}')
     content = fragment_path.read_text(encoding='utf-8')
     if not content.strip():
         raise ValueError(f'Fragment file is empty: {fragment_path}')
@@ -264,7 +308,7 @@ def _read_mode_from_bundle(bundle: dict[str, Any], bundle_path: Path) -> str:
 
 def cmd_init(args: argparse.Namespace) -> dict[str, Any]:
     """Create (or overwrite) a bundle file seeded with the resolution mode."""
-    bundle_path = resolve_bundle_path(args.mode, args.plan_id, args.archived_plan_path)
+    bundle_path = resolve_bundle_path(args.mode, args.plan_id)
     bundle_path.parent.mkdir(parents=True, exist_ok=True)
     _write_bundle(bundle_path, {_META_KEY: {'mode': args.mode}})
     return {
@@ -277,16 +321,16 @@ def cmd_init(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _locate_bundle(args: argparse.Namespace) -> Path:
-    """Probe live then archived candidate paths; return the first that exists.
+    """Probe live then archived candidate paths; return the first regular file.
 
-    Returns the ``live`` path when neither exists so ``_read_bundle`` raises
-    a consistent "Bundle file does not exist" error.
+    Returns the ``live`` path when neither names a regular file, so every
+    caller reports the absent bundle against one consistent path.
     """
-    live_path = resolve_bundle_path('live', args.plan_id, args.archived_plan_path)
-    if live_path.exists():
+    live_path = resolve_bundle_path('live', args.plan_id)
+    if live_path.is_file():
         return live_path
-    archived_path = resolve_bundle_path('archived', args.plan_id, args.archived_plan_path)
-    if archived_path.exists():
+    archived_path = resolve_bundle_path('archived', args.plan_id)
+    if archived_path.is_file():
         return archived_path
     return live_path
 
@@ -370,7 +414,7 @@ def cmd_add(args: argparse.Namespace) -> dict[str, Any]:
     # Sanity guard: the path we found the bundle at must match the path the
     # persisted mode resolves to. A mismatch means the bundle was moved or
     # hand-crafted with a contradictory _meta.mode.
-    expected_path = resolve_bundle_path(mode, args.plan_id, args.archived_plan_path)
+    expected_path = resolve_bundle_path(mode, args.plan_id)
     if bundle_path.resolve() != expected_path.resolve():
         raise ValueError(
             f'Bundle path mismatch: found at {bundle_path} but _meta.mode={mode!r} resolves to {expected_path}'
@@ -387,9 +431,9 @@ def cmd_add(args: argparse.Namespace) -> dict[str, Any]:
             'error': f'Aspect already registered: {aspect!r}. Pass --overwrite to replace.',
         }
 
-    plan_dir = _resolve_plan_dir(mode, args.plan_id, args.archived_plan_path)
-    fragment_path = _resolve_fragment_path(args.fragment_file, plan_dir)
-    if not fragment_path.exists():
+    bundle_root = _resolve_bundle_root(mode, args.plan_id)
+    fragment_path = _resolve_fragment_path(args.fragment_file, bundle_root)
+    if not fragment_path.is_file():
         return _fragment_missing('add', args.plan_id, aspect, fragment_path)
     fragment = _read_fragment(fragment_path)
     bundle[aspect] = fragment
@@ -422,8 +466,14 @@ def cmd_add(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def cmd_finalize(args: argparse.Namespace) -> dict[str, Any]:
-    """Return the bundle path and aspect list for hand-off to compile-report."""
+    """Return the bundle path and aspect list for hand-off to compile-report.
+
+    An absent bundle is refused as ``error: bundle_missing`` naming the path it
+    looked at, so the caller reaches its error record instead of a crash.
+    """
     bundle_path = _locate_bundle(args)
+    if not bundle_path.is_file():
+        return _bundle_missing('finalize', args.plan_id, bundle_path)
     bundle = _read_bundle(bundle_path)
     mode = _read_mode_from_bundle(bundle, bundle_path)
     raw_aspects = bundle.get(_META_KEY, {}).get('aspects', [])
@@ -521,7 +571,7 @@ def cmd_register(args: argparse.Namespace) -> dict[str, Any]:
 
     # Sanity guard: the path we found the bundle at must match the path the
     # persisted mode resolves to (same contract as `cmd_add`).
-    expected_path = resolve_bundle_path(mode, args.plan_id, args.archived_plan_path)
+    expected_path = resolve_bundle_path(mode, args.plan_id)
     if bundle_path.resolve() != expected_path.resolve():
         raise ValueError(
             f'Bundle path mismatch: found at {bundle_path} but _meta.mode={mode!r} resolves to {expected_path}'
@@ -546,12 +596,12 @@ def cmd_register(args: argparse.Namespace) -> dict[str, Any]:
     # Resolve every fragment path and refuse the batch on the first missing
     # file, then read every fragment (fail fast — the bundle is still
     # untouched), merge all, update the inventory once, and write once.
-    plan_dir = _resolve_plan_dir(mode, args.plan_id, args.archived_plan_path)
+    bundle_root = _resolve_bundle_root(mode, args.plan_id)
     resolved: list[tuple[str, Path]] = [
-        (aspect, _resolve_fragment_path(raw_path, plan_dir)) for aspect, raw_path in parsed
+        (aspect, _resolve_fragment_path(raw_path, bundle_root)) for aspect, raw_path in parsed
     ]
     for aspect, fragment_path in resolved:
-        if not fragment_path.exists():
+        if not fragment_path.is_file():
             return _fragment_missing('register', args.plan_id, aspect, fragment_path)
     fragments: list[tuple[str, Any]] = [(aspect, _read_fragment(fragment_path)) for aspect, fragment_path in resolved]
 
@@ -583,40 +633,29 @@ def cmd_register(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _add_init_args(parser: argparse.ArgumentParser) -> None:
-    """Attach flags for ``init``: ``--plan-id``, ``--mode``, ``--archived-plan-path``.
+    """Attach flags for ``init``: ``--plan-id`` and ``--mode``.
 
     ``--mode`` is required here because ``init`` persists it into the
-    bundle's ``_meta`` block; ``add`` and ``finalize`` later read it back
-    from the bundle rather than taking it as an argument.
+    bundle's ``_meta`` block; ``add``, ``register`` and ``finalize`` later
+    read it back from the bundle rather than taking it as an argument.
     """
     add_plan_id_arg(parser)
     parser.add_argument(
         '--mode',
         choices=['live', 'archived'],
         required=True,
-        help='Resolution mode (live | archived) — persisted into the bundle',
-    )
-    parser.add_argument(
-        '--archived-plan-path',
-        dest='archived_plan_path',
-        default=None,
-        help='Archived plan root; when set, archived-mode bundles live at <archived_plan_path>/work/retro-fragments.toon (else a synthetic OS tmp dir)',
+        help='Resolution mode (live | archived) — persisted into the bundle; archived bundles live under the OS tmpdir',
     )
 
 
 def _add_add_finalize_args(parser: argparse.ArgumentParser) -> None:
-    """Attach flags for ``add`` and ``finalize``: ``--plan-id``, ``--archived-plan-path``.
+    """Attach flags for ``add``, ``register`` and ``finalize``: ``--plan-id``.
 
-    Mode is deliberately omitted — both subcommands read it from the
-    bundle's persisted ``_meta.mode`` entry (written by ``init``).
+    Mode is deliberately omitted — every one of them reads it from the
+    bundle's persisted ``_meta.mode`` entry (written by ``init``), and the
+    bundle is located from ``--plan-id`` alone.
     """
     add_plan_id_arg(parser)
-    parser.add_argument(
-        '--archived-plan-path',
-        dest='archived_plan_path',
-        default=None,
-        help='Archived plan root; when set, archived-mode bundles live at <archived_plan_path>/work/retro-fragments.toon (else a synthetic OS tmp dir)',
-    )
 
 
 @safe_main

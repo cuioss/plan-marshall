@@ -85,49 +85,32 @@ class TestInitLiveMode:
 
 
 class TestInitArchivedMode:
-    """Archived-mode init now honours ``--archived-plan-path``.
+    """Archived-mode init roots the bundle in a synthetic per-plan tmp directory.
 
-    When the caller passes ``--archived-plan-path``, the bundle is created at
-    ``<archived_plan_path>/work/retro-fragments.toon`` so that
-    ``init``/``add``/``finalize`` from the same caller all converge on the
-    same bundle root. When the flag is omitted, archived mode falls back to a
-    synthetic per-plan tmp directory so production audits without an explicit
-    archive path never write into a real archived plan dir.
+    The archived plan directory is the audit's read-only input, so the bundle
+    is never created inside it; the synthetic root is keyed on ``--plan-id``
+    alone, which is what lets ``add``/``register``/``finalize`` locate it.
     """
 
-    def test_honours_archived_plan_path_when_provided(self, tmp_path):
-        plan_id = 'archived-honored'
-        archived_plan_path = tmp_path / '2026-04-27-archived-honored'
+    def test_rejects_an_archived_plan_path_override(self, tmp_path):
+        archived_plan_path = tmp_path / '2026-04-27-archived'
         archived_plan_path.mkdir(parents=True, exist_ok=True)
 
         result = run_script(
             SCRIPT_PATH,
             'init',
             '--plan-id',
-            plan_id,
+            'archived-override',
             '--mode',
             'archived',
             '--archived-plan-path',
             str(archived_plan_path),
         )
 
-        assert result.success, result.stderr
-        data = result.toon()
-        bundle_path = Path(data['bundle_path']).resolve()
-        # Bundle now lives under the caller-supplied archive root.
-        # Resolve both sides because resolve_bundle_path canonicalizes paths
-        # (macOS /var → /private/var symlink) and pytest's tmp_path on Linux
-        # may share /tmp with tempfile.gettempdir().
-        assert bundle_path == (archived_plan_path / 'work' / 'retro-fragments.toon').resolve()
-        assert bundle_path.exists()
-        # OS-tmp synthetic fallback is NOT used when --archived-plan-path is
-        # provided. Check the synthetic path specifically rather than
-        # tempfile.gettempdir() — on Linux, pytest's tmp_path lives under
-        # /tmp, so a generic "tempdir not an ancestor" assertion fails there.
-        synthetic_root = (Path(tempfile.gettempdir()) / 'plan-retrospective' / f'plan-{plan_id}').resolve()
-        assert synthetic_root not in bundle_path.parents
+        assert not result.success
+        assert not (archived_plan_path / 'work').exists()
 
-    def test_falls_back_to_synthetic_tmp_when_archived_plan_path_missing(self):
+    def test_creates_the_bundle_in_the_synthetic_tmp_root(self):
         # The synthetic fallback root is keyed on plan_id
         # (<tmp>/plan-retrospective/plan-<plan_id>), so a fixed plan_id makes
         # the synthetic path shared state across test runs — a leftover from

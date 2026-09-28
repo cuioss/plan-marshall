@@ -2,17 +2,22 @@
 """A missing retrospective fragment is a structured refusal, never a crash.
 
 ``collect-fragments add`` and ``register`` report a fragment path that names no
-file as ``error: fragment_missing`` at exit 0, naming the aspect and the resolved
-path and leaving the bundle byte-identical; ``compile-report run`` reports a
-missing bundle as ``error: fragments_file_missing`` at exit 0 and writes no
-report. Both fragment verbs resolve a relative path through one resolver, and a
-cwd-relative path that already names the plan directory is used as that
-location instead of being anchored under the plan directory a second time.
+regular file — absent, or a directory — as ``error: fragment_missing`` at exit 0,
+naming the aspect, the resolved path and its ``path_state``, and leaving the
+bundle byte-identical; ``collect-fragments finalize`` reports a bundle path that
+names no regular file as ``error: bundle_missing`` at exit 0; ``compile-report
+run`` reports a fragments path that names no regular file as ``error:
+fragments_file_missing`` at exit 0 and writes no report. Both fragment verbs
+resolve a relative path through one resolver, and a cwd-relative path that
+already names the plan directory is used as that location instead of being
+anchored under the plan directory a second time. In archived mode the resolver
+anchors to the synthetic per-plan tmp root, never to an archived plan.
 """
 
 from __future__ import annotations
 
 import os
+import tempfile
 from pathlib import Path
 
 from _collect_fragments_fixtures import (
@@ -37,13 +42,11 @@ def _bundle_bytes(plan_dir: Path) -> bytes:
 
 
 def _add_args(plan_id: str, fragment_file: str) -> _ArgsNS:
-    return _ArgsNS(
-        plan_id=plan_id, archived_plan_path=None, aspect=_ASPECT, fragment_file=fragment_file, overwrite=False
-    )
+    return _ArgsNS(plan_id=plan_id, aspect=_ASPECT, fragment_file=fragment_file, overwrite=False)
 
 
 def _register_args(plan_id: str, items: list[str]) -> _ArgsNS:
-    return _ArgsNS(plan_id=plan_id, archived_plan_path=None, item=items, overwrite=False)
+    return _ArgsNS(plan_id=plan_id, item=items, overwrite=False)
 
 
 class TestMissingFragmentRefusal:
@@ -159,6 +162,25 @@ class TestOneResolverForBothVerbs:
         assert result['aspects'] == [_ASPECT]
 
 
+class TestArchivedModeResolvesUnderTheSyntheticRoot:
+    """Archived mode anchors relative fragment paths to the synthetic tmp root, never an archive."""
+
+    def test_relative_fragment_path_anchors_to_the_synthetic_root(self, tmp_path, monkeypatch):
+        _isolate_os_tmpdir(tmp_path, monkeypatch)
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / 'base'))
+        plan_id = 'archived-relative'
+        module = _load_module()
+        init = module.cmd_init(_ArgsNS(plan_id=plan_id, mode='archived'))
+        fragment_dir = Path(init['bundle_path']).parent
+        (fragment_dir / 'fragment-log-analysis.toon').write_text(_valid_fragment_body(_ASPECT), encoding='utf-8')
+
+        result = module.cmd_add(_add_args(plan_id, 'work/fragment-log-analysis.toon'))
+
+        assert result['status'] == 'success', result
+        assert Path(result['bundle_path']) == Path(init['bundle_path'])
+        assert fragment_dir.resolve().is_relative_to((tmp_path / 'os-tmp').resolve())
+
+
 class TestCompileReportMissingBundle:
     """A missing fragments bundle is refused before any report is written."""
 
@@ -175,4 +197,118 @@ class TestCompileReportMissingBundle:
         assert data['status'] == 'error'
         assert data['error'] == 'fragments_file_missing'
         assert data['fragments_file'] == str(missing)
+        assert data['path_state'] == 'absent'
         assert not (plan_dir / 'quality-verification-report.md').exists()
+
+    def test_run_refuses_a_directory_as_the_fragments_file(self, tmp_path, monkeypatch):
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        directory = tmp_path / 'retro-fragments.toon'
+        directory.mkdir()
+
+        result = run_script(
+            COMPILE_REPORT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live', '--fragments-file', str(directory)
+        )
+
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['status'] == 'error'
+        assert data['error'] == 'fragments_file_missing'
+        assert data['fragments_file'] == str(directory)
+        assert data['path_state'] == 'not_a_file'
+        assert not (plan_dir / 'quality-verification-report.md').exists()
+
+
+class TestDirectoryAsFragmentRefusal:
+    """A directory at a fragment path is refused like an absent fragment, never read."""
+
+    def test_add_refuses_a_directory_fragment_at_exit_zero(self, tmp_path, monkeypatch):
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        _init_bundle(plan_id)
+        directory = tmp_path / 'fragment-log-analysis.toon'
+        directory.mkdir()
+        before = _bundle_bytes(plan_dir)
+
+        result = run_script(
+            SCRIPT_PATH, 'add', '--plan-id', plan_id, '--aspect', _ASPECT, '--fragment-file', str(directory)
+        )
+
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['status'] == 'error'
+        assert data['error'] == 'fragment_missing'
+        assert data['fragment_path'] == str(directory)
+        assert data['path_state'] == 'not_a_file'
+        assert _bundle_bytes(plan_dir) == before
+
+    def test_register_refuses_a_directory_fragment_for_the_whole_batch(self, tmp_path, monkeypatch):
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        _init_bundle(plan_id)
+        present = _write_fragment(tmp_path, 'present.toon', _valid_fragment_body(_OTHER_ASPECT))
+        directory = tmp_path / 'fragment-log-analysis.toon'
+        directory.mkdir()
+        before = _bundle_bytes(plan_dir)
+
+        result = run_script(
+            SCRIPT_PATH,
+            'register',
+            '--plan-id',
+            plan_id,
+            '--item',
+            f'{_OTHER_ASPECT}={present}',
+            '--item',
+            f'{_ASPECT}={directory}',
+        )
+
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['error'] == 'fragment_missing'
+        assert data['aspect'] == _ASPECT
+        assert data['path_state'] == 'not_a_file'
+        assert _bundle_bytes(plan_dir) == before
+
+
+def _isolate_os_tmpdir(tmp_path: Path, monkeypatch) -> None:
+    """Point the archived-mode bundle root at a per-test OS tmpdir.
+
+    The archived-mode bundle lives under the OS tmpdir, so a stale bundle left
+    there by another run must not be found. The environment variable reaches a
+    subprocess; the module attribute reaches an in-process call, because
+    ``tempfile`` caches the directory it resolved first.
+    """
+    os_tmp = tmp_path / 'os-tmp'
+    os_tmp.mkdir()
+    monkeypatch.setenv('TMPDIR', str(os_tmp))
+    monkeypatch.setattr(tempfile, 'tempdir', str(os_tmp))
+
+
+class TestFinalizeMissingBundle:
+    """``finalize`` refuses a bundle path naming no regular file instead of crashing."""
+
+    def test_finalize_reports_an_absent_bundle_at_exit_zero(self, tmp_path, monkeypatch):
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        _isolate_os_tmpdir(tmp_path, monkeypatch)
+        bundle_path = plan_dir / 'work' / 'retro-fragments.toon'
+
+        result = run_script(SCRIPT_PATH, 'finalize', '--plan-id', plan_id)
+
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['status'] == 'error'
+        assert data['error'] == 'bundle_missing'
+        assert data['bundle_path'] == str(bundle_path.resolve())
+        assert data['path_state'] == 'absent'
+
+    def test_finalize_refuses_a_directory_as_the_bundle(self, tmp_path, monkeypatch):
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        _isolate_os_tmpdir(tmp_path, monkeypatch)
+        bundle_path = plan_dir / 'work' / 'retro-fragments.toon'
+        bundle_path.mkdir(parents=True)
+
+        result = run_script(SCRIPT_PATH, 'finalize', '--plan-id', plan_id)
+
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['status'] == 'error'
+        assert data['error'] == 'bundle_missing'
+        assert data['bundle_path'] == str(bundle_path.resolve())
+        assert data['path_state'] == 'not_a_file'
