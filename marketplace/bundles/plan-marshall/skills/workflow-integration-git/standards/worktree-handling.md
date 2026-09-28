@@ -28,6 +28,8 @@ Rationale:
 - `local/` signals "host-local, do not transport" — the directory is a per-host scratch space, never published, never archived.
 - `{plan-id}/` is the plan identifier (e.g., `my-feature-plan`), one directory per active plan.
 
+The same root holds one reserved non-plan entry: `_orchestrator/`, the shared orchestrator ledger worktree that the orchestrator store resolves into when `orchestrator.use_worktree` is on. Its key cannot collide with a plan id (the plan-id pattern rejects the leading underscore), and every enumeration of the root's children skips it by name, so it is never listed as a plan worktree, never reported as an orphan or dangling worktree, and never offered for removal. The plan lifecycle verbs (`worktree-create`, `prepare_execute`, `worktree-remove`, `integrate_into_main`) address worktrees by plan id only and never create, move into, or remove it; its own lifecycle is documented in [`tools-file-ops/SKILL.md`](../../tools-file-ops/SKILL.md).
+
 The path is computed by the worktree-handling layer; callers never construct it from string concatenation. Resolve it via:
 
 ```bash

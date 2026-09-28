@@ -224,6 +224,8 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config clean
 
 Reconcile git worktrees under `<root>/.plan/local/worktrees/` against active and archived plans. Orphaned worktrees (plans that no longer exist in either `plans/` or `archived-plans/`) are reported; worktrees whose plan is archived (finalized) are offered for removal.
 
+The shared orchestrator ledger worktree (`_orchestrator/`) is not a plan worktree: it is never listed by Step 1, never reported as an orphan, and never offered for removal (see [`worktree-handling.md`](../../workflow-integration-git/standards/worktree-handling.md) § Path Convention).
+
 ### Step 1: List managed worktrees
 
 ```bash
