@@ -709,12 +709,37 @@ def cmd_create(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
-    """Transition to next phase."""
+    """Transition to next phase.
+
+    Every refusal returns BEFORE any state mutation, so a refused transition leaves
+    ``current_phase`` unchanged and carries no ``mailbox`` block. The first refusal
+    is structural: a ``phases`` structure that cannot be read in full (the shared
+    :func:`_status_core.in_progress_phases` examinability predicate ``cmd_archive``
+    and ``census`` already read) is refused as ``phases_unexaminable`` rather than
+    crashing on a row that is not a mapping or carries no ``name``.
+    """
     status = require_status(args)
     if status is None:
         return None
 
-    phases = status.get('phases', [])
+    # Refuse an unexaminable ``phases`` structure before anything reads a row by key.
+    # Mirrors the ``cmd_archive`` refusal shape: the phase list cannot be trusted to
+    # say which phase follows the completed one, so nothing is written.
+    phase_scan = in_progress_phases(status)
+    if not phase_scan.examinable:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'phases_unexaminable',
+            'unexaminable': list(phase_scan.unexaminable),
+            'message': (
+                f'Refusing to transition {args.plan_id!r}: its phases could not be read in full '
+                f'({"; ".join(phase_scan.unexaminable)}), so the phase that follows '
+                f'{args.completed!r} cannot be established. Repair the phases, then retry the transition.'
+            ),
+        }
+
+    phases = status['phases']
     phase_names = [p['name'] for p in phases]
 
     if args.completed not in phase_names:

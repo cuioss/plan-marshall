@@ -1073,6 +1073,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transi
   --completed 1-init
 ```
 
+**On any non-`success` result**, init did NOT advance: apply the [refused-transition halt rule](../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule) — init runs inline, so emit the `[ERROR]` work-log line carrying the refusal payload verbatim, STOP, and surface the refusal to the operator. Do NOT log completion, do NOT emit the separator, and do NOT yield to the refine phase (Step 12).
+
 **After successful transition**, log phase completion:
 
 ```bash

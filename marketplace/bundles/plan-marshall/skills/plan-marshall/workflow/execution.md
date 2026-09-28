@@ -420,6 +420,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transi
   --plan-id {plan_id} --completed 5-execute
 ```
 
+**On any non-`success` result, STOP.** Apply the [refused-transition halt rule](../../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule): ANY result whose `status` is not `success` — exit 1 or exit 0, `status: drift` included — means the phase did NOT advance. Emit the `[ERROR]` work-log line carrying the refusal payload verbatim, then stop. This is the one call site that owns a recovery: only the two tree-state codes in the table below have a recovery path; every other refusal halts for the operator. The config check and the **Finalize Phase** below are reachable only from a `status: success` transition.
+
 The transition's inline clean-tree post-condition refuses to advance on either of
 **two distinct tree-state codes**, and they take **different recovery paths** — read
 which code the refusal carries before acting:
@@ -497,7 +499,7 @@ The settlement commits are the recovery path, not the norm: commit ownership
 lives with the phase-5-execute envelope's Step 10a chain-tail (see
 `phase-5-execute/SKILL.md` § Step 10a).
 
-**Config check** — Read `finalize_without_asking` to determine next action:
+**Config check** (reached only from a `status: success` transition) — Read `finalize_without_asking` to determine next action:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize get --field finalize_without_asking

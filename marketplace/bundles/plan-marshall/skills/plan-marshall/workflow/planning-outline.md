@@ -264,6 +264,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transi
   --plan-id {plan_id} --completed 3-outline
 ```
 
+**On any non-`success` result, STOP** per the [refused-transition halt rule](../../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule): the phase did NOT advance, so emit the `[ERROR]` work-log line carrying the refusal payload verbatim and surface it to the operator — do NOT run the metrics boundary, the handshake capture, or the Step 3 review gate below.
+
 **Metrics**: After outline completes, record the `3-outline → 4-plan` boundary
 in a single fused call (forwarding the aggregated `<usage>` data from every
 dispatch spawned during this phase — the `phase-3-outline` outline envelope,
@@ -570,6 +572,8 @@ Do NOT call `manage-status transition` to 5-execute. Do NOT proceed to Step 4c. 
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \
   --plan-id {plan_id} --completed 4-plan
 ```
+
+**On any non-`success` result, STOP** per the [refused-transition halt rule](../../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule): the phase did NOT advance, so emit the `[ERROR]` work-log line carrying the refusal payload verbatim and surface it to the operator — do NOT read the Step 4c auto-continue gate and do NOT load the execute workflow.
 
 **Step 4c**: Check `execute_without_asking` config to determine next action:
 ```bash

@@ -1024,6 +1024,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transi
   --completed 4-plan
 ```
 
+**On any non-`success` result**, the plan phase did NOT advance: apply the [refused-transition halt rule](../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule) — emit the `[ERROR]` work-log line carrying the refusal payload verbatim and return it as this phase's error return instead of the `status: success` output below. Do NOT log completion or emit the separator.
+
 **Log phase completion**:
 
 ```bash
