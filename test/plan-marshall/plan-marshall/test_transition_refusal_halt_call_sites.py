@@ -68,8 +68,8 @@ _SHELL_LANGS = frozenset({'bash', 'sh', 'shell'})
 _FENCE_RE = re.compile(r'^[ \t]*(?P<fence>`{3,}|~{3,})(?P<lang>[\w+-]*)[ \t]*$')
 _HEADING_RE = re.compile(r'^(?P<hashes>#{1,6})[ \t]+(?P<title>.*?)[ \t]*#*[ \t]*$')
 _CONTINUATION_RE = re.compile(r'\\\n[ \t]*')
-_CALL_RE = re.compile(r'manage-status[ \t]+transition\b[^\n]*?--completed[ \t]+\S+')
-_TEMPLATED_RE = re.compile(r'--completed[ \t]+\{')
+_CALL_RE = re.compile(r'manage-status[ \t]+transition\b[^\n]*?--completed(?:[ \t]+|=)\S+')
+_TEMPLATED_RE = re.compile(r'--completed(?:[ \t]+|=)\{')
 _LINK_RE = re.compile(rf'\]\((?P<target>[^)\s#]*phase-lifecycle\.md)#{HALT_RULE_ANCHOR}\)')
 _BACKTICK_RE = re.compile(r'`([^`]+)`')
 _RAW_CALL_RE = re.compile(
@@ -292,6 +292,20 @@ def test_a_templated_call_followed_by_an_unconditional_auto_transition_is_flagge
     assert block.templated, 'the synthetic block must be recognised as templated'
     assert _violations(block, _HOME) == [
         f'synthetic.md:4: no link to the #{HALT_RULE_ANCHOR} halt rule follows the call'
+    ]
+
+
+def test_an_equals_form_call_without_the_link_is_flagged(tmp_path):
+    """Negative control: ``--completed=<phase>`` joins the population and is checked like the space form."""
+    block = _synthetic(
+        tmp_path,
+        '### Phase Transition\n\n```bash\npython3 .plan/execute-script.py plan-marshall:manage-status:manage-status '
+        'transition --plan-id {plan_id} --completed=4-plan\n```\n\n'
+        'Continue to the next phase.\n',
+    )
+
+    assert _violations(block, _HOME) == [
+        f'synthetic.md:3: no link to the #{HALT_RULE_ANCHOR} halt rule follows the call'
     ]
 
 

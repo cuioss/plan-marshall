@@ -974,12 +974,13 @@ with `missing_exempt_reason`.
 
 #### Refusal surface
 
-Every refusal returns before any state mutation: `current_phase` is unchanged, nothing is written, and the payload carries **no `mailbox` block**. Two exit codes carry refusals, so a caller branches on `status`, never on the exit code alone:
+No refusal advances the plan: `current_phase` is unchanged and the payload carries **no `mailbox` block**. Two exit codes carry refusals, so a caller branches on `status`, never on the exit code alone:
 
 | Refusal | Exit code | When |
 |---------|-----------|------|
 | `status: drift` (no `error` key) | 1 | Entering a blocking boundary (`5-execute` → `6-finalize`) and the inline strict handshake verify found invariant drift that no scheduled loop-back re-entry covers. |
 | `error` ∈ `VERIFY_REFUSAL_ERRORS` | 1 | Entering a blocking boundary and the inline strict verify or the clean-tree post-condition refused. The member set is the `VERIFY_REFUSAL_ERRORS` constant in `scripts/_cmd_lifecycle.py` — the single source of truth, not restated here. |
+| The failed re-capture's own payload | 1 when it is `status: drift` or its `error` ∈ `VERIFY_REFUSAL_ERRORS`, else 0 | Entering a blocking boundary on drift with a scheduled loop-back re-entry marker, and the auto-override re-capture did not succeed; its payload is returned verbatim (fail closed). |
 | `error: phases_unexaminable` | 0 | The `phases` structure could not be read in full (absent, not a list, a row that is not a mapping, a row without a non-empty string `name`, or a status outside the declared vocabulary). Carries `unexaminable[]` naming each malformed part. |
 | `error: invalid_phase` | 0 | `--completed` names no phase in the plan's `phases`. |
 | `error: refine_bare_transition` / `outline_bare_transition` / `plan_bare_transition` | 0 | The phase-completion artifact gate above refused a bare transition. |

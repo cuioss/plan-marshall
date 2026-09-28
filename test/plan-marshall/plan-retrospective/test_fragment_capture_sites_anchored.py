@@ -29,8 +29,8 @@ from conftest import MARKETPLACE_ROOT
 _ANCHOR = '{fragment_dir}/'
 _FRAGMENT_BASENAME = re.compile(r'^fragment-[\w{}.-]*\.toon$')
 _FRAGMENT_TOKEN = re.compile(r'fragment-[\w{}.-]*\.toon')
-_FRAGMENT_FILE_FLAG = re.compile(r'--fragment-file\s+(\S+)')
-_ITEM_FLAG = re.compile(r'--item\s+(\S+)')
+_FRAGMENT_FILE_FLAG = re.compile(r'--fragment-file(?:\s+|=)(\S+)')
+_ITEM_FLAG = re.compile(r'--item(?:\s+|=)(\S+)')
 _REDIRECT = re.compile(r'>\s*(\S+)')
 _BACKTICKED = re.compile(r'`([^`]+)`')
 _WRITE_TOOL = re.compile(r'`Write`|\bWrite tool\b')
@@ -149,6 +149,27 @@ class TestCaptureSitePredicate:
         flagged = unanchored(capture_sites(text))
 
         assert [(site.line, site.kind) for site in flagged] == [(1, 'write'), (2, 'registration')]
+
+    def test_equals_form_registrations_are_flagged(self):
+        text = (
+            'collect-fragments add --aspect x --fragment-file=work/fragment-x.toon\n'
+            'collect-fragments register --item=x=work/fragment-x.toon\n'
+        )
+
+        flagged = unanchored(capture_sites(text))
+
+        assert [(site.line, site.kind, site.path) for site in flagged] == [
+            (1, 'registration', 'work/fragment-x.toon'),
+            (2, 'registration', 'work/fragment-x.toon'),
+        ]
+
+    def test_anchored_equals_form_registrations_are_not_flagged(self):
+        text = 'add --fragment-file={fragment_dir}/fragment-x.toon\nregister --item=x={fragment_dir}/fragment-x.toon\n'
+
+        sites = capture_sites(text)
+
+        assert len(sites) == 2
+        assert unanchored(sites) == []
 
     def test_anchored_captures_are_not_flagged(self):
         text = (

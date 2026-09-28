@@ -711,8 +711,8 @@ def cmd_create(args: argparse.Namespace) -> dict[str, Any]:
 def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
     """Transition to next phase.
 
-    Every refusal returns BEFORE any state mutation, so a refused transition leaves
-    ``current_phase`` unchanged and carries no ``mailbox`` block. The first refusal
+    A refused transition leaves ``current_phase`` unchanged and carries no
+    ``mailbox`` block. The first refusal
     is structural: a ``phases`` structure that cannot be read in full (the shared
     :func:`_status_core.in_progress_phases` examinability predicate ``cmd_archive``
     and ``census`` already read) is refused as ``phases_unexaminable`` rather than
