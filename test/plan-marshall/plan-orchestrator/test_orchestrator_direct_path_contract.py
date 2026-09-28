@@ -41,11 +41,7 @@ article in either case — never the lowercase verbs.
    address and is skipped.
 3. On the orchestrator's own instruction surfaces, a paragraph carrying a clause
    with a non-negated git-write instruction (``git add``, ``git commit``, or a
-   verb form of ``commit``) carries ``{store_checkout}``. Three named exemptions
-   keep non-ledger commits out: a ``commit`` followed by a noun-use word or
-   preceded by ``merge``/``squash``, a determiner or a possessive (plus the
-   ``git add/add`` conflict name), a clause opening ``the plan commits``, and a clause
-   already addressed at another repository through ``git -C {remote_repo}``.
+   verb form of ``commit``) carries ``{store_checkout}``.
 4. A document whose text carries ``{epic_dir}`` or ``{store_checkout}`` carries
    the ``resolve-path`` invocation or cross-references the direct-file-write
    carve-out that states it.
