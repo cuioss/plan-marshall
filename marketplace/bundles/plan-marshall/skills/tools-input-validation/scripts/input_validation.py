@@ -990,14 +990,10 @@ def _root_router_value_option_strings(parser) -> set[str]:
     its value, and moving it ahead of the verb would make argparse read the verb
     as that value.
     """
-    import argparse
-
-    options: set[str] = set()
-    for action in getattr(parser, '_actions', []):
-        if isinstance(action, (argparse._HelpAction, argparse._SubParsersAction)) or action.nargs == 0:
-            continue
-        options.update(getattr(action, 'option_strings', ()) or ())
-    return options
+    boolean_flags = {
+        option for action in getattr(parser, '_actions', []) if action.nargs == 0 for option in action.option_strings
+    }
+    return _root_router_option_strings(parser) - boolean_flags
 
 
 def _router_flags_missing_value(argv: list[str], misplaced: list[str], value_flags: set[str]) -> list[str]:
