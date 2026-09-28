@@ -106,9 +106,9 @@ This is the ONLY allowed way to interact with `.plan` files. All other access is
 
 **Prohibited `.plan` Access** (ALL violations):
 - Direct Read/Write/Edit of ANY `.plan/**` file (except via execute-script.py invocation or the allowed direct write pattern above)
-- Direct Read/Write/Edit of `.plan/local/plans/*/status.toon`
+- Direct Read/Write/Edit of `.plan/local/plans/*/status.json`
 - Direct Read/Write/Edit of `.plan/local/plans/*/references.json`
-- Direct Read/Write/Edit of `.plan/local/plans/*/work.log`
+- Direct Read/Write/Edit of `.plan/local/plans/*/logs/work.log`
 - Direct Read/Write/Edit of `.plan/local/marshall-state.toon`
 - Direct Read/Write/Edit of `.plan/local/logs/*.log`
 - Direct Read/Write/Edit of `.plan/local/lessons-learned/*.md`
@@ -140,12 +140,12 @@ Direct .plan file access bypassing manage-* API
 
 ### Context
 - **Operation**: Read
-- **Target**: .plan/local/plans/jwt-auth/status.toon
+- **Target**: .plan/local/plans/jwt-auth/status.json
 - **Expected**: Use `python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read --plan-id jwt-auth`
 - **Actual**: Direct file read attempted
 
 ### Root Cause Analysis
-Command is reading status.toon directly instead of using
+Command is reading status.json directly instead of using
 `python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read --plan-id jwt-auth`.
 This bypasses audit trail and validation.
 
