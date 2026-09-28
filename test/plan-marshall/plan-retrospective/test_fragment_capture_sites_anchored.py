@@ -9,7 +9,8 @@ script's stdout into a
 written and the registered path must both begin with ``{fragment_dir}/`` — the
 directory of the ``bundle_path`` that ``collect-fragments init`` returns. A
 cwd-relative capture lands under whatever directory the caller runs from while
-``collect-fragments`` anchors a relative path to the plan directory, so the
+``collect-fragments`` anchors a relative path to the bundle root (the plan
+directory in live mode, a synthetic tmp root in archived mode), so the
 registered file is not the written one.
 
 The population is derived by scanning every markdown document under the

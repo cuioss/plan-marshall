@@ -35,7 +35,7 @@ implements:
 - Never write to archived plan directories. Archived mode writes the report next to the archived plan, but the plan state itself is read-only.
 - Never call `mark-step-done` in archived mode or user-invocable live mode — only the finalize-step mode emits the handshake tail.
 - Never call `manage-lessons add` in orchestration context (`orchestrated: true`). Step 5b routes every proposal to the epic inbox on that branch, and the `already_closed` deletion path does not run — deleting a global lesson is a corpus mutation the orchestrator owns.
-- Never silently skip aspect dispatch. If an aspect script fails, record the aspect as not captured — an `aspects_skipped` row with `reason: script_failed` in the Step 7 return, plus the Step 3 work-log line in live modes — and continue. The compiled report is not that record: it renders only the fragments the bundle holds.
+- Never silently skip aspect dispatch. If an aspect script fails, record the aspect as not captured — an `aspects_skipped` row with `reason: script_failed` in the Step 7 return — and continue. The compiled report is not that record: it renders only the fragments the bundle holds.
 - Never treat a `compile-report` warning as a clean pass. A non-empty `sections_dropped` MUST be surfaced in the report and carried into the Step 5 lessons proposal — a dropped fragment may have carried a live finding.
 - Do not modify any .plan/ files directly — all plan state access goes through `manage-*` scripts and the scripts in this skill.
 
@@ -177,7 +177,7 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragmen
 
 Parse `bundle_path` from the TOON output.
 
-**`{fragment_dir}`** is the directory of that `bundle_path` — an absolute path, equal to `<plan_dir>/work` in live mode and to the synthetic tmp directory's `work` directory in archived mode, so no fragment is ever written into the archived plan. Every fragment capture below writes to `{fragment_dir}/fragment-{aspect}.toon` and registers that same path: the stdout redirect, the `Write`-tool target, and the paired `add --fragment-file` all name it. A fragment path relative to the cwd lands under whatever directory the caller runs from, while `collect-fragments` anchors a relative path to the plan directory — so the registered file would not be the written one.
+**`{fragment_dir}`** is the directory of that `bundle_path` — an absolute path, equal to `<plan_dir>/work` in live mode and to the synthetic tmp directory's `work` directory in archived mode, so no fragment is ever written into the archived plan. Every fragment capture below writes to `{fragment_dir}/fragment-{aspect}.toon` and registers that same path: the stdout redirect, the `Write`-tool target, and the paired `add --fragment-file` all name it. A fragment path relative to the cwd lands under whatever directory the caller runs from, while `collect-fragments` anchors a relative path that does not already resolve inside the bundle root to that root — the plan directory in live mode, the synthetic `<tmp>/plan-retrospective/plan-{plan_id}` directory in archived mode — so the registered file would not be the written one.
 
 For each aspect below, produce a TOON fragment on disk at `{fragment_dir}/fragment-{aspect}.toon`, then register it via `collect-fragments add`. Fragments are persisted to disk so that `compile-report` in Step 4 can consume them from a single bundle file assembled by `collect-fragments`.
 
