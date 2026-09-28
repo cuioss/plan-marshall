@@ -128,9 +128,9 @@ def test_sync_defaults_backfills_orchestrator_block(plan_context):
 
     ``get_default_config()`` seeds ``orchestrator`` with every settable knob at its
     effective default (``auto_emit`` False, ``effort`` empty ``{}``,
-    ``parallelization_scope`` 1; a sibling of ``plan``), so the non-destructive
-    deep-merge back-fills the whole block into a config that predates it, and reports
-    the ``orchestrator`` top-level path in ``added``.
+    ``parallelization_scope`` 1, ``use_worktree`` False; a sibling of ``plan``), so
+    the non-destructive deep-merge back-fills the whole block into a config that
+    predates it, and reports the ``orchestrator`` top-level path in ``added``.
     """
     _write_marshal(plan_context.fixture_dir, {'plan': {'effort': 'level-3'}})
 
@@ -142,19 +142,20 @@ def test_sync_defaults_backfills_orchestrator_block(plan_context):
         'auto_emit': False,
         'effort': {},
         'parallelization_scope': 1,
+        'use_worktree': False,
     }, 'the fully-seeded orchestrator block must be back-filled'
     assert 'orchestrator' in result['added']
 
 
 def test_sync_defaults_backfills_new_knobs_into_legacy_block(plan_context):
-    """A genuine legacy ``{auto_emit: false}`` block gains the two new knobs on sync (D5c/D2).
+    """A genuine legacy ``{auto_emit: false}`` block gains every missing knob on sync.
 
     ``{'auto_emit': False}`` is the exact block a pre-materialisation ``init`` wrote.
-    The non-destructive deep-merge back-fills the newly-seeded ``effort: {}`` and
-    ``parallelization_scope: 1`` into it while preserving the operator's existing
-    ``auto_emit`` — an existing consumer's file stays valid and simply gains the
-    now-discoverable knobs. Only the two new sub-keys are reported as added (not the
-    ``orchestrator`` root, which was already present).
+    The non-destructive deep-merge back-fills the seeded ``effort: {}``,
+    ``parallelization_scope: 1`` and ``use_worktree: false`` into it while preserving
+    the operator's existing ``auto_emit`` — an existing consumer's file stays valid
+    and simply gains the now-discoverable knobs. Only the missing sub-keys are
+    reported as added (not the ``orchestrator`` root, which was already present).
     """
     _write_marshal(
         plan_context.fixture_dir,
@@ -169,9 +170,11 @@ def test_sync_defaults_backfills_new_knobs_into_legacy_block(plan_context):
         'auto_emit': False,
         'effort': {},
         'parallelization_scope': 1,
+        'use_worktree': False,
     }
     assert 'orchestrator.effort' in result['added']
     assert 'orchestrator.parallelization_scope' in result['added']
+    assert 'orchestrator.use_worktree' in result['added']
     # the pre-existing root is not re-reported as newly added
     assert 'orchestrator' not in result['added']
 
@@ -180,11 +183,12 @@ def test_sync_defaults_preserves_populated_orchestrator_block(plan_context):
     """A pre-existing populated ``orchestrator`` block survives sync non-destructively.
 
     The deep-merge only adds MISSING keys, so an operator-populated orchestrator
-    block (effort surfaces + parallelization_scope) is preserved verbatim; the
-    only change is the non-destructive back-fill of the seeded ``auto_emit``
-    default (a sub-key the pre-auto_emit block lacked), reported as the nested
-    ``orchestrator.auto_emit`` path — the ``orchestrator`` top-level path itself
-    is NOT re-reported as added.
+    block (effort surfaces + parallelization_scope + an explicit ``use_worktree:
+    true``) is preserved verbatim; the only change is the non-destructive back-fill
+    of the seeded ``auto_emit`` default (a sub-key the pre-auto_emit block lacked),
+    reported as the nested ``orchestrator.auto_emit`` path — the ``orchestrator``
+    top-level path itself is NOT re-reported as added, and the explicit
+    ``use_worktree`` value is not overwritten by its ``false`` default.
     """
     _write_marshal(
         plan_context.fixture_dir,
@@ -192,6 +196,7 @@ def test_sync_defaults_preserves_populated_orchestrator_block(plan_context):
             'orchestrator': {
                 'effort': {'analyze': 'level-6', 'max': 'level-5'},
                 'parallelization_scope': 3,
+                'use_worktree': True,
             },
             'plan': {'effort': 'level-3'},
         },
@@ -205,8 +210,10 @@ def test_sync_defaults_preserves_populated_orchestrator_block(plan_context):
     assert config['orchestrator'] == {
         'effort': {'analyze': 'level-6', 'max': 'level-5'},
         'parallelization_scope': 3,
+        'use_worktree': True,
         'auto_emit': False,
     }
+    assert 'orchestrator.use_worktree' not in result['added']
     # the present block is not re-reported as an added top-level path
     assert 'orchestrator' not in result['added']
 

@@ -82,6 +82,12 @@ def test_auto_emit_bool_is_legal():
     validate_orchestrator_block({'auto_emit': False})
 
 
+def test_use_worktree_bool_is_legal():
+    """``use_worktree`` as a bool is a legal scalar knob."""
+    validate_orchestrator_block({'use_worktree': True})
+    validate_orchestrator_block({'use_worktree': False})
+
+
 # =============================================================================
 # validate_orchestrator_block — rejected shapes
 # =============================================================================
@@ -103,6 +109,13 @@ def test_auto_emit_non_bool_is_rejected():
     """A non-bool ``auto_emit`` is rejected (fail-closed)."""
     with pytest.raises(ValueError, match='orchestrator.auto_emit'):
         validate_orchestrator_block({'auto_emit': 'yes'})
+
+
+@pytest.mark.parametrize('value', ['true', 1, 0, None])
+def test_use_worktree_non_bool_is_rejected(value):
+    """A non-bool ``use_worktree`` is rejected naming the knob (fail-closed)."""
+    with pytest.raises(ValueError, match='orchestrator.use_worktree'):
+        validate_orchestrator_block({'use_worktree': value})
 
 
 def test_bad_effort_string_level_is_rejected():
@@ -182,8 +195,8 @@ def test_seed_surfaces_every_orchestrator_knob():
     assert set(orch) == set(_config_defaults_mod.ORCHESTRATOR_KNOWN_KEYS)
     # Effective-default assertions, kept separate from the field-set check:
     # auto_emit safe-posture False, effort an empty (behaviourally-inert) object,
-    # scope its default of 1.
-    assert orch == {'auto_emit': False, 'effort': {}, 'parallelization_scope': 1}
+    # scope its default of 1, use_worktree off.
+    assert orch == {'auto_emit': False, 'effort': {}, 'parallelization_scope': 1, 'use_worktree': False}
     validate_orchestrator_block(orch)
 
 
