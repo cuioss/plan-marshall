@@ -28,10 +28,18 @@ carries its verdict only in the stdout TOON. A test that asserted on
 reproducing the exact "confident signal hides a caveat" defect this seam closes.
 All assertions run against the constructed-argv subprocess boundary
 (``run_script`` + ``parse_toon``), not against internal helpers.
+
+The orchestrator-store half pins that ``--body-file`` resolves a logical
+``.plan/orchestrator/…`` pointer through the store seam: with
+``orchestrator.use_worktree`` on, a spec staged only in the shared ledger
+worktree is ingested from there even when the main checkout holds a divergent
+copy, and with the knob off the pointer reads the current checkout's copy.
 """
 
 from pathlib import Path
 
+from _orchestrator_worktree_fixtures import build_ledger_repo, use_real_resolver, write_marshal
+from file_ops import get_orchestrator_store_root
 from toon_parser import parse_toon
 
 from conftest import get_script_path, run_script
@@ -212,3 +220,77 @@ def test_no_body_file_preserves_metadata_stub(plan_context):
     assert data['status'] == 'success', f'stdout={result.stdout!r} stderr={result.stderr!r}'
     rendered = Path(data['path']).read_text(encoding='utf-8')
     assert _BODY_STUB in rendered
+
+
+# The logical spec pointer phase-1-init records as ``source_id`` and passes as
+# ``--body-file`` on its file-pointer branch.
+_SPEC_POINTER = '.plan/orchestrator/epic-alpha/plans/PLAN-01-alpha.md'
+_WORKTREE_BODY = 'Spec body staged in the shared ledger worktree and not yet landed.'
+_MAIN_BODY = 'Divergent stale copy on the main checkout.'
+
+
+def _stage_divergent_specs(tmp_path, monkeypatch, *, knob: bool):
+    """A real sandbox whose shared worktree and main checkout hold different specs.
+
+    The shared worktree is created in-process first (knob on for that call), so
+    the worktree copy exists before ingestion runs; the knob is then set to
+    ``knob`` in the main checkout's ``marshal.json``, which is the only file the
+    seam reads it from.
+    """
+    use_real_resolver(monkeypatch)
+    monkeypatch.delenv('PLAN_TRACKED_CONFIG_DIR', raising=False)
+    repo = build_ledger_repo(tmp_path)
+    monkeypatch.chdir(repo.main)
+    write_marshal(repo.main, {'orchestrator': {'use_worktree': True}})
+    get_orchestrator_store_root()
+    for checkout, body in ((repo.expected_worktree, _WORKTREE_BODY), (repo.main, _MAIN_BODY)):
+        spec = checkout / _SPEC_POINTER
+        spec.parent.mkdir(parents=True, exist_ok=True)
+        spec.write_text(f'# Spec\n\n{body}\n', encoding='utf-8')
+    write_marshal(repo.main, {'orchestrator': {'use_worktree': knob}})
+    return repo
+
+
+def _ingest_pointer(repo, plan_id: str) -> str:
+    """Run the pointer-branch ingestion from the main checkout; return the rendered body."""
+    result = run_script(
+        SCRIPT_PATH,
+        'request',
+        'create',
+        '--plan-id',
+        plan_id,
+        '--title',
+        'Ingest Store Pointer',
+        '--source',
+        'description',
+        '--source-id',
+        _SPEC_POINTER,
+        '--body-file',
+        _SPEC_POINTER,
+        cwd=repo.main,
+    )
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'success', f'stdout={result.stdout!r} stderr={result.stderr!r}'
+    return Path(data['path']).read_text(encoding='utf-8')
+
+
+def test_knob_on_ingests_the_spec_staged_in_the_shared_worktree(tmp_path, monkeypatch):
+    """Knob on: the worktree copy is read and the divergent main copy is not."""
+    repo = _stage_divergent_specs(tmp_path, monkeypatch, knob=True)
+
+    rendered = _ingest_pointer(repo, 'ingest-knob-on')
+
+    assert _WORKTREE_BODY in rendered
+    assert _MAIN_BODY not in rendered
+    # The logical pointer — not a physical worktree path — is what provenance records.
+    assert f'source_id: {_SPEC_POINTER}' in rendered
+
+
+def test_knob_off_ingests_the_current_checkout_copy(tmp_path, monkeypatch):
+    """Knob off (matched control): the pointer resolves on the current checkout."""
+    repo = _stage_divergent_specs(tmp_path, monkeypatch, knob=False)
+
+    rendered = _ingest_pointer(repo, 'ingest-knob-off')
+
+    assert _MAIN_BODY in rendered
+    assert _WORKTREE_BODY not in rendered
