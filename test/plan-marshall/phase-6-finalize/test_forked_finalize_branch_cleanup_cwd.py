@@ -130,7 +130,7 @@ def _dict_message_text(node: ast.Dict) -> str:
     return ''
 
 
-def _containment_refusal(source: str, function_name: str = _REMOVAL_FUNCTION) -> ast.Dict:
+def _containment_refusal(source: str) -> ast.Dict:
     """Return the refusal dict the removal verb returns under its cwd-containment guard.
 
     Pure over ``source`` so the mutation guards can drive it with synthetic
@@ -139,25 +139,27 @@ def _containment_refusal(source: str, function_name: str = _REMOVAL_FUNCTION) ->
     comparison vacuous.
     """
     tree = ast.parse(source)
-    functions = [node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == function_name]
-    assert len(functions) == 1, f'expected exactly one {function_name}() definition, found {len(functions)}'
+    functions = [
+        node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == _REMOVAL_FUNCTION
+    ]
+    assert len(functions) == 1, f'expected exactly one {_REMOVAL_FUNCTION}() definition, found {len(functions)}'
     guards = _containment_guard_ifs(functions[0])
     assert guards, (
-        f'{function_name}() carries no `if ...{_CONTAINMENT_ATTR}(...)` guard — the cwd-containment '
+        f'{_REMOVAL_FUNCTION}() carries no `if ...{_CONTAINMENT_ATTR}(...)` guard — the cwd-containment '
         'refusal the forked-subagent section documents could not be located'
     )
     refusals = [refusal for guard in guards for refusal in _refusal_dicts(guard)]
     assert len(refusals) == 1, (
         f'expected exactly one error-bearing refusal under the containment guard in '
-        f'{function_name}(), found {len(refusals)}'
+        f'{_REMOVAL_FUNCTION}(), found {len(refusals)}'
     )
     return refusals[0]
 
 
-def _containment_refusal_token(source: str, function_name: str = _REMOVAL_FUNCTION) -> str:
+def _containment_refusal_token(source: str) -> str:
     """Return the ``error`` token of the containment refusal, failing loudly if absent."""
-    token = _dict_str_value(_containment_refusal(source, function_name), 'error')
-    assert token, f'the containment refusal in {function_name}() carries no string `error` value'
+    token = _dict_str_value(_containment_refusal(source), 'error')
+    assert token, f'the containment refusal in {_REMOVAL_FUNCTION}() carries no string `error` value'
     return token
 
 

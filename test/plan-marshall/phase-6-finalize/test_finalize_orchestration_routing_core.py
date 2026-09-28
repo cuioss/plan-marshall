@@ -118,10 +118,6 @@ def _a0_block(text: str) -> str:
     return _between(text, _A0_LABEL, _FOR_LOOP)
 
 
-def _item_4b(text: str) -> str:
-    return _between(text, _ITEM_4B_START, _ITEM_4B_END)
-
-
 def _resolution_placement_violations(text: str) -> list[str]:
     """The placement predicate under test: why the resolution is NOT at Step 3 entry.
 
@@ -447,7 +443,7 @@ class TestResolutionAtStep3Entry:
 
 class TestShortCircuitCarveOut:
     def _item_4b(self) -> str:
-        return _item_4b(_read(_FINALIZE_SKILL))
+        return _between(_read(_FINALIZE_SKILL), _ITEM_4B_START, _ITEM_4B_END)
 
     def test_resolution_is_documented_as_running_before_the_short_circuit(self):
         """(b) item 4b reads the held verdict and still states the ordering claim."""
