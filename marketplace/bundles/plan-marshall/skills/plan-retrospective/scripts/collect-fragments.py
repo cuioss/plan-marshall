@@ -25,11 +25,20 @@ Bundle location:
               real archived plan directory.
 
 Path resolution rules:
-    --fragment-file accepts both relative and absolute paths. Absolute paths
-    are used verbatim. Relative paths are resolved against the same
-    ``plan_dir`` that ``resolve_bundle_path`` uses for the active mode, so
-    SKILL.md examples like ``--fragment-file work/fragment-<aspect>.toon``
-    work without forcing callers to spell out the plan directory.
+    ``add --fragment-file`` and every ``register --item ASPECT=PATH`` resolve
+    through the one resolver, ``_resolve_fragment_path``. The documented
+    caller form is ``{fragment_dir}/fragment-<aspect>.toon``, where
+    ``{fragment_dir}`` is the directory of the ``bundle_path`` that ``init``
+    returns — an absolute path, used verbatim. A relative path that already
+    resolves from the cwd to a location inside the plan directory is used as
+    that location rather than re-anchored (which would double the plan
+    directory); any other relative path is anchored to the plan directory.
+
+Missing fragment:
+    A fragment path that resolves to no file returns ``status: error`` with
+    ``error: fragment_missing``, the ``aspect`` and the resolved
+    ``fragment_path`` — exit code 0, bundle untouched. ``register`` aborts the
+    whole batch on the first missing fragment, before any fragment is merged.
 
 All subcommands emit TOON output via ``serialize_toon`` and follow the
 execute-script executor contract (@safe_main, ``--help`` on every subparser,
@@ -66,10 +75,8 @@ def _resolve_plan_dir(mode: str, plan_id: str, archived_plan_path: str | None) -
 
     This is the single source of truth used by both ``resolve_bundle_path``
     (to locate the bundle file) and ``_resolve_fragment_path`` (to anchor
-    relative ``--fragment-file`` arguments). Keeping the resolution in one
-    place guarantees that ``init``/``add``/``finalize`` agree on the bundle
-    root and that fragment files referenced via the documented relative
-    snippets land where the bundle expects them.
+    relative fragment paths). Keeping the resolution in one place guarantees
+    that ``init``/``add``/``register``/``finalize`` agree on the bundle root.
 
     Args:
         mode: Either ``'live'`` or ``'archived'``.
@@ -120,18 +127,52 @@ def resolve_bundle_path(mode: str, plan_id: str, archived_plan_path: str | None 
     return _resolve_plan_dir(mode, plan_id, archived_plan_path).joinpath(*_BUNDLE_RELATIVE)
 
 
-def _resolve_fragment_path(args: argparse.Namespace, mode: str) -> Path:
-    """Resolve ``--fragment-file`` against the active plan directory.
+def _resolve_fragment_path(raw_path: str, plan_dir: Path) -> Path:
+    """Resolve one fragment path — the only fragment-path resolver ``add`` and ``register`` use.
 
-    Absolute paths are returned verbatim. Relative paths are anchored to the
-    same ``plan_dir`` that holds the bundle for the active ``mode``, so the
-    SKILL.md-documented ``work/fragment-<aspect>.toon`` snippets work without
-    forcing callers to spell out the plan directory.
+    The documented caller form is ``{fragment_dir}/fragment-<aspect>.toon``,
+    where ``{fragment_dir}`` is the directory of the ``bundle_path`` that
+    ``init`` returns; it is absolute and is returned verbatim.
+
+    A relative path is resolved in two steps. When it already resolves from
+    the cwd to a location inside ``plan_dir`` (the ``.plan/local/plans/<id>/...``
+    form a caller in the repository root spells out), that location is used
+    as-is: anchoring it to ``plan_dir`` again would double the plan directory.
+    Any other relative path is anchored to ``plan_dir``.
+
+    Args:
+        raw_path: The caller-supplied fragment path.
+        plan_dir: The resolved plan directory of the bundle's persisted mode.
+
+    Returns:
+        The path the fragment is read from. Existence is not checked here.
     """
-    raw = Path(args.fragment_file)
+    raw = Path(raw_path)
     if raw.is_absolute():
         return raw
-    return _resolve_plan_dir(mode, args.plan_id, args.archived_plan_path) / raw
+    from_cwd = raw.resolve()
+    if from_cwd.is_relative_to(plan_dir):
+        return from_cwd
+    return plan_dir / raw
+
+
+def _fragment_missing(operation: str, plan_id: str, aspect: str, fragment_path: Path) -> dict[str, Any]:
+    """Return the structured refusal for a fragment path that names no file.
+
+    A missing fragment is a caller-visible outcome, not a crash: the aspect
+    that produced no file is named so the caller can record it and move on to
+    the next aspect, and the resolved path is named so a wrong-path capture is
+    diagnosable from the result alone.
+    """
+    return {
+        'status': 'error',
+        'operation': operation,
+        'plan_id': plan_id,
+        'error': 'fragment_missing',
+        'aspect': aspect,
+        'fragment_path': str(fragment_path),
+        'message': f'Fragment file for aspect {aspect!r} does not exist: {fragment_path}. The bundle was not modified.',
+    }
 
 
 def _read_bundle(bundle_path: Path) -> dict[str, Any]:
@@ -346,7 +387,11 @@ def cmd_add(args: argparse.Namespace) -> dict[str, Any]:
             'error': f'Aspect already registered: {aspect!r}. Pass --overwrite to replace.',
         }
 
-    fragment = _read_fragment(_resolve_fragment_path(args, mode))
+    plan_dir = _resolve_plan_dir(mode, args.plan_id, args.archived_plan_path)
+    fragment_path = _resolve_fragment_path(args.fragment_file, plan_dir)
+    if not fragment_path.exists():
+        return _fragment_missing('add', args.plan_id, aspect, fragment_path)
+    fragment = _read_fragment(fragment_path)
     bundle[aspect] = fragment
 
     # Record the aspect in the authoritative inventory. The --aspect argument
@@ -498,14 +543,17 @@ def cmd_register(args: argparse.Namespace) -> dict[str, Any]:
             ),
         }
 
-    # Read every fragment (fail fast — the bundle is still untouched), then
-    # merge all, update the inventory once, and write once.
+    # Resolve every fragment path and refuse the batch on the first missing
+    # file, then read every fragment (fail fast — the bundle is still
+    # untouched), merge all, update the inventory once, and write once.
     plan_dir = _resolve_plan_dir(mode, args.plan_id, args.archived_plan_path)
-    fragments: list[tuple[str, Any]] = []
-    for aspect, raw_path in parsed:
-        candidate = Path(raw_path)
-        fragment_path = candidate if candidate.is_absolute() else plan_dir / candidate
-        fragments.append((aspect, _read_fragment(fragment_path)))
+    resolved: list[tuple[str, Path]] = [
+        (aspect, _resolve_fragment_path(raw_path, plan_dir)) for aspect, raw_path in parsed
+    ]
+    for aspect, fragment_path in resolved:
+        if not fragment_path.exists():
+            return _fragment_missing('register', args.plan_id, aspect, fragment_path)
+    fragments: list[tuple[str, Any]] = [(aspect, _read_fragment(fragment_path)) for aspect, fragment_path in resolved]
 
     meta = bundle[_META_KEY]
     registered_meta = meta.get('aspects', [])
@@ -600,7 +648,7 @@ def main() -> int:
         '--fragment-file',
         required=True,
         dest='fragment_file',
-        help='Path to a TOON fragment file',
+        help='Path to a TOON fragment file — {fragment_dir}/fragment-<aspect>.toon, where {fragment_dir} is the directory of the bundle_path init returns',
     )
     add_parser.add_argument(
         '--overwrite',

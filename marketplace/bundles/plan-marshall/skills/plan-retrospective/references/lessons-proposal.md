@@ -114,11 +114,11 @@ Only `confidence: high` proposals are auto-recorded. `medium` proposals are incl
 
 ## Persistence
 
-After synthesizing the TOON fragment per the shape documented above, the orchestrator writes the fragment to `work/fragment-lessons-proposal.toon` via the `Write` tool and registers it with the bundle:
+After synthesizing the TOON fragment per the shape documented above, the orchestrator writes the fragment to `{fragment_dir}/fragment-lessons-proposal.toon` via the `Write` tool and registers that same path with the bundle. `{fragment_dir}` is defined in [SKILL.md § Step 3](../SKILL.md#step-3-dispatch-aspects-in-order):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments add \
-  --plan-id {plan_id} --aspect lessons-proposal --fragment-file work/fragment-lessons-proposal.toon
+  --plan-id {plan_id} --aspect lessons-proposal --fragment-file {fragment_dir}/fragment-lessons-proposal.toon
 ```
 
 `compile-report run --fragments-file` consumes the assembled bundle in Step 4 of SKILL.md. The bundle file is auto-deleted on successful report write; on failure it is retained for debugging.

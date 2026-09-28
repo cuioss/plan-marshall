@@ -252,9 +252,10 @@ class TestAddOverwrite:
 class TestAddFragmentPathResolution:
     """``add`` resolves relative ``--fragment-file`` paths against the plan dir.
 
-    Absolute paths still work unchanged. Relative paths are anchored to the
-    plan directory used by the active mode, matching the SKILL.md-documented
-    snippets like ``--fragment-file work/fragment-<aspect>.toon``.
+    Absolute paths — the documented ``{fragment_dir}/fragment-<aspect>.toon``
+    form — work unchanged. A relative path that does not already resolve from
+    the cwd into the plan directory is anchored to the plan directory used by
+    the active mode.
     """
 
     def test_relative_fragment_file_resolves_against_live_plan_dir(self, tmp_path, monkeypatch):

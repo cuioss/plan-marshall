@@ -177,7 +177,11 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragmen
 
 Parse `bundle_path` from the TOON output.
 
-For each aspect below, produce a TOON fragment on disk at `work/fragment-{aspect}.toon` (live mode) or the tmp equivalent (archived mode), then register it via `collect-fragments add`. Fragments are persisted to disk so that `compile-report` in Step 4 can consume them from a single bundle file assembled by `collect-fragments`.
+**`{fragment_dir}`** is the directory of that `bundle_path` — an absolute path, equal to `<plan_dir>/work` in live mode and to the bundle's own directory in archived mode. Every fragment capture below writes to `{fragment_dir}/fragment-{aspect}.toon` and registers that same path: the stdout redirect, the `Write`-tool target, and the paired `add --fragment-file` all name it. A fragment path relative to the cwd lands under whatever directory the caller runs from, while `collect-fragments` anchors a relative path to the plan directory — so the registered file would not be the written one.
+
+For each aspect below, produce a TOON fragment on disk at `{fragment_dir}/fragment-{aspect}.toon`, then register it via `collect-fragments add`. Fragments are persisted to disk so that `compile-report` in Step 4 can consume them from a single bundle file assembled by `collect-fragments`.
+
+**A missing fragment is a recorded skip, never a stop.** When `collect-fragments add` (or `register`) returns `error: fragment_missing` — the aspect produced no file at the resolved `fragment_path` the result names — record the aspect under "Script failure analysis" in the report, naming that path, and continue with the next aspect. This is the structured skip the "Never silently skip aspect dispatch" rule prescribes: the aspect is reported as not captured, and the remaining aspects still run.
 
 **Key** is the canonical registry key — the exact literal `collect-fragments add --aspect` validates against, and the one `compile-report` looks the fragment up under. It is NOT the aspect's prose name and NOT its reference-document basename: four rows differ from their reference basename (`invariant-summary`, `manifest-decisions`, `routing-decisions`, `dispatch_boundaries`), so a key guessed from either column is rejected on first attempt. The keys are declared in [`scripts/retro_sections.py`](scripts/retro_sections.py) (`SECTION_SPEC`) — that module is the source of truth and this column restates it. `test/plan-marshall/plan-retrospective/test_registered_aspects_render.py` checks the restatement in **both** directions, and each direction is a separate assertion in `TestAspectTableKeysMatchTheRegistry`: every Key cell names a registered key (`_scan_aspect_table_keys()` ⊆ the registry), and every registerable key has a row (`valid_aspect_keys() - set(_scan_aspect_table_keys())` is empty). A sibling pair of assertions in the same class (`test_scan_finds_a_key_for_every_numbered_row`, `test_reverse_assertion_populations_are_non_empty`) publishes both populations' sizes and fails on an empty one, so neither direction can pass vacuously over an empty table scan or an empty registry. A registry row added without a table row therefore fails a test rather than shipping unnoticed. Read a key from here to save the lookup; settle any dispute at the registry.
 
@@ -236,13 +240,13 @@ The fixed aspect table above is domain-invariant — it runs for every plan. Dom
 
    Parse the `aspects[]` rows from the TOON output. Each row carries `aspect`, `domain`, `script`, `reference`, `description`, and `order`.
 
-3. **Filter by the audited plan's domain.** Keep only rows whose `domain` matches the plan's domain. Skip every aspect from a non-matching domain. The remaining aspects are deterministic script-backed fragments — run each exactly like the built-in script-backed aspects (1-3, 8, 10): invoke its `script` notation with `run --mode {live|archived}` plus the resolution flags, pipe stdout to `work/fragment-{aspect}.toon`, then register it via `collect-fragments add --aspect {aspect}`.
+3. **Filter by the audited plan's domain.** Keep only rows whose `domain` matches the plan's domain. Skip every aspect from a non-matching domain. The remaining aspects are deterministic script-backed fragments — run each exactly like the built-in script-backed aspects (1-3, 8, 10): invoke its `script` notation with `run --mode {live|archived}` plus the resolution flags, pipe stdout to `{fragment_dir}/fragment-{aspect}.toon`, then register it via `collect-fragments add --aspect {aspect}`.
 
    ```bash
    python3 .plan/execute-script.py {script} \
-     run --plan-id {plan_id} --mode {live|archived} > work/fragment-{aspect}.toon
+     run --plan-id {plan_id} --mode {live|archived} > {fragment_dir}/fragment-{aspect}.toon
    python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments \
-     add --plan-id {plan_id} --aspect {aspect} --fragment-file work/fragment-{aspect}.toon
+     add --plan-id {plan_id} --aspect {aspect} --fragment-file {fragment_dir}/fragment-{aspect}.toon
    ```
 
    For example, a `plan-marshall-plugin-dev` plan picks up the `wrapper-tangle` aspect (`pm-plugin-development:plan-marshall-plugin:wrapper-tangle-scan`) — the former Surface C of the generic `direct-gh-glab-usage` aspect, now homed in pm-plugin-development. Plans of other domains skip it.
@@ -257,16 +261,16 @@ The `analyze-logs` script (aspect 2) additionally parses the plan's **folded-in 
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:{script} \
-  run --plan-id {plan_id} --mode {live|archived} > work/fragment-{aspect}.toon
+  run --plan-id {plan_id} --mode {live|archived} > {fragment_dir}/fragment-{aspect}.toon
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments \
-  add --plan-id {plan_id} --aspect {name} --fragment-file work/fragment-{aspect}.toon
+  add --plan-id {plan_id} --aspect {name} --fragment-file {fragment_dir}/fragment-{aspect}.toon
 ```
 
-**LLM aspects (4-7, 9, and 14)** — load the aspect reference via `Read`, produce the TOON fragment body per the reference's schema, emit it with the `Write` tool to `work/fragment-{aspect}.toon`, then register:
+**LLM aspects (4-7, 9, and 14)** — load the aspect reference via `Read`, produce the TOON fragment body per the reference's schema, emit it with the `Write` tool to `{fragment_dir}/fragment-{aspect}.toon`, then register:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments \
-  add --plan-id {plan_id} --aspect {name} --fragment-file work/fragment-{aspect}.toon
+  add --plan-id {plan_id} --aspect {name} --fragment-file {fragment_dir}/fragment-{aspect}.toon
 ```
 
 **Aspect 11 (execution-context-dispatch-audit)** — a deterministic script-backed aspect run per the generic deterministic-aspect pattern above with the `check-dispatch-audit` script. It reads the plan's own `logs/`, `execution.toon`, and `status.json`, so it needs no footprint input. The concrete capture-and-register commands live in [`standards/execution-context-dispatch-audit.md`](standards/execution-context-dispatch-audit.md) § "Persistence" (SKILL.md dispatches the aspect and delegates its registration to that document). The script emits the four fact blocks (shape / three-state coverage / channel completeness / firing comparison) plus the two preserved surface checks. Their published field sets are NOT uniform — the two surface checks publish `{status, evaluated_population, violations, findings}`, `dispatch_coverage` publishes no `violations`, `channel_completeness` publishes none of the four, and `firing_comparison` publishes its own `{phase_count, phases{state, reason, boundary_rows, execution_rows, populations}}` shape instead; read each block's own schema in that document rather than assuming a shared shape. The LLM synthesizes the judgement of those facts per that same document — the script never judges. ⛔ A clean `shape_violation` over a populated population shows only that the emitter's two writes agree, never that dispatch discipline was verified: both surfaces come from one seam, and a hand-written `[DISPATCH]` line cancels a missing seam emission. Read `by_role[].foreign_caller_lines` before calling a zero clean — see that document's **Corroboration limit** and **Caller-blindness** blockquotes.
@@ -275,9 +279,9 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragmen
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:check-manifest-consistency \
-  run --plan-id {plan_id} --mode {live|archived} > work/fragment-manifest-decisions.toon
+  run --plan-id {plan_id} --mode {live|archived} > {fragment_dir}/fragment-manifest-decisions.toon
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments \
-  add --plan-id {plan_id} --aspect manifest-decisions --fragment-file work/fragment-manifest-decisions.toon
+  add --plan-id {plan_id} --aspect manifest-decisions --fragment-file {fragment_dir}/fragment-manifest-decisions.toon
 ```
 
 Skip the aspect entirely when the manifest file is absent.
@@ -286,9 +290,9 @@ Skip the aspect entirely when the manifest file is absent.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:check-routing-decisions \
-  run --plan-id {plan_id} --mode {live|archived} --diff-file work/footprint.txt > work/fragment-routing-decisions.toon
+  run --plan-id {plan_id} --mode {live|archived} --diff-file work/footprint.txt > {fragment_dir}/fragment-routing-decisions.toon
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments \
-  add --plan-id {plan_id} --aspect routing-decisions --fragment-file work/fragment-routing-decisions.toon
+  add --plan-id {plan_id} --aspect routing-decisions --fragment-file {fragment_dir}/fragment-routing-decisions.toon
 ```
 
 Skip the aspect entirely when the manifest file is absent.
@@ -321,6 +325,8 @@ Parse `bundle_path` from the TOON output, then:
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:compile-report \
   run --plan-id {plan_id} --mode {live|archived} --fragments-file {bundle_path}
 ```
+
+When the bundle is absent, `compile-report` returns `error: fragments_file_missing` naming the `fragments_file` it looked at, and writes no report. Record it under "Script failure analysis" exactly as a `fragment_missing` skip is recorded in Step 3, and carry it into the Step 7 return as the retrospective's error — there is no report to point at.
 
 The script returns the report's absolute path and a three-valued section outcome. `sections_written` names every section the report carries, and every section it names has a non-empty body — the partition invariant is *written implies non-empty*, so a section whose body would be only a placeholder is NOT written (it takes the omitted or dropped branch like any other). `sections_omitted` is the BENIGN half of the non-emit path — the section's trigger fragment was absent or carried nothing renderable, so there was nothing to lose. `sections_dropped` is the LOUD half — a registered fragment that was present and carried payload but still did not render. When `sections_dropped` is non-empty the script returns `status: warning` (never `success`) and a `message` naming the dropped headings; the process exit code stays `0` because the report itself was written. Section order follows `references/report-structure.md`.
 
@@ -604,7 +610,9 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragmen
 One batch replaces N `add` calls: the aspect-key registry resolves once, every
 key validates before the bundle is touched, and the bundle writes once. The
 result publishes the registered aspect keys with their fragment entry counts
-for the compile-report conservation check.
+for the compile-report conservation check. Each `PATH` resolves exactly as
+`add --fragment-file` does, and a batch naming a missing fragment returns
+`error: fragment_missing` with the bundle untouched.
 
 ### collect-fragments — finalize
 
