@@ -108,8 +108,6 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock budget-rec
   --plan-id {plan_id} --hold-start {hold_start} --hold-budget-seconds {budget}
 ```
 
-`{hold_start}` is passed verbatim as the integer `date +%s` epoch bound above — the script accepts it as a float and measures `now - hold_start` against the budget.
-
 On `action: released` (the recorded holder was provably stale and has been evicted and dequeued) re-poll `acquire`; on `not_due`, `nothing_to_reclaim`, or `status: refused` (a live holder past budget, or an unresolvable one) take the existing release + FIFO-re-enqueue + escalate path. The reclaim consults the main-anchored `holder_staleness` verdict through the observed-file sidecar arbitration, so a live-but-slow holder is never force-released here — the orchestrator-layer budget bounds a live holder by releasing its OWN hold, while the reclaim bounds a dead holder no release can reach.
 
 3. **FIFO fairness preserved** via the existing admission queue (`merge_queue.json`); the serialized-structure-is-front invariant (`merge_lock._fifo_front`) is unchanged, so a release-then-re-enqueue keeps the plan's place in line.

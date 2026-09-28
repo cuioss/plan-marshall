@@ -203,11 +203,11 @@ class TestBudgetReclaimInvalidInput:
 # =============================================================================
 
 
-def _run_cli(monkeypatch: pytest.MonkeyPatch, hold_start: str) -> int:
+def _run_cli(monkeypatch: pytest.MonkeyPatch, hold_start: str) -> None:
     """Drive ``main()`` with a patched argv for one ``budget-reclaim`` call.
 
-    argparse reads the process-global ``sys.argv``; ``main`` returns the exit
-    code on a parsed call and raises ``SystemExit`` on an argparse rejection.
+    argparse reads the process-global ``sys.argv``; ``main`` raises
+    ``SystemExit`` on an argparse rejection.
     """
     argv = [
         'merge_lock.py',
@@ -220,8 +220,7 @@ def _run_cli(monkeypatch: pytest.MonkeyPatch, hold_start: str) -> int:
         '3600',
     ]
     monkeypatch.setattr(sys, 'argv', argv)
-    exit_code: int = merge_lock.main()
-    return exit_code
+    merge_lock.main()
 
 
 class TestHoldStartCliShape:

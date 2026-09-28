@@ -722,9 +722,6 @@ def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
     if status is None:
         return None
 
-    # Refuse an unexaminable ``phases`` structure before anything reads a row by key.
-    # Mirrors the ``cmd_archive`` refusal shape: the phase list cannot be trusted to
-    # say which phase follows the completed one, so nothing is written.
     phase_scan = in_progress_phases(status)
     if not phase_scan.examinable:
         return {
