@@ -94,15 +94,17 @@ def _step_cases() -> list[dict[str, Any]]:
     R5 harness guard reports. The assertion is what makes the parametrization an
     observation instead of a conditional one.
 
-    The comprehension iterates the roster NAME directly, and that is load-bearing
-    twice over: a narrowing transform (``if`` clause, ``filter``) would prove
-    nothing about its result, and wrapping the roster in another call (``enumerate``,
-    ``len``) makes the returned expression name that callee rather than the roster,
-    so the assert and the return stop meeting on the same name and the guard reads
-    the helper as unguarded anyway.
+    The return form is load-bearing twice over, and only one spelling satisfies
+    both guards. It must be a transform that PRESERVES cardinality and carries the
+    roster name through, so the assert and the return meet on the same name and R5
+    reads the helper as guarded: a narrowing transform (``if`` clause, ``filter``)
+    proves nothing about its result, and wrapping the roster in another call
+    (``len``, ``enumerate``) makes the expression name that callee instead of the
+    roster. ``list()`` is both cardinality-preserving and name-carrying, and it is
+    also the form ruff's C416 requires over the equivalent comprehension.
     """
     assert EXPECTED_STEPS, 'the published roster must carry at least one step'
-    return [step for step in EXPECTED_STEPS]
+    return list(EXPECTED_STEPS)
 
 
 class TestKeyedMapIsRead:
