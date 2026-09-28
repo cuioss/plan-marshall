@@ -10,7 +10,7 @@ Storage format specifications for plan metrics collection and reporting.
 | `work/metrics-accumulator-{phase}.toon` | TOON key-value | Per-phase running totals of agent-reported token/tool/duration data, written by `accumulate-agent-usage` and read as fallback by `end-phase` / `phase-boundary` |
 | `metrics.md` | Markdown | Human-readable report with tables |
 
-All files live in `.plan/plans/{plan_id}/`. Accumulator files are created lazily — only phases that dispatch agents (and call `accumulate-agent-usage`) produce one.
+All files live in `.plan/local/plans/{plan_id}/`. Accumulator files are created lazily — only phases that dispatch agents (and call `accumulate-agent-usage`) produce one.
 
 ## Token-Field Population Lattice
 

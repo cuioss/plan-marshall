@@ -5,7 +5,7 @@ Cross-checks between plan artifacts to catch drift, missing files, and mismatche
 ## Inputs
 
 The script consumes:
-- `status.toon` (phase position, metadata)
+- `status.json` (phase position, metadata)
 - `solution_outline.md` (deliverables section)
 - `references.json` / `references.toon` (domains; `base_branch` for the footprint diff)
 - the plan's footprint — resolved through the shared footprint resolver: live worktree diff (`{base}...HEAD` ∪ porcelain) when one is on disk, else the persisted `references.realized_footprint` capture, then a merge-commit fallback, then a PR-landing fallback that resolves the landing commit from `references.pr_number` through the CI abstraction, then the legacy `references.modified_files` key for pre-ledger archives. The footprint carries a **resolution state**: it either resolved (possibly to a genuinely empty set) or it could not be resolved at all. The two are distinct answers, never collapsed into one empty set — see [Footprint resolution state](#footprint-resolution-state)
@@ -19,7 +19,7 @@ aspect: artifact_consistency
 status: success
 plan_id: {plan_id}
 files_present{name,present,path}:
-  status.toon,true,...
+  status.json,true,...
   solution_outline.md,true,...
   references.json,true,...
   metrics.md,false,...

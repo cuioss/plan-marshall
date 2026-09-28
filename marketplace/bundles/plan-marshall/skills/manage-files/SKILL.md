@@ -25,7 +25,7 @@ Generic file operations for plan directories. Provides basic CRUD operations for
 Files are stored in plan directories:
 
 ```text
-.plan/plans/{plan_id}/
+.plan/local/plans/{plan_id}/
 ```
 
 For domain-specific files within the plan directory, use the dedicated manage-* skills (see Relationship to Domain Skills below).
@@ -129,7 +129,7 @@ status: success
 plan_id: my-feature
 file: references.json
 exists: true
-path: .plan/plans/my-feature/references.json
+path: .plan/local/plans/my-feature/references.json
 ```
 
 When file does not exist:
@@ -138,7 +138,7 @@ status: success
 plan_id: my-feature
 file: missing.md
 exists: false
-path: .plan/plans/my-feature/missing.md
+path: .plan/local/plans/my-feature/missing.md
 ```
 
 On validation error (invalid plan_id or path):
@@ -168,7 +168,7 @@ status: success
 plan_id: my-feature
 action: created
 dir: requirements
-path: /path/to/.plan/plans/my-feature/requirements
+path: /path/to/.plan/local/plans/my-feature/requirements
 ```
 
 The `action` field is `created` if the directory was newly created, or `exists` if it already existed.
@@ -308,7 +308,7 @@ When plan is newly created:
 status: success
 plan_id: my-feature
 action: created
-path: /path/to/.plan/plans/my-feature
+path: /path/to/.plan/local/plans/my-feature
 ```
 
 When plan already exists:
@@ -316,7 +316,7 @@ When plan already exists:
 status: success
 plan_id: my-feature
 action: exists
-path: /path/to/.plan/plans/my-feature
+path: /path/to/.plan/local/plans/my-feature
 current_phase: refine
 domain: java
 ```
@@ -467,7 +467,7 @@ python3 .plan/execute-script.py plan-marshall:manage-files:manage-files open-in-
 | manage-status | status.json | N/A (use manage-status) |
 | manage-plan-documents | request.md | N/A (use manage-plan-documents) |
 | manage-solution-outline | solution_outline.md | N/A (use manage-solution-outline) |
-| manage-tasks | tasks/*.toon | N/A (use manage-tasks) |
+| manage-tasks | tasks/*.json | N/A (use manage-tasks) |
 | manage-files | any other file | Generic read/write/list |
 
 ### No path-resolution verb

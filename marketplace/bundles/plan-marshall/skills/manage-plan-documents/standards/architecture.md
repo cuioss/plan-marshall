@@ -113,7 +113,7 @@ Input: doc_type, plan_id, field values
          │
          ▼
     ┌────────────┐
-    │ Write      │──→ .plan/plans/{plan_id}/{file}
+    │ Write      │──→ .plan/local/plans/{plan_id}/{file}
     └────────────┘
          │
          ▼
@@ -132,7 +132,7 @@ Input: doc_type, plan_id
          │
          ▼
     ┌────────────┐
-    │ Read File  │──→ .plan/plans/{plan_id}/{file}
+    │ Read File  │──→ .plan/local/plans/{plan_id}/{file}
     └────────────┘
          │
          ▼

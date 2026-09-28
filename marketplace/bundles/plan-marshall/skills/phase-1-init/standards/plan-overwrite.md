@@ -28,7 +28,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status delete
 status: success
 plan_id: my-feature
 action: deleted
-path: /path/to/.plan/plans/my-feature
+path: /path/to/.plan/local/plans/my-feature
 files_removed: 5
 ```
 
@@ -43,7 +43,7 @@ The re-dispatched init proceeds through Step 4 (Get Task Content) and the subseq
 ## Safety Considerations
 
 The `delete-plan` command:
-- Only deletes directories under `.plan/plans/`
+- Only deletes directories under `.plan/local/plans/`
 - Validates plan_id format (kebab-case)
 - Returns TOON output with file count for audit trail
 - Does NOT prompt for confirmation (caller handles user confirmation)

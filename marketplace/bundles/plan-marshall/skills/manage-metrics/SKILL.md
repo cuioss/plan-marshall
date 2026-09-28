@@ -10,7 +10,7 @@ scope: hybrid
 
 Collects wall-clock duration and token usage data per phase, generates incremental metrics.md reports in the plan directory.
 
-**Scope: hybrid** means this skill stores data per-plan (`.plan/plans/{plan_id}/`) but can also enrich from the host platform's session transcripts on disk.
+**Scope: hybrid** means this skill stores data per-plan (`.plan/local/plans/{plan_id}/`) but can also enrich from the host platform's session transcripts on disk.
 
 ## Enforcement
 
@@ -19,7 +19,7 @@ Collects wall-clock duration and token usage data per phase, generates increment
 **Skill-specific constraints:**
 - Script-only skill — all access via the script API
 - Never hard-code token values — only use data from the runtime boundary: the normalized token/tool/duration figures the platform-runtime metrics ops emit (see **Token data sources**)
-- Metrics data stored in `.plan/plans/{plan_id}/work/metrics.toon`; human-readable output in `.plan/plans/{plan_id}/metrics.md`
+- Metrics data stored in `.plan/local/plans/{plan_id}/work/metrics.toon`; human-readable output in `.plan/local/plans/{plan_id}/metrics.md`
 - Phase names must be one of: `1-init`, `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-finalize` (must match `manage-status` phases exactly)
 
 ## Operations
@@ -386,7 +386,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics accu
 - `--retrospective-tokens` — Tokens attributable to the plan-retrospective dispatch to add to the running `retrospective_tokens` total (optional). Forwarded by `phase-6-finalize` ONLY when the just-returned dispatched step is the opt-in retrospective step — this is the producer side of the `retrospective_tokens` attribution that `end-phase` / `phase-boundary` read back from the accumulator.
 
 **Behaviour:**
-- Reads `.plan/plans/{plan_id}/work/metrics-accumulator-{phase}.toon`, initialising it when absent.
+- Reads `.plan/local/plans/{plan_id}/work/metrics-accumulator-{phase}.toon`, initialising it when absent.
 - Sums any provided flags into the existing totals (including `retrospective_tokens`) and increments the `samples` counter.
 - Writes the file back atomically. The on-disk file is the only source of truth — the call is idempotent across context compactions.
 - `cmd_end_phase` and `cmd_phase_boundary` read the same file when their corresponding flags are omitted.
@@ -452,7 +452,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics reco
 - `--input-tokens`, `--output-tokens`, `--cache-read-input-tokens`, `--cache-creation-input-tokens` — Per-dispatch context-load totals in the normalized `{input, output, cache_read, cache_creation}` shape (each optional). These are the per-DISPATCH counterpart to the per-PHASE context-load view `enrich` writes; they are recorded as four columns appended at the END of each row so the legacy five columns stay positionally unchanged. **They have no numeric default**: an omitted flag writes the literal `unmeasured` into its column and omits the key from the result TOON, so "the caller passed no measurement" stays distinguishable from "the dispatch loaded zero context". A *measured* zero is still written and returned as `0`. See [data-format.md](standards/data-format.md) § Per-Dispatch Context-Load Attribution for the canonical column order, count, and the four-way (measured / unmeasured / unrecognised / indeterminate) reader contract.
 
 **Behaviour:**
-- Appends one row to `.plan/plans/{plan_id}/work/metrics-dispatch-boundaries-{phase}.toon`.
+- Appends one row to `.plan/local/plans/{plan_id}/work/metrics-dispatch-boundaries-{phase}.toon`.
 - The file's first three lines are a TOON-tabular header followed by CSV-style data rows; the canonical row-header schema (column order, count, unmeasured representation) is owned by [data-format.md](standards/data-format.md) § Per-Dispatch Context-Load Attribution.
 - Atomic write — partial files are not visible to readers.
 - The same shared file-write helpers as `accumulate-agent-usage` are used.
@@ -640,7 +640,7 @@ manifest would otherwise produce by turning every boundary row into an orphan.
 ## Storage
 
 ```text
-.plan/plans/{plan_id}/
+.plan/local/plans/{plan_id}/
   work/metrics.toon                        # Intermediate timing/token data per phase
   work/metrics-accumulator-{phase}.toon    # Per-phase agent-reported running totals (one per phase that dispatches agents)
   metrics.md                               # Human-readable metrics report

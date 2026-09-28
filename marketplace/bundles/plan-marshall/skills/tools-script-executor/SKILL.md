@@ -372,7 +372,7 @@ The executor provides two-tier logging:
 
 When a plan ID is provided, logs to:
 ```text
-.plan/plans/{plan-id}/script-execution.log
+.plan/local/plans/{plan-id}/logs/script-execution.log
 ```
 
 **Two ways to enable plan-scoped logging:**
@@ -404,7 +404,7 @@ The `--audit-plan-id` parameter is audit-only — it is removed before the scrip
 
 Fallback when no plan context:
 ```text
-.plan/logs/script-execution-YYYY-MM-DD.log
+.plan/local/logs/script-execution-YYYY-MM-DD.log
 ```
 
 **Benefits**:
@@ -446,12 +446,18 @@ Scripts should use this for path construction instead of hardcoding `.plan`:
 import os
 from pathlib import Path
 
+from constants import DIR_LOGS
+from file_ops import get_base_dir
+
 # Get the plan directory name
 _PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
 
 # Use in path construction
 DATA_DIR = Path(_PLAN_DIR_NAME) / 'project-architecture'
-LOG_DIR = Path(_PLAN_DIR_NAME) / 'logs'
+
+# Runtime state (global logs included) lives under the runtime-state root
+# (<plan-root>/.plan/local), so derive it from get_base_dir(), not PLAN_DIR_NAME
+LOG_DIR = get_base_dir() / DIR_LOGS
 ```
 
 **Key points**:

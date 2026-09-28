@@ -135,7 +135,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics accu
   --total-tokens {total_tokens} --tool-uses {tool_uses} --duration-ms {duration_ms}
 ```
 
-This call is documented as **Step 8b** in `phase-5-execute/SKILL.md`. The accumulator file lives at `.plan/plans/{plan_id}/work/metrics-accumulator-5-execute.toon` — see `manage-metrics/standards/data-format.md` § "Per-Phase Subagent Accumulator" for the schema.
+This call is documented as **Step 8b** in `phase-5-execute/SKILL.md`. The accumulator file lives at `.plan/local/plans/{plan_id}/work/metrics-accumulator-5-execute.toon` — see `manage-metrics/standards/data-format.md` § "Per-Phase Subagent Accumulator" for the schema.
 
 ## Git Operations
 

@@ -262,6 +262,40 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
 
 Bind `{pr_title}` ← the returned `value`. An empty or missing `pr_title` here is an error — the `pr_title_present` phase-handshake invariant should already have blocked the `2-refine`+ boundary, so reaching this step with no title means the invariant was bypassed. STOP and return an error TOON rather than improvising a title.
 
+**Staleness check — the title was authored before execute ran.** `pr_title` is written once, at phase-2-refine, against the scope the plan intended. A deliverable dropped, narrowed, or re-scoped during execute changes what actually ships, and nothing else re-reads the title against that outcome — so without this check the PR ships under a title describing work it no longer contains. Read the executed deliverable set:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline list-deliverables \
+  --plan-id {plan_id}
+```
+
+Split every claim `{pr_title}` makes by kind, and check each kind against the evidence that can actually support it:
+
+- **Behaviour claims** — what the change *does* (a fix, a new capability, a guard, a removed behaviour) — are supported ONLY by the returned executed deliverable titles. `{changed_files}` can NEVER vouch for a behaviour claim: a changed file proves the file was touched, not that every behaviour tied to it shipped — a deliverable dropped during execute can leave its file changed by unrelated work.
+- **File, component, or area claims** — *where* the change lands (a named file, skill, bundle, or subsystem) — are supported by EITHER an executed deliverable title OR the Step 1 `{changed_files}`.
+
+The title is **stale** when any behaviour claim has no executed deliverable backing it, or any file/component/area claim appears in neither source. A title that is terser or more general than the deliverable list is NOT stale; the check asks whether the title claims something that did not ship, not whether it enumerates everything that did.
+
+- **Still describes the shipped scope** → log nothing, keep `{pr_title}` as bound, and proceed to Step 3.6.
+- **Stale** → re-derive the title under the phase-2-refine title-authoring rules — see [`phase-2-refine/standards/refine-workflow-detail.md` § "Author and persist the PR title"](../../phase-2-refine/standards/refine-workflow-detail.md#author-and-persist-the-pr-title) for the rules; they are not restated here — grounding its behaviour claims in the executed deliverables alone and its file/component/area claims in the executed deliverables or `{changed_files}`, rather than in the clarified request. Persist the re-derived value so every later reader sees the title the PR actually carries:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+    --plan-id {plan_id} --set --field pr_title --value "{new_title}"
+  ```
+
+  Record the rewrite, naming both titles, so the change is auditable rather than silent:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO \
+    --message "(plan-marshall:phase-6-finalize:create-pr) Stale pr_title re-derived against executed scope — old: {pr_title} — new: {new_title}"
+  ```
+
+  Rebind `{pr_title}` ← `{new_title}`; Step 4 passes the re-derived value.
+
+Persisting a rewritten title does not register as phase-handshake drift: the `pr_title_present` invariant fingerprints only the PRESENCE of a non-empty title, never its content, so a content edit leaves the captured value unchanged.
+
 #### Step 3.6: Resolve the bot-participation skip-label
 
 Read the `required_bots` / `optional_bots` participation lists — the config that governs which reviewer bots are expected on this plan's PR. Both are `configurable:` params owned by the `plan-marshall:automatic-review` finalize step (their single source-of-truth seeds live in that skill's frontmatter, both `default: ""`), read here from the plan-local execution-manifest step-params snapshot:

@@ -7,7 +7,7 @@ This document defines the complete specification for `solution_outline.md` docum
 ### File Location
 
 ```text
-.plan/plans/{plan_id}/solution_outline.md
+.plan/local/plans/{plan_id}/solution_outline.md
 ```
 
 ### Required Sections
@@ -415,7 +415,7 @@ Verification commands are resolved during the **outline phase** (phase-3-outline
 Task-plan creates one task per profile in the deliverable:
 
 ```text
-solution_outline.md                        TASK-*.toon (created by task-plan)
+solution_outline.md                        TASK-*.json (created by task-plan)
 ┌────────────────────────────┐             ┌────────────────────────┐
 │ **Metadata:**              │             │ TASK-001          │
 │ - domain: java             │             │ profile: implementation│

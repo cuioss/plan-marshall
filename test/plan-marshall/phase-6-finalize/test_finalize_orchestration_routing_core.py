@@ -30,6 +30,18 @@ Covered:
   is unreachable from an orchestrated plan generally.
 - **Retrospective input contract**, **non-orchestrated path unchanged**, and the
   **short-circuit carve-out**.
+- **The verdict is resolved at Step 3 entry, not inside a step's gate** — the
+  ``a0`` resolution block precedes the ``FOR each step_id`` loop and sits outside
+  the item-4b lessons-capture gate, so item 1's resumable skip of an
+  already-``done`` lessons-capture cannot starve the later consumers of it.
+- **The forwarded write-site list is closed** — the step ids the ``a0`` block
+  lists equal the registered finalize steps whose body issues an
+  ``orchestrator inbox write`` call, derived from the registered roster, so a new
+  inbox writer missing from the list fails the check.
+- **emit-landing fails closed** — its Step 0 guard records ``loop_back`` (never
+  ``skipped``) on an empty epic, and ``archive-plan`` is ordered after it and
+  declares ``destroys: plan-directory``, so that record is what keeps the
+  irreversible archive unreached.
 - **The routing registries are derived, not hand-maintained** — the SKILL.md
   "Built-in Step Dispatch Table" and ``_manifest_core.DEFAULT_PHASE_6_STEPS`` are
   both restatements of the same authoritative source (each step doc's own
@@ -60,6 +72,7 @@ _FINALIZE_SKILL = _FINALIZE / 'SKILL.md'
 _LESSONS_CAPTURE = _FINALIZE / 'workflow' / 'lessons-capture.md'
 _LESSONS_INTEGRATION = _FINALIZE / 'standards' / 'lessons-integration.md'
 _PREFERENCE_EMITTER = _FINALIZE / 'standards' / 'finalize-step-preference-emitter.md'
+_EMIT_LANDING = _FINALIZE / 'standards' / 'emit-landing.md'
 _RETROSPECTIVE = _PLAN_MARSHALL / 'plan-retrospective' / 'SKILL.md'
 _MARSHAL_JSON = PROJECT_ROOT / '.plan' / 'marshal.json'
 
@@ -86,6 +99,72 @@ def _between(text: str, start_marker: str, end_marker: str) -> str:
     return text[start:end]
 
 
+#: The label of the Step 3 entry orchestration-resolution block.
+_A0_LABEL = 'a0. Resolve orchestration context'
+
+#: The line that opens the Step 3 per-step dispatch loop.
+_FOR_LOOP = 'FOR each step_id in manifest.phase_6.steps:'
+
+#: The bounds of the item-4b lessons-capture Signal Gate inside the loop.
+_ITEM_4B_START = '4b. Lessons-capture Signal Gate'
+_ITEM_4B_END = '4c. Adr-propose Signal Gate'
+
+#: The executor form of the detection call — a prose mention of the verb is not a call.
+_DETECT_CALL = 'plan-orchestrator:orchestrator inbox detect'
+
+
+def _a0_block(text: str) -> str:
+    """The Step 3 entry resolution block: from its label up to the FOR loop line.
+
+    Ending the span at the loop line makes the extraction itself fail when the
+    block no longer precedes the loop.
+    """
+    return _between(text, _A0_LABEL, _FOR_LOOP)
+
+
+def _resolution_placement_violations(text: str) -> list[str]:
+    """The placement predicate under test: why the resolution is NOT at Step 3 entry.
+
+    Factored out so the mutation guard drives the SAME predicate the assertions
+    use. An empty list means the ``a0`` block precedes the dispatch loop, occurs
+    exactly once, and item 4b neither carries the block nor issues the detection
+    call itself.
+    """
+    violations: list[str] = []
+    label_at = text.find(_A0_LABEL)
+    loop_at = text.find(_FOR_LOOP)
+    if label_at == -1:
+        violations.append('resolution block label absent')
+    if loop_at == -1:
+        violations.append('dispatch loop line absent')
+    if label_at != -1 and loop_at != -1 and label_at > loop_at:
+        violations.append('resolution block follows the dispatch loop')
+    if text.count(_A0_LABEL) != 1:
+        violations.append(f'resolution block label occurs {text.count(_A0_LABEL)} times')
+    start = text.find(_ITEM_4B_START)
+    end = text.find(_ITEM_4B_END, start + 1) if start != -1 else -1
+    if start == -1 or end == -1:
+        violations.append('item 4b span absent')
+    else:
+        item = text[start:end]
+        if _A0_LABEL in item:
+            violations.append('resolution block sits inside item 4b')
+        if _DETECT_CALL in item:
+            violations.append('item 4b issues the detection call itself')
+    return violations
+
+
+def _frontmatter_order_and_destroys() -> dict[str, tuple[object, list[str]]]:
+    """Every discovered finalize step's ``(order, destroys)`` pair, off its own frontmatter."""
+    out: dict[str, tuple[object, list[str]]] = {}
+    for record in find_implementors(_EXT_POINT):
+        fields = extension_discovery._read_frontmatter_fields(Path(str(record.get('path', ''))), ('destroys',))
+        declared = fields.get('destroys')
+        destroys = [] if declared is None else list(declared) if isinstance(declared, list) else [declared]
+        out[str(record.get('name', ''))] = (record.get('order'), destroys)
+    return out
+
+
 def _registered_finalize_steps() -> list[str]:
     data = json.loads(_read(_MARSHAL_JSON))
     return list(data['plan']['phase-6-finalize']['steps'].keys())
@@ -104,6 +183,58 @@ def _step_documents(step_key: str) -> list[Path]:
         ]
     bundle, skill = step_key.split(':', 1)
     return [MARKETPLACE_ROOT / bundle / 'skills' / skill / 'SKILL.md']
+
+
+#: The sentence span of the a0 block that records the epic-inbox write-site list.
+_WRITE_SITE_SPAN_START = 'That set is currently'
+_WRITE_SITE_SPAN_END = 'A future step'
+
+#: A backtick-quoted finalize step id (``default:x``, ``project:x``, ``bundle:skill``).
+_STEP_ID_TOKEN = re.compile(r'`([a-z][a-z0-9-]*:[a-z0-9][a-z0-9-]*)`')
+
+
+def _registered_step_bodies() -> tuple[dict[str, str], list[str]]:
+    """Every registered finalize step's body text, plus the steps that resolved to no document.
+
+    The population is the registered roster itself (``marshal.json`` ->
+    ``plan.phase-6-finalize.steps``), so a newly registered step joins the check
+    without anyone editing a hand-copied list.
+    """
+    bodies: dict[str, str] = {}
+    unresolved: list[str] = []
+    for step_key in _registered_finalize_steps():
+        documents = [path for path in _step_documents(step_key) if path.is_file()]
+        if not documents:
+            unresolved.append(step_key)
+            continue
+        bodies[step_key] = '\n'.join(_read(path) for path in documents)
+    return bodies, unresolved
+
+
+def _derived_inbox_writers(step_bodies: dict[str, str]) -> set[str]:
+    """The step ids whose body issues an ``orchestrator inbox write`` call."""
+    return {step_key for step_key, body in step_bodies.items() if _INBOX_WRITE.search(body)}
+
+
+def _write_site_span(text: str) -> str:
+    """The a0-block sentence that records the write-site list."""
+    return _between(_a0_block(text), _WRITE_SITE_SPAN_START, _WRITE_SITE_SPAN_END)
+
+
+def _listed_write_sites(span: str) -> set[str]:
+    """The step ids the dispatcher's write-site list names."""
+    return set(_STEP_ID_TOKEN.findall(span))
+
+
+def _write_site_mismatch(writers: set[str], listed: set[str]) -> dict[str, list[str]]:
+    """The closure predicate under test: writers the list omits, and listed ids that write nothing.
+
+    Factored out so the mutation guards drive the SAME predicate the assertion uses.
+    """
+    return {
+        'unlisted_writers': sorted(writers - listed),
+        'listed_non_writers': sorted(listed - writers),
+    }
 
 
 # =============================================================================
@@ -197,24 +328,22 @@ class TestDetectionSeam:
         assert 'request read --plan-id {plan_id} --section source_id' in text
         assert 'orchestrator inbox detect' in text
 
+    def test_dispatcher_issues_both_seam_calls_inside_the_step_3_entry_block(self):
+        block = _a0_block(_read(_FINALIZE_SKILL))
+
+        assert 'request read --plan-id {plan_id} --section source_id' in block
+        assert _DETECT_CALL in block
+
     def test_dispatcher_parses_the_detection_token(self):
         # Anchored to the a0 block so the assertion cannot pass on a stray
         # match elsewhere in the SKILL body.
-        block = _between(
-            _read(_FINALIZE_SKILL),
-            'a0. Resolve orchestration context',
-            'a. Compute three signal counts',
-        )
+        block = _a0_block(_read(_FINALIZE_SKILL))
 
         assert '`detection`' in block
         assert 'detection={detection}' in block
 
     def test_dispatcher_warns_on_an_unrecognised_pointer(self):
-        block = _between(
-            _read(_FINALIZE_SKILL),
-            'a0. Resolve orchestration context',
-            'a. Compute three signal counts',
-        )
+        block = _a0_block(_read(_FINALIZE_SKILL))
 
         assert 'detection == unrecognised_id' in block
         assert '--level WARNING' in block
@@ -317,21 +446,125 @@ class TestRetrospectiveInputContract:
         assert 'epic: {slug|""}' in block
 
 
-class TestShortCircuitCarveOut:
-    def _item_4b(self) -> str:
-        return _between(
-            _read(_FINALIZE_SKILL),
-            '4b. Lessons-capture Signal Gate',
-            '4c. Adr-propose Signal Gate',
+class TestResolutionAtStep3Entry:
+    """(a) The orchestration verdict is resolved once at Step 3 entry, outside every step's gate.
+
+    Resolved inside item 4b, the verdict was unreachable whenever item 1's
+    resumable check SKIPped an already-``done`` lessons-capture, or the manifest
+    omitted lessons-capture — exactly the re-entries on which emit-landing then
+    saw an empty epic.
+    """
+
+    def test_resolution_block_precedes_the_for_loop_and_sits_outside_item_4b(self):
+        assert _resolution_placement_violations(_read(_FINALIZE_SKILL)) == []
+
+    def test_placement_predicate_rejects_the_block_moved_back_into_item_4b(self):
+        """Mutation guard: re-nesting the block inside item 4b must be caught."""
+        text = _read(_FINALIZE_SKILL)
+        block = _a0_block(text)
+        mutated = text.replace(block, '', 1).replace(_ITEM_4B_START, _ITEM_4B_START + '\n' + block, 1)
+
+        assert 'resolution block sits inside item 4b' in _resolution_placement_violations(mutated)
+
+    def test_placement_predicate_rejects_a_detection_call_inside_item_4b(self):
+        """Mutation guard: a second detection call issued from the gate must be caught."""
+        text = _read(_FINALIZE_SKILL)
+        mutated = text.replace(_ITEM_4B_START, _ITEM_4B_START + '\n' + _DETECT_CALL, 1)
+
+        assert 'item 4b issues the detection call itself' in _resolution_placement_violations(mutated)
+
+    def test_block_states_it_runs_on_every_entry_independent_of_resumable_skip(self):
+        block = _a0_block(_read(_FINALIZE_SKILL))
+
+        assert "independent of every step's resumable skip" in block
+        assert 'every re-entry' in block
+
+    def test_block_names_the_detect_seam_as_the_sole_classifier(self):
+        block = _a0_block(_read(_FINALIZE_SKILL))
+
+        assert '`orchestrator inbox detect` is the sole classifier' in block
+        # The transition mailbox probe's verdict is explicitly excluded as an input.
+        assert '`probe:` classification is never an input' in block
+
+    def test_the_write_site_list_is_recorded_at_the_resolution_site(self):
+        block = _a0_block(_read(_FINALIZE_SKILL))
+
+        assert 'default:lessons-capture' in block
+        assert 'plan-marshall:plan-retrospective' in block
+        assert 'default:finalize-step-preference-emitter' in block
+        # Plan 302 D1: the terminal emission step is the fourth epic-inbox write-site.
+        assert 'default:emit-landing' in block
+        assert 'MUST be added to this list' in block
+
+
+class TestWriteSiteListIsDerivedClosed:
+    """The dispatcher's forwarded write-site list equals the registered steps that write to the epic inbox.
+
+    The pins above lock the four current write-sites in place but cannot see a
+    NEW registered step that gains an ``orchestrator inbox write`` call and is
+    never added to the list — that step would run without the held orchestration
+    verdict. This class derives the writer set from the registered step roster
+    and compares it to the list the a0 block records, in both directions.
+    """
+
+    def test_every_registered_step_resolves_to_a_body(self):
+        """Anti-vacuity: a step with no readable body would silently drop out of the population."""
+        _, unresolved = _registered_step_bodies()
+
+        assert unresolved == [], f'Registered finalize steps with no resolvable body document: {unresolved}'
+
+    def test_derived_writer_set_is_non_empty(self):
+        """Anti-vacuity: an empty derived set would make the equality below meaningless."""
+        bodies, _ = _registered_step_bodies()
+
+        assert _derived_inbox_writers(bodies), (
+            'No registered finalize step body issues an `orchestrator inbox write` call, so the '
+            'write-site closure check would pass vacuously. The roster or the call regex drifted.'
         )
 
-    def test_orchestration_resolution_precedes_the_short_circuit(self):
-        item = self._item_4b()
+    def test_listed_write_sites_equal_the_derived_writers(self):
+        bodies, _ = _registered_step_bodies()
+        listed = _listed_write_sites(_write_site_span(_read(_FINALIZE_SKILL)))
 
-        assert item.index('a0. Resolve orchestration context') < item.index('b. Three-zero short-circuit')
+        mismatch = _write_site_mismatch(_derived_inbox_writers(bodies), listed)
+
+        assert mismatch == {'unlisted_writers': [], 'listed_non_writers': []}, (
+            'The phase-6-finalize SKILL.md a0 write-site list disagrees with the registered '
+            f'steps whose body issues an `orchestrator inbox write` call: {mismatch}'
+        )
+
+    def test_closure_predicate_catches_a_new_unlisted_writer(self):
+        """Mutation guard: a newly registered inbox writer missing from the list must be caught."""
+        bodies, _ = _registered_step_bodies()
+        bodies['default:hypothetical-new-writer'] = (
+            'python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator inbox write --kind landing'
+        )
+        listed = _listed_write_sites(_write_site_span(_read(_FINALIZE_SKILL)))
+
+        mismatch = _write_site_mismatch(_derived_inbox_writers(bodies), listed)
+
+        assert mismatch['unlisted_writers'] == ['default:hypothetical-new-writer']
+
+    def test_closure_predicate_catches_a_writer_dropped_from_the_list(self):
+        """Mutation guard: removing a real writer from the recorded list must be caught."""
+        bodies, _ = _registered_step_bodies()
+        span = _write_site_span(_read(_FINALIZE_SKILL)).replace('`default:emit-landing`', 'the landing step')
+
+        mismatch = _write_site_mismatch(_derived_inbox_writers(bodies), _listed_write_sites(span))
+
+        assert mismatch['unlisted_writers'] == ['default:emit-landing']
+
+
+class TestShortCircuitCarveOut:
+    def _item_4b(self) -> str:
+        return _between(_read(_FINALIZE_SKILL), _ITEM_4B_START, _ITEM_4B_END)
 
     def test_resolution_is_documented_as_running_before_the_short_circuit(self):
-        assert 'runs BEFORE the three-zero short-circuit' in self._item_4b()
+        """(b) item 4b reads the held verdict and still states the ordering claim."""
+        item = self._item_4b()
+
+        assert 'runs BEFORE the three-zero short-circuit' in item
+        assert 'issues no resolution call of its own' in item
 
     def test_short_circuit_fires_regardless_of_orchestration(self):
         """Plan 302 D1: the carve-out that dispatched lessons-capture at
@@ -357,22 +590,61 @@ class TestShortCircuitCarveOut:
         assert 'orchestrated: {true|false}' in item
         assert 'epic: {slug|""}' in item
 
-    def test_the_write_site_list_is_recorded_at_the_resolution_site(self):
-        item = self._item_4b()
-
-        assert 'default:lessons-capture' in item
-        assert 'plan-marshall:plan-retrospective' in item
-        assert 'default:finalize-step-preference-emitter' in item
-        # Plan 302 D1: the terminal emission step is the fourth epic-inbox write-site.
-        assert 'default:emit-landing' in item
-        assert 'MUST be added to this list' in item
-
     def test_body_declares_both_runtime_inputs(self):
         text = _read(_LESSONS_CAPTURE)
 
         assert '- `orchestrated` — bool;' in text
         assert '- `epic` — string;' in text
         assert 'MUST NOT re-issue either call' in text
+
+
+class TestEmitLandingEmptyEpicFailsClosed:
+    """(c) + (d) An empty epic on a present emit-landing step loops back, never skips.
+
+    A ``skipped`` record does not stop the finalize loop, so ``archive-plan`` —
+    ordered after ``emit-landing`` and declaring ``destroys: plan-directory`` —
+    would run next and delete the only copy of the run's facts. The ``loop_back``
+    record is what keeps archive unreached, and (d) pins the ordering fact that
+    makes that true.
+    """
+
+    _STEP_0_START = '### Step 0: Defensive orchestration guard'
+    _STEP_0_END = '### Step 1:'
+
+    def _step_0(self) -> str:
+        return _between(_read(_EMIT_LANDING), self._STEP_0_START, self._STEP_0_END)
+
+    def test_step_0_records_loop_back_to_finalize(self):
+        step = self._step_0()
+
+        assert '--outcome loop_back' in step
+        assert '--loop-back-target 6-finalize' in step
+        assert 'work_performed=false' in step
+
+    def test_step_0_warning_names_the_contradiction(self):
+        step = self._step_0()
+
+        assert '--level WARNING' in step
+        assert 'orchestration verdict contradiction' in step
+
+    def test_no_skipped_outcome_call_remains_in_emit_landing(self):
+        assert '--outcome skipped' not in _read(_EMIT_LANDING)
+
+    def test_archive_plan_destroys_the_plan_directory_after_emit_landing(self):
+        declared = _frontmatter_order_and_destroys()
+        assert 'default:emit-landing' in declared, 'emit-landing is not a discovered finalize step'
+        assert 'default:archive-plan' in declared, 'archive-plan is not a discovered finalize step'
+
+        landing_order, _ = declared['default:emit-landing']
+        archive_order, archive_destroys = declared['default:archive-plan']
+
+        assert 'plan-directory' in archive_destroys
+        assert isinstance(landing_order, int) and isinstance(archive_order, int)
+        assert archive_order > landing_order, (
+            f'archive-plan (order {archive_order}) must run after emit-landing (order '
+            f"{landing_order}); only then is emit-landing's loop_back record what keeps "
+            'the destroying archive step unreached.'
+        )
 
 
 class TestDefaultPhase6StepsMatchesDiscovery:

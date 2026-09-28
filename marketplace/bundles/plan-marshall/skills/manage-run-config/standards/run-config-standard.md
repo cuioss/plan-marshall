@@ -836,8 +836,8 @@ Retention defaults are defined in `manage-config/standards/data-model.md` under 
 
 | Directory | Content |
 |-----------|---------|
-| `.plan/logs/` | Execution logs |
-| `.plan/archived/` | Archived plan files |
+| `.plan/local/logs/` | Execution logs |
+| `.plan/local/archived-plans/` | Archived plan files |
 | `.plan/temp/` | Temporary files (always cleaned) |
 
 ---

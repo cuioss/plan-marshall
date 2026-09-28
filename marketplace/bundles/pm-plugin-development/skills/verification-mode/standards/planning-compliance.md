@@ -84,21 +84,21 @@ These files are designed for direct access and do NOT trigger compliance alerts:
 
 All other marketplace scripts must be invoked via the executor: `python3 .plan/execute-script.py {notation} [subcommand] {args...}`. Direct script invocation via an absolute path is a violation — it bypasses logging and response standardization.
 
-### Rule 1 — No Direct `.plan/plans/**` Access
+### Rule 1 — No Direct `.plan/local/plans/**` Access
 
 Plan data must use the manage-* API. Prohibited operations and their correct alternatives:
 
 | Tool | Prohibited Pattern | Correct Alternative |
 |------|--------------------|---------------------|
-| Read | `.plan/plans/{id}/status.toon` | `manage-status:manage-status read --plan-id {id}` |
-| Read | `.plan/plans/{id}/references.json` | `manage-references:manage-references read --plan-id {id}` |
-| Read | `.plan/plans/{id}/work.log` | `manage-logging:manage-logging read --plan-id {id} --type work` |
-| Read | `.plan/plans/{id}/solution_outline.md` | `manage-solution-outline:manage-solution-outline read --plan-id {id}` |
-| Read | `.plan/plans/{id}/tasks/TASK-*.toon` | `manage-tasks:manage-tasks read --plan-id {id} --task-number {N}` |
-| Write / Edit | any file under `.plan/plans/{id}/` | corresponding manage-* create/update subcommand |
-| Glob / find / ls | anything under `.plan/plans/` | corresponding manage-* list subcommand |
+| Read | `.plan/local/plans/{id}/status.json` | `manage-status:manage-status read --plan-id {id}` |
+| Read | `.plan/local/plans/{id}/references.json` | `manage-references:manage-references read --plan-id {id}` |
+| Read | `.plan/local/plans/{id}/logs/work.log` | `manage-logging:manage-logging read --plan-id {id} --type work` |
+| Read | `.plan/local/plans/{id}/solution_outline.md` | `manage-solution-outline:manage-solution-outline read --plan-id {id}` |
+| Read | `.plan/local/plans/{id}/tasks/TASK-*.json` | `manage-tasks:manage-tasks read --plan-id {id} --task-number {N}` |
+| Write / Edit | any file under `.plan/local/plans/{id}/` | corresponding manage-* create/update subcommand |
+| Glob / find / ls | anything under `.plan/local/plans/` | corresponding manage-* list subcommand |
 
-**Allowed direct write pattern**: `Write(.plan/plans/{plan_id}/solution_outline.md)` is permitted when the path was obtained via `manage-solution-outline resolve-path --plan-id {id}` AND the write is immediately followed by `manage-solution-outline write` (or `update`) to validate.
+**Allowed direct write pattern**: `Write(.plan/local/plans/{plan_id}/solution_outline.md)` is permitted when the path was obtained via `manage-solution-outline resolve-path --plan-id {id}` AND the write is immediately followed by `manage-solution-outline write` (or `update`) to validate.
 
 Complete script coverage:
 
@@ -154,13 +154,13 @@ Plan-related log files must exist, be well-formed, remain consistent, and be sca
 
 | File | Location | Purpose |
 |------|----------|---------|
-| `work.log` | `.plan/plans/{id}/work.log` | Semantic work entries (decisions, artifacts, progress) |
-| `script-execution.log` | `.plan/plans/{id}/script-execution.log` | Script execution records for plan-scoped operations |
-| `script-execution-*.log` | `.plan/logs/script-execution-{date}.log` | Global execution records (non-plan operations) |
+| `work.log` | `.plan/local/plans/{id}/logs/work.log` | Semantic work entries (decisions, artifacts, progress) |
+| `script-execution.log` | `.plan/local/plans/{id}/logs/script-execution.log` | Script execution records for plan-scoped operations |
+| `script-execution-*.log` | `.plan/local/logs/script-execution-{date}.log` | Global execution records (non-plan operations) |
 
 Entries follow the format `[{timestamp}] [{level}] [SCRIPT] {notation} {subcommand} ({duration}s)` (success) and `[{timestamp}] [ERROR] [SCRIPT] {notation} {subcommand} failed (exit {code})` (failure).
 
-Scan log files for common issue classes and respond per severity: `[ERROR]` entries (investigate root cause), repeated failures (systemic bug, fix immediately), slow executions over 30 s for simple ops (optimize or investigate hang), missing expected executions (executor not used), `usage:` or `argument` errors (wrong caller arguments), `ModuleNotFoundError`/`ImportError` (missing dependency), and `Permission denied` (access issue). Read logs via `manage-logging read` commands — direct `grep` inside the plan log tree is acceptable only for quick scans such as `grep '[ERROR]' .plan/plans/{plan_id}/script-execution.log`.
+Scan log files for common issue classes and respond per severity: `[ERROR]` entries (investigate root cause), repeated failures (systemic bug, fix immediately), slow executions over 30 s for simple ops (optimize or investigate hang), missing expected executions (executor not used), `usage:` or `argument` errors (wrong caller arguments), `ModuleNotFoundError`/`ImportError` (missing dependency), and `Permission denied` (access issue). Read logs via `manage-logging read` commands — direct `grep` inside the plan log tree is acceptable only for quick scans such as `grep '[ERROR]' .plan/local/plans/{plan_id}/logs/script-execution.log`.
 
 ---
 
@@ -213,10 +213,10 @@ When `/plan-marshall` runs phases 5-7, verify after each task: task started → 
 
 ## Common Violations
 
-1. **Direct status read** — `Read .plan/plans/EXAMPLE-PLAN/status.toon`. Use `manage-status:manage-status read --plan-id EXAMPLE-PLAN`. Direct reads bypass the managed parser, may see partial data during atomic writes, and skip script validation.
+1. **Direct status read** — `Read .plan/local/plans/EXAMPLE-PLAN/status.json`. Use `manage-status:manage-status read --plan-id EXAMPLE-PLAN`. Direct reads bypass the managed parser, may see partial data during atomic writes, and skip script validation.
 2. **Missing work-log entry** — an artifact is created but no work-log entry exists. Breaks the audit trail and blocks debugging/progress tracking.
 3. **Stale status after transition** — all tasks are done but `current_phase` is still the old phase. Phase routing will execute the wrong phase and the plan lifecycle breaks.
-4. **Direct file creation** — `Write .plan/plans/EXAMPLE-PLAN/tasks/TASK-003.toon`. Use `manage-tasks add` (singular script name `manage-task`, full notation `plan-marshall:manage-tasks:manage-tasks`) with the task definition passed via stdin heredoc to avoid shell metacharacter issues. Bypassing this skips numbering, validation, and work-log entries.
+4. **Direct file creation** — `Write .plan/local/plans/EXAMPLE-PLAN/tasks/TASK-003.json`. Use `manage-tasks add` (singular script name `manage-task`, full notation `plan-marshall:manage-tasks:manage-tasks`) with the task definition passed via stdin heredoc to avoid shell metacharacter issues. Bypassing this skips numbering, validation, and work-log entries.
 
 ## Exception Handling
 
@@ -244,4 +244,4 @@ Expected: a work-log entry within the last few seconds, `current_phase` matches 
 
 ## Post-Run Verification: Executor Pattern
 
-After script operations complete, confirm the executor was used. For plan-scoped operations, query `manage-logging read --plan-id {plan_id} --type script --limit 20` and verify the entries match the scripts that were invoked. For global operations (no plan context), inspect the current-day global log at `.plan/logs/script-execution-$(date +%Y-%m-%d).log` — direct read access to global logs is acceptable. Success entries use the format `[{timestamp}] [INFO] [SCRIPT] {notation} {subcommand} ({duration}s)` and error entries use `[{timestamp}] [ERROR] [SCRIPT] {notation} {subcommand} failed (exit {code})`. Verify the timestamp is recent, the notation matches the expected script, and the level is INFO for success or ERROR for failures.
+After script operations complete, confirm the executor was used. For plan-scoped operations, query `manage-logging read --plan-id {plan_id} --type script --limit 20` and verify the entries match the scripts that were invoked. For global operations (no plan context), inspect the current-day global log at `.plan/local/logs/script-execution-$(date +%Y-%m-%d).log` — direct read access to global logs is acceptable. Success entries use the format `[{timestamp}] [INFO] [SCRIPT] {notation} {subcommand} ({duration}s)` and error entries use `[{timestamp}] [ERROR] [SCRIPT] {notation} {subcommand} failed (exit {code})`. Verify the timestamp is recent, the notation matches the expected script, and the level is INFO for success or ERROR for failures.

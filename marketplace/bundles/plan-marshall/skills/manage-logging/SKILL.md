@@ -10,7 +10,7 @@ scope: hybrid
 
 Unified logging infrastructure providing script execution logging, semantic work progress tracking, and decision logging.
 
-**Scope: hybrid** means this skill operates at both plan-scoped and global levels. When a `plan_id` is provided and the plan directory exists, logs go to `.plan/plans/{plan-id}/logs/`. Otherwise, logs fall back to global daily files at `.plan/logs/`.
+**Scope: hybrid** means this skill operates at both plan-scoped and global levels. When a `plan_id` is provided and the plan directory exists, logs go to `.plan/local/plans/{plan-id}/logs/`. Otherwise, logs fall back to global daily files at `.plan/local/logs/`.
 
 A third, opt-in store exists for orchestrator epics: `--store orchestrator` on the `work` / `decision` / `read` verbs routes to the git-tracked orchestrator tree at `.plan/orchestrator/{slug}/logs/` (resolved via `file_ops.get_store_dir`, cwd-relative on the tracked config tier). The default store is `plans` — every existing call path is unchanged.
 
@@ -40,18 +40,18 @@ All plan-scoped logs are stored in the `logs/` subdirectory of the plan.
 
 ### Script Execution Log
 
-**File**: `.plan/plans/{plan-id}/logs/script-execution.log` (plan-scoped)
-**Fallback**: `.plan/logs/script-execution-YYYY-MM-DD.log` (global)
+**File**: `.plan/local/plans/{plan-id}/logs/script-execution.log` (plan-scoped)
+**Fallback**: `.plan/local/logs/script-execution-YYYY-MM-DD.log` (global)
 
 ### Work Log
 
-**File**: `.plan/plans/{plan-id}/logs/work.log`
-**Fallback**: `.plan/logs/work-YYYY-MM-DD.log` (global)
+**File**: `.plan/local/plans/{plan-id}/logs/work.log`
+**Fallback**: `.plan/local/logs/work-YYYY-MM-DD.log` (global)
 
 ### Decision Log
 
-**File**: `.plan/plans/{plan-id}/logs/decision.log`
-**Fallback**: `.plan/logs/decision-YYYY-MM-DD.log` (global)
+**File**: `.plan/local/plans/{plan-id}/logs/decision.log`
+**Fallback**: `.plan/local/logs/decision-YYYY-MM-DD.log` (global)
 
 ### Orchestrator Store (`--store orchestrator`)
 
@@ -75,7 +75,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 | Argument | Required | Values | Description |
 |----------|----------|--------|-------------|
 | `type` | Yes | `script`, `work`, `decision` | Log type (determines output file) |
-| `--plan-id` | No | kebab-case | Plan identifier. **Optional on write subcommands** — when omitted, the entry is written to the dated global log under `.plan/logs/` (the first-class global/no-plan path); when supplied and resolving to an initialized plan, the entry is plan-scoped. **Required with `--store orchestrator`** (the epic slug — the orchestrator store has no global fallback). |
+| `--plan-id` | No | kebab-case | Plan identifier. **Optional on write subcommands** — when omitted, the entry is written to the dated global log under `.plan/local/logs/` (the first-class global/no-plan path); when supplied and resolving to an initialized plan, the entry is plan-scoped. **Required with `--store orchestrator`** (the epic slug — the orchestrator store has no global fallback). |
 | `--level` | Yes | `INFO`, `WARNING`, `ERROR` | Log level |
 | `--message` | Yes | string | Log message |
 | `--store` | No | `plans` (default), `orchestrator` | Store selection — `work` and `decision` verbs only (`script` has no store flag). `orchestrator` writes to `.plan/orchestrator/{slug}/logs/{work,decision}.log`. |
@@ -84,7 +84,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 #### Global / no-plan logging path
 
-Omitting `--plan-id` is a first-class call, not an error — the entry lands in the dated global log under `.plan/logs/` (`work-{date}.log`, `decision-{date}.log`, or `script-execution-{date}.log`). This is the supported path for plan-less callers — components that run BEFORE any plan exists, such as `marshall-steward` (the project-configuration wizard). It replaces the previous workaround of passing a non-existent plan id to force a global fallback.
+Omitting `--plan-id` is a first-class call, not an error — the entry lands in the dated global log under `.plan/local/logs/` (`work-{date}.log`, `decision-{date}.log`, or `script-execution-{date}.log`). This is the supported path for plan-less callers — components that run BEFORE any plan exists, such as `marshall-steward` (the project-configuration wizard). It replaces the previous workaround of passing a non-existent plan id to force a global fallback.
 
 #### STEWARD audit namespace
 
@@ -206,7 +206,7 @@ its accept-set from a live `--help` walk rather than from this section. Consumin
 name (e.g., "see `manage-logging` Canonical invocations → `work`") instead of
 restating the command inline.
 
-`--plan-id` is OPTIONAL on the three write subcommands (`work` / `decision` / `script`); omitting it writes to the dated global log under `.plan/logs/`. `--store` is available on `work`, `decision`, and `read` only (default `plans`); `--store orchestrator` requires `--plan-id` (the epic slug) and routes to `.plan/orchestrator/{slug}/logs/`.
+`--plan-id` is OPTIONAL on the three write subcommands (`work` / `decision` / `script`); omitting it writes to the dated global log under `.plan/local/logs/`. `--store` is available on `work`, `decision`, and `read` only (default `plans`); `--store orchestrator` requires `--plan-id` (the epic slug) and routes to `.plan/orchestrator/{slug}/logs/`.
 
 ### work
 
@@ -332,7 +332,7 @@ log_entry('work', 'example-plan', 'INFO', '[ARTIFACT] Created deliverable')
 ### Plan-Scoped Logs
 
 ```text
-.plan/plans/{plan-id}/
+.plan/local/plans/{plan-id}/
 └── logs/
     ├── script-execution.log    # Script execution tracking
     ├── work.log                # Work progress tracking
@@ -342,7 +342,7 @@ log_entry('work', 'example-plan', 'INFO', '[ARTIFACT] Created deliverable')
 ### Global Logs
 
 ```text
-.plan/logs/
+.plan/local/logs/
 ├── script-execution-YYYY-MM-DD.log    # Daily global script logs
 ├── work-YYYY-MM-DD.log                # Daily global work logs (when no plan)
 └── decision-YYYY-MM-DD.log            # Daily global decision logs
@@ -368,7 +368,7 @@ log_entry('work', 'example-plan', 'INFO', '[ARTIFACT] Created deliverable')
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `PLAN_BASE_DIR` | Base directory for .plan structure | `.plan` |
+| `PLAN_BASE_DIR` | Overrides the runtime-state root (resolved by `file_ops.get_base_dir`) | `<plan-root>/.plan/local` |
 | `LOG_MAX_OUTPUT` | Max chars to capture from stdout/stderr | `2000` |
 | `LOG_RETENTION_DAYS` | Days to keep global logs (used by `cleanup_old_script_logs()`) | `7` |
 
