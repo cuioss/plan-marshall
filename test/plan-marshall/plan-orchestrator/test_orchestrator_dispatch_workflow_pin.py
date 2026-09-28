@@ -310,7 +310,11 @@ _ORCHESTRATOR_APPLIES_RE = re.compile(r'(?i)the orchestrator\b[^.]{0,80}\bperfor
 
 #: The concrete calls a drafting leaf may never make — the write path the refined
 #: write-freedom test still excludes. Lower-cased, because the grant scan folds
-#: case before matching.
+#: case before matching. The S2 bound and the write-freedom test name the epic
+#: tree as the resolved ``{epic_dir}`` and ledger commits as
+#: ``git -C {store_checkout}``, so a grant naming either must be caught as well;
+#: the literal ``.plan/orchestrator`` stays, because the logical path is still a
+#: forbidden write target.
 _FORBIDDEN_WRITE_TARGETS: tuple[str, ...] = (
     '`write`',
     '`edit`',
@@ -319,6 +323,8 @@ _FORBIDDEN_WRITE_TARGETS: tuple[str, ...] = (
     'orchestrator queue',
     'corpus set-verdict',
     '.plan/orchestrator',
+    '{epic_dir}',
+    '{store_checkout}',
 )
 
 #: The affirmative half of a grant: a permission or an assertion that the leaf DOES
@@ -718,6 +724,8 @@ class TestDraftingDispatchWritePathContainment:
             'status-store': 'The leaf writes the queue row itself via `manage-status` with the orchestrator store.',
             'queue': 'The leaf calls `orchestrator queue` to append the row once it has drafted the spec.',
             'verdict': 'The leaf invokes `corpus set-verdict` for each claim it settled.',
+            'resolved-epic-tree': 'The leaf authors the landing record inside `{epic_dir}/landings/`.',
+            'store-checkout': 'The leaf may commit the drafted spec with `git -C {store_checkout}`.',
         }
         for label, sentence in grants.items():
             fixture = tmp_path / f'grant-{label}.md'
@@ -770,7 +778,9 @@ class TestDraftingDispatchWritePathContainment:
             '`.plan/orchestrator/{slug}/**`, `manage-status` or `manage-logging --store '
             'orchestrator`, `orchestrator queue`, or `corpus set-verdict`.\n\n'
             'No leaf dispatched by an orchestrator verb writes inside '
-            '`.plan/orchestrator/{slug}/**`.\n',
+            '`.plan/orchestrator/{slug}/**`.\n\n'
+            'No leaf dispatched by an orchestrator verb writes inside `{epic_dir}/**` or commits at '
+            '`{store_checkout}`.\n',
             encoding='utf-8',
         )
 

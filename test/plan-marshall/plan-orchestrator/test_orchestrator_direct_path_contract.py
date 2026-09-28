@@ -1,0 +1,323 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""An orchestrator direct-file ledger instruction addresses the resolved epic tree.
+
+The orchestrator verb workflows author the epic's narrative documents with the
+Read/Write/Edit tools and commit ledger files with git. A tool call is not a
+Python seam: a cwd-relative ``.plan/orchestrator/{slug}/`` path lands on the
+checkout the session runs in, which with ``orchestrator.use_worktree`` on is not
+the checkout the store lives in. Every such instruction therefore addresses the
+tree ``orchestrator resolve-path`` returns — ``{epic_dir}/…`` for a file tool,
+``git -C {store_checkout}`` for a ledger commit — and this module makes an
+unrebased instruction a red test.
+
+**Population.** Every ``*.md`` under the ``plan-orchestrator`` and
+``persona-plan-orchestrator`` skill directories, globbed at test time and never
+listed; a non-vacuity guard requires it to contain ``workflow/init.md``,
+``workflow/decompose.md`` and ``standards/orchestration-model.md``.
+
+**Unit.** The blank-line-delimited paragraph outside fenced blocks (headings are
+boundaries, not paragraphs). Within a paragraph a **clause** is a span split on
+sentence ends, on ``;`` and on line breaks — a list item or a table row is its
+own statement — so a negation in one clause cannot excuse another. A clause is
+**negated** when it carries a whole-word, case-insensitive ``never``, ``not``,
+``no`` or ``cannot``. The **file-tool marker** is the Read / Write / Edit tool
+named as a tool: ``Read/Write/Edit``, ``Write/Edit``, a backticked tool name, or
+``the Read|Write|Edit tool`` — never the lowercase verbs.
+
+**Rules.**
+
+1. A paragraph carrying a file-tool marker AND a non-negated clause carrying a
+   ledger-document token carries ``{epic_dir}``.
+2. In a paragraph carrying a file-tool marker, every clause carrying the literal
+   ``.plan/orchestrator/`` or ``.plan/archived-orchestrators/`` prefix is negated.
+   An occurrence inside the logical hand-off pointer (``implement
+   .plan/orchestrator/…``, the ``source_id`` that stays logical) is not a tool
+   address and is skipped.
+3. On the orchestrator's own instruction surfaces, a paragraph carrying a
+   non-negated clause with a git-write instruction (``git add``, ``git commit``,
+   or a verb form of ``commit``) carries ``{store_checkout}``. Two named
+   exemptions keep the noun sense out: a ``commit`` followed by a noun-use word or
+   preceded by ``merge``/``squash``, a determiner or a possessive (plus the
+   ``git add/add`` conflict name), and a clause whose subject is a plan.
+4. A document whose text carries ``{epic_dir}`` or ``{store_checkout}`` carries
+   the ``resolve-path`` invocation or cross-references the direct-file-write
+   carve-out that states it.
+
+⚠ **Residual.** The rules are paragraph-scoped, so a rewording that separates the
+file-tool marker from the ledger token across a blank line escapes Rules 1 and 2.
+"""
+
+import re
+from pathlib import Path
+
+from conftest import MARKETPLACE_ROOT
+
+_SKILLS = Path(MARKETPLACE_ROOT) / 'plan-marshall' / 'skills'
+_ORCH = _SKILLS / 'plan-orchestrator'
+_PERSONA = _SKILLS / 'persona-plan-orchestrator'
+_MODEL = _PERSONA / 'standards' / 'orchestration-model.md'
+
+_FLOOR = (_ORCH / 'workflow' / 'init.md', _ORCH / 'workflow' / 'decompose.md', _MODEL)
+
+_EPIC_DIR = '{epic_dir}'
+_STORE_CHECKOUT = '{store_checkout}'
+
+_FENCE_RE = re.compile(r'^ {0,3}(`{3,}|~{3,})')
+_HEADING_RE = re.compile(r'^ {0,3}#{1,6}[ \t]+(?P<title>.*)$')
+_CLAUSE_SPLIT_RE = re.compile(r'(?<=[.!?;])\s+|\n')
+_NEGATION_RE = re.compile(r'\b(?:never|not|no|cannot)\b', re.IGNORECASE)
+_FILE_TOOL_RE = re.compile(r'Read/Write/Edit|Write/Edit|`(?:Read|Write|Edit)`|\bthe (?:Read|Write|Edit) tool\b')
+_LEDGER_DOC_TOKENS = (
+    'epic.md',
+    'history.md',
+    'settled.md',
+    'references.json',
+    'workstreams/WS-',
+    'plans/PLAN-',
+    'landings/PLAN-',
+)
+_LITERAL_PREFIXES = ('.plan/orchestrator/', '.plan/archived-orchestrators/')
+_HANDOFF_POINTER_RE = re.compile(r'implement \.plan/(?:orchestrator|archived-orchestrators)/')
+_GIT_WRITE_RE = re.compile(r'\bgit add\b|\bgit commit\b|\bcommit(?:s|ting|ted)?\b', re.IGNORECASE)
+#: Rule 3 exemption 1 — the noun sense of ``commit``. A determiner or a
+#: possessive never precedes a verb, so ``commit`` after one is the noun or the
+#: attributive participle; the unrebased tree read that way in "the committed
+#: `queue-view.md`" (plan-orchestrator/SKILL.md § resume-summary,
+#: orchestration-model.md § Persist / Stop-Resume Contract, orchestrate.md § Step 2
+#: and § Step 3, resume.md § Step 3), "walk every commit"
+#: (orchestration-model.md § Ledger Write Pattern), "a sibling epic's commit"
+#: (orchestration-model.md § Re-Grounding Verdict Field), "the commit, the PR"
+#: (cleanup.md § Step 4 (A2)) and "landing its commits" (orchestration-model.md
+#: § Shared ledger worktree).
+_NOUN_FOLLOWERS = ('message', 'sha', 'hash', 'trailer', 'range', 'history', 'log')
+_NOUN_PRECEDERS = ('merge', 'squash', 'the', 'a', 'an', 'every', 'each', 'its')
+_POSSESSIVE_SUFFIX = "'s"
+#: ``git add/add`` names a merge-conflict class, not a command
+#: (orchestration-model.md § Staging identity).
+_CONFLICT_CLASS_SUFFIX = '/add'
+#: Rule 3 exemption 2 — a clause describing a plan's own commits.
+_PLAN_SUBJECT_RE = re.compile(r'^(?:a plan|the plan|an executing plan)\b', re.IGNORECASE)
+_LEAD_IN_RE = re.compile(r'^[\s>*_`|-]*(?:\d+\.\s*)?[\s*_`]*')
+_RESOLVE_REFERENCES = ('resolve-path', 'direct-file-write-carve-out')
+
+
+def _population() -> list[Path]:
+    return sorted({path for root in (_ORCH, _PERSONA) for path in root.rglob('*.md')})
+
+
+def _instruction_surfaces() -> list[Path]:
+    return sorted({*(_ORCH / 'workflow').glob('*.md'), _ORCH / 'SKILL.md', _PERSONA / 'SKILL.md', _MODEL})
+
+
+def _paragraphs(text: str) -> list[tuple[str, str]]:
+    """Every ``(enclosing heading, paragraph)`` pair outside fenced blocks."""
+    found: list[tuple[str, str]] = []
+    current: list[str] = []
+    heading = ''
+    fence = ''
+
+    def flush() -> None:
+        if current:
+            found.append((heading, '\n'.join(current)))
+            current.clear()
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        if fence:
+            if stripped and set(stripped) == {fence[0]} and len(stripped) >= len(fence):
+                fence = ''
+            continue
+        opener = _FENCE_RE.match(line)
+        if opener:
+            flush()
+            fence = opener.group(1)
+            continue
+        titled = _HEADING_RE.match(line)
+        if titled:
+            flush()
+            heading = titled.group('title').strip()
+            continue
+        if not stripped:
+            flush()
+            continue
+        current.append(line)
+    flush()
+    return found
+
+
+def _clauses(paragraph: str) -> list[str]:
+    return [clause for clause in _CLAUSE_SPLIT_RE.split(paragraph) if clause.strip()]
+
+
+def _negated(clause: str) -> bool:
+    return bool(_NEGATION_RE.search(clause))
+
+
+def _rule1_triggers(paragraph: str) -> bool:
+    return bool(_FILE_TOOL_RE.search(paragraph)) and any(
+        not _negated(clause) and any(token in clause for token in _LEDGER_DOC_TOKENS) for clause in _clauses(paragraph)
+    )
+
+
+def rule1_violated(paragraph: str) -> bool:
+    return _rule1_triggers(paragraph) and _EPIC_DIR not in paragraph
+
+
+def _rule2_literal_clauses(paragraph: str) -> list[str]:
+    if not _FILE_TOOL_RE.search(paragraph):
+        return []
+    return [
+        clause
+        for clause in _clauses(paragraph)
+        if any(prefix in _HANDOFF_POINTER_RE.sub('', clause) for prefix in _LITERAL_PREFIXES)
+    ]
+
+
+def rule2_violated(paragraph: str) -> bool:
+    return any(not _negated(clause) for clause in _rule2_literal_clauses(paragraph))
+
+
+def _is_git_write(clause: str) -> bool:
+    if _PLAN_SUBJECT_RE.match(_LEAD_IN_RE.sub('', clause)):
+        return False
+    for match in _GIT_WRITE_RE.finditer(clause):
+        if match.group().lower().startswith('git '):
+            if clause[match.end() :].startswith(_CONFLICT_CLASS_SUFFIX):
+                continue
+            return True
+        following = clause[match.end() :].split()
+        preceding = clause[: match.start()].split()
+        if following and following[0].strip('`*.,;:()').lower() in _NOUN_FOLLOWERS:
+            continue
+        if preceding:
+            word = preceding[-1].strip('`*.,;:()').lower()
+            if word in _NOUN_PRECEDERS or word.endswith(_POSSESSIVE_SUFFIX):
+                continue
+        return True
+    return False
+
+
+def _rule3_triggers(paragraph: str) -> bool:
+    return any(not _negated(clause) and _is_git_write(clause) for clause in _clauses(paragraph))
+
+
+def rule3_violated(paragraph: str) -> bool:
+    return _rule3_triggers(paragraph) and _STORE_CHECKOUT not in paragraph
+
+
+def _uses_tokens(text: str) -> bool:
+    return _EPIC_DIR in text or _STORE_CHECKOUT in text
+
+
+def rule4_violated(text: str) -> bool:
+    return _uses_tokens(text) and not any(reference in text for reference in _RESOLVE_REFERENCES)
+
+
+def _flagged(paths: list[Path], violated) -> list[str]:
+    return [
+        f'{path.relative_to(_SKILLS)} § {heading or "(top)"}: {" ".join(paragraph.split())[:160]}'
+        for path in paths
+        for heading, paragraph in _paragraphs(path.read_text(encoding='utf-8'))
+        if violated(paragraph)
+    ]
+
+
+def _count_triggers(paths: list[Path], trigger) -> int:
+    return sum(
+        1 for path in paths for _, paragraph in _paragraphs(path.read_text(encoding='utf-8')) if trigger(paragraph)
+    )
+
+
+class TestPopulation:
+    def test_the_population_is_globbed_and_reaches_the_floor(self):
+        population = _population()
+
+        missing = [str(path) for path in _FLOOR if path not in population]
+
+        assert len(population) > len(_FLOOR), f'{len(population)} documents globbed under {_ORCH} and {_PERSONA}'
+        assert missing == [], f'the globbed population of {len(population)} documents misses {missing}'
+
+
+class TestRebasedTree:
+    def test_rule1_every_ledger_document_instruction_names_the_resolved_tree(self):
+        flagged = _flagged(_population(), rule1_violated)
+
+        assert flagged == [], (
+            f'Rule 1 — {len(flagged)} paragraph(s) name a ledger document beside a file tool: {flagged}'
+        )
+
+    def test_rule2_the_literal_prefix_is_only_a_negated_mention(self):
+        flagged = _flagged(_population(), rule2_violated)
+
+        assert flagged == [], f'Rule 2 — {len(flagged)} paragraph(s) address the literal store prefix: {flagged}'
+
+    def test_rule3_every_ledger_commit_targets_the_store_checkout(self):
+        flagged = _flagged(_instruction_surfaces(), rule3_violated)
+
+        assert flagged == [], f'Rule 3 — {len(flagged)} paragraph(s) commit without {_STORE_CHECKOUT}: {flagged}'
+
+    def test_rule4_every_document_using_the_tokens_resolves_them(self):
+        unresolved = [
+            str(path.relative_to(_SKILLS)) for path in _population() if rule4_violated(path.read_text(encoding='utf-8'))
+        ]
+
+        assert unresolved == [], f'Rule 4 — documents using the tokens with no resolve reference: {unresolved}'
+
+    def test_every_rule_trigger_matches_a_real_paragraph(self):
+        # A checker whose trigger matches nothing passes every rule vacuously.
+        population = _population()
+        counts = {
+            'rule1': _count_triggers(population, _rule1_triggers),
+            'rule2': _count_triggers(population, _rule2_literal_clauses),
+            'rule3': _count_triggers(_instruction_surfaces(), _rule3_triggers),
+            'rule4': sum(1 for path in population if _uses_tokens(path.read_text(encoding='utf-8'))),
+        }
+
+        assert all(counts.values()), f'a rule trigger matched no real paragraph or document: {counts}'
+
+
+class TestRuleControls:
+    def test_rule1_rejects_an_unrebased_instruction_and_accepts_its_twin(self):
+        assert rule1_violated('Instantiate `epic.md` from the template via the Write tool.')
+        assert not rule1_violated('Instantiate `{epic_dir}/epic.md` from the template via the Write tool.')
+
+    def test_rule2_rejects_an_affirmative_literal_and_accepts_a_negated_one(self):
+        assert rule2_violated('Write `.plan/orchestrator/{slug}/epic.md` with the Write tool.')
+        assert not rule2_violated(
+            'Every direct Read/Write/Edit addresses `{epic_dir}/…`; a cwd-relative '
+            '`.plan/orchestrator/{slug}/` path is never used for a tool call.'
+        )
+
+    def test_rule2_scopes_the_negation_to_its_own_clause(self):
+        assert rule2_violated(
+            'Never touch `logs/` directly; use the Write tool on `.plan/orchestrator/{slug}/epic.md`.'
+        )
+
+    def test_rule2_skips_the_logical_handoff_pointer(self):
+        assert not rule2_violated(
+            'After the `Read` of the spec, emit `/plan-marshall task="implement .plan/orchestrator/{slug}/plans/x.md"`.'
+        )
+
+    def test_rule3_rejects_a_commit_naming_no_ledger_file(self):
+        assert rule3_violated('Commit it with the closed ledger.')
+        assert not rule3_violated('Commit it with the closed ledger via `git -C {store_checkout}`.')
+
+    def test_rule3_leaves_the_noun_sense_and_a_plan_subject_alone(self):
+        assert not rule3_violated('Record the merge commit in the landing.')
+        assert not rule3_violated('Quote the commit message verbatim.')
+        assert not rule3_violated('A plan commits its own changes through its PR.')
+
+    def test_rule3_leaves_a_determiner_possessive_and_conflict_name_alone(self):
+        assert not rule3_violated('It says whether the committed `queue-view.md` still matches.')
+        assert not rule3_violated('Walk every commit that touched the ledger.')
+        assert not rule3_violated("A sibling epic's commit makes that test true.")
+        assert not rule3_violated('A duplicate id surfaces as a git add/add conflict.')
+
+    def test_rule3_still_flags_the_verb_beside_those_exemptions(self):
+        assert rule3_violated('Regenerate the view, then commit the anchor file.')
+        assert rule3_violated('Merge the source files and git add the result.')
+
+    def test_rule4_requires_the_resolve_reference(self):
+        assert rule4_violated('Edit `{epic_dir}/epic.md`.')
+        assert not rule4_violated('Run `orchestrator resolve-path --slug S`, then edit `{epic_dir}/epic.md`.')
