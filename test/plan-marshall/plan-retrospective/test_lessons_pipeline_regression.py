@@ -57,7 +57,7 @@ class TestDispatcherOrchestrationContext:
     def test_integration_pins_single_point_resolution(self):
         text = _INTEGRATION.read_text(encoding='utf-8')
 
-        assert 'resolved once at the finalize dispatcher' in text
+        assert "resolved once per finalize entry at the dispatcher's Step 3 entry" in text
         assert 'none re-resolves it' in text
 
 
