@@ -226,7 +226,7 @@ See [artifacts.md — Plan Directory Structure](artifacts.md#plan-directory-stru
 | Scope | Description | Storage Root |
 |-------|-------------|-------------|
 | `plan` | Data tied to a specific plan_id | `.plan/local/plans/{plan_id}/` |
-| `global` | Data shared across all plans | `.plan/` |
+| `global` | Data shared across all plans | `.plan/local/` |
 | `hybrid` | Both plan-scoped and global operations | Both |
 
 ### Skills by Scope

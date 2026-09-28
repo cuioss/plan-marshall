@@ -11,14 +11,14 @@ The plan-marshall findings pipeline routes every quality signal — PR review co
 │                                                                             │
 │  ┌──────────────────────┐  add  ┌──────────────────────┐  list   ┌────────┐ │
 │  │      PRODUCERS       │──────▶│    manage-findings   │◀────────│CONSUMER│ │
-│  │                      │       │                      │ resolve │   S    │ │
-│  │ workflow-integration-│       │  local/plans/{id}/   │────────▶│        │ │
+│  │                      │       │  .plan/local/        │ resolve │   S    │ │
+│  │ workflow-integration-│       │  plans/{id}/         │────────▶│        │ │
 │  │  github (PR review)  │       │  artifacts/findings/ │         │ phase- │ │
 │  │ workflow-integration-│       │   ├─ pr-comment.jsonl│         │ 6-fin- │ │
 │  │  gitlab (MR review)  │       │   ├─ pr-comment-     │         │ alize: │ │
 │  │ workflow-integration-│       │   │  overflow.jsonl  │         │  auto- │ │
-│  │  sonar (issues)      │       │   ├─ sonar-issue     │         │  matedR│ │
-│  │ build-pyproject /    │       │   │     .jsonl       │         │  view, │ │
+│  │  sonar (issues)      │       │   ├─ sonar-issue     │         │  matic-│ │
+│  │ build-pyproject /    │       │   │     .jsonl       │         │ review,│ │
 │  │ build-maven /        │       │   ├─ build-error     │         │  sonar-│ │
 │  │ build-gradle /       │       │   │     .jsonl       │         │  round-│ │
 │  │ build-npm            │       │   ├─ test-failure    │         │  trip  │ │
@@ -96,7 +96,7 @@ CI completion is resolved as a **dispatcher-side precondition** before the `plan
                                                     (phase-6-finalize, requires: [ci-complete])
    ┌─────────────────────────────┐                  ┌─────────────────────┐
    │ dispatcher Step 3:          │── satisfied ────▶│ fetch_findings      │
-   │ ci_complete_precondition   │   or             │ (producer)          │
+   │ ci_complete_precondition    │   or             │ (producer)          │
    │ .resolve(plan_id,           │   wait_succeeded │       ▼             │
    │   worktree_path,            │                  │ per-finding         │
    │   pr_number,                │                  │ dispatch (consumer) │
