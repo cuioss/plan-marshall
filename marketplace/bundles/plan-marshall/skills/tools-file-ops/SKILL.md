@@ -200,7 +200,7 @@ Import `file_ops` module in Python scripts that write to `.plan/` directories:
 
 This section is the single home of the orchestrator store's location contract; other documents cross-reference it rather than restating it.
 
-The orchestrator ledger store — `.plan/orchestrator/**` (active epics) and `.plan/archived-orchestrators/**` (closed epics) — is reached through ONE seam: `get_store_dir('orchestrator', …)` and `get_archived_orchestrator_dir` both compose onto `get_orchestrator_store_root()`. Every script that resolves the store goes through `get_store_dir` / `get_archived_orchestrator_dir` and carries no resolution logic of its own; the authoritative consumer population is the `_CONSUMERS` table in `test/plan-marshall/plan-orchestrator/test_orchestrator_worktree_refusal.py`, which drives each CLI entry point through the seam's refusal. `inbox detect` is deliberately not a consumer — it parses the logical `source_id` pointer and reads no store. Its answer is gated by the repository-wide `orchestrator.use_worktree` knob (see [`manage-config/standards/data-model.md`](../manage-config/standards/data-model.md) for the knob, its main-checkout-only write, and its cutover refusal):
+The orchestrator ledger store — `.plan/orchestrator/**` (active epics) and `.plan/archived-orchestrators/**` (closed epics) — is reached through ONE seam: `get_store_dir('orchestrator', …)` and `get_archived_orchestrator_dir` both compose onto `get_orchestrator_store_root()`. Its answer is gated by the repository-wide `orchestrator.use_worktree` knob (see [`manage-config/standards/data-model.md`](../manage-config/standards/data-model.md) for the knob, its main-checkout-only write, and its cutover refusal):
 
 | Knob | Store root | Scope |
 |------|-----------|-------|

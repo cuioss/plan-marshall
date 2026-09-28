@@ -44,8 +44,7 @@ article in either case — never the lowercase verbs.
    verb form of ``commit``) carries ``{store_checkout}``. Three named exemptions
    keep non-ledger commits out: a ``commit`` followed by a noun-use word or
    preceded by ``merge``/``squash``, a determiner or a possessive (plus the
-   ``git add/add`` conflict name), a clause whose whole subject noun phrase is a
-   plan (not ``the plan spec`` or ``the plan-orchestrator``), and a clause
+   ``git add/add`` conflict name), a clause opening ``the plan commits``, and a clause
    already addressed at another repository through ``git -C {remote_repo}``.
 4. A document whose text carries ``{epic_dir}`` or ``{store_checkout}`` carries
    the ``resolve-path`` invocation or cross-references the direct-file-write
@@ -112,12 +111,10 @@ _POSSESSIVE_SUFFIX = "'s"
 #: ``git add/add`` names a merge-conflict class, not a command
 #: (orchestration-model.md § Staging identity).
 _CONFLICT_CLASS_SUFFIX = '/add'
-#: Rule 3 exemption 2 — a clause describing a plan's own commits. The plan must
-#: be the whole subject noun phrase: a following hyphen (``the plan-orchestrator``)
-#: or a following noun (``the plan spec``) makes the subject a different thing.
+#: Rule 3 exemption 2 — a clause describing a plan's own commits: the plan noun
+#: phrase followed directly by the verb. Anything between them fails closed.
 _PLAN_SUBJECT_RE = re.compile(
-    r'^(?:a plan|the plan|an executing plan)(?![\w-])'
-    r'(?!\s+(?:spec|specs|row|rows|file|files|document|documents|pointer|pointers|directory|dir)\b)',
+    r'^(?:a plan|the plan|an executing plan)\s+commit(?:s|ted|ting)?(?![\w-])',
     re.IGNORECASE,
 )
 #: Rule 3 exemption 3 — a commit in another repository, already addressed at its
@@ -365,10 +362,11 @@ class TestRuleControls:
     @pytest.mark.parametrize(
         'clause',
         [
-            'The plan spec is committed with the queue change.',
+            'The plan landing is committed with the ledger.',
+            'The plan queue row is committed',
             'The plan-orchestrator commits the ledger.',
         ],
-        ids=['plan-as-modifier', 'hyphenated-compound'],
+        ids=['plan-as-modifier', 'plan-as-modifier-phrase', 'hyphenated-compound'],
     )
     def test_rule3_flags_a_subject_that_only_starts_with_plan(self, clause):
         assert rule3_violated(clause)
