@@ -48,3 +48,20 @@ jobs:
       # required check is satisfied and the merge queue never stalls. A
       # merge_group run and any change touching buildable source still verify.
       skip-on-docs-only: true
+      # Generate the target trees BEFORE verify, in this same job and workspace.
+      #
+      # `test_target_tree_foundational_skill_freshness.py` asserts that no
+      # deployed target tree names a foundational skill the marketplace retired.
+      # Its population is the GENERATED trees under `target/`, and it refuses to
+      # read an empty population as a clean sweep — so on a clean checkout, where
+      # nothing has generated them, that refusal is unconditionally red. A
+      # separate generate job cannot fix it: jobs do not share a filesystem
+      # without artifacts, and a `uses:` job cannot be given an injected
+      # download step.
+      #
+      # `generate` is passed through the same `^[a-z][a-z0-9-]*$` allowlist as
+      # `verify-goals`; the args are word-split data handed to `./pw` as
+      # arguments, never interpolated into a shell body. `all` writes every
+      # registered target to `target/<target-name>`.
+      pre-verify-goals: 'generate'
+      pre-verify-args: '--target all --output target'
