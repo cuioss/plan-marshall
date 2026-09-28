@@ -19,33 +19,39 @@ listed; a non-vacuity guard requires it to contain ``workflow/init.md``,
 **Unit.** The blank-line-delimited paragraph outside fenced blocks (headings are
 boundaries, not paragraphs). Within a paragraph a **clause** is a span split on
 sentence ends, on ``;`` and on line breaks — a list item or a table row is its
-own statement — so a negation in one clause cannot excuse another. A clause is
-**negated** when it carries a whole-word, case-insensitive ``never``, ``not``,
-``no`` or ``cannot``. The **file-tool marker** is the Read / Write / Edit tool
+own statement — so a negation in one clause cannot excuse another. A match is
+**negated** when a whole-word, case-insensitive ``never``, ``not``, ``no`` or
+``cannot`` PRECEDES it within its clause; a negation after the match (a trailing
+"when no archived tree exists", or a predicate "… path is never used") governs a
+different phrase and excuses nothing, so a negated instruction states its
+negation first. The **file-tool marker** is the Read / Write / Edit tool
 named as a tool: ``Read/Write/Edit``, ``Write/Edit``, a backticked tool name, or
 ``the Read|Write|Edit tool`` — never the lowercase verbs.
 
 **Rules.**
 
-1. A paragraph carrying a file-tool marker AND a non-negated clause carrying a
+1. A paragraph carrying a file-tool marker AND a clause with a non-negated
    ledger-document token carries ``{epic_dir}``.
 2. In a paragraph carrying a file-tool marker, every clause carrying the literal
-   ``.plan/orchestrator/`` or ``.plan/archived-orchestrators/`` prefix is negated.
+   ``.plan/orchestrator/`` or ``.plan/archived-orchestrators/`` prefix negates it.
    An occurrence inside the logical hand-off pointer (``implement
    .plan/orchestrator/…``, the ``source_id`` that stays logical) is not a tool
    address and is skipped.
-3. On the orchestrator's own instruction surfaces, a paragraph carrying a
-   non-negated clause with a git-write instruction (``git add``, ``git commit``,
-   or a verb form of ``commit``) carries ``{store_checkout}``. Two named
-   exemptions keep the noun sense out: a ``commit`` followed by a noun-use word or
+3. On the orchestrator's own instruction surfaces, a paragraph carrying a clause
+   with a non-negated git-write instruction (``git add``, ``git commit``, or a
+   verb form of ``commit``) carries ``{store_checkout}``. Three named exemptions
+   keep non-ledger commits out: a ``commit`` followed by a noun-use word or
    preceded by ``merge``/``squash``, a determiner or a possessive (plus the
-   ``git add/add`` conflict name), and a clause whose subject is a plan.
+   ``git add/add`` conflict name), a clause whose subject is a plan, and a clause
+   already addressed at another repository through ``git -C {remote_repo}``.
 4. A document whose text carries ``{epic_dir}`` or ``{store_checkout}`` carries
    the ``resolve-path`` invocation or cross-references the direct-file-write
    carve-out that states it.
 
 ⚠ **Residual.** The rules are paragraph-scoped, so a rewording that separates the
 file-tool marker from the ledger token across a blank line escapes Rules 1 and 2.
+A negation that precedes the match but governs another phrase in the same
+clause (a leading "When no tree exists, write …") still excuses it.
 """
 
 import re
@@ -98,6 +104,10 @@ _POSSESSIVE_SUFFIX = "'s"
 _CONFLICT_CLASS_SUFFIX = '/add'
 #: Rule 3 exemption 2 — a clause describing a plan's own commits.
 _PLAN_SUBJECT_RE = re.compile(r'^(?:a plan|the plan|an executing plan)\b', re.IGNORECASE)
+#: Rule 3 exemption 3 — a commit in another repository, already addressed at its
+#: own checkout (orchestration-model.md § Lessons-Handling Mode Contract,
+#: cross-repo lesson removal).
+_FOREIGN_REPO_TARGET = 'git -C {remote_repo}'
 _LEAD_IN_RE = re.compile(r'^[\s>*_`|-]*(?:\d+\.\s*)?[\s*_`]*')
 _RESOLVE_REFERENCES = ('resolve-path', 'direct-file-write-carve-out')
 
@@ -150,13 +160,19 @@ def _clauses(paragraph: str) -> list[str]:
     return [clause for clause in _CLAUSE_SPLIT_RE.split(paragraph) if clause.strip()]
 
 
-def _negated(clause: str) -> bool:
-    return bool(_NEGATION_RE.search(clause))
+def _affirms(clause: str, start: int | None) -> bool:
+    """Whether the match at ``start`` stands un-negated — no negation word precedes it in ``clause``."""
+    return start is not None and not _NEGATION_RE.search(clause[:start])
+
+
+def _ledger_token_start(clause: str) -> int | None:
+    starts = [clause.find(token) for token in _LEDGER_DOC_TOKENS if token in clause]
+    return min(starts, default=None)
 
 
 def _rule1_triggers(paragraph: str) -> bool:
     return bool(_FILE_TOOL_RE.search(paragraph)) and any(
-        not _negated(clause) and any(token in clause for token in _LEDGER_DOC_TOKENS) for clause in _clauses(paragraph)
+        _affirms(clause, _ledger_token_start(clause)) for clause in _clauses(paragraph)
     )
 
 
@@ -164,28 +180,32 @@ def rule1_violated(paragraph: str) -> bool:
     return _rule1_triggers(paragraph) and _EPIC_DIR not in paragraph
 
 
-def _rule2_literal_clauses(paragraph: str) -> list[str]:
+def _rule2_literal_clauses(paragraph: str) -> list[tuple[str, int]]:
+    """Every ``(clause, literal-prefix start)`` pair, with the hand-off pointer stripped first."""
     if not _FILE_TOOL_RE.search(paragraph):
         return []
-    return [
-        clause
-        for clause in _clauses(paragraph)
-        if any(prefix in _HANDOFF_POINTER_RE.sub('', clause) for prefix in _LITERAL_PREFIXES)
-    ]
+    found = []
+    for clause in _clauses(paragraph):
+        stripped = _HANDOFF_POINTER_RE.sub('', clause)
+        starts = [stripped.find(prefix) for prefix in _LITERAL_PREFIXES if prefix in stripped]
+        if starts:
+            found.append((stripped, min(starts)))
+    return found
 
 
 def rule2_violated(paragraph: str) -> bool:
-    return any(not _negated(clause) for clause in _rule2_literal_clauses(paragraph))
+    return any(_affirms(clause, start) for clause, start in _rule2_literal_clauses(paragraph))
 
 
-def _is_git_write(clause: str) -> bool:
-    if _PLAN_SUBJECT_RE.match(_LEAD_IN_RE.sub('', clause)):
-        return False
+def _git_write_start(clause: str) -> int | None:
+    """Where the first git-write instruction in ``clause`` starts, or ``None`` when it carries none."""
+    if _PLAN_SUBJECT_RE.match(_LEAD_IN_RE.sub('', clause)) or _FOREIGN_REPO_TARGET in clause:
+        return None
     for match in _GIT_WRITE_RE.finditer(clause):
         if match.group().lower().startswith('git '):
             if clause[match.end() :].startswith(_CONFLICT_CLASS_SUFFIX):
                 continue
-            return True
+            return match.start()
         following = clause[match.end() :].split()
         preceding = clause[: match.start()].split()
         if following and following[0].strip('`*.,;:()').lower() in _NOUN_FOLLOWERS:
@@ -194,12 +214,12 @@ def _is_git_write(clause: str) -> bool:
             word = preceding[-1].strip('`*.,;:()').lower()
             if word in _NOUN_PRECEDERS or word.endswith(_POSSESSIVE_SUFFIX):
                 continue
-        return True
-    return False
+        return match.start()
+    return None
 
 
 def _rule3_triggers(paragraph: str) -> bool:
-    return any(not _negated(clause) and _is_git_write(clause) for clause in _clauses(paragraph))
+    return any(_affirms(clause, _git_write_start(clause)) for clause in _clauses(paragraph))
 
 
 def rule3_violated(paragraph: str) -> bool:
@@ -285,14 +305,27 @@ class TestRuleControls:
     def test_rule2_rejects_an_affirmative_literal_and_accepts_a_negated_one(self):
         assert rule2_violated('Write `.plan/orchestrator/{slug}/epic.md` with the Write tool.')
         assert not rule2_violated(
-            'Every direct Read/Write/Edit addresses `{epic_dir}/…`; a cwd-relative '
-            '`.plan/orchestrator/{slug}/` path is never used for a tool call.'
+            'Every direct Read/Write/Edit addresses `{epic_dir}/…`; never use a cwd-relative '
+            '`.plan/orchestrator/{slug}/` path for a tool call.'
         )
 
     def test_rule2_scopes_the_negation_to_its_own_clause(self):
         assert rule2_violated(
             'Never touch `logs/` directly; use the Write tool on `.plan/orchestrator/{slug}/epic.md`.'
         )
+
+    def test_a_trailing_negation_does_not_excuse_the_instruction(self):
+        # The negation must precede the matched token: a stray "no" after it negates another phrase.
+        assert rule1_violated('Instantiate `epic.md` via the Write tool when no archived tree exists.')
+        assert rule2_violated(
+            'Write `.plan/orchestrator/{slug}/epic.md` with the Write tool when no archived tree exists.'
+        )
+        assert rule3_violated('Commit the closed ledger when no archived tree exists.')
+
+    def test_a_leading_negation_still_excuses_the_instruction(self):
+        assert not rule1_violated('Never instantiate `epic.md` via the Write tool from the session checkout.')
+        assert not rule2_violated('Never Write `.plan/orchestrator/{slug}/epic.md` with the Write tool.')
+        assert not rule3_violated('Never commit the closed ledger from the session checkout.')
 
     def test_rule2_skips_the_logical_handoff_pointer(self):
         assert not rule2_violated(
@@ -307,6 +340,10 @@ class TestRuleControls:
         assert not rule3_violated('Record the merge commit in the landing.')
         assert not rule3_violated('Quote the commit message verbatim.')
         assert not rule3_violated('A plan commits its own changes through its PR.')
+
+    def test_rule3_leaves_a_commit_addressed_at_another_repository_alone(self):
+        assert not rule3_violated('Remove the file and commit it via `git -C {remote_repo}`.')
+        assert rule3_violated('Remove the file and commit it via `git -C {path}`.')
 
     def test_rule3_leaves_a_determiner_possessive_and_conflict_name_alone(self):
         assert not rule3_violated('It says whether the committed `queue-view.md` still matches.')

@@ -193,7 +193,7 @@ Two bounded carve-outs define what the orchestrator may do directly. Everything 
 
 The orchestrator MAY use Write/Edit directly — but ONLY within the epic's own tree, the `{epic_dir}` that [`orchestrator resolve-path --slug {slug}`](../../plan-orchestrator/SKILL.md#resolve-path) returns, resolved once per verb invocation. This is a deliberate, bounded exception to the `.plan/` access via `manage-*` scripts only rule: the orchestrator's ledger documents (`epic.md`, workstream charters, plan specs, landing records, `history.md`, `settled.md`, `references.json`) are free-form authored artifacts with no owning manage-* script.
 
-Every direct Read/Write/Edit of a ledger document addresses `{epic_dir}/…`, and every ledger git operation — `git add`, `git commit` — runs as `git -C {store_checkout}`, the store checkout the same call returns. A cwd-relative `.plan/orchestrator/{slug}/` path is never used for a tool call, because with `orchestrator.use_worktree` on it names the main checkout, not the store.
+Every direct Read/Write/Edit of a ledger document addresses `{epic_dir}/…`, and every ledger git operation — `git add`, `git commit` — runs as `git -C {store_checkout}`, the store checkout the same call returns. Never use a cwd-relative `.plan/orchestrator/{slug}/` path for a tool call: with `orchestrator.use_worktree` on it names the main checkout, not the store.
 
 Three state surfaces stay script-mediated even inside the tree:
 
