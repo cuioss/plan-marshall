@@ -34,6 +34,12 @@ Contract under test (the waiter-side reclaim for the orchestrator-layer
   Window" invariant 2 binds ``{hold_start}`` as ``date +%s`` epoch seconds,
   and every other doc naming ``{hold_start}`` points at that binding instead
   of defining a shape of its own.
+* **The blocked-admission reclaim passes a value bound before it is used** —
+  a waiter blocked on admission was never admitted, so it has no
+  ``{hold_start}``. Invariant 2 binds ``{admission_wait_start}`` (``date +%s``
+  before the FIFO poll loop's first ``acquire``) and the ``budget-reclaim``
+  call passes that, never ``{hold_start}``; every other site naming
+  ``{admission_wait_start}`` points back at invariant 2.
 
 Isolation mirrors ``test_merge_lock_conditional_release.py``: every test runs
 against an isolated ``PLAN_BASE_DIR`` staged under ``tmp_path`` so the lock,
@@ -63,6 +69,7 @@ _BRANCH_CLEANUP_DOC: Path = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / 'branch-cleanup.md'
 )
 _HOLD_START_TOKEN = '{hold_start}'
+_ADMISSION_WAIT_START_TOKEN = '{admission_wait_start}'
 
 
 # =============================================================================
@@ -290,32 +297,81 @@ class TestHoldStartCallerBinding:
         assert f'`{_HOLD_START_TOKEN}` is the acquire instant as an **integer POSIX epoch in seconds**' in paragraph
         assert '`date +%s`' in paragraph
         assert 'never an ISO-8601 string' in paragraph
-        assert '--hold-start {hold_start}' in paragraph
 
     def test_every_other_hold_start_site_points_at_the_binding(self) -> None:
         # Population: every marketplace doc naming {hold_start}, derived by scan.
-        docs = {path: path.read_text(encoding='utf-8') for path in sorted(MARKETPLACE_ROOT.rglob('*.md'))}
+        docs = _marketplace_docs()
         sites = {path: text for path, text in docs.items() if path != _BRANCH_CLEANUP_DOC and _HOLD_START_TOKEN in text}
 
         assert sites, 'no doc outside branch-cleanup.md names {hold_start} — the scan matched nothing'
-        unanchored = {str(path): _unanchored_paragraphs(text) for path, text in sites.items()}
+        unanchored = {str(path): _unanchored_paragraphs(text, _HOLD_START_TOKEN) for path, text in sites.items()}
         assert {path: found for path, found in unanchored.items() if found} == {}
 
     def test_a_paragraph_defining_its_own_shape_is_flagged(self) -> None:
         anchored = 'Elapsed is `date +%s` minus `{hold_start}` (bound in `branch-cleanup.md` invariant 2).'
         competing = 'The orchestrator records the wall-clock instant of acquire as `{hold_start}`.'
 
-        assert _unanchored_paragraphs(f'{anchored}\n\n{competing}') == [competing]
+        assert _unanchored_paragraphs(f'{anchored}\n\n{competing}', _HOLD_START_TOKEN) == [competing]
 
 
-def _unanchored_paragraphs(text: str) -> list[str]:
-    """Return every paragraph naming ``{hold_start}`` without citing its binding.
+class TestBlockedAdmissionReclaimBinding:
+    """The waiter-side reclaim passes a value a BLOCKED waiter actually has bound."""
 
-    A paragraph cites the binding when it names both ``branch-cleanup.md`` and
-    invariant 2 — the one place the shape is defined.
+    def test_reclaim_call_passes_admission_wait_start_not_hold_start(self) -> None:
+        paragraph = _invariant_two_paragraph(_BRANCH_CLEANUP_DOC.read_text(encoding='utf-8'))
+        reclaim_calls = re.findall(r'merge_lock budget-reclaim.*?--hold-budget-seconds', paragraph, flags=re.DOTALL)
+
+        assert reclaim_calls, 'invariant 2 carries no budget-reclaim invocation — the scan matched nothing'
+        assert all(f'--hold-start {_ADMISSION_WAIT_START_TOKEN}' in call for call in reclaim_calls)
+        assert all(f'--hold-start {_HOLD_START_TOKEN}' not in call for call in reclaim_calls)
+
+    def test_invariant_two_binds_admission_wait_start_as_date_epoch_seconds(self) -> None:
+        paragraph = _invariant_two_paragraph(_BRANCH_CLEANUP_DOC.read_text(encoding='utf-8'))
+
+        assert (
+            f"The reclaim's `--hold-start` is therefore `{_ADMISSION_WAIT_START_TOKEN}`: the waiter's own "
+            'acquire-wait start as an **integer POSIX epoch in seconds**'
+        ) in paragraph
+        assert f'This is the one binding of `{_ADMISSION_WAIT_START_TOKEN}`.' in paragraph
+        # Bound BEFORE the first acquire, so every blocked poll that reaches the reclaim has it.
+        assert 'immediately before the first `acquire` of the FIFO poll loop' in paragraph
+
+    def test_every_other_admission_wait_start_site_points_at_the_binding(self) -> None:
+        # Population: every marketplace doc naming {admission_wait_start}, derived by scan —
+        # including branch-cleanup.md itself outside the invariant-2 binding.
+        binding = _invariant_two_paragraph(_BRANCH_CLEANUP_DOC.read_text(encoding='utf-8'))
+        sites: dict[str, list[str]] = {}
+        for path, text in _marketplace_docs().items():
+            if _ADMISSION_WAIT_START_TOKEN not in text:
+                continue
+            same_document = path == _BRANCH_CLEANUP_DOC
+            remainder = text.replace(binding, '') if same_document else text
+            sites[str(path)] = _unanchored_paragraphs(
+                remainder, _ADMISSION_WAIT_START_TOKEN, same_document=same_document
+            )
+
+        assert str(_BRANCH_CLEANUP_DOC) in sites, 'branch-cleanup.md no longer names {admission_wait_start}'
+        assert len(sites) > 1, (
+            'no doc outside branch-cleanup.md names {admission_wait_start} — the scan matched nothing'
+        )
+        assert {path: found for path, found in sites.items() if found} == {}
+
+
+def _marketplace_docs() -> dict[Path, str]:
+    """Return every marketplace markdown doc keyed by path."""
+    return {path: path.read_text(encoding='utf-8') for path in sorted(MARKETPLACE_ROOT.rglob('*.md'))}
+
+
+def _unanchored_paragraphs(text: str, token: str, *, same_document: bool = False) -> list[str]:
+    """Return every paragraph naming ``token`` without citing its binding.
+
+    A paragraph cites the binding when it names invariant 2 — the one place the
+    shape is defined — and, outside ``branch-cleanup.md`` itself, also names
+    ``branch-cleanup.md``.
     """
     return [
         paragraph
         for paragraph in re.split(r'\n\s*\n', text)
-        if _HOLD_START_TOKEN in paragraph and not ('branch-cleanup.md' in paragraph and 'invariant 2' in paragraph)
+        if token in paragraph
+        and not ('invariant 2' in paragraph and (same_document or 'branch-cleanup.md' in paragraph))
     ]
