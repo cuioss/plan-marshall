@@ -30,7 +30,10 @@ and the next heading at the same or a higher level — so a gate the rule gains 
 checked without editing this module. Every refusal code a recovery table under a call
 site names must be a member of ``VERIFY_REFUSAL_ERRORS``, imported from the
 production module, so a table can neither invent a code nor imply that an
-unlisted refusal has a recovery.
+unlisted refusal has a recovery. And no fenced ``manage-metrics phase-boundary``
+call closing the transitioned phase (``--prev-phase`` equal to ``--completed``)
+may sit between the nearest heading and the call: recorded there, the metrics
+close the phase before the transition is known to have succeeded.
 
 Why the scan is cross-checked and controlled
 --------------------------------------------
@@ -67,7 +70,8 @@ _SHELL_LANGS = frozenset({'bash', 'sh', 'shell'})
 _FENCE_RE = re.compile(r'^[ \t]*(?P<fence>`{3,}|~{3,})(?P<lang>[\w+-]*)[ \t]*$')
 _HEADING_RE = re.compile(r'^(?P<hashes>#{1,6})[ \t]+(?P<title>.*?)[ \t]*#*[ \t]*$')
 _CONTINUATION_RE = re.compile(r'\\\n[ \t]*')
-_CALL_RE = re.compile(r'manage-status[ \t]+transition\b[^\n]*?--completed(?:[ \t]+|=)\S+')
+_CALL_RE = re.compile(r'manage-status[ \t]+transition\b[^\n]*?--completed(?:[ \t]+|=)(?P<phase>\S+)')
+_BOUNDARY_RE = re.compile(r'manage-metrics[ \t]+phase-boundary\b[^\n]*?--prev-phase(?:[ \t]+|=)(?P<prev>\S+)')
 _TEMPLATED_RE = re.compile(r'--completed(?:[ \t]+|=)\{')
 _LINK_RE = re.compile(rf'\]\((?P<target>[^)\s#]*phase-lifecycle\.md)#{HALT_RULE_ANCHOR}\)')
 _BACKTICK_RE = re.compile(r'`([^`]+)`')
@@ -91,6 +95,8 @@ class CallBlock:
     line: int
     templated: bool
     following: str
+    phase: str
+    boundaries_before: tuple[str, ...]
 
     @property
     def label(self) -> str:
@@ -130,17 +136,29 @@ def _parse(path: Path, text: str) -> tuple[list[CallBlock], list[tuple[int, int,
     call_blocks: list[CallBlock] = []
     for start, end, body in blocks:
         collapsed = _CONTINUATION_RE.sub(' ', body)
-        if not _CALL_RE.search(collapsed):
+        call = _CALL_RE.search(collapsed)
+        if not call:
             continue
-        enclosing = [level for idx, level, _ in headings if idx < start]
-        level = enclosing[-1] if enclosing else 0
+        enclosing = [(idx, level) for idx, level, _ in headings if idx < start]
+        section_start, level = enclosing[-1] if enclosing else (-1, 0)
         section_end = next((idx for idx, lvl, _ in headings if idx > end and lvl <= level), len(lines))
+        # The metrics boundaries recorded between the nearest heading and the
+        # call: a boundary closing the phase this call transitions is recorded
+        # before the transition is known to have succeeded.
+        boundaries_before = tuple(
+            match.group('prev')
+            for other_start, _, other_body in blocks
+            if section_start < other_start < start
+            for match in _BOUNDARY_RE.finditer(_CONTINUATION_RE.sub(' ', other_body))
+        )
         call_blocks.append(
             CallBlock(
                 path=path,
                 line=start + 1,
                 templated=bool(_TEMPLATED_RE.search(collapsed)),
                 following='\n'.join(lines[end + 1 : section_end]),
+                phase=call.group('phase'),
+                boundaries_before=boundaries_before,
             )
         )
     return call_blocks, headings
@@ -211,6 +229,8 @@ def _violations(block: CallBlock, home: Path) -> list[str]:
     for code in _recovery_codes(block.following):
         if code not in VERIFY_REFUSAL_ERRORS:
             problems.append(f'{block.label}: recovery table names {code!r}, not a VERIFY_REFUSAL_ERRORS member')
+    if block.phase in block.boundaries_before:
+        problems.append(f'{block.label}: the {block.phase} metrics boundary is recorded ahead of the transition')
     return problems
 
 
@@ -376,6 +396,39 @@ def test_a_document_without_the_anchor_derives_no_gate():
     text = '#### Some other rule\n\nRead `alpha_without_asking`.\n'
 
     assert _halt_rule_gates(Path('synthetic.md'), text) == ()
+
+
+def test_a_metrics_boundary_recorded_ahead_of_its_transition_is_flagged(tmp_path):
+    """Negative control: closing the phase in the metrics before the transition succeeds is caught."""
+    link = os.path.relpath(_HOME, tmp_path)
+    block = _synthetic(
+        tmp_path,
+        '### Completion\n\n```bash\npython3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics '
+        'phase-boundary \\\n  --plan-id {plan_id} --prev-phase 5-execute --next-phase 6-finalize\n```\n\n'
+        '```bash\npython3 .plan/execute-script.py plan-marshall:manage-status:manage-status '
+        'transition --plan-id {plan_id} --completed 5-execute\n```\n\n'
+        f'On any non-success result, STOP per the [halt rule]({link}#{HALT_RULE_ANCHOR}).\n',
+    )
+
+    assert _violations(block, _HOME) == [
+        'synthetic.md:8: the 5-execute metrics boundary is recorded ahead of the transition'
+    ]
+
+
+def test_a_metrics_boundary_recorded_after_its_transition_passes(tmp_path):
+    """Positive control: the boundary placed after the halt link is not flagged."""
+    link = os.path.relpath(_HOME, tmp_path)
+    block = _synthetic(
+        tmp_path,
+        '### Completion\n\n```bash\npython3 .plan/execute-script.py plan-marshall:manage-status:manage-status '
+        'transition --plan-id {plan_id} --completed 5-execute\n```\n\n'
+        f'On any non-success result, STOP per the [halt rule]({link}#{HALT_RULE_ANCHOR}).\n\n'
+        '```bash\npython3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics '
+        'phase-boundary --plan-id {plan_id} --prev-phase 5-execute --next-phase 6-finalize\n```\n',
+    )
+
+    assert block.boundaries_before == ()
+    assert _violations(block, _HOME) == []
 
 
 def test_a_recovery_table_naming_an_unlisted_code_is_flagged():

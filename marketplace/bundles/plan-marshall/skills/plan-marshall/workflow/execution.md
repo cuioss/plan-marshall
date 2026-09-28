@@ -263,7 +263,7 @@ Inspect the returned TOON:
     --total-tokens 0 --tool-uses 0 --duration-ms 0
   ```
 
-  Then proceed directly to the **Execute Phase Completion** transition (capture invariants for `5-execute`, run the fused `5-execute → 6-finalize` `phase-boundary` call, transition status, and route through the `finalize_without_asking` gate). No phase-5-execute dispatch occurs.
+  Then proceed directly to the **Execute Phase Completion** transition (capture invariants for `5-execute`, transition status, run the fused `5-execute → 6-finalize` `phase-boundary` call only once the transition returned `status: success`, and route through the `finalize_without_asking` gate). No phase-5-execute dispatch occurs.
 
 - **`status: continue`** — at least one task is `pending` OR `in_progress`. The broadened predicate (Deliverable 2 of the originating plan) treats both axes as blocking; the `message` field of the guard return names which axis was non-empty so the orchestrator's log surfaces the reason. Proceed with the normal re-dispatch path below.
 
@@ -272,7 +272,9 @@ The peek is the same `loop-exit-guard` verb that the **Boundary-call fence** bel
 **Boundary-call fence** — the existing `5-execute → 6-finalize` fused
 `phase-boundary` call MUST only fire on a clean exit, defined as
 `termination-cause == clean_exit_queue_empty` AND `manage-tasks loop-exit-guard`
-returning `status: success` with `pending_count: 0`. For every other
+returning `status: success` with `pending_count: 0` — and, within
+**Execute Phase Completion**, only after `manage-status transition --completed 5-execute`
+returned `status: success`. For every other
 classified cause, the orchestrator MUST re-dispatch the execution-context
 (recoverable cases) or escalate to the user (`error` / repeated
 `harness_cancellation`) — it MUST NOT transition to `6-finalize` while
@@ -385,24 +387,11 @@ This handler is the consuming half of the leaf's live `execution_tier` resolutio
 
 ### Execute Phase Completion
 
-After all tasks complete, transition and check auto-continue:
-
-**Metrics**: During the task loop, maintain a running sum of `total_tokens`,
+After all tasks complete, transition, record the metrics boundary, and check auto-continue — in that order. During the task loop, maintain a running sum of `total_tokens`,
 `tool_uses`, and `duration_ms` from each task agent's `<usage>` tag (the
-Claude-target envelope, parsed by `platform-runtime`'s chat/usage ops). The
-canonical sub-agent `<usage>` token key is `total_tokens` — emitters MUST use
-that key (the `manage-metrics enrich` parser also tolerates the
-`subagent_tokens` alias as a recovery fallback, but `total_tokens` is
-canonical). After all tasks complete, record the `5-execute → 6-finalize`
-boundary in a single fused call (forwarding the aggregated totals to the
-closing phase):
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phase-boundary \
-  --plan-id {plan_id} --prev-phase 5-execute --next-phase 6-finalize \
-  --total-tokens {sum of total_tokens from all task agent <usage> tags} \
-  --tool-uses {sum of tool_uses from all task agent <usage> tags} \
-  --duration-ms {sum of duration_ms from all task agent <usage> tags}
-```
+Claude-target envelope, parsed by `platform-runtime`'s chat/usage ops); the
+`5-execute → 6-finalize` boundary that forwards it is recorded only AFTER the
+transition below returns `status: success`.
 
 **Phase handshake**: Capture invariants for the just-completed `5-execute` phase. Verification of this row happens at the `6-finalize` entry below.
 
@@ -411,16 +400,12 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capt
   --plan-id {plan_id} --phase 5-execute
 ```
 
-The fused call already recorded the start of `6-finalize`; the
-**Finalize Phase** section below MUST NOT call `start-phase 6-finalize`
-again.
-
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \
   --plan-id {plan_id} --completed 5-execute
 ```
 
-**On any non-`success` result, STOP.** Apply the [refused-transition halt rule](../../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule): ANY result whose `status` is not `success` — exit 1 or exit 0, `status: drift` included — means the phase did NOT advance. Emit the `[ERROR]` work-log line carrying the refusal payload verbatim, then stop. This is the one call site that owns a recovery: only the two tree-state codes in the table below have a recovery path; every other refusal halts for the operator. The config check and the **Finalize Phase** below are reachable only from a `status: success` transition.
+**On any non-`success` result, STOP.** Apply the [refused-transition halt rule](../../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule): ANY result whose `status` is not `success` — exit 1 or exit 0, `status: drift` included — means the phase did NOT advance. Emit the `[ERROR]` work-log line carrying the refusal payload verbatim, then stop. This is the one call site that owns a recovery: only the two tree-state codes in the table below have a recovery path; every other refusal halts for the operator. The metrics boundary, the config check and the **Finalize Phase** below are reachable only from a `status: success` transition — a boundary recorded for a refused transition would close `5-execute` and open `6-finalize` in the metrics while the plan stays in `5-execute`.
 
 The transition's inline clean-tree post-condition refuses to advance on either of
 **two distinct tree-state codes**, and they take **different recovery paths** — read
@@ -498,6 +483,24 @@ residual deliverable" would be wrong or ambiguous:
 The settlement commits are the recovery path, not the norm: commit ownership
 lives with the phase-5-execute envelope's Step 10a chain-tail (see
 `phase-5-execute/SKILL.md` § Step 10a).
+
+**Metrics** (reached only from a `status: success` transition): record the
+`5-execute → 6-finalize` boundary in a single fused call, forwarding the
+aggregated task-loop totals to the closing phase. The canonical sub-agent
+`<usage>` token key is `total_tokens` — emitters MUST use that key (the
+`manage-metrics enrich` parser also tolerates the `subagent_tokens` alias as a
+recovery fallback, but `total_tokens` is canonical):
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phase-boundary \
+  --plan-id {plan_id} --prev-phase 5-execute --next-phase 6-finalize \
+  --total-tokens {sum of total_tokens from all task agent <usage> tags} \
+  --tool-uses {sum of tool_uses from all task agent <usage> tags} \
+  --duration-ms {sum of duration_ms from all task agent <usage> tags}
+```
+
+The fused call already recorded the start of `6-finalize`; the
+**Finalize Phase** section below MUST NOT call `start-phase 6-finalize`
+again.
 
 **Config check** (reached only from a `status: success` transition) — Read `finalize_without_asking` to determine next action:
 ```bash
