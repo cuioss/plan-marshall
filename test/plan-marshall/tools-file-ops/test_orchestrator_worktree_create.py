@@ -42,6 +42,17 @@ def _branch(checkout) -> str:
     return git(checkout, 'symbolic-ref', '--short', 'HEAD')
 
 
+_LEDGER_PATH = '.plan/orchestrator/epic-a/status.json'
+_LEDGER_CONTENT = '{"phase": "execute"}\n'
+
+
+def _land_on_origin(repo, content: str) -> None:
+    """Land ``content`` at the ledger path on ``origin/main`` under a fresh SHA, then fetch it."""
+    commit_file(repo.peer, _LEDGER_PATH, content)
+    git(repo.peer, 'push', 'origin', 'main')
+    git(repo.main, 'fetch', 'origin', 'main')
+
+
 class TestFirstUse:
     """The first call creates the tree on the ledger branch at the fetched base."""
 
@@ -232,6 +243,29 @@ class TestDetectLedgerDrift:
         drift = detect_ledger_drift(ledger_repo.main, 'origin/main')
 
         assert drift == ['.plan/orchestrator/epic-a/moved.json', '.plan/orchestrator/epic-a/status.json']
+
+    @pytest.mark.parametrize(
+        ('landed_content', 'expected'),
+        [(_LEDGER_CONTENT, []), ('{"diverged": true}\n', [_LEDGER_PATH])],
+        ids=['squash-landed-content-is-not-drift', 'content-absent-from-the-base-is-drift'],
+    )
+    def test_unlanded_is_decided_by_content_not_commit_ancestry(self, ledger_repo, landed_content, expected):
+        """A ledger commit whose content reached the base under a different SHA is landed.
+
+        The main checkout's ledger commit is never an ancestor of ``origin/main``;
+        the peer lands content on the base the way a squash merge does. Only the
+        landed content differs between the two cases.
+        """
+        commit_file(ledger_repo.main, _LEDGER_PATH, _LEDGER_CONTENT)
+        _land_on_origin(ledger_repo, landed_content)
+
+        assert detect_ledger_drift(ledger_repo.main, 'origin/main') == expected
+
+    def test_ledger_content_only_on_the_base_is_not_drift(self, ledger_repo):
+        """A ledger change the base carries and the checkout lacks strands nothing."""
+        _land_on_origin(ledger_repo, _LEDGER_CONTENT)
+
+        assert detect_ledger_drift(ledger_repo.main, 'origin/main') == []
 
     def test_raises_unevaluable_for_an_unknown_base_ref(self, ledger_repo):
         with pytest.raises(OrchestratorStoreUnavailable) as exc_info:

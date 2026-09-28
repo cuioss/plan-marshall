@@ -23,6 +23,7 @@ from pathlib import Path
 import pytest
 
 import file_ops
+from _orchestrator_worktree_fixtures import build_ledger_repo, commit_file, git, use_real_resolver
 from conftest import load_script_module
 
 _cmd_orchestrator_mod = load_script_module(
@@ -237,6 +238,25 @@ class TestCutoverRefusal:
 
         assert (result['status'], calls) == ('success', [])
 
+    def test_an_unfetchable_base_refuses_even_with_a_stale_base_ref_present(self, sandbox, monkeypatch):
+        """A failed fetch fails closed; the stale local ``origin/main`` is not compared against.
+
+        ``refs/remotes/origin/main`` still resolves after the remote moves away, so
+        a drift check run without the fetch would read the clean checkout as clean.
+        """
+        path = _stand_in(monkeypatch, sandbox.main, {'orchestrator': {'use_worktree': False}})
+        _git(sandbox.main, 'remote', 'set-url', 'origin', str(sandbox.main.parent / 'moved-away.git'))
+        before = path.read_bytes()
+
+        result = _set('true')
+
+        assert (result['status'], result['error'], result['base_ref']) == (
+            'error',
+            'ledger_drift_unevaluable',
+            'origin/main',
+        )
+        assert path.read_bytes() == before
+
     def test_an_unevaluable_drift_check_refuses_with_its_own_code(self, sandbox, monkeypatch):
         path = _stand_in(
             monkeypatch,
@@ -251,5 +271,57 @@ class TestCutoverRefusal:
             'error',
             'ledger_drift_unevaluable',
             'origin/no-such-branch',
+        )
+        assert path.read_bytes() == before
+
+
+_LANDED_LEDGER_PATH = '.plan/orchestrator/epic-a/status.json'
+_LANDED_LEDGER_CONTENT = '{"phase": "execute"}\n'
+
+
+@pytest.fixture
+def ledger_repo(tmp_path, monkeypatch):
+    """A real sandbox whose shared ledger worktree carries one committed ledger change."""
+    use_real_resolver(monkeypatch)
+    repo = build_ledger_repo(tmp_path)
+    git(repo.main, 'worktree', 'add', '-b', _LEDGER_BRANCH, str(repo.expected_worktree), 'origin/main')
+    commit_file(repo.expected_worktree, _LANDED_LEDGER_PATH, _LANDED_LEDGER_CONTENT)
+    return repo
+
+
+class TestSwitchOffAfterLanding:
+    """Switch-off compares the shared worktree's ledger content with the freshly fetched base.
+
+    The peer lands content on ``origin/main`` the way a squash merge does — a new
+    commit, never an ancestor of the ledger branch — and the main checkout never
+    fetches it, so only the handler's own fetch can bring it into the comparison.
+    """
+
+    @staticmethod
+    def _land_on_origin(repo, content: str) -> None:
+        commit_file(repo.peer, _LANDED_LEDGER_PATH, content)
+        git(repo.peer, 'push', 'origin', 'main')
+
+    def test_switch_off_is_not_refused_once_the_ledger_content_landed_under_a_new_sha(self, ledger_repo, monkeypatch):
+        path = _stand_in(monkeypatch, ledger_repo.main, {'orchestrator': {'use_worktree': True}})
+        self._land_on_origin(ledger_repo, _LANDED_LEDGER_CONTENT)
+
+        result = _set('false')
+
+        assert result['status'] == 'success', result
+        assert json.loads(path.read_text(encoding='utf-8'))['orchestrator']['use_worktree'] is False
+
+    def test_switch_off_is_refused_naming_ledger_content_the_base_lacks(self, ledger_repo, monkeypatch):
+        """Matched control: the same topology, but the landed content differs from the ledger commit."""
+        path = _stand_in(monkeypatch, ledger_repo.main, {'orchestrator': {'use_worktree': True}})
+        self._land_on_origin(ledger_repo, '{"phase": "outline"}\n')
+        before = path.read_bytes()
+
+        result = _set('false')
+
+        assert (result['status'], result['error'], result['dirty_paths']) == (
+            'error',
+            'ledger_cutover_refused',
+            [_LANDED_LEDGER_PATH],
         )
         assert path.read_bytes() == before

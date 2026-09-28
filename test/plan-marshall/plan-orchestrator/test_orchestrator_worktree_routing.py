@@ -1,19 +1,16 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""End-to-end routing of every script consumer through the orchestrator store seam.
+"""End-to-end routing of script consumers through the orchestrator store seam.
 
-With ``orchestrator.use_worktree`` ON, every script consumer of the orchestrator
-ledger store — ``manage-status`` and ``manage-logging`` with ``--store
-orchestrator``, ``orchestrator.py`` ``scaffold`` / ``queue --add-row`` / ``corpus
-epics`` / ``archive``, and the plan-side ``inbox write`` / ``read`` — reads and
-writes only under the ONE shared ledger worktree, including when the caller
-stands in a plan worktree, and the main checkout's ledger paths stay clean. With
-the knob OFF the same calls land on the checkout the caller stands in, exactly as
-before, and no shared tree is created. ``inbox detect`` is a pure parse of the
+With ``orchestrator.use_worktree`` ON, the tested consumers of the orchestrator
+ledger store read and write only under the ONE shared ledger worktree, including
+when the caller stands in a plan worktree, and the main checkout's ledger paths
+stay clean. With the knob OFF the same calls land on the checkout the caller
+stands in, and no shared tree is created. ``inbox detect`` is a pure parse of the
 logical pointer and reads no store at all; it is exercised to pin that it keeps
 classifying the pointer identically under both knob positions.
 
-Every call crosses the real subprocess boundary (``run_script`` with a
+Each call crosses the real subprocess boundary (``run_script`` with a
 constructed argv and an explicit ``cwd``) against a real sandbox — a bare
 ``origin``, a main checkout, and a linked plan worktree that carries its own
 ``.plan/local`` exactly as a moved-in plan worktree does — with no base-dir

@@ -1,21 +1,19 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Every CLI consumer surfaces an orchestrator store refusal as its own verdict.
+"""CLI consumers surface an orchestrator store refusal as their own verdict.
 
 With ``orchestrator.use_worktree`` ON and the seam forced to refuse — the main
 checkout holds an uncommitted ledger path before first use, so the shared ledger
-worktree is never created (``ledger_cutover_refused``) — each script entry point
-that reaches the orchestrator store must return ``status: error`` carrying that
+worktree is never created (``ledger_cutover_refused``) — each consumer in the
+pinned sample must return ``status: error`` carrying that
 code and the offending path, with exit 0. None may convert the refusal into a
 not-found, an empty result, a fail-open success, or a crash. Each case carries a
 matched control over a CLEAN main checkout, where the same call does not report
 the refusal, so every refusal assertion is shown to be able to fail.
 
-``inbox detect`` is deliberately NOT in the refusal population: it is a pure
-parse of the logical ``source_id`` pointer and reads no store, so there is no
-refusal for it to surface. It is pinned separately as succeeding under the
-refused sandbox, which is what keeps its absence from the table a measured fact
-rather than an omission.
+``inbox detect`` is deliberately NOT in the sample: it is a pure parse of the
+logical ``source_id`` pointer and reads no store, so there is no refusal for it
+to surface. It is pinned separately as succeeding under the refused sandbox.
 
 The sandboxes are module-scoped (a refused call writes nothing, and the clean
 control's first call only creates the shared tree every later control reuses);
@@ -77,9 +75,9 @@ def _no_override_in_the_environment(monkeypatch):
         monkeypatch.delenv(name, raising=False)
 
 
-#: ``{case id: (script, argv builder, cwd selector)}`` — one row per CLI entry
-#: point that reaches the orchestrator store. The argv builder receives the
-#: sandbox so a payload path can be composed from it.
+#: ``{case id: (script, argv builder, cwd selector)}`` — the pinned sample of
+#: CLI consumers. The argv builder receives the sandbox so a payload path can be
+#: composed from it.
 _Argv = Callable[[Any], list[str]]
 _CONSUMERS: dict[str, tuple[Path, _Argv, str]] = {
     'manage-status-read': (

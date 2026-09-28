@@ -59,6 +59,7 @@ from marketplace_paths import main_checkout_root
 from orchestrator_worktree import (
     OrchestratorStoreUnavailable,
     detect_ledger_drift,
+    fetch_base_branch,
     orchestrator_knob_config_path,
     orchestrator_use_worktree,
     orchestrator_worktree_path,
@@ -150,7 +151,8 @@ def _cutover_refusal(config: dict, switching_on: bool) -> dict | None:
 
     Switching ON inspects the main checkout; switching OFF inspects the shared
     ledger worktree when it exists (no worktree means no ledger state to strand).
-    Either side compares against ``origin/{project.default_base_branch}``.
+    Either side fetches ``origin/{project.default_base_branch}`` first and
+    compares against it; a failed fetch refuses with ``ledger_drift_unevaluable``.
 
     Returns:
         The refusal dict when ledger state would be stranded or the check could
@@ -158,8 +160,8 @@ def _cutover_refusal(config: dict, switching_on: bool) -> dict | None:
     """
     project = config.get('project')
     configured = project.get('default_base_branch') if isinstance(project, dict) else None
-    base = configured.strip() if isinstance(configured, str) else ''
-    base_ref = f'origin/{base or DEFAULT_PROJECT_BASE_BRANCH}'
+    base = (configured.strip() if isinstance(configured, str) else '') or DEFAULT_PROJECT_BASE_BRANCH
+    base_ref = f'origin/{base}'
 
     try:
         if switching_on:
@@ -168,6 +170,15 @@ def _cutover_refusal(config: dict, switching_on: bool) -> dict | None:
             checkout = orchestrator_worktree_path()
             if not checkout.is_dir():
                 return None
+        fetch = fetch_base_branch(checkout, base)
+        if fetch.returncode != 0:
+            return error_exit(
+                'ledger_drift_unevaluable',
+                detail=f'cannot fetch {base_ref} for the cutover drift check: {fetch.stderr.strip()}',
+                checkout=str(checkout),
+                base_ref=base_ref,
+                stderr=fetch.stderr.strip(),
+            )
         dirty_paths = detect_ledger_drift(checkout, base_ref)
     except RuntimeError as exc:
         return error_exit(

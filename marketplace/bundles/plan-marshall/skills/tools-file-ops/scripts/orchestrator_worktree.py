@@ -180,21 +180,25 @@ def detect_ledger_drift(checkout_root: Path, base_ref: str) -> list[str]:
     """Return every ledger path that would be stranded by leaving ``checkout_root``.
 
     A ledger path is drift when it is uncommitted or untracked in the checkout
-    (``git status --porcelain`` over :data:`LEDGER_PATHSPECS`), or committed but
-    not on ``base_ref`` (``git log {base_ref}..HEAD --name-only`` over the same
-    pathspecs). Paths outside the ledger store are never reported.
+    (``git status --porcelain`` over :data:`LEDGER_PATHSPECS`), or when a commit
+    on the checkout that ``base_ref`` does not contain touched it
+    (``git log {base_ref}..HEAD``) AND its content at ``HEAD`` differs from its
+    content on ``base_ref`` (``git diff {base_ref} HEAD``), both over the same
+    pathspecs. The content comparison is what lets a squash- or rebase-landed
+    ledger commit — whose content reached ``base_ref`` under a different SHA —
+    read as landed. Paths outside the ledger store are never reported.
 
     Args:
         checkout_root: Root of the checkout to inspect.
-        base_ref: The ref a committed ledger path must be reachable from to count
-            as landed (e.g. ``origin/main``).
+        base_ref: The ref whose ledger content counts as landed (e.g.
+            ``origin/main``).
 
     Returns:
         The sorted, de-duplicated repo-relative drift paths; empty when clean.
 
     Raises:
         OrchestratorStoreUnavailable: code ``ledger_drift_unevaluable`` when git
-            cannot answer either question.
+            cannot answer any of the three questions.
     """
     status = _git(checkout_root, 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--', *LEDGER_PATHSPECS)
     if status.returncode != 0:
@@ -205,18 +209,50 @@ def detect_ledger_drift(checkout_root: Path, base_ref: str) -> list[str]:
             base_ref=base_ref,
             stderr=status.stderr.strip(),
         )
-    log = _git(checkout_root, 'log', f'{base_ref}..HEAD', '--name-only', '--pretty=format:', '--', *LEDGER_PATHSPECS)
-    if log.returncode != 0:
+    committed = _git_name_list(
+        checkout_root,
+        base_ref,
+        'history',
+        'log',
+        f'{base_ref}..HEAD',
+        '--no-renames',
+        '--name-only',
+        '--pretty=format:',
+    )
+    differing = _git_name_list(
+        checkout_root, base_ref, 'content', 'diff', '--no-renames', '--name-only', base_ref, 'HEAD'
+    )
+    drift = set(_porcelain_paths(status.stdout))
+    drift.update(committed & differing)
+    return sorted(drift)
+
+
+def _git_name_list(checkout_root: Path, base_ref: str, aspect: str, *args: str) -> set[str]:
+    """Run a ``--name-only`` git query over :data:`LEDGER_PATHSPECS` and return its paths.
+
+    Raises:
+        OrchestratorStoreUnavailable: code ``ledger_drift_unevaluable`` when the
+            git call fails.
+    """
+    result = _git(checkout_root, *args, '--', *LEDGER_PATHSPECS)
+    if result.returncode != 0:
         raise OrchestratorStoreUnavailable(
             'ledger_drift_unevaluable',
-            f'cannot compare the ledger history of {checkout_root} against {base_ref}: {log.stderr.strip()}',
+            f'cannot compare the ledger {aspect} of {checkout_root} against {base_ref}: {result.stderr.strip()}',
             checkout=str(checkout_root),
             base_ref=base_ref,
-            stderr=log.stderr.strip(),
+            stderr=result.stderr.strip(),
         )
-    drift = set(_porcelain_paths(status.stdout))
-    drift.update(line.strip() for line in log.stdout.splitlines() if line.strip())
-    return sorted(drift)
+    return {line.strip() for line in result.stdout.splitlines() if line.strip()}
+
+
+def fetch_base_branch(repo_root: Path, base: str) -> subprocess.CompletedProcess[str]:
+    """Run ``git fetch origin {base}`` in ``repo_root`` so ``origin/{base}`` is current.
+
+    Returns:
+        The completed git run; a missing binary or a timeout reads as a failed run.
+    """
+    return _git(repo_root, 'fetch', 'origin', base)
 
 
 def _registered_worktree_branch(main_root: Path, path: Path) -> str | None:
@@ -290,7 +326,7 @@ def ensure_orchestrator_worktree() -> Path:
 
     base = _default_base_branch()
     base_ref = f'origin/{base}'
-    probe = _git(main_root, 'fetch', 'origin', base)
+    probe = fetch_base_branch(main_root, base)
     if probe.returncode == 0:
         probe = _git(main_root, 'rev-parse', '--verify', '--quiet', f'refs/remotes/{base_ref}^{{commit}}')
     if probe.returncode != 0:
