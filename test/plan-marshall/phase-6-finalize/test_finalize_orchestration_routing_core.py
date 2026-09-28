@@ -34,6 +34,10 @@ Covered:
   ``a0`` resolution block precedes the ``FOR each step_id`` loop and sits outside
   the item-4b lessons-capture gate, so item 1's resumable skip of an
   already-``done`` lessons-capture cannot starve the later consumers of it.
+- **The forwarded write-site list is closed** — the step ids the ``a0`` block
+  lists equal the registered finalize steps whose body issues an
+  ``orchestrator inbox write`` call, derived from the registered roster, so a new
+  inbox writer missing from the list fails the check.
 - **emit-landing fails closed** — its Step 0 guard records ``loop_back`` (never
   ``skipped``) on an empty epic, and ``archive-plan`` is ordered after it and
   declares ``destroys: plan-directory``, so that record is what keeps the
@@ -179,6 +183,58 @@ def _step_documents(step_key: str) -> list[Path]:
         ]
     bundle, skill = step_key.split(':', 1)
     return [MARKETPLACE_ROOT / bundle / 'skills' / skill / 'SKILL.md']
+
+
+#: The sentence span of the a0 block that records the epic-inbox write-site list.
+_WRITE_SITE_SPAN_START = 'That set is currently'
+_WRITE_SITE_SPAN_END = 'A future step'
+
+#: A backtick-quoted finalize step id (``default:x``, ``project:x``, ``bundle:skill``).
+_STEP_ID_TOKEN = re.compile(r'`([a-z][a-z0-9-]*:[a-z0-9][a-z0-9-]*)`')
+
+
+def _registered_step_bodies() -> tuple[dict[str, str], list[str]]:
+    """Every registered finalize step's body text, plus the steps that resolved to no document.
+
+    The population is the registered roster itself (``marshal.json`` ->
+    ``plan.phase-6-finalize.steps``), so a newly registered step joins the check
+    without anyone editing a hand-copied list.
+    """
+    bodies: dict[str, str] = {}
+    unresolved: list[str] = []
+    for step_key in _registered_finalize_steps():
+        documents = [path for path in _step_documents(step_key) if path.is_file()]
+        if not documents:
+            unresolved.append(step_key)
+            continue
+        bodies[step_key] = '\n'.join(_read(path) for path in documents)
+    return bodies, unresolved
+
+
+def _derived_inbox_writers(step_bodies: dict[str, str]) -> set[str]:
+    """The step ids whose body issues an ``orchestrator inbox write`` call."""
+    return {step_key for step_key, body in step_bodies.items() if _INBOX_WRITE.search(body)}
+
+
+def _write_site_span(text: str) -> str:
+    """The a0-block sentence that records the write-site list."""
+    return _between(_a0_block(text), _WRITE_SITE_SPAN_START, _WRITE_SITE_SPAN_END)
+
+
+def _listed_write_sites(span: str) -> set[str]:
+    """The step ids the dispatcher's write-site list names."""
+    return set(_STEP_ID_TOKEN.findall(span))
+
+
+def _write_site_mismatch(writers: set[str], listed: set[str]) -> dict[str, list[str]]:
+    """The closure predicate under test: writers the list omits, and listed ids that write nothing.
+
+    Factored out so the mutation guards drive the SAME predicate the assertion uses.
+    """
+    return {
+        'unlisted_writers': sorted(writers - listed),
+        'listed_non_writers': sorted(listed - writers),
+    }
 
 
 # =============================================================================
@@ -439,6 +495,64 @@ class TestResolutionAtStep3Entry:
         # Plan 302 D1: the terminal emission step is the fourth epic-inbox write-site.
         assert 'default:emit-landing' in block
         assert 'MUST be added to this list' in block
+
+
+class TestWriteSiteListIsDerivedClosed:
+    """The dispatcher's forwarded write-site list equals the registered steps that write to the epic inbox.
+
+    The pins above lock the four current write-sites in place but cannot see a
+    NEW registered step that gains an ``orchestrator inbox write`` call and is
+    never added to the list — that step would run without the held orchestration
+    verdict. This class derives the writer set from the registered step roster
+    and compares it to the list the a0 block records, in both directions.
+    """
+
+    def test_every_registered_step_resolves_to_a_body(self):
+        """Anti-vacuity: a step with no readable body would silently drop out of the population."""
+        _, unresolved = _registered_step_bodies()
+
+        assert unresolved == [], f'Registered finalize steps with no resolvable body document: {unresolved}'
+
+    def test_derived_writer_set_is_non_empty(self):
+        """Anti-vacuity: an empty derived set would make the equality below meaningless."""
+        bodies, _ = _registered_step_bodies()
+
+        assert _derived_inbox_writers(bodies), (
+            'No registered finalize step body issues an `orchestrator inbox write` call, so the '
+            'write-site closure check would pass vacuously. The roster or the call regex drifted.'
+        )
+
+    def test_listed_write_sites_equal_the_derived_writers(self):
+        bodies, _ = _registered_step_bodies()
+        listed = _listed_write_sites(_write_site_span(_read(_FINALIZE_SKILL)))
+
+        mismatch = _write_site_mismatch(_derived_inbox_writers(bodies), listed)
+
+        assert mismatch == {'unlisted_writers': [], 'listed_non_writers': []}, (
+            'The phase-6-finalize SKILL.md a0 write-site list disagrees with the registered '
+            f'steps whose body issues an `orchestrator inbox write` call: {mismatch}'
+        )
+
+    def test_closure_predicate_catches_a_new_unlisted_writer(self):
+        """Mutation guard: a newly registered inbox writer missing from the list must be caught."""
+        bodies, _ = _registered_step_bodies()
+        bodies['default:hypothetical-new-writer'] = (
+            'python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator inbox write --kind landing'
+        )
+        listed = _listed_write_sites(_write_site_span(_read(_FINALIZE_SKILL)))
+
+        mismatch = _write_site_mismatch(_derived_inbox_writers(bodies), listed)
+
+        assert mismatch['unlisted_writers'] == ['default:hypothetical-new-writer']
+
+    def test_closure_predicate_catches_a_writer_dropped_from_the_list(self):
+        """Mutation guard: removing a real writer from the recorded list must be caught."""
+        bodies, _ = _registered_step_bodies()
+        span = _write_site_span(_read(_FINALIZE_SKILL)).replace('`default:emit-landing`', 'the landing step')
+
+        mismatch = _write_site_mismatch(_derived_inbox_writers(bodies), _listed_write_sites(span))
+
+        assert mismatch['unlisted_writers'] == ['default:emit-landing']
 
 
 class TestShortCircuitCarveOut:
