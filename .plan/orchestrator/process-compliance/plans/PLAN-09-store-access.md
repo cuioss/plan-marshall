@@ -1,5 +1,11 @@
 # PLAN-09: Plan-store access contracts
 
+> ⛔ **SUPERSEDED BY PM-MCP (2026-09-26, operator decision relayed in inbox `review-apparatus-001`).** Parked.
+> Do NOT emit; un-park only by explicit operator decision. The implementation-independent content of this spec
+> (rules, invariants, fixtures) is extracted to
+> `/Users/oliver/git/plan-marshall-mcp/doc/known-defects/process-compliance-carry-over.md`. The body below is kept
+> intact as the evidence chain.
+
 epic: process-compliance
 workstream: WS-03
 
