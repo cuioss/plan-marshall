@@ -86,6 +86,18 @@ def _runtimes() -> list[Any]:
     ]
 
 
+def _step_indices() -> list[int]:
+    """The per-step parametrization cases, over a roster proven non-empty.
+
+    ``range(len(EXPECTED_STEPS))`` inlines to no case at all when the roster is
+    empty, so the test would silently disappear rather than fail — the shape the
+    R5 harness guard reports. The assertion is what makes the parametrization an
+    observation instead of a conditional one.
+    """
+    assert EXPECTED_STEPS, 'the published roster must carry at least one step'
+    return list(range(len(EXPECTED_STEPS)))
+
+
 class TestKeyedMapIsRead:
     """The keyed map is the live shape; an unread one reports a false clean."""
 
@@ -97,7 +109,7 @@ class TestKeyedMapIsRead:
         """The keyed map is a change of shape, not a change of meaning."""
         assert extract_project_steps(config) == extract_project_steps(LEGACY_CONFIG)
 
-    @pytest.mark.parametrize('index', range(len(EXPECTED_STEPS)))
+    @pytest.mark.parametrize('index', _step_indices())
     def test_zero_project_steps_is_unreachable_from_a_well_formed_keyed_map(self, index: int) -> None:
         """No single declared project step may be dropped to nothing.
 
