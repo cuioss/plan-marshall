@@ -314,16 +314,41 @@ class TestHoldStartCallerBinding:
         assert _unanchored_paragraphs(f'{anchored}\n\n{competing}', _HOLD_START_TOKEN) == [competing]
 
 
+def _reclaim_invocations(text: str) -> list[str]:
+    """Return every ``budget-reclaim`` INVOCATION in ``text``, from its executor notation to its budget flag.
+
+    Anchored on the executor notation rather than the bare verb, so a prose
+    mention of ``merge_lock budget-reclaim`` never opens a match that runs on
+    into the next paragraph's flags.
+    """
+    return re.findall(
+        r'plan-marshall:manage-locks:merge_lock budget-reclaim.*?--hold-budget-seconds', text, flags=re.DOTALL
+    )
+
+
 class TestBlockedAdmissionReclaimBinding:
     """The waiter-side reclaim passes a value a BLOCKED waiter actually has bound."""
 
     def test_reclaim_call_passes_admission_wait_start_not_hold_start(self) -> None:
         paragraph = _invariant_two_paragraph(_BRANCH_CLEANUP_DOC.read_text(encoding='utf-8'))
-        reclaim_calls = re.findall(r'merge_lock budget-reclaim.*?--hold-budget-seconds', paragraph, flags=re.DOTALL)
+        reclaim_calls = _reclaim_invocations(paragraph)
 
         assert reclaim_calls, 'invariant 2 carries no budget-reclaim invocation — the scan matched nothing'
         assert all(f'--hold-start {_ADMISSION_WAIT_START_TOKEN}' in call for call in reclaim_calls)
         assert all(f'--hold-start {_HOLD_START_TOKEN}' not in call for call in reclaim_calls)
+
+    def test_the_scan_skips_prose_and_still_sees_an_invocation_passing_hold_start(self) -> None:
+        prose = '`merge_lock budget-reclaim` declares `--hold-start`, measured against `--hold-budget-seconds`.'
+        invocation = (
+            'python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock budget-reclaim \\\n'
+            f'  --plan-id {{plan_id}} --hold-start {_HOLD_START_TOKEN} --hold-budget-seconds {{budget}}'
+        )
+
+        calls = _reclaim_invocations(f'{prose}\n\n{invocation}')
+
+        assert len(calls) == 1
+        assert calls[0].startswith('plan-marshall:manage-locks:merge_lock budget-reclaim')
+        assert f'--hold-start {_HOLD_START_TOKEN}' in calls[0]
 
     def test_invariant_two_binds_admission_wait_start_as_date_epoch_seconds(self) -> None:
         paragraph = _invariant_two_paragraph(_BRANCH_CLEANUP_DOC.read_text(encoding='utf-8'))
