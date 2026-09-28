@@ -24,9 +24,11 @@ own statement — so a negation in one clause cannot excuse another. A match is
 ``cannot`` PRECEDES it within its clause; a negation after the match (a trailing
 "when no archived tree exists", or a predicate "… path is never used") governs a
 different phrase and excuses nothing, so a negated instruction states its
-negation first. The **file-tool marker** is the Read / Write / Edit tool
-named as a tool: ``Read/Write/Edit``, ``Write/Edit``, a backticked tool name, or
-``the Read|Write|Edit tool`` — never the lowercase verbs.
+negation first. A hyphenated compound (``no-op``) is not a negation, and a
+hyphenated ``commit`` (``pre-commit``) is not the verb. The **file-tool marker**
+is the Read / Write / Edit tool named as a tool: ``Read/Write/Edit``,
+``Write/Edit``, a backticked tool name, or ``the Read|Write|Edit tool`` with the
+article in either case — never the lowercase verbs.
 
 **Rules.**
 
@@ -42,7 +44,8 @@ named as a tool: ``Read/Write/Edit``, ``Write/Edit``, a backticked tool name, or
    verb form of ``commit``) carries ``{store_checkout}``. Three named exemptions
    keep non-ledger commits out: a ``commit`` followed by a noun-use word or
    preceded by ``merge``/``squash``, a determiner or a possessive (plus the
-   ``git add/add`` conflict name), a clause whose subject is a plan, and a clause
+   ``git add/add`` conflict name), a clause whose whole subject noun phrase is a
+   plan (not ``the plan spec`` or ``the plan-orchestrator``), and a clause
    already addressed at another repository through ``git -C {remote_repo}``.
 4. A document whose text carries ``{epic_dir}`` or ``{store_checkout}`` carries
    the ``resolve-path`` invocation or cross-references the direct-file-write
@@ -56,6 +59,8 @@ clause (a leading "When no tree exists, write …") still excuses it.
 
 import re
 from pathlib import Path
+
+import pytest
 
 from conftest import MARKETPLACE_ROOT
 
@@ -72,8 +77,10 @@ _STORE_CHECKOUT = '{store_checkout}'
 _FENCE_RE = re.compile(r'^ {0,3}(`{3,}|~{3,})')
 _HEADING_RE = re.compile(r'^ {0,3}#{1,6}[ \t]+(?P<title>.*)$')
 _CLAUSE_SPLIT_RE = re.compile(r'(?<=[.!?;])\s+|\n')
-_NEGATION_RE = re.compile(r'\b(?:never|not|no|cannot)\b', re.IGNORECASE)
-_FILE_TOOL_RE = re.compile(r'Read/Write/Edit|Write/Edit|`(?:Read|Write|Edit)`|\bthe (?:Read|Write|Edit) tool\b')
+#: Word edges exclude a hyphen on either side: ``no-op`` or ``pre-commit`` is a
+#: compound noun, never the negation or the verb the bare word would be.
+_NEGATION_RE = re.compile(r'(?<![\w-])(?:never|not|no|cannot)(?![\w-])', re.IGNORECASE)
+_FILE_TOOL_RE = re.compile(r'Read/Write/Edit|Write/Edit|`(?:Read|Write|Edit)`|\b[Tt]he (?:Read|Write|Edit) tool\b')
 _LEDGER_DOC_TOKENS = (
     'epic.md',
     'history.md',
@@ -85,7 +92,10 @@ _LEDGER_DOC_TOKENS = (
 )
 _LITERAL_PREFIXES = ('.plan/orchestrator/', '.plan/archived-orchestrators/')
 _HANDOFF_POINTER_RE = re.compile(r'implement \.plan/(?:orchestrator|archived-orchestrators)/')
-_GIT_WRITE_RE = re.compile(r'\bgit add\b|\bgit commit\b|\bcommit(?:s|ting|ted)?\b', re.IGNORECASE)
+_GIT_WRITE_RE = re.compile(
+    r'(?<![\w-])(?:git add|git commit|commit(?:s|ting|ted)?)(?![\w-])',
+    re.IGNORECASE,
+)
 #: Rule 3 exemption 1 — the noun sense of ``commit``. A determiner or a
 #: possessive never precedes a verb, so ``commit`` after one is the noun or the
 #: attributive participle; the unrebased tree read that way in "the committed
@@ -102,8 +112,14 @@ _POSSESSIVE_SUFFIX = "'s"
 #: ``git add/add`` names a merge-conflict class, not a command
 #: (orchestration-model.md § Staging identity).
 _CONFLICT_CLASS_SUFFIX = '/add'
-#: Rule 3 exemption 2 — a clause describing a plan's own commits.
-_PLAN_SUBJECT_RE = re.compile(r'^(?:a plan|the plan|an executing plan)\b', re.IGNORECASE)
+#: Rule 3 exemption 2 — a clause describing a plan's own commits. The plan must
+#: be the whole subject noun phrase: a following hyphen (``the plan-orchestrator``)
+#: or a following noun (``the plan spec``) makes the subject a different thing.
+_PLAN_SUBJECT_RE = re.compile(
+    r'^(?:a plan|the plan|an executing plan)(?![\w-])'
+    r'(?!\s+(?:spec|specs|row|rows|file|files|document|documents|pointer|pointers|directory|dir)\b)',
+    re.IGNORECASE,
+)
 #: Rule 3 exemption 3 — a commit in another repository, already addressed at its
 #: own checkout (orchestration-model.md § Lessons-Handling Mode Contract,
 #: cross-repo lesson removal).
@@ -301,6 +317,10 @@ class TestRuleControls:
         assert rule1_violated('Instantiate `epic.md` from the template via the Write tool.')
         assert not rule1_violated('Instantiate `{epic_dir}/epic.md` from the template via the Write tool.')
 
+    def test_rule1_reads_a_sentence_initial_tool_article(self):
+        assert rule1_violated('The Write tool instantiates epic.md from the template.')
+        assert not rule1_violated('The Write tool instantiates {epic_dir}/epic.md from the template.')
+
     def test_rule2_rejects_an_affirmative_literal_and_accepts_a_negated_one(self):
         assert rule2_violated('Write `.plan/orchestrator/{slug}/epic.md` with the Write tool.')
         assert not rule2_violated(
@@ -339,6 +359,23 @@ class TestRuleControls:
         assert not rule3_violated('Record the merge commit in the landing.')
         assert not rule3_violated('Quote the commit message verbatim.')
         assert not rule3_violated('A plan commits its own changes through its PR.')
+        assert not rule3_violated('The plan commits its own changes through its PR.')
+        assert not rule3_violated('An executing plan commits its inbox message through its PR.')
+
+    @pytest.mark.parametrize(
+        'clause',
+        [
+            'The plan spec is committed with the queue change.',
+            'The plan-orchestrator commits the ledger.',
+        ],
+        ids=['plan-as-modifier', 'hyphenated-compound'],
+    )
+    def test_rule3_flags_a_subject_that_only_starts_with_plan(self, clause):
+        assert rule3_violated(clause)
+
+    def test_rule3_reads_hyphenated_compounds_as_neither_verb_nor_negation(self):
+        assert not rule3_violated('Run the pre-commit hook on the anchor file.')
+        assert rule3_violated('Treat it as a no-op and commit the anchor file.')
 
     def test_rule3_leaves_a_commit_addressed_at_another_repository_alone(self):
         assert not rule3_violated('Remove the file and commit it via `git -C {remote_repo}`.')
