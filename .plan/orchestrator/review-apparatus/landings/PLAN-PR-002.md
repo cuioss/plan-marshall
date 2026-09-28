@@ -8,6 +8,50 @@ pr: cuioss/cuioss-organization#235 — https://github.com/cuioss/cuioss-organiza
 > `org-empty-review-guard-too-broad-001.md` (2026-08-08), after corroborating its claims
 > against ground truth. A pasted claim is a lead, never a fact.
 
+## ✅ SHIPPED 2026-09-28: second run, residual R3 closed (inbox `org-empty-review-guard-too-broad-002.md`)
+
+Everything above this section records the FIRST run: #235, which merged 2026-08-09 after that run's lifecycle
+ended. This section records the re-scoped second run, which closes #235's residual R3. The spec's
+`RE-SCOPED 2026-09-26` block describes that scope.
+
+**Corroborated first-party (2026-09-28), not taken from the message:**
+
+| Claim | Verdict | Evidence |
+|---|---|---|
+| cuioss-organization#297 merged at `f18ae7f` | corroborated | `ci --project-dir cuioss-organization pr view --pr-number 297`: `state: merged`, merge `f18ae7f6b9b4`, which is an ancestor of `origin/main` |
+| #298 prepared the release; v0.32.0 is tagged | corroborated | #298 merged `f56f1f9`; the tag object `3e70f35` points at commit `5fb6e07` ("pin internal action references for v0.32.0"), which is on `origin/main` |
+| The `changes` pre-job classifies (c) and (d), fails open, and leaves the gate unchanged | corroborated | `origin/main:.github/workflows/reusable-cuioss-review-bot.yml`: `reviewable` output (c at :156–160, classifier at :190); `review` gated on `needs.changes.outputs.reviewable != 'false'` (fail-open, :232–245); the `EXCLUDED` block moves (c)/(d) to "skipped upstream by `changes`" (:547–563); `exit 1` intact (:590). `workflow-scripts/classify-review-diff.py` is present |
+| 22/22 consumer pin-bump PRs merged; live check on plan-marshall #1651 run `36423408452`; live skip on #1639 | unverifiable (not re-read) | The plan's own report. plan-marshall `4af92f73a` ("update cuioss-organization workflows to v0.34.0", #1650) shows consumers have already moved past v0.32.0 |
+
+**Deliverable fidelity vs the re-scoped spec:**
+
+- **R3-D1** is shipped, with an operator-approved divergence: the skip mirrors the runner's FULL diff-file filter
+  chain, run inside the pinned image, rather than only the `[ignore]` globs.
+- **R3-D2** is shipped: the gate is unchanged and the `EXCLUDED` block is updated.
+- **R3-D3** is shipped: tests, docs, release and fan-out.
+
+**⛔ The spec's root-cause claim was WRONG, and the plan caught it (Q1).** API-Sheriff#340's diff was
+`.gitignore` plus `.plan/**` files. The runner dropped `.gitignore` through its invalid-extension filter, not
+through the `[ignore]` globs. A glob-only skip would therefore have missed the very case that motivated the
+plan. This is the epic's recurring *diagnosis-by-paste* archetype: the 2026-09-22 fold corroborated the failure
+itself against real logs, but not its mechanism.
+
+**⚠ The landing is prose-only.** `inbox landing-check` reports `complete: false` with all 9 required
+`landing-facts` keys missing. It is recorded as an Open Defect below; the drain continues.
+
+**Residual R1 is unchanged** and remains operator-accepted: a `synchronize` run whose every model call failed
+stays ungated, and `handle_push_trigger` is still off.
+
+**Lessons the plan filed** (global corpus, routed by the lessons flow, not absorbed here):
+
+- `2026-09-27-07-001`: the transition mailbox probe says `not_orchestrated` where `inbox detect` says
+  `orchestrated`.
+- `2026-09-27-07-002`: `ci checks logs` returns nothing for successful runs.
+- `2026-09-28-17-001`: `ci checks status` omits nested review-workflow checks, so the reviewer looks like it
+  never ran.
+- `2026-09-27-07-003`: the phase-3-outline leaf self-transitions before the Q-Gate.
+- `2026-09-27-07-004`: the strict handshake is unusable under concurrent orchestrator writes.
+
 ## ⛔⛔ THIS IS NOT A SHIP — THE DELIVERABLE PR IS OPEN AND UNMERGED
 
 The message is `kind: landing` and reads as a completion report. **Ground truth contradicts the ship

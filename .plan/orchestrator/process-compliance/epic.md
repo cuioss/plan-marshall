@@ -67,6 +67,15 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
 - **PLAN-03 shipped 2026-09-20 (PR #1542, merge 1e2aa916).** All 4 deliverables per spec incl. 4 review loop-back hardenings; both hypotheses re-corroborated at merge HEAD via set-verdict; landing record at `landings/PLAN-03.md`. Residues recorded in the landing (review-gap 3-file delta, token floor, uv.lock churn).
 - **PLAN-07 shipped 2026-09-20 (PR #1554, merge e8a7165).** Surrounds only (resolver untouched): degrade paths, sentinel, distinct consent prompt; claims 0–3 re-corroborated at merge HEAD; landing record at `landings/PLAN-07.md`. Residues recorded in the landing (duplicate-PR account, session override, sonar closure, body embellishment).
 - **PLAN-04 shipped 2026-09-21 (PR #1556, squash ed90328).** All 4 deliverables per spec incl. review-driven correction-memory mechanism; claims 0–2 re-corroborated at merge HEAD; landing record at `landings/PLAN-04.md`. Reconciled post store-tier migration (tree relocated to the tracked tier per operator direction).
+- **PLAN-13 shipped 2026-09-28 (PR #1651, merge c56710b).** All 5 deliverables per spec, each with a
+  regression test, plus an operator-approved ~40-file stale-path sweep outside the declared surface.
+  Landing record at `landings/PLAN-13.md`; the landing message was complete (`landing-check`). Residue:
+  self-review ran into the 5/5 loop-back ceiling, the closing round was waived, the head-dependent
+  re-fires were skipped, and the merge ran under `barrier-ask-override` — all now staged as PLAN-20 /
+  PLAN-21.
+- **PLAN-19 / PLAN-20 / PLAN-21 staged 2026-09-28** from the PLAN-13 run's 22-item report. PLAN-20 and
+  PLAN-21 share `phase-6-finalize/SKILL.md` and `standards/`, so run them in sequence: PLAN-20 after
+  PLAN-12 lands, then PLAN-21.
 - **Store-tier migration 2026-09-21 (operator direction).** Tree moved `.plan/local/orchestrator/process-compliance/` → `.plan/orchestrator/process-compliance/` completing the #1558 intent for this epic. Standing emit-convention inbox path is now `.plan/orchestrator/process-compliance/inbox`.
 
 ## Decisions
@@ -496,6 +505,21 @@ recipe-fix-argparse-rejection remediation carrier.
 
 ## Watches
 
+- **Drain 2026-09-28, second pass (PLAN-13 landing + 3 messages).** `-007` landing reconciled
+  (shipped). `-004`'s 22 items: 17 staged as PLAN-19/20/21; items 5, 21 and 22 routed to
+  truthful-signals (`process-compliance-002`: TRUTH-169, TRUTH-150/205); item 12 discarded as shipped
+  (#1651's sweep) — ⛔ **that verdict was WRONG, corrected the same day.** The verifying grep covered
+  `marketplace/bundles` and the `.plan/plans/` form only. `-008` then reported residue in `test/`,
+  `doc/` and the `.plan/logs/` / `status.toon` classes, and the item is now **staged as PLAN-22
+  runtime-state-path-migration**. The two sweeps disagree on the population (sender 7/2/15 files,
+  orchestrator grep 84/23/201), so PLAN-22 derives it itself. Run PLAN-22 alone: its surface is
+  repo-wide. Candidate lessons: `-005` routed to post-run-quality as a PRQ-12 recurrence, `-006`
+  routed to truthful-signals as a TRUTH-175 recurrence (`--step-id` facet). Inbox empty.
+- **RETIRED 2026-09-28 — PLAN-13's "landing will be skipped" claim (refuted 2026-09-27).** The run
+  claimed the `PLAN-13-…` filename was not recognised as orchestrated. `inbox detect` returned
+  `orchestrated: true`, and the `kind: landing` message `-007` then arrived through that same detector.
+  (The original 2026-09-27 entry was overwritten on disk by a concurrent session edit before it was
+  committed; it is restated here.)
 - **Drain 2026-09-28 (4 findings, standing directive "fix, not relay").**
   `plan-12-tool-triage-006` + `plan-13-…-003` §3 → folded into PLAN-17 D1
   (porcelain assertion vs handshake exemption set; +`planning-outline.md`,

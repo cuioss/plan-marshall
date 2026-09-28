@@ -43,8 +43,9 @@ persist each other's content.
    `pending_findings_blocking_count: 1` while every `pending_findings_by_type` bucket was
    `0` (the one open item was a refine Q-Gate flag-not-block). A blocking count must be
    derivable from the per-type buckets it summarises, or carry the missing bucket.
-2. **Plan-scoped staging paths.** `phase-2-refine` (and `phase-3-outline`, which cites the
-   same file) stage `.plan/temp/module_mapping.toon` — a literal shared across plans — before
+2. **Plan-scoped staging paths.** `phase-2-refine` stages `.plan/temp/module_mapping.toon`
+   (at HEAD c56710b the literal survives only in `phase-2-refine/standards/refine-workflow-detail.md`;
+   both SKILL.md files now cite `work/module_mapping.toon` — corrected at cleanup 2026-09-28) — a literal shared across plans — before
    `manage-files write --content-file`. A concurrent refine for another plan overwrote it
    mid-run. Every `.plan/temp/` staging path named in a workflow doc must include the plan
    id; sweep the phase docs for any other fixed staging filename and fix the whole population.
@@ -52,9 +53,13 @@ persist each other's content.
 ## Claim Labels
 
 - OBSERVED: refine clean-main assertion tripped on 7 sanctioned `.plan/orchestrator/process-compliance/` entries not written by the refine — cited at `inbox/archive/plan-13-finalize-mechanism-defects/plan-13-finalize-mechanism-defects-002.md` § 2 (porcelain quoted); prior instance `plan-09-outline-sweep-003.md` (main-dirt assertion fires on pre-existing dirt, originally folded into PLAN-10 without a deliverable — now carried here)
+  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: planning.md:441-475 refine assertion git status --porcelain must be empty, no baseline and no .plan/orchestrator exemption
 - OBSERVED: two further runs hit the same assertion on sanctioned orchestrator-store writes, with `phase_handshake verify` classifying the same paths `main_dirty_exempted` — cited at `inbox/archive/plan-12-tool-triage/plan-12-tool-triage-006.md` § Observed and `inbox/archive/plan-13-finalize-mechanism-defects/plan-13-finalize-mechanism-defects-003.md` § 3
+  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: _plan_state_exemption.py:236-273 exempts untracked .plan/ paths as main_dirty_exempted; porcelain assertions planning.md:441, planning-outline.md:219,526 exempt nothing
 - HYPOTHESIS: the blocking count is computed from a population the per-type buckets do not enumerate (Q-Gate flags) — confirm/refute at `marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/_invariants.py` § `pending_findings_blocking_count` (verify-at-outline); observation cited at `plan-12-tool-triage-006.md` § Secondary observation
+  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: _invariants.py:1271-1284 _PENDING_FINDING_TYPES lacks qgate while the :1304-1311 blocking set includes it (summed :1496-1497), so blocking > sum of buckets
 - OBSERVED: `.plan/temp/module_mapping.toon` overwritten by a concurrent refine — cited at `plan-13-finalize-mechanism-defects-002.md` § 3 (refine sub-agent report, not reproduced); the literal is confirmed at HEAD in `phase-2-refine/SKILL.md`, `phase-2-refine/standards/refine-workflow-detail.md`, `phase-3-outline/SKILL.md`
+  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: literal .plan/temp/module_mapping.toon survives only in phase-2-refine/standards/refine-workflow-detail.md; the SKILL.md citations in the claim are stale (they cite work/module_mapping.toon)
 
 ## Expected Surface
 
@@ -66,6 +71,9 @@ persist each other's content.
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-2-refine/` — staging filename
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md` — staging filename
 - OBSERVED: `test/plan-marshall/plan-marshall/` — invariant regression test
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/script-shared/scripts/_plan_state_exemption.py` — the ONE exemption set both guards must share (deliverable 1) (added cleanup 2026-09-28, re-grounding at c56710b — understated surface)
+- OBSERVED: `test/plan-marshall/script-shared/` — exemption-set tests (added cleanup 2026-09-28, re-grounding at c56710b — understated surface)
+- OBSERVED: `marketplace/bundles/pm-plugin-development/skills/ext-outline-workflow/workflow/inventory.md` — fixed `.plan/temp/` staging literal, 2 hits (deliverable 2 population) (added cleanup 2026-09-28, re-grounding at c56710b — understated surface)
 
 ## Dependencies and Sequencing
 
