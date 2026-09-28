@@ -29,7 +29,7 @@ Manage status.json files with phase tracking, metadata, and lifecycle operations
 Status is stored in the plan directory:
 
 ```text
-.plan/plans/{plan_id}/status.json
+.plan/local/plans/{plan_id}/status.json
 ```
 
 ---

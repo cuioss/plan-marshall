@@ -1071,7 +1071,7 @@ Each observed tool call is classified by its tool name into one of five buckets;
 status: success
 operation: metrics normalized-tokens
 session_id: 21df86b6-731d-4b88-8ad0-507e05a872fa
-output_file: .plan/plans/my-plan/work/normalized-tokens.json
+output_file: .plan/local/plans/my-plan/work/normalized-tokens.json
 phases_attributed: 6
 message_count: 412
 subagent_phases_attributed: 4

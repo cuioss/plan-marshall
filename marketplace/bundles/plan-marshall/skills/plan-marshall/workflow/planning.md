@@ -650,7 +650,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Step 3: Orphan-dir cleanup
 
-Prune orphan plan directories — entries under `.plan/plans/` that have no readable `status.json`. These typically result from interrupted plan creation, aborted `phase-1-init` runs, or stale worktree-only artifacts. The archived-plans directory is excluded by `manage-status list-orphans`.
+Prune orphan plan directories — entries under `.plan/local/plans/` that have no readable `status.json`. These typically result from interrupted plan creation, aborted `phase-1-init` runs, or stale worktree-only artifacts. The archived-plans directory is excluded by `manage-status list-orphans`.
 
 **3a — Enumerate orphan directories:**
 

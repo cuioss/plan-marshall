@@ -71,9 +71,9 @@ below are the dispatcher's already-resolved verdict, carried in so the body neve
 - `--iteration` — finalize iteration counter (accepted for contract compliance).
 - `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0).
 
-**Orchestration context (resolved once by the dispatcher, never re-derived here)**: this step writes to
-the epic inbox, so it consumes the same once-per-run orchestration verdict `lessons-capture`,
-`plan-retrospective`, and `finalize-step-preference-emitter` consume. The dispatcher resolves it once
+**Orchestration context (resolved once per finalize entry by the dispatcher, never re-derived here)**: this step writes to
+the epic inbox, so it consumes the same orchestration verdict `lessons-capture`,
+`plan-retrospective`, and `finalize-step-preference-emitter` consume. The dispatcher resolves it once per finalize entry
 at Step 3 entry — `phase-6-finalize/SKILL.md` Step 3 § "a0. Resolve orchestration context (Step 3
 entry)" (`manage-plan-documents request read --section source_id`, then `orchestrator inbox detect`) —
 before the step loop and independent of any step's resumable skip, so it holds the verdict when this

@@ -38,7 +38,7 @@ This step performs three sequenced `manage-metrics` invocations — `end-phase`,
 
 ## Record Phase End for 6-Finalize
 
-Close out the 6-finalize phase timing/token ledger. Every agent-dispatched step (see [`../SKILL.md`](../SKILL.md) Step 3, which owns the current roster) persists its `<usage>` totals to `.plan/plans/{plan_id}/work/metrics-accumulator-6-finalize.toon` via `manage-metrics accumulate-agent-usage` from SKILL.md Step 3 step 5b. `end-phase` reads that accumulator file as a fallback when no explicit token flags are passed:
+Close out the 6-finalize phase timing/token ledger. Every agent-dispatched step (see [`../SKILL.md`](../SKILL.md) Step 3, which owns the current roster) persists its `<usage>` totals to `.plan/local/plans/{plan_id}/work/metrics-accumulator-6-finalize.toon` via `manage-metrics accumulate-agent-usage` from SKILL.md Step 3 step 5b. `end-phase` reads that accumulator file as a fallback when no explicit token flags are passed:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics end-phase \
@@ -130,7 +130,7 @@ Per-step outcome tables, end-state verification, and the plan-complete summary a
 
 ## Mark Step Complete
 
-Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time. This MUST happen before `default:archive-plan` runs, because archive moves `status.json` out of `.plan/plans/{plan_id}/` and `mark-step-done` would no longer find the plan.
+Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time. This MUST happen before `default:archive-plan` runs, because archive moves `status.json` out of `.plan/local/plans/{plan_id}/` and `mark-step-done` would no longer find the plan.
 
 Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the core metrics without re-reading `metrics.md`:
 
