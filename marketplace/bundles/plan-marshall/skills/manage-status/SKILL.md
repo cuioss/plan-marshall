@@ -987,7 +987,7 @@ No refusal advances the plan: `current_phase` is unchanged and the payload carri
 | `error: missing_exempt_reason` | 0 | `--allow-bare-transition` was passed without a `--bare-reason`. |
 | `error: blocking_findings_present` | 0 | Completing `6-finalize` while an actionable finding is still pending. |
 
-A caller that reads only the exit code sees the exit-0 refusals as success; a caller that reads only an `error` key misses `status: drift`. The [refused-transition halt rule](../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule) is the single statement of what every caller does with any of them.
+A caller that reads only the exit code sees the exit-0 refusals as success; a caller that reads only an `error` key misses `status: drift`. The [refused-transition halt rule](../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule) is the single statement of what every caller does with any non-`success` result.
 
 **Output — refused, unexaminable `phases`** (TOON, nothing written):
 ```toon
@@ -1555,7 +1555,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transi
   --plan-id PLAN_ID --completed PHASE [--allow-bare-transition --bare-reason REASON]
 ```
 
-Any non-`success` result means the phase did NOT advance: the caller applies the [refused-transition halt rule](../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule). The refusal codes and their exit codes are enumerated under [Refusal surface](#refusal-surface).
+Any non-`success` result means the phase did NOT advance: the caller applies the [refused-transition halt rule](../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule). See [Refusal surface](#refusal-surface) for refusal codes and their exit codes.
 
 ### archive
 

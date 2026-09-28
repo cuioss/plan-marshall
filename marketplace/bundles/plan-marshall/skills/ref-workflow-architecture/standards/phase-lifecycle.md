@@ -134,7 +134,7 @@ ANY result whose `status` is not `success` means the phase did **NOT** advance �
    - A **dispatched leaf** returns its structured error payload carrying the refusal verbatim, instead of its success return. The leaf performs no recovery.
    - An **inline or orchestrator** context stops and surfaces the refusal to the operator. A site that owns a documented recovery for a named refusal code routes that code; every other refusal halts for the operator.
 
-The refusal codes and their exit codes are not restated here — they are enumerated by [`manage-status/SKILL.md`](../../manage-status/SKILL.md) § `transition` → "Refusal surface", whose blocking-boundary codes are the `VERIFY_REFUSAL_ERRORS` constant in `manage-status/scripts/_cmd_lifecycle.py`.
+Refusal codes and their exit codes are not restated here — see [`manage-status/SKILL.md`](../../manage-status/SKILL.md) § `transition` → "Refusal surface", whose blocking-boundary codes are the `VERIFY_REFUSAL_ERRORS` constant in `manage-status/scripts/_cmd_lifecycle.py`.
 
 #### On a successful transition
 

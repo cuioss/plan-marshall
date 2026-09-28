@@ -712,8 +712,7 @@ def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
     """Transition to next phase.
 
     A refused transition leaves ``current_phase`` unchanged and carries no
-    ``mailbox`` block. The first refusal
-    is structural: a ``phases`` structure that cannot be read in full (the shared
+    ``mailbox`` block. One refusal is structural: a ``phases`` structure that cannot be read in full (the shared
     :func:`_status_core.in_progress_phases` examinability predicate ``cmd_archive``
     and ``census`` already read) is refused as ``phases_unexaminable`` rather than
     crashing on a row that is not a mapping or carries no ``name``.
