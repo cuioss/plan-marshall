@@ -446,12 +446,18 @@ Scripts should use this for path construction instead of hardcoding `.plan`:
 import os
 from pathlib import Path
 
+from constants import DIR_LOGS
+from file_ops import get_base_dir
+
 # Get the plan directory name
 _PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
 
 # Use in path construction
 DATA_DIR = Path(_PLAN_DIR_NAME) / 'project-architecture'
-LOG_DIR = Path(_PLAN_DIR_NAME) / 'logs'
+
+# Runtime state (global logs included) lives under the runtime-state root
+# (<plan-root>/.plan/local), so derive it from get_base_dir(), not PLAN_DIR_NAME
+LOG_DIR = get_base_dir() / DIR_LOGS
 ```
 
 **Key points**:

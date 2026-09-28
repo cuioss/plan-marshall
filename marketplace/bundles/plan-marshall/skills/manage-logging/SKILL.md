@@ -368,7 +368,7 @@ log_entry('work', 'example-plan', 'INFO', '[ARTIFACT] Created deliverable')
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `PLAN_BASE_DIR` | Base directory for .plan structure | `.plan` |
+| `PLAN_BASE_DIR` | Overrides the runtime-state root (resolved by `file_ops.get_base_dir`) | `<plan-root>/.plan/local` |
 | `LOG_MAX_OUTPUT` | Max chars to capture from stdout/stderr | `2000` |
 | `LOG_RETENTION_DAYS` | Days to keep global logs (used by `cleanup_old_script_logs()`) | `7` |
 
