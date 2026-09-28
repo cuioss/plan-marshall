@@ -482,8 +482,16 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock budget-rec
 ```
 
 The waiter-side reclaim for the orchestrator-layer `merge_hold_budget_seconds`
-bound (branch-cleanup records the wall-clock instant of acquire and calls this
-verb when the held duration reaches budget with admission still blocked):
+bound (branch-cleanup binds the acquire instant with `date +%s` and calls this
+verb when the held duration reaches budget with admission still blocked).
+
+`--hold-start` is a **POSIX epoch in seconds**. It is declared `type=float`, so the
+integer form `date +%s` prints is accepted, and so is a fractional epoch. An
+ISO-8601 timestamp string is NOT an epoch: argparse rejects it (exit 2) before the
+script body runs, so the lock is never touched. `acquire` returns no timestamp, so
+the caller captures the value itself — the binding lives in
+[`phase-6-finalize/standards/branch-cleanup.md`](../phase-6-finalize/standards/branch-cleanup.md)
+§ "Merge-Mutex Hold Window" invariant 2 and is not restated here. Outcomes:
 
 - **No lock file** → `status: success`, `action: nothing_to_reclaim`
   (a concurrently-released lock is not an error).

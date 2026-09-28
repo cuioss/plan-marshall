@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for ``merge_lock.py`` budget-aware reclaim (``budget-reclaim``).
 
-Contract under test (PLAN-06 D2 — the waiter-side reclaim for the
-orchestrator-layer ``merge_hold_budget_seconds`` bound):
+Contract under test (the waiter-side reclaim for the orchestrator-layer
+``merge_hold_budget_seconds`` bound):
 
 * **Nothing to reclaim** — no lock file yields ``status: success``,
   ``action: nothing_to_reclaim`` (a concurrently-released lock is not an
@@ -26,6 +26,14 @@ orchestrator-layer ``merge_hold_budget_seconds`` bound):
   ``status: error`` and leave an existing lock intact.
 * **Budget audit fields** — every branch carries ``elapsed_seconds`` and
   ``hold_budget_seconds`` so the caller can audit the budget arithmetic.
+* **``--hold-start`` is POSIX epoch seconds** — at the CLI boundary the integer
+  string ``date +%s`` prints is accepted and reaches the budget arithmetic,
+  while an ISO-8601 timestamp is an argparse rejection (exit 2) raised before
+  the handler runs, so the lock is never touched.
+* **The caller binds that shape** — ``branch-cleanup.md`` § "Merge-Mutex Hold
+  Window" invariant 2 binds ``{hold_start}`` as ``date +%s`` epoch seconds,
+  and every other doc naming ``{hold_start}`` points at that binding instead
+  of defining a shape of its own.
 
 Isolation mirrors ``test_merge_lock_conditional_release.py``: every test runs
 against an isolated ``PLAN_BASE_DIR`` staged under ``tmp_path`` so the lock,
@@ -35,16 +43,26 @@ the FIFO queue, and holder plan dirs resolve there rather than the real
 
 from __future__ import annotations
 
+import re
+import sys
 import time
 from argparse import Namespace
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from _manage_locks_fixtures import _make_live_plan, _write_lock
+from toon_parser import parse_toon
 
-from conftest import load_script_module
+from conftest import MARKETPLACE_ROOT, load_script_module
 
 merge_lock = load_script_module('plan-marshall', 'manage-locks', 'merge_lock.py', 'merge_lock_budget_under_test')
+
+_BRANCH_CLEANUP_DOC: Path = (
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / 'branch-cleanup.md'
+)
+_HOLD_START_TOKEN = '{hold_start}'
 
 
 # =============================================================================
@@ -178,3 +196,127 @@ class TestBudgetReclaimInvalidInput:
         assert result['elapsed_seconds'] >= 0.0
         assert result['hold_budget_seconds'] == 0.0
         assert lock_path.exists()
+
+
+# =============================================================================
+# --hold-start shape at the CLI boundary — POSIX epoch seconds, never ISO-8601
+# =============================================================================
+
+
+def _run_cli(monkeypatch: pytest.MonkeyPatch, hold_start: str) -> int:
+    """Drive ``main()`` with a patched argv for one ``budget-reclaim`` call.
+
+    argparse reads the process-global ``sys.argv``; ``main`` returns the exit
+    code on a parsed call and raises ``SystemExit`` on an argparse rejection.
+    """
+    argv = [
+        'merge_lock.py',
+        'budget-reclaim',
+        '--plan-id',
+        'waiter',
+        '--hold-start',
+        hold_start,
+        '--hold-budget-seconds',
+        '3600',
+    ]
+    monkeypatch.setattr(sys, 'argv', argv)
+    exit_code: int = merge_lock.main()
+    return exit_code
+
+
+class TestHoldStartCliShape:
+    def test_integer_epoch_string_reaches_budget_arithmetic(
+        self, isolated_base: dict, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # The `date +%s` form: an integer string, 3700s before now.
+        lock_path = isolated_base['lock_path']
+        _write_lock(lock_path, 'dead-holder')
+        hold_start = int(time.time()) - 3700
+
+        _run_cli(monkeypatch, str(hold_start))
+
+        result = parse_toon(capsys.readouterr().out)
+        assert result['status'] == 'success'
+        assert result['action'] == 'released'
+        # elapsed is measured from the parsed epoch, so it lands just past 3700s.
+        assert 3700.0 <= result['elapsed_seconds'] < 3700.0 + 60.0
+        assert not lock_path.exists()
+
+    @pytest.mark.parametrize(
+        'iso_form',
+        [
+            pytest.param(lambda now: now.isoformat(), id='isoformat-offset'),
+            pytest.param(lambda now: now.strftime('%Y-%m-%dT%H:%M:%SZ'), id='zulu'),
+        ],
+    )
+    def test_iso_8601_value_is_rejected_before_the_lock_is_touched(
+        self,
+        isolated_base: dict,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        iso_form: Callable[[datetime], str],
+    ) -> None:
+        lock_path = isolated_base['lock_path']
+        _write_lock(lock_path, 'dead-holder')
+        lock_before = lock_path.read_bytes()
+        handler_calls: list[Namespace] = []
+        monkeypatch.setattr(merge_lock, 'run_budget_reclaim', handler_calls.append)
+
+        with pytest.raises(SystemExit) as exc:
+            _run_cli(monkeypatch, iso_form(datetime.now(UTC)))
+
+        assert exc.value.code == 2
+        assert 'argument --hold-start' in capsys.readouterr().err
+        assert handler_calls == []
+        assert lock_path.read_bytes() == lock_before
+
+
+# =============================================================================
+# Caller-side binding — branch-cleanup.md owns the {hold_start} shape
+# =============================================================================
+
+
+def _invariant_two_paragraph(text: str) -> str:
+    """Return invariant 2 of § "Merge-Mutex Hold Window" up to invariant 3."""
+    section = text.split('## Merge-Mutex Hold Window', 1)[1].split('\n## ', 1)[0]
+    match = re.search(r'^2\. \*\*Bounded hold.*?(?=^3\. )', section, flags=re.MULTILINE | re.DOTALL)
+    assert match is not None, 'invariant 2 not found under § "Merge-Mutex Hold Window"'
+    return match.group(0)
+
+
+class TestHoldStartCallerBinding:
+    def test_branch_cleanup_binds_hold_start_as_date_epoch_seconds(self) -> None:
+        paragraph = _invariant_two_paragraph(_BRANCH_CLEANUP_DOC.read_text(encoding='utf-8'))
+
+        assert f'`{_HOLD_START_TOKEN}` is the acquire instant as an **integer POSIX epoch in seconds**' in paragraph
+        assert '`date +%s`' in paragraph
+        assert 'never an ISO-8601 string' in paragraph
+        assert '--hold-start {hold_start}' in paragraph
+
+    def test_every_other_hold_start_site_points_at_the_binding(self) -> None:
+        # Population: every marketplace doc naming {hold_start}, derived by scan.
+        docs = {path: path.read_text(encoding='utf-8') for path in sorted(MARKETPLACE_ROOT.rglob('*.md'))}
+        sites = {path: text for path, text in docs.items() if path != _BRANCH_CLEANUP_DOC and _HOLD_START_TOKEN in text}
+
+        assert sites, 'no doc outside branch-cleanup.md names {hold_start} — the scan matched nothing'
+        unanchored = {str(path): _unanchored_paragraphs(text) for path, text in sites.items()}
+        assert {path: found for path, found in unanchored.items() if found} == {}
+
+    def test_a_paragraph_defining_its_own_shape_is_flagged(self) -> None:
+        anchored = 'Elapsed is `date +%s` minus `{hold_start}` (bound in `branch-cleanup.md` invariant 2).'
+        competing = 'The orchestrator records the wall-clock instant of acquire as `{hold_start}`.'
+
+        assert _unanchored_paragraphs(f'{anchored}\n\n{competing}') == [competing]
+
+
+def _unanchored_paragraphs(text: str) -> list[str]:
+    """Return every paragraph naming ``{hold_start}`` without citing its binding.
+
+    A paragraph cites the binding when it names both ``branch-cleanup.md`` and
+    invariant 2 — the one place the shape is defined.
+    """
+    return [
+        paragraph
+        for paragraph in re.split(r'\n\s*\n', text)
+        if _HOLD_START_TOKEN in paragraph and not ('branch-cleanup.md' in paragraph and 'invariant 2' in paragraph)
+    ]
