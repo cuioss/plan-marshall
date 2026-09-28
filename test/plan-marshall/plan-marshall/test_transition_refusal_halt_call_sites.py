@@ -23,9 +23,11 @@ What each call site must carry
 For every call block, the section text after it — up to the next heading at the
 same or a higher level — must link the halt-rule anchor (the anchor's own home
 states the rule under the anchor heading instead), and that marker must come
-before any ``plan_without_asking`` / ``execute_without_asking`` /
-``finalize_without_asking`` mention, because a gate read ahead of the halt is a
-continuation past a refusal. Every refusal code a recovery table under a call
+before any auto-continue gate mention, because a gate read ahead of the halt is a
+continuation past a refusal. The gate names are DERIVED from the halt rule's own
+section — every backticked ``*_without_asking`` token between the anchor heading
+and the next heading at the same or a higher level — so a gate the rule gains is
+checked without editing this module. Every refusal code a recovery table under a call
 site names must be a member of ``VERIFY_REFUSAL_ERRORS``, imported from the
 production module, so a table can neither invent a code nor imply that an
 unlisted refusal has a recovery.
@@ -61,9 +63,6 @@ VERIFY_REFUSAL_ERRORS: frozenset[str] = _lifecycle.VERIFY_REFUSAL_ERRORS
 #: breaks every link, and this spelling is what the links are checked against.
 HALT_RULE_ANCHOR = 'refused-transition-halt-rule'
 
-#: The auto-continue gates a call site must not read ahead of the halt.
-AUTO_CONTINUE_GATES = ('plan_without_asking', 'execute_without_asking', 'finalize_without_asking')
-
 _SHELL_LANGS = frozenset({'bash', 'sh', 'shell'})
 _FENCE_RE = re.compile(r'^[ \t]*(?P<fence>`{3,}|~{3,})(?P<lang>[\w+-]*)[ \t]*$')
 _HEADING_RE = re.compile(r'^(?P<hashes>#{1,6})[ \t]+(?P<title>.*?)[ \t]*#*[ \t]*$')
@@ -72,6 +71,7 @@ _CALL_RE = re.compile(r'manage-status[ \t]+transition\b[^\n]*?--completed(?:[ \t
 _TEMPLATED_RE = re.compile(r'--completed(?:[ \t]+|=)\{')
 _LINK_RE = re.compile(rf'\]\((?P<target>[^)\s#]*phase-lifecycle\.md)#{HALT_RULE_ANCHOR}\)')
 _BACKTICK_RE = re.compile(r'`([^`]+)`')
+_GATE_TOKEN_RE = re.compile(r'`(\w+_without_asking)`')
 _RAW_CALL_RE = re.compile(
     r'```(?:bash|sh|shell)[^\n]*\n(?:(?!```).)*?manage-status\s+transition(?:(?!```).)*?--completed', re.S
 )
@@ -146,6 +146,22 @@ def _parse(path: Path, text: str) -> tuple[list[CallBlock], list[tuple[int, int,
     return call_blocks, headings
 
 
+def _halt_rule_gates(path: Path, text: str) -> tuple[str, ...]:
+    """The backticked ``*_without_asking`` gates the halt-rule section names, in first-mention order.
+
+    The section runs from the anchor heading to the next heading at the same or a
+    higher level; a document without the anchor heading names no gate.
+    """
+    lines = text.split('\n')
+    _, headings = _parse(path, text)
+    anchor = next(((idx, level) for idx, level, title in headings if _slug(title) == HALT_RULE_ANCHOR), None)
+    if anchor is None:
+        return ()
+    start, level = anchor
+    end = next((idx for idx, lvl, _ in headings if idx > start and lvl <= level), len(lines))
+    return tuple(dict.fromkeys(_GATE_TOKEN_RE.findall('\n'.join(lines[start + 1 : end]))))
+
+
 def _marker_offset(block: CallBlock, home: Path) -> int | None:
     """Offset of the first halt-rule marker in the block's following text, or ``None``.
 
@@ -218,6 +234,11 @@ _CALL_BLOCKS, _HOMES, _RAW_HITS = _scan()
 assert _CALL_BLOCKS, f'no fenced manage-status transition --completed call block found under {MARKETPLACE_ROOT}'
 assert len(_HOMES) == 1, f'exactly one file must carry the #{HALT_RULE_ANCHOR} heading, found {_HOMES}'
 _HOME = _HOMES[0]
+
+#: The auto-continue gates a call site must not read ahead of the halt, derived from
+#: the halt rule's own section rather than restated here.
+AUTO_CONTINUE_GATES = _halt_rule_gates(_HOME, _HOME.read_text(encoding='utf-8'))
+assert AUTO_CONTINUE_GATES, f'the #{HALT_RULE_ANCHOR} section in {_HOME} names no backticked *_without_asking gate'
 
 
 def test_the_halt_rule_lives_under_its_anchor_in_the_phase_lifecycle_standard():
@@ -309,32 +330,52 @@ def test_an_equals_form_call_without_the_link_is_flagged(tmp_path):
     ]
 
 
-def test_a_gate_read_ahead_of_the_link_is_flagged(tmp_path):
-    """Negative control: a link that arrives only after the gate is read does not halt the run."""
+@pytest.mark.parametrize('gate', AUTO_CONTINUE_GATES)
+def test_a_gate_read_ahead_of_the_link_is_flagged(tmp_path, gate):
+    """Negative control: a link that arrives only after any derived gate is read does not halt the run."""
     link = os.path.relpath(_HOME, tmp_path)
     block = _synthetic(
         tmp_path,
         '### Phase Transition\n\n```bash\npython3 .plan/execute-script.py plan-marshall:manage-status:manage-status '
         'transition --plan-id {plan_id} --completed 4-plan\n```\n\n'
-        'Read `execute_without_asking` and continue.\n\n'
+        f'Read `{gate}` and continue.\n\n'
         f'See the [halt rule]({link}#{HALT_RULE_ANCHOR}).\n',
     )
 
     assert _violations(block, _HOME) == ['synthetic.md:3: an auto-continue gate is read before the halt-rule link']
 
 
-def test_a_call_linking_the_rule_before_its_gate_passes(tmp_path):
-    """Positive control: the compliant shape is not flagged, so the predicate is satisfiable."""
+@pytest.mark.parametrize('gate', AUTO_CONTINUE_GATES)
+def test_a_call_linking_the_rule_before_its_gate_passes(tmp_path, gate):
+    """Positive control: the compliant shape is not flagged for any derived gate, so the predicate is satisfiable."""
     link = os.path.relpath(_HOME, tmp_path)
     block = _synthetic(
         tmp_path,
         '### Phase Transition\n\n```bash\npython3 .plan/execute-script.py plan-marshall:manage-status:manage-status '
         'transition --plan-id {plan_id} --completed 4-plan\n```\n\n'
         f'On any non-success result, STOP per the [halt rule]({link}#{HALT_RULE_ANCHOR}).\n\n'
-        'Then read `execute_without_asking`.\n',
+        f'Then read `{gate}`.\n',
     )
 
     assert _violations(block, _HOME) == []
+
+
+def test_the_gate_derivation_reads_only_the_halt_rule_section():
+    """The deriver collects the anchor section's backticked gates and stops at the next peer heading."""
+    text = (
+        '### Step 1: Transition\n\n#### Refused-transition halt rule\n\n'
+        'No gate (`alpha_without_asking`, `beta_without_asking`) is read; `alpha_without_asking` again.\n\n'
+        '#### On a successful transition\n\nRead `delta_without_asking`.\n'
+    )
+
+    assert _halt_rule_gates(Path('synthetic.md'), text) == ('alpha_without_asking', 'beta_without_asking')
+
+
+def test_a_document_without_the_anchor_derives_no_gate():
+    """Negative control: a missing anchor yields the empty set the binding-site guard refuses."""
+    text = '#### Some other rule\n\nRead `alpha_without_asking`.\n'
+
+    assert _halt_rule_gates(Path('synthetic.md'), text) == ()
 
 
 def test_a_recovery_table_naming_an_unlisted_code_is_flagged():
