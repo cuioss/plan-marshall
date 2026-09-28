@@ -86,7 +86,7 @@ def _runtimes() -> list[Any]:
     ]
 
 
-def _step_indices() -> list[int]:
+def _step_cases() -> list[dict[str, Any]]:
     """The per-step parametrization cases, over a roster proven non-empty.
 
     ``range(len(EXPECTED_STEPS))`` inlines to no case at all when the roster is
@@ -94,12 +94,15 @@ def _step_indices() -> list[int]:
     R5 harness guard reports. The assertion is what makes the parametrization an
     observation instead of a conditional one.
 
-    The cases are enumerated off ``EXPECTED_STEPS`` itself rather than built from
-    ``len()``: a ``len()``-derived return does not carry the name the assertion
-    guards, so the guard reads the helper as unguarded anyway.
+    The comprehension iterates the roster NAME directly, and that is load-bearing
+    twice over: a narrowing transform (``if`` clause, ``filter``) would prove
+    nothing about its result, and wrapping the roster in another call (``enumerate``,
+    ``len``) makes the returned expression name that callee rather than the roster,
+    so the assert and the return stop meeting on the same name and the guard reads
+    the helper as unguarded anyway.
     """
     assert EXPECTED_STEPS, 'the published roster must carry at least one step'
-    return [index for index, _step in enumerate(EXPECTED_STEPS)]
+    return [step for step in EXPECTED_STEPS]
 
 
 class TestKeyedMapIsRead:
@@ -113,14 +116,14 @@ class TestKeyedMapIsRead:
         """The keyed map is a change of shape, not a change of meaning."""
         assert extract_project_steps(config) == extract_project_steps(LEGACY_CONFIG)
 
-    @pytest.mark.parametrize('index', _step_indices())
-    def test_zero_project_steps_is_unreachable_from_a_well_formed_keyed_map(self, index: int) -> None:
+    @pytest.mark.parametrize('step', _step_cases())
+    def test_zero_project_steps_is_unreachable_from_a_well_formed_keyed_map(self, step: dict[str, Any]) -> None:
         """No single declared project step may be dropped to nothing.
 
         Asserted per-entry rather than on the count so a regression names WHICH
         step stopped being read, instead of only how many are left.
         """
-        notation = EXPECTED_STEPS[index]['step']
+        notation = step['step']
         config: dict[str, Any] = {
             'plan': {'phase-5-execute': {'steps': _keyed(['default:push', notation])}},
         }
