@@ -12,7 +12,7 @@ Unified logging infrastructure providing script execution logging, semantic work
 
 **Scope: hybrid** means this skill operates at both plan-scoped and global levels. When a `plan_id` is provided and the plan directory exists, logs go to `.plan/local/plans/{plan-id}/logs/`. Otherwise, logs fall back to global daily files at `.plan/local/logs/`.
 
-A third, opt-in store exists for orchestrator epics: `--store orchestrator` on the `work` / `decision` / `read` verbs routes to the git-tracked orchestrator tree at `.plan/orchestrator/{slug}/logs/` (resolved via `file_ops.get_store_dir`, cwd-relative on the tracked config tier). The default store is `plans` — every existing call path is unchanged.
+A third, opt-in store exists for orchestrator epics: `--store orchestrator` on the `work` / `decision` / `read` verbs routes to the `logs/` directory of the git-tracked orchestrator epic tree, logically `.plan/orchestrator/{slug}/logs/`. The tree is resolved through the orchestrator store seam (`file_ops.get_store_dir`): on the current checkout's git-tracked config tier with `orchestrator.use_worktree` off, and inside the shared ledger worktree with it on — see [`tools-file-ops/SKILL.md`](../tools-file-ops/SKILL.md) for the store root. The default store is `plans` — every existing call path is unchanged.
 
 **The epic tree is git-tracked; its `logs/` subtree is not.** `.gitignore` un-ignores `.plan/orchestrator/` and `.plan/archived-orchestrators/` and then re-ignores `*/logs/` beneath both, because a per-verb append log is a pure audit artifact whose line-level churn would conflict on every run. So an orchestrator log entry stays machine-local even though the ledger it sits beside is versioned with the repository.
 
@@ -321,7 +321,7 @@ log_entry('work', 'example-plan', 'INFO', '[ARTIFACT] Created deliverable')
 
 **Note**: IDE warnings about unresolved imports are expected - PYTHONPATH is set at runtime by the executor.
 
-**Error behavior**: Logging calls are fire-and-forget. If the target directory doesn't exist or a write fails, the error is silently swallowed to avoid disrupting the calling script. This is intentional — logging should never cause a script to fail.
+**Error behavior**: Logging calls are fire-and-forget. If the target directory doesn't exist or a write fails, the error is silently swallowed to avoid disrupting the calling script. This is intentional — logging should never cause a script to fail. The one exception is a refusal from the orchestrator store seam on an orchestrator-store write (`OrchestratorStoreUnavailable`, see [`tools-file-ops/SKILL.md`](../tools-file-ops/SKILL.md)): it propagates rather than being swallowed, because swallowing it would report a log write that never landed.
 
 `plan_id` validity is enforced below this API as well — see the `invalid_plan_id` note under [Error Responses](#error-responses).
 
@@ -358,7 +358,7 @@ log_entry('work', 'example-plan', 'INFO', '[ARTIFACT] Created deliverable')
 ```
 
 **Scope Selection**:
-- If `--store orchestrator`: orchestrator log on the git-tracked tier (requires `plan_id` = epic slug; no fallback)
+- If `--store orchestrator`: orchestrator log in the epic tree the store seam resolves — the current checkout's tracked tier with `orchestrator.use_worktree` off, the shared ledger worktree with it on (requires `plan_id` = epic slug; no fallback)
 - If `plan_id` is provided and plan directory exists: plan-scoped log
 - Otherwise: global log (both script and work types supported)
 
@@ -386,7 +386,7 @@ log_entry('work', 'example-plan', 'INFO', '[ARTIFACT] Created deliverable')
 | `invalid_level` | Level not in: INFO, WARNING, ERROR |
 | `write_failed` | File system permission denied or directory missing |
 
-**Note**: Write operations are fire-and-forget — the Python `log_entry()` function silently swallows errors to avoid disrupting callers. The CLI script (`manage-logging`) returns exit code 1 on validation errors but silently succeeds on I/O failures.
+**Note**: Write operations are fire-and-forget — the Python `log_entry()` function silently swallows errors to avoid disrupting callers. The CLI script (`manage-logging`) returns exit code 1 on validation errors but silently succeeds on I/O failures. A refusal from the orchestrator store seam on a `--store orchestrator` call is not an I/O failure and is not swallowed: it reaches the caller as `status: error` carrying the seam's code, with exit 0.
 
 **Note**: `invalid_plan_id` is also enforced below the CLI boundary. A malformed `plan_id` handed to the Python API is rejected at `get_log_path` — the shared path resolver — so the entry is **dropped** instead of falling back to the global log; an absent (`None`) `plan_id` remains the first-class global path. The read verbs never reach that resolver with a malformed identifier: their own `is_valid_plan_id` pre-check surfaces it as the `invalid_plan_id` TOON error first. The fire-and-forget write verbs swallow it per the note above.
 

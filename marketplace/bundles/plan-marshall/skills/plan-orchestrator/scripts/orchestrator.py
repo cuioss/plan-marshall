@@ -13,6 +13,15 @@ one-file-per-row ``queue/{PLAN-ID}.json`` queue — goes through
 per-concern layout; no code path here opens a queue row or the anchor itself.
 
 - ``scaffold --slug S`` — create the epic directory tree (idempotent).
+- ``resolve-path --slug S`` — a READ that creates no epic tree: publish where
+  the store seam places the epic (``epic_dir`` — the active tree, else the
+  archived one, else the would-be active path with ``exists: false``) and the
+  checkout that holds the store (``store_checkout``, the one ``git -C`` target
+  for ledger git operations), so the verb workflows address every direct
+  Read/Write/Edit and every ledger commit through the seam's answer rather than
+  through a cwd-relative path. With ``orchestrator.use_worktree`` on, a first
+  call is a first use of the seam and creates the shared ledger worktree
+  exactly as any other store consumer would.
 - ``queue --slug S [--transition PLAN-NN --status X | --set-row PLAN-NN
   --field F --value V | --add-row PLAN-NN --slug-value SLUG --workstream WS-NN
   [--status X]]`` — a four-way surface over the plan queue's row files: read
@@ -194,12 +203,14 @@ from epic_spec_parser import (
 from file_ops import (
     cwd_checkout_root,
     get_archived_orchestrator_dir,
+    get_orchestrator_store_root,
     get_store_dir,
     now_utc_iso,
     output_toon,
     safe_main,
 )
 from input_validation import validate_plan_id
+from orchestrator_worktree import orchestrator_use_worktree
 from toon_parser import parse_toon, serialize_toon
 
 ORCHESTRATOR_STORE = 'orchestrator'
@@ -1287,6 +1298,55 @@ def cmd_scaffold(args: argparse.Namespace) -> dict[str, Any]:
         'root': str(root),
         'already_existed': already_existed,
         'directories': list(EPIC_SUBDIRS),
+    }
+
+
+def cmd_resolve_path(args: argparse.Namespace) -> dict[str, Any]:
+    """Publish where the orchestrator store seam places one epic, creating no epic tree.
+
+    The LLM verb workflows author the epic's narrative documents with the
+    Read/Write/Edit tools, and a tool call is not a Python seam: a cwd-relative
+    ``.plan/orchestrator/{slug}/`` path lands on whichever checkout the session
+    runs in, which with ``orchestrator.use_worktree`` on is NOT the checkout the
+    store lives in. This verb is the one sanctioned source of the physical
+    location, so it composes on the seam — :func:`_epic_root`,
+    :func:`get_archived_orchestrator_dir` and :func:`get_orchestrator_store_root`
+    — and never re-derives a path.
+
+    ``epic_dir`` is the active tree when it exists, else the archived tree when
+    only that exists (``archived: true``), else the would-be active path with
+    ``exists: false`` so ``init`` and the ``lessons`` absent branch can address
+    the tree ``scaffold`` is about to create. ``store_checkout`` is the root of the
+    checkout holding the store — the shared ledger worktree with the knob on, the
+    current checkout with it off — and is the one ``git -C`` target for every
+    ledger git operation.
+
+    The slug is validated before the seam is touched, so an unsafe slug is
+    refused with ``invalid_slug`` before any git side effect. A seam refusal
+    (:class:`OrchestratorStoreUnavailable`) is deliberately not caught: it
+    renders through ``safe_main`` as the typed ``status: error`` with exit 0.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    active = _epic_root(args.slug)
+    archived_dir = get_archived_orchestrator_dir(args.slug)
+    if active.is_dir():
+        epic_dir, exists, archived = active, True, False
+    elif archived_dir.is_dir():
+        epic_dir, exists, archived = archived_dir, True, True
+    else:
+        epic_dir, exists, archived = active, False, False
+    return {
+        'status': 'success',
+        'operation': 'resolve-path',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'epic_dir': str(epic_dir),
+        'exists': exists,
+        'archived': archived,
+        'store_checkout': str(get_orchestrator_store_root().parent),
+        'use_worktree': orchestrator_use_worktree(),
     }
 
 
@@ -5628,7 +5688,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         prog='orchestrator',
         description=(
             'Thin scaffolding for plan-orchestrator epics: scaffold the '
-            'epic tree, read/transition/stamp/stage the plan queue, render '
+            'epic tree, resolve where the store seam places it, '
+            'read/transition/stamp/stage the plan queue, render '
             'the START-HERE resume summary, regenerate the generated queue '
             'view, migrate a monolithic ledger, archive a closed epic, reconcile '
             'the staged spec corpus and its re-grounding verdicts, report the '
@@ -5647,6 +5708,17 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     )
     _add_slug_arg(scaffold)
     scaffold.set_defaults(handler=cmd_scaffold)
+
+    resolve_path = subparsers.add_parser(
+        'resolve-path',
+        help=(
+            'Publish where the store seam places the epic tree (epic_dir) and the checkout holding '
+            'the store (store_checkout); read-only, never creates the epic tree.'
+        ),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(resolve_path)
+    resolve_path.set_defaults(handler=cmd_resolve_path)
 
     queue = subparsers.add_parser(
         'queue',

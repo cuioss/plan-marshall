@@ -17,7 +17,10 @@ is ``resolve_main_anchored_path`` (below), which always resolves to the main
 checkout for the bounded exception set — ``merge.lock``,
 ``run-configuration.json``, ``lessons-learned``, ``merge-queue.json``,
 ``plans/NO_PLAN/build-results`` — every other resolution in the codebase is
-cwd-relative.
+cwd-relative. With ``orchestrator.use_worktree`` on, the orchestrator store is
+reached through the shared ledger worktree ``worktrees/_orchestrator``, whose
+location is NAMED through that same resolver without joining the resident set —
+the same standing as ``plans/{plan_id}``.
 
 Distinct from the per-repo main-anchored exception above is the machine-global
 home-root tier: ``home_root()`` returns a single ``~/.plan-marshall`` directory
@@ -72,6 +75,28 @@ PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
 # worktree-resident plan. Naming it once means a change to the spelling moves both
 # builders or neither.
 WORKTREES_DIRNAME = 'worktrees'
+
+# Reserved key of the shared orchestrator ledger worktree, ``<main>/.plan/local/
+# worktrees/_orchestrator`` — the SINGLE definition. It names a NON-plan tree that
+# lives under the same worktree container as the plan worktrees, and ``PLAN_ID_RE``
+# (``^[a-z][a-z0-9-]*$``) cannot produce it because of the leading underscore, so
+# no plan id can ever collide with it. The underscore is the collision guarantee,
+# not the skip mechanism: every enumeration of the container's children skips the
+# tree through :func:`is_orchestrator_worktree_dir`, never through plan-id
+# validation happening to reject the name.
+ORCHESTRATOR_WORKTREE_KEY = '_orchestrator'
+
+
+def is_orchestrator_worktree_dir(path: str | Path) -> bool:
+    """Return whether ``path`` names the reserved shared orchestrator ledger worktree.
+
+    The single predicate every worktree-root enumeration calls to skip the
+    reserved tree, instead of re-spelling the ``_orchestrator`` literal. The test
+    is name equality of the final path component against
+    ``ORCHESTRATOR_WORKTREE_KEY``; the path is not required to exist.
+    """
+    return Path(path).name == ORCHESTRATOR_WORKTREE_KEY
+
 
 # The plan-less sentinel — the single canonical definition. Its literal
 # uppercase spelling is deliberate: it is visually unmistakable against real
@@ -652,8 +677,9 @@ def resolve_main_anchored_path(subpath: str | Path) -> Path:
     ``file_ops.get_build_results_dir``). (Machine-global state such as
     ``build-queue.json`` and ``credentials/`` is NOT in this set — it anchors to
     the host-wide ``home_root()`` tier, not a repository's main checkout.) The
-    orchestrator store is NOT in this set either: it resolves on the git-tracked,
-    cwd-relative config tier via ``file_ops.get_tracked_config_dir``.
+    orchestrator store is NOT in this set either: with ``orchestrator.use_worktree``
+    off it resolves on the git-tracked, cwd-relative config tier via
+    ``file_ops.get_tracked_config_dir``.
 
     Beyond those residents, this function is also how main's slot is NAMED for
     state that does not live there: ``plans/{plan_id}``, the plan directory that
@@ -664,7 +690,11 @@ def resolve_main_anchored_path(subpath: str | Path) -> Path:
     the move-back DESTINATION it writes, and ``git-workflow.py``'s
     ``worktree-remove`` move-back guard resolves the same subpath (plus a scan of
     ``archived-plans/``) to confirm the write happened before destroying the
-    worktree. One writer and one reader of one path, derived by one call.
+    worktree. One writer and one reader of one path, derived by one call. With
+    ``orchestrator.use_worktree`` on, the shared ledger worktree's location
+    ``worktrees/_orchestrator`` is named here the same way (by
+    ``orchestrator_worktree.orchestrator_worktree_path``) — still a name, not a
+    resident corpus.
 
     Resolution precedence:
 

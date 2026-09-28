@@ -16,8 +16,6 @@ initial body creation, `request create` either emits a metadata-only stub
 splice a pre-written body into the rendered stub.
 """
 
-from pathlib import Path
-
 from _documents_core import (
     output_error,
     render_template,
@@ -29,7 +27,7 @@ from _plan_parsing import (
     _slugify_section_name,
     parse_document_sections,
 )
-from file_ops import atomic_write_file
+from file_ops import atomic_write_file, resolve_orchestrator_store_file
 
 # Placeholder paragraph emitted by templates/request.md when no body is provided.
 # When --body-file is supplied, cmd_create replaces this line with the file contents.
@@ -52,6 +50,15 @@ def cmd_create(doc_type: str, args) -> dict:
                              existing regular file that cannot be read as UTF-8
                              text (UnicodeDecodeError / OSError) returns
                              `body_file_unreadable` rather than propagating.
+                             PATH is resolved through the orchestrator store
+                             seam (`resolve_orchestrator_store_file`) BEFORE
+                             those checks: a relative `.plan/orchestrator/...`
+                             or `.plan/archived-orchestrators/...` pointer is
+                             read from the shared ledger worktree when the
+                             `orchestrator.use_worktree` knob is on, so both
+                             refusals report the path actually probed. A seam
+                             refusal is not caught here — it surfaces through
+                             `safe_main` as the typed store error.
 
     The returned dict always includes `path` (absolute resolved path of the
     created file) so callers can pipe directly into the Write tool.
@@ -83,7 +90,7 @@ def cmd_create(doc_type: str, args) -> dict:
     body_file_raw = getattr(args, 'body_file', None)
     body: str | None = None
     if body_file_raw:
-        body_file_path = Path(body_file_raw).expanduser().resolve()
+        body_file_path = resolve_orchestrator_store_file(body_file_raw)
         if not body_file_path.exists() or not body_file_path.is_file():
             return {
                 'status': 'error',

@@ -25,7 +25,8 @@ Active-plan enumeration mirrors ``_status_query.cmd_list``: it merges the
 main-checkout plans (``get_plans_dir()``) with the worktree-resident plans a
 phase-5+ plan was moved into (``get_worktree_root()/{wt}/.plan/local/plans/{id}``),
 deduped by id. Archived plans live under a separate directory and are excluded by
-construction.
+construction, and the reserved shared orchestrator ledger worktree is skipped by
+name, so it can never contribute a sibling.
 """
 
 from __future__ import annotations
@@ -43,7 +44,7 @@ from file_ops import (
     get_worktree_root,
     read_json,
 )
-from marketplace_paths import PLAN_DIR_NAME
+from marketplace_paths import PLAN_DIR_NAME, is_orchestrator_worktree_dir
 
 # source_id values that count as "no traceable origin" — a description-sourced
 # plan has no external id, so it can never trip the source-origin check.
@@ -131,7 +132,9 @@ def _iter_active_plan_dirs() -> dict[str, Path]:
 
     Mirrors ``_status_query.cmd_list``: main-checkout plans first, then
     worktree-resident plans (deduped — a moved-in plan appears once). Only
-    directories carrying a ``status.json`` sentinel are included.
+    directories carrying a ``status.json`` sentinel are included, and the
+    reserved shared orchestrator ledger worktree is skipped by name before any
+    probe of its tree.
     """
     result: dict[str, Path] = {}
 
@@ -157,7 +160,7 @@ def _iter_active_plan_dirs() -> dict[str, Path]:
         except OSError:
             wt_dirs = []
         for worktree_dir in wt_dirs:
-            if not worktree_dir.is_dir():
+            if is_orchestrator_worktree_dir(worktree_dir) or not worktree_dir.is_dir():
                 continue
             wt_plans_dir = worktree_dir / PLAN_DIR_NAME / 'local' / DIR_PLANS
             if not wt_plans_dir.is_dir():

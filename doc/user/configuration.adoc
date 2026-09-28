@@ -62,7 +62,7 @@ Effort tuning has its own dedicated user-facing page — wizard walkthrough, pre
 [#orchestrator-knobs]
 === Orchestrator settings — running several plans as one larger piece of work
 
-The top-level `orchestrator` block — a sibling of `plan`, not a child of it — governs the orchestrator that runs several plans together as one larger piece of work (`plan-orchestrator`). `init` seeds the block, and every setting it supports is materialised with its effective default so you can discover it by reading your own `marshal.json`; a seeded default resolves exactly as leaving the key unset did, so surfacing a setting never changes behaviour. `sync-defaults` back-fills the block non-destructively into projects that predate a setting. The two settings below are the ones tuned directly; the block also carries the `auto_emit` autonomy setting (its full reference, and the `effort` sub-key mechanics, live in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`]).
+The top-level `orchestrator` block — a sibling of `plan`, not a child of it — governs the orchestrator that runs several plans together as one larger piece of work (`plan-orchestrator`). `init` seeds the block, and every setting it supports is materialised with its effective default so you can discover it by reading your own `marshal.json`; a seeded default resolves exactly as leaving the key unset did, so surfacing a setting never changes behaviour. `sync-defaults` back-fills the block non-destructively into projects that predate a setting. The three settings below are the ones tuned directly; the block also carries the `auto_emit` autonomy setting (its full reference, the `effort` sub-key mechanics and the complete `use_worktree` contract live in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`]).
 
 [cols="1,1,3", options="header"]
 |===
@@ -70,14 +70,19 @@ The top-level `orchestrator` block — a sibling of `plan`, not a child of it �
 
 | `orchestrator.parallelization_scope` | `1` | Project-level default that pre-fills the parallelization-scope question `plan-orchestrator` init asks for each larger piece of work — the maximum number of plans the orchestrator may have launched concurrently, `1` being strictly sequential. It supplies only the initial suggestion for the first ask and stays fully overridable each time; the seeded `1` pre-fills the ask exactly as the unset key's hard-coded `1` did. Must be an integer `>= 1`.
 | `orchestrator.effort` | `{}` (empty) | Per-surface effort of the orchestrator's three read-only surfaces (`analyze` / `decompose` / `reader`), plus a `default` fallback slot and a `max` uplift ceiling. Seeded empty so the sub-block is discoverable; while empty, every surface falls through to `plan.effort` and the `max` ceiling is a no-op — identical to leaving it unset. Populate a leaf to override one surface. It is a string (one level for every surface) or an object over those keys, mirroring `plan.<phase>.effort`.
+| `orchestrator.use_worktree` | `false` | Opt-in, repository-wide. When `true`, the record of what has run for every larger piece of work (`.plan/orchestrator/**` and `.plan/archived-orchestrators/**`) lives in one shared, long-lived git worktree that the main checkout and every plan worktree reach, instead of in whichever checkout a session happens to run in — so a plan's message to the orchestrator is visible as soon as it is written. The setting is read and written only against the main checkout's `marshal.json`, so set it from the main checkout: a set issued from a plan worktree is refused. Switching it on or off is also refused while records that have not reached the base branch would be left behind on the side being left; the refusal names every such file so you can land or discard them first. Not the same setting as `plan.phase-1-init.use_worktree`, which decides whether a single plan runs in its own worktree.
 |===
 
-Set the scalar with the `orchestrator` verb; set the effort surfaces with the `effort` verb's `orchestrator` scope:
+Set the scalars with the `orchestrator` verb; set the effort surfaces with the `effort` verb's `orchestrator` scope:
 
 [source,bash]
 ----
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   orchestrator set --field parallelization_scope --value 3
+
+# From the main checkout only
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  orchestrator set --field use_worktree --value true
 
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   effort set --scope orchestrator.analyze --level level-5

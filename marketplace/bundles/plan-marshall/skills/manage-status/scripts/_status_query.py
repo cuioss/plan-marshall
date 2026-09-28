@@ -50,6 +50,7 @@ from marketplace_paths import (
     PLAN_DIR_NAME,
     WORKTREES_DIRNAME,
     base_dir_override_active,
+    is_orchestrator_worktree_dir,
     resolve_main_anchored_path,
 )
 
@@ -699,7 +700,10 @@ def cmd_list(args: argparse.Namespace) -> dict[str, Any]:
       and surfaces them tagged ``location: 'worktree'``. The probed layout is
       the exact ``get_worktree_root() / {id} / .plan/local/plans/{id}`` path
       that ``worktree-create`` materializes and ``cmd_locate_plan_checkout``
-      probes — single-sourced via ``PLAN_DIR_NAME`` / ``DIR_PLANS``.
+      probes — single-sourced via ``PLAN_DIR_NAME`` / ``DIR_PLANS``. The
+      reserved shared orchestrator ledger worktree is skipped by name
+      (``is_orchestrator_worktree_dir``) before any probe: it is never a plan
+      worktree, whatever its tree happens to contain.
 
     Each entry carries ``{id, current_phase, status, location}``. The merged
     list is deduped by id (a moved-in plan appears exactly once — main never
@@ -758,7 +762,9 @@ def cmd_list(args: argparse.Namespace) -> dict[str, Any]:
 
     if worktree_root is not None and worktree_root.is_dir():
         for worktree_dir in sorted(worktree_root.iterdir()):
-            if not worktree_dir.is_dir():
+            # The reserved ledger worktree is skipped by its name, before any
+            # plan-directory probe, so its contents can never surface as a plan.
+            if is_orchestrator_worktree_dir(worktree_dir) or not worktree_dir.is_dir():
                 continue
 
             wt_plans_dir = worktree_dir / PLAN_DIR_NAME / 'local' / DIR_PLANS
@@ -1298,6 +1304,10 @@ def _census_worktree_cohort(worktrees_root: Path) -> tuple[dict[str, Any], list[
     A moved-in plan whose ``phases`` could not be read in full carries the same
     credit as it does in the single-container cohorts, qualified by the holding
     worktree so the name stays unambiguous across them.
+
+    The reserved shared orchestrator ledger worktree is skipped by its name
+    before any probe: it is not a member of this cohort, so it is neither
+    counted, nor credited as unreadable, nor read for a plan store.
     """
     try:
         worktrees = sorted(worktrees_root.iterdir())
@@ -1334,6 +1344,8 @@ def _census_worktree_cohort(worktrees_root: Path) -> tuple[dict[str, Any], list[
     unexaminable_phases: list[str] = []
 
     for worktree_dir in worktrees:
+        if is_orchestrator_worktree_dir(worktree_dir):
+            continue
         try:
             if not _probe_is_dir(worktree_dir):
                 continue

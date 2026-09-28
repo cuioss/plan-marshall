@@ -119,6 +119,7 @@ from git_provider import _DEFAULT_TIMEOUT_SECONDS, run_git
 # resolver for the ``git -C`` target, which must name a real git checkout — an
 # override directory is not one.
 from marketplace_paths import (
+    ORCHESTRATOR_WORKTREE_KEY,
     _find_plan_root_from_cwd,
     main_checkout_root,
     resolve_main_anchored_path,
@@ -1517,7 +1518,25 @@ def cmd_worktree_create(args):
     ``metadata.use_worktree``/``worktree_path``/``worktree_branch`` via
     ``manage-status metadata --set`` so subsequent verbs can resolve the
     path through the canonical channel.
+
+    The reserved shared orchestrator ledger key
+    (:data:`marketplace_paths.ORCHESTRATOR_WORKTREE_KEY`) is refused BEFORE any
+    path resolution, filesystem touch, or git call: that tree is a non-plan
+    worktree no ``worktree-*`` verb may materialize, so a ``--plan-id`` naming it
+    returns ``reserved_worktree_name`` instead of running ``git worktree add``.
     """
+    if args.plan_id == ORCHESTRATOR_WORKTREE_KEY:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'reserved_worktree_name',
+            'message': (
+                f"'{ORCHESTRATOR_WORKTREE_KEY}' is the reserved shared orchestrator "
+                'ledger worktree key, not a plan id — worktree-create does not '
+                'materialize it'
+            ),
+        }
+
     try:
         target = get_worktree_root() / args.plan_id
     except RuntimeError as exc:

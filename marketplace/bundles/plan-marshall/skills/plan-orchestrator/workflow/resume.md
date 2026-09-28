@@ -23,6 +23,13 @@ python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime 
   --store orchestrator --slug {slug}
 ```
 
+**Resolve the epic tree.** Ask the store seam where this epic lives and which checkout holds the store, and keep `epic_dir` and `store_checkout` from the payload for every later step — every direct file-tool call on a ledger document addresses `{epic_dir}/…` and every ledger `git add` / `git commit` runs as `git -C {store_checkout}` (see the [direct-file-write carve-out](../../persona-plan-orchestrator/standards/orchestration-model.md#direct-file-write-carve-out)). The call writes nothing to the ledger and creates no epic tree, so it precedes the Step 2.5 closed-epic gate without breaking that gate's persist-nothing rule; an archived epic resolves to its archived tree:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator resolve-path \
+  --slug {slug}
+```
+
 ### Step 2: Read the machine authority
 
 ```bash
@@ -43,7 +50,7 @@ python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator mig
   --slug {slug}
 ```
 
-The conversion preserves every value, strips the generated blocks out of `epic.md` without touching a hand-written byte, and writes a fresh `queue-view.md`; a second run reports `already_migrated`. Commit the converted files, then restart this workflow at Step 2.
+The conversion preserves every value, strips the generated blocks out of `epic.md` without touching a hand-written byte, and writes a fresh `queue-view.md`; a second run reports `already_migrated`. Commit the converted files as `git -C {store_checkout}`, then restart this workflow at Step 2.
 
 ### Step 2.5: Closed-epic early return (read-only gate)
 
@@ -69,19 +76,19 @@ python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator reg
   --slug {slug}
 ```
 
-Then read `epic.md` for the human context (Vision, Queue annotations, Decisions, Open Defects, Watches) — any statement there that conflicts with the ledger files is stale prose; reconcile ledger files → `epic.md`, never the reverse.
+Then read `{epic_dir}/epic.md` for the human context (Vision, Queue annotations, Decisions, Open Defects, Watches) — any statement there that conflicts with the ledger files is stale prose; reconcile ledger files → `epic.md`, never the reverse.
 
 **Derived-beats-narrative reconciliation rule.** The block's `**Inbox (derived)**` line and the returned `inbox_queued` / `inbox_archived` / `inbox_state` fields are derived at render time from the epic's `inbox/` directory. When they disagree with a count sentence in the resume anchor prose, **the derived line wins** — the anchor is the stale party, not the filesystem. Correct the anchor via `manage-status update-field` (the Step 5 call below), in the same ledger-first direction this doc already mandates; never edit the derived line to match the prose. An `inbox_state: missing` is NOT "zero queued": it means the epic has no `inbox/` directory, so nothing could be drained from it — treat it as a scaffold gap to report, not as an empty queue.
 
 #### Recovery: a merge conflict in `queue-view.md`
 
-A session resuming after a merge can find git conflict markers in `queue-view.md` — two sessions each regenerated the view after staging different plans. The file is derived, so the conflict carries no information. ⛔ **Never merge `queue-view.md` by hand.** Merge the source files, then run `regenerate-view` on the merged tree (the call above) and `git add queue-view.md`. The verb never reads `queue-view.md`, so it simply overwrites the conflict markers.
+A session resuming after a merge can find git conflict markers in `queue-view.md` — two sessions each regenerated the view after staging different plans. The file is derived, so the conflict carries no information. ⛔ **Never merge `queue-view.md` by hand.** Merge the source files, then run `regenerate-view` on the merged tree (the call above) and `git -C {store_checkout} add {epic_dir}/queue-view.md`. The verb never reads `queue-view.md`, so it simply overwrites the conflict markers.
 
 When `regenerate-view` refuses with `row_unreadable` or `ledger_unreadable` instead, a SOURCE file — a `queue/{PLAN-ID}.json` row or the header — still holds a conflict, most often a duplicate plan id staged on two machines. That is a genuine conflict: resolve the named file first, then regenerate. The refusal writes nothing, so regeneration never hides it.
 
 ### Step 4: Verify in-flight plan states (ground truth)
 
-For each `launched` plan in the queue, verify the recorded state against ground truth within the small-ops carve-out — the plan's actual lifecycle state, its PR/CI state via read-side `plan-marshall:tools-integration-ci:ci` calls. A plan that shipped or stalled while no session was watching is reconciled now (queue transition + `epic.md` narrative update per [`analyze.md`](analyze.md) semantics).
+For each `launched` plan in the queue, verify the recorded state against ground truth within the small-ops carve-out — the plan's actual lifecycle state, its PR/CI state via read-side `plan-marshall:tools-integration-ci:ci` calls. A plan that shipped or stalled while no session was watching is reconciled now (queue transition + `{epic_dir}/epic.md` narrative update per [`analyze.md`](analyze.md) semantics).
 
 ### Step 5: Report and confirm the anchor
 
@@ -92,7 +99,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update
   --plan-id {slug} --field resume_anchor --value "{next action}" --store orchestrator
 ```
 
-When Step 4 changed any queue state or this step changed the anchor, the view rendered at Step 3 is stale. Regenerate it BEFORE returning, and commit it with the changed ledger files:
+When Step 4 changed any queue state or this step changed the anchor, the view rendered at Step 3 is stale. Regenerate it BEFORE returning, and commit it with the changed ledger files as `git -C {store_checkout}`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator regenerate-view \

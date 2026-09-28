@@ -23,7 +23,9 @@ artifact-bearing checks above:
   ``metadata.confidence < 95`` AND every phase beyond ``2-refine`` is
   ``pending`` AND no ``metadata.archived_reason`` is recorded.
 * ``dangling-worktree`` — a subdirectory under ``.plan/local/worktrees/``
-  whose corresponding ``.plan/local/plans/{name}/`` is absent.
+  whose corresponding ``.plan/local/plans/{name}/`` is absent. The reserved
+  shared orchestrator ledger worktree (``_orchestrator``) is excluded: it has
+  no plan directory by design and is never dangling.
 
 These three rules run only on ``--all`` sweeps and on the ``--plan-id``
 form when the plan ID matches a worktree or archived plan; their findings
@@ -65,6 +67,7 @@ from input_validation import (
     scan_lesson_id_tokens,
     verify_lesson_ids_exist,
 )
+from marketplace_paths import is_orchestrator_worktree_dir
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -522,7 +525,8 @@ def _scan_dangling_worktrees() -> list[dict[str, Any]]:
     ``.plan/local/plans/{name}/``. When the corresponding plan dir does
     not exist, the worktree is dangling. Archived plans are NOT a
     rescue — a worktree that survived an archive is still dangling
-    because finalize should have removed it.
+    because finalize should have removed it. The reserved shared
+    orchestrator ledger worktree is skipped by name and never reported.
     """
     root = _worktrees_root()
     if not root.is_dir():
@@ -531,6 +535,13 @@ def _scan_dangling_worktrees() -> list[dict[str, Any]]:
     plans_root = _plans_root()
     findings: list[dict[str, Any]] = []
     for entry in sorted(root.iterdir()):
+        # The reserved shared orchestrator ledger worktree is never dangling:
+        # it has no plan directory by design. This skip runs BEFORE the plan-id
+        # filter below and must not depend on it — that the validator happens to
+        # reject the reserved name's leading underscore is a collision guarantee,
+        # not the reason the tree is excluded.
+        if is_orchestrator_worktree_dir(entry):
+            continue
         if not entry.is_dir():
             continue
         # Worktree directory names mirror plan IDs by construction. Skip

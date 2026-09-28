@@ -536,3 +536,58 @@ class TestWorktreeCreate:
         result = cmd_worktree_create(Namespace(plan_id='no-repo', branch='feature/no-repo', base=None))
         assert result['status'] == 'error'
         assert result['error'] == 'plan_resolution_failed'
+
+
+class TestWorktreeCreateReservedKey:
+    """``worktree-create`` refuses the reserved shared orchestrator ledger key.
+
+    The refusal fires before path resolution, so neither the worktree root is
+    resolved, nor a directory created, nor ``git worktree add`` invoked. The
+    matched control drives an ordinary plan id through the same stubs and
+    observes that it DOES reach the git call — proving the guard keys on the
+    reserved name rather than refusing every invocation.
+    """
+
+    @staticmethod
+    def _stage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, list[str], list[list[str]]]:
+        root = tmp_path / 'worktrees-root'
+        root.mkdir()
+        root_calls: list[str] = []
+        git_calls: list[list[str]] = []
+
+        def fake_root() -> Path:
+            root_calls.append('get_worktree_root')
+            return root
+
+        def fake_run_git(args):
+            git_calls.append(list(args))
+            return 1, '', 'stubbed failure'
+
+        monkeypatch.setattr(git_workflow, 'get_worktree_root', fake_root)
+        monkeypatch.setattr(git_workflow, '_find_plan_root_from_cwd', lambda: tmp_path)
+        monkeypatch.setattr(git_workflow, 'run_git', fake_run_git)
+        return root, root_calls, git_calls
+
+    def test_reserved_key_refused_before_any_git_call(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        from marketplace_paths import ORCHESTRATOR_WORKTREE_KEY
+
+        root, root_calls, git_calls = self._stage(tmp_path, monkeypatch)
+
+        result = cmd_worktree_create(Namespace(plan_id=ORCHESTRATOR_WORKTREE_KEY, branch='feature/x', base=None))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'reserved_worktree_name'
+        assert ORCHESTRATOR_WORKTREE_KEY in result['message']
+        assert git_calls == []
+        assert root_calls == []
+        assert not (root / ORCHESTRATOR_WORKTREE_KEY).exists()
+
+    def test_ordinary_plan_id_reaches_git_worktree_add(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        _root, root_calls, git_calls = self._stage(tmp_path, monkeypatch)
+
+        result = cmd_worktree_create(Namespace(plan_id='my-plan', branch='feature/my-plan', base=None))
+
+        assert result['error'] == 'worktree_add_failed'
+        assert root_calls == ['get_worktree_root']
+        assert len(git_calls) == 1
+        assert 'worktree' in git_calls[0] and 'add' in git_calls[0]

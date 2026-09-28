@@ -23,6 +23,13 @@ python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime 
   --store orchestrator --slug {slug}
 ```
 
+**Resolve the epic tree.** Ask the store seam where this epic lives and which checkout holds the store, and keep `epic_dir` and `store_checkout` from the payload for every later step — every direct file-tool call on a ledger document addresses `{epic_dir}/…` and every ledger `git add` / `git commit` runs as `git -C {store_checkout}` (see the [direct-file-write carve-out](../../persona-plan-orchestrator/standards/orchestration-model.md#direct-file-write-carve-out)):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator resolve-path \
+  --slug {slug}
+```
+
 ### Step 2: Pre-close reconciliation
 
 ```bash
@@ -50,7 +57,7 @@ Nothing is pasted into `epic.md` — it is hand-written narrative only, and it i
 
 ### Step 3: Freeze into history.md
 
-Write `history.md` via the Write tool: the epic's final state — vision as pursued, the Step 2 `summary` and `ordered_queue` blocks verbatim, the queue outcome per plan, the decision record, unresolved defects and watches (carried forward as leads, not silently dropped), and the closing rationale. `history.md` is written from the rendered blocks, never from a hand-written table, so a stale queue is never frozen permanently.
+Write `{epic_dir}/history.md` via the Write tool: the epic's final state — vision as pursued, the Step 2 `summary` and `ordered_queue` blocks verbatim, the queue outcome per plan, the decision record, unresolved defects and watches (carried forward as leads, not silently dropped), and the closing rationale. `history.md` is written from the rendered blocks, never from a hand-written table, so a stale queue is never frozen permanently.
 
 Report the queue outcome over the terminal status vocabulary (see [`orchestration-model.md` § Plan-Status Vocabulary](../../persona-plan-orchestrator/standards/orchestration-model.md#plan-status-vocabulary)), per plan row read in Step 2:
 
@@ -76,7 +83,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update
   --plan-id {slug} --field resume_anchor --value "epic closed — see history.md" --store orchestrator
 ```
 
-START HERE renders the phase and the anchor, so regenerate the view once more and commit it with the closed ledger:
+START HERE renders the phase and the anchor, so regenerate the view once more and commit it with the closed ledger as `git -C {store_checkout}`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator regenerate-view \

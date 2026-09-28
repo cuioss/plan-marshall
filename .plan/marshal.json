@@ -188,7 +188,8 @@
       "decompose": "level-5",
       "reader": "level-3"
     },
-    "parallelization_scope": 1
+    "parallelization_scope": 1,
+    "use_worktree": false
   },
   "build": {
     "queue": {
@@ -360,6 +361,6 @@
       "build_results_days": 5
     },
     "provisioned_version": "0.1.1780",
-    "config_seed_fingerprint": "3f6947eb"
+    "config_seed_fingerprint": "28c7d1c8"
   }
 }

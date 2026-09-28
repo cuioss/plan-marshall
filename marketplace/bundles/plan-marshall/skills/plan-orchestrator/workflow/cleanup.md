@@ -32,6 +32,13 @@ python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime 
   --store orchestrator --slug {slug}
 ```
 
+**Resolve the epic tree.** Ask the store seam where this epic lives and which checkout holds the store, and keep `epic_dir` and `store_checkout` from the payload for every later step — every direct file-tool call on a ledger document addresses `{epic_dir}/…` and every ledger `git add` / `git commit` runs as `git -C {store_checkout}` (see the [direct-file-write carve-out](../../persona-plan-orchestrator/standards/orchestration-model.md#direct-file-write-carve-out)):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator resolve-path \
+  --slug {slug}
+```
+
 ### Step 2: Enumerate the corpus (Phase A entry)
 
 ```bash
@@ -41,7 +48,7 @@ python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator cor
 
 The returned payload is the population every later count in the report is computed over: `rows_total` / `specs_total` are the denominators, `rows_without_spec` and `specs_without_row` are the two reconciliation directions, and `unreadable` names every spec the pass could not read. A row carrying `excluded_reason: running` is enumerated and reported as excluded — never silently omitted, per the running-row exclusion in [§ Cleanup Contract](../../persona-plan-orchestrator/standards/orchestration-model.md#cleanup-contract). A row file that could not be read is named in `unreadable_rows[]` — neither reconciled nor orphaned.
 
-⛔ **A `legacy_layout` refusal stops the pass here — the pass's one disposition for a monolithic ledger.** It means the epic's ledger is still in the monolithic layout: its `status.json` still carries the queue or the anchor. No later step can read that ledger, Phase B included, so none of them runs. Run `orchestrator migrate-layout --slug {slug}` (see [`plan-orchestrator/SKILL.md`](../SKILL.md) § Canonical invocations → `migrate-layout`), which converts the ledger, writes a fresh `queue-view.md` and strips the generated blocks out of `epic.md`; commit the result and re-run `cleanup`.
+⛔ **A `legacy_layout` refusal stops the pass here — the pass's one disposition for a monolithic ledger.** It means the epic's ledger is still in the monolithic layout: its `status.json` still carries the queue or the anchor. No later step can read that ledger, Phase B included, so none of them runs. Run `orchestrator migrate-layout --slug {slug}` (see [`plan-orchestrator/SKILL.md`](../SKILL.md) § Canonical invocations → `migrate-layout`), which converts the ledger, writes a fresh `queue-view.md` and strips the generated blocks out of `epic.md`; commit the result as `git -C {store_checkout}` and re-run `cleanup`.
 
 ### Step 3 (A1): Re-ground each staged spec against HEAD
 
@@ -70,8 +77,8 @@ python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator cor
 
 Two findings come out of that read, and both route to the **Wrong surface / understated surface — apply — correct the Expected Surface** row of the apply-policy table (see [§ Cleanup Contract](../../persona-plan-orchestrator/standards/orchestration-model.md#cleanup-contract)); neither is a new class:
 
-- **Unresolvable** — the row's `derivation_status` is in the indeterminate set (`derived`, `prose`, `absent`, `unreadable`), so the spec declares nothing the gate can compare and its clean gate reading is SILENCE rather than a checked negative. Correct the section in place so it resolves, or — when the surface genuinely is a function of other plans' — leave the `derived` declaration and record that the spec is deliberately unpickable until those land.
-- **Understated** — the spec's own narrative names files its `## Expected Surface` does not. The declaration is corrected to match the narrative, in place.
+- **Unresolvable** — the row's `derivation_status` is in the indeterminate set (`derived`, `prose`, `absent`, `unreadable`), so the spec declares nothing the gate can compare and its clean gate reading is SILENCE rather than a checked negative. Correct the section in place, in the spec at `{epic_dir}/plans/…`, so it resolves, or — when the surface genuinely is a function of other plans' — leave the `derived` declaration and record that the spec is deliberately unpickable until those land.
+- **Understated** — the spec's own narrative names files its `## Expected Surface` does not. The declaration is corrected to match the narrative, in place at `{epic_dir}/plans/…`.
 
 **The running-row exclusion applies unchanged.** A spec whose ledger row is `running` is enumerated and reported as excluded, never re-scoped — a plan in flight owns its own scope, and re-scoping it underneath would be the ledger overwriting a live plan's declaration.
 
@@ -107,11 +114,11 @@ python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator cor
   --slug {slug}
 ```
 
-The verb reports candidates over three named populations — sibling epics (active and archived), the live plan set, and this epic's own corpus — and applies nothing. Superseding is this doc's inline, ledger-writing act, per the duplication row of the apply-policy table. ⛔ **No spec file is ever deleted**: the retired spec is the audit record of why it was retired.
+The verb reports candidates over three named populations — sibling epics (active and archived), the live plan set, and this epic's own corpus — and applies nothing. Superseding is this doc's inline, ledger-writing act on the specs at `{epic_dir}/plans/…`, per the duplication row of the apply-policy table. ⛔ **No spec file is ever deleted**: the retired spec is the audit record of why it was retired.
 
 ### Step 7 (A5): Distribution — component-first, task-second
 
-Regroup the corpus by **component first and task second**, and record each move in `applied[]` with its source and its destination. Two guards apply to every merge:
+Regroup the corpus — the specs at `{epic_dir}/plans/…` — by **component first and task second**, and record each move in `applied[]` with its source and its destination. Two guards apply to every merge:
 
 - **A weak merge is labelled weak in its own header** and is licensed to split back at outline. A merge the orchestrator is not confident in is recorded as such rather than presented as settled.
 - **A merged spec re-counts its deliverables.** Overlapping deliverables collapse rather than concatenate, so the merged spec's count is re-derived rather than summed — and the [Scope-Bloat Split Guard](../../persona-plan-orchestrator/standards/orchestration-model.md#scope-bloat-split-guard) is evaluated against the re-derived count.
@@ -122,7 +129,7 @@ A5 is inline-only in full: it is the judgement-heaviest class and the only one t
 
 The ledger-compaction stage. Its binding contract — the derivable-versus-narrative discriminator, the separate generated `queue-view.md`, the annotation-zone rule, the `## Decisions` authority, the `settled.md` relocation target, idempotence, and the closed-epic refusal — is owned by [§ Ledger-Compaction Stage](../../persona-plan-orchestrator/standards/orchestration-model.md#ledger-compaction-stage); the deterministic surface (arguments, error codes, report shape) is [`plan-orchestrator/SKILL.md`](../SKILL.md) § Canonical invocations → `compact`.
 
-⛔ **Read the epic's phase FIRST, before the judgement block.** The judgement block writes `epic.md` directly and runs BEFORE the script, so the script's own `refused_closed` does not protect it — by the time it fires, the frozen ledger has already been hand-edited. No other `cleanup` step carries a phase gate either, so a closed-but-not-yet-archived epic reaches this step with an active store tree:
+⛔ **Read the epic's phase FIRST, before the judgement block.** The judgement block writes `{epic_dir}/epic.md` directly and runs BEFORE the script, so the script's own `refused_closed` does not protect it — by the time it fires, the frozen ledger has already been hand-edited. No other `cleanup` step carries a phase gate either, so a closed-but-not-yet-archived epic reaches this step with an active store tree:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
@@ -135,7 +142,7 @@ When `phase == closed`, **skip Phase B in its entirety** — the judgement block
 
 The stage has two halves along the derivable-versus-narrative split, and the split IS the dispatch boundary. **Settled-narrative relocation** is the judgement half — inline, orchestrator-performed, never dispatched and never through the script; **invariant verification and view regeneration** is the deterministic half.
 
-**Settled-narrative relocation (judgement — inline).** Identify each `epic.md` section whose subject is **closed** — a shipped plan's residue, a resolved defect — and bulky enough to relocate. A section is settled only when its subject is closed, ⛔ **never merely because it is old**: a retraction, a refutation, and a do-not-re-derive note are the anti-rework record and stay reachable, relocated but never dropped. ⛔ **The annotation zone is NEVER a relocation candidate** — `## Queue annotations`, whatever its contents' subjects. It is the live working surface every reconciling verb writes its per-row notes into, not narrative about a closed subject; relocating it would leave a pointer where a working zone belongs. ⛔ **Do not apply the settled-versus-live call silently on a first run** — present the proposed relocations to the operator for confirmation; when no operator is reachable, relocate nothing this pass and record that the judgement was deferred (a deferred relocation is safe; a wrong one is not). For each confirmed section, move its body **verbatim** into `settled.md` (a live-epic sibling of `history.md`, created under the [direct-file-write carve-out](../../persona-plan-orchestrator/standards/orchestration-model.md#carve-outs)) under a `## {Heading}`, and leave a pointer at the origin naming that heading in double quotes so the reachability check resolves it:
+**Settled-narrative relocation (judgement — inline).** Identify each `{epic_dir}/epic.md` section whose subject is **closed** — a shipped plan's residue, a resolved defect — and bulky enough to relocate. A section is settled only when its subject is closed, ⛔ **never merely because it is old**: a retraction, a refutation, and a do-not-re-derive note are the anti-rework record and stay reachable, relocated but never dropped. ⛔ **The annotation zone is NEVER a relocation candidate** — `## Queue annotations`, whatever its contents' subjects. It is the live working surface every reconciling verb writes its per-row notes into, not narrative about a closed subject; relocating it would leave a pointer where a working zone belongs. ⛔ **Do not apply the settled-versus-live call silently on a first run** — present the proposed relocations to the operator for confirmation; when no operator is reachable, relocate nothing this pass and record that the judgement was deferred (a deferred relocation is safe; a wrong one is not). For each confirmed section, move its body **verbatim** into `{epic_dir}/settled.md` (a live-epic sibling of `history.md`, created under the [direct-file-write carve-out](../../persona-plan-orchestrator/standards/orchestration-model.md#carve-outs)) under a `## {Heading}`, and leave a pointer at the origin naming that heading in double quotes so the reachability check resolves it:
 
 ```text
 > ↪ Relocated to `settled.md` § "{Heading}" — {one-line reason the subject is settled}
@@ -154,7 +161,7 @@ Report `ledger_compaction: compacted`, carry the stage's `view_written` through 
 
 A `row_unreadable` or `ledger_unreadable` refusal writes nothing, not even the view: a row file or the header could not be read, most often because it still holds git conflict markers from a genuine duplicate plan id staged on two machines. That is a real source conflict — resolve the named file first, then re-run the stage. Report `ledger_compaction: indeterminate` with the refusal code as the reason until it is resolved.
 
-**The regenerate-on-conflict rule.** `queue-view.md` is derived from the ledger files, so a git merge conflict in it carries no information. ⛔ **Never merge `queue-view.md` by hand.** Merge the source files — the header, the row files, the anchor — then run `regenerate-view` on the merged tree and `git add` the result:
+**The regenerate-on-conflict rule.** `queue-view.md` is derived from the ledger files, so a git merge conflict in it carries no information. ⛔ **Never merge `queue-view.md` by hand.** Merge the source files — the header, the row files, the anchor — then run `regenerate-view` on the merged tree and `git -C {store_checkout} add` the result:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator regenerate-view \

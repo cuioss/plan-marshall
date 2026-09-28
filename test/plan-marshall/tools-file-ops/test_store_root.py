@@ -3,7 +3,10 @@
 """
 Tests for the store-root abstraction in tools-file-ops/file_ops.py (D0).
 
-Covers get_store_dir(store, entry_id):
+Covers get_store_dir(store, entry_id) with the ``orchestrator.use_worktree``
+knob OFF (the default) — every orchestrator case below is therefore a
+regression pin on the knob-off root; the knob-on routing through the shared
+ledger worktree lives in ``test_store_root_knob_on.py``:
 - 'plans' store round-trips through base_path / get_plan_dir (byte-identical).
 - 'orchestrator' store composes onto the git-tracked, cwd-relative config tier
   (get_tracked_config_dir), honouring the PLAN_BASE_DIR test override.

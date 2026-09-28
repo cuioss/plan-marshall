@@ -48,7 +48,6 @@ from _doctor_fixtures import (
     make_healthy_plan,
     make_plan_with_tasks,
     make_status_json,
-    make_worktree_dir,
     seed_lesson_inventory,
 )
 
@@ -454,32 +453,7 @@ def test_orphan_rule_case_c_healthy_plan_dir_yields_no_finding(plan_context):
     assert orphan_findings == []
 
 
-# =============================================================================
-# Rule 3 — dangling-worktree (case d)
-# =============================================================================
-
-
-def test_dangling_worktree_rule_case_d_worktree_without_plan_flagged(plan_context):
-    # a worktree directory whose corresponding plan dir is absent.
-    plan_context.plan_dir_for('rule3-host')
-    seed_lesson_inventory(plan_context.fixture_dir)
-    # Live plan + matching worktree → must NOT be flagged.
-    live_id = 'live-plan-with-wt'
-    live_dir = plan_context.fixture_dir / 'plans' / live_id
-    make_healthy_plan(live_dir)
-    make_worktree_dir(plan_context.fixture_dir, live_id)
-
-    # Dangling worktree → must be flagged.
-    dangling_id = 'dangling-wt-no-plan'
-    make_worktree_dir(plan_context.fixture_dir, dangling_id)
-
-    result = _scan_all()
-
-    payload = result.toon()
-    dangling_findings = _findings_by_reason(payload, 'dangling_worktree')
-    by_plan = {f['plan_id'] for f in dangling_findings}
-    assert dangling_id in by_plan
-    assert live_id not in by_plan
+# Rule 3 — dangling-worktree — lives in ``test_plan_doctor_dangling_worktree.py``.
 
 
 # =============================================================================

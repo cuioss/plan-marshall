@@ -35,6 +35,13 @@ python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator sca
 
 The scaffold is idempotent — re-running against an existing tree creates nothing and fails nothing.
 
+**Resolve the epic tree.** Ask the store seam where this epic lives and which checkout holds the store, and keep `epic_dir` and `store_checkout` from the payload for every later step — every direct file-tool call on a ledger document addresses `{epic_dir}/…` (see the [direct-file-write carve-out](../../persona-plan-orchestrator/standards/orchestration-model.md#direct-file-write-carve-out)):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator resolve-path \
+  --slug {slug}
+```
+
 ### Step 3: Create the ledger
 
 Create the `kind=orchestrator` machine authority. The call writes the epic header, `status.json` (`--phases` is ignored for this store; the header carries a single three-value `phase` field starting at `init`), and an empty anchor file, `resume_anchor.md`. It creates no `queue/` directory — an absent queue is a measured empty one, and `decompose` stages the first row file:
@@ -95,7 +102,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging deci
 
 ### Step 5: Write the epic skeleton
 
-Instantiate `epic.md` from [`templates/epic.md`](../templates/epic.md) via the Write tool — direct file access inside the epic's own tree is the direct-file-write carve-out. Fill the Vision section from the operator's framing and leave the `## Queue annotations` zone empty. `epic.md` is hand-written narrative only: START HERE and the Ordered Queue are not in it — they live in the generated `queue-view.md` (Step 6). Optionally seed `references.json` (external repos, PRs, source documents) the same way.
+Instantiate `{epic_dir}/epic.md` from [`templates/epic.md`](../templates/epic.md) via the Write tool — direct file access inside the epic's own tree is the direct-file-write carve-out. Fill the Vision section from the operator's framing and leave the `## Queue annotations` zone empty. `epic.md` is hand-written narrative only: START HERE and the Ordered Queue are not in it — they live in the generated `queue-view.md` (Step 6). Optionally seed `{epic_dir}/references.json` (external repos, PRs, source documents) the same way.
 
 ### Step 6: Set the resume anchor, render the view, and log
 

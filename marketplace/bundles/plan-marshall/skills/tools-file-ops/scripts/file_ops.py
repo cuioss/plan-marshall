@@ -20,6 +20,9 @@ Usage:
         base_path,
         get_store_dir,
         get_archived_orchestrator_dir,
+        get_orchestrator_store_root,
+        resolve_orchestrator_store_file,
+        OrchestratorStoreUnavailable,
         get_temp_dir,
         get_executor_path,
         guard_worktree_cwd,
@@ -57,6 +60,12 @@ from marketplace_paths import (
     WORKTREES_DIRNAME,
     _find_plan_root_from_cwd,
     resolve_main_anchored_path,
+)
+from orchestrator_worktree import (
+    LEDGER_PATHSPECS,
+    OrchestratorStoreUnavailable,
+    ensure_orchestrator_worktree,
+    orchestrator_use_worktree,
 )
 from toon_parser import serialize_toon
 
@@ -594,12 +603,15 @@ def get_store_dir(store: str, entry_id: str, allow_archived: bool = False) -> Pa
       :func:`base_path` (``{base_dir}/plans/{entry_id}``, ADR-002 unchanged):
       plan state moves into the pinned worktree during phase-5+ and resolves
       wherever the working directory is.
-    - ``store='orchestrator'`` — composes a subpath onto the git-tracked,
+    - ``store='orchestrator'`` — composes ``orchestrator/{entry_id}`` onto
+      :func:`get_orchestrator_store_root`, whose answer is gated by the
+      ``orchestrator.use_worktree`` knob. Knob off: the git-tracked,
       cwd-relative config tier, :func:`get_tracked_config_dir`
-      (``<checkout-root>/.plan/orchestrator/{entry_id}``): the orchestrator
-      corpus is git-tracked, repo-local state, so it resolves in whichever
-      checkout the working directory is in and is NOT a member of the bounded
-      main-anchored exception set.
+      (``<checkout-root>/.plan/orchestrator/{entry_id}``) — the corpus resolves
+      in whichever checkout the working directory is in and is NOT a member of
+      the bounded main-anchored exception set. Knob on: the ``.plan`` directory
+      of the shared, main-anchored ledger worktree, created on first use — the
+      same path from the main checkout and from every plan worktree.
 
     Args:
         store: Store name — ``'plans'`` or ``'orchestrator'``.
@@ -621,20 +633,26 @@ def get_store_dir(store: str, entry_id: str, allow_archived: bool = False) -> Pa
         ValueError: when ``store`` is not a known store name, or when an
             ``'orchestrator'`` ``entry_id`` contains a path-traversal or
             path-separator component (``..``, ``/``, ``\\``, or an embedded
-            null byte).
+            null byte). The entry id is checked BEFORE the store root is
+            resolved, so an unsafe id is refused before any git side effect.
+        OrchestratorStoreUnavailable: for ``store='orchestrator'`` with the
+            knob on, when the shared ledger worktree cannot be provided (see
+            :func:`get_orchestrator_store_root`). It is deliberately not caught
+            here — the typed refusal propagates to the caller's ``safe_main``.
     """
     if store == 'plans':
         return base_path('plans', entry_id)
     if store == 'orchestrator':
         # entry_id (an epic slug) flows unvalidated from CLI callers straight
-        # into the tracked-tier join below, and this is the single choke point
+        # into the store-root join below, and this is the single choke point
         # for every orchestrator-store consumer — including
         # claude_runtime.py's _read_orchestrator_title_state(slug), which reads
         # this function directly without going through orchestrator.py's
-        # _validate_slug. Reject traversal and separator components here so no
-        # caller can escape the orchestrator/ subtree.
+        # _validate_slug. Reject traversal and separator components here, FIRST,
+        # so no caller can escape the orchestrator/ subtree and an unsafe id is
+        # refused before the store root can create the shared worktree.
         _reject_unsafe_entry_id(entry_id)
-        active = get_tracked_config_dir() / 'orchestrator' / entry_id
+        active = get_orchestrator_store_root() / 'orchestrator' / entry_id
         if allow_archived and not active.exists():
             archived = get_archived_orchestrator_dir(entry_id)
             if archived.exists():
@@ -646,32 +664,108 @@ def get_store_dir(store: str, entry_id: str, allow_archived: bool = False) -> Pa
 def get_archived_orchestrator_dir(slug: str) -> Path:
     """Resolve the unconditional archived-home directory for an epic ``slug``.
 
-    Returns ``<checkout-root>/.plan/archived-orchestrators/{slug}`` — the
-    relocated home of a *closed* epic tree, mirroring the plan-lifecycle
-    ``archived-plans/`` convention. This is the unconditional destination
-    resolver (it never checks existence): the ``archive`` subcommand moves a
-    closed epic here, and the :func:`get_store_dir` read-fallback resolves it
-    when the active ``orchestrator/{slug}`` path is absent.
+    Returns ``{store-root}/archived-orchestrators/{slug}`` — the relocated home
+    of a *closed* epic tree, mirroring the plan-lifecycle ``archived-plans/``
+    convention. This is the unconditional destination resolver (it never
+    checks existence): the ``archive`` subcommand moves a closed epic here, and
+    the :func:`get_store_dir` read-fallback resolves it when the active
+    ``orchestrator/{slug}`` path is absent.
 
-    Composes onto the SAME tier as the active store root
-    (:func:`get_tracked_config_dir`), so one epic's active and archived homes
-    stay in one storage tier and ``allow_archived`` keeps resolving a single
-    slug across both. Reuses :func:`_reject_unsafe_entry_id` so a
-    traversal/separator slug cannot escape the ``archived-orchestrators/``
-    subtree.
+    Composes onto the SAME root as the active store,
+    :func:`get_orchestrator_store_root` — the tracked config dir with the
+    ``orchestrator.use_worktree`` knob off, the shared ledger worktree's
+    ``.plan`` with it on — so one epic's active and archived homes stay in one
+    storage tier and ``allow_archived`` keeps resolving a single slug across
+    both. Reuses :func:`_reject_unsafe_entry_id`, run before the root is
+    resolved, so a traversal/separator slug cannot escape the
+    ``archived-orchestrators/`` subtree and is refused before any git side
+    effect.
 
     Args:
         slug: Epic slug identifying the archived epic entry.
 
     Returns:
-        Path to ``archived-orchestrators/{slug}`` under the tracked config dir.
+        Path to ``archived-orchestrators/{slug}`` under the orchestrator store
+        root.
 
     Raises:
         ValueError: when ``slug`` is empty/whitespace-only or contains ``..``,
             ``/``, ``\\``, or a null byte.
+        OrchestratorStoreUnavailable: with the knob on, when the shared ledger
+            worktree cannot be provided; propagates uncaught.
     """
     _reject_unsafe_entry_id(slug)
-    return get_tracked_config_dir() / 'archived-orchestrators' / slug
+    return get_orchestrator_store_root() / 'archived-orchestrators' / slug
+
+
+def get_orchestrator_store_root() -> Path:
+    """Return the ``.plan`` directory the orchestrator ledger store lives under.
+
+    The single knob-gated branch of the orchestrator store seam; both
+    :func:`get_store_dir` (``store='orchestrator'``) and
+    :func:`get_archived_orchestrator_dir` compose onto it.
+
+    - ``orchestrator.use_worktree`` off (the default) — :func:`get_tracked_config_dir`,
+      exactly the tier the store has always resolved on.
+    - ``orchestrator.use_worktree`` on — ``{shared-worktree}/.plan``, where the
+      shared worktree is the one fixed, main-anchored ledger worktree returned
+      by :func:`orchestrator_worktree.ensure_orchestrator_worktree` (created on
+      first use, reused unchanged afterwards). The answer is the same from the
+      main checkout and from every plan worktree.
+
+    The knob is read from the MAIN checkout's ``marshal.json``
+    (:func:`orchestrator_worktree.orchestrator_use_worktree`), so every checkout
+    agrees on it. :func:`get_tracked_config_dir` itself is NOT rerouted: it
+    also resolves ``marshal.json``, ``project-architecture/`` and ``temp/``,
+    which stay on the current checkout.
+
+    Raises:
+        OrchestratorStoreUnavailable: with the knob on, when the shared worktree
+            cannot be provided (``ledger_cutover_refused``,
+            ``ledger_drift_unevaluable``, ``base_ref_unresolvable``,
+            ``orchestrator_worktree_create_failed``). Never raised with the knob
+            off.
+    """
+    if not orchestrator_use_worktree():
+        return get_tracked_config_dir()
+    return ensure_orchestrator_worktree() / PLAN_DIR_NAME
+
+
+def resolve_orchestrator_store_file(path: str) -> Path:
+    """Resolve a caller-supplied file path, rebasing a ledger-store path onto the seam.
+
+    A RELATIVE path whose leading components name one of the two ledger store
+    roots (:data:`orchestrator_worktree.LEDGER_PATHSPECS` —
+    ``.plan/orchestrator`` and ``.plan/archived-orchestrators``) is the LOGICAL
+    pointer a plan records (e.g. a spec's ``source_id``). With the
+    ``orchestrator.use_worktree`` knob on it is rebased onto
+    :func:`get_orchestrator_store_root`, so a spec staged in the shared ledger
+    worktree and not yet landed is read from there — never from a stale copy on
+    the checkout the working directory is in.
+
+    Every other path — absolute paths, relative paths outside the ledger store,
+    and every path with the knob off — resolves exactly as a plain
+    ``Path(path).expanduser().resolve()`` does (cwd-relative for a relative
+    path).
+
+    Args:
+        path: The path as the caller supplied it.
+
+    Returns:
+        The resolved absolute path to probe.
+
+    Raises:
+        OrchestratorStoreUnavailable: with the knob on, when a ledger-store path
+            must be rebased and the shared worktree cannot be provided;
+            propagates uncaught.
+    """
+    candidate = Path(path).expanduser()
+    if not candidate.is_absolute():
+        for spec in LEDGER_PATHSPECS:
+            spec_parts = Path(spec).parts
+            if candidate.parts[: len(spec_parts)] == spec_parts and orchestrator_use_worktree():
+                return (get_orchestrator_store_root() / Path(*candidate.parts[1:])).resolve()
+    return candidate.resolve()
 
 
 def _reject_unsafe_entry_id(entry_id: str) -> None:
@@ -1711,6 +1805,13 @@ def safe_main(main_fn: Any) -> Any:
     info-free empty-stdout exit 1. ``sys.exit(1)`` is retained, so the exit code
     still distinguishes a crash (1) from an operation failure (0).
 
+    One exception type is NOT a crash: :class:`OrchestratorStoreUnavailable`,
+    the orchestrator store seam's typed refusal. It is rendered in a dedicated
+    clause ahead of the generic handler as ``output_toon_error(exc.code,
+    str(exc), **exc.fields)`` — its own code and structured fields — with exit
+    0, because a refused store is an operation failure the caller can act on.
+    Every other exception keeps the ``internal_error`` / exit 1 path.
+
     Usage:
         @safe_main
         def main() -> int:
@@ -1730,6 +1831,9 @@ def safe_main(main_fn: Any) -> Any:
             sys.exit(130)
         except SystemExit:
             raise
+        except OrchestratorStoreUnavailable as exc:
+            output_toon_error(exc.code, str(exc), **exc.fields)
+            sys.exit(0)
         except Exception as e:
             output_toon_error('internal_error', str(e))
             sys.exit(1)
