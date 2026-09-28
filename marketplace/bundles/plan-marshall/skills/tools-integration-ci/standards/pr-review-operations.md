@@ -280,7 +280,9 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --plan-id 
 
 ⚠ `--plan-id` is **router-scoped on this verb** and MUST precede the first verb token: `ci.py`
 consumes it before the provider parser is built, so writing it after `pr view` is an
-`unrecognized arguments` rejection. Capture the PR's `title`, `body` and head branch from the return —
+`unrecognized arguments` rejection with exit 2. That rejection also prints a stdout TOON carrying
+`error: misplaced_router_flag`, the misplaced names in `flags`, and a `message` that is your own
+command with the flag moved ahead of the verb — run that command. Capture the PR's `title`, `body` and head branch from the return —
 the replacement PR carries them forward, so nothing an operator or a reviewer wrote is lost.
 
 `body` is the last field of the return and arrives as a block scalar (`body: |` with the description

@@ -1004,6 +1004,49 @@ def _move_router_flags_first(argv: list[str], misplaced: list[str]) -> list[str]
     return moved + rest
 
 
+def _misplaced_router_flags(message: str, router_flags: set[str]) -> list[str]:
+    """Return the router flags an ``unrecognized arguments`` rejection names, in order.
+
+    Returns ``[]`` when the message is not an ``unrecognized arguments`` failure
+    or names no declared router flag — a genuinely-unknown flag is not misplaced.
+    """
+    prefix = 'unrecognized arguments: '
+    if not message.startswith(prefix):
+        return []
+    misplaced: list[str] = []
+    for token in message[len(prefix) :].split():
+        name = token.split('=', 1)[0]
+        if name in router_flags and name not in misplaced:
+            misplaced.append(name)
+    return misplaced
+
+
+def _corrected_invocation(
+    misplaced: list[str],
+    prog: str,
+    *,
+    notation: str | None = None,
+    argv: list[str] | None = None,
+) -> str:
+    """Render the caller's invocation with every misplaced router flag moved ahead of the verb.
+
+    ``notation`` renders the command through this repository's script-execution
+    convention (``python3 .plan/execute-script.py {notation} …``); ``prog`` is the
+    fallback for a caller that supplies none. Without ``argv`` the example falls
+    back to a ``<subcommand>`` placeholder.
+    """
+    invocation = f'python3 .plan/execute-script.py {notation}' if notation else prog
+    if argv:
+        # ``shlex.join`` on the ARGUMENTS, not on the invocation: the corrected
+        # example is meant to be copied and run, and a value carrying a space or
+        # a shell metacharacter (`--title "a b"`, `--body $x`) would otherwise be
+        # re-split or expanded into a different command than the one the caller
+        # typed. The invocation prefix is composed here and never user data, so
+        # quoting it would only add noise.
+        return f'{invocation} {shlex.join(_move_router_flags_first(list(argv), misplaced))}'
+    return f'{invocation} {misplaced[0]} VALUE <subcommand> ...'
+
+
 def _augment_misplaced_router_flag(
     message: str,
     router_flags: set[str],
@@ -1042,28 +1085,11 @@ def _augment_misplaced_router_flag(
     ``unrecognized arguments`` failure or names no known router flag, so a
     genuinely-unknown flag still gets argparse's default rejection.
     """
-    prefix = 'unrecognized arguments: '
-    if not message.startswith(prefix):
-        return message
-    misplaced: list[str] = []
-    for token in message[len(prefix) :].split():
-        name = token.split('=', 1)[0]
-        if name in router_flags and name not in misplaced:
-            misplaced.append(name)
+    misplaced = _misplaced_router_flags(message, router_flags)
     if not misplaced:
         return message
     named = ', '.join(misplaced)
-    invocation = f'python3 .plan/execute-script.py {notation}' if notation else prog
-    if argv:
-        # ``shlex.join`` on the ARGUMENTS, not on the invocation: the corrected
-        # example is meant to be copied and run, and a value carrying a space or
-        # a shell metacharacter (`--title "a b"`, `--body $x`) would otherwise be
-        # re-split or expanded into a different command than the one the caller
-        # typed. The invocation prefix is composed here and never user data, so
-        # quoting it would only add noise.
-        example = f'{invocation} {shlex.join(_move_router_flags_first(list(argv), misplaced))}'
-    else:
-        example = f'{invocation} {misplaced[0]} VALUE <subcommand> ...'
+    example = _corrected_invocation(misplaced, prog, notation=notation, argv=argv)
     return (
         f'{message}\n'
         f'note: {named} is a top-level flag and belongs BEFORE the subcommand (verb), '
@@ -1091,9 +1117,13 @@ def parse_args_with_toon_errors(
     parser AND every subparser registered under it. The override scans the
     formatted error message for any of the known identifier flags
     (``--plan-id``, ``--lesson-id``, …) and, when one matches, emits the
-    canonical TOON error and exits with code 0. All other argparse errors
-    (missing subcommand, unknown flag, etc.) fall through to the original
-    behaviour.
+    canonical TOON error and exits with code 0. An ``unrecognized arguments``
+    rejection that names a router flag first prints a stdout TOON
+    (``status: error / error: misplaced_router_flag``, ``flags``, and a
+    ``message`` carrying the caller's command with the flags moved ahead of the
+    verb), then falls through to argparse's rejection, so stderr and exit 2 are
+    unchanged. All other argparse errors (missing subcommand, unknown flag,
+    etc.) fall through to the original behaviour with nothing on stdout.
 
     ``notation`` is the executor notation of the script being invoked. Supplying
     it makes the misplaced-router-flag note render its worked example through
@@ -1153,13 +1183,30 @@ def parse_args_with_toon_errors(
             # flag placed after the verb is rejected as "unrecognized arguments",
             # a message that hides the fact that the flag exists and merely sits
             # in the wrong position.
+            argv = sys.argv[1:]
+            misplaced = _misplaced_router_flags(message, router_flags)
+            if misplaced:
+                # A caller that parses stdout — the channel every executor
+                # refusal arrives on — would otherwise see nothing actionable:
+                # argparse's rejection below goes to stderr only. Emit the
+                # corrective there as well; stderr and exit 2 stay unchanged.
+                print(
+                    serialize_toon(
+                        {
+                            'status': 'error',
+                            'error': 'misplaced_router_flag',
+                            'flags': misplaced,
+                            'message': _corrected_invocation(misplaced, root_prog, notation=notation, argv=argv),
+                        }
+                    )
+                )
             orig(
                 _augment_misplaced_router_flag(
                     message,
                     router_flags,
                     root_prog,
                     notation=notation,
-                    argv=sys.argv[1:],
+                    argv=argv,
                 )
             )
 
