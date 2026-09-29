@@ -215,7 +215,7 @@ from marketplace_bundles import (  # noqa: E402
 )
 from marketplace_paths import MARKETPLACE_BUNDLES_PATH  # noqa: E402
 from marketplace_paths import get_base_path as _shared_get_base_path  # noqa: E402
-from marketplace_paths import get_bundle_cache_roots as _shared_get_bundle_cache_roots  # noqa: E402
+from marketplace_paths import _bundle_cache_roots_for as _shared_bundle_cache_roots_for  # noqa: E402
 from marketplace_paths import get_project_skill_roots as _shared_get_project_skill_roots  # noqa: E402
 
 # The single target/context resolver. Every target-resolving verb routes
@@ -2068,9 +2068,10 @@ def generate_executor(
     # Cache-recovery roots for the template's pruned-version self-heal, resolved at
     # generation time through the same runtime op the target-aware resolver family uses.
     # The executor cannot import the shared resolver before its own bootstrap is done, so
-    # the recovered roots travel with the generated file. A target with no versioned cache
-    # (OpenCode) contributes no root and the recovery honestly finds nothing.
-    recovery_roots = _shared_get_bundle_cache_roots()
+    # the recovered roots travel with the generated file. The roots are the RESOLVED
+    # target's, not the ambient one's: ``generate --target opencode`` on a Claude-ambient
+    # machine must not embed the Claude plugin-cache roots.
+    recovery_roots = _shared_bundle_cache_roots_for(resolved_target)
     cache_recovery_lines = (
         # repr() (not manual quotes) so a root path containing a quote cannot
         # emit invalid generated Python and trip the unsubstituted-placeholder
@@ -3091,7 +3092,22 @@ def cmd_bootstrap(args: argparse.Namespace) -> dict:
             'unknown' if not live_sha else 'uncompared',
             executor=str(real_executor),
         )
-    valid, script_count = verify_executor()
+    # Verify against the RESOLVED target's base, exactly as ``cmd_verify`` does, so
+    # ``bootstrap --target opencode`` does not decide executor validity from the
+    # ambient target's layout.
+    try:
+        ctx = resolve_verb_context(args)
+    except ValueError as e:
+        return {'status': 'error', 'error': 'invalid_context', 'detail': str(e)}
+    try:
+        verify_base: Path | None = get_base_path(
+            use_marketplace=getattr(args, 'marketplace', False),
+            marketplace_root=ctx['marketplace_root'],
+            target=ctx['target'],
+        )
+    except FileNotFoundError:
+        verify_base = None
+    valid, script_count = verify_executor(verify_base)
     if not valid:
         return _regenerate(
             'executor_invalid',

@@ -114,6 +114,29 @@ def extract_project_steps(marshal_config: dict[str, Any]) -> list[dict[str, str]
     return project_steps
 
 
+def project_steps_shape_error(marshal_config: dict[str, Any]) -> str | None:
+    """Return why the step roster's SHAPE is unreadable, or ``None`` when it is readable.
+
+    :func:`extract_project_steps` skips a malformed ``plan`` / phase / ``steps``
+    value on purpose — it is a tolerant scanner shared by every permission op.
+    An op that REPORTS a scan result cannot afford that tolerance: a malformed
+    roster and a valid roster with no project steps both yield ``[]``. This is
+    the check such an op runs first, so the two stay distinguishable.
+    """
+    plan = marshal_config.get('plan', {})
+    if not isinstance(plan, dict):
+        return "'plan' is not an object"
+    for phase in PROJECT_STEP_PHASES:
+        if phase not in plan:
+            continue
+        phase_config = plan[phase]
+        if not isinstance(phase_config, dict):
+            return f"'plan.{phase}' is not an object"
+        if 'steps' in phase_config and not isinstance(phase_config['steps'], (dict, list)):
+            return f"'plan.{phase}.steps' is neither a keyed map nor a list"
+    return None
+
+
 #: The operation name every ``permission ensure-steps`` response carries.
 ENSURE_STEPS_OPERATION: str = 'permission ensure-steps'
 
@@ -151,6 +174,9 @@ def ensure_steps_without_skill_grants(
     """
     if 'error' in marshal_config:
         return toon_error(ENSURE_STEPS_OPERATION, 'invalid_marshal', str(marshal_config['error']))
+    shape_error = project_steps_shape_error(marshal_config)
+    if shape_error is not None:
+        return toon_error(ENSURE_STEPS_OPERATION, 'invalid_marshal', f'unreadable step roster: {shape_error}')
     if not project_steps:
         return toon_success(
             ENSURE_STEPS_OPERATION,

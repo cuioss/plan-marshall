@@ -57,23 +57,28 @@ def discover_target_trees() -> dict[str, Path]:
 
     Discovered from the generator's own output directory rather than named, so a
     target added to the registry later is swept without an edit here. A directory
-    with no markdown under it is not a tree and is not returned.
+    counts as an examined tree only when it carries at least one generated skill
+    body (``SKILL.md``) — a directory holding only a README would otherwise pass
+    the coverage check while the staleness sweep examined nothing.
     """
     if not TARGET_ROOT.is_dir():
         return {}
-    return {path.name: path for path in sorted(TARGET_ROOT.iterdir()) if path.is_dir() and any(path.rglob('*.md'))}
+    return {path.name: path for path in sorted(TARGET_ROOT.iterdir()) if path.is_dir() and any(path.rglob('SKILL.md'))}
 
 
 def registered_target_names() -> list[str]:
-    """Return every target the generator registers — the trees a sweep must examine.
+    """Return every registered target that emits a skill tree — the trees a sweep must examine.
 
     Read from ``TARGET_REGISTRY`` rather than listed here, so a target added to
-    the registry is expected by this guard without an edit. ``generate --target
-    all --output target`` writes each one to ``target/{name}``.
+    the registry is expected by this guard without an edit. A target whose
+    output is not a bundle tree (``emits_bundle_tree`` false — the reviewer-pack
+    target) carries no skill bodies and so is not a population this sweep can
+    examine. ``generate --target all --output target`` writes each target to
+    ``target/{name}``.
     """
     from marketplace.targets import TARGET_REGISTRY
 
-    return sorted(TARGET_REGISTRY)
+    return sorted(name for name, target_cls in TARGET_REGISTRY.items() if target_cls.emits_bundle_tree)
 
 
 def unevaluated_targets(trees: dict[str, Path]) -> list[str]:
@@ -157,6 +162,20 @@ class TestTheSweepIsReal:
 
         assert unevaluated_targets({present: tmp_path}) == registered[1:]
         assert unevaluated_targets({}) == registered
+
+    def test_a_readme_only_directory_is_not_an_examined_tree(self, tmp_path: Path, monkeypatch) -> None:
+        """A directory with markdown but no skill body is not counted as examined."""
+        import sys
+
+        readme_only = tmp_path / 'opencode'
+        readme_only.mkdir()
+        (readme_only / 'README.md').write_text('# readme', encoding='utf-8')
+        with_skill = tmp_path / 'claude' / 'b' / 'skills' / 's'
+        with_skill.mkdir(parents=True)
+        (with_skill / 'SKILL.md').write_text('# skill', encoding='utf-8')
+        monkeypatch.setattr(sys.modules[__name__], 'TARGET_ROOT', tmp_path)
+
+        assert discover_target_trees() == {'claude': tmp_path / 'claude'}
 
     def test_a_retired_FLAT_notation_is_reported_not_dropped(self, tmp_path: Path) -> None:
         """The gate sees a retired name in the spelling the flat trees emit.

@@ -208,6 +208,24 @@ class TestEnsureStepsReadsTheRoster:
         assert result['steps_scanned'] == 0
         assert result['permissions_added'] == 0
 
+    @pytest.mark.parametrize(
+        'config',
+        [
+            pytest.param({'plan': []}, id='plan-not-a-map'),
+            pytest.param({'plan': {'phase-5-execute': []}}, id='phase-not-a-map'),
+            pytest.param({'plan': {'phase-5-execute': {'steps': 5}}}, id='steps-not-a-shape'),
+        ],
+    )
+    def test_a_malformed_roster_is_an_error_not_a_measured_zero(self, runtime, tmp_path, config) -> None:
+        """A readable marshal.json whose roster SHAPE is wrong is not "no project steps"."""
+        marshal = tmp_path / 'marshal.json'
+        marshal.write_text(json.dumps(config), encoding='utf-8')
+
+        result = _parse(runtime.permission_ensure_steps(str(marshal), 'project', False))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_marshal'
+
     def test_an_invalid_scope_is_refused_on_every_runtime(self, runtime, tmp_path) -> None:
         """Scope is validated alike on both targets, before any read."""
         marshal = tmp_path / 'marshal.json'

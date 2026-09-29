@@ -353,7 +353,39 @@ class TestSharedModuleLabel:
         assert _gen.shared_module_skill_label(scripts) == 'tools-file-ops'
 
 
+class TestTargetChoicesMirrorTheRuntimeRegistry:
+    def test_every_registered_runtime_target_is_accepted_by_the_verbs(self):
+        """``TARGET_CHOICES`` is a literal (the generator bootstraps before platform-runtime is importable).
+
+        Pinned here to the runtime registry, so a target registered there but
+        missing from the verbs' accept-set — which the shared resolver would
+        still resolve from the env tier or marshal.json — is a red build.
+        """
+        from platform_runtime import _REGISTRY
+
+        assert _REGISTRY, 'platform_runtime registers no target; the pin would be vacuous'
+        assert set(_gen.TARGET_CHOICES) == set(_REGISTRY)
+
+
 class TestVerbPayloadsReportTheResolutionTier:
+    def test_bootstrap_verifies_against_the_resolved_target(self, monkeypatch, tmp_path):
+        """``bootstrap --target X`` hands verify_executor the base resolved for X, not the ambient one."""
+        import types
+
+        seen: list = []
+        executor = tmp_path / 'execute-script.py'
+        executor.write_text('# executor', encoding='utf-8')
+        monkeypatch.setattr(_gen, 'executor_path', lambda: executor)
+        monkeypatch.setattr(_gen, 'current_template_sha256', lambda: 'sha')
+        monkeypatch.setattr(_gen, 'read_executor_template_sha', lambda: 'sha')
+        monkeypatch.setattr(_gen, 'get_base_path', lambda **kwargs: seen.append(kwargs['target']) or tmp_path)
+        monkeypatch.setattr(_gen, 'verify_executor', lambda base=None: (seen.append(base) or True, 1))
+
+        result = _gen.cmd_bootstrap(types.SimpleNamespace(target='opencode', marketplace_root=None, marketplace=False))
+
+        assert result['action'] == 'not_needed'
+        assert seen == ['opencode', tmp_path]
+
     def test_paths_success_payload_carries_target_and_its_tier(self, monkeypatch):
         """A success payload says WHICH tier produced the target, not only the target."""
         import types
