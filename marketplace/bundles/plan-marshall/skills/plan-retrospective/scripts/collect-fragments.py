@@ -58,13 +58,12 @@ kebab-case flags).
 from __future__ import annotations
 
 import argparse
-import tempfile
 from pathlib import Path
 from typing import Any
 
+from _retro_bundle_root import resolve_bundle_root, resolve_fragment_dir
 from file_ops import (
     atomic_write_file,
-    base_path,
     output_toon,
     safe_main,
 )
@@ -75,48 +74,17 @@ from input_validation import (
 from retro_sections import valid_aspect_keys
 from toon_parser import parse_toon, serialize_toon
 
-_ARCHIVED_TMP_SUBDIR = 'plan-retrospective'
 _META_KEY = '_meta'
-_BUNDLE_RELATIVE = ('work', 'retro-fragments.toon')
-
-
-def _resolve_bundle_root(mode: str, plan_id: str) -> Path:
-    """Return the directory the bundle and its fragments live under for ``mode``.
-
-    This is the single source of truth used by both ``resolve_bundle_path``
-    (to locate the bundle file) and ``_resolve_fragment_path`` (to anchor
-    relative fragment paths). Keeping the resolution in one place guarantees
-    that ``init``/``add``/``register``/``finalize`` agree on the bundle root.
-
-    Live mode roots at the plan directory. Archived mode roots at a synthetic
-    per-plan directory under the OS tmpdir — never at the archived plan
-    directory, which is the audit's read-only input.
-
-    Args:
-        mode: Either ``'live'`` or ``'archived'``.
-        plan_id: Plan identifier. Required for both modes.
-
-    Returns:
-        Absolute path to the bundle root.
-
-    Raises:
-        ValueError: On unknown ``mode`` or missing ``plan_id``.
-    """
-    if not plan_id:
-        raise ValueError('--plan-id is required')
-    if mode == 'live':
-        return base_path('plans', plan_id).resolve()
-    if mode == 'archived':
-        return (Path(tempfile.gettempdir()) / _ARCHIVED_TMP_SUBDIR / f'plan-{plan_id}').resolve()
-    raise ValueError(f'Unknown mode: {mode!r}')
+_BUNDLE_FILENAME = 'retro-fragments.toon'
 
 
 def resolve_bundle_path(mode: str, plan_id: str) -> Path:
     """Return the bundle path for the given mode.
 
     Both modes resolve to ``<bundle_root>/work/retro-fragments.toon``. The
-    bundle root comes from :func:`_resolve_bundle_root`, so ``init``, ``add``,
-    ``register`` and ``finalize`` agree on it by construction.
+    bundle root comes from the shared :func:`_retro_bundle_root.resolve_bundle_root`
+    — the single source of truth the fragment readers use too — so ``init``,
+    ``add``, ``register`` and ``finalize`` agree on it by construction.
 
     Args:
         mode: Either ``'live'`` or ``'archived'``.
@@ -128,7 +96,7 @@ def resolve_bundle_path(mode: str, plan_id: str) -> Path:
     Raises:
         ValueError: On unknown ``mode`` or missing ``plan_id``.
     """
-    return _resolve_bundle_root(mode, plan_id).joinpath(*_BUNDLE_RELATIVE)
+    return resolve_fragment_dir(mode, plan_id) / _BUNDLE_FILENAME
 
 
 def _resolve_fragment_path(raw_path: str, bundle_root: Path) -> Path:
@@ -431,7 +399,7 @@ def cmd_add(args: argparse.Namespace) -> dict[str, Any]:
             'error': f'Aspect already registered: {aspect!r}. Pass --overwrite to replace.',
         }
 
-    bundle_root = _resolve_bundle_root(mode, args.plan_id)
+    bundle_root = resolve_bundle_root(mode, args.plan_id)
     fragment_path = _resolve_fragment_path(args.fragment_file, bundle_root)
     if not fragment_path.is_file():
         return _fragment_missing('add', args.plan_id, aspect, fragment_path)
@@ -596,7 +564,7 @@ def cmd_register(args: argparse.Namespace) -> dict[str, Any]:
     # Resolve every fragment path and refuse the batch on the first missing
     # file, then read every fragment (fail fast — the bundle is still
     # untouched), merge all, update the inventory once, and write once.
-    bundle_root = _resolve_bundle_root(mode, args.plan_id)
+    bundle_root = resolve_bundle_root(mode, args.plan_id)
     resolved: list[tuple[str, Path]] = [
         (aspect, _resolve_fragment_path(raw_path, bundle_root)) for aspect, raw_path in parsed
     ]

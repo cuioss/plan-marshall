@@ -66,6 +66,7 @@ from _footprint_resolver import (
     resolve_footprint,
 )
 from _references_core import resolve_live_worktree
+from _retro_bundle_root import resolve_fragment_dir
 from _step_key_canonical import canonicalize_step_key
 from file_ops import base_path, output_toon, safe_main
 from input_validation import (
@@ -648,18 +649,36 @@ def evaluate_branch_cleanup(
     return _make_check('branch_cleanup_changes', 'fail', finding['message']), finding
 
 
-def load_forwarded_set_comparison(plan_dir: Path) -> dict[str, Any] | None:
+def resolve_forwarded_fragment_dir(mode: str, plan_id: str | None) -> Path | None:
+    """Return the ``{fragment_dir}`` the upstream fragment was written to, or ``None``.
+
+    The retrospective writes every aspect fragment under the bundle root
+    ``collect-fragments init`` resolves, so the reader resolves it through the SAME
+    shared resolver (:func:`_retro_bundle_root.resolve_fragment_dir`): the plan
+    directory's ``work`` in live mode, the synthetic tmp root's ``work`` in archived
+    mode — never the archived plan directory, which no fragment is written into.
+
+    The root is keyed on ``--plan-id``; without one (an archived run given only
+    ``--archived-plan-path``) there is no root to look under, and ``None`` makes
+    rule M6 report the unread input rather than guess a directory.
+    """
+    if not plan_id:
+        return None
+    return resolve_fragment_dir(mode, plan_id)
+
+
+def load_forwarded_set_comparison(fragment_dir: Path | None) -> dict[str, Any] | None:
     """Return the upstream ``affected_files_exact_match`` block, or ``None``.
 
-    ``None`` means the block could NOT be read — the fragment is absent, it did not
-    parse, or it carries no such block. That is a could-not-look, and rule M6 reports
-    it as one instead of grading two empty sets it never received. An empty
-    ``outline_only`` / ``references_only`` inside a block that WAS read is the
-    opposite answer: a measured agreement.
+    ``None`` means the block could NOT be read — no fragment directory resolved, the
+    fragment is absent, it did not parse, or it carries no such block. That is a
+    could-not-look, and rule M6 reports it as one instead of grading two empty sets
+    it never received. An empty ``outline_only`` / ``references_only`` inside a block
+    that WAS read is the opposite answer: a measured agreement.
     """
-    # The upstream ``artifact-consistency`` producer writes its fragment here, per
-    # that aspect's Persistence contract.
-    path = plan_dir / 'work' / 'fragment-artifact-consistency.toon'
+    if fragment_dir is None:
+        return None
+    path = fragment_dir / 'fragment-artifact-consistency.toon'
     if not path.is_file():
         return None
     try:
@@ -1040,7 +1059,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     )
     # The forwarded set comparison rule M6 receives. Loaded here so the payload can
     # publish whether it was readable at all beside the rule's own verdict.
-    forwarded_comparison = load_forwarded_set_comparison(plan_dir)
+    forwarded_comparison = load_forwarded_set_comparison(resolve_forwarded_fragment_dir(args.mode, args.plan_id))
     kept_files, dropped_files, reduction = filter_bookkeeping(raw_files)
     # Whether a diff observation reached the rules at all. Taken from the loader,
     # never inferred from an empty file list: a SUPPLIED file naming nothing is a

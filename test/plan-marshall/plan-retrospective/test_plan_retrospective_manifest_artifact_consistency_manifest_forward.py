@@ -11,7 +11,11 @@ manifest-bearing plan rather than re-routed.
 
 from __future__ import annotations
 
+import shutil
+from pathlib import Path
+
 import pytest
+from _collect_fragments_fixtures import SCRIPT_PATH as COLLECT_FRAGMENTS_SCRIPT
 from _plan_retrospective_fixtures import build_happy_plan_dir
 from _plan_retrospective_manifest_fixtures import (
     ARTIFACT_SCRIPT,
@@ -253,3 +257,109 @@ class TestForwardedFindingIsReceived:
         assert check is not None
         assert check['status'] == 'inconclusive', check
         assert _finding_by_code(received['findings'], 'declared_vs_realized_set_mismatch') is None
+
+
+# =============================================================================
+# Archived mode — the receiver reads the fragment root the producer writes to
+# =============================================================================
+
+
+def _forwarded_fragment(outline_only: list[str]) -> str:
+    """Serialize a minimal artifact-consistency fragment carrying a forwarded block."""
+    from toon_parser import serialize_toon  # local import — script-test PYTHONPATH
+
+    body = {
+        'affected_files_exact_match': {
+            'status': 'warn',
+            'forwarded_to_manifest': True,
+            'outline_only': outline_only,
+        }
+    }
+    return serialize_toon(body) + '\n'
+
+
+class TestArchivedModeReadsTheSyntheticFragmentRoot:
+    """In archived mode rule M6 reads ``{fragment_dir}`` under the synthetic tmp root.
+
+    The retrospective never writes a fragment into the archived plan — its
+    ``{fragment_dir}`` is the ``work`` directory beside the bundle
+    ``collect-fragments init --mode archived`` creates under the OS tmpdir. A
+    receiver that derived the location from ``--archived-plan-path`` read a
+    directory no current-run fragment is ever written to. Each test stages a
+    STALE fragment inside the archived plan's ``work/`` so a receiver reading the
+    wrong root is caught by content, not only by absence.
+    """
+
+    def _stage(self, tmp_path, monkeypatch):
+        import uuid
+
+        # A per-invocation-unique plan id: the synthetic root is keyed on it, so a
+        # fixed id would share state across runs and xdist workers.
+        plan_id = f'archived-m6-{uuid.uuid4().hex}'
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / 'base'))
+        archived_plan = tmp_path / 'archived-plans' / f'archived-{plan_id}'
+        build_happy_plan_dir(archived_plan)
+        _write_manifest(archived_plan, _manifest_default())
+        stale_work = archived_plan / 'work'
+        stale_work.mkdir(parents=True, exist_ok=True)
+        (stale_work / 'fragment-artifact-consistency.toon').write_text(
+            _forwarded_fragment(['src/stale.py']), encoding='utf-8'
+        )
+
+        # The producer's own resolution: {fragment_dir} is the bundle_path's directory.
+        init = run_script(COLLECT_FRAGMENTS_SCRIPT, 'init', '--plan-id', plan_id, '--mode', 'archived')
+        assert init.success, init.stderr
+        fragment_dir = Path(init.toon()['bundle_path']).parent
+        return plan_id, archived_plan, fragment_dir
+
+    def _run_archived(self, plan_id: str, archived_plan: Path):
+        result = run_script(
+            MANIFEST_SCRIPT,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'archived',
+            '--archived-plan-path',
+            str(archived_plan),
+        )
+        assert result.success, result.stderr
+        return result.toon()
+
+    def test_reads_the_fragment_from_the_synthetic_root_not_the_archived_plan(self, tmp_path, monkeypatch):
+        plan_id, archived_plan, fragment_dir = self._stage(tmp_path, monkeypatch)
+        try:
+            # Premise: the producer's root is NOT inside the archived plan.
+            assert not fragment_dir.is_relative_to(archived_plan.resolve())
+            (fragment_dir / 'fragment-artifact-consistency.toon').write_text(
+                _forwarded_fragment(['src/real.py']), encoding='utf-8'
+            )
+
+            received = self._run_archived(plan_id, archived_plan)
+
+            assert received['declared_vs_realized']['received'] is True
+            assert int(received['declared_vs_realized']['outline_only_count']) == 1
+            finding = _finding_by_code(received['findings'], 'declared_vs_realized_set_mismatch')
+            assert finding is not None
+            assert finding['culprits'] == ['src/real.py'], (
+                'rule M6 graded the stale fragment inside the archived plan instead of the '
+                "current run's fragment under the synthetic root"
+            )
+        finally:
+            shutil.rmtree(fragment_dir.parent, ignore_errors=True)
+
+    def test_a_fragment_only_inside_the_archived_plan_is_not_read(self, tmp_path, monkeypatch):
+        """The matched control: the stale fragment alone must read as an unread input."""
+        plan_id, archived_plan, fragment_dir = self._stage(tmp_path, monkeypatch)
+        try:
+            assert not (fragment_dir / 'fragment-artifact-consistency.toon').exists()
+
+            received = self._run_archived(plan_id, archived_plan)
+
+            assert received['declared_vs_realized']['received'] is False
+            check = _check_by_name(received['checks'], 'declared_vs_realized_set')
+            assert check is not None
+            assert check['status'] == 'inconclusive', check
+            assert _finding_by_code(received['findings'], 'declared_vs_realized_set_mismatch') is None
+        finally:
+            shutil.rmtree(fragment_dir.parent, ignore_errors=True)
