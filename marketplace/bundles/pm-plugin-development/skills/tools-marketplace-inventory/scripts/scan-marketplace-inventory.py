@@ -1001,6 +1001,12 @@ def main() -> int:
                 'bundles': {b['name']: {k: v for k, v in b.items() if k != 'name'} for b in bundles_data},
                 'statistics': output['statistics'],
             }
+            # The content-filter fields ride the JSON payload exactly as they ride
+            # the TOON one — a filtered JSON result that omitted them could not be
+            # told apart from an unfiltered one.
+            for key in ('content_filter_stats', 'content_pattern', 'content_exclude'):
+                if key in output:
+                    json_output[key] = output[key]
             print(json.dumps(json_output, indent=2))
         else:
             print(serialize_inventory_toon(output, args.full))
