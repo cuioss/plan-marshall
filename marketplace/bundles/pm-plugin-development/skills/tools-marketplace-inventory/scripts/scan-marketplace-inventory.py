@@ -342,8 +342,15 @@ def discover_flat_bundles(base_path: Path, include: dict[str, bool]) -> list[dic
     def _bundle(name: str) -> dict[str, Any]:
         return bundles.setdefault(
             name,
-            {'name': name, 'path': safe_relative_path(base_path), 'agents': [], 'commands': [], 'skills': [],
-             'scripts': [], 'tests': []},
+            {
+                'name': name,
+                'path': safe_relative_path(base_path),
+                'agents': [],
+                'commands': [],
+                'skills': [],
+                'scripts': [],
+                'tests': [],
+            },
         )
 
     if include.get('skills'):
