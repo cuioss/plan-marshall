@@ -83,7 +83,7 @@ Mode detection heuristic: when `--iteration` is present alongside `--plan-id`, t
 
 Validate inputs (`--plan-id` required in every mode; `--archived-plan-path` required in archived mode, never a substitute for `--plan-id`). Resolve:
 - Live modes: `plan_dir = .plan/local/plans/{plan-id}/`
-- Archived mode: `plan_dir = --archived-plan-path` (verify the directory exists). When the flag is absent, stop with an error rather than continuing: every archived-mode aspect script and `compile-report` would refuse the call, and there is no fallback plan directory. The synthetic per-plan directory under the OS tmpdir holds only the `collect-fragments` bundle and its fragments — it is the audit's output location, never a stand-in for the archived plan.
+- Archived mode: `plan_dir = --archived-plan-path` (verify the directory exists). When the flag is absent, stop with an error rather than continuing: every archived-mode aspect script and `compile-report` would refuse the call.
 
 **Canonical plan-status read** — when this workflow needs to read plan status (current phase, metadata, worktree binding) it MUST use the `manage-status` script's `read` subcommand. The supported invocation is:
 
