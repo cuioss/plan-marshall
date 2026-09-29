@@ -32,7 +32,8 @@ site names must be a member of ``VERIFY_REFUSAL_ERRORS``, imported from the
 production module, so a table can neither invent a code nor imply that an
 unlisted refusal has a recovery. And no fenced ``manage-metrics phase-boundary``
 call closing the transitioned phase (``--prev-phase`` equal to ``--completed``)
-may sit between the nearest heading and the call: recorded there, the metrics
+may sit between the nearest heading and the call — in an earlier fence of the
+section, or earlier inside the call's own fence: recorded there, the metrics
 close the phase before the transition is known to have succeeded.
 
 Why the scan is cross-checked and controlled
@@ -143,14 +144,15 @@ def _parse(path: Path, text: str) -> tuple[list[CallBlock], list[tuple[int, int,
         section_start, level = enclosing[-1] if enclosing else (-1, 0)
         section_end = next((idx for idx, lvl, _ in headings if idx > end and lvl <= level), len(lines))
         # The metrics boundaries recorded between the nearest heading and the
-        # call: a boundary closing the phase this call transitions is recorded
+        # call — in earlier fences of the section AND earlier in the call's own
+        # fence: a boundary closing the phase this call transitions is recorded
         # before the transition is known to have succeeded.
         boundaries_before = tuple(
             match.group('prev')
             for other_start, _, other_body in blocks
             if section_start < other_start < start
             for match in _BOUNDARY_RE.finditer(_CONTINUATION_RE.sub(' ', other_body))
-        )
+        ) + tuple(match.group('prev') for match in _BOUNDARY_RE.finditer(collapsed[: call.start()]))
         call_blocks.append(
             CallBlock(
                 path=path,
@@ -425,6 +427,40 @@ def test_a_metrics_boundary_recorded_after_its_transition_passes(tmp_path):
         f'On any non-success result, STOP per the [halt rule]({link}#{HALT_RULE_ANCHOR}).\n\n'
         '```bash\npython3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics '
         'phase-boundary --plan-id {plan_id} --prev-phase 5-execute --next-phase 6-finalize\n```\n',
+    )
+
+    assert block.boundaries_before == ()
+    assert _violations(block, _HOME) == []
+
+
+def test_a_metrics_boundary_ahead_of_its_transition_in_the_same_fence_is_flagged(tmp_path):
+    """Negative control: one fence closing the phase in the metrics before its transition is caught."""
+    link = os.path.relpath(_HOME, tmp_path)
+    block = _synthetic(
+        tmp_path,
+        '### Completion\n\n```bash\npython3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics '
+        'phase-boundary \\\n  --plan-id {plan_id} --prev-phase 5-execute --next-phase 6-finalize\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status '
+        'transition --plan-id {plan_id} --completed 5-execute\n```\n\n'
+        f'On any non-success result, STOP per the [halt rule]({link}#{HALT_RULE_ANCHOR}).\n',
+    )
+
+    assert block.boundaries_before == ('5-execute',)
+    assert _violations(block, _HOME) == [
+        'synthetic.md:3: the 5-execute metrics boundary is recorded ahead of the transition'
+    ]
+
+
+def test_a_metrics_boundary_after_its_transition_in_the_same_fence_passes(tmp_path):
+    """Positive control: a boundary following the transition inside the same fence is not flagged."""
+    link = os.path.relpath(_HOME, tmp_path)
+    block = _synthetic(
+        tmp_path,
+        '### Completion\n\n```bash\npython3 .plan/execute-script.py plan-marshall:manage-status:manage-status '
+        'transition --plan-id {plan_id} --completed 5-execute\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics '
+        'phase-boundary \\\n  --plan-id {plan_id} --prev-phase 5-execute --next-phase 6-finalize\n```\n\n'
+        f'On any non-success result, STOP per the [halt rule]({link}#{HALT_RULE_ANCHOR}).\n',
     )
 
     assert block.boundaries_before == ()
