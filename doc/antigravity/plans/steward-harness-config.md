@@ -24,7 +24,7 @@ Before making any changes, load the following skills from the repository bundle 
 - **`.plan/` access via scripts only**: Never use direct file tools (`Read`, `Write`, `Edit`) on `.plan/` paths. Always invoke `python3 .plan/execute-script.py` with `manage-*` scripts. Use `.plan/temp/` for temporary files.
 - **One command per shell call**: No `&&`, `;`, `|`, trailing `&`, `$()`, subshells, loops, or heredocs in shell tool calls.
 - **No shell file operations**: Never run `ls`, `find`, `cat`, `grep`, or `git grep`. Use dedicated file/search tools or `architecture` script queries.
-- **CI & git operations via abstraction**: Use `plan-marshall:workflow-integration-git:git-workflow` and `plan-marshall:tools-integration-ci:ci` via the executor.
+- **CI & git operations via abstraction**: Route worktree lifecycle, artifact detection, commit formatting, and branch switch/pull through `plan-marshall:workflow-integration-git:git-workflow` (`worktree-create`, `detect-artifacts`, `format-commit`, `switch-and-pull`, `worktree-remove`), use `git -C {worktree_path}` for staging, committing (`-F`), and pushing inside the worktree, and route PR/CI operations through `plan-marshall:tools-integration-ci:ci`.
 - **Documentation standards**: No version history, changelogs, dates, or timestamps; document current state only.
 
 ---
@@ -59,7 +59,8 @@ Before making any changes, load the following skills from the repository bundle 
   3. Inspection of `.plan/local/harness/{harness}.json` (resolved via `resolve_main_anchored_path(f'harness/{harness}.json')` with non-git fallback to `get_plan_base_dir() / 'local' / 'harness' / f'{harness}.json'`).
   4. Verification of:
      - File existence and valid JSON schema (`schema_version == 1`, `harness == active_harness`, `checks` dict, `dist_manifest_sha` string).
-     - `executor_ready`: `(plan_dir / 'execute-script.py').is_file()`.
+     - `executor_ready`: `checks.get('executor_ready') is True` and `(plan_dir / 'execute-script.py').is_file()`.
+     - `harness_paths_valid`: `checks.get('harness_paths_valid') is True` and the resolved harness bundle/skill root exists on disk (returning `configured: false`, `reason: 'harness_paths_invalid'` if false or missing).
      - `dist_manifest_sha` freshness: matches the current SHA-256 of the installed bundle root's `dist-manifest.json` (or SHA-256 of `.plan/execute-script.py` when running from a source checkout without `dist-manifest.json`).
   5. TOON return shape for `check-harness`:
      - When configured and fresh:
@@ -78,7 +79,7 @@ Before making any changes, load the following skills from the repository bundle 
        harness: antigravity
        target_source: env
        configured: false
-       reason: harness_config_missing | harness_config_invalid | harness_config_stale | executor_missing
+       reason: harness_config_missing | harness_config_invalid | harness_config_stale | harness_paths_invalid | executor_missing
        action_required: configure_harness
        config_path: /abs/path/to/.plan/local/harness/antigravity.json
        ```
@@ -115,9 +116,10 @@ Before making any changes, load the following skills from the repository bundle 
   1. Resolve active harness via `target_context.resolve_target(Path.cwd())` (or `--harness`).
   2. Check `(plan_dir / 'execute-script.py').is_file()` (`executor_ready`).
   3. Verify harness bundle/skill roots exist (`harness_paths_valid`).
-  4. Compute `dist_manifest_sha` (SHA-256 of `dist-manifest.json` in the resolved bundle cache root if present, else SHA-256 of `.plan/execute-script.py` if present, else `"unbootstrapped"`).
-  5. Write `.plan/local/harness/{harness}.json` atomically (`atomic_write_file`).
-  6. Output a concise TOON result:
+  4. Invoke the target's `platform-runtime` setup hook (`project_initial_setup` / `project_install_hook` from `antigravity_runtime.py` for Antigravity, `opencode_enforcement_apply` from `opencode_runtime.py` for OpenCode, or permission/hook verification for Claude) when applicable, and record `rules_emitted` in `checks`.
+  5. Compute `dist_manifest_sha` (SHA-256 of `dist-manifest.json` in the resolved bundle cache root if present, else SHA-256 of `.plan/execute-script.py` if present, else `"unbootstrapped"`).
+  6. Write `.plan/local/harness/{harness}.json` atomically (`atomic_write_file`).
+  7. Output a concise TOON result:
      ```toon
      status: success
      harness: antigravity
@@ -142,7 +144,7 @@ Before making any changes, load the following skills from the repository bundle 
 - **File**: `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/determine_mode.py`
 - **Changes**:
   - Import `resolve_target` from `target_context` and `resolve_main_anchored_path` from `marketplace_paths`.
-  - Implement `resolve_harness_config_path(harness: str) -> Path`, `compute_current_harness_sha(plan_dir: Path) -> str`, and `check_harness(harness_override: str | None = None) -> dict`.
+  - Implement `resolve_harness_config_path(harness: str) -> Path`, `compute_current_harness_sha(plan_dir: Path) -> str`, and `check_harness(harness_override: str | None = None) -> dict` (verifying `checks.executor_ready`, `checks.harness_paths_valid`, and `dist_manifest_sha`).
   - Add `check-harness` subcommand (`--harness` optional choice `['claude', 'opencode', 'antigravity']`).
   - Extend `determine_mode()` to call `check_harness()` and include `harness`, `target_source`, `harness_configured`, and `harness_reason` in its returned dictionary.
 
@@ -150,6 +152,7 @@ Before making any changes, load the following skills from the repository bundle 
 - **File**: `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/configure_harness.py`
 - **Changes**:
   - Implement `configure_harness(harness_override: str | None = None, auto_sandbox_elevation: bool = False) -> dict`.
+  - Dispatch the active target's `platform-runtime` setup hook (`project_initial_setup` / `project_install_hook` for Antigravity, `opencode_enforcement_apply` for OpenCode) and record the check outcomes (`rules_emitted`, `harness_paths_valid`, `executor_ready`).
   - Write `.plan/local/harness/{harness}.json` atomically using `atomic_write_file` from `file_ops`.
   - Expose CLI via `safe_main` and `parse_args_with_toon_errors`.
 
@@ -166,7 +169,8 @@ Before making any changes, load the following skills from the repository bundle 
   - `test/plan-marshall/marshall-steward/test_determine_mode.py` (extend or add `test_harness_config.py`)
 - **Tests to Add**:
   - Test `check_harness()` when `.plan/local/harness/{harness}.json` is missing (`configured: False`, `reason: 'harness_config_missing'`).
-  - Test `configure_harness()` writes valid `.plan/local/harness/{harness}.json` with no timestamps and `check_harness()` subsequently returns `configured: True`, `reason: 'configured'`.
+  - Test `configure_harness()` invokes the target's `platform-runtime` setup hook, writes valid `.plan/local/harness/{harness}.json` with no timestamps, and `check_harness()` subsequently returns `configured: True`, `reason: 'configured'`.
+  - Test `check_harness()` returns `configured: False`, `reason: 'harness_paths_invalid'` when `checks.harness_paths_valid` is `False` or the harness paths are missing.
   - Test `check_harness()` detects staleness (`reason: 'harness_config_stale'`) when `dist_manifest_sha` changes, and `configure_harness()` refreshes it.
   - Test multi-harness coexistence (`claude.json`, `antigravity.json`, `opencode.json` in `.plan/local/harness/`) driven by `ANTIGRAVITY_AGENT=1`, `OPENCODE=1`, and `CLAUDE_CODE_SESSION_ID=test` environment variables via `target_context.resolve_target()`.
   - Test `determine_mode()` includes `harness`, `target_source`, `harness_configured`, and `harness_reason`.
@@ -179,22 +183,22 @@ Before making any changes, load the following skills from the repository bundle 
 ### Stage 1: Worktree & Branch Setup
 - [ ] **Task 1.1**: Verify `git status --porcelain` on `main` is completely empty.
 - [ ] **Task 1.2**: Fetch latest `origin/main` (`git fetch origin main`).
-- [ ] **Task 1.3**: Create branch `feature/steward-harness-config` from `origin/main` and push immediately (`git push -u origin feature/steward-harness-config`).
-- [ ] **Task 1.4**: Set up isolated worktree at `.plan/local/worktrees/steward-harness-config` via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-setup --plan-id steward-harness-config --branch feature/steward-harness-config`.
+- [ ] **Task 1.3**: Set up isolated worktree at `.plan/local/worktrees/steward-harness-config` on branch `feature/steward-harness-config` based on `origin/main` via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-create --plan-id steward-harness-config --branch feature/steward-harness-config --base origin/main`.
+- [ ] **Task 1.4**: Push `feature/steward-harness-config` immediately (`git -C .plan/local/worktrees/steward-harness-config push -u origin feature/steward-harness-config`) and verify `.venv` and `.pyprojectx` symlinks exist in the worktree.
 
 ### Stage 2: Implement `check-harness` in `determine_mode.py` & `configure_harness.py` (D1, D2)
 - [ ] **Task 2.1**: Extend `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/determine_mode.py` with `check_harness()`, the `check-harness` CLI subcommand, and `harness_configured` fields in `determine_mode()`.
-- [ ] **Task 2.2**: Create `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/configure_harness.py` implementing deterministic `.plan/local/harness/{harness}.json` creation and update.
+- [ ] **Task 2.2**: Create `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/configure_harness.py` implementing deterministic `platform-runtime` setup hook invocation and `.plan/local/harness/{harness}.json` creation and update.
 - [ ] **Task 2.3**: Write unit tests in `test/plan-marshall/marshall-steward/test_harness_config.py` and run `uv run pytest test/plan-marshall/marshall-steward/ -o addopts=""`.
-- [ ] **Task 2.4**: Run `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "quality-gate"`, stage modified files explicitly, commit with trailer `Co-Authored-By: plan-marshall <noreply@cuioss.de>`, and `git push`.
+- [ ] **Task 2.4**: Run `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "quality-gate"`, stage modified files explicitly, commit with trailer `Co-Authored-By: plan-marshall <noreply@cuioss.de>`, and `git -C {worktree_path} push`.
 
 ### Stage 3: Integrate into `marshall-steward` Skill & Standards (D3)
 - [ ] **Task 3.1**: Update `marketplace/bundles/plan-marshall/skills/marshall-steward/SKILL.md`, `standards/wizard-flow.md`, and `standards/healthcheck-flow.md` to wire `check-harness` and `configure_harness`.
-- [ ] **Task 3.2**: Regenerate `target/claude` (`./pw generate-claude`) so `target/claude` stays in sync with `marketplace/bundles/plan-marshall/`.
-- [ ] **Task 3.3**: Run `quality-gate` (which runs `plugin-doctor` over the updated `SKILL.md` and `standards/*.md` files), confirm 0 issues/errors, stage explicitly, commit with trailer `Co-Authored-By: plan-marshall <noreply@cuioss.de>`, and `git push`.
+- [ ] **Task 3.2**: Regenerate `target/claude` (`python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "generate-claude"`) so `target/claude` stays in sync with `marketplace/bundles/plan-marshall/`.
+- [ ] **Task 3.3**: Run `quality-gate` (which runs `plugin-doctor` over the updated `SKILL.md` and `standards/*.md` files), confirm 0 issues/errors, stage explicitly, commit with trailer `Co-Authored-By: plan-marshall <noreply@cuioss.de>`, and `git -C {worktree_path} push`.
 
 ### Stage 4: Full Verification, Pre-PR Subagent Review, PR Lifecycle & Cleanup
 - [ ] **Task 4.1**: Run full verification: `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "verify"`. Confirm `status: success`, `total_issues: 0`, and `errors: []`.
-- [ ] **Task 4.2**: Dispatch an independent read-only verification subagent to review `git diff origin/main...HEAD` against `REQ-STEW-1..4`, including a beyond-diff consumer sweep for `determine_mode.py` callers and tests. Fix any findings, re-run `verify`, commit, and push.
+- [ ] **Task 4.2**: Dispatch an independent read-only verification subagent to review `git -C {worktree_path} diff origin/main...HEAD` against `REQ-STEW-1..4`, including a beyond-diff consumer sweep for `determine_mode.py` callers and tests. Fix any findings, re-run `verify`, commit, and push.
 - [ ] **Task 4.3**: Create PR via `plan-marshall:tools-integration-ci:ci`, monitor CI checks and automated review bots, triage and resolve any review findings, and merge via squash merge / merge queue.
-- [ ] **Task 4.4**: Switch main repository to `main`, run `git pull origin main`, tear down worktree `.plan/local/worktrees/steward-harness-config`, and move `doc/antigravity/plans/steward-harness-config.md` into `doc/antigravity/done/steward-harness-config.md` via `manage-files` (and `git rm doc/antigravity/plans/steward-harness-config.md`).
+- [ ] **Task 4.4**: Switch main repository to `main` and pull via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow switch-and-pull --plan-id steward-harness-config --base main`, tear down worktree `.plan/local/worktrees/steward-harness-config` via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-remove --plan-id steward-harness-config`, and move `doc/antigravity/plans/steward-harness-config.md` into `doc/antigravity/done/steward-harness-config.md`.

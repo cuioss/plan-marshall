@@ -105,23 +105,23 @@ Currently, `marketplace/targets/antigravity/templates/install.sh` and `marketpla
   - Write `.install-manifest.json` (Antigravity) / `.plan-marshall-manifest.json` (OpenCode) recording `installed_bundles`, `dist_manifest_sha`, and `managed_files`.
   - Prune Antigravity's installed `plugin.json` (`bundles` array) and OpenCode's `opencode.json` (`agent` map) to reflect only the installed bundles.
 - **`REQ-INST-5` (Atomic Update `--update` / `-U`)**:
-  - Add `-U` / `--update` to `install.sh`. Reads existing manifest to preserve the prior `installed_bundles` selection (unless overridden by `--bundles`/`--all`/`--core-only`), backs up existing `TARGET_DIR` state to a temporary staging directory, prunes obsolete files from the prior manifest, installs new files, and rolls back on failure.
+  - Add `-U` / `--update` to `install.sh`. Reads existing manifest to preserve the prior `installed_bundles` selection (unless overridden by `--bundles`/`--all`/`--core-only`; when `--without-bundles` is also passed with `--update`, its exclusions are applied to the prior `installed_bundles` selection, or to `--all` when no prior manifest exists). Backs up all files mutated by `--update` — all managed component files, the target config (`plugin.json` / `opencode.json`), and the installation manifest (`.install-manifest.json` / `.plan-marshall-manifest.json`) — to a temporary staging directory, prunes obsolete files from the prior manifest, installs new files, and restores all backed-up files atomically on failure.
 - **`REQ-INST-6` (Safe & Selective Uninstallation)**:
-  - Fix OpenCode `prune_managed_components()` to remove all paths listed in `.plan-marshall-manifest.json`, falling back when no manifest exists to pruning all known bundle prefixes (`plan-marshall-*`, `pm-dev-java-*`, `pm-dev-java-cui-*`, `pm-dev-python-*`, `pm-dev-frontend-*`, `pm-dev-frontend-cui-*`, `pm-dev-oci-*`, `pm-documents-*`, `pm-plugin-development-*`, `pm-requirements-*`) across `skills/`, `agents/`, `commands/` (and singular `skill/`, `agent/`, `command/`) without touching unmanaged user files.
+  - Fix OpenCode `prune_managed_components()` to remove all paths listed in `.plan-marshall-manifest.json`, falling back when no manifest exists to deriving the exact managed component paths from the distribution's `bundle-components.json` inventory (mapped across both plural `skills/`, `agents/`, `commands/` and singular `skill/`, `agent/`, `command/` directories) rather than maintaining a hardcoded prefix glob list, without touching unmanaged user files.
   - Support selective uninstallation (`install.sh --uninstall --bundles <csv>`) that removes only the specified non-core bundles (refusing if a remaining installed child bundle depends on the removed base bundle unless the child is also removed) and updates the manifest and `plugin.json`/`opencode.json`.
 
 ---
 
-## 3. Remaining Requirement Area 2: Harness-Specific Bundles & Zero-Token Target Rules (`REQ-HBNDL-1..8`)
+## 3. Remaining Requirement Area 2: Harness-Specific Bundles & Zero-Token Target Rules (`REQ-HBNDL-1..6`)
 
 **Implementation Plan**: `doc/antigravity/plans/harness-bundles-target-rules.md`
 
 ### 3.1 Problem Statement & Ground-Truth Gap
 - `marketplace/targets/component_targets.py` supports `targets:` scoping on individual components (`SKILL.md`, `agents/*.md`, `commands/*.md`) and skill-internal `.md` files, but does not yet support bundle-level `"targets": [...]` scoping in `{bundle}/.claude-plugin/plugin.json`.
-- Target-specific operational rules for Antigravity and OpenCode are not yet packaged as first-class target-scoped bundles (`plan-marshall-antigravity`, `plan-marshall-opencode`) or delivered into native zero-token rule locations (`.agents/rules/plan-marshall-target-rules.md` for Antigravity, `AGENTS.md` for OpenCode).
+- Target-specific operational rules for Antigravity and OpenCode are not yet packaged as first-class target-scoped bundles (`plan-marshall-antigravity`, `plan-marshall-opencode`) or delivered into native zero-token rule locations (`.agents/rules/plan-marshall-target-rules.md` for Antigravity, `.opencode/rules/plan-marshall-target-rules.md` for OpenCode).
 - Note on Ground-Truth Boundary: Build-time emitter templates (`templates/install.sh` and `templates/user-invocable-command.md`) are already owned and tested under `marketplace/targets/{target}/templates/` and remain there; meta-project developer sync skills (`.agents/skills/sync-antigravity/` and `.claude/skills/sync-plugin-cache/`) remain project-local.
 
-### 3.2 Requirements (`REQ-HBNDL-1..8`)
+### 3.2 Requirements (`REQ-HBNDL-1..6`)
 - **`REQ-HBNDL-1` (Bundle-Level Target Scoping in `component_targets.py` & Emitters)**:
   - Extend `marketplace/targets/component_targets.py` with `read_bundle_target_scope(bundle_dir: Path) -> frozenset[str] | None` and `bundle_emits_to(bundle_dir: Path, target_name: str) -> bool` reading `"targets"` from `.claude-plugin/plugin.json` with the same fail-closed validation (`TargetScopeError` on unknown target, empty list, non-component-tree-only target, or non-string items).
   - Enforce `bundle_emits_to(bundle_dir, target_name)` across all three component-tree targets (`claude`, `opencode`, `antigravity`), including `ClaudeTarget` equality checks and `marketplace_json_gen.py` so a bundle scoped to `["antigravity"]` is omitted from `target/claude/` and `target/opencode/`.
@@ -178,7 +178,7 @@ Currently, `marketplace/targets/antigravity/templates/install.sh` and `marketpla
 - **`REQ-STEW-1` (Active Harness Verification via `target_context` in `determine_mode.py`)**:
   - `determine_mode.py` must delegate active target detection to `target_context.resolve_target()` / `target_context.resolve_context()` from `plan-marshall:script-shared` (PR `#1646`), accepting an optional `--harness` (`claude`, `opencode`, `antigravity`) override.
   - Add subcommand `determine_mode.py check-harness [--harness {target}]` that inspects `.plan/local/harness/{target}.json`, verifies schema validity, checks `dist_manifest_sha` freshness against the installed target's `dist-manifest.json` (or `.plan/execute-script.py` SHA fallback), and verifies `checks.executor_ready` and `checks.harness_paths_valid`.
-  - Extend `determine_mode.py mode` output with `harness`, `harness_source`, `harness_configured` (`true`/`false`), and `harness_reason` so `marshall-steward` sees harness readiness in a single call.
+  - Extend `determine_mode.py mode` output with `harness`, `target_source`, `harness_configured` (`true`/`false`), and `harness_reason` so `marshall-steward` sees harness readiness in a single call.
 - **`REQ-STEW-2` (Deterministic Script-Only `configure_harness.py`)**:
   - Create `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/configure_harness.py` registered in the executor as `plan-marshall:marshall-steward:configure_harness`.
   - Runs deterministically without LLM prompt interaction:
@@ -187,7 +187,7 @@ Currently, `marketplace/targets/antigravity/templates/install.sh` and `marketpla
     3. Emits/updates `.plan/local/harness/{target}.json` with `dist_manifest_sha` and check results.
     4. Ensures zero git worktree pollution (never writes to tracked files without explicit steward wizard invocation; `.plan/local/harness/` is covered by `.plan/.gitignore`).
 - **`REQ-STEW-3` (Worktree Inheritance)**:
-  - Update `marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/git_workflow.py` (`worktree-setup`) so plan worktrees under `.plan/local/worktrees/{plan_id}` inherit `.plan/local/harness/` from the main repository checkout.
+  - Route `.plan/local/harness/{target}.json` resolution through `marketplace_paths.resolve_main_anchored_path` (and ensure `worktree-create` in `git_workflow.py` preserves `.plan/local` inheritance) so plan worktrees under `.plan/local/worktrees/{plan_id}` inherit `.plan/local/harness/` from the main repository checkout.
 - **`REQ-STEW-4` (`marshall-steward` Wizard, Menu Preflight & Health Check Integration)**:
   - Update `marshall-steward/SKILL.md`, `standards/wizard-flow.md`, and `standards/healthcheck-flow.md`:
     - In Menu Mode preflight: when `determine_mode.py mode` reports `harness_configured: false`, automatically run `plan-marshall:marshall-steward:configure_harness` before showing the menu and report a one-line status confirmation.

@@ -25,7 +25,7 @@ Before making any changes, load the following skills from the repository bundle 
 - **`.plan/` access via scripts only**: Never use direct file tools (`Read`, `Write`, `Edit`) on `.plan/` paths. Always invoke `python3 .plan/execute-script.py` with `manage-*` scripts. Use `.plan/temp/` for temporary files.
 - **One command per shell call**: No `&&`, `;`, `|`, trailing `&`, `$()`, subshells, loops, or heredocs in shell tool calls.
 - **No shell file operations**: Never run `ls`, `find`, `cat`, `grep`, or `git grep`. Use dedicated file/search tools or `architecture` script queries.
-- **CI & git operations via abstraction**: Use `plan-marshall:workflow-integration-git:git-workflow` and `plan-marshall:tools-integration-ci:ci` via the executor.
+- **CI & git operations via abstraction**: Route worktree lifecycle, artifact detection, commit formatting, and branch switch/pull through `plan-marshall:workflow-integration-git:git-workflow` (`worktree-create`, `detect-artifacts`, `format-commit`, `switch-and-pull`, `worktree-remove`), use `git -C {worktree_path}` for staging, committing (`-F`), and pushing inside the worktree, and route PR/CI operations through `plan-marshall:tools-integration-ci:ci`.
 - **Documentation standards**: No version history, changelogs, dates, or timestamps; document current state only.
 
 ---
@@ -140,16 +140,16 @@ Support the following CLI flags in both `marketplace/targets/antigravity/templat
 ### `REQ-INST-5`: Atomic Update Mechanism (`-U, --update`)
 - Support `-U` / `--update` in both `install.sh` scripts:
   1. Read existing `.install-manifest.json` / `.plan-marshall-manifest.json` in `TARGET_DIR`.
-  2. If present and no explicit `--bundles` / `--all` / `--core-only` flag was passed on the `--update` command line, reuse `installed_bundles` from the existing manifest. If no prior manifest exists, fall back to `--all`.
-  3. Create a temporary backup snapshot of existing managed files in `TARGET_DIR`.
+  2. If present and no explicit `--bundles` / `--all` / `--core-only` flag was passed on the `--update` command line, reuse `installed_bundles` from the existing manifest. When `--without-bundles` is also passed with `--update`, apply its exclusions to the prior `installed_bundles` selection (or to `--all` before applying exclusions when no prior manifest exists). If no prior manifest exists and no bundle flags are given, fall back to `--all`.
+  3. Create a temporary backup snapshot covering every file in `TARGET_DIR` mutated by `--update` — all existing managed component files, the target config (`plugin.json` / `opencode.json`), and the installation manifest (`.install-manifest.json` / `.plan-marshall-manifest.json`).
   4. Remove obsolete files listed in the old manifest's `managed_files` that are no longer part of the new installation set.
-  5. Copy the new selected bundle files and write the updated manifest.
-  6. If any step fails, restore `TARGET_DIR` from the backup snapshot and exit non-zero.
+  5. Copy the new selected bundle files, tailor `plugin.json` / `opencode.json`, and write the updated manifest.
+  6. If any step fails, restore all backed-up files (managed component files, `plugin.json` / `opencode.json`, and the manifest) from the backup snapshot and exit non-zero.
 
 ### `REQ-INST-6`: Re-Engineered Safe & Selective Uninstallation
 - **Full Uninstall (`--uninstall` without `--bundles`)**:
   - **Antigravity**: Remove `TARGET_DIR` if it exists (current behavior preserved).
-  - **OpenCode**: Read `.plan-marshall-manifest.json` if present and remove every file in `managed_files` plus empty parent skill directories and `.plan-marshall-manifest.json`. In addition (or when no manifest exists), prune all entries matching any known marketplace bundle prefix (`plan-marshall-*`, `pm-dev-java-*`, `pm-dev-java-cui-*`, `pm-dev-python-*`, `pm-dev-frontend-*`, `pm-dev-frontend-cui-*`, `pm-dev-oci-*`, `pm-documents-*`, `pm-plugin-development-*`, `pm-requirements-*`) across both plural (`skills/`, `agents/`, `commands/`) and singular (`skill/`, `agent/`, `command/`) directories. Never delete non-plan-marshall user files.
+  - **OpenCode**: Read `.plan-marshall-manifest.json` if present and remove every file in `managed_files` plus empty parent skill directories and `.plan-marshall-manifest.json`. When `.plan-marshall-manifest.json` is absent, derive the exact managed component paths from the distribution's `bundle-components.json` inventory (mapped across both plural `skills/`, `agents/`, `commands/` and singular `skill/`, `agent/`, `command/` directories) rather than maintaining a hardcoded prefix glob list. Never delete non-plan-marshall user files.
 - **Selective Uninstall (`--uninstall --bundles <csv>`)**:
   - Refuse to uninstall `plan-marshall` (core).
   - Refuse to uninstall a base bundle (`pm-dev-java` or `pm-dev-frontend`) if its dependent child (`pm-dev-java-cui` or `pm-dev-frontend-cui`) remains in `installed_bundles` and was not included in the `--bundles` removal list.
@@ -189,7 +189,7 @@ Support the following CLI flags in both `marketplace/targets/antigravity/templat
   - Embed a self-contained Python 3 helper function that:
     - Resolves bundle aliases (`all`, `core`, `java`, `python`, `frontend`, `oci`, `docs`, `reqs`, `plugin-dev`) and validates bundle names against `bundle-components.json` (or fallback `SKILL.md` `metadata.bundle` scan).
     - Computes dependency closure (`pm-dev-java-cui` $\to$ `pm-dev-java`, `pm-dev-frontend-cui` $\to$ `pm-dev-frontend`) and enforces mandatory `plan-marshall` (plus `plan-marshall-antigravity` if present).
-    - Supports `--update` (reading prior `.install-manifest.json` bundle selection if no new bundle flags were given, staging a backup, pruning removed files, rolling back on error).
+    - Supports `--update` (reading prior `.install-manifest.json` bundle selection if no new bundle flags were given, applying `--without-bundles` exclusions when combined with `--update`, staging a backup of managed files + `plugin.json` + `.install-manifest.json`, pruning removed files, and rolling back all backed-up files on error).
     - Copies only the selected bundles' skills, agents, and commands into `TARGET_DIR`.
     - Prunes `TARGET_DIR/plugin.json` `"bundles"` list to `installed_bundles`.
     - Computes `dist_manifest_sha` (SHA-256 of `dist-manifest.json` if present, else `"unknown"`) and writes `TARGET_DIR/.install-manifest.json`.
@@ -199,8 +199,8 @@ Support the following CLI flags in both `marketplace/targets/antigravity/templat
 - **File**: `marketplace/targets/opencode/templates/install.sh`
 - **Changes**:
   - Add the same CLI flags (`--all`, `--core-only`, `-b`/`--bundles <csv>`, `--without-bundles <csv>`, `-U`/`--update`) and `/dev/tty` interactive selector.
-  - Embed the Python 3 helper adapted for OpenCode's singular-to-plural deployment (`skill/` $\to$ `skills/`, `agent/` $\to$ `agents/`, `command/` $\to$ `commands/`) and `${TARGET_DIR}/.plan-marshall-manifest.json`.
-  - Fix full `--uninstall` (`prune_managed_components`) to delete all files tracked in `.plan-marshall-manifest.json` plus fallback prefix pruning for all 10 bundle prefixes (`plan-marshall-*`, `pm-dev-*`, `pm-documents-*`, `pm-plugin-development-*`, `pm-requirements-*`) across both plural and singular directories, while leaving non-plan-marshall files untouched.
+  - Embed the Python 3 helper adapted for OpenCode's singular-to-plural deployment (`skill/` $\to$ `skills/`, `agent/` $\to$ `agents/`, `command/` $\to$ `commands/`) and `${TARGET_DIR}/.plan-marshall-manifest.json` (including full backup/rollback of managed files, `opencode.json`, and `.plan-marshall-manifest.json` on `--update`).
+  - Fix full `--uninstall` (`prune_managed_components`) to delete all files tracked in `.plan-marshall-manifest.json` and, when no manifest is present, derive the exact managed component paths from `bundle-components.json` across both plural and singular directories, while leaving non-plan-marshall files untouched.
   - Support selective `--uninstall --bundles <csv>`.
 
 ### D4: Unit & Integration Tests
@@ -213,9 +213,9 @@ Support the following CLI flags in both `marketplace/targets/antigravity/templat
   - Test `install.sh --bundles pm-dev-java-cui` automatically pulls in `pm-dev-java` via dependency resolution.
   - Test `install.sh --bundles python,docs` installs `plan-marshall`, `pm-dev-python`, and `pm-documents` only.
   - Test `install.sh --without-bundles java,frontend` excludes Java and Frontend bundles while installing the rest.
-  - Test `install.sh --update` preserves the prior `installed_bundles` selection from the manifest and removes obsolete files.
+  - Test `install.sh --update` preserves the prior `installed_bundles` selection from the manifest (and applies `--without-bundles` when passed with `--update`), removes obsolete files, and restores managed files, `plugin.json`/`opencode.json`, and the manifest on failure.
   - Test `install.sh --uninstall --bundles pm-documents` selectively removes `pm-documents` files and updates the manifest while preserving other installed bundles, and refuses removing `pm-dev-java` while `pm-dev-java-cui` remains installed.
-  - Test OpenCode `install.sh --uninstall` removes `pm-dev-*`, `pm-documents-*`, `pm-plugin-development-*`, and `pm-requirements-*` components while preserving third-party user skills (e.g. `skills/my-custom-skill/SKILL.md`).
+  - Test OpenCode `install.sh --uninstall` removes all managed components (both via `.plan-marshall-manifest.json` and via `bundle-components.json` fallback when the manifest is absent) while preserving third-party user skills (e.g. `skills/my-custom-skill/SKILL.md` or `skills/pm-dev-custom/SKILL.md`).
 
 ### D5: User Installation Documentation
 - **Files**:
@@ -231,33 +231,33 @@ Support the following CLI flags in both `marketplace/targets/antigravity/templat
 ### Stage 1: Worktree & Branch Setup
 - [ ] **Task 1.1**: Verify `git status --porcelain` on `main` is completely empty.
 - [ ] **Task 1.2**: Fetch latest `origin/main` (`git fetch origin main`).
-- [ ] **Task 1.3**: Create branch `feature/selective-bundle-installer` from `origin/main` and push immediately to `origin` (`git push -u origin feature/selective-bundle-installer`).
-- [ ] **Task 1.4**: Set up isolated worktree at `.plan/local/worktrees/selective-bundle-installer` via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-setup --plan-id selective-bundle-installer --branch feature/selective-bundle-installer` (ensuring `.venv` and `.pyprojectx` symlinks exist in the worktree).
+- [ ] **Task 1.3**: Set up isolated worktree at `.plan/local/worktrees/selective-bundle-installer` on branch `feature/selective-bundle-installer` based on `origin/main` via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-create --plan-id selective-bundle-installer --branch feature/selective-bundle-installer --base origin/main`.
+- [ ] **Task 1.4**: Push `feature/selective-bundle-installer` immediately to `origin` (`git -C .plan/local/worktrees/selective-bundle-installer push -u origin feature/selective-bundle-installer`) and verify `.venv` and `.pyprojectx` symlinks exist in the worktree.
 
 ### Stage 2: Emitter `bundle-components.json` Attribution (D1)
 - [ ] **Task 2.1**: Update `marketplace/targets/antigravity/emitter.py` to collect per-bundle emitted relative paths (`skills`, `agents`, `commands`) and write `bundle-components.json` at `output_dir / 'bundle-components.json'`.
 - [ ] **Task 2.2**: Update `marketplace/targets/opencode/emitter.py` to collect per-bundle emitted relative paths (`skills`, `agents`, `commands`) and write `bundle-components.json` at `output_dir / 'bundle-components.json'`.
 - [ ] **Task 2.3**: Run fast pytest check on emitter tests (`uv run pytest test/marketplace/targets/antigravity/test_emitter.py test/marketplace/targets/opencode/test_emitter.py -o addopts=""`).
-- [ ] **Task 2.4**: Run `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "quality-gate"`, verify 0 issues/errors, stage modified files explicitly (`git add`), commit with trailer `Co-Authored-By: plan-marshall <noreply@cuioss.de>`, and `git push`.
+- [ ] **Task 2.4**: Run `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "quality-gate"`, verify 0 issues/errors, stage modified files explicitly (`git -C {worktree_path} add`), commit with trailer `Co-Authored-By: plan-marshall <noreply@cuioss.de>`, and `git -C {worktree_path} push`.
 
 ### Stage 3: Antigravity & OpenCode `install.sh` Lifecycle Upgrade (D2, D3)
-- [ ] **Task 3.1**: Implement selective bundle flags (`--all`, `--core-only`, `-b`/`--bundles`, `--without-bundles`, `-U`/`--update`), `/dev/tty` interactive prompt, dependency closure (`pm-dev-java-cui` $\to$ `pm-dev-java`, `pm-dev-frontend-cui` $\to$ `pm-dev-frontend`), `.install-manifest.json` generation, `plugin.json` pruning, atomic update backup/rollback, and selective `--uninstall --bundles` in `marketplace/targets/antigravity/templates/install.sh`.
-- [ ] **Task 3.2**: Implement the matching selective bundle flags, `/dev/tty` prompt, dependency closure, `.plan-marshall-manifest.json` generation, atomic `--update`, selective `--uninstall --bundles`, and fixed full `--uninstall` (`prune_managed_components` covering manifest + all `plan-marshall-*` and `pm-*` prefixes while preserving user files) in `marketplace/targets/opencode/templates/install.sh`.
-- [ ] **Task 3.3**: Verify shell syntax with `bash -n` on both templates and run target generation (`./pw generate --target antigravity --output .plan/temp/ag-test` and `./pw generate --target opencode --output .plan/temp/oc-test`).
-- [ ] **Task 3.4**: Run `quality-gate`, stage explicitly, commit with trailer `Co-Authored-By: plan-marshall <noreply@cuioss.de>`, and `git push`.
+- [ ] **Task 3.1**: Implement selective bundle flags (`--all`, `--core-only`, `-b`/`--bundles`, `--without-bundles`, `-U`/`--update`), `/dev/tty` interactive prompt, dependency closure (`pm-dev-java-cui` $\to$ `pm-dev-java`, `pm-dev-frontend-cui` $\to$ `pm-dev-frontend`), `.install-manifest.json` generation, `plugin.json` pruning, atomic update backup/rollback (covering managed files, `plugin.json`, and `.install-manifest.json`), and selective `--uninstall --bundles` in `marketplace/targets/antigravity/templates/install.sh`.
+- [ ] **Task 3.2**: Implement the matching selective bundle flags, `/dev/tty` prompt, dependency closure, `.plan-marshall-manifest.json` generation, atomic `--update` (backing up managed files, `opencode.json`, and `.plan-marshall-manifest.json`), selective `--uninstall --bundles`, and fixed full `--uninstall` (`prune_managed_components` removing manifest-tracked files or falling back to `bundle-components.json` inventory paths while preserving user files) in `marketplace/targets/opencode/templates/install.sh`.
+- [ ] **Task 3.3**: Verify shell syntax with `bash -n` on both templates and run target generation via the executor (`python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "generate --target antigravity --output .plan/temp/ag-test"` and `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "generate --target opencode --output .plan/temp/oc-test"`).
+- [ ] **Task 3.4**: Run `quality-gate`, stage explicitly, commit with trailer `Co-Authored-By: plan-marshall <noreply@cuioss.de>`, and `git -C {worktree_path} push`.
 
 ### Stage 4: Comprehensive Test Suite (D4)
-- [ ] **Task 4.1**: Add unit/integration tests in `test/marketplace/targets/antigravity/test_emitter.py` covering `bundle-components.json`, `--core-only`, `--bundles` with alias and dependency resolution (`pm-dev-java-cui` $\to$ `pm-dev-java`), `--without-bundles`, `.install-manifest.json`, `plugin.json` pruning, `--update`, and selective `--uninstall --bundles`.
-- [ ] **Task 4.2**: Add unit/integration tests in `test/marketplace/targets/opencode/test_emitter.py` covering `bundle-components.json`, `--core-only`, `--bundles`, `--without-bundles`, `.plan-marshall-manifest.json`, `--update`, selective `--uninstall --bundles`, and full `--uninstall` pruning all `pm-*` domain bundles while leaving custom user skills intact.
+- [ ] **Task 4.1**: Add unit/integration tests in `test/marketplace/targets/antigravity/test_emitter.py` covering `bundle-components.json`, `--core-only`, `--bundles` with alias and dependency resolution (`pm-dev-java-cui` $\to$ `pm-dev-java`), `--without-bundles`, `.install-manifest.json`, `plugin.json` pruning, `--update` (including `--without-bundles` and rollback), and selective `--uninstall --bundles`.
+- [ ] **Task 4.2**: Add unit/integration tests in `test/marketplace/targets/opencode/test_emitter.py` covering `bundle-components.json`, `--core-only`, `--bundles`, `--without-bundles`, `.plan-marshall-manifest.json`, `--update`, selective `--uninstall --bundles`, and full `--uninstall` pruning all managed components (via manifest and via `bundle-components.json` fallback) while leaving custom user skills intact.
 - [ ] **Task 4.3**: Run `uv run pytest test/marketplace/targets/antigravity/test_emitter.py test/marketplace/targets/opencode/test_emitter.py -o addopts=""` and confirm all tests pass.
-- [ ] **Task 4.4**: Run `quality-gate`, stage explicitly, commit with trailer `Co-Authored-By: plan-marshall <noreply@cuioss.de>`, and `git push`.
+- [ ] **Task 4.4**: Run `quality-gate`, stage explicitly, commit with trailer `Co-Authored-By: plan-marshall <noreply@cuioss.de>`, and `git -C {worktree_path} push`.
 
 ### Stage 5: Documentation Updates (D5)
 - [ ] **Task 5.1**: Update `doc/user/install-antigravity.adoc` and `doc/user/install-opencode.adoc` to document `--core-only`, `--bundles`, `--without-bundles`, bundle aliases, interactive selection, `--update`, and selective `--uninstall --bundles`.
-- [ ] **Task 5.2**: Run `quality-gate`, stage explicitly, commit with trailer `Co-Authored-By: plan-marshall <noreply@cuioss.de>`, and `git push`.
+- [ ] **Task 5.2**: Run `quality-gate`, stage explicitly, commit with trailer `Co-Authored-By: plan-marshall <noreply@cuioss.de>`, and `git -C {worktree_path} push`.
 
 ### Stage 6: Full Verification, Pre-PR Subagent Review, PR Lifecycle & Cleanup
 - [ ] **Task 6.1**: Run full verification: `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "verify"`. Confirm `status: success`, `total_issues: 0`, and `errors: []`.
-- [ ] **Task 6.2**: Dispatch an independent read-only verification subagent to review `git diff origin/main...HEAD` against `REQ-INST-1..6` and sweep beyond the diff for any stale claims or unreferenced constants. Fix any findings, re-run `verify`, commit, and push.
+- [ ] **Task 6.2**: Dispatch an independent read-only verification subagent to review `git -C {worktree_path} diff origin/main...HEAD` against `REQ-INST-1..6` and sweep beyond the diff for any stale claims or unreferenced constants. Fix any findings, re-run `verify`, commit, and push.
 - [ ] **Task 6.3**: Create PR via `plan-marshall:tools-integration-ci:ci`, monitor CI checks and automated review bots, triage and resolve any review findings, and merge via squash merge / merge queue.
-- [ ] **Task 6.4**: Switch main repository to `main`, run `git pull origin main`, tear down worktree `.plan/local/worktrees/selective-bundle-installer`, and move `doc/antigravity/plans/selective-bundle-installer.md` into `doc/antigravity/done/selective-bundle-installer.md` via `manage-files` (and `git rm doc/antigravity/plans/selective-bundle-installer.md`).
+- [ ] **Task 6.4**: Switch main repository to `main` and pull via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow switch-and-pull --plan-id selective-bundle-installer --base main`, tear down worktree `.plan/local/worktrees/selective-bundle-installer` via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-remove --plan-id selective-bundle-installer`, and move `doc/antigravity/plans/selective-bundle-installer.md` into `doc/antigravity/done/selective-bundle-installer.md`.

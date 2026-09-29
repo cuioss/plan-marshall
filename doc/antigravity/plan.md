@@ -34,7 +34,7 @@ Before writing code, load the foundational and surface-specific skills from the 
    - Never run `ls`, `find`, `cat`, `grep`, or `git grep` in shell commands.
    - Use structured architecture queries (`python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture ...`) or dedicated file/search tools.
 4. **CI & Git Operations via Abstraction**:
-   - Route git worktree/commit operations through `plan-marshall:workflow-integration-git:git-workflow` and PR/CI operations through `plan-marshall:tools-integration-ci:ci` whenever the executor is active.
+   - Route worktree lifecycle, artifact detection, commit formatting, branch switch/pull, and ref pruning through `plan-marshall:workflow-integration-git:git-workflow` (`worktree-create`, `detect-artifacts`, `format-commit`, `switch-and-pull`, `worktree-remove`, `prune-local-and-remote-ref`), use `git -C {worktree_path}` for staging, committing (`-F`), and pushing inside the worktree, and route all PR/CI operations through `plan-marshall:tools-integration-ci:ci`.
 5. **Documentation Standards**:
    - No version history, changelogs, timestamps, or dates in documentation.
    - Document current state only; cross-reference rather than duplicating.
@@ -46,16 +46,14 @@ Before writing code, load the foundational and surface-specific skills from the 
 ### Stage 1: Worktree & Branch Setup
 1. **Verify Clean Root Checkout**:
    - Confirm `git status --porcelain` is empty on `main`. Stop and report if dirty.
-2. **Fetch & Create Branch**:
+2. **Fetch, Create Worktree & Push Branch**:
    - Fetch latest `origin/main`: `git fetch origin main`.
-   - Create the plan's feature branch (`feature/{slug}` or `fix/{slug}`) from `origin/main`.
-   - **Push immediately before any edits**: `git push -u origin {branch}` (remote is the only durable storage).
-3. **Create Isolated Worktree**:
-   - Provision an isolated git worktree at `.plan/local/worktrees/{slug}` bound to `{branch}`:
+   - Provision an isolated git worktree at `.plan/local/worktrees/{slug}` on branch `{branch}` (`feature/{slug}` or `fix/{slug}`) based on `origin/main`:
      ```bash
-     python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-setup --plan-id {slug} --branch {branch}
+     python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-create --plan-id {slug} --branch {branch} --base origin/main
      ```
-   - Ensure `.venv` and `.pyprojectx` are symlinked into the worktree and `.plan/execute-script.py` is available so builds and executor calls run inside `.plan/local/worktrees/{slug}` without re-downloading toolchains.
+   - **Push immediately before any edits**: `git -C .plan/local/worktrees/{slug} push -u origin {branch}` (remote is the only durable storage).
+   - Verify `.venv` and `.pyprojectx` are available in the worktree and `.plan/execute-script.py` resolves cleanly so builds and executor calls run inside `.plan/local/worktrees/{slug}` without re-downloading toolchains.
 
 ### Stage 2..N: Iterative Implementation & Commit Discipline
 Work through the plan's deliverables in logical stages. For every stage:
@@ -74,16 +72,16 @@ Work through the plan's deliverables in logical stages. For every stage:
    - Note: `quality-gate` auto-fixes files in place via `ruff check --fix` and `ruff format`.
    - Inspect the output and log file (`total_issues: 0` and empty `errors[]`) to confirm `ruff`, `mypy`, `SPDX-header check`, and `plugin-doctor` all pass cleanly.
 3. **Explicit Staging (Never `git add -A`)**:
-   - Check `git status --porcelain` to verify no stray lockfile churn (e.g., `uv.lock`) or untracked artifacts exist.
-   - Stage only the explicit deliverable and test file paths (`git add <path1> <path2>`).
+   - Check `git -C {worktree_path} status --porcelain` to verify no stray lockfile churn (e.g., `uv.lock`) or untracked artifacts exist.
+   - Stage only the explicit deliverable and test file paths (`git -C {worktree_path} add <path1> <path2>`).
 4. **Commit with Mandatory Trailer & Push**:
-   - Commit in coherent units using conventional commit subjects (`feat(...): ...`, `fix(...): ...`, `test(...): ...`, `docs(...): ...`) and the mandatory trailer (no `Generated with` footer):
+   - Commit in coherent units using conventional commit subjects (`feat(...): ...`, `fix(...): ...`, `test(...): ...`, `docs(...): ...`) formatted via `plan-marshall:workflow-integration-git:git-workflow format-commit` and the mandatory trailer (no `Generated with` footer):
      ```text
      Co-Authored-By: plan-marshall <noreply@cuioss.de>
      ```
    - Push immediately after every commit:
      ```bash
-     git push
+     git -C {worktree_path} push
      ```
 
 ### Final Stage: Full Verification, Pre-PR Self-Review, PR Lifecycle & Cleanup
@@ -93,14 +91,14 @@ Work through the plan's deliverables in logical stages. For every stage:
      python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "verify"
      ```
    - Confirm `status: success`, `total_issues: 0`, and `errors: []`.
-   - When target generators, templates, or bundles are touched, also run target generation verification:
+   - When target generators, templates, or bundles are touched, also run target generation verification via the executor:
      ```bash
-     ./pw generate --target all --output .plan/temp/target-verify
+     python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "generate --target all --output .plan/temp/target-verify"
      ```
 2. **Independent Pre-PR Verification Subagent**:
    - Before opening the PR, dispatch a read-only verification subagent (`research` or `self`) with:
      - The plan file path and all requirements (`REQ-*`).
-     - The full branch diff (`git diff origin/main...HEAD`).
+     - The full branch diff (`git -C {worktree_path} diff origin/main...HEAD`).
      - Instructions to verify every deliverable is implemented as specified, covered by tests, free of collateral churn, and swept beyond the diff for stale references (docstrings, CLI help strings, test stubs, `.adoc` docs).
    - Fix any findings identified by the verifier, re-run `verify`, commit, and push.
 3. **Pull Request Creation & Review Cycle**:
@@ -108,9 +106,12 @@ Work through the plan's deliverables in logical stages. For every stage:
    - Monitor CI status and automated review bots; triage and resolve any review comments.
    - Merge via squash merge / merge queue once all required checks are green.
 4. **Post-Merge Cleanup**:
-   - Switch main checkout to `main` and pull latest: `git pull origin main`.
-   - Tear down the worktree at `.plan/local/worktrees/{slug}` and delete the local feature branch:
+   - Switch main checkout to `main` and pull latest via `git-workflow`:
      ```bash
-     python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-teardown --plan-id {slug}
+     python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow switch-and-pull --plan-id {slug} --base main
+     ```
+   - Tear down the worktree at `.plan/local/worktrees/{slug}` and prune the local/remote feature branch ref:
+     ```bash
+     python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-remove --plan-id {slug}
      ```
    - Move the completed plan file from `doc/antigravity/plans/` into `doc/antigravity/done/`.

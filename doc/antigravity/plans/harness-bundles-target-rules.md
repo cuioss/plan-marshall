@@ -25,7 +25,7 @@ Before making any changes, load the following skills from the repository bundle 
 - **`.plan/` access via scripts only**: Never use direct file tools (`Read`, `Write`, `Edit`) on `.plan/` paths. Always invoke `python3 .plan/execute-script.py` with `manage-*` scripts. Use `.plan/temp/` for temporary files.
 - **One command per shell call**: No `&&`, `;`, `|`, trailing `&`, `$()`, subshells, loops, or heredocs in shell tool calls.
 - **No shell file operations**: Never run `ls`, `find`, `cat`, `grep`, or `git grep`. Use dedicated file/search tools or `architecture` script queries.
-- **CI & git operations via abstraction**: Use `plan-marshall:workflow-integration-git:git-workflow` and `plan-marshall:tools-integration-ci:ci` via the executor.
+- **CI & git operations via abstraction**: Route worktree lifecycle, artifact detection, commit formatting, and branch switch/pull through `plan-marshall:workflow-integration-git:git-workflow` (`worktree-create`, `detect-artifacts`, `format-commit`, `switch-and-pull`, `worktree-remove`), use `git -C {worktree_path}` for staging, committing (`-F`), and pushing inside the worktree, and route PR/CI operations through `plan-marshall:tools-integration-ci:ci`.
 - **Documentation standards**: No version history, changelogs, dates, or timestamps; document current state only.
 
 ---
@@ -114,6 +114,7 @@ Before making any changes, load the following skills from the repository bundle 
 
 ### `REQ-HBNDL-6`: Zero-Token Native Rule Delivery & Fail-Safe Entrypoint References
 - Update `marketplace/targets/antigravity/templates/install.sh` (when `--workspace` is used or via `--emit-rules`) to copy the installed `skills/plan-marshall-antigravity-target-rules/standards/antigravity-rules.md` into `<workspace>/.agents/rules/plan-marshall-target-rules.md` when installing into a workspace, so Antigravity loads the rules natively with zero runtime tool calls.
+- Update `marketplace/targets/opencode/templates/install.sh` (when `--workspace` is used or via `--emit-rules`) to copy the installed `skills/plan-marshall-opencode-target-rules/standards/opencode-rules.md` into `<workspace>/.opencode/rules/plan-marshall-target-rules.md` when installing into a workspace, so OpenCode loads the rules natively with zero runtime tool calls.
 - Ensure `plan-marshall`, `plan-orchestrator`, and `marshall-steward` entrypoint skills do not make unconditional runtime file-read calls to load target rules and proceed normally when optional rule files are absent.
 
 ---
@@ -154,6 +155,7 @@ Before making any changes, load the following skills from the repository bundle 
   - `marketplace/bundles/plan-marshall-opencode/skills/target-rules/SKILL.md`
   - `marketplace/bundles/plan-marshall-opencode/skills/target-rules/standards/opencode-rules.md`
   - `marketplace/targets/antigravity/templates/install.sh` (workspace `.agents/rules/plan-marshall-target-rules.md` emission)
+  - `marketplace/targets/opencode/templates/install.sh` (workspace `.opencode/rules/plan-marshall-target-rules.md` emission)
 
 ### D4: Unit Tests
 - **Files**:
@@ -165,6 +167,7 @@ Before making any changes, load the following skills from the repository bundle 
 - **Tests to Add**:
   - Test `read_bundle_target_scope` and `bundle_emits_to` (absent $\to$ emits everywhere; `["antigravity"]` $\to$ emits only to `antigravity`; empty/unknown/contradicting component $\to$ raises `TargetScopeError`).
   - Test mutual exclusivity across targets: generating `claude`, `opencode`, and `antigravity` emits `plan-marshall-antigravity` only to `target/antigravity`, `plan-marshall-opencode` only to `target/opencode`, and neither to `target/claude` (nor `target/claude/.claude-plugin/marketplace.json`).
+  - Test workspace rule emission in both `antigravity` (`<workspace>/.agents/rules/plan-marshall-target-rules.md`) and `opencode` (`<workspace>/.opencode/rules/plan-marshall-target-rules.md`) `install.sh` scripts.
   - Test `_analyze_target_scope.py` flags bundle-level `targets_empty`, `targets_unknown`, and bundle-to-component `targets_contradiction`.
 
 ---
@@ -174,26 +177,26 @@ Before making any changes, load the following skills from the repository bundle 
 ### Stage 1: Worktree & Branch Setup
 - [ ] **Task 1.1**: Verify `git status --porcelain` on `main` is completely empty.
 - [ ] **Task 1.2**: Fetch latest `origin/main` (`git fetch origin main`).
-- [ ] **Task 1.3**: Create branch `feature/harness-bundles-target-rules` from `origin/main` and push immediately (`git push -u origin feature/harness-bundles-target-rules`).
-- [ ] **Task 1.4**: Set up isolated worktree at `.plan/local/worktrees/harness-bundles-target-rules` via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-setup --plan-id harness-bundles-target-rules --branch feature/harness-bundles-target-rules`.
+- [ ] **Task 1.3**: Set up isolated worktree at `.plan/local/worktrees/harness-bundles-target-rules` on branch `feature/harness-bundles-target-rules` based on `origin/main` via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-create --plan-id harness-bundles-target-rules --branch feature/harness-bundles-target-rules --base origin/main`.
+- [ ] **Task 1.4**: Push `feature/harness-bundles-target-rules` immediately (`git -C .plan/local/worktrees/harness-bundles-target-rules push -u origin feature/harness-bundles-target-rules`) and verify `.venv` and `.pyprojectx` symlinks exist in the worktree.
 
 ### Stage 2: Bundle-Level Target Scoping in `marketplace/targets/` & `plugin-doctor` (D1, D2)
 - [ ] **Task 2.1**: Implement `read_bundle_target_scope`, `bundle_emits_to`, and bundle-to-component narrowing checks in `marketplace/targets/component_targets.py`.
 - [ ] **Task 2.2**: Wire `bundle_emits_to` into `marketplace/targets/claude/{target.py,equality_check.py,marketplace_json_gen.py,plugin_json_gen.py}`, `marketplace/targets/opencode/emitter.py`, and `marketplace/targets/antigravity/emitter.py` (including component-level `emits_to` in `antigravity/emitter.py`).
 - [ ] **Task 2.3**: Extend `_analyze_target_scope.py` in `pm-plugin-development:plugin-doctor` to validate bundle-level `"targets"` in `.claude-plugin/plugin.json` and detect bundle-to-component scope contradictions.
 - [ ] **Task 2.4**: Add unit tests in `test/marketplace/targets/test_component_targets.py` and `test/pm-plugin-development/plugin-doctor/test_analyze_target_scope.py`, and run them via `uv run pytest test/marketplace/targets/test_component_targets.py test/pm-plugin-development/plugin-doctor/test_analyze_target_scope.py -o addopts=""`.
-- [ ] **Task 2.5**: Run `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "quality-gate"`, stage modified files explicitly, commit with trailer `Co-Authored-By: plan-marshall <noreply@cuioss.de>`, and `git push`.
+- [ ] **Task 2.5**: Run `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "quality-gate"`, stage modified files explicitly, commit with trailer `Co-Authored-By: plan-marshall <noreply@cuioss.de>`, and `git -C {worktree_path} push`.
 
 ### Stage 3: Author `plan-marshall-antigravity` & `plan-marshall-opencode` Bundles (D3)
 - [ ] **Task 3.1**: Create `marketplace/bundles/plan-marshall-antigravity/` (`.claude-plugin/plugin.json` with `"targets": ["antigravity"]`, `README.md`, `skills/target-rules/SKILL.md`, `skills/target-rules/standards/antigravity-rules.md`).
 - [ ] **Task 3.2**: Create `marketplace/bundles/plan-marshall-opencode/` (`.claude-plugin/plugin.json` with `"targets": ["opencode"]`, `README.md`, `skills/target-rules/SKILL.md`, `skills/target-rules/standards/opencode-rules.md`).
-- [ ] **Task 3.3**: Register both bundles in `marketplace/.claude-plugin/marketplace.json` and update `marketplace/targets/antigravity/templates/install.sh` to emit `.agents/rules/plan-marshall-target-rules.md` in workspace mode when `plan-marshall-antigravity-target-rules` is present.
-- [ ] **Task 3.4**: Regenerate `target/claude` (`./pw generate-claude`) so `target/claude` equality check stays in sync, and test `./pw generate --target all --output .plan/temp/all-targets`.
-- [ ] **Task 3.5**: Add target mutual-exclusivity tests in `test/marketplace/targets/{antigravity,opencode,claude}/test_emitter.py` and run them via `uv run pytest`.
-- [ ] **Task 3.6**: Run `quality-gate`, stage explicitly, commit with trailer `Co-Authored-By: plan-marshall <noreply@cuioss.de>`, and `git push`.
+- [ ] **Task 3.3**: Register both bundles in `marketplace/.claude-plugin/marketplace.json`, update `marketplace/targets/antigravity/templates/install.sh` to emit `.agents/rules/plan-marshall-target-rules.md` in workspace mode when `plan-marshall-antigravity-target-rules` is present, and update `marketplace/targets/opencode/templates/install.sh` to emit `.opencode/rules/plan-marshall-target-rules.md` in workspace mode when `plan-marshall-opencode-target-rules` is present.
+- [ ] **Task 3.4**: Regenerate `target/claude` (`python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "generate-claude"`) so `target/claude` equality check stays in sync, and test `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "generate --target all --output .plan/temp/all-targets"`.
+- [ ] **Task 3.5**: Add target mutual-exclusivity and workspace rule emission tests in `test/marketplace/targets/{antigravity,opencode,claude}/test_emitter.py` and run them via `uv run pytest`.
+- [ ] **Task 3.6**: Run `quality-gate`, stage explicitly, commit with trailer `Co-Authored-By: plan-marshall <noreply@cuioss.de>`, and `git -C {worktree_path} push`.
 
 ### Stage 4: Full Verification, Pre-PR Subagent Review, PR Lifecycle & Cleanup
 - [ ] **Task 4.1**: Run full verification: `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "verify"`. Confirm `status: success`, `total_issues: 0`, and `errors: []`.
-- [ ] **Task 4.2**: Dispatch an independent read-only verification subagent to review `git diff origin/main...HEAD` against `REQ-HBNDL-1..6`, including a beyond-diff sweep for any hardcoded bundle counts or lists in tests/docs. Fix any findings, re-run `verify`, commit, and push.
+- [ ] **Task 4.2**: Dispatch an independent read-only verification subagent to review `git -C {worktree_path} diff origin/main...HEAD` against `REQ-HBNDL-1..6`, including a beyond-diff sweep for any hardcoded bundle counts or lists in tests/docs. Fix any findings, re-run `verify`, commit, and push.
 - [ ] **Task 4.3**: Create PR via `plan-marshall:tools-integration-ci:ci`, monitor CI checks and automated review bots, triage and resolve any review findings, and merge via squash merge / merge queue.
-- [ ] **Task 4.4**: Switch main repository to `main`, run `git pull origin main`, tear down worktree `.plan/local/worktrees/harness-bundles-target-rules`, and move `doc/antigravity/plans/harness-bundles-target-rules.md` into `doc/antigravity/done/harness-bundles-target-rules.md` via `manage-files` (and `git rm doc/antigravity/plans/harness-bundles-target-rules.md`).
+- [ ] **Task 4.4**: Switch main repository to `main` and pull via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow switch-and-pull --plan-id harness-bundles-target-rules --base main`, tear down worktree `.plan/local/worktrees/harness-bundles-target-rules` via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-remove --plan-id harness-bundles-target-rules`, and move `doc/antigravity/plans/harness-bundles-target-rules.md` into `doc/antigravity/done/harness-bundles-target-rules.md`.
