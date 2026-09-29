@@ -759,6 +759,12 @@ class AntigravityRuntime(Runtime):
 
     def permission_ensure_steps(self, marshal_path: str, scope: str, dry_run: bool) -> str:
         """Scan project-steps; Antigravity cannot express a per-skill grant."""
+        if scope not in ('project', 'global'):
+            return toon_error(
+                'permission ensure-steps',
+                'invalid_scope',
+                f"--scope must be 'project' or 'global'; got {scope!r}",
+            )
         if not Path(marshal_path).is_file():
             return toon_error(
                 'permission ensure-steps',

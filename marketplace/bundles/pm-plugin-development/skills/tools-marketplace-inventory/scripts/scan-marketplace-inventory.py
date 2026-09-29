@@ -20,7 +20,7 @@ Options:
     --base-path <path>       Scan exactly this bundles/cache root instead of resolving one from --scope.
                              A flat deployed root (OpenCode/Antigravity) is read through the
                              bundle identity each SKILL.md records.
-    --output <path>         Custom output file path (default: .plan/temp/.../inventory-{timestamp}.toon)
+    --output <path>          Custom output file path (default: .plan/temp/.../inventory-{timestamp}.toon)
     --direct-result          Output full TOON directly to stdout (default: write to file)
 
 Output Modes:
@@ -357,7 +357,9 @@ def discover_flat_bundles(base_path: Path, include: dict[str, bool]) -> list[dic
         for skill_dir in flat_skill_dirs(base_path):
             identity = read_flat_skill_identity(skill_dir)
             if identity is not None:
-                _bundle(identity[0])['skills'].append({'name': identity[1]})
+                # The path is carried unconditionally: content filtering reads a
+                # resource through it, and a path-less row is dropped by the filter.
+                _bundle(identity[0])['skills'].append({'name': identity[1], 'path': safe_relative_path(skill_dir)})
     if include.get('scripts'):
         mount_prefix = runtime_mount_prefix()
         for flat_script in flat_script_inventory(base_path).scripts:
@@ -898,13 +900,30 @@ def main() -> int:
         total_content_stats['matched_count'] += stats['matched_count']
         total_content_stats['excluded_count'] += stats['excluded_count']
 
-    # A flat deployed root carries no bundle dirs for find_bundles to locate.
+    # A flat deployed root carries no bundle dirs for find_bundles to locate. Its
+    # skills pass the same name and content filters as nested ones, and a bundle
+    # present in both shapes is MERGED into one entry — the JSON output is keyed
+    # by bundle name, so a second entry would silently replace the first.
+    by_name = {bundle['name']: bundle for bundle in bundles_data}
     for flat_bundle in discover_flat_bundles(base_path, include):
         if bundle_filter and flat_bundle['name'] not in bundle_filter:
             continue
-        flat_bundle['skills'] = filter_resources_by_pattern(flat_bundle['skills'], name_patterns)
-        flat_bundle['scripts'] = filter_resources_by_pattern(flat_bundle['scripts'], name_patterns)
+        skills = filter_resources_by_pattern(flat_bundle['skills'], name_patterns)
+        scripts = filter_resources_by_pattern(flat_bundle['scripts'], name_patterns)
+        if content_include or content_exclude:
+            skills, stats = filter_resources_by_content(skills, content_include, content_exclude)
+            total_content_stats['input_count'] += stats['input_count'] + len(scripts)
+            total_content_stats['matched_count'] += stats['matched_count'] + len(scripts)
+            total_content_stats['excluded_count'] += stats['excluded_count']
+        existing = by_name.get(flat_bundle['name'])
+        if existing is not None:
+            existing['skills'].extend(skills)
+            existing['scripts'].extend(scripts)
+            continue
+        flat_bundle['skills'] = skills
+        flat_bundle['scripts'] = scripts
         bundles_data.append(flat_bundle)
+        by_name[flat_bundle['name']] = flat_bundle
 
     # Add project-skills pseudo-bundle if requested
     if args.include_project_skills:

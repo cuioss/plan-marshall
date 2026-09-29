@@ -208,6 +208,16 @@ class TestEnsureStepsReadsTheRoster:
         assert result['steps_scanned'] == 0
         assert result['permissions_added'] == 0
 
+    def test_an_invalid_scope_is_refused_on_every_runtime(self, runtime, tmp_path) -> None:
+        """Scope is validated alike on both targets, before any read."""
+        marshal = tmp_path / 'marshal.json'
+        marshal.write_text(json.dumps({'plan': {}}), encoding='utf-8')
+
+        result = _parse(runtime.permission_ensure_steps(str(marshal), 'workspace', False))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_scope'
+
     def test_a_malformed_marshal_is_an_error_not_an_empty_roster(self, runtime, tmp_path) -> None:
         """A load failure must never read as "scanned, nothing declared"."""
         marshal = tmp_path / 'marshal.json'

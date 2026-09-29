@@ -90,8 +90,8 @@ def _nested_root(tmp_path: Path) -> Path:
     return bundles
 
 
-def _scanned_notations(base: Path, monkeypatch, capsys) -> dict[str, str]:
-    """Run the REAL inventory scan in-process against ``base`` and return notation -> path."""
+def _scan_json(base: Path, monkeypatch, capsys, *extra: str) -> dict:
+    """Run the REAL inventory scan in-process against ``base`` and return its JSON payload."""
     import sys
 
     module = _scan_module()
@@ -99,21 +99,18 @@ def _scanned_notations(base: Path, monkeypatch, capsys) -> dict[str, str]:
     monkeypatch.setattr(
         sys,
         'argv',
-        [
-            'scan-marketplace-inventory.py',
-            '--base-path',
-            str(base),
-            '--resource-types',
-            'scripts',
-            '--direct-result',
-            '--format',
-            'json',
-        ],
+        ['scan-marketplace-inventory.py', '--base-path', str(base), '--direct-result', '--format', 'json', *extra],
     )
     with pytest.raises(SystemExit):
         module.main()
-    payload = json.loads(capsys.readouterr().out)
+    payload: dict = json.loads(capsys.readouterr().out)
     assert payload['status'] == 'success', payload
+    return payload
+
+
+def _scanned_notations(base: Path, monkeypatch, capsys) -> dict[str, str]:
+    """Run the REAL inventory scan against ``base`` and return notation -> path."""
+    payload = _scan_json(base, monkeypatch, capsys, '--resource-types', 'scripts')
     return {
         script['notation']: script['path_formats']['absolute']
         for bundle in payload['bundles'].values()
@@ -193,6 +190,31 @@ class TestBothSidesDeriveOneNotationSet:
 
         assert coverage['coverage_ok'] is True
         assert coverage['scripts_enumerated'] == coverage['scripts_discovered'] == 4
+
+
+class TestScannerFlatEntries:
+    def test_a_bundle_in_both_shapes_is_one_merged_entry(self, tmp_path, monkeypatch, capsys):
+        """JSON keys bundles by name, so a nested and a flat entry must merge, not replace."""
+        base = _nested_root(tmp_path)
+        _flat_skill(base / 'skills', BUNDLE, 'flat-only', {'flat_only.py': '#'})
+        monkeypatch.chdir(tmp_path)
+
+        scanned = _scanned_notations(base, monkeypatch, capsys)
+
+        assert 'plan-marshall:manage-status:manage-status' in scanned
+        assert 'plan-marshall:flat-only:flat_only' in scanned
+
+    def test_flat_skills_honour_the_content_filter(self, tmp_path, monkeypatch, capsys):
+        """A content filter applies to flat skills exactly as to nested ones."""
+        base = _deployed_flat_root(tmp_path)
+        monkeypatch.chdir(tmp_path)
+
+        payload = _scan_json(
+            base, monkeypatch, capsys, '--resource-types', 'skills', '--full', '--content-pattern', 'no-such-token'
+        )
+
+        assert all(not bundle.get('skills') for bundle in payload['bundles'].values())
+        assert payload['statistics']['total_skills'] == 0
 
 
 class TestAnUnreadableFlatRootFailsClosed:
