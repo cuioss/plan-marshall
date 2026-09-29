@@ -931,7 +931,7 @@ def main() -> int:
             # de-dup runs BEFORE the content filter, so each both-shapes skill
             # reaches the filter and its stats exactly once, whichever way the
             # filter decided the nested copy.
-            known_skills, known_notations = nested_deployed.get(flat_bundle['name'], (set(), set()))
+            known_skills, known_notations = nested_deployed[flat_bundle['name']]
             skills = [skill for skill in skills if skill['name'] not in known_skills]
             scripts = [script for script in scripts if script['notation'] not in known_notations]
         if content_include or content_exclude:
