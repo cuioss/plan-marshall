@@ -1467,6 +1467,8 @@ _PREFLIGHT_FIELDS = frozenset(
         'executor_version',
         'marshal_version',
         'warning',
+        'target',
+        'target_source',
     }
 )
 
@@ -1494,7 +1496,7 @@ def test_read_executor_version_unknown_on_undecodable_executor(tmp_path, monkeyp
 
 def test_preflight_fails_closed_on_unresolvable_manifest(outside_repo_dir, monkeypatch, capsys):
     """With no resolvable manifest, preflight fails CLOSED: it reports the full
-    seven-field TOON with marshal_status 'unknown' (never a vacuous 'fresh'),
+    nine-field TOON with marshal_status 'unknown' (never a vacuous 'fresh'),
     populates the warning field, and emits a legible warning to stderr — so a
     caller can never mistake "could not determine" for "confirmed fresh"."""
     module = load_module()
@@ -1509,7 +1511,7 @@ def test_preflight_fails_closed_on_unresolvable_manifest(outside_repo_dir, monke
     monkeypatch.chdir(outside_repo_dir)
     result = module.cmd_preflight(_preflight_args())
 
-    assert set(result.keys()) == _PREFLIGHT_FIELDS, f'preflight must return exactly the seven fields, got {set(result)}'
+    assert set(result.keys()) == _PREFLIGHT_FIELDS, f'preflight must return exactly the nine fields, got {set(result)}'
     assert result['status'] == 'success'
     assert result['executor_action'] == 'fresh'
     assert result['installed_version'] == 'unknown'
@@ -1696,7 +1698,7 @@ def test_cmd_generate_returns_error_when_base_path_unresolvable(tmp_path):
 
 def test_preflight_subcommand_registered_and_emits_toon(tmp_path):
     """The preflight subparser is registered and the verb emits a TOON carrying
-    the seven documented fields end-to-end."""
+    the nine documented fields end-to-end."""
     manifest = tmp_path / 'dist-manifest.json'
     manifest.write_text('{"version": "0.1.7"}', encoding='utf-8')
 
