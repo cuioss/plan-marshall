@@ -347,8 +347,15 @@ def resolve_context(
             outranks the whole cascade and the result carries
             ``target_source: 'explicit'``.
         marketplace_root: An explicit anchor, validated by
-            :func:`resolve_marketplace_root`. When ``None`` the last-resort
-            ``PM_MARKETPLACE_ROOT`` env anchor applies.
+            :func:`resolve_marketplace_root`. When ``None``, the
+            ``PM_MARKETPLACE_ROOT`` env anchor applies ONLY as a last resort:
+            when the target itself fell through to the ``fallback`` tier. A
+            declared target (``explicit``, ``env`` or ``marshal_json``) is a
+            declared context, so the env var is NOT folded into the returned
+            anchor and cannot re-anchor the verb — the same rule
+            ``marketplace_paths._env_anchor_is_last_resort`` applies to a direct
+            ``get_base_path`` call. Folding it in unconditionally turned the env
+            var into an explicit anchor that outranked every declared target.
         cwd: Directory the ``marshal.json`` walk starts from; forwarded to
             :func:`resolve_target` and ignored when ``target`` is explicit.
 
@@ -367,9 +374,16 @@ def resolve_context(
     else:
         resolved = resolve_target(cwd=cwd)
 
+    if marketplace_root is None and resolved['target_source'] != SOURCE_FALLBACK:
+        # A declared target outranks the last-resort env anchor: return no
+        # anchor rather than promoting PM_MARKETPLACE_ROOT to an explicit one.
+        anchor = None
+    else:
+        anchor = resolve_marketplace_root(marketplace_root)
+
     return {
         'target': resolved['target'],
         'target_source': resolved['target_source'],
         'reason': resolved['reason'],
-        'marketplace_root': resolve_marketplace_root(marketplace_root),
+        'marketplace_root': anchor,
     }

@@ -351,3 +351,18 @@ class TestSharedModuleLabel:
         scripts = tmp_path / BUNDLE / 'skills' / 'tools-file-ops' / 'scripts'
 
         assert _gen.shared_module_skill_label(scripts) == 'tools-file-ops'
+
+
+class TestVerbPayloadsReportTheResolutionTier:
+    def test_paths_success_payload_carries_target_and_its_tier(self, monkeypatch):
+        """A success payload says WHICH tier produced the target, not only the target."""
+        import types
+
+        monkeypatch.setattr(_gen, 'get_executor_mappings', lambda: {'a:b:c': '/x'})
+        monkeypatch.setattr(_gen, 'check_paths_exist', lambda mappings: (list(mappings), []))
+
+        result = _gen.cmd_paths(types.SimpleNamespace(target='opencode', marketplace_root=None))
+
+        assert result['status'] == 'success'
+        assert result['target'] == 'opencode'
+        assert result['target_source'] == 'explicit'

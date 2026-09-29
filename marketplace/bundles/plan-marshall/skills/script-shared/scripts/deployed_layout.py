@@ -3,7 +3,8 @@
 The single home for deployed-layout knowledge.
 
 A marketplace tree exists in exactly TWO shapes, and three independent readers
-used to model only the one that does not ship:
+used to model only the nested one — which the flat targets (OpenCode,
+Antigravity) do not ship:
 
 **Nested** — ``{root}/{bundle}/skills/{skill}/…``. The marketplace source tree
 (``marketplace/bundles/{bundle}/skills/…``) and the Claude plugin cache
@@ -234,10 +235,10 @@ def flat_script_dirs(root: Path) -> list[Path]:
     result, which is how the nested path already behaved — the difference here
     is only that the enumeration can see a flat tree at all.
 
-    A caller that needs the script FILES rather than their directory reads
-    :func:`flat_skill_dirs` and walks from there, because a flat skill's
-    notation is derived from its own directory name (a dash-joined
-    ``{bundle}-{skill}``), not from any single file.
+    A caller that needs the script FILES and their notations reads
+    :func:`flat_script_inventory`, which derives each notation from the identity
+    the skill's ``SKILL.md`` records — never from the dash-joined directory
+    name, which cannot be split.
     """
     dirs: list[Path] = []
     for skill_dir in flat_skill_dirs(root):

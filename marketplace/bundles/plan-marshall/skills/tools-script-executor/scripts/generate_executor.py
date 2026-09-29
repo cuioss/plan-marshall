@@ -83,14 +83,21 @@ Context Detection:
     (``ANTIGRAVITY_AGENT`` / ``OPENCODE`` / ``OPENCODE_PID`` /
     ``CLAUDE_CODE_SESSION_ID``), then ``runtime.target`` from the nearest
     ``marshal.json``, then a REPORTED fallback. The tier that produced the
-    answer rides each verb's payload as ``target_source``, so "resolved to
-    opencode" and "fell back to claude" are never the same observation.
+    answer rides every payload that follows a resolution — the success
+    payloads of ``generate``, ``verify``, ``drift``, ``paths`` and
+    ``preflight``, the coverage-error payloads of ``generate`` and ``drift``,
+    and ``bootstrap``'s ``generated`` payload — as
+    ``target_source`` beside the resolved ``target``, so "resolved to opencode"
+    and "fell back to claude" are never the same observation. ``bootstrap``'s
+    ``not_needed`` payloads carry neither: that path resolves no target.
 
     ``PM_MARKETPLACE_ROOT`` is the LAST-RESORT anchor, not a co-equal input.
     It promotes itself above the deployed-bundle cache only while nothing else
     has declared the context — no ``--target`` was given, and no env or
-    ``marshal.json`` tier resolved one. That demotion is what stops an exported
-    env var in an operator's shell from silently re-anchoring every verb on a
+    ``marshal.json`` tier resolved one. The demotion happens in
+    ``target_context.resolve_context``, which folds the env value into the
+    verb's anchor only on the fallback tier; that is what stops an exported env
+    var in an operator's shell from silently re-anchoring every verb on a
     machine whose project has declared which target it is. The flag takes
     precedence when both are supplied. Use this when invoking the script from
     a worktree or alternate checkout where Path.cwd() would otherwise resolve
@@ -254,8 +261,9 @@ def get_base_path(
             If False (default), tries plugin-cache first then marketplace.
         marketplace_root: Optional explicit override anchor for marketplace
             discovery. Normally the value ``resolve_context`` validated out of
-            ``--marketplace-root`` (or the last-resort ``PM_MARKETPLACE_ROOT``),
-            forwarded verbatim to
+            ``--marketplace-root``, or ``PM_MARKETPLACE_ROOT`` when — and only
+            when — the target fell through to the fallback tier; forwarded
+            verbatim to
             :func:`script_shared.marketplace_paths.get_base_path` and applied
             to the marketplace-aware scopes (``marketplace``, ``cache-first``).
             See :func:`script_shared.marketplace_paths.find_marketplace_path`
@@ -263,9 +271,12 @@ def get_base_path(
         target: The runtime target this call operates under, forwarded to the
             shared resolver so the target-dependent scopes (``cache-first`` and
             ``plugin-cache`` cache legs, ``global``, ``project``) resolve for
-            THAT target rather than the ambient cascade's answer. It is also
-            what demotes ``PM_MARKETPLACE_ROOT`` to a last-resort anchor
-            override; see ``marketplace_paths._env_anchor_is_last_resort``.
+            THAT target rather than the ambient cascade's answer. A non-``None``
+            target also demotes an ambient ``PM_MARKETPLACE_ROOT`` for a call
+            that passes no ``marketplace_root`` (see
+            ``marketplace_paths._env_anchor_is_last_resort``); for the verbs,
+            ``resolve_context`` has already applied the same rule before the
+            anchor reaches this call.
     """
     scope = 'marketplace' if use_marketplace else 'cache-first'
     return _shared_get_base_path(scope, marketplace_root=marketplace_root, target=target)
@@ -2969,6 +2980,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             'status': 'success',
             'scripts_discovered': len(mappings),
             'executor_target': resolved_target,
+            'target_source': ctx['target_source'],
             'dry_run': True,
             **surface_stats,
         }
@@ -2987,6 +2999,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         'scripts_discovered': len(mappings),
         'executor_generated': str(executor_path()),
         'executor_target': resolved_target,
+        'target_source': ctx['target_source'],
         'logs_cleaned': logs_cleaned,
         **surface_stats,
     }
@@ -3021,7 +3034,12 @@ def cmd_verify(args: argparse.Namespace) -> dict:
 
     valid, count = verify_executor(base_path)
     if valid:
-        return {'status': 'success', 'script_count': count}
+        return {
+            'status': 'success',
+            'script_count': count,
+            'target': ctx['target'],
+            'target_source': ctx['target_source'],
+        }
     else:
         return {'status': 'error', 'error': 'Verification failed'}
 
@@ -3065,6 +3083,8 @@ def cmd_bootstrap(args: argparse.Namespace) -> dict:
             'action': 'generated',
             'reason': reason,
             'template_status': template_status,
+            'target': regen.get('executor_target', ''),
+            'target_source': regen.get('target_source', ''),
             **extra,
         }
 
@@ -3298,6 +3318,8 @@ def cmd_drift(args: argparse.Namespace) -> dict:
         # could not report.
         'scripts_enumerated': coverage['scripts_enumerated'],
         'scripts_discovered': coverage['scripts_discovered'],
+        'target': resolved_target,
+        'target_source': ctx['target_source'],
     }
 
 
@@ -3312,7 +3334,7 @@ def cmd_paths(args: argparse.Namespace) -> dict:
     ``paths`` from being the one verb whose "current" means something else.
     """
     try:
-        resolve_verb_context(args)
+        ctx = resolve_verb_context(args)
     except ValueError as e:
         return {'status': 'error', 'error': 'invalid_context', 'detail': str(e)}
 
@@ -3329,6 +3351,8 @@ def cmd_paths(args: argparse.Namespace) -> dict:
         'total': len(mappings),
         'existing': len(existing),
         'missing': len(missing),
+        'target': ctx['target'],
+        'target_source': ctx['target_source'],
     }
 
 
@@ -3378,11 +3402,12 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
     ``marshal_status: unknown`` with a warning rather than a vacuous ``fresh``.
 
     Returns:
-        A single seven-field TOON dict: ``status``, ``executor_action``
+        A single nine-field TOON dict: ``status``, ``executor_action``
         (``fresh`` | ``regenerated``), ``marshal_status`` (``fresh`` | ``stale``
         | ``unknown``), ``installed_version``, ``executor_version``,
-        ``marshal_version``, and ``warning`` (the fail-closed message when
-        ``marshal_status`` is ``unknown``, else the empty string).
+        ``marshal_version``, ``warning`` (the fail-closed message when
+        ``marshal_status`` is ``unknown``, else the empty string), and the
+        ``target`` / ``target_source`` pair the verb resolved.
     """
     try:
         ctx = resolve_verb_context(args)
@@ -3452,6 +3477,8 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
         'executor_version': executor_version,
         'marshal_version': marshal_version,
         'warning': warning,
+        'target': resolved_target,
+        'target_source': ctx['target_source'],
     }
 
 

@@ -452,6 +452,36 @@ class TestResolveContext:
         assert ctx['target_source'] == SOURCE_EXPLICIT
         assert ctx['marketplace_root'] == tmp_path / 'explicit'
 
+    @pytest.mark.parametrize('declared_by', ['explicit', 'env', 'marshal_json'])
+    def test_a_declared_target_does_not_fold_in_the_env_anchor(self, declared_by, project, monkeypatch):
+        """A declared target outranks PM_MARKETPLACE_ROOT, so no anchor comes back.
+
+        Folding the env value into ``marketplace_root`` promoted it to an EXPLICIT
+        anchor downstream (``get_base_path`` reads any non-``None`` value as one),
+        so every verb re-anchored on the env tree even with ``--target opencode``.
+        """
+        monkeypatch.setenv(target_context.MARKETPLACE_ROOT_ENV, str(project / 'from-env'))
+        monkeypatch.chdir(project)
+        if declared_by == 'env':
+            monkeypatch.setenv('OPENCODE', '1')
+        elif declared_by == 'marshal_json':
+            _write_marshal(project, json.dumps({'runtime': {'target': 'opencode'}}))
+
+        ctx = resolve_context(target='opencode' if declared_by == 'explicit' else None, cwd=project)
+
+        assert ctx['target'] == 'opencode'
+        assert ctx['target_source'] == declared_by
+        assert ctx['marketplace_root'] is None
+
+    def test_the_env_anchor_still_applies_when_the_target_fell_back(self, project, monkeypatch):
+        """Last resort means last: with no declared target the env anchor is used."""
+        monkeypatch.setenv(target_context.MARKETPLACE_ROOT_ENV, str(project / 'from-env'))
+
+        ctx = resolve_context(cwd=project)
+
+        assert ctx['target_source'] == SOURCE_FALLBACK
+        assert ctx['marketplace_root'] == project / 'from-env'
+
 
 class TestSingleImplementation:
     """Guards against a second reader reappearing beside the shared one."""

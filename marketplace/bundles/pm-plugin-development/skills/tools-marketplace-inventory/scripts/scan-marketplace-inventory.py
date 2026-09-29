@@ -63,6 +63,7 @@ from deployed_layout import (  # noqa: E402, I001
     is_private_script,
     read_flat_skill_identity,
     script_notation,
+    skill_roots,
 )
 from marketplace_bundles import extract_bundle_name, find_bundles  # noqa: E402
 from marketplace_paths import (  # noqa: E402
@@ -888,8 +889,11 @@ def main() -> int:
     # any name or content filter. The flat-shape merge below de-duplicates against
     # this, not against the filtered listing: a nested copy the filter excluded is
     # still deployed, so its flat twin must not re-enter the filter a second time.
+    # Computed only when the base carries a flat skill root: without one there is
+    # no flat twin to de-duplicate, and the pre-pass would re-walk every nested
+    # bundle's scripts for nothing.
     nested_deployed: dict[str, tuple[set[str], set[str]]] = {}
-    for bundle_dir in bundle_dirs:
+    for bundle_dir in bundle_dirs if skill_roots(base_path) else []:
         name = _extract_bundle_name(bundle_dir)
         skills_dir = bundle_dir / 'skills'
         deployed_skills = {md.parent.name for md in skills_dir.glob('*/SKILL.md')} if skills_dir.is_dir() else set()

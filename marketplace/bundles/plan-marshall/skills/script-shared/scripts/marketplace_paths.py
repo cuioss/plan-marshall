@@ -894,10 +894,15 @@ def _env_anchor_is_last_resort(target: str | None) -> bool:
 
     Only when neither holds — an unmanaged checkout with no env signal and no
     declared ``runtime.target`` — is the ambient anchor the last remaining
-    signal, and it keeps the anchor-promoting behaviour it has always had. This
-    is what stops an exported ``PM_MARKETPLACE_ROOT`` in an operator's shell
-    from silently re-anchoring every verb on a machine whose project has
-    declared which target it is, while leaving the unmanaged path byte-identical.
+    signal, and it keeps the anchor-promoting behaviour it has always had.
+
+    This rule governs a :func:`get_base_path` call that passes no
+    ``marketplace_root``. The executor verbs reach :func:`get_base_path` through
+    ``target_context.resolve_context``, which applies the SAME rule before the
+    anchor is handed over — it folds the env value in only on the fallback tier
+    — so together the two stop an exported ``PM_MARKETPLACE_ROOT`` in an
+    operator's shell from re-anchoring a verb on a machine whose project has
+    declared which target it is, while leaving the unmanaged path unchanged.
 
     Args:
         target: The target the caller resolved, or ``None`` when it resolved

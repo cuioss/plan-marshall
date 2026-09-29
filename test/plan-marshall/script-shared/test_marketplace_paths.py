@@ -654,7 +654,12 @@ class TestEnvAnchorIsLastResort:
         assert get_base_path('auto', marketplace_root=bare) == bundles
 
     def test_env_anchor_is_demoted_when_the_caller_named_a_target(self, isolated_context, monkeypatch):
-        """A resolved target demotes the env anchor, so the env var cannot re-anchor a verb.
+        """A named target demotes the env anchor for a ``get_base_path`` call that passes no anchor.
+
+        This row measures the ``get_base_path`` leg only. The verb leg — where
+        ``target_context.resolve_context`` must not fold the env value into an
+        explicit anchor — is pinned in ``test_target_context.py``
+        (``test_a_declared_target_does_not_fold_in_the_env_anchor``).
 
         The env var points at a bundles-less directory and a cache is present, so
         anchor-promotion would RAISE (the explicit-anchor contract skips the
