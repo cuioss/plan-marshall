@@ -1423,9 +1423,9 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transi
   --completed 5-execute
 ```
 
-This automatically updates status.json and moves to the next phase.
+**On any non-`success` result, the phase did NOT advance.** Apply the [refused-transition halt rule](../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule): ANY result whose `status` is not `success` — exit 1 or exit 0, `status: drift` included — emits the `[ERROR]` work-log line carrying the refusal payload verbatim, reads no auto-continue config, and returns the structured error payload (§ Error Handling) carrying the transition's refusal payload verbatim. This leaf performs no recovery itself: the orchestrator's [`execution.md`](../plan-marshall/workflow/execution.md) § "Execute Phase Completion" routing — including the two tree-state recovery codes — decides the next move.
 
-**After transition**, check `finalize_without_asking` config:
+**After a `status: success` transition**, check `finalize_without_asking` config:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize get --field finalize_without_asking

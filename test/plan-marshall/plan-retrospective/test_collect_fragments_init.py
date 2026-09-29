@@ -3,7 +3,7 @@
 
 Its sections, in order:
 
-* init — live mode
+* init — live mode (including the stale-fragment cleanup)
 * init — archived mode
 * add — happy path
 * add — fault paths
@@ -78,27 +78,15 @@ class TestInitLiveMode:
         # Stale content is replaced with the meta-only bundle.
         assert parsed == {'_meta': {'mode': 'live'}}
 
-
-# =============================================================================
-# init — archived mode
-# =============================================================================
-
-
-class TestInitArchivedMode:
-    """Archived-mode init now honours ``--archived-plan-path``.
-
-    When the caller passes ``--archived-plan-path``, the bundle is created at
-    ``<archived_plan_path>/work/retro-fragments.toon`` so that
-    ``init``/``add``/``finalize`` from the same caller all converge on the
-    same bundle root. When the flag is omitted, archived mode falls back to a
-    synthetic per-plan tmp directory so production audits without an explicit
-    archive path never write into a real archived plan dir.
-    """
-
-    def test_honours_archived_plan_path_when_provided(self, tmp_path):
-        plan_id = 'archived-honored'
-        archived_plan_path = tmp_path / '2026-04-27-archived-honored'
-        archived_plan_path.mkdir(parents=True, exist_ok=True)
+    def test_init_removes_stale_fragment_files_from_a_previous_run(self, tmp_path, monkeypatch):
+        # A prior run's fragment left beside a fresh bundle is read by its fixed
+        # name (Rule M6 reads fragment-artifact-consistency.toon unconditionally),
+        # so it would be reported as this run's output unless init clears it.
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        fragment_dir = plan_dir / 'work'
+        fragment_dir.mkdir(parents=True, exist_ok=True)
+        stale_fragment = fragment_dir / 'fragment-artifact-consistency.toon'
+        stale_fragment.write_text('status: success\n', encoding='utf-8')
 
         result = run_script(
             SCRIPT_PATH,
@@ -106,28 +94,77 @@ class TestInitArchivedMode:
             '--plan-id',
             plan_id,
             '--mode',
+            'live',
+        )
+
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['status'] == 'success'
+        assert not stale_fragment.exists()
+        assert data['removed_fragment_count'] == 1
+        assert data['removed_fragments'] == ['fragment-artifact-consistency.toon']
+
+    def test_init_leaves_non_fragment_files_in_the_fragment_dir_untouched(self, tmp_path, monkeypatch):
+        # Control: only fragment-*.toon files are cleared — any other file that
+        # shares the directory with a stale fragment survives init byte-for-byte.
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        fragment_dir = plan_dir / 'work'
+        fragment_dir.mkdir(parents=True, exist_ok=True)
+        stale_fragment = fragment_dir / 'fragment-plan-efficiency.toon'
+        stale_fragment.write_text('status: success\n', encoding='utf-8')
+        unrelated = fragment_dir / 'notes-artifact-consistency.toon'
+        unrelated.write_text('keep: me\n', encoding='utf-8')
+
+        result = run_script(
+            SCRIPT_PATH,
+            'init',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+        )
+
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['status'] == 'success'
+        assert not stale_fragment.exists()
+        assert unrelated.read_text(encoding='utf-8') == 'keep: me\n'
+        assert data['removed_fragment_count'] == 1
+        assert data['removed_fragments'] == ['fragment-plan-efficiency.toon']
+
+
+# =============================================================================
+# init — archived mode
+# =============================================================================
+
+
+class TestInitArchivedMode:
+    """Archived-mode init roots the bundle in a synthetic per-plan tmp directory.
+
+    The archived plan directory is the audit's read-only input, so the bundle
+    is never created inside it; the synthetic root is keyed on ``--plan-id``
+    alone, which is what lets ``add``/``register``/``finalize`` locate it.
+    """
+
+    def test_rejects_an_archived_plan_path_override(self, tmp_path):
+        archived_plan_path = tmp_path / '2026-04-27-archived'
+        archived_plan_path.mkdir(parents=True, exist_ok=True)
+
+        result = run_script(
+            SCRIPT_PATH,
+            'init',
+            '--plan-id',
+            'archived-override',
+            '--mode',
             'archived',
             '--archived-plan-path',
             str(archived_plan_path),
         )
 
-        assert result.success, result.stderr
-        data = result.toon()
-        bundle_path = Path(data['bundle_path']).resolve()
-        # Bundle now lives under the caller-supplied archive root.
-        # Resolve both sides because resolve_bundle_path canonicalizes paths
-        # (macOS /var → /private/var symlink) and pytest's tmp_path on Linux
-        # may share /tmp with tempfile.gettempdir().
-        assert bundle_path == (archived_plan_path / 'work' / 'retro-fragments.toon').resolve()
-        assert bundle_path.exists()
-        # OS-tmp synthetic fallback is NOT used when --archived-plan-path is
-        # provided. Check the synthetic path specifically rather than
-        # tempfile.gettempdir() — on Linux, pytest's tmp_path lives under
-        # /tmp, so a generic "tempdir not an ancestor" assertion fails there.
-        synthetic_root = (Path(tempfile.gettempdir()) / 'plan-retrospective' / f'plan-{plan_id}').resolve()
-        assert synthetic_root not in bundle_path.parents
+        assert not result.success
+        assert not (archived_plan_path / 'work').exists()
 
-    def test_falls_back_to_synthetic_tmp_when_archived_plan_path_missing(self):
+    def test_creates_the_bundle_in_the_synthetic_tmp_root(self):
         # The synthetic fallback root is keyed on plan_id
         # (<tmp>/plan-retrospective/plan-<plan_id>), so a fixed plan_id makes
         # the synthetic path shared state across test runs — a leftover from

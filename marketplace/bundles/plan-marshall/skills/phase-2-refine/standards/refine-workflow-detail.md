@@ -100,6 +100,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transi
   --completed 2-refine
 ```
 
+**On any non-`success` result**, refine did NOT advance: apply the [refused-transition halt rule](../../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule) — emit the `[ERROR]` work-log line carrying the refusal payload verbatim and return it as this phase's error return instead of `status: success`. Do NOT log completion or emit the separator.
+
 Log phase completion:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -945,6 +947,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transi
   --plan-id {plan_id} \
   --completed 2-refine
 ```
+
+**On any non-`success` result**, refine did NOT advance: apply the [refused-transition halt rule](../../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule) — emit the `[ERROR]` work-log line carrying the refusal payload verbatim and return it as this phase's error return instead of the Step 13 `status: success` output. Do NOT log completion or emit the separator.
 
 **After successful transition**, log phase completion:
 

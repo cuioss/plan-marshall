@@ -19,22 +19,6 @@ from _plan_retrospective_fixtures import setup_archived_plan, setup_live_plan
 from conftest import run_script
 
 
-class TestFaultPaths:
-    def test_missing_fragments_file_errors(self, tmp_path, monkeypatch):
-        plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
-        result = run_script(
-            SCRIPT_PATH,
-            'run',
-            '--plan-id',
-            plan_id,
-            '--mode',
-            'live',
-            '--fragments-file',
-            str(tmp_path / 'does-not-exist.toon'),
-        )
-        assert not result.success
-
-
 class TestSessionIdPassthrough:
     def test_session_id_written_to_header_when_provided(self, tmp_path, monkeypatch):
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)

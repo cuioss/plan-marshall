@@ -264,6 +264,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transi
   --plan-id {plan_id} --completed 3-outline
 ```
 
+**On any non-`success` result, STOP** per the [refused-transition halt rule](../../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule): the phase did NOT advance, so emit the `[ERROR]` work-log line carrying the refusal payload verbatim and surface it to the operator — do NOT run the metrics boundary, the handshake capture, or the Step 3 review gate below.
+
 **Metrics**: After outline completes, record the `3-outline → 4-plan` boundary
 in a single fused call (forwarding the aggregated `<usage>` data from every
 dispatch spawned during this phase — the `phase-3-outline` outline envelope,
@@ -461,7 +463,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics reco
 
 Substitute the `--termination-cause` value with the canonical cause from the table above and `{n}` with the integer parsed from the phase-4-plan agent's `<usage>...</usage>` block (use `0` when the field is absent).
 
-**Post-return q-gate-validation dispatch (conditional)**: Read `qgate_validation_required` from the phase return TOON captured above. phase-4-plan already folds the operator's `plan.phase-4-plan.q_gate_validation` knob into this flag (Step 8b B1: `off` ⇒ `false`; `once`/`until_clean` ⇒ `true`, subject to the B2 surgical bypass). When `true`, dispatch q-gate-validation as a sibling top-level Task at the orchestrator layer — the phase body cannot spawn it because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. This is the FIRST q-gate-validation pass and always runs unconditionally when the flag is `true` (it is never content-gated — only re-runs in the auto-loop below are). When `false` or absent (`q_gate_validation == off`, surgical bypass, or unrecoverable error path), skip this block and continue directly to the Metrics fused-call below.
+**Post-return q-gate-validation dispatch (conditional)**: Read `qgate_validation_required` from the phase return TOON captured above. phase-4-plan already folds the operator's `plan.phase-4-plan.q_gate_validation` knob into this flag (Step 8b B1: `off` ⇒ `false`; `once`/`until_clean` ⇒ `true`, subject to the B2 surgical bypass). When `true`, dispatch q-gate-validation as a sibling top-level Task at the orchestrator layer — the phase body cannot spawn it because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. This is the FIRST q-gate-validation pass and always runs unconditionally when the flag is `true` (it is never content-gated — only re-runs in the auto-loop below are). When `false` or absent (`q_gate_validation == off`, surgical bypass, or unrecoverable error path), skip this block and continue directly to the Phase handshake capture below.
 
 Resolve the dispatch target via the same role used for phase-4-plan (q-gate-validation tracks the calling phase's default):
 
@@ -497,20 +499,7 @@ Task: plan-marshall:{target}
     validators: [module-mapping-validator, scope-criterion-validator]
 ```
 
-The agent returns `qgate_pending_count` in its TOON. ADD that value to the `qgate_pending_count` already returned by phase-4-plan so the combined aggregate drives the existing 3-iteration auto-loop predicate. The loop behaviour follows the same `plan.phase-4-plan.q_gate_validation` knob folded into `qgate_validation_required` above: under **`once`** (default) do NOT auto-loop — the single validation pass is the contract and any remaining findings surface at the next operator gate; under **`until_clean`** re-dispatch phase-4-plan via the same envelope used in Step 4 when the combined count is non-zero, up to `max_iterations`. Evaluate the exit gates FIRST on each pass, before any loop re-entry or break: guard every q-gate-validation re-dispatch in the `until_clean` loop with the whole-outline content-hash re-run gate (the `__whole_outline__` row in `work/deliverable-hashes.toon`, written by q-gate-validation.md Step 3.5): when the outline/task-plan content is unchanged since the last validated pass, SKIP the re-dispatch — the deterministic validators would return an identical result on identical input — leaving the combined pending count at its current (possibly non-zero) value and breaking the loop. Unify the post-loop exit on the pending COUNT, not on how the loop terminated: proceed past the Q-Gate loop (to the Metrics fused-call and the Step 4b transition below) ONLY when the combined `qgate_pending_count == 0`; ANY exit with a non-zero count — the hash-unchanged break (unchanged-and-pending) just as much as iteration exhaustion — escalates to the user (present the remaining findings and ask how to proceed), closing the unchanged-and-pending gap. Fold the q-gate-validation `<usage>` data into the per-phase running totals so it lands in the fused `phase-boundary` metrics call below.
-
-**Metrics**: After the plan agent completes, record the `4-plan → 5-execute`
-boundary in a single fused call (forwarding the aggregated `<usage>` data
-from every dispatch spawned during this phase — the `phase-4-plan` envelope
-itself plus the sibling orchestrator-level q-gate-validation dispatch above
-when `qgate_validation_required` was `true`):
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phase-boundary \
-  --plan-id {plan_id} --prev-phase 4-plan --next-phase 5-execute \
-  --total-tokens {sum of total_tokens from all agent <usage> tags} \
-  --duration-ms {sum of duration_ms from all agent <usage> tags} \
-  --tool-uses {sum of tool_uses from all agent <usage> tags}
-```
+The agent returns `qgate_pending_count` in its TOON. ADD that value to the `qgate_pending_count` already returned by phase-4-plan so the combined aggregate drives the existing 3-iteration auto-loop predicate. The loop behaviour follows the same `plan.phase-4-plan.q_gate_validation` knob folded into `qgate_validation_required` above: under **`once`** (default) do NOT auto-loop — the single validation pass is the contract and any remaining findings surface at the next operator gate; under **`until_clean`** re-dispatch phase-4-plan via the same envelope used in Step 4 when the combined count is non-zero, up to `max_iterations`. Evaluate the exit gates FIRST on each pass, before any loop re-entry or break: guard every q-gate-validation re-dispatch in the `until_clean` loop with the whole-outline content-hash re-run gate (the `__whole_outline__` row in `work/deliverable-hashes.toon`, written by q-gate-validation.md Step 3.5): when the outline/task-plan content is unchanged since the last validated pass, SKIP the re-dispatch — the deterministic validators would return an identical result on identical input — leaving the combined pending count at its current (possibly non-zero) value and breaking the loop. Unify the post-loop exit on the pending COUNT, not on how the loop terminated: proceed past the Q-Gate loop (to the Phase handshake capture and the Step 4b transition below) ONLY when the combined `qgate_pending_count == 0`; ANY exit with a non-zero count — the hash-unchanged break (unchanged-and-pending) just as much as iteration exhaustion — escalates to the user (present the remaining findings and ask how to proceed), closing the unchanged-and-pending gap. Fold the q-gate-validation `<usage>` data into the per-phase running totals so it lands in the fused `phase-boundary` metrics call below.
 
 **Phase handshake**: Capture invariants for the just-completed phase. The `5-execute` entry verifies this row before the task loop runs (see `workflow/execution.md`):
 
@@ -569,6 +558,23 @@ Do NOT call `manage-status transition` to 5-execute. Do NOT proceed to Step 4c. 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \
   --plan-id {plan_id} --completed 4-plan
+```
+
+**On any non-`success` result, STOP** per the [refused-transition halt rule](../../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule): the phase did NOT advance, so emit the `[ERROR]` work-log line carrying the refusal payload verbatim and surface it to the operator — do NOT record the metrics boundary below, do NOT read the Step 4c auto-continue gate, and do NOT load the execute workflow.
+
+**Metrics** (reached only from a `status: success` transition): record the
+`4-plan → 5-execute` boundary in a single fused call (forwarding the
+aggregated `<usage>` data from every dispatch spawned during this phase — the
+`phase-4-plan` envelope itself plus the sibling orchestrator-level
+q-gate-validation dispatch above when `qgate_validation_required` was `true`).
+Recording it before the transition succeeds would close `4-plan` and open
+`5-execute` in the metrics while the plan stays in `4-plan`:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phase-boundary \
+  --plan-id {plan_id} --prev-phase 4-plan --next-phase 5-execute \
+  --total-tokens {sum of total_tokens from all agent <usage> tags} \
+  --duration-ms {sum of duration_ms from all agent <usage> tags} \
+  --tool-uses {sum of tool_uses from all agent <usage> tags}
 ```
 
 **Step 4c**: Check `execute_without_asking` config to determine next action:

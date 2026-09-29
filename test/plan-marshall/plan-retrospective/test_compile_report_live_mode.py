@@ -267,16 +267,19 @@ class TestStrippedArchiveIntegration:
     silent-swallow.
     """
 
-    def test_full_retrospective_on_stripped_archive(self, tmp_path):
+    def test_full_retrospective_on_stripped_archive(self, tmp_path, monkeypatch):
         # copy the committed fixture so the test never mutates the
-        # checked-in tree. Use a unique plan_id to avoid collisions with
-        # the OS-tmp bundle path used by collect-fragments in archived
-        # mode (``/tmp/plan-retrospective/retro-fragments-<plan_id>.toon``).
+        # checked-in tree. collect-fragments roots an archived-mode bundle
+        # under the OS tmpdir, so point that at a per-test directory to keep
+        # the bundle out of shared state.
         archived = tmp_path / 'archived-plan-copy'
         shutil.copytree(_STRIPPED_ARCHIVE_FIXTURE, archived)
+        os_tmp = tmp_path / 'os-tmp'
+        os_tmp.mkdir()
+        monkeypatch.setenv('TMPDIR', str(os_tmp))
         plan_id = 'stripped-archive-integration-test'
 
-        # init the bundle in archived mode.
+        # init the bundle in archived mode — keyed on --plan-id alone.
         result_init = run_script(
             _COLLECT_FRAGMENTS_SCRIPT,
             'init',
@@ -284,10 +287,9 @@ class TestStrippedArchiveIntegration:
             plan_id,
             '--mode',
             'archived',
-            '--archived-plan-path',
-            str(archived),
         )
         assert result_init.success, result_init.stderr
+        assert not Path(result_init.toon()['bundle_path']).resolve().is_relative_to(archived.resolve())
 
         # Register one fragment per registerable registry key. The population is
         # DERIVED from the live ``SECTION_SPEC`` rather than hand-listed, so a
@@ -320,8 +322,6 @@ class TestStrippedArchiveIntegration:
                 'add',
                 '--plan-id',
                 plan_id,
-                '--archived-plan-path',
-                str(archived),
                 '--aspect',
                 aspect,
                 '--fragment-file',
@@ -335,8 +335,6 @@ class TestStrippedArchiveIntegration:
             'finalize',
             '--plan-id',
             plan_id,
-            '--archived-plan-path',
-            str(archived),
         )
         assert result_finalize.success, result_finalize.stderr
         finalize_data = result_finalize.toon()

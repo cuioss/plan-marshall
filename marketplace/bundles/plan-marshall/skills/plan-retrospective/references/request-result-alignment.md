@@ -60,11 +60,11 @@ goal: "{goal text, truncated to 80 chars}"
 
 ## Persistence
 
-After synthesizing the TOON fragment per the shape documented above, the orchestrator writes the fragment to `work/fragment-request-result-alignment.toon` via the `Write` tool and registers it with the bundle:
+After synthesizing the TOON fragment per the shape documented above, the orchestrator writes the fragment to `{fragment_dir}/fragment-request-result-alignment.toon` via the `Write` tool and registers that same path with the bundle. `{fragment_dir}` is defined in [SKILL.md § Step 3](../SKILL.md#step-3-dispatch-aspects-in-order):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments add \
-  --plan-id {plan_id} --aspect request-result-alignment --fragment-file work/fragment-request-result-alignment.toon
+  --plan-id {plan_id} --aspect request-result-alignment --fragment-file {fragment_dir}/fragment-request-result-alignment.toon
 ```
 
 `compile-report run --fragments-file` consumes the assembled bundle in Step 4 of SKILL.md. The bundle file is auto-deleted on successful report write; on failure it is retained for debugging.

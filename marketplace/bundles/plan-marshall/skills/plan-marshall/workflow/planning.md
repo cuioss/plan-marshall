@@ -254,6 +254,8 @@ Extract `value` (`light` or `deep`). When the field is absent or unresolved, tre
      --plan-id {plan_id} --completed 2-refine
    ```
 
+   **On any non-`success` result, STOP** per the [refused-transition halt rule](../../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule): `2-refine` did NOT close, so emit the `[ERROR]` work-log line carrying the refusal payload verbatim and surface it to the operator — do NOT run (b) or (c) below and do NOT dispatch the light-lane envelope.
+
    b. Record the `2-refine → 3-outline` boundary. **OMIT** the `<usage>`-derived flags (`--total-tokens` / `--tool-uses` / `--duration-ms`): no dispatch has run inside `2-refine` on this lane, so there is no `<usage>` total to forward, and passing `0` would write a fabricated measurement where an absent one is the honest record. This follows the `1-init → 2-refine` boundary call in § Action: init, which omits the same flags for the same reason:
 
    ```bash

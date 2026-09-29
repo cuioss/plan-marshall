@@ -108,13 +108,13 @@ llm_judgement_required: true
 
 ## Persistence
 
-Run the script and register its fragment under the canonical aspect key:
+Run the script, redirecting its fragment to `{fragment_dir}/fragment-outline-vs-shipped.toon`, and register that same path under the canonical aspect key. `{fragment_dir}` is defined in [SKILL.md § Step 3](../SKILL.md#step-3-dispatch-aspects-in-order). In archived mode pass `--archived-plan-path {archived_plan_path}` — the script refuses archived mode without it — and omit it in live modes; the `collect-fragments add` call stays keyed by `--plan-id` alone:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:check-outline-vs-shipped \
-  run --plan-id {plan_id} --mode {live|archived} --diff-file work/footprint.txt > work/fragment-outline-vs-shipped.toon
+  run --plan-id {plan_id} --mode {live|archived} [--archived-plan-path {archived_plan_path}] --diff-file work/footprint.txt > {fragment_dir}/fragment-outline-vs-shipped.toon
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments \
-  add --plan-id {plan_id} --aspect outline-vs-shipped --fragment-file work/fragment-outline-vs-shipped.toon
+  add --plan-id {plan_id} --aspect outline-vs-shipped --fragment-file {fragment_dir}/fragment-outline-vs-shipped.toon
 ```
 
 `--diff-file` is optional and carries the realized footprint one path per line, the same capture the routing-decisions aspect consumes. A relative path resolves against the plan directory first and the cwd second; a supplied path that resolves to nothing **raises** rather than reporting an empty footprint — a could-not-look must not carry a nothing-to-look-at's token. When the flag is absent the footprint is recovered through the shared resolver, and only a still-unresolvable footprint yields `comparison: inconclusive`.

@@ -957,6 +957,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transi
   [--allow-bare-transition --bare-reason REASON]
 ```
 
+**Caller obligation.** Any result whose `status` is not `success` means the phase did NOT advance — the caller stops and applies the [refused-transition halt rule](../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule), never continuing to its next step.
+
 **Phase-completion artifact gate.** Bare `2-refine` / `3-outline` / `4-plan`
 transitions are refused unless the phase artifact exists: `2-refine` requires
 a clarified/confidence record (`request.md` `## Clarified Request` or
@@ -969,6 +971,33 @@ A legitimately artifact-free phase uses the explicit exemption form
 `status.metadata.phase_exemptions[{phase}]` (`{reason, granted_at}`) and is
 decision-logged for retrospectives. An exemption without a reason is refused
 with `missing_exempt_reason`.
+
+#### Refusal surface
+
+No refusal advances the plan: `current_phase` is unchanged and the payload carries **no `mailbox` block**. Two exit codes carry refusals, so a caller branches on `status`, never on the exit code alone:
+
+| Refusal | Exit code | When |
+|---------|-----------|------|
+| `status: drift` (no `error` key) | 1 | Entering a blocking boundary (`5-execute` → `6-finalize`) and the inline strict handshake verify found invariant drift that no scheduled loop-back re-entry covers. |
+| `error` ∈ `VERIFY_REFUSAL_ERRORS` | 1 | Entering a blocking boundary and the inline strict verify or the clean-tree post-condition refused. The member set is the `VERIFY_REFUSAL_ERRORS` constant in `scripts/_cmd_lifecycle.py` — the single source of truth, not restated here. |
+| The failed re-capture's own payload | 1 when it is `status: drift` or its `error` ∈ `VERIFY_REFUSAL_ERRORS`, else 0 | Entering a blocking boundary on drift with a scheduled loop-back re-entry marker, and the auto-override re-capture did not succeed; its payload is returned verbatim (fail closed). |
+| `error: phases_unexaminable` | 0 | The `phases` structure could not be read in full (absent, not a list, a row that is not a mapping, a row without a non-empty string `name`, or a status outside the declared vocabulary). Carries `unexaminable[]` naming each malformed part. |
+| `error: invalid_phase` | 0 | `--completed` names no phase in the plan's `phases`. |
+| `error: refine_bare_transition` / `outline_bare_transition` / `plan_bare_transition` | 0 | The phase-completion artifact gate above refused a bare transition. |
+| `error: missing_exempt_reason` | 0 | `--allow-bare-transition` was passed without a `--bare-reason`. |
+| `error: blocking_findings_present` | 0 | Completing `6-finalize` while an actionable finding is still pending. |
+
+A caller that reads only the exit code sees the exit-0 refusals as success; a caller that reads only an `error` key misses `status: drift`. The [refused-transition halt rule](../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule) is the single statement of what every caller does with any non-`success` result.
+
+**Output — refused, unexaminable `phases`** (TOON, nothing written):
+```toon
+status: error
+plan_id: my-feature
+error: phases_unexaminable
+unexaminable[1]:
+  - "phases[2] carries name None, not a non-empty string"
+message: "Refusing to transition 'my-feature': its phases could not be read in full ..."
+```
 
 **Output** (TOON):
 ```toon
@@ -1525,6 +1554,8 @@ See § [census](#census) under Operations for the cohort table, the population-m
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \
   --plan-id PLAN_ID --completed PHASE [--allow-bare-transition --bare-reason REASON]
 ```
+
+Any non-`success` result means the phase did NOT advance: the caller applies the [refused-transition halt rule](../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule). See [Refusal surface](#refusal-surface) for refusal codes and their exit codes.
 
 ### archive
 

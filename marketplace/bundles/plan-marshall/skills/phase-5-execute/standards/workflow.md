@@ -7,7 +7,7 @@ Every `manage-*` script call in this document carries the following exit-code co
 - **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
 - **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
 
-Step-level exceptions — calls whose non-zero exit is itself the signal (e.g., `manage-files exists` returning `exists: false`) — are documented inline in the step that issues them.
+Step-level exceptions — calls whose non-zero exit is itself the signal (e.g., `manage-files exists` returning `exists: false`, or a refused `manage-status transition --completed` whose refusal payload rides on stdout) — are documented inline in the step that issues them. The [Phase Transition](#phase-transition) step is one such exception.
 
 ## Execution Pattern
 
@@ -147,28 +147,29 @@ The `manage-execution-manifest` skill's [decision-rules.md](../../manage-executi
 
 When all tasks in phase complete:
 
-1. **Automatic file collection** (execute phase):
-   - `manage-status transition` collects modified files
-   - Updates `references.json` with changed files
+1. **Transition the phase**:
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition --plan-id {plan_id} --completed {phase}
    ```
 
-2. **Auto-transition** to next phase:
+   **Step-level exception to the exit-code convention above**: a refused transition can exit `1` with its refusal payload on stdout, so the stop-and-return-stderr rule does NOT apply to this call — read the stdout TOON on ANY exit code and branch on its `status`. On any non-`success` result the phase did NOT advance: apply the [refused-transition halt rule](../../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule) — emit the `[ERROR]` work-log line carrying the refusal payload verbatim and return it as this leaf's structured error payload. Items 2 and 3 below do not apply.
+
+2. **Auto-transition** to next phase on a `status: success` transition only:
    - execute → finalize
    - finalize → complete
 
-3. **No user prompt** for transitions (continuous execution)
+3. **No user prompt** for a successful transition — a refused one stops
 
 ## Auto-Continue Rules
 
 **Continue without prompting**:
 - Task completion
-- Phase transition
+- Phase transition that returned `status: success`
 - Routine operations
 
 **Stop and prompt when**:
 - Error blocks progress
+- A phase transition was refused (any non-`success` result)
 - Multiple valid approaches exist
 - User explicitly requested confirmation
 

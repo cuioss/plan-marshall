@@ -257,18 +257,7 @@ class TestResolveBundlePath:
 
         assert path == plan_dir / 'work' / 'retro-fragments.toon'
 
-    def test_archived_mode_uses_archived_plan_path_when_provided(self, tmp_path):
-        # resolve archived_plan_path to match resolve_bundle_path's
-        # canonical-absolute return contract (macOS /var → /private/var).
-        module = _load_module()
-        archived_plan_path = (tmp_path / '2026-04-27-plan').resolve()
-
-        path = module.resolve_bundle_path('archived', 'some-plan', str(archived_plan_path))
-
-        # bundle now lives under the caller-supplied archive root.
-        assert path == archived_plan_path / 'work' / 'retro-fragments.toon'
-
-    def test_archived_mode_falls_back_to_synthetic_tmp_when_no_archived_path(self):
+    def test_archived_mode_resolves_to_the_synthetic_tmp_root(self):
         module = _load_module()
 
         path = module.resolve_bundle_path('archived', 'some-plan')

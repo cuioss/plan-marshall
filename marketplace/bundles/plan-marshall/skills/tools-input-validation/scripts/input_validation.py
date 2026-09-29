@@ -981,6 +981,53 @@ def _root_router_option_strings(parser) -> set[str]:
     return options
 
 
+def _root_router_value_option_strings(parser) -> set[str]:
+    """Return the root router flags that take a value (every one whose ``nargs`` is not 0).
+
+    A boolean router flag (``store_true`` and friends) declares ``nargs=0`` and
+    never carries a value, so a bare occurrence of it is complete. A value-taking
+    one written bare — with nothing, or only another flag, after it — is missing
+    its value, and moving it ahead of the verb would make argparse read the verb
+    as that value.
+    """
+    boolean_flags = {
+        option for action in getattr(parser, '_actions', []) if action.nargs == 0 for option in action.option_strings
+    }
+    return _root_router_option_strings(parser) - boolean_flags
+
+
+def _router_flags_missing_value(argv: list[str], misplaced: list[str], value_flags: set[str]) -> list[str]:
+    """Return the misplaced value-taking router flags ``argv`` writes with no value, in order.
+
+    A flag carries a value when it is written ``--flag=value`` or is followed by a
+    token that is not itself a flag. Boolean router flags are never reported.
+    """
+    missing: list[str] = []
+    for idx, token in enumerate(argv):
+        name, has_equals, _ = token.partition('=')
+        if name not in misplaced or name not in value_flags or has_equals or name in missing:
+            continue
+        following = argv[idx + 1] if idx + 1 < len(argv) else None
+        if following is None or following.startswith('-'):
+            missing.append(name)
+    return missing
+
+
+def _missing_value_remedy(missing: list[str]) -> str:
+    """Describe a misplaced router flag written without its value — deliberately with no command.
+
+    Moving such a flag ahead of the verb would make argparse consume the verb as
+    its value, so any "corrected" command built from the caller's argv would
+    still fail. The remedy names the missing value instead of printing one.
+    """
+    named = ', '.join(missing)
+    return (
+        f'{named} takes a value, but none follows it, so no corrected command can be built from '
+        f'this invocation: moved ahead of the verb as written, the verb would be read as its value. '
+        f'Supply the value, then place the flag before the subcommand (verb).'
+    )
+
+
 def _move_router_flags_first(argv: list[str], misplaced: list[str]) -> list[str]:
     """Return ``argv`` with every misplaced router flag moved ahead of the verb.
 
@@ -1004,6 +1051,49 @@ def _move_router_flags_first(argv: list[str], misplaced: list[str]) -> list[str]
     return moved + rest
 
 
+def _misplaced_router_flags(message: str, router_flags: set[str]) -> list[str]:
+    """Return the router flags an ``unrecognized arguments`` rejection names, in order.
+
+    Returns ``[]`` when the message is not an ``unrecognized arguments`` failure
+    or names no declared router flag — a genuinely-unknown flag is not misplaced.
+    """
+    prefix = 'unrecognized arguments: '
+    if not message.startswith(prefix):
+        return []
+    misplaced: list[str] = []
+    for token in message[len(prefix) :].split():
+        name = token.split('=', 1)[0]
+        if name in router_flags and name not in misplaced:
+            misplaced.append(name)
+    return misplaced
+
+
+def _corrected_invocation(
+    misplaced: list[str],
+    prog: str,
+    *,
+    notation: str | None = None,
+    argv: list[str] | None = None,
+) -> str:
+    """Render the caller's invocation with every misplaced router flag moved ahead of the verb.
+
+    ``notation`` renders the command through this repository's script-execution
+    convention (``python3 .plan/execute-script.py {notation} …``); ``prog`` is the
+    fallback for a caller that supplies none. Without ``argv`` the example falls
+    back to a ``<subcommand>`` placeholder.
+    """
+    invocation = f'python3 .plan/execute-script.py {notation}' if notation else prog
+    if argv:
+        # ``shlex.join`` on the ARGUMENTS, not on the invocation: the corrected
+        # example is meant to be copied and run, and a value carrying a space or
+        # a shell metacharacter (`--title "a b"`, `--body $x`) would otherwise be
+        # re-split or expanded into a different command than the one the caller
+        # typed. The invocation prefix is composed here and never user data, so
+        # quoting it would only add noise.
+        return f'{invocation} {shlex.join(_move_router_flags_first(list(argv), misplaced))}'
+    return f'{invocation} {misplaced[0]} VALUE <subcommand> ...'
+
+
 def _augment_misplaced_router_flag(
     message: str,
     router_flags: set[str],
@@ -1011,6 +1101,7 @@ def _augment_misplaced_router_flag(
     *,
     notation: str | None = None,
     argv: list[str] | None = None,
+    value_flags: set[str] | frozenset[str] = frozenset(),
 ) -> str:
     """Append a positional-fix note when an ``unrecognized arguments`` error names a router flag.
 
@@ -1038,38 +1129,30 @@ def _augment_misplaced_router_flag(
     bare script filename: a spelling the convention forbids and no caller may
     run.
 
+    ``value_flags`` names the router flags that take a value. When one of the
+    misplaced flags is one of them and the caller's ``argv`` writes it with no
+    value, the note carries no example at all and names the missing value
+    instead: moved ahead of the verb as written, the flag would consume the verb
+    as its value, so any command built from that ``argv`` would still fail.
+
     Returns ``message`` unchanged when the error is not an
     ``unrecognized arguments`` failure or names no known router flag, so a
     genuinely-unknown flag still gets argparse's default rejection.
     """
-    prefix = 'unrecognized arguments: '
-    if not message.startswith(prefix):
-        return message
-    misplaced: list[str] = []
-    for token in message[len(prefix) :].split():
-        name = token.split('=', 1)[0]
-        if name in router_flags and name not in misplaced:
-            misplaced.append(name)
+    misplaced = _misplaced_router_flags(message, router_flags)
     if not misplaced:
         return message
     named = ', '.join(misplaced)
-    invocation = f'python3 .plan/execute-script.py {notation}' if notation else prog
-    if argv:
-        # ``shlex.join`` on the ARGUMENTS, not on the invocation: the corrected
-        # example is meant to be copied and run, and a value carrying a space or
-        # a shell metacharacter (`--title "a b"`, `--body $x`) would otherwise be
-        # re-split or expanded into a different command than the one the caller
-        # typed. The invocation prefix is composed here and never user data, so
-        # quoting it would only add noise.
-        example = f'{invocation} {shlex.join(_move_router_flags_first(list(argv), misplaced))}'
-    else:
-        example = f'{invocation} {misplaced[0]} VALUE <subcommand> ...'
-    return (
+    lead = (
         f'{message}\n'
         f'note: {named} is a top-level flag and belongs BEFORE the subcommand (verb), '
         f'not after it. The flag exists — it is only in the wrong position. '
-        f'Move it ahead of the verb, e.g. `{example}`.'
     )
+    missing = _router_flags_missing_value(list(argv or []), misplaced, set(value_flags))
+    if missing:
+        return lead + _missing_value_remedy(missing)
+    example = _corrected_invocation(misplaced, prog, notation=notation, argv=argv)
+    return lead + f'Move it ahead of the verb, e.g. `{example}`.'
 
 
 def parse_args_with_toon_errors(
@@ -1091,9 +1174,16 @@ def parse_args_with_toon_errors(
     parser AND every subparser registered under it. The override scans the
     formatted error message for any of the known identifier flags
     (``--plan-id``, ``--lesson-id``, …) and, when one matches, emits the
-    canonical TOON error and exits with code 0. All other argparse errors
-    (missing subcommand, unknown flag, etc.) fall through to the original
-    behaviour.
+    canonical TOON error and exits with code 0. An ``unrecognized arguments``
+    rejection that names a router flag first prints a stdout TOON
+    (``status: error / error: misplaced_router_flag``, ``flags``, and a
+    ``message`` carrying the caller's command with the flags moved ahead of the
+    verb), then falls through to argparse's rejection, so stderr and exit 2 are
+    unchanged. When a misplaced value-taking router flag is written with no
+    value, the TOON instead carries ``missing_value`` and a ``message`` naming the
+    missing value, and neither channel prints a command — moved as written, the
+    flag would consume the verb as its value. All other argparse errors (missing subcommand, unknown flag,
+    etc.) fall through to the original behaviour with nothing on stdout.
 
     ``notation`` is the executor notation of the script being invoked. Supplying
     it makes the misplaced-router-flag note render its worked example through
@@ -1122,6 +1212,9 @@ def parse_args_with_toon_errors(
     # rejection of a misplaced router flag into a message that names the fix
     # instead of the flag alone.
     router_flags = _root_router_option_strings(parser) | set(extra_router_flags)
+    # The router flags that take a value. ``extra_router_flags`` are all
+    # value-taking (``--plan-id`` / ``--project-dir``), so they join the set.
+    value_flags = _root_router_value_option_strings(parser) | set(extra_router_flags)
     root_prog = parser.prog
 
     def make_toon_error(orig):
@@ -1153,13 +1246,35 @@ def parse_args_with_toon_errors(
             # flag placed after the verb is rejected as "unrecognized arguments",
             # a message that hides the fact that the flag exists and merely sits
             # in the wrong position.
+            argv = sys.argv[1:]
+            misplaced = _misplaced_router_flags(message, router_flags)
+            if misplaced:
+                # A caller that parses stdout — the channel every executor
+                # refusal arrives on — would otherwise see nothing actionable:
+                # argparse's rejection below goes to stderr only. Emit the
+                # corrective there as well; stderr and exit 2 stay unchanged. A
+                # value-taking flag written with no value gets no command at all:
+                # moving it would make argparse read the verb as its value.
+                missing = _router_flags_missing_value(argv, misplaced, value_flags)
+                payload: dict[str, object] = {
+                    'status': 'error',
+                    'error': 'misplaced_router_flag',
+                    'flags': misplaced,
+                }
+                if missing:
+                    payload['missing_value'] = missing
+                    payload['message'] = _missing_value_remedy(missing)
+                else:
+                    payload['message'] = _corrected_invocation(misplaced, root_prog, notation=notation, argv=argv)
+                print(serialize_toon(payload))
             orig(
                 _augment_misplaced_router_flag(
                     message,
                     router_flags,
                     root_prog,
                     notation=notation,
-                    argv=sys.argv[1:],
+                    argv=argv,
+                    value_flags=value_flags,
                 )
             )
 

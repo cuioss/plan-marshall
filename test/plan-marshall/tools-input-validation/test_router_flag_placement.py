@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the misplaced-router-flag argparse message (D6).
+"""Tests for the misplaced-router-flag argparse rejection.
 
 A top-level router flag (declared on the root parser, ahead of the subparsers)
 is accepted by argparse only BEFORE the subcommand. Placed after the verb it is
 rejected with ``unrecognized arguments: --flag`` — a message that names the flag
 but reads as "this flag does not exist", sending the caller to search an argparse
-table the flag is (correctly) absent from at that level. The augmented message
-states the flag exists and belongs before the verb.
+table the flag is (correctly) absent from at that level. The augmented stderr
+message states the flag exists and belongs before the verb, and the same
+corrective is printed on stdout as an ``error: misplaced_router_flag`` TOON for
+callers that parse stdout; exit 2 is preserved.
 """
 
 import argparse
@@ -18,6 +20,7 @@ from input_validation import (
     _root_router_option_strings,
     parse_args_with_toon_errors,
 )
+from toon_parser import parse_toon
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -245,4 +248,121 @@ def test_real_ci_parser_accepts_a_genuinely_unknown_flag_without_the_note(monkey
     with pytest.raises(SystemExit):
         ci_base.parse_ci_args(parser)
 
-    assert 'belongs BEFORE the subcommand' not in capsys.readouterr().err
+    captured = capsys.readouterr()
+    assert 'belongs BEFORE the subcommand' not in captured.err
+    assert captured.out == ''  # a non-router argparse error prints nothing on stdout
+
+
+# ---------------------------------------------------------------------------
+# The stdout corrective — the channel callers parse for a structured refusal.
+# ---------------------------------------------------------------------------
+def test_real_ci_parser_prints_the_corrected_command_as_a_stdout_toon(monkeypatch, capsys):
+    """An after-verb ``--plan-id`` yields a stdout TOON naming the command to run.
+
+    Stderr and exit 2 are unchanged, so the executor still classifies the call as
+    an argparse rejection; stdout is what a caller that parses results reads.
+    """
+    import ci_base
+
+    monkeypatch.setattr('sys.argv', ['ci', 'pr', 'view', '--pr-number', '7', '--plan-id', 'p1'])
+    parser, *_ = ci_base.build_parser('CI operations')
+
+    with pytest.raises(SystemExit) as excinfo:
+        ci_base.parse_ci_args(parser)
+
+    assert excinfo.value.code == 2
+    captured = capsys.readouterr()
+    payload = parse_toon(captured.out)
+    assert payload['status'] == 'error'
+    assert payload['error'] == 'misplaced_router_flag'
+    assert payload['flags'] == ['--plan-id']
+    assert payload['message'] == (
+        'python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --plan-id p1 pr view --pr-number 7'
+    )
+    assert 'belongs BEFORE the subcommand' in captured.err
+
+
+def test_real_ci_parser_with_the_flag_before_the_verb_prints_no_toon(monkeypatch, capsys):
+    """Control: a command the router already stripped parses and prints nothing."""
+    import ci_base
+
+    monkeypatch.setattr('sys.argv', ['ci', 'pr', 'view', '--pr-number', '7'])
+    parser, *_ = ci_base.build_parser('CI operations')
+
+    ci_base.parse_ci_args(parser)
+
+    assert capsys.readouterr().out == ''
+
+
+def test_every_misplaced_router_flag_is_named_and_moved(monkeypatch, capsys):
+    """Two misplaced router flags are both listed in ``flags`` and both moved ahead of the verb."""
+    monkeypatch.setattr(
+        'sys.argv', ['architecture', 'find', '--pattern', 'x', '--plan-id', 'p1', '--project-dir', '/repo']
+    )
+    with pytest.raises(SystemExit) as excinfo:
+        parse_args_with_toon_errors(_build_parser(), notation='plan-marshall:manage-architecture:architecture')
+
+    assert excinfo.value.code == 2
+    payload = parse_toon(capsys.readouterr().out)
+    assert payload['flags'] == ['--plan-id', '--project-dir']
+    assert payload['message'] == (
+        'python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture '
+        '--plan-id p1 --project-dir /repo find --pattern x'
+    )
+
+
+# ---------------------------------------------------------------------------
+# A misplaced value-taking router flag written with no value gets no command.
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    'tail',
+    [['--plan-id'], ['--plan-id', '--project-dir', '/repo']],
+    ids=['last-token', 'followed-by-a-flag'],
+)
+def test_valueless_router_flag_reports_the_missing_value_and_no_command(monkeypatch, capsys, tail):
+    """Moved as written, ``--plan-id`` would consume the verb as its value, so no command is shown."""
+    monkeypatch.setattr('sys.argv', ['architecture', 'find', '--pattern', 'x', *tail])
+    with pytest.raises(SystemExit) as excinfo:
+        parse_args_with_toon_errors(_build_parser(), notation='plan-marshall:manage-architecture:architecture')
+
+    assert excinfo.value.code == 2
+    captured = capsys.readouterr()
+    payload = parse_toon(captured.out)
+    assert payload['error'] == 'misplaced_router_flag'
+    assert payload['missing_value'] == ['--plan-id']
+    assert 'takes a value' in payload['message']
+    assert 'execute-script.py' not in payload['message']
+    assert 'takes a value' in captured.err
+    assert 'e.g. `' not in captured.err
+
+
+def test_boolean_router_flag_with_nothing_after_it_still_gets_the_corrected_command(monkeypatch, capsys):
+    """Control: a ``store_true`` router flag carries no value, so a bare occurrence is complete."""
+    parser = _build_parser()
+    parser.add_argument('--verbose', action='store_true')
+    monkeypatch.setattr('sys.argv', ['architecture', 'find', '--pattern', 'x', '--verbose'])
+    with pytest.raises(SystemExit):
+        parse_args_with_toon_errors(parser)
+
+    payload = parse_toon(capsys.readouterr().out)
+    assert 'missing_value' not in payload
+    assert payload['message'] == 'architecture --verbose find --pattern x'
+
+
+def test_genuinely_unknown_flag_after_verb_prints_no_toon(monkeypatch, capsys):
+    """Control: an unrecognized flag that is not a router flag keeps stdout empty."""
+    monkeypatch.setattr('sys.argv', ['architecture', 'find', '--pattern', '*.py', '--nope', 'x'])
+    with pytest.raises(SystemExit):
+        parse_args_with_toon_errors(_build_parser())
+
+    assert capsys.readouterr().out == ''
+
+
+def test_missing_required_argument_prints_no_toon(monkeypatch, capsys):
+    """Control: a non-``unrecognized arguments`` rejection keeps stdout empty."""
+    monkeypatch.setattr('sys.argv', ['architecture', 'find'])
+    with pytest.raises(SystemExit) as excinfo:
+        parse_args_with_toon_errors(_build_parser())
+
+    assert excinfo.value.code == 2
+    assert capsys.readouterr().out == ''

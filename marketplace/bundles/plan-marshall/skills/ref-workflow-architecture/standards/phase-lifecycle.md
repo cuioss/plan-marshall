@@ -116,7 +116,29 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transi
 
 Where `{phase_key}` is: `1-init`, `2-refine`, `3-outline`, `4-plan`, `5-execute`, or `6-finalize`.
 
-**Mailbox check-point (`phase-transition`)** — a transition is one of the two moments a running plan changes hands, so it is where a message delivered to that plan can first be noticed. The success payload of the call above carries a `mailbox` block; read it here.
+#### Refused-transition halt rule
+
+The single statement of what every `transition --completed` call site does with the result. Every other call site links this rule instead of restating it.
+
+ANY result whose `status` is not `success` means the phase did **NOT** advance — exit 1 or exit 0, with or without an `error` key (`status: drift` carries none). On such a result:
+
+1. Emit an `[ERROR]` work-log line carrying the refusal payload verbatim:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:{phase_skill}) Transition --completed {phase_key} refused: {refusal_payload}"
+   ```
+
+2. Run **none** of Steps 2-4 below — no completion log, no separator, no handshake capture — and no next-phase step: no auto-continue gate (`plan_without_asking`, `execute_without_asking`, `finalize_without_asking`) is read and no next phase is dispatched.
+3. Hand the refusal on, by context:
+   - A **dispatched leaf** returns its structured error payload carrying the refusal verbatim, instead of its success return. The leaf performs no recovery.
+   - An **inline or orchestrator** context stops and surfaces the refusal to the operator. A site that owns a documented recovery for a named refusal code routes that code; every other refusal halts for the operator.
+
+Refusal codes and their exit codes are not restated here — see [`manage-status/SKILL.md`](../../manage-status/SKILL.md) § `transition` → "Refusal surface".
+
+#### On a successful transition
+
+**Mailbox check-point (`phase-transition`)** — a transition is one of the two moments a running plan changes hands, so it is where a message delivered to that plan can first be noticed. On a `status: success` transition the payload of the call above carries a `mailbox` block; read it here. A refused transition carries none.
 
 - Branch on `mailbox.probe` **before** any count. Only `probe: read` reached the mailbox at all; `not_orchestrated` and `unresolved` publish no count keys, so there is no number to act on and nothing to report as empty.
 - On `probe: read`, a `live_count` above zero means mail is waiting for this plan. Surface it to the user in the phase-completion summary (Step 2) and carry on — the check-point is **advisory**. It never gates the transition, and a mailbox that could not be read degrades this block rather than the phase.

@@ -1093,8 +1093,26 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     if not plan_dir.exists():
         raise ValueError(f'Plan directory does not exist: {plan_dir}')
 
-    fragments = load_fragments(Path(args.fragments_file))
     plan_id = args.plan_id or plan_dir.name
+    fragments_path = Path(args.fragments_file)
+    if not fragments_path.is_file():
+        # A missing bundle is a caller-visible outcome, not a crash: refuse
+        # before any report is written, naming the path that was looked at. A
+        # directory at the path is refused the same way — reading it would
+        # raise instead of returning this result.
+        path_state = 'not_a_file' if fragments_path.exists() else 'absent'
+        state_clause = 'is not a regular file' if path_state == 'not_a_file' else 'does not exist'
+        return {
+            'status': 'error',
+            'error': 'fragments_file_missing',
+            'plan_id': plan_id,
+            'mode': args.mode,
+            'fragments_file': str(fragments_path),
+            'path_state': path_state,
+            'message': f'Fragments bundle {state_clause}: {fragments_path}. No report was written.',
+        }
+
+    fragments = load_fragments(fragments_path)
 
     # Derived here — every fragment is still on disk and the bundle cleanup below
     # has not run. The ordering is load-bearing rather than incidental: this
@@ -1114,7 +1132,6 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     # write. Any error BEFORE this point retains the bundle for debugging
     # (we never reach this cleanup). A missing bundle is a silent no-op;
     # other OSError conditions log a warning to stderr but do NOT abort.
-    fragments_path = Path(args.fragments_file)
     try:
         fragments_path.unlink()
     except FileNotFoundError:

@@ -69,15 +69,16 @@ A plan abandoned mid-lifecycle consequently archives as `current_phase: complete
 
 `_status_core.in_progress_phases` returns an `OpenPhaseScan`, not a list: the phases it positively established as `in_progress`, plus a note per part of the structure it could **not** classify (`phases` absent or not a list, a row that is not a mapping, a row whose `name` is missing / empty / not a string, a row whose `status` is outside `VALID_PHASE_STATUSES`). An empty result therefore no longer answers two questions with one value — `examinable` says whether the answer is complete. The type raises on `bool()` for the same reason: `if not scan:` cannot tell "nothing is open" from "could not look", and that conflation is what let an unreadable record be archived as `complete` and counted as a clean zero.
 
-The two consumers handle the unexaminable result separately, each in the direction its own job demands:
+The three readers handle the unexaminable result separately, each in the direction its own job demands:
 
 | Consumer | On an unexaminable `phases` structure |
 |---|---|
+| `transition` | **Refuses before any mutation** with `error: phases_unexaminable` and the `unexaminable[]` notes. A phase list that cannot be read in full cannot say which phase follows the completed one, so nothing is written and `current_phase` stays unchanged — the refusal carries a code instead of crashing on a row with no readable `name`. |
 | `archive`, **no** `--reason` | **Refuses** with `error: phases_unexaminable`. The gate below cannot establish that `6-finalize` is closed, and a guard whose job is to refuse fails closed rather than falling through. A deliberate `--reason` archive is the recorded way past it. |
 | `archive`, **with** `--reason` | Proceeds, but **preserves** the existing `current_phase` instead of writing `complete`, and reports `phase_closure: partial` with a reason naming the shortfall. |
 | `census` | Counts the plan in `population` (its `status.json` parsed, so it is a member), reports any open phase it did establish, and degrades the cohort to `coverage: partial` with the plan named in `reason` — the same shortfall machinery an unprobeable directory entry already used. |
 
-The predicate behind (1) and (3) is `_status_core.in_progress_phases`, and the `census` verb's open-phase reporting consumes that same function. The set of phases archive closes and the set census reports as open are therefore one answer to one question, rather than two local re-spellings of `status == in_progress` free to drift apart.
+The predicate behind (1) and (3) is `_status_core.in_progress_phases`; the `census` verb's open-phase reporting and the `transition` refusal consume that same function. The set of phases archive closes and the set census reports as open are therefore one answer to one question, rather than two local re-spellings of `status == in_progress` free to drift apart.
 
 #### Deferred requirement: the phase record and the metrics ledger are not cross-checked
 

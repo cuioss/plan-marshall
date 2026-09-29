@@ -85,13 +85,13 @@ snippet: "{trimmed line content, max 200 chars}"
 
 ## Persistence
 
-After running the aspect script, the retrospective orchestrator pipes its stdout to `work/fragment-wrapper-tangle.toon` and registers it with the bundle:
+After running the aspect script, the retrospective orchestrator pipes its stdout to `{fragment_dir}/fragment-wrapper-tangle.toon` and registers that same path with the bundle. `{fragment_dir}` is the binding defined in [`plan-marshall:plan-retrospective` SKILL.md § Step 3](../../../../plan-marshall/skills/plan-retrospective/SKILL.md#step-3-dispatch-aspects-in-order) — it is not redefined here:
 
 ```bash
 python3 .plan/execute-script.py pm-plugin-development:plan-marshall-plugin:wrapper-tangle-scan run \
-  --plan-id {plan_id} --mode live > work/fragment-wrapper-tangle.toon
+  --plan-id {plan_id} --mode {live|archived} [--archived-plan-path {archived_plan_path}] > {fragment_dir}/fragment-wrapper-tangle.toon
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments add \
-  --plan-id {plan_id} --aspect wrapper-tangle --fragment-file work/fragment-wrapper-tangle.toon
+  --plan-id {plan_id} --aspect wrapper-tangle --fragment-file {fragment_dir}/fragment-wrapper-tangle.toon
 ```
 
 `compile-report run --fragments-file` consumes the assembled bundle. The bundle file is auto-deleted on successful report write; on failure it is retained for debugging.
