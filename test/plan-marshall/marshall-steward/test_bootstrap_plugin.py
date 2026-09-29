@@ -83,6 +83,170 @@ def test_resolve_bundle_path_not_found(plan_context):
     assert result is None
 
 
+def _make_flat_plugin_root(root: Path, *, root_name: str = 'skills', manifest: str = 'opencode.json') -> Path:
+    """Build a real flat deployed plugin root and return its skill root.
+
+    ``root_name`` selects the skill-root spelling, and ``manifest`` the target
+    marker, so the fixtures cover every combination — including the singular
+    spelling, which only a not-yet-installed generated root carries. The
+    manifest is written AFTER the skill tree so the root directory exists first.
+    """
+    skills_root = root / root_name
+    skill_dir = skills_root / 'test-bundle-test-skill'
+    (skill_dir / 'scripts').mkdir(parents=True)
+    (skill_dir / 'SKILL.md').write_text('# Test Skill')
+    (skill_dir / 'scripts' / 'run.py').write_text('# script')
+    (root / manifest).write_text('{}')
+    return skills_root
+
+
+# =============================================================================
+# Flat deployed layout — the shape the OpenCode and Antigravity targets ship
+# =============================================================================
+
+
+def test_resolve_bundle_path_reads_the_deployed_plural_root(plan_context):
+    """A flat deployed root resolves the nested-layout subpath against its own spelling.
+
+    No case here covered this shape before: the nested population above needs a
+    ``{bundle}/`` directory, which a flat deployment does not have, so every one
+    of them returned ``None`` or a constructed path against a real deployment.
+    """
+    root = plan_context.fixture_dir / 'flat-plural'
+    skills_root = _make_flat_plugin_root(root, root_name='skills')
+
+    result = resolve_bundle_path(root, 'test-bundle', 'skills/test-skill/SKILL.md')
+
+    assert result == skills_root / 'test-bundle-test-skill' / 'SKILL.md'
+    assert result.is_file()
+
+
+def test_resolve_bundle_path_reads_the_deployed_plural_root_with_the_claude_manifest(plan_context):
+    """The plural root resolves under EITHER target manifest.
+
+    The two former legs gated on one manifest each — ``plugin.json`` for the
+    plural leg, ``opencode.json`` for the singular one — so a deployment carrying
+    the other manifest found nothing. The manifest identifies the root; it does
+    not decide the shape.
+    """
+    root = plan_context.fixture_dir / 'flat-plural-claude-manifest'
+    skills_root = _make_flat_plugin_root(root, root_name='skills', manifest='plugin.json')
+
+    result = resolve_bundle_path(root, 'test-bundle', 'skills/test-skill/SKILL.md')
+
+    assert result == skills_root / 'test-bundle-test-skill' / 'SKILL.md'
+
+
+def test_resolve_bundle_path_reads_the_singular_generated_root(plan_context):
+    """The generated singular tree resolves through the same call.
+
+    The emitter writes ``skill/`` and ``install.sh`` maps it to ``skills/``, so a
+    target tree that has not been installed yet carries the singular spelling and
+    used to fall through both former legs.
+    """
+    root = plan_context.fixture_dir / 'flat-singular'
+    skills_root = _make_flat_plugin_root(root, root_name='skill')
+
+    result = resolve_bundle_path(root, 'test-bundle', 'skills/test-skill/SKILL.md')
+
+    assert result == skills_root / 'test-bundle-test-skill' / 'SKILL.md'
+
+
+def test_resolve_bundle_path_reads_a_plural_root_with_no_manifest(plan_context):
+    """The skill root alone identifies a flat root, with no manifest beside it.
+
+    The narrowest of the three shapes the former legs could not all cover: the
+    gate is "is this a target root", and a skill root answers that on its own.
+    """
+    root = plan_context.fixture_dir / 'flat-no-manifest'
+    skills_root = root / 'skills' / 'test-bundle-test-skill'
+    skills_root.mkdir(parents=True)
+    (skills_root / 'SKILL.md').write_text('# Test Skill')
+
+    assert resolve_bundle_path(root, 'test-bundle', 'skills/test-skill/SKILL.md') == skills_root / 'SKILL.md'
+
+
+def test_resolve_bundle_path_reads_a_script_inside_a_flat_skill(plan_context):
+    """A sub-path below the skill resolves too, not only the skill root itself.
+
+    ``skills/{skill}/scripts/{script}.py`` is the shape the executor's own path
+    helpers use, so a resolver that handled only the bare skill directory would
+    still leave the executor unable to find a script.
+    """
+    root = plan_context.fixture_dir / 'flat-script'
+    skills_root = _make_flat_plugin_root(root, root_name='skills')
+
+    result = resolve_bundle_path(root, 'test-bundle', 'skills/test-skill/scripts/run.py')
+
+    assert result == skills_root / 'test-bundle-test-skill' / 'scripts' / 'run.py'
+    assert result.is_file()
+
+
+def test_resolve_bundle_path_prefers_the_deployed_plural_over_singular(plan_context):
+    """With both spellings present, the deployed one answers.
+
+    Each spelling carries a DIFFERENT file, so a reader that probed singular
+    first would resolve against the wrong root.
+    """
+    root = plan_context.fixture_dir / 'flat-both'
+    plural = root / 'skills' / 'test-bundle-plural-skill'
+    singular = root / 'skill' / 'test-bundle-singular-skill'
+    for skill_dir in (plural, singular):
+        skill_dir.mkdir(parents=True)
+        (skill_dir / 'SKILL.md').write_text('# skill')
+    (root / 'opencode.json').write_text('{}')
+
+    assert resolve_bundle_path(root, 'test-bundle', 'skills/plural-skill/SKILL.md') == plural / 'SKILL.md'
+    assert resolve_bundle_path(root, 'test-bundle', 'skills/singular-skill/SKILL.md') == singular / 'SKILL.md'
+
+
+def test_resolve_bundle_path_resolves_a_root_anchored_path_on_a_flat_root(plan_context):
+    """A non-skill-anchored subpath still resolves against the root.
+
+    The former legs carried this ``elif`` beside the flat probe, so it must keep
+    working: ``agents/foo.md`` is addressed from the root, not from a skill
+    directory, and dropping it would regress a path shape that resolved before.
+    """
+    root = plan_context.fixture_dir / 'flat-root-anchored'
+    _make_flat_plugin_root(root, root_name='skills')
+    agent = root / 'agents' / 'some-agent.md'
+    agent.parent.mkdir(parents=True)
+    agent.write_text('# agent')
+
+    assert resolve_bundle_path(root, 'test-bundle', 'agents/some-agent.md') == agent
+
+
+def test_resolve_bundle_path_on_a_flat_root_returns_none_for_a_miss(plan_context):
+    """A flat root with no matching skill still reports ``None``.
+
+    The flat leg is a probe: it must not fabricate a path. This verb's contract
+    is ``None`` for a miss, and a constructed path here would make every
+    diagnostic name a file that was never there.
+    """
+    root = plan_context.fixture_dir / 'flat-miss'
+    _make_flat_plugin_root(root, root_name='skills')
+
+    assert resolve_bundle_path(root, 'test-bundle', 'skills/absent-skill/SKILL.md') is None
+
+
+def test_resolve_bundle_path_on_a_nested_root_is_unchanged(plan_context):
+    """A nested root still resolves through its own version-dir selection.
+
+    The flat leg is a fallback for the branch where the bundle directory does
+    not exist; a root that HAS one must be unaffected, including its
+    newest-version-dir behaviour.
+    """
+    mock_root = plan_context.fixture_dir / 'flat-fallback-nested'
+    old = mock_root / 'test-bundle' / '1.0.0' / 'skills' / 'test-skill' / 'SKILL.md'
+    new = mock_root / 'test-bundle' / '1.0.10' / 'skills' / 'test-skill' / 'SKILL.md'
+    old.parent.mkdir(parents=True)
+    new.parent.mkdir(parents=True)
+    old.write_text('# old')
+    new.write_text('# new')
+
+    assert resolve_bundle_path(mock_root, 'test-bundle', 'skills/test-skill/SKILL.md') == new
+
+
 def test_state_read_empty(plan_context):
     """Test reading state when no state file exists."""
     state = read_state()

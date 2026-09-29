@@ -9,6 +9,7 @@ cwd. These tests pin both PLAN_BASE_DIR and cwd and never contend for the real
 ``.plan/`` under ``-n auto``.
 """
 
+import json
 import os
 import re
 import subprocess
@@ -560,31 +561,149 @@ class TestGetBasePathGlobalProjectRuntimeRouted:
     the runtime is unreachable or honestly declines, the Claude-default anchor
     is the fallback — never a constructed answer that pretends a target's
     settings exist.
+
+    The stubs below accept the second ``target`` argument the scopes forward:
+    a caller that has already resolved its target passes it so the settings base
+    is resolved for THAT target, and the stub that ignored the argument would
+    have made this suite pass on a signature that dropped it.
     """
 
     def test_global_scope_returns_runtime_settings_base(self, tmp_path, monkeypatch):
         """A non-default global settings base supplied by the runtime wins."""
         runtime_base = tmp_path / 'non-default' / 'global-settings'
-        monkeypatch.setattr(marketplace_paths, '_invoke_settings_op', lambda scope: runtime_base)
+        monkeypatch.setattr(marketplace_paths, '_invoke_settings_op', lambda scope, target=None: runtime_base)
         assert get_base_path('global') == runtime_base
 
     def test_project_scope_returns_runtime_settings_base(self, tmp_path, monkeypatch):
         """A non-default project settings base supplied by the runtime wins."""
         runtime_base = tmp_path / 'non-default' / 'project-settings'
-        monkeypatch.setattr(marketplace_paths, '_invoke_settings_op', lambda scope: runtime_base)
+        monkeypatch.setattr(marketplace_paths, '_invoke_settings_op', lambda scope, target=None: runtime_base)
         assert get_base_path('project') == runtime_base
+
+    def test_resolved_target_is_forwarded_to_the_settings_op(self, tmp_path, monkeypatch):
+        """The caller's resolved target reaches the settings op rather than the ambient one.
+
+        A scope that resolved the ambient target regardless of the ``target``
+        argument would still satisfy the two rows above, because their stubs
+        ignore the argument. This row is what makes the forwarding observable.
+        """
+        seen: list[str | None] = []
+
+        def _record(scope, target=None):
+            seen.append(target)
+            return tmp_path
+
+        monkeypatch.setattr(marketplace_paths, '_invoke_settings_op', _record)
+
+        get_base_path('global', target='opencode')
+        get_base_path('project', target='antigravity')
+
+        assert seen == ['opencode', 'antigravity']
 
     def test_global_scope_falls_back_when_runtime_unresolvable(self, tmp_path, monkeypatch):
         """``global`` falls back to the Claude-default anchor without a runtime."""
-        monkeypatch.setattr(marketplace_paths, '_invoke_settings_op', lambda scope: None)
+        monkeypatch.setattr(marketplace_paths, '_invoke_settings_op', lambda scope, target=None: None)
         monkeypatch.setattr(Path, 'home', lambda: tmp_path)
         assert get_base_path('global') == tmp_path / CLAUDE_DIR
 
     def test_project_scope_falls_back_when_runtime_unresolvable(self, tmp_path, monkeypatch):
         """``project`` falls back to the Claude-default anchor without a runtime."""
-        monkeypatch.setattr(marketplace_paths, '_invoke_settings_op', lambda scope: None)
+        monkeypatch.setattr(marketplace_paths, '_invoke_settings_op', lambda scope, target=None: None)
         monkeypatch.chdir(tmp_path)
         assert get_base_path('project') == tmp_path / CLAUDE_DIR
+
+
+class TestEnvAnchorIsLastResort:
+    """``PM_MARKETPLACE_ROOT`` is demoted below a declared target.
+
+    The env var promotes itself above the deployed-bundle cache for the
+    marketplace-aware scopes only while nothing else has declared the context.
+    Each row below therefore pins ONE of the three states: an explicit
+    ``marketplace_root`` always wins, a caller that resolved no target but whose
+    machine HAS one gets the cache (the env var is demoted), and an unmanaged checkout with no
+    declared target keeps the anchor promotion it has always had.
+    """
+
+    @pytest.fixture(autouse=True)
+    def isolated_context(self, monkeypatch, outside_repo_dir):
+        """Pin the cache root and the env tier so the anchor is the only variable.
+
+        Without this the two things the row is NOT about decide the outcome: the
+        real ``~/.claude``/``~/.config`` cache roots, and a platform env signal
+        the developer's shell may carry (this suite is run on a Claude machine
+        and an OpenCode one). Both are pinned so a row can only move when the
+        anchor rule moves.
+        """
+        for name in ('ANTIGRAVITY_AGENT', 'OPENCODE', 'OPENCODE_PID', 'CLAUDE_CODE_SESSION_ID'):
+            monkeypatch.delenv(name, raising=False)
+        bare = outside_repo_dir / 'bare'
+        bare.mkdir(exist_ok=True)
+        monkeypatch.chdir(bare)
+        cache = bare / 'fake-cache'
+        cache.mkdir()
+        monkeypatch.setattr(marketplace_paths, '_first_existing_bundle_cache_root', lambda target=None: cache)
+        return bare, cache
+
+    def test_explicit_param_outranks_the_env_anchor(self, isolated_context, monkeypatch):
+        """The parameter is always the anchor, env var or not."""
+        bare, _cache = isolated_context
+        bundles = bare / 'marketplace' / 'bundles'
+        bundles.mkdir(parents=True)
+        monkeypatch.setenv('PM_MARKETPLACE_ROOT', str(bare / 'does-not-exist'))
+
+        assert get_base_path('auto', marketplace_root=bare) == bundles
+
+    def test_env_anchor_is_demoted_when_the_caller_named_a_target(self, isolated_context, monkeypatch):
+        """A named target demotes the env anchor for a ``get_base_path`` call that passes no anchor.
+
+        This row measures the ``get_base_path`` leg only. The verb leg — where
+        ``target_context.resolve_context`` must not fold the env value into an
+        explicit anchor — is pinned in ``test_target_context.py``
+        (``test_a_declared_target_does_not_fold_in_the_env_anchor``).
+
+        The env var points at a bundles-less directory and a cache is present, so
+        anchor-promotion would RAISE (the explicit-anchor contract skips the
+        cache fallback) while demotion resolves through the cache. The raised
+        case is what makes this row discriminate: with promotion intact the call
+        raises, and with demotion intact it returns the cache.
+        """
+        bare, cache = isolated_context
+        monkeypatch.setenv('PM_MARKETPLACE_ROOT', str(bare))
+
+        assert get_base_path('cache-first', target='claude') == cache
+
+    def test_env_anchor_is_demoted_when_a_marshal_target_is_declared(self, isolated_context, monkeypatch):
+        """A ``runtime.target`` in ``marshal.json`` demotes the env anchor too.
+
+        The second demotion trigger, pinned separately from the explicit
+        ``--target`` row: a project that has DECLARED its target must not have
+        that declaration silently re-anchored by an inherited env var.
+        """
+        bare, cache = isolated_context
+        plan_dir = bare / '.plan'
+        plan_dir.mkdir()
+        (plan_dir / 'marshal.json').write_text(json.dumps({'runtime': {'target': 'opencode'}}), encoding='utf-8')
+        monkeypatch.setenv('PM_MARKETPLACE_ROOT', str(bare))
+
+        assert get_base_path('cache-first') == cache
+
+    def test_env_anchor_still_promotes_on_an_unmanaged_checkout(self, isolated_context, monkeypatch):
+        """With no target declared anywhere, the env anchor keeps its last-resort role.
+
+        This is the row that keeps the demotion from being a regression: a
+        developer who exported ``PM_MARKETPLACE_ROOT`` on a machine with no
+        ``runtime.target`` and no platform env signal must still have the verb
+        resolve through it, which is the only situation the env var exists for.
+        """
+        bare, _cache = isolated_context
+        bundles = bare / 'marketplace' / 'bundles'
+        bundles.mkdir(parents=True)
+        monkeypatch.setenv('PM_MARKETPLACE_ROOT', str(bare))
+
+        # ``target=None`` means the caller resolved none, and with the env tier
+        # cleared the cascade falls through to its fallback tier — so the env
+        # anchor is the last remaining signal and still promotes.
+        assert get_base_path('cache-first', target=None) == bundles
 
 
 def _init_repo(repo: Path) -> None:

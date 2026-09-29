@@ -14,7 +14,7 @@ so it uses its own lightweight caching mechanism.
 
 Usage:
     python3 bootstrap_plugin.py get-root [--target claude|opencode|antigravity] [--refresh]
-    python3 bootstrap_plugin.py resolve --bundle <bundle> --path <path>
+    python3 bootstrap_plugin.py resolve --bundle <bundle> --path <path> [--target claude|opencode|antigravity]
 
 Subcommands:
     get-root              Return the plugin root path (detects if needed)
@@ -66,11 +66,16 @@ for _lib in ('ref-toon-format', 'tools-file-ops'):
     if _lib_path.is_dir() and str(_lib_path) not in sys.path:
         sys.path.insert(0, str(_lib_path))
 
-from file_ops import get_base_dir, output_toon, safe_main  # noqa: E402
-
 # Shared path resolution (from script-shared). The layout ops are the single
 # source of target-resolved roots; this script consumes them rather than
-# re-enumerating per-target paths.
+# re-enumerating per-target paths. ``deployed_layout`` is the single home for
+# which deployed SHAPE a root carries and how a flat skill directory is named.
+from deployed_layout import (  # noqa: E402
+    carries_target_manifest,
+    is_flat_root,
+    resolve_skill_path,
+)
+from file_ops import get_base_dir, output_toon, safe_main  # noqa: E402
 from marketplace_paths import (  # noqa: E402
     _resolve_skill_root,
     get_bundle_cache_roots,
@@ -336,7 +341,26 @@ def get_plugin_root(refresh: bool = False, target: str | None = None) -> tuple[P
 
 def resolve_bundle_path(plugin_root: Path, bundle: str, relative_path: str) -> Path | None:
     """
-    Resolve a path relative to a bundle.
+    Resolve a path relative to a bundle, against either deployed shape.
+
+    Two shapes, in probe order. The NESTED one — ``{plugin_root}/{bundle}/…``
+    with newest-version-dir selection — is this verb's own long-standing
+    behaviour and is unchanged. The FLAT deployed one —
+    ``{plugin_root}/skills/{bundle}-{skill}/…`` — is delegated to
+    ``deployed_layout``, which owns the layout and the dash-namespaced join.
+
+    The flat leg is ONE probe, not two. It replaces a ``plugin.json`` +
+    plural ``skills/`` leg and an ``opencode.json`` + SINGULAR ``skill/`` leg
+    that differed only in those two facts, where the second could never fire:
+    the deployed OpenCode root carries ``skills/``, because the emitter writes a
+    singular ``skill/`` tree and ``install.sh`` maps it to the plural at install
+    time. Both spellings are probed now, in the shared module's declared order,
+    so the leg fires against whichever tree the machine actually has.
+
+    The gate is "is this a target/plugin root at all" — a root manifest, or a
+    skill root of either spelling — rather than one manifest per leg. The
+    candidate's own existence remains the real check; the gate only keeps a
+    directory that is not a root from being searched as one.
 
     Args:
         plugin_root: The plugin root directory
@@ -349,35 +373,13 @@ def resolve_bundle_path(plugin_root: Path, bundle: str, relative_path: str) -> P
     bundle_dir = plugin_root / bundle
 
     if not bundle_dir.exists():
-        # Handle Antigravity flat plugin layout (plugin_root / skills / {bundle}-{skill} / ...)
-        if (plugin_root / 'plugin.json').is_file():
-            if relative_path.startswith('skills/'):
-                parts = relative_path.split('/', 2)
-                if len(parts) >= 2:
-                    skill_name = parts[1]
-                    rest = parts[2] if len(parts) > 2 else ''
-                    cand = plugin_root / 'skills' / f'{bundle}-{skill_name}'
-                    if rest:
-                        cand = cand / rest
-                    if cand.exists():
-                        return cand
-            elif (plugin_root / relative_path).exists():
-                return plugin_root / relative_path
-
-        # Handle OpenCode singular layout (plugin_root / skill / {bundle}-{skill} / ...)
-        if (plugin_root / 'opencode.json').is_file() or (plugin_root / 'skill').is_dir():
-            if relative_path.startswith('skills/'):
-                parts = relative_path.split('/', 2)
-                if len(parts) >= 2:
-                    skill_name = parts[1]
-                    rest = parts[2] if len(parts) > 2 else ''
-                    cand = plugin_root / 'skill' / f'{bundle}-{skill_name}'
-                    if rest:
-                        cand = cand / rest
-                    if cand.exists():
-                        return cand
-            elif (plugin_root / relative_path).exists():
-                return plugin_root / relative_path
+        if carries_target_manifest(plugin_root) or is_flat_root(plugin_root):
+            flat = resolve_skill_path(plugin_root, bundle, relative_path)
+            if flat is not None:
+                return flat
+            root_anchored = plugin_root / relative_path
+            if root_anchored.exists():
+                return root_anchored
 
         return None
 

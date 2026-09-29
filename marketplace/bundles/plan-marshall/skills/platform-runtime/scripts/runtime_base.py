@@ -13,7 +13,7 @@ ad-hoc parsing or serialization in this module.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from typing import Any
 
 from toon_parser import serialize_toon
@@ -41,6 +41,154 @@ def has_session_identity(session_id: str | None) -> bool:
     if not session_id.strip():
         return False
     return session_id != NO_SESSION_IDENTITY
+
+
+#: The marshal.json phases that may carry ``project:{skill}`` step references,
+#: published once so no runtime names the roster independently.
+#:
+#: The roster was spelled out in two runtimes and inlined in a third, and the
+#: copies could not disagree visibly: a phase added to one reader left the other
+#: readers reporting "no project steps" for a step that exists, which is a clean
+#: measurement of the wrong thing. marshal.json is a shared, target-neutral file,
+#: so the roster is one fact with one home.
+PROJECT_STEP_PHASES: tuple[str, ...] = ('phase-5-execute', 'phase-6-finalize')
+
+#: The step-notation prefix naming a project-local skill step.
+PROJECT_STEP_PREFIX: str = 'project:'
+
+
+def extract_project_steps(marshal_config: dict[str, Any]) -> list[dict[str, str]]:
+    """Enumerate ``project:{skill}`` step references from a parsed marshal.json.
+
+    The single reader every runtime delegates to. It scans
+    ``plan.{phase}.steps`` for each phase in :data:`PROJECT_STEP_PHASES` and
+    returns one ``{skill, step, phase}`` dict per ``project:``-prefixed entry,
+    in phase-roster order.
+
+    **Both ``steps`` shapes are accepted.** The live marshal.json writes
+    ``steps`` as a KEYED MAP — ``{step-notation: {params}}`` — because a step
+    carries parameters, and a bare list cannot hold them. The earlier readers
+    only understood the bare list and guarded with ``isinstance(steps, list)``,
+    so against a real marshal.json they returned an empty scan: indistinguishable
+    from "scanned, found no project steps", which is how a reader that never read
+    the roster came to look like a clean result. The legacy list of notation
+    strings is still accepted so a hand-written or pre-parameters marshal.json
+    keeps working.
+
+    A malformed phase or ``steps`` value is skipped rather than raised: the
+    reader is a scanner over a shared file that other targets also edit, so one
+    unexpected shape must not take down every permission op on every runtime.
+
+    Args:
+        marshal_config: A parsed marshal.json mapping. A mapping carrying an
+            ``error`` key (a failed load) simply has no ``plan`` section and so
+            yields no steps.
+
+    Returns:
+        Dicts with keys ``skill``, ``step`` and ``phase``, in phase-roster
+        order. An entry whose ``project:`` prefix is followed by nothing is
+        skipped — it names no skill, so there is nothing to grant.
+    """
+    plan = marshal_config.get('plan', {})
+    if not isinstance(plan, dict):
+        return []
+    project_steps: list[dict[str, str]] = []
+    for phase in PROJECT_STEP_PHASES:
+        phase_config = plan.get(phase, {})
+        if not isinstance(phase_config, dict):
+            continue
+        steps = phase_config.get('steps', {})
+        if isinstance(steps, dict):
+            notations: Iterable[Any] = steps.keys()
+        elif isinstance(steps, list):
+            notations = steps
+        else:
+            continue
+        for notation in notations:
+            if not isinstance(notation, str) or not notation.startswith(PROJECT_STEP_PREFIX):
+                continue
+            skill = notation[len(PROJECT_STEP_PREFIX) :]
+            if not skill:
+                continue
+            project_steps.append({'skill': skill, 'step': notation, 'phase': phase})
+    return project_steps
+
+
+def project_steps_shape_error(marshal_config: dict[str, Any]) -> str | None:
+    """Return why the step roster's SHAPE is unreadable, or ``None`` when it is readable.
+
+    :func:`extract_project_steps` skips a malformed ``plan`` / phase / ``steps``
+    value on purpose — it is a tolerant scanner shared by every permission op.
+    An op that REPORTS a scan result cannot afford that tolerance: a malformed
+    roster and a valid roster with no project steps both yield ``[]``. This is
+    the check such an op runs first, so the two stay distinguishable.
+    """
+    plan = marshal_config.get('plan', {})
+    if not isinstance(plan, dict):
+        return "'plan' is not an object"
+    for phase in PROJECT_STEP_PHASES:
+        if phase not in plan:
+            continue
+        phase_config = plan[phase]
+        if not isinstance(phase_config, dict):
+            return f"'plan.{phase}' is not an object"
+        if 'steps' in phase_config and not isinstance(phase_config['steps'], (dict, list)):
+            return f"'plan.{phase}.steps' is neither a keyed map nor a list"
+    return None
+
+
+#: The operation name every ``permission ensure-steps`` response carries.
+ENSURE_STEPS_OPERATION: str = 'permission ensure-steps'
+
+
+def ensure_steps_without_skill_grants(
+    target_label: str,
+    marshal_config: dict[str, Any],
+    project_steps: list[dict[str, Any]],
+    scope: str,
+    dry_run: bool,
+) -> str:
+    """Answer ``permission ensure-steps`` for a target with no per-skill grant.
+
+    The shared tail of the OpenCode and Antigravity implementations. Both READ
+    the project steps — the caller loads marshal.json and runs
+    :func:`extract_project_steps` before calling this — because the answer
+    depends on what the roster holds, and an op that answers without reading
+    reports a scan that never happened.
+
+    * A marshal.json that failed to load is ``invalid_marshal``, never an empty
+      roster.
+    * An EMPTY roster is a genuine success: nothing needs a grant, and
+      ``steps_scanned: 0`` says the zero was measured.
+    * A NON-EMPTY roster is a ``no-op``: the target cannot express a per-skill
+      grant, so ``permissions_added: 0`` would read as "already covered" when
+      the truth is "not expressible here". The reason names the scanned count and
+      skills so the decline is diagnosable.
+
+    Args:
+        target_label: Human-readable target name for the decline reason.
+        marshal_config: The loaded marshal.json (an ``error`` key = load failure).
+        project_steps: The steps :func:`extract_project_steps` returned for it.
+        scope: The requested permission scope, echoed on success.
+        dry_run: The requested dry-run flag, echoed on success.
+    """
+    if 'error' in marshal_config:
+        return toon_error(ENSURE_STEPS_OPERATION, 'invalid_marshal', str(marshal_config['error']))
+    shape_error = project_steps_shape_error(marshal_config)
+    if shape_error is not None:
+        return toon_error(ENSURE_STEPS_OPERATION, 'invalid_marshal', f'unreadable step roster: {shape_error}')
+    if not project_steps:
+        return toon_success(
+            ENSURE_STEPS_OPERATION,
+            {'scope': scope, 'dry_run': dry_run, 'steps_scanned': 0, 'permissions_added': 0},
+        )
+    skills = sorted({step['skill'] for step in project_steps})
+    return toon_noop(
+        ENSURE_STEPS_OPERATION,
+        f'{len(project_steps)} project step(s) scanned ({", ".join(skills)}), but {target_label} '
+        'has no per-skill permission grant to add',
+        'Project skills run through the script executor; grant it with `permission ensure-wildcards`',
+    )
 
 
 #: The `permission fix` operation set, published once so no site restates it.
@@ -899,6 +1047,12 @@ class Runtime(ABC):
     @abstractmethod
     def permission_extract_project_steps(self, marshal_config: dict[str, Any]) -> list[dict[str, Any]]:
         """Enumerate ``project:{skill}`` step references from marshal config.
+
+        Every runtime delegates to :func:`extract_project_steps` rather than
+        reading the roster or the ``steps`` shape itself: the roster and the
+        shape are facts about the shared, target-neutral marshal.json, and a
+        runtime that re-derives either can report an empty scan for a step that
+        exists.
 
         Args:
             marshal_config: The parsed marshal.json dictionary.

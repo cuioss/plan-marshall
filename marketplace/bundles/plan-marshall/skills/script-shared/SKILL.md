@@ -40,7 +40,7 @@ Do NOT add a second parser of that section in either consumer. It also defines `
 
 The executor's PYTHONPATH generation scans immediate subdirectories of each `scripts/` directory, so modules in `scripts/build/` and `scripts/extension/` are importable by any script in the marketplace without path manipulation.
 
-`marketplace_paths.find_marketplace_path()` and `get_base_path()` accept an optional `marketplace_root` override and resolve in this order: explicit parameter → `PM_MARKETPLACE_ROOT` env var → script-relative `Path(__file__).parents[6]` walk → cwd-based discovery. Use the override (or the env var) to pin marketplace lookups to a specific worktree or test fixture instead of relying on cwd.
+`marketplace_paths.find_marketplace_path()` and `get_base_path()` accept an optional `marketplace_root` override. `find_marketplace_path()` resolves in the order explicit parameter → `PM_MARKETPLACE_ROOT` env var → cwd-based discovery. `get_base_path()` is stricter about what counts as an anchor for its cache-bypassing scopes: the explicit parameter always outranks the deployed-bundle cache, while the env var counts as an anchor only while nothing else has declared the context (`_env_anchor_is_last_resort`) — on a machine carrying a platform env signal or a declared `runtime.target`, an exported `PM_MARKETPLACE_ROOT` no longer pins the marketplace scope ahead of the cache. Use the explicit parameter to pin marketplace lookups to a specific worktree or test fixture instead of relying on cwd.
 
 See `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule (path convention and the `--plan-id` / `--project-dir` binding contract for callers that need to bind to a specific working tree).
 

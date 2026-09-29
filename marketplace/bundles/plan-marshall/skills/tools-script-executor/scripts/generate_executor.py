@@ -4,11 +4,12 @@
 Generate and manage execute-script.py with embedded script mappings.
 
 Usage:
-    python3 generate_executor.py generate [--force] [--dry-run] [--marketplace] [--marketplace-root PATH]
-    python3 generate_executor.py verify
-    python3 generate_executor.py bootstrap [--marketplace] [--marketplace-root PATH]
-    python3 generate_executor.py drift [--marketplace] [--marketplace-root PATH]
-    python3 generate_executor.py paths
+    python3 generate_executor.py generate [--force] [--dry-run] [--marketplace] [--marketplace-root PATH] [--target TARGET]
+    python3 generate_executor.py verify [--target TARGET]
+    python3 generate_executor.py bootstrap [--marketplace] [--marketplace-root PATH] [--target TARGET]
+    python3 generate_executor.py drift [--marketplace] [--marketplace-root PATH] [--target TARGET]
+    python3 generate_executor.py preflight [--marketplace] [--marketplace-root PATH] [--target TARGET]
+    python3 generate_executor.py paths [--target TARGET]
     python3 generate_executor.py cleanup [--max-age-days N]
 
 Subcommands:
@@ -16,6 +17,7 @@ Subcommands:
     verify      Verify existing executor is valid
     bootstrap   Sanctioned direct-path bootstrap (see below)
     drift       Compare executor mappings with current marketplace state
+    preflight   Report the preconditions a regeneration depends on
     paths       Verify all mapped paths exist
     cleanup     Clean up old logs
 
@@ -64,15 +66,55 @@ Context Detection:
     Use --marketplace flag for marketplace development context (marketplace/bundles/).
 
     The ``--marketplace-root PATH`` flag pins marketplace discovery to an
-    explicit anchor directory, overriding the script-relative walk and
-    cwd-based fallback. Every subcommand that performs marketplace discovery
-    — each verb that regenerates the executor or re-scans the bundle tree —
-    declares it; run a subcommand's ``--help`` for the flag set that verb
-    actually accepts, rather than reading a verb list from here. Equivalent
-    to setting the ``PM_MARKETPLACE_ROOT`` environment variable; the flag takes
-    precedence when both are supplied. Use this when invoking the script from
+    explicit anchor directory, overriding the ``PM_MARKETPLACE_ROOT`` env var
+    and the cwd-based fallback. It is declared on the four verbs that ANCHOR a
+    discovery (``generate``, ``bootstrap``, ``drift``, ``preflight``); the verbs
+    that read a discovered tree without choosing where to look (``verify``,
+    ``paths``) inherit the anchor from their environment and cwd. Run a
+    subcommand's ``--help`` for the flag set that verb actually accepts, rather
+    than reading a verb list from here.
+
+    ``--target`` is registered on ALL SIX target-resolving verbs (``generate``,
+    ``verify``, ``bootstrap``, ``drift``, ``preflight``, ``paths``) with one
+    shared accept-set and one shared help text, and every one of them resolves
+    its ``{target, marketplace-root}`` context through
+    ``target_context.resolve_context``. There is no per-verb default and no
+    verb-private reader of ``marshal.json``: the cascade is env signal first
+    (``ANTIGRAVITY_AGENT`` / ``OPENCODE`` / ``OPENCODE_PID`` /
+    ``CLAUDE_CODE_SESSION_ID``), then ``runtime.target`` from the nearest
+    ``marshal.json``, then a REPORTED fallback. The tier that produced the
+    answer rides every payload that follows a resolution — the success
+    payloads of ``generate``, ``verify``, ``drift``, ``paths`` and
+    ``preflight``, the coverage-error payloads of ``generate`` and ``drift``,
+    and ``bootstrap``'s ``generated`` payload — as
+    ``target_source`` beside the resolved ``target``, so "resolved to opencode"
+    and "fell back to claude" are never the same observation. ``bootstrap``'s
+    ``not_needed`` payloads carry neither: that path resolves no target.
+
+    ``PM_MARKETPLACE_ROOT`` promotes itself above the deployed-bundle cache
+    (cache-first scope) only while nothing else has declared the context — no
+    ``--target`` was given, and no env or ``marshal.json`` tier resolved one;
+    ``target_context.resolve_context`` folds it into the verb's anchor only on
+    that fallback tier. It is still consulted by marketplace discovery itself
+    (``--marketplace``, and the cache-first leg when no cache exists), where it
+    ranks ahead of the cwd walk-up on every tier. The flag takes precedence
+    when both are supplied. Use this when invoking the script from
     a worktree or alternate checkout where Path.cwd() would otherwise resolve
     to the wrong marketplace tree.
+
+Fail-closed discovery:
+    Script discovery can return a mapping that is short of what the tree holds
+    — empty when the scan found nothing, truncated when the glob fallback's
+    narrower rules dropped scripts — and neither failure is visible in the
+    returned dict. ``generate`` therefore refuses to write an executor from an
+    under-covered scan, and ``drift`` reports the same condition as an error
+    rather than as a removal list; both publish the enumerated count, the
+    discovered count and the named exclusion rules that produced the verdict.
+    Generation also refuses to substitute a logging-module directory that does
+    not exist, and refuses to emit its ``# (none detected)`` shared-module
+    degradation unless discovery coverage was established. A resolver failure
+    is a distinct third outcome everywhere, never a vacuous clean one (ADR-009,
+    ADR-019).
 
 Runtime Side-effects:
     The generated executor performs NO session-to-plan binding write. The
@@ -123,7 +165,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import NamedTuple
+from typing import NamedTuple, TypedDict
 
 # Bootstrap sys.path — this script may run before the executor sets up PYTHONPATH
 # (called directly during wizard Step 4 to generate the executor).
@@ -160,17 +202,28 @@ SCRIPT_DIR = Path(__file__).parent.resolve()
 # edit-time rules. The generator embeds what it derives; the doctor reads the
 # same module at edit time. One derivation, two consumers, nothing to drift.
 import argparse_surface as surface_api  # noqa: E402
+import deployed_layout  # noqa: E402
 from command_forms import SYNC_PLUGIN_CACHE_COMMAND  # noqa: E402
 from file_ops import get_base_dir as _get_plan_base_dir  # noqa: E402
 from file_ops import get_tracked_config_dir as _get_tracked_config_dir  # noqa: E402
 from marketplace_bundles import (  # noqa: E402
     build_pythonpath,
     collect_script_dirs,
+    extract_bundle_name,
+    find_bundles,
     resolve_bundle_path,
 )
+from marketplace_paths import MARKETPLACE_BUNDLES_PATH  # noqa: E402
+from marketplace_paths import _bundle_cache_roots_for as _shared_bundle_cache_roots_for  # noqa: E402
 from marketplace_paths import get_base_path as _shared_get_base_path  # noqa: E402
-from marketplace_paths import get_bundle_cache_roots as _shared_get_bundle_cache_roots  # noqa: E402
 from marketplace_paths import get_project_skill_roots as _shared_get_project_skill_roots  # noqa: E402
+
+# The single target/context resolver. Every target-resolving verb routes
+# through ``resolve_context`` below rather than reading ``marshal.json`` itself,
+# so the six verbs cannot reach different answers on one machine. The bootstrap
+# loop above already front-loads ``script-shared/scripts`` onto ``sys.path``,
+# which is where this lives.
+from target_context import TargetContext, resolve_context, resolve_target  # noqa: E402
 
 
 # Runtime-resolved locations. The executor lives at <root>/.plan/execute-script.py
@@ -194,7 +247,9 @@ def logs_dir() -> Path:
 # ============================================================================
 
 
-def get_base_path(use_marketplace: bool = False, marketplace_root: Path | None = None) -> Path:
+def get_base_path(
+    use_marketplace: bool = False, marketplace_root: Path | None = None, target: str | None = None
+) -> Path:
     """Determine base path based on context.
 
     By default (use_marketplace=False), tries plugin-cache first, then marketplace.
@@ -204,14 +259,55 @@ def get_base_path(use_marketplace: bool = False, marketplace_root: Path | None =
         use_marketplace: If True, force marketplace context (development mode).
             If False (default), tries plugin-cache first then marketplace.
         marketplace_root: Optional explicit override anchor for marketplace
-            discovery. Forwarded verbatim to
+            discovery. Normally the value ``resolve_context`` validated out of
+            ``--marketplace-root``, or ``PM_MARKETPLACE_ROOT`` when — and only
+            when — the target fell through to the fallback tier; forwarded
+            verbatim to
             :func:`script_shared.marketplace_paths.get_base_path` and applied
             to the marketplace-aware scopes (``marketplace``, ``cache-first``).
             See :func:`script_shared.marketplace_paths.find_marketplace_path`
-            for the four-step resolution order.
+            for the three-step resolution order.
+        target: The runtime target this call operates under, forwarded to the
+            shared resolver so the target-dependent scopes (``cache-first`` and
+            ``plugin-cache`` cache legs, ``global``, ``project``) resolve for
+            THAT target rather than the ambient cascade's answer. In the
+            ``cache-first`` scope a non-``None`` target also keeps an ambient
+            ``PM_MARKETPLACE_ROOT`` from outranking the cache (see
+            ``marketplace_paths._env_anchor_is_last_resort``).
     """
     scope = 'marketplace' if use_marketplace else 'cache-first'
-    return _shared_get_base_path(scope, marketplace_root=marketplace_root)
+    return _shared_get_base_path(scope, marketplace_root=marketplace_root, target=target)
+
+
+def resolve_verb_context(args: argparse.Namespace) -> TargetContext:
+    """Resolve the ``{target, marketplace-root}`` context for a verb's argv.
+
+    The one place a verb's ``--target`` / ``--marketplace-root`` flags become a
+    resolved context, so all six target-resolving verbs (``generate``,
+    ``verify``, ``bootstrap``, ``drift``, ``preflight``, ``paths``) read the
+    same flags through the same cascade and reach the same conclusion on the
+    same machine. ``getattr`` with a ``None`` default is deliberate: a verb
+    that registers ``--target`` but not ``--marketplace-root`` (``verify`` and
+    ``paths``) must still reach this function rather than growing its own
+    bespoke resolution. Read a verb's own ``--help`` for the flag set it
+    actually registers.
+
+    Args:
+        args: The parsed verb namespace.
+
+    Returns:
+        The resolved :class:`target_context.TargetContext`.
+
+    Raises:
+        ValueError: when a supplied ``--target`` or ``--marketplace-root`` is
+            not a usable value. The containment check belongs at the shared
+            resolver (ADR-016), so the refusal surfaces here and every verb
+            reports it the same way.
+    """
+    return resolve_context(
+        target=getattr(args, 'target', None),
+        marketplace_root=getattr(args, 'marketplace_root', None),
+    )
 
 
 def _resolve_bundle_path(base_path: Path, bundle_name: str, subpath: str) -> Path:
@@ -264,8 +360,17 @@ def get_templates_dir(base_path: Path) -> Path:
 
 
 def get_logging_scripts_dir(base_path: Path) -> Path:
-    """Get path to logging scripts directory based on context."""
-    return _resolve_plan_marshall_path(base_path, 'skills/manage-logging/scripts')
+    """Get path to logging scripts directory based on context.
+
+    The skill is named through the shared layout vocabulary rather than by
+    spelling ``'skills/{skill}/scripts'`` here: that string is a LAYOUT
+    spelling, and a root that deploys the flat shape has no ``skills/{skill}``
+    component to carry it — only a dash-namespaced ``{bundle}-{skill}``
+    directory. ``marketplace_bundles.resolve_bundle_path`` (a
+    ``deployed_layout`` consumer) reconciles the two, so a single skill name here
+    resolves against either shape.
+    """
+    return _resolve_plan_marshall_path(base_path, deployed_layout.skill_scripts_subpath('manage-logging'))
 
 
 def get_shared_module_dirs(base_path: Path) -> list[Path]:
@@ -274,20 +379,48 @@ def get_shared_module_dirs(base_path: Path) -> list[Path]:
     Shared modules are skills whose scripts are imported by other scripts (e.g., plan_logging
     imports input_validation) but have no executable script notation in the SCRIPTS mapping.
     These directories must be added to sys.path before any executor-level imports.
+
+    The skill names are the single source; each is turned into a layout subpath by
+    ``deployed_layout``, so the shared-module set resolves against a nested root
+    and a flat deployed root alike. That set is the one the emitted executor
+    puts on ``sys.path`` before its own imports, so a root whose shape this
+    cannot read produces an executor that cannot import the shared modules at
+    all — which is why the empty result is gated on the discovery-coverage
+    verdict rather than emitted as ``# (none detected)``.
     """
-    shared_skills = [
-        'skills/tools-file-ops/scripts',
-        'skills/tools-input-validation/scripts',
-        'skills/ref-toon-format/scripts',
-        'skills/script-shared/scripts',
-        'skills/manage-change-ledger/scripts',
-    ]
     dirs = []
-    for subpath in shared_skills:
-        resolved = _resolve_plan_marshall_path(base_path, subpath)
+    for skill in SHARED_MODULE_SKILLS:
+        resolved = _resolve_plan_marshall_path(base_path, deployed_layout.skill_scripts_subpath(skill))
         if resolved.is_dir():
             dirs.append(resolved.resolve())
     return dirs
+
+
+#: The skills whose scripts are imported by other scripts but carry no
+#: executable notation of their own; see :func:`get_shared_module_dirs`.
+SHARED_MODULE_SKILLS: tuple[str, ...] = (
+    'tools-file-ops',
+    'tools-input-validation',
+    'ref-toon-format',
+    'script-shared',
+    'manage-change-ledger',
+)
+
+
+def shared_module_skill_label(scripts_dir: Path) -> str:
+    """Return the skill name a resolved shared-module ``scripts/`` dir belongs to.
+
+    On a nested tree that is the directory's parent name. On a flat deployment
+    the parent is the dash-joined ``{bundle}-{skill}``, which the executor's
+    self-heal cannot match to a skill, so the flat name is mapped back to the
+    shared skill it was joined from — by JOINING each candidate, never by
+    splitting the directory name.
+    """
+    parent = scripts_dir.parent.name
+    for skill in SHARED_MODULE_SKILLS:
+        if parent in (skill, deployed_layout.flat_skill_dir_name('plan-marshall', skill)):
+            return skill
+    return parent
 
 
 # ============================================================================
@@ -295,9 +428,48 @@ def get_shared_module_dirs(base_path: Path) -> list[Path]:
 # ============================================================================
 
 
+def marketplace_root_for_base(base_path: Path) -> Path | None:
+    """Return the marketplace anchor that ``base_path``'s bundles dir sits under.
+
+    ``marketplace_paths.find_marketplace_path`` composes every anchor — the
+    explicit ``--marketplace-root`` value and the ``PM_MARKETPLACE_ROOT`` env
+    var alike — by joining ``marketplace/bundles`` onto it, so the anchor a
+    consumer must be handed is the directory CONTAINING ``marketplace/``. For a
+    base at ``<root>/marketplace/bundles`` that is ``<root>``.
+
+    Returns ``None`` for a base that is not inside a marketplace tree: a
+    plugin-cache root has no marketplace anchor to offer, and handing the
+    inventory an anchor it cannot use would be worse than handing it none.
+
+    Derived by locating the ``marketplace/bundles`` segment in the resolved path
+    rather than by counting parents, so a base several levels deeper (a version
+    dir inside a cache that itself lives in a checkout) still resolves to the
+    right anchor.
+    """
+    base_str = str(base_path.resolve())
+    marker = f'/{MARKETPLACE_BUNDLES_PATH}'
+    idx = base_str.rfind(marker)
+    if idx < 0:
+        return None
+    return Path(base_str[:idx])
+
+
 def discover_scripts(base_path: Path) -> dict[str, str]:
     """
     Discover all scripts from bundles using inventory script.
+
+    The resolved ``base_path`` is PROPAGATED to the scan through the
+    ``PM_MARKETPLACE_ROOT`` env anchor whenever it sits inside a marketplace
+    tree. Without that, the subprocess resolved its own base from its own
+    environment and cwd, so a run with ``--marketplace-root <worktree>``
+    scanned whatever tree the ambient resolution found while the caller
+    believed it had scanned the worktree — and the discovery-coverage verdict
+    would then be comparing two different trees. The scan is additionally
+    BOUND to ``base_path`` through ``--base-path``, so the plugin-cache leg
+    scans exactly the tree the caller resolved rather than whatever the
+    subprocess's AMBIENT target cache is — an explicit ``--target`` that
+    differed from the ambient one used to make the two sides of the coverage
+    comparison read two different installations.
 
     Args:
         base_path: Path to bundles directory (plugin-cache or marketplace)
@@ -321,6 +493,10 @@ def discover_scripts(base_path: Path) -> dict[str, str]:
         existing = env.get('PYTHONPATH', '')
         env['PYTHONPATH'] = f'{pythonpath}{os.pathsep}{existing}' if existing else pythonpath
 
+    marketplace_root = marketplace_root_for_base(base_path)
+    if marketplace_root is not None:
+        env['PM_MARKETPLACE_ROOT'] = str(marketplace_root)
+
     # Run inventory scan
     result = subprocess.run(
         [
@@ -328,6 +504,8 @@ def discover_scripts(base_path: Path) -> dict[str, str]:
             str(inventory_script),
             '--scope',
             scope,
+            '--base-path',
+            str(base_path),
             '--resource-types',
             'scripts',
             '--direct-result',
@@ -412,11 +590,226 @@ def discover_scripts_fallback(base_path: Path) -> dict[str, str]:
                     continue
 
                 # Use three-part notation: bundle:skill:script
-                notation = f'{bundle_name}:{skill_name}:{script_file.stem}'
+                notation = deployed_layout.script_notation(bundle_name, skill_name, script_file)
                 abs_path = str(script_file.resolve())
                 mappings[notation] = abs_path
 
+    # A flat deployed root's children are the skill root, not bundles, so the
+    # nested walk above contributes nothing there; the shared flat walk does.
+    for flat_script in deployed_layout.flat_script_inventory(base_path).scripts:
+        mappings.setdefault(flat_script.notation, str(flat_script.path.resolve()))
+
     return mappings
+
+
+# ============================================================================
+# DISCOVERY COVERAGE
+# ============================================================================
+# ``discover_scripts`` shells out to the inventory scan; ``discover_scripts_fallback``
+# globs the tree. Either can return a mapping that is short of what the tree
+# actually holds — an empty one when the scan found nothing, a truncated one
+# when the fallback's narrower globbing rules silently dropped scripts — and
+# neither failure is visible in the returned dict. Historically both were
+# accepted and then LAUNDERED into a fact about the world: ``cmd_drift`` turned a
+# resolver failure into "every executor mapping is removed", and ``cmd_generate``
+# emitted an executor built from whatever the scan happened to return.
+#
+# The coverage verdict below closes that. It enumerates the same tree
+# INDEPENDENTLY (directly off the filesystem, sharing only the bundle-discovery
+# primitives the inventory scan itself uses) and compares the two, so the
+# threshold is derived from the filesystem rather than asserted as a constant,
+# and both an empty and a truncated scan fail with the discrepancy in the
+# payload.
+
+#: The named exclusion categories, reported on every verdict so a reader can
+#: tell a legitimate skip from a genuine shortfall. Each maps a category key to
+#: the rule that excludes it — the rule is stated here, next to the count, not
+#: inferred from a number.
+#:
+#: No category names a ``__pycache__`` artefact: the candidate set is already
+#: ``*.py``/``*.sh`` UNDER a ``scripts/`` directory, so such an artefact is never a
+#: candidate and a rule for it would exclude nothing — a documented condition the
+#: enumeration can never reach, indistinguishable from a rule never implemented.
+DISCOVERY_EXCLUSION_RULES: dict[str, str] = {
+    'private_module': "script files whose name starts with '_' (PEP-8 internal module, not a CLI entrypoint)",
+    'unattributed_flat_skill': (
+        'flat {bundle}-{skill} directories carrying scripts/ whose SKILL.md records no bundle identity '
+        '(not emitted by a plan-marshall flat target, or deployed before the identity was recorded) — '
+        'their notation cannot be derived, so they are counted here rather than guessed'
+    ),
+}
+
+
+class DiscoveryCoverage(TypedDict):
+    """The enumerated-versus-discovered verdict for one script-discovery result.
+
+    ``coverage_ok`` is the single boolean every caller branches on.
+    ``missing_notations`` is the diagnosable core of the verdict: the notations
+    the independent enumeration found that the scan did not report. It is capped
+    at :data:`_MISSING_NOTATION_SAMPLE` entries so a wholly empty scan against a
+    large tree cannot turn the error payload into a second discovery report.
+    """
+
+    coverage_ok: bool
+    scripts_enumerated: int
+    scripts_expected: int
+    scripts_discovered: int
+    exclusions: dict[str, int]
+    missing_notations: list[str]
+
+
+#: How many missing notations an error payload names before truncating. The
+#: count fields carry the magnitude; the sample only has to make the failure
+#: locatable.
+_MISSING_NOTATION_SAMPLE = 20
+
+#: The verdict a caller that never assessed coverage is treated as carrying:
+#: coverage NOT established. Used only to give the refusal a payload that says
+#: so, rather than a payload that looks like a measured zero.
+_UNASSESSED_COVERAGE: DiscoveryCoverage = {
+    'coverage_ok': False,
+    'scripts_enumerated': 0,
+    'scripts_expected': 0,
+    'scripts_discovered': 0,
+    'exclusions': dict.fromkeys(DISCOVERY_EXCLUSION_RULES, 0),
+    'missing_notations': [],
+}
+
+
+def enumerate_script_notations(base_path: Path) -> tuple[set[str], set[str], dict[str, int]]:
+    """Enumerate the notations the inventory scan should yield for ``base_path``.
+
+    An INDEPENDENT derivation of the same set ``discover_scripts`` obtains from
+    the inventory subprocess: same bundle-discovery primitives
+    (:func:`marketplace_bundles.find_bundles` / ``extract_bundle_name``, which is
+    what the scan itself uses), same walk over ``<bundle>/skills/**/scripts/**``
+    for ``.py``/``.sh``, same ``{bundle}:{skill}:{stem}`` notation — but read
+    straight off the filesystem instead of through a subprocess and a JSON
+    round-trip. "Independent" is a claim about the MECHANISM, and it is the one
+    that matters: a comparison is only evidence if the two sides can fail
+    separately, and a subprocess that dies, times out or returns a partial
+    payload cannot fail the same way a direct walk does.
+
+    The comparison quantity is the set of DISTINCT notations, not the number of
+    files. Two files can legitimately share a notation (``foo.py`` and
+    ``foo.sh`` in one skill; ``scripts/foo.py`` and ``scripts/sub/foo.py``), and
+    the discovered mapping is keyed by notation, so counting files would report
+    a shortfall for a tree that is in fact fully covered.
+
+    Both deployed layouts are enumerated. The FLAT leg goes through
+    :func:`deployed_layout.flat_script_inventory` — the same walk the inventory
+    scan uses for a flat root — and every notation on either leg is built by
+    :func:`deployed_layout.script_notation`, so the two sides of the comparison
+    share one derivation rule. A flat directory whose ``SKILL.md`` records no
+    bundle identity cannot be named and is counted under
+    ``unattributed_flat_skill`` instead.
+
+    Args:
+        base_path: The resolved bundles/cache root to enumerate.
+
+    Returns:
+        ``(notations, excluded_paths, exclusion_counts)`` — the notations a
+        complete scan must yield, the paths deliberately skipped, and the
+        per-category skip counts drawn from :data:`DISCOVERY_EXCLUSION_RULES`.
+    """
+    notations: set[str] = set()
+    excluded: set[str] = set()
+    counts: dict[str, int] = dict.fromkeys(DISCOVERY_EXCLUSION_RULES, 0)
+
+    for bundle_dir in find_bundles(base_path):
+        bundle_name = extract_bundle_name(bundle_dir)
+        skills_dir = bundle_dir / 'skills'
+        if not skills_dir.is_dir():
+            continue
+        candidates = sorted(skills_dir.rglob('scripts/**/*.sh')) + sorted(skills_dir.rglob('scripts/**/*.py'))
+        for script_file in candidates:
+            if deployed_layout.is_private_script(script_file):
+                excluded.add(str(script_file))
+                counts['private_module'] += 1
+                continue
+            if not script_file.is_file():
+                continue
+            # The skill name is the parent of the nearest ancestor named
+            # ``scripts``, so a script in a sub-directory
+            # (``scripts/build/x.py``) attributes to the same skill as one
+            # directly in ``scripts/``.
+            skill_dir = script_file.parent
+            while skill_dir.name != 'scripts' and skill_dir != skills_dir:
+                skill_dir = skill_dir.parent
+            notations.add(deployed_layout.script_notation(bundle_name, skill_dir.parent.name, script_file))
+
+    flat = deployed_layout.flat_script_inventory(base_path)
+    notations.update(script.notation for script in flat.scripts)
+    excluded.update(str(path) for path in flat.private)
+    counts['private_module'] += len(flat.private)
+    excluded.update(str(path) for path in flat.unattributed)
+    counts['unattributed_flat_skill'] += len(flat.unattributed)
+
+    return notations, excluded, counts
+
+
+def assess_discovery_coverage(base_path: Path, discovered: dict[str, str]) -> DiscoveryCoverage:
+    """Compare a discovery result against an independent enumeration of the tree.
+
+    The single verdict every consumer of a discovery result branches on —
+    ``cmd_generate`` refuses to generate on a failing verdict, ``cmd_drift``
+    refuses to report a removal list on one, and ``generate_executor`` refuses
+    to emit its ``# (none detected)`` shared-module degradation on one.
+
+    Args:
+        base_path: The resolved bundles/cache root the scan ran against.
+        discovered: The notation → path mapping the scan returned.
+
+    Returns:
+        The :class:`DiscoveryCoverage` verdict. ``coverage_ok`` is ``True`` when
+        the enumeration found no notation the scan failed to report. A NESTED
+        tree that is genuinely empty (nothing enumerated, nothing discovered)
+        passes, and the counts travel with it so a reader can tell it from a
+        truncated scan. A FLAT root with nothing attributable does NOT pass: a
+        flat base is only reached as a target's deployed cache, so an empty
+        attributable population there means the deployment could not be read
+        (every skill unattributed, or none deployed) — the vacuous 0/0 this
+        guard exists to refuse, not a measured absence.
+    """
+    enumerated, _excluded, counts = enumerate_script_notations(base_path)
+    missing = sorted(enumerated - set(discovered))
+    unreadable_flat_root = not enumerated and bool(deployed_layout.skill_roots(base_path))
+    return {
+        'coverage_ok': not missing and not unreadable_flat_root,
+        'scripts_enumerated': len(enumerated),
+        'scripts_expected': len(enumerated),
+        'scripts_discovered': len(discovered),
+        'exclusions': counts,
+        'missing_notations': missing[:_MISSING_NOTATION_SAMPLE],
+    }
+
+
+def coverage_error_payload(
+    error: str,
+    detail: str,
+    coverage: DiscoveryCoverage,
+    **extra: object,
+) -> dict:
+    """Build the ``status: error`` payload a failing coverage verdict publishes.
+
+    The enumerated count, the discovered count and the declared exclusion rules
+    all ride the payload (ADR-019: an audit separates what it could not evaluate
+    from what it evaluated and found wanting). A failure with only a message
+    would leave the reader to re-derive the discrepancy by hand, which is the
+    work the verdict already did.
+    """
+    return {
+        'status': 'error',
+        'error': error,
+        'detail': detail,
+        'scripts_enumerated': coverage['scripts_enumerated'],
+        'scripts_expected': coverage['scripts_expected'],
+        'scripts_discovered': coverage['scripts_discovered'],
+        'exclusion_rules': DISCOVERY_EXCLUSION_RULES,
+        'excluded_counts': coverage['exclusions'],
+        'missing_notations': coverage['missing_notations'],
+        **extra,
+    }
 
 
 def discover_local_scripts(cwd: Path | None = None) -> dict[str, str]:
@@ -479,43 +872,61 @@ def discover_local_scripts(cwd: Path | None = None) -> dict[str, str]:
 # ============================================================================
 # TARGET-AWARE RESOLVER GENERATION
 # ============================================================================
-
-# Known OpenCode skill discovery roots in priority order (first match wins).
-# Each root is searched for ``{bundle}-{skill}/scripts/{script}.py`` because
-# the OpenCode dual-emit layout uses dash-namespaced directory names to avoid
-# hierarchy collisions in flat config directories.
-_OPENCODE_DISCOVERY_ROOTS = [
-    # Env-var override (highest priority; evaluated at runtime)
-    '$OPENCODE_CONFIG_DIR/skills',
-    # Project-local roots (checked relative to cwd)
-    '.opencode/skills',
-    '.claude/skills',
-    '.agents/skills',
-    # User-global roots
-    '~/.config/opencode/skills',
-    '~/.claude/skills',
-    '~/.agents/skills',
-]
+# The generated executor resolves a notation it has no embedded mapping for by
+# walking the layout ITS TARGET actually deploys. There are exactly TWO such
+# shapes, and the template below for each target probes every one of them that
+# target can encounter, so the emitted resolver agrees with the deployed tree
+# whichever of the two the machine carries:
+#
+# 1. The NESTED shape — ``{bundle}/skills/{skill}/scripts/{script}.py``. This is
+#    the marketplace source tree (``marketplace/bundles/{bundle}/skills/...``)
+#    and the Claude plugin cache (``.../cache/plan-marshall/<version>/skills/
+#    {skill}/scripts/...``, which is nested and single-bundle, so the ``bundle``
+#    component of the notation is not part of the path there).
+# 2. The FLAT deployed shape — ``skills/{bundle}-{skill}/scripts/{script}.py``,
+#    the dash-namespaced directory naming the OpenCode and Antigravity targets
+#    deploy, used so a flat config directory needs no hierarchy.
+#
+# Probe order is NESTED first, in every template: a live ``marketplace/bundles``
+# checkout at or above the executor file wins over any deployed copy, which
+# mirrors the tree-first ordering :func:`generate_mappings_code` already emits
+# for the embedded mapping. The Claude template used to walk the plugin cache
+# only, and the Antigravity template the flat roots only, so on a machine whose
+# deployment was the shape the template did not model, the resolver found
+# nothing at all while reporting no error. Each template carries the NESTED
+# tree-first leg; the FLAT leg is carried only by the two targets that deploy
+# it, because a Claude installation has no flat root to find.
 
 # Template for the Claude target-aware resolver.
-# Resolves ``{bundle}:{skill}:{script}`` by globbing the plugin cache.
-# The bundle component is intentionally ignored for Claude because the plugin
-# cache layout is ``~/.claude/plugins/cache/plan-marshall/*/skills/{skill}/scripts/{script}.py``
+# Resolves ``{bundle}:{skill}:{script}`` tree-first against a live
+# ``marketplace/bundles`` checkout, then by globbing the plugin cache.
+# The bundle component is intentionally ignored for the plugin-cache leg
+# because the cache layout is
+# ``~/.claude/plugins/cache/plan-marshall/*/skills/{skill}/scripts/{script}.py``
 # (single-bundle installation); the bundle in the notation is used to generate
 # suggestions only.
 _CLAUDE_RESOLVER_TEMPLATE = '''\
 def _resolve_notation_by_target(notation: str) -> str | None:
-    """Claude target: resolve notation via plugin-cache glob.
+    """Claude target: resolve notation tree-first, then via plugin-cache glob.
 
-    Walks ``~/.claude/plugins/cache/plan-marshall/*/skills/{skill}/scripts/{script}.py``,
-    collects EVERY version dir that carries the candidate script, and returns the
-    NUMERICALLY-NEWEST one.  Selecting the newest (rather than the first
-    ``iterdir`` match) stops a stale older version dir left on disk from shadowing
-    the current scripts.  When the currently-selected version dir is pruned, a
-    later invocation re-resolves at runtime to the newest surviving version dir
-    carrying the script.  The ``bundle`` component of the notation is not used for
-    path construction (the Claude plugin cache is a flat, single-bundle install)
-    but may be useful for logging.
+    Two shapes, probed in this order:
+
+      0. ``marketplace/bundles/{bundle}/skills/{skill}/scripts/{script}.py``
+         in a live checkout at or above THIS executor file (the NESTED shape).
+         Anchoring on the executor file rather than cwd ties the tree to the
+         artifact being run, and probing it first means a regen on a developer
+         machine resolves to tree code even with a stale cache present — the
+         same tree-first rule the embedded mapping is emitted under.
+      1. ``~/.claude/plugins/cache/plan-marshall/*/skills/{skill}/scripts/{script}.py``
+         (the deployed NESTED shape). Every version dir carrying the candidate
+         is collected and the NUMERICALLY-NEWEST is returned.  Selecting the
+         newest (rather than the first ``iterdir`` match) stops a stale older
+         version dir left on disk from shadowing the current scripts.  When the
+         currently-selected version dir is pruned, a later invocation
+         re-resolves at runtime to the newest surviving version dir carrying the
+         script.  The ``bundle`` component of the notation is not used for path
+         construction on THIS leg (the Claude plugin cache is a single-bundle
+         install) but may be useful for logging.
 
     The plugin-cache ``.orphaned_at`` marker is NOT consulted.  The field has a
     foreign co-producer — Claude Code's own plugin GC writes the same filename on
@@ -532,8 +943,8 @@ def _resolve_notation_by_target(notation: str) -> str | None:
         notation: Three-part notation ``{bundle}:{skill}:{script}``.
 
     Returns:
-        Absolute path string of the live version dir's script, or ``None``
-        when no match is found.
+        Absolute path string of the resolved script, or ``None`` when no match
+        is found.
     """
     import re
 
@@ -546,7 +957,22 @@ def _resolve_notation_by_target(notation: str) -> str | None:
     parts = notation.split(':')
     if len(parts) != 3:
         return None
-    _bundle, skill, script = parts
+    bundle, skill, script = parts
+
+    try:
+        _executor_file = Path(__file__).resolve()
+    except (OSError, ValueError, NameError):
+        _executor_file = None
+    if _executor_file is not None:
+        _rel = Path('marketplace') / 'bundles' / bundle / 'skills' / skill / 'scripts' / f'{script}.py'
+        for _parent in [_executor_file.parent, *_executor_file.parents]:
+            try:
+                _candidate = _parent / _rel
+                if _candidate.is_file():
+                    return str(_candidate.resolve())
+            except (OSError, ValueError):
+                continue
+
     try:
         cache_root = Path.home() / '.claude' / 'plugins' / 'cache' / 'plan-marshall'
         if not cache_root.is_dir():
@@ -619,16 +1045,13 @@ def _resolve_notation_by_target(notation: str) -> str | None:
         _executor_file = None
     if _executor_file is not None:
         _rel = Path('marketplace') / 'bundles' / bundle / 'skills' / skill / 'scripts' / script_file
-        try:
-            for _parent in [_executor_file.parent, *_executor_file.parents]:
-                try:
-                    _candidate = _parent / _rel
-                    if _candidate.is_file():
-                        return str(_candidate.resolve())
-                except (OSError, ValueError):
-                    continue
-        except (OSError, ValueError):
-            pass
+        for _parent in [_executor_file.parent, *_executor_file.parents]:
+            try:
+                _candidate = _parent / _rel
+                if _candidate.is_file():
+                    return str(_candidate.resolve())
+            except (OSError, ValueError):
+                continue
 
     try:
         home = Path.home()
@@ -661,18 +1084,28 @@ def _resolve_notation_by_target(notation: str) -> str | None:
 
 
 # Template for the Antigravity target-aware resolver.
-# Resolves ``{bundle}:{skill}:{script}`` by walking standard Antigravity roots,
+# Resolves ``{bundle}:{skill}:{script}`` tree-first against a live
+# ``marketplace/bundles`` checkout, then by walking standard Antigravity roots
 # using the dash-namespaced ``{bundle}-{skill}`` directory layout emitted by the
 # Antigravity build target. Paths are always converted to absolute form before
 # return to sidestep cwd ambiguity.
 _ANTIGRAVITY_RESOLVER_TEMPLATE = '''\
 def _resolve_notation_by_target(notation: str) -> str | None:
-    """Antigravity target: resolve notation via root walk.
+    """Antigravity target: resolve notation tree-first, then via root walk.
 
-    Searches Antigravity skill discovery roots in priority order for
-    ``{bundle}-{skill}/scripts/{script}.py`` (dash-namespaced layout per
-    Antigravity target convention). The first match is returned as an
-    absolute path.
+    Two shapes, probed in this order:
+
+      0. ``marketplace/bundles/{bundle}/skills/{skill}/scripts/{script}.py``
+         in a live checkout at or above THIS executor file (the NESTED shape).
+         This is the FIRST leg of this function, and this function runs at
+         position 3 of ``resolve_notation`` — after the embedded direct hit and
+         the prefix shim. So on an Antigravity executor a live embedded path
+         still wins, exactly as on Claude; only the OpenCode executor promotes
+         tree code ahead of the embedded checks, via its own leg-0 probe
+         outside this function.
+      1. ``{bundle}-{skill}/scripts/{script}.py`` under the Antigravity skill
+         discovery roots (the deployed FLAT shape). The first match is returned
+         as an absolute path.
 
     Roots searched in order:
       1. $GEMINI_CONFIG_DIR/plugins/plan-marshall/skills/  (env-var override)
@@ -695,6 +1128,20 @@ def _resolve_notation_by_target(notation: str) -> str | None:
     bundle, skill, script = parts
     dir_name = f'{bundle}-{skill}'
     script_file = f'{script}.py'
+
+    try:
+        _executor_file = Path(__file__).resolve()
+    except (OSError, ValueError, NameError):
+        _executor_file = None
+    if _executor_file is not None:
+        _rel = Path('marketplace') / 'bundles' / bundle / 'skills' / skill / 'scripts' / script_file
+        for _parent in [_executor_file.parent, *_executor_file.parents]:
+            try:
+                _candidate = _parent / _rel
+                if _candidate.is_file():
+                    return str(_candidate.resolve())
+            except (OSError, ValueError):
+                continue
 
     try:
         home = Path.home()
@@ -726,58 +1173,24 @@ def _resolve_notation_by_target(notation: str) -> str | None:
 '''
 
 
-def read_marshal_target(cwd: Path | None = None) -> str:
-    """Read ``runtime.target`` from ``.plan/marshal.json``.
-
-    Walks up from ``cwd`` (or ``Path.cwd()``) to find the nearest
-    ``.plan/marshal.json``, then extracts ``runtime.target``.
-
-    Args:
-        cwd: Starting directory for the upward walk.  Defaults to
-            ``Path.cwd()``.
-
-    Returns:
-        Target string (e.g. ``"claude"``, ``"antigravity"``, or ``"opencode"``), or the
-        fallback ``"claude"`` when the file is absent, malformed, or the
-        ``runtime.target`` key is missing.
-    """
-    import json as _json
-
-    if cwd is None:
-        cwd = Path.cwd()
-
-    for parent in [cwd, *cwd.parents]:
-        candidate = parent / PLAN_DIR_NAME / 'marshal.json'
-        if candidate.is_file():
-            try:
-                data = _json.loads(candidate.read_text(encoding='utf-8'))
-                if isinstance(data, dict):
-                    runtime = data.get('runtime')
-                    if isinstance(runtime, dict):
-                        target = runtime.get('target')
-                        if isinstance(target, str) and target:
-                            return target
-            except (OSError, ValueError):
-                pass
-            # File found but unreadable / missing key — use default
-            return 'claude'
-
-    # No marshal.json found — default to claude
-    return 'claude'
-
-
 def generate_target_aware_resolver_code(target: str) -> str:
     """Return the Python source for the ``_resolve_notation_by_target`` function.
 
     The body of the generated executor's ``resolve_notation`` function calls
     ``_resolve_notation_by_target`` as a dynamic fallback when a notation is
-    absent from the embedded SCRIPTS dict.  The implementation differs by
-    target:
+    absent from the embedded SCRIPTS dict.  Every implementation opens with the
+    NESTED ``{bundle}/skills/{skill}/scripts/{script}.py`` tree-first probe (a
+    live checkout at or above the executor file), then diverges: the two flat
+    targets add their own dash-namespaced deployed roots, while ``claude`` stops
+    at the nested plugin cache because a Claude installation has no flat root to
+    find.  The emitted resolver therefore agrees with whichever layout the
+    target actually ships.  They differ only in the roots searched after the
+    shared tree-first leg:
 
-    - ``claude``:  glob-based resolver using the Claude plugin-cache
+    - ``claude``:  the plugin-cache newest-version-dir walk
       (``~/.claude/plugins/cache/plan-marshall/*/skills/{skill}/scripts/{script}.py``).
-    - ``antigravity``:  root walk using the Antigravity dash-namespaced directory
-      layout (``{bundle}-{skill}/scripts/{script}.py``).
+    - ``antigravity``:  7-root walk using the Antigravity dash-namespaced
+      directory layout (``{bundle}-{skill}/scripts/{script}.py``).
     - ``opencode``:  7-root walk using the OpenCode dash-namespaced directory
       layout (``{bundle}-{skill}/scripts/{script}.py``).
 
@@ -1499,6 +1912,7 @@ def generate_executor(
     base_path: Path,
     dry_run: bool = False,
     target: str | None = None,
+    coverage: DiscoveryCoverage | None = None,
 ) -> dict:
     """
     Generate execute-script.py with embedded mappings.
@@ -1566,8 +1980,15 @@ def generate_executor(
         base_path: Path to bundles directory for resolving template/logging paths
         dry_run: If True, show what would be generated without writing
         target: Platform target (e.g. ``"claude"`` or ``"opencode"``).  When
-            ``None``, the target is read from ``marshal.json`` via
-            :func:`read_marshal_target`.
+            ``None``, it is resolved from the env tier or ``marshal.json`` via
+            :func:`target_context.resolve_target`.
+        coverage: The discovery-coverage verdict for ``mappings``, from
+            :func:`assess_discovery_coverage`.  It gates the one degradation
+            below that would otherwise be emitted as a fact: a
+            ``# (none detected)`` shared-module block is only honest when the
+            discovery that produced the mappings is known to be complete.  A
+            ``None`` verdict is treated as NOT established, so a caller that
+            has not assessed coverage cannot reach the degradation.
 
     Returns:
         A ``{'status': 'success'}`` dict on success (carrying ``dry_run: True``
@@ -1597,21 +2018,49 @@ def generate_executor(
     tree_bases = _resolve_tree_bases(base_path)
     import_base = tree_bases[0] if tree_bases else base_path
 
-    # Resolve platform target for target-aware resolver injection.
-    resolved_target = target if target is not None else read_marshal_target()
+    # Resolve platform target for target-aware resolver injection. The caller
+    # resolves it through the shared resolver; only a direct programmatic call
+    # that supplied none falls back to the cascade here, and it falls back to
+    # the SAME resolver rather than to a private marshal.json reader.
+    resolved_target = target if target is not None else resolve_target()['target']
     resolver_code = generate_target_aware_resolver_code(resolved_target)
 
-    # logging module location (unified logging skill)
+    # logging module location (unified logging skill). EXISTENCE-CHECKED: the
+    # generated executor imports ``plan_logging`` from this path before it can
+    # log anything, so substituting a path that does not exist emits an executor
+    # whose very first operation fails. Generation refuses instead.
     logging_scripts_dir = get_logging_scripts_dir(import_base)
+    if not logging_scripts_dir.is_dir():
+        return {
+            'status': 'error',
+            'error': 'logging_module_dir_missing',
+            'detail': (
+                f'the logging module directory {logging_scripts_dir} does not exist; the generated '
+                f'executor imports plan_logging from it, so no executor can be emitted for this base'
+            ),
+            'logging_dir': str(logging_scripts_dir),
+        }
     logging_dir = logging_scripts_dir.resolve().as_posix()
 
     # Shared module directories (must be on sys.path before executor-level imports).
     # Emitted as ``(skill, pinned_dir)`` pairs so the template bootstrap can self-heal a
     # GC-pruned pinned version to the newest surviving plugin-cache version dir. The skill
-    # name is the parent dir name of each resolved ``.../skills/{skill}/scripts`` path.
+    # name comes from shared_module_skill_label (a flat dir's parent is ``{bundle}-{skill}``).
     shared_dirs = get_shared_module_dirs(import_base)
+    if not shared_dirs and (coverage is None or not coverage['coverage_ok']):
+        # ``# (none detected)`` is a claim about the world — "there are no shared
+        # module dirs here" — and the shared-module discovery runs through the
+        # same bundle walk the script discovery does. When the discovery
+        # coverage could not be established, an empty result is indistinguishable
+        # from a truncated scan, so the claim is refused rather than emitted.
+        return coverage_error_payload(
+            'shared_module_dirs_unresolved',
+            'no shared-module directories resolved and script-discovery coverage could not be '
+            'established, so "(none detected)" cannot be claimed as a fact',
+            coverage if coverage is not None else _UNASSESSED_COVERAGE,
+        )
     shared_module_lines = (
-        '\n'.join(f"    ('{d.parent.name}', '{d.as_posix()}')," for d in shared_dirs)
+        '\n'.join(f"    ('{shared_module_skill_label(d)}', '{d.as_posix()}')," for d in shared_dirs)
         if shared_dirs
         else '    # (none detected)'
     )
@@ -1619,9 +2068,10 @@ def generate_executor(
     # Cache-recovery roots for the template's pruned-version self-heal, resolved at
     # generation time through the same runtime op the target-aware resolver family uses.
     # The executor cannot import the shared resolver before its own bootstrap is done, so
-    # the recovered roots travel with the generated file. A target with no versioned cache
-    # (OpenCode) contributes no root and the recovery honestly finds nothing.
-    recovery_roots = _shared_get_bundle_cache_roots()
+    # the recovered roots travel with the generated file. The roots are the RESOLVED
+    # target's, not the ambient one's: ``generate --target opencode`` on a Claude-ambient
+    # machine must not embed the Claude plugin-cache roots.
+    recovery_roots = _shared_bundle_cache_roots_for(resolved_target)
     cache_recovery_lines = (
         # repr() (not manual quotes) so a root path containing a quote cannot
         # emit invalid generated Python and trip the unsubstituted-placeholder
@@ -1634,6 +2084,14 @@ def generate_executor(
     # These are injected as extra PYTHONPATH entries so subprocess-invoked scripts can
     # import from organized subdirectory layouts (e.g., script-shared/scripts/build/).
     # Sourced from the same single tree as the entrypoints and shared dirs above.
+    #
+    # ``collect_script_dirs`` enumerates BOTH deployed shapes (it is a
+    # ``deployed_layout`` consumer), so this list is populated against a flat
+    # root as well as a nested one. That matters more here than anywhere else:
+    # these are the PYTHONPATH entries the generated executor hands to every
+    # subprocess it spawns, so an empty list on a flat root would ship an
+    # executor that cannot import a single shared module — while the generation
+    # itself reported success.
     all_script_dirs = collect_script_dirs(import_base)
     resolved_dirs = [Path(d).resolve().as_posix() for d in all_script_dirs]
     extra_dirs_code = ', '.join(f"'{d}'" for d in _sort_script_dirs_tree_first(sorted(set(resolved_dirs))))
@@ -2379,20 +2837,41 @@ def read_marshal_provisioned_version(cwd: Path | None = None) -> str:
 
 
 def cmd_generate(args: argparse.Namespace) -> dict:
-    """Generate executor with embedded script mappings."""
+    """Generate executor with embedded script mappings.
+
+    Fails CLOSED on an under-covered discovery. The scan below can return a
+    mapping that is short of what the tree holds — empty when the scan found
+    nothing, truncated when the glob fallback's narrower rules dropped scripts —
+    and neither failure is visible in the returned dict. The coverage verdict
+    from :func:`assess_discovery_coverage` is what makes the difference
+    refusable, and it is checked before anything is written: the enumerated
+    count, the discovered count, the declared exclusion rules and the missing
+    notations all ride the error payload so the shortfall is diagnosable without
+    re-running the scan by hand (ADR-019).
+    """
+    # One shared context resolution: the same ``--target`` /
+    # ``--marketplace-root`` cascade every target-resolving verb runs.
+    try:
+        ctx = resolve_verb_context(args)
+    except ValueError as e:
+        return {'status': 'error', 'error': 'invalid_context', 'detail': str(e)}
+
+    resolved_target: str = ctx['target']
+    marketplace_root = ctx['marketplace_root']
+
     # Resolve base path
     try:
-        base_path = get_base_path(use_marketplace=args.marketplace, marketplace_root=args.marketplace_root)
+        base_path = get_base_path(
+            use_marketplace=args.marketplace,
+            marketplace_root=marketplace_root,
+            target=resolved_target,
+        )
         context = 'marketplace' if args.marketplace else 'auto-detected'
         print(f'Using context: {context} ({base_path})')
     except FileNotFoundError as e:
         return {'status': 'error', 'error': str(e)}
 
-    # Resolve target for the target-aware resolver.
-    # Explicit --target flag takes precedence; fall back to marshal.json.
-    target: str | None = getattr(args, 'target', None)
-    resolved_target = target if target else read_marshal_target()
-    print(f'Target: {resolved_target}')
+    print(f'Target: {resolved_target} (source: {ctx["target_source"]})')
 
     # Discover marketplace scripts
     print('Discovering marketplace scripts...')
@@ -2405,12 +2884,37 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         # failure the fallback exists to cover. Catch SystemExit alongside
         # Exception so an inventory-not-found (or inventory-scan-failure) falls
         # back to glob discovery instead of aborting the whole regeneration.
-        # The sibling reader cmd_drift already catches SystemExit here.
+        # The fallback is NOT trusted blindly: it is handed to the same coverage
+        # verdict as the scan, and its known-narrower globbing rules (``.py``
+        # only, top-level only, tests dropped) will fail that verdict on a real
+        # tree. That is the intended outcome — an empty and a truncated scan are
+        # the same defect class, and neither may reach a written executor.
         print(f'Falling back to glob discovery: {e}', file=sys.stderr)
         mappings = discover_scripts_fallback(base_path)
 
     marketplace_count = len(mappings)
     print(f'Found {marketplace_count} marketplace scripts')
+
+    # Discovery-coverage guard. The comparison is against the MARKETPLACE
+    # mappings only — ``discover_local_scripts`` contributes ``default-bundle:``
+    # notations from a different tree entirely and is not part of what the
+    # enumeration covers.
+    coverage = assess_discovery_coverage(base_path, mappings)
+    if not coverage['coverage_ok']:
+        return coverage_error_payload(
+            'discovery_coverage_incomplete',
+            f'script discovery is short of the {coverage["scripts_enumerated"]} notations the tree '
+            f'holds ({coverage["scripts_discovered"]} discovered, '
+            f'{len(coverage["missing_notations"])}+ missing); refusing to generate an executor from '
+            f'an under-covered scan',
+            coverage,
+            executor_target=resolved_target,
+            target_source=ctx['target_source'],
+        )
+    print(
+        f'Discovery coverage verified: {coverage["scripts_discovered"]} of '
+        f'{coverage["scripts_expected"]} enumerated notations'
+    )
 
     # Discover project-local scripts
     print('Discovering project-local scripts...')
@@ -2437,7 +2941,13 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     # the output contract requires, so a caller reads ``status`` rather than
     # branching on the exit status.
     print('Generating executor...')
-    gen_result = generate_executor(mappings, base_path, dry_run=args.dry_run, target=resolved_target)
+    gen_result = generate_executor(
+        mappings,
+        base_path,
+        dry_run=args.dry_run,
+        target=resolved_target,
+        coverage=coverage,
+    )
     if gen_result.get('status') != 'success':
         # The fail-open guard's error result carries surface_stats — flatten
         # them to the top level so the counts reach the TOON output on the error
@@ -2468,6 +2978,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             'status': 'success',
             'scripts_discovered': len(mappings),
             'executor_target': resolved_target,
+            'target_source': ctx['target_source'],
             'dry_run': True,
             **surface_stats,
         }
@@ -2486,6 +2997,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         'scripts_discovered': len(mappings),
         'executor_generated': str(executor_path()),
         'executor_target': resolved_target,
+        'target_source': ctx['target_source'],
         'logs_cleaned': logs_cleaned,
         **surface_stats,
     }
@@ -2494,10 +3006,38 @@ def cmd_generate(args: argparse.Namespace) -> dict:
 
 
 def cmd_verify(args: argparse.Namespace) -> dict:
-    """Verify existing executor."""
-    valid, count = verify_executor()
+    """Verify the existing executor against the resolved target's context.
+
+    The verb resolves its ``{target, marketplace-root}`` context through the
+    shared resolver like every other target-resolving verb, and hands the
+    resolved base to :func:`verify_executor` rather than letting it
+    auto-detect. Verification is not target-neutral: the logging-module import
+    probe runs against the base's ``manage-logging`` directory, so a verb that
+    auto-detected while ignoring ``--target`` would verify one target's layout
+    and report the result as if it were the requested one's.
+    """
+    try:
+        ctx = resolve_verb_context(args)
+    except ValueError as e:
+        return {'status': 'error', 'error': 'invalid_context', 'detail': str(e)}
+
+    try:
+        base_path = get_base_path(
+            use_marketplace=getattr(args, 'marketplace', False),
+            marketplace_root=ctx['marketplace_root'],
+            target=ctx['target'],
+        )
+    except FileNotFoundError as e:
+        return {'status': 'error', 'error': str(e)}
+
+    valid, count = verify_executor(base_path)
     if valid:
-        return {'status': 'success', 'script_count': count}
+        return {
+            'status': 'success',
+            'script_count': count,
+            'target': ctx['target'],
+            'target_source': ctx['target_source'],
+        }
     else:
         return {'status': 'error', 'error': 'Verification failed'}
 
@@ -2541,6 +3081,8 @@ def cmd_bootstrap(args: argparse.Namespace) -> dict:
             'action': 'generated',
             'reason': reason,
             'template_status': template_status,
+            'target': regen.get('executor_target', ''),
+            'target_source': regen.get('target_source', ''),
             **extra,
         }
 
@@ -2550,7 +3092,22 @@ def cmd_bootstrap(args: argparse.Namespace) -> dict:
             'unknown' if not live_sha else 'uncompared',
             executor=str(real_executor),
         )
-    valid, script_count = verify_executor()
+    # Verify against the RESOLVED target's base, exactly as ``cmd_verify`` does, so
+    # ``bootstrap --target opencode`` does not decide executor validity from the
+    # ambient target's layout.
+    try:
+        ctx = resolve_verb_context(args)
+    except ValueError as e:
+        return {'status': 'error', 'error': 'invalid_context', 'detail': str(e)}
+    try:
+        verify_base: Path | None = get_base_path(
+            use_marketplace=getattr(args, 'marketplace', False),
+            marketplace_root=ctx['marketplace_root'],
+            target=ctx['target'],
+        )
+    except FileNotFoundError:
+        verify_base = None
+    valid, script_count = verify_executor(verify_base)
     if not valid:
         return _regenerate(
             'executor_invalid',
@@ -2652,27 +3209,85 @@ def _detect_notation_drift(
 
 
 def cmd_drift(args: argparse.Namespace) -> dict:
-    """Compare executor mappings with current bundles state."""
+    """Compare executor mappings with the current bundles state.
+
+    THREE outcomes, never two:
+
+    1. **A comparison** — the scan succeeded and its coverage against an
+       independent enumeration of the tree is complete, so ``added`` /
+       ``removed`` / ``changed`` are facts.
+    2. **A resolver failure** — ``discover_scripts`` raised, or the coverage
+       verdict fails. The verb returns ``status: error`` naming the failure and
+       the coverage it COULD establish. It never substitutes an empty mapping:
+       ``removed = executor_set - set()`` would report every executor mapping as
+       removed, under ``status: success``, for a condition that says nothing at
+       all about what was removed. That laundering is the defect this verb's
+       third outcome exists to close.
+    3. **A genuinely empty current set** — the scan succeeded AND the
+       enumeration found nothing either. Only this may yield an empty current
+       set, and it carries the enumerated-versus-discovered counts precisely so
+       it is distinguishable from a truncated scan by a reader who did not watch
+       the scan run.
+    """
     executor_mappings = get_executor_mappings()
 
     if not executor_mappings:
         return {'status': 'error', 'error': 'Could not read executor mappings'}
 
+    try:
+        ctx = resolve_verb_context(args)
+    except ValueError as e:
+        return {'status': 'error', 'error': 'invalid_context', 'detail': str(e)}
+    resolved_target: str = ctx['target']
+
     # Resolve base path
     try:
-        base_path = get_base_path(use_marketplace=args.marketplace, marketplace_root=args.marketplace_root)
+        base_path = get_base_path(
+            use_marketplace=args.marketplace,
+            marketplace_root=ctx['marketplace_root'],
+            target=resolved_target,
+        )
         context = 'marketplace' if args.marketplace else 'auto-detected'
         print(f'Using context: {context} ({base_path})')
     except FileNotFoundError as e:
         return {'status': 'error', 'error': str(e)}
 
-    # Get current bundles state using discover_scripts()
+    # Outcome 2a — the scan itself failed. Report the failure and whatever
+    # coverage the independent enumeration can still establish, so the reader
+    # can tell "I could not look" from "I looked and found nothing".
     try:
         current_mappings = discover_scripts(base_path)
-    except SystemExit:
-        print('Warning: Could not read bundles state', file=sys.stderr)
-        current_mappings = {}
+    except (Exception, SystemExit) as e:
+        print(f'Error: could not read bundles state: {e}', file=sys.stderr)
+        return coverage_error_payload(
+            'bundles_state_unresolvable',
+            f'script discovery failed ({type(e).__name__}: {e}); no removal verdict can be '
+            f'substantiated, and an empty current set is NOT substituted for one',
+            assess_discovery_coverage(base_path, {}),
+            executor_scripts=len(executor_mappings),
+            executor_target=resolved_target,
+            target_source=ctx['target_source'],
+        )
 
+    coverage = assess_discovery_coverage(base_path, current_mappings)
+
+    # Outcome 2b — the scan returned, but it is short of the tree. Same verdict:
+    # an error, not a removal list.
+    if not coverage['coverage_ok']:
+        return coverage_error_payload(
+            'bundles_state_under_covered',
+            f'script discovery returned {coverage["scripts_discovered"]} of '
+            f'{coverage["scripts_enumerated"]} enumerated notations; a truncated scan cannot '
+            f'substantiate a removal list',
+            coverage,
+            executor_scripts=len(executor_mappings),
+            executor_target=resolved_target,
+            target_source=ctx['target_source'],
+        )
+
+    # Outcome 1 or 3 — the scan succeeded with established coverage. An empty
+    # current set here is a measurement, and the counts below are what make it
+    # readable as one.
     # Find differences
     executor_set = set(executor_mappings.keys())
     current_set = set(current_mappings.keys())
@@ -2709,11 +3324,33 @@ def cmd_drift(args: argparse.Namespace) -> dict:
         'removed': len(removed),
         'changed': len(changed),
         'notation_drift': len(notation_drift),
+        # The coverage counts ride every successful verdict, not only the
+        # empty-set one: a reader seeing ``bundles_scripts: 0`` needs the
+        # enumerated count beside it to know that zero is a measurement of an
+        # empty tree rather than the residue of a scan that found nothing it
+        # could not report.
+        'scripts_enumerated': coverage['scripts_enumerated'],
+        'scripts_discovered': coverage['scripts_discovered'],
+        'target': resolved_target,
+        'target_source': ctx['target_source'],
     }
 
 
 def cmd_paths(args: argparse.Namespace) -> dict:
-    """Verify all mapped paths exist."""
+    """Verify every path the executor maps actually exists.
+
+    The verb resolves its ``{target, marketplace-root}`` context through the
+    shared resolver like every other target-resolving verb, so a caller can
+    compare this verdict against another verb's on the same machine and get the
+    same answer. The check itself is over the executor's EMBEDDED mappings, so
+    the target does not change WHAT is inspected — resolving it is what stops
+    ``paths`` from being the one verb whose "current" means something else.
+    """
+    try:
+        ctx = resolve_verb_context(args)
+    except ValueError as e:
+        return {'status': 'error', 'error': 'invalid_context', 'detail': str(e)}
+
     mappings = get_executor_mappings()
 
     if not mappings:
@@ -2727,6 +3364,8 @@ def cmd_paths(args: argparse.Namespace) -> dict:
         'total': len(mappings),
         'existing': len(existing),
         'missing': len(missing),
+        'target': ctx['target'],
+        'target_source': ctx['target_source'],
     }
 
 
@@ -2776,25 +3415,32 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
     ``marshal_status: unknown`` with a warning rather than a vacuous ``fresh``.
 
     Returns:
-        A single seven-field TOON dict: ``status``, ``executor_action``
+        A single nine-field TOON dict: ``status``, ``executor_action``
         (``fresh`` | ``regenerated``), ``marshal_status`` (``fresh`` | ``stale``
         | ``unknown``), ``installed_version``, ``executor_version``,
-        ``marshal_version``, and ``warning`` (the fail-closed message when
-        ``marshal_status`` is ``unknown``, else the empty string).
+        ``marshal_version``, ``warning`` (the fail-closed message when
+        ``marshal_status`` is ``unknown``, else the empty string), and the
+        ``target`` / ``target_source`` pair the verb resolved.
     """
+    try:
+        ctx = resolve_verb_context(args)
+    except ValueError as e:
+        return {'status': 'error', 'error': 'invalid_context', 'detail': str(e)}
+    resolved_target: str = ctx['target']
+
     try:
         base_path: Path | None = get_base_path(
             use_marketplace=getattr(args, 'marketplace', False),
-            marketplace_root=getattr(args, 'marketplace_root', None),
+            marketplace_root=ctx['marketplace_root'],
+            target=resolved_target,
         )
     except FileNotFoundError:
         base_path = None
 
-    # Resolve the target the same way cmd_generate does — an explicit --target
-    # flag wins; otherwise fall back to marshal.json — so a stale-executor
-    # regeneration and the manifest lookup below both look at the SAME target's
-    # published dist-manifest.json rather than always defaulting to claude.
-    resolved_target: str = getattr(args, 'target', None) or read_marshal_target()
+    # The target is resolved through the SAME shared resolver cmd_generate uses,
+    # so a stale-executor regeneration and the manifest lookup below both look
+    # at the SAME target's published dist-manifest.json rather than one of them
+    # defaulting to claude.
 
     manifest = read_installed_manifest(base_path, target=resolved_target)
     installed_version = str(manifest.get('version', '') or 'unknown')
@@ -2844,12 +3490,51 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
         'executor_version': executor_version,
         'marshal_version': marshal_version,
         'warning': warning,
+        'target': resolved_target,
+        'target_source': ctx['target_source'],
     }
 
 
 # ============================================================================
 # MAIN
 # ============================================================================
+
+#: The target accept-set, ONE list shared by every target-resolving verb. It is
+#: a module constant rather than a literal repeated per ``add_argument`` so a
+#: new target is added in one place: a verb whose list lagged the others would
+#: reject a target its siblings accept, which is exactly the "this verb
+#: disagrees with that one" failure the shared resolver exists to remove.
+TARGET_CHOICES = ['claude', 'opencode', 'antigravity']
+
+#: The ``--target`` help text, likewise shared verbatim by all six verbs. Three
+#: different texts for the same flag on three verbs meant ``--help`` was a
+#: per-verb answer to "what does --target do here", and the answers disagreed
+#: about whether the value came from ``marshal.json`` or from the environment
+#: cascade. It now says one thing, and the thing is true of all six.
+TARGET_FLAG_HELP = (
+    'Platform target this verb operates under (claude, opencode, or antigravity). '
+    'Overrides the value the shared resolver would otherwise derive from the '
+    'platform environment signals and .plan/marshal.json; when omitted, all six '
+    'verbs resolve the same target on the same machine.'
+)
+
+
+def add_target_argument(parser: argparse.ArgumentParser) -> None:
+    """Register the shared ``--target`` flag on a verb's subparser.
+
+    Every target-resolving verb calls this, so the flag's name, its accept-set
+    and its help text are identical on all six by construction rather than by
+    six copies agreeing. The entity-noun-first spelling is deliberate and
+    propagated verbatim: ``--target`` names the entity, and no ``--platform`` /
+    ``--target-name`` / ``--target-dir`` variant is introduced alongside it.
+    """
+    parser.add_argument(
+        '--target',
+        default=None,
+        choices=TARGET_CHOICES,
+        metavar='TARGET',
+        help=TARGET_FLAG_HELP,
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -2861,7 +3546,11 @@ def build_parser() -> argparse.ArgumentParser:
             'By default uses plugin-cache context. Use --marketplace for development. '
             'Use --marketplace-root PATH (or set PM_MARKETPLACE_ROOT) to pin marketplace '
             'discovery to an explicit anchor when running from a worktree or alternate '
-            'checkout. The flag takes precedence over the env var.'
+            'checkout. The flag takes precedence over the env var. In the default '
+            'cache-first context the env var outranks the plugin cache only when no '
+            '--target was given and no target was resolved from the environment signals '
+            'or .plan/marshal.json; marketplace discovery itself (--marketplace, or no '
+            'cache present) still consults it ahead of the working directory.'
         ),
         allow_abbrev=False,
     )
@@ -2881,24 +3570,15 @@ def build_parser() -> argparse.ArgumentParser:
         metavar='PATH',
         help=(
             'Explicit marketplace anchor directory (must contain marketplace/bundles). '
-            'Overrides PM_MARKETPLACE_ROOT, the script-relative walk, and cwd-based discovery.'
+            'Overrides PM_MARKETPLACE_ROOT and cwd-based discovery.'
         ),
     )
-    gen_parser.add_argument(
-        '--target',
-        default=None,
-        choices=['claude', 'opencode', 'antigravity'],
-        metavar='TARGET',
-        help=(
-            'Platform target for the embedded target-aware resolver (claude, opencode, or antigravity). '
-            'Overrides the value read from .plan/marshal.json. '
-            'When omitted, the target is read from marshal.json (defaulting to claude).'
-        ),
-    )
+    add_target_argument(gen_parser)
     gen_parser.set_defaults(func=cmd_generate)
 
     # verify subcommand
     verify_parser = subparsers.add_parser('verify', help='Verify existing executor', allow_abbrev=False)
+    add_target_argument(verify_parser)
     verify_parser.set_defaults(func=cmd_verify)
 
     # bootstrap subcommand — a sanctioned direct-path entry point (fresh clone /
@@ -2918,16 +3598,10 @@ def build_parser() -> argparse.ArgumentParser:
         metavar='PATH',
         help=(
             'Explicit marketplace anchor directory (must contain marketplace/bundles). '
-            'Overrides PM_MARKETPLACE_ROOT, the script-relative walk, and cwd-based discovery.'
+            'Overrides PM_MARKETPLACE_ROOT and cwd-based discovery.'
         ),
     )
-    bootstrap_parser.add_argument(
-        '--target',
-        default=None,
-        choices=['claude', 'opencode', 'antigravity'],
-        metavar='TARGET',
-        help=('Platform target used when bootstrap generates. Overrides the value read from .plan/marshal.json.'),
-    )
+    add_target_argument(bootstrap_parser)
     # cmd_generate dereferences args.dry_run directly, so the bootstrap
     # namespace must carry it — mirroring the preflight precedent below.
     # Without this default every bootstrap run that reaches regeneration
@@ -2947,13 +3621,15 @@ def build_parser() -> argparse.ArgumentParser:
         metavar='PATH',
         help=(
             'Explicit marketplace anchor directory (must contain marketplace/bundles). '
-            'Overrides PM_MARKETPLACE_ROOT, the script-relative walk, and cwd-based discovery.'
+            'Overrides PM_MARKETPLACE_ROOT and cwd-based discovery.'
         ),
     )
+    add_target_argument(drift_parser)
     drift_parser.set_defaults(func=cmd_drift)
 
     # paths subcommand
     paths_parser = subparsers.add_parser('paths', help='Verify all mapped paths exist', allow_abbrev=False)
+    add_target_argument(paths_parser)
     paths_parser.set_defaults(func=cmd_paths)
 
     # cleanup subcommand
@@ -2980,19 +3656,10 @@ def build_parser() -> argparse.ArgumentParser:
         metavar='PATH',
         help=(
             'Explicit marketplace anchor directory (must contain marketplace/bundles). '
-            'Overrides PM_MARKETPLACE_ROOT, the script-relative walk, and cwd-based discovery.'
+            'Overrides PM_MARKETPLACE_ROOT and cwd-based discovery.'
         ),
     )
-    preflight_parser.add_argument(
-        '--target',
-        default=None,
-        choices=['claude', 'opencode', 'antigravity'],
-        metavar='TARGET',
-        help=(
-            'Platform target used when a stale executor is regenerated. '
-            'Overrides the value read from .plan/marshal.json.'
-        ),
-    )
+    add_target_argument(preflight_parser)
     preflight_parser.set_defaults(func=cmd_preflight, dry_run=False)
 
     return parser

@@ -38,6 +38,8 @@ Load the orchestrator work identity before executing any verb — it carries the
 Skill: plan-marshall:persona-plan-orchestrator
 ```
 
+A foundational skill that cannot be loaded **aborts the verb** with a structured error — never skipped, never downgraded to a warning. The rule and its rationale live in [`ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md) § "Foundational Skills: load or fail closed".
+
 ## Enforcement
 
 **Execution mode**: verb router — resolve the verb, load its workflow doc, follow the documented steps verbatim. No verb means `status`.

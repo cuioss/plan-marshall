@@ -25,6 +25,8 @@ import runtime_info
 from runtime_base import (
     PERMISSION_FIX_OPERATIONS,
     Runtime,
+    ensure_steps_without_skill_grants,
+    extract_project_steps,
     marshal_shape_error,
     toon_error,
     toon_noop,
@@ -756,15 +758,22 @@ class AntigravityRuntime(Runtime):
         return toon_success('permission ensure-wildcards', res)
 
     def permission_ensure_steps(self, marshal_path: str, scope: str, dry_run: bool) -> str:
-        """Scan project-steps and ensure permission grants in Antigravity."""
-        return toon_success(
-            'permission ensure-steps',
-            {
-                'scope': scope,
-                'dry_run': dry_run,
-                'steps_added': 0,
-            },
-        )
+        """Scan project-steps; Antigravity cannot express a per-skill grant."""
+        if scope not in ('project', 'global'):
+            return toon_error(
+                'permission ensure-steps',
+                'invalid_scope',
+                f"--scope must be 'project' or 'global'; got {scope!r}",
+            )
+        if not Path(marshal_path).is_file():
+            return toon_error(
+                'permission ensure-steps',
+                'marshal_not_found',
+                f"{marshal_path} not found; run 'project initial-setup' first",
+            )
+        config = self.permission_load_marshal_config(marshal_path)
+        steps = [] if 'error' in config else self.permission_extract_project_steps(config)
+        return ensure_steps_without_skill_grants('Antigravity', config, steps, scope, dry_run)
 
     def permission_web_analyze(self, scope: str) -> str:
         """Analyze allowed URL domains in Antigravity."""
@@ -837,8 +846,15 @@ class AntigravityRuntime(Runtime):
             return {'error': str(exc)}
 
     def permission_extract_project_steps(self, marshal_config: dict[str, Any]) -> list[dict[str, Any]]:
-        """Enumerate project:{skill} step references."""
-        return []
+        """Enumerate project:{skill} step references — target-neutral.
+
+        Delegates to :func:`runtime_base.extract_project_steps`, the same reader
+        every other runtime uses. This method previously returned a hardcoded
+        empty list, so an Antigravity run reported "zero project steps scanned"
+        without reading anything: an empty scan result and a scan that never
+        happened were the same value.
+        """
+        return extract_project_steps(marshal_config)
 
     # ------------------------------------------------------------------
     # Metrics operations

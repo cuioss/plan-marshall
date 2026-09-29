@@ -17,6 +17,9 @@ Options:
     --full                   Include full details: frontmatter fields and skill subdirectory contents
     --name-pattern <pattern> Filter resources by name pattern (fnmatch glob, pipe-separated for multiple)
     --bundles <names>        Filter to specific bundles (comma-separated)
+    --base-path <path>       Scan exactly this bundles/cache root instead of resolving one from --scope.
+                             A flat deployed root (OpenCode/Antigravity) is read through the
+                             bundle identity each SKILL.md records.
     --output <path>          Custom output file path (default: .plan/temp/.../inventory-{timestamp}.toon)
     --direct-result          Output full TOON directly to stdout (default: write to file)
 
@@ -54,7 +57,15 @@ DEFAULT_OUTPUT_SUBDIR = 'tools-marketplace-inventory'
 
 
 # Shared path resolution (from script-shared)
-from marketplace_bundles import extract_bundle_name, find_bundles  # noqa: E402, I001
+from deployed_layout import (  # noqa: E402, I001
+    flat_script_inventory,
+    flat_skill_dirs,
+    is_private_script,
+    read_flat_skill_identity,
+    script_notation,
+    skill_roots,
+)
+from marketplace_bundles import extract_bundle_name, find_bundles  # noqa: E402
 from marketplace_paths import (  # noqa: E402
     get_base_path as _shared_get_base_path,
     get_project_skill_roots,
@@ -287,7 +298,7 @@ def discover_scripts(bundle_dir: Path, bundle_name: str) -> list[dict[str, Any]]
     # (e.g., scripts/build/*.py for organized script-shared skill)
     for script_file in sorted(skills_dir.rglob('scripts/**/*.sh')) + sorted(skills_dir.rglob('scripts/**/*.py')):
         # Skip private/internal modules (underscore prefix = internal per PEP 8)
-        if script_file.name.startswith('_'):
+        if is_private_script(script_file):
             continue
         if script_file.is_file():
             # Walk up from script_file to find the skill dir (parent of 'scripts/')
@@ -295,30 +306,68 @@ def discover_scripts(bundle_dir: Path, bundle_name: str) -> list[dict[str, Any]]
             while skill_dir.name != 'scripts' and skill_dir != skills_dir:
                 skill_dir = skill_dir.parent
             skill_dir = skill_dir.parent  # skill dir is parent of scripts/
-            skill_name = skill_dir.name
-
-            # Determine script type
-            script_type = 'python' if script_file.suffix == '.py' else 'bash'
-
-            # Generate path formats
-            relative_path = safe_relative_path(script_file)
-            runtime_mount = f'{mount_prefix}/{skill_name}/scripts/{script_file.name}'
-
-            scripts.append(
-                {
-                    'name': script_file.stem,
-                    'skill': skill_name,
-                    'notation': f'{bundle_name}:{skill_name}:{script_file.stem}',
-                    'type': script_type,
-                    'path_formats': {
-                        'runtime': runtime_mount,
-                        'relative': relative_path,
-                        'absolute': str(script_file.resolve()),
-                    },
-                }
-            )
+            scripts.append(_script_entry(bundle_name, skill_dir.name, script_file, mount_prefix))
 
     return scripts
+
+
+def _script_entry(bundle_name: str, skill_name: str, script_file: Path, mount_prefix: str) -> dict[str, Any]:
+    """Build one inventory script row; the notation comes from the shared rule."""
+    return {
+        'name': script_file.stem,
+        'skill': skill_name,
+        'notation': script_notation(bundle_name, skill_name, script_file),
+        'type': 'python' if script_file.suffix == '.py' else 'bash',
+        'path_formats': {
+            'runtime': f'{mount_prefix}/{skill_name}/scripts/{script_file.name}',
+            'relative': safe_relative_path(script_file),
+            'absolute': str(script_file.resolve()),
+        },
+    }
+
+
+def discover_flat_bundles(base_path: Path, include: dict[str, bool]) -> list[dict[str, Any]]:
+    """Discover the bundles a FLAT deployed root carries, one entry per bundle.
+
+    A flat root (``~/.config/opencode/skills``, or the directory containing it)
+    has no bundle directories and no ``plugin.json`` for :func:`find_bundles` to
+    locate, so the nested walk finds nothing on it. Its skills are attributed
+    through the identity the flat emitters record in each ``SKILL.md``, read by
+    ``deployed_layout.flat_script_inventory`` — the same walk the executor's
+    coverage enumeration uses, so the two sides cannot derive different
+    notations. A flat skill directory with no recorded identity is not reported
+    here; the executor's coverage verdict counts it as unattributed.
+    """
+    bundles: dict[str, dict[str, Any]] = {}
+
+    def _bundle(name: str) -> dict[str, Any]:
+        return bundles.setdefault(
+            name,
+            {
+                'name': name,
+                'path': safe_relative_path(base_path),
+                'agents': [],
+                'commands': [],
+                'skills': [],
+                'scripts': [],
+                'tests': [],
+            },
+        )
+
+    if include.get('skills'):
+        for skill_dir in flat_skill_dirs(base_path):
+            identity = read_flat_skill_identity(skill_dir)
+            if identity is not None:
+                # The path is carried unconditionally: content filtering reads a
+                # resource through it, and a path-less row is dropped by the filter.
+                _bundle(identity[0])['skills'].append({'name': identity[1], 'path': safe_relative_path(skill_dir)})
+    if include.get('scripts'):
+        mount_prefix = runtime_mount_prefix()
+        for flat_script in flat_script_inventory(base_path).scripts:
+            _bundle(flat_script.bundle)['scripts'].append(
+                _script_entry(flat_script.bundle, flat_script.skill, flat_script.path, mount_prefix)
+            )
+    return [bundles[name] for name in sorted(bundles)]
 
 
 def discover_tests(bundle_name: str) -> list[dict[str, Any]]:
@@ -745,6 +794,12 @@ def main() -> int:
     )
     parser.add_argument('--bundles', default='', help='Filter to specific bundles (comma-separated)')
     parser.add_argument(
+        '--base-path',
+        default='',
+        help='Scan exactly this bundles/cache root instead of resolving one from --scope '
+        '(binds the scan to a tree the caller already resolved)',
+    )
+    parser.add_argument(
         '--content-pattern',
         default='',
         help='Include only files matching content pattern(s). Regex, pipe-separated for multiple (OR logic).',
@@ -811,9 +866,9 @@ def main() -> int:
         print(serialize_toon({'status': 'error', 'error': f'{error}. Valid values: {", ".join(VALID_RESOURCE_TYPES)}'}))
         return 0
 
-    # Get base path
+    # Get base path — an explicit --base-path binds the scan to that tree.
     try:
-        base_path = get_base_path(args.scope)
+        base_path = Path(args.base_path).expanduser() if args.base_path else get_base_path(args.scope)
     except (FileNotFoundError, ValueError) as e:
         print(serialize_toon({'status': 'error', 'error': str(e)}))
         return 0
@@ -830,6 +885,22 @@ def main() -> int:
     # Build inventory
     bundles_data = []
     total_content_stats = {'input_count': 0, 'matched_count': 0, 'excluded_count': 0}
+    # Every skill name and script notation each nested bundle DEPLOYS, taken before
+    # any name or content filter. The flat-shape merge below de-duplicates against
+    # this, not against the filtered listing: a nested copy the filter excluded is
+    # still deployed, so its flat twin must not re-enter the filter a second time.
+    # Computed only when the base carries a flat skill root: without one there is
+    # no flat twin to de-duplicate, and the pre-pass would re-walk every nested
+    # bundle's scripts for nothing.
+    nested_deployed: dict[str, tuple[set[str], set[str]]] = {}
+    for bundle_dir in bundle_dirs if skill_roots(base_path) else []:
+        name = _extract_bundle_name(bundle_dir)
+        skills_dir = bundle_dir / 'skills'
+        deployed_skills = {md.parent.name for md in skills_dir.glob('*/SKILL.md')} if skills_dir.is_dir() else set()
+        deployed_notations = (
+            {script['notation'] for script in discover_scripts(bundle_dir, name)} if include['scripts'] else set()
+        )
+        nested_deployed[name] = (deployed_skills, deployed_notations)
     for bundle_dir in bundle_dirs:
         bundle, stats = process_bundle(
             bundle_dir,
@@ -845,6 +916,41 @@ def main() -> int:
         total_content_stats['input_count'] += stats['input_count']
         total_content_stats['matched_count'] += stats['matched_count']
         total_content_stats['excluded_count'] += stats['excluded_count']
+
+    # A flat deployed root carries no bundle dirs for find_bundles to locate. Its
+    # skills pass the same name and content filters as nested ones, and a bundle
+    # present in both shapes is MERGED into one entry — the JSON output is keyed
+    # by bundle name, so a second entry would silently replace the first.
+    by_name = {bundle['name']: bundle for bundle in bundles_data}
+    for flat_bundle in discover_flat_bundles(base_path, include):
+        if bundle_filter and flat_bundle['name'] not in bundle_filter:
+            continue
+        skills = filter_resources_by_pattern(flat_bundle['skills'], name_patterns)
+        scripts = filter_resources_by_pattern(flat_bundle['scripts'], name_patterns)
+        existing = by_name.get(flat_bundle['name'])
+        if existing is not None:
+            # A skill (or script notation) deployed in both shapes is evaluated
+            # ONCE, through its nested copy. The keys are what the nested bundle
+            # deploys before any filter — not its filtered listing — and the
+            # de-dup runs BEFORE the content filter, so each both-shapes skill
+            # reaches the filter and its stats exactly once, whichever way the
+            # filter decided the nested copy.
+            known_skills, known_notations = nested_deployed[flat_bundle['name']]
+            skills = [skill for skill in skills if skill['name'] not in known_skills]
+            scripts = [script for script in scripts if script['notation'] not in known_notations]
+        if content_include or content_exclude:
+            skills, stats = filter_resources_by_content(skills, content_include, content_exclude)
+            total_content_stats['input_count'] += stats['input_count'] + len(scripts)
+            total_content_stats['matched_count'] += stats['matched_count'] + len(scripts)
+            total_content_stats['excluded_count'] += stats['excluded_count']
+        if existing is not None:
+            existing['skills'].extend(skills)
+            existing['scripts'].extend(scripts)
+            continue
+        flat_bundle['skills'] = skills
+        flat_bundle['scripts'] = scripts
+        bundles_data.append(flat_bundle)
+        by_name[flat_bundle['name']] = flat_bundle
 
     # Add project-skills pseudo-bundle if requested
     if args.include_project_skills:
@@ -899,6 +1005,12 @@ def main() -> int:
                 'bundles': {b['name']: {k: v for k, v in b.items() if k != 'name'} for b in bundles_data},
                 'statistics': output['statistics'],
             }
+            # The content-filter fields ride the JSON payload exactly as they ride
+            # the TOON one — a filtered JSON result that omitted them could not be
+            # told apart from an unfiltered one.
+            for key in ('content_filter_stats', 'content_pattern', 'content_exclude'):
+                if key in output:
+                    json_output[key] = output[key]
             print(json.dumps(json_output, indent=2))
         else:
             print(serialize_inventory_toon(output, args.full))

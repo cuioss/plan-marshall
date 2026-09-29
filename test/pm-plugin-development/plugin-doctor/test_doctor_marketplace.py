@@ -1054,11 +1054,14 @@ def test_analyze_scans_project_local_recipe_tree_via_layout_op(tmp_path):
 
 
 # Scans the whole marketplace and contends with the lint leg under `verify`, where
-# it exceeds the global 300s hang detector. 900 is derived, not chosen: this test
-# runs the gate as a SUBPROCESS under its own declared `timeout=600` below, so any
-# per-test bound at or under 600 is structurally unable to let that inner bound
-# report first — the global 300 was exactly that inversion. 900 clears it by 300s.
-@pytest.mark.timeout(900)
+# it exceeds the global 300s hang detector. Both bounds are derived, not chosen, and
+# they move TOGETHER: this test runs the gate as a SUBPROCESS under its own declared
+# `timeout=1500` below, so any per-test bound at or under 1500 is structurally unable
+# to let that inner bound report first — the global 300 was exactly that inversion,
+# and 600 was its successor once the whole-tree gate outgrew 600s under xdist load
+# (observed: subprocess.TimeoutExpired after 600s, the gate passing standalone in
+# ~250s). 1800 clears the inner bound by 300s, the same margin the pairing declares.
+@pytest.mark.timeout(1800)
 def test_real_marketplace_quality_gate_has_zero_findings():
     """The real marketplace tree passes quality-gate with zero findings.
 
@@ -1077,7 +1080,9 @@ def test_real_marketplace_quality_gate_has_zero_findings():
     # No env_overrides / --marketplace-root: script-relative discovery targets
     # the real tree, exactly as CI runs it. The generous timeout covers the
     # whole-tree manage-invocation scan that derives script --help surfaces.
-    result = run_script(SCRIPT_PATH, 'quality-gate', timeout=600)
+    # It is the LOWER of this pair — the per-test bound above must stay above it
+    # so the inner budget reports before the outer one ever does.
+    result = run_script(SCRIPT_PATH, 'quality-gate', timeout=1500)
 
     # Assert the exit code FIRST, before parsing — a script crash would make
     # parse_output raise, masking the real returncode and stderr behind a

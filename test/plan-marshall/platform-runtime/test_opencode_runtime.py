@@ -18,6 +18,7 @@ import pathlib
 import pytest
 
 # conftest.py sets up PYTHONPATH so imports resolve without manual sys.path work.
+from _method_code import method_code
 from opencode_runtime import OpenCodeRuntime, to_opencode_grant
 from runtime_base import PERMISSION_FIX_OPERATIONS
 from toon_parser import parse_toon
@@ -562,14 +563,15 @@ def test_permission_ensure_wildcards_invalid_scope_returns_error(runtime: OpenCo
 
 
 def test_permission_ensure_steps_success(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
-    """permission_ensure_steps returns success when marshal.json exists."""
+    """permission_ensure_steps reports a measured zero for a marshal.json with no project steps."""
     marshal_path = tmp_path / 'marshal.json'
     marshal_path.write_text(json.dumps({'runtime': {'target': 'opencode'}}), encoding='utf-8')
 
     result = _parse(runtime.permission_ensure_steps(str(marshal_path), 'project', False))
     assert result['status'] == 'success'
     assert result['operation'] == 'permission ensure-steps'
-    assert result['steps_added'] == 0
+    assert result['steps_scanned'] == 0
+    assert result['permissions_added'] == 0
 
 
 def test_permission_ensure_steps_missing_marshal_returns_error(
@@ -610,6 +612,38 @@ def test_extract_project_steps_rejects_empty_project_prefix(
         {'plan': {'phase-5-execute': {'steps': ['project:', 'project:real-skill']}}}
     )
     assert steps == [{'skill': 'real-skill', 'step': 'project:real-skill', 'phase': 'phase-5-execute'}]
+
+
+def test_extract_project_steps_reads_the_keyed_map_shape(
+    runtime: OpenCodeRuntime,
+) -> None:
+    """The keyed map is the shape the live marshal.json writes.
+
+    The inlined reader this replaced guarded on ``isinstance(entries, list)`` and
+    so returned an empty scan against a real marshal.json — a value
+    indistinguishable from "this marshal.json declares no project steps". The
+    shared reader accepts both shapes; the cross-runtime agreement cases live in
+    ``test_project_steps_extraction.py``.
+    """
+    steps = runtime.permission_extract_project_steps(
+        {
+            'plan': {
+                'phase-5-execute': {'steps': {'default:push': {}, 'project:real-skill': {'lane': 'minimal'}}},
+            }
+        }
+    )
+    assert steps == [{'skill': 'real-skill', 'step': 'project:real-skill', 'phase': 'phase-5-execute'}]
+
+
+def test_extract_project_steps_delegates_to_the_shared_reader() -> None:
+    """This module names neither the phase roster nor the ``steps`` shape.
+
+    Asserted over the method's CODE, docstring excluded — see ``_method_code``.
+    """
+    body = method_code('plan-marshall', 'platform-runtime', 'opencode_runtime.py', 'permission_extract_project_steps')
+    assert 'extract_project_steps(' in body
+    assert "'phase-5-execute'" not in body
+    assert 'isinstance(entries, list)' not in body
 
 
 # 10. permission_web_analyze & permission_web_apply

@@ -435,7 +435,7 @@ The executor exports environment variables to child scripts:
 | Variable | Purpose | Default |
 |----------|---------|---------|
 | `PLAN_DIR_NAME` | Directory name for plan storage (e.g., `.plan`) | `.plan` |
-| `PM_MARKETPLACE_ROOT` | Optional explicit marketplace anchor directory (must contain `marketplace/bundles`). NOT required for stale/relocated embedded paths — the executor self-heals those (see [Self-healing path resolution](#self-healing-path-resolution)). Honored by `generate_executor.py` and `script_shared.marketplace_paths.find_marketplace_path()` when resolving the marketplace tree. Overrides the script-relative walk and cwd-based fallback. The CLI flag `--marketplace-root` takes precedence when both are set (see each subcommand's `--help` for which verbs accept it, rather than reading a verb list from here). | _(unset)_ |
+| `PM_MARKETPLACE_ROOT` | Optional explicit marketplace anchor directory (must contain `marketplace/bundles`). NOT required for stale/relocated embedded paths — the executor self-heals those (see [Self-healing path resolution](#self-healing-path-resolution)). Honored by `generate_executor.py` and `script_shared.marketplace_paths.find_marketplace_path()` when resolving the marketplace tree. Overrides the cwd-based fallback. The CLI flag `--marketplace-root` takes precedence when both are set (see each subcommand's `--help` for which verbs accept it, rather than reading a verb list from here). | _(unset)_ |
 | `PYTHONPATH` | Cross-skill import paths | Auto-built from all script directories |
 
 ### PLAN_DIR_NAME Usage
@@ -475,13 +475,18 @@ stale embedded path is never returned blindly:
 1. **Direct embedded hit** — returned only when the embedded path still exists
    on disk. A missing path is skipped, not returned.
 2. **Prefix/substring shim** — same existence guard.
-3. **Target-aware resolver** — discovers the script under the target's skill
-   roots (Claude plugin cache `~/.claude/plugins/cache/plan-marshall/*/skills/…`,
-   or the OpenCode config roots).
-4. **cwd / executor-file upward walk** — walks up from both `Path.cwd()` and the
-   executor file's own location looking for a live
-   `marketplace/bundles/{bundle}/skills/{skill}/scripts/{script}.py` (covers the
-   dev-checkout case).
+3. **Target-aware resolver** — walks up from the executor file's own location to
+   a live `marketplace/bundles/{bundle}/skills/{skill}/scripts/{script}.py`
+   first, so a checkout above the executor wins; failing that it probes the
+   target's deployed skill roots (Claude plugin cache
+   `~/.claude/plugins/cache/plan-marshall/*/skills/…`, the OpenCode config roots,
+   the Antigravity roots). Every target's template carries this leg — but it runs
+   at this position, after the embedded checks, so on a target other than OpenCode
+   a live embedded or cache path still wins. Only the OpenCode executor, whose own
+   tree-first probe runs *before* the embedded checks, promotes tree code ahead of
+   them.
+4. **cwd upward walk** — walks up from `Path.cwd()`, and from the executor
+   file's own location, to the same live tree.
 
 Because of this, `PM_MARKETPLACE_ROOT` is **not required** to recover from a
 stale/relocated embedded path — it remains only as an intentional explicit
@@ -507,8 +512,11 @@ A stale/relocated embedded path no longer needs an anchor — the executor
 self-heals it (see [Self-healing path resolution](#self-healing-path-resolution)).
 Pin discovery explicitly only when you deliberately want to force a *specific*
 marketplace tree (e.g. invoking `generate_executor.py` from a worktree where
-`Path.cwd()` would otherwise resolve to a different checkout). Two equivalent
-mechanisms are supported; the CLI flag wins when both are set:
+`Path.cwd()` would otherwise resolve to a different checkout). Two mechanisms
+are supported; the CLI flag wins when both are set. They are equivalent only
+under `--marketplace`: in the default cache-first context the env var is
+ignored whenever a target is declared (`--target`, a platform env signal, or
+`runtime.target` in `marshal.json`), so use the flag there.
 
 ```bash
 # Option A — CLI flag (preferred, single-call discipline)
@@ -525,8 +533,8 @@ PM_MARKETPLACE_ROOT=/abs/path/to/checkout python3 /abs/path/to/checkout/.plan/ex
 The path passed to `--marketplace-root` (and `PM_MARKETPLACE_ROOT`) is the
 checkout root that contains `marketplace/bundles`, not the bundles directory
 itself. See `script_shared.marketplace_paths.find_marketplace_path` for the
-authoritative four-step resolution order (explicit param → env var →
-script-relative walk → cwd discovery).
+authoritative three-step resolution order (explicit param → env var → cwd
+discovery).
 
 ## Architecture
 
@@ -747,7 +755,8 @@ python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_exe
 ### generate_executor — verify
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor verify
+python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor verify \
+  [--target TARGET]
 ```
 
 ### generate_executor — bootstrap
@@ -763,13 +772,14 @@ A sanctioned direct-path entry point for fresh-clone / stale-cache cases. Genera
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor drift \
-  [--marketplace] [--marketplace-root PATH]
+  [--marketplace] [--marketplace-root PATH] [--target TARGET]
 ```
 
 ### generate_executor — paths
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor paths
+python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor paths \
+  [--target TARGET]
 ```
 
 ### generate_executor — cleanup
@@ -786,4 +796,4 @@ python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_exe
   [--marketplace] [--marketplace-root PATH] [--target TARGET]
 ```
 
-Deterministic executor/config staleness check against the installed `dist-manifest.json`. Regenerates the executor in place (safe derived state, ADR-002) when its embedded `MARSHALL_VERSION` is older than the manifest's `executor_changed_at_version` (version staleness), reported as `executor_action: regenerated`. Multiple plugin-cache version dirs no longer trigger a regeneration or any marker write: the executor resolves bundle script paths at run time (the numerically-newest *eligible* version dir), so a stale version dir left on disk cannot shadow the current scripts on the cross-skill import path, and pruning superseded dirs is the `marshall-steward` `cache_retention sweep`'s job. Config-seed staleness is reported advisory-only (`marshal.json` is never auto-mutated). **Fail-closed semantics:** when the installed `dist-manifest.json` cannot be resolved (`installed_version` is the `unknown` sentinel), no version-based staleness verdict can be substantiated, so the verb reports `marshal_status: unknown` and emits a legible warning to stderr (also carried in the `warning` field) rather than a vacuous `fresh`. Returns a seven-field TOON: `status`, `executor_action` (`fresh` | `regenerated`), `marshal_status` (`fresh` | `stale` | `unknown`), `installed_version`, `executor_version`, `marshal_version`, `warning` (the fail-closed message when `marshal_status` is `unknown`, else the empty string).
+Deterministic executor/config staleness check against the installed `dist-manifest.json`. Regenerates the executor in place (safe derived state, ADR-002) when its embedded `MARSHALL_VERSION` is older than the manifest's `executor_changed_at_version` (version staleness), reported as `executor_action: regenerated`. Multiple plugin-cache version dirs no longer trigger a regeneration or any marker write: the executor resolves bundle script paths at run time (the numerically-newest *eligible* version dir), so a stale version dir left on disk cannot shadow the current scripts on the cross-skill import path, and pruning superseded dirs is the `marshall-steward` `cache_retention sweep`'s job. Config-seed staleness is reported advisory-only (`marshal.json` is never auto-mutated). **Fail-closed semantics:** when the installed `dist-manifest.json` cannot be resolved (`installed_version` is the `unknown` sentinel), no version-based staleness verdict can be substantiated, so the verb reports `marshal_status: unknown` and emits a legible warning to stderr (also carried in the `warning` field) rather than a vacuous `fresh`. Returns a nine-field TOON: `status`, `executor_action` (`fresh` | `regenerated`), `marshal_status` (`fresh` | `stale` | `unknown`), `installed_version`, `executor_version`, `marshal_version`, `warning` (the fail-closed message when `marshal_status` is `unknown`, else the empty string), and the resolved `target` / `target_source` pair.

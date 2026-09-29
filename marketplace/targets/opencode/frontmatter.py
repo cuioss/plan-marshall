@@ -33,6 +33,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from marketplace.targets.skill_identity import skill_identity_metadata_lines
+
 # OpenCode provider prefix. ``mapping.json`` model_map entries are
 # objects of shape ``{"id": "<unprefixed-model-id>", "supports_effort":
 # ["medium", "high", ...]}``. The emitter prepends this prefix to the
@@ -236,7 +238,8 @@ def transform_skill_frontmatter(
 
     Output keys: ``name`` (``{bundle}-{skill}``), ``description`` (passed
     through, single line), an explicit ``compatibility`` annotation noting the
-    source, and ``mode`` — the skill's declared execution archetype.
+    source, ``mode`` — the skill's declared execution archetype — and the
+    ``metadata`` identity block (see ``marketplace.targets.skill_identity``).
 
     ``mode`` is passed through **verbatim, or omitted when the source declares
     none**. It is the load-bearing field: ``persona-plan-marshall-agent``'s
@@ -275,6 +278,7 @@ def transform_skill_frontmatter(
         lines.append(f'mode: {mode}')
     lines += [
         'compatibility: Adapted from plan-marshall marketplace (Claude Code native)',
+        *skill_identity_metadata_lines(bundle, skill_name),
         '---',
     ]
     return '\n'.join(lines)

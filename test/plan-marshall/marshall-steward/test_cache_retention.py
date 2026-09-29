@@ -283,6 +283,106 @@ def test_unresolvable_cache_root_reports_error_and_sweeps_nothing(tmp_path: Path
 
 
 # ============================================================================
+# Target resolution — the env tier this verb inherited
+# ============================================================================
+
+
+class TestTargetResolution:
+    """The verb resolves its target through the shared resolver, env tier included.
+
+    Before the shared resolver this verb called ``generate_executor.read_marshal_target``,
+    a marshal.json-ONLY reader with no env leg. The target it produced feeds the
+    ``KEEP_MANIFEST`` keep-reason, so on a machine whose only deployment is OpenCode
+    the sweep compared the cache against CLAUDE's published manifest and could keep
+    a version the active target never published. The rows below pin that the env
+    signal now reaches that lookup, which no assertion on the sweep report alone
+    could have established: the report shape is unchanged either way, and a wrong
+    target still yields a well-formed keep set.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _no_platform_signal(self, monkeypatch: pytest.MonkeyPatch):
+        """Clear every platform env signal so a tier case is decided by what it sets."""
+        for name in ('ANTIGRAVITY_AGENT', 'OPENCODE', 'OPENCODE_PID', 'CLAUDE_CODE_SESSION_ID'):
+            monkeypatch.delenv(name, raising=False)
+
+    def _record_manifest_lookup(self, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+        """Capture the target each manifest lookup is issued for."""
+        seen: list[str] = []
+
+        def _record(cache_root=None, target='claude'):
+            seen.append(target)
+            return {}
+
+        monkeypatch.setattr(cache_retention, 'read_installed_manifest', _record)
+        return seen
+
+    @pytest.mark.parametrize(
+        ('signal', 'expected_target'),
+        [
+            ('ANTIGRAVITY_AGENT', 'antigravity'),
+            ('OPENCODE', 'opencode'),
+            ('OPENCODE_PID', 'opencode'),
+            ('CLAUDE_CODE_SESSION_ID', 'claude'),
+        ],
+        ids=['antigravity-signal', 'opencode-signal', 'opencode-pid-signal', 'claude-signal'],
+    )
+    def test_env_signal_reaches_the_manifest_lookup(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, signal, expected_target
+    ):
+        """Each platform env signal selects that target's manifest — the leg this verb never had."""
+        seen = self._record_manifest_lookup(monkeypatch)
+        cache_root = _make_cache(tmp_path, ['0.1.1', '0.1.2'])
+        project_root = _make_project(tmp_path, keep_versions=1, keep_days=0)
+        monkeypatch.setenv(signal, '1')
+
+        cache_retention.sweep(cache_root, project_root=project_root)
+
+        assert seen == [expected_target]
+
+    def test_no_signal_falls_back_to_the_reported_default(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, outside_repo_dir: Path
+    ):
+        """With no signal anywhere, the lookup uses the registry default.
+
+        The paired control: without it, a reader that mapped every env signal to
+        one target would still satisfy the four rows above.
+        """
+        import target_context
+
+        seen = self._record_manifest_lookup(monkeypatch)
+        cache_root = _make_cache(tmp_path, ['0.1.1', '0.1.2'])
+        outside = outside_repo_dir / 'bare'
+        outside.mkdir()
+
+        cache_retention.sweep(cache_root, project_root=outside)
+
+        assert seen == [target_context.default_target()]
+
+    def test_declared_marshal_target_reaches_the_lookup(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """A declared ``runtime.target`` still reaches the lookup — the cascade is not env-only."""
+        seen = self._record_manifest_lookup(monkeypatch)
+        cache_root = _make_cache(tmp_path, ['0.1.1', '0.1.2'])
+        project_root = tmp_path / 'declared'
+        (project_root / '.plan').mkdir(parents=True)
+        (project_root / '.plan' / 'marshal.json').write_text(
+            json.dumps({'runtime': {'target': 'antigravity'}, 'system': {'retention': {}}}),
+            encoding='utf-8',
+        )
+
+        cache_retention.sweep(cache_root, project_root=project_root)
+
+        assert seen == ['antigravity']
+
+    def test_the_verb_reads_the_shared_resolver_not_a_private_reader(self):
+        """The removed config-only symbol is gone and the shared one is in its place."""
+        import target_context
+
+        assert cache_retention.resolve_target is target_context.resolve_target
+        assert not hasattr(cache_retention, 'read_marshal_target')
+
+
+# ============================================================================
 # CLI surface
 # ============================================================================
 

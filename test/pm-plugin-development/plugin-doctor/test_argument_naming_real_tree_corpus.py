@@ -49,6 +49,8 @@ from collections import Counter
 from functools import lru_cache
 from pathlib import Path
 
+import pytest
+
 from conftest import MARKETPLACE_ROOT, load_script_module
 
 _aan = load_script_module(
@@ -175,6 +177,23 @@ def _require_judged_corpus() -> dict:
     return corpus
 
 
+#: Every test below is a consumer of the ``@lru_cache`` ``_corpus()``, so the
+#: FIRST consumer on a given xdist worker pays for the whole-marketplace markdown
+#: walk AND the ``--help`` derivation sweep over every registered notation, while
+#: the rest reuse that result. Which worker takes the cache miss is xdist
+#: scheduling, so an unmarked member of this class can exceed the suite-wide 300s
+#: default while passing standalone — the observed signature is
+#: ``Timeout (>300.0s) from pytest-timeout`` raised out of
+#: ``argparse_surface.build_surface_index``'s worker pool.
+#:
+#: 900 is the value the sibling whole-tree runner tests in ``test_runner.py``
+#: carry for the same cache-miss contention. The suite default stays at 300: it
+#: is coupled to the ``slow_live`` budget and must not drift to accommodate this
+#: class (see ``pyproject.toml`` § ``timeout = 300``).
+_CORPUS_SCAN_BUDGET = pytest.mark.timeout(900)
+
+
+@_CORPUS_SCAN_BUDGET
 def test_the_derived_population_is_non_empty():
     """Nothing below reports against a corpus of zero.
 
@@ -198,6 +217,7 @@ def test_the_derived_population_is_non_empty():
     )
 
 
+@_CORPUS_SCAN_BUDGET
 def test_the_report_publishes_every_population_figure():
     """A clean run still states what it walked.
 
@@ -218,6 +238,7 @@ def test_the_report_publishes_every_population_figure():
     assert f'findings: {len(corpus["findings"])}' in report, report
 
 
+@_CORPUS_SCAN_BUDGET
 def test_the_report_splits_the_findings_by_rule_not_only_by_file():
     """A moving total must say WHICH class moved.
 
@@ -246,6 +267,7 @@ def test_the_report_splits_the_findings_by_rule_not_only_by_file():
     )
 
 
+@_CORPUS_SCAN_BUDGET
 def test_the_argument_naming_corpus_is_clean_against_its_published_population():
     """Every documented invocation in the real tree matches its script's argparse surface.
 

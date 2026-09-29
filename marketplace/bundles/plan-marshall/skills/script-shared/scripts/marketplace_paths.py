@@ -31,12 +31,33 @@ one repository's main checkout, ``home_root()`` anchors machine-wide state
 not depend on git resolution.
 """
 
-import json
 import os
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any, TypeGuard
+
+# The target/context resolver. This module DELEGATES to it rather than
+# re-deriving the cascade: ``resolve_target`` is the single implementation of
+# "which target is active, and which tier said so", and keeping a second copy
+# of the walk here is what let the two readers disagree in the first place. The
+# import direction is one-way — ``target_context`` imports nothing from this
+# module — so there is no cycle, and its deferred ``platform_runtime`` import
+# stays deferred for the same bootstrap-path reason documented there.
+#
+# ``PLAN_DIR_NAME`` is defined in ``target_context`` (it composes the
+# ``marshal.json`` locate walk) and re-exported here, because a dozen readers
+# import it from this module. One definition, two documented import surfaces.
+from target_context import (
+    MARKETPLACE_ROOT_ENV,
+    PLAN_DIR_NAME,
+    SOURCE_FALLBACK,
+    default_target,
+    resolve_target,
+)
+from target_context import (
+    detect_target_from_env as _resolve_detect_target_from_env,
+)
 
 
 def resolve_home() -> Path:
@@ -58,8 +79,8 @@ def resolve_home() -> Path:
         return Path(os.environ.get('HOME') or '/tmp')
 
 
-# Central configuration
-PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
+# Central configuration: ``PLAN_DIR_NAME`` is imported from ``target_context``
+# above, which is its single definition.
 
 # Trailing segment of the worktree container, ``<base>/worktrees``. The SINGLE
 # definition, imported by every builder that composes that path rather than
@@ -149,24 +170,21 @@ CLAUDE_DIR = '.claude'
 # fallback root used when no runtime is resolvable.
 PLUGIN_CACHE_SUBPATH = 'plugins/cache/plan-marshall'
 
-# Fallback ``runtime.target`` identifier used when no target can be read from
-# ``marshal.json`` (file absent, unreadable, or carrying no ``runtime.target``).
-# Every fallback return in ``_read_runtime_target()`` reads THIS function rather
-# than repeating the literal, so the module has one place to change.  The value
-# is derived lazily from ``platform_runtime._DEFAULT_TARGET`` — the two modules
-# resolve the same default from a single source, so a silent divergence is
-# structurally impossible.
-_DEFAULT_RUNTIME_TARGET_SENTINEL = 'claude'
 
-
+# Fallback ``runtime.target`` identifier used when no target can be resolved
+# (no env signal, no readable ``runtime.target``). The fallback and its
+# ``'claude'`` bootstrap sentinel now live in ``target_context``, the single
+# resolver this module delegates to — ``_default_runtime_target`` below is the
+# delegating entry point rather than a second place the default is chosen.
 def _default_runtime_target() -> str:
-    """Return ``platform_runtime._DEFAULT_TARGET``, falling back to ``'claude'``."""
-    try:
-        from platform_runtime import _DEFAULT_TARGET as _target
+    """Return the registry's default runtime target identifier.
 
-        return _target
-    except (ImportError, ModuleNotFoundError):
-        return _DEFAULT_RUNTIME_TARGET_SENTINEL
+    Thin delegation to :func:`target_context.default_target`, kept under this
+    name because callers and tests bind to it. See that function for why the
+    value is derived from ``platform_runtime._DEFAULT_TARGET`` rather than
+    repeated here.
+    """
+    return default_target()
 
 
 # Fallback project-local-skill root used when the platform-runtime layout op
@@ -204,24 +222,19 @@ _BUNDLE_CACHE_ROOTS_CACHE: tuple[str, ...] | None = None
 def detect_target_from_env() -> str | None:
     """Detect the runtime target from platform-injected environment variables.
 
-    Public shared entry point for the platform-env target contract. Antigravity
-    injects ``ANTIGRAVITY_AGENT=1`` into every subprocess; OpenCode injects
-    ``OPENCODE=1`` (or ``OPENCODE_PID``); Claude Code injects
-    ``CLAUDE_CODE_SESSION_ID``. These ambient signals resolve the target before
-    any config or filesystem probe, eliminating the chicken-and-egg problem on
-    first run.
+    Public shared entry point for the platform-env target contract, delegating
+    to :func:`target_context.detect_target_from_env` so the env tier has one
+    implementation. Antigravity injects ``ANTIGRAVITY_AGENT=1`` into every
+    subprocess; OpenCode injects ``OPENCODE=1`` (or ``OPENCODE_PID``); Claude
+    Code injects ``CLAUDE_CODE_SESSION_ID``. These ambient signals resolve the
+    target before any config or filesystem probe, eliminating the
+    chicken-and-egg problem on first run.
 
     Returns:
         Target string (``'antigravity'``, ``'opencode'`` or ``'claude'``),
         or ``None`` when no platform env signal is present.
     """
-    if os.environ.get('ANTIGRAVITY_AGENT'):
-        return 'antigravity'
-    if os.environ.get('OPENCODE') or os.environ.get('OPENCODE_PID'):
-        return 'opencode'
-    if os.environ.get('CLAUDE_CODE_SESSION_ID'):
-        return 'claude'
-    return None
+    return _resolve_detect_target_from_env()
 
 
 def _detect_target_from_env() -> str | None:
@@ -229,43 +242,36 @@ def _detect_target_from_env() -> str | None:
 
     Backward-compatible thin wrapper over :func:`detect_target_from_env`.
     Retained because existing callers and tests bind to the private name; new
-    code MUST import the public entry point instead.
+    code MUST import the public entry point instead. It is a wrapper over the
+    public entry point, NOT a duplicate of the env tier: the tier itself lives
+    in ``target_context`` and both names here reach it.
     """
     return detect_target_from_env()
 
 
 def _read_runtime_target() -> str:
-    """Read ``runtime.target`` from platform env vars or ``.plan/marshal.json``.
+    """Return the active runtime target, resolved by the shared resolver.
 
-    Resolution cascade:
+    Thin delegation to :func:`target_context.resolve_target`, which owns the
+    whole cascade:
 
     1. **Env signal** — ``ANTIGRAVITY_AGENT`` → ``'antigravity'``,
        ``OPENCODE`` / ``OPENCODE_PID`` → ``'opencode'``,
        ``CLAUDE_CODE_SESSION_ID`` → ``'claude'``.
     2. **Config** — ``runtime.target`` from the nearest ``.plan/marshal.json``.
-    3. **Default** — ``_default_runtime_target()`` (``'claude'``).
+    3. **Default** — :func:`default_target` (``'claude'``).
+
+    What changed is not the cascade but the FAILURE HANDLING. The single
+    ``except (OSError, ValueError): return _default_runtime_target()`` this
+    function used to carry answered a parse failure with the very same default
+    its no-``runtime.target`` and no-``marshal.json`` paths returned, so an
+    unreadable ``marshal.json`` and an absent one were indistinguishable. The
+    resolver reports which of the four fall-through conditions applied, so a
+    caller that needs to tell "there is no config" from "the config could not
+    be read" reads :func:`target_context.resolve_target` directly instead of
+    this answer-only projection of it.
     """
-    # Tier 1: platform-injected env var (zero-cost, always present).
-    env_target = detect_target_from_env()
-    if env_target:
-        return env_target
-    # Tier 2: marshal.json config.
-    cwd = Path.cwd().resolve()
-    for parent in (cwd, *cwd.parents):
-        candidate = parent / PLAN_DIR_NAME / 'marshal.json'
-        if candidate.is_file():
-            try:
-                data = json.loads(candidate.read_text(encoding='utf-8'))
-            except (OSError, ValueError):
-                return _default_runtime_target()
-            if isinstance(data, dict):
-                runtime = data.get('runtime')
-                if isinstance(runtime, dict):
-                    target = runtime.get('target')
-                    if isinstance(target, str) and target:
-                        return target
-            return _default_runtime_target()
-    return _default_runtime_target()
+    return resolve_target()['target']
 
 
 def _find_skills_root() -> Path | None:
@@ -326,7 +332,7 @@ def _invoke_layout_op(target: str, method_name: str = 'layout_skill_roots') -> t
     return None
 
 
-def _invoke_settings_op(scope: str) -> Path | None:
+def _invoke_settings_op(scope: str, target: str | None = None) -> Path | None:
     """Resolve the settings BASE directory for ``scope`` via the runtime's op.
 
     Calls the active target's ``permission_settings_path(scope)`` — the
@@ -339,6 +345,12 @@ def _invoke_settings_op(scope: str) -> Path | None:
     fall back to the Claude-default anchor — the same defensive posture as
     :func:`_invoke_layout_op`. Imports the runtime scripts in-process (no
     executor dependency).
+
+    Args:
+        scope: ``'global'`` or ``'project'``.
+        target: An explicitly resolved target, consulted instead of the ambient
+            cascade. ``None`` keeps the ambient resolution, which is what every
+            pre-existing caller means.
     """
     skills_root = _find_skills_root()
     if skills_root is None:
@@ -355,7 +367,9 @@ def _invoke_settings_op(scope: str) -> Path | None:
         # The same shared-resolution rule as _invoke_layout_op: an unregistered
         # target resolves the default runtime, and the default carries the same
         # settings base the router's own fallback would.
-        runtime: Any = _make_runtime(_read_runtime_target()) or _make_runtime(_default_runtime_target())
+        runtime: Any = _make_runtime(target if target is not None else _read_runtime_target()) or _make_runtime(
+            _default_runtime_target()
+        )
         resolved = runtime.permission_settings_path(scope)
     except Exception:
         return None
@@ -410,9 +424,32 @@ def get_bundle_cache_roots() -> tuple[str, ...]:
     return _BUNDLE_CACHE_ROOTS_CACHE
 
 
-def _first_existing_bundle_cache_root() -> Path | None:
-    """Return the first deployed-bundle cache root that exists on disk, else None."""
-    for root in get_bundle_cache_roots():
+def _bundle_cache_roots_for(target: str) -> tuple[str, ...]:
+    """Return the deployed-bundle cache roots for an EXPLICITLY named ``target``.
+
+    The unmemoised, target-addressed counterpart of
+    :func:`get_bundle_cache_roots`. A caller that has already resolved its
+    target (an executor verb going through ``target_context.resolve_context``)
+    must resolve the cache for THAT target, not for whatever the ambient
+    cascade happens to say on this machine — otherwise ``--target opencode``
+    would still consult the Claude cache. The memoised no-arg form stays the
+    entry point for callers that have no target in hand, so the process-wide
+    cache is untouched for the many readers that never resolve one.
+    """
+    roots = _invoke_layout_op(target, 'layout_bundle_cache_root')
+    return roots if roots is not None else _DEFAULT_BUNDLE_CACHE_ROOTS
+
+
+def _first_existing_bundle_cache_root(target: str | None = None) -> Path | None:
+    """Return the first deployed-bundle cache root that exists on disk, else None.
+
+    Args:
+        target: An explicitly resolved target whose cache roots are consulted
+            instead of the memoised ambient ones. ``None`` keeps the ambient
+            resolution every pre-existing caller relies on.
+    """
+    roots = _bundle_cache_roots_for(target) if target is not None else get_bundle_cache_roots()
+    for root in roots:
         candidate = Path(root).expanduser()
         if candidate.is_dir():
             return candidate
@@ -824,9 +861,8 @@ def find_marketplace_path(marketplace_root: Path | None = None) -> Path | None:
 
     Args:
         marketplace_root: Optional explicit override. When provided, takes
-            precedence over the env var, script-relative walk, and cwd
-            discovery. Must point at a directory that contains
-            ``marketplace/bundles``.
+            precedence over the env var and cwd discovery. Must point at a
+            directory that contains ``marketplace/bundles``.
 
     Returns:
         Path to ``marketplace/bundles`` if any branch resolves, otherwise None.
@@ -860,17 +896,56 @@ def find_marketplace_path(marketplace_root: Path | None = None) -> Path | None:
     return None
 
 
-def get_plugin_cache_path() -> Path | None:
+def get_plugin_cache_path(target: str | None = None) -> Path | None:
     """Get the deployed-bundle cache path if it exists.
 
     Routes through the platform-runtime ``layout bundle-cache-root`` op
-    (memoised) and returns the first cache root that exists on disk, or
-    ``None`` when none is materialized.
+    (memoised for the ambient target) and returns the first cache root that
+    exists on disk, or ``None`` when none is materialized.
+
+    Args:
+        target: An explicitly resolved target whose cache root is consulted
+            instead of the memoised ambient one. ``None`` keeps the ambient
+            resolution, which is what every pre-existing caller means.
     """
-    return _first_existing_bundle_cache_root()
+    return _first_existing_bundle_cache_root(target)
 
 
-def get_base_path(scope: str = 'auto', marketplace_root: Path | None = None) -> Path:
+def _env_anchor_is_last_resort(target: str | None) -> bool:
+    """Return whether the ambient ``PM_MARKETPLACE_ROOT`` anchor may outrank target resolution.
+
+    ``PM_MARKETPLACE_ROOT`` is a LAST-RESORT override, not a co-equal input.
+    It promotes itself above the deployed-bundle cache for the marketplace-aware
+    scopes only when NOTHING else has declared the context:
+
+    * an explicit ``--target`` was supplied (``target is not None``), or
+    * a target was resolved from the env tier or from ``runtime.target`` in
+      ``marshal.json``.
+
+    Only when neither holds — an unmanaged checkout with no env signal and no
+    declared ``runtime.target`` — is the ambient anchor the last remaining
+    signal, and it keeps the anchor-promoting behaviour it has always had.
+
+    This rule governs only whether the env var outranks the deployed-bundle
+    cache in a :func:`get_base_path` call that passes no ``marketplace_root``.
+    It does not stop :func:`find_marketplace_path` from consulting the env var
+    ahead of the cwd walk-up when marketplace discovery runs.
+
+    Args:
+        target: The target the caller resolved, or ``None`` when it resolved
+            none explicitly.
+
+    Returns:
+        ``True`` when the env anchor is the last remaining signal.
+    """
+    if not os.environ.get(MARKETPLACE_ROOT_ENV):
+        return False
+    if target is not None:
+        return False
+    return resolve_target()['target_source'] == SOURCE_FALLBACK
+
+
+def get_base_path(scope: str = 'auto', marketplace_root: Path | None = None, target: str | None = None) -> Path:
     """Determine base path based on scope.
 
     Args:
@@ -893,6 +968,18 @@ def get_base_path(scope: str = 'auto', marketplace_root: Path | None = None) -> 
             :func:`find_marketplace_path` for the full three-step resolution
             order (explicit param → ``PM_MARKETPLACE_ROOT`` env var →
             cwd walk-up).
+        target: The runtime target this call operates under, for the scopes
+            whose resolution is target-dependent (``cache-first`` and
+            ``plugin-cache`` cache legs, ``global``, ``project``). A caller that
+            has already resolved its target — an executor verb going through
+            :func:`target_context.resolve_context` — passes it here so those legs
+            resolve for THAT target instead of the ambient cascade's answer.
+            ``None`` keeps the ambient resolution every pre-existing caller
+            means. Passing a target is also what demotes the
+            ``PM_MARKETPLACE_ROOT`` anchor to a last-resort override — an
+            already-resolved target is a declared context, so a configured
+            machine no longer lets the env var pin the marketplace scope ahead
+            of the cache; see :func:`_env_anchor_is_last_resort`.
 
     Returns:
         Path to the bundles directory (or .claude for global/project scope)
@@ -901,15 +988,15 @@ def get_base_path(scope: str = 'auto', marketplace_root: Path | None = None) -> 
         FileNotFoundError: If requested context is not available
         ValueError: If scope is invalid
     """
-    # An explicit anchor — either the function parameter or the
-    # ``PM_MARKETPLACE_ROOT`` environment variable — must outrank the
-    # plugin cache for ``cache-first`` (and ``auto``) scopes. Without this,
-    # callers that pass ``marketplace_root=<worktree>`` (e.g.
-    # generate_executor.py running inside an isolated worktree) would
-    # silently regenerate the executor against the cached main checkout
-    # because cache-first short-circuits on the first cache hit. The
-    # explicit override exists precisely to escape that branch.
-    explicit_anchor = marketplace_root is not None or bool(os.environ.get('PM_MARKETPLACE_ROOT'))
+    # An explicit anchor must outrank the plugin cache for ``cache-first`` (and
+    # ``auto``) scopes. Without this, callers that pass
+    # ``marketplace_root=<worktree>`` (e.g. generate_executor.py running inside
+    # an isolated worktree) would silently regenerate the executor against the
+    # cached main checkout because cache-first short-circuits on the first cache
+    # hit. The explicit parameter is the anchor; the ``PM_MARKETPLACE_ROOT``
+    # environment variable is the last-resort fallback and only counts as an
+    # explicit anchor while nothing else has declared the context.
+    explicit_anchor = marketplace_root is not None or _env_anchor_is_last_resort(target)
 
     if scope == 'auto':
         if explicit_anchor:
@@ -926,12 +1013,12 @@ def get_base_path(scope: str = 'auto', marketplace_root: Path | None = None) -> 
         marketplace = find_marketplace_path(marketplace_root=marketplace_root)
         if marketplace:
             return marketplace
-        cache = get_plugin_cache_path()
+        cache = get_plugin_cache_path(target)
         if cache:
             return cache
         raise FileNotFoundError(
             f'Neither {MARKETPLACE_BUNDLES_PATH} nor a deployed-bundle cache '
-            f'({", ".join(get_bundle_cache_roots())}) found. '
+            f'({", ".join(_bundle_cache_roots_for(target) if target else get_bundle_cache_roots())}) found. '
             f'Run from marketplace repo root or ensure the plugin is installed.'
         )
 
@@ -946,14 +1033,15 @@ def get_base_path(scope: str = 'auto', marketplace_root: Path | None = None) -> 
                 f'Set --marketplace-root or PM_MARKETPLACE_ROOT to a directory containing '
                 f'{MARKETPLACE_BUNDLES_PATH}.'
             )
-        cache = get_plugin_cache_path()
+        cache = get_plugin_cache_path(target)
         if cache:
             return cache
         marketplace = find_marketplace_path(marketplace_root=marketplace_root)
         if marketplace:
             return marketplace
         raise FileNotFoundError(
-            f'Neither a deployed-bundle cache ({", ".join(get_bundle_cache_roots())}) '
+            f'Neither a deployed-bundle cache '
+            f'({", ".join(_bundle_cache_roots_for(target) if target else get_bundle_cache_roots())}) '
             f'nor {MARKETPLACE_BUNDLES_PATH} found. '
             f'Ensure plugin is installed or run from marketplace repo.'
         )
@@ -965,19 +1053,22 @@ def get_base_path(scope: str = 'auto', marketplace_root: Path | None = None) -> 
         raise FileNotFoundError(f'{MARKETPLACE_BUNDLES_PATH} directory not found')
 
     if scope == 'plugin-cache':
-        cache = get_plugin_cache_path()
+        cache = get_plugin_cache_path(target)
         if cache:
             return cache
-        raise FileNotFoundError(f'Deployed-bundle cache not found: {", ".join(get_bundle_cache_roots())}')
+        raise FileNotFoundError(
+            f'Deployed-bundle cache not found: '
+            f'{", ".join(_bundle_cache_roots_for(target) if target else get_bundle_cache_roots())}'
+        )
 
     if scope == 'global':
-        base = _invoke_settings_op('global')
+        base = _invoke_settings_op('global', target)
         if base is not None:
             return base
         return Path.home() / CLAUDE_DIR
 
     if scope == 'project':
-        base = _invoke_settings_op('project')
+        base = _invoke_settings_op('project', target)
         if base is not None:
             return base
         return Path.cwd() / CLAUDE_DIR

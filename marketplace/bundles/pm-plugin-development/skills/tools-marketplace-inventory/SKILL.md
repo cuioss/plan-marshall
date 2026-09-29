@@ -107,6 +107,7 @@ In file mode (default), a summary is printed and full inventory is written to `.
 | `--scope` | `auto` | Scan scope: `auto`, `marketplace`, `plugin-cache`, `global`, `project` |
 | `--resource-types` | `all` | Filter: `all`, `agents`, `commands`, `skills`, `scripts` (comma-separated) |
 | `--bundles` | all | Filter to specific bundles (comma-separated) |
+| `--base-path` | none | Scan exactly this bundles/cache root instead of resolving one from `--scope`; a flat OpenCode/Antigravity root is read through the bundle identity each `SKILL.md` records |
 | `--name-pattern` | none | fnmatch glob filter, pipe-separated for multiple (e.g., `*-plan-*\|manage-*`) |
 | `--content-pattern` | none | Regex content filter (requires `--include-descriptions` or `--full`) |
 | `--content-exclude` | none | Regex content exclusion (requires `--include-descriptions` or `--full`) |
@@ -426,7 +427,7 @@ The canonical argparse surface for the three entry-point scripts this skill regi
 python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
   [--scope {auto,marketplace,global,project,plugin-cache}] [--resource-types RESOURCE_TYPES] \
   [--include-descriptions] [--full] [--name-pattern NAME_PATTERN] [--bundles BUNDLES] \
-  [--content-pattern CONTENT_PATTERN] [--content-exclude CONTENT_EXCLUDE] [--output OUTPUT] \
+  [--base-path BASE_PATH] [--content-pattern CONTENT_PATTERN] [--content-exclude CONTENT_EXCLUDE] [--output OUTPUT] \
   [--direct-result] [--format {toon,json}] [--include-tests] [--include-project-skills]
 ```
 

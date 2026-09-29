@@ -21,6 +21,7 @@ marketplace/targets/
 ├── body_transform_engine.py      # Target-shared data-driven body rewrites
 ├── component_targets.py          # `targets:` frontmatter scope filter
 ├── fs_safety.py                  # Containment primitives for destructive emits
+├── skill_identity.py             # Flat-target SKILL.md bundle/skill identity metadata
 ├── cuioss_review_bot/            # Reviewer per-domain instruction packs
 │   ├── __init__.py               # Registers CuiossReviewBotTarget
 │   └── target.py                 # CuiossReviewBotTarget(TargetBase) + derivation rules

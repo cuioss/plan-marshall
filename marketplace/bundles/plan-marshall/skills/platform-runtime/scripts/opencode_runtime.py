@@ -52,6 +52,8 @@ from marketplace_paths import resolve_home
 from runtime_base import (
     PERMISSION_FIX_OPERATIONS,
     Runtime,
+    ensure_steps_without_skill_grants,
+    extract_project_steps,
     marshal_shape_error,
     toon_error,
     toon_noop,
@@ -901,14 +903,9 @@ class OpenCodeRuntime(Runtime):
                 'invalid_scope',
                 f"--scope must be 'project' or 'global'; got {scope!r}",
             )
-        return toon_success(
-            'permission ensure-steps',
-            {
-                'scope': scope,
-                'dry_run': dry_run,
-                'steps_added': 0,
-            },
-        )
+        config = self.permission_load_marshal_config(marshal_path)
+        steps = [] if 'error' in config else self.permission_extract_project_steps(config)
+        return ensure_steps_without_skill_grants('OpenCode', config, steps, scope, dry_run)
 
     def permission_web_analyze(self, scope: str) -> str:
         """Analyze allowed URL domains in OpenCode."""
@@ -1136,34 +1133,17 @@ class OpenCodeRuntime(Runtime):
     def permission_extract_project_steps(self, marshal_config: dict[str, Any]) -> list[dict[str, Any]]:
         """Enumerate project:{skill} step references — target-neutral.
 
-        Scans the same phases as the Claude side: ``plan.{phase-5-execute}.steps``
-        and ``plan.{phase-6-finalize}.steps``, returning one ``{skill, step,
-        phase}`` dict per ``project:``-prefixed entry. Marshal.json is a shared,
-        target-neutral file, so the schema is identical across targets.
+        Delegates to :func:`runtime_base.extract_project_steps`, the same reader
+        the Claude runtime uses. marshal.json is a shared, target-neutral file,
+        so the schema is identical across targets and the reader must be too.
+
+        This method previously inlined the phase tuple and guarded with
+        ``isinstance(entries, list)``. Against a real marshal.json — where
+        ``steps`` is a keyed map — that guard made the scan return an empty
+        list, which read exactly like a marshal.json with no ``project:`` steps
+        in it.
         """
-        if 'error' in marshal_config:
-            return []
-        plan = marshal_config.get('plan', {})
-        if not isinstance(plan, dict):
-            return []
-        steps: list[dict[str, Any]] = []
-        for phase in ('phase-5-execute', 'phase-6-finalize'):
-            phase_config = plan.get(phase, {})
-            if not isinstance(phase_config, dict):
-                continue
-            entries = phase_config.get('steps', [])
-            if not isinstance(entries, list):
-                continue
-            for step in entries:
-                if isinstance(step, str) and step.startswith('project:') and len(step) > len('project:'):
-                    steps.append(
-                        {
-                            'skill': step[len('project:') :],
-                            'step': step,
-                            'phase': phase,
-                        }
-                    )
-        return steps
+        return extract_project_steps(marshal_config)
 
     # ------------------------------------------------------------------
     # Metrics
