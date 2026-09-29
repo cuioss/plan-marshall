@@ -64,21 +64,41 @@ Make phase-6's per-step records true and its re-fires proportionate. In the PLAN
    dispatch resolves with `--workflow`, so the seam emits `[DISPATCH]` itself. Test: dispatched finalize
    steps == finalize-dispatcher `[DISPATCH]` lines on a fixture run.
 
+**Folded 2026-09-29 from the PLAN-12 run.**
+- **D2 widens to "step-record transitions tell the truth".** `mark-step-done` refused `failed → done`
+  on a documented retry three times in one finalize (sync-baseline, push, automatic-review), which forced
+  an undocumented `--force`. `failed → done|skipped|loop_back` must be legal on retry, and `done → failed`
+  must be legal on a re-fire. The mirror case, a re-fired red gate refused `failed` over a stale `done`
+  (`module-budget-campaign-completion-007`, previously carried to PM-MCP), is reclaimed here. Add a test
+  that walks failed → retry → done through the documented calls.
+- **D3 recurrence:** one five-file self-review fix re-fired lessons-housekeeping, simplify and
+  plugin-doctor (about 350K tokens). The run suggests where `verdict_inputs` is sound:
+  - lessons-housekeeping reads references and the request, not source;
+  - simplify's surface is the plan footprint.
+- **D5a becomes a tool fix:** `record-dispatch-boundary` without token flags persisted `total_tokens: 0,
+  tool_uses: 0, duration_ms: 0` twice in one run. That row is indistinguishable from a measured
+  zero-cost dispatch. The verb must refuse, or record `unmeasured`, as `record-step` does.
+- **D5c recurrence:** 0 of 99 boundary rows carried `step_id`, and all 99 recorded the four
+  context-load columns as `unmeasured`. Forward the context-load flags when the return carries them, and
+  have the retrospective grade a 100% keyless share as a finding.
+- **D1 recurrence:** simplify's embedded dispatch was run in-context every round.
+
 ## Claim Labels
 
 - OBSERVED: `dispatch-inline-split.md` lines 21 and 27 list both steps as dispatched — read at HEAD by the orchestrator; that both step documents contain their own `Task:` dispatches is the run's report (`inbox/archive/plan-13-finalize-mechanism-defects/plan-13-finalize-mechanism-defects-004.md` § 7), HYPOTHESIS — confirm/refute at the simplify and pre-submission-self-review step documents under `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/` (verify-at-outline)
-  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: dispatch-inline-split.md L21/L27 list both as dispatched; Task: dispatches in standards/finalize-step-simplify.md and workflow/pre-submission-self-review.md Steps 2+3b
+  - verdict: corroborated | checked_at: 56add3fafe362e058a8e1b5d4608ac34ec77196b | by: process-compliance/cleanup | rescoped: n/a | evidence: dispatch-inline-split.md L21/L27 both still dispatched; both step docs still carry inner Task: dispatches
 - OBSERVED: re-stamp counted as a firing — cited at `plan-13-…-004.md` § 10
-  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: _cmd_mark_step.py L615-630 same-outcome head change calls _extend_firing_history; --no-completion-log only suppresses the log line (L332)
+  - verdict: corroborated | checked_at: 56add3fafe362e058a8e1b5d4608ac34ec77196b | by: process-compliance/cleanup | rescoped: n/a | evidence: _cmd_mark_step.py L615-630 same-outcome head change calls _extend_firing_history (L627); --no-completion-log only suppresses the marker (L630)
 - OBSERVED: `verdict_inputs_undeclared` for three steps after a docs-only commit — cited at `plan-13-…-004.md` § 11; no step frontmatter declares `verdict_inputs` (re-grounded at c56710b; the mention list also includes `phase-6-finalize/scripts/verdict_currency.py` and the plugin-doctor refusal — the earlier 'only in' list was incomplete)
-  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: no step frontmatter declares verdict_inputs; mention list also includes verdict_currency.py and the plugin-doctor SKILL.md L48-57 deliberate refusal
+  - verdict: corroborated | checked_at: 56add3fafe362e058a8e1b5d4608ac34ec77196b | by: process-compliance/cleanup | rescoped: n/a | evidence: no step frontmatter declares verdict_inputs; plugin-doctor SKILL.md L48-57 refusal stands
 - OBSERVED: plugin-doctor gated 8 declared skills vs ~12 realized — cited at `plan-13-…-004.md` § 16 and landing `-007` § Residue
-  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: .claude/skills/finalize-step-plugin-doctor/SKILL.md Step 1 L63-66 gates on affected_files; _references_crud.py L22-28 affected_files is the outline-declared set
+  - verdict: corroborated | checked_at: 56add3fafe362e058a8e1b5d4608ac34ec77196b | by: process-compliance/cleanup | rescoped: n/a | evidence: finalize-step-plugin-doctor/SKILL.md L63-66 gates on affected_files; _references_crud.py L22-28 outline-declared set
 - OBSERVED: usage recorded before arrival (+620 tokens, 15,622 ms) — cited at `plan-13-…-004.md` § 18
-  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: phase-6-finalize/SKILL.md items 5b/5c L1091-1128 no rule against recording a boundary before inner dispatches report; accumulator additive
+  - verdict: corroborated | checked_at: 56add3fafe362e058a8e1b5d4608ac34ec77196b | by: process-compliance/cleanup | rescoped: n/a | evidence: phase-6-finalize/SKILL.md items 5b/5c L1091-1128 no rule against recording before inner dispatches report; accumulator additive L1094-1098
 - OBSERVED: keyless dispatch-boundary rows (25/30 finalize, 8/9 execute) and `missing_dispatch_emission: 3` — cited at `inbox/archive/plan-13-finalize-mechanism-defects/plan-13-finalize-mechanism-defects-006.md` § Evidence (plan-retrospective aspects)
+  - verdict: corroborated | checked_at: 56add3fafe362e058a8e1b5d4608ac34ec77196b | by: process-compliance/cleanup | rescoped: n/a | evidence: the --step-id flag is optional ('Omit ... cell is written empty'); literal record-dispatch-boundary calls lack it at SKILL.md L1126-1128 and execution.md L216-218
 - OBSERVED: `modified_files` returns `field_retired` — cited at `plan-13-…-004.md` § 13, lesson `2026-09-27-08-001`
-  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: lessons-housekeeping SKILL.md Step 1 L89-91 reads --field modified_files; _references_core.py L125 RETIRED_REFERENCE_FIELDS={'modified_files'}
+  - verdict: corroborated | checked_at: 56add3fafe362e058a8e1b5d4608ac34ec77196b | by: process-compliance/cleanup | rescoped: n/a | evidence: finalize-step-lessons-housekeeping/SKILL.md L89-90 get --field modified_files; _references_core.py L125 RETIRED_REFERENCE_FIELDS={'modified_files'}
 
 ## Expected Surface
 
@@ -98,6 +118,10 @@ Make phase-6's per-step records true and its re-fires proportionate. In the PLAN
 - OBSERVED: `test/plan-marshall/manage-metrics/` — `--step-id` enforcement test (D5c, folded 2026-09-29)
 - OBSERVED: `test/plan-marshall/phase-6-finalize/` — roster closure test
 - OBSERVED: `test/plan-marshall/manage-status/` — firing accounting test
+- OBSERVED: `test/plan-marshall/manage-references/` — realized-footprint gating input test (D4) (added cleanup 2026-09-29 at 56add3f — understated surface)
+- OBSERVED: `test/plan-marshall/plan-retrospective/` — `[DISPATCH]`-count fixture and keyless-grading tests (D5c) (added cleanup 2026-09-29 at 56add3f — understated surface)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-retrospective/standards/execution-context-dispatch-audit.md` — grading contract (D5c) (added cleanup 2026-09-29 at 56add3f — understated surface)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/check-dispatch-audit.py` — grade 100% keyless as a finding (folded 2026-09-29)
 
 ## Dependencies and Sequencing
 
@@ -108,6 +132,11 @@ Make phase-6's per-step records true and its re-fires proportionate. In the PLAN
 ## Folded inbox material (same act)
 
 - `plan-13-finalize-mechanism-defects-004.md` items 7, 10, 11, 13, 16, 18: deliverables 1–5
+- `plan-12-tool-triage-011.md` (candidate-lesson, 2026-09-29): deliverable 5c (recurrence plus context-load flags)
+- `plan-12-tool-triage-016.md` (finding, 2026-09-29): deliverable 5a (tool-side fix)
+- `plan-12-tool-triage-018.md` (finding, 2026-09-29) + `module-budget-campaign-completion-007` (archived, reclaimed from PM-MCP carry-over MB07): deliverable 2
+- `plan-12-tool-triage-024.md` (finding, 2026-09-29): deliverable 3 (recurrence)
+- `plan-12-tool-triage-025.md` item 3 (finding, 2026-09-29): deliverable 1 (recurrence)
 
 ## Hand-Off Command
 

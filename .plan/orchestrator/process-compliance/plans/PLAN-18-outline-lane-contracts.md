@@ -65,19 +65,19 @@ state contradictory rules.
 ## Claim Labels
 
 - OBSERVED: phase-2/3/4 leaves self-transitioned while the return required orchestrator gates — cited at `inbox/archive/plan-12-tool-triage/plan-12-tool-triage-007.md` § Observed (orchestrator-side report of three leaf returns in one run)
-  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: phase-2-refine, phase-3-outline, phase-4-plan SKILL.md each carry their own transition --completed; planning-outline.md:262,569 transition again after the gates
+  - verdict: corroborated | checked_at: 56add3fafe362e058a8e1b5d4608ac34ec77196b | by: process-compliance/cleanup | rescoped: n/a | evidence: leaves still transition (refine-workflow-detail ~:100/~:948, phase-3-outline SKILL ~:699, phase-4-plan SKILL ~:1026); planning-outline.md:262,:558 too; #1654 halt rule keeps two owners
 - OBSERVED: three hash normalisations and two helper scripts across three Q-Gate passes — cited at `inbox/archive/plan-12-tool-triage/plan-12-tool-triage-008.md` § Observed
-  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: deliverable-hashes / __whole_outline__ appear only in planning-outline.md and q-gate-validation.md; no manage-solution-outline script computes them
+  - verdict: corroborated | checked_at: 56add3fafe362e058a8e1b5d4608ac34ec77196b | by: process-compliance/cleanup | rescoped: n/a | evidence: no script computes deliverable-hashes / __whole_outline__ (0 script hits); only planning-outline.md / q-gate-validation.md
 - OBSERVED: 6-question `outline_prompt` split 4 + 2 — cited at `inbox/archive/plan-13-finalize-mechanism-defects/plan-13-finalize-mechanism-defects-003.md` § 1
-  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: planning-outline.md:130 and planning.md:391 'ONE batched AskUserQuestion covering EVERY question', no cap or pagination; only phase-1-init SKILL.md:570 paginates
+  - verdict: corroborated | checked_at: 56add3fafe362e058a8e1b5d4608ac34ec77196b | by: process-compliance/cleanup | rescoped: n/a | evidence: planning-outline.md:130 and planning.md:393 'ONE batched AskUserQuestion covering EVERY question'; only phase-1-init SKILL.md:574 paginates
 - OBSERVED: `planning.md` line 548 says "loaded directly in main context"; `planning-outline.md` Step 2 dispatches — confirmed at HEAD by the orchestrator (grep); cited at `plan-13-finalize-mechanism-defects-003.md` § 2
-  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: planning.md:548 'loaded directly in main context' vs planning-outline.md:115-126 Step 2 Task dispatch
+  - verdict: corroborated | checked_at: 56add3fafe362e058a8e1b5d4608ac34ec77196b | by: process-compliance/cleanup | rescoped: n/a | evidence: planning.md:550 'loaded directly in main context' vs planning-outline.md:115-126 Step 2 Task dispatch
 - OBSERVED: `pm-plugin-development/skills/ext-outline-workflow/standards/change-types.md` lines 55/72 state "Always exactly 2 deliverables" — confirmed at HEAD by the orchestrator; cited at `plan-13-finalize-mechanism-defects-003.md` § 4
-  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: ext-outline-workflow/standards/change-types.md:55,72 'Always exactly 2 deliverables', no multi-defect branch
+  - verdict: corroborated | checked_at: 56add3fafe362e058a8e1b5d4608ac34ec77196b | by: process-compliance/cleanup | rescoped: n/a | evidence: change-types.md :55,72 'Always exactly 2 deliverables', no multi-defect branch
 - HYPOTHESIS: Step 9c rule/example disagreement — confirm/refute at `marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md` § Step 9c (verify-at-outline); cited at `plan-12-tool-triage-008.md` § Related inconsistency
-  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: phase-3-outline/standards/outline-workflow-detail.md:644 'no scripts/ -> LLM-driven' vs :639 example calling phase-2-refine (empty scripts/) hybrid
+  - verdict: corroborated | checked_at: 56add3fafe362e058a8e1b5d4608ac34ec77196b | by: process-compliance/cleanup | rescoped: n/a | evidence: outline-workflow-detail.md :644 'no scripts/ -> LLM-driven' vs :639 phase-2-refine hybrid example
 - HYPOTHESIS: no return signal exists for the `detect-change-type` fallback — confirm/refute at `marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/planning-outline.md` § Metrics (verify-at-outline); leaf-reported, not independently verified
-  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: planning-outline.md never mentions detect-change-type; :267-274 Metrics cites the fallback with no return signal; outline-workflow-detail.md:198-222 has the leaf issue a Task it cannot dispatch
+  - verdict: corroborated | checked_at: 56add3fafe362e058a8e1b5d4608ac34ec77196b | by: process-compliance/cleanup | rescoped: n/a | evidence: planning-outline.md never names detect-change-type; Metrics :269-276 cites the fallback with no return signal; detail :198-222 unchanged
 
 ## Expected Surface
 
@@ -91,6 +91,8 @@ state contradictory rules.
 - OBSERVED: `marketplace/bundles/pm-plugin-development/skills/ext-outline-workflow/standards/change-types.md` — multi-defect bug_fix branch
 - OBSERVED: `test/plan-marshall/manage-solution-outline/` — hash determinism test
 - OBSERVED: `test/plan-marshall/plan-marshall/` — return-shape assertion test
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/phase-lifecycle.md` — § Refused-transition halt rule (#1654) prescribes leaf and orchestrator handling at every transition site; D1 ownership change must edit it (added cleanup 2026-09-29 at 56add3f — understated surface)
+- OBSERVED: `test/plan-marshall/plan-marshall/test_transition_refusal_halt_call_sites.py` — must-update with D1 (#1654) (added cleanup 2026-09-29 at 56add3f — understated surface)
 
 ## Dependencies and Sequencing
 

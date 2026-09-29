@@ -45,8 +45,10 @@ migration as full-repo from the start, so no later finalize discovers it pieceme
 2. **Named leftovers from PLAN-13's self-review, re-checked by hand:**
    - `manage-run-config/scripts/_cmd_cleanup.py:46-48`: the comment still says "per-project global
      plan-marshall directory" beside `PLAN_BASE_DIR = get_base_dir()`.
-   - `plan-retrospective/references/artifact-consistency.md` (a path fragment): none of the stale
-     literals appears there at `c56710b`. Identify the fragment or close the item with that finding.
+   - `plan-retrospective/references/artifact-consistency.md` (a path fragment): **probably closed by #1654**
+     (`26f864b`). It replaced the file's only plan-dir-relative literal (`work/fragment-artifact-consistency.toon`
+     is now `{fragment_dir}` at L100) via the single-anchor resolver `_retro_bundle_root.py`. Confirm this is the
+     fragment PLAN-13's self-review meant; if so, close the item as fixed (cleanup 2026-09-29).
    - Dropped at cleanup 2026-09-28, with a positive account:
      - `ci_complete_precondition.py:496` is a docstring describing the already-fixed ghost-dir defect.
        The code uses `file_ops.get_plan_dir`, so the hit is intentional, not drift.
@@ -63,13 +65,13 @@ migration as full-repo from the start, so no later finalize discovers it pieceme
 ## Claim Labels
 
 - OBSERVED: residue after #1651 — cited at `inbox/archive/plan-13-finalize-mechanism-defects/plan-13-finalize-mechanism-defects-008.md` § Residue (a sweep over 3523 inventoried files: `.plan/logs/` 13 hits in 7 files, `status.toon` 2 files, `.plan/plans/` 30 hits in 15 files); spot-checked at HEAD by the orchestrator: `manage-logging.py` lines 22, 35 and 192 name `.plan/logs/`, and `collect-plan-artifacts.py:48` names `status.toon`
-  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: manage-logging.py L22, L35, L192 name .plan/logs/; collect-plan-artifacts.py L48 'status.toon'
+  - verdict: corroborated | checked_at: 56add3fafe362e058a8e1b5d4608ac34ec77196b | by: process-compliance/cleanup | rescoped: n/a | evidence: manage-logging.py names .plan/logs/ at L22, L35, L194; collect-plan-artifacts.py L48 'status.toon'
 - HYPOTHESIS (count): the populations are larger than that message states. An orchestrator `grep -rlE` over `marketplace/ test/ doc/ .claude/` counts 84 files for `.plan/logs/`, 23 for `status.toon` and 201 for `.plan/plans/`. The gap is either intentional hits, fixtures, or trees outside the sender's inventory. Confirm or refute by the deliverable-1 derivation itself (verify-at-outline); neither figure is authoritative. **Re-scoped at cleanup 2026-09-28:** refuted. The larger counts came from git-ignored trees. The tracked inventory matches the sender (7 / 2 / 15 files; 10 after excluding the detector). Deliverable 1 now states the inventory baseline plus the `.claude/**` / `.github/**` gap.
-  - verdict: contradicted | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: yes | evidence: inventory sweep 7/2/15 files matches the sender; 84/23/201 came from git-ignored trees (.claude/worktrees, __pycache__, stale ignored dirs); spec re-scoped in place with the inventory baseline + .claude/.github gap
+  - verdict: contradicted | checked_at: 56add3fafe362e058a8e1b5d4608ac34ec77196b | by: process-compliance/cleanup | rescoped: yes | evidence: prior rescope holds: inventory re-swept at HEAD (3553 files) .plan/logs/ 7 files/12, status.toon 2/2, .plan/plans/ 10/32 after excluding the 5 plugin-doctor files
 - OBSERVED: a partial path migration cannot converge inside pre-submission-self-review — cited at `plan-13-…-004.md` §§ 14 and 19 and `landings/PLAN-13.md` § Metrics and Anomalies
-  - verdict: unverifiable | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: 'cannot converge' is a run-time causal claim; the residue it depends on is present (claim 0)
+  - verdict: unverifiable | checked_at: 56add3fafe362e058a8e1b5d4608ac34ec77196b | by: process-compliance/cleanup | rescoped: n/a | evidence: 'cannot converge' is a run-time causal claim; residue it depends on present (claim 0)
 - OBSERVED: the archive-path parity test exists — `test/plan-marshall/manage-status/test_archive_path_doc_resolver_parity.py`, added by #1651
-  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: test/plan-marshall/manage-status/test_archive_path_doc_resolver_parity.py exists, last touched by c56710b36 (#1651)
+  - verdict: corroborated | checked_at: 56add3fafe362e058a8e1b5d4608ac34ec77196b | by: process-compliance/cleanup | rescoped: n/a | evidence: test/plan-marshall/manage-status/test_archive_path_doc_resolver_parity.py tracked at HEAD
 
 ## Expected Surface
 
@@ -87,6 +89,7 @@ migration as full-repo from the start, so no later finalize discovers it pieceme
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-lessons/` — `.plan/lessons-learned` form (added cleanup 2026-09-28)
 - OBSERVED: `test/plan-marshall/audit-archived-plan-retrospectives/`, `test/plan-marshall/manage-files/`, `test/plan-marshall/manage-ci-artifacts/`, `test/plan-marshall/manage-findings/`, `test/plan-marshall/manage-metrics/`, `test/plan-marshall/manage-references/`, `test/plan-marshall/tools-file-ops/` — test files with inventory hits (added cleanup 2026-09-28)
 - OBSERVED: `.claude/skills/` — not in the inventory, sweep required (added cleanup 2026-09-28)
+- OBSERVED: `.github/` — not in the inventory, sweep required (added cleanup 2026-09-29)
 - HYPOTHESIS: more files join once deliverable 1 derives the full population. Whatever the plan adds must be declared back through its own footprint (verify-at-outline).
 
 ## Dependencies and Sequencing

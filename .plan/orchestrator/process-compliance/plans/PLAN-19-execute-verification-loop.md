@@ -48,18 +48,36 @@ runs and five `verification-feedback` dispatches, all re-triaging one failure
    explicitly. Regression test: `commit-add` with `deliverable: 0` succeeds; a genuinely absent
    field still refuses.
 
+**Folded 2026-09-29 from the PLAN-12 run: the same defects recurred, with three new facets.**
+- **D1:** loop-back fix tasks (TASK-12..19) all carried `cost_size: null`, `predicted_cost_tokens:
+  null` and `envelope_id: null`. They were dispatched as an improvised `envelope_id: null` group. The
+  fix covers tasks created after phase-4 packing on every path, including `commit-add` past phase 4.
+  - The packer placed TASK-3/4 (`envelope_id: 1`) behind a `depends_on` edge into envelope 2. It also
+    ignores orchestrator-tier build yields: 7 dispatches ran for `envelope_count: 2`. A packed envelope
+    must respect dependency order.
+  - phase-6-finalize item 7b says to re-load `phase-5-execute` via `Skill:` inline, while that SKILL
+    says it is the dispatched envelope workflow. Align the two.
+- **D2:** the orchestrator checked the phase-scoped `qgate` store, found nothing, and filed a third
+  duplicate, while the build wrapper had already persisted the failure twice in the plan-scoped store.
+  State which store an orchestrator-tier build's failures land in.
+- **D3:** a leaf returned `budget_yield: true` plus a free-text `orchestrator_build_owed`, which falls
+  between the `budget_yield` and `blocked` branches. Make `orchestrator_build_owed` a first-class
+  return field that every termination branch honours. The end-of-execute contradiction recurred
+  (Step 12a never re-entered).
+- **D4:** TASK-11 was closed `done` before its orchestrator-owed verification ran (recurrence).
+
 ## Claim Labels
 
 - OBSERVED: six module-test runs + five verification-feedback dispatches on one known failure; TASK-11 `envelope_id: null` — cited at `inbox/archive/plan-13-finalize-mechanism-defects/plan-13-finalize-mechanism-defects-004.md` §§ 1–2 (run report)
-  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: _tasks_crud.py cmd_commit_add L261-275 writes no envelope_id; _tasks_query.py cmd_read L117-135 omits it (only cmd_next L271); execution.md L171/178 envelope_id filter
+  - verdict: corroborated | checked_at: 56add3fafe362e058a8e1b5d4608ac34ec77196b | by: process-compliance/cleanup | rescoped: n/a | evidence: _tasks_crud.py cmd_commit_add L261-275 writes no envelope_id; _tasks_query.py cmd_read L117-136 omits it; execution.md L171/L178 envelope_id filter
 - OBSERVED: the two contradictory re-dispatch rules — cited at `plan-13-…-004.md` § 3; HYPOTHESIS that both sentences sit in `marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/execution.md` — confirm/refute at that file § orchestrator-tier table and § pre-dispatch queue peek (verify-at-outline)
-  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: execution.md L376 orchestrator-tier success re-dispatch (freshness Step 12a) vs L258 pre-dispatch peek MUST NOT re-dispatch at pending=0/in_progress=0
+  - verdict: corroborated | checked_at: 56add3fafe362e058a8e1b5d4608ac34ec77196b | by: process-compliance/cleanup | rescoped: n/a | evidence: execution.md L378 orchestrator-tier success -> re-dispatch (Step 12a) vs L258 peek pending=0/in_progress=0 MUST NOT re-dispatch; #1654 edited L266 only
 - OBSERVED: build findings persisted twice per failing test — cited at `plan-13-…-004.md` § 4; HYPOTHESIS for the producer — confirm/refute at the build wrapper's findings-persist call (verify-at-outline)
-  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: _build_shared.py cmd_run_common L921-937 rebuilds the inner run's routed_errors and calls _store_build_findings again; daemon child re-runs the executor (_build_execute_factory.py L99-101)
+  - verdict: corroborated | checked_at: 56add3fafe362e058a8e1b5d4608ac34ec77196b | by: process-compliance/cleanup | rescoped: n/a | evidence: _build_shared.py cmd_run_common L921-937 calls _store_build_findings a second time for the inner run's routed_errors (unchanged)
 - OBSERVED: module_testing tasks auto-closed before verification — cited at `plan-13-…-004.md` § 6
-  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: _cmd_step.py cmd_finalize_step L112-114 sets status=done once all steps are terminal; no module_testing branch
+  - verdict: corroborated | checked_at: 56add3fafe362e058a8e1b5d4608ac34ec77196b | by: process-compliance/cleanup | rescoped: n/a | evidence: _cmd_step.py L113-114 all_terminal -> done/failed, no module_testing branch (unchanged)
 - OBSERVED: `triage.md:191` prescribes `deliverable: 0`; `_tasks_core.py:886` raises "Missing required field: deliverable" — both read at HEAD by the orchestrator; rejection of `0` specifically is the run's report (`plan-13-…-004.md` § 23), resolved at cleanup 2026-09-28: `_tasks_core.py` `_build_task_record` coerces None/blank to 0 and refuses 0 unless `origin=='holistic'`, while `triage.md` sets no origin
-  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: _tasks_core.py _build_task_record L881-886 coerces None/blank to 0 and refuses 0 unless origin=='holistic'; triage.md L191 prescribes deliverable: 0 with no origin
+  - verdict: corroborated | checked_at: 56add3fafe362e058a8e1b5d4608ac34ec77196b | by: process-compliance/cleanup | rescoped: n/a | evidence: _tasks_core.py L881-886 coerces None/blank to 0 then refuses 0 unless origin=='holistic'; triage.md L191 deliverable: 0 with no origin
 
 ## Expected Surface
 
@@ -74,6 +92,9 @@ runs and five `verification-feedback` dispatches, all re-triaging one failure
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_cmd_step.py` — `cmd_finalize_step` auto-close (D4) (added cleanup 2026-09-28, re-grounding at c56710b — understated surface)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/script-shared/scripts/build/_build_shared.py` — double finding persistence (D2) (added cleanup 2026-09-28, re-grounding at c56710b — understated surface)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/verification-feedback.md` — fix-task creation (D1) (added cleanup 2026-09-28, re-grounding at c56710b — understated surface)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/` — `pack-envelopes` dependency-order packing, post-phase-4 `commit-add` stamping (folded 2026-09-29)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md` — item 7b 5-execute re-entry wording (folded 2026-09-29)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md` — `orchestrator_build_owed` return field (folded 2026-09-29)
 
 ## Dependencies and Sequencing
 
@@ -84,6 +105,9 @@ runs and five `verification-feedback` dispatches, all re-triaging one failure
 ## Folded inbox material (same act)
 
 - `plan-13-finalize-mechanism-defects-004.md` items 1, 2, 3, 4, 6, 23 (first half): deliverables 1–5
+- `plan-12-tool-triage-017.md` items 2, 3, 5 (finding, 2026-09-29): deliverables 4, 3, 1
+- `plan-12-tool-triage-023.md` (finding, 2026-09-29): deliverable 1 (recurrence plus the 7b contradiction)
+- `plan-12-tool-triage-026.md` tertiary + quaternary (finding, 2026-09-29): deliverables 2, 3
 
 ## Hand-Off Command
 
