@@ -896,13 +896,10 @@ def _env_anchor_is_last_resort(target: str | None) -> bool:
     declared ``runtime.target`` — is the ambient anchor the last remaining
     signal, and it keeps the anchor-promoting behaviour it has always had.
 
-    This rule governs a :func:`get_base_path` call that passes no
-    ``marketplace_root``. The executor verbs reach :func:`get_base_path` through
-    ``target_context.resolve_context``, which applies the SAME rule before the
-    anchor is handed over — it folds the env value in only on the fallback tier
-    — so together the two stop an exported ``PM_MARKETPLACE_ROOT`` in an
-    operator's shell from re-anchoring a verb on a machine whose project has
-    declared which target it is, while leaving the unmanaged path unchanged.
+    This rule governs only whether the env var outranks the deployed-bundle
+    cache in a :func:`get_base_path` call that passes no ``marketplace_root``.
+    It does not stop :func:`find_marketplace_path` from consulting the env var
+    ahead of the cwd walk-up when marketplace discovery runs.
 
     Args:
         target: The target the caller resolved, or ``None`` when it resolved

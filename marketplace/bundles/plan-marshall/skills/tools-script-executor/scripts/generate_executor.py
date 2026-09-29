@@ -91,15 +91,14 @@ Context Detection:
     and "fell back to claude" are never the same observation. ``bootstrap``'s
     ``not_needed`` payloads carry neither: that path resolves no target.
 
-    ``PM_MARKETPLACE_ROOT`` is the LAST-RESORT anchor, not a co-equal input.
-    It promotes itself above the deployed-bundle cache only while nothing else
-    has declared the context — no ``--target`` was given, and no env or
-    ``marshal.json`` tier resolved one. The demotion happens in
-    ``target_context.resolve_context``, which folds the env value into the
-    verb's anchor only on the fallback tier; that is what stops an exported env
-    var in an operator's shell from silently re-anchoring every verb on a
-    machine whose project has declared which target it is. The flag takes
-    precedence when both are supplied. Use this when invoking the script from
+    ``PM_MARKETPLACE_ROOT`` promotes itself above the deployed-bundle cache
+    (cache-first scope) only while nothing else has declared the context — no
+    ``--target`` was given, and no env or ``marshal.json`` tier resolved one;
+    ``target_context.resolve_context`` folds it into the verb's anchor only on
+    that fallback tier. It is still consulted by marketplace discovery itself
+    (``--marketplace``, and the cache-first leg when no cache exists), where it
+    ranks ahead of the cwd walk-up on every tier. The flag takes precedence
+    when both are supplied. Use this when invoking the script from
     a worktree or alternate checkout where Path.cwd() would otherwise resolve
     to the wrong marketplace tree.
 
@@ -271,12 +270,10 @@ def get_base_path(
         target: The runtime target this call operates under, forwarded to the
             shared resolver so the target-dependent scopes (``cache-first`` and
             ``plugin-cache`` cache legs, ``global``, ``project``) resolve for
-            THAT target rather than the ambient cascade's answer. A non-``None``
-            target also demotes an ambient ``PM_MARKETPLACE_ROOT`` for a call
-            that passes no ``marketplace_root`` (see
-            ``marketplace_paths._env_anchor_is_last_resort``); for the verbs,
-            ``resolve_context`` has already applied the same rule before the
-            anchor reaches this call.
+            THAT target rather than the ambient cascade's answer. In the
+            ``cache-first`` scope a non-``None`` target also keeps an ambient
+            ``PM_MARKETPLACE_ROOT`` from outranking the cache (see
+            ``marketplace_paths._env_anchor_is_last_resort``).
     """
     scope = 'marketplace' if use_marketplace else 'cache-first'
     return _shared_get_base_path(scope, marketplace_root=marketplace_root, target=target)
@@ -3533,9 +3530,11 @@ def build_parser() -> argparse.ArgumentParser:
             'By default uses plugin-cache context. Use --marketplace for development. '
             'Use --marketplace-root PATH (or set PM_MARKETPLACE_ROOT) to pin marketplace '
             'discovery to an explicit anchor when running from a worktree or alternate '
-            'checkout. The flag takes precedence over the env var; the env var is a '
-            'last-resort anchor and is demoted whenever a --target was given or a target '
-            'was resolved from the environment signals or .plan/marshal.json.'
+            'checkout. The flag takes precedence over the env var. In the default '
+            'cache-first context the env var outranks the plugin cache only when no '
+            '--target was given and no target was resolved from the environment signals '
+            'or .plan/marshal.json; marketplace discovery itself (--marketplace, or no '
+            'cache present) still consults it ahead of the working directory.'
         ),
         allow_abbrev=False,
     )

@@ -348,13 +348,10 @@ def resolve_context(
             ``target_source: 'explicit'``.
         marketplace_root: An explicit anchor, validated by
             :func:`resolve_marketplace_root`. When ``None``, the
-            ``PM_MARKETPLACE_ROOT`` env anchor applies ONLY as a last resort:
-            when the target itself fell through to the ``fallback`` tier. A
-            declared target (``explicit``, ``env`` or ``marshal_json``) is a
-            declared context, so the env var is NOT folded into the returned
-            anchor and cannot re-anchor the verb — the same rule
-            ``marketplace_paths._env_anchor_is_last_resort`` applies to a direct
-            ``get_base_path`` call.
+            ``PM_MARKETPLACE_ROOT`` env value is folded into the returned anchor
+            only when the target fell through to the ``fallback`` tier; for a
+            declared target (``explicit``, ``env`` or ``marshal_json``) the
+            returned anchor is ``None``.
         cwd: Directory the ``marshal.json`` walk starts from; forwarded to
             :func:`resolve_target` and ignored when ``target`` is explicit.
 

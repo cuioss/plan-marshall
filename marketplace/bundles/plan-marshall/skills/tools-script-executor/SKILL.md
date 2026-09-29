@@ -506,8 +506,11 @@ A stale/relocated embedded path no longer needs an anchor — the executor
 self-heals it (see [Self-healing path resolution](#self-healing-path-resolution)).
 Pin discovery explicitly only when you deliberately want to force a *specific*
 marketplace tree (e.g. invoking `generate_executor.py` from a worktree where
-`Path.cwd()` would otherwise resolve to a different checkout). Two equivalent
-mechanisms are supported; the CLI flag wins when both are set:
+`Path.cwd()` would otherwise resolve to a different checkout). Two mechanisms
+are supported; the CLI flag wins when both are set. They are equivalent only
+under `--marketplace`: in the default cache-first context the env var is
+ignored whenever a target is declared (`--target`, a platform env signal, or
+`runtime.target` in `marshal.json`), so use the flag there.
 
 ```bash
 # Option A — CLI flag (preferred, single-call discipline)
@@ -787,4 +790,4 @@ python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_exe
   [--marketplace] [--marketplace-root PATH] [--target TARGET]
 ```
 
-Deterministic executor/config staleness check against the installed `dist-manifest.json`. Regenerates the executor in place (safe derived state, ADR-002) when its embedded `MARSHALL_VERSION` is older than the manifest's `executor_changed_at_version` (version staleness), reported as `executor_action: regenerated`. Multiple plugin-cache version dirs no longer trigger a regeneration or any marker write: the executor resolves bundle script paths at run time (the numerically-newest *eligible* version dir), so a stale version dir left on disk cannot shadow the current scripts on the cross-skill import path, and pruning superseded dirs is the `marshall-steward` `cache_retention sweep`'s job. Config-seed staleness is reported advisory-only (`marshal.json` is never auto-mutated). **Fail-closed semantics:** when the installed `dist-manifest.json` cannot be resolved (`installed_version` is the `unknown` sentinel), no version-based staleness verdict can be substantiated, so the verb reports `marshal_status: unknown` and emits a legible warning to stderr (also carried in the `warning` field) rather than a vacuous `fresh`. Returns a seven-field TOON: `status`, `executor_action` (`fresh` | `regenerated`), `marshal_status` (`fresh` | `stale` | `unknown`), `installed_version`, `executor_version`, `marshal_version`, `warning` (the fail-closed message when `marshal_status` is `unknown`, else the empty string).
+Deterministic executor/config staleness check against the installed `dist-manifest.json`. Regenerates the executor in place (safe derived state, ADR-002) when its embedded `MARSHALL_VERSION` is older than the manifest's `executor_changed_at_version` (version staleness), reported as `executor_action: regenerated`. Multiple plugin-cache version dirs no longer trigger a regeneration or any marker write: the executor resolves bundle script paths at run time (the numerically-newest *eligible* version dir), so a stale version dir left on disk cannot shadow the current scripts on the cross-skill import path, and pruning superseded dirs is the `marshall-steward` `cache_retention sweep`'s job. Config-seed staleness is reported advisory-only (`marshal.json` is never auto-mutated). **Fail-closed semantics:** when the installed `dist-manifest.json` cannot be resolved (`installed_version` is the `unknown` sentinel), no version-based staleness verdict can be substantiated, so the verb reports `marshal_status: unknown` and emits a legible warning to stderr (also carried in the `warning` field) rather than a vacuous `fresh`. Returns a nine-field TOON: `status`, `executor_action` (`fresh` | `regenerated`), `marshal_status` (`fresh` | `stale` | `unknown`), `installed_version`, `executor_version`, `marshal_version`, `warning` (the fail-closed message when `marshal_status` is `unknown`, else the empty string), and the resolved `target` / `target_source` pair.

@@ -620,7 +620,7 @@ class TestEnvAnchorIsLastResort:
     marketplace-aware scopes only while nothing else has declared the context.
     Each row below therefore pins ONE of the three states: an explicit
     ``marketplace_root`` always wins, a caller that resolved no target but whose
-    machine HAS one loses to the env var, and an unmanaged checkout with no
+    machine HAS one gets the cache (the env var is demoted), and an unmanaged checkout with no
     declared target keeps the anchor promotion it has always had.
     """
 
