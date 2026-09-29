@@ -512,6 +512,21 @@ another ledger). Both are restated in § Standing Constraints, which is where th
 
 ## Open Defects
 
+### ⛔ 2026-09-29: the reviewer fleet was never rolled out, and legacy repo-local config is still LIVE → `PLAN-PR-078`
+
+`PLAN-PR-066` shipped the per-repository opt-in, and by design enabled it only in its plan-marshall pilot. A
+2026-09-28 org sweep (30 repositories, 27 active) found:
+- only plan-marshall, API-Sheriff, TokenSheriff and cui-http run cuioss-review-bot at all;
+- the last three still use the legacy `pr-agent.yml` caller name;
+- API-Sheriff and TokenSheriff carry a generated java `.pr_agent.toml`. PR-Agent merges it over the central
+  settings, so it is live config, not residue.
+
+⚠ The sweep first misread `status: success` as "file present": `ci repo file read` reports the FILE in `state`,
+not `status`. The corrected sweep uses `state` and `org search-code`. Operator decisions (2026-09-29): migrate
+the three, enroll 17 named code repositories (everything except org/infra), and have D0 derive packs for the
+operator to confirm. Staged as **`PLAN-PR-078`**, outside PM-MCP scope. This is the last live work before
+`close`.
+
 ### ✅ 2026-09-28: `PLAN-PR-002` SHIPPED; the epic has NO live work left
 
 The second run closed #235's residual R3 through cuioss-organization#297, released as v0.32.0. It is

@@ -37,22 +37,30 @@ worktree — never deleting the worktree (the constraint the operator stated twi
    steps (reuse `manage-locks` rather than a second primitive; decide the exact lock at outline). A second
    caller either waits or finds the open PR and returns it — never commits over a land in progress.
 2. **D2 — PR create-or-update with an epic-native title/body.** Call the `ci` PR primitives directly with
-   `--project-dir {worktree_path}` (not `phase-6-finalize`'s plan-bound `create-pr` doc). Reuse the open PR for
+   `--project-dir {worktree_path}` (not `phase-6-finalize`'s plan-bound `create-pr` doc). **Re-scoped at cleanup
+   2026-09-29:** `--project-dir` is a ROUTER flag and replaces only the router-level `--plan-id`; the body-consumer
+   verbs `pr prepare-body` / `pr create` each REQUIRE their own `--plan-id` bound to the body file — pass the
+   `NO_PLAN` sentinel (accepted by the provider) and `--head` naming the fixed ledger branch. Reuse the open PR for
    the branch on a repeat `land` rather than opening a duplicate. Title/body are composed from the landed diff
    itself: which epics changed, and per epic which ledger files (rows, specs, anchor, landings, inbox) — no
    plan-only source (`pr_title`, `request.md`) exists for a ledger landing.
 3. **D3 — monitor WITH an explicit post-enqueue settle loop.** Wait for CI via `ci checks wait --pr-number N
    --project-dir {worktree_path}` (bounded; `status: timeout` means re-poll on re-entry, never a foreground busy
-   loop). On green, `ci pr merge-queue` enqueues and returns immediately (`_github_pr.py:2265`
-   `cmd_pr_merge_queue`) — `enqueued: true` is NOT merged: poll `ci pr landing-state` until a terminal
-   outcome, and stamp the landed PR only from the PR's own state then, never from the merge call's return
+   loop). On green, `ci pr merge-queue` enqueues and returns after a single membership read
+   (`workflow-integration-github/scripts/_github_pr.py` `cmd_pr_merge_queue`, :2469 at cleanup 2026-09-29) — it
+   never settles, and `enqueued` is THREE-valued: `true`, or `indeterminate` with a reason (e.g.
+   `auto_merge_armed_awaiting_checks`); both mean "not merged yet". Poll `ci pr view --pr-number N` until a terminal
+   state — NOT `ci pr landing-state`, which is keyed on the branch tip, and the queue deletes the head branch — and
+   stamp the landed PR only from the PR's own state then, never from the merge call's return
    (incident `project_ci_pr_merge_false_green`: `merged: true` with the branch deleted and nothing merged).
 4. **D4 — resync main and the worktree without losing post-snapshot writes.** On confirmed merge, fast-forward
    the primary checkout's `main`, and bring the worktree's branch onto the new `main`. Other epic sessions may
    have written into the worktree AFTER D1's snapshot, so the resync MUST NOT discard them — a blind `reset
    --hard origin/main` is forbidden; choose a mechanism that carries uncommitted and not-yet-landed committed
    changes across (e.g. stash-and-reapply, or rebase that drops the squash-merged commits) and decide it at
-   outline, stating its failure mode. The worktree directory persists either way.
+   outline, stating its failure mode. The worktree directory persists either way. The merge queue DELETES the
+   remote head branch on merge, so the fixed long-lived ledger branch must be re-created on the remote (or pushed
+   fresh) on the next `land`, never assumed to still exist.
 5. **D5 — failure/timeout leaves the worktree recoverable.** CI failure, merge-queue ejection or a wait timeout
    is reported and the land attempt stops there; the worktree's uncommitted or committed-but-unlanded state is
    left exactly as it was, and the lock released, so a re-invoked `land` resumes.
@@ -83,37 +91,42 @@ worktree — never deleting the worktree (the constraint the operator stated twi
   plan-only surfaces an orchestrator epic does not have (no `request.md`, no execution
   manifest). This workflow doc is confirmed NOT reusable as-is from an orchestrator
   context.
+  - verdict: corroborated | checked_at: fa7b517742567f1d271e3f3562a61e6daa40f3f0 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: Re-grounded at fa7b51774: create-pr.md still plan-bound (clarified_request :82-83, pr_title metadata :259-260, mark-step-done :383/:392).
 - OBSERVED: `tools-integration-ci:ci`'s PR primitives (`pr create/view/prepare-body`)
   support `--project-dir {path}` as an alternative to `--plan-id` throughout
   (`create-pr.md:33,65,115,283` cites the pattern even though that doc itself is
   plan-bound) — the PRIMITIVE layer is provider-agnostic and not plan-coupled, confirming
   D2's approach of calling it directly.
+  - verdict: contradicted | checked_at: fa7b517742567f1d271e3f3562a61e6daa40f3f0 | by: orchestrator-refactor/cleanup | rescoped: yes | evidence: At fa7b51774: --project-dir is a ROUTER flag replacing only the router --plan-id (ci_base.py:670-706); body-consumer verbs pr create / pr prepare-body carry their own REQUIRED --plan-id bound to the body file (BODY_CONSUMER_VERBS ci_base.py:378-380). D2 re-scoped: pass --plan-id NO_PLAN (accepted, _github_pr.py:849) and --head on the ledger branch.
 - OBSERVED: `tools-integration-ci:ci checks wait` is a bounded, self-timing-out primitive —
   `standards/blocking-wait-pattern.md` and `ci_complete_precondition.py:152-239` show a
   `--timeout` ceiling with harness-bash-ceiling-aware clamping and a `status: timeout`
   return meaning "re-poll on re-entry", matching this project's "never foreground-poll,
   always arm a waiter" convention (`feedback_no_shell_polling_loops`). `ci pr` additionally
   carries `merge-queue`/`merge`/`auto-merge`/`safe-merge`/`update-branch` sub-verbs.
+  - verdict: corroborated | checked_at: fa7b517742567f1d271e3f3562a61e6daa40f3f0 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: At fa7b51774: ci checks wait bounded (--timeout default 600, --interval 30). The harness-ceiling clamp (ci_complete_precondition.py:159-275) belongs to phase-6's resolver only; a direct call from land gets just its own --timeout.
 - OBSERVED: `orchestrator corpus epics` (no `--slug`) enumerates every epic slug across
   BOTH `.plan/orchestrator/` and `.plan/archived-orchestrators/`, partitioned
   `active[]`/`archived[]`, with per-root `exists`/`listed`/`entries_scanned`/`error`
   accounting — the correct, already-used-this-session substrate for D5's sweep.
+  - verdict: corroborated | checked_at: fa7b517742567f1d271e3f3562a61e6daa40f3f0 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: At fa7b51774: cmd_corpus_epics (orchestrator.py:3748-3797) returns active/archived with per-root accounting. Inert since the re-scope dropped land-all (D5 is now failure recovery); no body change.
 - OBSERVED: this epic's own memory records an incident (`project_ci_pr_merge_false_green`)
   where `ci pr merge` returned `merged: true` and deleted the branch WITHOUT actually
   merging — D3's "stamp from PR state, never from the landing call's own message" rule is
   a direct, first-party-verified response to a real recurring failure mode, not
   precautionary boilerplate.
+  - verdict: corroborated | checked_at: fa7b517742567f1d271e3f3562a61e6daa40f3f0 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: Incident real (#1081 merged:true, never merged) but its root cause (off-routing dispatch) was fixed in #1087 (ca7cf9bd4); 'recurring' overstated. The stamp-from-PR-state rule still holds; ci pr view --pr-number now exists for it.
 - HYPOTHESIS: `ci pr merge`'s existing merge-queue sub-verbs are sufficient for D3's
   "merge, then verify from PR state" sequence without additional orchestrator-side
   polling beyond `ci checks wait`; confirm/refute at `ci`'s merge-queue verb behavior
   (does it block until settled, or return immediately with the queue entry still
   pending?) before designing D3's exact call sequence (verify-at-outline).
-  - verdict: contradicted | checked_at: 9588b30b317d0312ede90f1982122aa3145ea871 | by: orchestrator-refactor/cleanup | rescoped: yes | evidence: Refutation still holds, but the surface relocated AND partially hardened since the prior pass. _github_pr.py moved from tools-integration-ci/scripts/ to workflow-integration-github/scripts/ (provider-split refactor; tools-integration-ci/scripts/ci.py is now a 208-line thin router dispatching by provider). cmd_pr_merge_queue is still at :2265 in its new home. NEW since last pass: it now probes the base branch's merge-queue configuration via _resolve_base_queue_state BEFORE enqueueing and refuses (status:error) if no queue is configured -- 'enqueued: true' is corroborated, not assumed from the gh exit code, per its own docstring. But the ORIGINAL defect this claim names is untouched: after a successful gh pr merge --auto, the function returns immediately (enqueued:True) with nothing polling for the PR to actually settle in the queue -- an entry can still be ejected on rebase after checks went green. Re-scope: D3 must still add an explicit post-enqueue settle loop; reuse ci pr landing-state and checks wait-for-status-flip's poll_until. The spec's Expected Surface must be updated to cite workflow-integration-github/scripts/_github_pr.py, not the retired tools-integration-ci path.
+  - verdict: contradicted | checked_at: fa7b517742567f1d271e3f3562a61e6daa40f3f0 | by: orchestrator-refactor/cleanup | rescoped: yes | evidence: At fa7b51774: cmd_pr_merge_queue now _github_pr.py:2469-2573, returns after one membership read, never settles; enqueued is three-valued (true / indeterminate with reason e.g. auto_merge_armed_awaiting_checks). pr landing-state is branch-keyed and the queue deletes the head branch, so the settle poll must use ci pr view --pr-number. D3/D4 re-scoped.
 - Verify-first clause: PLAN-09 may change `git-workflow.py`'s addressing surface (its own
   HYPOTHESIS, D2) before this plan is picked up — re-derive this plan's exact worktree-path
   resolution call against WHATEVER PLAN-09 actually shipped, not against PLAN-09's own
   staged design, at this plan's own outline.
-  - verdict: corroborated | checked_at: 9588b30b317d0312ede90f1982122aa3145ea871 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: Premise intact, re-confirmed. PLAN-09 reads staged at HEAD, nothing shipped -- orchestrator queue confirms row status:staged. PLAN-09's own D2 HYPOTHESIS (claim 6) is re-contradicted this same pass, so the addressing surface this plan binds to is still actively in flux. The ci primitive half is stable AT THE VERB LEVEL despite an internal provider-split refactor since the prior pass (tools-integration-ci/scripts/ci.py is now a 208-line router dispatching to workflow-integration-github/scripts/): ci pr --help still lists merge/auto-merge/safe-merge/merge-queue/update-branch/landing-state/create/view/prepare-body, all present, unchanged externally. See idx5 for the internal relocation detail.
+  - verdict: corroborated | checked_at: fa7b517742567f1d271e3f3562a61e6daa40f3f0 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: PLAN-09 shipped 438a0a71f. Addressing via orchestrator_worktree_path()/ensure_orchestrator_worktree() and orchestrator resolve-path (store_checkout). D6 premises hold: reuse without branch check (orchestrator_worktree.py:324-325); cmd_worktree_remove (:2000) lacks a reserved-key check. LEDGER_PATHSPECS (:54) reusable for D1.
 
 ## Expected Surface
 
@@ -129,6 +142,11 @@ worktree — never deleting the worktree (the constraint the operator stated twi
 - OBSERVED: `test/plan-marshall/tools-integration-ci/**`
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/tools-file-ops/scripts/orchestrator_worktree.py` — D6(a), added by the PLAN-09 landing fold
 - OBSERVED: `test/plan-marshall/workflow-integration-git/**` — D6(b)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/workflow-integration-github/scripts/_github_pr.py` — D3 (the merge-queue return this plan reads; added at cleanup 2026-09-29)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-orchestrator/workflow/**` — the new `land` verb's workflow doc
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/persona-plan-orchestrator/standards/orchestration-model.md` — the ledger landing model `land` changes
+- OBSERVED: `test/plan-marshall/tools-file-ops/**` — D6(a)'s `orchestrator_worktree.py` tests
+- HYPOTHESIS: `test/plan-marshall/manage-locks/**` — only if D1 extends `manage-locks` rather than consuming it (decided at outline)
 
 ## Dependencies and Sequencing
 
