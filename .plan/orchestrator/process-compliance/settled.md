@@ -192,6 +192,23 @@ recipe-fix-argparse-rejection remediation carrier.
   sequence, test-quality landing amended. The bypass story closes with a
   genuine re-execution plus merge — recorded here; test-quality PLAN-181
   queue reconciliation is that epic's drain business.
+- **Invalid inbox message `opencode-bootstrap-executor-fix-003.md` (drain 2026-09-29) — RESOLVED
+  2026-09-29.** On operator instruction the file was read directly and judged worth recovering: its
+  remedy is corroborated on PR #1646's branch (`python-verify.yml:66 pre-verify-goals: 'generate'`,
+  the new freshness test, green checks). The envelope was repaired: sender and kind taken from the
+  filename and body, `created` from the file mtime (2026-09-29T05:36:17Z), body untouched. It then
+  validated and was staged as PLAN-23. Original record: `inbox list` reports `missing_header_field`. The file carries no envelope at
+  all, only a markdown body, and no `-002` exists in the queue or the archive, so it was
+  evidently written directly rather than through `orchestrator inbox write`. That is itself a
+  channel bypass the write verb exists to prevent. Content (read, not dispositioned): the
+  pre-push quality gate reported the whole-tree `module-tests` arm green (28,361 tests) and the
+  freshness gate admitted the push, while CI failed twice on the same SHA. The cause was untracked
+  generated `target/` state in a long-lived worktree, scanned by a tracked test. The sender's ask:
+  a pre-push check that refuses a green verdict when untracked generated state sits under a path a
+  tracked test scans. Candidate homes once valid: truthful-signals PLAN-TRUTH-150 (build/CI
+  verdicts that mislead on the healthy path), or a local spec. Recovery is operator-side: the
+  sender refiles via `inbox write`, or the operator repairs the envelope (sender, kind and
+  `created` would have to be supplied).
 
 ## Watches — settled (relocated 2026-09-28)
 

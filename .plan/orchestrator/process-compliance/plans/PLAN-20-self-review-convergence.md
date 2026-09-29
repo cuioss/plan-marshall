@@ -51,16 +51,30 @@ PR-review loop no ceiling, and it could only be closed by moves no document sanc
    `requires_prompt_fields: candidates` demands the verbatim TOON in the prompt. Add a file-reference
    form.
 
+**Folded 2026-09-29 from the PLAN-12 run: the self-review recurred at larger scale.** It fired 13 times
+with 10 loop-backs: 12 iterations, 7 beyond `max_iterations=5`, each operator-authorized, and it closed
+by `may_close=operator_override`. 6-finalize took 59% of 19.85M tokens.
+- **D1 adds a convergence measure:** per round, report the share of findings that fall inside the
+  previous fix commit's diff hunks, and surface that split at the ceiling prompt. A fix-run that deletes
+  doc or contract content runs the whole-tree tests referencing that text: the round-12 fix deleted
+  content a whole-tree verb-doc test depended on, which only the pre-push gate caught.
+- **D1 recurrence:** no fixer is named for a `6-finalize` inline-tier loop-back under
+  `loop_back_without_asking: true`.
+- **D2 recurrence:** the ceiling's STOP display invites a re-run the persisted counter defeats. The
+  operator's "make a final round" was improvised as `manage-status metadata --set loop_back_iteration=6`.
+  Add a plan-scoped, logged grant-N-rounds verb and name it in the display.
+- **D5b recurrence:** a 91–93 KB candidates payload (183 candidates, 50 files) was handed over by path.
+
 ## Claim Labels
 
 - OBSERVED: 5/5 iterations spent; operator waiver; forced `done` at `3720898`; 2 CodeRabbit fixes blocked by the shared ceiling — cited at `inbox/archive/plan-13-finalize-mechanism-defects/plan-13-finalize-mechanism-defects-004.md` §§ 8, 14, 19, 20, 23 and the landing message `-007` § Residue; landing record `landings/PLAN-13.md`
-  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: commit 3720898 exists; one shared counter (phase-6-finalize/SKILL.md L697); no waiver or residual-accept disposition in the inventory (run counts not re-derivable)
+  - verdict: corroborated | checked_at: 56add3fafe362e058a8e1b5d4608ac34ec77196b | by: process-compliance/cleanup | rescoped: n/a | evidence: phase-6-finalize/SKILL.md L697-707 single loop_back_iteration; no waiver or residual-accept disposition (unchanged)
 - OBSERVED: one `loop_back_iteration` counter caps every source — read at HEAD in `marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md` (§ Step 3, "Read the persisted `loop_back_iteration` count"; `max_iterations`)
-  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: phase-6-finalize/SKILL.md L697-707 single status.metadata.loop_back_iteration; execution.md L647 'capped by max_iterations (counted across both tiers)'
+  - verdict: corroborated | checked_at: 56add3fafe362e058a8e1b5d4608ac34ec77196b | by: process-compliance/cleanup | rescoped: n/a | evidence: SKILL.md L697-707 one counter; execution.md L652 'capped by phase-6-finalize.max_iterations (default 3, counted across both tiers)'
 - OBSERVED: verifier refusal 161 vs 122; 80.6 KB candidates envelope — cited at `plan-13-…-004.md` §§ 9, 15
-  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: workflow/pre-submission-self-review.md Step 3b template L439 passes only {N}, no in_total note; candidates required verbatim (L52, L244); self_review surface --help has no file-output option
+  - verdict: corroborated | checked_at: 56add3fafe362e058a8e1b5d4608ac34ec77196b | by: process-compliance/cleanup | rescoped: n/a | evidence: workflow/pre-submission-self-review.md Step 3b L439 passes only {N}, no in_total; candidates verbatim L52/L244 (unchanged)
 - OBSERVED: `verdict_refused` has no file path — cited at `plan-13-…-004.md` § 17; HYPOTHESIS for the keying — confirm/refute at the `resolve-evidenced` implementation in `marketplace/bundles/plan-marshall/skills/manage-findings/scripts/` (verify-at-outline)
-  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: pre-submission-self-review.md L513-517 qgate add carries no --file-path; _findings_core.py resolve_qgate_findings_by_evidence L1257-1291 leaves pathless findings pending
+  - verdict: corroborated | checked_at: 56add3fafe362e058a8e1b5d4608ac34ec77196b | by: process-compliance/cleanup | rescoped: n/a | evidence: pre-submission-self-review.md L513-517 qgate add has no --file-path; _findings_core.py L1257-1291 leaves pathless findings pending
 
 ## Expected Surface
 
@@ -74,6 +88,8 @@ PR-review loop no ceiling, and it could only be closed by moves no document sanc
 - OBSERVED: `marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/` — candidates envelope file-reference form
 - OBSERVED: `test/plan-marshall/phase-6-finalize/` — ceiling / waiver tests
 - OBSERVED: `test/plan-marshall/manage-findings/` — resolution test
+- OBSERVED: `test/plan-marshall/manage-status/` — grant-verb, per-source counter, waiver-record tests (added cleanup 2026-09-29 at 56add3f — understated surface)
+- OBSERVED: `test/pm-plugin-development/ext-self-review-plan-marshall/` — candidates file-reference test (added cleanup 2026-09-29 at 56add3f — understated surface)
 
 ## Dependencies and Sequencing
 
@@ -85,6 +101,10 @@ PR-review loop no ceiling, and it could only be closed by moves no document sanc
 ## Folded inbox material (same act)
 
 - `plan-13-finalize-mechanism-defects-004.md` items 8, 9, 14, 15, 17, 19, 20, 23 (second half): deliverables 1–5
+- `plan-12-tool-triage-010.md` (candidate-lesson, 2026-09-29): deliverable 1 (convergence measure)
+- `plan-12-tool-triage-020.md` (finding, 2026-09-29): deliverable 1 (recurrence)
+- `plan-12-tool-triage-022.md` (finding, 2026-09-29): deliverable 2 (recurrence plus the grant verb)
+- `plan-12-tool-triage-025.md` item 1 (finding, 2026-09-29): deliverable 5 (recurrence)
 
 ## Hand-Off Command
 

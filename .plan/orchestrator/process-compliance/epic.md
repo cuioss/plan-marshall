@@ -67,6 +67,20 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
 - **PLAN-03 shipped 2026-09-20 (PR #1542, merge 1e2aa916).** All 4 deliverables per spec incl. 4 review loop-back hardenings; both hypotheses re-corroborated at merge HEAD via set-verdict; landing record at `landings/PLAN-03.md`. Residues recorded in the landing (review-gap 3-file delta, token floor, uv.lock churn).
 - **PLAN-07 shipped 2026-09-20 (PR #1554, merge e8a7165).** Surrounds only (resolver untouched): degrade paths, sentinel, distinct consent prompt; claims 0–3 re-corroborated at merge HEAD; landing record at `landings/PLAN-07.md`. Residues recorded in the landing (duplicate-PR account, session override, sonar closure, body embellishment).
 - **PLAN-04 shipped 2026-09-21 (PR #1556, squash ed90328).** All 4 deliverables per spec incl. review-driven correction-memory mechanism; claims 0–2 re-corroborated at merge HEAD; landing record at `landings/PLAN-04.md`. Reconciled post store-tier migration (tree relocated to the tracked tier per operator direction).
+- **PLAN-12 shipped 2026-09-29 (PR #1654, merge 26f864b; #1653 closed by the CodeRabbit close-and-reopen
+  recovery).** All defect deliverables per spec, each with a regression test. Landing record at
+  `landings/PLAN-12.md`. The landing message was complete, but its `pr=#1653` is a stale create-pr fact,
+  so the row carries 1654 (the root cause is staged as PLAN-24 D4). Main was merged into the branch to
+  resolve a `plan-retrospective/SKILL.md` conflict with #1651: an undeclared overlap between PLAN-12 and
+  PLAN-13, recorded, with no spec correction owed. Self-review ran 12 iterations and closed by
+  operator override.
+- **PLAN-24…27 staged 2026-09-29** from PLAN-12's 22 further messages:
+  - PLAN-24 review and PR record integrity;
+  - PLAN-25 build-routing integrity;
+  - PLAN-26 git and worktree contracts;
+  - PLAN-27 execute guards and dispatch header.
+
+  PLAN-16/19/20/21/23 took recurrence folds. The staged corpus is now 12 specs: PLAN-10 and PLAN-16 to 27.
 - **PLAN-13 shipped 2026-09-28 (PR #1651, merge c56710b).** All 5 deliverables per spec, each with a
   regression test, plus an operator-approved ~40-file stale-path sweep outside the declared surface.
   Landing record at `landings/PLAN-13.md`; the landing message was complete (`landing-check`). Residue:
@@ -153,23 +167,6 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
 
 ## Open Defects
 
-- **Invalid inbox message `opencode-bootstrap-executor-fix-003.md` (drain 2026-09-29) — RESOLVED
-  2026-09-29.** On operator instruction the file was read directly and judged worth recovering: its
-  remedy is corroborated on PR #1646's branch (`python-verify.yml:66 pre-verify-goals: 'generate'`,
-  the new freshness test, green checks). The envelope was repaired: sender and kind taken from the
-  filename and body, `created` from the file mtime (2026-09-29T05:36:17Z), body untouched. It then
-  validated and was staged as PLAN-23. Original record: `inbox list` reports `missing_header_field`. The file carries no envelope at
-  all, only a markdown body, and no `-002` exists in the queue or the archive, so it was
-  evidently written directly rather than through `orchestrator inbox write`. That is itself a
-  channel bypass the write verb exists to prevent. Content (read, not dispositioned): the
-  pre-push quality gate reported the whole-tree `module-tests` arm green (28,361 tests) and the
-  freshness gate admitted the push, while CI failed twice on the same SHA. The cause was untracked
-  generated `target/` state in a long-lived worktree, scanned by a tracked test. The sender's ask:
-  a pre-push check that refuses a green verdict when untracked generated state sits under a path a
-  tracked test scans. Candidate homes once valid: truthful-signals PLAN-TRUTH-150 (build/CI
-  verdicts that mislead on the healthy path), or a local spec. Recovery is operator-side: the
-  sender refiles via `inbox write`, or the operator repairs the envelope (sender, kind and
-  `created` would have to be supplied).
 - **#1641 (`945e59287`, "cross-epic ledger sync") reverted ledger state across 9
   epics (found 2026-09-28, this epic RESTORED).** Its body claims it held back 20
   deletions with no verifiable successor; the squash deleted exactly those 20
@@ -193,7 +190,7 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
   (the procedure covered staged/parked rows); route their invariants into the
   carry-over file as an addendum, or record them as `none`, before this epic
   closes.
-> ↪ Relocated to `settled.md` § "Open Defects — closed (relocated 2026-09-28)" — 4 entries whose subject is closed (six invalid messages resolved, 2026-09-21 partial drain closed, 2026-09-22 bypass story closed by PR #1582).
+> ↪ Relocated to `settled.md` § "Open Defects — closed (relocated 2026-09-28)" — 5 entries whose subject is closed (six invalid messages resolved, 2026-09-21 partial drain closed, 2026-09-22 bypass story closed by PR #1582, `opencode-bootstrap-executor-fix-003` recovered and staged as PLAN-23 on 2026-09-29).
 
 - **Self-review verifier close-out has no contract exit (drain 2026-09-18,
   `git-branch-mechanics-001` items 4+5, unowned).** Two identical accepted-clean
@@ -344,6 +341,18 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
   read-path discipline pattern.
 
 ## Watches
+
+- **Drain 2026-09-29 (PLAN-12 landing plus 23 messages).**
+  - Reconciled: `-013` (the landing).
+  - Staged into new specs: `-012`, `-014`, `-015`, `-019`, `-021`, `-028`, `-029`, `-030`, `-031`,
+    `-032`, and parts of `-017`, `-025` and `-027` (PLAN-24…27).
+  - Folded as recurrences: `-010`, `-011`, `-016`, `-018`, `-020`, `-022`, `-023`, `-024`, `-026`,
+    and the remaining parts (into PLAN-16/19/20/21/23).
+  - Routed: `-009` to post-run-quality (`process-compliance-003`, the second PRQ-12 recurrence), because
+    PRQ-12 is the one live sibling owner. review-apparatus and truthful-signals are fully parked, so
+    PR/review material was kept here.
+  - Reclaimed from the PM-MCP carry-over under the 2026-09-27 directive: MB06 (→ PLAN-27), MB07
+    (→ PLAN-21), MB10 (→ PLAN-26).
 
 - **⛔ Dead-end routing corrected (2026-09-29).** The 2026-09-28 routing of PLAN-13 report items 5, 21
   and 22 and the `-006` step-id lesson to truthful-signals (`process-compliance-002`) targeted
