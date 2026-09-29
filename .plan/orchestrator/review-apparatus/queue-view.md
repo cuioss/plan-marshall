@@ -203,4 +203,4 @@ ENVIRONMENT (SUPERSEDED 2026-09-22, kept for history): this line claimed the epi
 
 | # | Plan | Workstream | Status | Surface (expected) |
 |---|------|------------|--------|--------------------|
-| 1 | PLAN-PR-078 | WS-02 | staged | .github/actions/release-guard/; .github/project.yml; .github/workflows/cuioss-review-bot.yml; .github/workflows/pr-agent.yml; .github/workflows/release.yml; .github/workflows/reusable-npm-publish.yml; test/ |
+| 1 | PLAN-PR-078 | WS-02 | staged | .github/actions/release-guard/; .github/project.yml; .github/workflows/cuioss-review-bot.yml; .github/workflows/pr-agent.yml; .github/workflows/release.yml; .github/workflows/reusable-npm-publish.yml; test/workflow/ |

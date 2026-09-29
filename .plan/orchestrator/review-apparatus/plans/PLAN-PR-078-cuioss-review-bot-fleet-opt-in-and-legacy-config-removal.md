@@ -127,15 +127,19 @@ stops that run from publishing differs by release path:
   caller `pr-agent.yml`. API-Sheriff and TokenSheriff carry a generated java `.pr_agent.toml`. No active
   repository except plan-marshall has a `cuioss-review-bot:` block, and none has a legacy `pr-agent:` block.
   Confirm/refute by re-running D0's sweep.
+  - verdict: corroborated | checked_at: a53379ebc | by: review-apparatus/cleanup | rescoped: n/a | evidence: Re-derived first-party 2026-09-28/29: ci org search-code reusable-cuioss-review-bot.yml complete=true 26 hits; only plan-marshall (.github/workflows/cuioss-review-bot.yml) and API-Sheriff/TokenSheriff/cui-http (.github/workflows/pr-agent.yml) are callers; ci repo file read state=found for .pr_agent.toml only in API-Sheriff/TokenSheriff (generated, --packs java) plus the central cuioss-review-bot; only plan-marshall carries a cuioss-review-bot: block.
 - OBSERVED (2026-09-28, `cuioss-organization` `origin/main`): the central-charter path does not set
   `PR_REVIEWER.EXTRA_INSTRUCTIONS`, so a repo-local `.pr_agent.toml` is merged and its pack is live. A
   repo-local file can override `PR_ACTIONS`. Confirm/refute at `reusable-cuioss-review-bot.yml` ≈:119, ≈:396–413
   and ≈:513.
+  - verdict: corroborated | checked_at: a53379ebc | by: review-apparatus/cleanup | rescoped: n/a | evidence: Read at cuioss-organization origin/main reusable-cuioss-review-bot.yml: central-charter step sets no PR_REVIEWER.EXTRA_INSTRUCTIONS (~:396-413); runner merges repo-local .pr_agent.toml (~:119); repo-local file can reconfigure GITHUB_ACTION_CONFIG.PR_ACTIONS (~:513). Line numbers are leads; anchor on symbols.
 - ⚠ CORRECTION recorded: an earlier sweep in the orchestrator session read `status: success` as "file
   present" and wrongly reported the caller in all 27 repositories. `status` reports the READ, and `state`
   reports the FILE. D0 must use `state`.
+  - verdict: corroborated | checked_at: a53379ebc | by: review-apparatus/cleanup | rescoped: n/a | evidence: Observed directly: ci repo file read returns status: success with state: not_found / not_found_reason: path_absent for an absent path (cuioss/cui-http .pr_agent.toml), so status reports the read and state the file.
 - HYPOTHESIS: the "22/22 consumer pin-bump PRs" in `PLAN-PR-002`'s landing bumped OTHER org workflows, not a
   reviewer caller, since 23 active repositories have none. Not load-bearing here.
+  - verdict: unverifiable | checked_at: a53379ebc | by: review-apparatus/cleanup | rescoped: n/a | evidence: The 22/22 pin-bump PRs were not re-enumerated. Consistent with 23 active repos having no reviewer caller, but which workflow each bump touched was not read. Explicitly not load-bearing for this plan.
 
 ## Expected Surface
 
@@ -155,7 +159,10 @@ stops that run from publishing differs by release path:
 - OBSERVED: `coderabbit` → `.coderabbit.yaml`
 - OBSERVED (D0b): `cuioss-organization` → `.github/workflows/reusable-npm-publish.yml`
 - OBSERVED (D0b): `cuioss-organization` → `.github/actions/release-guard/`
-- OBSERVED (D0b): `cuioss-organization` → `test/`
+- OBSERVED (D0b): `cuioss-organization` → `test/workflow/` — narrowed 2026-09-29 (cleanup): the
+  surface parser drops the `{repo} →` prefix, so a bare `test/` aliased plan-marshall's own `test/` and
+  produced false overlaps with sibling-epic specs. ⚠ Every foreign path here is still read as a host path;
+  the gate's verdict on this spec is aliasing-prone and must be read by hand.
 - OBSERVED (D0b): `playwright-test-artifacts` → `.github/workflows/release.yml`
 - OBSERVED (absence): NO file inside `plan-marshall` is touched. plan-marshall is the reference shape.
 
