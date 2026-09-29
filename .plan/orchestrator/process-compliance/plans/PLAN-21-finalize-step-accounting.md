@@ -48,13 +48,21 @@ Make phase-6's per-step records true and its re-fires proportionate. In the PLAN
    `references.affected_files` (27 entries). `sync-affected-files` re-derives from the solution outline
    only, so a finalize-time scope widening is never gated structurally. Gate on the realized footprint,
    or the union of declared and realized.
-5. **Records wait for their inputs; retired fields are not read.** (a) In iteration 5 the orchestrator
+5. **Records wait for their inputs, carry their identity, and retired fields are not read.** (a) In iteration 5 the orchestrator
    recorded accumulate / record-dispatch-boundary / record-step with an estimated verifier share
    before the verifier's `<usage>` arrived. The accumulator could only be topped up (+620 tokens), and
    the row's duration stays overstated by 15,622 ms. Forbid recording a boundary before every dispatch
    inside it has reported. (b) lessons-housekeeping Step 1 reads
    `manage-references get --field modified_files`, which returns `field_retired` and falls back to
-   `compute-footprint` (lesson 2026-09-27-08-001 records it). Read the live field.
+   `compute-footprint` (lesson 2026-09-27-08-001 records it). Read the live field. (c) *(folded
+   2026-09-29, reclaimed from the parked PLAN-TRUTH-175)* 25 of 30 `6-finalize` and 8 of 9 `5-execute`
+   dispatch-boundary rows were recorded without `--step-id`, so `check-dispatch-audit` paired only 3 of
+   30 finalize dispatches with their `record-step` rows. `[DISPATCH]` lines exist for only 4 of 7
+   dispatched finalize steps (`missing_dispatch_emission: 3`, `confidence: low`). Make `--step-id` part
+   of the literal `record-dispatch-boundary` invocation in the phase-6-finalize dispatcher and
+   `execution.md`. The recorder warns or refuses when it is absent for `6-finalize`. Every finalize
+   dispatch resolves with `--workflow`, so the seam emits `[DISPATCH]` itself. Test: dispatched finalize
+   steps == finalize-dispatcher `[DISPATCH]` lines on a fixture run.
 
 ## Claim Labels
 
@@ -68,6 +76,7 @@ Make phase-6's per-step records true and its re-fires proportionate. In the PLAN
   - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: .claude/skills/finalize-step-plugin-doctor/SKILL.md Step 1 L63-66 gates on affected_files; _references_crud.py L22-28 affected_files is the outline-declared set
 - OBSERVED: usage recorded before arrival (+620 tokens, 15,622 ms) — cited at `plan-13-…-004.md` § 18
   - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: phase-6-finalize/SKILL.md items 5b/5c L1091-1128 no rule against recording a boundary before inner dispatches report; accumulator additive
+- OBSERVED: keyless dispatch-boundary rows (25/30 finalize, 8/9 execute) and `missing_dispatch_emission: 3` — cited at `inbox/archive/plan-13-finalize-mechanism-defects/plan-13-finalize-mechanism-defects-006.md` § Evidence (plan-retrospective aspects)
 - OBSERVED: `modified_files` returns `field_retired` — cited at `plan-13-…-004.md` § 13, lesson `2026-09-27-08-001`
   - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: lessons-housekeeping SKILL.md Step 1 L89-91 reads --field modified_files; _references_core.py L125 RETIRED_REFERENCE_FIELDS={'modified_files'}
 
@@ -84,13 +93,16 @@ Make phase-6's per-step records true and its re-fires proportionate. In the PLAN
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-references/scripts/` — realized-footprint gating input
 - OBSERVED: `.claude/skills/finalize-step-plugin-doctor/` — footprint scoping, `verdict_inputs`
 - OBSERVED: `.claude/skills/finalize-step-lessons-housekeeping/` — retired field, `verdict_inputs`
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-metrics/scripts/manage-metrics.py` — `record-dispatch-boundary` `--step-id` (D5c, folded 2026-09-29)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/execution.md` — literal `--step-id` on execute dispatch records (D5c, folded 2026-09-29)
+- OBSERVED: `test/plan-marshall/manage-metrics/` — `--step-id` enforcement test (D5c, folded 2026-09-29)
 - OBSERVED: `test/plan-marshall/phase-6-finalize/` — roster closure test
 - OBSERVED: `test/plan-marshall/manage-status/` — firing accounting test
 
 ## Dependencies and Sequencing
 
 - Depends on: none
-- Overlaps with: PLAN-20 (shares `phase-6-finalize/SKILL.md` and `standards/`); truthful-signals PLAN-TRUTH-175 (dispatch-boundary measurement — adjacent, not duplicated: that spec owns `[DISPATCH]` emission and `--step-id`, this one owns firing counts and recording order). Sequence after PLAN-20.
+- Overlaps with: PLAN-20 (shares `phase-6-finalize/SKILL.md` and `standards/`); truthful-signals PLAN-TRUTH-175 is PARKED (PM-MCP), so its `[DISPATCH]` / `--step-id` facet is reclaimed here as D5c (2026-09-29). Sequence after PLAN-20.
 - Scope-bloat guard: 5 deliverables.
 
 ## Folded inbox material (same act)
