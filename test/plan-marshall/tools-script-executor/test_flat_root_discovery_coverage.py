@@ -242,6 +242,29 @@ class TestScannerFlatEntries:
 
         assert payload['content_filter_stats']['matched_count'] == listed
 
+    def test_a_both_shapes_skill_whose_nested_copy_is_excluded_is_evaluated_once(self, tmp_path, monkeypatch, capsys):
+        """The nested-EXCLUDED arm: the flat twin must not re-enter the filter or the listing.
+
+        ``metadata:`` matches only the flat copy (the emitter adds the identity
+        block), so de-duplicating against the filtered nested listing would let
+        the flat copy through: counted twice, and listed although the skill's
+        nested copy was excluded.
+        """
+        base = _nested_root(tmp_path)
+        _flat_skill(base / 'skills', BUNDLE, 'manage-status', {'manage-status.py': '#'})
+        monkeypatch.chdir(tmp_path)
+
+        payload = _scan_json(
+            base, monkeypatch, capsys, '--resource-types', 'skills,scripts', '--full', '--content-pattern', 'metadata:'
+        )
+        stats = payload['content_filter_stats']
+        nested_scripts = 2  # manage-status.py and sub/nested.py; scripts are counted, never content-filtered
+
+        assert payload['bundles'][BUNDLE]['skills'] == []
+        assert stats['excluded_count'] == 1
+        assert stats['input_count'] == 1 + nested_scripts
+        assert stats['matched_count'] == nested_scripts
+
     def test_a_skill_in_both_shapes_is_listed_once(self, tmp_path, monkeypatch, capsys):
         """Merging a nested and a flat entry must not list the same skill twice."""
         base = _nested_root(tmp_path)

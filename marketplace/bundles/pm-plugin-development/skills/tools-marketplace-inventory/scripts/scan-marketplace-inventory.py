@@ -884,6 +884,19 @@ def main() -> int:
     # Build inventory
     bundles_data = []
     total_content_stats = {'input_count': 0, 'matched_count': 0, 'excluded_count': 0}
+    # Every skill name and script notation each nested bundle DEPLOYS, taken before
+    # any name or content filter. The flat-shape merge below de-duplicates against
+    # this, not against the filtered listing: a nested copy the filter excluded is
+    # still deployed, so its flat twin must not re-enter the filter a second time.
+    nested_deployed: dict[str, tuple[set[str], set[str]]] = {}
+    for bundle_dir in bundle_dirs:
+        name = _extract_bundle_name(bundle_dir)
+        skills_dir = bundle_dir / 'skills'
+        deployed_skills = {md.parent.name for md in skills_dir.glob('*/SKILL.md')} if skills_dir.is_dir() else set()
+        deployed_notations = (
+            {script['notation'] for script in discover_scripts(bundle_dir, name)} if include['scripts'] else set()
+        )
+        nested_deployed[name] = (deployed_skills, deployed_notations)
     for bundle_dir in bundle_dirs:
         bundle, stats = process_bundle(
             bundle_dir,
@@ -912,11 +925,13 @@ def main() -> int:
         scripts = filter_resources_by_pattern(flat_bundle['scripts'], name_patterns)
         existing = by_name.get(flat_bundle['name'])
         if existing is not None:
-            # A skill (or script notation) deployed in both shapes is listed once:
-            # the nested entry already carries it. De-duplicated BEFORE the content
-            # filter, so the filter's stats count exactly the rows that are listed.
-            known_skills = {skill['name'] for skill in existing['skills']}
-            known_notations = {script['notation'] for script in existing['scripts']}
+            # A skill (or script notation) deployed in both shapes is evaluated
+            # ONCE, through its nested copy. The keys are what the nested bundle
+            # deploys before any filter — not its filtered listing — and the
+            # de-dup runs BEFORE the content filter, so each both-shapes skill
+            # reaches the filter and its stats exactly once, whichever way the
+            # filter decided the nested copy.
+            known_skills, known_notations = nested_deployed.get(flat_bundle['name'], (set(), set()))
             skills = [skill for skill in skills if skill['name'] not in known_skills]
             scripts = [script for script in scripts if script['notation'] not in known_notations]
         if content_include or content_exclude:
