@@ -10,7 +10,7 @@ Subcommands:
     init      Create an empty TOON bundle at the mode-appropriate path, first
               removing every ``fragment-*.toon`` file a previous run left in
               the fragment directory (reported as ``removed_fragments``).
-    add      Merge a fragment file into the bundle under the aspect key.
+    add       Merge a fragment file into the bundle under the aspect key.
     register  Merge MANY fragment files in one batch — one aspect-key
               registration pass, one bundle write — reporting registered
               aspect keys with counts.
@@ -299,12 +299,7 @@ def _remove_stale_fragments(fragment_dir: Path) -> list[str]:
 
 
 def cmd_init(args: argparse.Namespace) -> dict[str, Any]:
-    """Create (or overwrite) a bundle seeded with the resolution mode, clearing stale fragments.
-
-    Every ``fragment-*.toon`` file a previous run left in the fragment directory
-    is removed before the bundle is seeded, and reported under
-    ``removed_fragments``, so the new run starts from an empty fragment set.
-    """
+    """Create (or overwrite) a bundle seeded with the resolution mode, clearing stale fragments."""
     bundle_path = resolve_bundle_path(args.mode, args.plan_id)
     fragment_dir = bundle_path.parent
     fragment_dir.mkdir(parents=True, exist_ok=True)
