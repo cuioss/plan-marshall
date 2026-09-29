@@ -1,3 +1,7 @@
+=== 2026-09-29 PLAN-PR-078 STAGED + EMITTED (reviewer fleet opt-in + legacy .pr_agent.toml removal). R = 0 of N = 2 until operator confirms launch. ===
+Scope: migrate API-Sheriff/TokenSheriff/cui-http (atomic toml removal + project.yml opt-in + caller rename) and enroll 17 named code repos; D0 derives packs and ASKS the operator before writing. Org/infra repos excluded; central cuioss-review-bot/.pr_agent.toml never touched.
+NEXT ACTION: on operator start, stamp PLAN-PR-078 running; on landing corroborate per-repo against the FOREIGN PRs + live 'Assembled review charter' log lines; then close the epic. Ledger (restore + 002 landing + 078) still uncommitted.
+
 === 2026-09-28 CLEANUP: corpus clean, all 41 rows terminal; restart not_ready ONLY on uncommitted worktree ===
 NEXT ACTION: land the ledger (restore + PLAN-PR-002 landing) via a ledger-only PR, then `close`.
 
@@ -136,6 +140,7 @@ PLAN-PR-002 PARKED: cuioss-organization#235 OPEN - corroborate against the FOREI
 ⛔ A pre-existing macOS test defect is OPERATOR-ASSIGNED to a separate plan: test_qgate_closure.py::test_a_declared_glob_escaping_the_repo_is_unmeasured_not_empty asserts == Path(/etc) against a path resolving to /private/etc. Also a pollution-guard teardown flake in test_comments_stage.py under xdist.
 ⚠ The build wrapper reported status: timeout on a run that COMPLETED (17877 passed in 467s). Read the LOG layer, never the outer status.
 ENVIRONMENT (SUPERSEDED 2026-09-22, kept for history): this line claimed the epic tree was GITIGNORED, LOCAL-ONLY. FALSE since the tracked-store migration (#1558-#1578) -- the tree is git-tracked. See the header block above.
+
 
 
 

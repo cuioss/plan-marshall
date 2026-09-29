@@ -81,7 +81,9 @@ D3's revised acceptance criterion.
    own licensed fallback clause, the chosen discriminator is therefore the string-prefix /
    date-suffix heuristic: recognise an archived directory name of the form
    `{live_slug}-{YY-MM-DD}` against a live directory named `{live_slug}` under
-   `.plan/orchestrator/`, matching the `archive` verb's own current naming convention. Record
+   `.plan/orchestrator/`, matching the PRE-#1578 dated naming the `archive` verb used (it now relocates to
+   `archived-orchestrators/{slug}/` without a date — corrected at cleanup 2026-09-29). The pattern must also cover
+   the `-YY-MM-DD-NN` ordinal form (`lessons-handling-26-08-08-01`), even though no live epic collides with one today. Record
    in the implementing plan that this IS the licensed fallback (identity-based read confirmed
    unreliable, not merely unavailable) — the naming-convention fragility this D1 originally
    worried about is accepted as the exclusion mechanism's known limitation, not solved.
@@ -115,20 +117,23 @@ D3's revised acceptance criterion.
 - OBSERVED: `_sibling_epic_roots` (`marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py:3736-3752`)
   dedupes sibling candidates by `child.name != slug and child.name not in roots` while walking
   both `.plan/orchestrator/` and `.plan/archived-orchestrators/` (`_epic_store_roots()`).
+  - verdict: corroborated | checked_at: fa7b517742567f1d271e3f3562a61e6daa40f3f0 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: At fa7b51774: _sibling_epic_roots now orchestrator.py:3800-3816, exact-name dedup unchanged at :3814; walks _epic_store_roots() (:3670), which since #1652 resolves through the store seam.
 - OBSERVED: at HEAD `14d8f3ccd`, `.plan/archived-orchestrators/` contains four dated snapshots
   whose slug is `{live_slug}-26-09-21` for a slug that ALSO exists live under
   `.plan/orchestrator/`: `code-intelligence-substrate-26-09-21`, `review-apparatus-26-09-21`,
   `test-quality-26-09-21`, `truthful-signals-26-09-21` — 4 of the 9 currently-live epics are
   affected. Verified by directory listing, not inferred.
+  - verdict: corroborated | checked_at: fa7b517742567f1d271e3f3562a61e6daa40f3f0 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: git ls-tree HEAD .plan/archived-orchestrators/ still lists the 4 {live}-26-09-21 snapshots (code-intelligence-substrate, review-apparatus, test-quality, truthful-signals), all with live epics.
 - OBSERVED: `review-apparatus`'s `corpus cross-check` at the same HEAD reports
   `candidates_indeterminate: 96` of which `sibling_epic_spec indeterminate: 94`, and
   `candidate_comparison_determinate: false` — the exact symptom this defect predicts, on the
   exact epic whose own dated snapshot exists.
+  - verdict: corroborated | checked_at: fa7b517742567f1d271e3f3562a61e6daa40f3f0 | by: orchestrator-refactor/cleanup | rescoped: n/a | evidence: Live re-run on review-apparatus: candidates_indeterminate 97 (sibling_epic_spec 94, live_plan 2, corpus_spec 1), candidate_comparison_determinate false; review-apparatus-26-09-21 alone yields 567 overlap rows against its own live epic.
 - HYPOTHESIS: the archived directory's own `status.json` carries an identity field (or the
   epic's `title`) stable enough to compare against the live epic's identity for D1's
   discriminator — confirm/refute by reading `.plan/archived-orchestrators/review-apparatus-26-09-21/status.json`
   at outline (verify-at-outline).
-  - verdict: contradicted | checked_at: 9588b30b317d0312ede90f1982122aa3145ea871 | by: orchestrator-refactor/cleanup | rescoped: yes | evidence: First verdict; refuted by direct read. .plan/archived-orchestrators/review-apparatus-26-09-21/status.json's title is 'Review Apparatus — archived 2026-09-21', while the LIVE .plan/orchestrator/review-apparatus/status.json's title is 'Automated PR review apparatus reliability' -- the two titles share no substring, so title is NOT a usable identity-based discriminator: it can diverge freely between an epic's live and archived self, and a live/archived comparison keyed on it would produce false negatives (failing to recognise a genuine self-collision) as readily as it fixes false positives. No other identity field (slug, epic id) exists in status.json at either location. Per this deliverable's own licensed fallback clause, this establishes that an identity-based read is unreliable, so D1's discriminator should be the string-prefix/date-suffix heuristic (matching the archive verb's own {slug}-{YY-MM-DD} naming convention) with that unreliability finding recorded in the plan, not a status.json field read.
+  - verdict: contradicted | checked_at: fa7b517742567f1d271e3f3562a61e6daa40f3f0 | by: orchestrator-refactor/cleanup | rescoped: no | evidence: Still refuted at fa7b51774: titles differ, no slug/epic-id field in either status.json. D1 already adopts the prefix/date-suffix fallback; no further body change.
 
 ## Expected Surface
 
@@ -137,6 +142,9 @@ D3's revised acceptance criterion.
 - HYPOTHESIS: `test/plan-marshall/plan-orchestrator/test_orchestrator_corpus.py` — where the
   cross-check candidate-enumeration tests already live (verify-at-outline; a new test module is
   also acceptable if the existing one is component-scoped elsewhere).
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-orchestrator/SKILL.md` — `corpus cross-check` states the sibling population (added at cleanup 2026-09-29)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-orchestrator/workflow/cleanup.md` — "sibling epics (active and archived)"
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-orchestrator/workflow/orchestrate.md` — the two-root scan description
 
 ## Dependencies and Sequencing
 

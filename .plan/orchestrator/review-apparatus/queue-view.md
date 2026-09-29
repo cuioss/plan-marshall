@@ -4,7 +4,11 @@
 
 ## START HERE
 
-**Resume anchor**: === 2026-09-28 CLEANUP: corpus clean, all 41 rows terminal; restart not_ready ONLY on uncommitted worktree ===
+**Resume anchor**: === 2026-09-29 PLAN-PR-078 STAGED + EMITTED (reviewer fleet opt-in + legacy .pr_agent.toml removal). R = 0 of N = 2 until operator confirms launch. ===
+Scope: migrate API-Sheriff/TokenSheriff/cui-http (atomic toml removal + project.yml opt-in + caller rename) and enroll 17 named code repos; D0 derives packs and ASKS the operator before writing. Org/infra repos excluded; central cuioss-review-bot/.pr_agent.toml never touched.
+NEXT ACTION: on operator start, stamp PLAN-PR-078 running; on landing corroborate per-repo against the FOREIGN PRs + live 'Assembled review charter' log lines; then close the epic. Ledger (restore + 002 landing + 078) still uncommitted.
+
+=== 2026-09-28 CLEANUP: corpus clean, all 41 rows terminal; restart not_ready ONLY on uncommitted worktree ===
 NEXT ACTION: land the ledger (restore + PLAN-PR-002 landing) via a ledger-only PR, then `close`.
 
 === 2026-09-28 PLAN-PR-002 SHIPPED (cuioss-organization#297, v0.32.0). ALL ROWS TERMINAL. #1641 regression RESTORED from 88fcfc9ef. ===
@@ -149,9 +153,10 @@ ENVIRONMENT (SUPERSEDED 2026-09-22, kept for history): this line claimed the epi
 
 
 
+
 **Phase**: orchestrating
 **Queue** (staged, in order):
-- (empty)
+1. PLAN-PR-078 (WS-02)
 - PLAN-PR-002 (WS-02) — plan=org-empty-review-guard-too-broad — PR cuioss-organization#297 — landing=landings/PLAN-PR-002.md — status: shipped
 - PLAN-PR-043 (WS-01) — status: superseded
 - PLAN-PR-045 (WS-01) — status: superseded
@@ -198,4 +203,4 @@ ENVIRONMENT (SUPERSEDED 2026-09-22, kept for history): this line claimed the epi
 
 | # | Plan | Workstream | Status | Surface (expected) |
 |---|------|------------|--------|--------------------|
-| — | (empty) | — | — | — |
+| 1 | PLAN-PR-078 | WS-02 | staged | .github/actions/release-guard/; .github/project.yml; .github/workflows/cuioss-review-bot.yml; .github/workflows/pr-agent.yml; .github/workflows/release.yml; .github/workflows/reusable-npm-publish.yml; test/ |
