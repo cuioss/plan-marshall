@@ -223,6 +223,17 @@ DEFAULT_PROJECT = {
 # key unset (the fall-through notes say how), so this block changes what is
 # DISCOVERABLE, never what is EFFECTIVE.
 #
+# `use_worktree` (bool, default `false`) is the repository-wide switch that moves
+# the orchestrator ledger store into the shared, main-anchored ledger worktree
+# (`tools-file-ops/scripts/orchestrator_worktree.py` owns its location and
+# branch). `false` is what an absent key resolves to — the store stays on the
+# cwd-relative tracked-config tier — so materialising it is behaviourally inert.
+# It is read AND written only against the main checkout's marshal.json
+# (`orchestrator_worktree.orchestrator_knob_config_path`), so every checkout
+# agrees on it; `orchestrator set --field use_worktree` enforces that write anchor
+# and the cutover refusal. It is a different tier from the plan-scoped
+# `plan.phase-1-init.use_worktree`.
+#
 # `auto_emit` (bool, default `false`) is the orchestrator-tier counterpart of the
 # plan-tier autonomy family (`finalize_without_asking` / `loop_back_without_asking`
 # / the step-owned `final_merge_without_asking`). It deliberately does NOT share
@@ -270,6 +281,7 @@ DEFAULT_ORCHESTRATOR = {
     'auto_emit': False,
     'effort': {},
     'parallelization_scope': 1,
+    'use_worktree': False,
 }
 
 # The authoritative set of top-level keys the orchestrator block supports — the
@@ -288,7 +300,7 @@ DEFAULT_ORCHESTRATOR = {
 # (`_cmd_orchestrator.ORCHESTRATOR_SCALAR_FIELDS`) is a deliberate subset —
 # `effort` is written through the `effort` noun, not the scalar `orchestrator set`
 # verb — so it is intentionally NOT derived from here.
-ORCHESTRATOR_KNOWN_KEYS = frozenset({'auto_emit', 'effort', 'parallelization_scope'})
+ORCHESTRATOR_KNOWN_KEYS = frozenset({'auto_emit', 'effort', 'parallelization_scope', 'use_worktree'})
 
 
 # PR-batching strategy enum (`project.pr_strategy` in marshal.json).
@@ -1228,20 +1240,21 @@ DEFAULT_BUILD_QUEUE = {'max_retries': 10}
 # The top-level `orchestrator` block default is `DEFAULT_ORCHESTRATOR`, defined
 # earlier in this module, where every knob is materialised with its effective
 # default (see that definition for the per-knob surfacing rationale). It seeds
-# `auto_emit` (`False`), the `effort` sub-block (empty `{}`), and
-# `parallelization_scope` (`1`) — every knob the block supports appears in the
+# `auto_emit` (`False`), the `effort` sub-block (empty `{}`),
+# `parallelization_scope` (`1`) and `use_worktree` (`False`) — every knob the block supports appears in the
 # seeded file so an operator reading their own marshal.json can discover it, per
 # the default-surfacing rule (recipe-marshal-json-config-audit Aspect 1). Each
 # materialised default resolves identically to leaving the key unset: `effort` `{}`
 # still falls through to `plan.effort` for the three read-only orchestrator
 # surfaces (with an unset-`max` no-op for the uplift ceiling), and
-# `parallelization_scope` `1` is the ask's hard-coded default — so surfacing
+# `parallelization_scope` `1` is the ask's hard-coded default, and `use_worktree`
+# `False` keeps the store on the cwd-relative tier an absent key selects — so surfacing
 # changes what is DISCOVERABLE, never what is EFFECTIVE. The block is the home the
 # orchestrator effort surfaces + scalar knobs read/write through the
 # `orchestrator` noun and the `effort set --scope orchestrator[...]` writer.
 # Validated by validate_orchestrator_block below (the seeded shape is legal; a
-# populated block's effort + parallelization_scope + auto_emit shapes are
-# checked). `/marshall-steward`'s upgrade verb back-fills the block into existing
+# populated block's effort + parallelization_scope + auto_emit + use_worktree
+# shapes are checked). `/marshall-steward`'s upgrade verb back-fills the block into existing
 # projects through the existing `sync-defaults` deep-merge — no new provisioning
 # mechanism.
 
@@ -1261,6 +1274,8 @@ def validate_orchestrator_block(value: object) -> None:
       numeric validators.
     - ``auto_emit`` (optional) is a bool — the orchestrator-tier autonomy knob
       seeded into every fresh block at its safe default ``False``.
+    - ``use_worktree`` (optional) is a bool — the repository-wide switch routing
+      the ledger store through the shared ledger worktree, seeded at ``False``.
 
     An unknown top-level key in the block is rejected so a typo'd knob fails loud
     rather than persisting silently.
@@ -1279,7 +1294,8 @@ def validate_orchestrator_block(value: object) -> None:
 
     Raises:
         ValueError: If the block is not a dict, carries an unknown top-level key,
-            or holds a malformed ``effort`` / ``parallelization_scope`` value.
+            or holds a malformed ``effort`` / ``parallelization_scope`` /
+            ``auto_emit`` / ``use_worktree`` value.
     """
     from _cmd_effort import ALLOWED_LEVELS, ORCHESTRATOR_EFFORT_SET_KEYS
 
@@ -1328,6 +1344,11 @@ def validate_orchestrator_block(value: object) -> None:
         auto_emit = value['auto_emit']
         if not isinstance(auto_emit, bool):
             raise ValueError(f'Invalid orchestrator.auto_emit {auto_emit!r}: expected a bool.')
+
+    if 'use_worktree' in value:
+        use_worktree = value['use_worktree']
+        if not isinstance(use_worktree, bool):
+            raise ValueError(f'Invalid orchestrator.use_worktree {use_worktree!r}: expected a bool.')
 
 
 def get_default_config() -> dict:
@@ -1428,7 +1449,8 @@ def get_default_config() -> dict:
         },
         # Top-level `orchestrator` block — a sibling of `plan`. Seeds every knob
         # the block supports with its effective default (`auto_emit` False,
-        # `effort` empty `{}`, `parallelization_scope` 1; see DEFAULT_ORCHESTRATOR),
+        # `effort` empty `{}`, `parallelization_scope` 1, `use_worktree` False;
+        # see DEFAULT_ORCHESTRATOR),
         # so each is discoverable in marshal.json while resolving exactly as an
         # unset key did. Its canonical placement immediately after `plan` is
         # handled by _config_core.CANONICAL_TOP_LEVEL_KEY_ORDER at save time.

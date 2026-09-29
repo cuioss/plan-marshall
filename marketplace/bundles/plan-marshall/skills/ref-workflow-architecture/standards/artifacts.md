@@ -5,7 +5,7 @@ File formats and structures for plan data storage.
 ## Plan Directory Structure
 
 ```text
-.plan/plans/{plan_id}/
+.plan/local/plans/{plan_id}/
 │
 ├── status.json              Phase: init
 ├── request.md               Phase: init
@@ -99,7 +99,7 @@ Plan lifecycle status with phase tracking.
 ### Location
 
 ```text
-.plan/plans/{plan_id}/status.json
+.plan/local/plans/{plan_id}/status.json
 ```
 
 ### Format
@@ -164,7 +164,7 @@ User request document in markdown format.
 ### Location
 
 ```text
-.plan/plans/{plan_id}/request.md
+.plan/local/plans/{plan_id}/request.md
 ```
 
 ### Format
@@ -206,7 +206,7 @@ Solution design document with deliverables.
 ### Location
 
 ```text
-.plan/plans/{plan_id}/solution_outline.md
+.plan/local/plans/{plan_id}/solution_outline.md
 ```
 
 ### Structure Diagram
@@ -293,7 +293,7 @@ Working files directory for intermediate data during outline and later phases.
 ### Location
 
 ```text
-.plan/plans/{plan_id}/work/
+.plan/local/plans/{plan_id}/work/
 ```
 
 ### Purpose
@@ -331,7 +331,7 @@ Individual task files in the tasks directory.
 ### Location
 
 ```text
-.plan/plans/{plan_id}/tasks/TASK-{NNN}.json
+.plan/local/plans/{plan_id}/tasks/TASK-{NNN}.json
 ```
 
 ### Filename Format
@@ -461,7 +461,7 @@ Plan references and domain configuration.
 ### Location
 
 ```text
-.plan/plans/{plan_id}/references.json
+.plan/local/plans/{plan_id}/references.json
 ```
 
 ### Format
@@ -500,7 +500,7 @@ Semantic work progress tracking across all phases.
 ### Location
 
 ```text
-.plan/plans/{plan_id}/logs/work.log
+.plan/local/plans/{plan_id}/logs/work.log
 ```
 
 ### Format
@@ -553,13 +553,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ## decision.log
 
-Dedicated log for decision entries tracking reasoning and choices made during execution. Stored at `.plan/plans/{plan_id}/logs/decision.log`. Entries have the shape `[{timestamp}] [{level}] {message}` followed by indented `phase:` and optional `detail:` continuation lines (no `[DECISION]` prefix — the file itself identifies the entry type). Manage entries via `plan-marshall:manage-logging:manage-logging decision` to write and `read --type decision` to read.
+Dedicated log for decision entries tracking reasoning and choices made during execution. Stored at `.plan/local/plans/{plan_id}/logs/decision.log`. Entries have the shape `[{timestamp}] [{level}] {message}` followed by indented `phase:` and optional `detail:` continuation lines (no `[DECISION]` prefix — the file itself identifies the entry type). Manage entries via `plan-marshall:manage-logging:manage-logging decision` to write and `read --type decision` to read.
 
 ---
 
 ## script-execution.log
 
-Technical script execution trace written automatically by the script executor at `.plan/plans/{plan_id}/logs/script-execution.log`. Entries have the shape `[{timestamp}] [{level}] [SCRIPT] {notation} {subcommand} ({duration}s)` with optional `exit_code`, `args`, and `stderr` continuation lines. The log powers debugging, performance analysis, and audit trails; skills never write to it directly. Read entries via:
+Technical script execution trace written automatically by the script executor at `.plan/local/plans/{plan_id}/logs/script-execution.log`. Entries have the shape `[{timestamp}] [{level}] [SCRIPT] {notation} {subcommand} ({duration}s)` with optional `exit_code`, `args`, and `stderr` continuation lines. The log powers debugging, performance analysis, and audit trails; skills never write to it directly. Read entries via:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \

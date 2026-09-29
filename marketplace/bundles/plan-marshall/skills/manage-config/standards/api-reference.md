@@ -178,14 +178,14 @@ The JSON array round-trips through `get`.
 
 ## Noun: orchestrator
 
-Manage the top-level `orchestrator` block in marshal.json — a **sibling of `plan`**, not a child of it. The block pins the effort of the orchestrator's read-only analysis dispatch surfaces (`analyze` / `decompose` / `reader`) behind a config-resolved uplift ceiling, holds the project-level `parallelization_scope` default that pre-fills the per-epic `AskUserQuestion` in `plan-orchestrator` init, and carries the epic-orchestration autonomy knob `auto_emit` (the orchestrator-tier analog of the plan-tier `finalize_without_asking` / `loop_back_without_asking` / `auto_merge_after_ci` family). `marshall-steward` seeds the block with every knob at its effective default — `orchestrator.auto_emit` to its safe default (`false`), the `effort` sub-block as an empty object (`{}`), and `parallelization_scope` to its effective default (`1`) — so each is discoverable in marshal.json. Each seeded default resolves exactly as it did before it was seeded: surfacing changes discoverability, not behaviour. The empty `effort` object still falls through to `plan.effort` for baseline orchestrator effort (an unset-ceiling no-op for the uplift bound), and `parallelization_scope` `1` is the ask's hard-coded default.
+Manage the top-level `orchestrator` block in marshal.json — a **sibling of `plan`**, not a child of it. The block pins the effort of the orchestrator's read-only analysis dispatch surfaces (`analyze` / `decompose` / `reader`) behind a config-resolved uplift ceiling, holds the project-level `parallelization_scope` default that pre-fills the per-epic `AskUserQuestion` in `plan-orchestrator` init, carries the epic-orchestration autonomy knob `auto_emit` (the orchestrator-tier analog of the plan-tier `finalize_without_asking` / `loop_back_without_asking` / `auto_merge_after_ci` family), and holds the repository-wide `use_worktree` switch that routes the ledger store through the shared ledger worktree. `marshall-steward` seeds the block with every knob at its effective default — `orchestrator.auto_emit` to its safe default (`false`), the `effort` sub-block as an empty object (`{}`), `parallelization_scope` to its effective default (`1`), and `use_worktree` off (`false`) — so each is discoverable in marshal.json. Each seeded default resolves exactly as it did before it was seeded: surfacing changes discoverability, not behaviour. The empty `effort` object still falls through to `plan.effort` for baseline orchestrator effort (an unset-ceiling no-op for the uplift bound), `parallelization_scope` `1` is the ask's hard-coded default, and `use_worktree: false` keeps the store on the cwd-relative tier an absent key selects.
 
-This noun (`orchestrator get`/`set --field`) owns the block's **scalar** knobs (`parallelization_scope` and `auto_emit`). The `orchestrator.effort` sub-block is NOT handled here — it lives in the `effort` noun's `read`/`resolve-target --role orchestrator[.{surface}]` and `set --scope orchestrator[.{surface}|.default|.max]` forms (see [Noun: effort](#noun-effort) below).
+This noun (`orchestrator get`/`set --field`) owns the block's **scalar** knobs (`parallelization_scope`, `auto_emit` and `use_worktree`). The `orchestrator.effort` sub-block is NOT handled here — it lives in the `effort` noun's `read`/`resolve-target --role orchestrator[.{surface}]` and `set --scope orchestrator[.{surface}|.default|.max]` forms (see [Noun: effort](#noun-effort) below).
 
 | Verb | Parameters | Description |
 |------|-----------|-------------|
-| `get` | `--field` | Get one scalar field off the top-level `orchestrator` block. Returns `{field, value, set}` — `set` is `false` when the field is unset in the live block; `value` then falls back to the canonical default from `DEFAULT_ORCHESTRATOR` (so `auto_emit` reads `false` and `parallelization_scope` reads `1` when unset; a field with no seeded default would read `null`). `--field` is checked against the known-field whitelist (`parallelization_scope`, `auto_emit`) before the read. |
-| `set` | `--field`, `--value` | Set one scalar field on the top-level `orchestrator` block. Per-field coerced/validated (`parallelization_scope` → int `>= 1`; `auto_emit` → bool), then rejects any `--field` outside the known scalar field set via the shared fail-closed provisioning-write seam (ADR-009) with `error_type: unknown_field` before any write — a typo'd or retired key never persists a dead key. |
+| `get` | `--field` | Get one scalar field off the top-level `orchestrator` block. Returns `{field, value, set}` — `set` is `false` when the field is unset in the live block; `value` then falls back to the canonical default from `DEFAULT_ORCHESTRATOR` (so `auto_emit` reads `false` and `parallelization_scope` reads `1` when unset; a field with no seeded default would read `null`). `--field` is checked against the known-field whitelist (`parallelization_scope`, `auto_emit`, `use_worktree`) before the read. `use_worktree` is read main-anchored: it returns `{field, value, set, knob_path}` where `value` is the effective value the store seam uses, read from the main checkout's `marshal.json` (`knob_path`), and `set` says whether that file carries the key — so a `get` from a plan worktree reports main's value. |
+| `set` | `--field`, `--value` | Set one scalar field on the top-level `orchestrator` block. Rejects any `--field` outside the known scalar field set via the shared fail-closed provisioning-write seam (ADR-009) with `error_type: unknown_field` before any write — a typo'd or retired key never persists a dead key — then coerces/validates per field (`parallelization_scope` → int `>= 1`; `auto_emit` and `use_worktree` → bool). `use_worktree` then passes two pre-persist refusals, each of which leaves `marshal.json` byte-unchanged — see [`use_worktree` refusals](#use_worktree-refusals) below. |
 
 ### Fields
 
@@ -193,6 +193,19 @@ This noun (`orchestrator get`/`set --field`) owns the block's **scalar** knobs (
 |-------|------|---------|-------------|
 | `parallelization_scope` | int (`>= 1`) | `1` (seeded; a genuinely-unset legacy block keeps the ask's hard-coded `1`) | Project-level default that pre-fills the per-epic `parallelization_scope` ask in `plan-orchestrator` init. The stored per-epic answer and the ask's own positive-integer validation are unaffected — this knob only supplies the initial suggestion for a NEW epic's first ask. `bool` is rejected even though it is an `int` subclass. |
 | `auto_emit` | bool | `false` | When `true`, the epic orchestrator auto-fills the emit queue toward `parallelization_scope` on each landing, marking each emitted plan `launched`. It NEVER records the operator-confirmed `launched → running` transition — the emit≠running invariant is absolute — and never emits a colliding, blocked, or unprepared plan (a shortfall is logged, not filled). When `false` (default), the post-landing emit is manual stage-and-wait. See [`data-model.md`](data-model.md) § orchestrator for the schema and [`persona-plan-orchestrator/standards/orchestration-model.md`](../../persona-plan-orchestrator/standards/orchestration-model.md) for the invariant the knob operates within. |
+| `use_worktree` | bool | `false` | Repository-wide switch: when `true`, the orchestrator ledger store resolves inside the shared ledger worktree instead of the caller's own checkout. Read AND written against the main checkout's `marshal.json` only. See [`data-model.md`](data-model.md) § `orchestrator.use_worktree`. |
+
+### `use_worktree` refusals
+
+`set --field use_worktree` returns `status: error` and writes nothing on any of:
+
+| `error` | Additional fields | Meaning |
+|---------|-------------------|---------|
+| `use_worktree_requires_main_checkout` | `detail`, `write_path`, `knob_path` | The `marshal.json` this call would write (`write_path`) is not the main checkout's file the knob is read from (`knob_path`, `null` when no main anchor resolves). Re-run the set from the main checkout. |
+| `ledger_cutover_refused` | `detail`, `checkout`, `base_ref`, `dirty_paths` | The value would CHANGE and ledger state would be stranded on the side being left: switching on while the main checkout holds uncommitted or unlanded ledger paths, or switching off while the shared ledger worktree does. `dirty_paths` names every path; land or discard them first. |
+| `ledger_drift_unevaluable` | `detail`, `base_ref`, plus `checkout` and git's `stderr` when the git call itself failed | The cutover drift check could not run (git failure, no `origin/{default_base_branch}` ref, unresolvable checkout) — never read as clean. |
+
+A same-value re-set skips the cutover check.
 
 ### Example: get parallelization_scope
 
@@ -219,6 +232,12 @@ the key is absent from marshal.json.
 
 ```bash
 manage-config orchestrator set --field auto_emit --value true
+```
+
+### Example: set use_worktree (from the main checkout)
+
+```bash
+manage-config orchestrator set --field use_worktree --value true
 ```
 
 ### Extension seam

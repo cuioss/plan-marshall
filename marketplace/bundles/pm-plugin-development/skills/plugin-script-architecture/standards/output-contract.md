@@ -186,7 +186,7 @@ created: 2025-01-15
 ```toon
 status: success
 created: TASK-004
-path: .plan/plans/EXAMPLE-PLAN/tasks/TASK-004.toon
+path: .plan/local/plans/EXAMPLE-PLAN/tasks/TASK-004.json
 ```
 
 ### Example: Error Response

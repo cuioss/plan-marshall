@@ -1951,8 +1951,9 @@ def test_get_default_config_seeds_orchestrator_block_with_every_knob():
 
     The block is a sibling of ``plan``. It materialises every knob it supports at
     its effective default — ``auto_emit`` (``False``), the ``effort`` sub-block
-    (empty ``{}``), and ``parallelization_scope`` (``1``) — so each is discoverable
-    in marshal.json while resolving exactly as an unset key did.
+    (empty ``{}``), ``parallelization_scope`` (``1``) and ``use_worktree``
+    (``False``) — so each is discoverable in marshal.json while resolving exactly as
+    an unset key did.
     """
     config = _config_defaults_mod.get_default_config()
 
@@ -1966,7 +1967,7 @@ def test_get_default_config_seeds_orchestrator_block_with_every_knob():
         f'{sorted(_config_defaults_mod.ORCHESTRATOR_KNOWN_KEYS)}'
     )
     # Effective-default assertions, kept separate from the field-set check.
-    assert orch == {'auto_emit': False, 'effort': {}, 'parallelization_scope': 1}
+    assert orch == {'auto_emit': False, 'effort': {}, 'parallelization_scope': 1, 'use_worktree': False}
 
 
 def test_seeded_orchestrator_leaves_effort_and_scope_resolution_unchanged():
@@ -1981,10 +1982,12 @@ def test_seeded_orchestrator_leaves_effort_and_scope_resolution_unchanged():
     """
     config = _config_defaults_mod.get_default_config()
 
-    # The materialised values are behaviourally inert: an empty effort object and
-    # the scope's own default of 1 cannot change effort/scope resolution.
+    # The materialised values are behaviourally inert: an empty effort object, the
+    # scope's own default of 1 and use_worktree off (the store stays on the
+    # cwd-relative tier) cannot change resolution.
     assert config['orchestrator']['effort'] == {}
     assert config['orchestrator']['parallelization_scope'] == 1
+    assert config['orchestrator']['use_worktree'] is False
     # plan.effort remains the baseline fallback every orchestrator surface resolves to.
     plan_effort = config['plan']['effort']
     assert isinstance(plan_effort, str) and plan_effort

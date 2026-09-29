@@ -263,7 +263,7 @@ Each agent follows the same pattern:
 ## Agent Constraints
 
 **MUST NOT:**
-- Use Read/Write/Edit on `.plan/plans/` files
+- Use Read/Write/Edit on `.plan/local/plans/` files
 - Use cat/head/tail/ls on `.plan/` directory
 - Spawn other agents (subagent constraint)
 - Invoke commands (commands are user-facing)

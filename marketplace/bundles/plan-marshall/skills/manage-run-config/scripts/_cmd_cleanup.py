@@ -183,7 +183,7 @@ def clean_temp(dry_run: bool = False) -> tuple[int, int]:
 
 def clean_logs(max_age_days: int, dry_run: bool = False) -> tuple[int, int]:
     """
-    Clean old log files from .plan/logs.
+    Clean old log files from .plan/local/logs.
 
     Returns:
         (files_deleted, bytes_freed)
@@ -211,7 +211,7 @@ def clean_logs(max_age_days: int, dry_run: bool = False) -> tuple[int, int]:
 
 def clean_archived_plans(max_age_days: int, dry_run: bool = False) -> tuple[int, int]:
     """
-    Clean old archived plan directories from .plan/archived-plans.
+    Clean old archived plan directories from .plan/local/archived-plans.
 
     Returns:
         (dirs_deleted, bytes_freed)

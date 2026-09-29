@@ -178,8 +178,10 @@ def handle_write(args: argparse.Namespace) -> dict[str, Any] | None:
             'message': '--store orchestrator requires --plan-id (the epic slug)',
         }
 
-    # Log entry — log_entry is best-effort and never raises into the caller
-    # (it swallows all exceptions internally), so no guard is needed here.
+    # Log entry — log_entry is best-effort and swallows every write failure
+    # internally, so no guard is needed here. The one exception it lets through
+    # is the orchestrator store seam's typed refusal (store='orchestrator'),
+    # which safe_main renders as its own status: error payload.
     log_entry(log_type, plan_id, level, message, store=store)
     return None
 

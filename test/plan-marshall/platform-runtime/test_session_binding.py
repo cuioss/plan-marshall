@@ -10,7 +10,9 @@ Covers:
   - unbind: caller-scoped removal of BOTH slots + empty-session-dir prune,
     idempotence, validation rejection, and the no-raise contract on I/O failure
   - doctor: reverse-index conflict scan, stale-slot detection, --fix GC, the
-    all-directories orphan sweep and prune, and the no-index.json invariant
+    all-directories orphan sweep and prune (counting only directories actually
+    deleted), the recognised non-session ``by-cwd`` index directory, and the
+    no-index.json invariant
   - orchestrator slot (bind_orchestrator / resolve_orchestrator): the parallel
     kind-disjoint epic binding, its mutual exclusion with the plan slot, the
     kind-agnostic unbind, and the doctor's recognition of an orchestrator-only
@@ -536,17 +538,40 @@ class TestDoctorOrphans:
         assert session_binding.resolve_plan(SID_A) == 'plan-1'
 
     def test_orphan_dir_holding_other_files_survives_the_prune(self, cache, project):
-        """The prune is best-effort: a reported orphan holding other files stays."""
+        """The prune is best-effort: a reported orphan holding other files stays and is not counted."""
         (cache / SID_A).mkdir(parents=True)
         (cache / SID_A / 'other-file').write_text('keep me', encoding='utf-8')
 
         report = session_binding.doctor(fix=True)
 
         assert report['orphans'] == [SID_A]
-        # _remove_slot_and_prune reports success (the absent slot file is not an
-        # error) while the rmdir of the non-empty dir is silently skipped.
-        assert report['orphans_removed'] == 1
+        assert report['orphans_removed'] == 0
         assert (cache / SID_A / 'other-file').is_file()
+
+    def test_orphans_removed_counts_only_directories_actually_deleted(self, cache, project):
+        """An empty orphan is deleted and counted; a populated one survives and is not."""
+        (cache / SID_A).mkdir(parents=True)
+        (cache / SID_B).mkdir(parents=True)
+        (cache / SID_B / 'other-file').write_text('keep me', encoding='utf-8')
+
+        report = session_binding.doctor(fix=True)
+
+        assert report['orphans'] == [SID_A, SID_B]
+        assert report['orphans_removed'] == 1
+        assert not (cache / SID_A).exists()
+        assert (cache / SID_B / 'other-file').is_file()
+
+    def test_non_session_index_dir_is_neither_orphan_nor_pruned(self, cache, project):
+        """The ``by-cwd`` index dir is recognised as non-session: not listed, not touched by --fix."""
+        index_entry = cache / 'by-cwd' / ('0' * 64)
+        index_entry.parent.mkdir(parents=True)
+        index_entry.write_text(SID_A, encoding='utf-8')
+
+        report = session_binding.doctor(fix=True)
+
+        assert report['orphans'] == []
+        assert report['orphans_removed'] == 0
+        assert index_entry.read_text(encoding='utf-8') == SID_A
 
     def test_stale_slot_is_not_double_counted_as_an_orphan(self, cache, project):
         """A stale slot resolves to a plan_id, so it is never also an orphan."""

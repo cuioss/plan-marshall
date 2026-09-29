@@ -35,7 +35,8 @@ JSON structure and field definitions for project configuration.
       "max": "level-6"
     },
     "parallelization_scope": 3,
-    "auto_emit": false
+    "auto_emit": false,
+    "use_worktree": false
   },
   "plan": {
     "open_in_ide": true,
@@ -241,7 +242,7 @@ Project-level settings (committed, shared via git). Seeded on `init` and back-fi
 
 ## Section: orchestrator
 
-A top-level block **sibling of `plan`** (not a child of it) governing the epic-orchestration identity (`plan-orchestrator`). It carries three key families: the `effort` sub-block (per-surface effort of the orchestrator's read-only dispatch surfaces behind an uplift ceiling), the `parallelization_scope` scalar (the per-epic ask's project default), and the `auto_emit` autonomy knob (the orchestrator-tier analog of the plan-tier `finalize_without_asking` / `loop_back_without_asking` family). `init` seeds the block with all three key families at their effective defaults — `auto_emit` at its safe default (`false`), the `effort` sub-block as an empty object (`{}`), and `parallelization_scope` at its effective default (`1`); `sync-defaults` back-fills the block non-destructively into existing projects (the same deep-merge `project` relies on). Every knob is materialised so it is discoverable in `marshal.json`, and each resolves exactly as it did before it was seeded — surfacing changes discoverability, not behaviour. The empty `effort` object still falls through to `plan.effort` for the orchestrator's three read-only dispatch surfaces (the uplift ceiling stays an unset-no-op), and `parallelization_scope` `1` is the ask's hard-coded default, so a materialised `1` pre-fills the per-epic ask exactly as the unset key did. `save_config` orders the block canonically immediately after `plan` (see `CANONICAL_TOP_LEVEL_KEY_ORDER` in `_config_core.py`). The scalar knobs are additively shaped: `orchestrator get`/`set --field` and its known-field whitelist are the extension seam a future scalar knob folds into without a schema rework.
+A top-level block **sibling of `plan`** (not a child of it) governing the epic-orchestration identity (`plan-orchestrator`). It carries four key families: the `effort` sub-block (per-surface effort of the orchestrator's read-only dispatch surfaces behind an uplift ceiling), the `parallelization_scope` scalar (the per-epic ask's project default), the `auto_emit` autonomy knob (the orchestrator-tier analog of the plan-tier `finalize_without_asking` / `loop_back_without_asking` family), and the `use_worktree` switch (whether the ledger store lives in the shared ledger worktree). `init` seeds the block with all four key families at their effective defaults — `auto_emit` at its safe default (`false`), the `effort` sub-block as an empty object (`{}`), `parallelization_scope` at its effective default (`1`), and `use_worktree` off (`false`); `sync-defaults` back-fills the block non-destructively into existing projects (the same deep-merge `project` relies on). Every knob is materialised so it is discoverable in `marshal.json`, and each resolves exactly as it did before it was seeded — surfacing changes discoverability, not behaviour. The empty `effort` object still falls through to `plan.effort` for the orchestrator's three read-only dispatch surfaces (the uplift ceiling stays an unset-no-op), `parallelization_scope` `1` is the ask's hard-coded default, so a materialised `1` pre-fills the per-epic ask exactly as the unset key did, and a materialised `use_worktree: false` keeps the store on the cwd-relative tier an absent key selects. `save_config` orders the block canonically immediately after `plan` (see `CANONICAL_TOP_LEVEL_KEY_ORDER` in `_config_core.py`). The scalar knobs are additively shaped: `orchestrator get`/`set --field` and its known-field whitelist are the extension seam a future scalar knob folds into without a schema rework.
 
 ### Structure
 
@@ -256,12 +257,13 @@ A top-level block **sibling of `plan`** (not a child of it) governing the epic-o
       "max": "level-6"
     },
     "parallelization_scope": 3,
-    "auto_emit": false
+    "auto_emit": false,
+    "use_worktree": false
   }
 }
 ```
 
-`effort` may also be a bare string (single-level shorthand applying to every orchestrator surface) instead of the object form above. A block carrying only `auto_emit`, or one missing any of the three key families (as a legacy pre-materialisation config does), is equally legal — every field below resolves to its documented fallback when absent.
+`effort` may also be a bare string (single-level shorthand applying to every orchestrator surface) instead of the object form above. A block carrying only `auto_emit`, or one missing any of the four key families (as a legacy pre-materialisation config does), is equally legal — every field below resolves to its documented fallback when absent.
 
 ### `orchestrator.effort`
 
@@ -301,9 +303,23 @@ Read/write via `manage-config orchestrator get/set --field parallelization_scope
 
 Read/write via `manage-config orchestrator get/set --field auto_emit`: `get` returns the persisted value, falling back to the canonical default (`false`) from `DEFAULT_ORCHESTRATOR` when the key is unset; `set` bool-coerces (`true`/`false`) and persists, rejecting any unknown field with `status: error` / `error_type: unknown_field`.
 
+### `orchestrator.use_worktree`
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `use_worktree` | bool | `false` | Repository-wide, not per epic. When `false`, the orchestrator ledger store (`.plan/orchestrator/**` and `.plan/archived-orchestrators/**`) resolves on the git-tracked, cwd-relative config tier of the checkout the caller runs in. When `true`, it resolves inside ONE shared, long-lived ledger worktree that every checkout reaches — its location and branch are owned by `tools-file-ops` (see [`../../tools-file-ops/SKILL.md`](../../tools-file-ops/SKILL.md)), not restated here. A different tier from the plan-scoped `plan.phase-1-init.use_worktree`, which decides whether a PLAN runs in its own worktree. |
+
+The knob is read AND written only against the **main checkout's** `marshal.json`, so main and every plan worktree agree on it:
+
+- `get --field use_worktree` returns the main-anchored effective value — the value the store seam actually uses — together with whether the main checkout's file sets it and the `knob_path` it was read from; a `get` issued from a plan worktree therefore reports main's value even when the worktree's own `marshal.json` disagrees.
+- `set --field use_worktree` refuses with `use_worktree_requires_main_checkout` (naming both `write_path` and `knob_path`) unless the `marshal.json` it would write IS that main-anchored file, and writes nothing.
+- Before persisting a value that differs from the stored one, `set` runs the **cutover refusal**: switching ON is refused with `ledger_cutover_refused` while the main checkout holds uncommitted or unlanded ledger paths, and switching OFF is refused on the same terms while the shared ledger worktree does; `dirty_paths` names every offending path. A drift check git cannot answer refuses with `ledger_drift_unevaluable` rather than reading as clean. A same-value re-set skips the check. On any refusal `marshal.json` is left byte-unchanged.
+
+Read/write via `manage-config orchestrator get/set --field use_worktree`. See [`api-reference.md` § Noun: orchestrator](api-reference.md#noun-orchestrator).
+
 ### Validation
 
-The whole block is validated by `validate_orchestrator_block` (`_config_defaults.py`): the seeded shape (`{"auto_emit": false, "effort": {}, "parallelization_scope": 1}`) passes trivially, as does a legacy block carrying only `{"auto_emit": false}`; a populated block rejects any top-level key outside `{effort, parallelization_scope, auto_emit}`, any `orchestrator.effort` object key outside `{analyze, decompose, reader, default, max}`, any non-`ALLOWED_LEVELS` effort value, a `parallelization_scope` that is not an int `>= 1`, and an `auto_emit` that is not a bool.
+The whole block is validated by `validate_orchestrator_block` (`_config_defaults.py`): the seeded shape (`{"auto_emit": false, "effort": {}, "parallelization_scope": 1, "use_worktree": false}`) passes trivially, as does a legacy block carrying only `{"auto_emit": false}`; a populated block rejects any top-level key outside `{effort, parallelization_scope, auto_emit, use_worktree}`, any `orchestrator.effort` object key outside `{analyze, decompose, reader, default, max}`, any non-`ALLOWED_LEVELS` effort value, a `parallelization_scope` that is not an int `>= 1`, and an `auto_emit` or `use_worktree` that is not a bool.
 
 ## Section: interaction_mode
 

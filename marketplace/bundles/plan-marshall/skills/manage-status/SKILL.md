@@ -29,7 +29,7 @@ Manage status.json files with phase tracking, metadata, and lifecycle operations
 Status is stored in the plan directory:
 
 ```text
-.plan/plans/{plan_id}/status.json
+.plan/local/plans/{plan_id}/status.json
 ```
 
 ---
@@ -1035,7 +1035,7 @@ On the `read` branch the same rule applies one level down: `count: 0` discrimina
 
 ### archive
 
-Archive a completed plan (moves to `.plan/archived-plans/YYYY-MM-DD-{plan_id}`).
+Archive a completed plan (moves `.plan/local/plans/{plan_id}` to `.plan/local/archived-plans/YYYY-MM-DD-{plan_id}`).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status archive \
@@ -1061,7 +1061,7 @@ Example values: `low_confidence`, `scope_changed`, `superseded_by_<plan_id>`.
 ```toon
 status: success
 plan_id: my-feature
-archived_to: .plan/archived-plans/2026-04-02-my-feature
+archived_to: .plan/local/archived-plans/2026-04-02-my-feature
 phase_closure: complete
 ```
 
@@ -1069,7 +1069,7 @@ phase_closure: complete
 ```toon
 status: success
 plan_id: my-feature
-archived_to: .plan/archived-plans/2026-04-02-my-feature
+archived_to: .plan/local/archived-plans/2026-04-02-my-feature
 phase_closure: partial
 phase_closure_reason: "the phases of 'my-feature' could not be read in full, so the open-phase set is unknown and the existing current_phase was preserved rather than written complete: phases[1] is str, not a phase record"
 ```

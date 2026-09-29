@@ -8,7 +8,7 @@ Canonical definitions for terms used across the plan-marshall bundle. When a ter
 
 | Term | Definition |
 |------|-----------|
-| **plan** | A structured unit of work managed through 6 sequential phases. Stored under `.plan/plans/{plan_id}/`. |
+| **plan** | A structured unit of work managed through 6 sequential phases. Stored under `.plan/local/plans/{plan_id}/`. |
 | **plan_id** | Unique kebab-case identifier for a plan (max 50 chars). Derived from the input source during phase-1-init (Step 2) or provided explicitly. |
 | **phase** | One of 6 sequential lifecycle stages: `1-init`, `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-finalize`. Phases execute in order; skipping is not allowed. |
 | **track** | Outline creation strategy determined during phase-2-refine. **Simple track**: localized changes with known targets. **Complex track**: codebase-wide discovery requiring domain skill involvement. |

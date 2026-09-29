@@ -1,5 +1,11 @@
 # PLAN-TRUTH-150: Build and CI verdicts that mislead specifically on the healthy path
 
+> ⛔⛔ **SUPERSEDED BY PM-MCP (2026-09-26, operator decision; row status `parked`).** `plan-marshall-mcp` replaces both the
+> process prose and the Python scripts this plan edits, so implementing it here is legacy work. Its
+> implementation-independent content (rules, invariants, classifications, data, fixtures) was extracted to
+> `plan-marshall-mcp/doc/implementation-watch/` (absorbed there from `doc/known-defects/truthful-signals-carry-over.md`) as PM-MCP input.
+> **Do NOT emit; un-park only by explicit operator decision.** The spec body below stays intact as the evidence chain.
+
 ## Objective
 
 Nine build and CI signals that are wrong in the direction nobody checks: they mislead on the GREEN path.
@@ -205,3 +211,10 @@ Expected Surface extended in the same act (`tools-integration-ci/standards/leaf-
 ## Write-Boundary
 
 The executing plan MUST NOT create or edit any file under `.plan/local/orchestrator/truthful-signals/` except its own `inbox/{sender}-{seq}.md` messages, written through `plan-marshall:plan-orchestrator:orchestrator inbox write`. The orchestrator owns every other ledger write.
+
+## Recurrence — 2026-09-28 (fold, spec stays parked)
+
+Source: `process-compliance` inbox `process-compliance-002` (drained 2026-09-28; run-reported by PLAN-13, not re-verified by the sender). The delivery-breaking half — the push freshness gate refusing the pre-push gate's own green
+per-command rows (`canonical_performs_too_few_analyses` → `stale: build_scope_narrow`, forcing a second ~40 min
+`verify`) — is STAGED separately as `PLAN-TRUTH-186` (operator-confirmed exception). Fixture: PLAN-13, all four gate
+arms green on the exact tree (quality-gate ×2, test-compile, 28128-test module-tests), freshness still refused.

@@ -636,7 +636,7 @@ Handles:
 - Lessons capture (advisory)
 - Record final metrics (`end-phase` + `enrich` + `generate`, inside `default:record-metrics` — plan finalization has no "next phase" so the fused `phase-boundary` does not apply here)
 - Mark plan complete
-- Archive plan (move to `.plan/archived-plans/`)
+- Archive plan (move `.plan/local/plans/{plan_id}/` to `.plan/local/archived-plans/`)
 
 All three `manage-metrics` commands (`end-phase`, `enrich`, `generate`) are executed inside `default:record-metrics` on the live plan directory before `default:archive-plan` runs. The fused `phase-boundary` subcommand is intentionally NOT used here because plan finalization has no "next phase" to start. Do NOT add any `manage-metrics` invocation after `Skill: plan-marshall:phase-6-finalize` returns — a post-archive write recreates `.plan/local/plans/{plan_id}/` as an orphan directory.
 

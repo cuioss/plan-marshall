@@ -2935,3 +2935,572 @@ phase, so with two open phases it closes the earlier and leaves the later — wh
 local cases read `5-execute: done` / `6-finalize: in_progress`. ⚠ The foreign report's terminal phase
 differs (`5-execute` open); `-127` D0(a) explains that rather than averaging it away. ⭐ The fifth
 loop-back plan closed cleanly and is `-127`'s matched negative control.
+
+## Inbox drain — 2026-09-06, 1 message, 11 items dispositioned (`review-apparatus-033`)
+
+**1 scanned / 1 archived / 0 invalid / 0 archive_failed.** One message carrying **nine relayed
+candidate-lessons plus two extra observations** — bundled by the sender *"to avoid nine queue rows
+arriving from one drain, not because they share a subject."*
+
+| Item | Disposition |
+|---|---|
+| 1 — 32 re-firings = 71% of an 8.63M-token 3-file plan | folded → `-107` |
+| 6 — execute yielded `voluntary_checkpoint` on 4 of 5 dispatches | folded → `-107`, surface +1 |
+| 2 — argparse rejections, 5 more notations | **recurrence** → `-129`, not staged again |
+| 4 — split `include_unrealised` by declared intent | folded → `-130` |
+| 5 — record `changed_files` on task records | **second independent report** → `-138` |
+| 7 — a correcting clause re-seeds the defect: DELETE instead | folded → `-117`, **not** re-promoted |
+| 8 — prose under `Files to survey:` parses into path fragments | folded → `-134`, surface reaches OUR gate |
+| 9 — two set-guarding checks over an empty population | folded → `-104` |
+| obs — `manage-logging read --phase` does not filter | folded → `-104`, surface +1 |
+| obs — `bd825d` recurrence, **third occurrence** | folded → `-129`, **root cause named** |
+| 3 — session-injected commit trailer displaces the resolver | **Open Defect**, operator decision owed |
+
+### ⭐⭐⭐ Item 1 is the first COMPLETE cost measurement this epic holds
+
+`any_phase_missing_end_time: false` — so **8.63M tokens / 28h44m wall, `6-finalize` 6.20M (72%)** are
+**real figures, not floors.** Every prior measurement here is a floor (`-089` never closed the phase;
+`-093` was `n=5/6`). ⇒ **The 71-77% finalize share is now established across four independent runs, one
+of them fully attributed.**
+
+### ⭐⭐ Item 6 REFUTES a hypothesis this epic was carrying
+
+Every stopping instance recorded so far is mid-`finalize`, and the leading hypothesis was that stops
+cluster there. **This one is mid-`execute` at 4 of 5 dispatches.** ⇒ `-107` D0(b)'s surviving arm now
+has a second phase with a real denominator, and **outline must not scope the remedy to finalize.**
+
+### ⛔ Item 2's FLOOR qualification had to survive the fold, and nearly did not
+
+The sending dispatcher observed **8 distinct failing notations** and **2 lie outside the log window that
+step paged** — so its 6-row table is a **lower bound**. A fold that carried the table and dropped that
+sentence would have handed D0 a population that reads complete and is not.
+
+### ⭐⭐ Item 8 pairs with our own opposite defect
+
+Prose parsing into path fragments **adds phantom paths** to a declared footprint; our own in-flight
+plans declaring `affected_files: 0` **write none at all**. ⛔ **Both end at the disjointness gate, and a
+fix for one does not touch the other** — `-134` D0 must state which direction it addresses.
+
+## Inbox drain — 2026-09-07, 12 messages, every one dispositioned (PLAN-TRUTH-128 full ship)
+
+**12 scanned / 12 archived / 0 invalid / 0 archive_failed.** 11 from the landing plan, 1 from
+`review-apparatus`. **8 folded · 2 forwarded · 1 reconciled · 1 split across two owners.**
+
+➡ **`truthful-signals-050.md` → `review-apparatus`** (the quorum passes at zero yield) and
+**`truthful-signals-057.md` → `code-intelligence-substrate`** (`blocked_user_review` spend in no
+published class — the THIRD distinct hole in that decomposition, and a separate defect from the
+41-of-41 unmeasured columns: **an unbucketed ROW versus an unfilled COLUMN**).
+
+### ⛔⛔⛔ The headline: the self-review matched 0 of 75 candidates in classes IT DECLARES
+
+`pre-submission-self-review` fired 8×, closed `75 candidates examined, no check matched`, and CodeRabbit
+then filed **9 actionable items — four in classes the gate already declares, two of them genuine
+fail-open contract defects.** ⛔ **Not a vacuous run**: the right population was examined, the right
+classes applied, and the verdict was still unearned.
+
+⭐⭐⭐ **The sender's sentence inverts a discipline this epic promotes:** *"it publishes the population
+size — the discipline this epic asks for — and then draws the wrong reassurance from it."* ⇒
+**Publishing the population is NECESSARY AND NOT SUFFICIENT. A stated denominator makes an unearned
+verdict MORE persuasive, not less.**
+
+### ⭐⭐⭐ Two messages in one drain, and one is a candidate CAUSE of the other
+
+`arm-the-refusal-...-001` reports that `pre-submission-self-review.md:133-143` invokes the surfacer with
+**no `--base-branch`**. **Verified first-party**: `self_review.py surface` defaults it to **local
+`main`**, so a plan rebased onto `origin/main` over-scopes — that run measured **136 files against a
+real diff of 21, ~6×.**
+
+⚠ **Recorded as a HYPOTHESIS with a named test, because the two senders reason OPPOSITELY** — `-001`
+concluded the failure is *"in the matching, not in candidate enumeration."* **Both can be true.** ⇒
+**Re-run the surfacer on #1425's branch with `--base-branch origin/main` and compare the candidate mix
+against the recorded 75.**
+
+### ⭐⭐ `sync-affected-files` is STRUCTURALLY INCAPABLE of closing the gap it is reached for
+
+Declared 19, realized 21; the verb **added zero** on re-run because it re-derives from the **solution
+outline**, and the outline is what is short. ⇒ **A clean-looking `added_count: 0` that reads as
+confirmation.** ⛔ Paired with `-008` (a deliverable closed at 62.5% declared coverage) as the
+**opposite direction** — realization exceeding declaration, and declaration exceeding realization.
+**`-136` D0 must own both or ship a one-way check over a two-way defect.**
+
+### ⭐⭐ D0(c) was recorded UNANSWERABLE, not clean — protect that
+
+The spec asked whether the exempt path ever permitted a real push. **It cannot be answered from HEAD:
+`push` only ever wrote `"pushed {branch}"`, so the discriminator this plan ADDS never existed to sweep
+for.** ⇒ **Latent by assumption, not by measurement.** ⛔ **Do not let a later reader convert
+"unanswerable" into "clean."**
+
+## Inbox drain — 2026-09-07 (b), 24 messages, every one dispositioned (PLAN-TRUTH-099 full ship)
+
+**24 scanned / 24 archived / 0 invalid / 0 archive_failed.** Three senders. **9 folded · 8 forwarded ·
+1 reconciled.** ➡ `truthful-signals-051.md` → `review-apparatus` (7 items), `truthful-signals-058.md`
+→ `code-intelligence-substrate` (1).
+
+### ⭐⭐⭐ The verb retires a workaround this orchestrator used FOUR TIMES in this session
+
+`queue --add-row` is live. Until it landed, every staged spec went in through a whole-array
+`update-field --field plans` rewrite — 145+ rows through one shell argument, no rollback — and `-138`,
+`-139`, `-140` each went that way behind hand-written key-order / duplicate-id / count assertions.
+⇒ **Those assertions WERE the workaround. They are retired; every future append uses the verb.**
+
+### ⛔⛔ THE FOOTPRINT GATES WHAT A PLAN CAN LEARN — third consequence, and the one with a price
+
+`review-apparatus-034` item 1: **`lessons-consult` RAN, SUCCEEDED, and searched exactly ONE component**,
+derived from a **9-file declaration against a realized 158-file footprint.** The lesson whose proposed
+action was *verbatim* what the operator later redirected that plan to do came from the **immediately
+preceding PR** and was invisible — its component fell outside the shrunken set. **A six-hour detour.**
+⇒ Folded to `-136` as its third consequence. ⛔ *"A successful `lessons-consult` return is
+indistinguishable from a complete one."*
+
+### ⛔ THE LANDING FACTS REGRESSED — fifth data point, first reversal
+
+| `-126` | `-093` | `-089` | `-128` | **`-099`** |
+|---|---|---|---|---|
+| none | outside the map | **complete** | **complete** | **none again** |
+
+⇒ **Compliance is INTERMITTENT, not improving — two complete landings did not establish a trend.**
+⚠ The facts are all present **in prose**, so the producer had them and emitted none machine-readably.
+`-106`'s subject: a producer that cannot fail its own contract.
+
+### ⭐⭐⭐ A positive control for the self-review gate, two landings after its worst showing
+
+`pre-submission-self-review` caught that the `--add-row` id regex anchored with `$`, **which in Python
+matches before a trailing newline** — so `PLAN-07\n` passed and the exact-string duplicate check never
+collided. **The `duplicate_plan_id` guard the plan exists to add was evadable by ONE TRAILING BYTE.**
+⇒ Two landings ago the same step matched 0 of 75. **The gate is INCONSISTENTLY EFFECTIVE, not uniformly
+blind — a harder problem than being broken.**
+
+## Inbox drain — 2026-09-07 (c), 11 messages, every one dispositioned (PLAN-TRUTH-125 full ship)
+
+**11 scanned / 11 archived / 0 invalid.** 4 folded (`-104` `-105` `-116` `-129`), 1 forwarded, 1
+reconciled, **1 DISCARDED WITH A POSITIVE ACCOUNT**, 2 recorded as Open Defects.
+`landing-check: complete: true` — recovered from `-099`'s regression.
+
+### ⭐⭐ A defect reported against this plan was closed BY this plan, in the same commit
+
+`arm-the-refusal-...-002`: **no plan could pass a local whole-tree `verify` on macOS** — the always-on
+skip gate refused the `/proc`-dependent nodeid, absent from `_SKIP_EXCEPTIONS`; CI is Linux so it was
+invisible there. ⛔ **Verified first-party and already CLOSED**: the table now carries 12 entries
+including that nodeid, and `git log -S` names the adding commit as **`39ec2a0ad` — PR #1427, this
+landing.** ⇒ **Discarded with a positive account. The report and the remedy crossed in flight.**
+
+### ⭐⭐⭐ The shipped test is the exemplar this corpus keeps asking for
+
+TOON now has one canonical implementation, **and a test that proves its population TWO independent ways
+— by function name AND by behaviour — cross-checked.** ⇒ **`derive completeness, never assert it`
+implemented as a CONTROL rather than restated as prose.** Cite `39ec2a0ad` rather than re-inventing it.
+
+### ⛔ A contaminated denominator that MANUFACTURES a failure
+
+`check-artifact-consistency` reported a failing **57% recall**; **six of its ten "missing files" are
+`lessons-consult` prose bullets.** Real recall ≈ **71%**. ⛔ Both numbers are plausible, so only
+enumerating the ten reveals four are not files at all ⇒ **a recall figure must publish its
+denominator's MEMBERSHIP, not its size.**
+
+## Inbox drain — 2026-09-08, 8 messages, every one dispositioned (no landing)
+
+**8 scanned / 8 archived / 0 invalid.** One sender, all `candidate-lesson`, relayed from Token-Sheriff
+PLAN-11 (PR #718 / `4e1e88db`). **5 folded (`-104` `-105`×2 `-121` `-129`), 3 forwarded** as
+`truthful-signals-053.md`.
+
+### ⭐⭐⭐ `-023` NAMES THE MECHANISM BEHIND THIS EPIC'S OWN STRANDED `uv.lock`
+
+> *"`pre-push-quality-gate` declares `mutates_source: false`. The dispatcher reads that declared fact
+> FIRST and, on `false`, SKIPS ITS COMMIT INSTRUMENTATION ENTIRELY — no staging, no commit, no owner
+> for any diff the step produced."*
+
+⛔⛔ **We recorded `uv.lock` as *"nothing owns committing it"* on 2026-09-05 without knowing why. Now we
+do.** The declaration is read as a fact, and on `false` **the owning code path is never created** — so
+the dirty tree survives to `push`, where it either blocks or rides along unattributed.
+
+⇒ **n = 2, two projects, one harness defect.** ⛔ **And the real defect is not the wrong declaration:
+a declared fact about a PROJECT-RESOLVED command is unknowable at declaration time**, so re-declaring
+the step is not the remedy. ⚠ The sender's split survives the fold — the project half is their PLAN-12,
+and **fixing only that leaves the harness still believing the command is non-mutating.**
+
+> ⛔ **CORRECTED 2026-09-11** — the harness half SHIPPED the same day this was written: **#1454
+> (`f24b19a51`) re-declared `pre-push-quality-gate` as `mutates_source: true`** and item 5f now commits the
+> gate's own edits. "Re-declaring the step is not the remedy" was wrong — declaring `true` is safe for a
+> non-mutating project too, since 5f commits only what is dirty. See the 2026-09-11 drain below and the
+> 2026-09-11 fold at the end of `PLAN-TRUTH-105`.
+
+### ⛔⛔ `-022` — A TOTAL WRITE LOSS THAT RECORDS `done`
+
+`phase-6-finalize`'s dispatch loop consumes `escalate_ask` for **`automatic-review` only**, so
+`adr-propose`'s escalations are **unreachable**: the leaf returns proposals, the dispatcher never reads
+the field, no prompt reaches the operator, **and the step records `outcome: done`.**
+
+**Two ADR-worthy decisions were lost**; the operator learned of them only from the plan's closing
+narrative. ⛔ **The only trace is a `display_detail` that STATES the loss in plain words and still
+renders as success** — *"no ADRs proposed (2 candidates need operator confirmation)"*.
+
+⇒ **`escalate_ask` is a channel with ONE registered consumer and an OPEN SET of producers.**
+**Enumerate the producers, not the consumer.**
+
+### ⛔✅ `-024` — the stale `worktree_path` reaches FIVE independent sightings — NOW STAGED as `PLAN-TRUTH-164`
+
+Two first-party here (`-126`, `-093` archived records), one with the root cause
+(`worktree-remove` is not the symmetric counterpart of `worktree-create`), and now a third epic.
+⚠ Fully diagnosed, unowned for four sightings, and the count measured the DELAY, not the defect.
+
+**Fifth sighting, 2026-09-15, PLAN-TRUTH-148's own finalize run**: `metadata.use_worktree`/`worktree_path`
+still pointed at a worktree `branch-cleanup` had already deleted; three dispatched post-merge steps
+correctly REFUSED rather than operate against the wrong tree (the fail-closed behaviour is correct — the
+defect is the metadata going stale, not the refusal). Operator worked around it in-session
+(`use_worktree=false` after `branch-cleanup`). Five sightings over an extended period with a fully-named
+root cause and no fix is past the delay-measuring stage — **staged as `PLAN-TRUTH-164`.**
+
+## Inbox drain — 2026-09-11, 40 messages, every one dispositioned (cross-repo lessons, no landing)
+
+**40 scanned / 40 archived / 0 invalid.** Two senders, all `candidate-lesson`, both consumer-repo
+orchestrators relocating plan-marshall lessons out of their own stores (integrate-then-remove):
+**API-Sheriff** `deployment-configurability` (9, each with a verification table at `356973d80`) and
+**Token-Sheriff** `lessons-handling-26-09-04-01` (31, `-025`…`-055`). Every material claim spot-checked
+first-party at HEAD `356973d80` (= `origin/main`) before any write.
+
+**24 folded · 3 staged (2 new specs) · 2 promoted (1 lesson) · 11 discarded (10 forwarded, 1 refuted).**
+
+| Message | Disposition | Destination / reason |
+|---|---|---|
+| `api-sheriff-…-001` | folded | `PLAN-TRUTH-122` — NEW root cause: `'[deprecation]'` compiled as a regex character class; `failIfNoSpecifiedTests` absent tree-wide; surface +3 |
+| `api-sheriff-…-002` | discarded | forwarded to `review-apparatus` as `truthful-signals-054.md` (Item 1) |
+| `api-sheriff-…-003` | discarded | forwarded `review-apparatus` `-054` (Item 7); two-axis rule is already lesson `2026-09-03-16-001` |
+| `api-sheriff-…-004` | folded | `PLAN-TRUTH-117` (dispatch-time delta rule, surface +1); footprint half forwarded to `code-intelligence-substrate` as `truthful-signals-059.md` |
+| `api-sheriff-…-005` | folded | `PLAN-TRUTH-132` — `step_execution_tier` is a second frozen param; `VALID_RECORD_OUTCOMES` has no lost-return value; surface +2 |
+| `api-sheriff-…-006` | folded | `PLAN-TRUTH-105` — ledger stamps the POST-churn sha (template:579); **fold (b)'s direction CORRECTED in place**; surface +1 |
+| `api-sheriff-…-007` | folded | `PLAN-TRUTH-118` D4 — enqueue corroborated by branch rule only (`github_ops.py`:982); surface +1 |
+| `api-sheriff-…-008` | staged | **`PLAN-TRUTH-141`** (new) — light lane never writes `pr_title` its `2-refine` capture requires; no transition checks the phase array |
+| `api-sheriff-…-009` | promoted | lesson **`2026-09-11-15-001`** (`persona-module-tester`, falsifiability — merged with `-044`) |
+| `-025` | folded | `PLAN-TRUTH-105` — correction chain for `-023`; adds no surface |
+| `-026` | folded | `PLAN-TRUTH-122` D1 — widening by argument subtraction drops `-am` (3rd plan) |
+| `-027` | folded | `PLAN-TRUTH-105` — `tests_run: 0` + `measured`, third relay, onto `-018`; adds no surface |
+| `-028` | folded | A → `PLAN-TRUTH-119` (q-gate skipped on `recipe_key` while outline branches on `plan_source`; surface +1); B → `PLAN-TRUTH-091` (consumer configured the phantom `drop_review_on_scope_gate`; precedence diagnosis REFUTED — nothing reads it; adds no surface) |
+| `-029` | discarded | forwarded `review-apparatus` `-054` (Item 6) |
+| `-030` | discarded | forwarded `review-apparatus` `-054` (Item 6) |
+| `-031` | discarded | forwarded `review-apparatus` `-054` (Item 5) |
+| `-032` | discarded | forwarded to `lessons-routing` as `truthful-signals-001.md` (Item 1) |
+| `-033` | folded | `PLAN-TRUTH-122` D1 — the phase-4 task deriver is a third `test-compile -pl -am` emission site; surface +1 |
+| `-034` | folded | `PLAN-TRUTH-119` D3 — TDD prose ordering contradicts `depends_on` (second instance); adds no surface (D3's `phase-4-plan/**` already declared) |
+| `-035` | staged | **`PLAN-TRUTH-142`** (new) — `integration-tests` named 4× in `canonical_verify.md` but absent from `canonicals:` |
+| `-036` | folded | `PLAN-TRUTH-135` — `consult` resolves the plan dir main-anchored only; a LIVE member for a spec whose original mechanisms were refuted; surface +1 |
+| `-037` | folded | `PLAN-TRUTH-105` — clean-tree assertions cannot tell a mutating gate from interference; surface +1 |
+| `-038` | discarded | forwarded `code-intelligence-substrate` `-059` (Item 2) — `diff-modules` reports a missing snapshot `derived.json` as `changed` |
+| `-039` | discarded | REFUTED at HEAD — `review_completeness` D3 prose uses the live flags; `--settled-bots` removed by #1041 (FYI in `review-apparatus` `-054`) |
+| `-040` | folded | `PLAN-TRUTH-129` — "hard-coded literal" REFUTED (0 hits); the notation is authored at allocation → validate at task creation; surface +1 |
+| `-041` | folded | `PLAN-TRUTH-122` D3 — trailing Failsafe block, recurrence of `-002` |
+| `-042` | folded | `PLAN-TRUTH-105` — `-023` instance closed at HEAD by #1454; Token-Sheriff now declares `build.maven.profiles.mutating` |
+| `-043` | folded | `PLAN-TRUTH-117` — criterion total contradicts its own addends; adds no surface |
+| `-044` | promoted | lesson **`2026-09-11-15-001`** (merged with `api-sheriff-…-009`) |
+| `-045` | folded | `PLAN-TRUTH-129` — A is a recurrence of the declared `auth_failed` funnel; B arity; C invented flag; surface +1 |
+| `-046` | folded | `PLAN-TRUTH-122` D1 — degraded pre-push arms (4th plan); no `resolve-test-scope` verb |
+| `-047` | discarded | forwarded `review-apparatus` `-054` (Item 2) |
+| `-048` | folded | `PLAN-TRUTH-107` — recurrence of `-016`, split at HEAD: pre-push's absence is a RECORDED refusal, self-review/simplify have none; surface +2 |
+| `-049` | discarded | forwarded `review-apparatus` `-054` (Item 3) |
+| `-050` | discarded | forwarded `review-apparatus` `-054` (Item 4) |
+| `-051` | folded | `PLAN-TRUTH-105` — a producer named for the `plan=NO_PLAN` hypothesis; adds no surface (`manage-architecture/` declared) |
+| `-052` | staged | **`PLAN-TRUTH-142`** (new) — a phase-5 leaf reports done over an unstaged Step 10a commit |
+| `-053` | folded | `PLAN-TRUTH-117` — fixing the cited sites is not closing the class; surface shared with `api-sheriff-…-004` |
+| `-054` | folded | `PLAN-TRUTH-119` D1 — both request classifiers read a heading-truncated section; surface +3 |
+| `-055` | folded | `PLAN-TRUTH-105` — `analyses_examined` lists `test` when `tests_run: 0` (`_build_shared.py`:870-873); adds no surface |
+
+### ⛔⛔ The `-023` harness half is CLOSED — and this ledger was still saying it is live
+
+**#1454 (`f24b19a51`, 2026-09-08) re-declared `pre-push-quality-gate` as `mutates_source: true`.** The
+2026-09-08 drain above and `PLAN-TRUTH-105`'s fold both ruled that remedy out as impossible; it shipped
+the same day, and the resume anchor carried "the MECHANISM half is still live, owned by `-105`" for three
+days after. Both corrected in place with a pointer. **What did NOT ship is the ledger half**
+(`api-sheriff-…-006`): the `kind=build` row carries the POST-churn sha, so a mandated revert of gate churn
+leaves a passing verify permanently `stale` — and the `-006` fold in `PLAN-TRUTH-105` had stated that
+direction backwards.
+
+### ⭐⭐ Three sender claims were refuted before they could become spec text
+
+`-028` B's precedence diagnosis (the param is read by nothing), `-040`'s "hard-coded second copy" (the
+notation occurs nowhere), and `-039` whole (the prose is correct at HEAD). ⇒ **A relayed lesson that
+arrives with its own verification table is still a lead** — API-Sheriff's tables held up on every row
+checked; Token-Sheriff's un-tabled relays produced all three refutations. That asymmetry is the argument
+for the tabled format.
+
+### ⭐ Recurrence counts, for the record — each measures the DELAY, not the defect
+
+The reactor/test-jar shape (`PLAN-TRUTH-122` D1): 4 Token-Sheriff plans + 1 API-Sheriff. `tests_run`
+under-report (`-122` D3 / `-105` D0): 3 relays. The `pr_title` light-lane gap: 3 independent sightings
+and 2 active local lessons before a spec existed. The `wrong_store` override: re-occurred after the first
+relocation.
+
+## Inbox drain — 2026-09-17, 14 messages, every one dispositioned (PLAN-TRUTH-166 full ship)
+
+**14 scanned / 14 archived / 0 invalid / 0 archive-failed — genuine EMPTY zero afterward.** One landing
+(`complete: true`, no missing keys) plus 13 candidate-lessons: 2 relayed from Token-Sheriff, 11 first-party
+from the landing plan. **11 folded, 1 forwarded, 1 promoted, 0 discarded.** Landing analysis:
+`landings/PLAN-TRUTH-166.md`.
+
+⭐⭐ **PLAN-TRUTH-166 exercised its own fix during its own finalize** — `discover --force --apply plan`
+classified the descriptor delta as `clean` and committed nothing. The strongest control this epic has seen
+for a defect class: the plan's own PR carries none of the churn it exists to stop.
+
+| Message | Disposition | Destination / reason |
+|---|---|---|
+| `…-012.md` (landing) | reconciled | **`PLAN-TRUTH-166` shipped**, PR #1501, merged `e8c3cad5b`. Corroborated first-party against `origin/main` and `ci pr view`. Unblocks `-145`, `-158`, `-167`. |
+| `lessons-handling-…-065.md` | folded | **`PLAN-TRUTH-143`** — ⛔ the disjointness gate counts TERMINAL and CLOSED-EPIC specs, so a maturing epic eventually cannot emit. **This orchestrator overrode the same rule on 2026-09-15 (c)** by comparing only in-flight rows. Surface +1. |
+| `lessons-handling-…-066.md` | folded | **`PLAN-TRUTH-167`** — confirm-and-close answered: `realized_footprint` is captured at `branch-cleanup`, AFTER review-fix rounds ⇒ superseded on its own key, but its `--base-ref` inherits the staleness D3 fixes. |
+| `…-001.md` | folded | **`PLAN-TRUTH-145` D4/D5** — third sighting, first-party: `plan_creation_sha` has no writer; `could_not_look` on all 16 tasks. ⭐ A could-not-look that fires on EVERY invocation is an INERT guard. |
+| `…-002.md`, `-004.md`, `-005.md` | folded | **`PLAN-TRUTH-152`** — three retrospective producers publishing a confident figure over an unread population (post-merge empty diff read as "nothing changed"; a MUST its own sibling contract states, violated by the producer; `build_time: 0` where the consumer rule says `unavailable`). |
+| `…-003.md` | folded | **`PLAN-TRUTH-167` D3** — promoted HYPOTHESIS → OBSERVED with source lines; the shipped consequence (simplify editing three upstream files) is recorded. Surface +1. |
+| `…-006.md` | folded | **`PLAN-TRUTH-147`** — self-seeding MEASURED (55% overall, **79% after round 1**) and the terminating move named: deletion-or-pointer by default from round 2, share published as the stop signal. |
+| `…-007.md` | folded | **`PLAN-TRUTH-160`** — the Billing column is empty because no call site passes the flags the recorder already accepts (0 of 13 rows). Surface +2. |
+| `…-008.md` | folded | **`PLAN-TRUTH-154`** — an escalation built on the documented DEFAULT (3) while the resolved ceiling was 14; the operator authorized a change nothing needed. |
+| `…-009.md` | forwarded | **`review-apparatus`** as `truthful-signals-059.md` — the EXTERNAL review loop re-found its own remediation's residue in 2 of 3 rounds, at an hour per round. |
+| `…-010.md` | folded | **`PLAN-TRUTH-153`** — a documented error token no component emits; what is owed is the detector class, with a matched control. Surface +1. |
+| `…-011.md` | promoted | Lesson **`2026-09-17-06-001`** — a tolerant read is void when a stricter read of the same artifact runs first on the same path. Instance already fixed in-run; only the rule survives. |
+
+⛔ **Two items outlive the plan.** `finalize-step-simplify` edited three files outside the declared
+footprint (all reverted) — the same attribution-scope defect one layer up, now owned by `PLAN-TRUTH-167`
+D3 with first-party evidence. The marshalld daemon reconcile was deferred (daemon busy), leaving a
+`reconcile-owed` marker on this machine — machine-local operator action, no plan work owed.
+
+⚠ **Unattended-review budget: 1 of 10 waits spent** on this landing's CodeRabbit quota refusal (~96 min).
+
+## Inbox drain — 2026-09-15 (c), 20 messages, every one dispositioned (no landing)
+
+**20 scanned / 20 archived / 0 invalid / 0 archive-failed — genuine EMPTY zero afterward** (`live_count 0`,
+no closed senders, `invalid_count 0`). Three passes: 1 operator-selected message (then emitted as
+PLAN-TRUTH-166, now RUNNING), 14 queued, and 5 that arrived mid-drain at 18:35Z. Every claim re-grounded
+at `7a028157e` unless marked a single-run lead. **2 new specs staged (167, 168), 10 specs folded into,
+1 discard, 0 promotions** — every candidate-lesson named a plan-marshall defect or a gap already documented,
+none a standing rule the corpus lacks.
+
+⭐ **Two consuming repos (API-Sheriff, Token-Sheriff) independently hit the same four shapes on
+`0.1.1670` the same day** — architecture-refresh churn (→166), its self-commit staling push (→158), the
+self-review deadlock on a non-plan-marshall diff (→167), and phase-6 cleanup verbs that fail after
+`worktree-remove` (→164). Cross-repo recurrence on one version is the strongest priority signal this
+drain carries.
+
+| Message | Disposition | Destination / reason |
+|---|---|---|
+| `api-sheriff-deployment-configurability-010.md` | folded | **`PLAN-TRUTH-149`** — the `orchestrated` verdict has no persisted carrier: emit-landing skips on an EMPTY `epic` input resolved only inside lessons-capture's gate; compose drops the step on *detector unavailable*. D1 makes the loss visible, not reachable. |
+| `api-sheriff-deployment-configurability-011.md` | staged | **`PLAN-TRUTH-167`** (new) — no surfacer reads Java; building one recorded out of scope. |
+| `api-sheriff-deployment-configurability-012.md` | folded | **`PLAN-TRUTH-145`** — D4/D5 sighting only; `plan_creation_sha` still has no writer. |
+| `api-sheriff-deployment-configurability-013.md` | folded | **`PLAN-TRUTH-150`** — no CI verb reads a run by commit; post-merge `main` verification unreachable. Surface +1. |
+| `api-sheriff-pro-forma-integration-test-fixes-001.md` | staged | **`PLAN-TRUTH-167`** (new) — selection by resolvability, round-invariant refusal loops to the ceiling, surfacer base = stale local `main`. |
+| `lessons-handling-26-09-04-01-056.md` | folded | **`PLAN-TRUTH-147` D9** — light lane never sets `pr_title`; deterministic false-RED. |
+| `lessons-handling-26-09-04-01-057.md` | staged | **`PLAN-TRUTH-167`** (new) — second consumer instance of the zero-detector self-review loop. |
+| `lessons-handling-26-09-04-01-058.md` | folded | **`PLAN-TRUTH-158`** — a fourth cause: `architecture-refresh` self-commits outside `push.md`'s `mutates_source` membership. Surface +1 ⇒ 158 now sequences behind RUNNING 166. Obs 1 (16 of 20 PR files churn) is recurrence evidence for 166, recorded here, never edited into a running spec. |
+| `lessons-handling-26-09-04-01-059.md` | folded | **`PLAN-TRUTH-150` D5** — sixth `tests_run: 0`; miscount vs zero-tests discriminator trap. |
+| `lessons-handling-26-09-04-01-060.md` | folded | **`PLAN-TRUTH-150`** — Maven failure-trailer advice filed as blocking `deprecation_warning`. |
+| `lessons-handling-26-09-04-01-061.md` | folded | **`PLAN-TRUTH-161` D2** — `manage-adr` template fails `ref-asciidoc`'s header rule. Surface +3. |
+| `lessons-handling-26-09-04-01-062.md` | folded | **`PLAN-TRUTH-145`** — `verify:coverage` composed for a test-resource-only change; fan-out lead for 146. |
+| `lessons-handling-26-09-04-01-063.md` | folded | **`PLAN-TRUTH-162`** — phase-4-plan rejections, identical retry ignoring the hint. Surface +1. |
+| `lessons-handling-26-09-04-01-064.md` | staged | **`PLAN-TRUTH-168`** (new) — `sync-defaults` reverts a deliberate `remove-step` while reporting `added`. |
+| `api-sheriff-deployment-configurability-014.md` | folded | **`PLAN-TRUTH-151`** — phase-3-outline transitioned past its own q-gate; three criteria written ahead of evidence (single-run leads). |
+| `api-sheriff-deployment-configurability-015.md` | folded | **`PLAN-TRUTH-150` D7** — `files_exist` blind to `depends_on`. Surface +1. |
+| `api-sheriff-deployment-configurability-016.md` | folded ×3 | `-009` → **158** recurrence; `-011` harness-blocked `sleep` in `branch-cleanup.md` → **159** (population widened, surface +1); `-012` `prune-local-and-remote-ref` not idempotent → **164 D2**, closing the 2026-09-07 UNOWNED Open Defect (surface +1). |
+| `api-sheriff-deployment-configurability-017.md` | discarded | Already documented in `await-long-running.md` — the consumer backgrounded a daemon wait the standard forbids. |
+| `api-sheriff-deployment-configurability-018.md` | folded | **`PLAN-TRUTH-151`** — a spec-mandated build flag is a claim class the Verify-First Contract does not name. Adopted by this orchestrator now. |
+| `api-sheriff-configuration-security-hardening-001.md` | staged | **`PLAN-TRUTH-166`** (new) — `architecture-refresh` Tier 0 commits tool-migration descriptor churn into an unrelated plan's PR under that plan's name, past `descriptor-regression-check`, which examines only `name`/`description`/`description_reasoning` and publishes no examined-field population. Re-grounded at `7a028157e`: the churn IS tool-caused — the `generation` back-fill and dotted→path `key_packages` re-keying are INTENDED `discover` migrations (`_cmd_manage.py` § `api_discover`). ⛔ **One sender premise REFUTED:** `tree_sha: null` is not confident-but-empty — `unknown_generation()` is the deliberate honest-`unknown` header. Staged, not folded: no staged or live spec in any epic owns this step. Emitted immediately on operator direction. |
+
+## Inbox drain — 2026-09-15 (b), 1 message, dispositioned (no landing)
+
+**1 scanned / 1 archived / 0 invalid** — genuine EMPTY zero afterward. Self-filed orchestrator finding,
+surfaced while `cleanup` was mid-run and correctly left undrained by that pass (draining is `analyze`'s
+job, not `cleanup`'s).
+
+| Message | Disposition | Destination / reason |
+|---|---|---|
+| `truthful-signals-011.md` | staged | **`PLAN-TRUTH-165`** (new) — `detect-suspicious` reports `suspicious_count: 0` on an allow list with a mid-command wildcard that silently over-grants, because `SUSPICIOUS_PATTERNS` covers only dangerous-target regexes, never malformed grammar; `claude_runtime.py`'s deny-rule renderer independently flags the same hazard class the allow-rule inspector misses entirely. Triggering rule already fixed in place. |
+
+## Inbox drain — 2026-09-15, 99 messages, every one dispositioned (PLAN-TRUTH-148 + PLAN-TRUTH-157 double full ship)
+
+**99 scanned / 99 archived / 0 invalid** — genuine EMPTY zero afterward. Two simultaneous plan landings
+(`plan-truth-148`: 63 candidate-lesson + 1 landing; `plan-truth-157`: 31 candidate-lesson + 1 landing) plus
+3 stragglers (`adhoc-token-economy-analysis`: 2 findings; `review-apparatus-041`: 1 cross-epic transfer
+bundling 18 items from `next-level`'s own boundary sweep).
+
+PR #1488 verified first-party via `ci pr view` (found via `ci pr list --head feature/plan-truth-148`,
+since the landing message's own `pr=` claim was not trusted on its own): `state=merged`,
+`merge_commit_sha=db0ae63464f1…`. PR #1494 verified first-party: `state=merged`,
+`merge_commit_sha=ab86d7cbfeb7f9…` (sha reused from this session's own earlier corroboration at that
+landing's paste). Both `landing-check`: `complete: true`. `landings/PLAN-TRUTH-148.md` and
+`landings/PLAN-TRUTH-157.md` written — full deliverable fidelity, metrics/anomalies, and per-message
+disposition detail live there; this entry summarizes.
+
+**6 promoted (3 lessons) · 15 folded · 2 staged as evidence into one shared spec (verb-paraphrase) · 2
+staged as new independent specs (adhoc findings) · 1 staged as a deferred-defect follow-up · 1 forwarded to
+`review-apparatus` · 1 distributed fold (the `review-apparatus-041` transfer, across 8 targets) · 64
+discarded (self-resolved self-review/process-note artifacts, recurrences of already-tracked archetypes) ·
+2 landing messages reconciled.**
+
+| Cluster | Messages | Disposition |
+|---|---|---|
+| Self-review loop-cost / no convergence signal (both plans, same day) | `148`-001, `157`-002 | Fold → `PLAN-TRUTH-147` |
+| Post-merge empty-diff false FAIL (3rd sighting) / plan-retrospective measurement bugs | `148`-002, `157`-001,003 | Fold → `PLAN-TRUTH-152` |
+| Build-time oracle blind to 96 real builds / 15s-timeout misclassified as `argparse_rejection` | `148`-003,062 | Fold → `PLAN-TRUTH-150`, Expected Surface += `manage-change-ledger/**` |
+| Outline declared-intent vocabulary gap / outline-refine self-review cluster (4 sub-findings) | `148`-004, `157`-008–012 | Fold → `PLAN-TRUTH-151` |
+| Per-step token record gap / finalize dispatcher prompt-body bug / terminal-step token gap | `148`-005,006, `157`-004,007 | Fold → `PLAN-TRUTH-149` |
+| Verb-paraphrase / invented-flag population (23 failures across both plans) | `148`-007,055–061,063, `157`-006,028–031 | **Staged → PLAN-TRUTH-162** as evidence, upgrades Watch **W-1483-b** (population threshold now met) |
+| Self-review misreads coarse roster label as blocking every sub-step | `148`-008 (dup 013) | **Promoted** — lesson `2026-09-15-06-001` |
+| Self-review guard/control-authoring pitfalls (6 distinct vacuity/scoping shapes + negation-scope) | `157`-013,016,017,021,022,024,026 | **Promoted** — lesson `2026-09-15-06-002` |
+| Hardcoded roster/surface list drifts from its own live source (found from both directions) | `148`-048, `157`-027 | **Promoted** — lesson `2026-09-15-06-003` |
+| `architecture search --category` vs `--module` doc-usability nit | `157`-005 | Discarded — minor, no defect |
+| `automatic-review` closed `done` with a refused-structural reviewer un-triaged | `148`-054 | Forwarded → `review-apparatus` (`truthful-signals-058.md`) |
+| Self-resolved self-review artifacts, all `resolution: fixed`/`rejected`/process-note | `148`-009-012,014-047,049-053, `157`-014,015,018,019,020,023,025 | Discarded — recurrences of already-tracked archetypes (`2026-09-05-16-001` pointer-not-restatement; WS-10 doc-contract-divergence; derive-completeness-never-assert-it; `plan-orchestrator` process lessons), self-resolved within each plan's own run, nothing owed |
+| `review-apparatus-041` (18-item transfer, `next-level`'s boundary sweep) | 1 message | Distributed fold: `PLAN-TRUTH-145` (§B-001,§B-004), `PLAN-TRUTH-150` (§B-020), `PLAN-TRUTH-151` (§C-019), `PLAN-TRUTH-152` (§C-002), `PLAN-TRUTH-153` (§C-016,§C-018), `PLAN-TRUTH-154` (§A-014,§C-015) |
+| Billing (cost) column undercounts output 5×, ten non-comparable figures in one column | `adhoc-token-economy-analysis-001` | **Staged → PLAN-TRUTH-160** (new) — read in full and corroborated on its merits, not discarded for an unfamiliar sender |
+| ADR number allocation reads the local tree, two branches collide invisibly | `adhoc-token-economy-analysis-002` | **Staged → PLAN-TRUTH-161** (new) — likewise corroborated on its merits |
+| Two deferred dispatch/write-grant-detector defects (`00d610`, `9a819a`) at `157`'s own loop-back ceiling | (named in `157`'s own landing, not a separate inbox message) | **Staged → PLAN-TRUTH-163** (new) |
+| `148`-064, `157`-032 | landing messages | Reconciled — see Reconciliation Actions in each `landings/` file |
+
+Residue named in the landings but not filed as separate messages: PLAN-TRUTH-147 gains fresh evidence its
+D6/convergence-signal fix needs observation under a real loop-back-heavy run, not yet exercised (both
+landings' own self-review anomalies recurred despite that fix having shipped earlier in this epic).
+
+## Inbox drain — 2026-09-14, 5 messages, every one dispositioned (no landing)
+
+**5 scanned / 5 archived / 0 invalid** — genuine EMPTY zero afterward. Sources: `next-level` (1,
+existence notice), `review-apparatus` (2, cross-epic transfer), `truthful-signals` itself (2, an
+operator-directed analysis this epic's own orchestrator filed and later split against the boundary
+above).
+
+| Message | Disposition | Destination / reason |
+|---|---|---|
+| `next-level-001.md` | absorbed | Records the boundary rule and the two prior retirements (see section above) |
+| `truthful-signals-009.md` | retired by successor | `lifecycle=superseded`, already absorbed whole by `next-level-001.md` |
+| `truthful-signals-010.md` (rev 3) | folded ×3 | finding 1 (doc-consistency enforced only at finalize) → `PLAN-TRUTH-147`; finding 2 (approval inferred from absence of objection, un-enumerated population) → `PLAN-TRUTH-154`, surface extended; finding 3 (operator decisions during execute have no write-back channel) → `PLAN-TRUTH-151`, surface extended |
+| `review-apparatus-039.md` | staged | **`PLAN-TRUTH-159`** (new) — `project:finalize-step-deploy-target` documents `./pw generate-claude`, denied by hook rule R4, documented recovery is a dead end |
+| `review-apparatus-040.md` | folded | `PLAN-TRUTH-150` — a gate build row's `worktree_sha=None` is harmless by convention, not invariant; dropped by `plan-pr-046` and carried nowhere until this transfer |
+
+**Sweep result, per `next-level-001.md`'s own request: zero further candidates.** Every one of the 15
+staged specs (143–147, 149–156, 158, 159) had its full Objective re-read against the boundary rule above.
+Every one is reporting/detection-correctness shaped — a confident signal hiding a caveat, a record
+diverging from reality, a producer claiming success over something it never checked — matching this
+epic's own theme. None proposes adversarial rule-testing, cross-model behavioural evaluation,
+resident-context-cost measurement, or PBT-standard-liveness derivation (`next-level`'s WS-01…WS-04). No
+`inbox write` performed beyond the two retirements already done by the prior session. This sweep need not
+be re-run on the unchanged 15; only a newly-staged or newly-folded spec needs checking against the
+boundary going forward.
+
+## Inbox drain — 2026-09-13 (b), 5 messages, every one dispositioned (PLAN-TRUTH-127 full ship)
+
+**5 scanned / 5 archived / 0 invalid** — genuine EMPTY zero afterward. Four `candidate-lesson` from
+`plan-truth-127`, one `landing`. A fifth message (`review-apparatus-038.md`, a cross-epic transfer from
+`review-apparatus` bundling 5 items from `plan-pr-046`'s own landing) arrived independently mid-drain and
+was drained in the same pass.
+
+PR #1483 verified first-party via `ci pr view` (`state=merged`, `merge_commit_sha=c38342609a1af…`, matches
+both the paste and the landing message). Landing `landing-check`: `complete: true`.
+`landings/PLAN-TRUTH-127.md` written.
+
+**3 promoted · 1 staged (new spec) · 3 folded (from the review-apparatus transfer) · 1 absorbed as a
+Watch · 1 forwarded to review-apparatus.**
+
+| Message | Disposition | Destination / reason |
+|---|---|---|
+| `plan-truth-127-001` | promoted | lesson **`2026-09-13-20-002`** (`marshall-steward`) — `drift --marketplace` publishes a count with no stated population; self-caught, finding `4adc50` withdrawn as `rejected` |
+| `plan-truth-127-002` | promoted | lesson **`2026-09-13-20-003`** (`ext-self-review-plan-marshall`) — a plan whose subject IS a defect archetype shipped that exact defect twice inside its own fix (`af0a4d`, `9e4ff2`), neither caught by the deterministic surfacer; proposes a self-application pass |
+| `plan-truth-127-003` | promoted | lesson **`2026-09-13-20-004`** (`plan-retrospective`) — three could-not-look discriminators hidden outside the payload (build_time docstring; review-body field mismatch; `UNTOUCHED_PHASE_STATUSES` prose). Instance 2 (review-body) ALSO forwarded to `review-apparatus` per the plan's own routing note |
+| `plan-truth-127-004` | staged | **`PLAN-TRUTH-158`** (new) — push.md's freshness-reconciliation refusal names a specific cause (un-built source drift) from an ambiguous absence that the same contract can also produce two other ways |
+| `review-apparatus-038` item 1–2 | folded | `PLAN-TRUTH-152` — post-merge empty-diff graded FAIL over an unobservable state; `permission-prompt-analysis` empty-list design question |
+| `review-apparatus-038` item 3 | folded | `PLAN-TRUTH-147` — `pre-submission-self-review` fired 7×/6 loop-backs with no computed convergence signal |
+| `review-apparatus-038` item 4 | folded | `PLAN-TRUTH-145` — finalize never calls the `reconcile-scope` detector it already has; 3rd consecutive `review-apparatus` landing exceeding its declaration |
+| `review-apparatus-038` item 5 | absorbed | Watch **W-1483-b** — verb-paraphrase argparse rejections, needs a population before action |
+
+Residue named in the landing but not filed as separate messages: `353313` (re-entry marker reports zero
+on a run with four re-entries — Open Defect, recurrence against shipped PLAN-TRUTH-101); `ac1774`
+(`manage-lessons consult` unrunnable post-move — Open Defect); plugin-doctor scoped-gate coverage gap
+(Watch **W-1483-a**); the status.json↔metrics cross-ledger reconciliation (deferred, cross-referenced to
+PLAN-TRUTH-146's sequencing, not re-staged).
+
+## Inbox drain — 2026-09-13, 7 messages, every one dispositioned (PLAN-TRUTH-139 full ship)
+
+**7 scanned / 7 archived / 0 invalid** — genuine EMPTY zero afterward (0 live, `closed_senders` empty,
+`invalid_count: 0`). One sender, `plan-truth-139`: 6 `candidate-lesson` + 1 `landing`.
+
+PR #1479 verified first-party via `ci pr view` (`state=merged`, `merge_commit_sha=d931d8baa9477…`, matches
+both the paste and the landing message's `pr=#1479`/`merge_state=merged`). Landing `landing-check`:
+`complete: true` — all 9 required keys present with real values. `landings/PLAN-TRUTH-139.md` written.
+
+**2 promoted · 1 staged (new spec) · 1 folded · 2 discarded (forwarded to `review-apparatus`).**
+
+| Message | Disposition | Destination / reason |
+|---|---|---|
+| `plan-truth-139-001` | promoted | lesson **`2026-09-13-14-001`** (`recipe-security-audit`) — the audit's own report-boundary sweep enumerated its population instead of deriving it; found 4 of 5 unsanitised boundaries, CodeRabbit found the 5th (`266f33`) |
+| `plan-truth-139-002` | promoted | lesson **`2026-09-13-14-002`** (`plan-marshall:plan-marshall`, anti-pattern) — a triage FIX task that flips a claim's truth conditions must assert both directions (matched pre/post control); two of this run's own fixes introduced the inverse of the defect they closed (`574fd5`, `9c441d`), both caught only by the reviewer |
+| `plan-truth-139-003` | staged | **`PLAN-TRUTH-156`** (new) — `mark-step-done` accepts `head_at_completion` from the caller instead of deriving it; this run self-caught a FABRICATED sha (padded short-hash) before it shipped, logged at WARNING (`858d9c`) |
+| `plan-truth-139-004` | folded | `PLAN-TRUTH-150` — temp residue poisons the adaptive learned build duration, which silently re-tiers canonicals to `execution_tier: orchestrator` when the learned `bash_timeout_seconds` crosses the leaf ceiling; surface unchanged (already covered) |
+| `plan-truth-139-005` | discarded | forwarded to `review-apparatus` as `truthful-signals-056.md` (Item 1) — `review_body_summary_patterns` classifies a whole body meta by its opening line, hiding a Major (`f7de42`) that arrived as an outside-diff comment |
+| `plan-truth-139-006` | discarded | forwarded to `review-apparatus` `-056` (Item 2) — the gate/review delta instrument is structurally excluded on every PR this repo's finalize ordering touches; re-fire `pre-push-quality-gate` after the `mutates_source` steps that follow it |
+| `plan-truth-139-007` | reconciled | full ship — see Reconciliation Actions in `landings/PLAN-TRUTH-139.md` |
+
+Residue named in the landing but not filed as separate messages: `367874` (Sonar `count_status: confirmed`
+with zero new-code issues, but NO Sonar analysis has ever run for this PR — an empty-surface zero,
+structurally indistinguishable from a clean scan; recorded as a Watch below, recurs on every plan until
+Sonar is wired into PR CI); `409263` (`triage.md` prescribes `deliverable: 0` for a FIX task, which the
+validator rejects — a RECURRENCE of already-filed lesson `2026-09-06-09-002`, not a new item); `805bc7`
+(in-process build env inheritance, declined by the plan itself as out-of-footprint — no action).
+
+## Inbox drain — 2026-09-21, 20 messages, every one dispositioned (ledger relocation to `.plan/orchestrator/`)
+
+**9 staged (4 new specs) · 11 promoted (global lessons corpus).**
+
+| Message | Disposition | Destination / reason |
+|---|---|---|
+| `truth-143-...-001` | staged | **`PLAN-TRUTH-174`** D1 — `extract-chat-signal` truncates `reduced_transcript` in a lossy TOON re-parse |
+| `truth-143-...-004` | staged | **`PLAN-TRUTH-174`** D2 — `outline-vs-shipped` reports `comparison: measured` over an absent assessment store |
+| `truth-143-...-002` | staged | **`PLAN-TRUTH-175`** D1 — `boundary_monotonicity` reports zero violations over a crossed 1h36m phase boundary |
+| `truth-143-...-003` | staged | **`PLAN-TRUTH-175`** D2 — 41 of 77 finalize dispatch-boundary rows record structural zero tokens, not unmeasured |
+| `truth-143-...-007` | staged | **`PLAN-TRUTH-175`** D3 — `context_position_cost` measured 0 of 98 dispatch rows on a 14.4M-token plan |
+| `truth-143-...-005` | staged | **`PLAN-TRUTH-175`** D4 — 8 of 15 token-proven dispatched finalize steps emit no `[DISPATCH]` line |
+| `truth-143-...-006` | staged | **`PLAN-TRUTH-175`** D5 — build-time oracle holds no row for a plan with 139 logged build calls |
+| `truth-143-...-008` | staged | **`PLAN-TRUTH-176`** (new) — pre-flight invocation validator; 41 script-call failures, 16 argparse rejections on one plan |
+| `post-run-quality-001` | staged | **`PLAN-TRUTH-177`** (new) — forwarded from `post-run-quality`: `phase-1-init` writes no `source_id` for description-sourced plans, orchestration detection fails open |
+| `truth-143-...-009` | promoted | lesson **`2026-09-21-10-002`** — hand-maintained doc enumeration of a code-declared set |
+| `truth-143-...-010` | promoted | lesson **`2026-09-21-10-003`** — a round-loop fix can self-seed the next instance of its own defect class |
+| `truth-143-...-011` | promoted | lesson **`2026-09-21-10-004`** — coverage figures re-derived in transit produce structurally impossible zeros |
+| `truth-143-...-012` | promoted | lesson **`2026-09-21-10-005`** — self-review findings go stale against a moving HEAD |
+| `truth-143-...-013` | promoted | lesson **`2026-09-21-10-006`** — a population-derived guard walking one document under-covers a roster split across two |
+| `truth-143-...-014` | promoted | lesson **`2026-09-21-10-007`** — a deliverable named the dispatch wrapper, not the defining module |
+| `truth-143-...-015` | promoted | lesson **`2026-09-21-10-008`** — positive pattern: do not back-fill an empty assessment population to make a validator pass |
+| `truth-143-...-016` | promoted | lesson **`2026-09-21-10-009`** — a publisher and its registration row are one edit |
+| `truth-143-...-017` | promoted | lesson **`2026-09-21-10-010`** — an idempotent-success path must observe a complete marker (bug already fixed in PR #1539 TASK-020, lesson records the rule) |
+| `truth-143-...-018` | promoted | lesson **`2026-09-21-10-011`** — a guard's stated scope must be derivable from its mechanism (frozenset within-set vacuity, already fixed in same PR) |
+| `truth-143-...-019` | promoted | lesson **`2026-09-21-10-012`** — publishing an indeterminacy count is not enforcing it (`candidates_indeterminate`, already fixed in same PR, TASK-025) |
+
+Also this pass: relocated `epic.md`/`status.json` drift from the day-old tracked snapshot at #1558 into
+the tracked `.plan/orchestrator/` location (the only two files that had drifted). Discovered a platform
+gotcha worth its own future finding: `orchestrator queue --add-row` / `inbox archive` / `manage-logging
+decision` / `resume-summary` resolve their read AND write target to the MAIN checkout regardless of actual
+cwd, even when invoked from a worktree with its own copied executor — only `git` itself and the `Write`
+tool correctly targeted this worktree. Worked around by mirroring main's post-write state into the
+worktree and reverting main to clean after each affected call.
+
+## Inbox drain — 2026-09-22, 1 message, 18 items dispositioned (no landing)
+
+**1 scanned / 1 archived / 0 invalid / 0 archive_failed.** One message, `lessons-handling-26-09-22-01-001.md`,
+bundling 18 candidate-lessons. ⛔ **7 of the 18 were this epic's own 2026-09-21 promotions round-tripped
+back to it** with their corpus copies then deleted by the sender's integrate-then-remove step — see Open
+Defects, forwarded to `lessons-routing`. All 7 restored to the corpus as `2026-09-22-07-001..007`.
+
+| Item | Disposition |
+|---|---|
+| `2026-09-21-10-003` (self-seeding fix) | discard, boomerang → restored `2026-09-22-07-002`; already folded into `PLAN-TRUTH-147` (2026-09-17) + `PLAN-TRUTH-173` D0 |
+| `2026-09-21-10-005` (self-review staleness) | discard, boomerang → restored `2026-09-22-07-003`; already folded into `PLAN-TRUTH-173` D2/D3 + `PLAN-TRUTH-167` D2 |
+| `2026-09-19-21-006` (monkeypatch vacuity) | discard here → forwarded to `test-quality` (`truthful-signals-001.md`), ambiguous owner vs local `PLAN-TRUTH-153` |
+| `2026-09-21-10-009` (publisher/registration edit) | discard, boomerang → restored `2026-09-22-07-006`; weakest-covered, no confirmed staged owner (nearest: `PLAN-TRUTH-173` D1/D3) |
+| `2026-09-21-10-011` (frozenset within-set vacuity) | discard, boomerang → restored `2026-09-22-07-007`; fully covered by `PLAN-TRUTH-153` D9, already fixed same PR (#1539) |
+| `2026-09-21-10-006` (roster split across two docs) | discard, boomerang → restored `2026-09-22-07-004`; covered by `PLAN-TRUTH-153` D9/D0 |
+| `2026-09-21-10-007` (deliverable named wrapper not module) | discard, boomerang → restored `2026-09-22-07-005`; no confirmed owner (LOW-CONFIDENCE: `PLAN-TRUTH-151` D0 / `code-intelligence-substrate`) |
+| `2026-09-21-13-003` (manage-lessons set-body header) | folded → **`PLAN-211` D3** — named mechanism REFUTED at HEAD (`set_body` fails closed, cannot destroy header), subject live: the 4 headerless lessons below ARE fresh population for D3's claim |
+| `2026-09-19-21-005` (verification-command mismatch) | recurrence, verbatim already inside `PLAN-TRUTH-151`'s § FOLDED 2026-09-15 (c) — no edit, no restage |
+| `2026-09-20-08-011` (suspicion heuristic vs orchestrated specs) | folded → **`PLAN-214` D1** — definitively NOT `PLAN-TRUTH-151` (opposite prescription, already-accepted corpus learning there); cross-ref `orchestrator-refactor`'s Watch for the derived population, do not re-derive |
+| `2026-09-20-07-001` (deploy-target doc/hook mismatch) | folded → **`PLAN-TRUTH-162` D3** — recurrence, routing hazard avoided (NOT `PLAN-TRUTH-159`, which is RETIRED/merged into 162) |
+| `2026-09-20-07-002` (sync-plugin-cache stale notation) | folded → **`PLAN-TRUTH-162` D3/D4** — corroborated first-party at `7d82d5d90` (live notation run reproduced the rejection); D4 design note: `.claude/**` is outside the architecture inventory |
+| `2026-09-21-10-002` (doc enumeration drift) | discard, boomerang → restored `2026-09-22-07-001`; covered by `PLAN-TRUTH-153` D8/D9 + `PLAN-TRUTH-173` |
+| `2026-09-20-08-007` (footprint capture pre-rebase) | folded → **`PLAN-TRUTH-167` D3** — ⚠ RE-GROUND before launch: PR #1559 (`fca06c4ca`, `orchestrator-refactor`) may already ship the upstream-base half; surviving residue is narrower (merge-commit re-derivation specifically) |
+| `2026-09-21-08-001` (PR-diff-size gate) | discard here → forwarded to `review-apparatus` (`truthful-signals-061.md`, primary, per standing dispatcher rule) + `code-intelligence-substrate` (`truthful-signals-061.md`, secondary, publish half) |
+| `2026-09-21-08-002` (sweep population re-derivation) | discard — code residue already routed to `code-intelligence-substrate` by the lesson's own text; rule half too thin (LOW-CONFIDENCE) to warrant a spec edit |
+| `2026-09-21-08-003` (done vs pending findings ledger) | folded → **`PLAN-TRUTH-146` D8/D9** — ⚠ possible duplicate of `review-apparatus` cross-notice `truthful-signals-058.md` (2026-09-15 drain), check before launch |
+| `2026-09-21-08-004` (PR pointer names dead PR) | folded → **`PLAN-TRUTH-170` D0/D1** (surface +1: `create-pr.md`) — consumer half split to **`PLAN-TRUTH-174` D2**, sequence 170 → 174 |
+
+All 18 drafted by dispatched `execution-context-level-5` (role `orchestrator.analyze`), corroborated and
+applied by the orchestrator. Zero queue rows staged/retired this pass — every disposition landed as a fold
+into an existing staged spec, a discard, or a cross-epic forward; no `queue --add-row` was warranted.

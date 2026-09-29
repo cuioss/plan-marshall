@@ -55,12 +55,14 @@ dispatcher prepends `default:` when looking up the dispatch-table row).
 - `--iteration` — finalize iteration counter (accepted for contract compliance).
 - `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0).
 
-**Orchestration context (resolved once by the dispatcher, never re-derived here)**: this step
-emits lesson-shaped output, so it consumes the same once-per-run orchestration verdict
-`lessons-capture` and `plan-retrospective` Step 5b consume. The dispatcher resolves it at
-`phase-6-finalize/SKILL.md` Step 3 item 4b.a0 (`manage-plan-documents request read --section
-source_id`, then `orchestrator inbox detect`) and still holds it when this inline step runs at
-`order: 992`, after `lessons-capture` at `991`.
+**Orchestration context (resolved once per finalize entry by the dispatcher, never re-derived here)**: this step
+emits lesson-shaped output, so it consumes the same orchestration verdict
+`lessons-capture` and `plan-retrospective` Step 5b consume. The dispatcher resolves it once per finalize entry at
+Step 3 entry — `phase-6-finalize/SKILL.md` Step 3 § "a0. Resolve orchestration context (Step 3
+entry)" (`manage-plan-documents request read --section source_id`, then `orchestrator inbox
+detect`) — before the step loop and independent of any step's resumable skip, so it holds the
+verdict when this inline step runs at `order: 992` on every finalize entry, whether or not
+`lessons-capture` ran or was skipped on this entry.
 
 - `orchestrated` — bool; `true` when this plan was launched from an epic's staged plan spec. This step MUST NOT re-issue either resolution call.
 - `epic` — string; the epic slug when `orchestrated` is `true`, the empty string otherwise. Same must-not-recompute obligation.

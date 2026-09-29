@@ -10,7 +10,7 @@ step.
 Per-plan, under the plan directory:
 
 ```text
-.plan/plans/{plan_id}/
+.plan/local/plans/{plan_id}/
   artifacts/
     ci-runs/
       {run_id}/                      # GitHub run.databaseId or GitLab pipeline.id

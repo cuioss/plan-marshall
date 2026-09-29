@@ -59,10 +59,15 @@ hard rules mandate `Grep`/`Glob` as the fallback while the session may not expos
 ## Claim Labels
 
 - OBSERVED: posture prose vs lanes preview mismatch and 25 vs 26 lane_report gap — cited at `inbox/archive/plan-12-tool-triage/plan-12-tool-triage-004.md` and `inbox/archive/plan-13-finalize-mechanism-defects/plan-13-finalize-mechanism-defects-001.md` § 5 (two independent runs)
+  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: phase-1-init SKILL.md:948 static 'written look back' prose; manage-execution-manifest.py:1852-1871 lane_report skips unclassed steps, external bundle:skill resolves None (:1545) dropping plan-retrospective
 - OBSERVED: `session_ids` `not_found` at Step 8a for a mid-session plan — cited at `plan-12-tool-triage-005.md` and `plan-13-finalize-mechanism-defects-001.md` § 6 (two independent runs)
+  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: phase-1-init SKILL.md:814 relies on SessionStart hook; Step 3a (:249-279) and cmd_create (_cmd_lifecycle.py:624-708) make no session capture
 - OBSERVED: scope-estimate counted provenance paths — cited at `plan-13-finalize-mechanism-defects-001.md` § 3
+  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: _cmd_planning_lane.py:268-279 _distinct_paths counts path strings incl. citations; :323-367 reads the whole body incl. spec header
 - OBSERVED: domain-detect matched the epic slug alias — cited at `plan-13-finalize-mechanism-defects-001.md` § 4
+  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: _cmd_domain_detect.py:387-395 tokenizes narrative with no header/provenance stripping; :79-83 parse_document_sections cuts at first ingested '## ', hiding .py surfaces
 - OBSERVED: `Grep`/`Glob` absent from the tool list while the rules name them — cited at `plan-12-tool-triage-003.md`; corroborated by the orchestrator's own 2026-09-27 drain session, which also had neither tool
+  - verdict: corroborated | checked_at: c56710b36f01f05be781ff9fb73dbf91b93f5706 | by: process-compliance/cleanup | rescoped: n/a | evidence: agent-behavior-rules.md:167-186 Principle 4 names only Glob/Grep with no substitute; CLAUDE.md now names architecture search --content (files, not lines)
 
 ## Expected Surface
 
@@ -76,6 +81,9 @@ hard rules mandate `Grep`/`Glob` as the fallback while the session may not expos
 - OBSERVED: `test/plan-marshall/manage-execution-manifest/` — lane_report population test
 - OBSERVED: `test/plan-marshall/manage-status/` — scope-estimate provenance test
 - OBSERVED: `test/plan-marshall/manage-config/` — domain-detect provenance test
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_lifecycle.py` — `cmd_create` create-time session capture (deliverable 2) (added cleanup 2026-09-28, re-grounding at c56710b — understated surface)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/` — `session capture` entry point (deliverable 2; NOT `session_binding.py`) (added cleanup 2026-09-28, re-grounding at c56710b — understated surface)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-solution-outline/scripts/_plan_parsing.py` — `parse_document_sections` truncation at the first ingested `## ` (deliverable 4) (added cleanup 2026-09-28, re-grounding at c56710b — understated surface)
 
 ## Dependencies and Sequencing
 

@@ -52,7 +52,7 @@ Create work directory and run full inventory scan:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-files:manage-files mkdir \
   --plan-id {plan_id} --dir work
-# Output includes: path: /absolute/path/to/.plan/plans/{plan_id}/work
+# Output includes: path: /absolute/path/to/.plan/local/plans/{plan_id}/work
 # Use the returned `path` value as {work_dir_path} below
 
 python3 .plan/execute-script.py \

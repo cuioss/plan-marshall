@@ -126,7 +126,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
 | `--title` | Yes | Document title |
 | `--source` | Yes | Source type: `description`, `lesson`, `issue`, or `recipe` |
 | `--source-id` | No | Source identifier (lesson ID, issue URL, recipe key) |
-| `--body-file` | No | Absolute path to a UTF-8 file whose contents fill the `## Original Input` section. When omitted, the template placeholder paragraph is emitted and the caller writes the body via `Write({path})`. |
+| `--body-file` | No | Path to a UTF-8 file whose contents fill the `## Original Input` section. When omitted, the template placeholder paragraph is emitted and the caller writes the body via `Write({path})`. The path is resolved through the orchestrator store seam (`file_ops.resolve_orchestrator_store_file`) before it is probed: a relative `.plan/orchestrator/…` or `.plan/archived-orchestrators/…` pointer — the logical spec pointer phase-1-init records as `source_id` — is read from the shared ledger worktree when `orchestrator.use_worktree` is on; every other path resolves as given (a relative one against the working directory). See [`tools-file-ops/SKILL.md`](../tools-file-ops/SKILL.md) § "The orchestrator store root". |
 | `--force` | No | Overwrite if exists |
 
 **Output:**
@@ -402,11 +402,13 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
 |------------|-------|
 | `document_not_found` | Document doesn't exist (read, path, mark-clarified, remove) |
 | `invalid_plan_id` | plan_id format invalid |
-| `file_exists` | Document already exists on create (use `--force`) |
+| `document_exists` | Document already exists on create (use `--force`) |
 | `section_not_found` | Requested section doesn't exist (except `clarified_request` which falls back) |
 | `not_clarified` | `mark-clarified` called but document has no Clarified Request section |
-| `body_file_not_found` | `--body-file` path does not exist or is not a regular file |
-| `validation_error` | Field validation failed on create |
+| `body_file_not_found` | The resolved `--body-file` path does not exist or is not a regular file |
+| `body_file_unreadable` | The resolved `--body-file` path exists but could not be read as UTF-8 text |
+| `validation_failed` | Field validation failed on create |
+| `ledger_cutover_refused`, `ledger_drift_unevaluable`, `base_ref_unresolvable`, `orchestrator_worktree_create_failed` | `--body-file` named an orchestrator ledger pointer with `orchestrator.use_worktree` on and the orchestrator store seam refused (exit 0); see [`tools-file-ops/SKILL.md`](../tools-file-ops/SKILL.md) § "The orchestrator store root" |
 
 ---
 

@@ -13,7 +13,7 @@ In addition to the TASK-level lesson-ID sweep, `scan --all` also runs three plan
 
 - **`orphan-plan-directory`** — a subdirectory under `.plan/local/plans/` that lacks `status.json`, or has `status.json` but none of `request.md` / `references.json` / `solution_outline.md`.
 - **`stuck-low-confidence-archive`** — a subdirectory under `.plan/local/archived-plans/` whose `status.json` has `metadata.confidence < 95` (or the project-configured threshold), every phase after `2-refine` is `pending`, and `metadata.archived_reason` is absent.
-- **`dangling-worktree`** — a subdirectory under `.plan/local/worktrees/` whose corresponding `.plan/local/plans/{name}/` directory does not exist.
+- **`dangling-worktree`** — a subdirectory under `.plan/local/worktrees/` whose corresponding `.plan/local/plans/{name}/` directory does not exist (the reserved `_orchestrator` ledger worktree excluded).
 
 This skill complements the at-write-time validation in `manage-tasks` (which prevents new bad references) by sweeping plans that may already contain stale or phantom lesson-ID references introduced before the at-write check existed (or via direct file edits that bypassed `manage-tasks`).
 
@@ -97,6 +97,8 @@ This is advisory only — the archive is a record of an operator decision. The f
 #### `dangling-worktree` (severity: warning)
 
 Triggers when a subdirectory of `.plan/local/worktrees/` does not have a corresponding `.plan/local/plans/{name}/` directory. The likely cause is a cleanup race or a failed `git worktree remove` on a prior finalize. Operator should inspect the worktree for uncommitted work, then remove it.
+
+The reserved shared orchestrator ledger worktree (`_orchestrator`) is never reported: it has no plan directory by design, and the rule skips it by name before any plan-id check — see [`tools-file-ops/SKILL.md`](../tools-file-ops/SKILL.md) for its lifecycle.
 
 ### scan-task-file
 

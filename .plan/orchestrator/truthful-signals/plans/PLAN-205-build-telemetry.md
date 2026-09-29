@@ -1,5 +1,11 @@
 # PLAN-02: Build telemetry and lock accounting
 
+> ⛔⛔ **SUPERSEDED BY PM-MCP (2026-09-26, operator decision; row status `parked`).** `plan-marshall-mcp` replaces both the
+> process prose and the Python scripts this plan edits, so implementing it here is legacy work. Its
+> implementation-independent content (rules, invariants, classifications, data, fixtures) was extracted to
+> `plan-marshall-mcp/doc/implementation-watch/` (absorbed there from `doc/known-defects/truthful-signals-carry-over.md`) as PM-MCP input.
+> **Do NOT emit; un-park only by explicit operator decision.** The spec body below stays intact as the evidence chain.
+
 epic: truthful-signals
 workstream: WS-01
 
@@ -69,3 +75,8 @@ manage-locks/scripts/merge_lock.py; verified in-tree before retiring.)
 The plan touches only its own repository source and tests. It creates and edits NO
 file under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}`
 message, and reports its outcome through its PR and its inbox message.
+
+## Recurrence — 2026-09-28 (fold, spec stays parked)
+
+Source: `process-compliance` inbox `process-compliance-002` (drained 2026-09-28; run-reported by PLAN-13, not re-verified by the sender). `build_scope_narrow` recurrence (205.D9's refusal-names-accepted-evidence rule): the push gate
+refused the pre-push gate's own green rows. The fix is staged as `PLAN-TRUTH-186`; 205 stays parked.

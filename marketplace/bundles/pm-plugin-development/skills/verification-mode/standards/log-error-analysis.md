@@ -11,7 +11,7 @@ Scripts that fail due to missing or incorrect `--plan-id` / `--audit-plan-id` pa
 Scan the global script execution log:
 
 ```bash
-grep '\[ERROR\]' .plan/logs/script-execution-$(date +%Y-%m-%d).log 2>/dev/null || echo "No errors"
+grep '\[ERROR\]' .plan/local/logs/script-execution-$(date +%Y-%m-%d).log 2>/dev/null || echo "No errors"
 ```
 
 ## Common Causes

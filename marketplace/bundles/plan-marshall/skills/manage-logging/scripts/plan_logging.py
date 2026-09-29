@@ -13,10 +13,11 @@ Log file locations:
 - Orchestrator-scoped (store='orchestrator'): .plan/orchestrator/{slug}/logs/{decision,work}.log
   (via get_store_dir, which composes onto the git-tracked config tier; the epic
   tree is committed, while this logs/ subtree stays git-ignored)
-- Global fallback: .plan/logs/{type}-YYYY-MM-DD.log
+- Global fallback: .plan/local/logs/{type}-YYYY-MM-DD.log
 
 Configuration via environment variables:
-- PLAN_BASE_DIR: Base directory for .plan structure (default: .plan)
+- PLAN_BASE_DIR: Overrides the runtime-state root (default: <plan-root>/.plan/local,
+  resolved by file_ops.get_base_dir)
 - LOG_MAX_OUTPUT: Max chars to capture from stdout/stderr (default: 2000)
 - LOG_RETENTION_DAYS: Days to keep global logs (default: 7)
 """
@@ -39,7 +40,7 @@ from constants import (
     VALID_LOG_TYPES,
     VALID_WORK_CATEGORIES,
 )
-from file_ops import get_base_dir, get_store_dir, now_utc_iso
+from file_ops import OrchestratorStoreUnavailable, get_base_dir, get_store_dir, now_utc_iso
 from input_validation import NO_PLAN_SENTINEL, is_valid_plan_id
 
 # =============================================================================
@@ -55,7 +56,7 @@ VALID_STORES = ('plans', 'orchestrator')
 
 
 def get_plan_base_dir() -> Path:
-    """Get base directory for plan structure."""
+    """Get the runtime-state root (``<plan-root>/.plan/local`` unless PLAN_BASE_DIR overrides it)."""
     return get_base_dir()
 
 
@@ -310,7 +311,13 @@ def log_entry(log_type: str, plan_id: str | None, level: str, message: str, stor
         with open(log_file, 'a', encoding='utf-8') as f:
             f.write(entry)
 
-    except Exception:  # logging is best-effort, never raises into a caller
+    except OrchestratorStoreUnavailable:
+        # The orchestrator store seam refused (store='orchestrator' only): a
+        # refused store is the caller's verdict to render, not a logging
+        # failure to swallow — silently dropping it would report success for a
+        # write that never landed.
+        raise
+    except Exception:  # logging is otherwise best-effort, never raises into a caller
         pass  # Silent failure for logging
 
 
@@ -560,7 +567,11 @@ def log_separator(log_type: str, plan_id: str, store: str = 'plans') -> None:
         with open(log_file, 'a', encoding='utf-8') as f:
             f.write('\n')
 
-    except Exception:  # logging is best-effort, never raises into a caller
+    except OrchestratorStoreUnavailable:
+        # The orchestrator store seam refused (store='orchestrator' only); the
+        # typed refusal propagates for the caller to render, as in log_entry.
+        raise
+    except Exception:  # logging is otherwise best-effort, never raises into a caller
         pass  # Silent failure for logging
 
 

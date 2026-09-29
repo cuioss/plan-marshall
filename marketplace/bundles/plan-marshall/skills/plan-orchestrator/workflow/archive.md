@@ -83,4 +83,4 @@ already_archived: true | false
 archived_to: /abs/path/.plan/archived-orchestrators/{slug}
 ```
 
-`archived_to` is the absolute, git-tracked-tier filesystem path `cmd_archive` returns via `str(dest)` (not the relative `archived-orchestrators/{slug}` form). `display_detail` is composed by the calling workflow — `cmd_archive` does not emit it — and is ≤80 chars, ASCII, no trailing period.
+`archived_to` is the absolute filesystem path of the archived tree under the orchestrator store root, as `cmd_archive` returns it via `str(dest)` (not the relative `archived-orchestrators/{slug}` form) — on the current checkout's git-tracked tier with `orchestrator.use_worktree` off, and inside the shared ledger worktree with it on (see [`tools-file-ops/SKILL.md`](../../tools-file-ops/SKILL.md) for the store root). `display_detail` is composed by the calling workflow — `cmd_archive` does not emit it — and is ≤80 chars, ASCII, no trailing period.

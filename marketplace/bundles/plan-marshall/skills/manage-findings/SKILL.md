@@ -27,9 +27,9 @@ Unified storage for plan-level findings, phase-scoped Q-Gate findings, and compo
 
 | Scope | Storage | Lifecycle |
 |-------|---------|-----------|
-| **Plan findings** | `.plan/plans/{plan_id}/artifacts/findings/{type}.jsonl` (one per type) | Long-lived, promotable |
-| **Q-Gate findings** | `.plan/plans/{plan_id}/artifacts/findings/qgate-{phase}.jsonl` | Per-phase, not promotable |
-| **Assessments** | `.plan/plans/{plan_id}/artifacts/findings/assessments.jsonl` | Working data, read-only after outline |
+| **Plan findings** | `.plan/local/plans/{plan_id}/artifacts/findings/{type}.jsonl` (one per type) | Long-lived, promotable |
+| **Q-Gate findings** | `.plan/local/plans/{plan_id}/artifacts/findings/qgate-{phase}.jsonl` | Per-phase, not promotable |
+| **Assessments** | `.plan/local/plans/{plan_id}/artifacts/findings/assessments.jsonl` | Working data, read-only after outline |
 
 Plan findings are working data during plan execution. Notable findings are promoted to project-level at `6-finalize`. Q-Gate findings track per-phase verification issues. Assessments track component evaluations with certainty/confidence classifications.
 
@@ -38,7 +38,7 @@ Plan findings are working data during plan execution. Notable findings are promo
 All finding-related JSONL files live under a single `findings/` subdirectory. Plan findings are split per type — each value of the `type` field gets its own file, and queries merge across files transparently:
 
 ```text
-.plan/plans/{plan_id}/
+.plan/local/plans/{plan_id}/
 └── artifacts/
     └── findings/
         ├── assessments.jsonl       # Component assessments

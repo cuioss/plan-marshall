@@ -926,7 +926,7 @@ alternative: Use OpenCode's built-in session mechanism for plan visibility
 
 ### `session doctor`
 
-Visit **every directory under the session-cache root** — not just the ones that yield a readable slot — build a plan→sessions reverse index from the live slots, flag any plan bound by more than one live session (a conflict), identify slots whose plan is archived/deleted (stale), and identify orphan directories that carry no binding at all (an absent, empty, or unreadable `active-plan` file). An archived plan whose terminal title has not been delivered yet is EXEMPT from the stale classification — its binding is the pending render's only route to the plan — and becomes collectable once that state is delivered; the exemption is state-driven, never an elapsed-time grace period. With `--fix`, GC each stale slot and prune each orphan directory. Keeps NO shared mutable index — the scan-then-GC is per-file and idempotent. `scanned` counts the live slots only and does NOT include orphan directories. No-op on OpenCode (no platform-provided session id).
+Visit **every directory under the session-cache root** — not just the ones that yield a readable slot — build a plan→sessions reverse index from the live slots, flag any plan bound by more than one live session (a conflict), identify slots whose plan is archived/deleted (stale), and identify orphan directories that carry no binding at all (an absent, empty, or unreadable `active-plan` file). An archived plan whose terminal title has not been delivered yet is EXEMPT from the stale classification — its binding is the pending render's only route to the plan — and becomes collectable once that state is delivered; the exemption is state-driven, never an elapsed-time grace period. With `--fix`, GC each stale slot and prune each orphan directory. Keeps NO shared mutable index — the scan-then-GC is per-file and idempotent. `scanned` counts the live slots only and does NOT include orphan directories. `orphans_removed` counts orphan directories actually deleted, read from the filesystem after the prune ran: the prune removes only an EMPTY directory, so a non-empty orphan directory it leaves behind stays listed in `orphans` but is not counted. A recognised non-session index directory under the root (`by-cwd`) carries no session binding and is neither a slot nor an orphan. No-op on OpenCode (no platform-provided session id).
 
 **Arguments**: `--fix` (optional — GC stale slots whose plan is archived/deleted, and prune orphan directories)
 
@@ -1071,7 +1071,7 @@ Each observed tool call is classified by its tool name into one of five buckets;
 status: success
 operation: metrics normalized-tokens
 session_id: 21df86b6-731d-4b88-8ad0-507e05a872fa
-output_file: .plan/plans/my-plan/work/normalized-tokens.json
+output_file: .plan/local/plans/my-plan/work/normalized-tokens.json
 phases_attributed: 6
 message_count: 412
 subagent_phases_attributed: 4

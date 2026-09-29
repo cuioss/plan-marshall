@@ -35,12 +35,26 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
 
 Branch on `plan.phase`. When it reads `closed`, HALT and escalate to the operator in the same shape as the both-homes HALT above — do not scaffold, do not create, do not sweep, and do not write anything into the frozen tree. Reopening a closed epic is an operator decision, not a sweep's. When the read does not return `status: success` (the epic's `status.json` is absent or unreadable), HALT likewise: an epic whose phase could not be read is not an epic whose phase is open, and proceeding would sweep over a tree nothing examined. Any other phase is the open case — proceed.
 
+**Resolve the epic tree.** On the present branch's open case, ask the store seam where `lessons-routing` lives and which checkout holds the store, and keep `epic_dir` and `store_checkout` from the payload for every later step — every direct file-tool call on a ledger document addresses `{epic_dir}/…` and every ledger `git add` / `git commit` runs as `git -C {store_checkout}` (see the [direct-file-write carve-out](../../persona-plan-orchestrator/standards/orchestration-model.md#direct-file-write-carve-out)):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator resolve-path \
+  --slug lessons-routing
+```
+
 ⛔ **The scaffold/create pair below runs on the ABSENT branch ONLY, and idempotence is not what makes that safe.** `orchestrator scaffold` is documented idempotent and would tolerate an unconditional call, but `manage-status create` is not: it offers no idempotent-overwrite semantics, and its only overwrite path is `--force`, documented as "Overwrite existing status". So an unconditional `create` against the live `lessons-routing` tree either fails outright or — with `--force` — DESTROYS that epic's header (`phase`, `workstreams`, `metadata`) and empties its `resume_anchor.md`. The guard is the protection; the idempotence of the sibling call is not.
 
 **Absent branch only.** Scaffold the epic tree:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator scaffold \
+  --slug lessons-routing
+```
+
+**Resolve the epic tree.** On the absent branch, resolve it right after the scaffold, with the same call and the same use of `epic_dir` and `store_checkout` as the present branch above:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator resolve-path \
   --slug lessons-routing
 ```
 
@@ -51,7 +65,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create
   --plan-id lessons-routing --title "Lessons routing" --store orchestrator
 ```
 
-Instantiate `epic.md` from `templates/epic.md` via the Write tool (direct file access inside the epic's own tree is covered by the direct-file-write carve-out). Set the epic phase to `orchestrating`:
+Instantiate `{epic_dir}/epic.md` from `templates/epic.md` via the Write tool (direct file access inside the epic's own tree is covered by the direct-file-write carve-out). Set the epic phase to `orchestrating`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update-field \
@@ -231,7 +245,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging deci
   --plan-id lessons-routing --level INFO --message "{decision statement}" --store orchestrator
 ```
 
-**Write this run's sweep record** into `lessons-routing/epic.md` as a dated subsection under the `## Lesson Sweeps` section, using the Write tool under the [direct-file-write carve-out](../../persona-plan-orchestrator/standards/orchestration-model.md#carve-outs) — the tree is this epic's own. Create the `## Lesson Sweeps` section when it is absent; when it is present, APPEND a new dated subsection and overwrite nothing already recorded there. The subsection carries every scanned lesson's per-lesson disposition (Step 3); per cluster, the destination epic it was routed to (or, under Step 4's no-active-owner rule, that no active epic owned it); and — whenever Step 4's narrow exception was considered — the two conjunct verdicts Step 4 already logged, folded in here from the decision log rather than re-derived. Per the mode contract's § "Sweep record", the ledger-compaction stage preserves that section verbatim as narrative and never regenerates it.
+**Write this run's sweep record** into `{epic_dir}/epic.md` — the `lessons-routing` epic's own — as a dated subsection under the `## Lesson Sweeps` section, using the Write tool under the [direct-file-write carve-out](../../persona-plan-orchestrator/standards/orchestration-model.md#carve-outs) — the tree is this epic's own. Create the `## Lesson Sweeps` section when it is absent; when it is present, APPEND a new dated subsection and overwrite nothing already recorded there. The subsection carries every scanned lesson's per-lesson disposition (Step 3); per cluster, the destination epic it was routed to (or, under Step 4's no-active-owner rule, that no active epic owned it); and — whenever Step 4's narrow exception was considered — the two conjunct verdicts Step 4 already logged, folded in here from the decision log rather than re-derived. Per the mode contract's § "Sweep record", the ledger-compaction stage preserves that section verbatim as narrative and never regenerates it.
 
 Before returning, set the resume anchor — and ⛔ **condition its text on BOTH `clusters_routed` AND `exception_plans_staged`, because the outward-routing follow-up and the staged-plan hand-off are two independent obligations that do not imply each other.** Several outcomes route zero clusters — the third bullet below enumerates them. An anchor that asserts "each destination epic now drains a message this sweep routed to it" on any of those names a follow-up nothing owes, which is the next session's first instruction. Separately, a run whose only cluster took Step 4's narrow exception routes zero clusters yet stages a `PLAN-LR-NN` that Step 7 hands off via the `next` verb — an anchor that ignores `exception_plans_staged` omits that hand-off regardless of which `clusters_routed` branch fires.
 
@@ -246,7 +260,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update
   --plan-id lessons-routing --field resume_anchor --value "{next action}" --store orchestrator
 ```
 
-Then regenerate the view — START HERE renders the anchor, and the Ordered Queue renders any row Step 4's exception path staged — and commit it with the anchor file:
+Then regenerate the view — START HERE renders the anchor, and the Ordered Queue renders any row Step 4's exception path staged — and commit it with the anchor file as `git -C {store_checkout}`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator regenerate-view \

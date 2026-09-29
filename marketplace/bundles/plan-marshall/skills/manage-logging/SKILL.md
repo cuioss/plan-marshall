@@ -10,9 +10,9 @@ scope: hybrid
 
 Unified logging infrastructure providing script execution logging, semantic work progress tracking, and decision logging.
 
-**Scope: hybrid** means this skill operates at both plan-scoped and global levels. When a `plan_id` is provided and the plan directory exists, logs go to `.plan/plans/{plan-id}/logs/`. Otherwise, logs fall back to global daily files at `.plan/logs/`.
+**Scope: hybrid** means this skill operates at both plan-scoped and global levels. When a `plan_id` is provided and the plan directory exists, logs go to `.plan/local/plans/{plan-id}/logs/`. Otherwise, logs fall back to global daily files at `.plan/local/logs/`.
 
-A third, opt-in store exists for orchestrator epics: `--store orchestrator` on the `work` / `decision` / `read` verbs routes to the git-tracked orchestrator tree at `.plan/orchestrator/{slug}/logs/` (resolved via `file_ops.get_store_dir`, cwd-relative on the tracked config tier). The default store is `plans` — every existing call path is unchanged.
+A third, opt-in store exists for orchestrator epics: `--store orchestrator` on the `work` / `decision` / `read` verbs routes to the `logs/` directory of the git-tracked orchestrator epic tree, logically `.plan/orchestrator/{slug}/logs/`. The tree is resolved through the orchestrator store seam (`file_ops.get_store_dir`): on the current checkout's git-tracked config tier with `orchestrator.use_worktree` off, and inside the shared ledger worktree with it on — see [`tools-file-ops/SKILL.md`](../tools-file-ops/SKILL.md) for the store root. The default store is `plans` — every existing call path is unchanged.
 
 **The epic tree is git-tracked; its `logs/` subtree is not.** `.gitignore` un-ignores `.plan/orchestrator/` and `.plan/archived-orchestrators/` and then re-ignores `*/logs/` beneath both, because a per-verb append log is a pure audit artifact whose line-level churn would conflict on every run. So an orchestrator log entry stays machine-local even though the ledger it sits beside is versioned with the repository.
 
@@ -40,18 +40,18 @@ All plan-scoped logs are stored in the `logs/` subdirectory of the plan.
 
 ### Script Execution Log
 
-**File**: `.plan/plans/{plan-id}/logs/script-execution.log` (plan-scoped)
-**Fallback**: `.plan/logs/script-execution-YYYY-MM-DD.log` (global)
+**File**: `.plan/local/plans/{plan-id}/logs/script-execution.log` (plan-scoped)
+**Fallback**: `.plan/local/logs/script-execution-YYYY-MM-DD.log` (global)
 
 ### Work Log
 
-**File**: `.plan/plans/{plan-id}/logs/work.log`
-**Fallback**: `.plan/logs/work-YYYY-MM-DD.log` (global)
+**File**: `.plan/local/plans/{plan-id}/logs/work.log`
+**Fallback**: `.plan/local/logs/work-YYYY-MM-DD.log` (global)
 
 ### Decision Log
 
-**File**: `.plan/plans/{plan-id}/logs/decision.log`
-**Fallback**: `.plan/logs/decision-YYYY-MM-DD.log` (global)
+**File**: `.plan/local/plans/{plan-id}/logs/decision.log`
+**Fallback**: `.plan/local/logs/decision-YYYY-MM-DD.log` (global)
 
 ### Orchestrator Store (`--store orchestrator`)
 
@@ -75,7 +75,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 | Argument | Required | Values | Description |
 |----------|----------|--------|-------------|
 | `type` | Yes | `script`, `work`, `decision` | Log type (determines output file) |
-| `--plan-id` | No | kebab-case | Plan identifier. **Optional on write subcommands** — when omitted, the entry is written to the dated global log under `.plan/logs/` (the first-class global/no-plan path); when supplied and resolving to an initialized plan, the entry is plan-scoped. **Required with `--store orchestrator`** (the epic slug — the orchestrator store has no global fallback). |
+| `--plan-id` | No | kebab-case | Plan identifier. **Optional on write subcommands** — when omitted, the entry is written to the dated global log under `.plan/local/logs/` (the first-class global/no-plan path); when supplied and resolving to an initialized plan, the entry is plan-scoped. **Required with `--store orchestrator`** (the epic slug — the orchestrator store has no global fallback). |
 | `--level` | Yes | `INFO`, `WARNING`, `ERROR` | Log level |
 | `--message` | Yes | string | Log message |
 | `--store` | No | `plans` (default), `orchestrator` | Store selection — `work` and `decision` verbs only (`script` has no store flag). `orchestrator` writes to `.plan/orchestrator/{slug}/logs/{work,decision}.log`. |
@@ -84,7 +84,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 #### Global / no-plan logging path
 
-Omitting `--plan-id` is a first-class call, not an error — the entry lands in the dated global log under `.plan/logs/` (`work-{date}.log`, `decision-{date}.log`, or `script-execution-{date}.log`). This is the supported path for plan-less callers — components that run BEFORE any plan exists, such as `marshall-steward` (the project-configuration wizard). It replaces the previous workaround of passing a non-existent plan id to force a global fallback.
+Omitting `--plan-id` is a first-class call, not an error — the entry lands in the dated global log under `.plan/local/logs/` (`work-{date}.log`, `decision-{date}.log`, or `script-execution-{date}.log`). This is the supported path for plan-less callers — components that run BEFORE any plan exists, such as `marshall-steward` (the project-configuration wizard). It replaces the previous workaround of passing a non-existent plan id to force a global fallback.
 
 #### STEWARD audit namespace
 
@@ -206,7 +206,7 @@ its accept-set from a live `--help` walk rather than from this section. Consumin
 name (e.g., "see `manage-logging` Canonical invocations → `work`") instead of
 restating the command inline.
 
-`--plan-id` is OPTIONAL on the three write subcommands (`work` / `decision` / `script`); omitting it writes to the dated global log under `.plan/logs/`. `--store` is available on `work`, `decision`, and `read` only (default `plans`); `--store orchestrator` requires `--plan-id` (the epic slug) and routes to `.plan/orchestrator/{slug}/logs/`.
+`--plan-id` is OPTIONAL on the three write subcommands (`work` / `decision` / `script`); omitting it writes to the dated global log under `.plan/local/logs/`. `--store` is available on `work`, `decision`, and `read` only (default `plans`); `--store orchestrator` requires `--plan-id` (the epic slug) and routes to `.plan/orchestrator/{slug}/logs/`.
 
 ### work
 
@@ -321,7 +321,7 @@ log_entry('work', 'example-plan', 'INFO', '[ARTIFACT] Created deliverable')
 
 **Note**: IDE warnings about unresolved imports are expected - PYTHONPATH is set at runtime by the executor.
 
-**Error behavior**: Logging calls are fire-and-forget. If the target directory doesn't exist or a write fails, the error is silently swallowed to avoid disrupting the calling script. This is intentional — logging should never cause a script to fail.
+**Error behavior**: Logging calls are fire-and-forget. If the target directory doesn't exist or a write fails, the error is silently swallowed to avoid disrupting the calling script. This is intentional — logging should never cause a script to fail. The one exception is a refusal from the orchestrator store seam on an orchestrator-store write (`OrchestratorStoreUnavailable`, see [`tools-file-ops/SKILL.md`](../tools-file-ops/SKILL.md)): it propagates rather than being swallowed, because swallowing it would report a log write that never landed.
 
 `plan_id` validity is enforced below this API as well — see the `invalid_plan_id` note under [Error Responses](#error-responses).
 
@@ -332,7 +332,7 @@ log_entry('work', 'example-plan', 'INFO', '[ARTIFACT] Created deliverable')
 ### Plan-Scoped Logs
 
 ```text
-.plan/plans/{plan-id}/
+.plan/local/plans/{plan-id}/
 └── logs/
     ├── script-execution.log    # Script execution tracking
     ├── work.log                # Work progress tracking
@@ -342,7 +342,7 @@ log_entry('work', 'example-plan', 'INFO', '[ARTIFACT] Created deliverable')
 ### Global Logs
 
 ```text
-.plan/logs/
+.plan/local/logs/
 ├── script-execution-YYYY-MM-DD.log    # Daily global script logs
 ├── work-YYYY-MM-DD.log                # Daily global work logs (when no plan)
 └── decision-YYYY-MM-DD.log            # Daily global decision logs
@@ -358,7 +358,7 @@ log_entry('work', 'example-plan', 'INFO', '[ARTIFACT] Created deliverable')
 ```
 
 **Scope Selection**:
-- If `--store orchestrator`: orchestrator log on the git-tracked tier (requires `plan_id` = epic slug; no fallback)
+- If `--store orchestrator`: orchestrator log in the epic tree the store seam resolves — the current checkout's tracked tier with `orchestrator.use_worktree` off, the shared ledger worktree with it on (requires `plan_id` = epic slug; no fallback)
 - If `plan_id` is provided and plan directory exists: plan-scoped log
 - Otherwise: global log (both script and work types supported)
 
@@ -368,7 +368,7 @@ log_entry('work', 'example-plan', 'INFO', '[ARTIFACT] Created deliverable')
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `PLAN_BASE_DIR` | Base directory for .plan structure | `.plan` |
+| `PLAN_BASE_DIR` | Overrides the runtime-state root (resolved by `file_ops.get_base_dir`) | `<plan-root>/.plan/local` |
 | `LOG_MAX_OUTPUT` | Max chars to capture from stdout/stderr | `2000` |
 | `LOG_RETENTION_DAYS` | Days to keep global logs (used by `cleanup_old_script_logs()`) | `7` |
 
@@ -386,7 +386,7 @@ log_entry('work', 'example-plan', 'INFO', '[ARTIFACT] Created deliverable')
 | `invalid_level` | Level not in: INFO, WARNING, ERROR |
 | `write_failed` | File system permission denied or directory missing |
 
-**Note**: Write operations are fire-and-forget — the Python `log_entry()` function silently swallows errors to avoid disrupting callers. The CLI script (`manage-logging`) returns exit code 1 on validation errors but silently succeeds on I/O failures.
+**Note**: Write operations are fire-and-forget — the Python `log_entry()` function silently swallows errors to avoid disrupting callers. The CLI script (`manage-logging`) returns exit code 1 on validation errors but silently succeeds on I/O failures. A refusal from the orchestrator store seam on a `--store orchestrator` call is not an I/O failure and is not swallowed: it reaches the caller as `status: error` carrying the seam's code, with exit 0.
 
 **Note**: `invalid_plan_id` is also enforced below the CLI boundary. A malformed `plan_id` handed to the Python API is rejected at `get_log_path` — the shared path resolver — so the entry is **dropped** instead of falling back to the global log; an absent (`None`) `plan_id` remains the first-class global path. The read verbs never reach that resolver with a malformed identifier: their own `is_valid_plan_id` pre-check surfaces it as the `invalid_plan_id` TOON error first. The fire-and-forget write verbs swallow it per the note above.
 
