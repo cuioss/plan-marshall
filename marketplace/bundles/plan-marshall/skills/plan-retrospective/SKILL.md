@@ -73,7 +73,7 @@ This workflow dispatches under `--phase phase-6-finalize --role post-run-review`
 **Mode resolution** (`--plan-id` is required in every mode):
 - `--plan-id` provided, invoked by `phase-6-finalize` → **finalize-step mode** (emit `mark-step-done` tail).
 - `--plan-id` provided, invoked by user or command, no `--mode archived` → **user-invocable live mode** (no `mark-step-done` tail).
-- `--plan-id` provided alongside archived-mode selection → **archived mode** (no `mark-step-done` tail, timestamped filename). `--archived-plan-path` is required here and is passed to every archived-capable aspect script and to `compile-report`; there is no fallback plan directory when it is omitted.
+- `--plan-id` provided alongside archived-mode selection → **archived mode** (no `mark-step-done` tail, timestamped filename). `--archived-plan-path` is required here and is passed to every archived-capable aspect script and to `compile-report`.
 
 Mode detection heuristic: when `--iteration` is present alongside `--plan-id`, treat as finalize-step mode; otherwise user-invocable live mode.
 
