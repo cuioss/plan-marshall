@@ -52,6 +52,7 @@ from marketplace_paths import resolve_home
 from runtime_base import (
     PERMISSION_FIX_OPERATIONS,
     Runtime,
+    ensure_steps_without_skill_grants,
     extract_project_steps,
     marshal_shape_error,
     toon_error,
@@ -902,14 +903,9 @@ class OpenCodeRuntime(Runtime):
                 'invalid_scope',
                 f"--scope must be 'project' or 'global'; got {scope!r}",
             )
-        return toon_success(
-            'permission ensure-steps',
-            {
-                'scope': scope,
-                'dry_run': dry_run,
-                'steps_added': 0,
-            },
-        )
+        config = self.permission_load_marshal_config(marshal_path)
+        steps = [] if 'error' in config else self.permission_extract_project_steps(config)
+        return ensure_steps_without_skill_grants('OpenCode', config, steps, scope, dry_run)
 
     def permission_web_analyze(self, scope: str) -> str:
         """Analyze allowed URL domains in OpenCode."""

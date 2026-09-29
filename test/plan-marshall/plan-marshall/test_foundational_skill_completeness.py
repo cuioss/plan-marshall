@@ -34,6 +34,7 @@ could otherwise pass while proving nothing:
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -164,8 +165,49 @@ class TestEveryDeclaredSkillExists:
         )
 
 
+#: The rule's canonical home. It NAMES the enforced lifecycle bodies, so the
+#: membership the directive checks below iterate is read from here rather than
+#: restated: a body added to the rule's list is checked on the next run, and a
+#: list kept only in this module would let a new lifecycle body join the rule
+#: without its directive ever being asserted.
+RULE_DOCUMENT = MARKETPLACE_ROOT / 'plan-marshall/skills/ref-workflow-architecture/standards/agents.md'
+
+#: The paragraph of :data:`RULE_DOCUMENT` that enumerates the enforced bodies.
+_ENFORCED_SURFACE_MARKER = '**This document owns the rule.**'
+
+_BACKTICKED_SKILL = re.compile(r'`([a-z0-9][a-z0-9-]*)`')
+
+
+def enforced_lifecycle_bodies() -> list[str]:
+    """Return the lifecycle bodies the rule document names as its enforced surface.
+
+    Parsed from the one paragraph that enumerates them, as marketplace-relative
+    ``SKILL.md`` paths. An absent paragraph yields an empty list, which the
+    callers assert against rather than iterate over.
+    """
+    text = RULE_DOCUMENT.read_text(encoding='utf-8')
+    paragraph = next((line for line in text.splitlines() if line.startswith(_ENFORCED_SURFACE_MARKER)), '')
+    return [f'plan-marshall/skills/{name}/SKILL.md' for name in _BACKTICKED_SKILL.findall(paragraph)]
+
+
+def _lifecycle_cases() -> list[str]:
+    """The directive-check parametrization, over a membership proven non-empty.
+
+    An empty parameter set is a collection error rather than a red assertion,
+    so the membership is asserted here — and returned through ``list()`` so the
+    returned expression carries the guarded name.
+    """
+    bodies = enforced_lifecycle_bodies()
+    assert bodies, f'{RULE_DOCUMENT} names no enforced lifecycle body under {_ENFORCED_SURFACE_MARKER!r}'
+    return list(bodies)
+
+
+def _skill_id(path: str) -> str:
+    return path.rsplit('/', 2)[-2]
+
+
 class TestTheSixLifecycleBodiesCarryTheDirective:
-    """The rule is one, stated once; the six lifecycle bodies must point at it.
+    """The rule is one, stated once; the lifecycle bodies it names must point at it.
 
     A gate that covers four phases of six is not a gate: the phases it omits
     would proceed on a half-applied foundational set while reporting the same
@@ -177,21 +219,37 @@ class TestTheSixLifecycleBodiesCarryTheDirective:
     def _body(self, relative: str) -> str:
         return (MARKETPLACE_ROOT / relative).read_text(encoding='utf-8')
 
-    @pytest.mark.parametrize(
-        'relative',
-        [
-            'plan-marshall/skills/phase-1-init/SKILL.md',
-            'plan-marshall/skills/phase-2-refine/SKILL.md',
-            'plan-marshall/skills/phase-3-outline/SKILL.md',
-            'plan-marshall/skills/phase-4-plan/SKILL.md',
-            'plan-marshall/skills/phase-5-execute/SKILL.md',
-            'plan-marshall/skills/plan-orchestrator/SKILL.md',
-        ],
-        ids=lambda path: path.rsplit('/', 2)[-2],
-    )
+    def test_every_named_lifecycle_body_carries_the_block(self, bodies: dict[str, str]) -> None:
+        """The rule names only bodies that actually declare foundational skills.
+
+        A name in the rule document that matches no block-carrying body is a
+        membership the directive checks would read from a file that has nothing
+        to fail closed on.
+        """
+        missing = sorted(set(enforced_lifecycle_bodies()) - set(bodies))
+        assert missing == [], f'the rule document names bodies that carry no foundational block: {missing}'
+
+    def test_every_phase_body_carrying_the_block_is_named_by_the_rule(self, bodies: dict[str, str]) -> None:
+        """A phase body that gains the block joins the enforced surface, or the build is red.
+
+        The phase roster is production's (``constants.PHASES``), so a phase added
+        to it — or a phase body that gains a foundational block — is checked
+        against the rule document's list without an edit here.
+        """
+        from constants import PHASES
+
+        assert PHASES, 'constants.PHASES is empty; the phase roster cross-check would be vacuous'
+        phase_bodies = {f'plan-marshall/skills/phase-{phase}/SKILL.md' for phase in PHASES}
+        unnamed = sorted((phase_bodies & set(bodies)) - set(enforced_lifecycle_bodies()))
+        assert unnamed == [], (
+            f'phase bodies carry a foundational block but are not on the rule document enforced surface: {unnamed}'
+        )
+
+    @pytest.mark.parametrize('relative', _lifecycle_cases(), ids=_skill_id)
     def test_body_points_at_the_canonical_rule(self, relative: str) -> None:
         body = self._body(relative)
-        assert 'aborts' in body, f'{relative} carries no fail-closed directive in its foundational block'
+        section = foundational_section(body) or ''
+        assert 'aborts' in section, f'{relative} carries no fail-closed directive in its foundational block'
         assert 'ref-workflow-architecture/standards/agents.md' in body, (
             f'{relative} does not point at agents.md, so the rule has no canonical home from this body'
         )
@@ -220,18 +278,7 @@ class TestTheSixLifecycleBodiesCarryTheDirective:
             f'the normative fail-closed statement must live only in agents.md; found it also in {carriers}'
         )
 
-    @pytest.mark.parametrize(
-        'relative',
-        [
-            'plan-marshall/skills/phase-1-init/SKILL.md',
-            'plan-marshall/skills/phase-2-refine/SKILL.md',
-            'plan-marshall/skills/phase-3-outline/SKILL.md',
-            'plan-marshall/skills/phase-4-plan/SKILL.md',
-            'plan-marshall/skills/phase-5-execute/SKILL.md',
-            'plan-marshall/skills/plan-orchestrator/SKILL.md',
-        ],
-        ids=lambda path: path.rsplit('/', 2)[-2],
-    )
+    @pytest.mark.parametrize('relative', _lifecycle_cases(), ids=_skill_id)
     def test_lifecycle_body_defers_rather_than_restates(self, relative: str) -> None:
         """A lifecycle body references the rule; it does not reproduce it.
 

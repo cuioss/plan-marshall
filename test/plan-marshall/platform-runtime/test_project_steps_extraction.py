@@ -166,6 +166,59 @@ class TestCrossRuntimeAgreement:
         assert reader({'plan': {'phase-5-execute': {'steps': _keyed(['default:push'])}}}) == []
 
 
+def _parse(output: str) -> dict[str, Any]:
+    from toon_parser import parse_toon
+
+    return parse_toon(output)
+
+
+#: The runtimes that cannot express a per-skill grant, keyed by pytest id. Each
+#: must READ the roster before answering ``ensure-steps``: an op that answers
+#: without reading reports a scan that never happened.
+_UNGRANTABLE_RUNTIMES = {'opencode': OpenCodeRuntime, 'antigravity': AntigravityRuntime}
+
+
+class TestEnsureStepsReadsTheRoster:
+    """``permission ensure-steps`` on a target with no per-skill grant."""
+
+    @pytest.fixture(params=list(_UNGRANTABLE_RUNTIMES), ids=list(_UNGRANTABLE_RUNTIMES))
+    def runtime(self, request) -> Any:
+        return _UNGRANTABLE_RUNTIMES[request.param]()
+
+    def test_a_declared_roster_is_declined_not_reported_clean(self, runtime, tmp_path) -> None:
+        """Project steps that cannot be granted are a no-op naming them, not ``success``."""
+        marshal = tmp_path / 'marshal.json'
+        marshal.write_text(json.dumps(KEYED_CONFIG), encoding='utf-8')
+
+        result = _parse(runtime.permission_ensure_steps(str(marshal), 'project', False))
+
+        assert result['status'] == 'no-op', result
+        assert f'{len(EXPECTED_STEPS)} project step(s) scanned' in result['reason']
+        for step in EXPECTED_STEPS:
+            assert step['skill'] in result['reason']
+
+    def test_an_empty_roster_is_a_measured_zero(self, runtime, tmp_path) -> None:
+        """No project steps is a genuine success, carrying the scanned count."""
+        marshal = tmp_path / 'marshal.json'
+        marshal.write_text(json.dumps({'plan': {}}), encoding='utf-8')
+
+        result = _parse(runtime.permission_ensure_steps(str(marshal), 'project', False))
+
+        assert result['status'] == 'success', result
+        assert result['steps_scanned'] == 0
+        assert result['permissions_added'] == 0
+
+    def test_a_malformed_marshal_is_an_error_not_an_empty_roster(self, runtime, tmp_path) -> None:
+        """A load failure must never read as "scanned, nothing declared"."""
+        marshal = tmp_path / 'marshal.json'
+        marshal.write_text('{not valid json', encoding='utf-8')
+
+        result = _parse(runtime.permission_ensure_steps(str(marshal), 'project', False))
+
+        assert result['status'] == 'error'
+        assert result['error'] in ('invalid_marshal', 'marshal_not_found')
+
+
 class TestNonProjectAndMalformedEntries:
     def test_non_project_notations_are_not_steps(self) -> None:
         config = {'plan': {'phase-5-execute': {'steps': _keyed(['default:push', 'plan-marshall:plan-retrospective'])}}}

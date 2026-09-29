@@ -26,13 +26,17 @@ that could never fire ON A DEPLOYED ROOT, because a deployed root carries
 a freshly generated, not-yet-installed tree carries, and the resolver probes both
 for exactly that reason.
 
-This module expresses the whole distinction ONCE, as data, and answers three
+This module expresses the whole distinction ONCE, as data, and answers four
 questions behind one interface:
 
 * :func:`resolve_skill_path` — where does this ``{bundle}:skills/{skill}/rest``
   subpath live in a root that deploys either shape?
 * :func:`flat_script_dirs` — which script directories does a flat root deploy?
 * :func:`skill_roots` — which skill-root directories does this root carry?
+* :func:`flat_script_inventory` — which ``{bundle}:{skill}:{script}`` notations
+  does a flat root deploy? Answered from the identity the emitters record in
+  each ``SKILL.md`` (:func:`read_flat_skill_identity`), never by splitting a
+  directory name.
 
 The NESTED shape's version-dir selection is deliberately NOT here. Choosing
 among sibling version directories is a different concern from choosing a shape,
@@ -47,7 +51,7 @@ because the fix teaches the readers to read the tree that ships.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Final
+from typing import Final, NamedTuple
 
 #: The directory name a target's skills are published under, in probe order.
 #:
@@ -102,15 +106,41 @@ def is_flat_skill_dir_name(dir_name: str) -> bool:
     return bool(separator and bundle and skill)
 
 
+def is_bundle_skill_root(path: Path) -> bool:
+    """Return whether ``path`` is a NESTED bundle's own ``skills/`` directory.
+
+    A bundle's ``skills/`` sits beside that bundle's ``.claude-plugin/plugin.json``
+    (the marketplace source and every plugin-cache version dir alike). Its
+    children are bare skill names, many of them kebab-case, so reading it as a
+    flat skill root would misattribute every one of them.
+    """
+    return (path.parent / '.claude-plugin' / 'plugin.json').is_file()
+
+
 def skill_roots(root: Path) -> list[Path]:
     """Return the skill-root directories ``root`` actually carries, in probe order.
 
-    Both spellings are probed, and the order comes from
-    :data:`SKILL_ROOT_NAMES` rather than from a call site's preference. A root
+    ``root`` may be handed over in either of the two forms a flat deployment is
+    reachable by:
+
+    * the directory CONTAINING the skill root (``~/.config/opencode``), whose
+      ``skills/`` / ``skill/`` children are probed in :data:`SKILL_ROOT_NAMES`
+      order; or
+    * the skill root ITSELF (``~/.config/opencode/skills``). This is the form the
+      runtimes' ``layout bundle-cache-root`` op returns, so it is the base every
+      cache-first consumer is actually handed. Reading only the first form found
+      nothing on the base that ships.
+
+    A NESTED bundle's own ``skills/`` directory is not a flat skill root and is
+    never returned for the second form (:func:`is_bundle_skill_root`). A root
     carrying neither yields an empty list, which every caller here reads as "this
     root does not deploy the flat shape" and falls through from.
     """
-    return [root / name for name in SKILL_ROOT_NAMES if (root / name).is_dir()]
+    roots: list[Path] = []
+    if root.name in SKILL_ROOT_NAMES and root.is_dir() and not is_bundle_skill_root(root):
+        roots.append(root)
+    roots.extend(root / name for name in SKILL_ROOT_NAMES if (root / name).is_dir())
+    return roots
 
 
 def is_flat_root(root: Path) -> bool:
@@ -215,3 +245,151 @@ def flat_script_dirs(root: Path) -> list[Path]:
         if scripts.is_dir():
             dirs.append(scripts)
     return dirs
+
+
+# ---------------------------------------------------------------------------
+# Flat skill IDENTITY — the bundle a flat directory belongs to
+# ---------------------------------------------------------------------------
+# ``{bundle}-{skill}`` cannot be split (see :func:`is_flat_skill_dir_name`), so a
+# flat directory's NAME never yields a ``{bundle}:{skill}:{script}`` notation.
+# The flat-target emitters therefore RECORD the identity in the skill's own
+# ``SKILL.md`` frontmatter, under the Agent Skills ``metadata`` map:
+#
+#     metadata:
+#       bundle: plan-marshall
+#       skill: manage-status
+#
+# and this module is the one reader of it. The identity is accepted only when it
+# re-joins to the directory's own name, so a copied or renamed directory cannot
+# claim a notation it does not carry.
+
+#: The frontmatter map the identity lives under, and its two keys. The flat
+#: emitters write these spellings through ``marketplace/targets/skill_identity.py``;
+#: ``test_flat_skill_identity_emission.py`` pins that the emitted tree reads back
+#: through :func:`read_flat_skill_identity`.
+IDENTITY_METADATA_KEY: Final[str] = 'metadata'
+IDENTITY_BUNDLE_KEY: Final[str] = 'bundle'
+IDENTITY_SKILL_KEY: Final[str] = 'skill'
+
+
+def _frontmatter_metadata(text: str) -> dict[str, str]:
+    """Return the ``metadata:`` map of a SKILL.md frontmatter block, or ``{}``.
+
+    A deliberately narrow reader (stdlib only, no YAML dependency): the block
+    this reads is written by our own emitters in one fixed shape — a top-level
+    ``metadata:`` key followed by indented ``key: value`` lines.
+    """
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != '---':
+        return {}
+    metadata: dict[str, str] = {}
+    in_metadata = False
+    for line in lines[1:]:
+        if line.strip() == '---':
+            break
+        if not line.startswith((' ', '\t')):
+            in_metadata = line.rstrip() == f'{IDENTITY_METADATA_KEY}:'
+            continue
+        if in_metadata:
+            key, separator, value = line.strip().partition(':')
+            if separator:
+                metadata[key.strip()] = value.strip().strip('"\'')
+    return metadata
+
+
+def read_flat_skill_identity(skill_dir: Path) -> tuple[str, str] | None:
+    """Return the ``(bundle, skill)`` a flat skill directory records, or ``None``.
+
+    ``None`` means UNATTRIBUTABLE: no ``SKILL.md``, no recorded identity, or an
+    identity that does not re-join to the directory name. The caller reports an
+    unattributable directory; it never guesses a split.
+    """
+    try:
+        text = (skill_dir / 'SKILL.md').read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError):
+        return None
+    metadata = _frontmatter_metadata(text)
+    bundle = metadata.get(IDENTITY_BUNDLE_KEY, '')
+    skill = metadata.get(IDENTITY_SKILL_KEY, '')
+    if not bundle or not skill or flat_skill_dir_name(bundle, skill) != skill_dir.name:
+        return None
+    return bundle, skill
+
+
+def script_notation(bundle: str, skill: str, script_file: Path) -> str:
+    """Return the ``{bundle}:{skill}:{stem}`` notation for a script file.
+
+    The ONE notation-derivation rule. The executor's coverage enumerator and the
+    marketplace inventory scanner both build notations through it, on either
+    layout, so the two sides of the coverage comparison cannot disagree about
+    how a script is named.
+    """
+    return f'{bundle}:{skill}:{script_file.stem}'
+
+
+def is_private_script(script_file: Path) -> bool:
+    """Whether ``script_file`` is an internal module rather than a CLI entrypoint."""
+    return script_file.name.startswith('_')
+
+
+def skill_script_files(scripts_dir: Path) -> list[Path]:
+    """Return every ``.sh`` / ``.py`` file under ``scripts_dir``, recursively.
+
+    Shell files first, then Python, each sorted — the candidate order both
+    discovery sides already used for the nested layout, so a colliding stem
+    resolves to the same file on either side.
+    """
+    return sorted(scripts_dir.rglob('*.sh')) + sorted(scripts_dir.rglob('*.py'))
+
+
+class FlatScript(NamedTuple):
+    """One public script of an attributable flat skill."""
+
+    bundle: str
+    skill: str
+    path: Path
+
+    @property
+    def notation(self) -> str:
+        return script_notation(self.bundle, self.skill, self.path)
+
+
+class FlatScriptInventory(NamedTuple):
+    """Everything a flat root's script walk found, partitioned by disposition.
+
+    ``unattributed`` lists the flat skill directories that carry a ``scripts/``
+    directory but no readable identity: their scripts exist and cannot be named,
+    so they are reported rather than silently dropped.
+    """
+
+    scripts: list[FlatScript]
+    private: list[Path]
+    unattributed: list[Path]
+
+
+def flat_script_inventory(root: Path) -> FlatScriptInventory:
+    """Walk every flat skill under ``root`` and classify its script files.
+
+    The single flat-layout walk. Both sides of the executor's discovery-coverage
+    comparison call it, so they enumerate the same population by construction.
+    """
+    scripts: list[FlatScript] = []
+    private: list[Path] = []
+    unattributed: list[Path] = []
+    for skill_dir in flat_skill_dirs(root):
+        scripts_dir = skill_dir / 'scripts'
+        if not scripts_dir.is_dir():
+            continue
+        identity = read_flat_skill_identity(skill_dir)
+        if identity is None:
+            unattributed.append(skill_dir)
+            continue
+        bundle, skill = identity
+        for script_file in skill_script_files(scripts_dir):
+            if not script_file.is_file():
+                continue
+            if is_private_script(script_file):
+                private.append(script_file)
+                continue
+            scripts.append(FlatScript(bundle, skill, script_file))
+    return FlatScriptInventory(scripts, private, unattributed)

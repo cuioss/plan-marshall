@@ -25,6 +25,7 @@ import runtime_info
 from runtime_base import (
     PERMISSION_FIX_OPERATIONS,
     Runtime,
+    ensure_steps_without_skill_grants,
     extract_project_steps,
     marshal_shape_error,
     toon_error,
@@ -757,15 +758,16 @@ class AntigravityRuntime(Runtime):
         return toon_success('permission ensure-wildcards', res)
 
     def permission_ensure_steps(self, marshal_path: str, scope: str, dry_run: bool) -> str:
-        """Scan project-steps and ensure permission grants in Antigravity."""
-        return toon_success(
-            'permission ensure-steps',
-            {
-                'scope': scope,
-                'dry_run': dry_run,
-                'steps_added': 0,
-            },
-        )
+        """Scan project-steps; Antigravity cannot express a per-skill grant."""
+        if not Path(marshal_path).is_file():
+            return toon_error(
+                'permission ensure-steps',
+                'marshal_not_found',
+                f"{marshal_path} not found; run 'project initial-setup' first",
+            )
+        config = self.permission_load_marshal_config(marshal_path)
+        steps = [] if 'error' in config else self.permission_extract_project_steps(config)
+        return ensure_steps_without_skill_grants('Antigravity', config, steps, scope, dry_run)
 
     def permission_web_analyze(self, scope: str) -> str:
         """Analyze allowed URL domains in Antigravity."""

@@ -522,7 +522,7 @@ class TestOpenCodePermissionsBackend:
         marshal.write_text('{}', encoding='utf-8')
         result = _parse(self.runtime.permission_ensure_steps(str(marshal), 'project', False))
         assert result['status'] == 'success'
-        assert result['steps_added'] == 0
+        assert result['steps_scanned'] == 0
 
     def test_web_analyze_succeeds(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.chdir(tmp_path)

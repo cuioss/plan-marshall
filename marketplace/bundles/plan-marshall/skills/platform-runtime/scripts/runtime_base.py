@@ -114,6 +114,57 @@ def extract_project_steps(marshal_config: dict[str, Any]) -> list[dict[str, str]
     return project_steps
 
 
+#: The operation name every ``permission ensure-steps`` response carries.
+ENSURE_STEPS_OPERATION: str = 'permission ensure-steps'
+
+
+def ensure_steps_without_skill_grants(
+    target_label: str,
+    marshal_config: dict[str, Any],
+    project_steps: list[dict[str, Any]],
+    scope: str,
+    dry_run: bool,
+) -> str:
+    """Answer ``permission ensure-steps`` for a target with no per-skill grant.
+
+    The shared tail of the OpenCode and Antigravity implementations. Both READ
+    the project steps — the caller loads marshal.json and runs
+    :func:`extract_project_steps` before calling this — because the answer
+    depends on what the roster holds, and an op that answers without reading
+    reports a scan that never happened.
+
+    * A marshal.json that failed to load is ``invalid_marshal``, never an empty
+      roster.
+    * An EMPTY roster is a genuine success: nothing needs a grant, and
+      ``steps_scanned: 0`` says the zero was measured.
+    * A NON-EMPTY roster is a ``no-op``: the target cannot express a per-skill
+      grant, so ``permissions_added: 0`` would read as "already covered" when
+      the truth is "not expressible here". The reason names the scanned count and
+      skills so the decline is diagnosable.
+
+    Args:
+        target_label: Human-readable target name for the decline reason.
+        marshal_config: The loaded marshal.json (an ``error`` key = load failure).
+        project_steps: The steps :func:`extract_project_steps` returned for it.
+        scope: The requested permission scope, echoed on success.
+        dry_run: The requested dry-run flag, echoed on success.
+    """
+    if 'error' in marshal_config:
+        return toon_error(ENSURE_STEPS_OPERATION, 'invalid_marshal', str(marshal_config['error']))
+    if not project_steps:
+        return toon_success(
+            ENSURE_STEPS_OPERATION,
+            {'scope': scope, 'dry_run': dry_run, 'steps_scanned': 0, 'permissions_added': 0},
+        )
+    skills = sorted({step['skill'] for step in project_steps})
+    return toon_noop(
+        ENSURE_STEPS_OPERATION,
+        f'{len(project_steps)} project step(s) scanned ({", ".join(skills)}), but {target_label} '
+        'has no per-skill permission grant to add',
+        'Project skills run through the script executor; grant it with `permission ensure-wildcards`',
+    )
+
+
 #: The `permission fix` operation set, published once so no site restates it.
 #:
 #: The names were maintained by hand in five places — the argparse ``choices``,

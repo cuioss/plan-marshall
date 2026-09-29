@@ -380,19 +380,39 @@ def get_shared_module_dirs(base_path: Path) -> list[Path]:
     all — which is why the empty result is gated on the discovery-coverage
     verdict rather than emitted as ``# (none detected)``.
     """
-    shared_skills = [
-        'tools-file-ops',
-        'tools-input-validation',
-        'ref-toon-format',
-        'script-shared',
-        'manage-change-ledger',
-    ]
     dirs = []
-    for skill in shared_skills:
+    for skill in SHARED_MODULE_SKILLS:
         resolved = _resolve_plan_marshall_path(base_path, deployed_layout.skill_scripts_subpath(skill))
         if resolved.is_dir():
             dirs.append(resolved.resolve())
     return dirs
+
+
+#: The skills whose scripts are imported by other scripts but carry no
+#: executable notation of their own; see :func:`get_shared_module_dirs`.
+SHARED_MODULE_SKILLS: tuple[str, ...] = (
+    'tools-file-ops',
+    'tools-input-validation',
+    'ref-toon-format',
+    'script-shared',
+    'manage-change-ledger',
+)
+
+
+def shared_module_skill_label(scripts_dir: Path) -> str:
+    """Return the skill name a resolved shared-module ``scripts/`` dir belongs to.
+
+    On a nested tree that is the directory's parent name. On a flat deployment
+    the parent is the dash-joined ``{bundle}-{skill}``, which the executor's
+    self-heal cannot match to a skill, so the flat name is mapped back to the
+    shared skill it was joined from — by JOINING each candidate, never by
+    splitting the directory name.
+    """
+    parent = scripts_dir.parent.name
+    for skill in SHARED_MODULE_SKILLS:
+        if parent in (skill, deployed_layout.flat_skill_dir_name('plan-marshall', skill)):
+            return skill
+    return parent
 
 
 # ============================================================================
@@ -436,10 +456,12 @@ def discover_scripts(base_path: Path) -> dict[str, str]:
     environment and cwd, so a run with ``--marketplace-root <worktree>``
     scanned whatever tree the ambient resolution found while the caller
     believed it had scanned the worktree — and the discovery-coverage verdict
-    would then be comparing two different trees. The plugin-cache leg
-    has no equivalent anchor: ``get_base_path('plugin-cache')`` inside the
-    subprocess resolves the AMBIENT target's cache, which is the same target
-    the shared resolver derived unless an explicit ``--target`` overrode it.
+    would then be comparing two different trees. The scan is additionally
+    BOUND to ``base_path`` through ``--base-path``, so the plugin-cache leg
+    scans exactly the tree the caller resolved rather than whatever the
+    subprocess's AMBIENT target cache is — an explicit ``--target`` that
+    differed from the ambient one used to make the two sides of the coverage
+    comparison read two different installations.
 
     Args:
         base_path: Path to bundles directory (plugin-cache or marketplace)
@@ -474,6 +496,8 @@ def discover_scripts(base_path: Path) -> dict[str, str]:
             str(inventory_script),
             '--scope',
             scope,
+            '--base-path',
+            str(base_path),
             '--resource-types',
             'scripts',
             '--direct-result',
@@ -558,9 +582,14 @@ def discover_scripts_fallback(base_path: Path) -> dict[str, str]:
                     continue
 
                 # Use three-part notation: bundle:skill:script
-                notation = f'{bundle_name}:{skill_name}:{script_file.stem}'
+                notation = deployed_layout.script_notation(bundle_name, skill_name, script_file)
                 abs_path = str(script_file.resolve())
                 mappings[notation] = abs_path
+
+    # A flat deployed root's children are the skill root, not bundles, so the
+    # nested walk above contributes nothing there; the shared flat walk does.
+    for flat_script in deployed_layout.flat_script_inventory(base_path).scripts:
+        mappings.setdefault(flat_script.notation, str(flat_script.path.resolve()))
 
     return mappings
 
@@ -589,13 +618,17 @@ def discover_scripts_fallback(base_path: Path) -> dict[str, str]:
 #: the rule that excludes it — the rule is stated here, next to the count, not
 #: inferred from a number.
 #:
-#: There is exactly one, and it is one because the candidate set is already
-#: ``*.py``/``*.sh`` UNDER a ``scripts/`` directory: a ``__pycache__`` artefact is
-#: neither, so it is never a candidate and naming a category for it would be a
-#: rule excluding nothing — a documented condition the enumeration can never
-#: reach, which is indistinguishable from a rule that was never implemented.
+#: No category names a ``__pycache__`` artefact: the candidate set is already
+#: ``*.py``/``*.sh`` UNDER a ``scripts/`` directory, so such an artefact is never a
+#: candidate and a rule for it would exclude nothing — a documented condition the
+#: enumeration can never reach, indistinguishable from a rule never implemented.
 DISCOVERY_EXCLUSION_RULES: dict[str, str] = {
     'private_module': "script files whose name starts with '_' (PEP-8 internal module, not a CLI entrypoint)",
+    'unattributed_flat_skill': (
+        'flat {bundle}-{skill} directories carrying scripts/ whose SKILL.md records no bundle identity '
+        '(not emitted by a plan-marshall flat target, or deployed before the identity was recorded) — '
+        'their notation cannot be derived, so they are counted here rather than guessed'
+    ),
 }
 
 
@@ -655,6 +688,14 @@ def enumerate_script_notations(base_path: Path) -> tuple[set[str], set[str], dic
     the discovered mapping is keyed by notation, so counting files would report
     a shortfall for a tree that is in fact fully covered.
 
+    Both deployed layouts are enumerated. The FLAT leg goes through
+    :func:`deployed_layout.flat_script_inventory` — the same walk the inventory
+    scan uses for a flat root — and every notation on either leg is built by
+    :func:`deployed_layout.script_notation`, so the two sides of the comparison
+    share one derivation rule. A flat directory whose ``SKILL.md`` records no
+    bundle identity cannot be named and is counted under
+    ``unattributed_flat_skill`` instead.
+
     Args:
         base_path: The resolved bundles/cache root to enumerate.
 
@@ -674,7 +715,7 @@ def enumerate_script_notations(base_path: Path) -> tuple[set[str], set[str], dic
             continue
         candidates = sorted(skills_dir.rglob('scripts/**/*.sh')) + sorted(skills_dir.rglob('scripts/**/*.py'))
         for script_file in candidates:
-            if script_file.name.startswith('_'):
+            if deployed_layout.is_private_script(script_file):
                 excluded.add(str(script_file))
                 counts['private_module'] += 1
                 continue
@@ -687,7 +728,14 @@ def enumerate_script_notations(base_path: Path) -> tuple[set[str], set[str], dic
             skill_dir = script_file.parent
             while skill_dir.name != 'scripts' and skill_dir != skills_dir:
                 skill_dir = skill_dir.parent
-            notations.add(f'{bundle_name}:{skill_dir.parent.name}:{script_file.stem}')
+            notations.add(deployed_layout.script_notation(bundle_name, skill_dir.parent.name, script_file))
+
+    flat = deployed_layout.flat_script_inventory(base_path)
+    notations.update(script.notation for script in flat.scripts)
+    excluded.update(str(path) for path in flat.private)
+    counts['private_module'] += len(flat.private)
+    excluded.update(str(path) for path in flat.unattributed)
+    counts['unattributed_flat_skill'] += len(flat.unattributed)
 
     return notations, excluded, counts
 
@@ -706,15 +754,20 @@ def assess_discovery_coverage(base_path: Path, discovered: dict[str, str]) -> Di
 
     Returns:
         The :class:`DiscoveryCoverage` verdict. ``coverage_ok`` is ``True`` when
-        the enumeration found no notation the scan failed to report, which
-        includes the genuinely-empty case (nothing enumerated, nothing
-        discovered) — that verdict is honest precisely because it carries the
-        counts, so a reader can tell it from a truncated scan.
+        the enumeration found no notation the scan failed to report. A NESTED
+        tree that is genuinely empty (nothing enumerated, nothing discovered)
+        passes, and the counts travel with it so a reader can tell it from a
+        truncated scan. A FLAT root with nothing attributable does NOT pass: a
+        flat base is only reached as a target's deployed cache, so an empty
+        attributable population there means the deployment could not be read
+        (every skill unattributed, or none deployed) — the vacuous 0/0 this
+        guard exists to refuse, not a measured absence.
     """
     enumerated, _excluded, counts = enumerate_script_notations(base_path)
     missing = sorted(enumerated - set(discovered))
+    unreadable_flat_root = not enumerated and bool(deployed_layout.skill_roots(base_path))
     return {
-        'coverage_ok': not missing,
+        'coverage_ok': not missing and not unreadable_flat_root,
         'scripts_enumerated': len(enumerated),
         'scripts_expected': len(enumerated),
         'scripts_discovered': len(discovered),
@@ -1984,7 +2037,7 @@ def generate_executor(
     # Shared module directories (must be on sys.path before executor-level imports).
     # Emitted as ``(skill, pinned_dir)`` pairs so the template bootstrap can self-heal a
     # GC-pruned pinned version to the newest surviving plugin-cache version dir. The skill
-    # name is the parent dir name of each resolved ``.../skills/{skill}/scripts`` path.
+    # name comes from shared_module_skill_label (a flat dir's parent is ``{bundle}-{skill}``).
     shared_dirs = get_shared_module_dirs(import_base)
     if not shared_dirs and (coverage is None or not coverage['coverage_ok']):
         # ``# (none detected)`` is a claim about the world — "there are no shared
@@ -1999,7 +2052,7 @@ def generate_executor(
             coverage if coverage is not None else _UNASSESSED_COVERAGE,
         )
     shared_module_lines = (
-        '\n'.join(f"    ('{d.parent.name}', '{d.as_posix()}')," for d in shared_dirs)
+        '\n'.join(f"    ('{shared_module_skill_label(d)}', '{d.as_posix()}')," for d in shared_dirs)
         if shared_dirs
         else '    # (none detected)'
     )

@@ -202,6 +202,15 @@ python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventor
 python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory --bundles "planning,pm-dev-java,pm-dev-frontend"
 ```
 
+## --base-path (optional)
+
+Scan exactly this bundles/cache root instead of resolving one from `--scope`. The executor generator passes the base it resolved, so the scan and the generator's coverage check read the same tree. A flat OpenCode/Antigravity deployment (`~/.config/opencode/skills`, or the directory containing it) is read through the `metadata.bundle` / `metadata.skill` identity each deployed `SKILL.md` records; a flat skill directory without that identity is not reported.
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
+  --base-path ~/.config/opencode/skills --resource-types scripts --direct-result
+```
+
 ## --direct-result (optional flag)
 
 Output full TOON directly to stdout instead of writing to file.

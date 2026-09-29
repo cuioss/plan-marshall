@@ -859,7 +859,7 @@ def test_enumeration_excludes_named_categories_and_reports_their_counts(tmp_path
     notations, excluded, counts = _gen.enumerate_script_notations(tmp_path)
 
     assert notations == {'demo:demo-skill:entry', 'demo:demo-skill:other'}
-    assert counts == {'private_module': 1}
+    assert counts == {'private_module': 1, 'unattributed_flat_skill': 0}
     assert len(excluded) == 1
 
 
@@ -879,6 +879,10 @@ def test_every_exclusion_rule_is_reachable_from_the_candidate_set(tmp_path):
     scripts.mkdir(parents=True)
     (scripts / 'entry.py').write_text('# public', encoding='utf-8')
     (scripts / '_private.py').write_text('# private', encoding='utf-8')
+    # A flat skill directory with scripts but no recorded bundle identity.
+    unattributed = tmp_path / 'skills' / 'foreign-tool' / 'scripts'
+    unattributed.mkdir(parents=True)
+    (unattributed / 'tool.py').write_text('# unattributable', encoding='utf-8')
 
     _notations, _excluded, counts = _gen.enumerate_script_notations(tmp_path)
 

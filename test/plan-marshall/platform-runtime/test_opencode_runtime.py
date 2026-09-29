@@ -563,14 +563,15 @@ def test_permission_ensure_wildcards_invalid_scope_returns_error(runtime: OpenCo
 
 
 def test_permission_ensure_steps_success(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
-    """permission_ensure_steps returns success when marshal.json exists."""
+    """permission_ensure_steps reports a measured zero for a marshal.json with no project steps."""
     marshal_path = tmp_path / 'marshal.json'
     marshal_path.write_text(json.dumps({'runtime': {'target': 'opencode'}}), encoding='utf-8')
 
     result = _parse(runtime.permission_ensure_steps(str(marshal_path), 'project', False))
     assert result['status'] == 'success'
     assert result['operation'] == 'permission ensure-steps'
-    assert result['steps_added'] == 0
+    assert result['steps_scanned'] == 0
+    assert result['permissions_added'] == 0
 
 
 def test_permission_ensure_steps_missing_marshal_returns_error(

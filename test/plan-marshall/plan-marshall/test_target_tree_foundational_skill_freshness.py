@@ -26,12 +26,18 @@ none of them are different findings, and collapsing them is how a deployment goe
 unexamined for months. The absent case is stated in the failure message of the
 aggregate test below, so a reader is told which trees were looked at.
 
+**The population is the registry, not whatever happens to exist.** The expected
+tree set is derived from the generator's ``TARGET_REGISTRY`` — the same set
+``./pw generate --target all --output target`` writes, one ``target/{name}``
+directory per registered target. A sweep over whatever trees exist would read a
+PARTIAL generation (only ``target/claude``, say) as a clean sweep over every
+target: the empty-population hole and the incomplete-population hole are the same
+failure, and each registered tree that is absent is named as unevaluated.
+
 **The boundary this module can and cannot draw.** A directory under the target
 root that carries no markdown is not a tree: the discovery filter excludes it, so
-a HALF-WRITTEN tree is indistinguishable from an absent one here. What the
-aggregate assertion does catch is the case that matters operationally — a target
-root with no trees at all, which reads as "unevaluated" rather than as a clean
-sweep over nothing.
+a HALF-WRITTEN tree is indistinguishable from an absent one here — and is
+reported as unevaluated for exactly that reason.
 """
 
 from __future__ import annotations
@@ -58,6 +64,23 @@ def discover_target_trees() -> dict[str, Path]:
     return {path.name: path for path in sorted(TARGET_ROOT.iterdir()) if path.is_dir() and any(path.rglob('*.md'))}
 
 
+def registered_target_names() -> list[str]:
+    """Return every target the generator registers — the trees a sweep must examine.
+
+    Read from ``TARGET_REGISTRY`` rather than listed here, so a target added to
+    the registry is expected by this guard without an edit. ``generate --target
+    all --output target`` writes each one to ``target/{name}``.
+    """
+    from marketplace.targets import TARGET_REGISTRY
+
+    return sorted(TARGET_REGISTRY)
+
+
+def unevaluated_targets(trees: dict[str, Path]) -> list[str]:
+    """Return the registered targets whose generated tree is absent from *trees*."""
+    return sorted(set(registered_target_names()) - set(trees))
+
+
 def stale_named_skills(tree: Path) -> dict[str, list[str]]:
     """Map every file in *tree* to the notations it names that no longer resolve."""
     stale: dict[str, list[str]] = {}
@@ -74,19 +97,27 @@ def trees() -> dict[str, Path]:
     return discover_target_trees()
 
 
+_REGENERATE_HINT = '`./pw generate --target all --output target`'
+
+
 class TestTheSweepIsReal:
-    def test_at_least_one_target_tree_was_examined(self, trees: dict[str, Path]) -> None:
-        """A sweep over zero trees satisfies "every tree is clean".
+    def test_the_registry_names_at_least_one_target(self) -> None:
+        """The expected population is non-empty, so the coverage check below can fail."""
+        assert registered_target_names(), 'TARGET_REGISTRY is empty; the sweep would expect no tree at all'
+
+    def test_every_registered_target_tree_was_examined(self, trees: dict[str, Path]) -> None:
+        """A sweep over a SUBSET of the registered trees satisfies "every tree is clean".
 
         Asserted separately from the staleness check because the two fail for
         unrelated reasons and a reader needs to tell them apart: this one says
-        the trees were not generated, the other says a tree names something the
-        marketplace retired.
+        which trees were not generated, the other says a tree names something the
+        marketplace retired. A sweep over zero trees is the degenerate case of
+        the same shortfall and is reported the same way.
         """
-        assert trees, (
-            f'no generated target tree found under {TARGET_ROOT} — run `./pw generate` first. '
-            'Reported as unevaluated rather than passing, so a deployment that was never '
-            'generated does not read as a clean sweep.'
+        missing = unevaluated_targets(trees)
+        assert missing == [], (
+            f'registered target trees absent under {TARGET_ROOT}, reported as UNEVALUATED: {missing} '
+            f'(examined: {sorted(trees)}). Run {_REGENERATE_HINT} first.'
         )
 
     def test_no_tree_names_a_skill_the_marketplace_does_not_ship(self, trees: dict[str, Path]) -> None:
@@ -97,13 +128,14 @@ class TestTheSweepIsReal:
         COLLECTION ERROR, so a run against a checkout where the trees were never
         generated would abort the whole module with a message naming a line
         number instead of reporting the unevaluated sweep this module exists to
-        distinguish from a clean one. The population is asserted first, so an
-        absent tree set reads as "not evaluated", with the fix in the message.
+        distinguish from a clean one. The registered population is asserted
+        first, so a partial or absent tree set reads as "not evaluated", with the
+        fix in the message.
         """
-        assert trees, (
-            f'no generated target tree found under {TARGET_ROOT} — run `./pw generate` first. '
-            'Reported as UNEVALUATED rather than passing, so a checkout whose trees were never '
-            'generated does not read as a clean sweep.'
+        missing = unevaluated_targets(trees)
+        assert missing == [], (
+            f'registered target trees absent under {TARGET_ROOT}, reported as UNEVALUATED: {missing}. '
+            f'Run {_REGENERATE_HINT} first — a partial sweep does not read as a clean one.'
         )
 
         stale = {name: findings for name, tree in trees.items() if (findings := stale_named_skills(tree))}
@@ -111,6 +143,20 @@ class TestTheSweepIsReal:
             f'generated target trees name foundational skills the marketplace does not ship; '
             f'regenerate with `./pw generate`. Offending trees: {stale}'
         )
+
+    def test_a_partial_generation_is_reported_as_unevaluated(self, tmp_path: Path) -> None:
+        """Positive control: a tree set carrying ONE registered target names the rest.
+
+        The incomplete-population twin of the empty-population case — the shape a
+        local ``./pw generate --target claude`` leaves behind. Without this
+        control a coverage check that silently compared against the discovered
+        set would pass here as well.
+        """
+        registered = registered_target_names()
+        present = registered[0]
+
+        assert unevaluated_targets({present: tmp_path}) == registered[1:]
+        assert unevaluated_targets({}) == registered
 
     def test_a_retired_FLAT_notation_is_reported_not_dropped(self, tmp_path: Path) -> None:
         """The gate sees a retired name in the spelling the flat trees emit.

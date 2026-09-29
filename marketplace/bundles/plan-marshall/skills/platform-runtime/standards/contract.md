@@ -631,6 +631,15 @@ error: invalid_marshal
 message: .plan/marshal.json is malformed JSON; cannot scan steps
 ```
 
+**Targets without a per-skill grant (OpenCode, Antigravity)**: the steps are still READ. No project steps is a measured success (`steps_scanned: 0`, `permissions_added: 0`); declared project steps are a `no-op` naming the scanned count and skills, because the target cannot express the grant — never a success that reads as "already covered":
+
+```toon
+status: no-op
+operation: permission ensure-steps
+reason: "3 project step(s) scanned (ci-verify, finalize-step-deploy-target, finalize-step-plugin-doctor), but OpenCode has no per-skill permission grant to add"
+alternative: Project skills run through the script executor; grant it with `permission ensure-wildcards`
+```
+
 ---
 
 ### `permission web-analyze`
