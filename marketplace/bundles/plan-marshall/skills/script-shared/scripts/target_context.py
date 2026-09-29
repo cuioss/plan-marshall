@@ -354,8 +354,7 @@ def resolve_context(
             declared context, so the env var is NOT folded into the returned
             anchor and cannot re-anchor the verb — the same rule
             ``marketplace_paths._env_anchor_is_last_resort`` applies to a direct
-            ``get_base_path`` call. Folding it in unconditionally turned the env
-            var into an explicit anchor that outranked every declared target.
+            ``get_base_path`` call.
         cwd: Directory the ``marshal.json`` walk starts from; forwarded to
             :func:`resolve_target` and ignored when ``target`` is explicit.
 
