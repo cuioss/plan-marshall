@@ -153,6 +153,23 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
 
 ## Open Defects
 
+- **Invalid inbox message `opencode-bootstrap-executor-fix-003.md` (drain 2026-09-29) — RESOLVED
+  2026-09-29.** On operator instruction the file was read directly and judged worth recovering: its
+  remedy is corroborated on PR #1646's branch (`python-verify.yml:66 pre-verify-goals: 'generate'`,
+  the new freshness test, green checks). The envelope was repaired: sender and kind taken from the
+  filename and body, `created` from the file mtime (2026-09-29T05:36:17Z), body untouched. It then
+  validated and was staged as PLAN-23. Original record: `inbox list` reports `missing_header_field`. The file carries no envelope at
+  all, only a markdown body, and no `-002` exists in the queue or the archive, so it was
+  evidently written directly rather than through `orchestrator inbox write`. That is itself a
+  channel bypass the write verb exists to prevent. Content (read, not dispositioned): the
+  pre-push quality gate reported the whole-tree `module-tests` arm green (28,361 tests) and the
+  freshness gate admitted the push, while CI failed twice on the same SHA. The cause was untracked
+  generated `target/` state in a long-lived worktree, scanned by a tracked test. The sender's ask:
+  a pre-push check that refuses a green verdict when untracked generated state sits under a path a
+  tracked test scans. Candidate homes once valid: truthful-signals PLAN-TRUTH-150 (build/CI
+  verdicts that mislead on the healthy path), or a local spec. Recovery is operator-side: the
+  sender refiles via `inbox write`, or the operator repairs the envelope (sender, kind and
+  `created` would have to be supplied).
 - **#1641 (`945e59287`, "cross-epic ledger sync") reverted ledger state across 9
   epics (found 2026-09-28, this epic RESTORED).** Its body claims it held back 20
   deletions with no verifiable successor; the squash deleted exactly those 20
@@ -327,6 +344,15 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
   read-path discipline pattern.
 
 ## Watches
+
+- **⛔ Dead-end routing corrected (2026-09-29).** The 2026-09-28 routing of PLAN-13 report items 5, 21
+  and 22 and the `-006` step-id lesson to truthful-signals (`process-compliance-002`) targeted
+  PLAN-TRUTH-169 / 150 / 205 / 175. All four are **parked** under the PM-MCP supersession: the
+  `staged` status seen at routing time was #1641's reverted state, which #1656 undid. No plan would
+  have acted on them. They are reclaimed here: items 5, 21 and 22 → PLAN-23 push-boundary-evidence;
+  step-id → PLAN-21 D5c. truthful-signals was notified (`process-compliance-003`). The PRQ-12 routing
+  (`post-run-quality`, staged) is unaffected. **Rule for future routing:** re-read the target row's
+  status at routing time. A parked or superseded target is not an owner.
 
 - **Drain 2026-09-28, second pass (PLAN-13 landing + 3 messages).** `-007` landing reconciled
   (shipped). `-004`'s 22 items: 17 staged as PLAN-19/20/21; items 5, 21 and 22 routed to
