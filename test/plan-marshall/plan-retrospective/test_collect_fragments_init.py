@@ -3,7 +3,7 @@
 
 Its sections, in order:
 
-* init — live mode
+* init — live mode (including the stale-fragment cleanup)
 * init — archived mode
 * add — happy path
 * add — fault paths
@@ -77,6 +77,60 @@ class TestInitLiveMode:
         parsed = parse_toon(bundle_path.read_text(encoding='utf-8'))
         # Stale content is replaced with the meta-only bundle.
         assert parsed == {'_meta': {'mode': 'live'}}
+
+    def test_init_removes_stale_fragment_files_from_a_previous_run(self, tmp_path, monkeypatch):
+        # A prior run's fragment left beside a fresh bundle is read by its fixed
+        # name (Rule M6 reads fragment-artifact-consistency.toon unconditionally),
+        # so it would be reported as this run's output unless init clears it.
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        fragment_dir = plan_dir / 'work'
+        fragment_dir.mkdir(parents=True, exist_ok=True)
+        stale_fragment = fragment_dir / 'fragment-artifact-consistency.toon'
+        stale_fragment.write_text('status: success\n', encoding='utf-8')
+
+        result = run_script(
+            SCRIPT_PATH,
+            'init',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+        )
+
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['status'] == 'success'
+        assert not stale_fragment.exists()
+        assert data['removed_fragment_count'] == 1
+        assert data['removed_fragments'] == ['fragment-artifact-consistency.toon']
+
+    def test_init_leaves_non_fragment_files_in_the_fragment_dir_untouched(self, tmp_path, monkeypatch):
+        # Control: only fragment-*.toon files are cleared — any other file that
+        # shares the directory with a stale fragment survives init byte-for-byte.
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        fragment_dir = plan_dir / 'work'
+        fragment_dir.mkdir(parents=True, exist_ok=True)
+        stale_fragment = fragment_dir / 'fragment-plan-efficiency.toon'
+        stale_fragment.write_text('status: success\n', encoding='utf-8')
+        unrelated = fragment_dir / 'notes-artifact-consistency.toon'
+        unrelated.write_text('keep: me\n', encoding='utf-8')
+
+        result = run_script(
+            SCRIPT_PATH,
+            'init',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+        )
+
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['status'] == 'success'
+        assert not stale_fragment.exists()
+        assert unrelated.read_text(encoding='utf-8') == 'keep: me\n'
+        assert data['removed_fragment_count'] == 1
+        assert data['removed_fragments'] == ['fragment-plan-efficiency.toon']
 
 
 # =============================================================================

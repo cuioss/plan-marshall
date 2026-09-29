@@ -61,8 +61,8 @@ This workflow dispatches under `--phase phase-6-finalize --role post-run-review`
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `--plan-id` | string | Yes | Plan identifier. Required in every mode — it keys the report, the fragment bundle, and the synthetic archived fallback. |
-| `--archived-plan-path` | string | No | Absolute path to an archived plan directory (`.plan/archived-plans/{date}-{plan_id}/`). Optional override honoured in archived mode only; when omitted, archived mode falls back to the synthetic per-plan directory. Never a substitute for `--plan-id`. |
+| `--plan-id` | string | Yes | Plan identifier. Required in every mode — it keys the report, the fragment bundle, and the archived-mode synthetic bundle directory. |
+| `--archived-plan-path` | string | Archived mode only | Absolute path to an archived plan directory (`.plan/archived-plans/{date}-{plan_id}/`) — the archived audit's read-only input. **Required in archived mode**: every archived-capable aspect script and `compile-report` refuse archived mode without it (`--archived-plan-path is required for archived mode`), and none of them falls back to another directory. Not used in live modes. `collect-fragments` never takes it — the fragment bundle is keyed on `--plan-id` and the mode alone. Never a substitute for `--plan-id`. |
 | `--session-id` | string | No | Optional session identifier. When present, the chat-history aspect is dispatched; otherwise it is skipped. |
 | `--iteration` | integer | No | Finalize-step iteration counter. Forwarded by `phase-6-finalize`; ignored by user-invocable and archived modes. |
 | `orchestrated` | bool | No | `true` when this plan was launched from an epic's staged plan spec, so Step 5b routes every proposal to the epic inbox instead of the global lessons store. In finalize-step mode the dispatcher forwards it (resolved once per finalize run at `phase-6-finalize/SKILL.md` Step 3 item 4b.a0); this body MUST NOT recompute it. |
@@ -73,7 +73,7 @@ This workflow dispatches under `--phase phase-6-finalize --role post-run-review`
 **Mode resolution** (`--plan-id` is required in every mode):
 - `--plan-id` provided, invoked by `phase-6-finalize` → **finalize-step mode** (emit `mark-step-done` tail).
 - `--plan-id` provided, invoked by user or command, no `--mode archived` → **user-invocable live mode** (no `mark-step-done` tail).
-- `--plan-id` provided alongside archived-mode selection → **archived mode** (no `mark-step-done` tail, timestamped filename). `--archived-plan-path` is an optional override honoured only here; when omitted the synthetic per-plan fallback applies.
+- `--plan-id` provided alongside archived-mode selection → **archived mode** (no `mark-step-done` tail, timestamped filename). `--archived-plan-path` is required here and is passed to every archived-capable aspect script and to `compile-report`; there is no fallback plan directory when it is omitted.
 
 Mode detection heuristic: when `--iteration` is present alongside `--plan-id`, treat as finalize-step mode; otherwise user-invocable live mode.
 
@@ -81,9 +81,9 @@ Mode detection heuristic: when `--iteration` is present alongside `--plan-id`, t
 
 ### Step 1: Validate Inputs and Resolve Plan Paths
 
-Validate inputs (`--plan-id` required in every mode; `--archived-plan-path` is an optional archived-mode override, never a substitute). Resolve:
+Validate inputs (`--plan-id` required in every mode; `--archived-plan-path` required in archived mode, never a substitute for `--plan-id`). Resolve:
 - Live modes: `plan_dir = .plan/local/plans/{plan-id}/`
-- Archived mode: `plan_dir = --archived-plan-path` when the override is supplied, otherwise the synthetic per-plan fallback (verify the resolved directory exists).
+- Archived mode: `plan_dir = --archived-plan-path` (verify the directory exists). When the flag is absent, stop with an error rather than continuing: every archived-mode aspect script and `compile-report` would refuse the call, and there is no fallback plan directory. The synthetic per-plan directory under the OS tmpdir holds only the `collect-fragments` bundle and its fragments — it is the audit's output location, never a stand-in for the archived plan.
 
 **Canonical plan-status read** — when this workflow needs to read plan status (current phase, metadata, worktree binding) it MUST use the `manage-status` script's `read` subcommand. The supported invocation is:
 
@@ -125,7 +125,7 @@ or for archived mode:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-plan-artifacts \
-  run --plan-id {plan_id} --archived-plan-path {path} --mode archived
+  run --plan-id {plan_id} --archived-plan-path {archived_plan_path} --mode archived
 ```
 
 Capture the manifest TOON for later aspects.
@@ -168,7 +168,7 @@ reconcile in archived mode entirely.
 
 ### Step 3: Dispatch Aspects (in order)
 
-Before dispatching aspects, initialize the fragment bundle. `collect-fragments init` creates an empty TOON bundle file at the mode-appropriate path: live mode writes to `{plan_dir}/work/retro-fragments.toon`; archived mode ALWAYS writes to a synthetic per-plan directory under the OS tmpdir (`<tmp>/plan-retrospective/plan-{plan_id}/work/retro-fragments.toon`), never into the archived plan, which stays read-only. The archived plan directory is the audit's input — the aspect scripts and `compile-report` read it through their own `--archived-plan-path` — and `collect-fragments` takes no path override: the bundle is keyed on `--plan-id` and the mode alone. Capture the returned `bundle_path` for use in Step 4. The mode is persisted into the bundle by `init`, so subsequent add, register and finalize calls read it back automatically, locate the bundle from `--plan-id` alone, and accept only `--plan-id` and the fragment inputs.
+Before dispatching aspects, initialize the fragment bundle. `collect-fragments init` creates an empty TOON bundle file at the mode-appropriate path: live mode writes to `{plan_dir}/work/retro-fragments.toon`; archived mode ALWAYS writes to a synthetic per-plan directory under the OS tmpdir (`<tmp>/plan-retrospective/plan-{plan_id}/work/retro-fragments.toon`), never into the archived plan, which stays read-only. Before seeding the bundle, `init` deletes every `fragment-*.toon` file a previous run left in that directory and reports them under `removed_fragments` (with `removed_fragment_count`), so a fragment read by its fixed name — as Rule M6 reads `fragment-artifact-consistency.toon` — can only be this run's output; every other file in the directory is left untouched. The archived plan directory is the audit's input — in archived mode every aspect script and `compile-report` receive it through the `--archived-plan-path {archived_plan_path}` flag each command below carries — and `collect-fragments` takes no path override: the bundle is keyed on `--plan-id` and the mode alone. Capture the returned `bundle_path` for use in Step 4. The mode is persisted into the bundle by `init`, so subsequent add, register and finalize calls read it back automatically, locate the bundle from `--plan-id` alone, and accept only `--plan-id` and the fragment inputs.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments \
@@ -252,11 +252,11 @@ The fixed aspect table above is domain-invariant — it runs for every plan. Dom
 
    Parse the `aspects[]` rows from the TOON output. Each row carries `aspect`, `domain`, `script`, `reference`, `description`, and `order`.
 
-3. **Filter by the audited plan's domain.** Keep only rows whose `domain` matches the plan's domain. Skip every aspect from a non-matching domain. The remaining aspects are deterministic script-backed fragments — run each exactly like the built-in script-backed aspects (1-3, 8, 10): invoke its `script` notation with `run --mode {live|archived}` plus the resolution flags, pipe stdout to `{fragment_dir}/fragment-{aspect}.toon`, then register it via `collect-fragments add --aspect {aspect}`.
+3. **Filter by the audited plan's domain.** Keep only rows whose `domain` matches the plan's domain. Skip every aspect from a non-matching domain. The remaining aspects are deterministic script-backed fragments — run each exactly like the built-in script-backed aspects (1-3, 8, 10): invoke its `script` notation with `run --mode {live|archived}` plus the resolution flags — `--plan-id`, and in archived mode `--archived-plan-path {archived_plan_path}` (required there; omit it in live modes) — pipe stdout to `{fragment_dir}/fragment-{aspect}.toon`, then register it via `collect-fragments add --aspect {aspect}`, which stays keyed by `--plan-id` alone.
 
    ```bash
    python3 .plan/execute-script.py {script} \
-     run --plan-id {plan_id} --mode {live|archived} > {fragment_dir}/fragment-{aspect}.toon
+     run --plan-id {plan_id} --mode {live|archived} [--archived-plan-path {archived_plan_path}] > {fragment_dir}/fragment-{aspect}.toon
    python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments \
      add --plan-id {plan_id} --aspect {aspect} --fragment-file {fragment_dir}/fragment-{aspect}.toon
    ```
@@ -265,7 +265,7 @@ The fixed aspect table above is domain-invariant — it runs for every plan. Dom
 
 **Per-aspect capture pattern**:
 
-**Deterministic aspects (1-3, 8, 10, and 11, script-backed)** — pipe the script's stdout to the fragment file, then register it:
+**Deterministic aspects (1-3, 8, 10, and 11, script-backed)** — pipe the script's stdout to the fragment file, then register it. The bracketed `[--archived-plan-path {archived_plan_path}]` in this and every following aspect command, and in the Step 4 `compile-report` command, is passed in archived mode — where the script refuses to run without it — and omitted in live modes; the `collect-fragments` calls never carry it:
 
 The `script-failure-analysis` script (aspect 8) consumes the plan's `script-execution.log` directly and classifies non-zero-exit calls by stderr signature (`invalid choice:` → `invented_subcommand`; `the following arguments are required:` → `missing_required_flag`; `unrecognized arguments:` → `invented_flag`; non-argparse exit-1 → `script_internal_error`). The TOON fragment carries deduped `findings[]` and seed `lessons[]` for downstream classification; the orchestrator does NOT inject LLM judgement at this point. See `references/script-failure-analysis.md` for the finding shape; the LLM aspects that follow may augment the script-emitted findings with source-component tracing.
 
@@ -273,7 +273,7 @@ The `analyze-logs` script (aspect 2) additionally parses the plan's **folded-in 
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:{script} \
-  run --plan-id {plan_id} --mode {live|archived} > {fragment_dir}/fragment-{aspect}.toon
+  run --plan-id {plan_id} --mode {live|archived} [--archived-plan-path {archived_plan_path}] > {fragment_dir}/fragment-{aspect}.toon
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments \
   add --plan-id {plan_id} --aspect {name} --fragment-file {fragment_dir}/fragment-{aspect}.toon
 ```
@@ -291,7 +291,7 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragmen
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:check-manifest-consistency \
-  run --plan-id {plan_id} --mode {live|archived} > {fragment_dir}/fragment-manifest-decisions.toon
+  run --plan-id {plan_id} --mode {live|archived} [--archived-plan-path {archived_plan_path}] > {fragment_dir}/fragment-manifest-decisions.toon
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments \
   add --plan-id {plan_id} --aspect manifest-decisions --fragment-file {fragment_dir}/fragment-manifest-decisions.toon
 ```
@@ -302,7 +302,7 @@ Skip the aspect entirely when the manifest file is absent.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:check-routing-decisions \
-  run --plan-id {plan_id} --mode {live|archived} --diff-file work/footprint.txt > {fragment_dir}/fragment-routing-decisions.toon
+  run --plan-id {plan_id} --mode {live|archived} [--archived-plan-path {archived_plan_path}] --diff-file work/footprint.txt > {fragment_dir}/fragment-routing-decisions.toon
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments \
   add --plan-id {plan_id} --aspect routing-decisions --fragment-file {fragment_dir}/fragment-routing-decisions.toon
 ```
@@ -337,8 +337,10 @@ Otherwise parse `bundle_path` from the TOON output, then:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:compile-report \
-  run --plan-id {plan_id} --mode {live|archived} --fragments-file {bundle_path}
+  run --plan-id {plan_id} --mode {live|archived} [--archived-plan-path {archived_plan_path}] --fragments-file {bundle_path}
 ```
+
+In archived mode `compile-report` needs `--archived-plan-path` to locate the archived plan it reports on (it refuses archived mode without it); the `--fragments-file` bundle it reads is still the synthetic-directory bundle `collect-fragments` returned.
 
 When the `--fragments-file` path names no regular file by the time `compile-report` reads it, `compile-report` returns `error: fragments_file_missing` at exit 0, naming the `fragments_file` it looked at and its `path_state`, and writes no report. Carry it to Step 7 the same way.
 

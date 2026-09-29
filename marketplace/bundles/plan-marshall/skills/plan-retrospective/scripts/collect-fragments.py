@@ -7,8 +7,10 @@ each aspect's output as a TOON fragment file, then registers it via ``add`` so
 that ``compile-report run --fragments-file`` can consume a single bundle.
 
 Subcommands:
-    init      Create an empty TOON bundle at the mode-appropriate path.
-    add       Merge a fragment file into the bundle under the aspect key.
+    init      Create an empty TOON bundle at the mode-appropriate path, first
+              removing every ``fragment-*.toon`` file a previous run left in
+              the fragment directory (reported as ``removed_fragments``).
+    add      Merge a fragment file into the bundle under the aspect key.
     register  Merge MANY fragment files in one batch — one aspect-key
               registration pass, one bundle write — reporting registered
               aspect keys with counts.
@@ -76,6 +78,7 @@ from toon_parser import parse_toon, serialize_toon
 
 _META_KEY = '_meta'
 _BUNDLE_FILENAME = 'retro-fragments.toon'
+_FRAGMENT_GLOB = 'fragment-*.toon'
 
 
 def resolve_bundle_path(mode: str, plan_id: str) -> Path:
@@ -274,10 +277,38 @@ def _read_mode_from_bundle(bundle: dict[str, Any], bundle_path: Path) -> str:
     return str(meta['mode'])
 
 
+def _remove_stale_fragments(fragment_dir: Path) -> list[str]:
+    """Delete every ``fragment-*.toon`` regular file left in ``fragment_dir``.
+
+    The retrospective is the only producer of ``fragment-*.toon`` files, and a
+    reader such as Rule M6 opens a fragment by its fixed name whether or not the
+    current bundle registered it — so a previous run's fragment left beside a
+    fresh bundle would be reported as this run's output. Only regular files
+    matching the fragment name pattern are removed; every other entry in the
+    directory is left untouched.
+
+    Returns:
+        The sorted file names that were removed.
+    """
+    removed: list[str] = []
+    for stale in sorted(fragment_dir.glob(_FRAGMENT_GLOB)):
+        if stale.is_file():
+            stale.unlink()
+            removed.append(stale.name)
+    return removed
+
+
 def cmd_init(args: argparse.Namespace) -> dict[str, Any]:
-    """Create (or overwrite) a bundle file seeded with the resolution mode."""
+    """Create (or overwrite) a bundle seeded with the resolution mode, clearing stale fragments.
+
+    Every ``fragment-*.toon`` file a previous run left in the fragment directory
+    is removed before the bundle is seeded, and reported under
+    ``removed_fragments``, so the new run starts from an empty fragment set.
+    """
     bundle_path = resolve_bundle_path(args.mode, args.plan_id)
-    bundle_path.parent.mkdir(parents=True, exist_ok=True)
+    fragment_dir = bundle_path.parent
+    fragment_dir.mkdir(parents=True, exist_ok=True)
+    removed = _remove_stale_fragments(fragment_dir)
     _write_bundle(bundle_path, {_META_KEY: {'mode': args.mode}})
     return {
         'status': 'success',
@@ -285,6 +316,8 @@ def cmd_init(args: argparse.Namespace) -> dict[str, Any]:
         'plan_id': args.plan_id,
         'mode': args.mode,
         'bundle_path': str(bundle_path),
+        'removed_fragment_count': len(removed),
+        'removed_fragments': removed,
     }
 
 

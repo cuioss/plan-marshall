@@ -194,11 +194,11 @@ counts:
 
 ## Persistence
 
-The aspect is script-backed: run `check-dispatch-audit` and pipe its stdout to `{fragment_dir}/fragment-execution-context-dispatch-audit.toon`, then register that same path. `{fragment_dir}` is defined in [`../SKILL.md` § Step 3](../SKILL.md#step-3-dispatch-aspects-in-order). The orchestrator does not hand-synthesize this fragment.
+The aspect is script-backed: run `check-dispatch-audit` and pipe its stdout to `{fragment_dir}/fragment-execution-context-dispatch-audit.toon`, then register that same path. `{fragment_dir}` is defined in [`../SKILL.md` § Step 3](../SKILL.md#step-3-dispatch-aspects-in-order). The orchestrator does not hand-synthesize this fragment. In archived mode pass `--archived-plan-path {archived_plan_path}` — the script refuses archived mode without it — and omit it in live modes; the `collect-fragments add` call stays keyed by `--plan-id` alone.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:check-dispatch-audit \
-  run --plan-id {plan_id} --mode {live|archived} > {fragment_dir}/fragment-execution-context-dispatch-audit.toon
+  run --plan-id {plan_id} --mode {live|archived} [--archived-plan-path {archived_plan_path}] > {fragment_dir}/fragment-execution-context-dispatch-audit.toon
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments add \
   --plan-id {plan_id} --aspect execution-context-dispatch-audit --fragment-file {fragment_dir}/fragment-execution-context-dispatch-audit.toon
 ```
