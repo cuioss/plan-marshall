@@ -299,16 +299,7 @@ cannot express.}
 
 ## Open Defects
 
-### 2026-09-28 — #1641 reverted this epic's ledger; RESTORED from `88fcfc9ef` (RESOLVED)
-
-`process-compliance-001` reported, and a direct diff confirmed, that #1641 (`945e59287`, a cross-epic ledger sync
-squash-merged from a branch cut before #1643) reverted 13 paths here: the PM-MCP park (spec banners, 43 lines of
-`epic.md`, `PLAN-03/05/06` back to `staged`), the PLAN-09/10 re-scope, the PLAN-11 re-stage note, and it deleted
-the archived `review-apparatus-001.md`. `git diff 88fcfc9ef origin/main` over this tree equalled the #1641 diff
-exactly (plus the new inbox message), so no legitimate later change existed and all 13 paths were restored
-whole from `88fcfc9ef`. **Archetype:** a stale-branch squash silently reverts every file it carries at an older
-version; a ledger landing from a branch not cut from current `origin/main` is a revert. Every ledger landing
-from this session branches from `origin/main` explicitly.
+> ↪ Relocated to `settled.md` § "2026-09-28 — #1641 reverted this epic's ledger; RESTORED from `88fcfc9ef`" — resolved: all 13 reverted paths restored from `88fcfc9ef` and landed in #1656
 
 ### ⛔⛔⛔ 2026-09-26 — THE WHOLE STAGED QUEUE IS PARKED: `plan-marshall-mcp` supersedes it
 
