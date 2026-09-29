@@ -482,8 +482,7 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock budget-rec
 ```
 
 The waiter-side reclaim for the orchestrator-layer `merge_hold_budget_seconds`
-bound (branch-cleanup binds the acquire instant with `date +%s` and calls this
-verb when the held duration reaches budget with admission still blocked).
+bound.
 
 `--hold-start` is a **POSIX epoch in seconds**. It is declared `type=float`, so the
 integer form `date +%s` prints is accepted, and so is a fractional epoch. An
