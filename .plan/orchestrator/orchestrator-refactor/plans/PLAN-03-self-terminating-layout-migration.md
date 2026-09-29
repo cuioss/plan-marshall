@@ -1,5 +1,12 @@
 # PLAN-03: A layout migration that terminates itself
 
+> ⛔⛔ **SUPERSEDED BY PM-MCP (2026-09-26, operator decision relayed by `review-apparatus` inbox message; row status `parked`).**
+> `plan-marshall-mcp` replaces both the process prose and the Python scripts this plan edits, so implementing it
+> here is legacy work. Its implementation-independent content (rules, invariants, classifications, data,
+> fixtures) was extracted to `plan-marshall-mcp/doc/known-defects/orchestrator-refactor-carry-over.md` as PM-MCP
+> input. **Do NOT emit; un-park only by explicit operator decision.** The body below is kept intact as the
+> evidence chain.
+
 epic: orchestrator-refactor
 workstream: WS-02
 

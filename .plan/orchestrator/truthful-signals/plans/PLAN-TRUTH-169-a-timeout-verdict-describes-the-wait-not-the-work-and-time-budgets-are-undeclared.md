@@ -1,5 +1,11 @@
 # PLAN-TRUTH-169: A timeout verdict describes the wait, not the work — and the time budgets it is measured against are undeclared
 
+> ⛔⛔ **SUPERSEDED BY PM-MCP (2026-09-26, operator decision; row status `parked`).** `plan-marshall-mcp` replaces both the
+> process prose and the Python scripts this plan edits, so implementing it here is legacy work. Its
+> implementation-independent content (rules, invariants, classifications, data, fixtures) was extracted to
+> `plan-marshall-mcp/doc/implementation-watch/` (absorbed there from `doc/known-defects/truthful-signals-carry-over.md`) as PM-MCP input.
+> **Do NOT emit; un-park only by explicit operator decision.** The spec body below stays intact as the evidence chain.
+
 epic: truthful-signals
 workstream: WS-01
 
@@ -166,3 +172,17 @@ NO file under `.plan/local/orchestrator/` other than its own `inbox/{sender}-{se
 orchestrator owns every other ledger write — and reports its outcome through its PR and its inbox
 message. The inbox exception's qualifiers and the sole sanctioned write mechanism are stated in
 `persona-plan-orchestrator/standards/orchestration-model.md` § Ledger Write-Boundary.
+
+## Recurrence — 2026-09-28 (fold, spec stays parked)
+
+Source: `process-compliance` inbox `process-compliance-002` (drained 2026-09-28; run-reported by PLAN-13, not re-verified by the sender). No surface change (parked).
+
+- **Harness ceiling vs "do not background the daemon wait".** `await-long-running.md` forbids `run_in_background` /
+  `sleep` for the build wait, but every orchestrator-tier build in PLAN-13 exceeded the harness's 600 s per-call
+  ceiling (resolved budgets 745–1437 s), so the harness backgrounded each call anyway — the rule cannot be honoured
+  as written. Invariant for PM-MCP: a build wait is a bounded poll shorter than the host's call ceiling, with an
+  explicit re-poll.
+- **ci-complete wait clamps at 569 s against a ~25 min `verify` job.** The first two waits returned
+  `wait_failed / ci_final_status: timeout` with every check still IN_PROGRESS and none failed; ci-verify would file
+  them as `ci_timeout` findings. Recurrence of 169.Folded / 219.D10: a non-terminal in-progress run is "pending,
+  re-wait", never a timeout verdict.

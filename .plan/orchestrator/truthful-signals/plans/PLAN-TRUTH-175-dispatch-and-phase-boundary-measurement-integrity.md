@@ -1,5 +1,11 @@
 # PLAN-TRUTH-175: dispatch and phase-boundary measurement integrity — five confident zeros over unmeasured populations
 
+> ⛔⛔ **SUPERSEDED BY PM-MCP (2026-09-26, operator decision; row status `parked`).** `plan-marshall-mcp` replaces both the
+> process prose and the Python scripts this plan edits, so implementing it here is legacy work. Its
+> implementation-independent content (rules, invariants, classifications, data, fixtures) was extracted to
+> `plan-marshall-mcp/doc/implementation-watch/` (absorbed there from `doc/known-defects/truthful-signals-carry-over.md`) as PM-MCP input.
+> **Do NOT emit; un-park only by explicit operator decision.** The spec body below stays intact as the evidence chain.
+
 epic: truthful-signals
 workstream: WS-01
 
@@ -109,3 +115,14 @@ The plan implementing this spec touches only its own repository source and tests
 and edits NO file under `.plan/orchestrator/` other than its own
 `inbox/{sender}-{seq}` message — the orchestrator owns every other ledger write — and reports
 its outcome through its PR and its inbox message.
+
+## Recurrence — 2026-09-28 (fold, spec stays parked)
+
+Source: `process-compliance` inbox `process-compliance-002` (drained 2026-09-28; run-reported by PLAN-13, not re-verified by the sender) (candidate lesson "Forward step_id and emit DISPATCH on every finalize and execute dispatch record").
+New facet beside 175.D4's `[DISPATCH]` emission gap: in plan-13-finalize-mechanism-defects 25 of 30 `6-finalize`
+and 8 of 9 `5-execute` dispatch-boundary rows carried no `--step-id`, so `check-dispatch-audit`
+`firing_comparison` paired only 3 of 30 finalize dispatches (`paired_firings: 3`) and fell back to timestamp
+windows; 7 finalize steps had token proof of a dispatched envelope but only 4 finalize-dispatcher `[DISPATCH]`
+lines (`missing_dispatch_emission: 3`, a floor; `channel_completeness.confidence: low`). Invariant for PM-MCP: every
+dispatch record carries its step identity by construction; a keyless row in a phase whose dispatches always have a
+step key is refused or flagged, never silently accepted.
