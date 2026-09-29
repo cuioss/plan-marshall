@@ -917,8 +917,12 @@ def main() -> int:
             total_content_stats['excluded_count'] += stats['excluded_count']
         existing = by_name.get(flat_bundle['name'])
         if existing is not None:
-            existing['skills'].extend(skills)
-            existing['scripts'].extend(scripts)
+            # A skill (or script notation) deployed in both shapes is listed once:
+            # the nested entry already carries it.
+            known_skills = {skill['name'] for skill in existing['skills']}
+            known_notations = {script['notation'] for script in existing['scripts']}
+            existing['skills'].extend(skill for skill in skills if skill['name'] not in known_skills)
+            existing['scripts'].extend(script for script in scripts if script['notation'] not in known_notations)
             continue
         flat_bundle['skills'] = skills
         flat_bundle['scripts'] = scripts

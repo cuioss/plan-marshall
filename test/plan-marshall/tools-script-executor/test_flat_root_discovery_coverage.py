@@ -216,6 +216,33 @@ class TestScannerFlatEntries:
         assert all(not bundle.get('skills') for bundle in payload['bundles'].values())
         assert payload['statistics']['total_skills'] == 0
 
+    def test_a_matching_content_filter_keeps_the_flat_skills(self, tmp_path, monkeypatch, capsys):
+        """Positive control: a flat row without a path would be dropped by ANY filter, matching or not."""
+        base = _deployed_flat_root(tmp_path)
+        monkeypatch.chdir(tmp_path)
+
+        payload = _scan_json(
+            base, monkeypatch, capsys, '--resource-types', 'skills', '--full', '--content-pattern', 'metadata:'
+        )
+
+        assert payload['statistics']['total_skills'] == 3
+
+    def test_a_skill_in_both_shapes_is_listed_once(self, tmp_path, monkeypatch, capsys):
+        """Merging a nested and a flat entry must not list the same skill twice."""
+        base = _nested_root(tmp_path)
+        _flat_skill(base / 'skills', BUNDLE, 'manage-status', {'manage-status.py': '#'})
+        monkeypatch.chdir(tmp_path)
+
+        payload = _scan_json(base, monkeypatch, capsys, '--resource-types', 'skills,scripts')
+        bundle = payload['bundles'][BUNDLE]
+
+        assert [skill if isinstance(skill, str) else skill['name'] for skill in bundle['skills']].count(
+            'manage-status'
+        ) == 1
+        assert [script['notation'] for script in bundle['scripts']].count(
+            'plan-marshall:manage-status:manage-status'
+        ) == 1
+
 
 class TestAnUnreadableFlatRootFailsClosed:
     def test_an_unattributed_skill_is_counted_not_guessed(self, tmp_path):
