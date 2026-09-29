@@ -78,7 +78,9 @@ def registered_target_names() -> list[str]:
     """
     from marketplace.targets import TARGET_REGISTRY
 
-    return sorted(name for name, target_cls in TARGET_REGISTRY.items() if target_cls.emits_bundle_tree)
+    # ``emits_bundle_tree`` is an instance property; reading it off the class would
+    # yield the property object, which is always truthy.
+    return sorted(name for name, target_cls in TARGET_REGISTRY.items() if target_cls().emits_bundle_tree)
 
 
 def unevaluated_targets(trees: dict[str, Path]) -> list[str]:

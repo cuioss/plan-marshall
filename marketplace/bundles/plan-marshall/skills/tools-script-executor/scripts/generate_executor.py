@@ -214,8 +214,8 @@ from marketplace_bundles import (  # noqa: E402
     resolve_bundle_path,
 )
 from marketplace_paths import MARKETPLACE_BUNDLES_PATH  # noqa: E402
-from marketplace_paths import get_base_path as _shared_get_base_path  # noqa: E402
 from marketplace_paths import _bundle_cache_roots_for as _shared_bundle_cache_roots_for  # noqa: E402
+from marketplace_paths import get_base_path as _shared_get_base_path  # noqa: E402
 from marketplace_paths import get_project_skill_roots as _shared_get_project_skill_roots  # noqa: E402
 
 # The single target/context resolver. Every target-resolving verb routes
