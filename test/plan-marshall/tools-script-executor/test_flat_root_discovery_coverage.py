@@ -236,9 +236,7 @@ class TestScannerFlatEntries:
         payload = _scan_json(base, monkeypatch, capsys, '--resource-types', 'skills,scripts')
         bundle = payload['bundles'][BUNDLE]
 
-        assert [skill if isinstance(skill, str) else skill['name'] for skill in bundle['skills']].count(
-            'manage-status'
-        ) == 1
+        assert [skill['name'] for skill in bundle['skills']].count('manage-status') == 1
         assert [script['notation'] for script in bundle['scripts']].count(
             'plan-marshall:manage-status:manage-status'
         ) == 1
