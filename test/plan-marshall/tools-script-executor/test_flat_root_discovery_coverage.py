@@ -227,6 +227,19 @@ class TestScannerFlatEntries:
 
         assert payload['statistics']['total_skills'] == 3
 
+    def test_content_filter_stats_count_what_is_listed_for_a_skill_in_both_shapes(self, tmp_path, monkeypatch, capsys):
+        """A de-duplicated flat row must not be counted by the filter it never reached the listing through."""
+        base = _nested_root(tmp_path)
+        _flat_skill(base / 'skills', BUNDLE, 'manage-status', {'manage-status.py': '#'})
+        monkeypatch.chdir(tmp_path)
+
+        payload = _scan_json(
+            base, monkeypatch, capsys, '--resource-types', 'skills,scripts', '--full', '--content-pattern', 'name:'
+        )
+        listed = sum(len(bundle.get('skills', [])) + len(bundle.get('scripts', [])) for bundle in payload['bundles'].values())
+
+        assert payload['content_filter_stats']['matched_count'] == listed
+
     def test_a_skill_in_both_shapes_is_listed_once(self, tmp_path, monkeypatch, capsys):
         """Merging a nested and a flat entry must not list the same skill twice."""
         base = _nested_root(tmp_path)

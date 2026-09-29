@@ -910,19 +910,23 @@ def main() -> int:
             continue
         skills = filter_resources_by_pattern(flat_bundle['skills'], name_patterns)
         scripts = filter_resources_by_pattern(flat_bundle['scripts'], name_patterns)
+        existing = by_name.get(flat_bundle['name'])
+        if existing is not None:
+            # A skill (or script notation) deployed in both shapes is listed once:
+            # the nested entry already carries it. De-duplicated BEFORE the content
+            # filter, so the filter's stats count exactly the rows that are listed.
+            known_skills = {skill['name'] for skill in existing['skills']}
+            known_notations = {script['notation'] for script in existing['scripts']}
+            skills = [skill for skill in skills if skill['name'] not in known_skills]
+            scripts = [script for script in scripts if script['notation'] not in known_notations]
         if content_include or content_exclude:
             skills, stats = filter_resources_by_content(skills, content_include, content_exclude)
             total_content_stats['input_count'] += stats['input_count'] + len(scripts)
             total_content_stats['matched_count'] += stats['matched_count'] + len(scripts)
             total_content_stats['excluded_count'] += stats['excluded_count']
-        existing = by_name.get(flat_bundle['name'])
         if existing is not None:
-            # A skill (or script notation) deployed in both shapes is listed once:
-            # the nested entry already carries it.
-            known_skills = {skill['name'] for skill in existing['skills']}
-            known_notations = {script['notation'] for script in existing['scripts']}
-            existing['skills'].extend(skill for skill in skills if skill['name'] not in known_skills)
-            existing['scripts'].extend(script for script in scripts if script['notation'] not in known_notations)
+            existing['skills'].extend(skills)
+            existing['scripts'].extend(scripts)
             continue
         flat_bundle['skills'] = skills
         flat_bundle['scripts'] = scripts
