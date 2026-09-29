@@ -236,7 +236,9 @@ class TestScannerFlatEntries:
         payload = _scan_json(
             base, monkeypatch, capsys, '--resource-types', 'skills,scripts', '--full', '--content-pattern', 'name:'
         )
-        listed = sum(len(bundle.get('skills', [])) + len(bundle.get('scripts', [])) for bundle in payload['bundles'].values())
+        listed = sum(
+            len(bundle.get('skills', [])) + len(bundle.get('scripts', [])) for bundle in payload['bundles'].values()
+        )
 
         assert payload['content_filter_stats']['matched_count'] == listed
 
