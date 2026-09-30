@@ -4,7 +4,8 @@
 Plan-marshall helper script for mode detection and documentation checks.
 
 Subcommands:
-    mode                          Determine wizard vs menu mode based on existing files
+    mode                          Determine wizard vs menu mode based on existing files and harness state
+    check-harness                 Verify active harness configuration
     check-docs                    Check if project docs need .plan/temp documentation
     fix-docs                      Deterministically fix missing documentation content
     check-structure               Check if the per-module project-architecture layout exists
@@ -26,6 +27,7 @@ executor exists).
 
 Usage:
     python3 determine_mode.py mode
+    python3 determine_mode.py check-harness [--harness {claude,opencode,antigravity}]
     python3 determine_mode.py check-docs
     python3 determine_mode.py fix-docs
     python3 determine_mode.py check-structure
@@ -36,8 +38,31 @@ Usage:
 
 Output (TOON format):
     mode subcommand:
+        status	success
         mode	wizard
         reason	executor_missing
+        harness	antigravity
+        target_source	env
+        harness_configured	false
+        harness_reason	harness_config_missing
+
+    check-harness subcommand:
+        status	success
+        harness	antigravity
+        target_source	env
+        configured	true
+        reason	configured
+        config_path	/abs/path/to/.plan/local/harness/antigravity.json
+        dist_manifest_sha	<sha256>
+
+        # When unconfigured or stale:
+        status	success
+        harness	antigravity
+        target_source	env
+        configured	false
+        reason	harness_config_missing
+        action_required	configure_harness
+        config_path	/abs/path/to/.plan/local/harness/antigravity.json
 
     check-docs subcommand:
         status	ok
@@ -116,10 +141,12 @@ Output (TOON format):
 """
 
 import argparse
+import hashlib
 import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 # Bootstrap sys.path — this script runs before the executor sets up PYTHONPATH.
 # Step 1: locate script-shared/scripts via identity walk so we can import the
@@ -139,10 +166,15 @@ for _ancestor in Path(__file__).resolve().parents:
         break
 
 from marketplace_bundles import resolve_skills_root  # noqa: E402
-from marketplace_paths import agent_instructions_filename, iter_project_skill_dirs  # noqa: E402
+from marketplace_paths import (  # noqa: E402
+    agent_instructions_filename,
+    iter_project_skill_dirs,
+    resolve_main_anchored_path,
+)
+from target_context import SOURCE_EXPLICIT, resolve_target  # noqa: E402
 
 _SKILLS_DIR = resolve_skills_root(Path(__file__))
-for _lib in ('ref-toon-format',):
+for _lib in ('ref-toon-format', 'tools-file-ops', 'platform-runtime', 'tools-script-executor'):
     _lib_path = _SKILLS_DIR / _lib / 'scripts'
     if not _lib_path.is_dir():
         _lib_path = _SKILLS_DIR / f'plan-marshall-{_lib}' / 'scripts'
@@ -194,9 +226,242 @@ FIX_CONTENT: dict[str, str] = {
 }
 
 
-def determine_mode(plan_dir: Path) -> tuple[str, str]:
+def _sha256_of_file(path: Path) -> str:
+    """Compute the SHA-256 hex digest of a file."""
+    h = hashlib.sha256()
+    with path.open('rb') as f:
+        while chunk := f.read(65536):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def resolve_harness_config_path(harness: str) -> Path:
+    """Resolve .plan/local/harness/{harness}.json anchored to the main checkout.
+
+    Uses resolve_main_anchored_path(f'harness/{harness}.json') with fallback
+    for non-git environments to get_base_dir() / 'harness' / f'{harness}.json'.
     """
-    Determine operational mode based on existing files.
+    subpath = f'harness/{harness}.json'
+    try:
+        return resolve_main_anchored_path(subpath)
+    except RuntimeError:
+        try:
+            from file_ops import get_base_dir
+
+            base = get_base_dir()
+            if base.name == 'local':
+                return base / subpath
+            return base / 'local' / subpath
+        except Exception:
+            return Path.cwd() / '.plan' / 'local' / subpath
+
+
+def check_harness_paths_valid(harness: str, project_dir: Path | None = None) -> bool:
+    """Check if the resolved harness bundle/skill root exists on disk."""
+    proj = project_dir or Path.cwd()
+    if (proj / 'marketplace' / 'bundles').is_dir():
+        return True
+
+    roots_to_check: list[Path] = []
+    if harness == 'antigravity':
+        roots_to_check.extend(
+            [
+                proj / '.agents' / 'skills',
+                proj / '.agents',
+                Path.home() / '.gemini' / 'config' / 'plugins' / 'plan-marshall' / 'skills',
+                Path.home() / '.gemini' / 'antigravity' / 'skills',
+                Path.home() / '.gemini' / 'config' / 'skills',
+            ]
+        )
+    elif harness == 'opencode':
+        roots_to_check.extend(
+            [
+                proj / '.opencode' / 'skills',
+                proj / '.opencode',
+                Path.home() / '.config' / 'opencode' / 'skills',
+                Path.home() / '.config' / 'opencode',
+            ]
+        )
+    elif harness == 'claude':
+        roots_to_check.extend(
+            [
+                proj / '.claude' / 'skills',
+                proj / '.claude',
+                Path.home() / '.claude' / 'plugins' / 'cache' / 'plan-marshall',
+            ]
+        )
+
+    try:
+        from platform_runtime import _make_runtime
+        from toon_parser import parse_toon
+
+        rt = _make_runtime(harness)
+        if rt is not None:
+            skill_roots_toon = parse_toon(rt.layout_skill_roots())
+            if isinstance(skill_roots_toon, dict) and 'roots' in skill_roots_toon:
+                for r in skill_roots_toon['roots']:
+                    roots_to_check.append(proj / r if not Path(r).is_absolute() else Path(r))
+            cache_roots_toon = parse_toon(rt.layout_bundle_cache_root())
+            if isinstance(cache_roots_toon, dict) and 'roots' in cache_roots_toon:
+                for r in cache_roots_toon['roots']:
+                    roots_to_check.append(Path(r))
+    except Exception:
+        pass
+
+    return any(p.exists() for p in roots_to_check)
+
+
+def compute_current_harness_sha(plan_dir: Path | None = None, harness: str | None = None) -> str:
+    """Compute the current SHA-256 for harness freshness checking.
+
+    Returns the SHA-256 of the installed bundle root's dist-manifest.json, or
+    SHA-256 of .plan/execute-script.py when running from a source checkout without
+    dist-manifest.json, or 'unbootstrapped' if neither is present.
+    """
+    if plan_dir is None:
+        plan_dir = Path('.plan')
+
+    target = harness or 'claude'
+    manifest_path: Path | None = None
+    try:
+        from generate_executor import find_installed_manifest_path
+
+        manifest_path = find_installed_manifest_path(_SKILLS_DIR, target=target)
+    except Exception:
+        pass
+
+    if manifest_path is not None and manifest_path.is_file():
+        return _sha256_of_file(manifest_path)
+
+    executor_file = plan_dir / 'execute-script.py'
+    if executor_file.is_file():
+        return _sha256_of_file(executor_file)
+
+    return 'unbootstrapped'
+
+
+def check_harness(
+    harness_override: str | None = None,
+    plan_dir: Path | None = None,
+    project_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Inspect and verify .plan/local/harness/{harness}.json.
+
+    Args:
+        harness_override: Optional harness identifier to check instead of
+            resolving from target_context.
+        plan_dir: Directory containing execute-script.py (default: .plan).
+        project_dir: Project root directory (default: cwd).
+
+    Returns:
+        TOON dict with harness verification result.
+    """
+    if plan_dir is None:
+        plan_dir = Path('.plan')
+    proj = project_dir or Path.cwd()
+
+    if harness_override is not None:
+        harness = harness_override
+        target_source = SOURCE_EXPLICIT
+    else:
+        resolved = resolve_target(proj)
+        harness = resolved['target']
+        target_source = resolved['target_source']
+
+    config_path = resolve_harness_config_path(harness)
+
+    if not config_path.is_file():
+        return {
+            'status': 'success',
+            'harness': harness,
+            'target_source': target_source,
+            'configured': False,
+            'reason': 'harness_config_missing',
+            'action_required': 'configure_harness',
+            'config_path': str(config_path),
+        }
+
+    try:
+        data = json.loads(config_path.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return {
+            'status': 'success',
+            'harness': harness,
+            'target_source': target_source,
+            'configured': False,
+            'reason': 'harness_config_invalid',
+            'action_required': 'configure_harness',
+            'config_path': str(config_path),
+        }
+
+    if (
+        not isinstance(data, dict)
+        or data.get('schema_version') != 1
+        or data.get('harness') != harness
+        or not isinstance(data.get('checks'), dict)
+        or not isinstance(data.get('dist_manifest_sha'), str)
+    ):
+        return {
+            'status': 'success',
+            'harness': harness,
+            'target_source': target_source,
+            'configured': False,
+            'reason': 'harness_config_invalid',
+            'action_required': 'configure_harness',
+            'config_path': str(config_path),
+        }
+
+    checks = data['checks']
+
+    executor_file = plan_dir / 'execute-script.py'
+    if not (checks.get('executor_ready') is True and executor_file.is_file()):
+        return {
+            'status': 'success',
+            'harness': harness,
+            'target_source': target_source,
+            'configured': False,
+            'reason': 'executor_missing',
+            'action_required': 'configure_harness',
+            'config_path': str(config_path),
+        }
+
+    if not (checks.get('harness_paths_valid') is True and check_harness_paths_valid(harness, proj)):
+        return {
+            'status': 'success',
+            'harness': harness,
+            'target_source': target_source,
+            'configured': False,
+            'reason': 'harness_paths_invalid',
+            'action_required': 'configure_harness',
+            'config_path': str(config_path),
+        }
+
+    current_sha = compute_current_harness_sha(plan_dir, harness)
+    if data['dist_manifest_sha'] != current_sha:
+        return {
+            'status': 'success',
+            'harness': harness,
+            'target_source': target_source,
+            'configured': False,
+            'reason': 'harness_config_stale',
+            'action_required': 'configure_harness',
+            'config_path': str(config_path),
+        }
+
+    return {
+        'status': 'success',
+        'harness': harness,
+        'target_source': target_source,
+        'configured': True,
+        'reason': 'configured',
+        'config_path': str(config_path),
+        'dist_manifest_sha': data['dist_manifest_sha'],
+    }
+
+
+def determine_mode(plan_dir: Path) -> dict[str, Any]:
+    """
+    Determine operational mode based on existing files and active harness.
 
     Both files live in the repo-local ``.plan/`` directory: marshal.json
     is tracked, and ``execute-script.py`` is the repo-local shim that
@@ -208,17 +473,30 @@ def determine_mode(plan_dir: Path) -> tuple[str, str]:
         plan_dir: Path to the repo-local ``.plan/`` directory.
 
     Returns:
-        Tuple of (mode, reason) where mode is 'wizard' or 'menu'
+        Dict carrying mode, reason, harness, target_source, harness_configured,
+        and harness_reason.
     """
-    executor_exists = (plan_dir / 'execute-script.py').exists()
-    marshal_exists = (plan_dir / 'marshal.json').exists()
+    executor_exists = (plan_dir / 'execute-script.py').is_file()
+    marshal_exists = (plan_dir / 'marshal.json').is_file()
 
     if not executor_exists:
-        return 'wizard', 'executor_missing'
+        mode, reason = 'wizard', 'executor_missing'
     elif not marshal_exists:
-        return 'wizard', 'marshal_missing'
+        mode, reason = 'wizard', 'marshal_missing'
     else:
-        return 'menu', 'both_exist'
+        mode, reason = 'menu', 'both_exist'
+
+    harness_info = check_harness(plan_dir=plan_dir)
+
+    return {
+        'status': 'success',
+        'mode': mode,
+        'reason': reason,
+        'harness': harness_info['harness'],
+        'target_source': harness_info['target_source'],
+        'harness_configured': harness_info['configured'],
+        'harness_reason': harness_info['reason'],
+    }
 
 
 def check_structure(plan_dir: Path) -> tuple[str, Path, int]:
@@ -555,9 +833,12 @@ def cmd_fix_docs(args: argparse.Namespace) -> dict:
 def cmd_mode(args: argparse.Namespace) -> dict:
     """Handle the 'mode' subcommand."""
     plan_dir = Path(args.plan_dir)
-    mode, reason = determine_mode(plan_dir)
+    return determine_mode(plan_dir)
 
-    return {'status': 'success', 'mode': mode, 'reason': reason}
+
+def cmd_check_harness(args: argparse.Namespace) -> dict:
+    """Handle the 'check-harness' subcommand."""
+    return check_harness(harness_override=args.harness, plan_dir=Path(args.plan_dir))
 
 
 def cmd_check_docs(args: argparse.Namespace) -> dict:
@@ -987,6 +1268,25 @@ def main() -> int:
     mode_parser = subparsers.add_parser('mode', help='Determine wizard vs menu mode', allow_abbrev=False)
     mode_parser.add_argument('--plan-dir', type=str, default='.plan', help='Directory to check (default: .plan)')
 
+    # check-harness subcommand
+    harness_parser = subparsers.add_parser(
+        'check-harness',
+        help='Verify active harness configuration',
+        allow_abbrev=False,
+    )
+    harness_parser.add_argument(
+        '--harness',
+        choices=['claude', 'opencode', 'antigravity'],
+        default=None,
+        help='Explicit harness override (default: resolved from environment/config)',
+    )
+    harness_parser.add_argument(
+        '--plan-dir',
+        type=str,
+        default='.plan',
+        help='Directory to check (default: .plan)',
+    )
+
     # check-docs subcommand
     docs_parser = subparsers.add_parser(
         'check-docs', help='Check if project docs need .plan/temp documentation', allow_abbrev=False
@@ -1085,6 +1385,8 @@ def main() -> int:
 
     if args.command == 'mode':
         result = cmd_mode(args)
+    elif args.command == 'check-harness':
+        result = cmd_check_harness(args)
     elif args.command == 'check-docs':
         result = cmd_check_docs(args)
     elif args.command == 'fix-docs':

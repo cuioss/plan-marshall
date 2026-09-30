@@ -34,20 +34,22 @@ dm = load_script_module('plan-marshall', 'marshall-steward', 'determine_mode.py'
 
 def test_determine_mode_wizard_when_executor_missing(tmp_path: Path):
     """determine_mode returns wizard/executor_missing when the shim is absent."""
-    mode, reason = dm.determine_mode(tmp_path)
+    result = dm.determine_mode(tmp_path)
 
-    assert mode == 'wizard'
-    assert reason == 'executor_missing'
+    assert result['mode'] == 'wizard'
+    assert result['reason'] == 'executor_missing'
+    assert 'harness' in result
+    assert 'harness_configured' in result
 
 
 def test_determine_mode_wizard_when_marshal_missing(tmp_path: Path):
     """determine_mode returns wizard/marshal_missing when only the executor exists."""
     (tmp_path / 'execute-script.py').write_text('# shim')
 
-    mode, reason = dm.determine_mode(tmp_path)
+    result = dm.determine_mode(tmp_path)
 
-    assert mode == 'wizard'
-    assert reason == 'marshal_missing'
+    assert result['mode'] == 'wizard'
+    assert result['reason'] == 'marshal_missing'
 
 
 def test_determine_mode_menu_when_both_present(tmp_path: Path):
@@ -55,10 +57,10 @@ def test_determine_mode_menu_when_both_present(tmp_path: Path):
     (tmp_path / 'execute-script.py').write_text('# shim')
     (tmp_path / 'marshal.json').write_text('{}')
 
-    mode, reason = dm.determine_mode(tmp_path)
+    result = dm.determine_mode(tmp_path)
 
-    assert mode == 'menu'
-    assert reason == 'both_exist'
+    assert result['mode'] == 'menu'
+    assert result['reason'] == 'both_exist'
 
 
 # =============================================================================

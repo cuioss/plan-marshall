@@ -709,7 +709,8 @@ def resolve_main_anchored_path(subpath: str | Path) -> Path:
     cross-session shared state MUST route through this function rather than
     re-implementing git-common-dir resolution. The bounded set of main-RESIDENT
     corpora is exactly: ``merge.lock``, ``run-configuration.json``,
-    ``lessons-learned``, ``merge-queue.json``, ``plans/NO_PLAN/build-results``
+    ``lessons-learned``, ``merge-queue.json``, ``harness/`` (REQ-STEW-2),
+    ``plans/NO_PLAN/build-results``
     (the plan-less build's results, which belong to no worktree — see
     ``file_ops.get_build_results_dir``). (Machine-global state such as
     ``build-queue.json`` and ``credentials/`` is NOT in this set — it anchors to

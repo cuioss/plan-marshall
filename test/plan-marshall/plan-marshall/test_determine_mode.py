@@ -133,9 +133,9 @@ class TestModeSubcommand:
         """Test the raw determine_mode function."""
         plan_dir = tmp_path / '.plan'
         plan_dir.mkdir(parents=True)
-        mode, reason = determine_mode(plan_dir)
-        assert mode == 'wizard'
-        assert reason == 'executor_missing'
+        result = determine_mode(plan_dir)
+        assert result['mode'] == 'wizard'
+        assert result['reason'] == 'executor_missing'
 
 
 class TestCheckDocsSubcommand:
@@ -367,8 +367,8 @@ class TestSubcommandRequired:
         assert result.success, f'Script failed: {result.stderr}'
 
         lines = result.stdout.strip().split('\n')
-        # status, mode, reason = 3 lines
-        assert len(lines) == 3
+        # status, mode, reason, harness, target_source, harness_configured, harness_reason = 7 lines
+        assert len(lines) == 7
         for line in lines:
             assert ': ' in line, f'Line should contain colon-space separator: {line}'
 
