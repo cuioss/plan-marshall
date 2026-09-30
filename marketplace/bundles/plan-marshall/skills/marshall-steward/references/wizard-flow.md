@@ -198,6 +198,23 @@ python3 -m py_compile .plan/execute-script.py
 
 **Output**: "Executor ready with N script mappings"
 
+**Configure local harness state**:
+Once the executor is ready, invoke `configure_harness` to record the active harness state, verify paths and emitted rules, and persist `.plan/local/harness/{harness}.json`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:configure_harness
+```
+
+**Output (TOON)**:
+```toon
+status	success
+harness	antigravity
+target_source	env
+configured	true
+config_path	.plan/local/harness/antigravity.json
+dist_manifest_sha	<sha256>
+```
+
 **NOTE**: From this point on, all script calls use: `python3 .plan/execute-script.py {notation} ...`
 
 ---

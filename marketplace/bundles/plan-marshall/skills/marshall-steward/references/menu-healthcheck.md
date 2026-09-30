@@ -308,6 +308,40 @@ A fresh install with no resolvable manifest reports `executor_action: fresh` / `
 
 ---
 
+## Step 6e: Check Harness Configuration
+
+Verify active harness configuration status:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode check-harness
+```
+
+**Interpret results**:
+- `configured: true` → Active harness configuration is valid and fresh PASS
+- `configured: false` → Harness not configured or stale. The `reason` field indicates the cause (`harness_config_missing`, `harness_config_stale`, `harness_paths_invalid`, `executor_missing`).
+
+When unconfigured or stale, offer to configure:
+```text
+AskUserQuestion:
+  question: "Active harness ({harness}) configuration is {reason}. Configure it now?"
+  options:
+    - label: "Configure"
+      description: "Run configure_harness to write .plan/local/harness/{harness}.json"
+      value: "configure"
+    - label: "Skip"
+      description: "Leave harness unconfigured"
+      value: "skip"
+```
+
+If the user chooses **Configure**:
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:configure_harness
+```
+
+Include `harness` in the Step 7 summary TOON (e.g., `harness: {target: antigravity, configured: true}`).
+
+---
+
 ## Step 7: Summary
 
 Output health check summary. Use `status: success` and `overall: HEALTHY` when all checks passed. Use `status: warning` and `overall: DEGRADED` when any check reported issues.
@@ -337,6 +371,9 @@ ci:
   tool_ready: true
 terminal_title:
   hook_installed: true
+harness:
+  target: antigravity
+  configured: true
 
 overall: HEALTHY
 ```
@@ -366,6 +403,10 @@ ci:
   tool_ready: false
 terminal_title:
   hook_installed: false
+harness:
+  target: antigravity
+  configured: false
+  reason: harness_config_missing
 
 issues:
   - Executor drift detected (regenerate recommended)
@@ -375,6 +416,7 @@ issues:
   - Project structure not configured
   - CI tool 'gh' not authenticated
   - Terminal title SessionStart hook not installed
+  - Active harness not configured (run configure_harness)
 
 fixes_available: true
 ```
