@@ -134,7 +134,7 @@ if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
 fi
 
 if [ -z "$TARGET_DIR" ]; then
-  if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/plan-marshall-install.sh" ] && [ "$UNINSTALL" = true ]; then
+  if [ -n "$SCRIPT_DIR" ] && ([ -f "$SCRIPT_DIR/plan-marshall-install.sh" ] || [ -f "$SCRIPT_DIR/.plan-marshall-manifest.json" ]) && ([ "$UNINSTALL" = true ] || [ "$UPDATE" = true ]); then
     TARGET_DIR="$SCRIPT_DIR"
   elif [ "$SCOPE" = "workspace" ]; then
     TARGET_DIR="${DEFAULT_WORKSPACE_DIR}"
@@ -496,7 +496,15 @@ def tailor_config(
                     for b in installed_bundles:
                         for a in bundle_components.get(b, {}).get('agents', []):
                             allowed_stems.add(Path(a).stem)
-                    data['agent'] = {k: v for k, v in data['agent'].items() if k in allowed_stems}
+                    all_pm_stems = {
+                        Path(a).stem
+                        for comp in bundle_components.values()
+                        for a in comp.get('agents', [])
+                    }
+                    data['agent'] = {
+                        k: v for k, v in data['agent'].items()
+                        if k not in all_pm_stems or k in allowed_stems
+                    }
                     opencode_path.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
             except Exception:
                 pass
@@ -517,11 +525,12 @@ def do_selective_uninstall(
     installed_bundles = list(manifest.get('installed_bundles', []))
     comps = load_bundle_components(source_dir, target_name)
     available_bundles = set(comps.keys()) | set(installed_bundles)
+    core_bundles = {'plan-marshall'} | ({f'plan-marshall-{target_name}'} & available_bundles)
 
     tokens = [t.strip() for t in bundles_csv.split(',') if t.strip()]
     to_remove = set()
     for token in tokens:
-        if token == 'core' or token == 'plan-marshall':
+        if token == 'core' or token in core_bundles:
             sys.stderr.write("Error: Cannot uninstall mandatory core bundle 'plan-marshall'\n")
             sys.exit(2)
         elif token == 'all':
@@ -535,7 +544,7 @@ def do_selective_uninstall(
             sys.stderr.write(f"Error: Unknown bundle or alias: '{token}'\n")
             sys.exit(2)
 
-    if 'plan-marshall' in to_remove:
+    if any(c in to_remove for c in core_bundles):
         sys.stderr.write("Error: Cannot uninstall mandatory core bundle 'plan-marshall'\n")
         sys.exit(2)
 

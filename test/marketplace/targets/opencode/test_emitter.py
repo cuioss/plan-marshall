@@ -500,6 +500,10 @@ def test_install_core_only(multi_bundle_repo: Path, tmp_path: Path, opencode_con
     _write(out / 'dist-manifest.json', json.dumps({'version': '1.0.0'}) + '\n')
 
     dest = tmp_path / 'installed'
+    _write(
+        dest / 'opencode.json',
+        json.dumps({'agent': {'my-custom-agent': {'description': 'user agent'}}}, indent=2) + '\n',
+    )
     subprocess.run([str(out / 'install.sh'), '--target-dir', str(dest), '--core-only'], check=True)
 
     assert (dest / 'skills' / 'plan-marshall-core-skill').is_dir()
@@ -507,6 +511,9 @@ def test_install_core_only(multi_bundle_repo: Path, tmp_path: Path, opencode_con
     assert (dest / 'commands' / 'core-cmd.md').is_file()
     assert not (dest / 'skills' / 'pm-dev-java-java-skill').exists()
     assert not (dest / 'skills' / 'pm-dev-python-python-skill').exists()
+
+    opencode_doc = json.loads((dest / 'opencode.json').read_text(encoding='utf-8'))
+    assert 'my-custom-agent' in opencode_doc.get('agent', {}), 'User-defined custom agents must be preserved'
 
     manifest = json.loads((dest / '.plan-marshall-manifest.json').read_text(encoding='utf-8'))
     assert manifest['schema_version'] == 1

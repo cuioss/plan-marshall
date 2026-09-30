@@ -134,7 +134,7 @@ if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
 fi
 
 if [ -z "$TARGET_DIR" ]; then
-  if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/plugin.json" ] && [ "$UNINSTALL" = true ]; then
+  if [ -n "$SCRIPT_DIR" ] && ([ -f "$SCRIPT_DIR/.install-manifest.json" ] || [ -f "$SCRIPT_DIR/plugin.json" ]) && ([ "$UNINSTALL" = true ] || [ "$UPDATE" = true ]); then
     TARGET_DIR="$SCRIPT_DIR"
   elif [ "$SCOPE" = "workspace" ]; then
     TARGET_DIR="${DEFAULT_WORKSPACE_DIR}"
@@ -201,7 +201,7 @@ if [ "$UNINSTALL" = true ] && [ -n "$BUNDLES" ]; then
   else
     SOURCE_DIR="$TARGET_DIR"
   fi
-elif [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/plugin.json" ] && [ -d "$SCRIPT_DIR/skills" ]; then
+elif [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/plugin.json" ] && [ -d "$SCRIPT_DIR/skills" ] && [ ! -f "$SCRIPT_DIR/.install-manifest.json" ]; then
   SOURCE_DIR="$SCRIPT_DIR"
   echo "Installing Plan Marshall Antigravity plugin from local source: $SOURCE_DIR"
 else
@@ -525,11 +525,12 @@ def do_selective_uninstall(
     installed_bundles = list(manifest.get('installed_bundles', []))
     comps = load_bundle_components(source_dir, target_name)
     available_bundles = set(comps.keys()) | set(installed_bundles)
+    core_bundles = {'plan-marshall'} | ({f'plan-marshall-{target_name}'} & available_bundles)
 
     tokens = [t.strip() for t in bundles_csv.split(',') if t.strip()]
     to_remove = set()
     for token in tokens:
-        if token == 'core' or token == 'plan-marshall':
+        if token == 'core' or token in core_bundles:
             sys.stderr.write("Error: Cannot uninstall mandatory core bundle 'plan-marshall'\n")
             sys.exit(2)
         elif token == 'all':
@@ -543,7 +544,7 @@ def do_selective_uninstall(
             sys.stderr.write(f"Error: Unknown bundle or alias: '{token}'\n")
             sys.exit(2)
 
-    if 'plan-marshall' in to_remove:
+    if any(c in to_remove for c in core_bundles):
         sys.stderr.write("Error: Cannot uninstall mandatory core bundle 'plan-marshall'\n")
         sys.exit(2)
 
