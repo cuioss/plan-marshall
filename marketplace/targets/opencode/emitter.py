@@ -38,6 +38,7 @@ import json
 import shutil
 from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
+from typing import Any
 
 from marketplace.targets.component_targets import (
     EXCLUDED_DIR_NAMES,
@@ -70,6 +71,7 @@ _INSTALL_SCRIPT_TEMPLATE = _TEMPLATES_DIR / 'install.sh'
 #: module that needs it, and importing the class from ``target.py`` (which
 #: imports this module) would close a cycle.
 OPENCODE_TARGET_NAME = 'opencode'
+BUNDLE_COMPONENTS_FILENAME = 'bundle-components.json'
 
 # Sub-directories that are copied verbatim alongside SKILL.md so the
 # generated skill remains self-contained at runtime.
@@ -234,10 +236,10 @@ def _emit_skill(
     rules: dict[str, list[str]],
     body_transformer: BodyTransformer,
     written: list[Path],
-) -> None:
+) -> tuple[str, str | None] | None:
     skill_md = skill_dir / 'SKILL.md'
     if not skill_md.exists():
-        return
+        return None
     skill_name = skill_dir.name
     content = skill_md.read_text(encoding='utf-8')
     fm, body = parse_frontmatter(content)
@@ -269,6 +271,8 @@ def _emit_skill(
                 written=written,
             )
 
+    skill_rel = f'skill/{bundle_name}-{skill_name}'
+    wrapper_rel: str | None = None
     # Dual-emit: user-invocable: true skills also get a command wrapper.
     if _is_user_invocable(fm):
         _emit_user_invocable_wrapper(
@@ -279,6 +283,9 @@ def _emit_skill(
             output_dir=output_dir,
             written=written,
         )
+        wrapper_rel = f'command/{bundle_name}-{skill_name}.md'
+
+    return skill_rel, wrapper_rel
 
 
 def _is_user_invocable(fm: dict[str, str]) -> bool:
@@ -354,9 +361,9 @@ def _emit_agent(
     written: list[Path],
     agent_index: dict[str, dict[str, str]],
     level_pins: dict[str, str] | None = None,
-) -> None:
+) -> list[str]:
     if not agent_md.exists():
-        return
+        return []
     content = agent_md.read_text(encoding='utf-8')
     fm, body = parse_frontmatter(content)
     source_label = f'agents/{bundle_name}/{agent_md.name}'
@@ -374,6 +381,7 @@ def _emit_agent(
     # the agent identifier matches OpenCode's CLI / config conventions.
     agent_id = agent_md.stem
     agent_index[agent_id] = {'bundle': bundle_name, 'source': source_label}
+    agent_rels = [f'agent/{agent_md.name}']
 
     # Role-eligible agents (dynamic-level-executor extension point) also emit
     # per-level variant files alongside the canonical one, so
@@ -400,6 +408,9 @@ def _emit_agent(
                 'bundle': bundle_name,
                 'source': source_label,
             }
+            agent_rels.append(f'agent/{agent_id}-{level}.md')
+
+    return agent_rels
 
 
 def _emit_command(
@@ -409,9 +420,9 @@ def _emit_command(
     rules: dict[str, list[str]],
     body_transformer: BodyTransformer,
     written: list[Path],
-) -> None:
+) -> str | None:
     if not command_md.exists():
-        return
+        return None
     content = command_md.read_text(encoding='utf-8')
     fm, body = parse_frontmatter(content)
     source_label = f'commands/{bundle_name}/{command_md.name}'
@@ -424,6 +435,7 @@ def _emit_command(
     target_command = command_dir / command_md.name
     target_command.write_text(new_fm + '\n\n' + new_body, encoding='utf-8')
     written.append(target_command)
+    return f'command/{command_md.name}'
 
 
 def _resolve_skill_dirs(bundle_dir: Path, plugin_config: dict) -> list[Path]:
@@ -489,6 +501,23 @@ def _generate_opencode_json(
     if agent_index:
         config['agent'] = {agent_id: {} for agent_id in sorted(agent_index)}
     config_path = output_dir / 'opencode.json'
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps(config, indent=2) + '\n', encoding='utf-8')
+    return config_path
+
+
+def _generate_bundle_components_json(
+    output_dir: Path,
+    target_name: str,
+    bundle_components: dict[str, dict[str, list[str]]],
+) -> Path:
+    """Write OpenCode ``bundle-components.json`` component attribution manifest."""
+    config: dict[str, Any] = {
+        'schema_version': 1,
+        'target': target_name,
+        'bundles': {k: bundle_components[k] for k in sorted(bundle_components)},
+    }
+    config_path = output_dir / BUNDLE_COMPONENTS_FILENAME
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(json.dumps(config, indent=2) + '\n', encoding='utf-8')
     return config_path
@@ -561,6 +590,7 @@ def emit_bundles(
 
     written: list[Path] = []
     agent_index: dict[str, dict[str, str]] = {}
+    bundle_components: dict[str, dict[str, list[str]]] = {}
 
     for bundle_dir in iter_bundle_dirs(marketplace_dir, bundle_list):
         plugin_config = _read_plugin_json(bundle_dir)
@@ -572,6 +602,10 @@ def emit_bundles(
         # same predicate.
         excluded = excluded_emission_roots(bundle_dir, target_name)
 
+        skills: list[str] = []
+        agents: list[str] = []
+        commands: list[str] = []
+
         for skill_dir in _resolve_skill_dirs(bundle_dir, plugin_config):
             # A skill's scope is declared on its manifest and governs the whole
             # directory — the verbatim sub-directories and the user-invocable
@@ -579,7 +613,7 @@ def emit_bundles(
             # ``_emit_skill``.
             if not emits_to(skill_dir / 'SKILL.md', target_name):
                 continue
-            _emit_skill(
+            skill_res = _emit_skill(
                 bundle_name,
                 skill_dir,
                 output_dir,
@@ -590,11 +624,16 @@ def emit_bundles(
                 transform_body,
                 written,
             )
+            if skill_res is not None:
+                skill_rel, wrapper_rel = skill_res
+                skills.append(skill_rel)
+                if wrapper_rel is not None:
+                    commands.append(wrapper_rel)
 
         for agent_md in _resolve_md_components(bundle_dir, plugin_config, 'agents', 'agents'):
             if not emits_to(agent_md, target_name):
                 continue
-            _emit_agent(
+            agent_rels = _emit_agent(
                 bundle_name,
                 agent_md,
                 output_dir,
@@ -605,11 +644,20 @@ def emit_bundles(
                 agent_index,
                 level_pins,
             )
+            agents.extend(agent_rels)
 
         for command_md in _resolve_md_components(bundle_dir, plugin_config, 'commands', 'commands'):
             if not emits_to(command_md, target_name):
                 continue
-            _emit_command(bundle_name, command_md, output_dir, rules, transform_body, written)
+            cmd_rel = _emit_command(bundle_name, command_md, output_dir, rules, transform_body, written)
+            if cmd_rel is not None:
+                commands.append(cmd_rel)
+
+        bundle_components[bundle_name] = {
+            'skills': sorted(skills),
+            'agents': sorted(agents),
+            'commands': sorted(commands),
+        }
 
     # Emit root installer script from template
     if not _INSTALL_SCRIPT_TEMPLATE.is_file():
@@ -634,6 +682,7 @@ def emit_bundles(
     written.append(readme_target)
 
     written.append(_generate_opencode_json(output_dir, agent_index))
+    written.append(_generate_bundle_components_json(output_dir, target_name, bundle_components))
 
     # Prune stale outputs so a component removed from source leaves no emitted
     # artifact behind. Full regenerations only (see _prune_stale_outputs).
@@ -644,6 +693,7 @@ def emit_bundles(
 
 
 __all__ = [
+    'BUNDLE_COMPONENTS_FILENAME',
     'BodyTransformer',
     'EXCLUDED_DIR_NAMES',
     'OPENCODE_TARGET_NAME',

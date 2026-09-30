@@ -33,6 +33,7 @@ from unittest import mock
 _PLATFORM_ENV_SIGNALS: tuple[str, ...] = ('ANTIGRAVITY_AGENT', 'OPENCODE', 'OPENCODE_PID', 'CLAUDE_CODE_SESSION_ID')
 for _sig in _PLATFORM_ENV_SIGNALS:
     os.environ.pop(_sig, None)
+os.environ.setdefault('PLAN_MARSHALL_NON_INTERACTIVE', '1')
 
 # =============================================================================
 # Path Constants

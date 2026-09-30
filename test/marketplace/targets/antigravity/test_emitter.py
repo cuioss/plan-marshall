@@ -145,3 +145,239 @@ def test_emit_bundles_raises_on_missing_required_template(
     monkeypatch.setattr(ag_emitter, '_INSTALL_SCRIPT_TEMPLATE', tmp_path / 'nonexistent.sh')
     with pytest.raises(FileNotFoundError, match='Required install.sh template not found'):
         emit_bundles(fixture_bundle, tmp_path / 'out', antigravity_config_dir)
+
+
+def _create_bundle(
+    marketplace: Path,
+    name: str,
+    skills: list[str],
+    agents: list[str] | None = None,
+    commands: list[str] | None = None,
+) -> None:
+    bundle = marketplace / name
+    agents = agents or []
+    commands = commands or []
+    plugin_doc = {
+        'name': name,
+        'version': '0.0.1',
+        'description': f'{name} bundle',
+        'agents': [f'./agents/{a}.md' for a in agents],
+        'commands': [f'./commands/{c}.md' for c in commands],
+        'skills': [f'./skills/{s}' for s in skills],
+    }
+    _write(bundle / '.claude-plugin' / 'plugin.json', json.dumps(plugin_doc, indent=2) + '\n')
+    for s in skills:
+        _write(
+            bundle / 'skills' / s / 'SKILL.md',
+            f'---\nname: {s}\ndescription: {s} skill\n---\n# {s} body\n',
+        )
+    for a in agents:
+        _write(
+            bundle / 'agents' / f'{a}.md',
+            f'---\nname: {a}\ndescription: {a} agent\nmodel: sonnet\ntools: Read, Write\n---\n{a} agent body\n',
+        )
+    for c in commands:
+        _write(
+            bundle / 'commands' / f'{c}.md',
+            f'---\nname: {c}\ndescription: {c} command\n---\n{c} cmd body\n',
+        )
+
+
+@pytest.fixture()
+def multi_bundle_repo(tmp_path: Path) -> Path:
+    marketplace = tmp_path / 'multi_bundles'
+    _create_bundle(marketplace, 'plan-marshall', ['core-skill'], ['core-agent'], ['core-cmd'])
+    _create_bundle(marketplace, 'pm-dev-java', ['java-skill'])
+    _create_bundle(marketplace, 'pm-dev-java-cui', ['java-cui-skill'])
+    _create_bundle(marketplace, 'pm-dev-python', ['python-skill'])
+    _create_bundle(marketplace, 'pm-documents', ['docs-skill'])
+    _create_bundle(marketplace, 'pm-dev-frontend', ['fe-skill'])
+    _create_bundle(marketplace, 'pm-dev-frontend-cui', ['fe-cui-skill'])
+    return marketplace
+
+
+def test_emit_bundles_emits_bundle_components_json(fixture_bundle: Path, tmp_path: Path, antigravity_config_dir: Path):
+    out = tmp_path / 'out'
+    written = emit_bundles(fixture_bundle, out, antigravity_config_dir)
+
+    components_json = out / 'bundle-components.json'
+    assert components_json.is_file()
+    assert components_json in written
+
+    data = json.loads(components_json.read_text(encoding='utf-8'))
+    assert data['schema_version'] == 1
+    assert data['target'] == 'antigravity'
+    assert 'bundles' in data
+    assert 'demo' in data['bundles']
+    demo_components = data['bundles']['demo']
+    assert demo_components['skills'] == ['skills/demo-demo-skill']
+    assert demo_components['agents'] == ['agents/demo-agent.md']
+    assert demo_components['commands'] == ['commands/demo-cmd.md']
+
+
+def test_install_core_only(multi_bundle_repo: Path, tmp_path: Path, antigravity_config_dir: Path):
+    out = tmp_path / 'out'
+    emit_bundles(multi_bundle_repo, out, antigravity_config_dir)
+    _write(out / 'dist-manifest.json', json.dumps({'version': '1.0.0'}) + '\n')
+
+    dest = tmp_path / 'installed'
+    subprocess.run([str(out / 'install.sh'), '--target-dir', str(dest), '--core-only'], check=True)
+
+    assert (dest / 'skills' / 'plan-marshall-core-skill').is_dir()
+    assert (dest / 'agents' / 'core-agent.md').is_file()
+    assert (dest / 'commands' / 'core-cmd.md').is_file()
+    assert not (dest / 'skills' / 'pm-dev-java-java-skill').exists()
+    assert not (dest / 'skills' / 'pm-dev-python-python-skill').exists()
+
+    plugin_doc = json.loads((dest / 'plugin.json').read_text(encoding='utf-8'))
+    assert plugin_doc.get('bundles') == ['plan-marshall']
+
+    manifest = json.loads((dest / '.install-manifest.json').read_text(encoding='utf-8'))
+    assert manifest['schema_version'] == 1
+    assert manifest['target'] == 'antigravity'
+    assert manifest['installed_bundles'] == ['plan-marshall']
+    assert manifest['core'] == 'plan-marshall'
+    assert len(manifest['dist_manifest_sha']) == 64
+    assert 'skills/plan-marshall-core-skill/SKILL.md' in manifest['managed_files']
+    assert 'agents/core-agent.md' in manifest['managed_files']
+
+
+def test_install_bundles_dependency_closure(multi_bundle_repo: Path, tmp_path: Path, antigravity_config_dir: Path):
+    out = tmp_path / 'out'
+    emit_bundles(multi_bundle_repo, out, antigravity_config_dir)
+
+    dest = tmp_path / 'installed'
+    subprocess.run([str(out / 'install.sh'), '--target-dir', str(dest), '--bundles', 'pm-dev-java-cui'], check=True)
+
+    assert (dest / 'skills' / 'plan-marshall-core-skill').is_dir()
+    assert (dest / 'skills' / 'pm-dev-java-cui-java-cui-skill').is_dir()
+    assert (dest / 'skills' / 'pm-dev-java-java-skill').is_dir()
+    assert not (dest / 'skills' / 'pm-dev-python-python-skill').exists()
+
+    manifest = json.loads((dest / '.install-manifest.json').read_text(encoding='utf-8'))
+    assert sorted(manifest['installed_bundles']) == ['plan-marshall', 'pm-dev-java', 'pm-dev-java-cui']
+
+
+def test_install_bundles_aliases(multi_bundle_repo: Path, tmp_path: Path, antigravity_config_dir: Path):
+    out = tmp_path / 'out'
+    emit_bundles(multi_bundle_repo, out, antigravity_config_dir)
+
+    dest = tmp_path / 'installed'
+    subprocess.run([str(out / 'install.sh'), '--target-dir', str(dest), '--bundles', 'python,docs'], check=True)
+
+    assert (dest / 'skills' / 'plan-marshall-core-skill').is_dir()
+    assert (dest / 'skills' / 'pm-dev-python-python-skill').is_dir()
+    assert (dest / 'skills' / 'pm-documents-docs-skill').is_dir()
+    assert not (dest / 'skills' / 'pm-dev-java-java-skill').exists()
+
+    manifest = json.loads((dest / '.install-manifest.json').read_text(encoding='utf-8'))
+    assert sorted(manifest['installed_bundles']) == ['plan-marshall', 'pm-dev-python', 'pm-documents']
+
+
+def test_install_without_bundles(multi_bundle_repo: Path, tmp_path: Path, antigravity_config_dir: Path):
+    out = tmp_path / 'out'
+    emit_bundles(multi_bundle_repo, out, antigravity_config_dir)
+
+    dest = tmp_path / 'installed'
+    subprocess.run(
+        [str(out / 'install.sh'), '--target-dir', str(dest), '--without-bundles', 'java,frontend'], check=True
+    )
+
+    assert (dest / 'skills' / 'plan-marshall-core-skill').is_dir()
+    assert (dest / 'skills' / 'pm-dev-python-python-skill').is_dir()
+    assert (dest / 'skills' / 'pm-documents-docs-skill').is_dir()
+    assert not (dest / 'skills' / 'pm-dev-java-java-skill').exists()
+    assert not (dest / 'skills' / 'pm-dev-java-cui-java-cui-skill').exists()
+    assert not (dest / 'skills' / 'pm-dev-frontend-fe-skill').exists()
+    assert not (dest / 'skills' / 'pm-dev-frontend-cui-fe-cui-skill').exists()
+
+
+def test_install_rejects_invalid_bundle_options(multi_bundle_repo: Path, tmp_path: Path, antigravity_config_dir: Path):
+    out = tmp_path / 'out'
+    emit_bundles(multi_bundle_repo, out, antigravity_config_dir)
+
+    dest = tmp_path / 'installed'
+
+    # 1. Unknown bundle name -> exit code 2
+    res = subprocess.run([str(out / 'install.sh'), '--target-dir', str(dest), '--bundles', 'unknown-bundle'])
+    assert res.returncode == 2
+
+    # 2. Excluding mandatory core -> exit code 2
+    res = subprocess.run([str(out / 'install.sh'), '--target-dir', str(dest), '--without-bundles', 'plan-marshall'])
+    assert res.returncode == 2
+
+    # 3. Excluding base bundle while retaining dependent child -> exit code 2
+    res = subprocess.run([str(out / 'install.sh'), '--target-dir', str(dest), '--without-bundles', 'pm-dev-java'])
+    assert res.returncode == 2
+
+
+def test_install_update_lifecycle_and_rollback(multi_bundle_repo: Path, tmp_path: Path, antigravity_config_dir: Path):
+    out = tmp_path / 'out'
+    emit_bundles(multi_bundle_repo, out, antigravity_config_dir)
+
+    dest = tmp_path / 'installed'
+
+    # Step 1: Initial install with python
+    subprocess.run([str(out / 'install.sh'), '--target-dir', str(dest), '--bundles', 'python'], check=True)
+    assert (dest / 'skills' / 'pm-dev-python-python-skill').is_dir()
+
+    # Step 2: Update without flags reuses prior bundle selection
+    subprocess.run([str(out / 'install.sh'), '--target-dir', str(dest), '--update'], check=True)
+    manifest = json.loads((dest / '.install-manifest.json').read_text(encoding='utf-8'))
+    assert sorted(manifest['installed_bundles']) == ['plan-marshall', 'pm-dev-python']
+
+    # Step 3: Update with --without-bundles removes python
+    subprocess.run(
+        [str(out / 'install.sh'), '--target-dir', str(dest), '--update', '--without-bundles', 'python'], check=True
+    )
+    assert not (dest / 'skills' / 'pm-dev-python-python-skill').exists()
+    manifest = json.loads((dest / '.install-manifest.json').read_text(encoding='utf-8'))
+    assert manifest['installed_bundles'] == ['plan-marshall']
+
+    # Step 4: Update with --bundles java installs java
+    subprocess.run([str(out / 'install.sh'), '--target-dir', str(dest), '--update', '--bundles', 'java'], check=True)
+    assert (dest / 'skills' / 'pm-dev-java-java-skill').is_dir()
+
+    # Step 5: Rollback verification on failure
+    # Make skills directory non-writable so update fails during copy
+    skills_dir = dest / 'skills'
+    skills_dir.chmod(0o555)
+    try:
+        res = subprocess.run([str(out / 'install.sh'), '--target-dir', str(dest), '--update', '--bundles', 'python'])
+        assert res.returncode != 0
+    finally:
+        skills_dir.chmod(0o755)
+
+    # State before failed update must be restored
+    assert (dest / 'skills' / 'pm-dev-java-java-skill').is_dir()
+    manifest_after = json.loads((dest / '.install-manifest.json').read_text(encoding='utf-8'))
+    assert 'pm-dev-java' in manifest_after['installed_bundles']
+
+
+def test_install_uninstall_selective_bundles(multi_bundle_repo: Path, tmp_path: Path, antigravity_config_dir: Path):
+    out = tmp_path / 'out'
+    emit_bundles(multi_bundle_repo, out, antigravity_config_dir)
+
+    dest = tmp_path / 'installed'
+    subprocess.run([str(out / 'install.sh'), '--target-dir', str(dest), '--bundles', 'java,python'], check=True)
+
+    # Refuse uninstalling core
+    res = subprocess.run([str(dest / 'install.sh'), '--uninstall', '--bundles', 'plan-marshall'])
+    assert res.returncode == 2
+
+    # Refuse uninstalling base while dependent child is retained
+    res = subprocess.run([str(dest / 'install.sh'), '--uninstall', '--bundles', 'pm-dev-java'])
+    assert res.returncode == 2
+
+    # Selectively uninstall python
+    subprocess.run([str(dest / 'install.sh'), '--uninstall', '--bundles', 'python'], check=True)
+    assert not (dest / 'skills' / 'pm-dev-python-python-skill').exists()
+    assert (dest / 'skills' / 'pm-dev-java-java-skill').is_dir()
+    assert (dest / 'skills' / 'plan-marshall-core-skill').is_dir()
+
+    manifest = json.loads((dest / '.install-manifest.json').read_text(encoding='utf-8'))
+    assert 'pm-dev-python' not in manifest['installed_bundles']
+    assert 'pm-dev-java' in manifest['installed_bundles']
+
+    plugin_doc = json.loads((dest / 'plugin.json').read_text(encoding='utf-8'))
+    assert 'pm-dev-python' not in plugin_doc.get('bundles', [])

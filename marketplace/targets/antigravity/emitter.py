@@ -43,6 +43,7 @@ _USER_INVOCABLE_TEMPLATE = _TEMPLATES_DIR / 'user-invocable-command.md'
 _INSTALL_SCRIPT_TEMPLATE = _TEMPLATES_DIR / 'install.sh'
 
 ANTIGRAVITY_TARGET_NAME = 'antigravity'
+BUNDLE_COMPONENTS_FILENAME = 'bundle-components.json'
 
 VERBATIM_SKILL_SUBDIRS = ('standards', 'references', 'templates', 'scripts')
 
@@ -187,10 +188,10 @@ def _emit_skill(
     rules: dict[str, list[str]],
     body_transformer: BodyTransformer,
     written: list[Path],
-) -> None:
+) -> tuple[str, str | None] | None:
     skill_md = skill_dir / 'SKILL.md'
     if not skill_md.exists():
-        return
+        return None
     skill_name = skill_dir.name
     content = skill_md.read_text(encoding='utf-8')
     fm, body = parse_frontmatter(content)
@@ -218,6 +219,8 @@ def _emit_skill(
                 written=written,
             )
 
+    skill_rel = f'skills/{bundle_name}-{skill_name}'
+    wrapper_rel: str | None = None
     if _is_user_invocable(fm):
         _emit_user_invocable_wrapper(
             bundle_name=bundle_name,
@@ -226,6 +229,9 @@ def _emit_skill(
             output_dir=output_dir,
             written=written,
         )
+        wrapper_rel = f'commands/{bundle_name}-{skill_name}.md'
+
+    return skill_rel, wrapper_rel
 
 
 def _emit_agent(
@@ -237,9 +243,9 @@ def _emit_agent(
     body_transformer: BodyTransformer,
     written: list[Path],
     level_pins: dict[str, Any] | None = None,
-) -> None:
+) -> list[str]:
     if not agent_md.exists():
-        return
+        return []
     content = agent_md.read_text(encoding='utf-8')
     fm, body = parse_frontmatter(content)
     source_label = f'agents/{bundle_name}/{agent_md.name}'
@@ -253,6 +259,7 @@ def _emit_agent(
     target_agent.write_text(new_fm + '\n\n' + new_body, encoding='utf-8')
     written.append(target_agent)
 
+    agent_rels = [f'agents/{agent_md.name}']
     agent_id = agent_md.stem
     result = emit_agent_variants(
         fm,
@@ -268,6 +275,9 @@ def _emit_agent(
         for level in result.variants_emitted:
             variant_path = agent_dir / f'{agent_id}-{level}.md'
             written.append(variant_path)
+            agent_rels.append(f'agents/{agent_id}-{level}.md')
+
+    return agent_rels
 
 
 def _emit_command(
@@ -277,9 +287,9 @@ def _emit_command(
     rules: dict[str, list[str]],
     body_transformer: BodyTransformer,
     written: list[Path],
-) -> None:
+) -> str | None:
     if not command_md.exists():
-        return
+        return None
     content = command_md.read_text(encoding='utf-8')
     fm, body = parse_frontmatter(content)
     source_label = f'commands/{bundle_name}/{command_md.name}'
@@ -292,6 +302,7 @@ def _emit_command(
     target_command = command_dir / command_md.name
     target_command.write_text(new_fm + '\n\n' + new_body, encoding='utf-8')
     written.append(target_command)
+    return f'commands/{command_md.name}'
 
 
 def _resolve_skill_dirs(bundle_dir: Path, plugin_config: dict) -> list[Path]:
@@ -349,6 +360,23 @@ def _generate_plugin_json(
     return config_path
 
 
+def _generate_bundle_components_json(
+    output_dir: Path,
+    target_name: str,
+    bundle_components: dict[str, dict[str, list[str]]],
+) -> Path:
+    """Write Antigravity ``bundle-components.json`` component attribution manifest."""
+    config: dict[str, Any] = {
+        'schema_version': 1,
+        'target': target_name,
+        'bundles': {k: bundle_components[k] for k in sorted(bundle_components)},
+    }
+    config_path = output_dir / BUNDLE_COMPONENTS_FILENAME
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps(config, indent=2) + '\n', encoding='utf-8')
+    return config_path
+
+
 def emit_bundles(
     marketplace_dir: Path,
     output_dir: Path,
@@ -370,16 +398,21 @@ def emit_bundles(
     output_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
     emitted_bundles: list[str] = []
+    bundle_components: dict[str, dict[str, list[str]]] = {}
 
     for bundle_dir in iter_bundle_dirs(marketplace_dir, bundle_list):
         bundle_name = bundle_dir.name
         excluded = excluded_emission_roots(bundle_dir, target_name)
         plugin_config = _read_plugin_json(bundle_dir)
 
+        skills: list[str] = []
+        agents: list[str] = []
+        commands: list[str] = []
+
         for skill_dir in _resolve_skill_dirs(bundle_dir, plugin_config):
             if is_under_any(skill_dir.relative_to(bundle_dir), excluded):
                 continue
-            _emit_skill(
+            skill_res = _emit_skill(
                 bundle_name=bundle_name,
                 skill_dir=skill_dir,
                 output_dir=output_dir,
@@ -389,11 +422,16 @@ def emit_bundles(
                 body_transformer=transform_body,
                 written=written,
             )
+            if skill_res is not None:
+                skill_rel, wrapper_rel = skill_res
+                skills.append(skill_rel)
+                if wrapper_rel is not None:
+                    commands.append(wrapper_rel)
 
         for agent_md in _resolve_md_components(bundle_dir, plugin_config, 'agents', 'agents'):
             if is_under_any(agent_md.relative_to(bundle_dir), excluded):
                 continue
-            _emit_agent(
+            agent_rels = _emit_agent(
                 bundle_name=bundle_name,
                 agent_md=agent_md,
                 output_dir=output_dir,
@@ -403,11 +441,12 @@ def emit_bundles(
                 written=written,
                 level_pins=level_pins,
             )
+            agents.extend(agent_rels)
 
         for command_md in _resolve_md_components(bundle_dir, plugin_config, 'commands', 'commands'):
             if is_under_any(command_md.relative_to(bundle_dir), excluded):
                 continue
-            _emit_command(
+            cmd_rel = _emit_command(
                 bundle_name=bundle_name,
                 command_md=command_md,
                 output_dir=output_dir,
@@ -415,11 +454,21 @@ def emit_bundles(
                 body_transformer=transform_body,
                 written=written,
             )
+            if cmd_rel is not None:
+                commands.append(cmd_rel)
 
+        bundle_components[bundle_name] = {
+            'skills': sorted(skills),
+            'agents': sorted(agents),
+            'commands': sorted(commands),
+        }
         emitted_bundles.append(bundle_name)
 
     manifest_path = _generate_plugin_json(output_dir, emitted_bundles)
     written.append(manifest_path)
+
+    bundle_components_path = _generate_bundle_components_json(output_dir, target_name, bundle_components)
+    written.append(bundle_components_path)
 
     # Emit root installer script from template
     if not _INSTALL_SCRIPT_TEMPLATE.is_file():
@@ -451,6 +500,7 @@ def emit_bundles(
 
 __all__ = [
     'ANTIGRAVITY_TARGET_NAME',
+    'BUNDLE_COMPONENTS_FILENAME',
     'VERBATIM_SKILL_SUBDIRS',
     'emit_bundles',
     'iter_bundle_dirs',
