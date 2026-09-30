@@ -51,6 +51,7 @@ def plan_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
     # Anchor resolve_main_anchored_path via PLAN_BASE_DIR
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_local))
+    monkeypatch.chdir(project_dir)
 
     return {
         'project_dir': project_dir,

@@ -47,7 +47,7 @@ def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> bool:
         if rt is not None:
             if hasattr(rt, 'project_initial_setup'):
                 rt.project_initial_setup(str(proj), harness)
-            if hasattr(rt, 'project_install_hook'):
+            if hasattr(rt, 'project_install_hook') and proj == Path.cwd().resolve():
                 rt.project_install_hook(harness)
             if hasattr(rt, 'opencode_enforcement_apply'):
                 rt.opencode_enforcement_apply(str(proj))
