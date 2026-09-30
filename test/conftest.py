@@ -2296,9 +2296,6 @@ def _root_fs_pollution_guard(request):
         pytest.fail(violation)
 
 
-_PLATFORM_ENV_SIGNALS: tuple[str, ...] = ('ANTIGRAVITY_AGENT', 'OPENCODE', 'OPENCODE_PID', 'CLAUDE_CODE_SESSION_ID')
-
-
 @pytest.fixture(autouse=True)
 def _isolate_platform_env_signals(monkeypatch: pytest.MonkeyPatch):
     """Clear ambient platform env signals so host harness environment does not leak into tests."""

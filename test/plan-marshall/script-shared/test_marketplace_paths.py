@@ -1115,6 +1115,7 @@ class TestMainAnchoredCorpusEnumeration:
             'run-configuration.json',
             'lessons-learned',
             'merge-queue.json',
+            'harness/',
             'plans/NO_PLAN/build-results',
         }
     )
@@ -1159,17 +1160,17 @@ class TestMainAnchoredCorpusEnumeration:
         )
         return [m.group(1) for m in cls._LITERAL_RE.finditer(segment)]
 
-    def test_function_docstring_enumerates_exactly_five_corpora(self):
+    def test_function_docstring_enumerates_exactly_six_corpora(self):
         corpora = self._function_corpora()
         # Non-vacuity guard: a parse that matched nothing must not arrive at the
-        # count assertion as a confusing ``0 != 5``.
+        # count assertion as a confusing ``0 != 6``.
         assert corpora, 'no corpora parsed from resolve_main_anchored_path.__doc__'
-        assert len(corpora) == 5, f'expected five main-resident corpora, got {len(corpora)}: {corpora}'
+        assert len(corpora) == 6, f'expected six main-resident corpora, got {len(corpora)}: {corpora}'
 
-    def test_module_docstring_enumerates_exactly_five_corpora(self):
+    def test_module_docstring_enumerates_exactly_six_corpora(self):
         corpora = self._module_corpora()
         assert corpora, 'no corpora parsed from the module docstring'
-        assert len(corpora) == 5, f'expected five main-resident corpora, got {len(corpora)}: {corpora}'
+        assert len(corpora) == 6, f'expected six main-resident corpora, got {len(corpora)}: {corpora}'
 
     def test_orchestrator_is_not_a_main_anchored_corpus(self):
         assert self.RETIRED_CORPUS not in self._function_corpora()
