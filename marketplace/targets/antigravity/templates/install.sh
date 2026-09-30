@@ -157,8 +157,10 @@ fi
 
 # Interactive bundle selection prompt if no bundle flags provided
 INTERACTIVE=false
-if [ -t 0 ] || ( : </dev/tty ) 2>/dev/null; then
-  INTERACTIVE=true
+if [ -z "${CI:-}" ] && [ -z "${PLAN_MARSHALL_NON_INTERACTIVE:-}" ] && [ -z "${DEBIAN_FRONTEND:-}" ]; then
+  if [ -t 0 ] || ( [ -t 1 ] && ( : </dev/tty ) 2>/dev/null ); then
+    INTERACTIVE=true
+  fi
 fi
 
 if [ -z "$MODE" ] && [ -z "$BUNDLES" ] && [ -z "$WITHOUT_BUNDLES" ] && [ "$UPDATE" = false ] && [ "$UNINSTALL" = false ]; then
