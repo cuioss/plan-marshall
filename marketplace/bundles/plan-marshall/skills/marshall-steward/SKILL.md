@@ -65,7 +65,8 @@ configure · verify · maintain
 
 | Script | Notation | Purpose |
 |--------|----------|---------|
-| determine_mode | `plan-marshall:marshall-steward:determine_mode` | Determine wizard vs menu mode; also exposes `check-working-prefixes` (project.working_prefixes presence/drift) and `check-staleness` (health-menu executor/config staleness preflight) |
+| determine_mode | `plan-marshall:marshall-steward:determine_mode` | Determine wizard vs menu mode; also exposes `check-harness` (active harness verification), `check-working-prefixes` (project.working_prefixes presence/drift), and `check-staleness` (health-menu executor/config staleness preflight) |
+| configure_harness | `plan-marshall:marshall-steward:configure_harness` | Deterministic script-only local harness configuration (`.plan/local/harness/{harness}.json`) |
 | gitignore_setup | `plan-marshall:marshall-steward:gitignore_setup` | Configure .gitignore for .plan/ |
 | upgrade | `plan-marshall:marshall-steward:upgrade` | Emit the four-stage `upgrade` verb plan (pure function of `(integrate, project_kind)`); also exposes `migrate-bot-lists`, the idempotent one-shot auto-map of the retired `enabled_bots` knob onto `required_bots` / `optional_bots` driven as the Stage-2 `migrate-bot-lists` sub-step, and `validate-bot-lists`, the read-only report of configured reviewer tokens matching no registered bot kind driven as the Stage-2 `validate-bot-lists` sub-step. The plan's last Stage-2 sub-step, `migrate-architecture-descriptors`, has no subcommand here — it is driven through the `manage-architecture` verbs (see `references/upgrade-flow.md`) |
 | cache_freshness | `plan-marshall:marshall-steward:cache_freshness` | Fail-closed three-valued plugin-cache freshness verdict (`fresh\|stale\|unknown`) driving the consumer Stage-1 `cache-freshness-check` sub-step |
@@ -127,8 +128,13 @@ python3 "{DETERMINE_MODE}" mode
 
 **Output (TOON)**:
 ```toon
+status	success
 mode	wizard
 reason	executor_missing
+harness	antigravity
+target_source	env
+harness_configured	false
+harness_reason	harness_config_missing
 ```
 
 ### Mode Routing
@@ -137,7 +143,21 @@ reason	executor_missing
 |------|--------|--------|
 | `wizard` | `executor_missing` | Load: `Read references/wizard-flow.md` → Execute wizard |
 | `wizard` | `marshal_missing` | Load: `Read references/wizard-flow.md` → Execute wizard |
-| `menu` | `both_exist` | Show Main Menu below |
+| `menu` | `both_exist` | Check Harness Preflight, then show Main Menu below |
+
+### Menu Mode Preflight (Harness Configuration)
+
+When `determine_mode` returns `mode: menu` with `harness_configured: false`, `marshall-steward` automatically configures the active harness before presenting the menu:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:configure_harness
+```
+
+Emit a one-line status confirmation:
+```text
+Configured local {harness} harness state (.plan/local/harness/{harness}.json).
+```
+Then proceed to the Main Menu.
 
 ### Check for `--wizard` Flag
 

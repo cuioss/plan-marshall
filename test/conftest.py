@@ -28,6 +28,12 @@ from types import ModuleType
 from typing import Any, Literal, overload
 from unittest import mock
 
+# Strip ambient platform env signals so host harness environment (e.g. Antigravity/Claude CLI)
+# does not poison top-level conftest imports or process-level caches.
+_PLATFORM_ENV_SIGNALS: tuple[str, ...] = ('ANTIGRAVITY_AGENT', 'OPENCODE', 'OPENCODE_PID', 'CLAUDE_CODE_SESSION_ID')
+for _sig in _PLATFORM_ENV_SIGNALS:
+    os.environ.pop(_sig, None)
+
 # =============================================================================
 # Path Constants
 # =============================================================================
@@ -2288,6 +2294,20 @@ def _root_fs_pollution_guard(request):
     if violation:
         _clear_root_fs_sentinel()
         pytest.fail(violation)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_platform_env_signals(monkeypatch: pytest.MonkeyPatch):
+    """Clear ambient platform env signals so host harness environment does not leak into tests."""
+    for name in _PLATFORM_ENV_SIGNALS:
+        monkeypatch.delenv(name, raising=False)
+    try:
+        import marketplace_paths
+
+        monkeypatch.setattr(marketplace_paths, '_SKILL_ROOTS_CACHE', None)
+        monkeypatch.setattr(marketplace_paths, '_BUNDLE_CACHE_ROOTS_CACHE', None)
+    except Exception:
+        pass
 
 
 @pytest.fixture

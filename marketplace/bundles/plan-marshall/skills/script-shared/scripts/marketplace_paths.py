@@ -16,7 +16,7 @@ the working directory is pinned there. The single deliberate exception mechanism
 is ``resolve_main_anchored_path`` (below), which always resolves to the main
 checkout for the bounded exception set — ``merge.lock``,
 ``run-configuration.json``, ``lessons-learned``, ``merge-queue.json``,
-``plans/NO_PLAN/build-results`` — every other resolution in the codebase is
+``harness/``, ``plans/NO_PLAN/build-results`` — every other resolution in the codebase is
 cwd-relative. With ``orchestrator.use_worktree`` on, the orchestrator store is
 reached through the shared ledger worktree ``worktrees/_orchestrator``, whose
 location is NAMED through that same resolver without joining the resident set —
@@ -709,7 +709,8 @@ def resolve_main_anchored_path(subpath: str | Path) -> Path:
     cross-session shared state MUST route through this function rather than
     re-implementing git-common-dir resolution. The bounded set of main-RESIDENT
     corpora is exactly: ``merge.lock``, ``run-configuration.json``,
-    ``lessons-learned``, ``merge-queue.json``, ``plans/NO_PLAN/build-results``
+    ``lessons-learned``, ``merge-queue.json``, ``harness/``,
+    ``plans/NO_PLAN/build-results``
     (the plan-less build's results, which belong to no worktree — see
     ``file_ops.get_build_results_dir``). (Machine-global state such as
     ``build-queue.json`` and ``credentials/`` is NOT in this set — it anchors to
