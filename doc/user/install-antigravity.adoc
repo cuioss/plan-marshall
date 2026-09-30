@@ -40,6 +40,73 @@ This script automatically downloads the latest snapshot from `dist-antigravity` 
 
 Restart Antigravity or open a new conversation. Antigravity automatically discovers the installed skills and agents.
 
+== Selective Bundle Installation
+
+Plan Marshall supports installing only the domain modules needed for your project or workflow:
+
+* **Mandatory Core**: `plan-marshall` is always installed and provides the runtime foundation, stewards, and architecture tools.
+* **Domain Bundles**: Tailored skill and agent bundles for specific tech stacks.
+
+=== Domain Aliases and Bundles
+
+The installer provides shorthand aliases for domain bundles:
+
+[cols="1,2,2",options="header"]
+|===
+| Alias | Bundles | Description
+| `core` | `plan-marshall` | Core execution context, stewards, and architecture tools (mandatory).
+| `java` | `pm-dev-java`, `pm-dev-java-cui` | Java, JUnit 5, Quarkus/CDI, Maven, and CUI Java standards.
+| `python` | `pm-dev-python` | Python 3.10+, pytest, pyprojectx, and import linting.
+| `frontend` | `pm-dev-frontend`, `pm-dev-frontend-cui` | TypeScript/JavaScript, CSS, Lit, ESLint, and CUI frontend standards.
+| `oci` | `pm-dev-oci` | Container images, Dockerfile standards, and container security.
+| `docs` | `pm-documents` | AsciiDoc and documentation verification tools.
+| `reqs` | `pm-requirements` | Requirements engineering and traceability.
+| `plugin-dev` | `pm-plugin-development` | Plugin maintenance and doctor tools.
+| `all` | All available bundles | Default installation set.
+|===
+
+[NOTE]
+====
+Dependency closure is automatic: selecting `pm-dev-java-cui` automatically includes `pm-dev-java`, and selecting `pm-dev-frontend-cui` automatically includes `pm-dev-frontend`.
+====
+
+=== CLI Options
+
+You can specify bundle selection directly via CLI flags:
+
+* `--core-only`: Install only the mandatory core bundle.
+* `-b, --bundles <csv>`: Install specific bundles or aliases (e.g. `--bundles python,docs`).
+* `--without-bundles <csv>`: Exclude specific bundles or aliases from the full set (e.g. `--without-bundles java,frontend`). Core cannot be excluded.
+* `--all`: Install all bundles.
+
+Example with specific bundles:
+
+[source,bash]
+----
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-antigravity/install.sh | bash -s -- --bundles python,docs
+----
+
+Example with core only:
+
+[source,bash]
+----
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-antigravity/install.sh | bash -s -- --core-only
+----
+
+=== Interactive Selection
+
+When `install.sh` is executed in an interactive terminal without bundle flags, it prompts you to choose bundles:
+
+[source,text]
+----
+Plan Marshall Bundle Selection:
+  Core: plan-marshall [MANDATORY]
+  Available domain aliases: java, python, frontend, oci, docs, reqs, plugin-dev
+Install [A]ll (default), [C]ore only, or comma-separated bundles/aliases:
+----
+
+In non-interactive or CI environments (`CI=true` or `PLAN_MARSHALL_NON_INTERACTIVE=1`), the prompt is bypassed and all bundles are installed by default.
+
 == Pinned Release (Specific Version)
 
 For reproducible installations, download the installer directly from the desired immutable release tag:
@@ -80,6 +147,26 @@ curl -fsSL https://github.com/cuioss/plan-marshall/archive/refs/heads/dist-antig
 
 == Updating
 
+=== Atomic Update (`-U, --update`)
+
+To update an existing installation, pass `-U` or `--update`:
+
+[source,bash]
+----
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-antigravity/install.sh | bash -s -- --update
+----
+
+Or via local script:
+
+[source,bash]
+----
+~/.gemini/config/plugins/plan-marshall/install.sh --update
+----
+
+* **Preserves Installed Selection**: If no bundle flags are provided with `--update`, the existing bundle selection recorded in `.install-manifest.json` is preserved.
+* **Modifying Bundles on Update**: You can change your installed bundles by passing `--bundles` or prune bundles with `--without-bundles` alongside `--update`.
+* **Atomic Rollback**: If an error occurs during update, all files, `plugin.json`, and `.install-manifest.json` are automatically rolled back from an in-memory backup snapshot.
+
 === Snapshot Users
 
 Re-run the installer script:
@@ -107,7 +194,9 @@ curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/antigravity/v0
 
 == Uninstallation
 
-To remove the installed plugin, pass `--uninstall`:
+=== Full Uninstallation
+
+To remove the installed plugin entirely, pass `--uninstall`:
 
 [source,bash]
 ----
@@ -127,6 +216,20 @@ For a workspace-scoped install:
 ----
 ./install.sh --workspace --uninstall
 ----
+
+=== Selective Bundle Uninstallation
+
+To remove specific domain bundles while keeping the rest of the plugin installed, use `--uninstall --bundles <csv>`:
+
+[source,bash]
+----
+~/.gemini/config/plugins/plan-marshall/install.sh --uninstall --bundles python,docs
+----
+
+[NOTE]
+====
+The mandatory core bundle (`plan-marshall`) cannot be uninstalled selectively. Similarly, base bundles cannot be removed while a dependent child bundle remains installed (e.g. `pm-dev-java` cannot be removed without also removing `pm-dev-java-cui`).
+====
 
 == Next Step
 
