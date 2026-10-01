@@ -899,11 +899,7 @@ def test_merge_tree_preserves_genuine_conflicts(monkeypatch):
     """Genuine conflict paths before the separator are still reported unchanged."""
     _stub_merge_tree(
         monkeypatch,
-        '4b825dc642cb6eb9a060e54bf8d69288fbee4904\n'
-        'a.txt\n'
-        'b-dir/b.txt\n'
-        '\n'
-        'Auto-merging a.txt\n',
+        '4b825dc642cb6eb9a060e54bf8d69288fbee4904\na.txt\nb-dir/b.txt\n\nAuto-merging a.txt\n',
     )
     paths, error = _mod._detect_merge_conflicts('/tmp/worktree', 'main')
     assert error is None
