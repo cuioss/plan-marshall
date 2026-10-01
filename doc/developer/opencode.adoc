@@ -57,6 +57,15 @@ The emitter strictly enforces containment invariants via `marketplace/targets/fs
 * `refuse_tree_overlap(output_dir, marketplace_dir)`: Refuses generation if the output directory overlaps the source marketplace in either direction.
 * Stale output pruning: Removes old bundle artifacts while preserving untouched target outputs.
 
+=== Harness-Specific Rules Bundle (`plan-marshall-opencode`)
+
+The `plan-marshall-opencode` bundle (`marketplace/bundles/plan-marshall-opencode/`) provides harness-specific operational rules, tool invariants, execution discipline, and deployed flat layout standards tailored exclusively for OpenCode environments:
+
+* **Target Scoping**: Its `.claude-plugin/plugin.json` declares `"targets": ["opencode"]`. The multi-target generator includes it in the OpenCode distribution (`target/opencode/`) while excluding it from other targets (such as Claude Code and Antigravity).
+* **Target Rules Skill**: Contains the `target-rules` knowledge skill (`skills/target-rules/SKILL.md`) and the normative rules standard (`skills/target-rules/standards/opencode-rules.md`).
+* **Zero-Token Workspace Delivery**: When installed with `./install.sh --workspace` or `--emit-rules`, the installer synchronizes `skills/plan-marshall-opencode-target-rules/standards/opencode-rules.md` into `<workspace>/.opencode/rules/plan-marshall-target-rules.md`. OpenCode automatically discovers and injects workspace rules into assistant context without requiring runtime tool calls.
+* **Uninstallation Lifecycle**: During full uninstallation (`./install.sh --uninstall`) or selective uninstallation of `plan-marshall-opencode`, the synchronized `.opencode/rules/plan-marshall-target-rules.md` is cleanly pruned.
+
 == Tool & Permission Mapping
 
 OpenCode operates with a native set of agent tools. The mappings are declared in `marketplace/targets/opencode/mapping.json`:
@@ -357,7 +366,7 @@ The OpenCode target is verified by dedicated automated tests:
 
 * `test/marketplace/targets/opencode/`:
   ** Target registration, frontmatter and tool transformations, body rewrites, and singular layout emission.
-  ** `test_emitter.py`: Target emission, singular directory layout, `bundle-components.json` attribution emission, and installer lifecycle validation (selective bundle flags, aliases, dependency closure, manifest persistence, `opencode.json` tailoring with custom agent preservation, atomic update backup/rollback, selective uninstallation, and safe non-destructive full uninstallation).
+  ** `test_emitter.py`: Target emission, singular directory layout, target-scoped bundle emission, `bundle-components.json` attribution emission, and installer lifecycle validation (selective bundle flags, aliases, dependency closure, manifest persistence, `opencode.json` tailoring with custom agent preservation, atomic update backup/rollback, workspace rule emission, selective uninstallation, and safe non-destructive full uninstallation).
 * `test/plan-marshall/platform-runtime/`:
   ** `test_opencode_runtime.py`: Unit tests for `OpenCodeRuntime` covering layout resolution, project setup, permission settings paths, defaults injection, permission fix operations, and health checks.
   ** `test_opencode_enforcement.py`: Deny refusals, ask prompts, and carve-out passes pinned against the runtime matrix, plus the mirror of the guard plugin decision table as a behavioral contract.

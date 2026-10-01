@@ -127,6 +127,7 @@ it is actually consumed.
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Iterator
 from pathlib import Path
@@ -372,9 +373,10 @@ def _validate(tokens: list[str], path: Path) -> frozenset[str]:
     the build failure is actionable without re-deriving what went wrong.
     """
     tree_targets = component_tree_target_names()
+    entity = 'bundle' if path.name == 'plugin.json' else 'component'
     if not tokens:
         raise TargetScopeError(
-            f'{path}: `{TARGET_SCOPE_FIELD}:` declares an empty list — a component that '
+            f'{path}: `{TARGET_SCOPE_FIELD}:` declares an empty list — a {entity} that '
             f'ships to no target is an authoring error. Omit the field to ship to every '
             f'target, or name at least one of: {_named(tree_targets)}.'
         )
@@ -388,7 +390,7 @@ def _validate(tokens: list[str], path: Path) -> frozenset[str]:
     if not tree_targets.intersection(tokens):
         raise TargetScopeError(
             f'{path}: `{TARGET_SCOPE_FIELD}: [{", ".join(tokens)}]` names only target(s) that '
-            f'emit no component tree, so the component would ship nowhere. Name at least one '
+            f'emit no component tree, so the {entity} would ship nowhere. Name at least one '
             f'of: {_named(tree_targets)}.'
         )
     return frozenset(tokens)
@@ -489,6 +491,88 @@ def emits_to(path: Path, target_name: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def read_bundle_target_scope(bundle_dir: Path) -> frozenset[str] | None:
+    """Return the validated target scope declared by ``bundle_dir``, or ``None``.
+
+    Reads ``{bundle_dir}/.claude-plugin/plugin.json`` and extracts the ``"targets"`` field.
+
+    Args:
+        bundle_dir: The bundle root directory.
+
+    Returns:
+        The declared registry names, or ``None`` when the bundle declares
+        no scope (ship to every component-tree target).
+
+    Raises:
+        TargetScopeError: The declaration is invalid — see fail-closed rules.
+    """
+    manifest = bundle_dir / '.claude-plugin' / 'plugin.json'
+    try:
+        text = manifest.read_text(encoding='utf-8')
+    except OSError:
+        return None
+    except UnicodeDecodeError:
+        try:
+            lossy_text = manifest.read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            return None
+        if f'"{TARGET_SCOPE_FIELD}"' not in lossy_text and f"'{TARGET_SCOPE_FIELD}'" not in lossy_text:
+            return None
+        raise TargetScopeError(
+            f'{manifest}: the file is not valid UTF-8, and appears to declare '
+            f'`"{TARGET_SCOPE_FIELD}"`. The build cannot read a declaration it cannot decode.'
+        ) from None
+
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as error:
+        if f'"{TARGET_SCOPE_FIELD}"' in text or f"'{TARGET_SCOPE_FIELD}'" in text:
+            raise TargetScopeError(
+                f'{manifest}: the manifest is not well-formed JSON, so the build cannot '
+                f'tell whether it declares `"{TARGET_SCOPE_FIELD}"` at all. Refusing rather '
+                f'than guessing: {error}'
+            ) from None
+        return None
+
+    if not isinstance(data, dict):
+        if f'"{TARGET_SCOPE_FIELD}"' in text or f"'{TARGET_SCOPE_FIELD}'" in text:
+            raise TargetScopeError(f'{manifest}: the manifest is not a JSON object.')
+        return None
+
+    if TARGET_SCOPE_FIELD not in data:
+        return None
+
+    value = data[TARGET_SCOPE_FIELD]
+    try:
+        tokens = _tokens(value)
+    except _NotAList as not_a_list:
+        raise TargetScopeError(
+            f'{manifest}: `{TARGET_SCOPE_FIELD}:` is {type(not_a_list.args[0]).__name__}, not a '
+            f'list of target names. Write `{TARGET_SCOPE_FIELD}: ["a", "b"]` or a '
+            f'single name. Registered targets are: {_named(registered_target_names())}.'
+        ) from None
+    except _NotAName as not_a_name:
+        item = not_a_name.args[0]
+        raise TargetScopeError(
+            f'{manifest}: `{TARGET_SCOPE_FIELD}:` is a list, but the item {item!r} is '
+            f'{type(item).__name__}, not a target name. Coercing it to text would name a '
+            f'target nobody wrote. Registered targets are: {_named(registered_target_names())}.'
+        ) from None
+    if tokens is None:
+        return None
+    return _validate(tokens, manifest)
+
+
+def bundle_emits_to(bundle_dir: Path, target_name: str) -> bool:
+    """Whether the bundle at ``bundle_dir`` is emitted by ``target_name``.
+
+    Raises:
+        TargetScopeError: The bundle's declaration is invalid.
+    """
+    scope = read_bundle_target_scope(bundle_dir)
+    return scope is None or target_name in scope
+
+
 def iter_component_manifests(bundle_dir: Path) -> Iterator[tuple[Path, Path]]:
     """Yield ``(manifest, emission_root)`` for every component in ``bundle_dir``.
 
@@ -537,6 +621,8 @@ def _file_level_exclusions(
     manifest: Path,
     parent_scope: frozenset[str] | None,
     target_name: str,
+    *,
+    bundle_scope: frozenset[str] | None = None,
 ) -> set[Path]:
     """Return the file-level exclusions the skill at ``manifest`` contributes.
 
@@ -562,6 +648,14 @@ def _file_level_exclusions(
                 f'{sibling}: `{TARGET_SCOPE_FIELD}:` names target(s) the enclosing '
                 f'skill scopes away: the file scope [{_joined(file_scope)}] is not a '
                 f'subset of the component scope [{_joined(parent_scope)}]; narrowing '
+                f'is legal, widening is not ({_joined(widening)})'
+            )
+        if parent_scope is None and bundle_scope is not None and not file_scope <= bundle_scope:
+            widening = file_scope - bundle_scope
+            raise TargetScopeError(
+                f'{sibling}: `{TARGET_SCOPE_FIELD}:` names target(s) the enclosing '
+                f'bundle scopes away: the file scope [{_joined(file_scope)}] is not a '
+                f'subset of the bundle scope [{_joined(bundle_scope)}]; narrowing '
                 f'is legal, widening is not ({_joined(widening)})'
             )
         if not parent_excluded and target_name not in file_scope:
@@ -595,13 +689,22 @@ def excluded_emission_roots(bundle_dir: Path, target_name: str) -> frozenset[Pat
         TargetScopeError: Some component in the bundle declares an invalid
             scope.
     """
+    bundle_scope = read_bundle_target_scope(bundle_dir)
     excluded: set[Path] = set()
     for manifest, emission_root in iter_component_manifests(bundle_dir):
         scope = read_target_scope(manifest)
+        if bundle_scope is not None and scope is not None and not scope <= bundle_scope:
+            widening = scope - bundle_scope
+            raise TargetScopeError(
+                f'{manifest}: `{TARGET_SCOPE_FIELD}:` names target(s) the enclosing '
+                f'bundle scopes away: the component scope [{_joined(scope)}] is not a '
+                f'subset of the bundle scope [{_joined(bundle_scope)}]; narrowing '
+                f'is legal, widening is not ({_joined(widening)})'
+            )
         if scope is not None and target_name not in scope:
             excluded.add(emission_root.relative_to(bundle_dir))
         if emission_root.is_dir():
-            excluded.update(_file_level_exclusions(bundle_dir, manifest, scope, target_name))
+            excluded.update(_file_level_exclusions(bundle_dir, manifest, scope, target_name, bundle_scope=bundle_scope))
     return frozenset(excluded)
 
 
@@ -620,6 +723,7 @@ def validate_component_scopes(bundle_dir: Path) -> None:
         TargetScopeError: Some component in the bundle declares an invalid
             scope.
     """
+    read_bundle_target_scope(bundle_dir)
     excluded_emission_roots(bundle_dir, _ANY_TARGET_NAME)
 
 
@@ -640,12 +744,14 @@ __all__ = [
     'EXCLUDED_DIR_NAMES',
     'validate_component_scopes',
     'TargetScopeError',
+    'bundle_emits_to',
     'component_tree_target_names',
     'emits_to',
     'excluded_emission_roots',
     'is_under_any',
     'iter_component_manifests',
     'iter_skill_internal_files',
+    'read_bundle_target_scope',
     'read_target_scope',
     'registered_target_names',
 ]

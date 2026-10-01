@@ -32,8 +32,11 @@ from marketplace.targets.antigravity.frontmatter import (
 from marketplace.targets.antigravity.variant_emitter import emit_agent_variants
 from marketplace.targets.component_targets import (
     EXCLUDED_DIR_NAMES,
+    bundle_emits_to,
+    emits_to,
     excluded_emission_roots,
     is_under_any,
+    validate_component_scopes,
 )
 from marketplace.targets.fs_safety import refuse_tree_overlap, safe_rmtree
 
@@ -401,6 +404,10 @@ def emit_bundles(
     bundle_components: dict[str, dict[str, list[str]]] = {}
 
     for bundle_dir in iter_bundle_dirs(marketplace_dir, bundle_list):
+        validate_component_scopes(bundle_dir)
+        if not bundle_emits_to(bundle_dir, target_name):
+            continue
+
         bundle_name = bundle_dir.name
         excluded = excluded_emission_roots(bundle_dir, target_name)
         plugin_config = _read_plugin_json(bundle_dir)
@@ -410,7 +417,7 @@ def emit_bundles(
         commands: list[str] = []
 
         for skill_dir in _resolve_skill_dirs(bundle_dir, plugin_config):
-            if is_under_any(skill_dir.relative_to(bundle_dir), excluded):
+            if not emits_to(skill_dir / 'SKILL.md', target_name):
                 continue
             skill_res = _emit_skill(
                 bundle_name=bundle_name,
@@ -429,7 +436,7 @@ def emit_bundles(
                     commands.append(wrapper_rel)
 
         for agent_md in _resolve_md_components(bundle_dir, plugin_config, 'agents', 'agents'):
-            if is_under_any(agent_md.relative_to(bundle_dir), excluded):
+            if not emits_to(agent_md, target_name):
                 continue
             agent_rels = _emit_agent(
                 bundle_name=bundle_name,
@@ -444,7 +451,7 @@ def emit_bundles(
             agents.extend(agent_rels)
 
         for command_md in _resolve_md_components(bundle_dir, plugin_config, 'commands', 'commands'):
-            if is_under_any(command_md.relative_to(bundle_dir), excluded):
+            if not emits_to(command_md, target_name):
                 continue
             cmd_rel = _emit_command(
                 bundle_name=bundle_name,

@@ -44,6 +44,7 @@ def bundle_dir(tmp_path: Path) -> Path:
                 'diagnostics': False,
             }
         },
+        'targets': ['claude'],
         'agents': ['./agents/zeta-agent.md'],
         # Intentionally listed out of alphabetical order.
         'skills': ['./skills/zeta-skill', './skills/alpha-skill'],
@@ -73,6 +74,8 @@ def test_build_plugin_json_passes_top_level_fields(bundle_dir: Path):
             assert output[field] == ['demo']
         elif field == 'author':
             assert output[field] == {'name': 'demo author', 'email': 'demo@example.com'}
+        elif field == 'targets':
+            assert output[field] == ['claude']
         else:
             assert field in output
 

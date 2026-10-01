@@ -59,6 +59,7 @@ from pathlib import Path
 from marketplace.targets.claude.emitter import CLAUDE_TARGET_NAME
 from marketplace.targets.claude.marketplace_json_gen import build_marketplace_json
 from marketplace.targets.claude.plugin_json_gen import build_plugin_json
+from marketplace.targets.component_targets import bundle_emits_to
 
 
 class CorruptEmittedPluginJsonError(RuntimeError):
@@ -349,7 +350,7 @@ def run_equality_check(
     listed in ``unusable_target_bundles`` alongside the absent ones, because
     both are "could not be compared" and both are repaired by re-emitting.
     """
-    bundles_list = list(bundle_dirs)
+    bundles_list = [b for b in bundle_dirs if bundle_emits_to(b, target_name)]
     bundle_count = len(bundles_list)
 
     if not target_dir.exists():

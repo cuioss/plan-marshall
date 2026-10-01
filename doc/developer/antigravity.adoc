@@ -57,6 +57,15 @@ The emitter strictly enforces containment invariants via `marketplace/targets/fs
 * `refuse_tree_overlap(output_dir, marketplace_dir)`: Refuses generation if the output directory overlaps the source marketplace in either direction.
 * Stale output pruning: Removes old bundle artifacts while preserving untouched target outputs.
 
+=== Harness-Specific Rules Bundle (`plan-marshall-antigravity`)
+
+The `plan-marshall-antigravity` bundle (`marketplace/bundles/plan-marshall-antigravity/`) provides harness-specific operational rules, tool invariants, execution discipline, and runtime constraints tailored exclusively for Google Antigravity environments:
+
+* **Target Scoping**: Its `.claude-plugin/plugin.json` declares `"targets": ["antigravity"]`. The multi-target generator includes it in the Antigravity distribution (`target/antigravity/`) while excluding it from other targets (such as Claude Code and OpenCode).
+* **Target Rules Skill**: Contains the `target-rules` knowledge skill (`skills/target-rules/SKILL.md`) and the normative rules standard (`skills/target-rules/standards/antigravity-rules.md`).
+* **Zero-Token Workspace Delivery**: When installed with `./install.sh --workspace` or `--emit-rules`, the installer synchronizes `skills/plan-marshall-antigravity-target-rules/standards/antigravity-rules.md` into `<workspace>/.agents/rules/plan-marshall-target-rules.md`. Antigravity automatically discovers and injects workspace rules into assistant context without requiring runtime tool calls.
+* **Uninstallation Lifecycle**: During full uninstallation (`./install.sh --uninstall`) or selective uninstallation of `plan-marshall-antigravity`, the synchronized `.agents/rules/plan-marshall-target-rules.md` is cleanly pruned.
+
 == Tool & Permission Mapping
 
 Antigravity operates with a distinct set of native tools compared to Claude Code. The mappings are declared in `mapping.json`:
@@ -334,7 +343,7 @@ The test suite provides complete coverage across:
   ** `test_config_files.py`: JSON schema validation for `mapping.json` and `frontmatter-rules.json`.
   ** `test_frontmatter.py`: Tool transformation, model resolution, and fail-closed error handling (`UnmappedToolError`, `UnmappedFrontmatterError`).
   ** `test_body_transforms.py`: Directive rewriting and slash command expansion.
-  ** `test_emitter.py`: Bundle traversal, verbatim directory copying (`standards/`, `references/`, `templates/`, `scripts/`), stale artifact pruning, `bundle-components.json` attribution emission, and installer lifecycle validation (selective bundle flags, aliases, dependency closure, manifest persistence, `plugin.json` tailoring, atomic update backup/rollback, and selective uninstallation).
+  ** `test_emitter.py`: Bundle traversal, verbatim directory copying (`standards/`, `references/`, `templates/`, `scripts/`), stale artifact pruning, target-scoped bundle emission, `bundle-components.json` attribution emission, and installer lifecycle validation (selective bundle flags, aliases, dependency closure, manifest persistence, `plugin.json` tailoring, atomic update backup/rollback, workspace rule emission, and selective uninstallation).
   ** `test_variant_emitter.py`: Role-eligible subagent variant generation and ADR-021 model pin application.
   ** `test_level_table_lockstep.py`: Table object identity assertion against Claude target and model alias validity.
 * `test/sync-antigravity/`:

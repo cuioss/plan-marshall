@@ -42,9 +42,11 @@ from typing import Any
 
 from marketplace.targets.component_targets import (
     EXCLUDED_DIR_NAMES,
+    bundle_emits_to,
     emits_to,
     excluded_emission_roots,
     is_under_any,
+    validate_component_scopes,
 )
 from marketplace.targets.fs_safety import refuse_tree_overlap, safe_rmtree
 from marketplace.targets.opencode.frontmatter import (
@@ -593,6 +595,10 @@ def emit_bundles(
     bundle_components: dict[str, dict[str, list[str]]] = {}
 
     for bundle_dir in iter_bundle_dirs(marketplace_dir, bundle_list):
+        validate_component_scopes(bundle_dir)
+        if not bundle_emits_to(bundle_dir, target_name):
+            continue
+
         plugin_config = _read_plugin_json(bundle_dir)
         bundle_name = plugin_config.get('name', bundle_dir.name)
 

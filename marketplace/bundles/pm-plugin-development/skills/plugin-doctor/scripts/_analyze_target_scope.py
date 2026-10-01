@@ -95,6 +95,7 @@ Public API
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Iterator
 from pathlib import Path
@@ -149,6 +150,23 @@ _DESCRIPTION_CONTRADICTION = (
     'skill-internal file `targets:` frontmatter names a target its enclosing skill '
     "scopes away — a file may only NARROW its component's scope, and the multi-target "
     'build rejects a widening, so until it is fixed the build fails.'
+)
+
+_DESCRIPTION_BUNDLE_EMPTY = (
+    'bundle `targets` in .claude-plugin/plugin.json declares an empty list — a bundle that '
+    'ships to no target is an authoring error. Omit the field to ship to every target.'
+)
+
+_DESCRIPTION_BUNDLE_UNKNOWN = (
+    'bundle `targets` in .claude-plugin/plugin.json names a target that is not registered — '
+    'the multi-target build rejects the declaration, so until it is fixed the build fails '
+    'rather than shipping the bundle anywhere.'
+)
+
+_DESCRIPTION_BUNDLE_CONTRADICTION = (
+    'component `targets:` frontmatter names a target its enclosing bundle scopes away — '
+    "a component may only NARROW its bundle's scope, and the multi-target build rejects "
+    'a widening, so until it is fixed the build fails.'
 )
 
 #: Ephemeral and generated directories no component-tree target ever emits
@@ -462,6 +480,34 @@ def registered_target_names(marketplace_root: Path) -> frozenset[str] | None:
     return frozenset(names) if names else None
 
 
+def _find_targets_line(text: str) -> int:
+    """Return the 1-indexed line number containing `"targets"` in `text`, or 1."""
+    for idx, line in enumerate(text.splitlines(), start=1):
+        if '"targets"' in line:
+            return idx
+    return 1
+
+
+def _bundle_component_files(bundle_dir: Path) -> list[Path]:
+    """Enumerate every component file within a single bundle."""
+    files: list[Path] = []
+    if not bundle_dir.is_dir():
+        return files
+    for subdir_name in ('agents', 'commands'):
+        subdir = bundle_dir / subdir_name
+        if not subdir.is_dir():
+            continue
+        files.extend(path for path in sorted(subdir.glob('*.md')) if path.is_file() and not path.name.startswith('.'))
+    skills_dir = bundle_dir / 'skills'
+    if not skills_dir.is_dir():
+        return files
+    for skill_dir in sorted(skills_dir.iterdir()):
+        skill_md = skill_dir / 'SKILL.md'
+        if skill_dir.is_dir() and skill_md.is_file():
+            files.append(skill_md)
+    return files
+
+
 def component_files(marketplace_root: Path) -> list[Path]:
     """Enumerate every component file that may carry a ``targets:`` declaration."""
     files: list[Path] = []
@@ -470,22 +516,7 @@ def component_files(marketplace_root: Path) -> list[Path]:
     except OSError:
         return files
     for bundle_dir in bundle_dirs:
-        if not bundle_dir.is_dir():
-            continue
-        for subdir_name in ('agents', 'commands'):
-            subdir = bundle_dir / subdir_name
-            if not subdir.is_dir():
-                continue
-            files.extend(
-                path for path in sorted(subdir.glob('*.md')) if path.is_file() and not path.name.startswith('.')
-            )
-        skills_dir = bundle_dir / 'skills'
-        if not skills_dir.is_dir():
-            continue
-        for skill_dir in sorted(skills_dir.iterdir()):
-            skill_md = skill_dir / 'SKILL.md'
-            if skill_dir.is_dir() and skill_md.is_file():
-                files.append(skill_md)
+        files.extend(_bundle_component_files(bundle_dir))
     return files
 
 
@@ -545,8 +576,125 @@ def _scan_component(path: Path, registered: frozenset[str] | None) -> list[dict]
     ]
 
 
+def _scan_bundle_manifest(
+    bundle_dir: Path,
+    registered: frozenset[str] | None,
+) -> tuple[frozenset[str] | None, list[dict]]:
+    """Scan `{bundle_dir}/.claude-plugin/plugin.json` for targets scoping issues.
+
+    Returns `(scope, findings)`.
+    """
+    manifest_path = bundle_dir / '.claude-plugin' / 'plugin.json'
+    if not manifest_path.is_file():
+        return None, []
+    try:
+        text = manifest_path.read_text(encoding='utf-8')
+        data = json.loads(text)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None, []
+
+    if not isinstance(data, dict) or 'targets' not in data:
+        return None, []
+
+    raw = data['targets']
+    line_number = _find_targets_line(text)
+
+    if raw is None or (isinstance(raw, list) and len(raw) == 0):
+        return frozenset(), [
+            Finding(
+                type=RULE_ID,
+                file=str(manifest_path),
+                line=line_number,
+                severity='error',
+                fixable=False,
+                rule_id=RULE_ID,
+                description=_DESCRIPTION_BUNDLE_EMPTY,
+                details={'reason': 'targets_empty'},
+                extra={'rule': RULE_NAME},
+            ).to_dict()
+        ]
+
+    if isinstance(raw, str):
+        names = [raw]
+    elif isinstance(raw, list) and all(isinstance(x, str) for x in raw):
+        names = list(raw)
+    else:
+        return None, []
+
+    if registered is not None:
+        unknown = sorted(name for name in names if name not in registered)
+        if unknown:
+            return frozenset(names), [
+                Finding(
+                    type=RULE_ID,
+                    file=str(manifest_path),
+                    line=line_number,
+                    severity='error',
+                    fixable=False,
+                    rule_id=RULE_ID,
+                    description=(
+                        f'{_DESCRIPTION_BUNDLE_UNKNOWN} Unknown: {", ".join(unknown)}. '
+                        f'Registered targets are: {", ".join(sorted(registered))}.'
+                    ),
+                    details={
+                        'reason': 'targets_unknown',
+                        'declared_targets': names,
+                        'unknown_targets': unknown,
+                        'registered_targets': sorted(registered),
+                    },
+                    extra={'rule': RULE_NAME},
+                ).to_dict()
+            ]
+
+    return frozenset(names), []
+
+
+def _scan_bundle_component_contradiction(
+    comp_path: Path,
+    bundle_scope: frozenset[str],
+    registered: frozenset[str] | None,
+) -> list[dict]:
+    """Flag a component whose `targets:` widens its enclosing bundle's `targets`."""
+    try:
+        text = comp_path.read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError):
+        return []
+
+    declaration = declared_targets(text)
+    if (
+        declaration is None
+        or not declaration[0]
+        or (registered is not None and any(name not in registered for name in declaration[0]))
+    ):
+        return []
+
+    comp_names, line_number = declaration
+    if not set(comp_names) <= set(bundle_scope):
+        return [
+            Finding(
+                type=RULE_ID,
+                file=str(comp_path),
+                line=line_number,
+                severity='error',
+                fixable=False,
+                rule_id=RULE_ID,
+                description=_DESCRIPTION_BUNDLE_CONTRADICTION,
+                details={
+                    'reason': 'targets_contradiction',
+                    'bundle_targets': sorted(bundle_scope),
+                    'component_targets': sorted(comp_names),
+                    'parent_targets': sorted(bundle_scope),
+                    'file_targets': sorted(comp_names),
+                    'contradiction': sorted(set(comp_names) - set(bundle_scope)),
+                },
+                extra={'rule': RULE_NAME},
+            ).to_dict()
+        ]
+    return []
+
+
 def analyze_target_scope(marketplace_root: Path) -> list[dict]:
-    """Scan every component for an invalid ``targets:`` declaration.
+    """Scan every bundle manifest and component for an invalid ``targets:`` declaration.
 
     Parameters
     ----------
@@ -561,10 +709,29 @@ def analyze_target_scope(marketplace_root: Path) -> list[dict]:
     """
     registered = registered_target_names(marketplace_root)
     findings: list[dict] = []
-    for path in component_files(marketplace_root):
-        findings.extend(_scan_component(path, registered))
-        if path.name == 'SKILL.md':
-            findings.extend(_scan_skill_internals(path, registered))
+    try:
+        bundle_dirs = sorted(marketplace_root.iterdir())
+    except OSError:
+        return findings
+
+    for bundle_dir in bundle_dirs:
+        if not bundle_dir.is_dir():
+            continue
+        bundle_scope, bundle_findings = _scan_bundle_manifest(bundle_dir, registered)
+        findings.extend(bundle_findings)
+
+        valid_bundle_scope = (
+            bundle_scope
+            if (bundle_scope and (registered is None or all(name in registered for name in bundle_scope)))
+            else None
+        )
+
+        for comp_path in _bundle_component_files(bundle_dir):
+            findings.extend(_scan_component(comp_path, registered))
+            if valid_bundle_scope is not None:
+                findings.extend(_scan_bundle_component_contradiction(comp_path, valid_bundle_scope, registered))
+            if comp_path.name == 'SKILL.md':
+                findings.extend(_scan_skill_internals(comp_path, registered, bundle_scope=valid_bundle_scope))
     return findings
 
 
@@ -607,7 +774,11 @@ def iter_skill_internal_files(skill_dir: Path) -> Iterator[Path]:
         yield path
 
 
-def _scan_skill_internals(skill_md: Path, registered: frozenset[str] | None) -> list[dict]:
+def _scan_skill_internals(
+    skill_md: Path,
+    registered: frozenset[str] | None,
+    bundle_scope: frozenset[str] | None = None,
+) -> list[dict]:
     """Return findings for the internal files of the skill whose manifest is ``skill_md``.
 
     Each file is scanned as a component would be — empty and unknown-target
@@ -616,17 +787,19 @@ def _scan_skill_internals(skill_md: Path, registered: frozenset[str] | None) -> 
     certainty: the parent's declaration readable and non-empty, and the file's
     declaration readable and name-based (an unknown name is already its own
     finding, and testing set inclusion on it could attribute a real target to
-    a typo's parent).
+    a typo's parent). When the skill manifest itself declares no target scope,
+    its scope falls back to the enclosing ``bundle_scope`` if one was declared.
     """
     try:
         parent_text = skill_md.read_text(encoding='utf-8')
     except (OSError, UnicodeDecodeError):
         parent_text = ''
     parent_declaration = declared_targets(parent_text)
+    parent_names: frozenset[str] | None
     if parent_declaration is None or not parent_declaration[0]:
-        parent_names = None
+        parent_names = bundle_scope
     else:
-        parent_names = parent_declaration[0]
+        parent_names = frozenset(parent_declaration[0])
 
     findings: list[dict] = []
     for sibling in iter_skill_internal_files(skill_md.parent):

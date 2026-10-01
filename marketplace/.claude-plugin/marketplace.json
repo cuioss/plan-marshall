@@ -67,6 +67,18 @@
       "description": "OCI container security standards and best practices",
       "source": "./bundles/pm-dev-oci",
       "strict": false
+    },
+    {
+      "name": "plan-marshall-antigravity",
+      "description": "Antigravity harness operational rules, tool invariants, and execution discipline",
+      "source": "./bundles/plan-marshall-antigravity",
+      "strict": false
+    },
+    {
+      "name": "plan-marshall-opencode",
+      "description": "OpenCode harness operational rules, tool invariants, and execution discipline",
+      "source": "./bundles/plan-marshall-opencode",
+      "strict": false
     }
   ]
 }

@@ -23,6 +23,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from marketplace.targets.claude.emitter import CLAUDE_TARGET_NAME
+from marketplace.targets.component_targets import bundle_emits_to
+
 _SOURCE_PREFIX = './bundles/'
 _TARGET_PREFIX = './'
 
@@ -63,6 +66,12 @@ def build_marketplace_json(marketplace_src: Path) -> dict:
 
     rewritten_plugins: list[dict] = []
     for entry in source.get('plugins', []):
+        source_val = entry.get('source', '')
+        if source_val.startswith(_SOURCE_PREFIX):
+            bundle_name = source_val[len(_SOURCE_PREFIX) :]
+            bundle_dir = marketplace_src / 'bundles' / bundle_name
+            if bundle_dir.is_dir() and not bundle_emits_to(bundle_dir, CLAUDE_TARGET_NAME):
+                continue
         rewritten = dict(entry)
         plugin_name = entry.get('name', '<unknown>')
         if 'source' in rewritten:

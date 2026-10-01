@@ -130,6 +130,17 @@ curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-opencode/
 
 This installs into `<project-root>/.opencode/{skills,agents,commands}/`.
 
+=== Workspace Rules & Zero-Token Rule Delivery
+
+When installing with `--workspace` (or when `--emit-rules` is explicitly supplied), the installer automatically synchronizes OpenCode operational rules from `plan-marshall-opencode` into:
+
+`<project-root>/.opencode/rules/plan-marshall-target-rules.md`
+
+OpenCode automatically discovers and loads workspace rules from `.opencode/rules/` into assistant context, delivering tool invariants, single-command execution discipline, and layout standards without consuming tool calls or prompt tokens.
+
+* `--emit-rules`: Explicitly forces target rules synchronization into `.opencode/rules/` regardless of scope.
+* Clean Uninstallation: Full uninstallation or removal of `plan-marshall-opencode` automatically cleans up `.opencode/rules/plan-marshall-target-rules.md`.
+
 == Manual Installation (Clone or Download)
 
 If you prefer to inspect the files before installing:
