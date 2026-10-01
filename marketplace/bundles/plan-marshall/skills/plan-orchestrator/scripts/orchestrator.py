@@ -3859,8 +3859,6 @@ def _sibling_epic_roots(slug: str) -> tuple[list[Path], list[str]]:
     in the ACTIVE root is a live epic in its own right and stays a sibling. A
     queried slug with no active tree — an archived epic queried directly — has
     no live corpus for a dated neighbour to duplicate, so nothing is excluded.
-    A dated snapshot of ANOTHER epic is likewise untouched: it stays a sibling
-    candidate, because the exclusion removes self-comparison and nothing else.
 
     The name-prefix plus date-suffix match is the chosen discriminator because
     the live and the archived ``status.json`` of one epic share no identity

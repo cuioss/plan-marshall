@@ -3390,8 +3390,7 @@ class TestCrossCheckDatedSnapshotNearMisses:
 
     @pytest.mark.parametrize('suffix', _DATED_SNAPSHOT_SUFFIXES, ids=_DATED_SNAPSHOT_SUFFIX_IDS)
     def test_a_dated_snapshot_of_a_different_slug_is_still_a_sibling(self, plan_context, suffix):
-        # The exclusion removes SELF-comparison and nothing else: another epic's
-        # snapshot is real archived work this corpus can duplicate.
+        # Another epic's snapshot is real archived work this corpus can duplicate.
         other_snapshot = f'{SIBLING_SLUG}{suffix}'
         _seed_queried_epic(plan_context)
         _plant_overlapping_spec(plan_context, _archived_epic_dir(plan_context, other_snapshot))
