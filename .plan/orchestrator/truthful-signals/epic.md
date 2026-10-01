@@ -2171,6 +2171,14 @@ Inbox `truth-168-sync-defaults-reverting-remove-001.md`: branch
 Not merged: PLAN-TRUTH-168 stays `staged`, no queue transition. Retire when 1674
 merges and the landing reconciles.
 
+Recurrence 2026-10-01 (operator paste, same facts as the drained inbox message):
+fix mechanics corroborated via PR body (atomic-once-present `held_for_ask`,
+intent-recorded `remove-step`, `added` vs `re_added`, Stage-2 ask step); test
+claims (5/5 tasks, quality-gate green, whole-tree module-tests timeout at 330s)
+remain orchestrator-unverified leads — no build runs inline. Process-rule
+frictions went to the process-compliance inbox (other epic's scope, no action
+here). PR re-checked: still open, review none.
+
 ### W-2026-10-01-b — PLAN-211 implemented in branch, PR not yet opened (inbox 2026-10-01)
 
 Inbox `implement-plan-211-baseline-reconcile-001.md`: branch
