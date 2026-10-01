@@ -16,7 +16,16 @@ Covers the four sub-verbs against a SCAFFOLDED FIXTURE EPIC under
   sides of that comparison publish a whole-vocabulary derivation tally: the spec
   side over ``SURFACE_STATES``, and the candidate side per ``candidate_kind``
   over ``CANDIDATE_DERIVATION_STATES``, each riding with the candidate
-  population it was computed over.
+  population it was computed over. Two entries the store walks reach are never
+  candidates and are left out of those populations before anything is counted:
+  the queried epic's own dated archive snapshot (``{slug}-YY-MM-DD`` or
+  ``{slug}-YY-MM-DD-NN`` in the archived root, while the slug has a live tree)
+  and the plan-less sentinel's directory in the plan store. The payload names
+  each exclusion with a stated count, and each is pinned as a matched pair: the
+  exclusion itself, beside the near-misses that must still be enumerated and
+  compared — a distinct archived epic, another slug's dated snapshot, names
+  outside the suffix grammar, the dated name in the active root, an
+  archived-only queried slug, and a real plan with no captured footprint.
 - ``corpus verdicts``: the sole interpreter of the re-grounding verdict field —
   one control per row of the admission table in
   ``persona-plan-orchestrator/standards/orchestration-model.md``
@@ -83,6 +92,7 @@ from typing import Any
 import pytest
 from _dispatch_roster import section_lines
 from _ledger_fixtures import write_ledger, write_legacy_status
+from marketplace_paths import NO_PLAN_SENTINEL
 
 from conftest import (
     MARKETPLACE_ROOT,
@@ -3183,6 +3193,308 @@ class TestCandidateVocabularyIsDerivedNotHandListed:
         assert emitted_kinds == set(CANDIDATE_KINDS), (
             f'the fixture must exercise every declared kind, got {sorted(emitted_kinds)}'
         )
+
+
+# =============================================================================
+# corpus cross-check — the two entries that are never candidates
+# =============================================================================
+#
+# Two entries the store walks reach are not candidates for duplicate work, and
+# both are left out of the comparison BEFORE anything is counted:
+#
+# - the queried epic's own DATED ARCHIVE SNAPSHOT — an entry of the archived
+#   root named ``{slug}-YY-MM-DD`` or ``{slug}-YY-MM-DD-NN`` while the slug has a
+#   live tree. It is the same epic under another name, so comparing against it
+#   scores the corpus against a stale copy of itself;
+# - the plan-less sentinel's directory in the plan store. It carries a
+#   ``status.json`` and is not a plan: it never declares a footprint, so as a
+#   live candidate it holds the comparison indeterminate on its own.
+#
+# Neither exclusion is silent — the payload names each with a stated count — and
+# each is deliberately NARROW. Every positive control therefore rides with the
+# near-misses that must still be enumerated and compared: on the snapshot side a
+# genuinely distinct archived epic, a dated snapshot of a DIFFERENT slug, names
+# that only resemble the suffix grammar, the dated name in the ACTIVE root, and
+# an archived-only queried slug; on the sentinel side a REAL plan that has no
+# captured footprint. Without them, an exclusion that also swallowed real
+# siblings or real pre-footprint plans would satisfy every positive assertion.
+
+#: The two suffix forms a dated archive snapshot appends to the epic's slug: the
+#: date alone, and the date followed by a two-digit ordinal.
+_DATED_SNAPSHOT_SUFFIXES = ('-26-09-21', '-26-09-21-01')
+_DATED_SNAPSHOT_SUFFIX_IDS = ('date', 'date-and-ordinal')
+# Non-vacuity guard for the parametrizations below — an empty tuple would drop
+# every snapshot control to zero cases instead of failing loudly.
+assert _DATED_SNAPSHOT_SUFFIXES, '_DATED_SNAPSHOT_SUFFIXES must not be empty'
+assert len(_DATED_SNAPSHOT_SUFFIX_IDS) == len(_DATED_SNAPSHOT_SUFFIXES)
+
+#: Archived directory names that BEGIN with the fixture slug and END in date-like
+#: digits, yet sit outside the snapshot grammar: something between the slug and
+#: the date, a four-digit year, and a truncated date.
+_DATED_SNAPSHOT_NEAR_MISSES = (
+    f'{SLUG}-extra-26-09-21',
+    f'{SLUG}-2026-09-21',
+    f'{SLUG}-26-09',
+)
+_DATED_SNAPSHOT_NEAR_MISS_IDS = ('infix-before-date', 'four-digit-year', 'truncated-date')
+assert _DATED_SNAPSHOT_NEAR_MISSES, '_DATED_SNAPSHOT_NEAR_MISSES must not be empty'
+assert len(_DATED_SNAPSHOT_NEAR_MISS_IDS) == len(_DATED_SNAPSHOT_NEAR_MISSES)
+
+#: The one spec every snapshot NEGATIVE control plants in its candidate tree. It
+#: declares the surface the queried epic's own spec declares, so "still compared"
+#: is observable as an overlap row naming the candidate — a population count
+#: alone would also be satisfied by a tree that was counted and never scored.
+_PLANTED_SPEC = 'PLAN-77-sibling.md'
+
+
+def _seed_queried_epic(plan_context, *, archived_only: bool = False) -> None:
+    """Seed the queried epic's own corpus: one spec declaring ``SHARED_PATH``.
+
+    The default seeds the LIVE tree, ledger included. ``archived_only`` writes
+    the same spec under the ARCHIVED root and seeds nothing in the active one —
+    the shape of an archived epic queried directly, where the queried slug has
+    no live tree at all.
+    """
+    if archived_only:
+        _write_spec(
+            plan_context,
+            'PLAN-01-alpha.md',
+            epic_dir=_archived_epic_dir(plan_context, SLUG),
+            surface_lines=_surface(SHARED_PATH),
+        )
+        return
+    _write_status(plan_context, [_row('PLAN-01')])
+    _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+
+
+def _plant_overlapping_spec(plan_context, epic_dir: Path) -> None:
+    """Plant :data:`_PLANTED_SPEC` in ``epic_dir``, declaring the own spec's surface."""
+    _write_spec(plan_context, _PLANTED_SPEC, epic_dir=epic_dir, surface_lines=_surface(SHARED_PATH))
+
+
+def _sibling_overlap_candidates(result: Any) -> list:
+    """The candidate of every sibling-epic overlap row, in payload order."""
+    return [
+        row['candidate']
+        for row in result['file_overlap_matches']
+        if row['candidate_kind'] == CANDIDATE_KIND_SIBLING_EPIC_SPEC
+    ]
+
+
+def _assert_still_enumerated_and_compared(result: Any, candidate_root: str) -> None:
+    """Assert ONE sibling tree was walked, counted and scored, and nothing excluded.
+
+    The shared body of every snapshot negative control. The three readings are
+    separate facts and each is asserted: the tree counts as a scanned epic, its
+    spec is in the sibling population as a comparable candidate, and the matcher
+    produced the overlap row that names it.
+    """
+    assert result['status'] == 'success'
+    assert result['excluded_self_snapshot_count'] == 0, f'{candidate_root} was excluded as a self-snapshot'
+    assert result['excluded_self_snapshots'] == []
+    assert result['epics_scanned'] == 1, f'{candidate_root} was not enumerated as a sibling epic'
+    assert _candidate_population(result)[CANDIDATE_KIND_SIBLING_EPIC_SPEC] == 1
+    assert _candidate_tally(result)[(CANDIDATE_KIND_SIBLING_EPIC_SPEC, CANDIDATE_COMPARABLE)] == 1
+    assert _sibling_overlap_candidates(result) == [f'{candidate_root}/{_PLANTED_SPEC}'], (
+        f'{candidate_root} was counted but never compared — its declared surface is the own '
+        "spec's, so a scored candidate must produce exactly one overlap row"
+    )
+
+
+class TestCrossCheckExcludesOwnDatedSnapshot:
+    """Positive control: the queried epic's own dated archive snapshot is no sibling."""
+
+    @pytest.mark.parametrize('suffix', _DATED_SNAPSHOT_SUFFIXES, ids=_DATED_SNAPSHOT_SUFFIX_IDS)
+    def test_should_exclude_the_snapshot_and_name_the_exclusion(self, plan_context, suffix):
+        # The snapshot holds a copy of the live spec (the SAME declared surface —
+        # an overlap row if it were scored) and a second spec that both cites the
+        # live spec's pointer (an origin row if it were scored) and declares no
+        # resolvable surface (a sibling ``indeterminate`` if it were tallied). So
+        # every assertion below has something to fail on.
+        snapshot_name = f'{SLUG}{suffix}'
+        snapshot_dir = _archived_epic_dir(plan_context, snapshot_name)
+        _seed_queried_epic(plan_context)
+        _write_spec(plan_context, 'PLAN-01-alpha.md', epic_dir=snapshot_dir, surface_lines=_surface(SHARED_PATH))
+        _write_spec(
+            plan_context,
+            'PLAN-02-beta.md',
+            epic_dir=snapshot_dir,
+            objective=f'Follows {_pointer("PLAN-01-alpha.md")}.',
+        )
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert result['status'] == 'success'
+        assert result['specs_total'] == 1, 'the live corpus did not materialize'
+        assert len(list((snapshot_dir / 'plans').glob('PLAN-*.md'))) == 2, (
+            'the archived snapshot corpus did not materialize'
+        )
+        assert result['excluded_self_snapshots'] == [snapshot_name]
+        assert result['excluded_self_snapshot_count'] == 1
+        assert result['epics_scanned'] == 0, 'the snapshot was still counted as a scanned sibling epic'
+        assert _candidate_population(result)[CANDIDATE_KIND_SIBLING_EPIC_SPEC] == 0
+        tally = _candidate_tally(result)
+        assert CANDIDATE_DERIVATION_STATES, 'an empty state vocabulary would make the tally sweep below vacuous'
+        assert {state: tally[(CANDIDATE_KIND_SIBLING_EPIC_SPEC, state)] for state in CANDIDATE_DERIVATION_STATES} == (
+            dict.fromkeys(CANDIDATE_DERIVATION_STATES, 0)
+        ), 'the snapshot corpus still contributes to the sibling tally'
+        prefix = f'{snapshot_name}/'
+        for field in ('file_overlap_matches', 'source_origin_matches'):
+            from_snapshot = [row['candidate'] for row in result[field] if row['candidate'].startswith(prefix)]
+            assert from_snapshot == [], f'{field} still carries rows scored against the snapshot'
+        assert result['candidates_indeterminate'] == 0, (
+            "the snapshot's non-declarative spec still holds the comparison indeterminate"
+        )
+        assert result['candidate_comparison_determinate'] is True
+
+
+class TestCrossCheckDatedSnapshotNearMisses:
+    """Negative controls: each near-miss is still enumerated, compared, and unexcluded."""
+
+    def test_a_distinct_archived_epic_is_still_a_sibling(self, plan_context):
+        _seed_queried_epic(plan_context)
+        _plant_overlapping_spec(plan_context, _archived_epic_dir(plan_context, ARCHIVED_SLUG))
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        _assert_still_enumerated_and_compared(result, ARCHIVED_SLUG)
+
+    @pytest.mark.parametrize('suffix', _DATED_SNAPSHOT_SUFFIXES, ids=_DATED_SNAPSHOT_SUFFIX_IDS)
+    def test_a_dated_snapshot_of_a_different_slug_is_still_a_sibling(self, plan_context, suffix):
+        # The exclusion removes SELF-comparison and nothing else: another epic's
+        # snapshot is real archived work this corpus can duplicate.
+        other_snapshot = f'{SIBLING_SLUG}{suffix}'
+        _seed_queried_epic(plan_context)
+        _plant_overlapping_spec(plan_context, _archived_epic_dir(plan_context, other_snapshot))
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        _assert_still_enumerated_and_compared(result, other_snapshot)
+
+    @pytest.mark.parametrize('name', _DATED_SNAPSHOT_NEAR_MISSES, ids=_DATED_SNAPSHOT_NEAR_MISS_IDS)
+    def test_a_name_outside_the_suffix_grammar_is_still_a_sibling(self, plan_context, name):
+        # Each name starts with the queried slug and ends in date-like digits, so
+        # a match anchored on only ONE end of the name would exclude it.
+        _seed_queried_epic(plan_context)
+        _plant_overlapping_spec(plan_context, _archived_epic_dir(plan_context, name))
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        _assert_still_enumerated_and_compared(result, name)
+
+    @pytest.mark.parametrize('suffix', _DATED_SNAPSHOT_SUFFIXES, ids=_DATED_SNAPSHOT_SUFFIX_IDS)
+    def test_the_dated_name_in_the_active_root_is_still_a_sibling(self, plan_context, suffix):
+        # The same name the positive control excludes, in the OTHER store root:
+        # an active epic is a live epic in its own right, whatever it is called.
+        active_name = f'{SLUG}{suffix}'
+        _seed_queried_epic(plan_context)
+        _plant_overlapping_spec(plan_context, _epic_dir(plan_context, active_name))
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert not _archived_epic_dir(plan_context, active_name).exists(), (
+            'the control is only load-bearing when the dated name lives in the ACTIVE root alone'
+        )
+        _assert_still_enumerated_and_compared(result, active_name)
+
+    @pytest.mark.parametrize('suffix', _DATED_SNAPSHOT_SUFFIXES, ids=_DATED_SNAPSHOT_SUFFIX_IDS)
+    def test_an_archived_only_queried_slug_keeps_its_dated_neighbour(self, plan_context, suffix):
+        # The queried slug has NO live tree, so there is no live corpus for the
+        # dated neighbour to be a stale copy of — the exclusion's second condition.
+        dated_neighbour = f'{SLUG}{suffix}'
+        _seed_queried_epic(plan_context, archived_only=True)
+        _plant_overlapping_spec(plan_context, _archived_epic_dir(plan_context, dated_neighbour))
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert not _epic_dir(plan_context).exists(), (
+            'the control is only load-bearing when the queried slug has no tree in the ACTIVE root'
+        )
+        assert result['specs_total'] == 1, 'the archived own corpus did not materialize'
+        _assert_still_enumerated_and_compared(result, dated_neighbour)
+
+
+def _write_sentinel_plan_dir(plan_context) -> Path:
+    """Materialize the plan-less sentinel's directory, named through the constant.
+
+    Only the ``status.json`` that makes the active-plan walk admit a directory is
+    written: the sentinel has no request and never declares a footprint, which is
+    exactly why it can only ever be an indeterminate candidate.
+    """
+    plan_dir: Path = plan_context.plan_dir_for(NO_PLAN_SENTINEL)
+    (plan_dir / 'status.json').write_text(json.dumps({'plan_id': NO_PLAN_SENTINEL}), encoding='utf-8')
+    return plan_dir
+
+
+def _active_plan_names(plan_context) -> list:
+    """Every directory of the fixture plan store the active-plan walk admits."""
+    return sorted(path.parent.name for path in Path(plan_context.plans_dir).glob('*/status.json'))
+
+
+class TestCrossCheckExcludesTheSentinelPlanDirectory:
+    """The plan-less sentinel is skipped by id — never by an empty path set."""
+
+    def test_should_exclude_a_store_holding_only_the_sentinel(self, plan_context):
+        # Positive control. The own spec is declarative, so the sentinel is the
+        # ONLY thing that could hold the comparison indeterminate.
+        _seed_queried_epic(plan_context)
+        _write_sentinel_plan_dir(plan_context)
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert _active_plan_names(plan_context) == [NO_PLAN_SENTINEL], (
+            'the control is only load-bearing when the sentinel is the sole admitted directory'
+        )
+        assert result['status'] == 'success'
+        assert result['excluded_sentinel_plan_count'] == 1
+        assert result['plans_scanned'] == 0
+        assert _candidate_population(result)[CANDIDATE_KIND_LIVE_PLAN] == 0
+        tally = _candidate_tally(result)
+        assert CANDIDATE_DERIVATION_STATES, 'an empty state vocabulary would make the tally sweep below vacuous'
+        assert {state: tally[(CANDIDATE_KIND_LIVE_PLAN, state)] for state in CANDIDATE_DERIVATION_STATES} == (
+            dict.fromkeys(CANDIDATE_DERIVATION_STATES, 0)
+        ), 'the sentinel still contributes to the live-plan tally'
+        assert result['live_indeterminate_plans'] == []
+        assert result['live_plan_surfaces'] == []
+        assert result['candidates_indeterminate'] == 0, 'the sentinel still holds the comparison indeterminate'
+        assert result['candidate_comparison_determinate'] is True
+
+    def test_a_real_unfootprinted_plan_beside_the_sentinel_is_still_indeterminate(self, plan_context):
+        # Negative control. The real plan and the sentinel BOTH have an empty
+        # path set, so an exclusion keyed on that instead of on the id would
+        # drop the real plan too — and hide exactly the pre-footprint plan the
+        # indeterminate reading exists to name.
+        _seed_queried_epic(plan_context)
+        _write_sentinel_plan_dir(plan_context)
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[])
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert _active_plan_names(plan_context) == sorted([NO_PLAN_SENTINEL, LIVE_PLAN_ID]), (
+            'both plan-store directories must be admitted by the walk for the pair to discriminate'
+        )
+        assert result['excluded_sentinel_plan_count'] == 1
+        assert result['plans_scanned'] == 1
+        assert result['live_indeterminate_plans'] == [LIVE_PLAN_ID]
+        assert result['live_plan_surfaces'] == [{'plan': LIVE_PLAN_ID, 'comparable': False}]
+        assert _candidate_population(result)[CANDIDATE_KIND_LIVE_PLAN] == 1
+        assert _candidate_tally(result)[(CANDIDATE_KIND_LIVE_PLAN, CANDIDATE_INDETERMINATE)] == 1
+        assert result['candidate_comparison_determinate'] is False
+
+    def test_a_store_without_the_sentinel_reports_a_stated_zero(self, plan_context):
+        # Negative control on the COUNT: the key is published on every successful
+        # call, so "nothing was excluded" is a stated zero rather than an absent
+        # key — asserted beside a non-empty live population, never an empty one.
+        _seed_queried_epic(plan_context)
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[OTHER_PATH])
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert _active_plan_names(plan_context) == [LIVE_PLAN_ID]
+        assert result['excluded_sentinel_plan_count'] == 0
+        assert result['plans_scanned'] == 1, 'the live population must be non-empty for the zero to mean anything'
+        assert result['excluded_self_snapshot_count'] == 0
+        assert result['excluded_self_snapshots'] == []
 
 
 class TestCorpusSurfacesRefusals:

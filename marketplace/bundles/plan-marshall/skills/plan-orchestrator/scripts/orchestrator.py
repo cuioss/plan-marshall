@@ -70,7 +70,9 @@ per-concern layout; no code path here opens a queue row or the anchor itself.
   compliant alternative to a direct ``Read`` of the ledger tree), cross-check those specs
   against sibling epics and live plans for duplicate work (the arm a single
   ledger structurally cannot perform, scored on ``manage-status
-  sibling-collision-check``'s two classes), publish every spec's DECLARED
+  sibling-collision-check``'s two classes; the queried epic's own dated archive
+  snapshot and the plan-less sentinel's directory are never candidates, and the
+  payload names each exclusion with a stated count), publish every spec's DECLARED
   ``## Expected Surface`` with its derivation status and the population the
   comparison was drawn from (``surfaces`` — the read verb the disjointness gate
   decides on, so that verdict is a parser decision rather than a reader's
@@ -210,6 +212,7 @@ from file_ops import (
     safe_main,
 )
 from input_validation import validate_plan_id
+from marketplace_paths import names_real_plan
 from orchestrator_worktree import orchestrator_use_worktree
 from toon_parser import parse_toon, serialize_toon
 
@@ -403,6 +406,16 @@ SCOPE_ARCHIVED = 'archived'
 #: moves this walk with it instead of leaving it pointing at a stale directory.
 #: The probe is never joined onto anything that is read, written or created.
 _ROOT_PROBE_ENTRY = 'root-probe'
+
+#: The suffix an epic's DATED ARCHIVE SNAPSHOT appends to the epic's own slug:
+#: ``-YY-MM-DD``, optionally followed by a two-digit ordinal ``-NN``. Every group
+#: is exactly two ASCII digits. The single definition of that grammar — matched
+#: with ``fullmatch`` against the WHOLE remainder of a directory name once the
+#: queried slug has been taken off its front, so the name as a whole is anchored
+#: at both ends: ``{slug}-extra-26-09-21`` (something between slug and date),
+#: ``{slug}-2026-09-21`` (a four-digit year) and ``{slug}-26-09`` (a truncated
+#: date) are all outside it. Consumed by :func:`_is_own_dated_snapshot` only.
+_DATED_SNAPSHOT_SUFFIX_RE = re.compile(r'-[0-9]{2}-[0-9]{2}-[0-9]{2}(?:-[0-9]{2})?')
 
 # ``RUNNING_STATUS`` — a row at this status is enumerated but carries
 # ``excluded_reason`` so a caller cannot re-scope it: re-scoping a spec
@@ -3797,23 +3810,72 @@ def cmd_corpus_epics(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def _sibling_epic_roots(slug: str) -> list[Path]:
-    """Enumerate the OTHER epics' store roots — active and archived alike.
+def _is_own_dated_snapshot(name: str, slug: str) -> bool:
+    """Whether ``name`` is ``slug`` followed by exactly one dated-snapshot suffix.
+
+    The prefix must equal the queried slug EXACTLY and the remainder must be the
+    whole of :data:`_DATED_SNAPSHOT_SUFFIX_RE`, so the test is anchored on the
+    full directory name rather than on a date that merely appears somewhere in
+    it. A snapshot of a DIFFERENT slug therefore never matches — including a
+    slug the queried one is itself a prefix of.
+    """
+    return name.startswith(slug) and _DATED_SNAPSHOT_SUFFIX_RE.fullmatch(name[len(slug) :]) is not None
+
+
+def _sibling_epic_roots(slug: str) -> tuple[list[Path], list[str]]:
+    """Enumerate the OTHER epics' store roots, and name what was left out of them.
+
+    Returns ``(roots, excluded_self_snapshots)``: the sibling epic trees in name
+    order, and the sorted directory names that were recognised as the queried
+    epic's own dated archive snapshot and therefore NOT yielded. The second
+    element is handed back so the caller can publish the exclusion; a smaller
+    sibling population that nothing names is indistinguishable from a store that
+    simply holds fewer epics.
 
     Mirrors the on-query store scan the read verbs document: both
     ``.plan/orchestrator/`` and ``.plan/archived-orchestrators/`` are walked, so
     an archived sibling stays visible to the duplication check. An epic present
-    in both homes is yielded once.
+    in both homes is yielded once. Two entries are not siblings of the queried
+    epic:
+
+    * the queried epic itself, by exact directory-name equality; and
+    * the queried epic's own DATED ARCHIVE SNAPSHOT — an entry of the ARCHIVED
+      root named ``{slug}-YY-MM-DD`` or ``{slug}-YY-MM-DD-NN``
+      (:func:`_is_own_dated_snapshot`), excluded only while the queried slug has
+      a tree in the ACTIVE root. That directory is the same epic under another
+      name, so yielding it would compare the epic's corpus against a stale copy
+      of itself.
+
+    Both conditions on the second rule are load-bearing. An entry of that name
+    in the ACTIVE root is a live epic in its own right and stays a sibling. A
+    queried slug with no active tree — an archived epic queried directly — has
+    no live corpus for a dated neighbour to duplicate, so nothing is excluded.
+    A dated snapshot of ANOTHER epic is likewise untouched: it stays a sibling
+    candidate, because the exclusion removes self-comparison and nothing else.
+
+    The name-prefix plus date-suffix match is the chosen discriminator because
+    the live and the archived ``status.json`` of one epic share no identity
+    field: neither carries the slug or an epic id, and ``title`` diverges freely
+    between the two. The exclusion therefore depends on the snapshot naming
+    convention, which no code enforces, and that dependence is an accepted
+    limitation: an unrelated archived epic that happens to carry the dated name
+    is excluded, and a snapshot archived under any other name is not.
     """
     roots: dict[str, Path] = {}
-    bases = [base for _, base in _epic_store_roots()]
-    for base in bases:
+    excluded: set[str] = set()
+    store_roots = _epic_store_roots()
+    has_active_tree = any((base / slug).is_dir() for scope, base in store_roots if scope == SCOPE_ACTIVE)
+    for scope, base in store_roots:
         if not base.is_dir():
             continue
         for child in sorted(base.iterdir()):
-            if child.is_dir() and child.name != slug and child.name not in roots:
-                roots[child.name] = child
-    return [roots[name] for name in sorted(roots)]
+            if not child.is_dir() or child.name == slug or child.name in roots:
+                continue
+            if scope == SCOPE_ARCHIVED and has_active_tree and _is_own_dated_snapshot(child.name, slug):
+                excluded.add(child.name)
+                continue
+            roots[child.name] = child
+    return [roots[name] for name in sorted(roots)], sorted(excluded)
 
 
 def _spec_record(epic_slug: str, path: Path, repo_root: Path) -> dict[str, Any] | None:
@@ -3857,23 +3919,48 @@ def _spec_record(epic_slug: str, path: Path, repo_root: Path) -> dict[str, Any] 
     }
 
 
-def _live_plan_records() -> list[dict[str, Any]]:
-    """Build one comparable record per ACTIVE plan — the cross-ledger direction.
+def _live_plan_records() -> tuple[list[dict[str, Any]], int]:
+    """Build one comparable record per REAL active plan — the cross-ledger direction.
+
+    Returns ``(records, excluded_sentinel_plan_count)``: the records, and how
+    many entries of the active-plan walk were left out because their id names no
+    real plan. The count is handed back so the caller can publish the exclusion
+    rather than report a smaller live population nothing accounts for.
 
     A single ledger structurally cannot see a duplicate held in another ledger,
     so the live plan set is enumerated through ``_cmd_sibling_collision``'s own
     active-plan walk and each plan contributes its ``source_id`` origin and its
     ``references.json`` ``affected_files`` surface.
 
-    A live plan with an empty path set declares no comparable surface (before
-    footprint capture it has nothing to compare), so it is flagged
+    That walk admits every directory carrying a ``status.json``, and the
+    plan-less operations sentinel's directory carries one. It is not a plan: it
+    has no request, never declares a footprint, and is recreated by the next
+    plan-less build if removed — so as a record it would be permanently
+    ``comparable: False`` and would alone hold the candidate comparison
+    indeterminate. It is skipped through ``marketplace_paths.names_real_plan``,
+    the single predicate for "does this id name an actual plan"; this module
+    holds no copy of the sentinel value. The skip sits HERE rather than in the
+    shared walk for two reasons: the excluded count is local to this consumer,
+    and that walk mirrors the plan listing, which still reports the directory —
+    narrowing the walk would break the mirror for a consumer the sentinel does
+    not affect, since an entry with no traceable source and no surface can
+    match neither collision class.
+
+    The skip is keyed on the id and NEVER on an empty path set. A real plan with
+    an empty path set declares no comparable surface (before footprint capture
+    it has nothing to compare), so it is still enumerated and flagged
     ``comparable: False`` — the live-side analog of a spec in any
     :data:`SURFACE_INDETERMINATE_STATES` state. An empty set contributes no
     overlap row at all, so without the flag its absence from the match list is
-    indistinguishable from a checked negative.
+    indistinguishable from a checked negative; dropping such a plan instead
+    would hide exactly the pre-footprint plan the flag exists to name.
     """
     records: list[dict[str, Any]] = []
+    excluded_sentinel_plan_count = 0
     for plan_id, plan_dir in sorted(_iter_active_plan_dirs().items()):
+        if not names_real_plan(plan_id):
+            excluded_sentinel_plan_count += 1
+            continue
         _, source_id = _read_request_source(plan_dir)
         pointers = _spec_pointers(source_id) if source_id else set()
         paths = _read_affected_files(plan_dir)
@@ -3885,7 +3972,7 @@ def _live_plan_records() -> list[dict[str, Any]]:
                 'comparable': bool(paths),
             }
         )
-    return records
+    return records, excluded_sentinel_plan_count
 
 
 def _glob_stem(container: str) -> str:
@@ -4073,6 +4160,19 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
     archived), the live plan set, and this epic's own corpus for the
     within-corpus direction — so a ``count: 0`` states which zero it is.
 
+    Two entries are never candidates and are left out of those populations
+    BEFORE anything is counted: the queried epic's own dated archive snapshot
+    (see :func:`_sibling_epic_roots`) and the plan-less sentinel's directory
+    (see :func:`_live_plan_records`). Neither exclusion is silent. Every
+    successful call publishes ``excluded_self_snapshot_count``,
+    ``excluded_self_snapshots`` (the excluded archived directory names, sorted)
+    and ``excluded_sentinel_plan_count``, so a zero in any of them is a STATED
+    zero — nothing was excluded — rather than an absent key. ``epics_scanned``,
+    ``plans_scanned``, ``candidate_population``, ``candidate_derivation_states``,
+    ``candidates_total``, ``candidates_indeterminate``, the live-side lists and
+    the determinacy verdict are all computed over the post-exclusion
+    populations, so each figure reconciles with the exclusion counts beside it.
+
     BOTH sides of the comparison publish a derivation-status tally over their
     whole state vocabulary. The spec side is ``spec_surface_states`` over
     :data:`SURFACE_STATES`; the candidate side is ``candidate_derivation_states``
@@ -4130,7 +4230,7 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
             unreadable.append({'spec': path.name, 'error': 'unreadable'})
         else:
             own.append(record)
-    sibling_roots = _sibling_epic_roots(args.slug)
+    sibling_roots, excluded_self_snapshots = _sibling_epic_roots(args.slug)
     candidates: list[tuple[str, dict[str, Any]]] = []
     for sibling_root in sibling_roots:
         for path in _spec_paths(sibling_root):
@@ -4146,7 +4246,7 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
                         {**record, 'name': f'{sibling_root.name}/{path.name}'},
                     )
                 )
-    live = _live_plan_records()
+    live, excluded_sentinel_plan_count = _live_plan_records()
     for record in live:
         candidate_population[CANDIDATE_KIND_LIVE_PLAN] += 1
         candidate_tally[CANDIDATE_KIND_LIVE_PLAN][_live_candidate_state(record)] += 1
@@ -4219,6 +4319,16 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
         'governing_authority': SURFACE_GOVERNING_AUTHORITY,
         'epics_scanned': len(sibling_roots),
         'plans_scanned': len(live),
+        # The two never-real candidate populations left out of the figures
+        # above, published on EVERY successful call so a zero states that
+        # nothing was excluded. ``excluded_self_snapshots`` names the archived
+        # directories recognised as this epic's own dated snapshot;
+        # ``excluded_sentinel_plan_count`` counts the active-plan directories
+        # whose id names no real plan. ``epics_scanned`` and ``plans_scanned``
+        # are post-exclusion, so each reconciles with the count beside it.
+        'excluded_self_snapshot_count': len(excluded_self_snapshots),
+        'excluded_self_snapshots': excluded_self_snapshots,
+        'excluded_sentinel_plan_count': excluded_sentinel_plan_count,
         'specs_total': len(own_paths),
         'specs_scanned': len(own),
         'candidates_scanned': len(candidates),

@@ -114,7 +114,7 @@ python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator cor
   --slug {slug}
 ```
 
-The verb reports candidates over three named populations — sibling epics (active and archived), the live plan set, and this epic's own corpus — and applies nothing. Superseding is this doc's inline, ledger-writing act on the specs at `{epic_dir}/plans/…`, per the duplication row of the apply-policy table. ⛔ **No spec file is ever deleted**: the retired spec is the audit record of why it was retired.
+The verb reports candidates over three named populations — sibling epics (active and archived, EXCEPT this epic's own dated archive snapshot), the live plan set (EXCEPT the plan-less sentinel), and this epic's own corpus — and applies nothing. Neither exception is applied silently: the payload names each one with a stated count, and the keys that carry them — with what a zero in each means — are documented once at [`plan-orchestrator/SKILL.md`](../SKILL.md) § Canonical invocations → `corpus cross-check`, not restated here. The exceptions are narrow by design: a dated snapshot of ANOTHER epic is still a sibling candidate, and a real live plan that has captured no surface is still enumerated and still indeterminate. Superseding is this doc's inline, ledger-writing act on the specs at `{epic_dir}/plans/…`, per the duplication row of the apply-policy table. ⛔ **No spec file is ever deleted**: the retired spec is the audit record of why it was retired.
 
 ### Step 7 (A5): Distribution — component-first, task-second
 
