@@ -75,6 +75,7 @@ PASSTHROUGH_FIELDS = (
     'repository',
     'keywords',
     'lspServers',
+    'targets',
 )
 
 

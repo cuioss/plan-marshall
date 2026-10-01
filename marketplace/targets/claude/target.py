@@ -56,7 +56,7 @@ from marketplace.targets.claude.source_fingerprint import (
     compute_source_tree_fingerprint,
     hash_objects,
 )
-from marketplace.targets.component_targets import validate_component_scopes
+from marketplace.targets.component_targets import bundle_emits_to, validate_component_scopes
 from marketplace.targets.fs_safety import refuse_tree_overlap, safe_rmtree
 
 # Sentinel file written at the end of every successful emit. The
@@ -233,6 +233,8 @@ class ClaudeTarget(TargetBase):
         output_dir.mkdir(parents=True, exist_ok=True)
 
         for bundle_dir in bundle_dirs:
+            if not bundle_emits_to(bundle_dir, self.name):
+                continue
             mirrored = emit_bundle_verbatim(bundle_dir, output_dir, target_name=self.name)
             emitted.extend(mirrored)
 
@@ -248,7 +250,8 @@ class ClaudeTarget(TargetBase):
         # live bundle's output. Same gate, for the same reason, as the OpenCode
         # emitter's ``_prune_stale_outputs``.
         if bundles is None:
-            prune_removed_bundles(output_dir, {d.name for d in bundle_dirs})
+            active_bundle_dirs = [d for d in bundle_dirs if bundle_emits_to(d, self.name)]
+            prune_removed_bundles(output_dir, {d.name for d in active_bundle_dirs})
 
         # Top-level marketplace.json so target/claude/ is registerable as a
         # Claude Code marketplace. plugins[].source paths are rewritten from

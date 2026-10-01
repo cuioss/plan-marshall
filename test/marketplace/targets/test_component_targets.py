@@ -11,14 +11,17 @@ from marketplace.targets import TARGET_REGISTRY
 from marketplace.targets.base import TargetBase
 from marketplace.targets.component_targets import (
     TargetScopeError,
+    bundle_emits_to,
     component_tree_target_names,
     emits_to,
     excluded_emission_roots,
     is_under_any,
     iter_component_manifests,
     iter_skill_internal_files,
+    read_bundle_target_scope,
     read_target_scope,
     registered_target_names,
+    validate_component_scopes,
 )
 
 # Every declaration spelling the build must accept, paired with the scope it
@@ -847,3 +850,132 @@ def test_the_internal_walk_skips_dotfiles_and_cache_dirs(tmp_path):
     (cache_dir / 'cache.md').write_text('# cache\n', encoding='utf-8')
 
     assert list(iter_skill_internal_files(skill_dir)) == [skill_dir / 'references' / 'x.md']
+
+
+# ---------------------------------------------------------------------------
+# Bundle-level target scoping (REQ-HBNDL-1, REQ-HBNDL-2)
+# ---------------------------------------------------------------------------
+
+
+def _bundle_with_manifest(tmp_path: Path, manifest_content: str | None = None) -> Path:
+    bundle_dir = tmp_path / 'test-bundle'
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+    if manifest_content is not None:
+        plugin_json = bundle_dir / '.claude-plugin' / 'plugin.json'
+        plugin_json.parent.mkdir(parents=True, exist_ok=True)
+        plugin_json.write_text(manifest_content, encoding='utf-8')
+    return bundle_dir
+
+
+def test_bundle_target_scope_absent_manifest(tmp_path):
+    """A bundle directory without plugin.json defaults to emitting everywhere."""
+    bundle = _bundle_with_manifest(tmp_path, manifest_content=None)
+    assert read_bundle_target_scope(bundle) is None
+    assert bundle_emits_to(bundle, 'claude') is True
+    assert bundle_emits_to(bundle, 'antigravity') is True
+    assert bundle_emits_to(bundle, 'opencode') is True
+
+
+def test_bundle_target_scope_absent_targets_field(tmp_path):
+    """A bundle manifest without targets field defaults to emitting everywhere."""
+    bundle = _bundle_with_manifest(tmp_path, manifest_content='{"name": "test"}')
+    assert read_bundle_target_scope(bundle) is None
+    assert bundle_emits_to(bundle, 'claude') is True
+    assert bundle_emits_to(bundle, 'antigravity') is True
+
+
+def test_bundle_target_scope_valid_list(tmp_path):
+    """A bundle manifest declaring targets list emits only to those targets."""
+    bundle = _bundle_with_manifest(tmp_path, manifest_content='{"name": "test", "targets": ["antigravity"]}')
+    assert read_bundle_target_scope(bundle) == frozenset({'antigravity'})
+    assert bundle_emits_to(bundle, 'antigravity') is True
+    assert bundle_emits_to(bundle, 'claude') is False
+    assert bundle_emits_to(bundle, 'opencode') is False
+
+
+def test_bundle_target_scope_valid_single_string(tmp_path):
+    """A bundle manifest declaring targets as a single string is accepted."""
+    bundle = _bundle_with_manifest(tmp_path, manifest_content='{"name": "test", "targets": "antigravity"}')
+    assert read_bundle_target_scope(bundle) == frozenset({'antigravity'})
+    assert bundle_emits_to(bundle, 'antigravity') is True
+    assert bundle_emits_to(bundle, 'claude') is False
+
+
+@pytest.mark.parametrize('empty_value', ['[]', 'null', '""'])
+def test_bundle_target_scope_empty_fails_closed(tmp_path, empty_value):
+    """A bundle manifest declaring an empty targets field raises TargetScopeError."""
+    bundle = _bundle_with_manifest(tmp_path, manifest_content=f'{{"name": "test", "targets": {empty_value}}}')
+    with pytest.raises(TargetScopeError, match='empty'):
+        read_bundle_target_scope(bundle)
+
+
+def test_bundle_target_scope_unknown_target_fails_closed(tmp_path):
+    """A bundle manifest declaring unknown target raises TargetScopeError."""
+    bundle = _bundle_with_manifest(tmp_path, manifest_content='{"name": "test", "targets": ["nonexistent"]}')
+    with pytest.raises(TargetScopeError, match='unknown target'):
+        read_bundle_target_scope(bundle)
+
+
+def test_bundle_target_scope_treeless_only_fails_closed(tmp_path):
+    """A bundle manifest naming only treeless targets raises TargetScopeError."""
+    treeless = sorted(registered_target_names() - component_tree_target_names())
+    assert treeless
+    quoted = ', '.join(f'"{t}"' for t in treeless)
+    bundle = _bundle_with_manifest(tmp_path, manifest_content=f'{{"name": "test", "targets": [{quoted}]}}')
+    with pytest.raises(TargetScopeError, match='ship nowhere'):
+        read_bundle_target_scope(bundle)
+
+
+def test_bundle_target_scope_malformed_json_mentioning_targets_fails_closed(tmp_path):
+    """A malformed bundle manifest mentioning targets raises TargetScopeError."""
+    bundle = _bundle_with_manifest(tmp_path, manifest_content='{"name": "test", "targets": [broken')
+    with pytest.raises(TargetScopeError, match='not well-formed JSON'):
+        read_bundle_target_scope(bundle)
+
+
+def test_bundle_target_scope_malformed_json_without_targets_ignored(tmp_path):
+    """A malformed bundle manifest not mentioning targets returns None."""
+    bundle = _bundle_with_manifest(tmp_path, manifest_content='{broken json without the keyword')
+    assert read_bundle_target_scope(bundle) is None
+
+
+def test_validate_component_scopes_accepts_bundle_narrowing(tmp_path):
+    """Components narrowing bundle scope pass validation."""
+    bundle = _bundle_with_manifest(tmp_path, manifest_content='{"targets": ["claude", "opencode"]}')
+    agent = bundle / 'agents' / 'a.md'
+    agent.parent.mkdir(parents=True, exist_ok=True)
+    agent.write_text('---\nname: a\ntargets: [claude]\n---\n# Agent\n', encoding='utf-8')
+    validate_component_scopes(bundle)
+
+
+def test_validate_component_scopes_rejects_component_widening_bundle_scope(tmp_path):
+    """A component declaring targets outside bundle scope raises TargetScopeError."""
+    bundle = _bundle_with_manifest(tmp_path, manifest_content='{"targets": ["antigravity"]}')
+    agent = bundle / 'agents' / 'a.md'
+    agent.parent.mkdir(parents=True, exist_ok=True)
+    agent.write_text('---\nname: a\ntargets: [claude]\n---\n# Agent\n', encoding='utf-8')
+    with pytest.raises(TargetScopeError, match='scopes away'):
+        validate_component_scopes(bundle)
+
+
+def test_excluded_emission_roots_rejects_component_widening_bundle_scope(tmp_path):
+    """excluded_emission_roots validates bundle scope and rejects component widening."""
+    bundle = _bundle_with_manifest(tmp_path, manifest_content='{"targets": ["antigravity"]}')
+    skill_manifest = bundle / 'skills' / 's' / 'SKILL.md'
+    skill_manifest.parent.mkdir(parents=True, exist_ok=True)
+    skill_manifest.write_text('---\nname: s\ntargets: [claude]\n---\n# Skill\n', encoding='utf-8')
+    with pytest.raises(TargetScopeError, match='scopes away'):
+        excluded_emission_roots(bundle, 'antigravity')
+
+
+def test_excluded_emission_roots_rejects_file_widening_bundle_scope_via_unscoped_skill(tmp_path):
+    """A skill-internal file widening bundle scope via unscoped skill raises TargetScopeError."""
+    bundle = _bundle_with_manifest(tmp_path, manifest_content='{"targets": ["antigravity"]}')
+    skill_manifest = bundle / 'skills' / 's' / 'SKILL.md'
+    skill_manifest.parent.mkdir(parents=True, exist_ok=True)
+    skill_manifest.write_text('---\nname: s\n---\n# Skill\n', encoding='utf-8')
+    ref_file = bundle / 'skills' / 's' / 'references' / 'r.md'
+    ref_file.parent.mkdir(parents=True, exist_ok=True)
+    ref_file.write_text('---\nname: r\ntargets: [claude]\n---\n# Ref\n', encoding='utf-8')
+    with pytest.raises(TargetScopeError, match='scopes away'):
+        excluded_emission_roots(bundle, 'antigravity')
