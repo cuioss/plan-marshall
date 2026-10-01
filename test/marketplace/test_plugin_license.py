@@ -5,7 +5,7 @@ The license revert to FSL-1.1-ALv2 must be reflected in every
 bundle manifest. This test reads all bundle ``plugin.json`` files under
 ``marketplace/bundles/*/.claude-plugin/`` and asserts each declares
 ``"license": "FSL-1.1-ALv2"``. It fails if any manifest declares a different
-license or if the count of discovered manifests is not the expected 10.
+license or if the count of discovered manifests is not the expected 12.
 """
 
 import json
@@ -17,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 BUNDLES_DIR = PROJECT_ROOT / 'marketplace' / 'bundles'
 
 EXPECTED_LICENSE = 'FSL-1.1-ALv2'
-EXPECTED_MANIFEST_COUNT = 10
+EXPECTED_MANIFEST_COUNT = 12
 
 
 def _bundle_manifests() -> list[Path]:
