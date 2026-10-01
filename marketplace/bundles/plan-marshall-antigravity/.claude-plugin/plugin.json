@@ -1,0 +1,25 @@
+{
+  "name": "plan-marshall-antigravity",
+  "version": "0.1",
+  "description": "Antigravity harness operational rules, tool invariants, and execution discipline",
+  "author": {
+    "name": "https://github.com/cuioss/plan-marshall",
+    "email": "contact@cuioss.de"
+  },
+  "license": "FSL-1.1-ALv2",
+  "homepage": "https://github.com/cuioss/plan-marshall",
+  "repository": "https://github.com/cuioss/plan-marshall.git",
+  "keywords": [
+    "antigravity",
+    "harness",
+    "rules",
+    "standards",
+    "tools"
+  ],
+  "targets": [
+    "antigravity"
+  ],
+  "agents": [],
+  "commands": [],
+  "skills": []
+}
