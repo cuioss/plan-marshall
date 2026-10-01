@@ -61,6 +61,13 @@ Practical consequence for D3: excluding the duplicate removes roughly HALF of
 `candidates_indeterminate`'s current sibling-side contribution, not necessarily all of it — see
 D3's revised acceptance criterion.
 
+**Second false candidate population, folded 2026-10-01 (D4).** The same verdict is also held
+`false` by the `NO_PLAN` plan-less operations sentinel, which the `live_plan` walk enumerates as
+an active plan. Both defects are one shape — a population that can never be a real candidate is
+counted as an indeterminate one — and both feed `candidate_comparison_determinate` in
+`cmd_corpus_cross_check`, which is why they ship together. The sentinel case is the more severe:
+it blocks every epic in every project that has ever run a plan-less build, with nothing running.
+
 ## Deliverables
 
 1. **D0 — GATE: derive the affected population first-party, do not carry the figure 4 forward
@@ -104,13 +111,44 @@ D3's revised acceptance criterion.
    `candidates_indeterminate` count is accounted for by candidates this plan never claimed to
    fix (named individually, not waved past). This is the acceptance criterion the defect was
    actually blocking, calibrated to what D1 can actually deliver, not the unit-level fix alone.
+5. **D4 — exclude the `NO_PLAN` plan-less operations sentinel from the `live_plan` candidate
+   population, EXPLICITLY, with a regression test (folded 2026-10-01, operator-reported from a
+   consumer project).** `.plan/local/plans/NO_PLAN/` is the shared directory backing plan-less
+   callers (build results, logs). It carries a `status.json`, so the active-plan walk enumerates
+   it as a live plan; it never has `affected_files`, so it is permanently `comparable: false`,
+   `candidates_indeterminate` is permanently `>= 1`, `candidate_comparison_determinate` is
+   permanently `false`, and `next` fails closed for EVERY candidate **even with no plan
+   running at all**. Deleting the directory is not a remedy — the next plan-less build recreates
+   it. Required outcome:
+   - The sentinel never appears in `plans_scanned`, `live_indeterminate_plans[]`,
+     `live_plan_surfaces[]`, `candidate_population[]`'s `live_plan` row, or
+     `candidate_derivation_states[]`. The exclusion is keyed on the single sentinel definition
+     (`NO_PLAN_SENTINEL` / `names_real_plan` in `script-shared`'s `marketplace_paths.py`) — never
+     on a second string literal, and never on "has no `affected_files`", which would also hide a
+     real pre-footprint plan.
+   - The exclusion is NAMED in the payload (a stated excluded-sentinel count or flag), so the
+     smaller `live_plan` population is a reported exclusion rather than a silent one (ADR-019).
+   - Regression test with a matched negative control: a plan store holding ONLY the sentinel
+     yields a `live_plan` population of `0` and contributes nothing to
+     `candidates_indeterminate`; a REAL plan with empty `affected_files` beside it is still
+     enumerated and still indeterminate.
+   - Decide at outline WHERE the exclusion sits and record why: at the shared walk
+     (`_iter_active_plan_dirs`, which also feeds `manage-status sibling-collision-check`) or at
+     the orchestrator's own consumer (`_live_plan_records`). `manage-status list` reporting the
+     sentinel as an `in_progress` plan is the same root observation; fixing that listing is in
+     scope only if the chosen site is the shared walk.
 
 ## Non-Goals
 
 - No change to how `archive` NAMES a relocated epic tree (whether it should stop using a dated
   suffix at all is a separate, larger question this plan does not decide).
-- No change to `corpus cross-check`'s live-plan or corpus-spec candidate kinds — only the
-  `sibling_epic_spec` enumeration.
+- No change to `corpus cross-check`'s corpus-spec candidate kind. The `live_plan` kind changes
+  in exactly one way — D4's sentinel exclusion; a REAL live plan with no captured footprint
+  stays enumerated and stays indeterminate.
+- No change to the gate's fail-closed scope (whole-population `candidate_comparison_determinate`
+  versus a per-candidate verdict). That is the separate Open Defect recorded in `epic.md`
+  (2026-09-22); this plan removes two populations that should never have been candidates, it
+  does not re-decide what an honestly indeterminate candidate blocks.
 
 ## Claim Labels
 
@@ -133,12 +171,35 @@ D3's revised acceptance criterion.
   epic's `title`) stable enough to compare against the live epic's identity for D1's
   discriminator — confirm/refute by reading `.plan/archived-orchestrators/review-apparatus-26-09-21/status.json`
   at outline (verify-at-outline).
-  - verdict: contradicted | checked_at: fa7b517742567f1d271e3f3562a61e6daa40f3f0 | by: orchestrator-refactor/cleanup | rescoped: no | evidence: Still refuted at fa7b51774: titles differ, no slug/epic-id field in either status.json. D1 already adopts the prefix/date-suffix fallback; no further body change.
+  - verdict: contradicted | checked_at: 391efbbd6d064c839cb47a994e7945d8b205fec3 | by: orchestrator-refactor/analyze | rescoped: yes | evidence: Still refuted at 391efbbd6: live title 'Automated PR review apparatus reliability' vs archived 'Review Apparatus - archived 2026-09-21', no slug or epic-id field in either status.json. The refutation is ABSORBED: D1 was re-scoped at cleanup 2026-09-24 to the prefix/date-suffix discriminator, so the prior rescoped=no misreported an absorbed refutation as open.
+- OBSERVED (2026-10-01, at `391efbbd6`): `_live_plan_records`
+  (`marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py:3860-3888`)
+  builds one record per entry of `_iter_active_plan_dirs()`
+  (`marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_sibling_collision.py:130`),
+  which admits every directory carrying a `status.json`. Neither function references
+  `NO_PLAN_SENTINEL`; `orchestrator.py` contains no occurrence of `NO_PLAN` at all.
+- OBSERVED (2026-10-01, at `391efbbd6`): `corpus cross-check --slug orchestrator-refactor` reports
+  `plans_scanned: 2`, `live_indeterminate_plans: [NO_PLAN, antigravity]`,
+  `live_plans_comparable: 0`; `manage-status read --plan-id NO_PLAN` returns a document titled
+  "Plan-less operations sentinel" with `metadata.sentinel: true`. The verdict is computed as
+  `candidates_indeterminate == 0` (`orchestrator.py:4279`), so the sentinel alone holds it `false`.
+- OBSERVED (operator paste, 2026-10-01, consumer project — not independently re-run there): with
+  no plan running, the sentinel was the ONLY live-plan candidate and the only blocker; all 19
+  surfaces declarative, 0 of 79 verdicts blocking, nothing emittable.
+- HYPOTHESIS: the single sentinel definition (`NO_PLAN_SENTINEL` and `names_real_plan`,
+  `marketplace/bundles/plan-marshall/skills/script-shared/scripts/marketplace_paths.py` §
+  `names_real_plan`) is importable at whichever exclusion site D4 chooses without a new
+  cross-skill import cycle — confirm/refute at
+  `marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_sibling_collision.py` §
+  `_iter_active_plan_dirs` (verify-at-outline).
 
 ## Expected Surface
 
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py`
-  — `_sibling_epic_roots` and its caller `cmd_corpus_cross_check`.
+  — `_sibling_epic_roots` and its caller `cmd_corpus_cross_check`; `_live_plan_records` (D4).
+- HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_sibling_collision.py`
+  — `_iter_active_plan_dirs`, if D4's exclusion sits at the shared walk (verify-at-outline).
+- HYPOTHESIS: `test/plan-marshall/manage-status/**` — the shared walk's tests, same condition.
 - HYPOTHESIS: `test/plan-marshall/plan-orchestrator/test_orchestrator_corpus.py` — where the
   cross-check candidate-enumeration tests already live (verify-at-outline; a new test module is
   also acceptable if the existing one is component-scoped elsewhere).
@@ -149,8 +210,9 @@ D3's revised acceptance criterion.
 ## Dependencies and Sequencing
 
 - Depends on: none in-epic.
-- Overlaps with: none declared against this epic's other staged specs (single-file surface,
-  `orchestrator.py`'s own candidate-enumeration function).
+- Overlaps with: PLAN-10 on `orchestrator.py`, `SKILL.md` and `workflow/**` — one at a time.
+  D4 may add `manage-status`'s shared active-plan walk (parked PLAN-05 declares
+  `manage-status/**`).
 - Partially unblocks (cross-epic, not this plan's to touch): `review-apparatus`'s `next` verb,
   whose disjointness admission test fails closed on `candidate_comparison_determinate: false`
   for every staged candidate today. This plan removes the self-collision's contribution to that
