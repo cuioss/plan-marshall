@@ -842,3 +842,94 @@ def test_default_base_branch_is_main(plan_context):
     result = cmd_baseline_reconcile(args)
     assert result['base_branch'] == 'main'
     assert result['base_branch_source'] == 'default'
+
+
+# =============================================================================
+# Localized merge-tree regression (PLAN-211 D1/D4/D6/D7)
+# =============================================================================
+
+
+def _stub_merge_tree(monkeypatch, stdout, rc=1, stderr=''):
+    """Stub ``run_git`` for the merge-tree probe; capture argv for flag asserts."""
+    seen = {}
+
+    def _fake(args, **kwargs):
+        seen['argv'] = list(args)
+        if 'merge-tree' in args:
+            return rc, stdout, stderr
+        raise AssertionError(f'unexpected git argv in regression stub: {args}')
+
+    monkeypatch.setattr(_mod, 'run_git', _fake)
+    return seen
+
+
+def test_merge_tree_filters_english_informational_prose(monkeypatch):
+    """English ``Auto-merging``/``CONFLICT`` lines after the blank separator are never paths."""
+    seen = _stub_merge_tree(
+        monkeypatch,
+        '4b825dc642cb6eb9a060e54bf8d69288fbee4904\n'
+        'shared.txt\n'
+        '\n'
+        'Auto-merging shared.txt\n'
+        'CONFLICT (content): Merge conflict in shared.txt\n',
+    )
+    paths, error = _mod._detect_merge_conflicts('/tmp/worktree', 'main')
+    assert error is None
+    assert paths == ['shared.txt']
+    assert '--no-messages' in seen['argv']
+
+
+def test_merge_tree_filters_german_localized_prose(monkeypatch):
+    """German localized informational lines after the blank separator are never paths."""
+    seen = _stub_merge_tree(
+        monkeypatch,
+        '4b825dc642cb6eb9a060e54bf8d69288fbee4904\n'
+        'shared.txt\n'
+        '\n'
+        'Automatisches Zusammenfuehren von shared.txt\n'
+        'KONFLIKT (Inhalt): Zusammenfuehrungskonflikt in shared.txt\n',
+    )
+    paths, error = _mod._detect_merge_conflicts('/tmp/worktree', 'main')
+    assert error is None
+    assert paths == ['shared.txt']
+    assert '--no-messages' in seen['argv']
+
+
+def test_merge_tree_preserves_genuine_conflicts(monkeypatch):
+    """Genuine conflict paths before the separator are still reported unchanged."""
+    _stub_merge_tree(
+        monkeypatch,
+        '4b825dc642cb6eb9a060e54bf8d69288fbee4904\n'
+        'a.txt\n'
+        'b-dir/b.txt\n'
+        '\n'
+        'Auto-merging a.txt\n',
+    )
+    paths, error = _mod._detect_merge_conflicts('/tmp/worktree', 'main')
+    assert error is None
+    assert paths == ['a.txt', 'b-dir/b.txt']
+
+
+def test_merge_tree_clean_stays_clean(monkeypatch):
+    """``rc==0`` returns no paths even when stdout carries only the tree SHA."""
+    _stub_merge_tree(
+        monkeypatch,
+        '4b825dc642cb6eb9a060e54bf8d69288fbee4904\n',
+        rc=0,
+    )
+    paths, error = _mod._detect_merge_conflicts('/tmp/worktree', 'main')
+    assert error is None
+    assert paths == []
+
+
+def test_parse_merge_tree_paths_stops_at_blank_separator():
+    """Direct structural parse: prose after the blank line never leaks into paths."""
+    stdout = (
+        '4b825dc642cb6eb9a060e54bf8d69288fbee4904\n'
+        'shared.txt\n'
+        '\n'
+        'Auto-merging shared.txt\n'
+        'CONFLICT (content): Merge conflict in shared.txt\n'
+    )
+    assert _mod._parse_merge_tree_paths(stdout) == ['shared.txt']
+    assert _mod._parse_merge_tree_paths('4b825dc642cb6eb9a060e54bf8d69288fbee4904\n') == []
