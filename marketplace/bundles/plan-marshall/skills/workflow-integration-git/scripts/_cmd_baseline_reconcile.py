@@ -391,12 +391,31 @@ def _detect_merge_conflicts(
 ) -> tuple[list[str], str | None]:
     """Run ``git merge-tree`` and return ``(conflicted_files, error_or_None)``.
 
-    Uses modern ``--write-tree --name-only`` syntax. Returns an empty
-    list when the merge is clean (exit 0). Returns an error message
+    Uses modern ``--write-tree --name-only --no-messages`` syntax. Returns an
+    empty list when the merge is clean (exit 0). Returns an error message
     (without a list of files) when the git invocation itself fails.
+
+    Parsing is structural, never prose-driven: line 1 is the tree SHA and
+    only the path block up to the first blank separator is collected. Any
+    informational message section after that separator — localized or not —
+    is never filed as a conflict path. ``--no-messages`` suppresses that
+    section on supported git versions; the separator stop keeps older
+    versions truthful. ``run_git`` pins ``LC_ALL/LANG/LANGUAGE=C`` so any
+    residual message text is deterministic.
     """
-    rc, stdout, stderr = run_git(
-        [
+    base_args = [
+        '-C',
+        worktree_path,
+        'merge-tree',
+        '--write-tree',
+        '--name-only',
+        '--no-messages',
+        'HEAD',
+        f'origin/{base_branch}',
+    ]
+    rc, stdout, stderr = run_git(base_args)
+    if 'unknown option' in (stderr or '').lower() and '--no-messages' in ' '.join(base_args):
+        fallback = [
             '-C',
             worktree_path,
             'merge-tree',
@@ -405,13 +424,23 @@ def _detect_merge_conflicts(
             'HEAD',
             f'origin/{base_branch}',
         ]
-    )
+        rc, stdout, stderr = run_git(fallback)
     if rc == 0:
         return [], None
     if rc == 1:
-        # Conflicts: line 1 is the tree SHA, subsequent lines are paths.
+        # Conflicts: line 1 is the tree SHA, subsequent lines up to the first
+        # blank separator are paths. Stop at the separator so informational
+        # messages are never parsed as file paths.
         lines = stdout.splitlines()
-        return [p.strip() for p in lines[1:] if p.strip()], None
+        if not lines:
+            return [], None
+        conflicts: list[str] = []
+        for raw in lines[1:]:
+            stripped = raw.strip()
+            if not stripped:
+                break
+            conflicts.append(stripped)
+        return conflicts, None
     return [], stderr or f'git merge-tree exited {rc}'
 
 
