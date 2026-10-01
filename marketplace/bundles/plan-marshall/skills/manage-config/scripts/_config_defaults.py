@@ -799,11 +799,45 @@ def _seed_verify_steps() -> dict:
     written. Verification steps own no params, so every value is the empty object
     ``{}`` (config-less); key insertion order is the execution order.
 
+    The seed is a WHOLE-MAP seed: ``sync-defaults`` copies it wholesale only
+    when ``plan.phase-5-execute.verification_steps`` is wholly absent. A present
+    map is atomic-once-present and is never expanded with missing ids — each
+    missing id is held for the ask-before-add gate instead (see
+    ``_cmd_sync_defaults._deep_merge_missing``). No ``default_on`` filter lives
+    here; exclusion is an operator decision the merge honours, never a seed
+    omission.
+
     Returns:
         The keyed-map serial form: an id-keyed dict mapping each built-in
         verify-step ID to an empty param object, in execution order.
     """
     return {step_id: {} for step_id in _verify_step_ids()}
+
+
+# Operator-curated step-map locations the sync-defaults merge treats as
+# atomic-once-present: (phase key, map key). Mirrors
+# ``_cmd_sync_defaults._STEP_MAP_LOCATIONS`` as data (not an import) so the
+# seed module stays free of the sync module's import chain. D0 enumerates
+# exactly these two: both are seeded keyed maps an operator verb
+# (``remove-step``) can delete entries from.
+OPERATOR_STEP_MAP_LOCATIONS: tuple[tuple[str, str], ...] = (
+    ('phase-5-execute', 'verification_steps'),
+    ('phase-6-finalize', 'steps'),
+)
+
+
+def get_operator_step_map_locations() -> tuple[tuple[str, str], ...]:
+    """Return the operator-curated step-map locations (D0 population).
+
+    The single auditable source for "every keyed map ``sync-defaults``
+    deep-merges that an operator verb can remove from". Consumers (the merge,
+    the ask-before-add gate, D3 fixtures) read this tuple rather than
+    re-listing the locations.
+
+    Returns:
+        :data:`OPERATOR_STEP_MAP_LOCATIONS` verbatim.
+    """
+    return OPERATOR_STEP_MAP_LOCATIONS
 
 
 # Canonical-verify step prefix. A ``per_deliverable_build`` list entry MUST be a

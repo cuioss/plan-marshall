@@ -46,7 +46,7 @@ Per-stage ``sub_steps`` (the meta/consumer matrix):
                                            cache-retention-sweep]
                                 consumer: [cache-freshness-check, regenerate-executor,
                                            cache-retention-sweep]
-    Stage 2 reconcile-config    both:     [reconcile-marshal-json, migrate-bot-lists,
+    Stage 2 reconcile-config    both:     [reconcile-marshal-json, review-held-defaults, migrate-bot-lists,
                                            validate-bot-lists, migrate-architecture-descriptors]
     Stage 3 verify              meta:     [executor-preflight, content-drift-report]
                                 consumer: [executor-preflight]
@@ -56,6 +56,15 @@ Per-stage ``sub_steps`` (the meta/consumer matrix):
 it through the existing ``manage-architecture`` verbs (``discover --force
 --apply migration`` then ``descriptor-regression-check --pre-ref HEAD``), and
 the migration it writes lands through Stage 4 with no commit of its own.
+
+``review-held-defaults`` likewise has no subcommand: the router drives it by
+reading the ``reconcile-marshal-json`` (``sync-defaults``) report's
+``held_for_ask`` / ``re_added`` buckets and asking the operator once per
+newly-discovered not-yet-selected step (never auto-adding). A prior
+``remove-step`` survives the upgrade because ``sync-defaults`` is
+atomic-once-present on both step maps — the sub-step only surfaces what was
+held, using the same ``re-add`` vs ``new default`` wording the sync report
+uses.
 
 Gate model:
 
@@ -151,6 +160,7 @@ _STAGE_SPECS: list[dict] = [
         'nested_gates': ['build-map-reseed'],
         'sub_steps': [
             'reconcile-marshal-json',
+            'review-held-defaults',
             'migrate-bot-lists',
             'validate-bot-lists',
             'migrate-architecture-descriptors',

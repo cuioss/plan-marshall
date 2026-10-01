@@ -54,6 +54,7 @@ _STAGE_ROW_KEYS = {'order', 'key', 'name', 'mutating', 'top_level_gate', 'nested
 # end Stage 1 with the cache-retention sweep. Stages 2 and 4 are kind-invariant.
 _EXPECTED_STAGE_2_SUB_STEPS = [
     'reconcile-marshal-json',
+    'review-held-defaults',
     'migrate-bot-lists',
     'validate-bot-lists',
     'migrate-architecture-descriptors',
@@ -198,6 +199,23 @@ def test_migrate_architecture_descriptors_is_the_last_stage_2_sub_step(project_k
     assert stage_2[-1] == 'migrate-architecture-descriptors'
     assert stage_2.count('migrate-architecture-descriptors') == 1
     assert stage_2 == _EXPECTED_STAGE_2_SUB_STEPS
+
+
+@pytest.mark.parametrize('integrate', [True, False])
+def test_review_held_defaults_follows_reconcile_marshal_json(project_kind: str, integrate: bool):
+    """D3: the operator-intent ask step runs immediately after reconcile, for both kinds.
+
+    `reconcile-marshal-json` (sync-defaults, atomic-once-present) preserves a
+    prior removal structurally; `review-held-defaults` then surfaces the held
+    `held_for_ask` / `re_added` buckets with the sync-identical `re-add` vs
+    `new default` wording, asking once per newly-discovered step and never
+    auto-adding.
+    """
+    by_key = {s['key']: s['sub_steps'] for s in upgrade.build_plan(integrate, project_kind)['stages']}
+
+    stage_2 = by_key['reconcile-config']
+    assert stage_2.index('review-held-defaults') == stage_2.index('reconcile-marshal-json') + 1
+    assert stage_2.count('review-held-defaults') == 1
 
 
 def test_build_plan_consumer_excludes_meta_only_sub_steps():

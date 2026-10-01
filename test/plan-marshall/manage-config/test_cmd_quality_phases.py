@@ -1816,5 +1816,105 @@ def test_a_non_lane_param_on_an_immune_element_is_untouched_by_the_refusal(plan_
 
 
 # =============================================================================
+# D3 operator-intent controls (PLAN-TRUTH-168)
+# =============================================================================
+#
+# `remove-step` records the removal intent; `add-step` clears it on explicit
+# re-add; `set-steps` drops ids that are present again. Both step maps.
+
+
+def test_remove_step_records_operator_removal_intent_execute(plan_context):
+    """D3: execute `remove-step` records the removed id in `removed_steps`."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_plan(
+        Namespace(
+            sub_noun='phase-5-execute',
+            verb='remove-step',
+            step='default:verify:quality-gate',
+        )
+    )
+
+    assert result['status'] == 'success'
+    config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
+    section = config['plan']['phase-5-execute']
+    assert 'default:verify:quality-gate' not in section['verification_steps']
+    assert 'default:verify:quality-gate' in section.get('removed_steps', [])
+
+
+def test_remove_step_records_operator_removal_intent_finalize(plan_context):
+    """D3: finalize `remove-step` records the removed id in `removed_steps`."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_plan(
+        Namespace(
+            sub_noun='phase-6-finalize',
+            verb='remove-step',
+            step='default:push',
+        )
+    )
+
+    assert result['status'] == 'success'
+    config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
+    section = config['plan']['phase-6-finalize']
+    assert 'default:push' not in section['steps']
+    assert 'default:push' in section.get('removed_steps', [])
+
+
+def test_add_step_clears_operator_removal_intent(plan_context):
+    """D3: an explicit `add-step` re-add clears the removal record for that id."""
+    create_marshal_json(plan_context.fixture_dir)
+    removed = cmd_plan(
+        Namespace(
+            sub_noun='phase-5-execute',
+            verb='remove-step',
+            step='default:verify:quality-gate',
+        )
+    )
+    assert removed['status'] == 'success'
+
+    result = cmd_plan(
+        Namespace(
+            sub_noun='phase-5-execute',
+            verb='add-step',
+            step='default:verify:quality-gate',
+        )
+    )
+
+    assert result['status'] == 'success'
+    config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
+    section = config['plan']['phase-5-execute']
+    assert 'default:verify:quality-gate' in section['verification_steps']
+    assert 'default:verify:quality-gate' not in section.get('removed_steps', [])
+
+
+def test_set_steps_reconciles_operator_removal_intent(plan_context):
+    """D3: `set-steps` drops ids present again and keeps ids still absent."""
+    create_marshal_json(plan_context.fixture_dir)
+    first = cmd_plan(
+        Namespace(
+            sub_noun='phase-5-execute',
+            verb='remove-step',
+            step='default:verify:quality-gate',
+        )
+    )
+    assert first['status'] == 'success'
+
+    result = cmd_plan(
+        Namespace(
+            sub_noun='phase-5-execute',
+            verb='set-steps',
+            steps='default:verify:quality-gate, default:verify:module-tests',
+        )
+    )
+
+    assert result['status'] == 'success'
+    config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
+    section = config['plan']['phase-5-execute']
+    assert 'default:verify:quality-gate' in section['verification_steps']
+    assert 'default:verify:quality-gate' not in section.get('removed_steps', [])
+
+
+# =============================================================================
 # Main
 # =============================================================================

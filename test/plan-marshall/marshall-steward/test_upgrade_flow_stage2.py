@@ -121,3 +121,41 @@ def test_stage2_descriptor_migration_is_gated_on_the_regression_check_against_he
     regression_check = block.index('descriptor-regression-check --pre-ref HEAD')
 
     assert migrate_descriptors < regression_check
+
+
+# =============================================================================
+# D3 upgrade-path controls (PLAN-TRUTH-168)
+# =============================================================================
+#
+# Stage-2 order preserves a prior removal (sync first, atomic-once-present),
+# the upgrade report words `re-add` vs `new default` identically to sync, and
+# the operator-intent ask step runs before the bot-list migration.
+
+
+def test_stage2_review_held_defaults_runs_after_reconcile_and_before_migrate_bot_lists():
+    """D3: the operator-intent ask step runs between reconcile and bot migration."""
+    stage2 = next(spec for spec in upgrade._STAGE_SPECS if spec['key'] == 'reconcile-config')
+    sub_steps = stage2['sub_steps']
+    assert isinstance(sub_steps, list)
+    assert sub_steps.index('review-held-defaults') == sub_steps.index('reconcile-marshal-json') + 1
+    assert sub_steps.index('review-held-defaults') < sub_steps.index('migrate-bot-lists')
+
+
+def test_stage2_prose_words_re_add_vs_new_default_identically_to_sync():
+    """D3: the upgrade prose uses `re-add` for removals and `new default` for fresh gaps."""
+    block = _stage2_block()
+
+    assert '`re_added`' in block or 're-added' in block or 're-add' in block
+    assert 'held_for_ask' in block or 'held' in block
+    assert 'new default' in block
+    # the ask-once, never-auto-add posture is stated
+    assert 'never auto-add' in block or 'never auto-adding' in block
+
+
+def test_stage2_prose_states_removal_survives_sync():
+    """D3: the upgrade prose states a prior removal survives reconcile untouched."""
+    block = _stage2_block()
+
+    assert 'removal' in block
+    assert 'atomic-once-present' in block
+    assert 'review-held-defaults' in block
