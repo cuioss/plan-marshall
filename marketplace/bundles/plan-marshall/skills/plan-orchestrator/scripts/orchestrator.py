@@ -414,13 +414,8 @@ _ROOT_PROBE_ENTRY = 'root-probe'
 #: queried slug has been taken off its front, so the name as a whole is anchored
 #: at both ends: ``{slug}-extra-26-09-21`` (something between slug and date),
 #: ``{slug}-2026-09-21`` (a four-digit year) and ``{slug}-26-09`` (a truncated
-#: date) are all outside it. Consumed by :func:`_is_own_dated_snapshot` only.
+#: date) are all outside it. Consumed by :func:`_is_dated_snapshot_of` only.
 _DATED_SNAPSHOT_SUFFIX_RE = re.compile(r'-[0-9]{2}-[0-9]{2}-[0-9]{2}(?:-[0-9]{2})?')
-
-#: Length of the plain ``-YY-MM-DD`` suffix. Taking it off the END of a matching
-#: name gives the slug that name is the plain dated snapshot OF — the queried
-#: slug itself for the date-only form, ``{slug}-NN`` for the four-group form.
-_PLAIN_DATED_SUFFIX_LEN = len('-00-00-00')
 
 # ``RUNNING_STATUS`` — a row at this status is enumerated but carries
 # ``excluded_reason`` so a caller cannot re-scope it: re-scoping a spec
@@ -3815,26 +3810,25 @@ def cmd_corpus_epics(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _is_dated_snapshot_of(name: str, owner: str) -> bool:
+    """Whether ``name`` is ``owner`` followed by the whole dated-snapshot suffix."""
+    return name.startswith(owner) and _DATED_SNAPSHOT_SUFFIX_RE.fullmatch(name[len(owner) :]) is not None
+
+
 def _is_own_dated_snapshot(name: str, slug: str, epic_names: set[str]) -> bool:
-    """Whether ``name`` is ``slug`` followed by exactly one dated-snapshot suffix.
+    """Whether ``slug`` is the ONLY epic that ``name`` can be a dated snapshot of.
 
-    The prefix must equal the queried slug EXACTLY and the remainder must be the
-    whole of :data:`_DATED_SNAPSHOT_SUFFIX_RE`, so the test is anchored on the
-    full directory name rather than on a date that merely appears somewhere in
-    it.
-
-    The four-group form is ambiguous by name alone: ``{slug}-A-B-C-D`` is the
-    queried epic's snapshot with ordinal ``D``, and equally the plain dated
-    snapshot of a DIFFERENT epic named ``{slug}-A``. ``epic_names`` — every epic
-    directory name in either store root — settles it: when that other epic
-    exists, the name is ITS snapshot and does not match. The ambiguity is
-    resolved toward comparing, because a real sibling left out hides duplicate
-    work while a stale self-copy left in only adds noise.
+    One name can read as a dated snapshot of two epics at once — ``a-12-26-09-21``
+    is ``a`` plus a date and an ordinal, and equally ``a-12`` plus a date — and
+    nothing in the name says which. ``epic_names``, every epic directory name in
+    either store root, decides: the name is the queried epic's own only when no
+    OTHER existing epic can claim it. A contested name stays a sibling, so a real
+    sibling is never dropped; the cost is that a genuine own snapshot carrying a
+    contested name is compared against its own epic.
     """
-    if not name.startswith(slug) or _DATED_SNAPSHOT_SUFFIX_RE.fullmatch(name[len(slug) :]) is None:
-        return False
-    plain_owner = name[:-_PLAIN_DATED_SUFFIX_LEN]
-    return plain_owner == slug or plain_owner not in epic_names
+    return _is_dated_snapshot_of(name, slug) and not any(
+        _is_dated_snapshot_of(name, other) for other in epic_names if other != slug
+    )
 
 
 def _sibling_epic_roots(slug: str) -> tuple[list[Path], list[str]]:
@@ -3874,11 +3868,9 @@ def _sibling_epic_roots(slug: str) -> tuple[list[Path], list[str]]:
     between the two. The exclusion therefore depends on the snapshot naming
     convention, which no code enforces, and that dependence is an accepted
     limitation: an unrelated archived epic that happens to carry the dated name
-    is excluded, and a snapshot archived under any other name is not. One case
-    the name leaves open is settled by the store instead: a four-group name is
-    another epic's snapshot whenever that epic (``{slug}-NN``) exists in either
-    root, and only then — a snapshot whose owning epic has left both roots is
-    still read as the queried epic's own.
+    is excluded, and a snapshot archived under any other name is not. A name
+    that another epic present in either root can also claim is never excluded
+    (:func:`_is_own_dated_snapshot`).
     """
     roots: dict[str, Path] = {}
     excluded: set[str] = set()

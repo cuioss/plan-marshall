@@ -3344,6 +3344,39 @@ class TestCrossCheckExcludesOwnDatedSnapshot:
         assert result['candidate_comparison_determinate'] is True
 
 
+#: ``(name, queried slug, epic names in the stores, own?)``. Each contested name
+#: rides beside the same name uncontested, in BOTH directions: the other claimant
+#: is the longer owner (``alpha-12``) in one pair and the shorter (``alpha``) in
+#: the other.
+_OWN_SNAPSHOT_CASES = (
+    ('alpha-26-09-21', 'alpha', {'alpha'}, True),
+    ('alpha-26-09-21-01', 'alpha', {'alpha'}, True),
+    ('alpha-12-26-09-21', 'alpha', {'alpha'}, True),
+    ('alpha-12-26-09-21', 'alpha', {'alpha', 'alpha-12'}, False),
+    ('alpha-26-09-11-01', 'alpha-26', {'alpha-26'}, True),
+    ('alpha-26-09-11-01', 'alpha-26', {'alpha-26', 'alpha'}, False),
+    ('beta-26-09-21', 'alpha', {'alpha', 'beta'}, False),
+)
+_OWN_SNAPSHOT_CASE_IDS = (
+    'date',
+    'date-and-ordinal',
+    'four-groups-uncontested',
+    'four-groups-claimed-by-longer-slug',
+    'three-groups-uncontested',
+    'three-groups-claimed-by-shorter-slug',
+    'another-slug',
+)
+assert _OWN_SNAPSHOT_CASES, '_OWN_SNAPSHOT_CASES must not be empty'
+
+
+class TestOwnDatedSnapshotPredicate:
+    """A name is the queried epic's own snapshot only when no other epic can claim it."""
+
+    @pytest.mark.parametrize(('name', 'slug', 'epic_names', 'own'), _OWN_SNAPSHOT_CASES, ids=_OWN_SNAPSHOT_CASE_IDS)
+    def test_should_decide_ownership_against_the_store(self, name, slug, epic_names, own):
+        assert _orch._is_own_dated_snapshot(name, slug, epic_names) is own
+
+
 class TestCrossCheckDatedSnapshotNearMisses:
     """Negative controls: each near-miss is still enumerated, compared, and unexcluded."""
 
@@ -3389,19 +3422,6 @@ class TestCrossCheckDatedSnapshotNearMisses:
             if row['candidate_kind'] == CANDIDATE_KIND_SIBLING_EPIC_SPEC
         ]
         assert overlap_candidates == [f'{other_snapshot}/{_PLANTED_SPEC}']
-
-    def test_the_same_name_is_excluded_when_no_such_epic_exists(self, plan_context):
-        # The matched positive control: with no ``{SLUG}-12`` epic in either
-        # root, the identical name is the queried epic's own ordinal snapshot.
-        snapshot_name = f'{SLUG}-12-26-09-21'
-        _seed_queried_epic(plan_context)
-        _plant_overlapping_spec(plan_context, _archived_epic_dir(plan_context, snapshot_name))
-
-        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
-
-        assert result['status'] == 'success'
-        assert result['excluded_self_snapshots'] == [snapshot_name]
-        assert _candidate_population(result)[CANDIDATE_KIND_SIBLING_EPIC_SPEC] == 0
 
     @pytest.mark.parametrize('name', _DATED_SNAPSHOT_NEAR_MISSES, ids=_DATED_SNAPSHOT_NEAR_MISS_IDS)
     def test_a_name_outside_the_suffix_grammar_is_still_a_sibling(self, plan_context, name):

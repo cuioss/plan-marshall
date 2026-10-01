@@ -52,7 +52,7 @@ The `queue` read returns the queue rows from `queue/{PLAN-ID}.json` in `(seq, id
 
 The on-query epic discovery / store scan enumerates BOTH `.plan/orchestrator/` and `.plan/archived-orchestrators/` — each root resolved through the orchestrator store seam, so with `orchestrator.use_worktree` on both are the shared ledger worktree's roots rather than the current checkout's — and the `read` verb resolves an archived epic transparently via the read-fallback — so a slug naming an archived (closed-and-relocated) epic is still discoverable and reportable here without re-anchoring.
 
-`corpus cross-check`'s SIBLING population (Step 4) walks those same two roots and then drops one further entry beyond the queried epic itself: the queried epic's own dated archive snapshot, an `archived-orchestrators/` entry named `{slug}-YY-MM-DD[-NN]`, left out while the queried epic has an active tree. That narrowing belongs to the duplicate-work comparison only — the epic lookup above still resolves such a directory by its own name like any other archived epic.
+`corpus cross-check`'s SIBLING population (Step 4) walks those same two roots and then drops one further entry beyond the queried epic itself: the queried epic's own dated archive snapshot, as defined at [`plan-orchestrator/SKILL.md`](../SKILL.md) § Canonical invocations → `corpus cross-check`. That narrowing belongs to the duplicate-work comparison only — the epic lookup above still resolves such a directory by its own name like any other archived epic.
 
 ### Step 3 (verb = `status`): Report
 
