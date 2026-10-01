@@ -411,7 +411,7 @@ _ROOT_PROBE_ENTRY = 'root-probe'
 #: ``-YY-MM-DD``, optionally followed by a two-digit ordinal ``-NN``. Every group
 #: is exactly two ASCII digits. The single definition of that grammar — matched
 #: with ``fullmatch`` against the WHOLE remainder of a directory name once the
-#: queried slug has been taken off its front, so the name as a whole is anchored
+#: slug has been taken off its front, so the name as a whole is anchored
 #: at both ends: ``{slug}-extra-26-09-21`` (something between slug and date),
 #: ``{slug}-2026-09-21`` (a four-digit year) and ``{slug}-26-09`` (a truncated
 #: date) are all outside it. Consumed by :func:`_is_dated_snapshot_of` only.
@@ -3822,9 +3822,9 @@ def _is_own_dated_snapshot(name: str, slug: str, epic_names: set[str]) -> bool:
     is ``a`` plus a date and an ordinal, and equally ``a-12`` plus a date — and
     nothing in the name says which. ``epic_names``, every epic directory name in
     either store root, decides: the name is the queried epic's own only when no
-    OTHER existing epic can claim it. A contested name stays a sibling, so a real
-    sibling is never dropped; the cost is that a genuine own snapshot carrying a
-    contested name is compared against its own epic.
+    OTHER existing epic can claim it. A contested name stays a sibling; the cost
+    is that a genuine own snapshot carrying a contested name is compared against
+    its own epic.
     """
     return _is_dated_snapshot_of(name, slug) and not any(
         _is_dated_snapshot_of(name, other) for other in epic_names if other != slug
@@ -4181,7 +4181,7 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
     ``plans_scanned``, ``candidate_population``, ``candidate_derivation_states``,
     ``candidates_total``, ``candidates_indeterminate``, the live-side lists and
     the determinacy verdict are all computed over the post-exclusion
-    populations, so each figure reconciles with the exclusion counts beside it.
+    populations.
 
     BOTH sides of the comparison publish a derivation-status tally over their
     whole state vocabulary. The spec side is ``spec_surface_states`` over
