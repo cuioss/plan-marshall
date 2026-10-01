@@ -2163,6 +2163,30 @@ cannot see this: the 22 renderings pass green either way until something tries t
 
 ## Watches
 
+### W-2026-10-01-a — PLAN-TRUTH-168 implementation awaiting PR 1674 review/CI (inbox 2026-10-01)
+
+Inbox `truth-168-sync-defaults-reverting-remove-001.md`: branch
+`feature/truth-168-sync-defaults-reverting-remove` exists, PR 1674 open
+(`merge_state: blocked`, no review decision) — corroborated via `ci pr view`.
+Not merged: PLAN-TRUTH-168 stays `staged`, no queue transition. Retire when 1674
+merges and the landing reconciles.
+
+### W-2026-10-01-b — PLAN-211 implemented in branch, PR not yet opened (inbox 2026-10-01)
+
+Inbox `implement-plan-211-baseline-reconcile-001.md`: branch
+`feature/implement-plan-211-baseline-reconcile` exists, `pr list` reports 0 open
+PRs on it — corroborated. Test/compile/quality-gate claims are orchestrator-
+unverified (no build runs inline); recorded as lead, not fact. PLAN-211 stays
+`staged`. Retire when the PR opens/merges.
+
+### W-2026-10-01-c — process-compliance reclaimed 002 items to PLAN-21/23 (inbox 2026-09-29)
+
+Inbox `process-compliance-003.md`: `process-compliance-002` (already archived)
+items 5/21/22 plus the `--step-id`/`[DISPATCH]` lesson are now owned by
+process-compliance PLAN-23 / PLAN-21 — no new work here. Do not restage those
+facets under parked PLAN-TRUTH-169/-175/-150/PLAN-205 without replying on that
+channel first (double-build guard).
+
 ### W-1599-a — PLAN-TRUTH-147 follow-up (TASK-21–26 + lesson 2026-09-24-05-001) not yet staged
 
 Surfaced at PLAN-TRUTH-147's landing (PR #1599): 6 residual fix tasks deferred by operator
