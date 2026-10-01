@@ -2020,8 +2020,13 @@ def test_committed_marshal_json_top_level_keys_already_canonical():
 #: ``effort``: all three orchestrator surfaces are pinned explicitly so none of them
 #: silently tracks ``plan.effort``. The decision and its consequence are recorded in
 #: ``plan-marshall/standards/effort-roles.md`` § Orchestrator role group.
+#:
+#: ``use_worktree``: turned on so the orchestrator ledger store resolves inside the
+#: one shared ledger worktree for every checkout, instead of on the checkout the
+#: session runs in. The seeded default stays off.
 _PROJECT_TUNED_ORCHESTRATOR_KNOBS: dict[str, object] = {
     'effort': {'analyze': 'level-5', 'decompose': 'level-5', 'reader': 'level-3'},
+    'use_worktree': True,
 }
 
 
@@ -2092,7 +2097,7 @@ def test_committed_marshal_json_surfaces_every_orchestrator_knob():
         assert block[knob] == tuned_value, (
             f"committed orchestrator knob '{knob}' is {block[knob]}, expected the project's "
             f'recorded tuning {tuned_value}. The tuning is a recorded decision (see '
-            'effort-roles.md, Orchestrator role group) — a DIFFERENT value here is drift, '
+            '_PROJECT_TUNED_ORCHESTRATOR_KNOBS) — a DIFFERENT value here is drift, '
             'not the decision.'
         )
 
