@@ -1,14 +1,14 @@
 # Multi-Target Distribution, Selective Bundle Installation & Harness-Aware Steward Requirements
 
 **Document ID**: `REQ-SPEC-MULTI-TARGET-001`  
-**Status**: Ground-Truth Verified against `main` + PR `#1646`  
+**Status**: Ground-Truth Verified against `main` (PR `#1646`, PR `#1662`, PR `#1663`)  
 **Target Harnesses**: Google Antigravity, OpenCode, Claude Code
 
 ---
 
 ## 1. Ground-Truth Baseline (Already Implemented — Excluded from Scope)
 
-The following capabilities are already implemented on `main` and incoming PR `#1646` (`fix(runtime): align OpenCode layout, target resolution, and fail-closed`) and are **removed from active scope**:
+The following capabilities are already implemented on `main` and are **removed from active scope**:
 
 1. **Antigravity & OpenCode Target Compilers (`marketplace/targets/{antigravity,opencode}/`)**:
    - Complete target packages (`target.py`, `emitter.py`, `frontmatter.py`, `variant_emitter.py`, `mapping.json`, `frontmatter-rules.json`, `templates/user-invocable-command.md`, `templates/install.sh`) and ADR-021 `level_pins` agent variant generation.
@@ -26,19 +26,31 @@ The following capabilities are already implemented on `main` and incoming PR `#1
      ```
      and provide `read_flat_skill_identity(skill_dir)` for unambiguous bundle attribution without prefix-splitting heuristics.
    - `marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/antigravity_runtime.py` already provides `project_initial_setup` and `project_install_hook` (`.agents/hooks.json`), and `opencode_runtime.py` provides `opencode_enforcement_apply`.
+4. **`marshall-steward` Local Harness Configuration & Verification (`REQ-STEW-1..4`, PR `#1662`)**:
+   - `determine_mode.py` actively checks the runtime harness via `target_context.resolve_target()` and provides `check-harness` to verify schema, checksum freshness, and executor readiness against `.plan/local/harness/{target}.json`.
+   - `configure_harness.py` deterministically configures local harness state, invoking target-specific setup hooks with zero conversational LLM prompts and zero git pollution.
+   - Linked git worktrees inherit `.plan/local/harness/{target}.json` via `resolve_main_anchored_path()`.
+   - Integrated into `marshall-steward` preflight, wizard completion, and health checks.
+5. **Selective Bundle Installation, Atomic Updates & Safe Uninstall Lifecycle (`REQ-INST-1..6`, PR `#1663`)**:
+   - Target emitters generate `bundle-components.json` mapping each bundle to its emitted skills, agents, and commands.
+   - `install.sh` supports selective flags (`--all`, `--core-only`, `-b/--bundles`, `--without-bundles`), group aliases, automatic dependency closures, and `/dev/tty` interactive selection.
+   - Persistent manifests (`.install-manifest.json` and `.plan-marshall-manifest.json`) and configuration tailoring (`plugin.json` and `opencode.json`, with custom agent preservation).
+   - Atomic update (`-U, --update`) with pre-update snapshot under `.install-backup/`, obsolete file pruning, and automatic rollback on failure.
+   - Safe uninstallation (`--uninstall`) and selective bundle removal (`--uninstall --bundles`).
 
 ---
 
-## 2. Remaining Requirement Area 1: Selective Bundle Installation, Update & Uninstall Lifecycle (`REQ-INST-1..6`)
+## 2. Requirement Area 1: Selective Bundle Installation, Update & Uninstall Lifecycle (`REQ-INST-1..6`) — IMPLEMENTED & VERIFIED
 
-**Implementation Plan**: `doc/antigravity/plans/selective-bundle-installer.md`
+**Implementation Plan**: `doc/antigravity/plans/selective-bundle-installer.md` (Archived in `doc/antigravity/done/selective-bundle-installer.md`; Merged in PR `#1663`)  
+**Status**: Implemented, Verified & Merged (41 unit/integration tests in `test/marketplace/targets/{antigravity,opencode}/test_emitter.py`)
 
-### 2.1 Problem Statement & Ground-Truth Gap
-Currently, `marketplace/targets/antigravity/templates/install.sh` and `marketplace/targets/opencode/templates/install.sh` copy all emitted skills, agents, and commands wholesale:
-- **Bundle Bloat**: Consumers install all 10 marketplace bundles (Java, Java-CUI, Python, Frontend, Frontend-CUI, OCI, Documents, Plugin-Development, Requirements) even when working on a single-language repository.
-- **Component Attribution for Agents & Commands**: While PR `#1646` stamps `metadata.bundle` into every emitted flat `SKILL.md`, emitted `agents/` and `commands/` files also need deterministic bundle attribution in `dist-manifest.json` (or `plugin.json`) so partial bundle installs and selective uninstalls filter `skills/`, `agents/`, and `commands/` accurately.
-- **No Update State Preservation**: Re-running `install.sh` overwrites the installation without remembering which bundles were previously selected or backing up on failure.
-- **Broken OpenCode Uninstall**: `marketplace/targets/opencode/templates/install.sh` `prune_managed_components()` only globs `plan-marshall-*`, leaving behind all `pm-dev-*`, `pm-documents-*`, `pm-plugin-development-*`, and `pm-requirements-*` skills and commands on `--uninstall`.
+### 2.1 Problem Statement & Ground-Truth Gap (Resolved)
+The prior wholesale component copying in `marketplace/targets/{antigravity,opencode}/templates/install.sh` has been completely replaced with a deterministic, selective lifecycle engine:
+- **Bundle Bloat Eliminated**: Consumers can install only the needed domain modules or core runtime.
+- **Component Attribution for Agents & Commands**: Emitters generate `bundle-components.json` with per-bundle relative paths for `skills`, `agents`, and `commands`.
+- **Update State Preserved**: Re-running `install.sh -U` / `--update` detects the existing manifest, remembers previously installed bundles, creates `.install-backup/`, prunes obsolete files, and rolls back on failure.
+- **Safe & Non-Destructive OpenCode Uninstall**: OpenCode `--uninstall` removes tracked `managed_files` from the manifest (or `bundle-components.json` inventory fallback) and cleans empty parent directories under `skill/`, strictly preserving third-party user skills.
 
 ### 2.2 Bundle Hierarchy, Aliases & Dependency Resolution
 - **Core Bundle (Mandatory)**: `plan-marshall` (plus target harness bundle `plan-marshall-{target}` when present in the distribution).
@@ -70,7 +82,7 @@ Currently, `marketplace/targets/antigravity/templates/install.sh` and `marketpla
 - **Paths**:
   - Antigravity: `${TARGET_DIR}/.install-manifest.json`
   - OpenCode: `${TARGET_DIR}/.plan-marshall-manifest.json`
-- **Schema**:
+- **Schema** (strictly no timestamps):
   ```json
   {
     "schema_version": 1,
@@ -92,36 +104,42 @@ Currently, `marketplace/targets/antigravity/templates/install.sh` and `marketpla
   }
   ```
 
-### 2.4 Requirements (`REQ-INST-1..6`)
+### 2.4 Requirements & Implementation Verification (`REQ-INST-1..6`)
+
 - **`REQ-INST-1` (Bundle Attribution & Dependency Closure)**:
-  - Emitters (`antigravity/emitter.py`, `opencode/emitter.py`) or `dist-manifest.json` must record the per-bundle component inventory (`skills`, `agents`, `commands`) alongside `#1646`'s `SKILL.md` `metadata.bundle` block so every emitted file maps deterministically to its owning bundle.
-  - `plan-marshall` (and `plan-marshall-{target}` if present) are mandatory. Selecting `pm-dev-java-cui` or `pm-dev-frontend-cui` automatically includes `pm-dev-java` or `pm-dev-frontend`.
+  - *Verification Status*: **Complete & Verified** (PR `#1663`).
+  - *Implementation Details*: `marketplace/targets/antigravity/emitter.py` and `marketplace/targets/opencode/emitter.py` write `bundle-components.json` at `output_dir / 'bundle-components.json'` mapping each bundle to its relative component paths (`skills`, `agents`, `commands`). Core `plan-marshall` is mandatory; target harness core bundles (`plan-marshall-{target}`) are protected when present; closures `pm-dev-java-cui` $\to$ `pm-dev-java` and `pm-dev-frontend-cui` $\to$ `pm-dev-frontend` are automatically resolved during installation and checked during selective uninstallation.
 - **`REQ-INST-2` (Interactive `/dev/tty` Selection & Python 3 Helper)**:
-  - When invoked interactively without bundle selection flags, `install.sh` checks `/dev/tty` (`[ -t 0 ]` or readable `/dev/tty` for `curl ... | bash` pipelines) and presents an interactive selector (`[A]ll (default)`, `[C]ore only`, or comma-separated domain aliases/bundles). When `/dev/tty` is unavailable (headless CI), it defaults to `--all`.
-  - JSON parsing, dependency resolution, file filtering, manifest generation, and `plugin.json`/`opencode.json` tailoring are delegated to an embedded Python 3 helper in `install.sh` (stdlib only, no `jq` dependency).
+  - *Verification Status*: **Complete & Verified** (PR `#1663`).
+  - *Implementation Details*: `install.sh` explicitly opens and reads `/dev/tty` (`[ -t 0 ] || [ -r /dev/tty ]`) when run interactively (supporting `curl ... | bash` pipelines), displaying `[A]ll (default)`, `[C]ore only`, or a comma-separated list of bundles/aliases. In non-interactive environments (CI, or when `PLAN_MARSHALL_NON_INTERACTIVE=1`), it cleanly defaults to `--all`. An embedded Python 3 stdlib helper handles parsing, resolution, and filtering with zero external CLI dependencies (no `jq`).
 - **`REQ-INST-3` (Non-Interactive CLI Flags)**:
-  - Support `--all`, `--core-only`, `-b` / `--bundles <csv>`, and `--without-bundles <csv>` in both Antigravity and OpenCode `install.sh`.
+  - *Verification Status*: **Complete & Verified** (PR `#1663`).
+  - *Implementation Details*: Flags `--all`, `--core-only`, `-b` / `--bundles <csv>`, and `--without-bundles <csv>` are implemented in both Antigravity and OpenCode `install.sh`. Flag validation fails closed with exit code 2 on unknown bundle names, attempts to exclude the core bundle, or excluding a base bundle while its dependent child is requested.
 - **`REQ-INST-4` (Persistent Installation Manifest & Manifest Tailoring)**:
-  - Write `.install-manifest.json` (Antigravity) / `.plan-marshall-manifest.json` (OpenCode) recording `installed_bundles`, `dist_manifest_sha`, and `managed_files`.
-  - Prune Antigravity's installed `plugin.json` (`bundles` array) and OpenCode's `opencode.json` (`agent` map) to reflect only the installed bundles.
+  - *Verification Status*: **Complete & Verified** (PR `#1663`).
+  - *Implementation Details*: Antigravity writes `${TARGET_DIR}/.install-manifest.json` and prunes `plugin.json` (`"bundles"` array). OpenCode writes `${TARGET_DIR}/.plan-marshall-manifest.json` and prunes `opencode.json` commands and agents. The manifest schema matches the specification with strictly zero timestamps.
+  - *Adaptation Confirmed in Implementation*: OpenCode config tailoring strictly preserves user-defined custom agents and commands (any components not part of `bundle-components.json`).
 - **`REQ-INST-5` (Atomic Update `--update` / `-U`)**:
-  - Add `-U` / `--update` to `install.sh`. Reads existing manifest to preserve the prior `installed_bundles` selection (unless overridden by `--bundles`/`--all`/`--core-only`; when `--without-bundles` is also passed with `--update`, its exclusions are applied to the prior `installed_bundles` selection, or to `--all` when no prior manifest exists). Backs up all files mutated by `--update` — all managed component files, the target config (`plugin.json` / `opencode.json`), and the installation manifest (`.install-manifest.json` / `.plan-marshall-manifest.json`) — to a temporary staging directory, prunes obsolete files from the prior manifest, installs new files, and restores all backed-up files atomically on failure.
+  - *Verification Status*: **Complete & Verified** (PR `#1663`).
+  - *Implementation Details*: `-U` / `--update` detects existing manifests and defaults to the previously installed bundle set unless overridden. Supports `--without-bundles` overlay during updates. Creates a temporary backup in `${TARGET_DIR}/.install-backup/` containing all managed files, configuration, and manifest; prunes obsolete files; installs new files; and automatically restores all files from backup upon any failure before exiting.
+  - *Adaptation Confirmed in Implementation*: Installed target directories containing `.install-manifest.json` or `.plan-marshall-manifest.json` are excluded from being detected as local source distribution trees during updates, and `TARGET_DIR` is automatically inferred from `SCRIPT_DIR` for installed scripts.
 - **`REQ-INST-6` (Safe & Selective Uninstallation)**:
-  - Fix OpenCode `prune_managed_components()` to remove all paths listed in `.plan-marshall-manifest.json`, falling back when no manifest exists to deriving the exact managed component paths from the distribution's `bundle-components.json` inventory (mapped across both plural `skills/`, `agents/`, `commands/` and singular `skill/`, `agent/`, `command/` directories) rather than maintaining a hardcoded prefix glob list, without touching unmanaged user files.
-  - Support selective uninstallation (`install.sh --uninstall --bundles <csv>`) that removes only the specified non-core bundles (refusing if a remaining installed child bundle depends on the removed base bundle unless the child is also removed) and updates the manifest and `plugin.json`/`opencode.json`.
+  - *Verification Status*: **Complete & Verified** (PR `#1663`).
+  - *Implementation Details*: Antigravity full `--uninstall` cleanly removes `${TARGET_DIR}`. OpenCode full `--uninstall` removes all paths listed in `managed_files` from `.plan-marshall-manifest.json` (falling back to `bundle-components.json` inventory if the manifest is absent) and cleans empty parent directories under `skill/`, without touching third-party user skills or custom agents. Selective uninstallation (`install.sh --uninstall --bundles <csv>`) validates closures (refusing removal of core or base bundles whose children remain installed), deletes only the specified bundle files, and tailors the manifest and configuration.
 
 ---
 
-## 3. Remaining Requirement Area 2: Harness-Specific Bundles & Zero-Token Target Rules (`REQ-HBNDL-1..6`)
+## 3. Active Scope / Remaining Requirement Area: Harness-Specific Bundles & Zero-Token Target Rules (`REQ-HBNDL-1..6`) — PENDING
 
-**Implementation Plan**: `doc/antigravity/plans/harness-bundles-target-rules.md`
+**Implementation Plan**: `doc/antigravity/plans/harness-bundles-target-rules.md`  
+**Status**: Pending / Active Scope (Implementation verified: 0 of 6 requirements implemented on `main`)
 
 ### 3.1 Problem Statement & Ground-Truth Gap
 - `marketplace/targets/component_targets.py` supports `targets:` scoping on individual components (`SKILL.md`, `agents/*.md`, `commands/*.md`) and skill-internal `.md` files, but does not yet support bundle-level `"targets": [...]` scoping in `{bundle}/.claude-plugin/plugin.json`.
 - Target-specific operational rules for Antigravity and OpenCode are not yet packaged as first-class target-scoped bundles (`plan-marshall-antigravity`, `plan-marshall-opencode`) or delivered into native zero-token rule locations (`.agents/rules/plan-marshall-target-rules.md` for Antigravity, `.opencode/rules/plan-marshall-target-rules.md` for OpenCode).
 - Note on Ground-Truth Boundary: Build-time emitter templates (`templates/install.sh` and `templates/user-invocable-command.md`) are already owned and tested under `marketplace/targets/{target}/templates/` and remain there; meta-project developer sync skills (`.agents/skills/sync-antigravity/` and `.claude/skills/sync-plugin-cache/`) remain project-local.
 
-### 3.2 Requirements (`REQ-HBNDL-1..6`)
+### 3.2 Requirements Specification (`REQ-HBNDL-1..6`)
 - **`REQ-HBNDL-1` (Bundle-Level Target Scoping in `component_targets.py` & Emitters)**:
   - Extend `marketplace/targets/component_targets.py` with `read_bundle_target_scope(bundle_dir: Path) -> frozenset[str] | None` and `bundle_emits_to(bundle_dir: Path, target_name: str) -> bool` reading `"targets"` from `.claude-plugin/plugin.json` with the same fail-closed validation (`TargetScopeError` on unknown target, empty list, non-component-tree-only target, or non-string items).
   - Enforce `bundle_emits_to(bundle_dir, target_name)` across all three component-tree targets (`claude`, `opencode`, `antigravity`), including `ClaudeTarget` equality checks and `marketplace_json_gen.py` so a bundle scoped to `["antigravity"]` is omitted from `target/claude/` and `target/opencode/`.
@@ -145,14 +163,16 @@ Currently, `marketplace/targets/antigravity/templates/install.sh` and `marketpla
 
 ---
 
-## 4. Remaining Requirement Area 3: `marshall-steward` Harness-Aware Run & Script-Only Local Harness Configuration (`REQ-STEW-1..4`)
+## 4. Requirement Area 3: `marshall-steward` Harness-Aware Run & Script-Only Local Harness Configuration (`REQ-STEW-1..4`) — IMPLEMENTED & VERIFIED
 
-**Implementation Plan**: `doc/antigravity/plans/steward-harness-config.md`
+**Implementation Plan**: `doc/antigravity/plans/steward-harness-config.md` (Merged in PR `#1662`)  
+**Status**: Implemented, Verified & Merged (11 unit tests in `test/plan-marshall/marshall-steward/test_harness_config.py`)
 
-### 4.1 Problem Statement & Ground-Truth Gap
-- `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/determine_mode.py` currently checks only whether `.plan/execute-script.py` and `.plan/marshal.json` exist (`mode: menu, reason: both_exist`).
-- If a repository was initialized under Claude Code (so `marshal.json` exists) and is later opened in Antigravity or OpenCode (or vice versa), `determine_mode.py` does not check whether the *active* harness (resolved via PR `#1646`'s `target_context.resolve_target()`) has been locally configured on this checkout.
-- Per-checkout harness readiness must be tracked in git-ignored `.plan/local/harness/{target}.json` and configured deterministically via Python script (`configure_harness.py`) without burning conversational LLM tokens.
+### 4.1 Problem Statement & Ground-Truth Gap (Resolved)
+The prior gap where `determine_mode.py` only checked for `.plan/execute-script.py` and `.plan/marshal.json` regardless of the active runtime harness has been resolved:
+- **Active Target Identification**: `determine_mode.py` delegates harness detection to `target_context.resolve_target()`.
+- **Harness State Schema**: Per-checkout harness readiness is tracked in `.plan/local/harness/{target}.json`.
+- **Deterministic Script Configuration**: `configure_harness.py` configures harness state deterministically without conversational LLM prompt overhead.
 
 ### 4.2 Local Harness State Schema (`.plan/local/harness/{target}.json`)
 - **Location**: `.plan/local/harness/{target}.json` (e.g. `.plan/local/harness/antigravity.json`, `.plan/local/harness/opencode.json`, `.plan/local/harness/claude.json`).
@@ -174,32 +194,27 @@ Currently, `marketplace/targets/antigravity/templates/install.sh` and `marketpla
   }
   ```
 
-### 4.3 Requirements (`REQ-STEW-1..4`)
+### 4.3 Requirements & Implementation Verification (`REQ-STEW-1..4`)
+
 - **`REQ-STEW-1` (Active Harness Verification via `target_context` in `determine_mode.py`)**:
-  - `determine_mode.py` must delegate active target detection to `target_context.resolve_target()` / `target_context.resolve_context()` from `plan-marshall:script-shared` (PR `#1646`), accepting an optional `--harness` (`claude`, `opencode`, `antigravity`) override.
-  - Add subcommand `determine_mode.py check-harness [--harness {target}]` that inspects `.plan/local/harness/{target}.json`, verifies schema validity, checks `dist_manifest_sha` freshness against the installed target's `dist-manifest.json` (or `.plan/execute-script.py` SHA fallback), and verifies `checks.executor_ready` and `checks.harness_paths_valid`.
-  - Extend `determine_mode.py mode` output with `harness`, `target_source`, `harness_configured` (`true`/`false`), and `harness_reason` so `marshall-steward` sees harness readiness in a single call.
+  - *Verification Status*: **Complete & Verified** (PR `#1662`).
+  - *Implementation Details*: `determine_mode.py` imports and delegates active target detection to `target_context.resolve_target()` / `target_context.resolve_context()` from `plan-marshall:script-shared` (PR `#1646`), supporting optional `--harness` override. Subcommand `determine_mode.py check-harness [--harness {target}]` inspects `.plan/local/harness/{target}.json`, verifies schema validity, checks `dist_manifest_sha` freshness, and checks `checks.executor_ready` and `checks.harness_paths_valid`. `determine_mode.py mode` returns `harness`, `target_source`, `harness_configured`, and `harness_reason`.
 - **`REQ-STEW-2` (Deterministic Script-Only `configure_harness.py`)**:
-  - Create `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/configure_harness.py` registered in the executor as `plan-marshall:marshall-steward:configure_harness`.
-  - Runs deterministically without LLM prompt interaction:
-    1. Resolves active target via `target_context.resolve_context()`.
-    2. Invokes the target's existing `platform-runtime` setup hook (`project_initial_setup` / `project_install_hook` for Antigravity, `opencode_enforcement_apply` for OpenCode, or permission/hook check for Claude) when applicable.
-    3. Emits/updates `.plan/local/harness/{target}.json` with `dist_manifest_sha` and check results.
-    4. Ensures zero git worktree pollution (never writes to tracked files without explicit steward wizard invocation; `.plan/local/harness/` is covered by `.plan/.gitignore`).
+  - *Verification Status*: **Complete & Verified** (PR `#1662`).
+  - *Implementation Details*: `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/configure_harness.py` is implemented and registered in the executor. It runs deterministically with zero conversational LLM prompts: resolves active target via `target_context.resolve_context()`, invokes target-specific `platform-runtime` setup hooks, emits/updates `.plan/local/harness/{target}.json`, and produces zero git pollution (guaranteed by `.plan/.gitignore`).
 - **`REQ-STEW-3` (Worktree Inheritance)**:
-  - Route `.plan/local/harness/{target}.json` resolution through `marketplace_paths.resolve_main_anchored_path` (and ensure `worktree-create` in `git_workflow.py` preserves `.plan/local` inheritance) so plan worktrees under `.plan/local/worktrees/{plan_id}` inherit `.plan/local/harness/` from the main repository checkout.
+  - *Verification Status*: **Complete & Verified** (PR `#1662`).
+  - *Implementation Details*: Routes `.plan/local/harness/{target}.json` resolution through `marketplace_paths.resolve_main_anchored_path(f'harness/{target}.json')`, enabling linked worktrees under `.plan/local/worktrees/{plan_id}` to inherit the main repository checkout's configured harness state without duplicated configuration.
 - **`REQ-STEW-4` (`marshall-steward` Wizard, Menu Preflight & Health Check Integration)**:
-  - Update `marshall-steward/SKILL.md`, `standards/wizard-flow.md`, and `standards/healthcheck-flow.md`:
-    - In Menu Mode preflight: when `determine_mode.py mode` reports `harness_configured: false`, automatically run `plan-marshall:marshall-steward:configure_harness` before showing the menu and report a one-line status confirmation.
-    - In Wizard Mode: run `configure_harness` as part of initial setup completion.
-    - In Health Check Mode: include `check-harness` status in the health report.
+  - *Verification Status*: **Complete & Verified** (PR `#1662`).
+  - *Implementation Details*: Preflight in Menu Mode runs `configure_harness` when `harness_configured: false`; Wizard Mode executes `configure_harness` as part of setup completion; Health Check includes `check-harness` status. Documented in `marshall-steward/SKILL.md` and reference flows (`references/wizard-flow.md`, `references/menu-healthcheck.md`), tested in `test_harness_config.py`.
 
 ---
 
 ## 5. Traceability Matrix
 
-| Plan File | Requirement IDs | Target Branch | Key Affected Paths |
+| Plan File | Requirement IDs | Status | Key Landed / Affected Paths |
 | :--- | :--- | :--- | :--- |
-| `doc/antigravity/plans/selective-bundle-installer.md` | `REQ-INST-1..6` | `feature/selective-bundle-installer` | `marketplace/targets/{antigravity,opencode}/emitter.py`, `marketplace/targets/{antigravity,opencode}/templates/install.sh`, `test/marketplace/targets/{antigravity,opencode}/test_emitter.py`, `doc/user/install-{antigravity,opencode}.adoc` |
-| `doc/antigravity/plans/harness-bundles-target-rules.md` | `REQ-HBNDL-1..6` | `feature/harness-bundles-target-rules` | `marketplace/targets/component_targets.py`, `marketplace/targets/{claude,opencode,antigravity}/`, `marketplace/bundles/plan-marshall-{antigravity,opencode}/`, `marketplace/.claude-plugin/marketplace.json`, `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/` |
-| `doc/antigravity/plans/steward-harness-config.md` | `REQ-STEW-1..4` | `feature/steward-harness-config` | `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/{determine_mode.py,configure_harness.py}`, `marketplace/bundles/plan-marshall/skills/marshall-steward/{SKILL.md,standards/}`, `marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/git_workflow.py` |
+| `doc/antigravity/done/selective-bundle-installer.md` | `REQ-INST-1..6` | **Merged & Done** (PR `#1663`) | `marketplace/targets/{antigravity,opencode}/emitter.py`, `marketplace/targets/{antigravity,opencode}/templates/install.sh`, `test/marketplace/targets/{antigravity,opencode}/test_emitter.py`, `doc/user/install-{antigravity,opencode}.adoc` |
+| `doc/antigravity/plans/steward-harness-config.md` | `REQ-STEW-1..4` | **Merged & Verified** (PR `#1662`) | `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/{determine_mode.py,configure_harness.py}`, `marketplace/bundles/plan-marshall/skills/marshall-steward/{SKILL.md,references/}`, `test/plan-marshall/marshall-steward/test_harness_config.py` |
+| `doc/antigravity/plans/harness-bundles-target-rules.md` | `REQ-HBNDL-1..6` | **Pending / Active Scope** (`feature/harness-bundles-target-rules`) | `marketplace/targets/component_targets.py`, `marketplace/targets/{claude,opencode,antigravity}/`, `marketplace/bundles/plan-marshall-{antigravity,opencode}/`, `marketplace/.claude-plugin/marketplace.json`, `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/` |
