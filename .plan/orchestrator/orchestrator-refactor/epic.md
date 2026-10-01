@@ -42,8 +42,10 @@ ad hoc commits directly against `main`.
 > here, at `.plan/orchestrator/orchestrator-refactor/`. **Aspect 3's literal framing was
 > corrected by PLAN-04/ADR-023**: the settled spelling is `--epic`, not `--name` — see
 > Decisions below. **Aspect 5 staged 2026-09-23** as WS-05 (PLAN-09/PLAN-10) — not yet
-> shipped; this epic's OWN ledger writes still land ad hoc on `main` until WS-05 ships and
-> `orchestrator.use_worktree` is turned on for this epic, same as every other epic today.
+> half shipped: PLAN-09 landed the shared ledger worktree, and **`orchestrator.use_worktree` was turned ON
+> 2026-10-01** (repository-wide, #1666). Every epic's ledger writes now go to the shared worktree
+> (`.plan/local/worktrees/_orchestrator`, branch `chore/orchestrator-ledger`), not to `main`. The `land` verb
+> (PLAN-10) is NOT shipped, so landing that branch is still a hand-run branch/PR/merge cycle.
 
 ## Queue annotations
 
@@ -57,8 +59,8 @@ cannot express.}
   PLAN-10 strictly follows PLAN-09. Queue order puts PLAN-09 first; PLAN-11 is the smallest and may go first by
   operator choice.
 - PLAN-09 — **SHIPPED 2026-09-28** (#1652, squash `438a0a71f`; landing `landings/PLAN-09.md`). The shared
-  `_orchestrator` worktree and `orchestrator.use_worktree` exist but are OFF in this checkout (`use_worktree:
-  false`) — nothing routes through the worktree until the operator opts in.
+  `_orchestrator` worktree and `orchestrator.use_worktree` it delivered were switched ON by the operator on
+  2026-10-01 — see Decisions.
 - PLAN-10 — now emittable (PLAN-09 landed). 6 deliverables after the D6 fold from the PLAN-09 landing (ledger-branch
   check before commit; dedicated reserved-key refusal on `worktree-remove`). Kept unsplit at the ~6 threshold:
   D6 is two small guards on `land`'s own code path, and splitting them off would ship `land` without them.
@@ -147,6 +149,16 @@ cannot express.}
   this session — see the spec itself before relying on its Claim Labels.
 
 ## Decisions
+
+- 2026-10-01 — **`orchestrator.use_worktree` turned ON, on operator instruction; this epic now works in the
+  shared ledger worktree.** Order of events: the session's ledger changes landed on `main` first (#1665,
+  `0f94c0d8f`), so the cutover check found no uncommitted or unlanded ledger path; `manage-config orchestrator
+  set --field use_worktree --value true` then succeeded from the main checkout and its one-line `marshal.json`
+  change went out as #1666. First use created the worktree at `.plan/local/worktrees/_orchestrator` on
+  `chore/orchestrator-ledger`, branched from `0f94c0d8f`. The knob is repository-wide: every other epic's
+  session resolves into the same worktree from its next script call. Consequence to remember: nothing lands
+  ledger commits on `main` automatically — until PLAN-10's `land` ships, the ledger branch is landed by hand.
+  The running PLAN-11 plan's inbox writes resolve into the worktree as well.
 
 - 2026-10-01 — **PLAN-11 emitted on operator override and confirmed started.** `next` refused it
   (`candidate comparison indeterminate — sibling_epic_spec indeterminate: 95, live_plan indeterminate: 2`);
