@@ -80,6 +80,7 @@ def _write_removed_steps(section: dict, removed: list[str]) -> None:
             seen[step_id] = None
     section[REMOVED_STEPS_KEY] = list(seen)
 
+
 # Phases with simple scalar fields only
 SCALAR_PHASES = {'phase-1-init', 'phase-2-refine', 'phase-3-outline', 'phase-4-plan'}
 
