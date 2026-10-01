@@ -352,11 +352,7 @@ def _deep_merge_missing(
         if _is_operator_step_map(prefix, key) and key in live:
             live_map = live[key]
             if not isinstance(live_map, dict) or not isinstance(default_value, dict):
-                # A present-but-malformed map falls back to the standard rule:
-                # absent handled above; both-dicts handled below; anything else
-                # is preserved untouched.
-                if isinstance(default_value, dict) and isinstance(live_map, dict):
-                    _deep_merge_missing(live_map, default_value, path, added, held_for_ask, re_added)
+                # A present-but-malformed map is preserved untouched.
                 continue
             # Atomic-once-present: never add a missing step id to a curated map.
             # Recurse only into step ids the operator kept, to back-fill missing

@@ -814,32 +814,6 @@ def _seed_verify_steps() -> dict:
     return {step_id: {} for step_id in _verify_step_ids()}
 
 
-# Operator-curated step-map locations the sync-defaults merge treats as
-# atomic-once-present: (phase key, map key). Mirrors
-# ``_cmd_sync_defaults._STEP_MAP_LOCATIONS`` as data (not an import) so the
-# seed module stays free of the sync module's import chain. D0 enumerates
-# exactly these two: both are seeded keyed maps an operator verb
-# (``remove-step``) can delete entries from.
-OPERATOR_STEP_MAP_LOCATIONS: tuple[tuple[str, str], ...] = (
-    ('phase-5-execute', 'verification_steps'),
-    ('phase-6-finalize', 'steps'),
-)
-
-
-def get_operator_step_map_locations() -> tuple[tuple[str, str], ...]:
-    """Return the operator-curated step-map locations (D0 population).
-
-    The single auditable source for "every keyed map ``sync-defaults``
-    deep-merges that an operator verb can remove from". Consumers (the merge,
-    the ask-before-add gate, D3 fixtures) read this tuple rather than
-    re-listing the locations.
-
-    Returns:
-        :data:`OPERATOR_STEP_MAP_LOCATIONS` verbatim.
-    """
-    return OPERATOR_STEP_MAP_LOCATIONS
-
-
 # Canonical-verify step prefix. A ``per_deliverable_build`` list entry MUST be a
 # ``default:verify:{canonical}`` ID; the prefix-strict validator rejects any
 # other shape (including the retired ``per_deliverable_build`` enum strings).
