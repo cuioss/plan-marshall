@@ -181,24 +181,24 @@ Before making any changes, load the following skills from the repository bundle 
 ## 5. Stage-by-Stage Execution Tasks
 
 ### Stage 1: Worktree & Branch Setup
-- [ ] **Task 1.1**: Verify `git status --porcelain` on `main` is completely empty.
-- [ ] **Task 1.2**: Fetch latest `origin/main` (`git fetch origin main`).
-- [ ] **Task 1.3**: Set up isolated worktree at `.plan/local/worktrees/steward-harness-config` on branch `feature/steward-harness-config` based on `origin/main` via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-create --plan-id steward-harness-config --branch feature/steward-harness-config --base origin/main`.
-- [ ] **Task 1.4**: Push `feature/steward-harness-config` immediately (`git -C .plan/local/worktrees/steward-harness-config push -u origin feature/steward-harness-config`) and verify `.venv` and `.pyprojectx` symlinks exist in the worktree.
+- [x] **Task 1.1**: Verify `git status --porcelain` on `main` is completely empty.
+- [x] **Task 1.2**: Fetch latest `origin/main` (`git fetch origin main`).
+- [x] **Task 1.3**: Set up isolated worktree at `.plan/local/worktrees/steward-harness-config` on branch `feature/steward-harness-config` based on `origin/main` via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-create --plan-id steward-harness-config --branch feature/steward-harness-config --base origin/main`.
+- [x] **Task 1.4**: Push `feature/steward-harness-config` immediately (`git -C .plan/local/worktrees/steward-harness-config push -u origin feature/steward-harness-config`) and verify `.venv` and `.pyprojectx` symlinks exist in the worktree.
 
 ### Stage 2: Implement `check-harness` in `determine_mode.py` & `configure_harness.py` (D1, D2)
-- [ ] **Task 2.1**: Extend `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/determine_mode.py` with `check_harness()`, the `check-harness` CLI subcommand, and `harness_configured` fields in `determine_mode()`.
-- [ ] **Task 2.2**: Create `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/configure_harness.py` implementing deterministic `platform-runtime` setup hook invocation and `.plan/local/harness/{harness}.json` creation and update.
-- [ ] **Task 2.3**: Write unit tests in `test/plan-marshall/marshall-steward/test_harness_config.py` and run `uv run pytest test/plan-marshall/marshall-steward/ -o addopts=""`.
-- [ ] **Task 2.4**: Run `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "quality-gate"`, stage modified files explicitly, commit with trailer `Co-Authored-By: plan-marshall <noreply@cuioss.de>`, and `git -C {worktree_path} push`.
+- [x] **Task 2.1**: Extend `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/determine_mode.py` with `check_harness()`, the `check-harness` CLI subcommand, and `harness_configured` fields in `determine_mode()`.
+- [x] **Task 2.2**: Create `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/configure_harness.py` implementing deterministic `platform-runtime` setup hook invocation and `.plan/local/harness/{harness}.json` creation and update.
+- [x] **Task 2.3**: Write unit tests in `test/plan-marshall/marshall-steward/test_harness_config.py` and run `uv run pytest test/plan-marshall/marshall-steward/ -o addopts=""`.
+- [x] **Task 2.4**: Run `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "quality-gate"`, stage modified files explicitly, commit with trailer `Co-Authored-By: plan-marshall <noreply@cuioss.de>`, and `git -C {worktree_path} push`.
 
 ### Stage 3: Integrate into `marshall-steward` Skill & Standards (D3)
-- [ ] **Task 3.1**: Update `marketplace/bundles/plan-marshall/skills/marshall-steward/SKILL.md`, `standards/wizard-flow.md`, and `standards/healthcheck-flow.md` to wire `check-harness` and `configure_harness`.
-- [ ] **Task 3.2**: Regenerate `target/claude` (`python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "generate-claude"`) so `target/claude` stays in sync with `marketplace/bundles/plan-marshall/`.
-- [ ] **Task 3.3**: Run `quality-gate` (which runs `plugin-doctor` over the updated `SKILL.md` and `standards/*.md` files), confirm 0 issues/errors, stage explicitly, commit with trailer `Co-Authored-By: plan-marshall <noreply@cuioss.de>`, and `git -C {worktree_path} push`.
+- [x] **Task 3.1**: Update `marketplace/bundles/plan-marshall/skills/marshall-steward/SKILL.md`, `standards/wizard-flow.md`, and `standards/healthcheck-flow.md` to wire `check-harness` and `configure_harness`.
+- [x] **Task 3.2**: Regenerate `target/claude` (`python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "generate-claude"`) so `target/claude` stays in sync with `marketplace/bundles/plan-marshall/`.
+- [x] **Task 3.3**: Run `quality-gate` (which runs `plugin-doctor` over the updated `SKILL.md` and `standards/*.md` files), confirm 0 issues/errors, stage explicitly, commit with trailer `Co-Authored-By: plan-marshall <noreply@cuioss.de>`, and `git -C {worktree_path} push`.
 
 ### Stage 4: Full Verification, Pre-PR Subagent Review, PR Lifecycle & Cleanup
-- [ ] **Task 4.1**: Run full verification: `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "verify"`. Confirm `status: success`, `total_issues: 0`, and `errors: []`.
-- [ ] **Task 4.2**: Dispatch an independent read-only verification subagent to review `git -C {worktree_path} diff origin/main...HEAD` against `REQ-STEW-1..4`, including a beyond-diff consumer sweep for `determine_mode.py` callers and tests. Fix any findings, re-run `verify`, commit, and push.
-- [ ] **Task 4.3**: Create PR via `plan-marshall:tools-integration-ci:ci`, monitor CI checks and automated review bots, triage and resolve any review findings, and merge via squash merge / merge queue.
-- [ ] **Task 4.4**: Switch main repository to `main` and pull via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow switch-and-pull --plan-id steward-harness-config --base main`, tear down worktree `.plan/local/worktrees/steward-harness-config` via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-remove --plan-id steward-harness-config`, and move `doc/antigravity/plans/steward-harness-config.md` into `doc/antigravity/done/steward-harness-config.md`.
+- [x] **Task 4.1**: Run full verification: `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "verify"`. Confirm `status: success`, `total_issues: 0`, and `errors: []`.
+- [x] **Task 4.2**: Dispatch an independent read-only verification subagent to review `git -C {worktree_path} diff origin/main...HEAD` against `REQ-STEW-1..4`, including a beyond-diff consumer sweep for `determine_mode.py` callers and tests. Fix any findings, re-run `verify`, commit, and push.
+- [x] **Task 4.3**: Create PR via `plan-marshall:tools-integration-ci:ci`, monitor CI checks and automated review bots, triage and resolve any review findings, and merge via squash merge / merge queue.
+- [x] **Task 4.4**: Switch main repository to `main` and pull via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow switch-and-pull --plan-id steward-harness-config --base main`, tear down worktree `.plan/local/worktrees/steward-harness-config` via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-remove --plan-id steward-harness-config`, and move `doc/antigravity/plans/steward-harness-config.md` into `doc/antigravity/done/steward-harness-config.md`.

@@ -24,6 +24,10 @@ Survey of every configuration surface a project author touches when running Plan
 | ❌ ignored
 | Per-developer command-execution state: adaptive build-command timeouts, acceptable-warning patterns, the `architecture_refresh` tier settings, the `language_servers` and `derivation_resolvers` machine-local bindings, and last-execution metadata. Never committed. See <<derivation-resolvers>>.
 
+| `.plan/local/harness/{target}.json`
+| ❌ ignored (per-checkout)
+| Target harness readiness state for Antigravity, OpenCode, and Claude. Auto-configured and verified by `/marshall-steward`. Never committed. See xref:getting-started.adoc#_where_things_live[Getting Started › Where things live].
+
 | `CLAUDE.md`, `AGENTS.md`
 | project decision (usually ✅)
 | Agent instructions. The wizard appends three idempotent guidance blocks — see xref:getting-started.adoc#_what_the_wizard_writes_to_claude_md[Getting Started → What the wizard writes to `CLAUDE.md`]. The agents file is uppercase `AGENTS.md`: the PR-Agent reviewer resolves it through a case-sensitive contents lookup, so a lowercase name is read by nothing.

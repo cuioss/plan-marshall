@@ -95,6 +95,7 @@ The runtime data layer Plan Marshall maintains for itself. Mostly local-only, wi
 ├── local/                                # ❌ ignored — private working area
 │   ├── plans/{plan-id}/
 │   ├── worktrees/{plan-id}/
+│   ├── harness/{target}.json             # active harness readiness state (antigravity, opencode, claude)
 │   ├── lessons-learned/
 │   ├── logs/
 │   ├── archived-plans/

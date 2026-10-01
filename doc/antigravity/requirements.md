@@ -165,7 +165,7 @@ The prior wholesale component copying in `marketplace/targets/{antigravity,openc
 
 ## 4. Requirement Area 3: `marshall-steward` Harness-Aware Run & Script-Only Local Harness Configuration (`REQ-STEW-1..4`) — IMPLEMENTED & VERIFIED
 
-**Implementation Plan**: `doc/antigravity/plans/steward-harness-config.md` (Merged in PR `#1662`)  
+**Implementation Plan**: `doc/antigravity/plans/steward-harness-config.md` (Archived in `doc/antigravity/done/steward-harness-config.md`; Merged in PR `#1662`)  
 **Status**: Implemented, Verified & Merged (11 unit tests in `test/plan-marshall/marshall-steward/test_harness_config.py`)
 
 ### 4.1 Problem Statement & Ground-Truth Gap (Resolved)
@@ -216,5 +216,5 @@ The prior gap where `determine_mode.py` only checked for `.plan/execute-script.p
 | Plan File | Requirement IDs | Status | Key Landed / Affected Paths |
 | :--- | :--- | :--- | :--- |
 | `doc/antigravity/done/selective-bundle-installer.md` | `REQ-INST-1..6` | **Merged & Done** (PR `#1663`) | `marketplace/targets/{antigravity,opencode}/emitter.py`, `marketplace/targets/{antigravity,opencode}/templates/install.sh`, `test/marketplace/targets/{antigravity,opencode}/test_emitter.py`, `doc/user/install-{antigravity,opencode}.adoc` |
-| `doc/antigravity/plans/steward-harness-config.md` | `REQ-STEW-1..4` | **Merged & Verified** (PR `#1662`) | `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/{determine_mode.py,configure_harness.py}`, `marketplace/bundles/plan-marshall/skills/marshall-steward/{SKILL.md,references/}`, `test/plan-marshall/marshall-steward/test_harness_config.py` |
+| `doc/antigravity/done/steward-harness-config.md` | `REQ-STEW-1..4` | **Merged & Done** (PR `#1662`) | `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/{determine_mode.py,configure_harness.py}`, `marketplace/bundles/plan-marshall/skills/marshall-steward/{SKILL.md,references/}`, `test/plan-marshall/marshall-steward/test_harness_config.py` |
 | `doc/antigravity/plans/harness-bundles-target-rules.md` | `REQ-HBNDL-1..6` | **Pending / Active Scope** (`feature/harness-bundles-target-rules`) | `marketplace/targets/component_targets.py`, `marketplace/targets/{claude,opencode,antigravity}/`, `marketplace/bundles/plan-marshall-{antigravity,opencode}/`, `marketplace/.claude-plugin/marketplace.json`, `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/` |

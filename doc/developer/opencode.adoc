@@ -247,11 +247,21 @@ The `OpenCodeRuntime` subclass implements target operations:
 
 === Marshall Steward Integration
 
-`bootstrap_plugin.py` supports OpenCode discovery and path resolution:
+`marshall-steward` integrates harness awareness, deterministic configuration, and plugin discovery for OpenCode:
 
-* `--target opencode`: Detects OpenCode roots by querying the runtime layout.
-* **Singular Layout Resolution (`resolve_bundle_path`)**:
-  Callers provide standard relative paths (e.g. `skills/manage-tasks/SKILL.md`). In OpenCode's singular directory layout, `bootstrap_plugin.py` automatically maps this to `skill/{bundle}-{skill}/SKILL.md` when `opencode.json` or `skill/` is detected at the plugin root.
+* **Plugin Discovery & Singular Layout Resolution (`bootstrap_plugin.py`)**:
+  ** `--target opencode`: Detects OpenCode roots by querying the runtime layout.
+  ** Callers provide standard relative paths (e.g. `skills/manage-tasks/SKILL.md`). In OpenCode's singular directory layout, `bootstrap_plugin.py` automatically maps this to `skill/{bundle}-{skill}/SKILL.md` when `opencode.json` or `skill/` is detected at the plugin root.
+* **Harness Detection & Preflight Verification (`determine_mode.py`)**:
+  ** Detects active harness via `target_context.resolve_target()`.
+  ** `determine_mode.py mode` returns `harness: opencode`, `target_source`, `harness_configured`, and `harness_reason`.
+  ** Subcommand `determine_mode.py check-harness` verifies `.plan/local/harness/opencode.json` schema, `dist_manifest_sha` freshness against the installed distribution or `.plan/execute-script.py` SHA fallback, and verifies `checks.rules_emitted`, `checks.harness_paths_valid`, and `checks.executor_ready`.
+* **Deterministic Script Configuration (`configure_harness.py`)**:
+  ** `configure_harness.py` runs deterministically with zero conversational LLM prompt overhead.
+  ** Invokes `OpenCodeRuntime.opencode_enforcement_apply()` to ensure baseline permissions, verifies paths and executor readiness, and atomically writes `.plan/local/harness/opencode.json`.
+  ** In Menu Mode preflight, unconfigured checkouts automatically trigger `configure_harness.py` before presenting the steward menu.
+* **Worktree State Inheritance**:
+  ** Harness configuration paths resolve via `marketplace_paths.resolve_main_anchored_path(f'harness/{target}.json')`, enabling linked worktrees under `.plan/local/worktrees/{plan_id}` to inherit the main checkout's configured harness state without duplicate state files.
 
 == Consumer Distribution & Installer Mechanics
 
@@ -353,5 +363,6 @@ The OpenCode target is verified by dedicated automated tests:
   ** `test_opencode_enforcement.py`: Deny refusals, ask prompts, and carve-out passes pinned against the runtime matrix, plus the mirror of the guard plugin decision table as a behavioral contract.
 * `test/plan-marshall/marshall-steward/`:
   ** `test_bootstrap_plugin_behavior.py`: Tests for OpenCode singular layout path resolution (`skill/{bundle}-{skill}/`).
+  ** `test_harness_config.py`: Unit test suite covering `check_harness`, `configure_harness`, schema verification, freshness checks, multi-harness coexistence, `determine_mode` return fields, and worktree inheritance.
 * `test/plan-marshall/tools-permission-fix/`:
   ** `test_permission_fix_opencode.py` (and related): Tests for `ensure-executor`, `ensure`, `apply-fixes`, and `consolidate` on OpenCode targets.
