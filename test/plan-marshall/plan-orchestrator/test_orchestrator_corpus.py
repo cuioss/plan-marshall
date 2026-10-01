@@ -3367,6 +3367,42 @@ class TestCrossCheckDatedSnapshotNearMisses:
 
         _assert_still_enumerated_and_compared(result, other_snapshot)
 
+    def test_a_snapshot_of_an_existing_prefix_sharing_epic_is_still_a_sibling(self, plan_context):
+        # ``{SLUG}-12-26-09-21`` reads two ways by name alone: the queried epic's
+        # snapshot with ordinal 21, or the plain dated snapshot of the epic
+        # ``{SLUG}-12``. That epic exists here, so the name is ITS snapshot.
+        owner = f'{SLUG}-12'
+        other_snapshot = f'{owner}-26-09-21'
+        _seed_queried_epic(plan_context)
+        _archived_epic_dir(plan_context, owner).mkdir(parents=True)
+        _plant_overlapping_spec(plan_context, _archived_epic_dir(plan_context, other_snapshot))
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert result['status'] == 'success'
+        assert result['excluded_self_snapshots'] == [], f'{other_snapshot} was excluded as a self-snapshot'
+        assert result['excluded_self_snapshot_count'] == 0
+        assert _candidate_population(result)[CANDIDATE_KIND_SIBLING_EPIC_SPEC] == 1
+        overlap_candidates = [
+            row['candidate']
+            for row in result['file_overlap_matches']
+            if row['candidate_kind'] == CANDIDATE_KIND_SIBLING_EPIC_SPEC
+        ]
+        assert overlap_candidates == [f'{other_snapshot}/{_PLANTED_SPEC}']
+
+    def test_the_same_name_is_excluded_when_no_such_epic_exists(self, plan_context):
+        # The matched positive control: with no ``{SLUG}-12`` epic in either
+        # root, the identical name is the queried epic's own ordinal snapshot.
+        snapshot_name = f'{SLUG}-12-26-09-21'
+        _seed_queried_epic(plan_context)
+        _plant_overlapping_spec(plan_context, _archived_epic_dir(plan_context, snapshot_name))
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert result['status'] == 'success'
+        assert result['excluded_self_snapshots'] == [snapshot_name]
+        assert _candidate_population(result)[CANDIDATE_KIND_SIBLING_EPIC_SPEC] == 0
+
     @pytest.mark.parametrize('name', _DATED_SNAPSHOT_NEAR_MISSES, ids=_DATED_SNAPSHOT_NEAR_MISS_IDS)
     def test_a_name_outside_the_suffix_grammar_is_still_a_sibling(self, plan_context, name):
         # Each name starts with the queried slug and ends in date-like digits, so

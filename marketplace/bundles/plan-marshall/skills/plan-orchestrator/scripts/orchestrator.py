@@ -417,6 +417,11 @@ _ROOT_PROBE_ENTRY = 'root-probe'
 #: date) are all outside it. Consumed by :func:`_is_own_dated_snapshot` only.
 _DATED_SNAPSHOT_SUFFIX_RE = re.compile(r'-[0-9]{2}-[0-9]{2}-[0-9]{2}(?:-[0-9]{2})?')
 
+#: Length of the plain ``-YY-MM-DD`` suffix. Taking it off the END of a matching
+#: name gives the slug that name is the plain dated snapshot OF — the queried
+#: slug itself for the date-only form, ``{slug}-NN`` for the four-group form.
+_PLAIN_DATED_SUFFIX_LEN = len('-00-00-00')
+
 # ``RUNNING_STATUS`` — a row at this status is enumerated but carries
 # ``excluded_reason`` so a caller cannot re-scope it: re-scoping a spec
 # mid-execution changes the brief under a running plan (orchestration-model.md
@@ -3810,16 +3815,26 @@ def cmd_corpus_epics(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def _is_own_dated_snapshot(name: str, slug: str) -> bool:
+def _is_own_dated_snapshot(name: str, slug: str, epic_names: set[str]) -> bool:
     """Whether ``name`` is ``slug`` followed by exactly one dated-snapshot suffix.
 
     The prefix must equal the queried slug EXACTLY and the remainder must be the
     whole of :data:`_DATED_SNAPSHOT_SUFFIX_RE`, so the test is anchored on the
     full directory name rather than on a date that merely appears somewhere in
-    it. A snapshot of a DIFFERENT slug therefore never matches — including a
-    slug the queried one is itself a prefix of.
+    it.
+
+    The four-group form is ambiguous by name alone: ``{slug}-A-B-C-D`` is the
+    queried epic's snapshot with ordinal ``D``, and equally the plain dated
+    snapshot of a DIFFERENT epic named ``{slug}-A``. ``epic_names`` — every epic
+    directory name in either store root — settles it: when that other epic
+    exists, the name is ITS snapshot and does not match. The ambiguity is
+    resolved toward comparing, because a real sibling left out hides duplicate
+    work while a stale self-copy left in only adds noise.
     """
-    return name.startswith(slug) and _DATED_SNAPSHOT_SUFFIX_RE.fullmatch(name[len(slug) :]) is not None
+    if not name.startswith(slug) or _DATED_SNAPSHOT_SUFFIX_RE.fullmatch(name[len(slug) :]) is None:
+        return False
+    plain_owner = name[:-_PLAIN_DATED_SUFFIX_LEN]
+    return plain_owner == slug or plain_owner not in epic_names
 
 
 def _sibling_epic_roots(slug: str) -> tuple[list[Path], list[str]]:
@@ -3859,19 +3874,24 @@ def _sibling_epic_roots(slug: str) -> tuple[list[Path], list[str]]:
     between the two. The exclusion therefore depends on the snapshot naming
     convention, which no code enforces, and that dependence is an accepted
     limitation: an unrelated archived epic that happens to carry the dated name
-    is excluded, and a snapshot archived under any other name is not.
+    is excluded, and a snapshot archived under any other name is not. One case
+    the name leaves open is settled by the store instead: a four-group name is
+    another epic's snapshot whenever that epic (``{slug}-NN``) exists in either
+    root, and only then — a snapshot whose owning epic has left both roots is
+    still read as the queried epic's own.
     """
     roots: dict[str, Path] = {}
     excluded: set[str] = set()
     store_roots = _epic_store_roots()
     has_active_tree = any((base / slug).is_dir() for scope, base in store_roots if scope == SCOPE_ACTIVE)
+    epic_names = {child.name for _, base in store_roots if base.is_dir() for child in base.iterdir() if child.is_dir()}
     for scope, base in store_roots:
         if not base.is_dir():
             continue
         for child in sorted(base.iterdir()):
             if not child.is_dir() or child.name == slug or child.name in roots:
                 continue
-            if scope == SCOPE_ARCHIVED and has_active_tree and _is_own_dated_snapshot(child.name, slug):
+            if scope == SCOPE_ARCHIVED and has_active_tree and _is_own_dated_snapshot(child.name, slug, epic_names):
                 excluded.add(child.name)
                 continue
             roots[child.name] = child
