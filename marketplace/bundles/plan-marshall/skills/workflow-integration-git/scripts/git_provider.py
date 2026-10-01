@@ -20,6 +20,7 @@ existing ``analyze-diff`` / artifact-scan paths.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -72,6 +73,10 @@ def run_git(
     cannot prepend ``-C``; prefer ``-C`` for repo-rooted commands.
     """
     cwd_str = str(cwd) if cwd is not None else None
+    env = dict(os.environ)
+    env['LC_ALL'] = 'C'
+    env['LANG'] = 'C'
+    env['LANGUAGE'] = 'C'
     try:
         result = subprocess.run(
             ['git', *args],
@@ -79,6 +84,7 @@ def run_git(
             text=True,
             timeout=timeout,
             cwd=cwd_str,
+            env=env,
         )
     except FileNotFoundError:
         return 127, '', 'git executable not found on PATH'
