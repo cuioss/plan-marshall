@@ -51,8 +51,8 @@ ad hoc commits directly against `main`.
 status, workstream, and surface are in `queue-view.md`; this zone carries only what it
 cannot express.}
 
-- PLAN-09 / PLAN-10 / PLAN-11 (2026-09-26; PLAN-09 has since SHIPPED, so the staged rows are PLAN-10 and
-  PLAN-11) — the only staged rows after the PM-MCP park. All three share
+- PLAN-09 / PLAN-10 / PLAN-11 (2026-09-26, historical: PLAN-09 has since SHIPPED and PLAN-11 is RUNNING, so
+  PLAN-10 is the only staged row) — the rows re-staged after the PM-MCP park. All three share
   `orchestrator.py` and `test/plan-marshall/plan-orchestrator/**`, so they run one at a time, never paired.
   PLAN-10 strictly follows PLAN-09. Queue order puts PLAN-09 first; PLAN-11 is the smallest and may go first by
   operator choice.
