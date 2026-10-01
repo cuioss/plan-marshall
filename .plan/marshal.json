@@ -189,7 +189,7 @@
       "reader": "level-3"
     },
     "parallelization_scope": 1,
-    "use_worktree": false
+    "use_worktree": true
   },
   "build": {
     "queue": {
