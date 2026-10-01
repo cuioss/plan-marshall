@@ -129,37 +129,48 @@ The prior wholesale component copying in `marketplace/targets/{antigravity,openc
 
 ---
 
-## 3. Active Scope / Remaining Requirement Area: Harness-Specific Bundles & Zero-Token Target Rules (`REQ-HBNDL-1..6`) — PENDING
+## 3. Requirement Area 2: Harness-Specific Bundles & Zero-Token Target Rules (`REQ-HBNDL-1..6`) — IMPLEMENTED & VERIFIED
 
 **Implementation Plan**: `doc/antigravity/plans/harness-bundles-target-rules.md`  
-**Status**: Pending / Active Scope (Implementation verified: 0 of 6 requirements implemented on `main`)
+**Status**: Implemented & Verified (`feature/harness-bundles-target-rules`)  
+**Test Evidence**: 308 passing tests across `test_component_targets.py` (112 tests), `test_analyze_target_scope.py` (130 tests), and emitter test suites for Antigravity, OpenCode, and Claude (66 tests).
 
-### 3.1 Problem Statement & Ground-Truth Gap
-- `marketplace/targets/component_targets.py` supports `targets:` scoping on individual components (`SKILL.md`, `agents/*.md`, `commands/*.md`) and skill-internal `.md` files, but does not yet support bundle-level `"targets": [...]` scoping in `{bundle}/.claude-plugin/plugin.json`.
-- Target-specific operational rules for Antigravity and OpenCode are not yet packaged as first-class target-scoped bundles (`plan-marshall-antigravity`, `plan-marshall-opencode`) or delivered into native zero-token rule locations (`.agents/rules/plan-marshall-target-rules.md` for Antigravity, `.opencode/rules/plan-marshall-target-rules.md` for OpenCode).
-- Note on Ground-Truth Boundary: Build-time emitter templates (`templates/install.sh` and `templates/user-invocable-command.md`) are already owned and tested under `marketplace/targets/{target}/templates/` and remain there; meta-project developer sync skills (`.agents/skills/sync-antigravity/` and `.claude/skills/sync-plugin-cache/`) remain project-local.
+### 3.1 Problem Statement & Ground-Truth Gap (Resolved)
+- Bundle-level target scoping is fully implemented in `marketplace/targets/component_targets.py` and enforced across Claude, OpenCode, and Antigravity target emitters.
+- Target-specific operational rules for Antigravity and OpenCode are packaged into first-class target-scoped bundles (`plan-marshall-antigravity` with `targets: ["antigravity"]`, and `plan-marshall-opencode` with `targets: ["opencode"]`).
+- Installer scripts (`install.sh`) automatically emit zero-token rules into `<workspace>/.agents/rules/plan-marshall-target-rules.md` (Antigravity) and `<workspace>/.opencode/rules/plan-marshall-target-rules.md` (OpenCode) when `--workspace` or `--emit-rules` is passed, and cleanly clean them up on uninstallation.
+- `plugin-doctor` validates bundle-level `"targets"` in `.claude-plugin/plugin.json` and flags bundle-to-component contradictions.
 
-### 3.2 Requirements Specification (`REQ-HBNDL-1..6`)
+### 3.2 Requirements & Implementation Verification (`REQ-HBNDL-1..6`)
+
 - **`REQ-HBNDL-1` (Bundle-Level Target Scoping in `component_targets.py` & Emitters)**:
-  - Extend `marketplace/targets/component_targets.py` with `read_bundle_target_scope(bundle_dir: Path) -> frozenset[str] | None` and `bundle_emits_to(bundle_dir: Path, target_name: str) -> bool` reading `"targets"` from `.claude-plugin/plugin.json` with the same fail-closed validation (`TargetScopeError` on unknown target, empty list, non-component-tree-only target, or non-string items).
-  - Enforce `bundle_emits_to(bundle_dir, target_name)` across all three component-tree targets (`claude`, `opencode`, `antigravity`), including `ClaudeTarget` equality checks and `marketplace_json_gen.py` so a bundle scoped to `["antigravity"]` is omitted from `target/claude/` and `target/opencode/`.
+  - *Verification Status*: **Complete & Verified**.
+  - *Implementation Details*: Extended `marketplace/targets/component_targets.py` with `read_bundle_target_scope(bundle_dir: Path) -> frozenset[str] | None` and `bundle_emits_to(bundle_dir: Path, target_name: str) -> bool`. Enforces fail-closed validation (`TargetScopeError` on unknown target names, empty list, non-component-tree target, or non-string items). Invariant enforced: component targets must be a subset of enclosing bundle targets.
+  - *Target Integration*: Filtered across Claude (`target.py`, `equality_check.py`, `marketplace_json_gen.py`, `plugin_json_gen.py`), OpenCode (`opencode/emitter.py`), and Antigravity (`antigravity/emitter.py`).
+  - *Test Coverage*: 112 tests passing in `test/marketplace/targets/test_component_targets.py`.
 - **`REQ-HBNDL-2` (`plugin-doctor` Bundle Target Scope Support)**:
-  - Update `pm-plugin-development:plugin-doctor` to validate bundle-level `"targets"` in `.claude-plugin/plugin.json` and validate tool declarations inside target-scoped bundles against the target's `mapping.json`.
+  - *Verification Status*: **Complete & Verified**.
+  - *Implementation Details*: Extended `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_target_scope.py` with `_validate_bundle_plugin_json` (`targets_empty`, `targets_unknown`) and `_find_bundle_contradictions` (`targets_contradiction`).
+  - *Test Coverage*: 130 tests passing in `test/pm-plugin-development/plugin-doctor/test_analyze_target_scope.py`.
 - **`REQ-HBNDL-3` (Harness Bundles `plan-marshall-antigravity` & `plan-marshall-opencode`)**:
-  - Create `marketplace/bundles/plan-marshall-antigravity/` (`"targets": ["antigravity"]`) and `marketplace/bundles/plan-marshall-opencode/` (`"targets": ["opencode"]`), registered in `marketplace/.claude-plugin/marketplace.json`.
-  - Each bundle provides `skills/target-rules/SKILL.md` and `standards/harness-rules.md`.
+  - *Verification Status*: **Complete & Verified**.
+  - *Implementation Details*: Created `marketplace/bundles/plan-marshall-antigravity/` (`"targets": ["antigravity"]`) and `marketplace/bundles/plan-marshall-opencode/` (`"targets": ["opencode"]`). Both registered in `marketplace/.claude-plugin/marketplace.json`. Each provides `skills/target-rules/SKILL.md` (`mode: knowledge`), `README.md`, and normative standards (`standards/antigravity-rules.md`, `standards/opencode-rules.md`).
+  - *Mutual Exclusivity*: Verified via `generate --target all --output .plan/temp/all-targets` and unit tests in `test_emitter.py`.
 - **`REQ-HBNDL-4` (Antigravity Target Rules Content)**:
-  - `plan-marshall-antigravity:target-rules` codifies:
-    1. Complete Antigravity tool invariants (`run_command`, `view_file`, `write_to_file`, `replace_file_content`, `find_by_name`, `grep_search`, `ask_question`, `manage_task`, `invoke_subagent`, `send_message`, `schedule`, `search_web`, `read_url_content`).
-    2. Terminal sandbox discipline (`BypassSandbox: false` first, one command per call, no `&&`/`;`/`|`/`$()`/heredocs).
-    3. Reactive background task & subagent handling (never poll `manage_task status` in a loop).
+  - *Verification Status*: **Complete & Verified**.
+  - *Implementation Details*: `marketplace/bundles/plan-marshall-antigravity/skills/target-rules/standards/antigravity-rules.md` codifies:
+    1. Antigravity tool invariants (`run_command`, `view_file`, `write_to_file`, `replace_file_content`, `ask_question`, `invoke_subagent`, `send_message`, `manage_task`, `schedule`).
+    2. Terminal sandbox discipline (one command per call, no shell file inspection, explicit working directory).
+    3. Reactive background task & subagent handling (never poll `status` in a loop; rely on reactive wakeups).
     4. `.plan/` script-only access via `python3 .plan/execute-script.py`.
-    5. Artifact isolation (`<appDataDir>/brain/` artifacts kept separate from repository source and `.plan/` state).
+    5. Artifact isolation in `<appDataDir>/brain/<conversation-id>/`.
 - **`REQ-HBNDL-5` (OpenCode Target Rules Content)**:
-  - `plan-marshall-opencode:target-rules` codifies OpenCode tool mappings, singular-to-plural deployed skill resolution (`~/.config/opencode/skills/` / `.opencode/skills/`), one-command-per-call discipline, and `.plan/` script-only access.
+  - *Verification Status*: **Complete & Verified**.
+  - *Implementation Details*: `marketplace/bundles/plan-marshall-opencode/skills/target-rules/standards/opencode-rules.md` codifies OpenCode tool mappings (`bash`, `read`, `edit`, `glob`, `grep`, `question`, `task`, `skill`), flat deployed layout conventions (`~/.config/opencode/skills/` / `.opencode/skills/`), single-command-per-call discipline, and `.plan/` script-only access.
 - **`REQ-HBNDL-6` (Zero-Token Native Rule Delivery & Fail-Safe Entrypoints)**:
-  - Update `install.sh` (workspace mode) and harness setup to emit the active harness's `target-rules` into `.agents/rules/plan-marshall-target-rules.md` (Antigravity) or `.opencode/rules/plan-marshall-target-rules.md` (OpenCode) so rules enter system context with zero runtime `Read`/`view_file` calls.
-  - Entrypoint skills (`plan-marshall`, `plan-orchestrator`, `marshall-steward`) rely passively on native agentfiles/rules and never fail if optional rule files are absent.
+  - *Verification Status*: **Complete & Verified**.
+  - *Implementation Details*: Updated `marketplace/targets/antigravity/templates/install.sh` and `marketplace/targets/opencode/templates/install.sh` with `--emit-rules` support and `sync_workspace_rules` in Python. Automatically copies target rules into `<workspace>/.agents/rules/plan-marshall-target-rules.md` (Antigravity) and `<workspace>/.opencode/rules/plan-marshall-target-rules.md` (OpenCode) when `--workspace` or `--emit-rules` is set. Full and selective uninstalls cleanly remove the rule file.
+  - *Test Coverage*: Validated by integration tests in `test/marketplace/targets/antigravity/test_emitter.py` (`test_antigravity_workspace_rule_emission`) and `test/marketplace/targets/opencode/test_emitter.py` (`test_opencode_workspace_rule_emission`).
 
 ---
 
@@ -217,4 +228,4 @@ The prior gap where `determine_mode.py` only checked for `.plan/execute-script.p
 | :--- | :--- | :--- | :--- |
 | `doc/antigravity/done/selective-bundle-installer.md` | `REQ-INST-1..6` | **Merged & Done** (PR `#1663`) | `marketplace/targets/{antigravity,opencode}/emitter.py`, `marketplace/targets/{antigravity,opencode}/templates/install.sh`, `test/marketplace/targets/{antigravity,opencode}/test_emitter.py`, `doc/user/install-{antigravity,opencode}.adoc` |
 | `doc/antigravity/done/steward-harness-config.md` | `REQ-STEW-1..4` | **Merged & Done** (PR `#1662`) | `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/{determine_mode.py,configure_harness.py}`, `marketplace/bundles/plan-marshall/skills/marshall-steward/{SKILL.md,references/}`, `test/plan-marshall/marshall-steward/test_harness_config.py` |
-| `doc/antigravity/plans/harness-bundles-target-rules.md` | `REQ-HBNDL-1..6` | **Pending / Active Scope** (`feature/harness-bundles-target-rules`) | `marketplace/targets/component_targets.py`, `marketplace/targets/{claude,opencode,antigravity}/`, `marketplace/bundles/plan-marshall-{antigravity,opencode}/`, `marketplace/.claude-plugin/marketplace.json`, `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/` |
+| `doc/antigravity/plans/harness-bundles-target-rules.md` | `REQ-HBNDL-1..6` | **Implemented & Verified** (`feature/harness-bundles-target-rules`) | `marketplace/targets/component_targets.py`, `marketplace/targets/{claude,opencode,antigravity}/`, `marketplace/bundles/plan-marshall-{antigravity,opencode}/`, `marketplace/.claude-plugin/marketplace.json`, `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/` |
