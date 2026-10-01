@@ -304,6 +304,9 @@
       "url": "https://github.com/cuioss/plan-marshall.git"
     }
   ],
+  "runtime": {
+    "target": "opencode"
+  },
   "skill_domains": {
     "system": {
       "defaults": [],

@@ -41,7 +41,11 @@
       "python3 -m pip *": "ask",
       "pip install *": "ask",
       "npm install *": "ask",
-      "docker *": "ask"
+      "docker *": "ask",
+      "python3 .plan/execute-script.py *": "allow",
+      "./pw *": "allow",
+      "python3 marketplace/targets/sync.py *": "allow",
+      "python3 .opencode/scripts/sync_opencode.py *": "allow"
     }
   },
   "agent": {
