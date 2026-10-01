@@ -170,6 +170,26 @@ Before making any changes, load the following skills from the repository bundle 
   - Test workspace rule emission in both `antigravity` (`<workspace>/.agents/rules/plan-marshall-target-rules.md`) and `opencode` (`<workspace>/.opencode/rules/plan-marshall-target-rules.md`) `install.sh` scripts.
   - Test `_analyze_target_scope.py` flags bundle-level `targets_empty`, `targets_unknown`, and bundle-to-component `targets_contradiction`.
 
+### D5: Developer & User Documentation Updates
+- **Files**:
+  - `doc/developer/antigravity.adoc`
+  - `doc/developer/opencode.adoc`
+  - `doc/developer/distribution.adoc`
+  - `doc/developer/repository-layout.adoc`
+  - `doc/user/install-antigravity.adoc`
+  - `doc/user/install-opencode.adoc`
+- **Changes**:
+  - Document `plan-marshall-antigravity` and `plan-marshall-opencode` bundles, bundle-level target scoping in `.claude-plugin/plugin.json`, zero-token workspace rules, tool invariants, and verification.
+  - Document workspace target rules emission (`--workspace`, `.agents/rules/plan-marshall-target-rules.md`, `.opencode/rules/plan-marshall-target-rules.md`) in user installation guides.
+
+### D6: Requirements Alignment & Plan Archival
+- **Files**:
+  - `doc/antigravity/requirements.md`
+  - `doc/antigravity/plans/harness-bundles-target-rules.md` -> `doc/antigravity/done/harness-bundles-target-rules.md`
+- **Changes**:
+  - Thoroughly audit `REQ-HBNDL-1..6` implementation, adapt `doc/antigravity/requirements.md` from Pending to Implemented & Verified with test evidence, and update status overview and traceability matrix.
+  - Check off all completed tasks and move plan to `doc/antigravity/done/harness-bundles-target-rules.md`.
+
 ---
 
 ## 5. Stage-by-Stage Execution Tasks
@@ -195,8 +215,18 @@ Before making any changes, load the following skills from the repository bundle 
 - [ ] **Task 3.5**: Add target mutual-exclusivity and workspace rule emission tests in `test/marketplace/targets/{antigravity,opencode,claude}/test_emitter.py` and run them via `uv run pytest`.
 - [ ] **Task 3.6**: Run `quality-gate`, stage explicitly, commit with trailer `Co-Authored-By: plan-marshall <noreply@cuioss.de>`, and `git -C {worktree_path} push`.
 
-### Stage 4: Full Verification, Pre-PR Subagent Review, PR Lifecycle & Cleanup
-- [ ] **Task 4.1**: Run full verification: `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "verify"`. Confirm `status: success`, `total_issues: 0`, and `errors: []`.
-- [ ] **Task 4.2**: Dispatch an independent read-only verification subagent to review `git -C {worktree_path} diff origin/main...HEAD` against `REQ-HBNDL-1..6`, including a beyond-diff sweep for any hardcoded bundle counts or lists in tests/docs. Fix any findings, re-run `verify`, commit, and push.
-- [ ] **Task 4.3**: Create PR via `plan-marshall:tools-integration-ci:ci`, monitor CI checks and automated review bots, triage and resolve any review findings, and merge via squash merge / merge queue.
-- [ ] **Task 4.4**: Switch main repository to `main` and pull via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow switch-and-pull --plan-id harness-bundles-target-rules --base main`, tear down worktree `.plan/local/worktrees/harness-bundles-target-rules` via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-remove --plan-id harness-bundles-target-rules`, and move `doc/antigravity/plans/harness-bundles-target-rules.md` into `doc/antigravity/done/harness-bundles-target-rules.md`.
+### Stage 4: Developer & User Documentation, Requirements Alignment (D5, D6)
+- [ ] **Task 4.1**: Update developer guides (`doc/developer/antigravity.adoc`, `doc/developer/opencode.adoc`, `doc/developer/distribution.adoc`, `doc/developer/repository-layout.adoc`) for harness bundles and bundle-level target scoping.
+- [ ] **Task 4.2**: Update user installation guides (`doc/user/install-antigravity.adoc`, `doc/user/install-opencode.adoc`) documenting workspace rule delivery.
+- [ ] **Task 4.3**: Thoroughly verify `REQ-HBNDL-1..6` against the implementation, adapt `doc/antigravity/requirements.md` from Pending to Implemented & Verified with test evidence, and update status overview and traceability matrix.
+- [ ] **Task 4.4**: Run `quality-gate`, stage explicitly, commit with trailer `Co-Authored-By: plan-marshall <noreply@cuioss.de>`, and `git -C {worktree_path} push`.
+
+### Stage 5: Full Verification, Pre-PR Subagent Review & PR Lifecycle
+- [ ] **Task 5.1**: Run full verification: `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "verify"`. Confirm `status: success`, `total_issues: 0`, and `errors: []`.
+- [ ] **Task 5.2**: Dispatch an independent read-only verification subagent to review `git -C {worktree_path} diff origin/main...HEAD` against `REQ-HBNDL-1..6`, including a beyond-diff sweep for any hardcoded bundle counts or lists in tests/docs. Fix any findings, re-run `verify`, commit, and push.
+- [ ] **Task 5.3**: Create PR via `plan-marshall:tools-integration-ci:ci`, monitor CI checks and automated review bots, triage and resolve any review findings, and merge via squash merge / merge queue.
+
+### Stage 6: Post-Merge Cleanup & Plan Archival
+- [ ] **Task 6.1**: Switch main repository to `main` and pull via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow switch-and-pull --plan-id harness-bundles-target-rules --base main`.
+- [ ] **Task 6.2**: Tear down worktree `.plan/local/worktrees/harness-bundles-target-rules` via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-remove --plan-id harness-bundles-target-rules`.
+- [ ] **Task 6.3**: Check off all completed tasks in `doc/antigravity/plans/harness-bundles-target-rules.md`, move to `doc/antigravity/done/harness-bundles-target-rules.md` via `git mv`, update the traceability matrix in `doc/antigravity/requirements.md` to reference `doc/antigravity/done/harness-bundles-target-rules.md`, and commit the archival.

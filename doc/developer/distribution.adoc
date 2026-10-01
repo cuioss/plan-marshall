@@ -7,7 +7,7 @@ xref:../../README.md[Plan Marshall] » xref:README.adoc[Developer Guide]
 
 == Overview
 
-`plan-marshall` publishes each of its distribution targets to refs on `cuioss/plan-marshall`. The `claude` target publishes to the `dist-claude` orphan branch (snapshot, force-updated on every push to `main`) and the immutable dist tag `claude/v{x.y.z}` (per-release). Each ref's root holds `.claude-plugin/marketplace.json`, a root `README.adoc` rendered on GitHub, and the expanded bundle tree, so Claude Code's `/plugin marketplace add` against the ref registers the marketplace directly. The `opencode` and `antigravity` targets publish to `dist-opencode` / `opencode/v*` and `dist-antigravity` / `antigravity/v*`. Each carries a root `README.adoc` and a self-contained `install.sh` script providing one-line installation (`curl -fsSL ... | bash`), workspace scoping, and uninstallation (xref:../user/install-opencode.adoc[Installation (OpenCode)], xref:../user/install-antigravity.adoc[Installation (Google Antigravity)]).
+`plan-marshall` publishes each of its distribution targets to refs on `cuioss/plan-marshall`. The `claude` target publishes to the `dist-claude` orphan branch (snapshot, force-updated on every push to `main`) and the immutable dist tag `claude/v{x.y.z}` (per-release). Each ref's root holds `.claude-plugin/marketplace.json`, a root `README.adoc` rendered on GitHub, and the expanded bundle tree, so Claude Code's `/plugin marketplace add` against the ref registers the marketplace directly. The `opencode` and `antigravity` targets publish to `dist-opencode` / `opencode/v*` and `dist-antigravity` / `antigravity/v*`. Each carries a root `README.adoc`, a `bundle-components.json` component inventory, and a self-contained `install.sh` script providing one-line installation (`curl -fsSL ... | bash`), selective bundle installation, atomic updates, workspace/project scoping, and uninstallation (xref:../user/install-opencode.adoc[Installation (OpenCode)], xref:../user/install-antigravity.adoc[Installation (Google Antigravity)]).
 
 The install commands that follow are Claude-specific (`/plugin marketplace add`, `/reload-plugins`), with the full walkthrough at xref:../user/install-claude.adoc[Installation (Claude Code)].
 
@@ -103,7 +103,7 @@ The publish workflow is target-parametrized via a GitHub Actions `strategy.matri
 | `--target antigravity`
 |===
 
-Both `dist-opencode` and `dist-antigravity` branches carry root `README.adoc` guides and `install.sh` scripts that allow consumers to install components without cloning the monorepo or running local generators. For contributors and CI pipelines, the local `./pw generate --target ...` workflow remains authoritative for emitting and validating target trees.
+Both `dist-opencode` and `dist-antigravity` branches carry root `README.adoc` guides, `bundle-components.json` inventory mappings, and `install.sh` scripts that allow consumers to selectively install components, perform atomic updates with automatic rollback, and safely uninstall without cloning the monorepo or running local generators. For contributors and CI pipelines, the local `./pw generate --target ...` workflow remains authoritative for emitting and validating target trees.
 
 The single source `v{x.y.z}` tag drives all targets; versioning stays unified
 across the marketplace. Adding another future target is not a config-only
@@ -118,4 +118,5 @@ the whole change.
 * xref:../user/install-opencode.adoc[User Guide › Installation (OpenCode)] — OpenCode generate-and-sync deploy walkthrough
 * xref:../user/install-antigravity.adoc[User Guide › Installation (Google Antigravity)] — Antigravity generate-and-deploy walkthrough
 * xref:antigravity.adoc[Developer Guide › Antigravity Target Port] — Antigravity target port architecture, tool mappings, and findings
+* xref:opencode.adoc[Developer Guide › OpenCode Target Port] — OpenCode target port architecture, directory layout, permission model, and findings
 * xref:marketplace-build.adoc[Marketplace Build] — pipeline that produces the `target/claude/` tree this distribution publishes
