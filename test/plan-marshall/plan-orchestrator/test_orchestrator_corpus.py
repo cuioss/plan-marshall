@@ -3272,15 +3272,6 @@ def _plant_overlapping_spec(plan_context, epic_dir: Path) -> None:
     _write_spec(plan_context, _PLANTED_SPEC, epic_dir=epic_dir, surface_lines=_surface(SHARED_PATH))
 
 
-def _sibling_overlap_candidates(result: Any) -> list:
-    """The candidate of every sibling-epic overlap row, in payload order."""
-    return [
-        row['candidate']
-        for row in result['file_overlap_matches']
-        if row['candidate_kind'] == CANDIDATE_KIND_SIBLING_EPIC_SPEC
-    ]
-
-
 def _assert_still_enumerated_and_compared(result: Any, candidate_root: str) -> None:
     """Assert ONE sibling tree was walked, counted and scored, and nothing excluded.
 
@@ -3295,7 +3286,12 @@ def _assert_still_enumerated_and_compared(result: Any, candidate_root: str) -> N
     assert result['epics_scanned'] == 1, f'{candidate_root} was not enumerated as a sibling epic'
     assert _candidate_population(result)[CANDIDATE_KIND_SIBLING_EPIC_SPEC] == 1
     assert _candidate_tally(result)[(CANDIDATE_KIND_SIBLING_EPIC_SPEC, CANDIDATE_COMPARABLE)] == 1
-    assert _sibling_overlap_candidates(result) == [f'{candidate_root}/{_PLANTED_SPEC}'], (
+    sibling_overlap_candidates = [
+        row['candidate']
+        for row in result['file_overlap_matches']
+        if row['candidate_kind'] == CANDIDATE_KIND_SIBLING_EPIC_SPEC
+    ]
+    assert sibling_overlap_candidates == [f'{candidate_root}/{_PLANTED_SPEC}'], (
         f'{candidate_root} was counted but never compared — its declared surface is the own '
         "spec's, so a scored candidate must produce exactly one overlap row"
     )
@@ -3414,16 +3410,15 @@ class TestCrossCheckDatedSnapshotNearMisses:
         _assert_still_enumerated_and_compared(result, dated_neighbour)
 
 
-def _write_sentinel_plan_dir(plan_context) -> Path:
+def _write_sentinel_plan_dir(plan_context) -> None:
     """Materialize the plan-less sentinel's directory, named through the constant.
 
     Only the ``status.json`` that makes the active-plan walk admit a directory is
     written: the sentinel has no request and never declares a footprint, which is
     exactly why it can only ever be an indeterminate candidate.
     """
-    plan_dir: Path = plan_context.plan_dir_for(NO_PLAN_SENTINEL)
+    plan_dir = plan_context.plan_dir_for(NO_PLAN_SENTINEL)
     (plan_dir / 'status.json').write_text(json.dumps({'plan_id': NO_PLAN_SENTINEL}), encoding='utf-8')
-    return plan_dir
 
 
 def _active_plan_names(plan_context) -> list:
