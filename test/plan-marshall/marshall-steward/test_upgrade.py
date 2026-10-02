@@ -201,6 +201,7 @@ def test_migrate_architecture_descriptors_is_the_last_stage_2_sub_step(project_k
     assert stage_2 == _EXPECTED_STAGE_2_SUB_STEPS
 
 
+@pytest.mark.parametrize('project_kind', ['meta', 'consumer'])
 @pytest.mark.parametrize('integrate', [True, False])
 def test_review_held_defaults_follows_reconcile_marshal_json(project_kind: str, integrate: bool):
     """D3: the operator-intent ask step runs immediately after reconcile, for both kinds.

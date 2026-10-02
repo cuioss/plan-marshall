@@ -3212,9 +3212,9 @@ def test_migration_is_idempotent():
 def test_migration_deferral_repeats_stably():
     """A deferred qgate re-reports identically without changing state.
 
-    Deferral retains the legacy key, so every run reports it — but the report
-    is byte-identical and the tree is untouched, which is the stable
-    fixed-point a pending deferral converges to (not a second migration).
+    The first run also migrates the simplify legacy param; the deferral
+    itself is the stable fixed-point: every later run reports only the
+    deferral against an untouched tree (not a second migration).
     """
     live = {
         'plan': {
@@ -3226,13 +3226,17 @@ def test_migration_deferral_repeats_stably():
     }
     first: list = []
     _migrate_run_at_all_to_lane(live, first)
+    assert len(first) == 2  # one deferral + one simplify migration
     snapshot = json.loads(json.dumps(live))
 
     second: list = []
     _migrate_run_at_all_to_lane(live, second)
 
-    assert first == second
-    assert len(first) == 2  # one deferral + one simplify migration
+    deferred = (
+        'plan.phase-6-finalize.qgate=never -> deferred until '
+        'steps[default:pre-push-quality-gate] is accepted'
+    )
+    assert second == [deferred]
     assert live == snapshot
     assert live['plan']['phase-6-finalize']['qgate'] == 'never'
 
