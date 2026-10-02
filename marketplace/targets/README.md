@@ -320,6 +320,8 @@ antigravity:
 
 The aggregate `status` is `success` only when every harness reported `success`, `partial` when some did, and `error` when none did.
 
+Under `--dry-run` every harness result block additionally carries `dry_run: true`, and nothing is written.
+
 ### CLI Interface
 
 The engine is invoked directly with the host interpreter; it has no `./pw` alias.
