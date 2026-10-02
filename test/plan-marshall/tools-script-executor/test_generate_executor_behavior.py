@@ -130,20 +130,21 @@ def _load_template_module() -> types.ModuleType:
     ],
     ids=['antigravity-signal', 'opencode-signal', 'opencode-pid-signal', 'claude-signal'],
 )
-def test_env_tier_outranks_marshal_json(monkeypatch, tmp_path, env_signal, expected_target, expected_source):
-    """A platform env signal decides the target even when marshal.json disagrees.
+def test_env_tier_outranks_local_config(monkeypatch, tmp_path, env_signal, expected_target, expected_source):
+    """A platform env signal decides the target even when local harness config disagrees.
 
     The env leg is the one the removed reader never had: it read config only, so
     a machine whose only deployment is OpenCode was told ``claude`` no matter
-    what its runtime injected. Each row writes a CONTRADICTING ``runtime.target``
-    so a reader that consulted marshal.json first would answer wrongly.
+    what its runtime injected. Each row writes a CONTRADICTING local harness config
+    so a reader that consulted config first would answer wrongly.
     """
     for name in ('ANTIGRAVITY_AGENT', 'OPENCODE', 'OPENCODE_PID', 'CLAUDE_CODE_SESSION_ID'):
         monkeypatch.delenv(name, raising=False)
-    plan_dir = tmp_path / '.plan'
-    plan_dir.mkdir()
-    (plan_dir / 'marshal.json').write_text(
-        json.dumps({'runtime': {'target': 'claude' if expected_target != 'claude' else 'opencode'}}),
+    harness_dir = tmp_path / '.plan' / 'local' / 'harness'
+    harness_dir.mkdir(parents=True)
+    contra = 'claude' if expected_target != 'claude' else 'opencode'
+    (harness_dir / f'{contra}.json').write_text(
+        json.dumps({'schema_version': 1, 'harness': contra}),
         encoding='utf-8',
     )
     monkeypatch.setenv(env_signal, '1')
@@ -155,34 +156,54 @@ def test_env_tier_outranks_marshal_json(monkeypatch, tmp_path, env_signal, expec
 
 
 @pytest.mark.parametrize(
-    ('marshal_body', 'expected_target', 'expected_source', 'expected_reason'),
+    ('config_body', 'expected_target', 'expected_source', 'expected_reason'),
     [
-        ('{"runtime": {"target": "opencode"}}', 'opencode', 'marshal_json', ''),
-        (None, target_context.default_target(), 'fallback', 'marshal_json_absent'),
-        ('{not valid json', target_context.default_target(), 'fallback', 'marshal_json_malformed'),
-        ('{"other": {"target": "opencode"}}', target_context.default_target(), 'fallback', 'runtime_target_absent'),
-        ('{"runtime": "opencode"}', target_context.default_target(), 'fallback', 'runtime_target_absent'),
+        ('{"target": "opencode"}', 'opencode', target_context.SOURCE_LOCAL_CONFIG, ''),
+        (
+            None,
+            target_context.default_target(),
+            target_context.SOURCE_FALLBACK,
+            target_context.REASON_LOCAL_CONFIG_ABSENT,
+        ),
+        (
+            '{not valid json',
+            target_context.default_target(),
+            target_context.SOURCE_FALLBACK,
+            target_context.REASON_LOCAL_CONFIG_MALFORMED,
+        ),
+        (
+            '{"other": {"target": "opencode"}}',
+            target_context.default_target(),
+            target_context.SOURCE_FALLBACK,
+            target_context.REASON_TARGET_ABSENT,
+        ),
+        (
+            '{"target": 42}',
+            target_context.default_target(),
+            target_context.SOURCE_FALLBACK,
+            target_context.REASON_TARGET_ABSENT,
+        ),
     ],
     ids=[
         'declared-target-is-returned-verbatim',
-        'no-marshal-json-anywhere-up-the-tree',
-        'marshal-json-is-not-valid-json',
-        'no-runtime-key',
-        'runtime-is-a-scalar-not-a-mapping',
+        'no-local-config-anywhere-up-the-tree',
+        'local-config-is-not-valid-json',
+        'no-target-key',
+        'target-is-not-a-string',
     ],
 )
 def test_config_tier_reports_its_own_fall_through_reason(
-    monkeypatch, outside_repo_dir, marshal_body, expected_target, expected_source, expected_reason
+    monkeypatch, outside_repo_dir, config_body, expected_target, expected_source, expected_reason
 ):
     """A declared target resolves; each unusable shape names its OWN condition.
 
-    ``marshal_body`` of ``None`` writes no file at all, so the walk reaches the
+    ``config_body`` of ``None`` writes no file at all, so the walk reaches the
     filesystem root without a hit. The first row is the matched positive control
     for the rest: a reader that always answered the fallback would fail on it
     rather than satisfy every defaulting row.
 
     The root is OUTSIDE the repo because pytest's basetemp is repo-local, and a
-    ``tmp_path`` root would find the real ``.plan/marshal.json`` above it — the
+    ``tmp_path`` root would find the real ``.plan/local/harness`` above it — the
     absent-config row would then measure the developer's checkout.
 
     The scalar row's value is deliberately NOT the fallback: a reader that
@@ -193,10 +214,10 @@ def test_config_tier_reports_its_own_fall_through_reason(
         monkeypatch.delenv(name, raising=False)
     root = outside_repo_dir / 'project'
     root.mkdir()
-    if marshal_body is not None:
+    if config_body is not None:
         plan_dir = root / '.plan'
         plan_dir.mkdir()
-        (plan_dir / 'marshal.json').write_text(marshal_body, encoding='utf-8')
+        (plan_dir / 'run-configuration.json').write_text(config_body, encoding='utf-8')
 
     resolved = target_context.resolve_target(cwd=root)
 

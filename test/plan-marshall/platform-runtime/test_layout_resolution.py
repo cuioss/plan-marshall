@@ -86,9 +86,9 @@ def test_opencode_layout_skill_roots_honours_config_dir_env(monkeypatch: pytest.
 
 def test_router_dispatches_layout_skill_roots(tmp_path, capsys, in_tmp_cwd) -> None:
     """The router resolves runtime.target and dispatches `layout skill-roots`."""
-    plan_dir = tmp_path / '.plan'
-    plan_dir.mkdir()
-    (plan_dir / 'marshal.json').write_text('{"runtime": {"target": "claude"}}', encoding='utf-8')
+    harness_dir = tmp_path / '.plan' / 'local' / 'harness'
+    harness_dir.mkdir(parents=True)
+    (harness_dir / 'claude.json').write_text('{"schema_version": 1, "harness": "claude"}', encoding='utf-8')
 
     rc = platform_runtime.main(['layout', 'skill-roots'])
     assert rc == 0
@@ -99,11 +99,11 @@ def test_router_dispatches_layout_skill_roots(tmp_path, capsys, in_tmp_cwd) -> N
 
 
 def test_router_dispatches_layout_skill_roots_opencode(monkeypatch, tmp_path, capsys, in_tmp_cwd) -> None:
-    """The router selects the OpenCode runtime when marshal.json says so."""
+    """The router selects the OpenCode runtime when local harness config says so."""
     monkeypatch.delenv('OPENCODE_CONFIG_DIR', raising=False)
-    plan_dir = tmp_path / '.plan'
-    plan_dir.mkdir()
-    (plan_dir / 'marshal.json').write_text('{"runtime": {"target": "opencode"}}', encoding='utf-8')
+    harness_dir = tmp_path / '.plan' / 'local' / 'harness'
+    harness_dir.mkdir(parents=True)
+    (harness_dir / 'opencode.json').write_text('{"schema_version": 1, "harness": "opencode"}', encoding='utf-8')
 
     rc = platform_runtime.main(['layout', 'skill-roots'])
     assert rc == 0

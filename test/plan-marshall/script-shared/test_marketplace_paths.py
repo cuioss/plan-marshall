@@ -672,17 +672,19 @@ class TestEnvAnchorIsLastResort:
 
         assert get_base_path('cache-first', target='claude') == cache
 
-    def test_env_anchor_is_demoted_when_a_marshal_target_is_declared(self, isolated_context, monkeypatch):
-        """A ``runtime.target`` in ``marshal.json`` demotes the env anchor too.
+    def test_env_anchor_is_demoted_when_a_local_harness_target_is_declared(self, isolated_context, monkeypatch):
+        """A machine-local harness target demotes the env anchor too.
 
         The second demotion trigger, pinned separately from the explicit
         ``--target`` row: a project that has DECLARED its target must not have
         that declaration silently re-anchored by an inherited env var.
         """
         bare, cache = isolated_context
-        plan_dir = bare / '.plan'
-        plan_dir.mkdir()
-        (plan_dir / 'marshal.json').write_text(json.dumps({'runtime': {'target': 'opencode'}}), encoding='utf-8')
+        harness_dir = bare / '.plan' / 'local' / 'harness'
+        harness_dir.mkdir(parents=True)
+        (harness_dir / 'opencode.json').write_text(
+            json.dumps({'schema_version': 1, 'harness': 'opencode'}), encoding='utf-8'
+        )
         monkeypatch.setenv('PM_MARKETPLACE_ROOT', str(bare))
 
         assert get_base_path('cache-first') == cache

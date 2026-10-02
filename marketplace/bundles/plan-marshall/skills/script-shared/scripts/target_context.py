@@ -2,35 +2,31 @@
 """
 The single target/context resolver for every marketplace verb.
 
-Before this module there were two independent readers of "which target is
-active", and they disagreed:
+The active runtime target is resolved across three distinct tiers:
 
-* ``generate_executor.read_marshal_target`` read ``.plan/marshal.json`` only,
-  and returned the literal ``'claude'`` for an absent file, an unreadable file,
-  a malformed file and a missing ``runtime.target`` key alike — four distinct
-  conditions collapsed into one indistinguishable answer.
-* ``marketplace_paths._read_runtime_target`` implemented a wider cascade
-  (env → config → default) but answered its own parse failures with the very
-  default its no-``runtime.target`` and no-``marshal.json`` paths returned.
+1. Ambient environment variables (``ANTIGRAVITY_AGENT``, ``OPENCODE`` /
+   ``OPENCODE_PID``, ``CLAUDE_CODE_SESSION_ID``) — zero git footprint.
+2. Machine-local configuration (``.plan/local/harness/{target}.json`` or
+   ``.plan/run-configuration.json``) — unversioned machine-local settings.
+3. Fallback sentinel (``default_target()``, typically ``'claude'``).
 
-On a repository whose ``marshal.json`` carries no ``runtime.target``, both
-readers answer ``claude`` on a machine whose only deployment is OpenCode, so
-the generated executor embeds the Claude resolver and the flat ``skills/`` tree
-is never consulted. This module is the one implementation both of them now
-delegate to, so the answer and the *reason* for the answer are produced once.
+Git-tracked ``.plan/marshal.json`` is explicitly retired from runtime target
+resolution to prevent git working tree churn, cross-developer merge conflicts,
+and headless CI runner test suite failures caused by committing seat-local harness
+settings into version control.
 
 Two exports carry the contract:
 
 ``resolve_target()``
     The target plus the cascade tier that produced it — ``env`` |
-    ``marshal_json`` | ``fallback``. The tier is what makes a fallback
+    ``local_config`` | ``fallback``. The tier is what makes a fallback
     distinguishable from a genuine ``env``-tier resolution of the same string
     (ADR-015: an absent identity is a stated sentinel, never an assumed one).
     When the tier is ``fallback``, ``reason`` names WHICH absence it was
-    (``marshal_json_absent`` / ``marshal_json_unreadable`` /
-    ``marshal_json_malformed`` / ``runtime_target_absent``), so four
-    previously indistinguishable conditions stay distinguishable here rather
-    than being re-collapsed downstream.
+    (``local_config_absent`` / ``local_config_unreadable`` /
+    ``local_config_malformed`` / ``target_absent``), so four
+    conditions stay distinguishable here rather than being re-collapsed
+    downstream.
 
 ``resolve_context()``
     The ``{target, marketplace_root}`` pair the executor verbs share, plus the
@@ -75,8 +71,8 @@ MARKETPLACE_ROOT_ENV: Final[str] = 'PM_MARKETPLACE_ROOT'
 
 #: A platform-injected environment variable named the target.
 SOURCE_ENV: Final[str] = 'env'
-#: ``runtime.target`` in the nearest ``marshal.json`` named the target.
-SOURCE_MARSHAL_JSON: Final[str] = 'marshal_json'
+#: Machine-local harness state or run configuration named the target.
+SOURCE_LOCAL_CONFIG: Final[str] = 'local_config'
 #: No tier produced a target; :func:`default_target` supplied the sentinel.
 SOURCE_FALLBACK: Final[str] = 'fallback'
 #: The CALLER named the target explicitly (an ``--target`` flag). Only
@@ -84,15 +80,18 @@ SOURCE_FALLBACK: Final[str] = 'fallback'
 #: explicit target, so it can never reach the tier that bypasses the cascade.
 SOURCE_EXPLICIT: Final[str] = 'explicit'
 
+#: Legacy alias kept for import compatibility.
+SOURCE_MARSHAL_JSON: Final[str] = 'marshal_json'
+
 #: Every tier :func:`resolve_target` can report, in cascade order.
-TARGET_SOURCES: Final[tuple[str, ...]] = (SOURCE_ENV, SOURCE_MARSHAL_JSON, SOURCE_FALLBACK)
+TARGET_SOURCES: Final[tuple[str, ...]] = (SOURCE_ENV, SOURCE_LOCAL_CONFIG, SOURCE_FALLBACK)
 
 #: The ``reason`` values a ``fallback``-tier resolution can carry. Each names a
 #: DISTINCT condition that the pre-resolver code collapsed into one answer.
-REASON_MARSHAL_ABSENT: Final[str] = 'marshal_json_absent'
-REASON_MARSHAL_UNREADABLE: Final[str] = 'marshal_json_unreadable'
-REASON_MARSHAL_MALFORMED: Final[str] = 'marshal_json_malformed'
-REASON_RUNTIME_TARGET_ABSENT: Final[str] = 'runtime_target_absent'
+REASON_LOCAL_CONFIG_ABSENT: Final[str] = 'local_config_absent'
+REASON_LOCAL_CONFIG_UNREADABLE: Final[str] = 'local_config_unreadable'
+REASON_LOCAL_CONFIG_MALFORMED: Final[str] = 'local_config_malformed'
+REASON_TARGET_ABSENT: Final[str] = 'target_absent'
 
 #: Fallback identifier used when the ``platform_runtime`` registry cannot be
 #: imported (a bootstrap-path call site where only the pure-stdlib foundation
@@ -172,10 +171,10 @@ def detect_target_from_env() -> str | None:
     return None
 
 
-def find_marshal_json(cwd: Path | None = None) -> Path | None:
-    """Return the nearest ``.plan/marshal.json`` at or above ``cwd``, else ``None``.
+def find_local_config(cwd: Path | None = None) -> Path | None:
+    """Return the nearest machine-local harness or run configuration file at or above ``cwd``, else ``None``.
 
-    The locate half of the ``marshal.json`` tier, split out so the walk is
+    The locate half of the machine-local config tier, split out so the walk is
     written once and the read half can report WHY a resolution fell through.
 
     Args:
@@ -188,44 +187,62 @@ def find_marshal_json(cwd: Path | None = None) -> Path | None:
     except OSError:
         resolved = start
     for parent in (resolved, *resolved.parents):
-        candidate = parent / PLAN_DIR_NAME / 'marshal.json'
-        if candidate.is_file():
-            return candidate
+        plan_dir = parent / PLAN_DIR_NAME
+        harness_dir = plan_dir / 'local' / 'harness'
+        if harness_dir.is_dir():
+            try:
+                candidates = [
+                    p
+                    for p in harness_dir.iterdir()
+                    if p.is_file() and p.name.endswith('.json') and not p.name.startswith('.')
+                ]
+                if candidates:
+                    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                    return candidates[0]
+            except OSError:
+                pass
+        run_config = plan_dir / 'run-configuration.json'
+        if run_config.is_file():
+            return run_config
+        # Stop at project root boundary: do not cross out into parent repositories/worktrees
+        if (plan_dir / 'marshal.json').is_file() or (parent / '.git').exists():
+            break
     return None
 
 
-def _read_marshal_runtime_target(candidate: Path) -> tuple[str | None, str]:
-    """Return ``(target, reason)`` read from the ``marshal.json`` at ``candidate``.
+def _read_local_target(candidate: Path) -> tuple[str | None, str]:
+    """Return ``(target, reason)`` read from the machine-local config at ``candidate``.
 
     ``target`` is ``None`` — with a non-empty ``reason`` — for each of the four
     distinct conditions that used to collapse into the same answer: the file
-    vanished between the locate and the read (``marshal_json_absent``), it could
-    not be read (``marshal_json_unreadable``), it is not JSON or not an object
-    (``marshal_json_malformed``), or it carries no usable ``runtime.target``
-    (``runtime_target_absent``).
+    vanished between the locate and the read (``local_config_absent``), it could
+    not be read (``local_config_unreadable``), it is not JSON or not an object
+    (``local_config_malformed``), or it carries no usable target / harness
+    declaration (``target_absent``).
     """
     try:
         raw = candidate.read_text(encoding='utf-8')
     except FileNotFoundError:
-        return None, REASON_MARSHAL_ABSENT
+        return None, REASON_LOCAL_CONFIG_ABSENT
     except (OSError, UnicodeDecodeError):
-        return None, REASON_MARSHAL_UNREADABLE
+        return None, REASON_LOCAL_CONFIG_UNREADABLE
 
     try:
         data = json.loads(raw)
     except ValueError:
-        return None, REASON_MARSHAL_MALFORMED
+        return None, REASON_LOCAL_CONFIG_MALFORMED
 
     if not isinstance(data, dict):
-        return None, REASON_MARSHAL_MALFORMED
+        return None, REASON_LOCAL_CONFIG_MALFORMED
 
-    runtime = data.get('runtime')
-    if isinstance(runtime, dict):
-        target = runtime.get('target')
-        if isinstance(target, str) and target:
-            return target, ''
+    target = data.get('harness') or data.get('target')
+    if not target and isinstance(data.get('runtime'), dict):
+        target = data['runtime'].get('target')
 
-    return None, REASON_RUNTIME_TARGET_ABSENT
+    if isinstance(target, str) and target.strip():
+        return target.strip(), ''
+
+    return None, REASON_TARGET_ABSENT
 
 
 def resolve_target(cwd: Path | None = None) -> ResolvedTarget:
@@ -236,13 +253,14 @@ def resolve_target(cwd: Path | None = None) -> ResolvedTarget:
     1. **Env** — ``ANTIGRAVITY_AGENT`` → ``'antigravity'``, ``OPENCODE`` /
        ``OPENCODE_PID`` → ``'opencode'``, ``CLAUDE_CODE_SESSION_ID`` →
        ``'claude'`` (``target_source: env``).
-    2. **marshal.json** — ``runtime.target`` from the nearest
-       ``<ancestor>/.plan/marshal.json`` (``target_source: marshal_json``).
+    2. **Local Config** — machine-local harness state in
+       ``<ancestor>/.plan/local/harness/{target}.json`` or
+       ``<ancestor>/.plan/run-configuration.json`` (``target_source: local_config``).
     3. **Fallback** — :func:`default_target` (``target_source: fallback``),
        with ``reason`` naming which of the four fall-through conditions it was.
 
     Args:
-        cwd: Directory the ``marshal.json`` walk starts from. Defaults to
+        cwd: Directory the local config walk starts from. Defaults to
             ``Path.cwd()``. The env tier ignores it — the env signal is
             ambient, so there is nothing to anchor.
 
@@ -254,14 +272,14 @@ def resolve_target(cwd: Path | None = None) -> ResolvedTarget:
     if env_target:
         return {'target': env_target, 'target_source': SOURCE_ENV, 'reason': ''}
 
-    candidate = find_marshal_json(cwd)
+    candidate = find_local_config(cwd)
     if candidate is not None:
-        target, reason = _read_marshal_runtime_target(candidate)
+        target, reason = _read_local_target(candidate)
         if target:
-            return {'target': target, 'target_source': SOURCE_MARSHAL_JSON, 'reason': ''}
+            return {'target': target, 'target_source': SOURCE_LOCAL_CONFIG, 'reason': ''}
         return {'target': default_target(), 'target_source': SOURCE_FALLBACK, 'reason': reason}
 
-    return {'target': default_target(), 'target_source': SOURCE_FALLBACK, 'reason': REASON_MARSHAL_ABSENT}
+    return {'target': default_target(), 'target_source': SOURCE_FALLBACK, 'reason': REASON_LOCAL_CONFIG_ABSENT}
 
 
 def resolve_marketplace_root(marketplace_root: str | Path | None) -> Path | None:
@@ -350,9 +368,9 @@ def resolve_context(
             :func:`resolve_marketplace_root`. When ``None``, the
             ``PM_MARKETPLACE_ROOT`` env value is folded into the returned anchor
             only when the target fell through to the ``fallback`` tier; for a
-            declared target (``explicit``, ``env`` or ``marshal_json``) the
+            declared target (``explicit``, ``env`` or ``local_config``) the
             returned anchor is ``None``.
-        cwd: Directory the ``marshal.json`` walk starts from; forwarded to
+        cwd: Directory the local config walk starts from; forwarded to
             :func:`resolve_target` and ignored when ``target`` is explicit.
 
     Returns:

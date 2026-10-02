@@ -150,10 +150,6 @@ JSON structure and field definitions for project configuration.
     }
   },
   "interaction_mode": "advanced",
-  "project_dir": "/absolute/path/to/project",
-  "runtime": {
-    "target": "claude"
-  },
   "skill_domains": {
     "system": {
       "defaults": ["plan-marshall:persona-plan-marshall-agent"],
@@ -459,31 +455,23 @@ Non-secret per-provider configuration (committed, shared via git), written by `m
 |-------|------|----------|-------------|
 | `<key>` | string | No | A non-secret provider-config field (e.g. `organization`, `project_key` for SonarCloud). Keys are provider-defined; `manage-providers` upserts them idempotently via `--extra KEY=VALUE`. |
 
-## Section: runtime and project_dir
+## Section: Runtime Target Resolution and Legacy Keys
 
-The two top-level keys the platform-runtime seed writes. `platform_runtime project initial-setup --target <id>` is their sole writer: the Claude runtime writes both, the OpenCode runtime writes `runtime` only. Neither is part of `get_default_config()`, so `init` does not seed them and `sync-defaults` does not back-fill them — a project acquires them the first time its runtime is set up, and a project that never ran the seed legitimately carries neither.
+The active runtime target is resolved dynamically via the cascade in `target_context.py` rather than being persisted in the shared `.plan/marshal.json`:
 
-Both are first-party product configuration rather than stray blocks: `platform_runtime._resolve_target` reads `runtime.target` back on every routed operation. `save_config` orders them canonically among the trailing keys — `project_dir` between `project` and `providers`, `runtime` between `providers` and `skill_domains` (see `CANONICAL_TOP_LEVEL_KEY_ORDER` in `_config_core.py`). Omitting them from that constant made `normalize-keys` report the product's own seed as unrecognized, which is why they are listed there rather than left to the append-unrecognized tail.
+1. **Ambient Environment** — platform-injected environment variables (`ANTIGRAVITY_AGENT=1` → `antigravity`, `OPENCODE=1` / `OPENCODE_PID` → `opencode`, `CLAUDE_CODE_SESSION_ID` → `claude`).
+2. **Machine-Local Harness State** — machine-local harness configuration in `.plan/local/harness/{target}.json` (written by `platform_runtime project initial-setup`) or `.plan/run-configuration.json`.
+3. **Fallback** — defaults to `claude`.
 
-### Structure
+Neither `runtime` nor `project_dir` is written to `marshal.json` by `project initial-setup`. Shared repository configuration stays portable and independent of individual developer harnesses.
 
-```json
-{
-  "project_dir": "/absolute/path/to/project",
-  "runtime": {
-    "target": "claude"
-  }
-}
-```
+### Legacy Configuration Keys
 
-### Fields
+For backwards compatibility with projects carrying legacy keys:
+- `project_dir`: Legacy absolute project directory recorded by older setups.
+- `runtime`: Legacy object carrying `{"target": "<id>"}`.
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `runtime.target` | string | none (absent until the seed runs) | The registered runtime the platform router dispatches to — one of the `_REGISTRY` keys in `platform_runtime.py` (`claude`, `opencode`). An absent block, a non-object block, or an empty `target` all resolve to "no target", and the router falls back to its `claude` default rather than failing. |
-| `project_dir` | string | none (absent until the Claude seed runs) | Absolute path of the project root recorded at setup time, written by the Claude runtime seed only. |
-
-The seed is a read-modify-write: it merges these two keys into whatever the project already carries rather than replacing the document, so setting up (or re-targeting) a runtime on an initialized project leaves every other top-level block intact.
+Both keys are tolerated in `marshal.json` and recognized by `CANONICAL_TOP_LEVEL_KEY_ORDER` (in `_config_core.py`) so `normalize-keys` orders them canonically without flagging them as unrecognized. Neither key is required or written during project initialization or setup.
 
 ## Section: skill_domains
 

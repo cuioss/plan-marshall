@@ -235,8 +235,20 @@ def test_normalize_keys_is_clean_after_init_then_platform_runtime_seed(seeded_pr
 
     setup = parse_toon(ClaudeRuntime().project_initial_setup(str(seeded_project), 'claude'))
     assert setup['status'] == 'success'
+    assert setup['marshal_written'] is False
 
-    # The bypass writer appended both keys at end-of-object, in the order it set
+    after_setup = list(json.loads(_config_core.MARSHAL_PATH.read_text(encoding='utf-8')))
+    assert 'runtime' not in after_setup
+    assert 'project_dir' not in after_setup
+    assert after_setup == after_init
+
+    # Simulate legacy marshal with runtime and project_dir appended out of canonical order.
+    config = json.loads(_config_core.MARSHAL_PATH.read_text(encoding='utf-8'))
+    config['runtime'] = {'target': 'claude'}
+    config['project_dir'] = str(seeded_project)
+    _config_core.MARSHAL_PATH.write_text(json.dumps(config, indent=2) + '\n', encoding='utf-8')
+
+    # The legacy writer appended both keys at end-of-object, in the order it set
     # them — so there IS a canonical reordering for normalize_keys to perform.
     after_seed = list(json.loads(_config_core.MARSHAL_PATH.read_text(encoding='utf-8')))
     assert after_seed[-2:] == ['runtime', 'project_dir']
@@ -267,6 +279,8 @@ def test_normalize_keys_still_warns_on_a_stray_key_beside_the_seed(seeded_projec
     ClaudeRuntime().project_initial_setup(str(seeded_project), 'claude')
 
     config = json.loads(_config_core.MARSHAL_PATH.read_text(encoding='utf-8'))
+    config['runtime'] = {'target': 'claude'}
+    config['project_dir'] = str(seeded_project)
     config['zzz_consumer_block'] = {'x': 1}
     _config_core.MARSHAL_PATH.write_text(json.dumps(config, indent=2) + '\n', encoding='utf-8')
 

@@ -40,9 +40,10 @@ from toon_parser import parse_toon
 
 
 @pytest.fixture()
-def in_tmp_cwd(tmp_path, monkeypatch):
+def in_tmp_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Run with the process working directory inside an isolated tmp_path."""
     monkeypatch.chdir(tmp_path)
+    return tmp_path
 
 
 # =============================================================================
@@ -55,12 +56,15 @@ def _parsed(output: str) -> dict[str, Any]:
     return parse_toon(output)
 
 
-def _make_marshal_file(directory: Path, target: str = 'claude') -> Path:
+def _make_marshal_file(directory: Path, target: str | None = None) -> Path:
     """Write a minimal .plan/marshal.json and return its path."""
     plan_dir = directory / '.plan'
     plan_dir.mkdir(parents=True, exist_ok=True)
     marshal_path = plan_dir / 'marshal.json'
-    marshal_path.write_text(json.dumps({'runtime': {'target': target}}), encoding='utf-8')
+    data: dict[str, Any] = {'build': {'map': {}}}
+    if target is not None:
+        data['runtime'] = {'target': target}
+    marshal_path.write_text(json.dumps(data), encoding='utf-8')
     return marshal_path
 
 
@@ -989,6 +993,11 @@ class TestDispatch:
 class TestMain:
     """Integration tests for the main() entry point."""
 
+    @pytest.fixture(autouse=True)
+    def _in_outside_repo(self, outside_repo_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Run all TestMain tests with cwd outside the repo."""
+        monkeypatch.chdir(outside_repo_dir)
+
     def test_main_no_args_returns_1(self, capsys):
         """main() with no arguments prints usage to stderr and returns exit code 1."""
         code = main([])
@@ -996,12 +1005,8 @@ class TestMain:
         captured = capsys.readouterr()
         assert 'usage' in captured.err.lower() or 'platform_runtime' in captured.err.lower()
 
-    def test_main_missing_marshal_returns_0_with_toon_error(self, outside_repo_dir, monkeypatch, capsys):
+    def test_main_missing_marshal_returns_0_with_toon_error(self, capsys):
         """main() with non-project-initial-setup op and no marshal prints TOON error, exit 0."""
-        # Change cwd to a directory with no marshal.json anywhere in its ancestry.
-        # Must be OUTSIDE the repo: pytest's tmp_path now roots under the
-        # repo-local --basetemp, whose ancestry contains the real .plan/marshal.json.
-        monkeypatch.chdir(outside_repo_dir)
         code = main(['session', 'capture', '--plan-id', 'p1'])
         assert code == 0
         captured = capsys.readouterr()
@@ -1009,9 +1014,14 @@ class TestMain:
         assert parsed['status'] == 'error'
         assert parsed['error'] == 'marshal_not_found'
 
-    def test_main_unknown_target_in_marshal_returns_0_with_toon_error(self, tmp_path, capsys, in_tmp_cwd):
-        """main() with an unknown runtime.target in marshal prints TOON error, exit 0."""
-        _make_marshal_file(tmp_path, 'unsupported-runtime')
+    def test_main_unknown_target_returns_0_with_toon_error(self, outside_repo_dir, capsys):
+        """main() with an unknown runtime target prints TOON error, exit 0."""
+        _make_marshal_file(outside_repo_dir)
+        harness_dir = outside_repo_dir / '.plan' / 'local' / 'harness'
+        harness_dir.mkdir(parents=True, exist_ok=True)
+        (harness_dir / 'unsupported-runtime.json').write_text(
+            json.dumps({'schema_version': 1, 'harness': 'unsupported-runtime'}), encoding='utf-8'
+        )
         code = main(['session', 'capture', '--plan-id', 'p1'])
         assert code == 0
         captured = capsys.readouterr()
@@ -1019,9 +1029,9 @@ class TestMain:
         assert parsed['status'] == 'error'
         assert parsed['error'] == 'unknown_target'
 
-    def test_main_dispatches_to_runtime_and_prints_toon(self, tmp_path, capsys, in_tmp_cwd):
+    def test_main_dispatches_to_runtime_and_prints_toon(self, outside_repo_dir, capsys):
         """main() with a valid marshal dispatches correctly and prints TOON to stdout."""
-        _make_marshal_file(tmp_path, 'claude')
+        _make_marshal_file(outside_repo_dir)
         rt = _mock_runtime()
         with _make_runtime_returning(rt):
             code = main(['session', 'render-title'])
@@ -1034,16 +1044,19 @@ class TestMain:
     # ---- project install-hook: the two-target-identifier seam ----------------
     #
     # ``install-hook`` takes a target identifier as an argument while the runtime
-    # serving it is selected independently from marshal.json. When the two
-    # disagree the request cannot be honoured, and BOTH pre-guard outcomes were
-    # wrong answers rather than refusals: opencode-serving-claude declined without
-    # reading the argument ("OpenCode has no hook channel" — a true sentence about
-    # the wrong question), and claude-serving-opencode raised ``unknown_target``
-    # ("must be 'claude' or an absolute path" — an error about the wrong thing).
+    # serving it was selected independently. When the two disagree the request
+    # cannot be honoured, and BOTH pre-guard outcomes were wrong answers rather
+    # than refusals: opencode-serving-claude declined without reading the
+    # argument ("OpenCode has no hook channel" — a true sentence about the wrong
+    # question), and claude-serving-opencode raised ``unknown_target`` ("must be
+    # 'claude' or an absolute path" — an error about the wrong thing).
 
-    def test_install_hook_refuses_a_registered_target_other_than_the_projects(self, tmp_path, capsys, in_tmp_cwd):
+    def test_install_hook_refuses_a_registered_target_other_than_the_projects(
+        self, outside_repo_dir, monkeypatch, capsys
+    ):
         """An opencode project asked to install the claude hook is refused, not declined."""
-        _make_marshal_file(tmp_path, 'opencode')
+        _make_marshal_file(outside_repo_dir)
+        monkeypatch.setenv('OPENCODE', '1')
         rt = _mock_runtime()
         with _make_runtime_returning(rt):
             code = main(['project', 'install-hook', '--target', 'claude'])
@@ -1055,9 +1068,9 @@ class TestMain:
         # what produced the misleading no-op this guard exists to prevent.
         rt.project_install_hook.assert_not_called()
 
-    def test_install_hook_refuses_the_inverse_mismatch_too(self, tmp_path, capsys, in_tmp_cwd):
+    def test_install_hook_refuses_the_inverse_mismatch_too(self, outside_repo_dir, capsys):
         """The guard is symmetric — a claude project asked for opencode is refused."""
-        _make_marshal_file(tmp_path, 'claude')
+        _make_marshal_file(outside_repo_dir)
         rt = _mock_runtime()
         with _make_runtime_returning(rt):
             code = main(['project', 'install-hook', '--target', 'opencode'])
@@ -1067,20 +1080,20 @@ class TestMain:
         assert parsed['error'] == 'target_mismatch'
         rt.project_install_hook.assert_not_called()
 
-    def test_install_hook_allows_the_projects_own_target(self, tmp_path, capsys, in_tmp_cwd):
+    def test_install_hook_allows_the_projects_own_target(self, outside_repo_dir, capsys):
         """Agreement is the ordinary path and must still dispatch."""
-        _make_marshal_file(tmp_path, 'claude')
+        _make_marshal_file(outside_repo_dir)
         rt = _mock_runtime()
         with _make_runtime_returning(rt):
             code = main(['project', 'install-hook', '--target', 'claude'])
         assert code == 0
         rt.project_install_hook.assert_called_once()
 
-    def test_install_hook_still_passes_an_absolute_settings_path_through(self, tmp_path, capsys, in_tmp_cwd):
+    def test_install_hook_still_passes_an_absolute_settings_path_through(self, outside_repo_dir, capsys):
         """The absolute-path test/recovery override is NOT a registry key, so it is
         not a mismatch and must still reach the implementation that defines it."""
-        _make_marshal_file(tmp_path, 'claude')
-        override = str(tmp_path / 'settings.local.json')
+        _make_marshal_file(outside_repo_dir)
+        override = str(outside_repo_dir / 'settings.local.json')
         rt = _mock_runtime()
         with _make_runtime_returning(rt):
             code = main(['project', 'install-hook', '--target', override])
@@ -1088,28 +1101,28 @@ class TestMain:
         rt.project_install_hook.assert_called_once()
         assert rt.project_install_hook.call_args.args[0] == override
 
-    def test_main_project_initial_setup_without_marshal_uses_target_arg(self, tmp_path, capsys, in_tmp_cwd):
+    def test_main_project_initial_setup_without_marshal_uses_target_arg(self, outside_repo_dir, capsys):
         """project initial-setup can run before marshal.json exists; uses --target arg."""
         rt = _mock_runtime()
         with _make_runtime_returning(rt) as mock_make:
-            code = main(['project', 'initial-setup', '--project-dir', str(tmp_path), '--target', 'opencode'])
+            code = main(['project', 'initial-setup', '--project-dir', str(outside_repo_dir), '--target', 'opencode'])
         assert code == 0
         mock_make.assert_called_once_with('opencode')
 
-    def test_main_marshal_with_missing_target_defaults_to_claude(self, tmp_path, capsys, in_tmp_cwd):
-        """When marshal.json exists but lacks runtime.target, router defaults to 'claude'."""
-        plan_dir = tmp_path / '.plan'
+    def test_main_marshal_with_missing_target_defaults_to_claude(self, outside_repo_dir, capsys):
+        """When marshal.json exists without runtime.target, router defaults to 'claude'."""
+        plan_dir = outside_repo_dir / '.plan'
         plan_dir.mkdir()
-        (plan_dir / 'marshal.json').write_text(json.dumps({'runtime': {}}), encoding='utf-8')
+        (plan_dir / 'marshal.json').write_text(json.dumps({'build': {}}), encoding='utf-8')
         rt = _mock_runtime()
         with _make_runtime_returning(rt) as mock_make:
             code = main(['health-check', '--checks', 'all'])
         assert code == 0
         mock_make.assert_called_once_with('claude')
 
-    def test_main_dispatches_wait_for(self, tmp_path, capsys, in_tmp_cwd):
+    def test_main_dispatches_wait_for(self, outside_repo_dir, capsys):
         """``wait for`` is reachable end-to-end through main()."""
-        _make_marshal_file(tmp_path, 'claude')
+        _make_marshal_file(outside_repo_dir)
         rt = _mock_runtime()
         with _make_runtime_returning(rt):
             code = main(
@@ -1128,7 +1141,7 @@ class TestMain:
         assert _parsed(capsys.readouterr().out)['status'] == 'success'
         rt.wait_for.assert_called_once_with('build-job', 'job-1', 60)
 
-    def test_main_uses_plan_dir_name_env_var(self, tmp_path, monkeypatch, capsys, in_tmp_cwd):
+    def test_main_uses_plan_dir_name_env_var(self, outside_repo_dir, monkeypatch, capsys):
         """main() respects PLAN_DIR_NAME env var when locating marshal.json.
 
         ``_PLAN_DIR_NAME`` is resolved from the environment ONCE, at module import,
@@ -1138,9 +1151,9 @@ class TestMain:
         ``_read_marshal`` reads the name from the same namespace ``main`` does.
         """
         monkeypatch.setenv('PLAN_DIR_NAME', '.custom-plan')
-        custom_plan = tmp_path / '.custom-plan'
+        custom_plan = outside_repo_dir / '.custom-plan'
         custom_plan.mkdir()
-        (custom_plan / 'marshal.json').write_text(json.dumps({'runtime': {'target': 'claude'}}), encoding='utf-8')
+        (custom_plan / 'marshal.json').write_text(json.dumps({'build': {}}), encoding='utf-8')
         rt = _mock_runtime()
         recorder = MagicMock(return_value=rt)
         with _router_globals(_PLAN_DIR_NAME='.custom-plan', _make_runtime=recorder):

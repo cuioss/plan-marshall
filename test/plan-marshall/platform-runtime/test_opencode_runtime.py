@@ -83,88 +83,35 @@ def test_project_initial_setup_creates_plan_dir(runtime: OpenCodeRuntime, tmp_pa
     assert result['status'] == 'success'
     assert result['operation'] == 'project initial-setup'
     assert result['target'] == 'opencode'
-    assert result['marshal_written'] is True
+    assert result['marshal_written'] is False
     assert result['hook_installed'] is False
     assert (tmp_path / '.plan').is_dir()
     assert (tmp_path / '.plan' / 'temp').is_dir()
     assert (tmp_path / 'opencode.json').is_file()
 
 
-def test_project_initial_setup_writes_marshal_json(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
-    """project_initial_setup writes runtime.target into marshal.json."""
-    runtime.project_initial_setup(str(tmp_path), 'opencode')
-    marshal_path = tmp_path / '.plan' / 'marshal.json'
-    assert marshal_path.exists()
-    data = json.loads(marshal_path.read_text(encoding='utf-8'))
-    assert data['runtime']['target'] == 'opencode'
-
-
-def test_project_initial_setup_preserves_existing_marshal_fields(
-    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
-) -> None:
-    """project_initial_setup merges into an existing marshal.json without discarding other fields."""
-    plan_dir = tmp_path / '.plan'
-    plan_dir.mkdir()
-    marshal_path = plan_dir / 'marshal.json'
-    marshal_path.write_text(json.dumps({'existing_key': 'existing_value'}), encoding='utf-8')
-
-    runtime.project_initial_setup(str(tmp_path), 'opencode')
-
-    data = json.loads(marshal_path.read_text(encoding='utf-8'))
-    assert data['existing_key'] == 'existing_value'
-    assert data['runtime']['target'] == 'opencode'
-
-
-@pytest.mark.parametrize(
-    'raw',
-    [
-        pytest.param('[]', id='top-level-list'),
-        pytest.param('{"runtime": null}', id='null-runtime-block'),
-    ],
-)
-def test_project_initial_setup_wrong_shape_yields_io_error_and_leaves_file_intact(
-    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, raw: str
-) -> None:
-    """A PARSEABLE marshal.json of the wrong shape is refused, not crashed on.
-
-    The sibling of the ClaudeRuntime case, asserted here because the mirror is a
-    property of BOTH implementations rather than of one plus a comment. Both
-    documents parse, so neither is caught by the ``json.JSONDecodeError``
-    handler; before the shared shape guard each reached the seeding assignments
-    and raised an uncaught ``TypeError``.
-    """
-    plan_dir = tmp_path / '.plan'
-    plan_dir.mkdir()
-    marshal_path = plan_dir / 'marshal.json'
-    marshal_path.write_text(raw, encoding='utf-8')
-
+def test_project_initial_setup_leaves_marshal_json_unwritten(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """project_initial_setup leaves marshal.json unwritten; runtime.target is retired."""
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
-
-    assert result['status'] == 'error'
-    assert result['error'] == 'io_error'
-    assert marshal_path.read_text(encoding='utf-8') == raw
+    assert result['marshal_written'] is False
+    assert not (tmp_path / '.plan' / 'marshal.json').exists()
 
 
-def test_project_initial_setup_absent_runtime_key_still_initializes(
+def test_project_initial_setup_leaves_existing_marshal_untouched(
     runtime: OpenCodeRuntime, tmp_path: pathlib.Path
 ) -> None:
-    """Matched negative control: a runtime-less object is not a shape violation.
-
-    Key-absent and key-present-but-null are distinct states and only the second
-    is corrupt; a guard that conflated them would reject every first-run
-    initialization while still passing the two rejection cases above.
-    """
+    """project_initial_setup leaves an existing marshal.json untouched."""
     plan_dir = tmp_path / '.plan'
     plan_dir.mkdir()
     marshal_path = plan_dir / 'marshal.json'
-    marshal_path.write_text(json.dumps({'existing_key': 'existing_value'}), encoding='utf-8')
+    initial = json.dumps({'existing_key': 'existing_value'})
+    marshal_path.write_text(initial, encoding='utf-8')
 
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
 
     assert result['status'] == 'success'
-    data = json.loads(marshal_path.read_text(encoding='utf-8'))
-    assert data['runtime']['target'] == 'opencode'
-    assert data['existing_key'] == 'existing_value'
+    assert result['marshal_written'] is False
+    assert marshal_path.read_text(encoding='utf-8') == initial
 
 
 def test_project_initial_setup_hook_skip_reason_present(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
