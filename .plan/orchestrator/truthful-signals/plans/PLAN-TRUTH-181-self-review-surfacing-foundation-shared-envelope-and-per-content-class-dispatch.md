@@ -65,26 +65,28 @@ Eight deliverables (split guard: 12). D1–D3 are the delivery-breaking fix and 
 
 - OBSERVED: the dispatcher selects exactly one implementor — "Select the first implementor whose notation **resolves
   in the current executor**" — read at `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md` line 119.
-  - verdict: corroborated | checked_at: a8862630661404aeb132f95ad00b413e2493bfb9 | by: truthful-signals/cleanup | rescoped: n/a | evidence: pre-submission-self-review.md:119 selects exactly one implementor (first resolvable).
+  - verdict: corroborated | checked_at: 0a099a1071c1bc315d03d2d8008f74d89d0e29e0 | by: truthful-signals/cleanup | rescoped: n/a | evidence: pre-submission-self-review.md:119 still selects the first resolvable implementor (exactly one).
 - OBSERVED: the candidate registry and the content-class registry are private to the plan-marshall implementor —
   `CANDIDATE_LISTS` at `marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/scripts/_self_review_patterns.py:488`,
   `CONTENT_CLASSES` at `…/_self_review_detectors.py:2463`.
-  - verdict: corroborated | checked_at: a8862630661404aeb132f95ad00b413e2493bfb9 | by: truthful-signals/cleanup | rescoped: n/a | evidence: CANDIDATE_LISTS _self_review_patterns.py:488; CONTENT_CLASSES _self_review_detectors.py:2463-2470 (python, skill_doc, standards_doc, markdown_other, structured_config, other) — private; .java/.adoc fall into other.
+  - verdict: corroborated | checked_at: 0a099a1071c1bc315d03d2d8008f74d89d0e29e0 | by: truthful-signals/cleanup | rescoped: n/a | evidence: CANDIDATE_LISTS declared at _self_review_patterns.py:488; CONTENT_CLASSES six classes at _self_review_detectors.py:2463-2469.
 - OBSERVED: exactly one implementor exists — a directory sweep of `marketplace/bundles/*/skills/` for
   `ext-self-review-*` finds only `ext-self-review-plan-marshall` (2026-09-26); also recorded in archived
   `PLAN-TRUTH-126` as "a separate unowned item".
-  - verdict: corroborated | checked_at: a8862630661404aeb132f95ad00b413e2493bfb9 | by: truthful-signals/cleanup | rescoped: n/a | evidence: Only pm-plugin-development/skills/ext-self-review-plan-marshall exists; implements: sweep finds one implementor.
+  - verdict: corroborated | checked_at: 0a099a1071c1bc315d03d2d8008f74d89d0e29e0 | by: truthful-signals/cleanup | rescoped: n/a | evidence: Glob finds exactly one ext-self-review-*/SKILL.md (pm-plugin-development); 182-185 staged, none shipped.
 - HYPOTHESIS: the shared module belongs in `plan-marshall:script-shared` (the cross-bundle import home) — confirm at
   `marketplace/bundles/plan-marshall/skills/script-shared/scripts/` against how other cross-bundle helpers are
   imported by bundle scripts (verify-at-outline).
-  - verdict: unverifiable | checked_at: a8862630661404aeb132f95ad00b413e2493bfb9 | by: truthful-signals/cleanup | rescoped: n/a | evidence: Placement decision; executor PYTHONPATH already allows cross-bundle script imports (self_review.py:42 imports manage-references _references_core), so script-shared is one option, not a requirement.
+  - verdict: unverifiable | checked_at: 0a099a1071c1bc315d03d2d8008f74d89d0e29e0 | by: truthful-signals/cleanup | rescoped: n/a | evidence: Placement hypothesis (script-shared vs cross-bundle import); executor PYTHONPATH already permits the import, so either placement works — decision, not fact.
 - HYPOTHESIS: implementors are discovered by `implements:` frontmatter alone, so no per-bundle `extension.py` edit
   is needed — confirm at the `extension_discovery implementors` verb (verify-at-outline).
-  - verdict: corroborated | checked_at: a8862630661404aeb132f95ad00b413e2493bfb9 | by: truthful-signals/cleanup | rescoped: n/a | evidence: extension_discovery.py:1124-1204 _scan_skills_roots_for_implementors reads SKILL.md implements: via read_implements_field (:229-297); no extension.py involved.
+  - verdict: corroborated | checked_at: 0a099a1071c1bc315d03d2d8008f74d89d0e29e0 | by: truthful-signals/cleanup | rescoped: n/a | evidence: extension_discovery.py:1124 defines _scan_skills_roots_for_implementors scanning SKILL.md implements: fields.
 - Verify-first clause: settle what `PLAN-TRUTH-167` D1/D2 changed in Step 1 before touching the selection code. (167 is now absorbed here; the clause is settled below and stays as the record.)
-  - verdict: corroborated | checked_at: a8862630661404aeb132f95ad00b413e2493bfb9 | by: truthful-signals/cleanup | rescoped: n/a | evidence: Step 1 selection unchanged at :119; PLAN-TRUTH-167 D1/D2 not landed; only post-#1559 edit (#1599) touched Branch A; no applicability mechanism exists.
+  - verdict: corroborated | checked_at: 0a099a1071c1bc315d03d2d8008f74d89d0e29e0 | by: truthful-signals/cleanup | rescoped: n/a | evidence: 167 D1/D2 never landed (superseded, no landing record); git log shows #1599 the last touch to pre-submission-self-review.md; Branch A first-resolvable selection unchanged.
 - OBSERVED (carried from 167 claim 2, corroborated at `a88626306`): every non-closing verifier state records `loop_back` — `pre-submission-self-review.md:503-511` maps `verdict_refused`, `further_round_owed` and `verifier_unavailable` to `loop_back`, and `:520` "Every non-closing state above records loop_back" (D2).
+  - verdict: corroborated | checked_at: 0a099a1071c1bc315d03d2d8008f74d89d0e29e0 | by: truthful-signals/cleanup | rescoped: n/a | evidence: Table :507-511 maps all three non-closing states to loop_back; :520 states every non-closing state records loop_back.
 - OBSERVED (carried from 167 claim 5, contradicted at `a88626306`): 167's D3 premise ("footprint never diffs against `origin/{base}`") is REFUTED — `_references_core.py:259-263` returns `origin/{base}` when it resolves (#1559) — so no base-anchor deliverable is carried.
+  - verdict: contradicted | checked_at: 0a099a1071c1bc315d03d2d8008f74d89d0e29e0 | by: truthful-signals/cleanup | rescoped: yes | evidence: _references_core.py:259-263 still returns origin/{base} when it resolves (#1559): 167 D3 premise stays refuted; absorbed — spec carries no base-anchor deliverable.
 
 ## Expected Surface
 

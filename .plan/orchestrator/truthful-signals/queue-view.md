@@ -4,7 +4,7 @@
 
 ## START HERE
 
-**Resume anchor**: 2026-10-02: PR 1681 merged (W-2026-10-02-a retired); PLAN-TRUTH-168 + follow-up both landed. Live staged 7 (172, 186, 181-185). Next: emit PLAN-TRUTH-172/186 when operator confirms launch.
+**Resume anchor**: 2026-10-02: cleanup done (17 verdicts at 0a099a1, compact ok, restart ready) + ledger landed on main. Live staged 7 (172, 186, 181-185). Next: emit PLAN-TRUTH-172/186 when operator confirms launch.
 **Phase**: orchestrating
 **Parked**:
 - PLAN-TRUTH-145 (WS-01)
