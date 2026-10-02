@@ -180,18 +180,18 @@ def test_cli_ok_on_main_checkout(outside_repo_dir: Path):
 # hand-maintained project-local step.
 
 _PROJECT_STEPS = (
-    'plugin-doctor',
-    'deploy-target',
-    'sync-plugin-cache',
+    'finalize-step-plugin-doctor',
+    'finalize-step-deploy-target',
+    'finalize-step-sync-plugin-cache',
 )
 
 
 def _ship_project_finalize_skills(project_root: Path, names) -> None:
-    """Create `.claude/skills/finalize-step-<name>/SKILL.md` for each name."""
+    """Create `.claude/skills/<name>/SKILL.md` for each finalize-step skill name."""
     for name in names:
-        skill_dir = project_root / '.claude' / 'skills' / f'finalize-step-{name}'
+        skill_dir = project_root / '.claude' / 'skills' / name
         skill_dir.mkdir(parents=True, exist_ok=True)
-        (skill_dir / 'SKILL.md').write_text(f'# finalize-step-{name}\n', encoding='utf-8')
+        (skill_dir / 'SKILL.md').write_text(f'# {name}\n', encoding='utf-8')
 
 
 def _write_finalize_steps_marshal(plan_dir: Path, steps: list[str]) -> None:
@@ -208,7 +208,7 @@ def test_discover_shipped_project_finalize_steps_enumerates_skills(tmp_path: Pat
 
     shipped = discover_shipped_project_finalize_steps(project_root)
 
-    assert shipped == sorted(f'project:finalize-step-{n}' for n in _PROJECT_STEPS)
+    assert shipped == sorted(f'project:{n}' for n in _PROJECT_STEPS)
 
 
 def test_discover_shipped_returns_empty_without_claude_skills(tmp_path: Path):
@@ -230,7 +230,7 @@ def test_all_project_steps_present_reports_clean(tmp_path: Path):
     project_root = tmp_path / 'repo'
     plan_dir = project_root / '.plan'
     _ship_project_finalize_skills(project_root, _PROJECT_STEPS)
-    steps = [f'project:finalize-step-{n}' for n in _PROJECT_STEPS] + ['default:push']
+    steps = [f'project:{n}' for n in _PROJECT_STEPS] + ['default:push']
     _write_finalize_steps_marshal(plan_dir, steps)
 
     missing = detect_missing_project_finalize_steps(plan_dir, project_root)
@@ -313,7 +313,7 @@ def test_cli_reports_ok_when_all_project_steps_present(tmp_path: Path):
         )
         if rec.get('name')
     ]
-    steps = built_in_defaults + [f'project:finalize-step-{n}' for n in _PROJECT_STEPS]
+    steps = built_in_defaults + [f'project:{n}' for n in _PROJECT_STEPS]
     _write_finalize_steps_marshal(plan_dir, steps)
 
     out = _run_finalize_cli(plan_dir, project_root)

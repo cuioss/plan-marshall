@@ -138,7 +138,7 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission
 missing[1]{skill,step,phase}:
 finalize-step-plugin-doctor	project:finalize-step-plugin-doctor	phase-6-finalize
 present[1]{skill,step,phase,covered_by}:
-sync-plugin-cache	project:sync-plugin-cache	phase-6-finalize	Skill(sync-plugin-cache)
+sync-harnesses	project:sync-harnesses	phase-6-finalize	Skill(sync-harnesses)
 summary:
   missing_count: 1
   present_count: 1

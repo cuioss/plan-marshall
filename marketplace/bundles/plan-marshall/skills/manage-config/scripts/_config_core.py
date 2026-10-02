@@ -426,7 +426,7 @@ def get_skill_description(skill_notation: str) -> str:
       project-local-skill roots)
 
     Args:
-        skill_notation: e.g., "pm-dev-java:java-core" or "project:sync-plugin-cache"
+        skill_notation: e.g., "pm-dev-java:java-core" or "project:sync-harnesses"
 
     Returns:
         Description string or skill name as fallback

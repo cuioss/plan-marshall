@@ -79,7 +79,7 @@ Each size maps to a `predicted_cost_tokens` magnitude. These are the **tunable d
 
 | Size | `predicted_cost_tokens` (default) | covers |
 |------|----------------------------------:|--------|
-| `XS` | 5K (5 000) | deterministic ≈0-token bookkeeping (push, branch-cleanup, archive, record-metrics, deploy-target, sync-plugin-cache) |
+| `XS` | 5K (5 000) | deterministic ≈0-token bookkeeping (push, branch-cleanup, archive, record-metrics, finalize-step-deploy-target, finalize-step-sync-plugin-cache) |
 | `S` | 25K (25 000) | small agent steps |
 | `M` | 60K (60 000) | medium |
 | `L` | 130K (130 000) | heavy single steps |

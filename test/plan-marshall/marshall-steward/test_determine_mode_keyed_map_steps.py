@@ -52,9 +52,9 @@ discover_shipped_project_finalize_steps = _dm.discover_shipped_project_finalize_
 # =============================================================================
 
 _PROJECT_STEPS = (
-    'plugin-doctor',
-    'deploy-target',
-    'sync-plugin-cache',
+    'finalize-step-plugin-doctor',
+    'finalize-step-deploy-target',
+    'finalize-step-sync-plugin-cache',
 )
 
 
@@ -75,11 +75,11 @@ def _keyed_map(step_ids: list[str]) -> dict[str, dict]:
 
 
 def _ship_project_finalize_skills(project_root: Path, names) -> None:
-    """Create ``.claude/skills/finalize-step-<name>/SKILL.md`` for each name."""
+    """Create ``.claude/skills/<name>/SKILL.md`` for each finalize-step skill name."""
     for name in names:
-        skill_dir = project_root / '.claude' / 'skills' / f'finalize-step-{name}'
+        skill_dir = project_root / '.claude' / 'skills' / name
         skill_dir.mkdir(parents=True, exist_ok=True)
-        (skill_dir / 'SKILL.md').write_text(f'# finalize-step-{name}\n', encoding='utf-8')
+        (skill_dir / 'SKILL.md').write_text(f'# {name}\n', encoding='utf-8')
 
 
 # =============================================================================
@@ -210,7 +210,7 @@ def test_keyed_map_all_project_steps_present_is_clean(tmp_path: Path):
     project_root = tmp_path / 'repo'
     plan_dir = project_root / '.plan'
     _ship_project_finalize_skills(project_root, _PROJECT_STEPS)
-    step_ids = [f'project:finalize-step-{n}' for n in _PROJECT_STEPS] + ['default:push']
+    step_ids = [f'project:{n}' for n in _PROJECT_STEPS] + ['default:push']
     _write_marshal_steps(plan_dir, _keyed_map(step_ids))
 
     assert detect_missing_project_finalize_steps(plan_dir, project_root) == []

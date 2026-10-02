@@ -14,7 +14,7 @@ A. Layer-D ``main_dirty_files`` invariant — capture a clean baseline at
    ``main_checkout_dirtied_during_plan``. Reverting and re-running
    yields a clean verify. Untracked ``.plan/`` paths are filtered; a
    tracked ``.plan/`` file is retained as a real leak.
-C. ``sync-plugin-cache`` staleness guard — synthetic ``__pycache__``
+C. ``sync-harnesses`` staleness guard — synthetic ``__pycache__``
    files created with fresh mtimes do NOT trip the guard; touching a
    tracked source file DOES.
 D. ``phase-6-finalize`` Step 6 done-title — assert SKILL.md routes
@@ -147,13 +147,14 @@ def test_a_main_dirty_filter_excludes_untracked_plan_paths(tmp_path: Path) -> No
 
 
 # =============================================================================
-# C. sync-plugin-cache staleness guard
+# C. sync-harnesses staleness guard
 # =============================================================================
 #
 # The mtime-based end-to-end scenarios that previously lived here were
 # removed as part of the sentinel-file staleness-guard cutover. The
 # sentinel-based equivalents — covering fresh emit / missing sentinel /
 # fingerprint mismatch / --skip-staleness-guard escape — live in
-# ``test/sync-plugin-cache/test_staleness_guard.py`` next to the script
-# under test. Locking the same behavior twice would create drift if one
-# side ever rewrites; the sync-side suite is authoritative.
+# ``test/sync-harnesses/test_staleness_guard.py``, the suite that owns the
+# guard in ``marketplace/targets/claude/cache_sync.py``. Locking the same
+# behavior twice would create drift if one side ever rewrites; the
+# sync-side suite is authoritative.

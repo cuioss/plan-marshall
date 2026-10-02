@@ -80,6 +80,6 @@ To add a new built-in recipe to plan-marshall:
 3. Append the recipe entry to `provides_recipes()` in `plan-marshall-plugin/extension.py`. The dict shape is `{key, name, description, skill, default_change_type, scope}`.
 4. Register the skill in `.claude-plugin/plugin.json` under `skills`.
 5. Add an entry to this file (`menu-recipes.md`) describing the recipe for wizard users.
-6. Run `/sync-plugin-cache` then `/marshall-steward` to regenerate the executor with the new skill notation.
+6. Run the project-local, meta-repo-only `/sync-harnesses` command then `/marshall-steward` to regenerate the executor with the new skill notation.
 
 For project-local (single-project) recipes, drop a `recipe-*` skill under your project skill root (e.g. `.claude/skills/`, `.agents/skills/`, or `.opencode/skills/`) instead — the steward discovers it automatically via Source 2 in `_discover_all_recipes`. Project recipes do not require plugin registration.

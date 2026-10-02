@@ -296,7 +296,7 @@ Per ADR-002, the orchestrator enters finalize still cwd-pinned to the worktree (
      --plan-id {plan_id}
    ```
 
-   `integrate_into_main.py` resolves its SOURCE (the worktree-resident plan dir, via `manage-status get-worktree-path`) and its DESTINATION (main's plan dir, via the sanctioned main-anchored resolver) **cwd-independently**, so it is correct whether invoked before or after the cwd return — it does NOT require any particular working directory. It also does NOT change the caller's working directory, does NOT remove the worktree, and does NOT regenerate the executor. On-main executor regeneration is performed later by the project-level `project:finalize-step-sync-plugin-cache` step (meta-project-only) after the cache sync — the executor stays a per-tree derived artifact (ADR-002), never file-moved onto main.
+   `integrate_into_main.py` resolves its SOURCE (the worktree-resident plan dir, via `manage-status get-worktree-path`) and its DESTINATION (main's plan dir, via the sanctioned main-anchored resolver) **cwd-independently**, so it is correct whether invoked before or after the cwd return — it does NOT require any particular working directory. It also does NOT change the caller's working directory, does NOT remove the worktree, and does NOT regenerate the executor. On-main executor regeneration is performed later by the project-level `project:finalize-step-sync-plugin-cache` step (meta-project-only) after the harness sync — the executor stays a per-tree derived artifact (ADR-002), never file-moved onto main.
 
 2. **Return cwd to main.** After the move-back returns, the orchestrator returns its own working directory to `{main_checkout}`. The plan directory and executor now live on main again, so the uniform cwd rule resolves them on main from this point. Because `integrate_into_main` is cwd-independent, the cwd return is not a precondition of the move-back — the only hard ordering constraint is the worktree-removal sequencing in step 3. The return is a convention rather than an enforced precondition — no script asserts it, and none can establish it either, since a subprocess cannot change its parent's working directory — so the `worktree-remove` call in step 3 does not depend on it happening: that verb resolves both its `git -C` target (through `marketplace_paths.main_checkout_root()`) and its move-back probe (through `marketplace_paths.resolve_main_anchored_path`, the same resolver the move-back writes through) without consulting the caller's cwd, and refuses with `error: cwd_inside_removal_target` (not overridable by `--force`) when the caller is still standing inside the worktree, instead of trusting that the return took place.
 
@@ -437,24 +437,28 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Iterate over `manifest.phase_6.steps` (read in Step 2). The list is the manifest's authoritative ordering — neither this skill nor any standards document re-orders, filters, or skip-conditional any step.
 
-#### Plugin cache freshness
+#### Harness install freshness
 
 In meta-projects that own marketplace bundles (notably the
 plan-marshall repo itself), the project-local Phase 6 ordering pairs
 `project:finalize-step-deploy-target` (order 81) with
 `project:finalize-step-sync-plugin-cache` (order 85), placing both
 **after** `default:branch-cleanup`, against the main checkout
-post-merge. The cache mirrors the `target/claude/` content from the
-merged source tree, so the next session-boot re-derivation reads the
-same authoritative tree the dispatcher just wrote to. On-main executor
-regeneration is performed by the project-level
-`project:finalize-step-sync-plugin-cache` step (order 85) immediately
-after the cache sync, in both worktree and no-worktree finalize flows;
-`integrate_into_main` performs the move-back only and does NOT regenerate
-the executor.
+post-merge. The first regenerates all three harness target trees
+(`target/claude/`, `target/opencode/`, `target/antigravity/`) from the
+merged source tree; the second mirrors each tree into its harness
+install (the Claude plugin cache, the OpenCode install, the Antigravity
+install), so the next session-boot re-derivation reads the same
+authoritative tree the dispatcher just wrote to. Both step ids are
+unchanged — `finalize-step-sync-plugin-cache` names the Claude cache but
+syncs every harness. On-main executor regeneration is performed by the
+project-level `project:finalize-step-sync-plugin-cache` step (order 85)
+immediately after the sync, once the Claude target has synced, in both
+worktree and no-worktree finalize flows; `integrate_into_main` performs
+the move-back only and does NOT regenerate the executor.
 
 Meta-project finalize agents dispatched between `create-pr` and
-`branch-cleanup` see pre-plan skill bodies in the host cache (the cache
+`branch-cleanup` see pre-plan skill bodies in the host cache (the harness
 sync now runs later, post-merge). This is acceptable — see the
 `what_this_gives_up` analysis in the originating lesson for the
 deliberate-trade-off rationale: tool calls resolve against worktree
@@ -789,7 +793,7 @@ FOR each step_id in manifest.phase_6.steps:
      once per re-entry, and there is no adjacent emit step to suppress. The INFO skip-decision line
      above is the audit record for this path.
 
-     **HEAD-dependent step set**: membership is the derived `head_dependent: true` frontmatter fact — see § "Special case — HEAD-dependent steps" above for the single authoritative statement and the governing discriminator; do NOT re-list or count the members here. A loop-back commit (typically produced by `plan-marshall:automatic-review` or `sonar-roundtrip` opening a fix task that produces a new commit) advances HEAD past the previously-validated SHA, and a stale `done` record on any head-dependent step would produce a false-clean result on re-entry. The same `head_at_completion` comparison applies to every member. The `push` step is NOT head-dependent — it is a pure push barrier whose re-entry skip/re-fire decision is parity-driven, not done-record-driven: the item-1 push-specific branch consults `branch-sync-state` and branches on the `barrier_action` it publishes instead of on a HEAD-comparison, and the dispatcher additionally re-invokes it explicitly after a post-PR `mutates_source` step commits (item 5f § "Post-PR re-push") as the fast path. Every other step whose authoritative doc declares no `head_dependent` fact is likewise not head-dependent — their effect is captured by side-effect (a created PR, recorded lessons, regenerated `target/claude/` from the post-merge source tree) and is idempotent against HEAD advances; the general rule above applies to them. Note that head-dependence is **orthogonal to the dispatched/inline split** — do NOT infer non-head-dependence from a step's presence on the [`standards/dispatch-inline-split.md`](standards/dispatch-inline-split.md) § "Inline steps" roster. Some steps on that roster declare `head_dependent: true` and some do not, so resolve each step's own frontmatter fact rather than inferring from its roster placement. CI completion is resolved as a separate dispatcher-side precondition (`requires: [ci-complete]`) — its cache key is the same `git rev-parse HEAD` SHA, so a HEAD advance also invalidates the precondition cache.
+     **HEAD-dependent step set**: membership is the derived `head_dependent: true` frontmatter fact — see § "Special case — HEAD-dependent steps" above for the single authoritative statement and the governing discriminator; do NOT re-list or count the members here. A loop-back commit (typically produced by `plan-marshall:automatic-review` or `sonar-roundtrip` opening a fix task that produces a new commit) advances HEAD past the previously-validated SHA, and a stale `done` record on any head-dependent step would produce a false-clean result on re-entry. The same `head_at_completion` comparison applies to every member. The `push` step is NOT head-dependent — it is a pure push barrier whose re-entry skip/re-fire decision is parity-driven, not done-record-driven: the item-1 push-specific branch consults `branch-sync-state` and branches on the `barrier_action` it publishes instead of on a HEAD-comparison, and the dispatcher additionally re-invokes it explicitly after a post-PR `mutates_source` step commits (item 5f § "Post-PR re-push") as the fast path. Every other step whose authoritative doc declares no `head_dependent` fact is likewise not head-dependent — their effect is captured by side-effect (a created PR, recorded lessons, regenerated `target/` harness trees from the post-merge source tree) and is idempotent against HEAD advances; the general rule above applies to them. Note that head-dependence is **orthogonal to the dispatched/inline split** — do NOT infer non-head-dependence from a step's presence on the [`standards/dispatch-inline-split.md`](standards/dispatch-inline-split.md) § "Inline steps" roster. Some steps on that roster declare `head_dependent: true` and some do not, so resolve each step's own frontmatter fact rather than inferring from its roster placement. CI completion is resolved as a separate dispatcher-side precondition (`requires: [ci-complete]`) — its cache key is the same `git rev-parse HEAD` SHA, so a HEAD advance also invalidates the precondition cache.
 
   2. Log step start:
      python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \

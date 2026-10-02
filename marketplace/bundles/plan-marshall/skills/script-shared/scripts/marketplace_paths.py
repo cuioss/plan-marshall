@@ -493,7 +493,7 @@ def resolve_project_skill_path(rel_subpath: str, base: Path | None = None) -> Pa
 
     Args:
         rel_subpath: Subpath beneath a skill root, e.g.
-            ``"sync-plugin-cache/SKILL.md"``.
+            ``"sync-harnesses/SKILL.md"``.
         base: Project root to resolve relative roots against; defaults to cwd.
 
     Returns:

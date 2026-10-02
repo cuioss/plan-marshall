@@ -651,7 +651,7 @@ test.
 
 ## Broken Executor Recovery (Generated but Unrunnable)
 
-This case is distinct from the [Bootstrap Pattern](#bootstrap-pattern-before-executor-exists) above. Bootstrap covers the **first-run** state where `.plan/execute-script.py` does **not yet exist**. This section covers the state where the generated executor **exists on disk but fails to run** — for example, a template import-surface change makes the embedded preamble import a symbol the runtime no longer exports, so every `python3 .plan/execute-script.py …` call aborts before reaching any script body. Because the executor itself is broken, the normal `/marshall-steward` and `/sync-plugin-cache` regeneration paths — which route through the executor — cannot be used to repair it.
+This case is distinct from the [Bootstrap Pattern](#bootstrap-pattern-before-executor-exists) above. Bootstrap covers the **first-run** state where `.plan/execute-script.py` does **not yet exist**. This section covers the state where the generated executor **exists on disk but fails to run** — for example, a template import-surface change makes the embedded preamble import a symbol the runtime no longer exports, so every `python3 .plan/execute-script.py …` call aborts before reaching any script body. Because the executor itself is broken, the normal `/marshall-steward` and project-local, meta-repo-only `/sync-harnesses` regeneration paths — which route through the executor — cannot be used to repair it.
 
 ### Recovery
 

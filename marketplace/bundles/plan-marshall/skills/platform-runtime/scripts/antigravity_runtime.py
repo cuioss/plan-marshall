@@ -354,7 +354,7 @@ class AntigravityRuntime(Runtime):
         return toon_noop(
             'session reload-directive',
             'Antigravity automatically discovers updated plugins in ~/.gemini/config/plugins/',
-            'Run /sync-antigravity to update deployed bundles',
+            'Run /sync-harnesses --target antigravity to update deployed bundles',
         )
 
     # ------------------------------------------------------------------

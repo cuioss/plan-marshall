@@ -47,8 +47,6 @@ ROUTING_SCRIPT = (
 # fnmatch, so the glob covers the nested ``{skill}/scripts/`` layout).
 PROJECT_LOCAL_PRODUCTION = [
     '.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py',
-    '.claude/skills/sync-plugin-cache/scripts/sync.py',
-    '.claude/skills/sync-plugin-cache/scripts/reconcile_daemon.py',
     '.claude/skills/finalize-step-era-stamp-fill/scripts/era_stamp_fill.py',
     '.claude/skills/finalize-step-review-retrospective/scripts/review_retrospective.py',
 ]
