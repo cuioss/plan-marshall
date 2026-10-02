@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: E402
-"""Tests for the project-local marshalld reconcile (D1/D2/D3, D6 cases).
+"""Tests for the meta-project marshalld reconcile (D1/D2/D3, D6 cases).
 
 The reconcile heals version drift from the meta-project's own sync surface. The
 DECISION (``decide``) is pure and pins the D1 idle-conditional contract; the
@@ -25,31 +24,18 @@ Each fail-closed case carries a matched control — a genuine zero count, and a
 verb whose fields do substantiate success — so a guard that fired on everything
 would be caught rather than read as green.
 
-The script is project-local (``.claude/skills/sync-plugin-cache/scripts``), not a
-marketplace bundle — sync-plugin-cache is meta-project-only tooling.
+The script lives at ``marketplace/targets/claude/reconcile_daemon.py``, not in a
+marketplace bundle — the harness sync is meta-project-only tooling.
 """
 
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import pytest
 
-from conftest import PROJECT_ROOT
-
-# ``reconcile_daemon`` is a PROJECT-LOCAL skill script under ``.claude/``, not a
-# marketplace bundle script, so neither ``load_script_module`` nor
-# ``load_skill_module`` can address it and the root conftest's marketplace
-# ``sys.path`` setup does not reach it. This bootstrap therefore stays where every
-# marketplace one was removed, and it is what the file-level ``I001, E402`` waiver
-# above is still paying for.
-_SCRIPTS = PROJECT_ROOT / '.claude' / 'skills' / 'sync-plugin-cache' / 'scripts'
-if str(_SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS))
-
-import reconcile_daemon as rd
+from marketplace.targets.claude import reconcile_daemon as rd
 
 _RESOLVED = '/cache/plan-marshall/0.1.1231/skills/manage-build-server/scripts/marshalld.py'
 _RUNNING_STALE = '/cache/plan-marshall/0.1.1212/skills/manage-build-server/scripts/marshalld.py'

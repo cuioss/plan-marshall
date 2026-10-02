@@ -17,7 +17,7 @@ marketplace/targets/
 ├── __init__.py                   # TARGET_REGISTRY + register_target()
 ├── base.py                       # TargetBase ABC
 ├── generate.py                   # CLI entry point
-├── sync.py                       # Unified sync engine (antigravity/opencode)
+├── sync.py                       # Single sync engine (claude/opencode/antigravity)
 ├── body_transform_engine.py      # Target-shared data-driven body rewrites
 ├── component_targets.py          # `targets:` frontmatter scope filter
 ├── fs_safety.py                  # Containment primitives for destructive emits
@@ -34,6 +34,9 @@ marketplace/targets/
 │   ├── variant_emitter.py        # Per-level agent variant emission
 │   ├── equality_check.py         # Source ↔ target drift detection
 │   ├── source_fingerprint.py     # Worktree fingerprint for the staleness guard
+│   ├── cache_sync.py             # Plugin-cache sync + staleness guard (sync.py's claude path)
+│   ├── reconcile_daemon.py       # marshalld reconcile after a cache version bump
+│   ├── list_bundles_and_versions.py  # Bundle/version table of target/claude/
 │   ├── content_drift.py          # Live content-drift check engine
 │   └── content_drift_cli.py      # CLI wrapper for the content-drift check
 ├── antigravity/                  # Google Antigravity build target

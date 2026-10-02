@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Tests for the sentinel-based staleness guard inside the project-local sync.py.
+"""Tests for the staleness guard of the Claude path of the sync engine.
 
-The guard reads ``target/claude/.emit-marker.json`` and refuses to mirror
+The guard lives in ``marketplace/targets/claude/cache_sync.py`` and is
+reached through ``marketplace/targets/sync.py --target claude``. It reads ``target/claude/.emit-marker.json`` and refuses to mirror
 the cache when the sentinel is absent, unparseable, or carries a
 fingerprint that no longer matches the worktree under
 ``marketplace/bundles/``. The fingerprint is computed by the shared
@@ -42,10 +43,19 @@ fingerprint recompute and the file-level re-hash, the latter of which
 previously disabled itself by returning ``None``), the ``guard_outcome`` field
 that makes the kind machine-readable, and its absence on the success path. It
 also pins the root cause that made the misreport observable: the stdlib-only
-fingerprint helper is loaded by file location, so a bare interpreter without
-the project's third-party dependencies can still run the guard — with a
-matched negative control proving the dependency block used in that test is
-effective.
+fingerprint helper and the Claude cache-sync module are both loaded by file
+location, so a bare interpreter without the project's third-party dependencies
+can still run the dispatcher and its guard — with a matched negative control
+proving the dependency block used in those tests is effective.
+
+The bundle-set check has its own group: the guard expects in ``target/claude/``
+exactly the bundles whose ``plugin.json`` ``targets`` declaration admits the
+Claude target, which is the predicate the Claude emitter applies. The group
+covers a bundle scoped to other harnesses (not expected, no refusal), a
+claude-admitting bundle missing from the emitted tree (``stale``), a manifest
+that cannot be read (``probe_failed`` naming the file), and a lockstep check
+that the guard's expected set equals the emitter's selection over the live
+``marketplace/bundles/`` tree.
 """
 
 from __future__ import annotations
@@ -62,17 +72,23 @@ from pathlib import Path
 
 import pytest
 
+from marketplace.targets.claude.emitter import CLAUDE_TARGET_NAME, iter_bundle_dirs
 from marketplace.targets.claude.source_fingerprint import (
     FingerprintError,
     compute_source_tree_fingerprint,
     hash_objects,
     list_tracked_files,
 )
+from marketplace.targets.component_targets import bundle_emits_to
 from toon_parser import parse_toon
 
 from conftest import _MARKETPLACE_SCRIPT_DIRS, PROJECT_ROOT, ScriptResult, run_script
 
-_SYNC_PY = PROJECT_ROOT / '.claude' / 'skills' / 'sync-plugin-cache' / 'scripts' / 'sync.py'
+#: The dispatcher every CLI test drives, always with ``--target claude``.
+_SYNC_PY = PROJECT_ROOT / 'marketplace' / 'targets' / 'sync.py'
+#: The module that owns the guard, loaded by file location for in-process tests.
+_CACHE_SYNC_PY = PROJECT_ROOT / 'marketplace' / 'targets' / 'claude' / 'cache_sync.py'
+_REAL_MARKETPLACE_BUNDLES = PROJECT_ROOT / 'marketplace' / 'bundles'
 _SENTINEL_NAME = '.emit-marker.json'
 
 
@@ -87,7 +103,7 @@ def _write(path: Path, content: str = '') -> None:
 
 
 def _run(*args: str, cwd: Path | None = None) -> ScriptResult:
-    return run_script(_SYNC_PY, *args, cwd=cwd, timeout=60)
+    return run_script(_SYNC_PY, '--target', 'claude', *args, cwd=cwd, timeout=60)
 
 
 def _make_marketplace(cwd: Path, bundles: dict[str, str]) -> None:
@@ -646,12 +662,13 @@ def test_skip_staleness_guard_bypasses_file_drift(tmp_path: Path) -> None:
 # the fingerprint helper is stdlib-only, but reaching it through the
 # ``marketplace.targets`` package path executes that package's __init__, which
 # imports every registered target and with them third-party dependencies absent
-# under a bare interpreter. sync.py loads the helper file directly instead.
+# under a bare interpreter. cache_sync.py loads the helper file directly instead,
+# and the dispatcher loads cache_sync.py the same way.
 
 
 def _load_sync_module():
-    """Load ``sync.py`` by file location, exactly as ``python3 sync.py`` does."""
-    spec = importlib.util.spec_from_file_location('sync_under_test', _SYNC_PY)
+    """Load ``cache_sync.py`` by file location, exactly as the dispatcher does."""
+    spec = importlib.util.spec_from_file_location('sync_under_test', _CACHE_SYNC_PY)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -660,7 +677,7 @@ def _load_sync_module():
 
 @pytest.fixture
 def sync_module():
-    """A freshly loaded sync.py, with its helper-module cache torn down after.
+    """A freshly loaded cache_sync.py, with its helper-module cache torn down after.
 
     ``_load_source_fingerprint_module`` caches the helper in ``sys.modules``
     under a module name of its own choosing; popping it keeps each test
@@ -771,12 +788,59 @@ def test_fingerprint_helper_loads_without_the_marketplace_package() -> None:
             print('marketplace_imported=' + str('marketplace.targets' in sys.modules))
             """
         ),
-        str(_SYNC_PY),
+        str(_CACHE_SYNC_PY),
     )
 
     assert result.returncode == 0, result.stderr
     # Both helper accessors returned, and the package chain was never walked.
     assert 'marketplace_imported=False' in result.stdout
+
+
+def test_dispatcher_runs_the_claude_path_without_the_marketplace_package(tmp_path: Path) -> None:
+    """The dispatcher itself, guard included, runs with third-party imports blocked.
+
+    ``marketplace/targets/sync.py`` reaches the Claude path by loading
+    ``cache_sync.py`` by file location. Importing it through
+    ``marketplace.targets.claude`` would execute the package ``__init__``
+    modules and, through them, ``yaml`` — which a bare interpreter does not
+    have. The run goes through the real guard (no ``--skip-staleness-guard``)
+    so the fingerprint helper is loaded on the same route.
+    """
+    project = tmp_path / 'project'
+    project.mkdir()
+    _make_marketplace(project, {'demo': '0.1.0'})
+    _make_target(project, {'demo': '0.1.0'})
+    _git_init_and_commit(project)
+    _write_sentinel(project, _compute_fingerprint_for(project), _target_file_hashes(project))
+    cache = tmp_path / 'cache'
+
+    result = _run_python(
+        _BLOCK_YAML
+        + textwrap.dedent(
+            """
+            import runpy
+            import sys
+
+            script, worktree, cache_root = sys.argv[1:4]
+            sys.argv = [script, '--target', 'claude', '--from-worktree', worktree, '--cache-root', cache_root]
+            try:
+                runpy.run_path(script, run_name='__main__')
+            except SystemExit as exc:
+                print('exit=' + str(exc.code))
+
+            print('marketplace_imported=' + str('marketplace.targets' in sys.modules))
+            """
+        ),
+        str(_SYNC_PY),
+        str(project),
+        str(cache),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert 'exit=0' in result.stdout
+    assert 'status: success' in result.stdout
+    assert 'marketplace_imported=False' in result.stdout
+    assert (cache / 'demo' / '0.1.0' / 'README.md').is_file()
 
 
 def test_marketplace_package_route_is_blocked_under_the_same_conditions() -> None:
@@ -1063,52 +1127,126 @@ def test_successful_sync_emits_no_guard_outcome(tmp_path: Path) -> None:
 
 
 # =============================================================================
-# Target-scoped bundles absent from the Claude output
+# Bundle-set check — the expected set is the Claude emitter's selection
 # =============================================================================
 #
-# A bundle declaring ``targets:`` without ``claude`` (e.g. a harness bundle
-# scoped ``[antigravity]``) is correctly ABSENT from ``target/claude/`` — the
-# emitter skips it by design. The bundle-set check must not demand it, or
-# every sync refuses on a current tree.
+# The guard expects in target/claude/ the bundles whose own plugin.json admits
+# the claude target through its ``targets`` declaration: field absent means
+# every target, field present means the listed targets only. A bundle scoped to
+# other harnesses is never emitted into target/claude/, so expecting it there
+# would refuse every sync of a healthy tree.
 
 
-def _make_scoped_bundle(cwd: Path, name: str, targets: list[str]) -> None:
-    """Write a marketplace bundle carrying a ``targets:`` scope declaration."""
-    plugin_doc = json.dumps({'name': name, 'version': '0.1.0', 'targets': targets}, indent=2) + '\n'
-    _write(cwd / 'marketplace' / 'bundles' / name / '.claude-plugin' / 'plugin.json', plugin_doc)
-    _write(cwd / 'marketplace' / 'bundles' / name / 'README.md', f'# {name}\n')
+def _write_bundle_manifest(cwd: Path, name: str, manifest_text: str) -> Path:
+    """Write ``manifest_text`` as the source ``plugin.json`` of bundle ``name``."""
+    manifest = cwd / 'marketplace' / 'bundles' / name / '.claude-plugin' / 'plugin.json'
+    _write(manifest, manifest_text)
+    return manifest
 
 
-def test_scoped_away_bundle_absent_from_target_passes(tmp_path: Path, sync_module) -> None:
-    """A bundle scoped away from Claude is correctly absent from the output."""
+def _manifest(name: str, **fields: object) -> str:
+    return json.dumps({'name': name, 'version': '0.1.0', **fields}) + '\n'
+
+
+def _project_with_emitted_demo(tmp_path: Path) -> Path:
+    """A project whose only emitted bundle, ``demo``, is also in source."""
     cwd = tmp_path / 'project'
     cwd.mkdir()
     _make_marketplace(cwd, {'demo': '0.1.0'})
-    _make_scoped_bundle(cwd, 'demo-harness', ['antigravity'])
     _make_target(cwd, {'demo': '0.1.0'})
+    return cwd
+
+
+def _guard(sync_module, cwd: Path):
+    return sync_module._staleness_guard(cwd / 'target' / 'claude', cwd / 'marketplace' / 'bundles')
+
+
+def test_bundle_scoped_to_other_targets_is_not_expected_in_the_claude_tree(tmp_path: Path, sync_module) -> None:
+    """A bundle declaring only non-claude targets is absent by design, not stale."""
+    cwd = _project_with_emitted_demo(tmp_path)
+    _write_bundle_manifest(cwd, 'opencode-only', _manifest('opencode-only', targets=['opencode']))
     _git_init_and_commit(cwd)
     _write_sentinel(cwd, _compute_fingerprint_for(cwd), _target_file_hashes(cwd))
 
-    refusal = sync_module._staleness_guard(cwd / 'target' / 'claude', cwd / 'marketplace' / 'bundles')
+    refusal = _guard(sync_module, cwd)
 
     assert refusal is None
 
 
-def test_unscoped_bundle_absent_from_target_still_refuses(tmp_path: Path, sync_module) -> None:
-    """Matched negative control: an unscoped bundle missing from the output still refuses.
+@pytest.mark.parametrize(
+    'declaration',
+    [{}, {'targets': ['claude']}, {'targets': ['claude', 'opencode']}, {'targets': 'claude, opencode'}],
+    ids=['field-absent', 'claude-only', 'claude-among-others', 'comma-separated-string'],
+)
+def test_claude_admitting_bundle_missing_from_the_claude_tree_is_stale(
+    tmp_path: Path, sync_module, declaration: dict[str, object]
+) -> None:
+    """A bundle that ships to claude and was never emitted is still refused."""
+    cwd = _project_with_emitted_demo(tmp_path)
+    _write_bundle_manifest(cwd, 'not-emitted', _manifest('not-emitted', **declaration))
 
-    Without this, the scoped-away pass above could be masking a guard that
-    had simply stopped checking bundle presence at all.
-    """
-    cwd = tmp_path / 'project'
-    cwd.mkdir()
-    _make_marketplace(cwd, {'demo': '0.1.0', 'demo-missing': '0.1.0'})
-    _make_target(cwd, {'demo': '0.1.0'})
-    _git_init_and_commit(cwd)
-    _write_sentinel(cwd, _compute_fingerprint_for(cwd), _target_file_hashes(cwd))
-
-    refusal = sync_module._staleness_guard(cwd / 'target' / 'claude', cwd / 'marketplace' / 'bundles')
+    refusal = _guard(sync_module, cwd)
 
     assert refusal is not None
     assert refusal.kind == 'stale'
-    assert 'demo-missing' in refusal.message
+    assert 'not-emitted' in refusal.message
+    assert sync_module._regenerate_hint() in refusal.message
+
+
+@pytest.mark.parametrize(
+    'manifest_text',
+    [
+        'not json {',
+        '[]\n',
+        _manifest('broken', targets=5),
+        _manifest('broken', targets=[]),
+        _manifest('broken', targets=[True]),
+    ],
+    ids=['invalid-json', 'not-an-object', 'targets-not-a-list', 'targets-empty', 'targets-item-not-a-name'],
+)
+def test_unreadable_bundle_manifest_is_probe_failed_naming_the_file(
+    tmp_path: Path, sync_module, manifest_text: str
+) -> None:
+    """A declaration nobody could read is neither an include nor an exclude."""
+    cwd = _project_with_emitted_demo(tmp_path)
+    manifest = _write_bundle_manifest(cwd, 'broken', manifest_text)
+
+    refusal = _guard(sync_module, cwd)
+
+    assert refusal is not None
+    assert refusal.kind == 'probe_failed'
+    assert str(manifest) in refusal.message
+    assert 'not a staleness verdict' in refusal.message
+    assert sync_module._regenerate_hint() not in refusal.message
+
+
+def test_cli_reports_an_unreadable_bundle_manifest_as_probe_failed(tmp_path: Path) -> None:
+    """The bundle-set probe failure reaches the result document as its own kind."""
+    cwd = _project_with_emitted_demo(tmp_path)
+    _write_bundle_manifest(cwd, 'broken', 'not json {')
+
+    result = _run(cwd=cwd)
+
+    assert result.returncode == 2, result.stdout
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'error'
+    assert data['guard_outcome'] == 'probe_failed'
+
+
+def test_expected_bundle_set_equals_the_claude_emitter_selection_on_the_live_tree(sync_module) -> None:
+    """The guard and the emitter select the same bundles from the real source tree.
+
+    The guard restates the emitter's predicate with the stdlib because it must
+    not import the emitter's package. This holds the two to one answer on the
+    tree they both run against, and requires that tree to contain at least one
+    bundle scoped away from claude — otherwise equality would also hold for a
+    guard that still expected every bundle.
+    """
+    source_bundles = list(iter_bundle_dirs(_REAL_MARKETPLACE_BUNDLES, None))
+    emitter_selection = sorted(d.name for d in source_bundles if bundle_emits_to(d, CLAUDE_TARGET_NAME))
+
+    expected = sync_module._claude_admitting_bundles(_REAL_MARKETPLACE_BUNDLES)
+
+    assert expected == emitter_selection
+    scoped_away = {d.name for d in source_bundles} - set(expected)
+    assert scoped_away, 'the live tree no longer holds a bundle scoped away from claude'

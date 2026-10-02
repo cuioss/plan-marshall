@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Unit + integration tests for the project-local sync.py engine.
+"""Unit + integration tests for the Claude path of the sync engine.
 
 Covers parallel rsync, TOON return shape, --from-worktree redirection,
---bundle scoping, and the rsync-failure error path. The staleness guard
-gets its own dedicated suite (``test_staleness_guard.py``); these tests
-bypass it via ``--skip-staleness-guard`` so they can focus on the
-engine itself.
+--bundles scoping, --dry-run, and the rsync-failure error path. The
+staleness guard gets its own dedicated suite
+(``test_staleness_guard.py``); these tests bypass it via
+``--skip-staleness-guard`` so they can focus on the engine itself.
 
-The script under test lives at
-``.claude/skills/sync-plugin-cache/scripts/sync.py`` (project-local),
-not in any marketplace bundle — sync-plugin-cache is meta-project-only
-tooling that does not ship to consumers of plan-marshall.
+The script under test is ``marketplace/targets/sync.py`` run with
+``--target claude``, which drives
+``marketplace/targets/claude/cache_sync.py``. Neither lives in a
+marketplace bundle — the sync engine is meta-project-only tooling that
+does not ship to consumers of plan-marshall.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ from pathlib import Path
 from conftest import PROJECT_ROOT, ScriptResult, run_script
 from toon_parser import parse_toon
 
-_SYNC_PY = PROJECT_ROOT / '.claude' / 'skills' / 'sync-plugin-cache' / 'scripts' / 'sync.py'
+_SYNC_PY = PROJECT_ROOT / 'marketplace' / 'targets' / 'sync.py'
 
 
 def _write(path: Path, content: str | bytes = '') -> None:
@@ -43,7 +44,7 @@ def _make_target(target_root: Path, bundles: dict[str, str]) -> None:
 
 
 def _run(*args: str, cwd: Path | None = None) -> ScriptResult:
-    return run_script(_SYNC_PY, *args, cwd=cwd, timeout=60)
+    return run_script(_SYNC_PY, '--target', 'claude', *args, cwd=cwd, timeout=60)
 
 
 # ---------------------------------------------------------------------------
@@ -57,7 +58,7 @@ def test_sync_engine_emits_canonical_toon(tmp_path: Path):
     _make_target(target, {'demo-a': '0.1.0', 'demo-b': '0.2.0'})
 
     result = _run(
-        '--source-root',
+        '--source',
         str(target),
         '--cache-root',
         str(cache),
@@ -77,7 +78,7 @@ def test_sync_engine_writes_into_versioned_cache_subdirs(tmp_path: Path):
     _make_target(target, {'demo': '0.3.0'})
 
     result = _run(
-        '--source-root',
+        '--source',
         str(target),
         '--cache-root',
         str(cache),
@@ -103,7 +104,7 @@ def test_sync_engine_skips_directories_without_plugin_json(tmp_path: Path):
     _write(target / 'real-bundle' / 'agents' / 'demo.md', '---\nname: demo\n---\n')
 
     result = _run(
-        '--source-root',
+        '--source',
         str(target),
         '--cache-root',
         str(cache),
@@ -116,7 +117,7 @@ def test_sync_engine_skips_directories_without_plugin_json(tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
-# --bundle scoping
+# --bundles scoping
 # ---------------------------------------------------------------------------
 
 
@@ -126,12 +127,12 @@ def test_sync_engine_bundle_flag_scopes_to_one(tmp_path: Path):
     _make_target(target, {'demo-a': '0.1.0', 'demo-b': '0.2.0', 'demo-c': '0.3.0'})
 
     result = _run(
-        '--source-root',
+        '--source',
         str(target),
         '--cache-root',
         str(cache),
         '--skip-staleness-guard',
-        '--bundle',
+        '--bundles',
         'demo-b',
     )
     assert result.returncode == 0
@@ -147,18 +148,50 @@ def test_sync_engine_bundle_flag_unknown_returns_error(tmp_path: Path):
     _make_target(target, {'demo': '0.1.0'})
 
     result = _run(
-        '--source-root',
+        '--source',
         str(target),
         '--cache-root',
         str(cache),
         '--skip-staleness-guard',
-        '--bundle',
+        '--bundles',
         'nonexistent',
     )
     assert result.returncode == 1
     data = parse_toon(result.stdout)
     assert data['status'] == 'error'
     assert 'no matching bundles' in data['summary_message']
+
+
+# ---------------------------------------------------------------------------
+# --dry-run — the bundles are selected, nothing is written
+# ---------------------------------------------------------------------------
+
+
+def test_sync_engine_dry_run_reports_the_selection_and_writes_nothing(tmp_path: Path):
+    target = tmp_path / 'target' / 'claude'
+    cache = tmp_path / 'cache'
+    _make_target(target, {'demo-a': '0.1.0', 'demo-b': '0.2.0'})
+    _write(target / 'dist-manifest.json', '{"version": "0.1.1068"}\n')
+
+    result = _run(
+        '--source',
+        str(target),
+        '--cache-root',
+        str(cache),
+        '--skip-staleness-guard',
+        '--dry-run',
+    )
+
+    assert result.returncode == 0, result.stderr
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'success'
+    assert data['dry_run'] is True
+    assert int(data['synced_count']) == 0
+    assert [(row['bundle'], row['status']) for row in data['synced']] == [
+        ('demo-a', 'dry_run'),
+        ('demo-b', 'dry_run'),
+    ]
+    assert not cache.exists()
 
 
 # ---------------------------------------------------------------------------
@@ -199,7 +232,7 @@ def test_sync_engine_failure_path_when_rsync_missing(tmp_path: Path, monkeypatch
     monkeypatch.setenv('PATH', str(empty_path))
 
     result = _run(
-        '--source-root',
+        '--source',
         str(target),
         '--cache-root',
         str(cache),
@@ -233,7 +266,7 @@ def test_sync_engine_copies_dist_manifest_to_cache_root_byte_for_byte(tmp_path: 
     _write(target / 'dist-manifest.json', manifest_doc)
 
     result = _run(
-        '--source-root',
+        '--source',
         str(target),
         '--cache-root',
         str(cache),
@@ -255,7 +288,7 @@ def test_sync_engine_dist_manifest_lands_at_cache_root_not_versioned_subdir(tmp_
     _write(target / 'dist-manifest.json', '{"version": "0.1.1068"}\n')
 
     result = _run(
-        '--source-root',
+        '--source',
         str(target),
         '--cache-root',
         str(cache),
@@ -275,7 +308,7 @@ def test_sync_engine_absent_dist_manifest_degrades_to_noop(tmp_path: Path):
     _make_target(target, {'demo': '0.4.0'})
 
     result = _run(
-        '--source-root',
+        '--source',
         str(target),
         '--cache-root',
         str(cache),
@@ -296,7 +329,7 @@ def test_sync_engine_dist_manifest_copy_does_not_perturb_bundle_sync(tmp_path: P
     _write(target / 'dist-manifest.json', '{"version": "0.1.1068"}\n')
 
     result = _run(
-        '--source-root',
+        '--source',
         str(target),
         '--cache-root',
         str(cache),

@@ -485,7 +485,7 @@ def test_emit_marker_fingerprint_non_empty_for_real_worktree(tmp_path: Path):
     that cwd. ``ls-files`` matched zero paths and the fingerprint became
     the SHA-1 of empty input
     (``da39a3ee5e6b4b0d3255bfef95601890afd80709``), silently breaking
-    the sync-plugin-cache staleness guard. The fix is
+    the sync-harnesses staleness guard. The fix is
     ``repo_root = marketplace_dir.parent.parent`` so the prefix resolves
     against the project root that contains ``marketplace/``.
 

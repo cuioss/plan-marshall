@@ -105,9 +105,6 @@ generate = "uv run python marketplace/targets/generate.py"
 generate-antigravity = "uv run python marketplace/targets/generate.py --target antigravity --output target/antigravity"
 generate-claude = "uv run python marketplace/targets/generate.py --target claude --output target/claude"
 generate-opencode = "uv run python marketplace/targets/generate.py --target opencode --output target/opencode"
-sync = "uv run python marketplace/targets/sync.py"
-sync-antigravity = "uv run python marketplace/targets/sync.py --target antigravity"
-sync-opencode = "uv run python marketplace/targets/sync.py --target opencode"
 
 # Claude-target content-drift gate — the Stage 3 verify sub-step of the
 # marshall-steward `upgrade` verb. It is an alias for the same reason the
@@ -454,9 +451,7 @@ exclude = [
     "test/.*/integration/",
     "test/finalize-step-deploy-target/",
     "test/finalize-step-sync-plugin-cache/",
-    "test/sync-plugin-cache/",
-    "test/sync-opencode/",
-    "test/sync-antigravity/",
+    "test/sync-harnesses/",
     "test/pm-documents/ref-ascii-diagrams/",
     "test/plan-marshall/audit-archived-plan-retrospectives/",
     "test/plan-marshall/execute-task/",
