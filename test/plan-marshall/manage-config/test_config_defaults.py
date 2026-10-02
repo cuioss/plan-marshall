@@ -3213,7 +3213,8 @@ def test_migration_canonicalizes_removed_steps():
     assert removed == ['plan-marshall:automatic-review', 'default:push']
 
 
-def test_migration_deferral_repeats_stably():    """A deferred qgate re-reports identically without changing state.
+def test_migration_deferral_repeats_stably():
+    """A deferred qgate re-reports identically without changing state.
 
     The first run also migrates the simplify legacy param; the deferral
     itself is the stable fixed-point: every later run reports only the

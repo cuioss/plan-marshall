@@ -1434,7 +1434,7 @@ def test_sync_defaults_retired_removal_id_matches_canonical_step(plan_context):
         'plan-marshall:automatic-review (crosses operator removal)'
     )
     assert expected in result['re_added']
-    assert not any('automatic-review' in entry for entry in result['held_for_ask'])]
+    assert not any('automatic-review' in entry for entry in result['held_for_ask'])
 
 
 def test_sync_defaults_re_added_entries_name_the_crossed_decision(plan_context):
