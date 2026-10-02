@@ -597,6 +597,15 @@ standards) and 5 (a working multi-model eval harness, design-input-only prior ar
 
 ## Open Defects
 
+### 2026-10-02 — PLAN-211 landing incomplete: `total_tokens` unknown (`implement-plan-211-baseline-reconcile-002.md`)
+
+Landing-check `complete: false`, `missing_keys: [total_tokens]` — sender
+declares the run recorded zeroed dispatch usage, so metrics carry no token
+figures. Reconciled as far as it goes (row shipped + stamped); a manual paste
+from that plan may still surface a required fact the inbox did not get. Retire
+when a complete landing-facts block (or an operator-confirmed n/a with
+justification) arrives.
+
 ### 2026-09-22 — `7d82d5d90`: lessons-handling round-tripped this epic's own one-day-old promotions back to it, then deleted the corpus copies
 
 **FORWARDED to `lessons-routing`** (cross-notice `truthful-signals-002.md`, that epic's inbox). Draining
@@ -2179,7 +2188,7 @@ remain orchestrator-unverified leads — no build runs inline. Process-rule
 frictions went to the process-compliance inbox (other epic's scope, no action
 here). PR re-checked: still open, review none.
 
-### W-2026-10-01-b — PLAN-211 implemented in branch, PR not yet opened (inbox 2026-10-01)
+### ✅ RETIRED 2026-10-02 — W-2026-10-01-b landed as PR 1675 (PLAN-211 shipped)
 
 Inbox `implement-plan-211-baseline-reconcile-001.md`: branch
 `feature/implement-plan-211-baseline-reconcile` exists, `pr list` reports 0 open

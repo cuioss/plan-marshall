@@ -4,7 +4,7 @@
 
 ## START HERE
 
-**Resume anchor**: 2026-10-01: inbox drained (3 findings absorbed as W-2026-10-01-a/b/c, no queue transition). PR 1674 (truth-168) open/blocked awaiting review+CI; PLAN-211 branch ready, PR not yet opened. Live staged still 9. Next: analyze 1674 landing when merged; emit PLAN-211 + PLAN-TRUTH-168 when operator confirms launch (parallelization_scope=1, gate indeterminate on sibling/live side).
+**Resume anchor**: 2026-10-02: PLAN-211 shipped via PR 1675 (landing incomplete: total_tokens unknown). Live staged now 8 (168, 172, 186, 181-185). Next: analyze 1674 landing when merged; emit PLAN-TRUTH-168 when operator confirms launch.
 **Phase**: orchestrating
 **Parked**:
 - PLAN-TRUTH-145 (WS-01)
@@ -50,16 +50,16 @@
 **Queue** (staged, in order):
 1. PLAN-TRUTH-168 (WS-01)
 2. PLAN-TRUTH-172 (WS-01)
-3. PLAN-211 (WS-QA-04)
-4. PLAN-TRUTH-181 (WS-01)
-5. PLAN-TRUTH-182 (WS-01)
-6. PLAN-TRUTH-183 (WS-01)
-7. PLAN-TRUTH-184 (WS-01)
-8. PLAN-TRUTH-185 (WS-01)
-9. PLAN-TRUTH-186 (WS-01)
+3. PLAN-TRUTH-181 (WS-01)
+4. PLAN-TRUTH-182 (WS-01)
+5. PLAN-TRUTH-183 (WS-01)
+6. PLAN-TRUTH-184 (WS-01)
+7. PLAN-TRUTH-185 (WS-01)
+8. PLAN-TRUTH-186 (WS-01)
 - PLAN-TRUTH-147 (WS-01) — plan=truth-147-lane-reports-green — PR 1599 — landing=landings/PLAN-TRUTH-147.md — status: shipped
 - PLAN-TRUTH-161 (WS-01) — plan=truth-161-adr-number-allocation — PR 1586 — landing=landings/PLAN-TRUTH-161.md — status: shipped
 - PLAN-TRUTH-167 (WS-01) — status: superseded
+- PLAN-211 (WS-QA-04) — plan=implement-plan-211-baseline-reconcile — PR 1675 — landing=landings/PLAN-211.md — status: shipped
 - PLAN-TRUTH-179 (WS-01) — plan=truth-179-opencode-target-detection-landed — PR 1619 — landing=landings/PLAN-TRUTH-179.md — status: shipped
 
 ## Ordered Queue
@@ -97,21 +97,20 @@
 | 29 | PLAN-207 | WS-QA-02 | parked | marketplace/bundles/plan-marshall/skills/phase-5-execute/; marketplace/bundles/plan-marshall/skills/phase-6-finalize/ |
 | 30 | PLAN-208 | WS-QA-03 | parked | marketplace/bundles/plan-marshall/skills/automatic-review/ |
 | 31 | PLAN-209 | WS-QA-03 | parked | marketplace/bundles/plan-marshall/skills/automatic-review/; marketplace/bundles/plan-marshall/skills/manage-providers/ |
-| 32 | PLAN-211 | WS-QA-04 | staged | marketplace/bundles/plan-marshall/skills/manage-lessons/; marketplace/bundles/plan-marshall/skills/workflow-integration-git/ |
-| 33 | PLAN-213 | WS-QA-06 | parked | marketplace/bundles/plan-marshall/skills/manage-tasks/; marketplace/bundles/plan-marshall/skills/phase-4-plan/; marketplace/bundles/plan-marshall/skills/phase-5-execute/ |
-| 34 | PLAN-214 | WS-QA-06 | parked | marketplace/bundles/plan-marshall/skills/phase-2-refine/; marketplace/bundles/plan-marshall/skills/plan-marshall/; marketplace/bundles/plan-marshall/skills/workflow-integration-github/ |
-| 35 | PLAN-215 | WS-QA-06 | parked | marketplace/bundles/plan-marshall/skills/manage-architecture/; marketplace/bundles/plan-marshall/skills/manage-lessons/; marketplace/bundles/plan-marshall/skills/tools-script-executor/ |
-| 36 | PLAN-216 | WS-QA-07 | parked | marketplace/bundles/plan-marshall/skills/manage-findings/; marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/; marketplace/bundles/pm-plugin-development/skills/plugin-doctor/ |
-| 37 | PLAN-217 | WS-QA-07 | parked | marketplace/bundles/plan-marshall/skills/manage-logging/; marketplace/bundles/plan-marshall/skills/plan-retrospective/ |
-| 38 | PLAN-218 | WS-QA-09 | parked | marketplace/bundles/plan-marshall/skills/manage-config/ |
-| 39 | PLAN-219 | WS-QA-08 | parked | marketplace/bundles/plan-marshall/skills/phase-6-finalize/ |
-| 40 | PLAN-220 | WS-QA-08 | parked | marketplace/bundles/plan-marshall/skills/phase-6-finalize/; marketplace/bundles/plan-marshall/skills/tools-integration-ci/ |
-| 41 | PLAN-221 | WS-QA-02 | parked | marketplace/bundles/plan-marshall/skills/marshall-steward/; marketplace/bundles/plan-marshall/skills/platform-runtime/; marketplace/bundles/plan-marshall/skills/tools-script-executor/; marketplace/bundles/pm-plugin-development/skills/finalize-step-deploy-target/ |
-| 42 | PLAN-TRUTH-178 | WS-01 | parked | marketplace/bundles/plan-marshall/skills/manage-findings/scripts/; marketplace/bundles/plan-marshall/skills/phase-5-execute/scripts/scope_creep_check.py; marketplace/bundles/plan-marshall/skills/tools-file-ops/scripts/constants.py; test/plan-marshall/manage-findings/; test/plan-marshall/phase-5-execute/ |
-| 43 | PLAN-TRUTH-180 | WS-01 | parked | marketplace/bundles/plan-marshall/skills/manage-config/scripts/manage-config.py; marketplace/bundles/plan-marshall/skills/manage-status/scripts/; marketplace/bundles/plan-marshall/skills/phase-5-execute/scripts/scope_creep_check.py; test/plan-marshall/manage-config/; test/plan-marshall/manage-status/; test/plan-marshall/phase-5-execute/ |
-| 44 | PLAN-TRUTH-181 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/extension-api/scripts/extension_discovery.py; marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/standards/landing-payload-spec.md; marketplace/bundles/plan-marshall/skills/script-shared/scripts/; marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/SKILL.md; marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/scripts/; test/plan-marshall/phase-6-finalize/; test/pm-plugin-development/ext-self-review-plan-marshall/ |
-| 45 | PLAN-TRUTH-182 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md; marketplace/bundles/pm-dev-java/.claude-plugin/plugin.json; marketplace/bundles/pm-dev-java/README.md; marketplace/bundles/pm-dev-java/skills/ext-self-review-java/; test/pm-dev-java/ext-self-review-java/ |
-| 46 | PLAN-TRUTH-183 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md; marketplace/bundles/pm-dev-python/.claude-plugin/plugin.json; marketplace/bundles/pm-dev-python/README.md; marketplace/bundles/pm-dev-python/skills/ext-self-review-python/; test/pm-dev-python/ext-self-review-python/ |
-| 47 | PLAN-TRUTH-184 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md; marketplace/bundles/pm-dev-frontend/.claude-plugin/plugin.json; marketplace/bundles/pm-dev-frontend/README.md; marketplace/bundles/pm-dev-frontend/skills/ext-self-review-javascript/; test/pm-dev-frontend/ext-self-review-javascript/ |
-| 48 | PLAN-TRUTH-185 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md; marketplace/bundles/pm-documents/.claude-plugin/plugin.json; marketplace/bundles/pm-documents/README.md; marketplace/bundles/pm-documents/skills/ext-self-review-documents/; test/pm-documents/ext-self-review-documents/ |
-| 49 | PLAN-TRUTH-186 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md; marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_cmd_pre_commit_verify_freshness.py; marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_freshness_crosscheck.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/pre-push-quality-gate.md; test/plan-marshall/manage-tasks/ |
+| 32 | PLAN-213 | WS-QA-06 | parked | marketplace/bundles/plan-marshall/skills/manage-tasks/; marketplace/bundles/plan-marshall/skills/phase-4-plan/; marketplace/bundles/plan-marshall/skills/phase-5-execute/ |
+| 33 | PLAN-214 | WS-QA-06 | parked | marketplace/bundles/plan-marshall/skills/phase-2-refine/; marketplace/bundles/plan-marshall/skills/plan-marshall/; marketplace/bundles/plan-marshall/skills/workflow-integration-github/ |
+| 34 | PLAN-215 | WS-QA-06 | parked | marketplace/bundles/plan-marshall/skills/manage-architecture/; marketplace/bundles/plan-marshall/skills/manage-lessons/; marketplace/bundles/plan-marshall/skills/tools-script-executor/ |
+| 35 | PLAN-216 | WS-QA-07 | parked | marketplace/bundles/plan-marshall/skills/manage-findings/; marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/; marketplace/bundles/pm-plugin-development/skills/plugin-doctor/ |
+| 36 | PLAN-217 | WS-QA-07 | parked | marketplace/bundles/plan-marshall/skills/manage-logging/; marketplace/bundles/plan-marshall/skills/plan-retrospective/ |
+| 37 | PLAN-218 | WS-QA-09 | parked | marketplace/bundles/plan-marshall/skills/manage-config/ |
+| 38 | PLAN-219 | WS-QA-08 | parked | marketplace/bundles/plan-marshall/skills/phase-6-finalize/ |
+| 39 | PLAN-220 | WS-QA-08 | parked | marketplace/bundles/plan-marshall/skills/phase-6-finalize/; marketplace/bundles/plan-marshall/skills/tools-integration-ci/ |
+| 40 | PLAN-221 | WS-QA-02 | parked | marketplace/bundles/plan-marshall/skills/marshall-steward/; marketplace/bundles/plan-marshall/skills/platform-runtime/; marketplace/bundles/plan-marshall/skills/tools-script-executor/; marketplace/bundles/pm-plugin-development/skills/finalize-step-deploy-target/ |
+| 41 | PLAN-TRUTH-178 | WS-01 | parked | marketplace/bundles/plan-marshall/skills/manage-findings/scripts/; marketplace/bundles/plan-marshall/skills/phase-5-execute/scripts/scope_creep_check.py; marketplace/bundles/plan-marshall/skills/tools-file-ops/scripts/constants.py; test/plan-marshall/manage-findings/; test/plan-marshall/phase-5-execute/ |
+| 42 | PLAN-TRUTH-180 | WS-01 | parked | marketplace/bundles/plan-marshall/skills/manage-config/scripts/manage-config.py; marketplace/bundles/plan-marshall/skills/manage-status/scripts/; marketplace/bundles/plan-marshall/skills/phase-5-execute/scripts/scope_creep_check.py; test/plan-marshall/manage-config/; test/plan-marshall/manage-status/; test/plan-marshall/phase-5-execute/ |
+| 43 | PLAN-TRUTH-181 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/extension-api/scripts/extension_discovery.py; marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/standards/landing-payload-spec.md; marketplace/bundles/plan-marshall/skills/script-shared/scripts/; marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/SKILL.md; marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/scripts/; test/plan-marshall/phase-6-finalize/; test/pm-plugin-development/ext-self-review-plan-marshall/ |
+| 44 | PLAN-TRUTH-182 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md; marketplace/bundles/pm-dev-java/.claude-plugin/plugin.json; marketplace/bundles/pm-dev-java/README.md; marketplace/bundles/pm-dev-java/skills/ext-self-review-java/; test/pm-dev-java/ext-self-review-java/ |
+| 45 | PLAN-TRUTH-183 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md; marketplace/bundles/pm-dev-python/.claude-plugin/plugin.json; marketplace/bundles/pm-dev-python/README.md; marketplace/bundles/pm-dev-python/skills/ext-self-review-python/; test/pm-dev-python/ext-self-review-python/ |
+| 46 | PLAN-TRUTH-184 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md; marketplace/bundles/pm-dev-frontend/.claude-plugin/plugin.json; marketplace/bundles/pm-dev-frontend/README.md; marketplace/bundles/pm-dev-frontend/skills/ext-self-review-javascript/; test/pm-dev-frontend/ext-self-review-javascript/ |
+| 47 | PLAN-TRUTH-185 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md; marketplace/bundles/pm-documents/.claude-plugin/plugin.json; marketplace/bundles/pm-documents/README.md; marketplace/bundles/pm-documents/skills/ext-self-review-documents/; test/pm-documents/ext-self-review-documents/ |
+| 48 | PLAN-TRUTH-186 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md; marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_cmd_pre_commit_verify_freshness.py; marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_freshness_crosscheck.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/pre-push-quality-gate.md; test/plan-marshall/manage-tasks/ |
