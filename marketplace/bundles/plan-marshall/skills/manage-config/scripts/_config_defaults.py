@@ -799,11 +799,40 @@ def _seed_verify_steps() -> dict:
     written. Verification steps own no params, so every value is the empty object
     ``{}`` (config-less); key insertion order is the execution order.
 
+    The seed is a WHOLE-MAP seed: ``sync-defaults`` copies it wholesale only
+    when ``plan.phase-5-execute.verification_steps`` is wholly absent. A present
+    map is atomic-once-present and is never expanded with missing ids — each
+    missing id is held for the ask-before-add gate instead (see
+    ``_cmd_sync_defaults._deep_merge_missing``). No ``default_on`` filter lives
+    here; exclusion is an operator decision the merge honours, never a seed
+    omission.
+
     Returns:
         The keyed-map serial form: an id-keyed dict mapping each built-in
         verify-step ID to an empty param object, in execution order.
     """
     return {step_id: {} for step_id in _verify_step_ids()}
+
+
+# Operator-curated keyed step maps and the removal-intent key — the SINGLE
+# source both consumers derive from (``_cmd_sync_defaults`` for the merge
+# guard/report, ``_cmd_quality_phases`` for the remove-step record). A third
+# copy as a literal is a defect: if one copy changes, removal and sync
+# silently disagree about which maps are guarded.
+OPERATOR_STEP_MAP_LOCATIONS: tuple[tuple[str, str], ...] = (
+    ('phase-5-execute', 'verification_steps'),
+    ('phase-6-finalize', 'steps'),
+)
+# Operator step-intent key persisted per phase section (e.g.
+# ``plan.phase-5-execute.removed_steps``). ``remove-step`` appends the removed
+# step id; ``add-step`` clears it on explicit re-add; ``set-steps`` drops ids
+# that are present again. The key is intentionally absent from
+# ``get_default_config()`` so the deep-merge preserves an existing list
+# verbatim and never seeds one. The merge consults it only for reporting
+# (a held id crossing this list lands in the distinct ``re_added`` bucket);
+# the no-auto-expand guarantee itself is structural and holds even when this
+# list is absent.
+OPERATOR_REMOVED_STEPS_KEY = 'removed_steps'
 
 
 # Canonical-verify step prefix. A ``per_deliverable_build`` list entry MUST be a

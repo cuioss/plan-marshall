@@ -17,7 +17,12 @@ from _config_core import (
     save_config,
     success_exit,
 )
-from _config_defaults import get_default_config, stamp_provisioning_fields
+from _config_defaults import (
+    OPERATOR_REMOVED_STEPS_KEY,
+    OPERATOR_STEP_MAP_LOCATIONS,
+    get_default_config,
+    stamp_provisioning_fields,
+)
 from _manifest_lanes import _IMMUNE_TO_OFF_CLASSES, LANE_TIERS, _effective_lane_tier
 from command_forms import STEWARD_COMMAND
 
@@ -37,10 +42,33 @@ RETIRED_STEP_KEY_RENAMES: dict[str, str] = {
 }
 
 # The two keyed-map step containers a rename pass walks: (phase key, map key).
-_STEP_MAP_LOCATIONS: tuple[tuple[str, str], ...] = (
-    ('phase-5-execute', 'verification_steps'),
-    ('phase-6-finalize', 'steps'),
-)
+# Derived from the single source in :mod:`_config_defaults` — never restated
+# as a literal here.
+_STEP_MAP_LOCATIONS: tuple[tuple[str, str], ...] = OPERATOR_STEP_MAP_LOCATIONS
+
+
+def _canonical_step_id(step_id: str) -> str:
+    """Return the canonical id for ``step_id`` via the retired-key renames.
+
+    Removal records are written by ``remove-step`` in whatever form the
+    operator named, which may be a retired id the map migration has since
+    canonicalized. Comparing canonical forms on both sides keeps a recorded
+    removal matching the map it constrains.
+    """
+    return RETIRED_STEP_KEY_RENAMES.get(step_id, step_id)
+
+
+def _is_operator_step_map(prefix: str, key: str) -> bool:
+    """Return True when ``prefix.key`` is an operator-curated step map.
+
+    Derived from :data:`_STEP_MAP_LOCATIONS` rendered as dotted paths
+    (``plan.phase-5-execute.verification_steps`` and
+    ``plan.phase-6-finalize.steps``) — never restated as literals. A present
+    map at either location is atomic-once-present: the merge never adds a
+    missing step id to it without an explicit operator answer — it holds the
+    id for the ask-before-add gate instead (see :func:`_deep_merge_missing`).
+    """
+    return any(prefix == f'plan.{phase}' and key == map_key for phase, map_key in _STEP_MAP_LOCATIONS)
 
 
 def _rename_in_map(steps_map: dict, prefix: str, renamed: list[str]) -> dict:
@@ -82,8 +110,10 @@ def _migrate_retired_step_keys(live: dict, renamed: list[str]) -> dict:
     ``plan.phase-6-finalize.steps``, applying :func:`_rename_in_map` to each. Runs
     BEFORE the deep-merge so the canonical is already present when the merge
     inspects the map — the merge then never re-adds a default canonical alongside a
-    surviving retired key (which would produce a double review step). Mutates
-    ``live`` in place and returns it.
+    surviving retired key (which would produce a double review step). The phase's
+    ``removed_steps`` list is canonicalized through the same table (deduped,
+    order-preserving) so a removal recorded under a retired id keeps constraining
+    the map it was recorded against. Mutates ``live`` in place and returns it.
     """
     plan = live.get('plan')
     if not isinstance(plan, dict):
@@ -97,6 +127,13 @@ def _migrate_retired_step_keys(live: dict, renamed: list[str]) -> dict:
             continue
         prefix = f'plan.{phase_key}.{map_key}'
         phase[map_key] = _rename_in_map(steps_map, prefix, renamed)
+        raw_removed = phase.get(OPERATOR_REMOVED_STEPS_KEY)
+        if isinstance(raw_removed, list):
+            seen: dict[str, None] = {}
+            for entry in raw_removed:
+                if isinstance(entry, str) and entry:
+                    seen.setdefault(_canonical_step_id(entry))
+            phase[OPERATOR_REMOVED_STEPS_KEY] = list(seen)
     return live
 
 
@@ -171,9 +208,18 @@ def _migrate_run_at_all_to_lane(live: dict, migrated: list[str]) -> dict:
 
     Reads each gate's retired run_at_all value from its legacy location, maps it
     (:data:`_RUN_AT_ALL_TO_LANE`), writes the owning step's ``lane`` override
-    (materializing ``default:pre-push-quality-gate`` for ``qgate``), and removes
-    the legacy run_at_all key so the subsequent deep-merge back-fills the
-    newly-materialized ``lane:off`` / ``lane:ask`` steps cleanly.
+    — materializing ``default:pre-push-quality-gate`` for ``qgate`` only when
+    no ``steps`` map exists yet to protect — and removes the legacy run_at_all
+    key so the subsequent deep-merge back-fills the newly-materialized
+    ``lane:off`` / ``lane:ask`` steps cleanly.
+
+    D1 deferral: when ``phase-6-finalize.steps`` is already present as a dict
+    but carries no entry for the ``qgate`` owner, the migration does NOT
+    materialize the missing owner — a present map is never expanded, not even
+    by legacy migration. The ``qgate`` value is retained untouched and the
+    deferral is reported, so a later run can apply the lane after ``add-step``
+    restores membership (surfaced to the operator via the ``held_for_ask`` /
+    ``review-held-defaults`` path instead of silently restoring the step).
 
     Legacy locations:
 
@@ -198,14 +244,25 @@ def _migrate_run_at_all_to_lane(live: dict, migrated: list[str]) -> dict:
 
     # qgate — flat phase-level sibling.
     if 'qgate' in phase6:
-        legacy = phase6.pop('qgate')
+        legacy = phase6['qgate']
         mapped = _RUN_AT_ALL_TO_LANE.get(legacy) if isinstance(legacy, str) else None
         owner = _CEREMONY_GATE_OWNER_STEP['qgate']
-        if mapped is not None:
-            _set_step_lane(phase6, owner, mapped)
-            migrated.append(f'plan.phase-6-finalize.qgate={legacy} -> steps[{owner}].lane={mapped}')
+        steps_map = phase6.get('steps')
+        owner_present = isinstance(steps_map, dict) and _find_step_key(steps_map, owner) is not None
+        if mapped is not None and isinstance(steps_map, dict) and not owner_present:
+            # D1 deferral: the steps map is present but carries no entry for
+            # the owner — materializing it here would expand a curated map by
+            # another route. Retain qgate untouched so a later run can migrate
+            # it after add-step restores membership; report the deferral.
+            # Falls through to the step-owned gates below (no early return).
+            migrated.append(f'plan.phase-6-finalize.qgate={legacy} -> deferred until steps[{owner}] is accepted')
         else:
-            migrated.append(f'plan.phase-6-finalize.qgate={legacy} -> (auto: omitted)')
+            del phase6['qgate']
+            if mapped is not None:
+                _set_step_lane(phase6, owner, mapped)
+                migrated.append(f'plan.phase-6-finalize.qgate={legacy} -> steps[{owner}].lane={mapped}')
+            else:
+                migrated.append(f'plan.phase-6-finalize.qgate={legacy} -> (auto: omitted)')
 
     # self_review / simplify / security_audit — step-owned params.
     steps_map = phase6.get('steps')
@@ -251,7 +308,14 @@ def _record_added_paths(value: object, prefix: str, added: list[str]) -> None:
             _record_added_paths(sub_value, f'{prefix}.{key}', added)
 
 
-def _deep_merge_missing(live: dict, defaults: dict, prefix: str, added: list[str]) -> dict:
+def _deep_merge_missing(
+    live: dict,
+    defaults: dict,
+    prefix: str,
+    added: list[str],
+    held_for_ask: list[str] | None = None,
+    re_added: list[str] | None = None,
+) -> dict:
     """Recursively add keys present in ``defaults`` but absent from ``live``.
 
     Semantics:
@@ -268,6 +332,20 @@ def _deep_merge_missing(live: dict, defaults: dict, prefix: str, added: list[str
       just the subtree root — so downstream provenance checks recognize each
       wholesale-copied leaf row as newly-added.
 
+    Operator step-map atomicity (D1): when ``prefix.key`` is an operator-curated
+    step map (see :func:`_is_operator_step_map`) and the map is already present
+    in ``live`` as a dict, missing step ids are NEVER auto-added. Each missing
+    step id's dotted path is appended to ``held_for_ask`` (when supplied) for
+    the ask-before-add gate instead — once per newly-discovered not-yet-selected
+    step, never auto-added — except ids that cross an explicit operator removal
+    (present in the phase's ``removed_steps`` list), which go to ``re_added``
+    (D2) so a back-fill crossing an operator decision never reads as a routine
+    addition. A step id already present keeps the standard recurse-into-dicts
+    behaviour so missing per-step params of a KEPT step are still back-filled;
+    only the map membership itself is atomic. When the whole map key is absent
+    from ``live``, the default map is copied wholesale as before (a fresh
+    project seeding, not an expansion of a curated map).
+
     Ownerless-step interaction: an ownerless ``steps`` / ``verification_steps``
     entry now defaults to ``None`` (no noisy empty ``{}``). Because ``None`` is a
     non-dict atomic value, a step id absent from ``live`` is back-filled with
@@ -283,17 +361,56 @@ def _deep_merge_missing(live: dict, defaults: dict, prefix: str, added: list[str
         defaults: The default config subtree to merge from.
         prefix: Dotted path prefix for the current subtree (for reporting).
         added: Accumulator of dotted paths that were newly added.
+        held_for_ask: Optional accumulator of dotted step paths held for the
+            ask-before-add gate (missing step ids in a present operator map
+            that were deliberately NOT auto-added). ``None`` disables holding
+            (the ids are still skipped, just not reported).
+        re_added: Optional accumulator of dotted step paths held because they
+            cross an explicit operator removal (the step id is in the phase's
+            ``removed_steps`` list). Each entry names the crossed decision so
+            the report distinguishes "re-adding something removed" from a
+            routine new-default addition. ``None`` folds these into
+            ``held_for_ask`` instead of splitting them out.
 
     Returns:
         The mutated ``live`` subtree.
     """
     for key, default_value in defaults.items():
         path = f'{prefix}.{key}' if prefix else key
+        if _is_operator_step_map(prefix, key) and key in live:
+            live_map = live[key]
+            if not isinstance(live_map, dict) or not isinstance(default_value, dict):
+                # A present-but-malformed map is preserved untouched.
+                continue
+            # Atomic-once-present: never add a missing step id to a curated map.
+            # Recurse only into step ids the operator kept, to back-fill missing
+            # per-step params of a kept step; hold every absent id for ask.
+            removed: list[str] = []
+            if isinstance(live, dict):
+                raw_removed = live.get(OPERATOR_REMOVED_STEPS_KEY, [])
+                if isinstance(raw_removed, list):
+                    removed = [_canonical_step_id(s) for s in raw_removed if isinstance(s, str)]
+            for step_id, step_default in default_value.items():
+                dotted = f'{path}.{step_id}'
+                if step_id not in live_map:
+                    if _canonical_step_id(step_id) in removed:
+                        entry = f'{dotted} (crosses operator removal)'
+                        if re_added is not None:
+                            re_added.append(entry)
+                        elif held_for_ask is not None:
+                            held_for_ask.append(entry)
+                    elif held_for_ask is not None:
+                        held_for_ask.append(dotted)
+                    continue
+                live_params = live_map[step_id]
+                if isinstance(live_params, dict) and isinstance(step_default, dict):
+                    _deep_merge_missing(live_params, step_default, dotted, added, held_for_ask, re_added)
+            continue
         if key not in live:
             live[key] = default_value
             _record_added_paths(default_value, path, added)
         elif isinstance(default_value, dict) and isinstance(live[key], dict):
-            _deep_merge_missing(live[key], default_value, path, added)
+            _deep_merge_missing(live[key], default_value, path, added, held_for_ask, re_added)
     return live
 
 
@@ -423,6 +540,22 @@ def cmd_sync_defaults(args) -> dict:
     step (Step 8b), never at init or by sync-defaults. The deep-merge therefore
     back-fills other missing default keys while leaving the user's seeded
     ``build.map`` untouched.
+
+    Operator step-map atomicity (D1): a present
+    ``plan.phase-5-execute.verification_steps`` / ``plan.phase-6-finalize.steps``
+    map is never expanded with missing step ids — each missing id is held for
+    the ask-before-add gate (``held_for_ask``) instead of auto-added, whether
+    the gap comes from an explicit ``remove-step`` or from a curated map that
+    simply never included the id. Only a wholly absent map is seeded wholesale.
+
+    Report distinction (D2): a held id that crosses an explicit operator
+    removal (the id is in the phase's ``removed_steps`` list) is reported in
+    the distinct ``re_added`` bucket — each entry naming the crossed decision
+    — never folded into ``added``. ``added[]`` carries genuine first-seen
+    defaults only (wholesale seeds and non-step keys); ``held_for_ask[]``
+    carries curated-but-never-removed gaps; ``re_added[]`` carries gaps that
+    cross a removal. A back-fill that crosses an operator decision can therefore
+    never read as a routine addition.
     """
     if not is_initialized():
         return error_exit(f'marshal.json not found. Run command {STEWARD_COMMAND} first')
@@ -437,7 +570,9 @@ def cmd_sync_defaults(args) -> dict:
     _migrate_run_at_all_to_lane(live, migrated)
 
     added: list[str] = []
-    merged = _deep_merge_missing(live, defaults, '', added)
+    held_for_ask: list[str] = []
+    re_added: list[str] = []
+    merged = _deep_merge_missing(live, defaults, '', added, held_for_ask, re_added)
 
     # Materialize an explicit lane on every lane-less phase-6-finalize step. Runs
     # AFTER the deep-merge (consumes the populated ``added`` accumulator to
@@ -471,6 +606,10 @@ def cmd_sync_defaults(args) -> dict:
         {
             'added': sorted(added),
             'added_count': len(added),
+            'held_for_ask': sorted(held_for_ask),
+            'held_for_ask_count': len(held_for_ask),
+            're_added': sorted(re_added),
+            're_added_count': len(re_added),
             'renamed': sorted(renamed),
             'renamed_count': len(renamed),
             'migrated': sorted(migrated),

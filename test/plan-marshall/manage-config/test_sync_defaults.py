@@ -40,6 +40,15 @@ _config_defaults_mod = load_script_module(
 
 cmd_sync_defaults = _sync_mod.cmd_sync_defaults
 
+_cmd_quality_phases_mod = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_quality_phases.py', module_name='_cmd_quality_phases_for_sync_flow'
+)
+_cmd_system_plan_mod = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_system_plan.py', module_name='_cmd_system_plan_for_sync_flow'
+)
+
+cmd_plan = _cmd_system_plan_mod.cmd_plan
+
 
 # The namespace the real ``sync-defaults`` parser produces, built ONCE (parse_ns
 # re-executes the script module on every call) and copied per test.
@@ -312,11 +321,12 @@ def test_sync_defaults_deep_merges_missing_siblings_into_keyed_map_steps(plan_co
 
 
 def test_sync_defaults_backfills_missing_steps_into_pruned_keyed_map(plan_context):
-    """A user's pruned single-entry steps map gains the missing default steps.
+    """A user's pruned single-entry steps map is NOT expanded — missing ids are held for ask.
 
-    The schema default is the keyed map, and the deep-merge recurses into it, so a
-    user who pruned steps to a single entry gets the missing default step keys
-    back-filled (each as a new top-level step key).
+    Operator step-map atomicity (D1): a present map is never expanded with
+    missing step ids, whether the gap comes from an explicit ``remove-step``
+    or from a curated map that simply never included the id. Each missing id
+    is held for the ask-before-add gate instead of auto-added.
     """
     # user pruned the finalize steps to a single config-less entry
     _write_marshal(
@@ -332,9 +342,10 @@ def test_sync_defaults_backfills_missing_steps_into_pruned_keyed_map(plan_contex
     assert isinstance(steps, dict)
     # the user's pruned entry survives
     assert 'default:push' in steps
-    # a missing default step is back-filled and reported as a new step key
-    assert 'default:archive-plan' in steps
-    assert 'plan.phase-6-finalize.steps.default:archive-plan' in result['added']
+    # a missing default step is NOT back-filled — it is held for ask
+    assert 'default:archive-plan' not in steps
+    assert 'plan.phase-6-finalize.steps.default:archive-plan' not in result['added']
+    assert 'plan.phase-6-finalize.steps.default:archive-plan' in result['held_for_ask']
 
 
 def test_sync_defaults_is_idempotent(plan_context):
@@ -456,10 +467,11 @@ def test_sync_defaults_materializes_all_finalize_steps_as_keyed_map_form(plan_co
 
 
 def test_sync_defaults_preserves_present_steps_map_untouched(plan_context):
-    """A present `steps` map's existing keys are preserved; missing default keys are back-filled.
+    """A present `steps` map's existing keys are preserved; missing ids are held, never back-filled.
 
-    The deep-merge recurses into a present keyed map: a user-supplied step key is
-    preserved verbatim, while every missing default step key is back-filled.
+    Atomic-once-present (D1): a user-supplied step key is preserved verbatim,
+    while every missing default step key is held for the ask-before-add gate
+    instead of back-filled.
     """
     # a marshal.json whose finalize steps already carry a pruned keyed map
     _write_marshal(
@@ -476,8 +488,9 @@ def test_sync_defaults_preserves_present_steps_map_untouched(plan_context):
     assert 'default:create-pr' in steps
     # the present step key is NOT reported as added
     assert 'plan.phase-6-finalize.steps.default:create-pr' not in result['added']
-    # a missing default step key IS back-filled
-    assert 'default:archive-plan' in steps
+    # a missing default step key is NOT back-filled — it is held for ask
+    assert 'default:archive-plan' not in steps
+    assert 'plan.phase-6-finalize.steps.default:archive-plan' in result['held_for_ask']
 
 
 def test_sync_defaults_is_idempotent_against_keyed_map_steps(plan_context):
@@ -890,15 +903,15 @@ def test_sync_defaults_materializes_preexisting_steps_to_effective_lane(plan_con
 
 
 def test_sync_defaults_materializes_freshly_merged_default_step_to_off(plan_context):
-    """A freshly deep-merged NON-IMMUNE default step that lacks a lane is materialized to `off`.
+    """A present map is NOT expanded, so there is no freshly-merged row to materialize.
 
-    `default:pre-submission-self-review` is a default_on:true step absent from the
-    sparse input config; the deep-merge back-fills it (its dotted path lands in
-    `added`), and its `adversarial` class is a real opt-out target, so the
-    materializer fills it with `lane: off` (opt-in) rather than its `standard`
-    effective lane.
+    Atomic-once-present (D1) supersedes the former opt-in fill for this shape:
+    `default:pre-submission-self-review` is absent from the sparse input config,
+    so the deep-merge HOLDS it for ask (its dotted path lands in `held_for_ask`,
+    never in `added`) and the materializer never sees it. Only the pre-existing
+    core step materializes — to its effective lane, never `off`.
     """
-    # sparse input: one pre-existing step; every other default step is fresh
+    # sparse input: one pre-existing step; every other default step is held
     _write_marshal(
         plan_context.fixture_dir,
         {'plan': {'phase-6-finalize': {'steps': {_CORE_STEP: {}}}}},
@@ -909,22 +922,22 @@ def test_sync_defaults_materializes_freshly_merged_default_step_to_off(plan_cont
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
     steps = config['plan']['phase-6-finalize']['steps']
-    # freshly-merged NON-immune default step → off (opt-in), reported
-    assert steps[_ADVERSARIAL_STEP]['lane'] == 'off'
-    assert _materialized_entry(_ADVERSARIAL_STEP, 'off') in result['materialized']
+    # the absent NON-immune default step is held for ask, never merged
+    assert _ADVERSARIAL_STEP not in steps
+    assert f'plan.phase-6-finalize.steps.{_ADVERSARIAL_STEP}' in result['held_for_ask']
+    assert f'plan.phase-6-finalize.steps.{_ADVERSARIAL_STEP}' not in result['added']
     # the pre-existing core step still materializes to its effective lane, not off
     assert steps[_CORE_STEP]['lane'] == 'minimal'
 
 
 def test_sync_defaults_materializes_freshly_merged_immune_step_to_its_effective_lane(plan_context):
-    """MATCHED PAIR with the test above: a freshly-merged IMMUNE row is NOT filled with `off`.
+    """MATCHED PAIR with the test above: a held IMMUNE row is equally absent.
 
-    `default:archive-plan` is equally freshly-merged and equally lane-less, and
-    differs from the self-review row above in exactly one respect: its class is on
-    the mandatory floor, so an `off` there could never opt anything out. Filling it
-    with `off` would leave the config advertising a disabled step the composer runs
-    on every plan — a row whose stored value and actual behaviour disagree from the
-    moment it is written.
+    `default:archive-plan` is equally held for ask (its class is on the
+    mandatory floor, but holding precedes any fill decision — a held id is
+    never written, so no fill applies). The former effective-lane fill for a
+    freshly-merged immune row now applies only to the wholesale-seed shape
+    (map wholly absent), covered by the wholesale test below.
     """
     _write_marshal(
         plan_context.fixture_dir,
@@ -936,11 +949,11 @@ def test_sync_defaults_materializes_freshly_merged_immune_step_to_its_effective_
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
     steps = config['plan']['phase-6-finalize']['steps']
-    # The row IS freshly merged — the precondition the opt-in rule keys on.
-    assert 'plan.phase-6-finalize.steps.default:archive-plan' in result['added']
-    # …yet it takes the class-effective fill, not the blanket off.
-    assert steps['default:archive-plan']['lane'] == 'minimal'
-    assert _materialized_entry('default:archive-plan', 'minimal') in result['materialized']
+    # The row is held — the precondition the old opt-in rule keyed on no longer occurs here.
+    assert 'plan.phase-6-finalize.steps.default:archive-plan' in result['held_for_ask']
+    assert 'plan.phase-6-finalize.steps.default:archive-plan' not in result['added']
+    # …so no fill is written for it at all.
+    assert 'default:archive-plan' not in steps
 
 
 def test_sync_defaults_materializes_wholesale_copied_steps_subtree_to_off(plan_context):
@@ -1270,3 +1283,178 @@ def test_sync_defaults_fresh_wizard_materialization_is_idempotent(plan_context):
     assert second['status'] == 'success'
     assert second['materialized'] == []
     assert second['materialized_count'] == 0
+
+
+# =============================================================================
+# D3 regression + positive controls (PLAN-TRUTH-168)
+# =============================================================================
+#
+# Remove-then-sync-absent regression plus genuine-new-default held positive
+# control, for both `verification_steps` and finalize `steps`, including the
+# re-add vs new-default report distinction.
+
+
+def test_sync_defaults_remove_then_sync_keeps_verification_step_absent(plan_context):
+    """D3 remove-absent: a real `remove-step` survives sync and is reported as re-add."""
+    _write_marshal(
+        plan_context.fixture_dir,
+        {
+            'plan': {
+                'phase-5-execute': {
+                    'verification_steps': {
+                        'default:verify:quality-gate': {},
+                        'default:verify:module-tests': {},
+                        'default:verify:coverage': {},
+                    },
+                }
+            }
+        },
+    )
+
+    removed = cmd_plan(
+        Namespace(
+            sub_noun='phase-5-execute',
+            verb='remove-step',
+            step='default:verify:coverage',
+        )
+    )
+    assert removed['status'] == 'success'
+
+    result = cmd_sync_defaults(_sync_ns())
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    verification_steps = config['plan']['phase-5-execute']['verification_steps']
+    assert 'default:verify:coverage' not in verification_steps
+    assert 'default:verify:quality-gate' in verification_steps
+    expected = 'plan.phase-5-execute.verification_steps.default:verify:coverage (crosses operator removal)'
+    assert expected in result['re_added']
+    assert not any('default:verify:coverage' in entry for entry in result['added'])
+
+
+def test_sync_defaults_remove_then_sync_keeps_finalize_step_absent(plan_context):
+    """D3 remove-absent: a real `remove-step` survives sync and is reported as re-add."""
+    _write_marshal(
+        plan_context.fixture_dir,
+        {
+            'plan': {
+                'phase-6-finalize': {
+                    'steps': {
+                        'default:push': {},
+                        'default:pre-submission-self-review': {},
+                        'default:archive-plan': {},
+                    },
+                }
+            }
+        },
+    )
+
+    removed = cmd_plan(
+        Namespace(
+            sub_noun='phase-6-finalize',
+            verb='remove-step',
+            step='default:pre-submission-self-review',
+        )
+    )
+    assert removed['status'] == 'success'
+
+    result = cmd_sync_defaults(_sync_ns())
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    steps = config['plan']['phase-6-finalize']['steps']
+    assert 'default:pre-submission-self-review' not in steps
+    assert 'default:push' in steps
+    expected = 'plan.phase-6-finalize.steps.default:pre-submission-self-review (crosses operator removal)'
+    assert expected in result['re_added']
+
+
+def test_sync_defaults_curated_map_without_step_is_held_not_expanded(plan_context):
+    """D3 curated-map: a pre-existing map that never included a step is not expanded without consent."""
+    _write_marshal(
+        plan_context.fixture_dir,
+        {'plan': {'phase-5-execute': {'verification_steps': {'default:verify:quality-gate': {}}}}},
+    )
+
+    result = cmd_sync_defaults(_sync_ns())
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    verification_steps = config['plan']['phase-5-execute']['verification_steps']
+    assert 'default:verify:module-tests' not in verification_steps
+    assert 'plan.phase-5-execute.verification_steps.default:verify:module-tests' in result['held_for_ask']
+    assert result['re_added'] == []
+    assert result['re_added_count'] == 0
+
+
+def test_sync_defaults_genuine_new_default_is_held_for_ask_never_auto_added(plan_context):
+    """D3 positive control: a genuine new default in a present map is held for ask, never auto-added."""
+    _write_marshal(
+        plan_context.fixture_dir,
+        {'plan': {'phase-6-finalize': {'steps': {'default:push': {}}}}},
+    )
+
+    result = cmd_sync_defaults(_sync_ns())
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    steps = config['plan']['phase-6-finalize']['steps']
+    assert 'default:archive-plan' not in steps
+    assert 'plan.phase-6-finalize.steps.default:archive-plan' in result['held_for_ask']
+    assert 'plan.phase-6-finalize.steps.default:archive-plan' not in result['added']
+
+
+def test_sync_defaults_retired_removal_id_matches_canonical_step(plan_context):
+    """D2 retired-id removal: a removal recorded under a retired id constrains the canonical step.
+
+    The retired-key migration canonicalizes the record, so the held
+    canonical id lands in `re_added` — not in `held_for_ask` as a routine
+    new default.
+    """
+    _write_marshal(
+        plan_context.fixture_dir,
+        {
+            'plan': {
+                'phase-6-finalize': {
+                    'steps': {'default:push': {}},
+                    'removed_steps': ['default:automated-review'],
+                }
+            }
+        },
+    )
+
+    result = cmd_sync_defaults(_sync_ns())
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    steps = config['plan']['phase-6-finalize']['steps']
+    assert 'plan-marshall:automatic-review' not in steps
+    expected = 'plan.phase-6-finalize.steps.plan-marshall:automatic-review (crosses operator removal)'
+    assert expected in result['re_added']
+    assert not any('automatic-review' in entry for entry in result['held_for_ask'])
+
+
+def test_sync_defaults_re_added_entries_name_the_crossed_decision(plan_context):
+    """D3 report distinction: every re_added entry names the crossed operator removal."""
+    _write_marshal(
+        plan_context.fixture_dir,
+        {
+            'plan': {
+                'phase-5-execute': {
+                    'verification_steps': {'default:verify:quality-gate': {}},
+                    'removed_steps': ['default:verify:coverage'],
+                }
+            }
+        },
+    )
+
+    result = cmd_sync_defaults(_sync_ns())
+
+    assert result['status'] == 'success'
+    assert result['re_added_count'] == len(result['re_added'])
+    assert result['re_added_count'] >= 1
+    for entry in result['re_added']:
+        assert 'crosses operator removal' in entry
+    assert result['added'] == sorted(result['added'])
+    assert result['held_for_ask'] == sorted(result['held_for_ask'])
+    assert result['re_added'] == sorted(result['re_added'])

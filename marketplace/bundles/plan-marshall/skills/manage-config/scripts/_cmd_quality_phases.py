@@ -20,6 +20,7 @@ from _config_core import (
     success_exit,
 )
 from _config_defaults import (
+    OPERATOR_REMOVED_STEPS_KEY,
     get_default_config,
     validate_gate_mode,
     validate_per_deliverable_build,
@@ -46,6 +47,40 @@ STEP_KEYS = {
     'phase-5-execute': 'verification_steps',
     'phase-6-finalize': 'steps',
 }
+
+# Operator step-intent key persisted per phase section — the single source in
+# :mod:`_config_defaults` (imported, never restated: a literal here would let
+# removal and sync disagree about the key). ``remove-step`` appends the
+# removed step id so a later ``sync-defaults`` has a durable removal signal
+# to consult for reporting (D2 splits a held id that crosses this list into
+# the distinct ``re_added`` bucket). The no-auto-expand guarantee itself is
+# structural — a present map is never expanded even when this list is
+# absent — so a curated map that never carried a step id needs no entry here
+# to stay unexpanded.
+REMOVED_STEPS_KEY = OPERATOR_REMOVED_STEPS_KEY
+
+
+def _read_removed_steps(section: dict) -> list[str]:
+    """Return the operator-removed step ids recorded on ``section``.
+
+    Reads ``section[REMOVED_STEPS_KEY]`` when it is a list of str, else an
+    empty list. Never raises — a malformed value degrades to no recorded
+    intent rather than failing the verb.
+    """
+    raw = section.get(REMOVED_STEPS_KEY, [])
+    if not isinstance(raw, list):
+        return []
+    return [s for s in raw if isinstance(s, str) and s]
+
+
+def _write_removed_steps(section: dict, removed: list[str]) -> None:
+    """Persist ``removed`` as the section's operator-removed list (deduped, ordered)."""
+    seen: dict[str, None] = {}
+    for step_id in removed:
+        if isinstance(step_id, str) and step_id and step_id not in seen:
+            seen[step_id] = None
+    section[REMOVED_STEPS_KEY] = list(seen)
+
 
 # Phases with simple scalar fields only
 SCALAR_PHASES = {'phase-1-init', 'phase-2-refine', 'phase-3-outline', 'phase-4-plan'}
@@ -548,6 +583,10 @@ def cmd_phase(args, phase_section: str) -> dict:
         sorted_map = {step_id: existing.get(step_id, {}) for step_id in sorted_ids}
         # Persist the keyed map directly (the sole on-disk shape).
         section[step_key] = sorted_map
+        # Reconcile operator intent: steps explicitly present again clear their
+        # removal record; steps still absent keep theirs so a later sync can
+        # report the crossing distinctly (D2).
+        _write_removed_steps(section, [s for s in _read_removed_steps(section) if s not in sorted_ids])
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)
@@ -569,6 +608,8 @@ def cmd_phase(args, phase_section: str) -> dict:
         sorted_map = {step_id: existing.get(step_id, {}) for step_id in sorted_ids}
         # Persist the keyed map directly (the sole on-disk shape).
         section[step_key] = sorted_map
+        # An explicit operator re-add clears the removal record for that id.
+        _write_removed_steps(section, [s for s in _read_removed_steps(section) if s != step])
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)
@@ -584,6 +625,11 @@ def cmd_phase(args, phase_section: str) -> dict:
         del existing[step]
         # Persist the keyed map directly (the sole on-disk shape).
         section[step_key] = existing
+        # Record the operator removal intent so the merge has a durable signal
+        # to consult for reporting (D2). The removal survives sync even without
+        # this record (a present map is never expanded), but the record is what
+        # lets the report name the crossing distinctly from a routine addition.
+        _write_removed_steps(section, [*_read_removed_steps(section), step])
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)
