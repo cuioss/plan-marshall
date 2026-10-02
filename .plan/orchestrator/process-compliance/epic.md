@@ -339,6 +339,33 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
   item 1, folded here).** Structured-queries-first bypass (straight to
   Grep/Glob, minor, no impact observed) — fourth instance class of the
   read-path discipline pattern.
+- **verification-feedback producer accept-set rejects `ci-verify-build` (drain
+  2026-10-02, `truth-168-003` item 8, unowned).** `ci_verify run` returns
+  `producers: [ci-verify-build]` with a one-invocation-per-producer contract,
+  but the verification-feedback guard accepts only build-runner, sonar,
+  pr-comment, plugin-doctor, pr-state, finalize-feedback. Red-CI triage
+  dead-ends; workaround `producer=pr-state`. Candidate: widen accept-set or
+  document taxonomy-to-producer mapping at the call site. No owning spec
+  (closest PLAN-19 verification-loop, not yet widened); candidate future work.
+- **No sanctioned file-scoped pytest on opencode target (drain 2026-10-02,
+  `truth-168-003` item 9, unowned).** R4 guard refuses bare pytest, wrapper
+  offers only whole-bundle module-tests (~20 min vs ~330s daemon cap). No
+  sanctioned re-run of touched test files after settle-band edits; CI is the
+  authoritative runner. Candidate: file-scoped suite surface or documented
+  exemption. No owning spec; candidate future work.
+- **Footprint gate treats `.plan/marshal.json` as docs-only (drain 2026-10-02,
+  `truth-168-003` item 10, unowned).** Steward landing #1677 skipped verify,
+  left main red on the canonical-order test. Candidate: treat
+  `.plan/marshal.json` as buildable or gate steward artifact landings on
+  verify. No owning spec; candidate future work.
+- **Re-filed `opencode-bootstrap-executor-fix-003.md` cannot archive (drain
+  2026-10-02, `archive_conflict`, open).** The live `inbox/` file carries the
+  same name as the already-archived staging source of PLAN-23, and the archive
+  verb refuses to clobber the audit record. Disposition stands (folded into
+  PLAN-23 at staging; recurrence noted in this drain's Watch entry) and is NOT
+  re-applied. Recovery is operator-side: retire the live file via `inbox archive
+  --as-name` under a non-colliding sender-preserving name. Left un-archived by
+  design so it stays visible to the next drain.
 
 ## Watches
 
@@ -414,4 +441,62 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
   (not yet staged): standardizing the preamble in the plan-spec template and the
   emitted hand-off line is candidate follow-up work — no owning spec exists
   (closest is WS-04 persona behavior, which owns rules, not the template/emit
-  format). Revisit at cleanup or on operator direction.
+   format). Revisit at cleanup or on operator direction.
+- **Drain 2026-10-02 (9 findings, no landings, no invalid).**
+  - `implement-plan-211-baseline-reconcile-001` (finding): direct `.plan` reads before
+    sanctioned `corpus read`/`resolve-path`, self-corrected, no ledger mutation.
+    Recurrence of the read-path discipline pattern (home: PLAN-14/PLAN-15 surfaces).
+    Absorbed as observed; no spec change.
+  - `implement-plan-211-baseline-reconcile-002` (finding): PLAN-211 first pass bypassed
+    phases 2-4/5/6 with partial verification. Historical record only; superseded by
+    the by-the-book redo in `-003`. Absorbed as observed; no spec change.
+  - `implement-plan-211-baseline-reconcile-003` (finding): redo by the book (init via
+    finalize, PR 1675 merged green, zero actionable review). Noted gap: finalize leaf
+    could not issue Task dispatches so 12 orchestrator-owned dispatched sub-steps did
+    not run. Recorded as Watch for PLAN-21 consideration; message absorbed as
+    observed, no spec change in this drain.
+  - `opencode-bootstrap-executor-fix-002` (finding): finalize session-identity resolver
+    misclassifies OpenCode-without-session as transcript-capable Claude
+    (`hook_not_configured` + `runtime-info harness: claude`). Owned by
+    finalize-machinery PLAN-07 (resolver itself) with here PLAN-13 shipped covering
+    `session_binding.py`; no re-stage. Absorbed as observed.
+  - `opencode-bootstrap-executor-fix-003` (finding): local green `verify` contaminated
+    by untracked generated `target/` tree; CI fix already landed on the plan branch
+    (pre-verify generate `--target all`). Already staged as PLAN-23 on 2026-09-29;
+    this message is the staging source. Folded into PLAN-23 as the source record;
+    expected surface unchanged by this drain fold (no new file surface in this message
+    beyond PLAN-23 scope — recorded explicitly).
+  - `truth-168-sync-defaults-reverting-remove-001` items 1-4 (finding): (1) direct
+    `.plan` read recurrence; (2) recipe-match/aspect-classify `--request-text`
+    verbatim vs Bash newline rule, workaround single-line title, zero-match
+    no-routing-impact; (3) manage-logging parentheses vs R1 guard, dash-only
+    workaround; (4) logical-vs-physical store path note, no action. Items 1-2 are
+    PLAN-10 deliverable 2/3 recurrences; folded into PLAN-10 as recurrence notes.
+    Expected surface unchanged by this fold (phase-1-init/ and probe paths already
+    declared — recorded explicitly). Item 3 is an opencode-guard facet with no
+    owning staged spec; carried in this Watch entry.
+  - `truth-168-sync-defaults-reverting-remove-002` items 5-7 (finding): (5) commit
+    trailer angle-brackets vs R1 redirect guard, Python helper workaround; (6)
+    `inbox detect orchestrated:true` vs transition mailbox probe `not_orchestrated`
+    on the same pointer, PLAN-10 D2 recurrence with confirmed root cause; (7)
+    whole-tree module-tests timeout on build server (capacity, not code failure).
+    Item 6 folded into PLAN-10 D2 as recurrence; expected surface unchanged
+    (`_cmd_lifecycle.py` already declared — recorded explicitly). Items 5/7 carried
+    in this Watch entry.
+  - `truth-168-sync-defaults-reverting-remove-003` items 8-10 (finding): (8)
+    `ci_verify` producer `ci-verify-build` rejected by verification-feedback guard
+    accept-set, workaround `producer=pr-state`; (9) targeted pytest guard-blocked,
+    no file-scoped suite surface, CI as authoritative runner; (10) pre-existing red
+    baseline from verify-skipped steward landing (#1677 `.plan/marshal.json` top-level
+    key, canonical-order table stale), repair riding as drive-by. Item 8 belongs to
+    PLAN-19 verification-loop scope, items 9-10 to PLAN-25 build-routing scope;
+    recorded here as Open-Defect-class observations (see Open Defects) rather than
+    spec edits in this drain — absorbed as observed with ownership pointers, no
+    surface change.
+  - `truth-168-sync-defaults-reverting-remove-004` items 11-13 (finding): owned
+    deviations — (11) direct `.plan` reads for diagnosis (no manage-* read verb for
+    build logs/config bytes/CI payloads); (12) one-word `runtime.target` restore
+    (`antigravity` to `claude`) via direct edit, diff-verified, flagged in PR body;
+    (13) two out-of-spec drive-by commits as landing blockers, named in commit
+    messages. Auditable deviations, operator review flagged upstream. Absorbed as
+    observed; no spec change.
