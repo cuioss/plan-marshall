@@ -4,18 +4,18 @@
 
 ## START HERE
 
-**Resume anchor**: 2026-10-01 — PLAN-11 RUNNING (plan cross-check-dated-archive-self-collision, operator-confirmed start, emitted on operator override of the indeterminate gate). It carries the folded D4: explicitly exclude the NO_PLAN plan-less sentinel from cross-check's live_plan candidates (operator-reported from a consumer project, corroborated at 391efbbd6); 5 deliverables, surface 7; claim-3 verdict corrected to rescoped=yes. Next action: wait for PLAN-11's landing message in inbox/, then analyze. Do NOT re-scope its spec while running. PLAN-10 stays staged behind it (shared orchestrator.py) and still overlaps live plans — re-check at next. Parked, do NOT emit: PLAN-03/05/06/07. Open operator questions: per-candidate vs whole-population fail-closed scope (Open Defect 2026-09-22); whether live plan antigravity (1-init since 2026-09-17) is abandoned. PLAN-09 lesson rows kept at findings/2026-09-28-plan-09-lesson-carry-over.md until the operator introduces a target — then move them and retire that file.
+**Resume anchor**: 2026-10-02 — CLEANUP DONE after the PLAN-11 landing; nothing running, inbox empty. Queue: PLAN-10 is the only staged row — re-grounded at 8665ddacf (7 claims: 5 corroborated, 2 contradicted+rescoped, 0 blocking), D5 sharpened with the merge-queue ejection case, no longer sequenced behind anything. Parked, do NOT emit: PLAN-03/05/06/07 (PM-MCP supersession; verdicts stale, deliberately not refreshed). Shipped: PLAN-01/02/04/08/09/11.
 
-2026-09-29 — CLEANUP DONE, restart-ready (PLAN-10 re-grounded + re-scoped at fa7b51774, surface 14 entries).
+Next action: OPERATOR DECISION. next emits nothing because the disjointness gate is closed for the whole repository (candidate comparison indeterminate — sibling_epic_spec indeterminate: 95, live_plan indeterminate: 1 = antigravity). Either (a) decide the gate's scope — per-candidate instead of whole-population fail-closed; that would be a new WS-04 spec — or (b) override to emit PLAN-10. Other open operator questions: is live plan antigravity (1-init since 2026-09-17) abandoned; the 24-epic legacy-layout sweep; routing of the git-config-injection hardening; settled-narrative relocation out of epic.md (deferred this pass). PLAN-09 lesson rows stay at findings/2026-09-28-plan-09-lesson-carry-over.md until the operator names a target.
+
+Before restarting a session: the plugin cache is stale relative to 8665ddacf (finalize-step-sync-plugin-cache failed on its staleness guard, lesson 2026-10-02-10-006) — a sync is owed and is outside the orchestrator's carve-out.
+
+LEDGER LIVES IN THE SHARED WORKTREE since 2026-10-01: orchestrator.use_worktree is ON (repository-wide, #1666). Every ledger read/write resolves to .plan/local/worktrees/_orchestrator (branch chore/orchestrator-ledger) — always take epic_dir and store_checkout from resolve-path, never a cwd-relative .plan/orchestrator path. Ledger commits do not reach main by themselves: until PLAN-10 ships land, the ledger branch is landed by hand. To see what is unlanded, run git -C {store_checkout} log origin/main..HEAD and git -C {store_checkout} status.
 
 2026-09-28 — PLAN-09 SHIPPED (#1652, 438a0a71f). #1641's revert of this tree restored from 88fcfc9ef and landed (#1656); record relocated to settled.md.
 
 2026-09-26 — QUEUE PARKED, PM-MCP SUPERSEDES IT (review-apparatus-001 drained); PLAN-09/10/11 later re-staged by operator decision.
-
-PREVIOUS ANCHOR (kept): Cleanup pass shipped (PR #1621, merge 54b4bb525): 30 A1 verdicts re-grounded, PLAN-10/PLAN-11 re-scoped. restart-check: ready.
 **Phase**: orchestrating
-**Running**:
-- PLAN-11 (WS-04) — plan=cross-check-dated-archive-self-collision
 **Parked**:
 - PLAN-03 (WS-02)
 - PLAN-05 (WS-03)
@@ -28,6 +28,7 @@ PREVIOUS ANCHOR (kept): Cleanup pass shipped (PR #1621, merge 54b4bb525): 30 A1 
 - PLAN-04 (WS-03) — plan=identifier-vocabulary-decision — PR #1543 — landing=landings/PLAN-04.md — status: shipped
 - PLAN-08 (WS-04) — plan=verdict-staleness-scoping — PR #1585 — landing=landings/PLAN-08.md — status: shipped
 - PLAN-09 (WS-05) — plan=orchestrator-worktree-substrate — PR #1652 — landing=landings/PLAN-09.md — status: shipped
+- PLAN-11 (WS-04) — plan=cross-check-dated-archive-self-collision — PR #1676 — landing=landings/PLAN-11.md — status: shipped
 
 ## Ordered Queue
 
@@ -38,4 +39,3 @@ PREVIOUS ANCHOR (kept): Cleanup pass shipped (PR #1621, merge 54b4bb525): 30 A1 
 | 3 | PLAN-06 | WS-04 | parked | marketplace/bundles/plan-marshall/skills/phase-1-init/**; marketplace/bundles/plan-marshall/skills/phase-6-finalize/**; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/_orchestrator_inbox.py; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py; marketplace/bundles/plan-marshall/skills/plan-orchestrator/standards/inbox-envelope.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/standards/landing-payload-spec.md; marketplace/bundles/pm-plugin-development/skills/tools-epic-surface-partition/scripts/_epic_partition.py; marketplace/bundles/pm-plugin-development/skills/tools-epic-surface-partition/scripts/epic-surface-partition.py; test/plan-marshall/phase-1-init/**; test/plan-marshall/phase-6-finalize/**; test/plan-marshall/plan-orchestrator/**; test/pm-plugin-development/tools-epic-surface-partition/** |
 | 4 | PLAN-07 | WS-04 | parked | marketplace/bundles/plan-marshall/skills/plan-orchestrator/SKILL.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/_orchestrator_inbox.py; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py; test/plan-marshall/plan-orchestrator/** |
 | 5 | PLAN-10 | WS-05 | staged | marketplace/bundles/plan-marshall/skills/manage-locks/**; marketplace/bundles/plan-marshall/skills/persona-plan-orchestrator/standards/orchestration-model.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/SKILL.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py; marketplace/bundles/plan-marshall/skills/plan-orchestrator/workflow/**; marketplace/bundles/plan-marshall/skills/tools-file-ops/scripts/orchestrator_worktree.py; marketplace/bundles/plan-marshall/skills/tools-integration-ci/**; marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py; marketplace/bundles/plan-marshall/skills/workflow-integration-github/scripts/_github_pr.py; test/plan-marshall/manage-locks/**; test/plan-marshall/plan-orchestrator/**; test/plan-marshall/tools-file-ops/**; test/plan-marshall/tools-integration-ci/**; test/plan-marshall/workflow-integration-git/** |
-| 6 | PLAN-11 | WS-04 | running | marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_sibling_collision.py; marketplace/bundles/plan-marshall/skills/plan-orchestrator/SKILL.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py; marketplace/bundles/plan-marshall/skills/plan-orchestrator/workflow/cleanup.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/workflow/orchestrate.md; test/plan-marshall/manage-status/**; test/plan-marshall/plan-orchestrator/test_orchestrator_corpus.py |
