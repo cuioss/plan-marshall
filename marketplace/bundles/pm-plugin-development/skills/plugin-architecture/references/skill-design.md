@@ -18,7 +18,7 @@ execute-task
 build-maven
 manage-files
 plan-retrospective
-sync-plugin-cache
+sync-harnesses
 ```
 
 ### Forbidden Pattern: Noun Suffixes

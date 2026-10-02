@@ -176,7 +176,7 @@ _AXES_NOTE = (
 # no error, and moves on believing the cache was pruned.
 REMEDY_OPERATOR = (
     'Repair is operator-only — this detector writes nothing. To repair the cache and '
-    'executor: (1) re-run the cache sync (`/sync-plugin-cache`) to move the cache '
+    'executor: (1) re-run the harness sync (`/sync-harnesses`) to move the cache '
     'forward; (2) prune the superseded version dirs with the marshall-steward '
     'cache-retention sweep — `python3 .plan/execute-script.py '
     'plan-marshall:marshall-steward:cache_retention sweep --apply` (WITHOUT `--apply` '

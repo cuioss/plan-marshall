@@ -511,7 +511,7 @@ def test_list_finalize_steps_discovers_project_skills(plan_context):
 
 
 # =============================================================================
-# list-finalize-steps ordering tests (lock in sync-plugin-cache head placement)
+# list-finalize-steps ordering tests (lock in finalize-step-sync-plugin-cache head placement)
 # =============================================================================
 
 
@@ -559,7 +559,7 @@ def test_list_finalize_steps_starts_with_built_ins(tmp_path):
 
 
 def test_list_finalize_steps_sync_and_deploy_are_project_steps(tmp_path):
-    """sync-plugin-cache and deploy-target are project-local steps, not built-in defaults.
+    """The harness-sync and deploy-target steps are project-local, not built-in defaults.
 
     They are meta-project-only project-local finalize-step skills (Source: project),
     discovered the same way as ``finalize-step-plugin-doctor`` — never built-in
@@ -570,8 +570,8 @@ def test_list_finalize_steps_sync_and_deploy_are_project_steps(tmp_path):
     names = [s['name'] for s in steps]
 
     # Neither is a built-in default.
-    assert 'default:sync-plugin-cache' not in names
-    assert 'default:deploy-target' not in names
+    assert 'default:finalize-step-sync-plugin-cache' not in names
+    assert 'default:finalize-step-deploy-target' not in names
 
     # Both are discovered as project steps in the real repo.
     by_name = {s['name']: s for s in steps}

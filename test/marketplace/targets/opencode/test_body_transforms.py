@@ -245,7 +245,7 @@ def test_read_directive_re_anchored_to_full_line():
 def _basic_lookup() -> dict[str, str]:
     return {
         'plan-marshall': 'plan-marshall-plan-marshall',
-        'sync-plugin-cache': 'plan-marshall-sync-plugin-cache',
+        'sync-harnesses': 'plan-marshall-sync-harnesses',
     }
 
 
@@ -269,9 +269,9 @@ def test_rewrite_slash_commands_with_action_arg():
 
 
 def test_rewrite_slash_commands_at_end_of_line():
-    body = 'And finally /sync-plugin-cache\n'
+    body = 'And finally /sync-harnesses\n'
     result = rewrite_slash_commands(body, _basic_lookup(), OPENCODE_SLASH_TEMPLATE)
-    assert result == 'And finally /plan-marshall-sync-plugin-cache\n'
+    assert result == 'And finally /plan-marshall-sync-harnesses\n'
 
 
 def test_rewrite_slash_commands_already_namespaced_passthrough():

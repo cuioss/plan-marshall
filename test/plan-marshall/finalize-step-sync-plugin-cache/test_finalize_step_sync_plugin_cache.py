@@ -3,24 +3,30 @@
 """Tests for the project-level finalize-step-sync-plugin-cache SKILL contract.
 
 On-main executor regeneration belongs to this project-level finalize step, NOT to
-``integrate_into_main``: after a successful cache sync, the step regenerates
-``.plan/execute-script.py`` against the freshly-synced cache, in BOTH worktree and
-no-worktree finalize flows (closing the no-worktree staleness gap).
+``integrate_into_main``: once the unified sync engine has synced the Claude
+target, the step regenerates ``.plan/execute-script.py`` against the
+freshly-synced cache, in BOTH worktree and no-worktree finalize flows (closing
+the no-worktree staleness gap).
 
 The step body is a markdown workflow (no executable Python body), so these tests
 assert the documented contract — the regen invocation ordering, its
 non-fatal / unconditional-after-success semantics, the both-flows guarantee, and
-the relocation of regen ownership away from ``integrate_into_main`` — guarding
-against silent regression of the wiring.
+that regen ownership sits with this step rather than with
+``integrate_into_main`` — guarding against silent regression of the wiring.
 """
 
 from __future__ import annotations
 
 import pytest
+from _documented_example_scan import BARE_PYTHON_TARGETS_PREFIX
 
 from conftest import PROJECT_ROOT
 
 _SKILL_MD = PROJECT_ROOT / '.claude' / 'skills' / 'finalize-step-sync-plugin-cache' / 'SKILL.md'
+
+#: The unified sync engine invocation the step prescribes. Built from the shared
+#: prefix constant so this module never opens a line with the invocation itself.
+_ENGINE_INVOCATION = f'{BARE_PYTHON_TARGETS_PREFIX}sync.py'
 
 
 @pytest.fixture(scope='module')
@@ -35,9 +41,9 @@ class TestCacheSyncStepRegenContract:
     def test_regenerates_executor_after_sync(self, skill_text: str) -> None:
         """The step invokes ``generate_executor generate`` (the on-main regen) AFTER
         the sync-engine invocation."""
-        sync_idx = skill_text.find('sync-plugin-cache/scripts/sync.py')
+        sync_idx = skill_text.find(_ENGINE_INVOCATION)
         regen_idx = skill_text.find('tools-script-executor:generate_executor generate')
-        assert sync_idx != -1, 'sync.py invocation missing from the step body'
+        assert sync_idx != -1, 'sync engine invocation missing from the step body'
         assert regen_idx != -1, 'generate_executor generate invocation missing from the step body'
         # Regen is documented AFTER the sync invocation.
         assert regen_idx > sync_idx

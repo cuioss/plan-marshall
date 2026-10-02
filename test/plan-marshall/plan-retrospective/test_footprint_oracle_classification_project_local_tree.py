@@ -64,7 +64,10 @@ class TestProjectLocalTreeSurvivesFilter:
         )
         diff = _write_diff(
             tmp_path,
-            ['.plan/plans/oracle-plan/status.json', '.claude/skills/sync-plugin-cache/scripts/sync.py'],
+            [
+                '.plan/plans/oracle-plan/status.json',
+                '.claude/skills/finalize-step-era-stamp-fill/scripts/era_stamp_fill.py',
+            ],
         )
 
         result = run_script(MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff))

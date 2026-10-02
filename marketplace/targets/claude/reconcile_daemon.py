@@ -8,10 +8,10 @@ nothing reconciling it — drifting over time to ``registered``-but-``socket_abs
 (enrolled, believed available, actually dead), after which builds silently fall
 back to in-process execution. The drift is a **meta-project phenomenon**: consumer
 repositories do not regenerate the executor or bump the cache at finalize, so they
-never accumulate the skew. That is why this reconcile lives in the project-local
-``sync-plugin-cache`` surface (invoked by ``/sync-plugin-cache`` and the
-``finalize-step-sync-plugin-cache`` step) rather than in the shared daemon: **it
-changes no shared-daemon behaviour.**
+never accumulate the skew. That is why this reconcile lives in the meta-project-only
+``marketplace/targets/claude/`` tree (invoked by ``/sync-harnesses`` and the
+``finalize-step-sync-plugin-cache`` step once the Claude target has synced) rather
+than in the shared daemon: **it changes no shared-daemon behaviour.**
 
 After the sync bumps the cache version, this script queries ``manage-build-server
 status`` (through the executor) and applies the D1 idle-conditional contract:
@@ -48,8 +48,8 @@ executor, a status read failure, or an unreachable control surface all resolve t
 a silent no-op rather than aborting the sync.
 
 Usage:
-    python3 .claude/skills/sync-plugin-cache/scripts/reconcile_daemon.py
-    python3 .claude/skills/sync-plugin-cache/scripts/reconcile_daemon.py --repo-root /path/to/repo
+    python3 marketplace/targets/claude/reconcile_daemon.py
+    python3 marketplace/targets/claude/reconcile_daemon.py --repo-root /path/to/repo
 """
 
 from __future__ import annotations
@@ -184,7 +184,7 @@ def _daemon_state_dir() -> Path:
 
     Resolves ``$PLAN_MARSHALL_HOME`` (else ``~/.plan-marshall``) then ``marshalld``
     — the same resolution ``marketplace_paths.home_root()`` uses — without
-    importing the marketplace tree (this is a standalone project-local script).
+    importing the marketplace tree (this is a standalone stdlib-only script).
     """
     home = os.environ.get('PLAN_MARSHALL_HOME') or str(Path.home() / '.plan-marshall')
     return Path(home) / 'marshalld'
@@ -415,14 +415,15 @@ def _display_detail(summary: dict) -> str:
 def _import_parse_toon():
     """Import the shared ``parse_toon`` helper from the marketplace tree, or None.
 
-    Mirrors ``sync.py``'s path-hack import: this standalone script has no
-    marketplace package on ``sys.path``, so the repo root is resolved from the
-    script's own location (``.claude/skills/sync-plugin-cache/scripts`` → four
-    parents up) and the ref-toon-format scripts dir is prepended before import.
-    Returns ``None`` on any failure so the caller fails open.
+    Mirrors the sync engine's path-hack import (``marketplace/targets/sync.py``):
+    this standalone script has no marketplace package on ``sys.path``, so the
+    repo root is resolved from the script's own location
+    (``marketplace/targets/claude`` → three parents up) and the ref-toon-format
+    scripts dir is prepended before import. Returns ``None`` on any failure so
+    the caller fails open.
     """
     script_path = Path(__file__).resolve()
-    repo_root = script_path.parents[4]
+    repo_root = script_path.parents[3]
     toon_scripts = repo_root / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'ref-toon-format' / 'scripts'
     if str(toon_scripts) not in sys.path:
         sys.path.insert(0, str(toon_scripts))

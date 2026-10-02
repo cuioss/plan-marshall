@@ -58,7 +58,8 @@ def _validate_loadable_ns(
 # `order` strictly greater than every token-consuming step's order. The
 # token-consuming finalize steps are the ones whose bodies dispatch a subagent
 # or run a token-spending sweep before record-metrics closes the ledger:
-# deploy-target, sync-plugin-cache, lessons-housekeeping, plugin-doctor, and
+# finalize-step-deploy-target, finalize-step-sync-plugin-cache,
+# finalize-step-lessons-housekeeping, finalize-step-plugin-doctor, and
 # pre-submission-self-review. This regression would fail if record-metrics'
 # order were reverted below any of them (the defect this plan corrected).
 

@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Tests for the project-local list_bundles_and_versions.py helper.
+"""Tests for the list_bundles_and_versions.py helper.
 
-After cluster 02 the helper's default --source-root is
-``{cwd}/target/claude`` (was ``{cwd}/marketplace/bundles`` in the
-pre-cluster-02 version). The bundle/version table is populated from
+The helper's default --source-root is ``{cwd}/target/claude``. The
+bundle/version table is populated from
 ``target/claude/{bundle}/.claude-plugin/plugin.json``.
 
 The script lives at
-``.claude/skills/sync-plugin-cache/scripts/list_bundles_and_versions.py``
-(project-local).
+``marketplace/targets/claude/list_bundles_and_versions.py``.
 """
 
 from __future__ import annotations
@@ -21,7 +19,7 @@ from pathlib import Path
 from conftest import PROJECT_ROOT, ScriptResult, run_script
 from toon_parser import parse_toon
 
-_HELPER = PROJECT_ROOT / '.claude' / 'skills' / 'sync-plugin-cache' / 'scripts' / 'list_bundles_and_versions.py'
+_HELPER = PROJECT_ROOT / 'marketplace' / 'targets' / 'claude' / 'list_bundles_and_versions.py'
 
 
 def _write(path: Path, content: str | bytes = '') -> None:

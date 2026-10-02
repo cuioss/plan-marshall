@@ -305,8 +305,8 @@ The Stage 1 asymmetry is exactly one entry wide, and it is deliberate:
 plugin cache current through `project:finalize-step-sync-plugin-cache`, which
 runs at the end of every plan's finalize phase and mirrors the freshly-generated
 `target/claude/` tree into the cache. That step is **meta-project-only** (the
-meta project's `sync-plugin-cache` surface — a project-local skill under
-project skill roots, not bundle content): it is a project-local skill under
+finalize-time counterpart of the meta project's `/sync-harnesses` command — a
+project-local, meta-repo-only surface, not bundle content): it is a project-local skill under
 project skill roots, registered in the meta project's own `marshal.json`, and
 consumer projects neither ship it nor have it seeded. So the mechanism that keeps
 the meta cache fresh is invisible to — and does not cover — a consumer, whose

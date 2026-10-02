@@ -219,24 +219,29 @@ passing control reports its own silence.
 | `build-queue-limit` | 0 |
 | `build_queue_upper_limit` | 0 |
 | `upper_limit_seconds` | 2 |
-| `home_root` | 2 |
+| `home_root` | 3 |
 | `build-queue.json` | 1 |
 
 `build_queue_upper_limit` subsumes the leading-underscore spelling of the retired
 helpers, so one sweep covers both names.
 
 **Method 2 — direct scan at HEAD.** Walk both trees and count occurrences per
-file. **61** files scanned; **3** unreadable, and each of the three is a compiled
+file. **58** files scanned; **3** unreadable, and each of the three is a compiled
 `.pyc` artifact under `__pycache__` whose `.py` source sibling WAS scanned — so the
-unreadable count is a build artifact, not a coverage gap. **3** files carry a hit:
+unreadable count is a build artifact, not a coverage gap. **2** files carry a hit:
 
 | File | Tokens |
 |------|--------|
 | `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py` | `upper_limit_seconds` (2), `build-queue.json` (3), `home_root` (2) |
 | `.claude/skills/audit-archived-plan-retrospectives/checks/global-log-analysis.md` | `upper_limit_seconds` (2), `build-queue.json` (2) |
-| `.claude/skills/sync-plugin-cache/scripts/reconcile_daemon.py` | `home_root` (2) |
 
-**The out-of-inventory members, dispositioned by name.**
+**A third consumer sits outside the pinned derivation without sitting in either
+tree.** `marketplace/targets/claude/reconcile_daemon.py` carries `home_root` (2).
+`marketplace/targets/` IS crawled, but its files are attributed to the `source`
+category of the `default` module, so the `--category script` sweeps above and the
+`marketplace/bundles/*/skills/*/scripts/**/*.py` AST glob both pass it by.
+
+**The members outside the pinned derivation, dispositioned by name.**
 
 - `audit.py` — `_ratcheted_ci_wait_ceiling` reads the top-level
   `upper_limit_seconds` of the machine-global `build-queue.json` under the home
@@ -257,12 +262,13 @@ unreadable count is a build artifact, not a coverage gap. **3** files carry a hi
   different files.
 - `reconcile_daemon.py` — `_daemon_state_dir()` re-implements the home-root
   resolution inline (`PLAN_MARSHALL_HOME`, else `~/.plan-marshall`, then
-  `marshalld`) because it is a standalone project-local script that must not
-  import the marketplace tree. It reaches the tier for the reconcile-owed marker
-  and applies **no config key** against it, so it is the same
-  state-without-a-key class as the daemon journal — but it is a real tier consumer
-  that no inventory sweep can see, and a future key added there would be outside
-  every derivation above.
+  `marshalld`) because it is a standalone, stdlib-only, meta-repo-only script
+  under `marketplace/targets/claude/` that must not import the marketplace
+  bundle tree. It reaches the tier for the reconcile-owed marker and applies
+  **no config key** against it, so it is the same state-without-a-key class as
+  the daemon journal — but it is a real tier consumer that neither the
+  `--category script` sweeps nor the AST glob can see, and a future key added
+  there would be outside every derivation above.
 
 Git-ignored files under `.claude/` are machine-local and outside both methods.
 

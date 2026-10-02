@@ -38,7 +38,6 @@ ANTIGRAVITY_DEFAULT_PERMISSIONS: tuple[str, ...] = (
     'command(python3 .plan/execute-script.py)',
     'command(./pw)',
     'command(python3 marketplace/targets/sync.py --target antigravity)',
-    'command(python3 .agents/scripts/sync_antigravity.py)',
 )
 
 DEFAULT_ANTIGRAVITY_COMMANDS = ANTIGRAVITY_DEFAULT_PERMISSIONS
@@ -354,7 +353,7 @@ class AntigravityRuntime(Runtime):
         return toon_noop(
             'session reload-directive',
             'Antigravity automatically discovers updated plugins in ~/.gemini/config/plugins/',
-            'Run /sync-antigravity to update deployed bundles',
+            'Run /sync-harnesses --target antigravity to update deployed bundles',
         )
 
     # ------------------------------------------------------------------

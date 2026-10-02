@@ -1,12 +1,11 @@
-#!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Consolidated sync engine for the project-local ``sync-plugin-cache`` skill.
+"""Claude plugin-cache sync — the Claude path of the ``/sync-harnesses`` engine.
 
 Pipeline:
 
     marketplace/bundles/  →  target/claude/  →  ~/.claude/plugins/cache/plan-marshall/{bundle}/{version}/
 
-The script consumes the multi-target generator output at
+This module consumes the multi-target generator output at
 ``target/claude/`` (or a worktree-local equivalent) and rsyncs each
 emitted bundle into the host plugin cache. After a successful (non-error)
 sync it also mirrors the top-level ``target/claude/dist-manifest.json``
@@ -15,6 +14,16 @@ the versioned ``{bundle}/{version}/`` dirs) so the dist-branch versioning
 feature's ``find_installed_manifest_path`` resolves the installed version
 from ``base_path/dist-manifest.json`` in the meta-project's own
 preflight/executor-regen context.
+
+It is a library, not an entry point: the single sync engine
+``marketplace/targets/sync.py`` loads it BY FILE LOCATION and drives it
+through :func:`sync_cache`. It is deliberately stdlib-only and is never
+reached through the ``marketplace.targets`` / ``claude`` packages, whose
+``__init__`` modules import third-party dependencies (``yaml``) that a
+bare ``python3`` with no project virtualenv does not carry. For the same
+reason it defines no ``@dataclass``: a module loaded by file location is
+not necessarily registered in ``sys.modules``, which ``dataclasses``
+requires under postponed annotation evaluation.
 
 Staleness guard
 ---------------
@@ -26,10 +35,18 @@ at the end of every successful emit by
 ``marketplace/targets/claude/target.py``. The sentinel carries a
 ``source_tree_fingerprint`` computed from git's native ``ls-files`` /
 ``hash-object`` primitives over ``marketplace/bundles/``; the guard
-recomputes the same fingerprint and refuses on mismatch. Both sides
-import the helper from
-``marketplace.targets.claude.source_fingerprint`` so the fingerprint
-algorithm cannot drift between emit and sync.
+recomputes the same fingerprint and refuses on mismatch. Both sides use
+the helper in ``marketplace/targets/claude/source_fingerprint.py`` so the
+fingerprint algorithm cannot drift between emit and sync.
+
+The bundle-set check (check 2 of :func:`_staleness_guard`) expects in
+``target/claude/`` exactly the bundles the Claude emitter selects: those
+whose own ``.claude-plugin/plugin.json`` admits ``claude`` through its
+``targets`` declaration. The field absent means every target; the field
+present means the listed targets only. A bundle scoped to other harnesses
+is therefore never expected in the Claude tree, while a claude-admitting
+bundle missing from it is still refused as ``stale``. See
+:func:`_claude_admitting_bundles`.
 
 The sentinel fingerprint is supplemented by a file-level content-hash
 check (``_file_level_drift``): the emitter records a per-file hash
@@ -53,53 +70,43 @@ for. Its refusals are discriminated into two kinds (see
 :class:`GuardRefusal`): ``stale`` — a probe ran and observed a staleness
 condition, so the remedy is to regenerate the target tree — and
 ``probe_failed`` — a probe could not run at all (the helper would not
-import, git would not answer), so nothing was observed about the target
-tree and its freshness is unknown. A ``probe_failed`` refusal never
-borrows the regenerate remedy, because sending the operator to re-run a
-generator whose output may already be current is a misreport, not a fix.
-Both kinds refuse (exit 2), and ``--skip-staleness-guard`` remains the
-deliberate override.
+import, git would not answer, a bundle manifest could not be read), so
+nothing was observed about the target tree and its freshness is unknown.
+A ``probe_failed`` refusal never borrows the regenerate remedy, because
+sending the operator to re-run a generator whose output may already be
+current is a misreport, not a fix. Both kinds refuse (exit 2), and
+``--skip-staleness-guard`` remains the deliberate override.
 
-Outputs a TOON document on stdout:
+Result document (rendered by :func:`render`):
 
     status: success | partial | error
     synced_count: N
     failed_count: M
     summary_message: "<human-readable summary>"
     guard_outcome: stale | probe_failed   # only on a guard refusal
+    dry_run: true                         # only under --dry-run
     synced[N]{bundle,version,status}:
       bundle1,0.1.0,success
-      bundle2,unknown,skipped
     failed[M]{bundle,error}:
       bundle3,"rsync exited 23"
 
 ``guard_outcome`` is present only when the staleness guard refused; its
-absence on every other path means no guard verdict was reached.
+absence on every other path means no guard verdict was reached. Under
+``--dry-run`` the guard and the bundle selection still run, nothing is
+written, and every selected bundle's row carries the status ``dry_run``
+(so ``synced_count`` stays 0 — nothing was synced).
 
-Exit codes:
+Exit codes (carried on :class:`CacheSyncResult`):
 
     0 on ``status: success`` or ``status: partial`` (partial means at
       least one bundle synced; the caller decides whether to treat that
       as a hard failure based on the failure table).
     1 on ``status: error`` (nothing synced, hard failure).
-    2 on bad inputs (no target/, staleness guard tripped, etc.).
-
-Flags:
-
-    --from-worktree PATH   Resolve source from {PATH}/target/claude/.
-    --bundle NAME          Restrict sync to a single bundle.
-    --source-root PATH     Override the source root (advanced — bypasses
-                           the worktree resolver). Default is
-                           ``{cwd}/target/claude``.
-    --cache-root PATH      Override the cache destination root. Default
-                           is ``~/.claude/plugins/cache/plan-marshall``.
-    --skip-staleness-guard Bypass the staleness check (dangerous —
-                           reserved for tests and recovery flows).
+    2 on a staleness-guard refusal.
 """
 
 from __future__ import annotations
 
-import argparse
 import importlib.util
 import json
 import shutil
@@ -107,7 +114,8 @@ import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import NamedTuple
+from types import ModuleType
+from typing import Any, NamedTuple
 
 
 class GuardRefusal(NamedTuple):
@@ -120,12 +128,12 @@ class GuardRefusal(NamedTuple):
       drift). The remedy is to regenerate the target tree, so the
       message carries :func:`_regenerate_hint`.
     * ``probe_failed`` — the guard's probe could NOT run (the helper
-      would not import, git would not answer). Nothing was observed
-      about the target tree, so its freshness is UNKNOWN. A
-      ``probe_failed`` message therefore says so plainly and carries the
-      remedy for the probe's own fault — never the regenerate hint,
-      which would send the operator to re-run a generator whose output
-      may already be current.
+      would not import, git would not answer, a bundle manifest could
+      not be read). Nothing was observed about the target tree, so its
+      freshness is UNKNOWN. A ``probe_failed`` message therefore says so
+      plainly and carries the remedy for the probe's own fault — never
+      the regenerate hint, which would send the operator to re-run a
+      generator whose output may already be current.
 
     Collapsing the second kind into the first is the defect this type
     exists to prevent: a guard that reports the failure it hunts for
@@ -134,6 +142,23 @@ class GuardRefusal(NamedTuple):
 
     kind: str
     message: str
+
+
+class CacheSyncResult(NamedTuple):
+    """The outcome of one Claude cache sync, before rendering.
+
+    ``guard_outcome`` is set only on a staleness-guard refusal and
+    carries the refusal KIND (``stale`` / ``probe_failed``); ``None`` on
+    every other path means no guard verdict was reached.
+    """
+
+    exit_code: int
+    status: str
+    summary_message: str
+    synced: list[dict[str, str]]
+    failed: list[dict[str, str]]
+    guard_outcome: str | None = None
+    dry_run: bool = False
 
 
 def _stale(message: str) -> GuardRefusal:
@@ -167,12 +192,12 @@ def _resolve_repo_root_for_sentinel(source_root: Path) -> Path:
     ``marketplace_dir.parent`` (the project root that contains
     ``marketplace/``). When sync runs against
     ``{repo}/target/claude/`` the repo root is the grandparent of
-    ``source_root``. The ``--from-worktree`` and ``--source-root``
-    flags can move the source root around; the guard pairs the
-    sentinel's recompute against the directory tree that produced it,
-    which is always two levels up from ``source_root`` for the
-    canonical ``{repo}/target/claude/`` layout. Callers using
-    ``--source-root`` for ad-hoc paths can still bypass the guard via
+    ``source_root``. The ``--from-worktree`` and ``--source`` flags can
+    move the source root around; the guard pairs the sentinel's
+    recompute against the directory tree that produced it, which is
+    always two levels up from ``source_root`` for the canonical
+    ``{repo}/target/claude/`` layout. Callers using ``--source`` for
+    ad-hoc paths can still bypass the guard via
     ``--skip-staleness-guard``.
     """
     return source_root.parent.parent
@@ -185,20 +210,20 @@ SOURCE_FINGERPRINT_RELPATH = Path('marketplace') / 'targets' / 'claude' / 'sourc
 #: ``marketplace.targets.claude.source_fingerprint`` — see
 #: :func:`_load_source_fingerprint_module` for why the package path is
 #: avoided entirely.
-HELPER_MODULE_NAME = '_sync_plugin_cache_source_fingerprint'
+HELPER_MODULE_NAME = '_sync_harnesses_source_fingerprint'
 
 
 def _repo_root_from_script() -> Path:
-    """Resolve the project root from this script's own location.
+    """Resolve the project root from this module's own location.
 
-    ``.claude/skills/sync-plugin-cache/scripts/sync.py`` -> the repo root
-    is four parents up: parents[0]=scripts, [1]=sync-plugin-cache,
-    [2]=skills, [3]=.claude, [4]=repo.
+    ``marketplace/targets/claude/cache_sync.py`` -> the repo root is
+    three parents up: parents[0]=claude, [1]=targets, [2]=marketplace,
+    [3]=repo.
     """
-    return Path(__file__).resolve().parents[4]
+    return Path(__file__).resolve().parents[3]
 
 
-def _load_source_fingerprint_module():
+def _load_source_fingerprint_module() -> ModuleType:
     """Load the fingerprint helper BY FILE LOCATION, not by package path.
 
     The helper (``marketplace/targets/claude/source_fingerprint.py``) is
@@ -209,10 +234,10 @@ def _load_source_fingerprint_module():
     ``marketplace/targets/__init__.py``, which imports every registered
     target sub-package to fire their ``register_target`` side effects,
     and those target modules pull in third-party dependencies (``yaml``).
-    This script is invoked as a standalone file under a bare ``python3``
-    with no project virtualenv, where those dependencies are absent — so
-    the package route raises ``ModuleNotFoundError`` on a dependency the
-    helper itself never needed.
+    The sync engine is invoked as a standalone file under a bare
+    ``python3`` with no project virtualenv, where those dependencies are
+    absent — so the package route raises ``ModuleNotFoundError`` on a
+    dependency the helper itself never needed.
 
     Loading the single file via ``importlib.util.spec_from_file_location``
     executes exactly that module and nothing else, which keeps the
@@ -251,7 +276,7 @@ def _load_source_fingerprint_module():
     return module
 
 
-def _import_source_fingerprint():
+def _import_source_fingerprint() -> tuple[Any, Any]:
     """Return ``(compute_source_tree_fingerprint, FingerprintError)``.
 
     Thin accessor over :func:`_load_source_fingerprint_module`; raises
@@ -261,7 +286,7 @@ def _import_source_fingerprint():
     return module.compute_source_tree_fingerprint, module.FingerprintError
 
 
-def _import_hash_objects():
+def _import_hash_objects() -> tuple[Any, Any]:
     """Return ``(hash_objects, FingerprintError)``.
 
     ``hash_objects`` hashes arbitrary worktree bytes via
@@ -290,24 +315,33 @@ EMIT_MARKER_FILENAME = '.emit-marker.json'
 # the cache root alongside the versioned ``{bundle}/{version}/`` dirs.
 DIST_MANIFEST_FILENAME = 'dist-manifest.json'
 
+#: Registry name of the Claude target — the value a bundle's ``targets``
+#: declaration must contain for the Claude emitter to emit it. Mirrors
+#: ``CLAUDE_TARGET_NAME`` in ``marketplace/targets/claude/emitter.py``,
+#: restated here because that module is reachable only through the
+#: package path this module must not import.
+CLAUDE_TARGET_NAME = 'claude'
+
+#: ``plugin.json`` field a bundle uses to declare the targets it ships to.
+#: Mirrors ``TARGET_SCOPE_FIELD`` in ``marketplace/targets/component_targets.py``.
+TARGET_SCOPE_FIELD = 'targets'
+
+#: Status a bundle row carries under ``--dry-run``: selected, not synced.
+DRY_RUN_ROW_STATUS = 'dry_run'
+
 
 def _read_version(plugin_json: Path) -> str:
     try:
         data = json.loads(plugin_json.read_text(encoding='utf-8'))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return 'unknown'
+    if not isinstance(data, dict):
         return 'unknown'
     version = data.get('version')
     return version if isinstance(version, str) and version else 'unknown'
 
 
-def _emit_toon(
-    *,
-    status: str,
-    synced: list[dict[str, str]],
-    failed: list[dict[str, str]],
-    summary_message: str,
-    guard_outcome: str | None = None,
-) -> str:
+def render(result: CacheSyncResult) -> str:
     """Render the result document.
 
     ``guard_outcome`` is emitted only on a staleness-guard refusal and
@@ -317,39 +351,64 @@ def _emit_toon(
     no guard verdict was reached there — an absent field is honest about
     that, where a default value would not be.
     """
-    synced_count = sum(1 for row in synced if row['status'] == 'success')
-    failed_count = len(failed)
+    synced_count = sum(1 for row in result.synced if row['status'] == 'success')
+    summary = result.summary_message.replace('"', '\\"')
     lines = [
-        f'status: {status}',
+        f'status: {result.status}',
         f'synced_count: {synced_count}',
-        f'failed_count: {failed_count}',
-        f'summary_message: "{summary_message}"',
+        f'failed_count: {len(result.failed)}',
+        f'summary_message: "{summary}"',
     ]
-    if guard_outcome is not None:
-        lines.append(f'guard_outcome: {guard_outcome}')
-    lines.append(f'synced[{len(synced)}]{{bundle,version,status}}:')
-    for row in synced:
+    if result.guard_outcome is not None:
+        lines.append(f'guard_outcome: {result.guard_outcome}')
+    if result.dry_run:
+        lines.append('dry_run: true')
+    lines.append(f'synced[{len(result.synced)}]{{bundle,version,status}}:')
+    for row in result.synced:
         lines.append(f'  {row["bundle"]},{row["version"]},{row["status"]}')
-    if failed:
-        lines.append(f'failed[{len(failed)}]{{bundle,error}}:')
-        for row in failed:
+    if result.failed:
+        lines.append(f'failed[{len(result.failed)}]{{bundle,error}}:')
+        for row in result.failed:
             err = row['error'].replace('"', '\\"')
             lines.append(f'  {row["bundle"]},"{err}"')
     return '\n'.join(lines) + '\n'
 
 
-def _resolve_source_root(args: argparse.Namespace) -> Path:
-    source_root: Path | None = args.source_root
-    from_worktree: Path | None = args.from_worktree
-    if source_root is not None:
-        return source_root
+def as_dict(result: CacheSyncResult) -> dict[str, Any]:
+    """Return the result as a plain mapping carrying :func:`render`'s fields.
+
+    The all-targets run of the sync engine nests each target's result in
+    one aggregate document, which needs the fields as data rather than
+    as rendered text. The field set and its conditional members
+    (``guard_outcome``, ``dry_run``, ``failed``) match :func:`render`.
+    """
+    data: dict[str, Any] = {
+        'status': result.status,
+        'synced_count': sum(1 for row in result.synced if row['status'] == 'success'),
+        'failed_count': len(result.failed),
+        'summary_message': result.summary_message,
+    }
+    if result.guard_outcome is not None:
+        data['guard_outcome'] = result.guard_outcome
+    if result.dry_run:
+        data['dry_run'] = True
+    data['synced'] = result.synced
+    if result.failed:
+        data['failed'] = result.failed
+    return data
+
+
+def resolve_source_root(source: Path | None, from_worktree: Path | None) -> Path:
+    """Resolve the emitted-tree root: explicit override, worktree, then cwd."""
+    if source is not None:
+        return source
     if from_worktree is not None:
         return from_worktree / TARGET_SUBDIR
     return Path.cwd() / TARGET_SUBDIR
 
 
-def _resolve_marketplace_root(args: argparse.Namespace) -> Path:
-    from_worktree: Path | None = args.from_worktree
+def resolve_marketplace_root(from_worktree: Path | None) -> Path:
+    """Resolve the ``marketplace/bundles/`` root the guard compares against."""
     if from_worktree is not None:
         return from_worktree / MARKETPLACE_SUBDIR
     return Path.cwd() / MARKETPLACE_SUBDIR
@@ -369,38 +428,76 @@ def _is_bundle_dir(path: Path) -> bool:
     return path.is_dir() and (path / '.claude-plugin' / 'plugin.json').is_file()
 
 
-#: This sync mirrors the Claude target tree, so only bundles the Claude
-#: emitter produces are expected in ``target/claude/``.
-CLAUDE_TARGET_NAME = 'claude'
+def _bundle_manifest_probe_failed(manifest: Path, detail: str) -> GuardRefusal:
+    """Build the ``probe_failed`` refusal for an unreadable bundle manifest."""
+    return _probe_failed(
+        f'the bundle-set probe could not read the `{TARGET_SCOPE_FIELD}` declaration in {manifest}',
+        detail,
+        f'Repair {manifest}, or re-run with --skip-staleness-guard to sync without the check.',
+    )
 
 
-def _bundle_emits_to_claude(marketplace_root: Path, bundle_name: str) -> bool:
-    """Whether ``bundle_name`` is expected in the Claude target output.
+def _bundle_admits_claude(manifest: Path) -> bool | GuardRefusal:
+    """Whether the bundle owning ``manifest`` ships to the Claude target.
 
-    Mirrors ``marketplace.targets.component_targets.bundle_emits_to`` for the
-    bundle-level ``targets:`` declaration — read locally (not imported)
-    because importing that module executes ``marketplace/targets/__init__.py``
-    with its per-target ``register_target`` side effects, which this script
-    deliberately avoids (see :func:`_load_source_fingerprint_module`). A
-    bundle whose declaration cannot be read is treated as expected (fail
-    closed toward the previous require-everything behaviour, never toward
-    silently skipping a bundle).
+    Applies the same ``targets`` declaration predicate the Claude emitter
+    applies (``bundle_emits_to`` in
+    ``marketplace/targets/component_targets.py``), read with stdlib
+    ``json`` because that module is reachable only through the package
+    path:
+
+    * field absent — the bundle ships to every target, so it is admitted;
+    * field present — the bundle ships to the listed targets only. The
+      value is a list of names, or a single string (which may list
+      several names separated by commas).
+
+    A manifest that cannot be read, is not a JSON object, or declares a
+    value that is not a non-empty list of names yields a ``probe_failed``
+    refusal naming the file. It is never resolved to an include or an
+    exclude: either guess would report a verdict about a declaration
+    nobody read.
     """
-    manifest = marketplace_root / bundle_name / '.claude-plugin' / 'plugin.json'
     try:
         data = json.loads(manifest.read_text(encoding='utf-8'))
-    except (OSError, json.JSONDecodeError):
-        return True
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return _bundle_manifest_probe_failed(manifest, str(exc))
     if not isinstance(data, dict):
+        return _bundle_manifest_probe_failed(manifest, 'the manifest is not a JSON object')
+    if TARGET_SCOPE_FIELD not in data:
         return True
-    scope = data.get('targets')
-    if scope is None:
-        return True
-    if isinstance(scope, str):
-        scope = [scope]
-    if not isinstance(scope, list):
-        return True
-    return CLAUDE_TARGET_NAME in scope
+
+    value = data[TARGET_SCOPE_FIELD]
+    if isinstance(value, str):
+        names = [token.strip() for token in value.split(',') if token.strip()]
+    elif isinstance(value, list) and all(isinstance(item, str) for item in value):
+        names = [item.strip() for item in value if item.strip()]
+    else:
+        return _bundle_manifest_probe_failed(
+            manifest, f'`{TARGET_SCOPE_FIELD}` is {type(value).__name__}, not a list of target names'
+        )
+    if not names:
+        return _bundle_manifest_probe_failed(manifest, f'`{TARGET_SCOPE_FIELD}` declares no target name')
+    return CLAUDE_TARGET_NAME in names
+
+
+def _claude_admitting_bundles(marketplace_root: Path) -> list[str] | GuardRefusal:
+    """Return the sorted names of the source bundles the Claude emitter selects.
+
+    This is the expected bundle set of ``target/claude/``. It is derived
+    from the SOURCE declarations rather than read back from the emitted
+    ``dist-manifest.json``: a set read from the emitted tree would be
+    circular, and could never report a bundle that was added to source
+    and not re-emitted. Returns a ``probe_failed`` refusal as soon as one
+    bundle's manifest cannot be read — see :func:`_bundle_admits_claude`.
+    """
+    admitted: list[str] = []
+    for bundle_dir in sorted(p for p in marketplace_root.iterdir() if _is_bundle_dir(p)):
+        verdict = _bundle_admits_claude(bundle_dir / '.claude-plugin' / 'plugin.json')
+        if isinstance(verdict, GuardRefusal):
+            return verdict
+        if verdict:
+            admitted.append(bundle_dir.name)
+    return admitted
 
 
 def _relative_file_map(root: Path) -> dict[str, Path]:
@@ -532,18 +629,25 @@ def _staleness_guard(source_root: Path, marketplace_root: Path) -> GuardRefusal 
 
     Sentinel-based staleness check:
 
-    1. ``source_root`` must exist and contain at least one bundle (the
-       same structural prerequisites as before).
-    2. Every bundle present in ``marketplace_root`` must also be present
-       in ``source_root`` (catches "added a bundle, forgot to re-emit").
+    1. ``source_root`` must exist and contain at least one bundle.
+    2. Every source bundle the Claude emitter selects must also be
+       present in ``source_root`` (catches "added a bundle, forgot to
+       re-emit"). The expected set is the bundles under
+       ``marketplace_root`` whose own ``.claude-plugin/plugin.json``
+       admits ``claude`` through its ``targets`` declaration — field
+       absent means every target, field present means the listed targets
+       only — which is the predicate the emitter itself applies. A bundle
+       scoped to other harnesses is never expected here. A bundle
+       manifest that cannot be read is a ``probe_failed`` refusal naming
+       the file, never a silent include or exclude.
     3. The sentinel file ``{source_root}/.emit-marker.json`` must exist
        and parse as JSON carrying a ``source_tree_fingerprint`` field.
     4. Recomputing the fingerprint against the worktree
        ``marketplace/bundles/`` (via the shared
-       ``compute_source_tree_fingerprint`` helper imported from
-       ``marketplace.targets.claude.source_fingerprint``) must match the
-       sentinel's stored fingerprint. Mismatch -> source drifted since
-       the last emit; refuse so callers regenerate before sync.
+       ``compute_source_tree_fingerprint`` helper in
+       ``marketplace/targets/claude/source_fingerprint.py``) must match
+       the sentinel's stored fingerprint. Mismatch -> source drifted
+       since the last emit; refuse so callers regenerate before sync.
     5. File-level content-hash check (``_file_level_drift``): every file
        under ``target/claude/`` is compared against the per-file hash
        manifest the emitter recorded in the sentinel's ``file_hashes``
@@ -563,17 +667,14 @@ def _staleness_guard(source_root: Path, marketplace_root: Path) -> GuardRefusal 
         return _stale(f'source root contains no bundles: {source_root}. {_regenerate_hint()}')
 
     if marketplace_root.is_dir():
-        bundles_in_market = sorted(p.name for p in marketplace_root.iterdir() if _is_bundle_dir(p))
-        # Only bundles the Claude emitter produces are expected in the
-        # target output: a bundle scoped away from this target (e.g. a
-        # harness bundle declaring ``targets: [antigravity]``) is correctly
-        # absent, and demanding it would refuse every sync.
-        bundles_in_market = [b for b in bundles_in_market if _bundle_emits_to_claude(marketplace_root, b)]
-        missing = [b for b in bundles_in_market if b not in bundles_in_source]
+        expected = _claude_admitting_bundles(marketplace_root)
+        if isinstance(expected, GuardRefusal):
+            return expected
+        missing = [b for b in expected if b not in bundles_in_source]
         if missing:
             return _stale(
-                'target/claude/ appears stale — bundles in marketplace/bundles/ are missing '
-                f'from target output: {", ".join(missing)}. {_regenerate_hint()}'
+                'target/claude/ appears stale — bundles in marketplace/bundles/ that ship to the '
+                f'claude target are missing from target output: {", ".join(missing)}. {_regenerate_hint()}'
             )
 
     sentinel_path = source_root / EMIT_MARKER_FILENAME
@@ -638,7 +739,7 @@ def _staleness_guard(source_root: Path, marketplace_root: Path) -> GuardRefusal 
     return None
 
 
-def _rsync_bundle(*, bundle: str, source_dir: Path, dest_dir: Path) -> tuple[str, str]:
+def _rsync_bundle(*, source_dir: Path, dest_dir: Path) -> tuple[str, str]:
     """rsync one bundle. Returns (status, error_message)."""
     if not shutil.which('rsync'):
         return 'failed', 'rsync not found on PATH'
@@ -704,55 +805,75 @@ def _select_bundles(source_root: Path, only: str | None) -> list[Path]:
     return bundles
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description='Synchronize the Claude plugin cache from target/claude/.',
-        allow_abbrev=False,
-    )
-    parser.add_argument('--from-worktree', type=Path, default=None, metavar='PATH')
-    parser.add_argument('--bundle', type=str, default=None, metavar='NAME')
-    parser.add_argument('--source-root', type=Path, default=None, metavar='PATH')
-    parser.add_argument('--cache-root', type=Path, default=DEFAULT_CACHE_ROOT, metavar='PATH')
-    parser.add_argument('--skip-staleness-guard', action='store_true')
-    return parser
+def sync_cache(
+    *,
+    source_root: Path,
+    marketplace_root: Path,
+    cache_root: Path,
+    only_bundle: str | None = None,
+    skip_staleness_guard: bool = False,
+    dry_run: bool = False,
+) -> CacheSyncResult:
+    """Sync the emitted Claude tree at ``source_root`` into ``cache_root``.
 
+    Args:
+        source_root: The emitted ``target/claude/`` tree.
+        marketplace_root: The ``marketplace/bundles/`` source tree the
+            staleness guard compares the emitted tree against.
+        cache_root: The plugin-cache root the bundles are mirrored into.
+        only_bundle: Restrict the sync to the bundle of this name.
+        skip_staleness_guard: Bypass the staleness guard entirely.
+        dry_run: Run the guard and the bundle selection, write nothing.
 
-def main(argv: list[str] | None = None) -> int:
-    args = _build_parser().parse_args(argv if argv is not None else sys.argv[1:])
-
-    source_root = _resolve_source_root(args)
-    marketplace_root = _resolve_marketplace_root(args)
-
-    if not args.skip_staleness_guard:
+    Returns:
+        The sync outcome, carrying the exit code the engine returns.
+    """
+    if not skip_staleness_guard:
         refusal = _staleness_guard(source_root, marketplace_root)
         if refusal is not None:
-            sys.stdout.write(
-                _emit_toon(
-                    status='error',
-                    synced=[],
-                    failed=[],
-                    summary_message=refusal.message,
-                    guard_outcome=refusal.kind,
-                )
+            return CacheSyncResult(
+                exit_code=2,
+                status='error',
+                summary_message=refusal.message,
+                synced=[],
+                failed=[],
+                guard_outcome=refusal.kind,
+                dry_run=dry_run,
             )
-            return 2
 
-    bundles = _select_bundles(source_root, args.bundle)
+    bundles = _select_bundles(source_root, only_bundle)
     if not bundles:
-        msg = f'no matching bundles in {source_root}' + (f' (filter: --bundle {args.bundle})' if args.bundle else '')
-        sys.stdout.write(_emit_toon(status='error', synced=[], failed=[], summary_message=msg))
-        return 1
+        msg = f'no matching bundles in {source_root}' + (f' (filter: --bundles {only_bundle})' if only_bundle else '')
+        return CacheSyncResult(exit_code=1, status='error', summary_message=msg, synced=[], failed=[], dry_run=dry_run)
+
+    if dry_run:
+        planned = [
+            {
+                'bundle': bundle_dir.name,
+                'version': _read_version(bundle_dir / '.claude-plugin' / 'plugin.json'),
+                'status': DRY_RUN_ROW_STATUS,
+            }
+            for bundle_dir in bundles
+        ]
+        return CacheSyncResult(
+            exit_code=0,
+            status='success',
+            summary_message=f'would sync {len(planned)} bundle(s) to {cache_root}',
+            synced=planned,
+            failed=[],
+            dry_run=True,
+        )
 
     synced: list[dict[str, str]] = []
     failed: list[dict[str, str]] = []
 
     def task(bundle_dir: Path) -> tuple[str, str, str, str]:
         version = _read_version(bundle_dir / '.claude-plugin' / 'plugin.json')
-        dest = args.cache_root / bundle_dir.name / version
-        status, error = _rsync_bundle(bundle=bundle_dir.name, source_dir=bundle_dir, dest_dir=dest)
+        dest = cache_root / bundle_dir.name / version
+        status, error = _rsync_bundle(source_dir=bundle_dir, dest_dir=dest)
         return bundle_dir.name, version, status, error
 
-    with ThreadPoolExecutor(max_workers=min(8, len(bundles) or 1)) as pool:
+    with ThreadPoolExecutor(max_workers=min(8, len(bundles))) as pool:
         futures = [pool.submit(task, b) for b in bundles]
         for fut in as_completed(futures):
             name, version, status, error = fut.result()
@@ -765,7 +886,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if not failed:
         status = 'success'
-        message = f'synced {len(synced)} bundle(s) to {args.cache_root}'
+        message = f'synced {len(synced)} bundle(s) to {cache_root}'
         exit_code = 0
     elif len(failed) == len(bundles):
         status = 'error'
@@ -780,11 +901,6 @@ def main(argv: list[str] | None = None) -> int:
     # successful (non-error) sync so the meta-project's own preflight can
     # resolve the installed version from base_path/dist-manifest.json.
     if status != 'error':
-        _copy_dist_manifest(source_root, args.cache_root)
+        _copy_dist_manifest(source_root, cache_root)
 
-    sys.stdout.write(_emit_toon(status=status, synced=synced, failed=failed, summary_message=message))
-    return exit_code
-
-
-if __name__ == '__main__':
-    raise SystemExit(main())
+    return CacheSyncResult(exit_code=exit_code, status=status, summary_message=message, synced=synced, failed=failed)

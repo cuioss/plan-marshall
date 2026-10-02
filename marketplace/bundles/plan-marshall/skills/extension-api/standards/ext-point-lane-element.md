@@ -47,7 +47,7 @@ class value is a contract change to this document, not a per-element choice.
 
 | `class` | default `tier` | prunable? | meaning | examples |
 |---------|----------------|-----------|---------|----------|
-| **derived-state** | `minimal` | no — a weakening `off` is **immune** (ignored; the element stays at its class-default tier) | correctness-required derived output; dropping it ships a broken artifact | deploy-target, sync-plugin-cache |
+| **derived-state** | `minimal` | no — a weakening `off` is **immune** (ignored; the element stays at its class-default tier) | correctness-required derived output; dropping it ships a broken artifact | finalize-step-deploy-target, finalize-step-sync-plugin-cache |
 | **core** | `minimal` | no — a weakening `off` is **immune** (ignored; the element stays at its class-default tier) | always-on plan machinery; the leanest floor | push, create-pr, ci-verify, branch-cleanup, record-metrics, archive |
 | **adversarial** | `standard` | no | a validator that finds real defects; never predicate-pruned by the lane | outline scope-validator (1st pass), automatic-review, sonar-roundtrip, self-review, security-audit-as-finder |
 | **prunable** | `standard` | yes — via `prunable_when` | conditional overhead that a firm-signal predicate can skip | lessons-housekeeping, refine, 4-plan decomposition |
@@ -191,7 +191,7 @@ changed) is a standalone improvement, not part of this contract; the lane only *
 | Element(s) | class | tier |
 |---|---|---|
 | init · outline · plan · execute · push · create-pr · ci-verify · branch-cleanup · record-metrics · print-phase-breakdown · archive | core | minimal |
-| deploy-target · sync-plugin-cache *(meta-only)* | derived-state | minimal |
+| finalize-step-deploy-target · finalize-step-sync-plugin-cache *(meta-only)* | derived-state | minimal |
 | finalize-step-sync-baseline | core | minimal |
 | lessons-capture | prunable | standard |
 | lessons-housekeeping | prunable | **minimal** |
@@ -218,7 +218,7 @@ predicted calibration loop that tunes the task table also tunes the lane preview
 
 | size | token magnitude | covers |
 |------|-----------------|--------|
-| **XS** | ~5K | deterministic ≈0-token bookkeeping (push, ci-verify, branch-cleanup, archive, record-metrics, deploy-target, sync-plugin-cache) |
+| **XS** | ~5K | deterministic ≈0-token bookkeeping (push, ci-verify, branch-cleanup, archive, record-metrics, finalize-step-deploy-target, finalize-step-sync-plugin-cache) |
 | **S** | 25K | small agent steps (plugin-doctor) |
 | **M** | 60K | medium (init, refine, create-pr, simplify, lessons-capture, review-retrospective) |
 | **L** | 130K | heavy single steps (sonar, self-review, security-audit, automated-review, lessons-housekeeping, plan-retrospective, q-gate) |

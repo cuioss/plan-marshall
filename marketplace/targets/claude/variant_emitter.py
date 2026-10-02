@@ -36,7 +36,7 @@ reload the session's plugin set (``/reload-plugins`` on Claude, which
 refreshes the session-pinned registry live; a full session restart is
 the fallback) before dispatching against any newly-emitted variant. The
 same WHY rationale (registry is session-pinned at startup) is documented
-at the sister surfaces — ``/sync-plugin-cache``, ``/marshall-steward``,
+at the sister surfaces — ``/sync-harnesses``, ``/marshall-steward``,
 and ``ext-point-dynamic-level-executor.md`` — and MUST stay convergent
 across all four surfaces.
 """

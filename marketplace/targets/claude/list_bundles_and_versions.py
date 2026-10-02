@@ -4,7 +4,9 @@
 
 Reads ``{source_root}/<bundle>/.claude-plugin/plugin.json`` from the
 configured source root (defaulting to ``{cwd}/target/claude``) and
-prints a TOON table consumable by ``sync.py``.
+prints a TOON table of the bundles the Claude path of the
+``/sync-harnesses`` engine (``marketplace/targets/claude/cache_sync.py``)
+would mirror into the plugin cache.
 
 A missing or malformed manifest yields ``version: unknown``.
 
@@ -12,6 +14,10 @@ The ``--source-root PATH`` flag overrides the default. The default
 points at the multi-target generator output (``target/claude/``); pass
 ``--source-root <worktree>/target/claude`` to read from a worktree-local
 generator output.
+
+Usage:
+    python3 marketplace/targets/claude/list_bundles_and_versions.py
+    python3 marketplace/targets/claude/list_bundles_and_versions.py --source-root <worktree>/target/claude
 """
 
 from __future__ import annotations
@@ -27,7 +33,9 @@ DEFAULT_SOURCE_SUBDIR = Path('target') / 'claude'
 def _read_version(manifest: Path) -> str:
     try:
         data = json.loads(manifest.read_text(encoding='utf-8'))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return 'unknown'
+    if not isinstance(data, dict):
         return 'unknown'
     version = data.get('version')
     return version if isinstance(version, str) and version else 'unknown'

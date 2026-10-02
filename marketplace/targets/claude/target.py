@@ -59,8 +59,9 @@ from marketplace.targets.claude.source_fingerprint import (
 from marketplace.targets.component_targets import bundle_emits_to, validate_component_scopes
 from marketplace.targets.fs_safety import refuse_tree_overlap, safe_rmtree
 
-# Sentinel file written at the end of every successful emit. The
-# project-local ``sync-plugin-cache`` skill reads it to decide whether
+# Sentinel file written at the end of every successful emit. The Claude
+# path of the ``/sync-harnesses`` engine
+# (``marketplace/targets/claude/cache_sync.py``) reads it to decide whether
 # ``target/claude/`` is fresh relative to the worktree source tree.
 EMIT_MARKER_FILENAME = '.emit-marker.json'
 

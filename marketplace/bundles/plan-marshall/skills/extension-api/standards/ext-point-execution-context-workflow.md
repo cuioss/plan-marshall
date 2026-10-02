@@ -47,7 +47,7 @@ On Claude the cache is the single resolution root for every workflow load, regar
 
 **Consequence (Claude target) — stale dispatch until cache sync + session restart**: a plan that modifies a `workflow/*.md` or `SKILL.md` in its worktree sees the **pre-change** version of that file at every dispatch site until BOTH of the following hold:
 
-1. The plugin cache has been synced from the worktree (via `/sync-plugin-cache` or `project:finalize-step-sync-plugin-cache`), and
+1. The plugin cache has been synced from the worktree (via the project-local, meta-repo-only `/sync-harnesses` command or `project:finalize-step-sync-plugin-cache`), and
 2. The Claude Code session has been restarted so the host platform re-reads the cache instead of serving its in-process registry snapshot.
 
 Meta-projects that author marketplace bundles maintain their own self-host fence (a project-local finalize step) that halts the dispatcher and demands a session restart before any agent-dispatched step runs against the worktree-modified workflow; consumer projects do not encounter the failure mode because their plans do not modify the bundles the dispatcher loads from.

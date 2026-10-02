@@ -23,10 +23,10 @@ from toon_parser import parse_toon
 _SYNC_PY = PROJECT_ROOT / 'marketplace' / 'targets' / 'sync.py'
 
 # Antigravity uses plural component layout in both source and destination.
-_SKILL_SRC = 'skills/plan-marshall-sync-antigravity'
+_SKILL_SRC = 'skills/plan-marshall-sync-harnesses'
 _AGENT_SRC = 'agents/execution-context.md'
 _ANOTHER_AGENT_SRC = 'agents/execution-context-reader.md'
-_COMMAND_SRC = 'commands/plan-marshall-sync-antigravity.md'
+_COMMAND_SRC = 'commands/plan-marshall-sync-harnesses.md'
 
 
 def _write(path: Path, content: str | bytes = '') -> None:
@@ -39,9 +39,9 @@ def _write(path: Path, content: str | bytes = '') -> None:
 
 def _make_source(target_root: Path, *, with_agent: bool = True, with_root_assets: bool = True) -> None:
     """Build a fixture target/antigravity/ tree with realistic layout."""
-    _write(target_root / _SKILL_SRC / 'SKILL.md', '---\nname: sync-antigravity\n---\nbody\n')
+    _write(target_root / _SKILL_SRC / 'SKILL.md', '---\nname: sync-harnesses\n---\nbody\n')
     _write(target_root / _SKILL_SRC / 'standards' / 'note.md', '# standards\n')
-    _write(target_root / _COMMAND_SRC, '---\nname: plan-marshall-sync-antigravity\n---\ncmd\n')
+    _write(target_root / _COMMAND_SRC, '---\nname: plan-marshall-sync-harnesses\n---\ncmd\n')
     if with_agent:
         _write(target_root / _AGENT_SRC, '---\nname: execution-context\n---\nagent\n')
         _write(target_root / _ANOTHER_AGENT_SRC, '---\nname: execution-context-reader\n---\nagent\n')
@@ -69,12 +69,12 @@ def test_sync_antigravity_deploys_components(tmp_path: Path):
     assert result.returncode == 0, result.stderr
 
     # Skill dir deployed into skills/
-    assert (dest / 'skills' / 'plan-marshall-sync-antigravity').exists()
-    assert (dest / 'skills' / 'plan-marshall-sync-antigravity' / 'SKILL.md').is_file()
-    assert (dest / 'skills' / 'plan-marshall-sync-antigravity' / 'standards' / 'note.md').is_file()
+    assert (dest / 'skills' / 'plan-marshall-sync-harnesses').exists()
+    assert (dest / 'skills' / 'plan-marshall-sync-harnesses' / 'SKILL.md').is_file()
+    assert (dest / 'skills' / 'plan-marshall-sync-harnesses' / 'standards' / 'note.md').is_file()
 
     # Command deployed into commands/
-    assert (dest / 'commands' / 'plan-marshall-sync-antigravity.md').is_file()
+    assert (dest / 'commands' / 'plan-marshall-sync-harnesses.md').is_file()
 
     # Agent files deployed into agents/
     assert (dest / 'agents' / 'execution-context.md').is_file()
@@ -155,8 +155,8 @@ def test_sync_antigravity_real_deploy_writes_layout(tmp_path: Path):
 
     result = _run('--source', str(source), '--target-dir', str(dest))
     assert result.returncode == 0, result.stderr
-    assert (dest / 'skills' / 'plan-marshall-sync-antigravity' / 'SKILL.md').is_file()
-    assert (dest / 'commands' / 'plan-marshall-sync-antigravity.md').is_file()
+    assert (dest / 'skills' / 'plan-marshall-sync-harnesses' / 'SKILL.md').is_file()
+    assert (dest / 'commands' / 'plan-marshall-sync-harnesses.md').is_file()
     assert (dest / 'agents' / 'execution-context.md').is_file()
     assert (dest / 'plugin.json').is_file()
 
@@ -417,7 +417,7 @@ def test_sync_antigravity_copies_verbatim_subdirs(tmp_path: Path):
 
     result = _run('--source', str(source), '--target-dir', str(dest))
     assert result.returncode == 0, result.stderr
-    skill_dst = dest / 'skills' / 'plan-marshall-sync-antigravity'
+    skill_dst = dest / 'skills' / 'plan-marshall-sync-harnesses'
     assert (skill_dst / 'standards' / 'note.md').is_file()
     assert (skill_dst / 'references' / 'manual.md').is_file()
     assert (skill_dst / 'templates' / 'tpl.txt').is_file()
