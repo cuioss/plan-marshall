@@ -24,7 +24,7 @@ This bundle provides **core infrastructure** organized into functional areas:
 
 Configuration (`marshall-steward`) and WebFetch permission consolidation (`workflow-permission-web`) are skills, not commands.
 
-### Skills (76)
+### Skills (77)
 
 | Category | Skills |
 |----------|--------|
@@ -34,7 +34,7 @@ Configuration (`marshall-steward`) and WebFetch permission consolidation (`workf
 | **Services (`manage-*`)** | `manage-adr`, `manage-architecture`, `manage-build-server`, `manage-change-ledger`, `manage-ci-artifacts`, `manage-config`, `manage-execution-manifest`, `manage-files`, `manage-findings`, `manage-lessons`, `manage-locks`, `manage-logging`, `manage-metrics`, `manage-personas`, `manage-plan-documents`, `manage-providers`, `manage-references`, `manage-run-config`, `manage-solution-outline`, `manage-status`, `manage-tasks`, `manage-terminal-title` |
 | **Build systems** | `build-gradle`, `build-maven`, `build-npm`, `build-pyproject`, `build-server-client` |
 | **CI & review** | `automatic-review`, `workflow-integration-git`, `workflow-integration-github`, `workflow-integration-gitlab`, `workflow-integration-sonar`, `workflow-pr-doctor`, `workflow-permission-web` |
-| **Tools** | `tools-file-ops`, `tools-input-validation`, `tools-integration-ci`, `tools-permission-doctor`, `tools-permission-fix`, `tools-script-executor` |
+| **Tools** | `lsp-client`, `tools-file-ops`, `tools-input-validation`, `tools-integration-ci`, `tools-permission-doctor`, `tools-permission-fix`, `tools-script-executor` |
 | **Recipes** | `recipe-agentfile-hygiene`, `recipe-code-review`, `recipe-lesson-cleanup`, `recipe-refactor-to-profile-standards`, `recipe-security-audit`, `recipe-simplify-codebase` |
 | **References** | `ref-agentfile-hygiene`, `ref-code-quality`, `ref-toon-format`, `ref-workflow-architecture` |
 | **Extension / infrastructure** | `extension-api`, `plan-marshall-plugin`, `platform-runtime`, `script-shared`, `untrusted-ingestion` |

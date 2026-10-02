@@ -48,6 +48,7 @@
     "./skills/persona-security-expert",
     "./skills/execute-task",
     "./skills/extension-api",
+    "./skills/lsp-client",
     "./skills/manage-adr",
     "./skills/manage-architecture",
     "./skills/manage-build-server",

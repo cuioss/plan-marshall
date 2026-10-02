@@ -304,9 +304,6 @@
       "url": "https://github.com/cuioss/plan-marshall.git"
     }
   ],
-  "runtime": {
-    "target": "antigravity"
-  },
   "skill_domains": {
     "system": {
       "defaults": [],
