@@ -28,6 +28,13 @@ _inbox = load_script_module(
     'plan-marshall', 'plan-orchestrator', '_orchestrator_inbox.py', '_transition_orchestrator_inbox'
 )
 
+#: The request-document renderer, loaded under a name of this module's own for
+#: the same collision-proofing reason. ``_seed_plan_with_provenance`` renders
+#: ``request.md`` through it so the fixture cannot drift from the real template.
+_documents_core = load_script_module(
+    'plan-marshall', 'manage-plan-documents', '_documents_core.py', '_transition_documents_core'
+)
+
 
 # =============================================================================
 # Tests: the ``phase-transition`` mailbox check-point on the transition payload
@@ -62,10 +69,25 @@ def _seed_plan_with_provenance(plan_context, plan_id: str, source_id: str) -> No
         )
     )
     plan_dir = plan_context.plan_dir_for(plan_id)
-    (plan_dir / 'request.md').write_text(
-        f'source=orchestrator\nsource_id={source_id}\n\n# Request\n\nDemo request body.\n',
-        encoding='utf-8',
+    (plan_dir / 'request.md').write_text(_render_request(plan_id, source_id), encoding='utf-8')
+
+
+def _render_request(plan_id: str, source_id: str) -> str:
+    """The ``request.md`` text ``request create`` writes for ``source_id``.
+
+    Rendered by the PRODUCTION renderer from the production template rather than
+    hand-composed, so the shape under test is the one a real plan carries: a
+    leading HTML comment, a ``# Request:`` heading, then ``key: value`` header
+    lines. A hand-written ``key=value`` block here agreed with a parser the real
+    document defeats, which let the probe report ``not_orchestrated`` for every
+    orchestrated plan while these tests stayed green.
+    """
+    rendered: str = _documents_core.render_template(
+        _documents_core.load_document_type('request'),
+        {'title': 'Mailbox Checkpoint', 'source': 'description', 'source_id': source_id},
+        plan_id,
     )
+    return rendered
 
 
 def _mailbox_dir(plan_id: str, epic_slug: str = _MAILBOX_EPIC) -> Path:

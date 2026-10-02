@@ -18,6 +18,7 @@ from _invariants import (
     assert_finalize_findings_clean,
 )
 from _lessons_query import RESTORE_ACTIONS
+from _plan_parsing import parse_document_sections
 from _short_description import derive_short_description
 from _status_core import (
     _surface_drive,
@@ -36,7 +37,7 @@ from constants import (
     PHASE_STATUS_IN_PROGRESS,
     PHASE_STATUS_PENDING,
 )
-from file_ops import get_plan_dir, parse_markdown_metadata
+from file_ops import get_plan_dir
 
 # Result-status values that indicate the strict-verify gate refuses to advance.
 # Mirrors the ``--strict`` exit-1 conditions in ``phase_handshake.py`` main()
@@ -171,7 +172,12 @@ def _resolve_mailbox_checkpoint(plan_id: str) -> dict[str, Any]:
         block['reason'] = f'request.md could not be read, so the plan has no resolvable provenance: {exc}'
         return block
 
-    classification = classify_source_id(parse_markdown_metadata(request_text).get('source_id', ''))
+    # ``parse_document_sections`` is the reader ``manage-plan-documents request
+    # read`` uses: it promotes the ``source_id: <value>`` header line of a real
+    # ``request.md`` — which opens with an HTML comment and a ``# Request:``
+    # heading — to a virtual section. A ``key=value`` front-matter parser stops
+    # at that heading and yields an empty pointer for every orchestrated plan.
+    classification = classify_source_id(parse_document_sections(request_text).get('source_id', ''))
     if not classification.orchestrated or not classification.epic:
         block['probe'] = MAILBOX_PROBE_NOT_ORCHESTRATED
         block['reason'] = (

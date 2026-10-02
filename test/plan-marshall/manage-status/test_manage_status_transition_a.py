@@ -32,6 +32,31 @@ def test_a_plan_with_no_epic_reports_not_orchestrated_and_publishes_no_counts(pl
     assert 'state' not in mailbox
 
 
+def test_a_templated_request_with_a_plan_spec_pointer_reaches_the_read(plan_context):
+    """A real ``request.md`` carrying a plan-spec pointer yields ``probe=read``.
+
+    The document is the one the request template renders — an HTML comment and a
+    ``# Request:`` heading ahead of a ``source_id: <pointer>`` header line. The
+    shape is asserted before the probe runs so this test cannot pass against a
+    fixture that quietly went back to a form no real plan carries.
+    """
+    plan_id = 'mailbox-templated-pointer'
+    source_id = _orchestrator_source_id(_MAILBOX_EPIC)
+    _seed_plan_with_provenance(plan_context, plan_id, source_id)
+    request_lines = (plan_context.plan_dir_for(plan_id) / 'request.md').read_text(encoding='utf-8').splitlines()
+    assert request_lines[0].startswith('<!--')
+    assert '# Request: Mailbox Checkpoint' in request_lines
+    assert f'source_id: {source_id}' in request_lines
+
+    mailbox = _transition(plan_id)['mailbox']
+
+    assert mailbox['probe'] == _lifecycle.MAILBOX_PROBE_READ
+    assert mailbox['epic'] == _MAILBOX_EPIC
+    for key in _MAILBOX_COUNT_KEYS:
+        assert key in mailbox, f'{key} is missing from a probe that read the mailbox'
+    assert 'state' in mailbox
+
+
 def test_a_probe_that_raises_is_contained_and_named(plan_context, monkeypatch):
     """An unanticipated probe failure degrades the block, never the transition.
 
