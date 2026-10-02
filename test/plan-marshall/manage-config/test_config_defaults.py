@@ -3232,10 +3232,7 @@ def test_migration_deferral_repeats_stably():
     second: list = []
     _migrate_run_at_all_to_lane(live, second)
 
-    deferred = (
-        'plan.phase-6-finalize.qgate=never -> deferred until '
-        'steps[default:pre-push-quality-gate] is accepted'
-    )
+    deferred = 'plan.phase-6-finalize.qgate=never -> deferred until steps[default:pre-push-quality-gate] is accepted'
     assert second == [deferred]
     assert live == snapshot
     assert live['plan']['phase-6-finalize']['qgate'] == 'never'
