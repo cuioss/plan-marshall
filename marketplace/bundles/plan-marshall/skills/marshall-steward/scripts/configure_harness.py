@@ -36,7 +36,11 @@ from toon_parser import serialize_toon
 
 
 def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> bool:
-    """Dispatch the active target's platform-runtime setup hooks and verify rule emission."""
+    """Dispatch the active target's platform-runtime setup hooks and verify rule emission.
+
+    Invokes project_initial_setup and project_install_hook on the runtime. For targets
+    without lifecycle hooks (e.g., Antigravity, OpenCode), project_install_hook is a no-op.
+    """
     proj = project_dir.resolve()
     rules_emitted = False
 

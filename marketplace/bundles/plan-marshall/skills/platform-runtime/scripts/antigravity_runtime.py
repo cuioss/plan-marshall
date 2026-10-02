@@ -216,7 +216,7 @@ class AntigravityRuntime(Runtime):
                 'marshal_written': True,
                 'settings_path': settings_path,
                 'hook_installed': False,
-                'hook_skip_reason': 'Antigravity hooks managed in .agents/hooks.json',
+                'hook_skip_reason': 'Antigravity runs without PreToolUse lifecycle hooks',
             },
         )
 
@@ -226,7 +226,7 @@ class AntigravityRuntime(Runtime):
         overwrite: Sequence[str] = (),
         enforcement: bool = False,
     ) -> str:
-        """Install lifecycle hooks into Antigravity workspace."""
+        """No-op: Antigravity executes commands directly without lifecycle hooks."""
         if target != 'antigravity':
             from platform_runtime import _REGISTRY
             from runtime_base import describe_targets
@@ -237,78 +237,11 @@ class AntigravityRuntime(Runtime):
                 f'Target {target!r} is not in the registry; valid targets are: {describe_targets(_REGISTRY.keys())}',
             )
 
-        hooks_dir = Path.cwd() / '.agents'
-        hooks_file = hooks_dir / 'hooks.json'
-
-        guard_config = {
-            'enabled': True,
-            'PreToolUse': [
-                {
-                    'matcher': 'run_command',
-                    'hooks': [
-                        {
-                            'type': 'command',
-                            'command': 'python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor --check-only',
-                            'timeout': 10,
-                        }
-                    ],
-                }
-            ],
-        }
-
-        # Antigravity hook skeleton if none exists
-        if not hooks_file.exists():
-            try:
-                hooks_dir.mkdir(parents=True, exist_ok=True)
-                skeleton = {'plan-marshall-guard': guard_config}
-                hooks_file.write_text(json.dumps(skeleton, indent=2) + '\n', encoding='utf-8')
-                return toon_success(
-                    'project install-hook',
-                    {
-                        'target': target,
-                        'hooks_file': str(hooks_file),
-                        'installed': True,
-                    },
-                )
-            except OSError as exc:
-                return toon_error(
-                    'project install-hook',
-                    'io_error',
-                    f'Failed to write .agents/hooks.json: {exc}',
-                )
-
-        # Existing hooks file: merge plan-marshall-guard
-        try:
-            raw_text = hooks_file.read_text(encoding='utf-8')
-            data = json.loads(raw_text) if raw_text.strip() else {}
-            if not isinstance(data, dict):
-                data = {}
-            if data.get('plan-marshall-guard') == guard_config:
-                return toon_success(
-                    'project install-hook',
-                    {
-                        'target': target,
-                        'hooks_file': str(hooks_file),
-                        'installed': False,
-                        'message': 'plan-marshall-guard already installed in .agents/hooks.json',
-                    },
-                )
-            data['plan-marshall-guard'] = guard_config
-            hooks_file.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
-            return toon_success(
-                'project install-hook',
-                {
-                    'target': target,
-                    'hooks_file': str(hooks_file),
-                    'installed': True,
-                },
-            )
-        except (OSError, json.JSONDecodeError) as exc:
-            return toon_error(
-                'project install-hook',
-                'io_error',
-                f'Failed to update .agents/hooks.json: {exc}',
-            )
+        return toon_noop(
+            'project install-hook',
+            'Antigravity executes commands directly without lifecycle hooks',
+            'No hook installation required for Antigravity workspace',
+        )
 
     # ------------------------------------------------------------------
     # Layout operations
@@ -318,6 +251,7 @@ class AntigravityRuntime(Runtime):
         """Return the Antigravity project-local skill discovery roots."""
         roots = [
             '.agents/skills',
+            '.claude/skills',
             '.agents/plugins/plan-marshall/skills',
         ]
         return toon_success(
