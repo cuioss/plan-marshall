@@ -388,6 +388,13 @@ exists to prevent.
 
 Binding decisions that still govern. Settled ones are removed.
 
+- **2026-10-02 — truth-168 drain dispositions.** Landing 005 reconciled
+  (PLAN-TRUTH-168 shipped via #1674); candidate-lessons promoted:
+  002 → lesson `2026-10-02-16-001` (promoted), 003 → `2026-10-02-16-002`
+  (promoted), 004 → `2026-10-02-16-003` (promoted). Dedup checked: no active
+  lesson under `plan-marshall:manage-config`; no duplicate under
+  `plan-marshall:tools-script-executor`.
+
 - **Merge only within a serialization class.** Plans that already share files can never run in
   parallel, so merging them costs zero throughput and saves a plan lifecycle. Surface-disjoint plans
   **are** parallel slots — merging those destroys capacity. Apply this to every future merge question.
@@ -596,6 +603,15 @@ standards) and 5 (a working multi-model eval harness, design-input-only prior ar
 > ↪ Relocated to `settled.md` § "Inbox drain — 2026-09-22, 1 message, 18 items dispositioned (no landing)" — settled: the drain/sweep is complete — every message dispositioned and archived, every resulting plan row reconciled
 
 ## Open Defects
+
+### 2026-10-02 — PLAN-211 landing incomplete: `total_tokens` unknown (`implement-plan-211-baseline-reconcile-002.md`)
+
+Landing-check `complete: false`, `missing_keys: [total_tokens]` — sender
+declares the run recorded zeroed dispatch usage, so metrics carry no token
+figures. Reconciled as far as it goes (row shipped + stamped); a manual paste
+from that plan may still surface a required fact the inbox did not get. Retire
+when a complete landing-facts block (or an operator-confirmed n/a with
+justification) arrives.
 
 ### 2026-09-22 — `7d82d5d90`: lessons-handling round-tripped this epic's own one-day-old promotions back to it, then deleted the corpus copies
 
@@ -2162,6 +2178,44 @@ cannot see this: the 22 renderings pass green either way until something tries t
 > ↪ Relocated to `settled.md` § "✅ Resolved / retracted — compacted 2026-08-08, retained as the record" — the retraction record itself, retained and reachable rather than dropped
 
 ## Watches
+
+### ✅ RETIRED 2026-10-02 — W-2026-10-02-a landed as PR 1681 (merged `8e21bd1`, branch pruned)
+
+Surfaced at PLAN-TRUTH-168's landing (PR #1674): a sync-guard/emitter scope
+mismatch found during the run was fixed as drive-by and rides follow-up PR
+#1681. Tracked work, not the landing's cleanup. Retire when #1681 merges.
+
+### ✅ RETIRED 2026-10-02 — W-2026-10-01-a landed as PR 1674 (PLAN-TRUTH-168 shipped)
+
+Inbox `truth-168-sync-defaults-reverting-remove-001.md`: branch
+`feature/truth-168-sync-defaults-reverting-remove` exists, PR 1674 open
+(`merge_state: blocked`, no review decision) — corroborated via `ci pr view`.
+Not merged: PLAN-TRUTH-168 stays `staged`, no queue transition. Retire when 1674
+merges and the landing reconciles.
+
+Recurrence 2026-10-01 (operator paste, same facts as the drained inbox message):
+fix mechanics corroborated via PR body (atomic-once-present `held_for_ask`,
+intent-recorded `remove-step`, `added` vs `re_added`, Stage-2 ask step); test
+claims (5/5 tasks, quality-gate green, whole-tree module-tests timeout at 330s)
+remain orchestrator-unverified leads — no build runs inline. Process-rule
+frictions went to the process-compliance inbox (other epic's scope, no action
+here). PR re-checked: still open, review none.
+
+### ✅ RETIRED 2026-10-02 — W-2026-10-01-b landed as PR 1675 (PLAN-211 shipped)
+
+Inbox `implement-plan-211-baseline-reconcile-001.md`: branch
+`feature/implement-plan-211-baseline-reconcile` exists, `pr list` reports 0 open
+PRs on it — corroborated. Test/compile/quality-gate claims are orchestrator-
+unverified (no build runs inline); recorded as lead, not fact. PLAN-211 stays
+`staged`. Retire when the PR opens/merges.
+
+### W-2026-10-01-c — process-compliance reclaimed 002 items to PLAN-21/23 (inbox 2026-09-29)
+
+Inbox `process-compliance-003.md`: `process-compliance-002` (already archived)
+items 5/21/22 plus the `--step-id`/`[DISPATCH]` lesson are now owned by
+process-compliance PLAN-23 / PLAN-21 — no new work here. Do not restage those
+facets under parked PLAN-TRUTH-169/-175/-150/PLAN-205 without replying on that
+channel first (double-build guard).
 
 ### W-1599-a — PLAN-TRUTH-147 follow-up (TASK-21–26 + lesson 2026-09-24-05-001) not yet staged
 
