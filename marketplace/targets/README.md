@@ -320,7 +320,7 @@ antigravity:
 
 The aggregate `status` is `success` only when every harness reported `success`, `partial` when some did, and `error` when none did.
 
-Under `--dry-run` every harness result block additionally carries `dry_run: true`, and nothing is written.
+Under `--dry-run` nothing is written, and each result block produced by a harness's own sync code additionally carries `dry_run: true`. The engine-level fallback block for a harness that could not start carries no `dry_run` field.
 
 ### CLI Interface
 
