@@ -229,6 +229,7 @@ _REGISTRY: dict[str, type[Runtime]] = {name: rec['runtime_class'] for name, rec 
 _TARGET_BOOTSTRAP_LIBS: dict[str, tuple[str, ...]] = {
     name: rec['bootstrap_libs'] for name, rec in _TARGET_RECORDS.items()
 }
+_TARGET_FOR_RUNTIME: dict[type[Runtime], str] = {rec['runtime_class']: name for name, rec in _TARGET_RECORDS.items()}
 
 #: Canonical operation registry for _dispatch. Single construction site for
 #: the operation strings the router handles; tests drive from this instead
@@ -340,26 +341,21 @@ def _make_runtime(target: str) -> Runtime | None:
 
 
 def _runtime_for_target(project_dir: str | None = None) -> Runtime:
-    """Resolve the active runtime for a project from marshal.json.
+    """Resolve the active runtime for a project via target_context.
 
     Public entry point for scripts (e.g. the permission skills) that must
-    honour ``runtime.target`` without going through the ``_dispatch`` router,
-    which is bound to a CLI argv shape. Reads marshal.json the same way the
-    router does and looks the implementation up in ``_REGISTRY``.
-
-    When no marshal.json (or no ``runtime.target``) can be resolved, the
-    default target is used — a project that declares no target is assumed to
-    be on the default platform. A target that IS declared is always honoured:
-    the fallback never overrides an explicit ``runtime.target``.
+    honour the resolved target without going through the ``_dispatch`` router,
+    which is bound to a CLI argv shape. Delegates target resolution to
+    ``target_context.resolve_target()``.
 
     Raises:
         RuntimeError: When the resolved target is not registered in the
             registry.
     """
-    marshal = _read_marshal(project_dir)
-    target = _resolve_target(marshal) if marshal is not None else None
-    if target is None:
-        target = _DEFAULT_TARGET
+    import target_context
+
+    p = Path(project_dir) if project_dir else None
+    target = target_context.resolve_target(p)['target']
     runtime = _make_runtime(target)
     if runtime is None:
         raise RuntimeError(f'Unknown runtime target: {target!r}')
@@ -396,9 +392,10 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     if operation == 'project initial-setup':
         p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime project initial-setup')
         p.add_argument('--project-dir', default='.')
-        p.add_argument('--target', default=_DEFAULT_TARGET, choices=list(_REGISTRY))
+        p.add_argument('--target', default=None, choices=list(_REGISTRY))
         ns = p.parse_args(remaining)
-        return runtime.project_initial_setup(ns.project_dir, ns.target)
+        target_val = ns.target if ns.target is not None else _TARGET_FOR_RUNTIME.get(type(runtime), _DEFAULT_TARGET)
+        return runtime.project_initial_setup(ns.project_dir, target_val)
 
     # ------------------------------------------------------------------
     # project install-hook
@@ -846,45 +843,27 @@ def main(argv: list[str] | None = None) -> int:
     operation, remaining = _build_operation(argv)
 
     # ------------------------------------------------------------------
-    # Determine project_dir for marshal.json lookup.
+    # Determine project_dir and resolve target via target_context.
     # ``project initial-setup`` is the only operation that explicitly
     # supplies --project-dir before the executor exists; extract it here
-    # so the marshal lookup works correctly for that path.
+    # so the resolution works correctly for that path.
     # All other operations use cwd-walk.
     # ------------------------------------------------------------------
     project_dir: str | None = None
+    target: str | None = None
     if operation == 'project initial-setup':
-        # Peek at --project-dir without consuming remaining.
+        # Peek at --project-dir and --target without consuming remaining.
         peek = argparse.ArgumentParser(allow_abbrev=False, add_help=False)
         peek.add_argument('--project-dir', default=None)
-        peek.add_argument('--target', default=_DEFAULT_TARGET)
+        peek.add_argument('--target', default=None)
         ns_peek, _ = peek.parse_known_args(remaining)
         if ns_peek.project_dir:
             project_dir = ns_peek.project_dir
-
-    # ------------------------------------------------------------------
-    # Load marshal.json and resolve target.
-    # ``project initial-setup`` may run before marshal.json exists, so we
-    # attempt the read but fall back to the --target argument when the
-    # file is absent.
-    # ------------------------------------------------------------------
-    marshal = _read_marshal(project_dir)
-
-    if marshal is not None:
-        target = _resolve_target(marshal)
-        if not target:
-            # marshal.json found but runtime.target missing — fall back to the
-            # registered default target.
-            target = _DEFAULT_TARGET
+        if ns_peek.target:
+            target = ns_peek.target
     else:
-        # marshal.json absent — only valid for ``project initial-setup``.
-        if operation == 'project initial-setup':
-            # Extract --target from remaining to bootstrap the correct runtime.
-            peek2 = argparse.ArgumentParser(allow_abbrev=False, add_help=False)
-            peek2.add_argument('--target', default=_DEFAULT_TARGET)
-            ns_peek2, _ = peek2.parse_known_args(remaining)
-            target = ns_peek2.target
-        else:
+        marshal = _read_marshal(project_dir)
+        if marshal is None:
             print(
                 toon_error(
                     operation,
@@ -893,6 +872,12 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
             return 0
+
+    if target is None:
+        import target_context
+
+        proj_path = Path(project_dir) if project_dir else None
+        target = target_context.resolve_target(proj_path)['target']
 
     # Activate target-specific bootstrap libs now that the target is known.
     # This extends sys.path with platform-specific skill libraries (e.g.
@@ -907,7 +892,7 @@ def main(argv: list[str] | None = None) -> int:
             toon_error(
                 operation,
                 'unknown_target',
-                f'runtime.target {target!r} is not in the registry; '
+                f'runtime target {target!r} is not in the registry; '
                 f'valid targets are: {describe_targets(_REGISTRY.keys())}',
             )
         )
@@ -916,14 +901,13 @@ def main(argv: list[str] | None = None) -> int:
     # ------------------------------------------------------------------
     # ``project install-hook`` is the one operation that takes a target
     # identifier as an ARGUMENT while the runtime serving it was selected
-    # independently from marshal.json. Two identifiers that can disagree is
-    # a silent-wrong-answer seam: a project whose marshal.json says
-    # ``opencode`` invoked with ``--target claude`` would reach
-    # ``OpenCodeRuntime``, which declines every invocation without reading
-    # the argument at all — so the caller asked for the Claude integration
-    # and was told OpenCode has no hook channel. The inverse mismatch
-    # reaches ClaudeRuntime and reports ``unknown_target``, which is an
-    # error about the wrong thing.
+    # independently. Two identifiers that can disagree is a silent-wrong-answer
+    # seam: a project whose harness is opencode invoked with --target claude
+    # would reach OpenCodeRuntime, which declines every invocation without
+    # reading the argument at all — so the caller asked for the Claude
+    # integration and was told OpenCode has no hook channel. The inverse
+    # mismatch reaches ClaudeRuntime and reports unknown_target, which is
+    # an error about the wrong thing.
     #
     # Refuse the disagreement here, where both identifiers are in scope.
     # The check fires ONLY when the requested target names a REGISTERED
@@ -942,10 +926,10 @@ def main(argv: list[str] | None = None) -> int:
                     operation,
                     'target_mismatch',
                     f'--target {requested!r} names a different target than this '
-                    f"project's runtime.target {target!r}; the install would be "
+                    f"project's runtime target {target!r}; the install would be "
                     f'served by the {target!r} runtime and could not honour the '
-                    f'request. Run this from a {requested!r} project, or change '
-                    f'runtime.target in .plan/marshal.json.',
+                    f'request. Run this from a {requested!r} project, or configure '
+                    f'the harness for {requested!r}.',
                 )
             )
             return 0

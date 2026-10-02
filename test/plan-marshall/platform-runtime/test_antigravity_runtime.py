@@ -95,32 +95,29 @@ def test_layout_bundle_cache_root(runtime: AntigravityRuntime):
 
 
 def test_project_initial_setup(runtime: AntigravityRuntime, tmp_path: Path):
-    """project_initial_setup creates .plan/ and initializes marshal.json with antigravity target."""
+    """project_initial_setup creates .plan/ and leaves marshal.json unwritten."""
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
     assert result['status'] == 'success'
     assert result['target'] == 'antigravity'
-    assert result['marshal_written'] is True
+    assert result['marshal_written'] is False
 
-    marshal_file = tmp_path / '.plan' / 'marshal.json'
-    assert marshal_file.is_file()
-    data = json.loads(marshal_file.read_text(encoding='utf-8'))
-    assert data['runtime']['target'] == 'antigravity'
     assert (tmp_path / '.plan' / 'temp').is_dir()
+    assert not (tmp_path / '.plan' / 'marshal.json').exists()
 
 
 def test_project_initial_setup_preserves_existing_marshal(runtime: AntigravityRuntime, tmp_path: Path):
-    """project_initial_setup merges into existing marshal.json."""
+    """project_initial_setup leaves existing marshal.json untouched."""
     plan_dir = tmp_path / '.plan'
     plan_dir.mkdir(parents=True)
     marshal_file = plan_dir / 'marshal.json'
-    marshal_file.write_text(json.dumps({'custom_key': 'custom_value'}), encoding='utf-8')
+    initial = json.dumps({'custom_key': 'custom_value'})
+    marshal_file.write_text(initial, encoding='utf-8')
 
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
     assert result['status'] == 'success'
+    assert result['marshal_written'] is False
 
-    data = json.loads(marshal_file.read_text(encoding='utf-8'))
-    assert data['custom_key'] == 'custom_value'
-    assert data['runtime']['target'] == 'antigravity'
+    assert marshal_file.read_text(encoding='utf-8') == initial
 
 
 def test_project_install_hook(runtime: AntigravityRuntime, monkeypatch, tmp_path: Path):

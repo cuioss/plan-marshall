@@ -27,7 +27,6 @@ from runtime_base import (
     Runtime,
     ensure_steps_without_skill_grants,
     extract_project_steps,
-    marshal_shape_error,
     toon_error,
     toon_noop,
     toon_success,
@@ -172,36 +171,6 @@ class AntigravityRuntime(Runtime):
                 f'Failed to create .plan directory: {exc}',
             )
 
-        marshal_path = plan_dir / 'marshal.json'
-        try:
-            if marshal_path.exists():
-                existing: Any = json.loads(marshal_path.read_text(encoding='utf-8'))
-            else:
-                existing = {}
-        except (OSError, json.JSONDecodeError) as exc:
-            return toon_error(
-                'project initial-setup',
-                'io_error',
-                f'Failed to read marshal.json: {exc}',
-            )
-
-        shape_error = marshal_shape_error('project initial-setup', marshal_path, existing)
-        if shape_error is not None:
-            return shape_error
-
-        if 'runtime' not in existing or not isinstance(existing['runtime'], dict):
-            existing['runtime'] = {}
-        existing['runtime']['target'] = target
-
-        try:
-            marshal_path.write_text(json.dumps(existing, indent=2), encoding='utf-8')
-        except OSError as exc:
-            return toon_error(
-                'project initial-setup',
-                'io_error',
-                f'Failed to write marshal.json: {exc}',
-            )
-
         # Ensure project settings exist and default executor is allowed
         settings_path = self.permission_settings_path('project', write=True, project_dir=str(proj))
         settings = self.permission_load_settings(settings_path)
@@ -212,7 +181,7 @@ class AntigravityRuntime(Runtime):
             {
                 'target': target,
                 'project_dir': str(proj),
-                'marshal_written': True,
+                'marshal_written': False,
                 'settings_path': settings_path,
                 'hook_installed': False,
                 'hook_skip_reason': 'Antigravity runs without PreToolUse lifecycle hooks',
