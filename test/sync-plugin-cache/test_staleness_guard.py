@@ -1060,3 +1060,55 @@ def test_successful_sync_emits_no_guard_outcome(tmp_path: Path) -> None:
     data = parse_toon(result.stdout)
     assert data['status'] == 'success'
     assert 'guard_outcome' not in data
+
+
+# =============================================================================
+# Target-scoped bundles absent from the Claude output
+# =============================================================================
+#
+# A bundle declaring ``targets:`` without ``claude`` (e.g. a harness bundle
+# scoped ``[antigravity]``) is correctly ABSENT from ``target/claude/`` — the
+# emitter skips it by design. The bundle-set check must not demand it, or
+# every sync refuses on a current tree.
+
+
+def _make_scoped_bundle(cwd: Path, name: str, targets: list[str]) -> None:
+    """Write a marketplace bundle carrying a ``targets:`` scope declaration."""
+    plugin_doc = json.dumps({'name': name, 'version': '0.1.0', 'targets': targets}, indent=2) + '\n'
+    _write(cwd / 'marketplace' / 'bundles' / name / '.claude-plugin' / 'plugin.json', plugin_doc)
+    _write(cwd / 'marketplace' / 'bundles' / name / 'README.md', f'# {name}\n')
+
+
+def test_scoped_away_bundle_absent_from_target_passes(tmp_path: Path, sync_module) -> None:
+    """A bundle scoped away from Claude is correctly absent from the output."""
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_scoped_bundle(cwd, 'demo-harness', ['antigravity'])
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+    _write_sentinel(cwd, _compute_fingerprint_for(cwd), _target_file_hashes(cwd))
+
+    refusal = sync_module._staleness_guard(cwd / 'target' / 'claude', cwd / 'marketplace' / 'bundles')
+
+    assert refusal is None
+
+
+def test_unscoped_bundle_absent_from_target_still_refuses(tmp_path: Path, sync_module) -> None:
+    """Matched negative control: an unscoped bundle missing from the output still refuses.
+
+    Without this, the scoped-away pass above could be masking a guard that
+    had simply stopped checking bundle presence at all.
+    """
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0', 'demo-missing': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+    _write_sentinel(cwd, _compute_fingerprint_for(cwd), _target_file_hashes(cwd))
+
+    refusal = sync_module._staleness_guard(cwd / 'target' / 'claude', cwd / 'marketplace' / 'bundles')
+
+    assert refusal is not None
+    assert refusal.kind == 'stale'
+    assert 'demo-missing' in refusal.message
