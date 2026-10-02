@@ -369,6 +369,40 @@ def _is_bundle_dir(path: Path) -> bool:
     return path.is_dir() and (path / '.claude-plugin' / 'plugin.json').is_file()
 
 
+#: This sync mirrors the Claude target tree, so only bundles the Claude
+#: emitter produces are expected in ``target/claude/``.
+CLAUDE_TARGET_NAME = 'claude'
+
+
+def _bundle_emits_to_claude(marketplace_root: Path, bundle_name: str) -> bool:
+    """Whether ``bundle_name`` is expected in the Claude target output.
+
+    Mirrors ``marketplace.targets.component_targets.bundle_emits_to`` for the
+    bundle-level ``targets:`` declaration — read locally (not imported)
+    because importing that module executes ``marketplace/targets/__init__.py``
+    with its per-target ``register_target`` side effects, which this script
+    deliberately avoids (see :func:`_load_source_fingerprint_module`). A
+    bundle whose declaration cannot be read is treated as expected (fail
+    closed toward the previous require-everything behaviour, never toward
+    silently skipping a bundle).
+    """
+    manifest = marketplace_root / bundle_name / '.claude-plugin' / 'plugin.json'
+    try:
+        data = json.loads(manifest.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return True
+    if not isinstance(data, dict):
+        return True
+    scope = data.get('targets')
+    if scope is None:
+        return True
+    if isinstance(scope, str):
+        scope = [scope]
+    if not isinstance(scope, list):
+        return True
+    return CLAUDE_TARGET_NAME in scope
+
+
 def _relative_file_map(root: Path) -> dict[str, Path]:
     """Map every regular file under ``root`` to its ``root``-relative POSIX path.
 
@@ -530,6 +564,11 @@ def _staleness_guard(source_root: Path, marketplace_root: Path) -> GuardRefusal 
 
     if marketplace_root.is_dir():
         bundles_in_market = sorted(p.name for p in marketplace_root.iterdir() if _is_bundle_dir(p))
+        # Only bundles the Claude emitter produces are expected in the
+        # target output: a bundle scoped away from this target (e.g. a
+        # harness bundle declaring ``targets: [antigravity]``) is correctly
+        # absent, and demanding it would refuse every sync.
+        bundles_in_market = [b for b in bundles_in_market if _bundle_emits_to_claude(marketplace_root, b)]
         missing = [b for b in bundles_in_market if b not in bundles_in_source]
         if missing:
             return _stale(
