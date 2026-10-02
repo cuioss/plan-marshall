@@ -1,0 +1,20 @@
+{
+  "best_practices": [],
+  "generation": {
+    "by": "architecture",
+    "tree_sha": "6eb2980f1b48801797a81d803529ebfde578627f5c0a752f111ff2fc9580a224"
+  },
+  "insights": [],
+  "internal_dependencies": [],
+  "key_dependencies": [],
+  "key_dependencies_reasoning": "",
+  "key_packages": {},
+  "purpose": "",
+  "purpose_reasoning": "",
+  "responsibility": "",
+  "responsibility_reasoning": "",
+  "skills_by_profile": {},
+  "skills_by_profile_reasoning": "",
+  "tips": [],
+  "type": "module"
+}
