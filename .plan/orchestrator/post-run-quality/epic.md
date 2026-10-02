@@ -66,6 +66,36 @@ the machinery that grades us.
 
 ## Decisions
 
+- 2026-10-02 — **Ledger restored after the #1641 revert, then the inbox drained (3 messages).** Two
+  operator decisions this session. (1) **Restore.** `process-compliance-001.md` reported that PR #1641
+  (`945e59287`), squash-merged from a branch cut before #1643, had reverted this epic's 2026-09-26 PM-MCP
+  supersession. The claim was corroborated first-party (`git diff 88fcfc9ef..HEAD` over this tree) and was
+  still live on `main`: every parked row flipped back to `staged`, the SUPERSEDED banner stripped from each
+  spec, `settled.md` and `inbox/archive/review-apparatus/review-apparatus-001.md` deleted, two
+  already-dispositioned `lessons-routing` messages un-archived back into `inbox/`, and `resume_anchor.md`
+  reduced to its oldest entry. ⛔ **The operational consequence is what made this urgent rather than
+  cosmetic**: the queue presented ten superseded rows as emittable, so a `next` would have handed out a
+  plan whose spec says "do not emit". Restored from `88fcfc9ef` after verifying that the only commits
+  touching this tree after the revert were #1649/#1655/#1660, each adding exactly one `process-compliance`
+  inbox message and nothing else — 27 paths, commit `13e3d2426`, `queue-view.md` regenerated rather than
+  restored. (2) **Landing.** Committed and pushed on `chore/orchestrator-ledger` in the `_orchestrator`
+  worktree; the branch had no upstream, so the push also published eight sibling-session commits, a trade
+  the operator took explicitly. ⚠ **The revert itself is a merge-gate defect this epic does not own** — a
+  squash merge from a stale branch silently reverting a newer landing, unflagged at merge, is orchestrator
+  /merge-queue mechanics. `process-compliance` restored its own tree the same way (operator rule: each
+  epic restores its own), so this is the second instance of the same mechanism, not an isolated accident.
+- 2026-10-02 — **PLAN-PRQ-12's D1 premise refuted at HEAD; D2 is the only live deliverable.** Found while
+  draining `process-compliance-002.md`/`-003.md`, which folded two further pre-fix instances of the
+  chat-signal truncation into PRQ-12 (five in total). ⛔ **The root cause PRQ-12 identified has been fixed
+  elsewhere**: `_chat_signal_reducer.py:406` now returns `BlockScalar(reduced_text)`, landed by PR #1646
+  (`56add3faf`, 2026-09-29T16:56:43Z) with the multi-line round-trip regression test PRQ-12 D1 asked for.
+  Verdict persisted on claim 2 as `contradicted` / `rescoped: yes`; D1 marked SHIPPED ELSEWHERE, D0 moot,
+  D2 (the delivery-integrity lower bound plus the `transcript_undelivered` token) left live and still
+  unimplemented. ⚠ **Both recurrences are PRE-FIX and neither re-opens anything** — the date ordering
+  settles it: `-003.md` was filed 2026-09-29T16:59:25Z, two minutes and forty-two seconds AFTER the fix
+  merged, so the run it reports cannot have exercised post-fix code. This is also the second time a
+  third-party recurrence report has independently confirmed this spec's own root-cause correction while
+  stating the cause as unestablished on its own evidence.
 - 2026-09-17 — **Epic created, and it OWNS the subject end to end.** Operator decision at init, chosen
   over two alternatives: (a) staging only unowned aspects and leaving the subject split across three
   ledgers, and (b) a narrower retrospective-plus-audit cut. Rationale: a single ledger cannot see a
@@ -229,6 +259,14 @@ the machinery that grades us.
 
 ## Open Defects
 
+- ✅ **RESOLVED 2026-10-02 — #1641 reverted this epic's ledger state.** Filed as
+  `process-compliance-001.md` (2026-09-28), corroborated first-party and repaired the same session; the
+  full account is the 2026-10-02 Decisions entry. Retained as the record of why `settled.md`,
+  `inbox/archive/review-apparatus/review-apparatus-001.md` and the ten SUPERSEDED banners have a
+  restore commit (`13e3d2426`) in their history rather than a continuous one. ⇒ **The mechanism remains
+  unowned by this epic**: a stale-branch squash merge silently reverting a newer landing, unflagged at the
+  merge gate, is orchestrator/merge-queue mechanics. Second observed instance (`process-compliance`
+  restored its own tree the same way), so it is a recurring class, not an accident.
 - **2026-09-26 — Whole queue parked (see Decisions).** Every row but the two shipped ones is `parked`; nothing
   is emittable. The Open Defects below are now each owned by a parked spec, i.e. by the PM-MCP carry-over, not
   by pending plan-marshall work.
@@ -386,6 +424,15 @@ this epic's.
 
 ## Watches
 
+- ⚠ **The PM-MCP carry-over now carries at least one stale defect, and this epic cannot see it.**
+  `plan-marshall-mcp/doc/known-defects/post-run-quality-carry-over.md` extracted the whole parked corpus on
+  2026-09-26. PLAN-PRQ-12's D1 was fixed in this repository on 2026-09-29 (PR #1646), so whatever the
+  carry-over says about it is three days out of date — and the same exposure applies to every other carried
+  row: the document is a snapshot of premises that keep moving in the repo it was extracted FROM. ⛔ **No
+  checkout of `plan-marshall-mcp` exists on this machine**, so this is recorded as unverifiable rather than
+  as confirmed-stale (ADR-019: a population that could not be reached is not a finding). — re-check when a
+  `plan-marshall-mcp` checkout is available; at minimum the carry-over needs a re-grounding pass against
+  this repo's HEAD before PM-MCP implements from it, and that pass is the natural precondition for `close`.
 - **CI-wait behaviour needs an operator call, not a fold.** From the 2026-09-19 inbox drain:
   `ci_complete_precondition`'s early-negative return path (return immediately when the precondition
   cannot possibly resolve — no run started, SHA mismatch) and its ~600s poll budgets (95%+ of the harness
