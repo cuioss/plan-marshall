@@ -138,9 +138,10 @@ cannot express.}
   store after landing. The gate verdict is still `false` — see the Open Defect of 2026-09-22. Ran 2026-10-01 to
   2026-10-02 as plan `cross-check-dated-archive-self-collision`, emitted on operator override.
 - PLAN-10 — **sequencing block lifted 2026-10-02**: PLAN-11 has landed, so nothing else in this epic holds
-  `orchestrator.py`. Its verdicts were grounded at `fa7b51774`, before #1676 changed `orchestrator.py`,
-  `SKILL.md` and `workflow/**` — all on its declared surface — so they read stale; re-ground before emitting.
-  The gate still refuses it, so it too goes out only on an operator override.
+  `orchestrator.py`. **Re-grounded at `8665ddacf` by `cleanup` 2026-10-02** (7 claims: 5 corroborated, 2
+  contradicted and already re-scoped; none blocking). D5 was sharpened with the merge-queue ejection case seen
+  on PLAN-11 — a dequeued PR stays `open`, so the settle poll alone cannot report it. Still 6 deliverables,
+  surface unchanged at 14 entries. The gate still refuses it, so it goes out only on an operator override.
 - PLAN-11 — **2026-10-01: folded D4 (exclude the `NO_PLAN` sentinel from the `live_plan` candidates), now 5
   deliverables.** Surface +2 entries (`manage-status/scripts/_cmd_sibling_collision.py`,
   `test/plan-marshall/manage-status/**`), so it now also overlaps parked PLAN-05. Claim 3's verdict corrected
@@ -153,6 +154,17 @@ cannot express.}
   this session — see the spec itself before relying on its Claim Labels.
 
 ## Decisions
+
+- 2026-10-02 — **`cleanup` pass after the PLAN-11 landing.** Corpus: 11 rows and 11 specs, reconciled both
+  ways, none running. Applied: PLAN-10 re-grounded at `8665ddacf` (all 7 verdicts re-stamped, outcomes
+  unchanged) and its D5 corrected for the merge-queue ejection case; its PLAN-11 overlap note marked
+  discharged. **Declined, by name:** re-grounding of parked PLAN-03/05/06/07 — they are under the PM-MCP
+  do-not-emit park, so their verdicts stay stale on purpose and must be refreshed before any un-park — and of
+  the six shipped specs, which are terminal. Settled-narrative relocation out of this file was deferred:
+  candidates are the 2026-09-20 to 2026-09-24 drain and landing decisions for shipped PLAN-01/02/04/08, and
+  they move only on operator confirmation. No duplication (0 source-origin matches). Compaction: view
+  unchanged, both invariants ok, 6 relocation pointers reachable. Inbox archive drain refused, as always (no
+  epic-wide quiescence signal).
 
 - 2026-10-02 — **PLAN-11 landed (#1676, `8665ddacf`); reconciled via `analyze` (inbox scan, 10 messages).**
   The landing message was complete (`landing-check`: no missing key) and corroborated against `ci pr view`

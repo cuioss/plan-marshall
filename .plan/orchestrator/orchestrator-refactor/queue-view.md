@@ -4,17 +4,17 @@
 
 ## START HERE
 
-**Resume anchor**: 2026-10-02 — PLAN-11 SHIPPED (#1676, 8665ddacf; landings/PLAN-11.md). Inbox drained: 10 of 10 archived, 9 lessons promoted (2026-10-02-10-001..009). Both false candidate populations (own dated archive snapshot, NO_PLAN sentinel) are now excluded from cross-check; the sentinel exclusion was observed live here. Next action: OPERATOR DECISION — the disjointness gate is still closed (candidate comparison indeterminate — sibling_epic_spec indeterminate: 95, live_plan indeterminate: 1 = antigravity), so next emits nothing. Either decide the gate's scope (per-candidate instead of whole-population fail-closed; would be a new WS-04 spec) or override to emit PLAN-10. PLAN-10 is the only staged row, prep-ready (0 blocking), no longer sequenced behind anything, but its 7 verdicts are stale (declared_surface_touched by #1676) — re-ground before emitting. Parked, do NOT emit: PLAN-03/05/06/07. Other open operator questions: whether live plan antigravity (1-init since 2026-09-17) is abandoned; the 24-epic legacy-layout sweep; routing of the git-config-injection hardening. PLAN-09 lesson rows kept at findings/2026-09-28-plan-09-lesson-carry-over.md until the operator introduces a target — then move them and retire that file.
+**Resume anchor**: 2026-10-02 — CLEANUP DONE after the PLAN-11 landing; nothing running, inbox empty. Queue: PLAN-10 is the only staged row — re-grounded at 8665ddacf (7 claims: 5 corroborated, 2 contradicted+rescoped, 0 blocking), D5 sharpened with the merge-queue ejection case, no longer sequenced behind anything. Parked, do NOT emit: PLAN-03/05/06/07 (PM-MCP supersession; verdicts stale, deliberately not refreshed). Shipped: PLAN-01/02/04/08/09/11.
 
-LEDGER LIVES IN THE SHARED WORKTREE since 2026-10-01: orchestrator.use_worktree is ON (repository-wide, #1666). Every ledger read/write resolves to .plan/local/worktrees/_orchestrator (branch chore/orchestrator-ledger) — always take epic_dir and store_checkout from resolve-path, never a cwd-relative .plan/orchestrator path. Ledger commits do not reach main by themselves; until PLAN-10 ships land, the ledger branch is landed by hand, and it carries unlanded commits (the cutover record and this landing).
+Next action: OPERATOR DECISION. next emits nothing because the disjointness gate is closed for the whole repository (candidate comparison indeterminate — sibling_epic_spec indeterminate: 95, live_plan indeterminate: 1 = antigravity). Either (a) decide the gate's scope — per-candidate instead of whole-population fail-closed; that would be a new WS-04 spec — or (b) override to emit PLAN-10. Other open operator questions: is live plan antigravity (1-init since 2026-09-17) abandoned; the 24-epic legacy-layout sweep; routing of the git-config-injection hardening; settled-narrative relocation out of epic.md (deferred this pass). PLAN-09 lesson rows stay at findings/2026-09-28-plan-09-lesson-carry-over.md until the operator names a target.
 
-2026-09-29 — CLEANUP DONE, restart-ready (PLAN-10 re-grounded + re-scoped at fa7b51774, surface 14 entries).
+Before restarting a session: the plugin cache is stale relative to 8665ddacf (finalize-step-sync-plugin-cache failed on its staleness guard, lesson 2026-10-02-10-006) — a sync is owed and is outside the orchestrator's carve-out.
+
+LEDGER LIVES IN THE SHARED WORKTREE since 2026-10-01: orchestrator.use_worktree is ON (repository-wide, #1666). Every ledger read/write resolves to .plan/local/worktrees/_orchestrator (branch chore/orchestrator-ledger) — always take epic_dir and store_checkout from resolve-path, never a cwd-relative .plan/orchestrator path. Ledger commits do not reach main by themselves: until PLAN-10 ships land, the ledger branch is landed by hand. To see what is unlanded, run git -C {store_checkout} log origin/main..HEAD and git -C {store_checkout} status.
 
 2026-09-28 — PLAN-09 SHIPPED (#1652, 438a0a71f). #1641's revert of this tree restored from 88fcfc9ef and landed (#1656); record relocated to settled.md.
 
 2026-09-26 — QUEUE PARKED, PM-MCP SUPERSEDES IT (review-apparatus-001 drained); PLAN-09/10/11 later re-staged by operator decision.
-
-PREVIOUS ANCHOR (kept): Cleanup pass shipped (PR #1621, merge 54b4bb525): 30 A1 verdicts re-grounded, PLAN-10/PLAN-11 re-scoped. restart-check: ready.
 **Phase**: orchestrating
 **Parked**:
 - PLAN-03 (WS-02)
