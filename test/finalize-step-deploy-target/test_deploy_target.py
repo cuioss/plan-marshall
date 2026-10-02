@@ -12,9 +12,12 @@ contract from three angles:
 2. **Project-local registration** — the skill lives at
    ``.claude/skills/finalize-step-deploy-target/SKILL.md`` (NOT in any
    marketplace bundle, NOT in ``BUILT_IN_FINALIZE_STEPS``).
-3. **Generator behaviour** — when the live generator runs against a
+3. **Three harness targets** — the skill prescribes one generator call
+   per harness (``claude``, ``opencode``, ``antigravity``) and records
+   ``done`` only when all three exit ``0``.
+4. **Generator behaviour** — when the live generator runs against a
    fixture marketplace it exits ``0`` and prints a
-   ``claude: produced {N} entries`` line to stdout with a non-zero
+   ``{target}: produced {N} entries`` line to stdout with a non-zero
    ``{N}``; the executor reads its outcome from the exit code and its
    ``display_detail`` count from that line. The generator emits no
    machine-readable envelope, so the tests assert the exit code and the
@@ -28,7 +31,7 @@ import re
 from pathlib import Path
 
 import pytest
-from _documented_example_scan import DEFECTIVE_GENERATOR_CALL
+from _documented_example_scan import DEFECTIVE_GENERATOR_CALL, WRAPPER_GENERATOR_CALL, scan_shell_prescriptions
 
 from conftest import (
     MARKETPLACE_ROOT,
@@ -43,10 +46,21 @@ cd = load_script_module('plan-marshall', 'manage-config', '_config_defaults.py')
 _SKILL_MD = PROJECT_ROOT / '.claude' / 'skills' / 'finalize-step-deploy-target' / 'SKILL.md'
 _GENERATE_PY = PROJECT_ROOT / 'marketplace' / 'targets' / 'generate.py'
 
-#: The invocation the skill prescribes. ``uv`` is installed only into the
-#: project-local ``.pyprojectx/`` tree and is not on ``PATH``, so the wrapper
-#: alias is the only form that runs from a normal shell.
-_WRAPPER_INVOCATION = './pw generate-claude'
+#: The harness targets the step generates, in the order it prescribes them.
+_HARNESS_TARGETS: tuple[str, ...] = ('claude', 'opencode', 'antigravity')
+
+#: The invocations the skill prescribes, one per harness target. ``uv`` is
+#: installed only into the project-local ``.pyprojectx/`` tree and is not on
+#: ``PATH``, so the wrapper alias is the only form that runs from a normal shell.
+_WRAPPER_INVOCATIONS: tuple[str, ...] = (
+    './pw generate-claude',
+    './pw generate-opencode',
+    './pw generate-antigravity',
+)
+
+#: A row of the skill's outcome table: the exit-code condition, then the
+#: ``outcome=`` token it maps to. Any text after the token is the row's remark.
+_OUTCOME_ROW_RE = re.compile(r'^\| (?P<condition>[^|]+?) \| `outcome=(?P<outcome>\w+)`', re.MULTILINE)
 
 #: The prescription that cannot succeed as written — it exits 127 outside the
 #: wrapper. Pinned as the COMMAND literal rather than as the bare words
@@ -88,7 +102,8 @@ def test_skill_frontmatter_has_canonical_fields():
     assert fm.get('name') == 'finalize-step-deploy-target'
     assert fm.get('description'), 'description must be non-empty'
     assert fm.get('order') == '81', (
-        'deploy-target order must be 81 (post-merge: after branch-cleanup=70, before sync-plugin-cache=85)'
+        'deploy-target order must be 81 (post-merge: after branch-cleanup=70, '
+        'before finalize-step-sync-plugin-cache=85)'
     )
 
 
@@ -99,10 +114,40 @@ def test_skill_body_documents_inline_only_and_no_skip_detector():
     assert 'no skip detector' in flat, (
         'standard must explicitly state there is no skip detector — generator handles no-op'
     )
-    # Generator command must appear verbatim
-    assert _WRAPPER_INVOCATION in text
-    # display_detail template must carry the count the produced-line supplies
-    assert 'files emitted to target/claude/' in text
+
+
+def test_skill_body_prescribes_one_generator_call_per_harness_target():
+    """The step prescribes exactly the three wrapper calls, one per harness, in order.
+
+    Read off the fenced command lines rather than matched as substrings of the
+    whole document, so a call that is only mentioned in prose does not count as
+    prescribed, and a fourth generator call would not pass unseen.
+    """
+    prescriptions, _ = scan_shell_prescriptions(_SKILL_MD.read_text(encoding='utf-8'))
+
+    generator_calls = [line for line in prescriptions if line.startswith(WRAPPER_GENERATOR_CALL)]
+
+    assert generator_calls == list(_WRAPPER_INVOCATIONS)
+
+
+def test_skill_body_records_done_only_when_all_three_targets_succeed():
+    """The outcome table maps all-three-zero to ``done`` and any non-zero exit to ``failed``.
+
+    One failed target must fail the step: recording ``done`` on a partial
+    generation would let the sync step consume a tree that was never refreshed.
+    """
+    text = _SKILL_MD.read_text(encoding='utf-8')
+
+    outcome_rows = {match.group('outcome'): match.group('condition') for match in _OUTCOME_ROW_RE.finditer(text)}
+
+    assert outcome_rows == {'done': 'all three `0`', 'failed': 'any call non-zero'}
+
+
+def test_skill_body_display_detail_names_the_per_target_entry_counts():
+    """The ``display_detail`` template carries one produced-line count per harness target."""
+    text = _SKILL_MD.read_text(encoding='utf-8')
+
+    assert 'claude {N}, opencode {N}, antigravity {N} entries emitted to target/' in text
 
 
 def test_skill_body_prescribes_no_command_that_fails_as_written():
@@ -118,7 +163,7 @@ def test_skill_body_prescribes_no_command_that_fails_as_written():
 
     assert _DEFECTIVE_INVOCATION not in text, (
         f'skill body prescribes {_DEFECTIVE_INVOCATION!r}, which exits 127 outside '
-        f'the wrapper — prescribe {_WRAPPER_INVOCATION!r} instead'
+        f'the wrapper — prescribe the {WRAPPER_GENERATOR_CALL}-{{target}} aliases instead'
     )
     assert _DEFECTIVE_NOTATION not in text, (
         f'skill body carries the {_DEFECTIVE_NOTATION!r} script segment, which the '
@@ -210,10 +255,11 @@ def fixture_marketplace(tmp_path: Path) -> Path:
     return marketplace
 
 
-#: The stdout line the skill body reads its ``display_detail`` count from.
-#: Named here so the test parses the count exactly as the documented step does,
-#: rather than settling for a substring that would survive the line changing shape.
-_PRODUCED_LINE_RE = re.compile(r'^claude: produced (?P<count>\d+) entries$', re.MULTILINE)
+#: The stdout line the skill body reads each target's ``display_detail`` count
+#: from. Named here so the test parses the count exactly as the documented step
+#: does, rather than settling for a substring that would survive the line
+#: changing shape.
+_PRODUCED_LINE_RE = re.compile(r'^(?P<target>[a-z][a-z-]*): produced (?P<count>\d+) entries$', re.MULTILINE)
 
 #: The exit codes ``generate.py`` returns. The exit code is the outcome signal —
 #: there is no ``status:`` field on stdout to branch on.
@@ -226,25 +272,29 @@ def _run_generator(*args: str) -> ScriptResult:
     return run_script(_GENERATE_PY, *args, timeout=60)
 
 
-def test_generator_success_exits_zero_and_prints_a_nonzero_produced_count(fixture_marketplace: Path, tmp_path: Path):
-    """The two signals the skill body is written against, asserted as such.
+@pytest.mark.parametrize('target', _HARNESS_TARGETS)
+def test_generator_success_exits_zero_and_prints_a_nonzero_produced_count(
+    target: str, fixture_marketplace: Path, tmp_path: Path
+):
+    """The two signals the skill body is written against, for every harness target.
 
-    The step reads its OUTCOME from the exit code and its ``display_detail``
-    COUNT from the ``claude: produced {N} entries`` stdout line. Asserting only
-    that ``'claude:'`` appears somewhere in stdout would pass on a line whose
-    count had vanished — the count is the thing the executor consumes, so it is
-    parsed here with the same shape the step body prescribes.
+    The step reads each target's OUTCOME from the exit code and its
+    ``display_detail`` COUNT from the ``{target}: produced {N} entries`` stdout
+    line. Asserting only that the target name appears somewhere in stdout would
+    pass on a line whose count had vanished — the count is the thing the
+    executor consumes, so it is parsed here with the same shape the step body
+    prescribes.
 
     The absence of an envelope is asserted on the SAME run, because it is what
-    makes the exit code load-bearing: the body once branched on ``status:`` /
-    ``emitted_count`` fields no code path emits, so re-introducing one on stdout
-    must fail here and force the body to be updated in the same change.
+    makes the exit code load-bearing: a ``status:`` / ``emitted_count`` field on
+    stdout would give the body a second outcome signal that can disagree with
+    the exit code.
     """
     output_dir = tmp_path / 'out'
 
     result = _run_generator(
         '--target',
-        'claude',
+        target,
         '--output',
         str(output_dir),
         '--marketplace-dir',
@@ -254,9 +304,10 @@ def test_generator_success_exits_zero_and_prints_a_nonzero_produced_count(fixtur
     assert result.returncode == _EXIT_OK, f'generator exit={result.returncode}, stderr={result.stderr}'
     match = _PRODUCED_LINE_RE.search(result.stdout)
     assert match is not None, (
-        f'stdout carries no "claude: produced N entries" line, which is where the step '
+        f'stdout carries no "{target}: produced N entries" line, which is where the step '
         f'body reads its display_detail count: {result.stdout!r}'
     )
+    assert match.group('target') == target
     assert int(match.group('count')) > 0, 'a non-empty bundle must produce entries'
     for absent in ('status:', 'emitted_count'):
         assert absent not in result.stdout, (
