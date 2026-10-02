@@ -78,6 +78,18 @@ the machinery that grades us.
 
 ## Decisions
 
+- 2026-10-02 — **PLAN-PRQ-07 started** (operator confirmation, *"plan started"*); `staged → running`, plan id
+  `cross-repo-telemetry-archive-and-analyze` stamped on the row, pre-flight `client.toon` written
+  (`degraded: false`). The intermediate `launched` state is deliberately not in the row's history: `auto_emit`
+  is `false`, so nothing was stamped at emit time, and the operator's confirmation arrived as a START
+  confirmation — recording `launched` retroactively would assert an observation that was never made. ✅
+  **First-party control for this epic's own orchestration-detection Open Defect:** `inbox detect` on the
+  plan's persisted `source_id` returns `orchestrated: true`, `epic: post-run-quality`,
+  `detection: orchestrated`. PRQ-06's landing was lost precisely because its `request.md` carried no
+  `source_id` and the detector answered a confident "not orchestrated"; this plan carries one, so
+  `emit-landing` should fire and this epic should receive its landing through the inbox rather than by manual
+  filing. ⚠ That is a prediction from the detector's verdict, not an observed landing — it is confirmed only
+  when the message actually arrives.
 - 2026-10-02 — **PLAN-PRQ-07 un-parked and emitted; the disjointness gate overridden on a stated basis and
   the hard dependency discharged.** Operator decision, two forks surfaced and both answered. **(1) Why this
   row and not the others:** the 2026-09-26 supersession's ground is that `plan-marshall-mcp` replaces the
