@@ -3007,6 +3007,7 @@ _cmd_sync_defaults_mod = load_script_module(
     *_MANAGE_CONFIG, '_cmd_sync_defaults.py', module_name='_cmd_sync_defaults_for_lane_migration'
 )
 _migrate_run_at_all_to_lane = _cmd_sync_defaults_mod._migrate_run_at_all_to_lane
+_migrate_retired_step_keys = _cmd_sync_defaults_mod._migrate_retired_step_keys
 
 
 def test_migrate_qgate_never_materializes_lane_off():
@@ -3206,8 +3207,8 @@ def test_migration_canonicalizes_removed_steps():
             }
         }
     }
-    migrated: list = []
-    _migrate_run_at_all_to_lane(live, migrated)
+    renamed: list = []
+    _migrate_retired_step_keys(live, renamed)
 
     removed = live['plan']['phase-6-finalize']['removed_steps']
     assert removed == ['plan-marshall:automatic-review', 'default:push']
