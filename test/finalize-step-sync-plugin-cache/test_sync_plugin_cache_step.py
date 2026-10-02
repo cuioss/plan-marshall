@@ -141,7 +141,8 @@ def test_skill_body_display_detail_templates_name_the_per_target_result():
 
     assert '"claude {synced_count}, opencode {deployed_count}, antigravity {deployed_count} synced; regen ok"' in flat
     assert '"failed: {targets} (details in work log)"' in flat
-    assert '"; claude synced, regen ok"' in flat
+    assert '"; claude synced"' in flat
+    assert '"; daemon failed"' in flat
 
 
 # ---------------------------------------------------------------------------
@@ -245,7 +246,7 @@ def _resolve_step(document: dict[str, Any]) -> tuple[str, str, bool]:
     failed = [row['target'] for row in document['targets'] if row['status'] != 'success']
     detail = f'failed: {", ".join(failed)} (details in work log)'
     if claude_synced:
-        detail += '; claude synced, regen ok'
+        detail += '; claude synced'
     return 'failed', detail, claude_synced
 
 
@@ -258,7 +259,7 @@ def _resolve_step(document: dict[str, Any]) -> tuple[str, str, bool]:
         ),
         (
             _aggregate('partial', opencode=('error', 'source not found: /repo/target/opencode')),
-            ('failed', 'failed: opencode (details in work log); claude synced, regen ok', True),
+            ('failed', 'failed: opencode (details in work log); claude synced', True),
         ),
         (
             _aggregate('partial', claude=('error', 'staleness_guard: source tree changed since last emit')),
