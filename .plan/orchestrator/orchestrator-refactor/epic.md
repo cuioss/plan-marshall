@@ -155,6 +155,16 @@ cannot express.}
 
 ## Decisions
 
+- 2026-10-02 — **PLAN-10 emitted on operator override ("emit the plan"); not yet confirmed launched.** `next`
+  refused it on two counts, read from `corpus cross-check` at emit time: (1) `candidate comparison
+  indeterminate — sibling_epic_spec indeterminate: 95` (of 611), the standing repository-wide gate; (2) a
+  CHECKED overlap with the live plan `unified-sync-all-harnesses` (`6-finalize`, PR #1684) on
+  `manage-locks/standards/machine-global-config-scope-audit.md`, which PLAN-10's `manage-locks/**` claim
+  contains. The second is new — the previous live-plan candidate (`antigravity`, indeterminate) is no longer
+  in the live plan set. Prep-readiness passed on its own terms: 7 verdict rows, all admit, none stale. One of
+  two slots filled (`parallelization_scope` 2, nothing launched). `auto_emit` is `false`, so the row stays
+  `staged` until the operator confirms the launch. Same override precedent as PLAN-02, PLAN-08 and PLAN-11.
+
 - 2026-10-02 — **`cleanup` pass after the PLAN-11 landing.** Corpus: 11 rows and 11 specs, reconciled both
   ways, none running. Applied: PLAN-10 re-grounded at `8665ddacf` (all 7 verdicts re-stamped, outcomes
   unchanged) and its D5 corrected for the merge-queue ejection case; its PLAN-11 overlap note marked
