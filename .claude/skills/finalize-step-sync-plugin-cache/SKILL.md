@@ -231,22 +231,38 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   --display-detail "{display_detail}"
 ```
 
-`{display_detail}` names the per-target result.
+`{display_detail}` names the per-target result. It is plain ASCII and
+at most 80 characters (the limit is owned by
+`phase-6-finalize/standards/external-step-contract.md`), so it carries
+counts and tokens only; free-form text goes to the work log.
 
 On aggregate `status: success`, it is
-`"claude {synced_count} bundles, opencode {deployed_count}, antigravity {deployed_count} synced; on-main executor regenerated"`,
-each count read from that harness's result block (append
-`" (regen failed — run /marshall-steward)"` instead when the Step 3 regen
-exited non-zero — the sync outcome is still `done`). Append the
-reconcile's `display_detail` from Step 3b when it did anything other
-than a plain no-op (e.g. `"; daemon upgraded"` or
-`"; daemon reconcile deferred (owed x2)"`), so a deferral is visible at
-the step level and not only in the marker.
+`"claude {synced_count}, opencode {deployed_count}, antigravity {deployed_count} synced; regen ok"`,
+each count read from that harness's result block. When the Step 3 regen
+exited non-zero, end it with `"; regen failed"` instead — the sync
+outcome is still `done`, and the Step 3 WARNING line carries the remedy.
+When the Step 3b reconcile did anything other than a plain no-op, append
+`"; daemon {action}"` with the reconcile's `action` token (`upgrade`,
+`defer` or `start`), so a deferral is visible at the step level and not
+only in the marker. The reconcile's own `display_detail` is free-form
+and is logged, not appended:
 
-On aggregate `status: partial` or `status: error`, it names every
-harness whose row is not `success` as `"{target}: {summary_message}"`,
-the engine's `summary_message` verbatim, joined by `"; "`, so the
-renderer shows each underlying failure for triage. When the Claude
-target synced in a `partial` run, append
-`"; claude synced, on-main executor regenerated"` so the record states
-that Steps 3 and 3b ran.
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[STATUS] (project:finalize-step-sync-plugin-cache) Daemon reconcile: {reconcile_display_detail}"
+```
+
+On aggregate `status: partial` or `status: error`, it is
+`"failed: {targets} (details in work log)"`, where `{targets}` is the
+comma-separated names of every harness whose row is not `success`. When
+the Claude target synced in a `partial` run, append
+`"; claude synced, regen ok"` so the record states that Steps 3 and 3b
+ran. The engine's `summary_message` text is unbounded, so each failing
+row's message is logged in full rather than placed in the detail:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level ERROR \
+  --message "[ERROR] (project:finalize-step-sync-plugin-cache) {target}: {summary_message}"
+```

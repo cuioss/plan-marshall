@@ -135,13 +135,13 @@ def test_skill_body_gates_regen_and_reconcile_on_the_claude_target():
 
 
 def test_skill_body_display_detail_templates_name_the_per_target_result():
-    """Both ``display_detail`` templates name harnesses: counts on success, each failed row otherwise."""
+    """Both ``display_detail`` templates name harnesses: counts on success, the failed targets otherwise."""
     text = _SKILL_MD.read_text(encoding='utf-8')
     flat = re.sub(r'\s+', ' ', text)
 
-    assert 'claude {synced_count} bundles, opencode {deployed_count}, antigravity {deployed_count} synced' in flat
-    assert '"{target}: {summary_message}"' in flat
-    assert '"; claude synced, on-main executor regenerated"' in flat
+    assert '"claude {synced_count}, opencode {deployed_count}, antigravity {deployed_count} synced; regen ok"' in flat
+    assert '"failed: {targets} (details in work log)"' in flat
+    assert '"; claude synced, regen ok"' in flat
 
 
 # ---------------------------------------------------------------------------
@@ -237,17 +237,15 @@ def _resolve_step(document: dict[str, Any]) -> tuple[str, str, bool]:
     claude_synced = rows['claude']['status'] == 'success'
     if document['status'] == 'success':
         detail = (
-            f'claude {document["claude"]["synced_count"]} bundles, '
+            f'claude {document["claude"]["synced_count"]}, '
             f'opencode {document["opencode"]["deployed_count"]}, '
-            f'antigravity {document["antigravity"]["deployed_count"]} synced; on-main executor regenerated'
+            f'antigravity {document["antigravity"]["deployed_count"]} synced; regen ok'
         )
         return 'done', detail, claude_synced
-    failures = [
-        f'{row["target"]}: {row["summary_message"]}' for row in document['targets'] if row['status'] != 'success'
-    ]
-    detail = '; '.join(failures)
+    failed = [row['target'] for row in document['targets'] if row['status'] != 'success']
+    detail = f'failed: {", ".join(failed)} (details in work log)'
     if claude_synced:
-        detail += '; claude synced, on-main executor regenerated'
+        detail += '; claude synced, regen ok'
     return 'failed', detail, claude_synced
 
 
@@ -256,23 +254,19 @@ def _resolve_step(document: dict[str, Any]) -> tuple[str, str, bool]:
     [
         (
             _aggregate('success'),
-            ('done', 'claude 10 bundles, opencode 164, antigravity 170 synced; on-main executor regenerated', True),
+            ('done', 'claude 10, opencode 164, antigravity 170 synced; regen ok', True),
         ),
         (
             _aggregate('partial', opencode=('error', 'source not found: /repo/target/opencode')),
-            (
-                'failed',
-                'opencode: source not found: /repo/target/opencode; claude synced, on-main executor regenerated',
-                True,
-            ),
+            ('failed', 'failed: opencode (details in work log); claude synced, regen ok', True),
         ),
         (
             _aggregate('partial', claude=('error', 'staleness_guard: source tree changed since last emit')),
-            ('failed', 'claude: staleness_guard: source tree changed since last emit', False),
+            ('failed', 'failed: claude (details in work log)', False),
         ),
         (
             _aggregate('partial', claude=('partial', '9 succeeded, 1 failed')),
-            ('failed', 'claude: 9 succeeded, 1 failed', False),
+            ('failed', 'failed: claude (details in work log)', False),
         ),
         (
             _aggregate(
@@ -281,12 +275,7 @@ def _resolve_step(document: dict[str, Any]) -> tuple[str, str, bool]:
                 opencode=('error', 'source not found'),
                 antigravity=('error', 'source contains no emit output'),
             ),
-            (
-                'failed',
-                'claude: source root not found; opencode: source not found; '
-                'antigravity: source contains no emit output',
-                False,
-            ),
+            ('failed', 'failed: claude, opencode, antigravity (details in work log)', False),
         ),
     ],
     ids=[

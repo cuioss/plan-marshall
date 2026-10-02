@@ -4,7 +4,7 @@
 
 The skill is a markdown executor playbook backed by the multi-target
 generator at ``marketplace/targets/generate.py``. These tests pin the
-contract from three angles:
+contract from four angles:
 
 1. **Frontmatter and ordering** — the skill declares ``order: 81`` so
    the dispatcher places it post-merge after ``default:branch-cleanup``

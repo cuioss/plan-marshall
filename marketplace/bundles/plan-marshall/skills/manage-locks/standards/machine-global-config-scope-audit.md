@@ -219,14 +219,14 @@ passing control reports its own silence.
 | `build-queue-limit` | 0 |
 | `build_queue_upper_limit` | 0 |
 | `upper_limit_seconds` | 2 |
-| `home_root` | 2 |
+| `home_root` | 3 |
 | `build-queue.json` | 1 |
 
 `build_queue_upper_limit` subsumes the leading-underscore spelling of the retired
 helpers, so one sweep covers both names.
 
 **Method 2 — direct scan at HEAD.** Walk both trees and count occurrences per
-file. **61** files scanned; **3** unreadable, and each of the three is a compiled
+file. **58** files scanned; **3** unreadable, and each of the three is a compiled
 `.pyc` artifact under `__pycache__` whose `.py` source sibling WAS scanned — so the
 unreadable count is a build artifact, not a coverage gap. **2** files carry a hit:
 

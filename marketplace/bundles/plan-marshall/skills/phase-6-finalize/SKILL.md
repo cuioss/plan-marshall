@@ -449,9 +449,9 @@ post-merge. The first regenerates all three harness target trees
 merged source tree; the second mirrors each tree into its harness
 install (the Claude plugin cache, the OpenCode install, the Antigravity
 install), so the next session-boot re-derivation reads the same
-authoritative tree the dispatcher just wrote to. Both step ids are
-unchanged — `finalize-step-sync-plugin-cache` names the Claude cache but
-syncs every harness. On-main executor regeneration is performed by the
+authoritative tree the dispatcher just wrote to. The id
+`finalize-step-sync-plugin-cache` names the Claude cache; the step syncs
+every harness. On-main executor regeneration is performed by the
 project-level `project:finalize-step-sync-plugin-cache` step (order 85)
 immediately after the sync, once the Claude target has synced, in both
 worktree and no-worktree finalize flows; `integrate_into_main` performs
