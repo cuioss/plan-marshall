@@ -58,14 +58,48 @@ the machinery that grades us.
 - PLAN-PRQ-01 ↔ PLAN-PRQ-02 — both touch `plan-retrospective/scripts/`; never pair.
 - PLAN-PRQ-03 is the only spec whose surface is entirely project-local (`.claude/skills/`), so it is the
   natural partner if the scope knob is ever raised.
+- ✅ **PLAN-PRQ-07 — UN-PARKED AND EMITTED 2026-10-02 (operator). The only live row in the queue.** The
+  dependency below is DISCHARGED, not overridden, and the disjointness gate was overridden on a stated
+  basis; see the 2026-10-02 Decisions entry for both, and the spec's own banner for what the implementing
+  plan must re-check.
 - PLAN-PRQ-07 ↔ PLAN-PRQ-01, PLAN-PRQ-03 — both touch `.claude/skills/audit-archived-plan-retrospectives/**`,
   the exact skill PRQ-07 relocates out of this repo. PRQ-07 is a hard DEPENDENCY on both landing first, not
-  a mere disjointness overlap — never emit PRQ-07 while either is staged/launched/running.
+  a mere disjointness overlap — never emit PRQ-07 while either is staged/launched/running. ✅ **Discharged
+  2026-10-02**: both are `parked`, so neither can be in flight and the hazard cannot occur. ⛔ Un-parking
+  either one makes this binding again.
 - PLAN-PRQ-07 ↔ PLAN-PRQ-04, PLAN-PRQ-06 — conditional overlap on `phase-6-finalize/**`, pending whether
-  PRQ-07's finalize step lands marketplace-bundled (HYPOTHESIS, verify-at-outline in its spec).
+  PRQ-07's finalize step lands marketplace-bundled (HYPOTHESIS, verify-at-outline in its spec). ✅ **Moot
+  2026-10-02**: PRQ-06 is `shipped`, PRQ-04 is `parked`; same for the `parked` PRQ-08/PRQ-10 overlaps on the
+  same surface.
+- ⛔ **PLAN-PRQ-07 ↔ `code-intelligence-substrate` PLAN-CIS-036/050/052/054/056 — the one UNSERIALIZED risk.**
+  Those specs are staged in ANOTHER ledger and declare the same `audit-archived-plan-retrospectives` skill
+  and test mirror PRQ-07 relocates. No gate serializes across ledgers, and each ledger's own "no known
+  overlap" line is scoped to its own queue. Re-read that epic's live queue at PRQ-07's outline.
 
 ## Decisions
 
+- 2026-10-02 — **PLAN-PRQ-07 un-parked and emitted; the disjointness gate overridden on a stated basis and
+  the hard dependency discharged.** Operator decision, two forks surfaced and both answered. **(1) Why this
+  row and not the others:** the 2026-09-26 supersession's ground is that `plan-marshall-mcp` replaces the
+  process prose and the Python scripts the parked plans edit — PRQ-07 stands up a NEW repository and
+  relocates a skill OUT of this one, so that ground never fitted it. The blanket park swept it in with the
+  rest; this corrects that. The other nine rows stay parked. **(2) The gate was refused and overridden, not
+  passed:** `corpus cross-check` returns `candidate_comparison_determinate: false` — 96 sibling-epic specs
+  and 3 live plans declare no comparable surface, so the admission test fails closed per ADR-019 rather than
+  calling an unexamined population disjoint. The override's basis is recorded because it is the whole
+  warrant: **zero** overlap rows against any live plan, and every in-corpus overlap is against a `parked` or
+  `shipped` sibling that cannot be in flight. ⛔ The indeterminacy is NOT fixable from here — it is 96 other
+  ledgers' specs declaring prose surfaces — so "resolve it first" would mean "never". **(3) The dependency
+  on PRQ-01/PRQ-03 is DISCHARGED, not overridden:** the hazard it names is relocating the skill out from
+  under their *in-flight edits*, and a parked plan is never in flight. The rule is left in the spec intact
+  and becomes binding again if either is un-parked. **(4) What the override does NOT cover, and it is a real
+  exposure:** `code-intelligence-substrate` carries five staged specs (`PLAN-CIS-036/050/052/054/056`)
+  declaring the same skill and test mirror. No gate serializes across two ledgers, and each ledger's
+  "no known overlap" statement is scoped to its own queue — the exact blind spot this epic exists to name.
+  PRQ-07's spec carries a re-check-at-outline obligation for it. **(5) Prep-readiness passed on its own
+  terms** (8 claims, 0 blocking) but every verdict is STALE at `7d82d5d90` against HEAD `59ad113e2`;
+  staleness is reported, never promoted, and the spec carries a re-ground-all-eight obligation. `auto_emit`
+  is `false`, so the command is emitted and the `launched` transition waits on operator-confirmed launch.
 - 2026-10-02 — **Ledger restored after the #1641 revert, then the inbox drained (3 messages).** Two
   operator decisions this session. (1) **Restore.** `process-compliance-001.md` reported that PR #1641
   (`945e59287`), squash-merged from a branch cut before #1643, had reverted this epic's 2026-09-26 PM-MCP

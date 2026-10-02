@@ -1,10 +1,35 @@
 # PLAN-PRQ-07: Cross-repo telemetry archive and analyze
 
-> ⛔⛔ **SUPERSEDED BY PM-MCP (2026-09-26, operator decision; row status `parked`).** `plan-marshall-mcp` replaces both the
-> process prose and the Python scripts this plan edits, so implementing it here is legacy work. Its
-> implementation-independent content (rules, invariants, classifications, data, fixtures) was extracted to
-> `plan-marshall-mcp/doc/known-defects/post-run-quality-carry-over.md` as PM-MCP input.
-> **Do NOT emit; un-park only by explicit operator decision.** The spec body below stays intact as the evidence chain.
+> ✅ **UN-PARKED AND EMITTED 2026-10-02 by explicit operator decision — this plan is LIVE.** It was parked on
+> 2026-09-26 under the blanket PM-MCP supersession; that supersession's stated ground is that
+> `plan-marshall-mcp` replaces the process prose and the Python scripts the parked plans edit. **That ground
+> does not fit this plan**: its work is standing up a new `plan-marshall-telemetry` repository and
+> relocating a skill out of this one, not editing machinery PM-MCP replaces. Its
+> implementation-independent content was nonetheless extracted to
+> `plan-marshall-mcp/doc/known-defects/post-run-quality-carry-over.md` on 2026-09-26, and that snapshot is
+> known to have decayed since (see `epic.md` § Watches), so **this spec, not the carry-over, is the
+> authoritative brief.**
+>
+> ⚠ **Two gates were cleared by recorded decision rather than by the machine, and the implementing plan must
+> know which:**
+> - **The disjointness gate REFUSED this candidate fail-closed** — `corpus cross-check` reports
+>   `candidate_comparison_determinate: false` (96 sibling-epic specs and 3 live plans declare no comparable
+>   surface), so the comparison population was incomplete and the gate declines to call anything disjoint.
+>   Overridden on a stated basis: **zero** overlap rows against any live plan, and every in-corpus overlap is
+>   against a `parked` or `shipped` sibling that cannot be in flight. ⛔ **The residual risk is cross-ledger
+>   and real**: `code-intelligence-substrate` carries staged specs (`PLAN-CIS-036/050/052/054/056`) that share
+>   `.claude/skills/audit-archived-plan-retrospectives/**` and the `test/plan-marshall/audit-archived-plan-retrospectives/`
+>   mirror with this plan. Nothing serializes across ledgers. **Re-check that epic's queue at outline before
+>   relocating the skill.**
+> - **The spec's own hard dependency on PLAN-PRQ-01 and PLAN-PRQ-03 is DISCHARGED, not overridden.** The
+>   hazard it names is relocating the skill out from under those plans' *in-flight edits*; both are `parked`
+>   and so can never be in flight. Nothing in this repository is currently editing that skill.
+>
+> Prep-readiness passed on its own terms: `corpus verdicts` reports 8 claims, 0 blocking. ⚠ **Every one of
+> those verdicts is STALE** — checked at `7d82d5d90`, HEAD is `59ad113e2` — which is reported, never promoted
+> to blocking. Claim 1 is already `contradicted` / `rescoped: yes` (the `archived-orchestrators` path moved to
+> the git-tracked tier per ADR-024), and claims 4, 5 and 7 are `unverifiable` because their deciding facts sit
+> outside this repository. **Re-ground all eight at outline.**
 
 epic: post-run-quality
 workstream: WS-05
@@ -150,13 +175,25 @@ operator before creating it — this is not a decision the plan makes unilateral
 
 ## Dependencies and Sequencing
 
-- Depends on: PLAN-PRQ-01, PLAN-PRQ-03 (both touch
-  `.claude/skills/audit-archived-plan-retrospectives/**`; this plan must not relocate that
-  skill out from under either plan's in-flight edits — land both first)
-- Overlaps with: PLAN-PRQ-04, PLAN-PRQ-06 (both touch
-  `marketplace/bundles/plan-marshall/skills/phase-6-finalize/**` if the new finalize step
-  lands marketplace-bundled per the HYPOTHESIS above — never pair PRQ-07 with either while
-  that surface is in flight)
+- ✅ **Depended on: PLAN-PRQ-01, PLAN-PRQ-03 — DISCHARGED 2026-10-02.** The original constraint stands
+  unchanged in its reasoning: both touch `.claude/skills/audit-archived-plan-retrospectives/**`, and this
+  plan must not relocate that skill out from under either plan's **in-flight edits** — so land both first.
+  What changed is the world, not the rule: both rows are `parked` under the PM-MCP supersession and
+  therefore can never be in flight, so the hazard the dependency guards against cannot occur. ⛔ If either
+  is ever un-parked, this dependency becomes binding again and this plan must not run concurrently with it.
+- ✅ **Overlaps with: PLAN-PRQ-04, PLAN-PRQ-06 — both MOOT 2026-10-02.** Both touch
+  `marketplace/bundles/plan-marshall/skills/phase-6-finalize/**` if the new finalize step lands
+  marketplace-bundled per the HYPOTHESIS above, and the "never pair while that surface is in flight" rule is
+  unchanged — but PRQ-06 is `shipped` and PRQ-04 is `parked`, so neither surface is in flight. The same
+  reading covers the `phase-6-finalize` overlaps `corpus cross-check` reports against `parked` PLAN-PRQ-08
+  and PLAN-PRQ-10.
+- ⛔ **CROSS-LEDGER, UNSERIALIZED, and the one live risk:** `code-intelligence-substrate` carries staged
+  specs — `PLAN-CIS-036`, `PLAN-CIS-050`, `PLAN-CIS-052`, `PLAN-CIS-054`, `PLAN-CIS-056` — declaring
+  `.claude/skills/audit-archived-plan-retrospectives/**` and the `test/plan-marshall/audit-archived-plan-retrospectives/`
+  mirror, the exact surface this plan relocates out of the repository. No gate serializes across two
+  ledgers, and each ledger's own "overlaps with: none known" statement is made against its own queue only.
+  **Read that epic's live queue at outline before performing the relocation**; if one of those plans is
+  running, sequence behind it rather than racing it.
 - Adjacent to: PLAN-PRQ-05 (lessons corpus provenance and quality) — both are "the learning
   loop must survive past one project" in theme, but PRQ-05 owns the lessons corpus itself and
   is untouched by this plan; no shared surface.
