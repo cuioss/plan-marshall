@@ -53,7 +53,7 @@ ad hoc commits directly against `main`.
 status, workstream, and surface are in `queue-view.md`; this zone carries only what it
 cannot express.}
 
-- PLAN-09 / PLAN-10 / PLAN-11 (2026-09-26, historical: PLAN-09 has since SHIPPED and PLAN-11 is RUNNING, so
+- PLAN-09 / PLAN-10 / PLAN-11 (2026-09-26, historical: PLAN-09 and PLAN-11 have since SHIPPED, so
   PLAN-10 is the only staged row) — the rows re-staged after the PM-MCP park. All three share
   `orchestrator.py` and `test/plan-marshall/plan-orchestrator/**`, so they run one at a time, never paired.
   PLAN-10 strictly follows PLAN-09. Queue order puts PLAN-09 first; PLAN-11 is the smallest and may go first by
@@ -133,10 +133,14 @@ cannot express.}
   Carries an open sequencing question for `land-all` (sequential vs bounded-parallel
   against the merge queue) and a HYPOTHESIS on whether `ci pr merge`'s existing sub-verbs
   suffice for D3 — both verify-at-outline, not decided here.
-- PLAN-11 — **RUNNING since 2026-10-01** as plan `cross-check-dated-archive-self-collision` (operator-confirmed
-  start; observed at `2-refine` in `manage-status list`). Emitted on operator override — the disjointness gate
-  was indeterminate and would not have admitted it. Running-row exclusion applies: do not re-scope its spec.
-  PLAN-10 waits for it (shared `orchestrator.py`).
+- PLAN-11 — **SHIPPED 2026-10-02** (#1676, squash `8665ddacf`; landing `landings/PLAN-11.md`). Both false
+  candidate populations are excluded and named in the payload; the sentinel exclusion was observed live on this
+  store after landing. The gate verdict is still `false` — see the Open Defect of 2026-09-22. Ran 2026-10-01 to
+  2026-10-02 as plan `cross-check-dated-archive-self-collision`, emitted on operator override.
+- PLAN-10 — **sequencing block lifted 2026-10-02**: PLAN-11 has landed, so nothing else in this epic holds
+  `orchestrator.py`. Its verdicts were grounded at `fa7b51774`, before #1676 changed `orchestrator.py`,
+  `SKILL.md` and `workflow/**` — all on its declared surface — so they read stale; re-ground before emitting.
+  The gate still refuses it, so it too goes out only on an operator override.
 - PLAN-11 — **2026-10-01: folded D4 (exclude the `NO_PLAN` sentinel from the `live_plan` candidates), now 5
   deliverables.** Surface +2 entries (`manage-status/scripts/_cmd_sibling_collision.py`,
   `test/plan-marshall/manage-status/**`), so it now also overlaps parked PLAN-05. Claim 3's verdict corrected
@@ -149,6 +153,32 @@ cannot express.}
   this session — see the spec itself before relying on its Claim Labels.
 
 ## Decisions
+
+- 2026-10-02 — **PLAN-11 landed (#1676, `8665ddacf`); reconciled via `analyze` (inbox scan, 10 messages).**
+  The landing message was complete (`landing-check`: no missing key) and corroborated against `ci pr view`
+  (merged), the merge commit's file list, and two live `corpus cross-check` runs. Row transitioned `running` →
+  `shipped`, `pr` and `landing` stamped. Two readings the landing changes: (1) the spec's estimate that the
+  self-snapshot accounted for "roughly half" of `review-apparatus`'s sibling indeterminacy is refuted — it
+  was 2 of 94; (2) the sentinel exclusion, which the plan could only cover by test, is now observed on a real
+  store (`excluded_sentinel_plan_count: 1`). Surface delta: 3 undeclared architecture descriptors (finalize
+  catch-up for #1670, not plan work) and 2 declared-but-untouched `manage-status` entries (D4 chose the
+  consumer site). No spec's declaration needs correcting — the landed spec is terminal.
+
+- 2026-10-02 — **Inbox drain: 9 `candidate-lesson` messages from `cross-check-dated-archive-self-collision`
+  (PLAN-11's own #1676 retrospective) — all 9 PROMOTED, `2026-10-02-10-001` through `-009`, in message order.**
+  None concerns this epic's substrate; each is about another component: `python-verify-ci` (config-only
+  `marshal.json` PRs redden main, -001), `phase-6-finalize` (a dequeued PR is indistinguishable from a queued
+  one, -002; settle-band verdicts re-bought on every loop-back, -005; dispatch-boundary rows without a step id,
+  -008), `phase-5-execute` (`scope_creep_warning` rejected by `manage-findings`, -003; scope-creep and artifact
+  diffs run from a pre-rebase commit, -004), `finalize-step-sync-plugin-cache` (staleness guard expects bundles
+  the claude target never emits, -006), `plan-retrospective` (read-intent files counted as unrealised, -007),
+  `plan-marshall` (orchestrator-tier verify builds filed under `NO_PLAN`, -009). Bodies were lifted verbatim.
+  Three restate signals this epic already promoted and `lessons-routing` has since drained from the corpus:
+  -003 (PLAN-02's drain, 2026-09-24), -005 (the post-loop-back re-fire set, same drain) and -008 (the
+  dispatch-audit channel, PLAN-08's drain, 2026-09-23) — promoted again because no active lesson carries them.
+  ⚠ `manage-lessons drain-dedup` was NOT followed: it groups by component only and reported 5 of the 9 as
+  recurrences of two unrelated lessons (`2026-09-29-17-001`, `2026-09-27-07-004`) and of each other. Checked
+  by reading both lessons and listing each component — no real duplicate exists. See Watches.
 
 - 2026-10-01 — **`orchestrator.use_worktree` turned ON, on operator instruction; this epic now works in the
   shared ledger worktree.** Order of events: the session's ledger changes landed on `main` first (#1665,
@@ -417,6 +447,12 @@ by the operator — do not re-derive it.
   `1-init`, untouched since 2026-09-17, looks abandoned) — so this repo's gate stays closed until the scope
   question above is decided. A project whose only indeterminate candidate is the sentinel is fully unblocked
   by PLAN-11.
+  **Re-measured 2026-10-02 at `8665ddacf`, after PLAN-11 landed:** still `false` — `sibling_epic_spec
+  indeterminate: 95` of 611, `live_plan indeterminate: 1` of 2 (`antigravity`; the sentinel is excluded).
+  This is now the ONLY thing between this epic and a working `next`, and no staged plan addresses it:
+  either the gate's scope changes (an indeterminate candidate blocks only what it could collide with), or 95
+  sibling specs in other epics gain declarative surfaces. **Operator decision needed** — if the scope change
+  is wanted, it is a new WS-04 spec on `orchestrator.py` and `orchestrate.md`.
 - **NEW, operator-reported 2026-09-22 — no owner: orchestrator-session UX/mechanism gap.**
   Three related asks surfaced during a live `status` interaction, none cleanly covered by
   an existing staged spec: (a) when already inside a `/plan-marshall:plan-orchestrator
@@ -481,6 +517,17 @@ by the operator — do not re-derive it.
   `truthful-signals` as one cross-cutting hardening plan.
 
 ## Watches
+
+- **PLAN-11 landing residue (2026-10-02):** (1) the plugin cache is stale relative to `8665ddacf` —
+  `finalize-step-sync-plugin-cache` failed on its staleness guard (lesson `2026-10-02-10-006`); `corpus
+  cross-check` already runs the landed code here, so the orchestrator scripts are not affected, but the synced
+  skill bodies are. Retire when a sync succeeds. (2) This epic's own #1666 (`use_worktree` on) reddened `main`
+  for about two hours because a `marshal.json`-only PR skips the test build (lesson `2026-10-02-10-001`) —
+  until that is fixed, run the config-contract tests locally before landing any knob change from this epic.
+  (3) `manage-lessons drain-dedup` groups candidates by component alone and reports distinct defects as
+  recurrences; a drain that trusted it would have dropped 5 of 9 lessons. Not filed as a lesson yet — route
+  to `truthful-signals` (a confident "recurrence" count hiding a loss) on the next sweep. It also reported
+  lesson `2026-09-27-19-001` as present but carrying no parseable metadata header.
 
 - **PLAN-09 landing residue (2026-09-28, not folded):** (1) an unreadable main-checkout config silently falls
   back to the primary checkout (CodeRabbit, noise-filtered) — a silent fallback on the resolver seam; (2)

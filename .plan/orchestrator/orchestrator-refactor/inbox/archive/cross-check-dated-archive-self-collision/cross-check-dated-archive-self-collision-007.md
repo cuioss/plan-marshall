@@ -1,0 +1,38 @@
+envelope_version=1
+sender_type=plan
+sender_id=cross-check-dated-archive-self-collision
+epic=orchestrator-refactor
+kind=candidate-lesson
+created=2026-10-02T09:30:36Z
+
+component=plan-marshall:plan-retrospective
+category=improvement
+created=2026-10-02
+source_plan=cross-check-dated-archive-self-collision
+confidence=high
+
+# Exclude read-intent assessments from include_unrealised
+
+## Context
+
+The outline-vs-shipped aspect reported `include_unrealised: 3 of 8` for this plan - "may be a silent descope". The three members are:
+
+- `manage-status/scripts/_cmd_sibling_collision.py`
+- `persona-plan-orchestrator/standards/orchestration-model.md`
+- `script-shared/scripts/marketplace_paths.py`
+
+All three are the outline's declared read-only files (`references.json` `read_intent_files`). The deliverable's own success criterion requires two of them to be byte-identical to the base branch. Nothing was descoped.
+
+## Root cause
+
+`check-outline-vs-shipped` counts every `CERTAIN_INCLUDE` assessment as a file expected in the realized footprint. An assessment records that a file is in scope, not that it will be modified, and a file declared `(read)` can never appear in a diff. The neighbouring `check-artifact-consistency` already handles this: it reports `read_intent_excluded: 3` for the same three paths and scores recall 100%.
+
+## Proposed action
+
+Subtract the plan's read-intent paths from the `include_unrealised` population (both the count and its denominator), and publish the number excluded beside the class, as artifact-consistency does. Add a test with a read-intent `CERTAIN_INCLUDE` path absent from the footprint and assert it is not reported.
+
+## Evidence
+
+- outline-vs-shipped fragment: `include_unrealised` count 3, denominator 8, the three members above
+- artifact-consistency fragment: `affected_files_recall` declared 5, found 5, `read_intent_excluded: 3`
+- references.json: `read_intent_files` holds exactly those three paths
