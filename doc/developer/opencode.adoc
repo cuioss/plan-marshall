@@ -340,25 +340,27 @@ The `-U` / `--update` flag enables safe, atomic updates for existing installatio
 * **Full Uninstall (`--uninstall`)**:
   Removes all files tracked in `managed_files` in `.plan-marshall-manifest.json` (or falls back to `bundle-components.json` inventory if the manifest is absent) and cleans empty parent directories under `skill/`. Third-party user skills and custom user agents are strictly preserved.
 
-== Developer Inner Loop (`sync-opencode`)
+== Developer Inner Loop (`sync-harnesses`)
 
 For contributors iterating on OpenCode bundles:
 
 1. Edit bundle sources under `marketplace/bundles/`.
-2. Regenerate the OpenCode distribution target:
+2. Regenerate and sync into the global OpenCode config directory:
 +
+[source]
+----
+/sync-harnesses --target opencode
+----
+
+Without `--target`, `/sync-harnesses` syncs all three harnesses in one run. The command regenerates the OpenCode distribution target and then runs the sync engine. The same two steps by hand:
+
 [source,bash]
 ----
 ./pw generate-opencode
-----
-3. Sync into the project or global OpenCode skill discovery root:
-+
-[source,bash]
-----
-/sync-opencode
+python3 marketplace/targets/sync.py --target opencode
 ----
 
-The project-level command invokes `marketplace/targets/sync.py --target opencode` to deploy `skill/`, `agent/`, `command/`, and `opencode.json`.
+The project-level command (`.opencode/commands/sync-harnesses.md`) is a thin pointer at the single sync engine (`marketplace/targets/sync.py`), which deploys `skill/`, `agent/`, `command/`, and `opencode.json` for the OpenCode target. `--target-dir` redirects the deploy to a staging directory.
 
 == Verification & Test Coverage
 

@@ -12,11 +12,11 @@ How to recover the build target (`target/claude/`) and the host plugin cache (`~
 The meta-project ships through a two-tier sync model:
 
 1. **SOURCE → TARGET**: `marketplace/bundles/` is the authoritative source. `marketplace/targets/generate.py` regenerates `target/claude/` from that source, expanding role-eligible agents into per-level variants and emitting a variant-aware `plugin.json` per bundle plus the top-level `target/claude/.claude-plugin/marketplace.json`.
-2. **TARGET → CACHE**: `~/.claude/plugins/cache/plan-marshall/` is what Claude Code actually loads after install. The `/sync-plugin-cache` slash command rsyncs `target/claude/` into the host cache with `--delete` for exact mirroring.
+2. **TARGET → CACHE**: `~/.claude/plugins/cache/plan-marshall/` is what Claude Code actually loads after install. The `/sync-harnesses` slash command rsyncs `target/claude/` into the host cache with `--delete` for exact mirroring. That is its Claude leg, implemented by `marketplace/targets/claude/cache_sync.py`; the same run also syncs the OpenCode and Antigravity installs unless `--target claude` narrows it.
 
 Both tiers exist because Claude Code's plugin loader reads from the cache, not from `target/claude/` directly. `target/claude/` is the registered marketplace path the loader consults at install time; the cache is the runtime load path.
 
-The two slash commands `/finalize-step-deploy-target` and `/sync-plugin-cache` are meta-project-only — consumer projects of Plan Marshall do not get this surface.
+The two slash commands `/finalize-step-deploy-target` and `/sync-harnesses` are meta-project-only — consumer projects of Plan Marshall do not get this surface.
 
 == Symptom → Command decision table
 
@@ -25,39 +25,47 @@ The two slash commands `/finalize-step-deploy-target` and `/sync-plugin-cache` a
 | Symptom | Command(s) to run | Why
 
 | Modified marketplace bundle source and want changes live in the current session.
-| `/finalize-step-deploy-target` then `/sync-plugin-cache`
-| Deploy regenerates `target/claude/` from the new source; sync mirrors `target/claude/` into the host cache so Claude Code loads the new version.
+| `/sync-harnesses`
+| The command regenerates the target trees from the new source and then mirrors `target/claude/` into the host cache so Claude Code loads the new version. One run reconciles both tiers.
 
 | Manual commit to marketplace source landed without running phase-6-finalize (e.g. lesson `2026-05-20-08-005`).
-| `/finalize-step-deploy-target` then `/sync-plugin-cache`
-| Deploy reconciles `target/claude/` with the committed HEAD; sync mirrors that reconciled tree into the cache. Both tiers were bypassed by the manual commit, so both must be reconciled.
+| `/sync-harnesses`
+| The regeneration reconciles `target/claude/` with the committed HEAD; the sync mirrors that reconciled tree into the cache. Both tiers were bypassed by the manual commit, and the one command reconciles both.
 
 | Plugin cache looks stale but `target/claude/` matches source.
-| `/sync-plugin-cache`
-| Target is already current — only the cache mirror is stale. Skip the deploy step.
+| `/sync-harnesses --target claude`
+| Only the cache mirror is stale. The regeneration is a no-op on a current tree, and the sync refreshes the cache.
 
 | Variant agent dispatch fails with `Agent type not found` (e.g. a `Task:` to `execution-context-level-4` fails immediately).
 | `/finalize-step-deploy-target`
 | Per-level variants live only in `target/claude/`; the source carries canonicals only. The deploy step is what materialises the variant files Claude Code's agent registry needs.
 
 | Skill changes do not take effect at runtime despite a clean `target/claude/`.
-| `/sync-plugin-cache`
+| `/sync-harnesses --target claude`
 | The cache mirror is the actual load path. `target/claude/` being current is necessary but not sufficient.
+
+| The sync reports `guard_outcome: stale` for the Claude target.
+| `/finalize-step-deploy-target`, then re-run the sync
+| The staleness guard in `cache_sync.py` saw a `target/claude/` that is missing, incomplete, or behind `marketplace/bundles/`. Regenerating the tree is the remedy.
+
+| The sync reports `guard_outcome: probe_failed` for the Claude target.
+| Repair the probe the `summary_message` names
+| A guard check could not run, so the tree's freshness is unknown. Regenerating is not the fix.
 |===
 
 == What each command does
 
 `/finalize-step-deploy-target`::
-Runs `./pw generate-claude` to regenerate the build target from `marketplace/bundles/` — always through the `./pw` wrapper, because `uv` lives in the project-local `.pyprojectx/` tree and is not on `PATH`. Generates per-level agent variants (`{name}-level-1.md` through `{name}-level-7.md`), expands the variant-aware `plugin.json` per bundle, and emits the top-level `target/claude/.claude-plugin/marketplace.json`. Reads source, writes `target/claude/`. Does NOT touch `~/.claude/plugins/cache/`.
+Runs `./pw generate-claude`, `./pw generate-opencode` and `./pw generate-antigravity` to regenerate the build targets from `marketplace/bundles/` — always through the `./pw` wrapper, because `uv` lives in the project-local `.pyprojectx/` tree and is not on `PATH`. For the Claude target it generates per-level agent variants (`{name}-level-1.md` through `{name}-level-7.md`), expands the variant-aware `plugin.json` per bundle, and emits the top-level `target/claude/.claude-plugin/marketplace.json`. Reads source, writes `target/`. Does NOT touch `~/.claude/plugins/cache/` or any other harness install.
 
-`/sync-plugin-cache`::
-Runs `rsync --delete` from `target/claude/` into `~/.claude/plugins/cache/plan-marshall/`. Refuses to run when `target/claude/` is missing or stale relative to `marketplace/bundles/` — the staleness guard is the structural reason to run `/finalize-step-deploy-target` first whenever the source has advanced. Reads `target/claude/`, writes the host plugin cache. Does NOT regenerate from source.
+`/sync-harnesses`::
+Regenerates the selected target trees and then runs the single sync engine, `marketplace/targets/sync.py`. With no arguments it syncs the Claude, OpenCode and Antigravity installs; `--target claude` restricts the run to the plugin cache. The Claude leg, `marketplace/targets/claude/cache_sync.py`, runs `rsync --delete` from `target/claude/` into `~/.claude/plugins/cache/plan-marshall/`. It refuses when `target/claude/` is missing or stale relative to `marketplace/bundles/`. That staleness guard is what protects a direct engine run, `python3 marketplace/targets/sync.py --target claude`, which does not regenerate from source. After a successful Claude sync the command runs `marketplace/targets/claude/reconcile_daemon.py`, which reconciles a running build daemon with the new cache version.
 
 == Authoritative path vs manual recovery
 
 The local-finalize chain — `project:finalize-step-deploy-target` followed by `project:finalize-step-sync-plugin-cache`, both running automatically as phase-6-finalize steps — is the canonical sync path during normal plan execution. Both steps run on every phase-6-finalize entry that completes; no developer action is required when a plan ships through the standard flow.
 
-Manual `/finalize-step-deploy-target` and `/sync-plugin-cache` invocations are recovery surfaces for the rare cases where a commit bypassed the finalize chain. Lesson `2026-05-20-08-005` is the empirical motivation for documenting this path: a manual commit landed on the marketplace registry without running phase-6-finalize, leaving `target/claude/` out of sync with the committed source and the host cache out of sync with `target/claude/`. Operator awareness of which command resolves which symptom is the cheapest mitigation; a CI gate was considered and explicitly declined in favour of this documentation surface.
+Manual `/finalize-step-deploy-target` and `/sync-harnesses` invocations are recovery surfaces for the rare cases where a commit bypassed the finalize chain. Lesson `2026-05-20-08-005` is the empirical motivation for documenting this path: a manual commit landed on the marketplace registry without running phase-6-finalize, leaving `target/claude/` out of sync with the committed source and the host cache out of sync with `target/claude/`. Operator awareness of which command resolves which symptom is the cheapest mitigation; a CI gate was considered and explicitly declined in favour of this documentation surface.
 
 == When NOT to run these
 
@@ -69,4 +77,5 @@ Manual invocation outside a plan flow is the supported recovery surface — that
 
 * xref:marketplace-build.adoc[Marketplace Build] — the canonical two-tier sync pipeline this page recovers when bypassed.
 * link:../../.claude/skills/finalize-step-deploy-target/SKILL.md[`project:finalize-step-deploy-target`] — the finalize step that runs `/finalize-step-deploy-target` automatically.
-* link:../../.claude/skills/finalize-step-sync-plugin-cache/SKILL.md[`project:finalize-step-sync-plugin-cache`] — the finalize step that runs `/sync-plugin-cache` automatically.
+* link:../../.claude/skills/finalize-step-sync-plugin-cache/SKILL.md[`project:finalize-step-sync-plugin-cache`] — the finalize step that runs the same sync engine as `/sync-harnesses` automatically.
+* link:../../.claude/skills/sync-harnesses/SKILL.md[`/sync-harnesses`] — the project-local command, with its flags and result shapes.

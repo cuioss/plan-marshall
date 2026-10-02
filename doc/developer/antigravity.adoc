@@ -228,25 +228,28 @@ The `-U` / `--update` flag enables safe, atomic updates for existing installatio
 * **Selective Uninstall (`--uninstall --bundles <csv>`)**:
   Validates dependency closures (refuses removal of core or base bundles whose children remain installed), deletes only the managed files belonging to the specified bundles, updates `.install-manifest.json`, and tailors `plugin.json` accordingly.
 
-== Developer Inner Loop (`sync-antigravity`)
+== Developer Inner Loop (`sync-harnesses`)
 
-For contributors iterating on Plan Marshall bundles, the Antigravity developer workflow matches Claude Code and OpenCode:
+For contributors iterating on Plan Marshall bundles, the Antigravity developer workflow is the same command Claude Code and OpenCode use:
 
 1. Edit bundle sources under `marketplace/bundles/`.
-2. Regenerate the Antigravity distribution target:
+2. Regenerate and deploy into the local Antigravity plugin installation:
 +
+[source]
+----
+/sync-harnesses --target antigravity
+----
+
+Without `--target`, `/sync-harnesses` syncs all three harnesses in one run. The command regenerates the Antigravity distribution target and then runs the sync engine. The same two steps by hand:
+
 [source,bash]
 ----
 ./pw generate-antigravity
-----
-3. Deploy into the local Antigravity plugin installation:
-+
-[source,bash]
-----
-/sync-antigravity
+python3 marketplace/targets/sync.py --target antigravity
 ----
 
-The project-level workspace skill (`.agents/skills/sync-antigravity/SKILL.md`) invokes the unified deploy engine (`marketplace/targets/sync.py --target antigravity`). The engine:
+The project-level workspace skill (`.agents/skills/sync-harnesses/SKILL.md`) is a thin pointer at the single sync engine (`marketplace/targets/sync.py`). For the Antigravity target the engine:
+
 * Deploys `skills/`, `agents/`, `commands/`, `plugin.json`, `install.sh`, and `README.adoc` to `~/.gemini/config/plugins/plan-marshall/` (or `--target-dir`).
 * Prunes stale managed entries in `skills/` and `commands/` belonging to the synced bundles while preserving unmanaged user files and agents.
 * Supports `--bundles <name>` for scoped deployments and `--dry-run` for non-destructive preview.
@@ -346,7 +349,7 @@ The test suite provides complete coverage across:
   ** `test_emitter.py`: Bundle traversal, verbatim directory copying (`standards/`, `references/`, `templates/`, `scripts/`), stale artifact pruning, target-scoped bundle emission, `bundle-components.json` attribution emission, and installer lifecycle validation (selective bundle flags, aliases, dependency closure, manifest persistence, `plugin.json` tailoring, atomic update backup/rollback, workspace rule emission, and selective uninstallation).
   ** `test_variant_emitter.py`: Role-eligible subagent variant generation and ADR-021 model pin application.
   ** `test_level_table_lockstep.py`: Table object identity assertion against Claude target and model alias validity.
-* `test/sync-antigravity/`:
+* `test/sync-harnesses/`:
   ** `test_sync_antigravity.py`: Component deployment, root asset handling, dry run semantics, managed entry pruning, unmanaged entry preservation, prefix ambiguity resolution, and error exit codes.
 * `test/plan-marshall/platform-runtime/`:
   ** `test_antigravity_runtime.py`: `AntigravityRuntime` unit tests covering layout, permission paths, settings I/O, default grants, and health checks.

@@ -29,7 +29,9 @@ plan-marshall/
 │   └── resources/                        # static assets (hero image, etc.)
 ├── .plan/                                # partially tracked — see below
 ├── .claude/                              # project-level Claude Code configuration
-├── pw / pw.bat / pw.lock                 # Pyprojectx wrapper (committed)
+├── .opencode/                            # project-level OpenCode configuration
+├── .agents/                              # project-level Antigravity workspace skills
+├── pw / pw.bat / pw.lock                # Pyprojectx wrapper (committed)
 ├── build.py                              # per-module build dispatcher (committed)
 ├── pyproject.toml                        # tool configuration (Pyprojectx, ruff, mypy, pytest)
 └── README.md
@@ -120,10 +122,20 @@ For anyone working from a `local/worktrees/{plan-id}/` tree: that directory is a
 Project-level Claude Code configuration committed to the repository:
 
 * `.claude/settings.json` — team-shared permission allow-list. Narrow by design (see xref:../concepts/security.adoc[Security]).
-* `.claude/skills/` — project-local skills (the meta-project only — `finalize-step-deploy-target/`, `finalize-step-plugin-doctor/`, `finalize-step-sync-plugin-cache/`, `recipe-plugin-compliance/`, `sync-plugin-cache/`). Consumer projects of Plan Marshall do not get these.
+* `.claude/skills/` — project-local skills (the meta-project only — `finalize-step-deploy-target/`, `finalize-step-plugin-doctor/`, `finalize-step-sync-plugin-cache/`, `recipe-plugin-compliance/`, `sync-harnesses/`). Consumer projects of Plan Marshall do not get these.
 * `.claude/commands/` — project-local slash commands (today: `build-fix-commit.md`).
 
 `.claude/settings.local.json` (per-developer, gitignored) sits alongside but is never committed.
+
+== `.opencode/` and `.agents/`
+
+Project-level configuration for the other two harnesses, committed to the repository:
+
+* `.opencode/commands/sync-harnesses.md` — the OpenCode entry point of the harness sync command.
+* `.opencode/plugin/guard.js` — the OpenCode `tool.execute.before` guard plugin. See xref:opencode.adoc[OpenCode].
+* `.agents/skills/sync-harnesses/` — the Antigravity workspace skill carrying the same command.
+
+The `sync-harnesses` command exists once per harness: `.claude/skills/sync-harnesses/`, `.opencode/commands/sync-harnesses.md` and `.agents/skills/sync-harnesses/`. Each is a thin pointer at the single sync engine, `marketplace/targets/sync.py`. See xref:marketplace-build.adoc[Marketplace Build] for the sync pipeline.
 
 == Build wrappers and configuration
 
