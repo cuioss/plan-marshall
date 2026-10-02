@@ -77,6 +77,7 @@ def test_layout_skill_roots(runtime: AntigravityRuntime):
     assert result['status'] == 'success'
     roots = result['roots']
     assert '.agents/skills' in roots
+    assert '.claude/skills' in roots
     assert '.agents/plugins/plan-marshall/skills' in roots
 
 
@@ -123,17 +124,19 @@ def test_project_initial_setup_preserves_existing_marshal(runtime: AntigravityRu
 
 
 def test_project_install_hook(runtime: AntigravityRuntime, monkeypatch, tmp_path: Path):
-    """project_install_hook creates .agents/hooks.json in project dir."""
+    """project_install_hook is a no-op that does not create .agents/hooks.json."""
     monkeypatch.chdir(tmp_path)
     result = _parse(runtime.project_install_hook('antigravity'))
-    assert result['status'] == 'success'
-    assert result['installed'] is True
-    assert (tmp_path / '.agents' / 'hooks.json').is_file()
+    assert result['status'] == 'no-op'
+    assert result['operation'] == 'project install-hook'
+    assert not (tmp_path / '.agents' / 'hooks.json').exists()
 
-    # Second invocation notes already exists
-    result2 = _parse(runtime.project_install_hook('antigravity'))
-    assert result2['status'] == 'success'
-    assert result2['installed'] is False
+
+def test_project_install_hook_unknown_target(runtime: AntigravityRuntime):
+    """project_install_hook fails for unknown target."""
+    result = _parse(runtime.project_install_hook('unknown_target'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'unknown_target'
 
 
 # =============================================================================
@@ -426,7 +429,7 @@ def test_permission_ensure_wildcards(
 def test_project_install_hook_merge_existing(
     runtime: AntigravityRuntime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    """project_install_hook merges plan-marshall-guard into existing hooks.json."""
+    """project_install_hook does not modify existing hooks.json."""
     monkeypatch.chdir(tmp_path)
     hooks_dir = tmp_path / '.agents'
     hooks_dir.mkdir(parents=True)
@@ -435,17 +438,10 @@ def test_project_install_hook_merge_existing(
     hooks_file.write_text(json.dumps(existing), encoding='utf-8')
 
     res = _parse(runtime.project_install_hook('antigravity'))
-    assert res['status'] == 'success'
-    assert res['installed'] is True
+    assert res['status'] == 'no-op'
 
     updated = json.loads(hooks_file.read_text(encoding='utf-8'))
-    assert 'user-hook' in updated
-    assert 'plan-marshall-guard' in updated
-
-    # Calling again is idempotent
-    res2 = _parse(runtime.project_install_hook('antigravity'))
-    assert res2['status'] == 'success'
-    assert res2['installed'] is False
+    assert updated == existing
 
 
 def test_to_antigravity_grant_structured():
