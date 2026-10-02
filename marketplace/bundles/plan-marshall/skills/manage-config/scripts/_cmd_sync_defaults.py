@@ -200,9 +200,18 @@ def _migrate_run_at_all_to_lane(live: dict, migrated: list[str]) -> dict:
 
     Reads each gate's retired run_at_all value from its legacy location, maps it
     (:data:`_RUN_AT_ALL_TO_LANE`), writes the owning step's ``lane`` override
-    (materializing ``default:pre-push-quality-gate`` for ``qgate``), and removes
-    the legacy run_at_all key so the subsequent deep-merge back-fills the
-    newly-materialized ``lane:off`` / ``lane:ask`` steps cleanly.
+    — materializing ``default:pre-push-quality-gate`` for ``qgate`` only when
+    no ``steps`` map exists yet to protect — and removes the legacy run_at_all
+    key so the subsequent deep-merge back-fills the newly-materialized
+    ``lane:off`` / ``lane:ask`` steps cleanly.
+
+    D1 deferral: when ``phase-6-finalize.steps`` is already present as a dict
+    but carries no entry for the ``qgate`` owner, the migration does NOT
+    materialize the missing owner — a present map is never expanded, not even
+    by legacy migration. The ``qgate`` value is retained untouched and the
+    deferral is reported, so a later run can apply the lane after ``add-step``
+    restores membership (surfaced to the operator via the ``held_for_ask`` /
+    ``review-held-defaults`` path instead of silently restoring the step).
 
     Legacy locations:
 
@@ -227,14 +236,25 @@ def _migrate_run_at_all_to_lane(live: dict, migrated: list[str]) -> dict:
 
     # qgate — flat phase-level sibling.
     if 'qgate' in phase6:
-        legacy = phase6.pop('qgate')
+        legacy = phase6['qgate']
         mapped = _RUN_AT_ALL_TO_LANE.get(legacy) if isinstance(legacy, str) else None
         owner = _CEREMONY_GATE_OWNER_STEP['qgate']
-        if mapped is not None:
-            _set_step_lane(phase6, owner, mapped)
-            migrated.append(f'plan.phase-6-finalize.qgate={legacy} -> steps[{owner}].lane={mapped}')
+        steps_map = phase6.get('steps')
+        owner_present = isinstance(steps_map, dict) and _find_step_key(steps_map, owner) is not None
+        if mapped is not None and isinstance(steps_map, dict) and not owner_present:
+            # D1 deferral: the steps map is present but carries no entry for
+            # the owner — materializing it here would expand a curated map by
+            # another route. Retain qgate untouched so a later run can migrate
+            # it after add-step restores membership; report the deferral.
+            # Falls through to the step-owned gates below (no early return).
+            migrated.append(f'plan.phase-6-finalize.qgate={legacy} -> deferred until steps[{owner}] is accepted')
         else:
-            migrated.append(f'plan.phase-6-finalize.qgate={legacy} -> (auto: omitted)')
+            del phase6['qgate']
+            if mapped is not None:
+                _set_step_lane(phase6, owner, mapped)
+                migrated.append(f'plan.phase-6-finalize.qgate={legacy} -> steps[{owner}].lane={mapped}')
+            else:
+                migrated.append(f'plan.phase-6-finalize.qgate={legacy} -> (auto: omitted)')
 
     # self_review / simplify / security_audit — step-owned params.
     steps_map = phase6.get('steps')

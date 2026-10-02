@@ -57,14 +57,18 @@ it through the existing ``manage-architecture`` verbs (``discover --force
 --apply migration`` then ``descriptor-regression-check --pre-ref HEAD``), and
 the migration it writes lands through Stage 4 with no commit of its own.
 
-``review-held-defaults`` likewise has no subcommand: the router drives it by
-reading the ``reconcile-marshal-json`` (``sync-defaults``) report's
-``held_for_ask`` / ``re_added`` buckets and asking the operator once per
-newly-discovered not-yet-selected step (never auto-adding). A prior
-``remove-step`` survives the upgrade because ``sync-defaults`` is
-atomic-once-present on both step maps — the sub-step only surfaces what was
-held, using the same ``re-add`` vs ``new default`` wording the sync report
-uses.
+``review-held-defaults`` likewise has no subcommand: it is an agent-executed
+sub-step, not a script verb. The agent running the upgrade holds the
+``reconcile-marshal-json`` (``sync-defaults``) report returned by the
+immediately-preceding call in the SAME run, reads its ``held_for_ask`` /
+``re_added`` buckets, and asks the operator once per newly-discovered
+not-yet-selected step (never auto-adding). A prior ``remove-step`` survives
+the upgrade because ``sync-defaults`` is atomic-once-present on both step
+maps — the sub-step only surfaces what was held, using the same ``re-add``
+vs ``new default`` wording the sync report uses. A re-run recomputes the
+buckets from the live maps (there is no durable declined record, so a
+declined id is held again); the safety property is unaffected because
+recomputation still never auto-adds.
 
 Gate model:
 

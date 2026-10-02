@@ -41,6 +41,19 @@ def _stage2_block() -> str:
     return text[start:end]
 
 
+def _review_held_defaults_block() -> str:
+    """Return the '### Sub-step `review-held-defaults`' subsection only.
+
+    Scoping the wording assertions to this block keeps them load-bearing: a
+    whole-Stage-2 search already matches unrelated `held`/`removal` prose, so
+    only the subsection proves the ask step itself carries the wording.
+    """
+    block = _stage2_block()
+    start = block.index('### Sub-step `review-held-defaults`')
+    end = block.index('### Sub-step `migrate-bot-lists`', start)
+    return block[start:end]
+
+
 def _invocation_index(block: str, verb: str) -> int:
     """Return the position of the manage-config invocation of ``verb`` in ``block``."""
     return block.index(f'plan-marshall:manage-config:manage-config {verb}')
@@ -142,20 +155,21 @@ def test_stage2_review_held_defaults_runs_after_reconcile_and_before_migrate_bot
 
 
 def test_stage2_prose_words_re_add_vs_new_default_identically_to_sync():
-    """D3: the upgrade prose uses `re-add` for removals and `new default` for fresh gaps."""
-    block = _stage2_block()
+    """D3: the review-held-defaults block uses `re-add`/`re_added` for removals, `new default`/`held_for_ask` for fresh gaps."""
+    block = _review_held_defaults_block()
 
-    assert '`re_added`' in block or 're-added' in block or 're-add' in block
-    assert 'held_for_ask' in block or 'held' in block
+    assert '`re_added`' in block
+    assert 're-add' in block
+    assert '`held_for_ask`' in block
     assert 'new default' in block
-    # the ask-once, never-auto-add posture is stated
+    # the ask-once, never-auto-add posture is stated inside the block itself
     assert 'never auto-add' in block or 'never auto-adding' in block
 
 
 def test_stage2_prose_states_removal_survives_sync():
-    """D3: the upgrade prose states a prior removal survives reconcile untouched."""
-    block = _stage2_block()
+    """D3: the review-held-defaults block states a prior removal survives reconcile untouched."""
+    block = _review_held_defaults_block()
 
     assert 'removal' in block
     assert 'atomic-once-present' in block
-    assert 'review-held-defaults' in block
+    assert 'crosses operator removal' in block

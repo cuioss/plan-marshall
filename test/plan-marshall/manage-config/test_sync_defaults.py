@@ -40,6 +40,15 @@ _config_defaults_mod = load_script_module(
 
 cmd_sync_defaults = _sync_mod.cmd_sync_defaults
 
+_cmd_quality_phases_mod = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_quality_phases.py', module_name='_cmd_quality_phases_for_sync_flow'
+)
+_cmd_system_plan_mod = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_system_plan.py', module_name='_cmd_system_plan_for_sync_flow'
+)
+
+cmd_plan = _cmd_system_plan_mod.cmd_plan
+
 
 # The namespace the real ``sync-defaults`` parser produces, built ONCE (parse_ns
 # re-executes the script module on every call) and copied per test.
@@ -1286,18 +1295,30 @@ def test_sync_defaults_fresh_wizard_materialization_is_idempotent(plan_context):
 
 
 def test_sync_defaults_remove_then_sync_keeps_verification_step_absent(plan_context):
-    """D3 remove-absent: an operator-removed verify step survives sync and is reported as re-add."""
+    """D3 remove-absent: a real `remove-step` survives sync and is reported as re-add."""
     _write_marshal(
         plan_context.fixture_dir,
         {
             'plan': {
                 'phase-5-execute': {
-                    'verification_steps': {'default:verify:quality-gate': {}, 'default:verify:module-tests': {}},
-                    'removed_steps': ['default:verify:coverage'],
+                    'verification_steps': {
+                        'default:verify:quality-gate': {},
+                        'default:verify:module-tests': {},
+                        'default:verify:coverage': {},
+                    },
                 }
             }
         },
     )
+
+    removed = cmd_plan(
+        Namespace(
+            sub_noun='phase-5-execute',
+            verb='remove-step',
+            step='default:verify:coverage',
+        )
+    )
+    assert removed['status'] == 'success'
 
     result = cmd_sync_defaults(_sync_ns())
 
@@ -1306,23 +1327,39 @@ def test_sync_defaults_remove_then_sync_keeps_verification_step_absent(plan_cont
     verification_steps = config['plan']['phase-5-execute']['verification_steps']
     assert 'default:verify:coverage' not in verification_steps
     assert 'default:verify:quality-gate' in verification_steps
-    assert any('default:verify:coverage' in entry for entry in result['re_added'])
+    expected = (
+        'plan.phase-5-execute.verification_steps.'
+        'default:verify:coverage (crosses operator removal)'
+    )
+    assert expected in result['re_added']
     assert not any('default:verify:coverage' in entry for entry in result['added'])
 
 
 def test_sync_defaults_remove_then_sync_keeps_finalize_step_absent(plan_context):
-    """D3 remove-absent: an operator-removed finalize step survives sync and is reported as re-add."""
+    """D3 remove-absent: a real `remove-step` survives sync and is reported as re-add."""
     _write_marshal(
         plan_context.fixture_dir,
         {
             'plan': {
                 'phase-6-finalize': {
-                    'steps': {'default:push': {}, 'default:archive-plan': {}},
-                    'removed_steps': ['default:pre-submission-self-review'],
+                    'steps': {
+                        'default:push': {},
+                        'default:pre-submission-self-review': {},
+                        'default:archive-plan': {},
+                    },
                 }
             }
         },
     )
+
+    removed = cmd_plan(
+        Namespace(
+            sub_noun='phase-6-finalize',
+            verb='remove-step',
+            step='default:pre-submission-self-review',
+        )
+    )
+    assert removed['status'] == 'success'
 
     result = cmd_sync_defaults(_sync_ns())
 
@@ -1331,7 +1368,11 @@ def test_sync_defaults_remove_then_sync_keeps_finalize_step_absent(plan_context)
     steps = config['plan']['phase-6-finalize']['steps']
     assert 'default:pre-submission-self-review' not in steps
     assert 'default:push' in steps
-    assert any('default:pre-submission-self-review' in entry for entry in result['re_added'])
+    expected = (
+        'plan.phase-6-finalize.steps.'
+        'default:pre-submission-self-review (crosses operator removal)'
+    )
+    assert expected in result['re_added']
 
 
 def test_sync_defaults_curated_map_without_step_is_held_not_expanded(plan_context):

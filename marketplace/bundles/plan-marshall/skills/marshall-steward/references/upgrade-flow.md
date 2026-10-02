@@ -381,7 +381,11 @@ stray or consumer-added block) rather than dropped.
 ### Sub-step `review-held-defaults`
 
 Run immediately after the three reconcile verbs, before `migrate-bot-lists`.
-Read the `sync-defaults` report's `held_for_ask` / `re_added` buckets:
+This is an agent-executed sub-step (no script subcommand): read the
+`held_for_ask` / `re_added` buckets off the `sync-defaults` report returned
+by the immediately-preceding reconcile call IN THE SAME RUN — never a
+re-run's report, which recomputes from the live maps and returns empty
+buckets for ids already answered:
 
 - `held_for_ask[]` — curated-but-never-removed gaps: a present step map that
   never carried the step id was NOT expanded with it. The id is held for the
@@ -392,7 +396,7 @@ Read the `sync-defaults` report's `held_for_ask` / `re_added` buckets:
   operator decision never reads as a routine addition.
 
 Word the operator prompt identically to the sync report: `re-add` for an entry
-in `re_added[]`, `new default` for an entry in `held_for_ask[]`. Ask once per
+in `re_added`, `new default` for an entry in `held_for_ask`. Ask once per
 newly-discovered not-yet-selected step; an explicit operator answer adds the
 step via `add-step` (which clears the removal record), and a prior removal
 survives the upgrade untouched because `sync-defaults` is atomic-once-present

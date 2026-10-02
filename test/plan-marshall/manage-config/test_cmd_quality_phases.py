@@ -1891,14 +1891,23 @@ def test_add_step_clears_operator_removal_intent(plan_context):
 def test_set_steps_reconciles_operator_removal_intent(plan_context):
     """D3: `set-steps` drops ids present again and keeps ids still absent."""
     create_marshal_json(plan_context.fixture_dir)
-    first = cmd_plan(
+    added = cmd_plan(
         Namespace(
             sub_noun='phase-5-execute',
-            verb='remove-step',
-            step='default:verify:quality-gate',
+            verb='add-step',
+            step='default:verify:coverage',
         )
     )
-    assert first['status'] == 'success'
+    assert added['status'] == 'success'
+    for step_id in ('default:verify:quality-gate', 'default:verify:coverage'):
+        first = cmd_plan(
+            Namespace(
+                sub_noun='phase-5-execute',
+                verb='remove-step',
+                step=step_id,
+            )
+        )
+        assert first['status'] == 'success'
 
     result = cmd_plan(
         Namespace(
@@ -1913,6 +1922,10 @@ def test_set_steps_reconciles_operator_removal_intent(plan_context):
     section = config['plan']['phase-5-execute']
     assert 'default:verify:quality-gate' in section['verification_steps']
     assert 'default:verify:quality-gate' not in section.get('removed_steps', [])
+    # The still-absent id keeps its removal record so a later sync reports
+    # the crossing distinctly instead of a routine addition.
+    assert 'default:verify:coverage' not in section['verification_steps']
+    assert 'default:verify:coverage' in section.get('removed_steps', [])
 
 
 # =============================================================================

@@ -1848,12 +1848,21 @@ _EXPECTED_CANONICAL_KEY_ORDER = [
     # of `plan`, emitted immediately after it.
     'orchestrator',
     'build',
+    # `code_intelligence` sits between `build` and `credentials_config`,
+    # matching production (`CANONICAL_TOP_LEVEL_KEY_ORDER`).
+    'code_intelligence',
     'credentials_config',
     # `interaction_mode` (the top-level scalar preference) sits in its alphabetical
     # slot between `credentials_config` and `project`, matching production.
     'interaction_mode',
     'project',
+    # `project_dir` and `runtime` are written at the top level by the platform
+    # runtime seed; both take their alphabetical slot, matching production.
+    # `runtime` arrived via steward-maintained artifacts while the verify job
+    # was skipped, which is how the table fell behind the committed file.
+    'project_dir',
     'providers',
+    'runtime',
     'skill_domains',
     'system',
 ]
@@ -1887,10 +1896,13 @@ def test_save_config_emits_canonical_top_level_key_order(tmp_path, monkeypatch):
     scrambled = {
         'system': {},
         'skill_domains': {},
+        'runtime': {},
         'providers': {},
+        'project_dir': {},
         'project': {},
-        'credentials_config': {},
         'interaction_mode': 'advanced',
+        'credentials_config': {},
+        'code_intelligence': {},
         'orchestrator': {},
         'plan': {},
         'extension_defaults': {},
@@ -3017,8 +3029,12 @@ _migrate_run_at_all_to_lane = _cmd_sync_defaults_mod._migrate_run_at_all_to_lane
 
 
 def test_migrate_qgate_never_materializes_lane_off():
-    """qgate: never → materialize default:pre-push-quality-gate with lane: off."""
-    live = {'plan': {'phase-6-finalize': {'qgate': 'never', 'steps': {}}}}
+    """qgate: never → materialize default:pre-push-quality-gate with lane: off.
+
+    The steps map is wholly absent here, so there is no curated map to
+    protect and the legacy migration materializes the owner.
+    """
+    live = {'plan': {'phase-6-finalize': {'qgate': 'never'}}}
     migrated: list = []
     _migrate_run_at_all_to_lane(live, migrated)
 
@@ -3029,8 +3045,12 @@ def test_migrate_qgate_never_materializes_lane_off():
 
 
 def test_migrate_qgate_always_materializes_lane_minimal():
-    """qgate: always → lane: minimal on the materialized owning step."""
-    live = {'plan': {'phase-6-finalize': {'qgate': 'always', 'steps': {}}}}
+    """qgate: always → lane: minimal on the materialized owning step.
+
+    The steps map is wholly absent here, so there is no curated map to
+    protect and the legacy migration materializes the owner.
+    """
+    live = {'plan': {'phase-6-finalize': {'qgate': 'always'}}}
     migrated: list = []
     _migrate_run_at_all_to_lane(live, migrated)
 
@@ -3040,17 +3060,61 @@ def test_migrate_qgate_always_materializes_lane_minimal():
 
 
 def test_migrate_qgate_auto_omits_lane_but_removes_legacy_key():
-    """qgate: auto → the legacy key is removed but NO lane override is written."""
-    live = {'plan': {'phase-6-finalize': {'qgate': 'auto', 'steps': {}}}}
+    """qgate: auto → the legacy key is removed but NO lane override is written.
+
+    The steps map is wholly absent here; auto maps to no lane, so nothing is
+    materialized either way.
+    """
+    live = {'plan': {'phase-6-finalize': {'qgate': 'auto'}}}
     migrated: list = []
     _migrate_run_at_all_to_lane(live, migrated)
 
     p6 = live['plan']['phase-6-finalize']
     assert 'qgate' not in p6
     # standard is the lane default — the owning step is NOT materialized with a lane.
-    assert 'default:pre-push-quality-gate' not in p6['steps']
+    assert 'default:pre-push-quality-gate' not in p6.get('steps', {})
     # The removal is still reported so sync-defaults persists the change.
     assert migrated
+
+
+def test_migrate_qgate_defers_when_present_map_lacks_owner():
+    """qgate + present steps map without the owner → defer, retain qgate.
+
+    A present map is never expanded — not even by legacy migration. The
+    legacy value is retained untouched (not popped) and the deferral is
+    reported, so a later run can migrate it after add-step restores
+    membership. Covers the empty-map and populated-without-owner shapes.
+    """
+    for steps in ({}, {'default:finalize-step-simplify': {}}):
+        live = {'plan': {'phase-6-finalize': {'qgate': 'never', 'steps': dict(steps)}}}
+        migrated: list = []
+        _migrate_run_at_all_to_lane(live, migrated)
+
+        p6 = live['plan']['phase-6-finalize']
+        assert p6['qgate'] == 'never'
+        assert 'default:pre-push-quality-gate' not in p6['steps']
+        assert migrated == [
+            'plan.phase-6-finalize.qgate=never -> deferred until '
+            'steps[default:pre-push-quality-gate] is accepted'
+        ]
+
+
+def test_migrate_qgate_sets_lane_on_present_owner():
+    """qgate + present owner → lane written on the existing entry, key removed."""
+    live = {
+        'plan': {
+            'phase-6-finalize': {
+                'qgate': 'always',
+                'steps': {'default:pre-push-quality-gate': {}},
+            }
+        }
+    }
+    migrated: list = []
+    _migrate_run_at_all_to_lane(live, migrated)
+
+    p6 = live['plan']['phase-6-finalize']
+    assert 'qgate' not in p6
+    assert p6['steps']['default:pre-push-quality-gate']['lane'] == 'minimal'
 
 
 def test_migrate_step_owned_simplify_always_to_lane_minimal():
@@ -3085,8 +3149,11 @@ def test_migrate_all_four_gates_preserve_values():
     _migrate_run_at_all_to_lane(live, migrated)
 
     steps = live['plan']['phase-6-finalize']['steps']
-    # qgate never → materialized lane off.
-    assert steps['default:pre-push-quality-gate']['lane'] == 'off'
+    # qgate never defers: the present map carries no pre-push-quality-gate
+    # entry, so the legacy value is retained for a later run instead of
+    # materializing the missing owner.
+    assert live['plan']['phase-6-finalize']['qgate'] == 'never'
+    assert 'default:pre-push-quality-gate' not in steps
     # self_review always → minimal, sibling escape hatch preserved, legacy removed.
     self_review = steps['default:pre-submission-self-review']
     assert self_review['lane'] == 'minimal'
@@ -3114,12 +3181,19 @@ def test_migrate_bare_owner_key_form_handled():
 
 
 def test_migration_is_idempotent():
-    """A second run reports no migration and leaves the lane values unchanged."""
+    """A second run reports no migration and leaves the lane values unchanged.
+
+    The owner is present here, so the legacy key migrates onto the existing
+    entry and the second run is clean.
+    """
     live = {
         'plan': {
             'phase-6-finalize': {
                 'qgate': 'never',
-                'steps': {'default:finalize-step-simplify': {'simplify': 'always'}},
+                'steps': {
+                    'default:pre-push-quality-gate': {},
+                    'default:finalize-step-simplify': {'simplify': 'always'},
+                },
             }
         }
     }
@@ -3134,6 +3208,34 @@ def test_migration_is_idempotent():
     steps = live['plan']['phase-6-finalize']['steps']
     assert steps['default:pre-push-quality-gate']['lane'] == 'off'
     assert steps['default:finalize-step-simplify']['lane'] == 'minimal'
+
+
+def test_migration_deferral_repeats_stably():
+    """A deferred qgate re-reports identically without changing state.
+
+    Deferral retains the legacy key, so every run reports it — but the report
+    is byte-identical and the tree is untouched, which is the stable
+    fixed-point a pending deferral converges to (not a second migration).
+    """
+    live = {
+        'plan': {
+            'phase-6-finalize': {
+                'qgate': 'never',
+                'steps': {'default:finalize-step-simplify': {'simplify': 'always'}},
+            }
+        }
+    }
+    first: list = []
+    _migrate_run_at_all_to_lane(live, first)
+    snapshot = json.loads(json.dumps(live))
+
+    second: list = []
+    _migrate_run_at_all_to_lane(live, second)
+
+    assert first == second
+    assert len(first) == 2  # one deferral + one simplify migration
+    assert live == snapshot
+    assert live['plan']['phase-6-finalize']['qgate'] == 'never'
 
 
 def test_planning_gates_untouched_by_run_at_all_migration():
