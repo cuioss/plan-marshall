@@ -2179,7 +2179,7 @@ cannot see this: the 22 renderings pass green either way until something tries t
 
 ## Watches
 
-### W-2026-10-02-a — follow-up PR #1681 (sync-guard scope fix) needs CI + merge
+### ✅ RETIRED 2026-10-02 — W-2026-10-02-a landed as PR 1681 (merged `8e21bd1`, branch pruned)
 
 Surfaced at PLAN-TRUTH-168's landing (PR #1674): a sync-guard/emitter scope
 mismatch found during the run was fixed as drive-by and rides follow-up PR
