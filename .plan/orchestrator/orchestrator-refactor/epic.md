@@ -164,6 +164,9 @@ cannot express.}
   in the live plan set. Prep-readiness passed on its own terms: 7 verdict rows, all admit, none stale. One of
   two slots filled (`parallelization_scope` 2, nothing launched). `auto_emit` is `false`, so the row stays
   `staged` until the operator confirms the launch. Same override precedent as PLAN-02, PLAN-08 and PLAN-11.
+  **Same day: operator confirmed the start.** Cross-read of the live plan store showed
+  `orchestrator-land-verbs` in `2-refine`; row transitioned `staged` → `running`, `plan_marshall_plan_id`
+  stamped.
 
 - 2026-10-02 — **`cleanup` pass after the PLAN-11 landing.** Corpus: 11 rows and 11 specs, reconciled both
   ways, none running. Applied: PLAN-10 re-grounded at `8665ddacf` (all 7 verdicts re-stamped, outcomes

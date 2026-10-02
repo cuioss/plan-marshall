@@ -2,8 +2,8 @@
   "id": "PLAN-10",
   "slug": "orchestrator-land-verbs",
   "workstream": "WS-05",
-  "status": "staged",
-  "plan_marshall_plan_id": "",
+  "status": "running",
+  "plan_marshall_plan_id": "orchestrator-land-verbs",
   "pr": "",
   "landing": "",
   "seq": 10
