@@ -479,31 +479,19 @@ def _load_cache_sync_module() -> ModuleType:
     (``yaml``) that a bare ``python3`` with no project virtualenv does not
     carry. Loading the single file executes exactly that module.
 
-    The loaded module is cached in ``sys.modules`` under
-    :data:`CACHE_SYNC_MODULE_NAME`.
-
     Raises:
         ImportError: the module file is absent, has no loadable spec, or
             fails while executing.
     """
-    cached = sys.modules.get(CACHE_SYNC_MODULE_NAME)
-    if cached is not None:
-        return cached
-
     module_path = _PROJECT_ROOT / CACHE_SYNC_RELPATH
-    if not module_path.is_file():
-        raise ImportError(f'claude cache-sync module not found at {module_path}')
-
     spec = importlib.util.spec_from_file_location(CACHE_SYNC_MODULE_NAME, module_path)
     if spec is None or spec.loader is None:
         raise ImportError(f'no loadable module spec for claude cache-sync module at {module_path}')
 
     module = importlib.util.module_from_spec(spec)
-    sys.modules[CACHE_SYNC_MODULE_NAME] = module
     try:
         spec.loader.exec_module(module)
     except Exception as exc:  # normalised to ImportError below
-        sys.modules.pop(CACHE_SYNC_MODULE_NAME, None)
         raise ImportError(f'claude cache-sync module at {module_path} failed to import: {exc}') from exc
     return module
 
@@ -558,10 +546,8 @@ def _sync_one_for_aggregate(target_name: str, args: argparse.Namespace) -> dict[
         }
 
 
-def sync_all(args: argparse.Namespace, *, stdout: TextIO | None = None) -> int:
+def sync_all(args: argparse.Namespace) -> int:
     """Sync every harness in :data:`SYNC_TARGETS` order and write the aggregate."""
-    out = stdout if stdout is not None else sys.stdout
-
     blocks = {target_name: _sync_one_for_aggregate(target_name, args) for target_name in SYNC_TARGETS}
     succeeded = [name for name, block in blocks.items() if block['status'] == 'success']
 
@@ -580,7 +566,7 @@ def sync_all(args: argparse.Namespace, *, stdout: TextIO | None = None) -> int:
         ],
         **blocks,
     }
-    out.write(serialize_toon(document) + '\n')
+    sys.stdout.write(serialize_toon(document) + '\n')
     return 0 if status == 'success' else 1
 
 
