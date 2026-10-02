@@ -68,9 +68,7 @@ def _is_operator_step_map(prefix: str, key: str) -> bool:
     missing step id to it without an explicit operator answer — it holds the
     id for the ask-before-add gate instead (see :func:`_deep_merge_missing`).
     """
-    return any(
-        prefix == f'plan.{phase}' and key == map_key for phase, map_key in _STEP_MAP_LOCATIONS
-    )
+    return any(prefix == f'plan.{phase}' and key == map_key for phase, map_key in _STEP_MAP_LOCATIONS)
 
 
 def _rename_in_map(steps_map: dict, prefix: str, renamed: list[str]) -> dict:

@@ -1429,10 +1429,7 @@ def test_sync_defaults_retired_removal_id_matches_canonical_step(plan_context):
     config = _read_marshal(plan_context.fixture_dir)
     steps = config['plan']['phase-6-finalize']['steps']
     assert 'plan-marshall:automatic-review' not in steps
-    expected = (
-        'plan.phase-6-finalize.steps.'
-        'plan-marshall:automatic-review (crosses operator removal)'
-    )
+    expected = 'plan.phase-6-finalize.steps.plan-marshall:automatic-review (crosses operator removal)'
     assert expected in result['re_added']
     assert not any('automatic-review' in entry for entry in result['held_for_ask'])
 
