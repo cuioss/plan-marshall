@@ -1327,10 +1327,7 @@ def test_sync_defaults_remove_then_sync_keeps_verification_step_absent(plan_cont
     verification_steps = config['plan']['phase-5-execute']['verification_steps']
     assert 'default:verify:coverage' not in verification_steps
     assert 'default:verify:quality-gate' in verification_steps
-    expected = (
-        'plan.phase-5-execute.verification_steps.'
-        'default:verify:coverage (crosses operator removal)'
-    )
+    expected = 'plan.phase-5-execute.verification_steps.default:verify:coverage (crosses operator removal)'
     assert expected in result['re_added']
     assert not any('default:verify:coverage' in entry for entry in result['added'])
 
@@ -1368,10 +1365,7 @@ def test_sync_defaults_remove_then_sync_keeps_finalize_step_absent(plan_context)
     steps = config['plan']['phase-6-finalize']['steps']
     assert 'default:pre-submission-self-review' not in steps
     assert 'default:push' in steps
-    expected = (
-        'plan.phase-6-finalize.steps.'
-        'default:pre-submission-self-review (crosses operator removal)'
-    )
+    expected = 'plan.phase-6-finalize.steps.default:pre-submission-self-review (crosses operator removal)'
     assert expected in result['re_added']
 
 

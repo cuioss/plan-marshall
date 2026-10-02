@@ -3094,8 +3094,7 @@ def test_migrate_qgate_defers_when_present_map_lacks_owner():
         assert p6['qgate'] == 'never'
         assert 'default:pre-push-quality-gate' not in p6['steps']
         assert migrated == [
-            'plan.phase-6-finalize.qgate=never -> deferred until '
-            'steps[default:pre-push-quality-gate] is accepted'
+            'plan.phase-6-finalize.qgate=never -> deferred until steps[default:pre-push-quality-gate] is accepted'
         ]
 
 
