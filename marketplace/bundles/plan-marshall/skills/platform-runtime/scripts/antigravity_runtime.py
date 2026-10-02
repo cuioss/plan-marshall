@@ -38,7 +38,6 @@ ANTIGRAVITY_DEFAULT_PERMISSIONS: tuple[str, ...] = (
     'command(python3 .plan/execute-script.py)',
     'command(./pw)',
     'command(python3 marketplace/targets/sync.py --target antigravity)',
-    'command(python3 .agents/scripts/sync_antigravity.py)',
 )
 
 DEFAULT_ANTIGRAVITY_COMMANDS = ANTIGRAVITY_DEFAULT_PERMISSIONS

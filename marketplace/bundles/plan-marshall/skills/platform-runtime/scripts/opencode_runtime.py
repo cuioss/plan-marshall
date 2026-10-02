@@ -65,7 +65,6 @@ OPENCODE_DEFAULT_PERMISSIONS: tuple[str, ...] = (
     'python3 .plan/execute-script.py *',
     './pw *',
     'python3 marketplace/targets/sync.py *',
-    'python3 .opencode/scripts/sync_opencode.py *',
 )
 
 DEFAULT_OPENCODE_COMMANDS = OPENCODE_DEFAULT_PERMISSIONS

@@ -184,7 +184,7 @@ The matrix below resolves every relevant (role, surface, path) cell. Rows are ve
 | Surface | Path | Resolution | Source (landed artifact)
 | Executor | `python3 .plan/execute-script.py *` | allow | `agent.build.permission.bash` allow row; guard R4 exempts the permit
 | Build wrapper | `./pw *` | allow, narrowed by guard | `agent.build.permission.bash` allow row; guard R4 blocks build verbs, `./pw generate*` / `./pw --*` pass
-| Sync scripts | `python3 marketplace/targets/sync.py *`, `python3 .opencode/scripts/sync_opencode.py *` | allow | `agent.build.permission.bash` allow rows
+| Sync engine | `python3 marketplace/targets/sync.py *` | allow | `agent.build.permission.bash` allow row
 | Git read | `git status/log/diff/show/branch *` | ask | `agent.build.permission.bash` ask rows — information lookups stay available under operator confirmation
 | Read probes | `ls/cat/head/tail/grep/find *` | ask | `agent.build.permission.bash` ask rows — override the global deny for the orchestrator (carve-out as implemented)
 | Git write | `git add/commit *` and other unwritten git verbs | ask | `agent.build.permission.bash` `"*": "ask"` fallback

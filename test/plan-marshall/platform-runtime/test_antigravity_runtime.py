@@ -224,7 +224,7 @@ def test_permission_ensure_defaults(runtime: AntigravityRuntime, tmp_path: Path)
     project_file.write_text(json.dumps(initial_data), encoding='utf-8')
 
     result = runtime.permission_ensure_defaults(initial_data, str(project_file), dry_run=False)
-    assert result['defaults_added_count'] == 4
+    assert result['defaults_added_count'] == 3
     assert 'command(python3 .plan/execute-script.py)' in result['defaults_added']
     assert 'command(./pw)' in result['defaults_added']
     assert result['applied'] is True
@@ -308,7 +308,7 @@ def test_permission_ensure_defaults_dry_run(runtime: AntigravityRuntime, tmp_pat
     project_file.write_text(json.dumps(initial_data), encoding='utf-8')
 
     result = runtime.permission_ensure_defaults(initial_data, str(project_file), dry_run=True)
-    assert result['defaults_added_count'] == 4
+    assert result['defaults_added_count'] == 3
     assert result['applied'] is False
 
     saved_data = json.loads(project_file.read_text(encoding='utf-8'))
