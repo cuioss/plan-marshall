@@ -119,7 +119,7 @@ project-skills:
   path: .claude/skills
   skills[N]:
     - plan-retrospective
-    - sync-plugin-cache
+    - sync-harnesses
   scripts[N]:
     - collect-artifacts
 ```
