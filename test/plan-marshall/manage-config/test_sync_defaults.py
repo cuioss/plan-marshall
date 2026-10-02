@@ -1404,6 +1404,39 @@ def test_sync_defaults_genuine_new_default_is_held_for_ask_never_auto_added(plan
     assert 'plan.phase-6-finalize.steps.default:archive-plan' not in result['added']
 
 
+def test_sync_defaults_retired_removal_id_matches_canonical_step(plan_context):
+    """D2 retired-id removal: a removal recorded under a retired id constrains the canonical step.
+
+    The retired-key migration canonicalizes the record, so the held
+    canonical id lands in `re_added` — not in `held_for_ask` as a routine
+    new default.
+    """
+    _write_marshal(
+        plan_context.fixture_dir,
+        {
+            'plan': {
+                'phase-6-finalize': {
+                    'steps': {'default:push': {}},
+                    'removed_steps': ['default:automated-review'],
+                }
+            }
+        },
+    )
+
+    result = cmd_sync_defaults(_sync_ns())
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    steps = config['plan']['phase-6-finalize']['steps']
+    assert 'plan-marshall:automatic-review' not in steps
+    expected = (
+        'plan.phase-6-finalize.steps.'
+        'plan-marshall:automatic-review (crosses operator removal)'
+    )
+    assert expected in result['re_added']
+    assert not any('automatic-review' in entry for entry in result['held_for_ask'])]
+
+
 def test_sync_defaults_re_added_entries_name_the_crossed_decision(plan_context):
     """D3 report distinction: every re_added entry names the crossed operator removal."""
     _write_marshal(

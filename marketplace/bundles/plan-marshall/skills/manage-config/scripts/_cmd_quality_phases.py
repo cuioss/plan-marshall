@@ -20,6 +20,7 @@ from _config_core import (
     success_exit,
 )
 from _config_defaults import (
+    OPERATOR_REMOVED_STEPS_KEY,
     get_default_config,
     validate_gate_mode,
     validate_per_deliverable_build,
@@ -47,16 +48,16 @@ STEP_KEYS = {
     'phase-6-finalize': 'steps',
 }
 
-# Operator step-intent key persisted per phase section (mirrors
-# ``_cmd_sync_defaults.OPERATOR_REMOVED_STEPS_KEY``; duplicated as a literal
-# here because _cmd_quality_phases must not import the sync module at runtime).
-# ``remove-step`` appends the removed step id so a later ``sync-defaults``
-# has a durable removal signal to consult for reporting (D2 splits a held id
-# that crosses this list into the distinct ``re_added`` bucket). The
-# no-auto-expand guarantee itself is structural — a present map is never
-# expanded even when this list is absent — so a curated map that never carried
-# a step id needs no entry here to stay unexpanded.
-REMOVED_STEPS_KEY = 'removed_steps'
+# Operator step-intent key persisted per phase section — the single source in
+# :mod:`_config_defaults` (imported, never restated: a literal here would let
+# removal and sync disagree about the key). ``remove-step`` appends the
+# removed step id so a later ``sync-defaults`` has a durable removal signal
+# to consult for reporting (D2 splits a held id that crosses this list into
+# the distinct ``re_added`` bucket). The no-auto-expand guarantee itself is
+# structural — a present map is never expanded even when this list is
+# absent — so a curated map that never carried a step id needs no entry here
+# to stay unexpanded.
+REMOVED_STEPS_KEY = OPERATOR_REMOVED_STEPS_KEY
 
 
 def _read_removed_steps(section: dict) -> list[str]:

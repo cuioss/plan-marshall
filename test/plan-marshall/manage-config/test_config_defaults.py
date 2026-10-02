@@ -1830,42 +1830,23 @@ def test_build_map_round_trips_at_top_level_build_path(tmp_path, monkeypatch):
 # save_config() in _config_core.py enforces a canonical top-level key order when
 # persisting marshal.json. After the D1–D6 dissolutions and the build_map
 # relocation to the top-level build block, the surviving top-level blocks
-# (ci/ceremony_policy/build_map_overrides removed) lead with ``extension_defaults``
-# (the extension-seeded defaults block), then ``plan`` (the primary user-facing
-# config), then ``build`` (build infrastructure), and finally the remaining
-# top-level keys alphabetically: extension_defaults, plan, build,
-# credentials_config, project, providers, skill_domains, system.
-# ``credentials_config`` (the non-secret per-provider config block written by
-# manage-providers) takes its alphabetical slot between ``build`` and
-# ``project``. These tests pin that contract and prove the committed
-# marshal.json already round-trips through save_config with its key order
-# unchanged.
+# lead with ``extension_defaults`` (the extension-seeded defaults block),
+# then ``plan`` (the primary user-facing config), then ``build`` (build
+# infrastructure), followed by the remaining keys per
+# ``CANONICAL_TOP_LEVEL_KEY_ORDER``. These tests pin that contract and prove
+# the committed marshal.json already round-trips through save_config with
+# its key order unchanged. The expected order below is derived from the
+# production definition, so the contract — not a hand-maintained copy of it
+# — is what is pinned.
 
-_EXPECTED_CANONICAL_KEY_ORDER = [
-    'extension_defaults',
-    'plan',
-    # `orchestrator` (the epic-orchestration config block) is a top-level sibling
-    # of `plan`, emitted immediately after it.
-    'orchestrator',
-    'build',
-    # `code_intelligence` sits between `build` and `credentials_config`,
-    # matching production (`CANONICAL_TOP_LEVEL_KEY_ORDER`).
-    'code_intelligence',
-    'credentials_config',
-    # `interaction_mode` (the top-level scalar preference) sits in its alphabetical
-    # slot between `credentials_config` and `project`, matching production.
-    'interaction_mode',
-    'project',
-    # `project_dir` and `runtime` are written at the top level by the platform
-    # runtime seed; both take their alphabetical slot, matching production.
-    # `runtime` arrived via steward-maintained artifacts while the verify job
-    # was skipped, which is how the table fell behind the committed file.
-    'project_dir',
-    'providers',
-    'runtime',
-    'skill_domains',
-    'system',
-]
+# The expected order is DERIVED from the production definition — never
+# restated as a literal. A hand-maintained mirror is how this table fell
+# behind the committed file once already (the `runtime` key arrived via a
+# verify-skipped steward landing); deriving it keeps a production key
+# addition flowing into every assertion below with no test edit. What the
+# tests pin is that `save_config` honors the definition and that the
+# committed file already matches it — not the definition itself.
+_EXPECTED_CANONICAL_KEY_ORDER = list(_config_core_mod.CANONICAL_TOP_LEVEL_KEY_ORDER)
 
 #: The committed marshal.json the repo ships, resolved from the shared project root.
 _COMMITTED_MARSHAL_PATH = PROJECT_ROOT / '.plan' / 'marshal.json'
@@ -3209,8 +3190,30 @@ def test_migration_is_idempotent():
     assert steps['default:finalize-step-simplify']['lane'] == 'minimal'
 
 
-def test_migration_deferral_repeats_stably():
-    """A deferred qgate re-reports identically without changing state.
+def test_migration_canonicalizes_removed_steps():
+    """Retired ids in `removed_steps` are rewritten to their canonicals.
+
+    A removal recorded under a retired id must keep constraining the map
+    after the retired-key migration renames map keys: the merge compares
+    canonical forms, so an uncanonicalized record would miss and report the
+    held canonical step as a routine new default instead of a re-add.
+    """
+    live = {
+        'plan': {
+            'phase-6-finalize': {
+                'steps': {'default:push': {}},
+                'removed_steps': ['default:automated-review', 'default:push'],
+            }
+        }
+    }
+    migrated: list = []
+    _migrate_run_at_all_to_lane(live, migrated)
+
+    removed = live['plan']['phase-6-finalize']['removed_steps']
+    assert removed == ['plan-marshall:automatic-review', 'default:push']
+
+
+def test_migration_deferral_repeats_stably():    """A deferred qgate re-reports identically without changing state.
 
     The first run also migrates the simplify legacy param; the deferral
     itself is the stable fixed-point: every later run reports only the

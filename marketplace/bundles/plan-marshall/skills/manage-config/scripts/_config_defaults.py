@@ -814,6 +814,27 @@ def _seed_verify_steps() -> dict:
     return {step_id: {} for step_id in _verify_step_ids()}
 
 
+# Operator-curated keyed step maps and the removal-intent key — the SINGLE
+# source both consumers derive from (``_cmd_sync_defaults`` for the merge
+# guard/report, ``_cmd_quality_phases`` for the remove-step record). A third
+# copy as a literal is a defect: if one copy changes, removal and sync
+# silently disagree about which maps are guarded.
+OPERATOR_STEP_MAP_LOCATIONS: tuple[tuple[str, str], ...] = (
+    ('phase-5-execute', 'verification_steps'),
+    ('phase-6-finalize', 'steps'),
+)
+# Operator step-intent key persisted per phase section (e.g.
+# ``plan.phase-5-execute.removed_steps``). ``remove-step`` appends the removed
+# step id; ``add-step`` clears it on explicit re-add; ``set-steps`` drops ids
+# that are present again. The key is intentionally absent from
+# ``get_default_config()`` so the deep-merge preserves an existing list
+# verbatim and never seeds one. The merge consults it only for reporting
+# (a held id crossing this list lands in the distinct ``re_added`` bucket);
+# the no-auto-expand guarantee itself is structural and holds even when this
+# list is absent.
+OPERATOR_REMOVED_STEPS_KEY = 'removed_steps'
+
+
 # Canonical-verify step prefix. A ``per_deliverable_build`` list entry MUST be a
 # ``default:verify:{canonical}`` ID; the prefix-strict validator rejects any
 # other shape (including the retired ``per_deliverable_build`` enum strings).

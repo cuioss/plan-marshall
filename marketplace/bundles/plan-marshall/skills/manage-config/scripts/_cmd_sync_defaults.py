@@ -17,7 +17,12 @@ from _config_core import (
     save_config,
     success_exit,
 )
-from _config_defaults import get_default_config, stamp_provisioning_fields
+from _config_defaults import (
+    OPERATOR_REMOVED_STEPS_KEY,
+    OPERATOR_STEP_MAP_LOCATIONS,
+    get_default_config,
+    stamp_provisioning_fields,
+)
 from _manifest_lanes import _IMMUNE_TO_OFF_CLASSES, LANE_TIERS, _effective_lane_tier
 from command_forms import STEWARD_COMMAND
 
@@ -37,38 +42,34 @@ RETIRED_STEP_KEY_RENAMES: dict[str, str] = {
 }
 
 # The two keyed-map step containers a rename pass walks: (phase key, map key).
-_STEP_MAP_LOCATIONS: tuple[tuple[str, str], ...] = (
-    ('phase-5-execute', 'verification_steps'),
-    ('phase-6-finalize', 'steps'),
-)
+# Derived from the single source in :mod:`_config_defaults` — never restated
+# as a literal here.
+_STEP_MAP_LOCATIONS: tuple[tuple[str, str], ...] = OPERATOR_STEP_MAP_LOCATIONS
 
-# Operator step-intent key persisted per phase section (e.g.
-# ``plan.phase-5-execute.removed_steps``). ``remove-step`` appends the removed
-# step id; ``add-step`` clears it on explicit re-add; ``set-steps`` drops ids
-# that are present again. The key is intentionally absent from
-# ``get_default_config()`` so the deep-merge preserves an existing list
-# verbatim and never seeds one. The merge consults it only for reporting
-# (D2 splits a held id that crosses this list into the distinct ``re_added``
-# bucket); the no-auto-expand guarantee itself is structural (see
-# :func:`_deep_merge_missing`) and holds even when this list is absent — a
-# pre-existing curated map that never carried a step id is never back-filled
-# with it, removal or not.
-OPERATOR_REMOVED_STEPS_KEY = 'removed_steps'
+
+def _canonical_step_id(step_id: str) -> str:
+    """Return the canonical id for ``step_id`` via the retired-key renames.
+
+    Removal records are written by ``remove-step`` in whatever form the
+    operator named, which may be a retired id the map migration has since
+    canonicalized. Comparing canonical forms on both sides keeps a recorded
+    removal matching the map it constrains.
+    """
+    return RETIRED_STEP_KEY_RENAMES.get(step_id, step_id)
 
 
 def _is_operator_step_map(prefix: str, key: str) -> bool:
     """Return True when ``prefix.key`` is an operator-curated step map.
 
-    The two locations are exactly :data:`_STEP_MAP_LOCATIONS` rendered as a
-    dotted path (``plan.phase-5-execute.verification_steps`` and
-    ``plan.phase-6-finalize.steps``). A present map at either location is
-    atomic-once-present: the merge never adds a missing step id to it without
-    an explicit operator answer — it holds the id for the ask-before-add gate
-    instead (see :func:`_deep_merge_missing`).
+    Derived from :data:`_STEP_MAP_LOCATIONS` rendered as dotted paths
+    (``plan.phase-5-execute.verification_steps`` and
+    ``plan.phase-6-finalize.steps``) — never restated as literals. A present
+    map at either location is atomic-once-present: the merge never adds a
+    missing step id to it without an explicit operator answer — it holds the
+    id for the ask-before-add gate instead (see :func:`_deep_merge_missing`).
     """
-    return (prefix, key) in (
-        ('plan.phase-5-execute', 'verification_steps'),
-        ('plan.phase-6-finalize', 'steps'),
+    return any(
+        prefix == f'plan.{phase}' and key == map_key for phase, map_key in _STEP_MAP_LOCATIONS
     )
 
 
@@ -111,8 +112,10 @@ def _migrate_retired_step_keys(live: dict, renamed: list[str]) -> dict:
     ``plan.phase-6-finalize.steps``, applying :func:`_rename_in_map` to each. Runs
     BEFORE the deep-merge so the canonical is already present when the merge
     inspects the map — the merge then never re-adds a default canonical alongside a
-    surviving retired key (which would produce a double review step). Mutates
-    ``live`` in place and returns it.
+    surviving retired key (which would produce a double review step). The phase's
+    ``removed_steps`` list is canonicalized through the same table (deduped,
+    order-preserving) so a removal recorded under a retired id keeps constraining
+    the map it was recorded against. Mutates ``live`` in place and returns it.
     """
     plan = live.get('plan')
     if not isinstance(plan, dict):
@@ -126,6 +129,13 @@ def _migrate_retired_step_keys(live: dict, renamed: list[str]) -> dict:
             continue
         prefix = f'plan.{phase_key}.{map_key}'
         phase[map_key] = _rename_in_map(steps_map, prefix, renamed)
+        raw_removed = phase.get(OPERATOR_REMOVED_STEPS_KEY)
+        if isinstance(raw_removed, list):
+            seen: dict[str, None] = {}
+            for entry in raw_removed:
+                if isinstance(entry, str) and entry:
+                    seen.setdefault(_canonical_step_id(entry))
+            phase[OPERATOR_REMOVED_STEPS_KEY] = list(seen)
     return live
 
 
@@ -381,11 +391,11 @@ def _deep_merge_missing(
             if isinstance(live, dict):
                 raw_removed = live.get(OPERATOR_REMOVED_STEPS_KEY, [])
                 if isinstance(raw_removed, list):
-                    removed = [s for s in raw_removed if isinstance(s, str)]
+                    removed = [_canonical_step_id(s) for s in raw_removed if isinstance(s, str)]
             for step_id, step_default in default_value.items():
                 dotted = f'{path}.{step_id}'
                 if step_id not in live_map:
-                    if step_id in removed:
+                    if _canonical_step_id(step_id) in removed:
                         entry = f'{dotted} (crosses operator removal)'
                         if re_added is not None:
                             re_added.append(entry)

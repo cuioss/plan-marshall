@@ -133,8 +133,11 @@ re_added_count: 0
 ```
 
 `added[]` lists the dotted paths of every newly-added key; `added_count` is its
-length. An empty `added[]` (with `added_count: 0`) means the live config already
-carried every default. `renamed[]` lists each migrated retired key as a
+length. An empty `added[]` (with `added_count: 0`) means this run added no
+keys — not that the live config already carries every default: a present
+step map can withhold ids that appear in `held_for_ask[]` or `re_added[]`
+while `added[]` stays empty, so readers checking for withheld defaults must
+consult the held-step buckets, never `added[]` alone. `renamed[]` lists each migrated retired key as a
 human-readable dotted-path string (`... -> {canonical}` for a rename in place, or
 `... (dropped duplicate of {canonical})` for a dropped duplicate); `renamed_count`
 is its length, and an empty `renamed[]` means no retired key was present.
