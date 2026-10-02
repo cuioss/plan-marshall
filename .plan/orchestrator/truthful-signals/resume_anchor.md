@@ -1,1 +1,1 @@
-2026-10-02: PLAN-211 shipped via PR 1675 (landing incomplete: total_tokens unknown). Live staged now 8 (168, 172, 186, 181-185). Next: analyze 1674 landing when merged; emit PLAN-TRUTH-168 when operator confirms launch.
+2026-10-02: PLAN-TRUTH-168 shipped via PR 1674 (complete landing); 3 lessons promoted (16-001..003). Live staged now 7 (172, 186, 181-185). Next: watch PR 1681 CI+merge (W-2026-10-02-a); emit PLAN-TRUTH-172/186 when operator confirms launch.

@@ -388,6 +388,13 @@ exists to prevent.
 
 Binding decisions that still govern. Settled ones are removed.
 
+- **2026-10-02 — truth-168 drain dispositions.** Landing 005 reconciled
+  (PLAN-TRUTH-168 shipped via #1674); candidate-lessons promoted:
+  002 → lesson `2026-10-02-16-001` (promoted), 003 → `2026-10-02-16-002`
+  (promoted), 004 → `2026-10-02-16-003` (promoted). Dedup checked: no active
+  lesson under `plan-marshall:manage-config`; no duplicate under
+  `plan-marshall:tools-script-executor`.
+
 - **Merge only within a serialization class.** Plans that already share files can never run in
   parallel, so merging them costs zero throughput and saves a plan lifecycle. Surface-disjoint plans
   **are** parallel slots — merging those destroys capacity. Apply this to every future merge question.
@@ -2172,7 +2179,13 @@ cannot see this: the 22 renderings pass green either way until something tries t
 
 ## Watches
 
-### W-2026-10-01-a — PLAN-TRUTH-168 implementation awaiting PR 1674 review/CI (inbox 2026-10-01)
+### W-2026-10-02-a — follow-up PR #1681 (sync-guard scope fix) needs CI + merge
+
+Surfaced at PLAN-TRUTH-168's landing (PR #1674): a sync-guard/emitter scope
+mismatch found during the run was fixed as drive-by and rides follow-up PR
+#1681. Tracked work, not the landing's cleanup. Retire when #1681 merges.
+
+### ✅ RETIRED 2026-10-02 — W-2026-10-01-a landed as PR 1674 (PLAN-TRUTH-168 shipped)
 
 Inbox `truth-168-sync-defaults-reverting-remove-001.md`: branch
 `feature/truth-168-sync-defaults-reverting-remove` exists, PR 1674 open
