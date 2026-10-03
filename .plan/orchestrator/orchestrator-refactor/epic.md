@@ -44,8 +44,9 @@ ad hoc commits directly against `main`.
 > Decisions below. **Aspect 5 staged 2026-09-23** as WS-05 (PLAN-09/PLAN-10) — not yet
 > half shipped: PLAN-09 landed the shared ledger worktree, and **`orchestrator.use_worktree` was turned ON
 > 2026-10-01** (repository-wide, #1666). Every epic's ledger writes now go to the shared worktree
-> (`.plan/local/worktrees/_orchestrator`, branch `chore/orchestrator-ledger`), not to `main`. The `land` verb
-> (PLAN-10) is NOT shipped, so landing that branch is still a hand-run branch/PR/merge cycle.
+> (`.plan/local/worktrees/_orchestrator`, branch `chore/orchestrator-ledger`), not to `main`. **Aspect 5 shipped
+> 2026-10-03**: PLAN-10 landed the `land` verb (#1690), so that branch is landed by `orchestrator land` rather
+> than by hand once the harness installs are synced.
 
 ## Queue annotations
 
@@ -53,6 +54,9 @@ ad hoc commits directly against `main`.
 status, workstream, and surface are in `queue-view.md`; this zone carries only what it
 cannot express.}
 
+- PLAN-10 — **SHIPPED 2026-10-03** (#1690, squash `7a0af07c5`; landing `landings/PLAN-10.md`). All six spec
+  deliverables plus one operator-accepted unplanned one (`worktree_setup_commands`). Realized surface 43 against
+  14 declared (21 undeclared, 1 declared-untouched). WS-05 is complete; no staged row remains in this epic.
 - PLAN-09 / PLAN-10 / PLAN-11 (2026-09-26, historical: PLAN-09 and PLAN-11 have since SHIPPED, so
   PLAN-10 is the only staged row) — the rows re-staged after the PM-MCP park. All three share
   `orchestrator.py` and `test/plan-marshall/plan-orchestrator/**`, so they run one at a time, never paired.
@@ -154,6 +158,22 @@ cannot express.}
   this session — see the spec itself before relying on its Claim Labels.
 
 ## Decisions
+
+- 2026-10-03 — **PLAN-10 landed (#1690, `7a0af07c5`); reconciled via `analyze` (inbox scan, 9 messages).** The
+  landing message was complete (`landing-check`: no missing key) and corroborated against `ci pr view` (merged),
+  ancestry on fetched `origin/main`, and the merge commit's file list. Row `running` → `shipped`, `pr` and
+  `landing` stamped. The spec's D5 HYPOTHESIS (no `ci` verb exposes queue membership) held — the plan added
+  `ci pr queue-state` and `ci pr wait-for-queue-settle`. The emit-time overlap with `unified-sync-all-harnesses`
+  did not materialize (PLAN-10 never touched the file). No spec's declaration needs correcting — the landed spec
+  is terminal and no staged spec remains.
+  **Lessons drain (messages -001 … -008):** 3 PROMOTED — `2026-10-03-18-001` (automatic-review: re-trigger a
+  `participated_stale` required bot, -002), `-002` (manage-solution-outline: q-gate deliverable-hash verb, -003),
+  `-003` (execute-task: orchestrator-tier module-tests block per-task verification, -004; cross-referenced to
+  `2026-10-02-10-009`). 5 FOLDED as recurrence sections on active lessons, each verified active and matching
+  before writing: `2026-10-02-10-003` and `-004` (-001), `2026-10-02-10-008` (-005), `2026-10-02-10-009` (-006),
+  `2026-09-29-17-002` (-007, new trigger: operator-added work mid-execute), `2026-10-02-21-002` (-008). None
+  concerns this epic's substrate. Noticed, not acted on: active lesson `2026-09-27-07-001` describes the
+  mailbox-probe defect #1685 fixed — a retirement candidate for lessons housekeeping.
 
 - 2026-10-03 — **Phase-transition mailbox probe fixed outside the queue: #1685 (`8aa33cfe1`), an ad-hoc
   operator-run fix, not a plan of this epic.** Found while PLAN-10 ran: its transition probe reported
@@ -559,11 +579,13 @@ by the operator — do not re-derive it.
 
 ## Watches
 
-- **Harness sync owed for the #1685 probe fix (2026-10-03).** A running plan executes the synced plugin copy,
-  so PLAN-10 (`orchestrator-land-verbs`) keeps getting `not_orchestrated` at its phase transitions until the
-  operator runs `/sync-harnesses` (#1684 replaced `/sync-plugin-cache`). Consequence while unsynced: a
-  message delivered to its mailbox is not surfaced at a transition. Nothing is in its mailbox today. — trigger:
-  before delivering any mailbox message to a running plan; retire when a sync succeeds.
+- **Harness sync owed (2026-10-03, updated at the PLAN-10 landing).** The harness installs predate #1685 (the
+  mailbox-probe fix) and #1690 (the `land` verb and its `workflow/land.md`). PLAN-10's own finalize reports
+  `finalize-step-sync-plugin-cache: done`, but whether that sync included #1685 was not checked. Until
+  `/sync-harnesses` is confirmed: a running plan may still misreport `not_orchestrated` at transitions, and
+  orchestrator sessions may not see the `land` verb. No plan is running now. — trigger: before the first
+  `orchestrator land`, and before delivering any mailbox message to a running plan; retire when a sync is
+  confirmed after `7a0af07c5`.
 
 - **PLAN-11 landing residue (2026-10-02):** (1) the plugin cache is stale relative to `8665ddacf` —
   `finalize-step-sync-plugin-cache` failed on its staleness guard (lesson `2026-10-02-10-006`); `corpus

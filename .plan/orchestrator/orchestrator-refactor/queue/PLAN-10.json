@@ -2,9 +2,9 @@
   "id": "PLAN-10",
   "slug": "orchestrator-land-verbs",
   "workstream": "WS-05",
-  "status": "running",
+  "status": "shipped",
   "plan_marshall_plan_id": "orchestrator-land-verbs",
-  "pr": "",
-  "landing": "",
+  "pr": "#1690",
+  "landing": "landings/PLAN-10.md",
   "seq": 10
 }
