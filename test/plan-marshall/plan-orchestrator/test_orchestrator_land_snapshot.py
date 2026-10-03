@@ -14,6 +14,9 @@ worktree directory still exists, so both hold after EVERY outcome below, the
 error ones included.
 """
 
+import subprocess
+
+import _locks_core
 import _orchestrator_land
 import pytest
 from _orchestrator_land_fixtures import (
@@ -223,6 +226,49 @@ def test_the_guard_is_held_while_the_ledger_is_staged(sandbox, monkeypatch):
     snapshot()
 
     assert seen == [True]
+
+
+def test_the_guarded_budget_ends_before_the_guard_can_be_reclaimed():
+    budget = _orchestrator_land._GUARD_WORK_SECONDS + _orchestrator_land._GUARD_ABORT_SECONDS
+
+    assert 0 < budget < _locks_core._GUARD_STALE_SECONDS
+
+
+def test_git_calls_under_the_guard_are_bounded_by_the_section_budget(sandbox, monkeypatch):
+    """Guarded calls run on what is left of the budget; the push, outside the guard, on the plain bound."""
+    calls: list[tuple[bool, bool, float | None]] = []
+    real_run = subprocess.run
+
+    def recording_run(cmd, **kwargs):
+        calls.append((sandbox.guard.exists(), 'push' in cmd, kwargs.get('timeout')))
+        return real_run(cmd, **kwargs)
+
+    monkeypatch.setattr(_orchestrator_land.subprocess, 'run', recording_run)
+    sandbox.write(_EPIC_MD, '# epic alpha\n')
+
+    result = snapshot()
+    recorded = list(calls)
+
+    assert result['outcome'] == 'pushed'
+    guarded = [timeout for held, _, timeout in recorded if held]
+    assert guarded
+    assert all(timeout is not None and 0 < timeout <= _orchestrator_land._GUARD_WORK_SECONDS for timeout in guarded)
+    assert [timeout for held, is_push, timeout in recorded if is_push and not held] == [
+        _orchestrator_land._GIT_TIMEOUT_SECONDS
+    ]
+
+
+def test_a_guarded_section_out_of_budget_is_a_guard_timeout_that_changes_nothing(sandbox, monkeypatch):
+    sandbox.write(_EPIC_MD, '# epic alpha\n')
+    before = sandbox.tree_state()
+    monkeypatch.setattr(_orchestrator_land, '_GUARD_WORK_SECONDS', 0.0)
+
+    result = snapshot()
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'land_guard_timeout'
+    assert sandbox.tree_state() == before
+    assert sandbox.remote_head() is None
 
 
 # =============================================================================

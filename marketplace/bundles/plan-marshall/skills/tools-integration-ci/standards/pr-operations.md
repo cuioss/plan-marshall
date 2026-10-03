@@ -539,7 +539,7 @@ The observation is assembled from three reads:
 |------|-----------------|
 | `pr view` for the PR number | `pr_state` (`open` / `merged` / `closed`) and `merge_commit_sha` — an explicit `null` when the PR has no landing commit |
 | `repository.pullRequest(number:) { state autoMergeRequest { enabledAt } mergeQueueEntry { position state } }` — the same read `pr merge-queue` performs for an unlisted PR | `in_queue`, `queue_position`, `queue_entry_state`, `auto_merge_armed` |
-| `gh run list --event merge_group` | `merge_group_run` — the newest run whose head branch belongs to the PR. GitHub runs a merge group on a temporary branch named `gh-readonly-queue/{base}/pr-{number}-{sha}`, so a run belongs to the PR when its head branch carries the `pr-{number}-` segment |
+| `gh run list --event merge_group` | `merge_group_run` — the newest run whose head branch belongs to the PR. A merge group is assumed to run on a temporary branch named `gh-readonly-queue/{base}/pr-{number}-{sha}` — not verified against a live merge queue; consequence in [`plan-orchestrator/workflow/land.md`](../../plan-orchestrator/workflow/land.md) Step 7 — so a run belongs to the PR when its head branch carries the `pr-{number}-` segment |
 
 **The three tri-state fields never collapse a failed read into `false`.** `in_queue`, `auto_merge_armed` and `merge_group_run.found` each take `true`, `false`, or the string `indeterminate`:
 

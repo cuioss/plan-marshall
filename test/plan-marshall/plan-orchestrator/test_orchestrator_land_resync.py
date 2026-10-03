@@ -220,6 +220,57 @@ def test_a_conflicting_replay_is_aborted_and_leaves_the_tree_exactly_as_it_was(s
     assert sandbox.bindings() == {_BINDING: marker}
 
 
+def test_a_replay_that_runs_out_of_the_guard_budget_is_aborted_like_a_conflict(sandbox, monkeypatch):
+    marker = _push_a_land_of_two_commits(sandbox)
+    _commit_in_tree(sandbox, _LANDING, '# landed after the snapshot\n')
+    merge = sandbox.squash_land()
+    before = sandbox.tree_state()
+    real_git = _orchestrator_land._git
+
+    def git_whose_replay_runs_out(cwd, *args):
+        if args[0] == 'rebase' and '--abort' not in args:
+            raise TimeoutError('the guarded land section ran out of its time budget')
+        return real_git(cwd, *args)
+
+    monkeypatch.setattr(_orchestrator_land, '_git', git_whose_replay_runs_out)
+
+    result = resync(_PR, merge)
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'resync_conflict'
+    assert result['head_restored'] is True
+    assert 'time budget' in result['stderr']
+    assert sandbox.tree_state() == before
+    assert sandbox.marker() == marker
+
+
+def test_a_guard_timeout_reports_the_steps_that_already_ran_and_a_rerun_closes_the_cycle(sandbox, monkeypatch):
+    marker = _push_a_land_of_two_commits(sandbox)
+    merge = sandbox.squash_land()
+    before = sandbox.tree_state()
+
+    with monkeypatch.context() as patched:
+        patched.setattr(_orchestrator_land, '_GUARD_WORK_SECONDS', 0.0)
+        result = resync(_PR, merge)
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'land_guard_timeout'
+    # The steps ahead of the guard ran and are reported; the tree and both refs are untouched.
+    assert result['main_fast_forward'] == 'done'
+    assert result['remote_branch_cleanup'] == 'deleted'
+    assert sandbox.ref('main', cwd=sandbox.repo.main) == merge
+    assert sandbox.remote_head() is None
+    assert sandbox.tree_state() == before
+    assert sandbox.marker() == marker
+
+    rerun = resync(_PR, merge)
+
+    assert rerun['outcome'] == 'resynced'
+    assert rerun['remote_branch_cleanup'] == 'already_absent'
+    assert sandbox.ref('HEAD') == merge
+    assert sandbox.marker() is None
+
+
 def test_a_second_resync_after_a_rebase_by_hand_only_closes_the_cycle(sandbox):
     marker = _push_a_land_of_two_commits(sandbox)
     merge = sandbox.squash_land()

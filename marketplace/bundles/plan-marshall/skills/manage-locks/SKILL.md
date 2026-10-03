@@ -154,7 +154,10 @@ Two consumers hold the guard this way:
   guard across the existing-file check, the row scan, the sequence allocation and
   the publish of the new row file.
 - `plan-orchestrator/scripts/_orchestrator_land.py` — the ledger land module holds
-  the guard around its snapshot of the shared ledger worktree.
+  the guard in its `snapshot` (twice: around the commit, and around the ref
+  writes after the push), `bind` and `resync` (around the replay and the ref
+  deletion) verbs, with the git calls of each section on one shared deadline
+  below the stale threshold.
 
 `_acquire_guard` is private to `_locks_core`. Nothing outside that module imports
 it, and no consumer pairs it with a release of its own.

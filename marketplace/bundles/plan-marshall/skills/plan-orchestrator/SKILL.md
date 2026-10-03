@@ -366,7 +366,7 @@ Reports where the shared ledger worktree stands in the land cycle, read-only. Th
 
 - **Knob refusal.** Each returns `land_requires_use_worktree` while `orchestrator.use_worktree` is off, before the tree is touched.
 - **Tree resolution.** Each resolves the worktree through the orchestrator store seam, so a seam refusal — the set listed under [`resolve-path`](#resolve-path) — reaches the caller as `status: error` under its own code.
-- **State and guard.** The land's state lives in two local-only git refs that are never pushed: the pushed marker `refs/plan-marshall/ledger-land/pushed` and the PR binding `refs/plan-marshall/ledger-land/pr/{N}`, both naming the same SHA. A land is in flight exactly while the marker exists. Every check-then-act over those refs runs under one main-anchored guard file, `.plan/local/orchestrator-land.lock`, with network round-trips outside it; a guard that cannot be acquired returns `land_guard_timeout`.
+- **State and guard.** The land's state lives in two local-only git refs that are never pushed: the pushed marker `refs/plan-marshall/ledger-land/pushed` and the PR binding `refs/plan-marshall/ledger-land/pr/{N}`, both naming the same SHA. A land is in flight exactly while the marker exists. Every check-then-act over those refs runs under one main-anchored guard file, `.plan/local/orchestrator-land.lock`, with network round-trips outside it. `land status` takes no guard; on the other three verbs a guard that cannot be acquired, or a guarded section that runs out of its time budget, returns `land_guard_timeout`.
 
 The payload:
 
@@ -430,7 +430,7 @@ Closes the cycle after the land PR merged: verifies the landed content, replays 
 
 Success returns `outcome: resynced` with `pr_number`, `merge_commit_sha`, `head_sha`, `already_resynced`, `replayed_commits`, `carried_uncommitted`, `main_fast_forward` and `remote_branch_cleanup`.
 
-A replay that cannot complete is aborted and returns `resync_conflict` with both land refs kept, `pre_rebase_sha`, and `head_restored` saying whether the tree is back at that SHA. ⚠ Step 4 runs BEFORE the replay, so on `resync_conflict` the primary checkout may already be fast-forwarded and the remote head branch already deleted; the payload reports both in `main_fast_forward` and `remote_branch_cleanup`.
+A replay that cannot complete is aborted and returns `resync_conflict` with both land refs kept, `pre_rebase_sha`, and `head_restored` saying whether the tree is back at that SHA. ⚠ Step 4 runs BEFORE the replay, so on `resync_conflict` and on `land_guard_timeout` the primary checkout may already be fast-forwarded and the remote head branch already deleted; the payload reports both in `main_fast_forward` and `remote_branch_cleanup`.
 
 ### inbox write
 

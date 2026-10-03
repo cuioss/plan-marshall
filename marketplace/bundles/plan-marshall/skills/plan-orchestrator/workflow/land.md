@@ -50,8 +50,7 @@ The payload fields and their value sets are in [`SKILL.md` § Canonical invocati
 
 | Observation | Action |
 |-------------|--------|
-| `status: error` with `land_requires_use_worktree` | STOP. Report the refusal; there is nothing to land through this verb. |
-| `status: error` with a seam refusal code (`ledger_cutover_refused`, `ledger_drift_unevaluable`, `base_ref_unresolvable`, `orchestrator_worktree_create_failed`, `orchestrator_worktree_wrong_branch`) or `land_guard_timeout` | STOP. Report the code and its message verbatim; nothing was changed. |
+| `status: error` (`land_requires_use_worktree`, or a seam refusal code: `ledger_cutover_refused`, `ledger_drift_unevaluable`, `base_ref_unresolvable`, `orchestrator_worktree_create_failed`, `orchestrator_worktree_wrong_branch`) | STOP with outcome `indeterminate`. Report the code and its message verbatim; nothing was changed. |
 | `pushed_marker` is set | A land is in flight. Go to Step 2. |
 | `pushed_marker` is null, `remote_branch: present`, `remote_branch_contained: false` | STOP with outcome `remote_branch_diverged` — the remote head branch holds work the local tree lacks, and a push would be rejected. |
 | `pushed_marker` is null and `remote_branch` or `remote_branch_contained` is `unknown` | STOP with outcome `indeterminate` — the remote could not be read. |
@@ -151,7 +150,7 @@ python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator lan
   --pr-number {pr_number}
 ```
 
-`outcome: bound` continues to Step 5. A failed create, or a bind returning `no_land_in_flight` or `land_ref_write_failed`, is outcome `indeterminate`.
+`outcome: bound` continues to Step 5. A failed create, or a bind returning `status: error` (`no_land_in_flight`, `land_ref_write_failed`, `land_guard_timeout`), is outcome `indeterminate`.
 
 ### Step 5: Wait for the PR checks
 
@@ -219,7 +218,7 @@ Every `status: error` return is outcome `resync_failed`. The PR has merged, so n
 | `resync_content_unevaluable` | Untouched | Git could not measure what the land changed. Report the payload's `stderr`; the operator repairs the repository state before a re-run. |
 | `resync_content_mismatch` | Untouched; `mismatched_paths` lists the paths | The landed content differs from what was pushed. The operator compares each listed path at `{store_checkout}` against the base before anything is replayed. |
 | `resync_conflict` | The replay was aborted, both land refs are kept, `head_restored` says whether the tree is back where it was. The payload's `main_fast_forward` and `remote_branch_cleanup` report steps that ran BEFORE the replay — the primary checkout may already be fast-forwarded and the remote head branch already deleted | The operator replays the tree onto the base by hand at `git -C {store_checkout}`, then re-runs `/plan-orchestrator land`: Step 2 reads the PR as merged, and the resync recognises the already-replayed tree and closes the cycle. |
-| `land_guard_timeout` | Untouched | Another session holds the land guard. Re-run `/plan-orchestrator land`. |
+| `land_guard_timeout` | The cycle is not closed: the tree is untouched, already replayed, or — when aborting a replay itself ran out of time — still mid-rebase. As in the `resync_conflict` row, the payload's `main_fast_forward` and `remote_branch_cleanup` report steps that ran BEFORE the guard | The land guard was not acquired, or its section ran out of its time budget. Abort a rebase still in progress at `git -C {store_checkout}`, then re-run `/plan-orchestrator land`; the resync recognises an already-replayed tree. |
 
 The verb echoes `--pr-number` into its return and does not compare it against the binding ref; the number this step passes is the one Step 2 or Step 4 established.
 
@@ -235,11 +234,9 @@ Report exactly ONE outcome from the closed set, with the evidence that establish
 | `dequeued` | Step 7 `settle: dequeued`, or the Step 2 ejection gate without `requeue=true` |
 | `closed_unmerged` | Step 7 `settle: closed` |
 | `timeout` | Step 5 `wait_outcome: deadline_exceeded`, or Step 7 `settle: timeout` |
-| `indeterminate` | A read or a step the land needed returned no verdict |
+| `indeterminate` | A read or a step the land needed returned no verdict — a Step 1 refusal included, with its code as the evidence |
 | `resync_failed` | Step 8 returned `status: error` |
 | `remote_branch_diverged` | Step 1 read an uncontained remote branch, or Step 3 returned `ledger_push_rejected` |
-
-A refusal in Step 1 (`land_requires_use_worktree`, a seam refusal) is reported as that refusal and carries no outcome: the land never started.
 
 ## Output
 

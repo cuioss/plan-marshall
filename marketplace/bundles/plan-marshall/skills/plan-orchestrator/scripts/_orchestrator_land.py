@@ -37,10 +37,11 @@ propagate to ``safe_main`` and render under their own codes. Git is always
 targeted as ``git -C {store_checkout}``.
 
 **Concurrency (TOCTOU / check-then-act).** Every check-then-act over the two refs
-and the commit runs inside :func:`_locks_core.held_guard` on one main-anchored
-guard file, with the check re-read inside the guard. The guard is reclaimed after
-a bounded age, so network round-trips (push, fetch, ls-remote) always run OUTSIDE
-it. The mitigation menu lives in
+and the commit runs inside :func:`_land_guard` — :func:`_locks_core.held_guard`
+on one main-anchored guard file — with the check re-read inside the guard. The
+guard is reclaimed after a bounded age, so network round-trips (push, fetch,
+ls-remote) always run OUTSIDE it, and the git calls made inside it share one
+deadline that ends before that age. The mitigation menu lives in
 ``ref-code-quality/standards/code-organization.md#toctou--check-then-act-hazards``.
 """
 
@@ -50,11 +51,13 @@ import argparse
 import functools
 import re
 import subprocess
-from collections.abc import Callable
+import time
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from _locks_core import held_guard
+from _locks_core import _GUARD_STALE_SECONDS, held_guard
 from marketplace_paths import main_checkout_root, resolve_main_anchored_path
 from orchestrator_worktree import (
     LEDGER_PATHSPECS,
@@ -86,20 +89,63 @@ _CATEGORY_ORDER = ('queue rows', 'plan specs', 'anchor/header', 'landings', 'inb
 _CATEGORY_BY_DIR = {'queue': 'queue rows', 'plans': 'plan specs', 'landings': 'landings', 'inbox': 'inbox'}
 _HEADER_FILES = frozenset({'status.json', 'resume_anchor.md'})
 
+#: Bound of one git call made OUTSIDE the land guard.
 _GIT_TIMEOUT_SECONDS = 120
+
+#: Wall-clock budget shared by every git call of one guarded section, and the
+#: further allowance for aborting a replay that ran into it. Their sum is below
+#: the age at which the next acquirer reclaims the guard.
+_GUARD_WORK_SECONDS = _GUARD_STALE_SECONDS / 2
+_GUARD_ABORT_SECONDS = _GUARD_STALE_SECONDS / 4
+
 _SHA_RE = re.compile(r'^[0-9a-f]{7,64}$')
+
+
+class _GuardClock:
+    """The deadline of the guarded section this process is in; ``None`` outside one."""
+
+    deadline: float | None = None
 
 
 # --- git plumbing -------------------------------------------------------------
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    """Run ``git -C {cwd} {args}``; a missing binary or a timeout reads as a failed run."""
+    """Run ``git -C {cwd} {args}``; a missing binary or a timeout reads as a failed run.
+
+    Inside :func:`_land_guard` the call is bounded by what is left of the
+    section's deadline instead, and running into it raises ``TimeoutError``.
+    """
     cmd = ['git', '-C', str(cwd), *args]
+    guarded = _GuardClock.deadline is not None
+    timeout = _GuardClock.deadline - time.monotonic() if _GuardClock.deadline is not None else _GIT_TIMEOUT_SECONDS
+    out_of_budget = f'the guarded land section ran out of its time budget at `git {args[0]}`'
+    if timeout <= 0:
+        raise TimeoutError(out_of_budget)
     try:
-        return subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=_GIT_TIMEOUT_SECONDS)
-    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        return subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=timeout)
+    except FileNotFoundError as exc:
         return subprocess.CompletedProcess(cmd, 1, '', str(exc))
+    except subprocess.TimeoutExpired as exc:
+        if guarded:
+            raise TimeoutError(out_of_budget) from exc
+        return subprocess.CompletedProcess(cmd, 1, '', str(exc))
+
+
+@contextmanager
+def _land_guard() -> Iterator[None]:
+    """Hold the land guard for a ``with`` block whose git calls share one deadline.
+
+    The deadline keeps the whole block shorter than the age at which the next
+    acquirer reclaims the guard. A git call that runs into it is killed and
+    raises ``TimeoutError``; the guard is released either way.
+    """
+    with held_guard(_guard_path()):
+        _GuardClock.deadline = time.monotonic() + _GUARD_WORK_SECONDS
+        try:
+            yield
+        finally:
+            _GuardClock.deadline = None
 
 
 def _error(code: str, message: str, **fields: Any) -> dict[str, Any]:
@@ -221,7 +267,8 @@ def _land_verb(
     The knob-off refusal is returned before the tree is touched. The tree is
     resolved through ``ensure_orchestrator_worktree``; its typed refusals are NOT
     caught here — they reach ``safe_main`` and render under their own codes. A
-    guard that could not be acquired is an operation failure, not a crash.
+    guard that could not be acquired, or a guarded section that ran out of its
+    time budget, is an operation failure, not a crash.
     """
 
     @functools.wraps(body)
@@ -388,7 +435,7 @@ def cmd_land_snapshot(checkout: Path, args: argparse.Namespace) -> dict[str, Any
     extend = args.extend
     base = default_base_branch()
 
-    with held_guard(_guard_path()):
+    with _land_guard():
         marker = _rev(checkout, PUSHED_MARKER_REF)
         if marker and not extend:
             in_flight_prs = _binding_prs(checkout)
@@ -440,7 +487,7 @@ def cmd_land_snapshot(checkout: Path, args: argparse.Namespace) -> dict[str, Any
             stderr=push.stderr.strip(),
         )
 
-    with held_guard(_guard_path()):
+    with _land_guard():
         current = _rev(checkout, PUSHED_MARKER_REF)
         # Never move the marker backwards: a concurrent --extend may already have
         # recorded a later push that contains this one.
@@ -482,7 +529,7 @@ def cmd_land_bind(checkout: Path, args: argparse.Namespace) -> dict[str, Any]:
     """Point the PR binding ref at the pushed marker; idempotent."""
     pr_number = args.pr_number
     target = f'{BINDING_REF_PREFIX}{pr_number}'
-    with held_guard(_guard_path()):
+    with _land_guard():
         marker = _rev(checkout, PUSHED_MARKER_REF)
         if marker is None:
             return _no_land_in_flight(pr_number)
@@ -599,6 +646,20 @@ def _delete_landed_remote_branch(checkout: Path, marker: str) -> str:
     return 'kept_diverged' if 'stale info' in push.stderr else 'failed'
 
 
+def _replay_onto(checkout: Path, base_ref: str, marker: str) -> subprocess.CompletedProcess[str]:
+    """Rebase everything after ``marker`` onto ``base_ref``; running out of the guard budget is a failed run."""
+    try:
+        return _git(checkout, 'rebase', '--autostash', '--onto', base_ref, marker)
+    except TimeoutError as exc:
+        return subprocess.CompletedProcess([], 1, '', str(exc))
+
+
+def _abort_replay(checkout: Path) -> None:
+    """Abort a failed replay on the abort allowance, so one that spent the work budget is still undone."""
+    _GuardClock.deadline = max(_GuardClock.deadline or 0.0, time.monotonic() + _GUARD_ABORT_SECONDS)
+    _git(checkout, 'rebase', '--abort')
+
+
 def _delete_land_refs(checkout: Path) -> None:
     for pr in _binding_prs(checkout):
         _git(checkout, 'update-ref', '-d', f'{BINDING_REF_PREFIX}{pr}')
@@ -659,37 +720,47 @@ def cmd_land_resync(checkout: Path, args: argparse.Namespace) -> dict[str, Any]:
     main_fast_forward = _fast_forward_main(base)
     remote_branch_cleanup = _delete_landed_remote_branch(checkout, marker)
 
-    with held_guard(_guard_path()):
-        marker_now = _rev(checkout, PUSHED_MARKER_REF)
-        if marker_now is None:
-            return _no_land_in_flight(pr_number)
-        pre_rebase = _rev(checkout, 'HEAD')
-        replayed = _commit_count(checkout, f'{marker_now}..HEAD')
-        carried = _git(checkout, 'status', '--porcelain=v1', '--untracked-files=no')
-        carried_uncommitted = bool(carried.stdout.strip()) if carried.returncode == 0 else UNKNOWN
-        # A HEAD that no longer contains the marker was already replayed onto the
-        # base by an earlier resync that stopped before closing the cycle.
-        already_resynced = _is_ancestor(checkout, marker_now, 'HEAD') is False
-        if already_resynced:
-            replayed = 0
-        else:
-            rebase = _git(checkout, 'rebase', '--autostash', '--onto', base_ref, marker_now)
-            if rebase.returncode != 0:
-                _git(checkout, 'rebase', '--abort')
-                return _error(
-                    'resync_conflict',
-                    'the ledger tree could not be replayed onto the base; '
-                    'the rebase was aborted and both land refs are kept',
-                    pr_number=pr_number,
-                    merge_commit_sha=merge_sha,
-                    pushed_marker=marker_now,
-                    pre_rebase_sha=pre_rebase,
-                    head_restored=_rev(checkout, 'HEAD') == pre_rebase,
-                    main_fast_forward=main_fast_forward,
-                    remote_branch_cleanup=remote_branch_cleanup,
-                    stderr=rebase.stderr.strip() or rebase.stdout.strip(),
-                )
-        _delete_land_refs(checkout)
+    try:
+        with _land_guard():
+            marker_now = _rev(checkout, PUSHED_MARKER_REF)
+            if marker_now is None:
+                return _no_land_in_flight(pr_number)
+            pre_rebase = _rev(checkout, 'HEAD')
+            replayed = _commit_count(checkout, f'{marker_now}..HEAD')
+            carried = _git(checkout, 'status', '--porcelain=v1', '--untracked-files=no')
+            carried_uncommitted = bool(carried.stdout.strip()) if carried.returncode == 0 else UNKNOWN
+            # A HEAD that no longer contains the marker was already replayed onto the
+            # base by an earlier resync that stopped before closing the cycle.
+            already_resynced = _is_ancestor(checkout, marker_now, 'HEAD') is False
+            if already_resynced:
+                replayed = 0
+            else:
+                rebase = _replay_onto(checkout, base_ref, marker_now)
+                if rebase.returncode != 0:
+                    _abort_replay(checkout)
+                    return _error(
+                        'resync_conflict',
+                        'the ledger tree could not be replayed onto the base; '
+                        'the rebase was aborted and both land refs are kept',
+                        pr_number=pr_number,
+                        merge_commit_sha=merge_sha,
+                        pushed_marker=marker_now,
+                        pre_rebase_sha=pre_rebase,
+                        head_restored=_rev(checkout, 'HEAD') == pre_rebase,
+                        main_fast_forward=main_fast_forward,
+                        remote_branch_cleanup=remote_branch_cleanup,
+                        stderr=rebase.stderr.strip() or rebase.stdout.strip(),
+                    )
+            _delete_land_refs(checkout)
+    except TimeoutError as exc:
+        return _error(
+            'land_guard_timeout',
+            str(exc),
+            store_checkout=str(checkout),
+            pr_number=pr_number,
+            main_fast_forward=main_fast_forward,
+            remote_branch_cleanup=remote_branch_cleanup,
+        )
 
     return {
         'status': 'success',

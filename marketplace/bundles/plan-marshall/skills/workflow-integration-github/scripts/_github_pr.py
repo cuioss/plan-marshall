@@ -2673,9 +2673,11 @@ def _merge_group_run_for_pr(pr_number: int) -> tuple[dict, str]:
     """Return the ``merge_group_run`` block for the PR and the observation naming the read.
 
     The block describes the NEWEST ``merge_group``-event workflow run whose head
-    branch belongs to the PR. GitHub runs a merge group on a temporary branch
-    named ``gh-readonly-queue/{base}/pr-{number}-{sha}``, so a run belongs to the
-    PR when its head branch carries the ``pr-{number}-`` segment.
+    branch belongs to the PR. A merge group is ASSUMED to run on a temporary
+    branch named ``gh-readonly-queue/{base}/pr-{number}-{sha}`` — not verified
+    against a live merge queue; the consequence is stated in
+    ``plan-orchestrator/workflow/land.md`` Step 7 — so a run belongs to the PR
+    when its head branch carries the ``pr-{number}-`` segment.
 
     ``found`` is tri-state. ``True`` carries the run's ``run_id``, ``status``,
     ``conclusion`` and ``url``. ``False`` means the run list was read to its end
