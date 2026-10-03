@@ -89,6 +89,7 @@ JSON structure and field definitions for project configuration.
         "XXL": "520K"
       },
       "per_envelope_budget_tokens": "400K",
+      "worktree_setup_commands": [],
       "verification_steps": [
         "default:verify:quality-gate",
         "default:verify:module-tests",
@@ -776,6 +777,7 @@ Execute phase with integrated verification pipeline. Contains the `commit_and_pu
         "XXL": "520K"
       },
       "per_envelope_budget_tokens": "400K",
+      "worktree_setup_commands": [],
       "verification_steps": {
         "default:verify:quality-gate": {},
         "default:verify:module-tests": {},
@@ -793,6 +795,7 @@ Execute phase with integrated verification pipeline. Contains the `commit_and_pu
 | `per_deliverable_build` | list[string] | `["default:verify:compile","default:verify:module-tests"]` | A list of `default:verify:{canonical}` step IDs — the canonical-verify rungs phase-5-execute runs for the changed module at each per-deliverable chain-tail point (Step 10). The default runs `compile` + the module's scoped `module-tests`. Set to `[]` to disable the focused build (the whole-tree sweep at end-of-phase remains the only build). Each entry must be a `default:verify:{canonical}` ID; the retired enum strings (`off` / `compile-only` / `compile+scoped-test` / `full`) are rejected with a migration error. |
 | `cost_size_token_table` | dict | `{"XS":"5K","S":"25K","M":"60K","L":"130K","XL":"260K","XXL":"520K"}` | Size→token table mapping each T-shirt `cost_size` (`XS`/`S`/`M`/`L`/`XL`/`XXL`) to a predicted-token magnitude. The phase-4-plan bin-packer (`manage-tasks pack-envelopes`) reads it to map a task's derived `cost_size` to its `predicted_cost_tokens`. Keys must be exactly `XS`/`S`/`M`/`L`/`XL`/`XXL`; each value parses via `sensible_number.parse_sensible_int`. Validated by `validate_cost_size_token_table`. The four original magnitudes (`S`≈25K / `M`≈60K / `L`≈130K / `XL`≈260K) are calibrated to the forensic 134K–392K per-dispatch range; `XS`≈5K labels deterministic ≈0-token bookkeeping and `XXL`≈520K the heaviest elements. The magnitudes are tunable to recalibrate the cost model. |
 | `per_envelope_budget_tokens` | string | "400K" | Per-envelope packing budget — the token ceiling the phase-4-plan bin-packer accumulates `predicted_cost_tokens` against before opening a new envelope group. Consumed at PLAN time by the bin-packer (`manage-tasks pack-envelopes`), NOT a runtime comparand. The `_tokens` suffix names the unit; the human-friendly value form (`"400K"`) parses to an int via `sensible_number.parse_sensible_int`. The 400K default leaves headroom below a typical context window. |
+| `worktree_setup_commands` | list[list[string]] | `[]` | Project-declared commands that build git-ignored derived state a fresh plan worktree lacks (a generated output tree, a cache). Each entry is an argv list — e.g. `[["<generator>", "--output", "<dir>"]]` — run by `prepare_execute` with `cwd` pinned to the worktree, without a shell, on both the fresh move-in and the re-entry path. Non-fatal: each command's outcome (command, exit code, last output line) is reported in the move-in payload's `worktree_setup[]`, and a failing command never fails or rolls back the move-in. A malformed entry is reported and skipped, never run. The `[]` default is a no-op. Read from the worktree's own `.plan/marshal.json`; the `set --field` verb does not take a nested list, so declare it by editing the tracked file. See [`workflow-integration-git/standards/worktree-handling.md`](../../workflow-integration-git/standards/worktree-handling.md) § "Worktree Setup Commands". |
 
 #### Verify step ID scheme
 

@@ -470,6 +470,19 @@ Three conditions bound it, each observable on the payload:
 
 This is the **worktree-side** regeneration. It is distinct from the meta-project-only, post-merge regeneration of *main's* executor performed by `project:finalize-step-sync-plugin-cache` (`order: 85`), and from the universal generation of a *new* worktree's executor at move-in (`prepare_execute`). All three keep the executor per-tree derived state per ADR-002; none file-moves it.
 
+### Worktree Setup Commands
+
+A fresh worktree carries only git-tracked content. The executor is the one piece of derived state every worktree needs, and `prepare_execute` produces it itself; any **other** git-ignored state a project's build or tests expect — a generated output tree, a cache — is missing there until something builds it. A project declares the commands that build it under `plan.phase-5-execute.worktree_setup_commands` in its tracked `.plan/marshal.json`: a list of argv lists, e.g. `[["<generator>", "--output", "<dir>"]]`. The field's type and default are tabled in [`manage-config/standards/data-model.md`](../../manage-config/standards/data-model.md) § phase-5-execute.
+
+`prepare_execute` runs each declared command right after the worktree executor is in place, on both paths that end in a usable worktree:
+
+- the **fresh move-in** (`action: moved`), and
+- the **re-entry** responder (`action: noop` / `healed`), so re-running `prepare` on an existing worktree builds derived state it still lacks.
+
+Each command runs with `cwd` pinned to the worktree and no shell. The key is read from the worktree's own `.plan/marshal.json`, so the commands describe the tree being set up. Nothing project-specific is hard-coded in the script: an absent or empty key is a no-op, and a project that declares nothing sees no change.
+
+**The seam is non-fatal.** By the time it runs the plan directory is already resident in the worktree, so a failure never fails the move-in and never rolls it back. Every declared entry is reported in the payload's `worktree_setup[]` as `{command, exit_code, detail}` — `detail` carries the last stderr line, or why the command did not run (a malformed entry is skipped and reported, never run; a launch failure or timeout carries `exit_code` `null`). An unreadable or unparseable `marshal.json` is reported as a single record. The remedy for a failed command is to fix the cause and re-run `prepare`, whose re-entry path runs the commands again.
+
 ### Conflict Handling
 
 The default behavior on conflict is **leave-in-place**: the rebase remains in progress and the working tree carries conflict markers. This lets the caller inspect the conflicts (the paths are enumerated in `conflicts[]` via `git diff --name-only --diff-filter=U`) and choose between manual resolution (`git rebase --continue`) and abandonment (`git rebase --abort`). The verb never auto-aborts because the caller — typically a higher-level workflow — owns the decision.
