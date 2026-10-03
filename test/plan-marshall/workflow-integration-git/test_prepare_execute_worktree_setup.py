@@ -6,22 +6,29 @@ Contract under test (``plan.phase-5-execute.worktree_setup_commands``):
 
 * An absent or empty key is a no-op — ``worktree_setup[]`` is empty and no
   command runs.
-* A declared argv list runs with ``cwd`` pinned to the worktree and no shell —
-  asserted at the ``subprocess.run`` primitive.
+* A key present with a non-list value — JSON ``null`` included — is reported
+  and runs nothing.
+* A declared argv list runs with ``cwd`` pinned to the worktree, no shell,
+  stdout discarded and in its own session — asserted at the
+  ``subprocess.Popen`` primitive.
 * A failing command is reported (exit code + last stderr line) while the move-in
   still returns ``status: success`` and the plan dir stays moved in.
+* A command that times out has its whole process group killed and is then
+  reaped, and is reported as timed out.
 * The re-entry responder (``noop`` and ``healed``) runs the commands too.
 * manage-config seeds the key with an empty list.
 
 Isolation mirrors ``test_prepare_execute_prepare_core.py``: an isolated main
 checkout + worktree root under ``tmp_path``, ``cmd_worktree_create`` and the
-executor generation stubbed, and ``subprocess.run`` replaced by a recorder so no
-declared command ever really executes.
+executor generation stubbed, and ``subprocess.Popen`` and ``os.killpg``
+replaced by recorders so no declared command ever really executes and no real
+process group is ever signalled.
 """
 
 from __future__ import annotations
 
 import json
+import signal
 import subprocess
 from argparse import Namespace
 from pathlib import Path
@@ -47,6 +54,7 @@ _config_defaults_mod = load_script_module(
 
 PLAN_ID = 'sample-plan'
 GENERATE_ARGV = ['./pw', 'generate', '--target', 'all', '--output', 'target']
+FAKE_PID = 424242
 
 
 # =============================================================================
@@ -65,13 +73,16 @@ def _write_marshal(worktree_path: Path, phase_5: dict[str, Any] | None) -> None:
 
 @pytest.fixture
 def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    """Stage main + worktree root and record every ``subprocess.run`` call.
+    """Stage main + worktree root and record every ``subprocess.Popen`` launch.
 
     ``env['phase_5']`` is the ``plan.phase-5-execute`` block the stubbed
     ``worktree-create`` writes into the fresh worktree's marshal.json (``None``
     writes no file). ``env['calls']`` collects ``(argv, kwargs)`` per recorded
-    run; ``env['result']`` is what the recorder returns (or raises, when it is an
-    exception instance).
+    launch; ``env['result']`` is the command's outcome — a ``CompletedProcess``
+    to report, a ``TimeoutExpired`` the wait raises, or any other exception the
+    launch itself raises. ``env['events']`` records the wait / kill / reap
+    sequence, and ``env['killpg_error']`` is raised by the recorded
+    ``os.killpg`` when set.
     """
     main = tmp_path / 'main'
     plan_dir = main / '.plan' / 'local' / 'plans' / PLAN_ID
@@ -89,6 +100,8 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         'phase_5': None,
         'calls': [],
         'result': None,
+        'events': [],
+        'killpg_error': None,
     }
 
     monkeypatch.setattr(prepare_execute, 'get_plan_dir', lambda pid: main / '.plan' / 'local' / 'plans' / pid)
@@ -111,17 +124,46 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     fake_module = type('M', (), {'cmd_worktree_create': staticmethod(fake_worktree_create)})()
     monkeypatch.setattr(prepare_execute, '_load_git_workflow', lambda: fake_module)
 
-    def recording_run(argv: Any, **kwargs: Any) -> subprocess.CompletedProcess:
-        state['calls'].append((argv, kwargs))
-        outcome = state['result']
-        if isinstance(outcome, BaseException):
-            raise outcome
-        if outcome is None:
-            return subprocess.CompletedProcess(argv, 0, stdout='', stderr='')
-        completed: subprocess.CompletedProcess = outcome
-        return completed
+    class RecordingPopen:
+        """Stand-in for ``subprocess.Popen`` that never starts a process.
 
-    monkeypatch.setattr(prepare_execute.subprocess, 'run', recording_run)
+        A ``TimeoutExpired`` outcome is raised by the first ``communicate``
+        only: the code under test kills the group and then reaps, and the reap
+        must return.
+        """
+
+        pid = FAKE_PID
+
+        def __init__(self, argv: Any, **kwargs: Any) -> None:
+            state['calls'].append((argv, kwargs))
+            outcome = state['result']
+            if isinstance(outcome, BaseException) and not isinstance(outcome, subprocess.TimeoutExpired):
+                raise outcome
+            self._outcome = outcome
+            self._timed_out = False
+            self.returncode: int | None = None
+            self.stderr = None
+
+        def communicate(self, timeout: float | None = None) -> tuple[None, str]:
+            state['events'].append(('communicate', timeout))
+            if isinstance(self._outcome, subprocess.TimeoutExpired) and not self._timed_out:
+                self._timed_out = True
+                raise self._outcome
+            if isinstance(self._outcome, subprocess.CompletedProcess):
+                self.returncode = self._outcome.returncode
+                return None, self._outcome.stderr
+            self.returncode = -9 if self._timed_out else 0
+            return None, ''
+
+    def recording_killpg(pgid: int, sig: int) -> None:
+        state['events'].append(('killpg', pgid, sig))
+        if state['killpg_error'] is not None:
+            raise state['killpg_error']
+
+    monkeypatch.setattr(prepare_execute.subprocess, 'Popen', RecordingPopen)
+    # Always replaced: FAKE_PID names no process of this test, so a real
+    # os.killpg must never be reachable from here.
+    monkeypatch.setattr(prepare_execute.os, 'killpg', recording_killpg)
     return state
 
 
@@ -174,6 +216,19 @@ class TestDeclaredCommandRuns:
         assert result['worktree_setup'] == [
             {'command': './pw generate --target all --output target', 'exit_code': 0, 'detail': 'ok'}
         ]
+        assert env['events'] == [('communicate', prepare_execute._SETUP_COMMAND_TIMEOUT_SECONDS)]
+
+    def test_command_is_launched_with_stdout_discarded_in_a_new_session(self, env: dict[str, Any]) -> None:
+        env['phase_5'] = {'worktree_setup_commands': [GENERATE_ARGV]}
+
+        _prepare()
+
+        _, kwargs = env['calls'][0]
+        assert (kwargs['stdout'], kwargs['stderr'], kwargs['start_new_session']) == (
+            subprocess.DEVNULL,
+            subprocess.PIPE,
+            True,
+        )
 
     def test_malformed_entry_is_reported_and_never_run(self, env: dict[str, Any]) -> None:
         env['phase_5'] = {'worktree_setup_commands': ['./pw generate', [], GENERATE_ARGV]}
@@ -188,8 +243,14 @@ class TestDeclaredCommandRuns:
         assert setup[0]['detail'].startswith('skipped:')
         assert setup[1]['detail'].startswith('skipped:')
 
-    def test_non_list_key_is_reported_without_running(self, env: dict[str, Any]) -> None:
-        env['phase_5'] = {'worktree_setup_commands': './pw generate'}
+    @pytest.mark.parametrize('value', ['./pw generate', None], ids=['string', 'json-null'])
+    def test_non_list_key_is_reported_without_running(self, env: dict[str, Any], value: Any) -> None:
+        """A key that is present with a non-list value is reported, ``null`` included.
+
+        Its matched control is the ``key-absent`` case above: the same config
+        without the key runs nothing and reports nothing.
+        """
+        env['phase_5'] = {'worktree_setup_commands': value}
 
         result = _prepare()
 
@@ -236,16 +297,47 @@ class TestFailingCommandIsNonFatal:
         assert record['exit_code'] is None
         assert record['detail'].startswith('failed to launch:')
 
-    def test_timeout_reported_with_null_exit_code(self, env: dict[str, Any]) -> None:
+    @pytest.mark.parametrize(
+        'killpg_error',
+        [None, ProcessLookupError(3, 'No such process')],
+        ids=['group-killed', 'group-already-gone'],
+    )
+    def test_timeout_kills_the_process_group_then_reaps(
+        self, env: dict[str, Any], killpg_error: BaseException | None
+    ) -> None:
+        """A timed-out command takes its whole process group down with it.
+
+        The command is its own session leader, so its pid is the group id the
+        kill is sent to. The reap follows the kill, and a group that is already
+        gone changes nothing about the reported outcome.
+        """
         env['phase_5'] = {'worktree_setup_commands': [GENERATE_ARGV]}
         env['result'] = subprocess.TimeoutExpired(GENERATE_ARGV, 900)
+        env['killpg_error'] = killpg_error
 
         result = _prepare()
 
         self._assert_still_moved_in(env, result)
-        record = result['worktree_setup'][0]
-        assert record['exit_code'] is None
-        assert record['detail'].startswith('timed out')
+        assert result['worktree_setup'] == [
+            {
+                'command': './pw generate --target all --output target',
+                'exit_code': None,
+                'detail': f'timed out after {prepare_execute._SETUP_COMMAND_TIMEOUT_SECONDS}s',
+            }
+        ]
+        assert env['events'] == [
+            ('communicate', prepare_execute._SETUP_COMMAND_TIMEOUT_SECONDS),
+            ('killpg', FAKE_PID, signal.SIGKILL),
+            ('communicate', prepare_execute._SETUP_REAP_TIMEOUT_SECONDS),
+        ]
+
+    def test_a_command_that_finishes_in_time_is_never_signalled(self, env: dict[str, Any]) -> None:
+        """Matched control for the timeout kill: no timeout, no signal."""
+        env['phase_5'] = {'worktree_setup_commands': [GENERATE_ARGV]}
+
+        _prepare()
+
+        assert [event[0] for event in env['events']] == ['communicate']
 
 
 # =============================================================================

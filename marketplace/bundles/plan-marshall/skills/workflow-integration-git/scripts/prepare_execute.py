@@ -52,6 +52,7 @@ import json
 import os
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 from argparse import Namespace
@@ -579,6 +580,9 @@ WORKTREE_SETUP_COMMANDS_FIELD = 'worktree_setup_commands'
 #: is reported instead of stalling the move-in forever.
 _SETUP_COMMAND_TIMEOUT_SECONDS = 900
 
+#: Upper bound for reaping a setup command after its process group was killed.
+_SETUP_REAP_TIMEOUT_SECONDS = 10
+
 
 def _read_worktree_setup_commands(worktree_path: Path) -> tuple[list[Any], str | None]:
     """Read the declared setup commands from the worktree's own marshal.json.
@@ -587,9 +591,12 @@ def _read_worktree_setup_commands(worktree_path: Path) -> tuple[list[Any], str |
     commands describe the tree being set up, and on a re-entry that tree may
     carry a branch-local edit of the key.
 
-    Returns ``(entries, error)``. An absent file, section, or key yields
-    ``([], None)`` — the no-op default. An unreadable or unparseable file, or a
-    key that is not a list, yields ``([], detail)`` so the caller can report it.
+    Returns ``(entries, error)``. An absent file, ``plan`` section,
+    ``phase-5-execute`` section, or key yields ``([], None)`` — the no-op
+    default. An unreadable or unparseable file yields ``([], detail)``, and so
+    does a key that is PRESENT with any non-list value: JSON ``null`` is a
+    declared value of the wrong shape, not an absent key, and is reported like
+    every other non-list.
     """
     marshal_path = worktree_path / PLAN_DIR_NAME / 'marshal.json'
     try:
@@ -604,22 +611,58 @@ def _read_worktree_setup_commands(worktree_path: Path) -> tuple[list[Any], str |
         return [], f'cannot parse {marshal_path}: {exc}'
     plan = config.get('plan') if isinstance(config, dict) else None
     phase = plan.get('phase-5-execute') if isinstance(plan, dict) else None
-    commands = phase.get(WORKTREE_SETUP_COMMANDS_FIELD) if isinstance(phase, dict) else None
-    if commands is None:
+    if not isinstance(phase, dict) or WORKTREE_SETUP_COMMANDS_FIELD not in phase:
         return [], None
+    commands = phase[WORKTREE_SETUP_COMMANDS_FIELD]
     if not isinstance(commands, list):
         return [], f'{WORKTREE_SETUP_COMMANDS_FIELD} is not a list of argv lists: {commands!r}'
     return commands, None
 
 
+def _kill_setup_process_group(process: subprocess.Popen[str]) -> None:
+    """Stop a timed-out setup command together with everything it spawned.
+
+    The command runs as the leader of its own session, so its pid is also its
+    process-group id and one ``SIGKILL`` to the group reaches a wrapper's worker
+    processes as well as the wrapper. A group that is already gone is not an
+    error. The child is then reaped; the reap is bounded so a descendant that
+    left the group and still holds the stderr pipe cannot stall the move-in.
+    Never raises.
+    """
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except OSError:
+        # ProcessLookupError (the group already exited) is the expected case;
+        # any other failure to signal must not break the non-fatal contract.
+        pass
+    try:
+        process.communicate(timeout=_SETUP_REAP_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        if process.stderr is not None:
+            try:
+                process.stderr.close()
+            except OSError:
+                pass
+        try:
+            process.wait(timeout=_SETUP_REAP_TIMEOUT_SECONDS)
+        except (OSError, subprocess.SubprocessError):
+            pass
+    except (OSError, ValueError, subprocess.SubprocessError):
+        pass
+
+
 def _run_worktree_setup(worktree_path: Path) -> list[dict[str, Any]]:
     """Run the project-declared setup commands in the worktree; report each one.
 
-    Each declared argv list runs via :func:`subprocess.run` with ``cwd`` pinned to
-    ``worktree_path`` and no shell. NON-FATAL by contract: this never raises and
-    never rolls back the move-in — by the time it runs the plan dir is already
-    resident in the worktree, and a setup failure is repairable by re-running
-    ``prepare`` (the re-entry path runs the commands again).
+    Each declared argv list is launched via :class:`subprocess.Popen` with
+    ``cwd`` pinned to ``worktree_path``, no shell, and in its own session.
+    stdout is discarded — nothing reads it — and only stderr is captured. A
+    command that exceeds ``_SETUP_COMMAND_TIMEOUT_SECONDS`` has its whole
+    process group killed, so a wrapper's worker cannot keep writing into the
+    worktree after the timeout was reported. NON-FATAL by contract: this never
+    raises and never rolls back the move-in — by the time it runs the plan dir
+    is already resident in the worktree, and a setup failure is repairable by
+    re-running ``prepare`` (the re-entry path runs the commands again).
 
     Returns one record per declared entry — ``command`` (the argv, shell-quoted
     for display), ``exit_code`` (``None`` when the command never ran), and
@@ -644,15 +687,21 @@ def _run_worktree_setup(worktree_path: Path) -> list[dict[str, Any]]:
             continue
         command = shlex.join(entry)
         try:
-            result = subprocess.run(
+            process = subprocess.Popen(
                 entry,
                 cwd=str(worktree_path),
-                capture_output=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
                 text=True,
-                check=False,
-                timeout=_SETUP_COMMAND_TIMEOUT_SECONDS,
+                start_new_session=True,
             )
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            outcomes.append({'command': command, 'exit_code': None, 'detail': f'failed to launch: {exc}'})
+            continue
+        try:
+            _, stderr = process.communicate(timeout=_SETUP_COMMAND_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired:
+            _kill_setup_process_group(process)
             outcomes.append(
                 {
                     'command': command,
@@ -662,16 +711,17 @@ def _run_worktree_setup(worktree_path: Path) -> list[dict[str, Any]]:
             )
             continue
         except (OSError, ValueError, subprocess.SubprocessError) as exc:
-            outcomes.append({'command': command, 'exit_code': None, 'detail': f'failed to launch: {exc}'})
+            _kill_setup_process_group(process)
+            outcomes.append({'command': command, 'exit_code': None, 'detail': f'failed while running: {exc}'})
             continue
-        lines = (result.stderr or '').strip().splitlines()
+        lines = (stderr or '').strip().splitlines()
         if lines:
             detail = lines[-1]
-        elif result.returncode == 0:
+        elif process.returncode == 0:
             detail = 'ok'
         else:
-            detail = f'exit {result.returncode}'
-        outcomes.append({'command': command, 'exit_code': result.returncode, 'detail': detail})
+            detail = f'exit {process.returncode}'
+        outcomes.append({'command': command, 'exit_code': process.returncode, 'detail': detail})
     return outcomes
 
 
