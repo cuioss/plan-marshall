@@ -67,18 +67,18 @@ distinct outcomes with a matched negative control; a light-lane plan reaches cap
 
 - HYPOTHESIS: every scoping premise carried from `PLAN-TRUTH-104` still holds at HEAD — confirm/refute at
   that spec's `## Claim Labels` (verify-at-outline)
-  - verdict: unverifiable | checked_at: a8862630661404aeb132f95ad00b413e2493bfb9 | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer claim at PLAN-TRUTH-104 Claim Labels; D0 owns the re-grounding; not recursed into the superseded spec.
+  - verdict: unverifiable | checked_at: 0a099a1071c1bc315d03d2d8008f74d89d0e29e0 | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer claim into superseded PLAN-TRUTH-104; D0 owns the re-grounding; not recursed into the superseded spec (same basis as prior stamp).
 - HYPOTHESIS: every scoping premise carried from `PLAN-TRUTH-141` still holds at HEAD — confirm/refute at
   that spec's `## Claim Labels` (verify-at-outline)
-  - verdict: unverifiable | checked_at: a8862630661404aeb132f95ad00b413e2493bfb9 | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer claim at PLAN-TRUTH-141 Claim Labels; D0 owns the re-grounding; not recursed into the superseded spec.
+  - verdict: unverifiable | checked_at: 0a099a1071c1bc315d03d2d8008f74d89d0e29e0 | by: truthful-signals/cleanup | rescoped: n/a | evidence: Pointer claim into superseded PLAN-TRUTH-141; D0 owns the re-grounding; not recursed into the superseded spec (same basis as prior stamp).
 - OBSERVED: the light-lane `pr_title` defect was re-confirmed first-party on 2026-09-17 —
   `pr_title_missing` is raised by `plan-marshall/scripts/_handshake_commands.py` line 470 (invariant
   documented at `_invariants.py` line 321), and neither `planning.md` nor `light-lane.md` mentions
   `pr_title`.
-  - verdict: corroborated | checked_at: a8862630661404aeb132f95ad00b413e2493bfb9 | by: truthful-signals/cleanup | rescoped: n/a | evidence: _handshake_commands.py:467-474 returns pr_title_missing (:470); _invariants.py:313-333 PrTitleMissing names phase-2-refine Step 13 as sole producer; zero pr_title hits in planning.md and light-lane.md.
+  - verdict: corroborated | checked_at: 0a099a1071c1bc315d03d2d8008f74d89d0e29e0 | by: truthful-signals/cleanup | rescoped: n/a | evidence: _handshake_commands.py:467-474 returns pr_title_missing; _invariants.py:313 PrTitleMissing naming phase-2-refine; zero pr_title hits in planning.md and light-lane.md at HEAD.
 - OBSERVED: this spec carries no deliverable of its own invention — all four are `PLAN-TRUTH-147`'s D8–D11
   and their gate, moved without rewording. The split changed the owner, not the work.
-  - verdict: corroborated | checked_at: a8862630661404aeb132f95ad00b413e2493bfb9 | by: truthful-signals/cleanup | rescoped: n/a | evidence: PLAN-TRUTH-147 :23-26 marks D8/D9/D10 MOVED OUT 2026-09-18 to PLAN-TRUTH-172 and moves -104/-141 control sets to 172 D3.
+  - verdict: corroborated | checked_at: 0a099a1071c1bc315d03d2d8008f74d89d0e29e0 | by: truthful-signals/cleanup | rescoped: n/a | evidence: 147 spec still marks D8/D9/D10 MOVED OUT 2026-09-18 to 172 and moves -104/-141 control sets to 172 D3.
 
 ## Expected Surface
 

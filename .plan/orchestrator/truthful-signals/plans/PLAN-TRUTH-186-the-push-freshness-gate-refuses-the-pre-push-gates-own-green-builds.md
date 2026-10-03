@@ -40,10 +40,15 @@ analyses, so the gate's own runs are sufficient and no second `verify` is needed
 ## Claim Labels
 
 - OBSERVED: the refusal codes live in `marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_freshness_crosscheck.py` — `REASON_SCOPE_NARROW = 'build_scope_narrow'` (:257), `ROW_CANONICAL_TOO_WEAK = 'canonical_performs_too_few_analyses'` (:272), per-row judgement in `_row_refusal` (:504) and `scope_check_candidates` (:548), coverage requirement in `required_coverage` (:375).
+  - verdict: corroborated | checked_at: 0a099a1071c1bc315d03d2d8008f74d89d0e29e0 | by: truthful-signals/cleanup | rescoped: n/a | evidence: All symbols at stated lines: REASON_SCOPE_NARROW :257, ROW_CANONICAL_TOO_WEAK :272, required_coverage :375, _row_refusal :504, scope_check_candidates :548.
 - OBSERVED: the doc claim is at `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/pre-push-quality-gate.md:54` ("it permits on a `kind=build` ledger entry carrying the current worktree SHA, which only this gate's just-completed builds can have written for the settled tree").
+  - verdict: corroborated | checked_at: 0a099a1071c1bc315d03d2d8008f74d89d0e29e0 | by: truthful-signals/cleanup | rescoped: n/a | evidence: pre-push-quality-gate.md:54 carries the quoted kind=build ledger-entry claim verbatim.
 - HYPOTHESIS (run-reported, not re-verified by the sender): in PLAN-13's finalize all four gate arms were green on the exact tree (quality-gate ×2, test-compile, 28128-test module-tests) and freshness still refused with `stale: build_scope_narrow`, every row `canonical_performs_too_few_analyses` — confirm by constructing the same row set against `scope_check_candidates` (verify-at-outline).
+  - verdict: unverifiable | checked_at: 0a099a1071c1bc315d03d2d8008f74d89d0e29e0 | by: truthful-signals/cleanup | rescoped: n/a | evidence: Run-reported PLAN-13 outcome; confirming needs the same row set constructed against scope_check_candidates — D4 owns that fixture.
 - HYPOTHESIS: the rows are evaluated one at a time with no aggregation step — confirm at `_freshness_crosscheck.py` § `scope_check_candidates` (verify-at-outline).
+  - verdict: corroborated | checked_at: 0a099a1071c1bc315d03d2d8008f74d89d0e29e0 | by: truthful-signals/cleanup | rescoped: n/a | evidence: scope_check_candidates loops per-row _row_refusal (:595-601); each row must fully cover required (:530-539); no cross-row union of partial coverage.
 - Verify-first clause: if HEAD already aggregates rows, re-scope to the doc/diagnostic half (D2/D3) only.
+  - verdict: corroborated | checked_at: 0a099a1071c1bc315d03d2d8008f74d89d0e29e0 | by: truthful-signals/cleanup | rescoped: n/a | evidence: Condition evaluated at HEAD: no cross-row aggregation exists, so the re-scope branch does not trigger.
 
 ## Expected Surface
 
