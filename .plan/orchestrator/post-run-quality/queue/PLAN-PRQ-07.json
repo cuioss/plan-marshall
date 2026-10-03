@@ -2,8 +2,8 @@
   "id": "PLAN-PRQ-07",
   "slug": "cross-repo-telemetry-archive-and-analyze",
   "workstream": "WS-05",
-  "status": "staged",
-  "plan_marshall_plan_id": "",
+  "status": "running",
+  "plan_marshall_plan_id": "cross-repo-telemetry-archive-and-analyze",
   "pr": "",
   "landing": "",
   "seq": 7

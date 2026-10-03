@@ -58,14 +58,90 @@ the machinery that grades us.
 - PLAN-PRQ-01 ↔ PLAN-PRQ-02 — both touch `plan-retrospective/scripts/`; never pair.
 - PLAN-PRQ-03 is the only spec whose surface is entirely project-local (`.claude/skills/`), so it is the
   natural partner if the scope knob is ever raised.
+- ✅ **PLAN-PRQ-07 — UN-PARKED AND EMITTED 2026-10-02 (operator). The only live row in the queue.** The
+  dependency below is DISCHARGED, not overridden, and the disjointness gate was overridden on a stated
+  basis; see the 2026-10-02 Decisions entry for both, and the spec's own banner for what the implementing
+  plan must re-check.
 - PLAN-PRQ-07 ↔ PLAN-PRQ-01, PLAN-PRQ-03 — both touch `.claude/skills/audit-archived-plan-retrospectives/**`,
   the exact skill PRQ-07 relocates out of this repo. PRQ-07 is a hard DEPENDENCY on both landing first, not
-  a mere disjointness overlap — never emit PRQ-07 while either is staged/launched/running.
+  a mere disjointness overlap — never emit PRQ-07 while either is staged/launched/running. ✅ **Discharged
+  2026-10-02**: both are `parked`, so neither can be in flight and the hazard cannot occur. ⛔ Un-parking
+  either one makes this binding again.
 - PLAN-PRQ-07 ↔ PLAN-PRQ-04, PLAN-PRQ-06 — conditional overlap on `phase-6-finalize/**`, pending whether
-  PRQ-07's finalize step lands marketplace-bundled (HYPOTHESIS, verify-at-outline in its spec).
+  PRQ-07's finalize step lands marketplace-bundled (HYPOTHESIS, verify-at-outline in its spec). ✅ **Moot
+  2026-10-02**: PRQ-06 is `shipped`, PRQ-04 is `parked`; same for the `parked` PRQ-08/PRQ-10 overlaps on the
+  same surface.
+- ⛔ **PLAN-PRQ-07 ↔ `code-intelligence-substrate` PLAN-CIS-036/050/052/054/056 — the one UNSERIALIZED risk.**
+  Those specs are staged in ANOTHER ledger and declare the same `audit-archived-plan-retrospectives` skill
+  and test mirror PRQ-07 relocates. No gate serializes across ledgers, and each ledger's own "no known
+  overlap" line is scoped to its own queue. Re-read that epic's live queue at PRQ-07's outline.
 
 ## Decisions
 
+- 2026-10-02 — **PLAN-PRQ-07 started** (operator confirmation, *"plan started"*); `staged → running`, plan id
+  `cross-repo-telemetry-archive-and-analyze` stamped on the row, pre-flight `client.toon` written
+  (`degraded: false`). The intermediate `launched` state is deliberately not in the row's history: `auto_emit`
+  is `false`, so nothing was stamped at emit time, and the operator's confirmation arrived as a START
+  confirmation — recording `launched` retroactively would assert an observation that was never made. ✅
+  **First-party control for this epic's own orchestration-detection Open Defect:** `inbox detect` on the
+  plan's persisted `source_id` returns `orchestrated: true`, `epic: post-run-quality`,
+  `detection: orchestrated`. PRQ-06's landing was lost precisely because its `request.md` carried no
+  `source_id` and the detector answered a confident "not orchestrated"; this plan carries one, so
+  `emit-landing` should fire and this epic should receive its landing through the inbox rather than by manual
+  filing. ⚠ That is a prediction from the detector's verdict, not an observed landing — it is confirmed only
+  when the message actually arrives.
+- 2026-10-02 — **PLAN-PRQ-07 un-parked and emitted; the disjointness gate overridden on a stated basis and
+  the hard dependency discharged.** Operator decision, two forks surfaced and both answered. **(1) Why this
+  row and not the others:** the 2026-09-26 supersession's ground is that `plan-marshall-mcp` replaces the
+  process prose and the Python scripts the parked plans edit — PRQ-07 stands up a NEW repository and
+  relocates a skill OUT of this one, so that ground never fitted it. The blanket park swept it in with the
+  rest; this corrects that. The other nine rows stay parked. **(2) The gate was refused and overridden, not
+  passed:** `corpus cross-check` returns `candidate_comparison_determinate: false` — 96 sibling-epic specs
+  and 3 live plans declare no comparable surface, so the admission test fails closed per ADR-019 rather than
+  calling an unexamined population disjoint. The override's basis is recorded because it is the whole
+  warrant: **zero** overlap rows against any live plan, and every in-corpus overlap is against a `parked` or
+  `shipped` sibling that cannot be in flight. ⛔ The indeterminacy is NOT fixable from here — it is 96 other
+  ledgers' specs declaring prose surfaces — so "resolve it first" would mean "never". **(3) The dependency
+  on PRQ-01/PRQ-03 is DISCHARGED, not overridden:** the hazard it names is relocating the skill out from
+  under their *in-flight edits*, and a parked plan is never in flight. The rule is left in the spec intact
+  and becomes binding again if either is un-parked. **(4) What the override does NOT cover, and it is a real
+  exposure:** `code-intelligence-substrate` carries five staged specs (`PLAN-CIS-036/050/052/054/056`)
+  declaring the same skill and test mirror. No gate serializes across two ledgers, and each ledger's
+  "no known overlap" statement is scoped to its own queue — the exact blind spot this epic exists to name.
+  PRQ-07's spec carries a re-check-at-outline obligation for it. **(5) Prep-readiness passed on its own
+  terms** (8 claims, 0 blocking) but every verdict is STALE at `7d82d5d90` against HEAD `59ad113e2`;
+  staleness is reported, never promoted, and the spec carries a re-ground-all-eight obligation. `auto_emit`
+  is `false`, so the command is emitted and the `launched` transition waits on operator-confirmed launch.
+- 2026-10-02 — **Ledger restored after the #1641 revert, then the inbox drained (3 messages).** Two
+  operator decisions this session. (1) **Restore.** `process-compliance-001.md` reported that PR #1641
+  (`945e59287`), squash-merged from a branch cut before #1643, had reverted this epic's 2026-09-26 PM-MCP
+  supersession. The claim was corroborated first-party (`git diff 88fcfc9ef..HEAD` over this tree) and was
+  still live on `main`: every parked row flipped back to `staged`, the SUPERSEDED banner stripped from each
+  spec, `settled.md` and `inbox/archive/review-apparatus/review-apparatus-001.md` deleted, two
+  already-dispositioned `lessons-routing` messages un-archived back into `inbox/`, and `resume_anchor.md`
+  reduced to its oldest entry. ⛔ **The operational consequence is what made this urgent rather than
+  cosmetic**: the queue presented ten superseded rows as emittable, so a `next` would have handed out a
+  plan whose spec says "do not emit". Restored from `88fcfc9ef` after verifying that the only commits
+  touching this tree after the revert were #1649/#1655/#1660, each adding exactly one `process-compliance`
+  inbox message and nothing else — 27 paths, commit `13e3d2426`, `queue-view.md` regenerated rather than
+  restored. (2) **Landing.** Committed and pushed on `chore/orchestrator-ledger` in the `_orchestrator`
+  worktree; the branch had no upstream, so the push also published eight sibling-session commits, a trade
+  the operator took explicitly. ⚠ **The revert itself is a merge-gate defect this epic does not own** — a
+  squash merge from a stale branch silently reverting a newer landing, unflagged at merge, is orchestrator
+  /merge-queue mechanics. `process-compliance` restored its own tree the same way (operator rule: each
+  epic restores its own), so this is the second instance of the same mechanism, not an isolated accident.
+- 2026-10-02 — **PLAN-PRQ-12's D1 premise refuted at HEAD; D2 is the only live deliverable.** Found while
+  draining `process-compliance-002.md`/`-003.md`, which folded two further pre-fix instances of the
+  chat-signal truncation into PRQ-12 (five in total). ⛔ **The root cause PRQ-12 identified has been fixed
+  elsewhere**: `_chat_signal_reducer.py:406` now returns `BlockScalar(reduced_text)`, landed by PR #1646
+  (`56add3faf`, 2026-09-29T16:56:43Z) with the multi-line round-trip regression test PRQ-12 D1 asked for.
+  Verdict persisted on claim 2 as `contradicted` / `rescoped: yes`; D1 marked SHIPPED ELSEWHERE, D0 moot,
+  D2 (the delivery-integrity lower bound plus the `transcript_undelivered` token) left live and still
+  unimplemented. ⚠ **Both recurrences are PRE-FIX and neither re-opens anything** — the date ordering
+  settles it: `-003.md` was filed 2026-09-29T16:59:25Z, two minutes and forty-two seconds AFTER the fix
+  merged, so the run it reports cannot have exercised post-fix code. This is also the second time a
+  third-party recurrence report has independently confirmed this spec's own root-cause correction while
+  stating the cause as unestablished on its own evidence.
 - 2026-09-17 — **Epic created, and it OWNS the subject end to end.** Operator decision at init, chosen
   over two alternatives: (a) staging only unowned aspects and leaving the subject split across three
   ledgers, and (b) a narrower retrospective-plus-audit cut. Rationale: a single ledger cannot see a
@@ -205,8 +281,41 @@ the machinery that grades us.
   landing. The old `.plan/local/orchestrator/post-run-quality/` tree is now ORPHANED — do not read or
   write it going forward.
 
+- 2026-09-26 — **THE WHOLE STAGED QUEUE IS PARKED — superseded by PM-MCP.** Inbox `review-apparatus-001.md`
+  (rev 1, relaying a binding operator ruling): `plan-marshall-mcp` replaces both the Python scripts and the
+  process prose, so every Python- or prose-bound plan is legacy work. All 10 staged rows (`PLAN-PRQ-01`, `-03`,
+  `-04`, `-05`, `-07`, `-08`, `-09`, `-10`, `-11`, `-12`) were classified per deliverable by four read-only
+  sub-agents and mapped against PM-MCP `7e13ea1`: **148 rows, 116 carry, 32 none; 52 gap, 58 partial, 6
+  covered; 14 contradictions** (6 hard, 5 tensions, 3 weak/internal — e.g. assessments merged into findings,
+  `FIX|SUPPRESS|ACCEPT` losing "refuted", a clean delta self-review round allowed to close, the retrospective
+  ordered before `record-metrics`). Counts re-derived from the filed tables. **No emission exception applied**
+  to any spec (no foreign-repo config, no coexistence enabler, no delivery-breaking defect). Filed as
+  `/Users/oliver/git/plan-marshall-mcp/doc/known-defects/post-run-quality-carry-over.md` (the one
+  operator-authorized write there; NOT committed — the operator commits it). No copy kept in this tree. Each
+  spec carries a SUPERSEDED BY PM-MCP banner; bodies intact as the evidence chain. Un-park only by explicit
+  operator decision. ⚠ The message's coexistence framing (`co-exist.lock`, cross-runtime `flock`) is refuted by
+  PM-MCP itself: PM-MIG-2 is a hard per-machine cutover and PM-MIG-3 needs no cross-runtime locking
+  (`11-migration.adoc:16/25/37`); recorded in the carry-over intro.
+- 2026-09-26 — **Inbox `lessons-routing-001.md` → discarded.** Lead verified: `2026-09-21-10-008` was promoted
+  by `truthful-signals` (2026-09-21) and re-promoted here as `2026-09-22-08-003` (2026-09-22), which tombstoned
+  the original — the corpus holds one copy, so no live duplicate. Rule carried as Part B row 1 of the carry-over.
+- 2026-09-26 — **Inbox `lessons-routing-002.md` → discarded.** `scope_creep_check` / `scope_creep_warning` is
+  owned by `truthful-signals` PLAN-TRUTH-178 (parked, superseded) and already carried as its 178.D0; recorded
+  here as a `none (dup)` row.
+
 ## Open Defects
 
+- ✅ **RESOLVED 2026-10-02 — #1641 reverted this epic's ledger state.** Filed as
+  `process-compliance-001.md` (2026-09-28), corroborated first-party and repaired the same session; the
+  full account is the 2026-10-02 Decisions entry. Retained as the record of why `settled.md`,
+  `inbox/archive/review-apparatus/review-apparatus-001.md` and the ten SUPERSEDED banners have a
+  restore commit (`13e3d2426`) in their history rather than a continuous one. ⇒ **The mechanism remains
+  unowned by this epic**: a stale-branch squash merge silently reverting a newer landing, unflagged at the
+  merge gate, is orchestrator/merge-queue mechanics. Second observed instance (`process-compliance`
+  restored its own tree the same way), so it is a recurring class, not an accident.
+- **2026-09-26 — Whole queue parked (see Decisions).** Every row but the two shipped ones is `parked`; nothing
+  is emittable. The Open Defects below are now each owned by a parked spec, i.e. by the PM-MCP carry-over, not
+  by pending plan-marshall work.
 - **The census does not census itself.** `audit-archived-plan-retrospectives` SKILL.md:231-236 states it
   outright — the suspect-zero census is excluded from its own population, "the detector-inside-its-own-
   population failure mode, standing unresolved in the instrument built to surface it." — source: inventory
@@ -361,6 +470,15 @@ this epic's.
 
 ## Watches
 
+- ⚠ **The PM-MCP carry-over now carries at least one stale defect, and this epic cannot see it.**
+  `plan-marshall-mcp/doc/known-defects/post-run-quality-carry-over.md` extracted the whole parked corpus on
+  2026-09-26. PLAN-PRQ-12's D1 was fixed in this repository on 2026-09-29 (PR #1646), so whatever the
+  carry-over says about it is three days out of date — and the same exposure applies to every other carried
+  row: the document is a snapshot of premises that keep moving in the repo it was extracted FROM. ⛔ **No
+  checkout of `plan-marshall-mcp` exists on this machine**, so this is recorded as unverifiable rather than
+  as confirmed-stale (ADR-019: a population that could not be reached is not a finding). — re-check when a
+  `plan-marshall-mcp` checkout is available; at minimum the carry-over needs a re-grounding pass against
+  this repo's HEAD before PM-MCP implements from it, and that pass is the natural precondition for `close`.
 - **CI-wait behaviour needs an operator call, not a fold.** From the 2026-09-19 inbox drain:
   `ci_complete_precondition`'s early-negative return path (return immediately when the precondition
   cannot possibly resolve — no run started, SHA mismatch) and its ~600s poll budgets (95%+ of the harness
@@ -400,17 +518,5 @@ this epic's.
   provenance-of-retirement, worth folding into PLAN-PRQ-05 D3's design at outline. No spec edit applied
   this pass (informational, no ship semantics, PLAN-PRQ-05 not yet launched) — re-read at PLAN-PRQ-05's
   outline.
-- **Two NEW staged `truthful-signals` specs materially overlap PLAN-PRQ-08 and PLAN-PRQ-01, invisible to
-  either ledger.** Found 2026-09-22 during A1 re-grounding corroboration. `PLAN-TRUTH-175-dispatch-and-
-  phase-boundary-measurement-integrity` (staged) declares D2/D3 = the same dispatch-boundary token
-  recording and four component token columns PLAN-PRQ-08 claims 5/7 own, with the OPPOSITE stated root
-  cause (-175: "the recorder does not capture them, fix the recorder" vs PLAN-PRQ-08/`truthful-signals`
-  PLAN-TRUTH-160: "the recorder declares all four flags, the call sites pass nothing, fix the call
-  sites"), and D5 = the identical `manage-change-ledger`/build-time-oracle investigation PLAN-PRQ-08 claim
-  6 owns. `PLAN-TRUTH-175` itself records "Overlaps with: none known against the current live queue" —
-  that statement is made against its own ledger only, so the sole-ownership reading on either side is not
-  safe. `PLAN-TRUTH-174-plan-retrospective-measurement-integrity` (staged, same-source sibling) is an
-  adjacent candidate collision with PLAN-PRQ-01's `plan-retrospective/**` surface, not yet corroborated in
-  detail. — resolve before either PLAN-PRQ-01 or PLAN-PRQ-08 is emitted: read `truthful-signals`'
-  PLAN-TRUTH-174/-175 spec bodies in full and either fold/cross-reference or explicitly partition the
-  overlapping deliverables between the two epics.
+> ↪ Relocated to `settled.md` § "Cross-epic collision: PLAN-TRUTH-175/174 vs PLAN-PRQ-08/01" — settled 2026-09-26: PLAN-PRQ-01 and PLAN-PRQ-08 are parked (superseded by PM-MCP) and
+> truthful-signals PLAN-TRUTH-174/-175 are parked there too, so neither side can be emitted; the overlap is moot.
