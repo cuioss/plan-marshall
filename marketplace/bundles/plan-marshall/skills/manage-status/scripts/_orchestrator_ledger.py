@@ -43,7 +43,8 @@ the root:
 duplicate-slug scan runs, then the row file is created. Duplicate IDs are
 refused by the atomic primitive — the row file is published with ``os.link``,
 which never replaces an existing file — and the slug scan, the ``seq``
-allocation and the publish run inside ONE critical section scoped to the queue.
+allocation and the publish run inside ONE critical section scoped to the queue,
+held through :func:`_locks_core.held_guard`.
 Mutating a row runs through :func:`_locks_core.rmw_json` over that row's own
 file, so two sessions acting on different rows never contend. No lock spans
 machines: a duplicate id staged on two machines surfaces as a git add/add
@@ -61,7 +62,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from _locks_core import _acquire_guard, _atomic_write_json, rmw_json
+from _locks_core import _atomic_write_json, held_guard, rmw_json
 from epic_spec_parser import PLAN_ID_SEGMENT
 
 # --- file names -------------------------------------------------------------
@@ -575,14 +576,6 @@ def set_metadata_field(root: Path, field_name: str, value: Any) -> dict[str, Any
     return outcome
 
 
-def _release_guard(fd: int, guard: Path) -> None:
-    os.close(fd)
-    try:
-        os.unlink(str(guard))
-    except OSError:
-        pass
-
-
 def _publish_new_file(path: Path, row: dict[str, Any]) -> bool:
     """Publish ``row`` at ``path`` only if nothing is there; return whether it was created.
 
@@ -627,9 +620,7 @@ def create_row(root: Path, row: Mapping[str, Any], *, epic_slug: str | None = No
     if epic_slug is not None and row.get('slug') == epic_slug:
         return {'epic_slug': epic_slug}
     path = row_path(root, plan_id)
-    guard = root / QUEUE_GUARD_FILE
-    fd = _acquire_guard(guard)
-    try:
+    with held_guard(root / QUEUE_GUARD_FILE):
         if path.exists():
             existing, _ = _read_row_file(path)
             return {'duplicate': existing if existing is not None else {'id': plan_id}}
@@ -649,8 +640,6 @@ def create_row(root: Path, row: Mapping[str, Any], *, epic_slug: str | None = No
             existing, _ = _read_row_file(path)
             return {'duplicate': existing if existing is not None else {'id': plan_id}}
         return {'row': record}
-    finally:
-        _release_guard(fd, guard)
 
 
 def mutate_row(root: Path, plan_id: str, apply: Callable[[dict[str, Any]], Any]) -> dict[str, Any]:

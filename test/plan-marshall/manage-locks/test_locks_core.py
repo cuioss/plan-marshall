@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import json
 import os
+import threading
+import time
 
 import pytest
 from _locks_core_fixtures import (
@@ -195,6 +197,133 @@ def test_acquire_guard_times_out_when_held(tmp_path, monkeypatch):
     finally:
         os.close(held_fd)
         guard.unlink()
+
+
+# =============================================================================
+# held_guard — the one acquire/release implementation
+# =============================================================================
+
+
+def test_held_guard_holds_the_guard_inside_the_body_and_removes_it_after(tmp_path):
+    guard = tmp_path / 'section.lock'
+
+    with _mod.held_guard(guard):
+        held_inside = guard.exists()
+
+    assert (held_inside, guard.exists()) == (True, False)
+
+
+def test_held_guard_removes_the_guard_when_the_body_raises(tmp_path):
+    """The release is a ``finally``: a raising body must not wedge the guard."""
+    guard = tmp_path / 'section.lock'
+
+    with pytest.raises(RuntimeError, match='critical section failed'), _mod.held_guard(guard):
+        raise RuntimeError('critical section failed')
+
+    assert not guard.exists()
+
+
+def test_held_guard_blocks_a_second_acquirer_until_release(tmp_path, monkeypatch):
+    """A second acquirer enters only after the first holder leaves its block.
+
+    The ordering is established without a wall-clock wait. The worker's backoff
+    sleep is the observable proof that it reached the held guard and was turned
+    away, so the holder releases only after that signal — and the worker can
+    record its entry only once the guard file is gone.
+    """
+    monkeypatch.setattr(_mod, '_GUARD_STALE_SECONDS', 10_000.0)
+    monkeypatch.setattr(_mod, '_GUARD_BACKOFF_SECONDS', 0.001)
+    guard = tmp_path / 'section.lock'
+    turned_away = threading.Event()
+    real_sleep = time.sleep
+    events: list[str] = []
+    errors: list[Exception] = []
+
+    def signalling_sleep(seconds: float) -> None:
+        turned_away.set()
+        real_sleep(seconds)
+
+    monkeypatch.setattr(_mod.time, 'sleep', signalling_sleep)
+
+    def second_acquirer() -> None:
+        try:
+            with _mod.held_guard(guard):
+                events.append('second-entered')
+        except Exception as exc:  # broad on purpose: surfaced by the assertion below
+            errors.append(exc)
+
+    worker = threading.Thread(target=second_acquirer)
+    with _mod.held_guard(guard):
+        worker.start()
+        blocked = turned_away.wait(timeout=30)
+        events.append('first-releasing')
+    worker.join(timeout=30)
+
+    assert (blocked, worker.is_alive(), errors) == (True, False, [])
+    assert events == ['first-releasing', 'second-entered']
+    assert not guard.exists()
+
+
+def test_held_guard_reclaims_a_guard_older_than_the_stale_threshold(tmp_path, monkeypatch):
+    monkeypatch.setattr(_mod, '_GUARD_STALE_SECONDS', -1.0)
+    guard = tmp_path / 'section.lock'
+    guard.write_text('', encoding='utf-8')  # left behind by a killed holder
+
+    with _mod.held_guard(guard):
+        entered = True
+
+    assert (entered, guard.exists()) == (True, False)
+
+
+def test_held_guard_does_not_run_the_body_when_a_fresh_guard_is_held(tmp_path, monkeypatch):
+    """Matched control for the stale reclaim: a guard inside the threshold is honoured.
+
+    The same pre-existing guard file that is reclaimed above blocks here, where
+    only the threshold differs. The ``TimeoutError`` reaches the caller and the
+    block never runs.
+    """
+    monkeypatch.setattr(_mod, '_GUARD_STALE_SECONDS', 10_000.0)
+    monkeypatch.setattr(_mod, '_GUARD_TIMEOUT_SECONDS', 0.05)
+    monkeypatch.setattr(_mod, '_GUARD_BACKOFF_SECONDS', 0.005)
+    guard = tmp_path / 'section.lock'
+    guard.write_text('', encoding='utf-8')
+    entered = False
+
+    with pytest.raises(TimeoutError), _mod.held_guard(guard):
+        entered = True
+
+    assert (entered, guard.exists()) == (False, True)
+
+
+# =============================================================================
+# rmw_json — unchanged on top of held_guard
+# =============================================================================
+
+
+def test_rmw_json_commits_and_returns_the_mutated_state_and_releases_the_guard(tmp_path):
+    path = tmp_path / 'state.json'
+    path.write_text(json.dumps({'count': 1}), encoding='utf-8')
+
+    result = _mod.rmw_json(path, lambda state: {**state, 'count': state['count'] + 1})
+
+    assert result == {'count': 2}
+    assert json.loads(path.read_text(encoding='utf-8')) == {'count': 2}
+    assert not (tmp_path / 'state.json.lock').exists()
+
+
+def test_rmw_json_releases_the_guard_and_commits_nothing_when_the_mutator_raises(tmp_path):
+    path = tmp_path / 'state.json'
+    path.write_text(json.dumps({'count': 1}), encoding='utf-8')
+    before = path.read_bytes()
+
+    def failing_mutator(_state):
+        raise RuntimeError('mutator failed')
+
+    with pytest.raises(RuntimeError, match='mutator failed'):
+        _mod.rmw_json(path, failing_mutator)
+
+    assert path.read_bytes() == before
+    assert not (tmp_path / 'state.json.lock').exists()
 
 
 # =============================================================================
