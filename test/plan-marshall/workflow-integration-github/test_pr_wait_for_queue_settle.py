@@ -233,6 +233,103 @@ def test_wait_does_not_settle_an_open_pr_without_a_failed_completed_run(monkeypa
 
 
 # =============================================================================
+# A run that had already failed before the wait began
+# =============================================================================
+
+
+def _in_flight_world(run_id: int) -> QueueWorld:
+    """Open, unlisted, not armed, with the given merge-group run still in progress."""
+    return QueueWorld(runs=[merge_group_run(run_id=run_id, status='in_progress', conclusion=None)])
+
+
+def test_wait_does_not_settle_on_a_run_that_had_failed_before_the_wait_began(monkeypatch, clock):
+    """A re-enqueued PR is not reported dequeued for its PREVIOUS attempt's run.
+
+    The baseline and the first poll both see the open, unqueued, unarmed PR whose
+    newest run is the earlier attempt's failed one — the instant after a
+    re-enqueue call. The wait keeps polling, sees the PR admitted, and settles on
+    the merge.
+    """
+    install_gh(
+        monkeypatch,
+        [
+            _dequeued_world(),
+            _dequeued_world(),
+            queued_world(),
+            QueueWorld(state='MERGED', merge_commit=MERGE_SHA),
+        ],
+    )
+
+    result = github_ops.cmd_pr_wait_for_queue_settle(_args(timeout=4 * _INTERVAL))
+
+    assert (result['status'], result['settle'], result['timed_out']) == ('success', 'merged', False)
+    assert result['polls'] == 3
+    assert result['baseline']['merge_group_run']['run_id'] == 901
+    assert result['final']['merge_commit_sha'] == MERGE_SHA
+
+
+def test_wait_settles_as_dequeued_when_the_baseline_run_fails_during_the_wait(monkeypatch, clock):
+    """A run still in progress at the baseline is the current attempt's, not a stale one.
+
+    Matched control for the stale-run exclusion: the SAME run id is seen at the
+    baseline and at the settling poll, and only its having been unfinished at the
+    baseline keeps it eligible.
+    """
+    install_gh(monkeypatch, [_in_flight_world(901), _dequeued_world()])
+
+    result = github_ops.cmd_pr_wait_for_queue_settle(_args())
+
+    assert (result['status'], result['settle'], result['timed_out']) == ('success', 'dequeued', False)
+    assert result['polls'] == 1
+    assert result['baseline']['merge_group_run']['run_id'] == 901
+    assert result['final']['merge_group_run']['run_id'] == 901
+
+
+def test_wait_settles_as_dequeued_on_a_newer_failed_run(monkeypatch, clock):
+    """An old failed run at the baseline does not hide the current attempt's failure."""
+    newer_failure = QueueWorld(
+        runs=[
+            merge_group_run(run_id=901, conclusion='failure', created_at='2026-01-01T00:00:00Z'),
+            merge_group_run(run_id=902, conclusion='failure', created_at='2026-01-02T00:00:00Z'),
+        ]
+    )
+    install_gh(monkeypatch, [_dequeued_world(), _dequeued_world(), newer_failure])
+
+    result = github_ops.cmd_pr_wait_for_queue_settle(_args(timeout=4 * _INTERVAL))
+
+    assert (result['status'], result['settle'], result['timed_out']) == ('success', 'dequeued', False)
+    assert result['polls'] == 2
+    assert result['baseline']['merge_group_run']['run_id'] == 901
+    assert result['final']['merge_group_run']['run_id'] == 902
+
+
+def test_wait_runs_to_the_deadline_for_a_pr_ejected_before_the_wait_began(monkeypatch, clock):
+    """A PR that was already ejected at the baseline is not this wait's ejection."""
+    install_gh(monkeypatch, [_dequeued_world()])
+
+    result = github_ops.cmd_pr_wait_for_queue_settle(_args())
+
+    assert (result['status'], result['settle'], result['timed_out']) == ('success', 'timeout', True)
+    assert result['final']['merge_group_run'] == result['baseline']['merge_group_run']
+
+
+@pytest.mark.parametrize(
+    ('stale_run_id', 'expected'),
+    [(None, 'dequeued'), (901, None), (902, 'dequeued')],
+    ids=['no-stale-id', 'observed-run-is-stale', 'another-run-is-stale'],
+)
+def test_classification_excludes_only_the_named_stale_run(monkeypatch, stale_run_id, expected):
+    """With no stale id the single-read classification is unchanged."""
+    install_gh(monkeypatch, [_dequeued_world()])
+    ok, observation = _github_pr._observe_pr_queue_state(PR_NUMBER)
+
+    assert ok is True
+    assert _github_pr._classify_queue_settle(observation, stale_run_id) == expected
+    if stale_run_id is None:
+        assert _github_pr._classify_queue_settle(observation) == expected
+
+
+# =============================================================================
 # The PR could not be read
 # =============================================================================
 

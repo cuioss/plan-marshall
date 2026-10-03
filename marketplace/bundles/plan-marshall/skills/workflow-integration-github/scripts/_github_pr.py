@@ -2760,7 +2760,29 @@ def _observe_pr_queue_state(pr_number: int) -> tuple[bool, dict]:
     }
 
 
-def _classify_queue_settle(data: dict) -> str | None:
+def _failed_run_id(data: dict) -> int | str | None:
+    """Return the ``run_id`` of an observation's merge-group run when that run has FAILED.
+
+    A run counts only when it was found, completed, and concluded with anything
+    but success. A run still in progress, a run that succeeded, an unread run
+    list, and a failed run carrying no id all return ``None``.
+    """
+    run = data.get('merge_group_run')
+    if not isinstance(run, dict):
+        return None
+    conclusion = run.get('conclusion')
+    if (
+        run.get('found') is True
+        and run.get('status') == _RUN_STATUS_COMPLETED
+        and isinstance(conclusion, str)
+        and conclusion != _RUN_CONCLUSION_SUCCESS
+    ):
+        run_id: int | str | None = run.get('run_id')
+        return run_id
+    return None
+
+
+def _classify_queue_settle(data: dict, stale_run_id: int | str | None = None) -> str | None:
     """Return the settle an observation establishes, or ``None`` while the PR is still in flight.
 
     - ``merged`` / ``closed`` — the PR's own state.
@@ -2774,6 +2796,13 @@ def _classify_queue_settle(data: dict) -> str | None:
     An open PR that is neither queued nor armed but has no failed merge-group run
     is NOT settled: that is also what a PR looks like in the instant between an
     enqueue call and its admission.
+
+    ``stale_run_id`` names a failed run that belongs to an EARLIER queue attempt.
+    The newest run stays that old one until the current attempt produces its
+    own, so a caller that knows the id passes it and the ``dequeued`` arm then
+    additionally requires the observed run to be a different one. With the
+    default ``None`` no run is excluded, which is the classification a single
+    read without any earlier observation makes.
     """
     pr_state = data.get('pr_state')
     if pr_state == QUEUE_PR_STATE_MERGED:
@@ -2792,6 +2821,7 @@ def _classify_queue_settle(data: dict) -> str | None:
         and run.get('status') == _RUN_STATUS_COMPLETED
         and isinstance(conclusion, str)
         and conclusion != _RUN_CONCLUSION_SUCCESS
+        and (stale_run_id is None or run.get('run_id') != stale_run_id)
     ):
         return QUEUE_SETTLE_DEQUEUED
     return None
@@ -2837,16 +2867,32 @@ def cmd_pr_wait_for_queue_settle(args: argparse.Namespace) -> dict:
     is true, and there is no ``status: timeout``. A PR read that fails during the
     poll ends the wait with ``pr_read_failed`` and the ``polls`` / ``duration_sec``
     reached.
+
+    **A run that had already failed before the wait began is not this wait's
+    ejection.** When the baseline's merge-group run is found, completed, and
+    concluded with anything but success, it belongs to an earlier queue attempt,
+    and its id is excluded from the ``dequeued`` settle for the whole wait. A
+    baseline run that is still in progress, or that succeeded, is NOT excluded:
+    it may be the current attempt's run, and when it later fails the wait
+    reports ``dequeued``. A newer failed run reports ``dequeued`` as well.
+
+    The consequence: a PR that was already ejected before the wait began is not
+    reported ``dequeued`` by this verb — the wait runs to ``timeout``.
+    ``pr queue-state`` reports that state from a single read, and
+    ``plan-orchestrator/workflow/land.md`` Step 2's ejection gate reads it before
+    Step 7 reaches this wait.
     """
     ok, baseline = _observe_pr_queue_state(args.pr_number)
     if not ok:
         return _pr_read_failed('pr_wait_for_queue_settle', args.pr_number, baseline)
 
+    stale_run_id = _failed_run_id(baseline)
+
     def check_fn() -> tuple[bool, dict]:
         return _observe_pr_queue_state(args.pr_number)
 
     def is_complete_fn(data: dict) -> bool:
-        return _classify_queue_settle(data) is not None
+        return _classify_queue_settle(data, stale_run_id) is not None
 
     poll_result = github_ops.poll_until(check_fn, is_complete_fn, timeout=args.timeout, interval=args.interval)
 
@@ -2864,7 +2910,7 @@ def cmd_pr_wait_for_queue_settle(args: argparse.Namespace) -> dict:
 
     final = poll_result.get('last_data') or baseline
     timed_out = bool(poll_result.get('timed_out'))
-    settle = QUEUE_SETTLE_TIMEOUT if timed_out else _classify_queue_settle(final)
+    settle = QUEUE_SETTLE_TIMEOUT if timed_out else _classify_queue_settle(final, stale_run_id)
     if settle is None:
         # poll_until returned without a deadline and without a settled
         # observation. Reporting a settle here would invent one.

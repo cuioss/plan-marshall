@@ -588,12 +588,13 @@ final: {the Step 1 fields of the last observation}
 |----------|-----------|
 | `merged` | `pr_state` is `merged`. `final.merge_commit_sha` carries the landing commit |
 | `closed` | `pr_state` is `closed` |
-| `dequeued` | The PR is `open`, `in_queue` is `false`, `auto_merge_armed` is `false`, AND `merge_group_run.found` is `true` with `status: completed` and a conclusion other than `success` |
+| `dequeued` | The PR is `open`, `in_queue` is `false`, `auto_merge_armed` is `false`, AND `merge_group_run.found` is `true` with `status: completed` and a conclusion other than `success`, AND that run is not one the baseline had already observed as failed |
 | `timeout` | `--timeout` elapsed before any of the three |
 
 - **`settle: timeout` holds exactly when `timed_out` is `true`.** The deadline is `status: success` — the wait ran and reports what it saw. There is no `status: timeout`.
 - **An `indeterminate` read never produces `dequeued`.** Each term of the `dequeued` definition is tested against the measured value, so a failed queue read or an unreadable run list keeps the wait polling rather than reporting an ejection nothing observed.
 - **An open PR that is neither queued nor armed is not, by itself, settled.** Without a failed merge-group run, that is also what a PR looks like in the instant between an enqueue call and its admission.
+- **A run that had already failed before the wait began belongs to an earlier queue attempt.** A PR ejected before the wait started is therefore not reported `dequeued` here — the wait runs to `timeout` — and `pr queue-state` is the verb that reports that state; a baseline run still in progress that fails later, or a newer failed run, does report `dequeued`.
 - **A PR read failure is `status: error`, `error: pr_read_failed`.** When the baseline read fails, nothing is polled. When a read fails during the poll, the return also carries the `polls` and `duration_sec` reached.
 
 A caller that needs the landing commit reads `final.merge_commit_sha` on `settle: merged`. On `settle: dequeued`, `final.merge_group_run` names the run that failed the merge group.
