@@ -130,12 +130,6 @@ class TestLockStepWithContract:
     # coverage-gathering-contract.md § Current Implementations. Each must be a
     # coherent, expandable cell.
     _CONSUMED_CELLS = [
-        # audit-archived-plan-retrospectives
-        ('T1', 'change-set'),
-        ('T2', 'overall'),
-        ('T3', 'module'),
-        ('T4', 'overall'),
-        ('T5', 'overall'),
         # recipe-plugin-compliance
         ('T2', 'component'),
         ('T3', 'module'),

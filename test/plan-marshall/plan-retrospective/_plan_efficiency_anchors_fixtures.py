@@ -8,13 +8,9 @@ the module itself carries the import and not the preamble.
 
 from __future__ import annotations
 
-import importlib.util
 import re
-import sys
-from pathlib import Path
-from typing import Any
 
-from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, load_script_module
+from conftest import MARKETPLACE_ROOT, load_script_module
 
 # ---------------------------------------------------------------------------
 # Source anchors — every one of these is a LIVE source, never a copied value
@@ -30,11 +26,6 @@ _ANCHORS_DOC = (
 _CHANGE_TYPES_DOC = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'ref-workflow-architecture' / 'standards' / 'change-types.md'
 )
-
-
-#: The audit skill's deterministic computation core (no executor notation — it
-#: runs via a direct ``python3 .../audit.py``, so it is loaded by file location).
-_AUDIT_SCRIPT = PROJECT_ROOT / '.claude' / 'skills' / 'audit-archived-plan-retrospectives' / 'scripts' / 'audit.py'
 
 
 #: Heading prefixes the section slicer anchors on.
@@ -223,47 +214,3 @@ def _insert_anchor_row(content: str, key: tuple[str, str]) -> str:
             lines.insert(index + 2, row)
             return '\n'.join(lines)
     raise AssertionError('Mutation helper found no anchors-table header row.')
-
-
-# ---------------------------------------------------------------------------
-# audit.py loading + metrics fixtures
-# ---------------------------------------------------------------------------
-
-
-#: sys.modules key the audit core is registered under while it executes.
-_AUDIT_MODULE_NAME = 'audit_anchors_under_test'
-
-
-def _load_audit() -> Any:
-    """Load the audit computation core by file location (it has no notation).
-
-    The module MUST be registered in ``sys.modules`` BEFORE ``exec_module``:
-    ``audit.py`` defines ``@dataclass`` types at import time, and
-    ``dataclasses._is_type`` resolves ``sys.modules.get(cls.__module__)`` while
-    processing each class. Executing an unregistered module makes that lookup
-    return ``None`` and the import dies with ``AttributeError: 'NoneType' object
-    has no attribute '__dict__'`` — the same registration ``conftest``'s
-    ``load_script_module`` performs for exactly this reason.
-    """
-    cached = sys.modules.get(_AUDIT_MODULE_NAME)
-    if cached is not None:
-        return cached
-    spec = importlib.util.spec_from_file_location(_AUDIT_MODULE_NAME, _AUDIT_SCRIPT)
-    assert spec is not None, f'Failed to load module spec for {_AUDIT_SCRIPT}'
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    sys.modules[_AUDIT_MODULE_NAME] = module
-    try:
-        spec.loader.exec_module(module)
-    except BaseException:
-        sys.modules.pop(_AUDIT_MODULE_NAME, None)
-        raise
-    return module
-
-
-def _write_metrics(plan_dir: Path, body: str) -> Path:
-    """Write ``work/metrics.toon`` under ``plan_dir`` and return the plan dir."""
-    work = plan_dir / 'work'
-    work.mkdir(parents=True, exist_ok=True)
-    (work / 'metrics.toon').write_text(body, encoding='utf-8')
-    return plan_dir

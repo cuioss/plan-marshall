@@ -226,14 +226,17 @@ passing control reports its own silence.
 helpers, so one sweep covers both names.
 
 **Method 2 — direct scan at HEAD.** Walk both trees and count occurrences per
-file. **58** files scanned; **3** unreadable, and each of the three is a compiled
-`.pyc` artifact under `__pycache__` whose `.py` source sibling WAS scanned — so the
-unreadable count is a build artifact, not a coverage gap. **2** files carry a hit:
+file, reporting the files scanned and every file that could not be read. A
+compiled `.pyc` artifact under `__pycache__` whose `.py` source sibling WAS scanned
+is a build artifact, not a coverage gap.
 
-| File | Tokens |
-|------|--------|
-| `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py` | `upper_limit_seconds` (2), `build-queue.json` (3), `home_root` (2) |
-| `.claude/skills/audit-archived-plan-retrospectives/checks/global-log-analysis.md` | `upper_limit_seconds` (2), `build-queue.json` (2) |
+**Two consumers sit outside this repository altogether.** The cross-plan
+auditor's `audit.py` and its `global-log-analysis.md` interpretation guide live in
+the `plan-marshall-telemetry` repository, so neither sweep method over this
+repository's trees reaches them. Both carry `upper_limit_seconds` and
+`build-queue.json`, and `audit.py` additionally carries `home_root`; the non-zero
+pickaxe rows above include the history of those files from when they sat under
+`.claude/`.
 
 **A third consumer sits outside the pinned derivation without sitting in either
 tree.** `marketplace/targets/claude/reconcile_daemon.py` carries `home_root` (2).
@@ -243,12 +246,13 @@ category of the `default` module, so the `--category script` sweeps above and th
 
 **The members outside the pinned derivation, dispositioned by name.**
 
-- `audit.py` — `_ratcheted_ci_wait_ceiling` reads the top-level
+- `audit.py` (the cross-plan auditor, in the `plan-marshall-telemetry`
+  repository) — `_ratcheted_ci_wait_ceiling` reads the top-level
   `upper_limit_seconds` of the machine-global `build-queue.json` under the home
   root (`PLAN_MARSHALL_HOME` when set, else `~/.plan-marshall`), inline, per the
   skill's inline-reader rule. It is a genuine consumer of a population member and
-  it is invisible to the pinned population on **two** independent grounds: the
-  inventory does not walk its tree, and it never calls
+  it is invisible to the pinned population on **two** independent grounds: it
+  lives outside this repository, and it never calls
   `marketplace_paths.home_root` — it binds a LOCAL name `home_root` to the
   resolved path, which the call-aware classifier correctly reads as a non-call
   reference. Either ground alone would hide it, which is why it is dispositioned
@@ -257,7 +261,8 @@ category of the `default` module, so the `--category script` sweeps above and th
   `.plan/local/run-configuration.json` — the one path that file ever sits at — and
   each of the two reads degrades to the flat floor independently, so an absent or
   unreadable source never suppresses the other.
-- `global-log-analysis.md` — the interpretation guide for that reader. It states
+- `global-log-analysis.md` (same repository as `audit.py`) — the interpretation
+  guide for that reader. It states
   the same two sources, so the guide and the code cannot drift into describing
   different files.
 - `reconcile_daemon.py` — `_daemon_state_dir()` re-implements the home-root
