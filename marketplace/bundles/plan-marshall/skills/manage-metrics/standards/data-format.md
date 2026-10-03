@@ -74,7 +74,7 @@ The lattice has two directions and **both halves are first-class**. A field that
 | `subagent_tool_uses` | `cmd_enrich` | dispatched-subagent | Sum of the runtime's agent-reported tool-use counts across the same attributed dispatches | No render site |
 | `subagent_duration_ms` | `cmd_enrich` | dispatched-subagent | Sum of the runtime's agent-reported durations across the same attributed dispatches | Consumed only inside `_worked_ms`'s `max()`; never rendered as a figure of its own |
 | `subagent_samples` | `cmd_enrich` | dispatched-subagent | Count of dispatch returns attributed to the phase window | No render site — yet it is the only signal that separates a measured dispatched zero from a phase that was never walked |
-| `retrospective_tokens` | `_close_phase_accumulating` | dispatched-subagent | `--retrospective-tokens` flag (per-close delta, ADDED) or the accumulator's cumulative value (ASSIGNED) | No render site; read only by the audit checks that exclude deliberate-analysis spend |
+| `retrospective_tokens` | `_close_phase_accumulating` | dispatched-subagent | `--retrospective-tokens` flag (per-close delta, ADDED) or the accumulator's cumulative value (ASSIGNED) | No render site; read only by the cross-plan auditor's checks (in the `plan-marshall-telemetry` repository) that exclude deliberate-analysis spend |
 | `samples` (accumulator file) | `cmd_accumulate_agent_usage` | per-dispatch | Count of `accumulate-agent-usage` calls folded into the phase accumulator | Accumulator-local; `generate` reads the accumulator's totals but never its call count |
 | `tool_uses` (dispatch-boundary column 4) | `cmd_record_dispatch_boundary` | per-dispatch | `--tool-uses` at dispatch termination, default `0` | Recorded per dispatch, never aggregated into a phase figure and never rendered |
 | `duration_ms` (dispatch-boundary column 5) | `cmd_record_dispatch_boundary` | per-dispatch | `--duration-ms` at dispatch termination, default `0` | Recorded per dispatch, never aggregated and never rendered |
@@ -180,7 +180,7 @@ totals_tokens_spans_populations: true
 
 #### Exploration-share counters (absent is not zero)
 
-The ten `*_tool_calls` / `*_result_bytes` counters above are the inputs to the `exploration-share` audit check. Each observed tool call is classified by its tool name into one of five buckets, and both the call itself (turn share) and its result payload's byte length (payload-byte share) are accumulated into the phase window containing the call's timestamp. `exploration + work + execute` is the share denominator; `orchestration` and `unclassified` are emitted so the five buckets partition the observed population and the exclusion from the ratio stays auditable.
+The ten `*_tool_calls` / `*_result_bytes` counters above are the inputs to the cross-plan auditor's `exploration-share` check (in the `plan-marshall-telemetry` repository). Each observed tool call is classified by its tool name into one of five buckets, and both the call itself (turn share) and its result payload's byte length (payload-byte share) are accumulated into the phase window containing the call's timestamp. `exploration + work + execute` is the share denominator; `orchestration` and `unclassified` are emitted so the five buckets partition the observed population and the exclusion from the ratio stays auditable.
 
 **A counter is written only when the runtime supplied it.** An absent counter is NEVER persisted as `0`, and a *measured* zero IS persisted as `0`. The two are different facts: absent means the target declined the transcript primitive and measured nothing (OpenCode exposes no transcript, so it emits no bucket at all); zero means the walk ran and found no calls in that bucket. Collapsing them would let an unmeasured plan enter the `exploration-share` corpus as a maximally-efficient one. For the same reason `generate` renders these bullets on a **presence** test rather than the truthiness test the four-field bullets use — see the render-guard divergence comment at the per-phase render in `manage-metrics.py`.
 
@@ -415,7 +415,7 @@ The `inline_main_context_tokens` column above describes what **`enrich`** writes
 **The inline-only fold is deliberate, not a silent substitution.** Folding the
 inline sum into `total_tokens` is what keeps a zero-dispatch phase countable in
 the Phase Breakdown — the report reads `n=6/6` rather than `n=5/6` — and what
-keeps the downstream zero-token predicates (the audit's `incomplete_recording`
+keeps the downstream zero-token predicates (the telemetry repository auditor's `incomplete_recording`
 anomaly, the checkpoint budget verdict, the corpus percentile cut-points) off a
 phase that really did cost something. The defect the labelling closes is not the
 fold; it is a main-context figure being **read as** a dispatched one. Two records

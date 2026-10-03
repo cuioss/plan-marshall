@@ -47,8 +47,8 @@ build_time:
   # not the same as a build that did not run. It is published rather than dropped
   # so the identity holds; a four-term sum short of build_count leaves the
   # remainder unnamed, and an unnamed remainder reads as "these builds did not
-  # happen". Spelled `status_unknown` to mirror the audit side's
-  # `build_status_unknown` / `corpus_build_status_unknown`.
+  # happen". Spelled `status_unknown` to mirror the cross-plan auditor's
+  # `build_status_unknown` / `corpus_build_status_unknown` (plan-marshall-telemetry).
   population: change_ledger_build_rows
   ledger_present: true|false
   ledger_readable: true|false
@@ -154,7 +154,8 @@ Under the move-based finalize model the plan's OWN global logs
 (`{prefix}-YYYY-MM-DD.log`) are folded into `<plan_dir>/logs/` at
 integrate-into-main. `analyze-logs` parses those folded-in copies for per-plan
 operational signals (`global_log_signals`) — a complement to the cross-plan
-`global-log-analysis` audit check (which does cross-plan live-corpus correlation
+`global-log-analysis` check of the auditor in the `plan-marshall-telemetry`
+repository (which does cross-plan live-corpus correlation
 over phases 1-4); the per-plan view here surfaces each plan's own folded-in
 signals. A plan with no folded-in
 global logs (live mode before finalize, pre-fold archives) yields all-zero

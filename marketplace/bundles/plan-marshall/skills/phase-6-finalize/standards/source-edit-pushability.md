@@ -95,8 +95,8 @@ the owed edit, so the work is visible and scheduled rather than lost.
 Guessing a value that is not yet known at edit time (for example, hand-editing a PR
 number before the PR exists) is a special case of the same failure: it produces an
 unpushable or wrong edit that a later reader must silently reconcile. The correct
-shape is a deterministic, self-resolving sentinel filled by a pre-merge step from a
-value the dispatcher already provides.
+shape is to defer the edit until the value exists, and to fill it in a step that
+still runs before the merge.
 
 This rule is also the **sanctioned route for a `post_run_review: true` step that
 derives an architecture hint**. Such a step is ordered post-merge by construction,
@@ -122,9 +122,10 @@ When authoring a finalize step that edits source:
     on its own would push the same branch a second time, outside the single-push
     contract the barrier exists to hold. `default:architecture-refresh` (order 9) is
     the reference case — it commits its refreshed descriptor and stops.
-  - **Ordered AFTER `default:push`** — commit **and** push within the step, because no
-    later barrier will ship it. Self-committing and self-pushing is what makes such a
-    step's edit ride the PR.
+  - **Ordered AFTER `default:push`** — leave the edit to the dispatcher's commit
+    instrumentation, which commits it and then re-invokes `default:push` (the post-PR
+    re-push in [`../SKILL.md`](../SKILL.md) Step 3 item 5f), so the edit rides the PR
+    without the step pushing on its own.
 
   What the checklist item forbids in both cases is the same thing: do not leave the
   edit uncommitted, and do not defer the *responsibility* for shipping it to the
