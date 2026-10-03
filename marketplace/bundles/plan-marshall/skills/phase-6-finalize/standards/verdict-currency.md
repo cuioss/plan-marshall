@@ -144,15 +144,15 @@ it is "name a set the step's verdict provably cannot depend on the complement of
 distinction that decides it is what the step's body *does*:
 
 - **A verdict that is a property of NAMED FILES is trivially declarable**, and its surface is a
-  superset by construction rather than by survey. `project:finalize-step-era-stamp-fill` is the
-  worked positive case: it asserts that two files — named by full path in its own doc, and the
-  same pair it stages — carry no unresolved sentinel. Its declaration names a third path, the
-  executor whose matcher DEFINES "unresolved", because that is the one other tracked file whose
-  change could make the recorded claim false. Which is the general rule for a declaration:
-  **name what determines the TRUTH of the recorded claim, not what determines the step's future
-  behaviour.** A step's own procedural doc — its staging list, its detail wording — governs what
-  it does next time and cannot falsify a verdict already recorded about the tree, so it stays
-  out; a file that redefines what the verdict *means* stays in.
+  superset by construction rather than by survey: the declaration names the files the verdict
+  is a claim about, plus every other tracked file whose change could make the recorded claim
+  false — a file that defines the predicate the verdict asserts is the usual third entry. The
+  general rule for a declaration is: **name what determines the TRUTH of the recorded claim, not
+  what determines the step's future behaviour.** A step's own procedural doc — its staging list,
+  its detail wording — governs what it does next time and cannot falsify a verdict already
+  recorded about the tree, so it stays out; a file that redefines what the verdict *means* stays
+  in. No finalize step currently declares `verdict_inputs`; the mechanism stays available to any
+  step whose verdict has this shape.
 - **A verdict produced by a body that executes something OPEN-ENDED over the repository has no
   sound subset at all.** Three shapes recur, and each is independently disqualifying:
   1. **A test suite that asserts against the real tree** — this repository's own pytest reads

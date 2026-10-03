@@ -9,8 +9,8 @@ The single, shared contract for turning recurring user gate-dispositions
 (`suppressed` / `accepted` / `taken_into_account`) into durable architecture
 hints. It is consumed by BOTH preference-learning surfaces:
 
-- the **meta-only cross-plan auditor** (`audit-archived-plan-retrospectives`
-  Step 4c), which aggregates dispositions across the whole archived-plan corpus,
+- the **cross-plan auditor** in the `plan-marshall-telemetry` repository
+  (ADR-020), which aggregates dispositions across the whole archived-plan corpus,
   and
 - the **consumer-available per-plan emitter**
   (`default:finalize-step-preference-emitter`), which aggregates one plan's
@@ -199,8 +199,9 @@ threshold mechanism that decides which recurrences are surfaced. The threshold
 gate is owned by each surface:
 
 - the **cross-plan auditor** gates via its `THRESHOLDS` script constant
-  (`THRESHOLDS["preference_disposition_occurrences"]` in `scripts/audit.py`) —
-  meta-only; consumers cannot edit it;
+  (`THRESHOLDS["preference_disposition_occurrences"]` in the auditor's own
+  script, in the `plan-marshall-telemetry` repository) — consumers cannot edit
+  it;
 - the **per-plan emitter** gates via its `marshal.json` config knob (its
   `configurable:` block) — consumers CAN edit it.
 

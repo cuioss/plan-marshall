@@ -333,11 +333,6 @@ def test_unresolvable_sha_reports_failure_not_an_empty_difference(git_repo: Path
     assert paths == []
 
 
-def test_at_least_one_step_declares_a_verdict_input_surface():
-    """A conformance guard over an empty population is vacuously green."""
-    assert _declared_surfaces(), 'no finalize step declares verdict_inputs'
-
-
 def test_real_resolver_reports_an_unknown_step_as_unresolved():
     """An unrecognised key must fail closed, not resolve to an empty surface."""
     _globs, _head_dependent, unresolved = _mod.resolve_verdict_inputs('no-such-finalize-step')
