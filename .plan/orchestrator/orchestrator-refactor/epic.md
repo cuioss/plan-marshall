@@ -159,6 +159,15 @@ cannot express.}
 
 ## Decisions
 
+- 2026-10-03 — **`cleanup` pass after the PLAN-10 landing.** Corpus: 11 rows and 11 specs, reconciled both
+  ways, none running; all 11 surfaces `declarative`; 0 source-origin duplicates. **Applied: nothing** — no spec
+  is staged. **Declined, by name:** re-grounding of the 7 shipped specs (terminal) and of parked PLAN-03/05/06/07
+  (PM-MCP do-not-emit park; verdicts stay stale on purpose and must be refreshed before any un-park).
+  Settled-narrative relocation deferred again, pending operator confirmation; candidates are the shipped-plan
+  residue for PLAN-01/02/04/08/09/10/11 in Decisions and Queue annotations. Compaction: view unchanged, both
+  invariants ok, 6 relocation pointers reachable. Inbox archive drain refused (no epic-wide quiescence signal).
+  Restart verdict `ready` (5 of 6 signals scored; `registry_parity` not available).
+
 - 2026-10-03 — **PLAN-10 landed (#1690, `7a0af07c5`); reconciled via `analyze` (inbox scan, 9 messages).** The
   landing message was complete (`landing-check`: no missing key) and corroborated against `ci pr view` (merged),
   ancestry on fetched `origin/main`, and the merge commit's file list. Row `running` → `shipped`, `pr` and
