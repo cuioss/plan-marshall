@@ -97,8 +97,9 @@ Callers that need a different ceiling pass `--timeout` explicitly. For example, 
 | `checks wait-for-status-flip` | PR CI status must transition from `pending` to a terminal state (`success` / `failure`). | `pr-doctor` after pushing fixes, before re-reading CI results |
 | `issue wait-for-close` | Automation blocks until an issue's state flips from `open` (triage / merge-queue closes it). | Automation that gates follow-up work on issue closure |
 | `issue wait-for-label` | Automation gates on a label being added or removed (e.g., `ready-for-review`, `blocked`). | Review-gate automations that watch label state |
+| `pr wait-for-queue-settle` | An enqueued PR must leave the merge queue — merged, closed, or dequeued by a failed merge group — before the caller continues. **GitHub only.** | The orchestrator ledger land flow, after `pr merge-queue` |
 
-All four subcommands follow the recipe in section 3 and honour the timeout/interval contract in section 4.
+All five subcommands follow the recipe in section 3 and honour the timeout/interval contract in section 4. `pr wait-for-queue-settle` is no exception to either: it snapshots its baseline once, passes `--timeout` / `--interval` straight to `poll_until`, and reports the deadline as `timed_out: true` beside `settle: timeout`. What it predicates on is the PR's observed state — `pr_state`, queue membership, armed auto-merge, and the newest merge-group run — not a count, and a read it could not complete is carried as `indeterminate` rather than read as a settled state. See [`pr-operations.md`](pr-operations.md) § "Workflow: Merge-Queue State and Settle Wait".
 
 ---
 

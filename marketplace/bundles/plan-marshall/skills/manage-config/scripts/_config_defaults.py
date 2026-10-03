@@ -986,6 +986,15 @@ DEFAULT_PLAN_EXECUTE = {
     # plan time. The 400K default leaves headroom below a typical context window.
     # Registering it here makes the packing budget operator-visible in marshal.json.
     'per_envelope_budget_tokens': '400K',
+    # Project-declared derived-state setup for a plan worktree. A LIST of argv
+    # lists (e.g. [['<generator>', '--output', '<dir>']]);
+    # `prepare_execute` runs each one with cwd pinned to the worktree — no shell —
+    # on the fresh move-in and on the re-entry path, so git-ignored derived state a
+    # fresh checkout lacks (generated trees, caches) is built where the plan runs.
+    # Non-fatal: a failing command is reported in the move-in payload's
+    # `worktree_setup[]` and never fails or rolls back the move-in. The empty-list
+    # default is a no-op, so a project that declares nothing sees no change.
+    'worktree_setup_commands': [],
     # Verification steps as the canonical keyed-map form: an id-keyed object
     # `{step_id: {params}}` whose key insertion order is the execution order.
     # Verification steps own no params, so every built-in verify step seeds with

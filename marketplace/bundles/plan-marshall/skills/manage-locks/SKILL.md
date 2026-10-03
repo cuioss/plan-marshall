@@ -85,7 +85,7 @@ Two primitives live here:
 - Do not couple the rate-window claim to the merge mutex — a `rate-window` action must never acquire, contend for, or release `merge.lock`, and must never read or mutate the `waiting` FIFO list. The two claims share the store, not the mutex.
 - Do not return a freshly-constructed state dict from an `rmw_json` mutator — merge into the state handed in, so a co-tenant top-level key is never silently erased.
 - Do not invent script arguments not listed in the **Canonical invocations** section below.
-- Do not re-implement holder-liveness or main-anchored read-modify-write in a consumer — import the shared helpers from `_locks_core` so there is one TOCTOU-safe serialization surface, not parallel copies.
+- Do not re-implement holder-liveness, main-anchored read-modify-write, or the guard acquire/release pair in a consumer — import the shared helpers from `_locks_core` so there is one TOCTOU-safe serialization surface, not parallel copies. A consumer that needs the guard around a critical section that is not a JSON read-modify-write holds it through `_locks_core.held_guard`; `_acquire_guard` is private to `_locks_core` and is never imported (see **Holding the guard around a non-JSON critical section** below).
 - Do not add a second main-anchored resolution path for per-repo state — route `merge.lock` and `merge-queue.json` through `resolve_main_anchored_path` (the single ADR-002 sanctioned utility). Route `build-queue.json` through `home_root()` (the machine-global tier), NOT `resolve_main_anchored_path` — the build queue is host-wide, and binding it to one repository's main checkout would break cross-repo build coordination.
 
 **Constraints:**
@@ -128,6 +128,39 @@ on — which is exactly why the FIFO mutators **merge** their result into the st
 they were handed rather than returning a freshly-constructed `{"waiting": ...}`: a
 wholesale replace would silently erase the co-tenant `rate_windows` key on the next
 merge acquire.
+
+## Holding the guard around a non-JSON critical section
+
+`_locks_core.held_guard(guard_path)` is the sanctioned way to hold the shared
+`O_EXCL` guard-file mutex around a critical section that is **not** a JSON
+read-modify-write. It is a context manager: it acquires the guard, runs the
+`with` block, and releases the guard in a `finally` whether the block returns
+or raises. It is the one
+acquire/release implementation in the skill: `rmw_json` and `read_json_guarded`
+are themselves expressed on top of it, with the same spin backoff, timeout and
+stale-reclaim constants. A guard that cannot be acquired within the budget raises
+`TimeoutError` to the caller, and the block does not run.
+
+**The critical section must be short.** A guard older than the stale threshold is
+treated as abandoned and reclaimed by the next acquirer, so a block that outlives
+that threshold loses its mutual exclusion while it is still running. Keep network
+round-trips, builds, and anything else of unbounded duration outside the block.
+The check-then-act mitigation menu this guard belongs to lives in
+[`ref-code-quality/standards/code-organization.md`](../ref-code-quality/standards/code-organization.md#toctou--check-then-act-hazards).
+
+Two consumers hold the guard this way:
+
+- `manage-status/scripts/_orchestrator_ledger.py` — `create_row` holds the queue
+  guard across the existing-file check, the row scan, the sequence allocation and
+  the publish of the new row file.
+- `plan-orchestrator/scripts/_orchestrator_land.py` — the ledger land module holds
+  the guard in its `snapshot` (twice: around the commit, and around the ref
+  writes after the push), `bind` and `resync` (around the replay and the ref
+  deletion) verbs, with the git calls of each section on one shared deadline
+  below the stale threshold.
+
+`_acquire_guard` is private to `_locks_core`. Nothing outside that module imports
+it, and no consumer pairs it with a release of its own.
 
 ## Anchoring: per-repo main vs machine-global home root
 

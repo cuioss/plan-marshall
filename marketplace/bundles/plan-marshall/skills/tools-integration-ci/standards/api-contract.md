@@ -148,6 +148,8 @@ Those four keys describe the error shape of a subcommand that reached the provid
 | `pr view` | — (uses current branch) | _at most one of_ `--pr-number` _or_ `--head` | **Success**: `pr_number`, `pr_url`, `state`, `title`, `head_branch`, `base_branch`, `is_draft`, `mergeable`, `merge_state`, `review_decision`, `merge_commit_sha`, `body` (emitted last, as a block scalar — see [pr-operations.md](pr-operations.md) § "`body` — the description, whole"). **Error**: `status`, `operation`, `error`, and `error_cause` on every arm; `context` on every arm EXCEPT the pre-provider auth failure, which has no provider output to report — see § "`pr view` and the `error_cause` discriminator" |
 | `pr list` | — | `--head {branch}`, `--state open\|closed\|all` (default `open`), `--limit {n}` **(GitHub only, default 100)** | `total`, `state_filter`, `head_filter`, `prs[N]{number,url,title,state,head_branch,base_branch}`, plus `limit` and `truncated` **(GitHub only)** |
 | `pr landing-state` **(GitHub only)** | — (uses the routed working tree's checked-out branch) | `--branch {branch}` | `provider`, `branch`, `tip_sha`, `pushed`, `pr_count`, `landing_state`, `landing_states` |
+| `pr queue-state` **(GitHub only)** | `--pr-number` | — | `pr_number`, `pr_state`, `merge_commit_sha`, `in_queue`, `queue_position`, `queue_entry_state`, `auto_merge_armed`, `merge_group_run{found,run_id,status,conclusion,url}`, `observation` |
+| `pr wait-for-queue-settle` **(GitHub only)** | `--pr-number` | `--timeout` (default `DEFAULT_CI_TIMEOUT`), `--interval` (default `DEFAULT_CI_INTERVAL`) | `pr_number`, `timed_out`, `duration_sec`, `polls`, `settle`, `baseline{…}`, `final{…}` — `baseline` and `final` each carry the `pr queue-state` observation fields |
 | `pr reply` | `--pr-number`, `--plan-id` | `--slot` | `pr_number` |
 | `pr resolve-thread` | `--thread-id` (GitLab also requires `--pr-number`) | — | `thread_id` |
 | `pr thread-reply` | `--pr-number`, `--thread-id`, `--plan-id` | `--slot` | `pr_number`, `thread_id` |
@@ -161,6 +163,23 @@ Those four keys describe the error shape of a subcommand that reached the provid
 `--limit`, `limit` and `truncated` are **GitHub-only**. The flag is registered on the shared `pr list` subparser by the GitHub front-end rather than by `ci_base.build_parser`, so **GitLab argparse-rejects `--limit`** instead of accepting and ignoring it; GitLab's listing stays bounded by `glab`'s own page size and carries no `limit` and no `truncated` field. Treat a GitLab `total` as a page, not a population — the asymmetry is deliberate and is recorded as declared residue rather than silently closed, because an accepted-and-ignored flag would hand GitLab callers a page-bounded count with no evidence beside it.
 
 **`pr landing-state` field semantics.** `landing_state` is exactly one member of `landing_states`, the verb's own declared population (`merged`, `pr_open`, `pushed_no_pr`, `unpushed`) — published on the response so a consumer asserts against the verb's declaration rather than a hand-copied list. `pr_count` counts only PRs whose head IS `tip_sha`, which is why a stale PR that merged a previous tip on a reused branch name cannot report `merged`. `pushed` is `true` / `false` when remote containment was readable and `null` when it was not; a `null` is only ever returned alongside a `merged` / `pr_open` verdict, because those rest on the PR listing rather than on git — when the verdict WOULD rest on push evidence that could not be read, the verb returns `status: error` instead. That is the general posture: unreadable evidence produces an error, never a state that could clear the pre-archive gate.
+
+**`pr queue-state` field semantics.** `operation` is `pr_queue_state`. `pr_state` is one of `open` / `merged` / `closed`. `merge_commit_sha` is the landing commit of a merged PR and an explicit `null` otherwise — never an empty string. `in_queue`, `auto_merge_armed` and `merge_group_run.found` are tri-state: `true`, `false`, or the string `indeterminate`. `indeterminate` means the read that would have filled the field failed or could not be completed — for `merge_group_run.found` that includes a run list that filled its read bound without a run for the PR — and it is never reported as `false`. `queue_position` and `queue_entry_state` are `null` unless `in_queue` is `true`; the `merge_group_run` fields `run_id`, `status`, `conclusion` and `url` are `null` unless `found` is `true`. `observation` names each read and what it saw. An `indeterminate` field does not fail the verb: it is returned with `status: success` beside a `pr_state` that was read.
+
+**`pr wait-for-queue-settle` field semantics.** `operation` is `pr_wait_for_queue_settle`. `settle` is exactly one of `merged`, `closed`, `dequeued`, `timeout`. `settle: timeout` holds exactly when `timed_out` is `true`, and that return is `status: success` — the verb has no `status: timeout`. `dequeued` holds only when `final.pr_state` is `open`, `final.in_queue` is `false`, `final.auto_merge_armed` is `false`, and `final.merge_group_run` is `found: true` with `status: completed` and a conclusion other than `success`; an `indeterminate` value on any of those never yields `dequeued`. `baseline` is the observation taken once before polling and `final` the last observation, so a caller diffs the two.
+
+**The `pr_read_failed` error, shared by both verbs.** When the PR itself cannot be read — `pr view` fails, or reports a state outside `open` / `merged` / `closed` — both verbs return:
+
+```toon
+status: error
+operation: pr_queue_state | pr_wait_for_queue_settle
+error: pr_read_failed
+pr_number: 123
+message: <what the PR read reported>
+context: <the provider's detail, or empty>
+```
+
+`error` carries the machine-readable code and `message` the human text. On `pr wait-for-queue-settle` a failed BASELINE read returns this without polling; a read that fails during the poll returns it with the `polls` and `duration_sec` reached. It is distinct from an `indeterminate` queue or run read, which is not an error.
 
 ### Provider Field Mapping
 

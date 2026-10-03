@@ -16,7 +16,10 @@ model (ADR-002, solution_outline.md §4):
      (``.plan/execute-script.py``) is NOT moved — it is per-tree DERIVED state:
      main's copy stays present and untouched, and a worktree-bound copy is
      GENERATED into the worktree (via ``generate_executor --marketplace-root``).
-  3. **Return** a status TOON carrying the canonical ``worktree_path`` and a
+  3. **Set up** project-declared derived state: the argv lists under
+     ``plan.phase-5-execute.worktree_setup_commands`` run with cwd pinned to the
+     worktree (non-fatal; each outcome is reported in ``worktree_setup[]``).
+  4. **Return** a status TOON carrying the canonical ``worktree_path`` and a
      ``status`` field.
 
 Concurrency / crash correctness (solution_outline.md §4 "Concurrency-correctness
@@ -47,7 +50,9 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shlex
 import shutil
+import signal
 import subprocess
 import sys
 from argparse import Namespace
@@ -221,6 +226,12 @@ def _restore_slot(src: Path, dst: Path) -> None:
 #      Also universal, but conditional on positively-detected drift.
 #   3. The meta-project-only, post-merge REgeneration of MAIN's executor by
 #      ``project:finalize-step-sync-plugin-cache``.
+#
+# The executor is the one piece of derived state every worktree needs. Any OTHER
+# git-ignored derived state a project needs in a fresh worktree (a generated
+# output tree, a cache) is project-declared, not hard-coded here: the
+# ``plan.phase-5-execute.worktree_setup_commands`` seam below runs those commands
+# right after the executor is produced, on the same move-in and re-entry paths.
 
 _GENERATE_EXECUTOR_PATH = _THIS_DIR.parent.parent / 'tools-script-executor' / 'scripts' / 'generate_executor.py'
 
@@ -368,7 +379,9 @@ def _already_moved_in_response(worktree_path: Path, plan_id: str, *, main_copy_a
 
     Self-heals a partial materialization the same way both call sites need: when
     the worktree executor is missing on disk, regenerate/copy it before
-    reporting ``healed`` instead of a bare ``noop``.
+    reporting ``healed`` instead of a bare ``noop``. The project-declared setup
+    commands run on both outcomes, after the executor is in place, so re-running
+    ``prepare`` on an existing worktree builds any derived state it still lacks.
     """
     suffix = ' (main copy absent on re-entry)' if main_copy_absent else ''
     wt_executor = _worktree_executor_path(worktree_path)
@@ -378,6 +391,7 @@ def _already_moved_in_response(worktree_path: Path, plan_id: str, *, main_copy_a
     # this same flag and would otherwise block dispatch on a success.
     verified = is_worktree_materialized(plan_id, worktree_path)
     if _executor_landed(wt_executor):
+        worktree_setup = _run_worktree_setup(worktree_path)
         return {
             'status': 'success',
             'plan_id': plan_id,
@@ -387,8 +401,10 @@ def _already_moved_in_response(worktree_path: Path, plan_id: str, *, main_copy_a
             'worktree_materialized': verified,
             'worktree_materialized_persisted': persisted,
             'persist_detail': persist_detail,
+            'worktree_setup': worktree_setup,
         }
     generated, executor_detail = _generate_worktree_executor(worktree_path, plan_id)
+    worktree_setup = _run_worktree_setup(worktree_path)
     healed_suffix = ' (main copy absent)' if main_copy_absent else ''
     return {
         'status': 'success',
@@ -401,6 +417,7 @@ def _already_moved_in_response(worktree_path: Path, plan_id: str, *, main_copy_a
         'worktree_materialized': verified,
         'worktree_materialized_persisted': persisted,
         'persist_detail': persist_detail,
+        'worktree_setup': worktree_setup,
     }
 
 
@@ -541,6 +558,172 @@ def _generate_worktree_executor(worktree_path: Path, plan_id: str) -> tuple[bool
     if copied:
         return True, copy_detail
     return False, f'{launch_detail}; {copy_detail}'
+
+
+# ---------------------------------------------------------------------------
+# project-declared worktree setup commands
+# ---------------------------------------------------------------------------
+#
+# A fresh worktree carries only git-tracked content, so git-ignored derived state
+# the project's own build or tests expect (a generated output tree, a cache) is
+# missing there. The project declares the commands that build it under
+# ``plan.phase-5-execute.worktree_setup_commands`` — a list of argv lists — and
+# this seam runs them with cwd pinned to the worktree. Nothing project-specific is
+# hard-coded: an absent or empty key is a no-op.
+
+#: Plan-scoped marshal.json key (under ``plan.phase-5-execute``) holding the
+#: project-declared setup commands.
+WORKTREE_SETUP_COMMANDS_FIELD = 'worktree_setup_commands'
+
+#: Upper bound for one setup command. A fresh worktree may bootstrap its build
+#: tooling on first use, so the bound is generous; it exists so a hung command
+#: is reported instead of stalling the move-in forever.
+_SETUP_COMMAND_TIMEOUT_SECONDS = 900
+
+#: Upper bound for reaping a setup command after its process group was killed.
+_SETUP_REAP_TIMEOUT_SECONDS = 10
+
+
+def _read_worktree_setup_commands(worktree_path: Path) -> tuple[list[Any], str | None]:
+    """Read the declared setup commands from the worktree's own marshal.json.
+
+    The worktree's tracked ``.plan/marshal.json`` is read rather than main's: the
+    commands describe the tree being set up, and on a re-entry that tree may
+    carry a branch-local edit of the key.
+
+    Returns ``(entries, error)``. An absent file, ``plan`` section,
+    ``phase-5-execute`` section, or key yields ``([], None)`` — the no-op
+    default. An unreadable file — invalid UTF-8 included — or an unparseable
+    one yields ``([], detail)``, and so
+    does a key that is PRESENT with any non-list value: JSON ``null`` is a
+    declared value of the wrong shape, not an absent key, and is reported like
+    every other non-list.
+    """
+    marshal_path = worktree_path / PLAN_DIR_NAME / 'marshal.json'
+    try:
+        raw = marshal_path.read_text(encoding='utf-8')
+    except FileNotFoundError:
+        return [], None
+    except (OSError, UnicodeError) as exc:
+        return [], f'cannot read {marshal_path}: {exc}'
+    try:
+        config = json.loads(raw)
+    except ValueError as exc:
+        return [], f'cannot parse {marshal_path}: {exc}'
+    plan = config.get('plan') if isinstance(config, dict) else None
+    phase = plan.get('phase-5-execute') if isinstance(plan, dict) else None
+    if not isinstance(phase, dict) or WORKTREE_SETUP_COMMANDS_FIELD not in phase:
+        return [], None
+    commands = phase[WORKTREE_SETUP_COMMANDS_FIELD]
+    if not isinstance(commands, list):
+        return [], f'{WORKTREE_SETUP_COMMANDS_FIELD} is not a list of argv lists: {commands!r}'
+    return commands, None
+
+
+def _kill_setup_process_group(process: subprocess.Popen[str]) -> None:
+    """Stop a timed-out setup command together with everything it spawned.
+
+    The command runs as the leader of its own session, so its pid is also its
+    process-group id and one ``SIGKILL`` to the group reaches a wrapper's worker
+    processes as well as the wrapper. A group that is already gone is not an
+    error. The child is then reaped; the reap is bounded so a descendant that
+    left the group and still holds the stderr pipe cannot stall the move-in.
+    Never raises.
+    """
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except OSError:
+        # ProcessLookupError (the group already exited) is the expected case;
+        # any other failure to signal must not break the non-fatal contract.
+        pass
+    try:
+        process.communicate(timeout=_SETUP_REAP_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        if process.stderr is not None:
+            try:
+                process.stderr.close()
+            except OSError:
+                pass
+        try:
+            process.wait(timeout=_SETUP_REAP_TIMEOUT_SECONDS)
+        except (OSError, subprocess.SubprocessError):
+            pass
+    except (OSError, ValueError, subprocess.SubprocessError):
+        pass
+
+
+def _run_worktree_setup(worktree_path: Path) -> list[dict[str, Any]]:
+    """Run the project-declared setup commands in the worktree; report each one.
+
+    Each declared argv list is launched via :class:`subprocess.Popen` with
+    ``cwd`` pinned to ``worktree_path``, no shell, and in its own session.
+    stdout is discarded — nothing reads it — and only stderr is captured. A
+    command that exceeds ``_SETUP_COMMAND_TIMEOUT_SECONDS`` has its whole
+    process group killed, so a wrapper's worker cannot keep writing into the
+    worktree after the timeout was reported. NON-FATAL by contract: this never
+    raises and never rolls back the move-in — by the time it runs the plan dir
+    is already resident in the worktree, and a setup failure is repairable by
+    re-running ``prepare`` (the re-entry path runs the commands again).
+
+    Returns one record per declared entry — ``command`` (the argv, shell-quoted
+    for display), ``exit_code`` (``None`` when the command never ran), and
+    ``detail`` (the last stderr line, or why the command did not run). A config
+    that could not be read yields a single record naming the problem. The empty
+    list means nothing was declared.
+    """
+    commands, read_error = _read_worktree_setup_commands(worktree_path)
+    if read_error is not None:
+        return [{'command': '-', 'exit_code': None, 'detail': read_error}]
+
+    outcomes: list[dict[str, Any]] = []
+    for entry in commands:
+        if not (isinstance(entry, list) and entry and all(isinstance(arg, str) and arg for arg in entry)):
+            outcomes.append(
+                {
+                    'command': repr(entry),
+                    'exit_code': None,
+                    'detail': 'skipped: entry is not a non-empty list of non-empty strings',
+                }
+            )
+            continue
+        command = shlex.join(entry)
+        try:
+            process = subprocess.Popen(
+                entry,
+                cwd=str(worktree_path),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+                start_new_session=True,
+            )
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            outcomes.append({'command': command, 'exit_code': None, 'detail': f'failed to launch: {exc}'})
+            continue
+        try:
+            _, stderr = process.communicate(timeout=_SETUP_COMMAND_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            _kill_setup_process_group(process)
+            outcomes.append(
+                {
+                    'command': command,
+                    'exit_code': None,
+                    'detail': f'timed out after {_SETUP_COMMAND_TIMEOUT_SECONDS}s',
+                }
+            )
+            continue
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            _kill_setup_process_group(process)
+            outcomes.append({'command': command, 'exit_code': None, 'detail': f'failed while running: {exc}'})
+            continue
+        lines = (stderr or '').strip().splitlines()
+        if lines:
+            detail = lines[-1]
+        elif process.returncode == 0:
+            detail = 'ok'
+        else:
+            detail = f'exit {process.returncode}'
+        outcomes.append({'command': command, 'exit_code': process.returncode, 'detail': detail})
+    return outcomes
 
 
 # ---------------------------------------------------------------------------
@@ -725,6 +908,12 @@ def run_prepare_execute(args: Namespace) -> dict[str, Any]:
     # in the payload but never rolls back the completed plan-dir move.
     generated, executor_detail = _generate_worktree_executor(worktree_path, plan_id)
 
+    # --- Step 4: project-declared derived-state setup ----------------------
+    # Runs once the executor is in place. Non-fatal like the executor step: a
+    # failing command is reported in worktree_setup[] and never rolls back the
+    # completed move.
+    worktree_setup = _run_worktree_setup(worktree_path)
+
     persisted, persist_detail = _persist_worktree_materialized(plan_id, worktree_path)
 
     # Claim only what the read-back confirms (see _already_moved_in_response).
@@ -742,6 +931,7 @@ def run_prepare_execute(args: Namespace) -> dict[str, Any]:
             'worktree_materialized': verified,
             'worktree_materialized_persisted': persisted,
             'persist_detail': persist_detail,
+            'worktree_setup': worktree_setup,
         }
     )
 

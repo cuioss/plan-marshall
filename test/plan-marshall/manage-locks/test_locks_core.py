@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import json
 import os
+import threading
+import time
 
 import pytest
 from _locks_core_fixtures import (
@@ -195,6 +197,240 @@ def test_acquire_guard_times_out_when_held(tmp_path, monkeypatch):
     finally:
         os.close(held_fd)
         guard.unlink()
+
+
+def _fail_unlink_of(monkeypatch, guard, error, *, remove_first=False):
+    """Make ``os.unlink(guard)`` raise ``error``; every other path unlinks normally.
+
+    With ``remove_first`` the guard is really removed before the error is
+    raised, which is the on-disk state a lost reclaim race leaves behind.
+    Returns the list the patched primitive records its guard calls in.
+    """
+    real_unlink = os.unlink
+    calls: list[str] = []
+
+    def patched_unlink(path, *args, **kwargs):
+        if str(path) != str(guard):
+            return real_unlink(path, *args, **kwargs)
+        calls.append(str(path))
+        if remove_first:
+            real_unlink(path)
+        raise error
+
+    monkeypatch.setattr(_mod.os, 'unlink', patched_unlink)
+    return calls
+
+
+def _record_backoff_sleeps(monkeypatch):
+    """Record every backoff sleep the guard spin performs, without waiting."""
+    sleeps: list[float] = []
+    monkeypatch.setattr(_mod.time, 'sleep', sleeps.append)
+    return sleeps
+
+
+def test_acquire_guard_times_out_when_a_stale_guard_cannot_be_removed(tmp_path, monkeypatch):
+    """An unremovable stale guard spends the budget and ends in ``TimeoutError``.
+
+    The reclaim fails with something other than "already gone", so the path is
+    still occupied. The attempt must reach the deadline check and the backoff
+    sleep; a loop that retried the create straight away would never leave.
+    """
+    monkeypatch.setattr(_mod, '_GUARD_STALE_SECONDS', -1.0)
+    monkeypatch.setattr(_mod, '_GUARD_TIMEOUT_SECONDS', 0.05)
+    monkeypatch.setattr(_mod, '_GUARD_BACKOFF_SECONDS', 0.005)
+    guard = tmp_path / 'state.json.lock'
+    guard.write_text('', encoding='utf-8')
+    unlink_calls = _fail_unlink_of(monkeypatch, guard, PermissionError('guard is not removable'))
+    real_sleep = time.sleep
+    sleeps: list[float] = []
+
+    def recording_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        real_sleep(seconds)
+
+    monkeypatch.setattr(_mod.time, 'sleep', recording_sleep)
+
+    with pytest.raises(TimeoutError):
+        _acquire_guard(guard)
+
+    assert unlink_calls, 'the stale guard was never offered for reclaim'
+    assert sleeps and set(sleeps) == {0.005}
+    assert guard.exists()
+
+
+def test_acquire_guard_acquires_a_stale_guard_another_session_reclaimed_first(tmp_path, monkeypatch):
+    """A stale guard that vanishes between the stat and the unlink is still acquired.
+
+    ``FileNotFoundError`` means the path is free, so the create is retried at
+    once: no backoff sleep is spent on a guard that is already gone.
+    """
+    monkeypatch.setattr(_mod, '_GUARD_STALE_SECONDS', -1.0)
+    guard = tmp_path / 'state.json.lock'
+    guard.write_text('', encoding='utf-8')
+    unlink_calls = _fail_unlink_of(monkeypatch, guard, FileNotFoundError(str(guard)), remove_first=True)
+    sleeps = _record_backoff_sleeps(monkeypatch)
+
+    fd = _acquire_guard(guard)
+    try:
+        acquired = guard.exists()
+    finally:
+        os.close(fd)
+
+    assert (acquired, len(unlink_calls), sleeps) == (True, 1, [])
+
+
+# =============================================================================
+# held_guard — the one acquire/release implementation
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    ('reclaimed_by_successor', 'guard_exists_after_exit'),
+    [
+        pytest.param(True, True, id='successor-guard-is-left-in-place'),
+        pytest.param(False, False, id='own-guard-is-removed'),
+    ],
+)
+def test_held_guard_exit_removes_only_the_guard_it_created(tmp_path, reclaimed_by_successor, guard_exists_after_exit):
+    """A holder that outlived the stale threshold must not release its successor.
+
+    The successor's reclaim is reproduced on disk as it happens: the holder's
+    guard is unlinked and a new file is created at the same path while the
+    holder's fd is still open, so the two are different inodes. The matched
+    control leaves the guard alone and shows the ordinary exit still removes it.
+    """
+    guard = tmp_path / 'section.lock'
+
+    with _mod.held_guard(guard):
+        if reclaimed_by_successor:
+            guard.unlink()
+            guard.write_text('successor', encoding='utf-8')
+
+    assert guard.exists() is guard_exists_after_exit
+    if reclaimed_by_successor:
+        assert guard.read_text(encoding='utf-8') == 'successor'
+
+
+def test_held_guard_holds_the_guard_inside_the_body_and_removes_it_after(tmp_path):
+    guard = tmp_path / 'section.lock'
+
+    with _mod.held_guard(guard):
+        held_inside = guard.exists()
+
+    assert (held_inside, guard.exists()) == (True, False)
+
+
+def test_held_guard_removes_the_guard_when_the_body_raises(tmp_path):
+    """The release is a ``finally``: a raising body must not wedge the guard."""
+    guard = tmp_path / 'section.lock'
+
+    with pytest.raises(RuntimeError, match='critical section failed'), _mod.held_guard(guard):
+        raise RuntimeError('critical section failed')
+
+    assert not guard.exists()
+
+
+def test_held_guard_blocks_a_second_acquirer_until_release(tmp_path, monkeypatch):
+    """A second acquirer enters only after the first holder leaves its block.
+
+    The ordering is established without a wall-clock wait. The worker's backoff
+    sleep is the observable proof that it reached the held guard and was turned
+    away, so the holder releases only after that signal — and the worker can
+    record its entry only once the guard file is gone.
+    """
+    monkeypatch.setattr(_mod, '_GUARD_STALE_SECONDS', 10_000.0)
+    monkeypatch.setattr(_mod, '_GUARD_BACKOFF_SECONDS', 0.001)
+    guard = tmp_path / 'section.lock'
+    turned_away = threading.Event()
+    real_sleep = time.sleep
+    events: list[str] = []
+    errors: list[Exception] = []
+
+    def signalling_sleep(seconds: float) -> None:
+        turned_away.set()
+        real_sleep(seconds)
+
+    monkeypatch.setattr(_mod.time, 'sleep', signalling_sleep)
+
+    def second_acquirer() -> None:
+        try:
+            with _mod.held_guard(guard):
+                events.append('second-entered')
+        except Exception as exc:  # broad on purpose: surfaced by the assertion below
+            errors.append(exc)
+
+    worker = threading.Thread(target=second_acquirer)
+    with _mod.held_guard(guard):
+        worker.start()
+        blocked = turned_away.wait(timeout=30)
+        events.append('first-releasing')
+    worker.join(timeout=30)
+
+    assert (blocked, worker.is_alive(), errors) == (True, False, [])
+    assert events == ['first-releasing', 'second-entered']
+    assert not guard.exists()
+
+
+def test_held_guard_reclaims_a_guard_older_than_the_stale_threshold(tmp_path, monkeypatch):
+    monkeypatch.setattr(_mod, '_GUARD_STALE_SECONDS', -1.0)
+    guard = tmp_path / 'section.lock'
+    guard.write_text('', encoding='utf-8')  # left behind by a killed holder
+
+    with _mod.held_guard(guard):
+        entered = True
+
+    assert (entered, guard.exists()) == (True, False)
+
+
+def test_held_guard_does_not_run_the_body_when_a_fresh_guard_is_held(tmp_path, monkeypatch):
+    """Matched control for the stale reclaim: a guard inside the threshold is honoured.
+
+    The same pre-existing guard file that is reclaimed above blocks here, where
+    only the threshold differs. The ``TimeoutError`` reaches the caller and the
+    block never runs.
+    """
+    monkeypatch.setattr(_mod, '_GUARD_STALE_SECONDS', 10_000.0)
+    monkeypatch.setattr(_mod, '_GUARD_TIMEOUT_SECONDS', 0.05)
+    monkeypatch.setattr(_mod, '_GUARD_BACKOFF_SECONDS', 0.005)
+    guard = tmp_path / 'section.lock'
+    guard.write_text('', encoding='utf-8')
+    entered = False
+
+    with pytest.raises(TimeoutError), _mod.held_guard(guard):
+        entered = True
+
+    assert (entered, guard.exists()) == (False, True)
+
+
+# =============================================================================
+# rmw_json — unchanged on top of held_guard
+# =============================================================================
+
+
+def test_rmw_json_commits_and_returns_the_mutated_state_and_releases_the_guard(tmp_path):
+    path = tmp_path / 'state.json'
+    path.write_text(json.dumps({'count': 1}), encoding='utf-8')
+
+    result = _mod.rmw_json(path, lambda state: {**state, 'count': state['count'] + 1})
+
+    assert result == {'count': 2}
+    assert json.loads(path.read_text(encoding='utf-8')) == {'count': 2}
+    assert not (tmp_path / 'state.json.lock').exists()
+
+
+def test_rmw_json_releases_the_guard_and_commits_nothing_when_the_mutator_raises(tmp_path):
+    path = tmp_path / 'state.json'
+    path.write_text(json.dumps({'count': 1}), encoding='utf-8')
+    before = path.read_bytes()
+
+    def failing_mutator(_state):
+        raise RuntimeError('mutator failed')
+
+    with pytest.raises(RuntimeError, match='mutator failed'):
+        _mod.rmw_json(path, failing_mutator)
+
+    assert path.read_bytes() == before
+    assert not (tmp_path / 'state.json.lock').exists()
 
 
 # =============================================================================

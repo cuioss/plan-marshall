@@ -2024,6 +2024,15 @@ def cmd_worktree_remove(args):
     unresolvable name both surface as ``branch_warning`` — so no success payload
     leaves a stranded branch unmentioned.
 
+    Reserved-key refusal (script-enforced, ahead of both preconditions below):
+    the reserved shared orchestrator ledger key
+    (:data:`marketplace_paths.ORCHESTRATOR_WORKTREE_KEY`) is refused with
+    ``error: reserved_worktree_name`` BEFORE any path resolution, structural
+    probe, filesystem touch, or git call. That tree is a non-plan worktree no
+    ``worktree-*`` verb may remove, and without this refusal the structural
+    probe would resolve it — its slot sits under the same worktree root as every
+    plan worktree. The refusal is NOT overridable by ``--force``.
+
     Precondition (script-enforced): the plan's authoritative state MUST already
     live on the MAIN checkout before the worktree may be removed — either as
     the live directory ``integrate_into_main`` landed back there, or as the
@@ -2068,6 +2077,18 @@ def cmd_worktree_remove(args):
     wrong — and the most destructive available — response to a removal that is
     merely slow.
     """
+    if args.plan_id == ORCHESTRATOR_WORKTREE_KEY:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'reserved_worktree_name',
+            'message': (
+                f"'{ORCHESTRATOR_WORKTREE_KEY}' is the reserved shared orchestrator "
+                'ledger worktree key, not a plan id — worktree-remove never removes '
+                'it, with or without --force'
+            ),
+        }
+
     target, error = _resolve_worktree_path_for_plan(args.plan_id)
     resolution = 'metadata'
     if error is not None:

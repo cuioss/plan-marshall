@@ -53,6 +53,16 @@
         "XXL": "520K"
       },
       "per_envelope_budget_tokens": "400K",
+      "worktree_setup_commands": [
+        [
+          "./pw",
+          "generate",
+          "--target",
+          "all",
+          "--output",
+          "target"
+        ]
+      ],
       "verification_steps": {
         "default:verify:quality-gate": {},
         "default:verify:module-tests": {}

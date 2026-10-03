@@ -8,7 +8,7 @@ holder_is_dead, rmw_json``. NOT an executor entry point.
 This module is the single TOCTOU-safe coordination surface that BOTH the unified
 merge mutex (``merge_lock.py``, D3) and the build-queue limiter
 (``build_queue.py``, D5) build on, so the two primitives do not each
-re-implement holder-liveness or shared-file serialization. It exposes four
+re-implement holder-liveness or shared-file serialization. It exposes five
 pieces:
 
   * :func:`holder_is_dead` — the plan-liveness predicate (lifted from the prior
@@ -28,6 +28,15 @@ pieces:
     :func:`rmw_json` commits unconditionally: routing a read through it with an
     identity mutator writes the ``{}`` a corrupt file reads as straight back over
     that file, so a read verb would destroy the state it was asked to describe.
+  * :func:`held_guard` — a context manager that holds the same ``O_EXCL``
+    guard-file mutex around a critical section that is NOT a JSON
+    read-modify-write. It is the one acquire/release implementation:
+    :func:`rmw_json` and :func:`read_json_guarded` are both expressed on top of
+    it, and the non-JSON consumers hold the guard through it directly — the
+    ledger queue's ``create_row`` (``manage-status/_orchestrator_ledger.py``)
+    and the ledger land module (``plan-orchestrator/_orchestrator_land.py``).
+    ``_acquire_guard`` is private to this module; nothing outside it acquires
+    the guard any other way.
   * :func:`log_lock_event` — the single best-effort ``[LOCK]`` emission point both
     lock primitives call at each lifecycle point (acquire / blocked / release /
     stale-reclaim / cap-disagreement). It appends a ``[LOCK]``-tagged line to the SINGLE
@@ -50,9 +59,13 @@ the read-modify-write into a guarded critical section: the ``O_EXCL`` guard-file
 admits exactly one mutator at a time (a racing creator gets ``EEXIST`` and spins
 with simple backoff), the mutation runs against the freshly-read state, and the
 commit is an atomic ``os.replace`` of a temp file written in the same directory.
-The guard file is always removed in a ``finally`` so a crashed mutator does not
-wedge the file forever — a stale guard is reclaimed once its age exceeds a bounded
-threshold. The mitigation menu lives in
+The holder's own guard file is removed in a ``finally`` (:func:`held_guard`) so a
+mutator that raises does not wedge the file forever — and a guard left behind by
+a killed process is reclaimed once its age exceeds a bounded threshold. That
+threshold is also the constraint on every :func:`held_guard` consumer: a critical
+section that outlives it has its guard reclaimed from under it, and on exit it
+leaves the successor's guard in place. The mitigation
+menu lives in
 ``ref-code-quality/standards/code-organization.md#toctou--check-then-act-hazards``
 and is not duplicated here.
 """
@@ -63,7 +76,8 @@ import errno
 import json
 import os
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
 from typing import Any, Literal
@@ -319,6 +333,14 @@ def _acquire_guard(guard_path: Path) -> int:
     if a third session won the race in between, the create loses cleanly
     (``EEXIST``) and the spin continues.
 
+    The create is re-attempted immediately only when the reclaim actually freed
+    the path — the unlink succeeded, or it raised ``FileNotFoundError`` because
+    another session reclaimed the guard first. Any other unlink failure (a
+    stale guard this process may not remove) leaves the path occupied, so the
+    attempt is charged against the budget like any other held guard: the
+    deadline is checked and the backoff sleep runs. An unremovable stale guard
+    therefore ends in ``TimeoutError`` instead of a hot spin.
+
     Raises:
         TimeoutError: when the guard cannot be acquired within the budget.
     """
@@ -338,12 +360,87 @@ def _acquire_guard(guard_path: Path) -> int:
         if age > _GUARD_STALE_SECONDS:
             try:
                 os.unlink(str(guard_path))
+            except FileNotFoundError:
+                continue  # Someone else already reclaimed it — retry the create.
             except OSError:
-                pass  # Someone else already reclaimed it — fall through to retry.
-            continue
+                pass  # Unremovable — the path is still occupied; spend the budget.
+            else:
+                continue  # Reclaimed — retry the create.
         if time.monotonic() >= deadline:
             raise TimeoutError(f'could not acquire coordination guard {guard_path} within {_GUARD_TIMEOUT_SECONDS}s')
         time.sleep(_GUARD_BACKOFF_SECONDS)
+
+
+@contextmanager
+def held_guard(guard_path: Path) -> Iterator[None]:
+    """Hold the ``O_EXCL`` guard-file mutex at ``guard_path`` for a ``with`` block.
+
+    The one acquire/release implementation of the shared guard: it acquires via
+    :func:`_acquire_guard`, yields, and in a ``finally`` closes the fd and
+    unlinks the guard it created, so the guard is released whether the block
+    returns or raises. :func:`rmw_json` and :func:`read_json_guarded` are built
+    on it, and a caller whose critical section is not a JSON read-modify-write —
+    a check-then-publish over several files, a git sequence — holds the guard
+    through it directly rather than re-implementing the acquire/unlink pair.
+
+    **The critical section must be short.** A guard whose mtime is older than
+    ``_GUARD_STALE_SECONDS`` is treated as abandoned and reclaimed by the next
+    acquirer, so a block that runs longer than that threshold loses its mutual
+    exclusion while it is still running. Keep network round-trips and builds
+    outside the block.
+
+    **Release removes only this invocation's guard.** A holder that outlived the
+    stale threshold may find a successor's guard at ``guard_path`` when it
+    exits. The release compares the identity of the fd it opened (device and
+    inode) with the file now at the path and unlinks only on a match; a missing
+    path or a different file is no longer this holder's guard and is left alone,
+    so the exit does not remove a successor's guard that was already in place.
+
+    **Residual window.** The identity check and the ``os.unlink`` are two
+    pathname operations, not one atomic step: a successor that reclaims the
+    guard between them still loses its guard to this unlink. The window opens
+    only for a holder that already overran ``_GUARD_STALE_SECONDS`` — the
+    short-critical-section contract above — and closing it needs a different
+    primitive (a kernel lock such as ``flock``), not a stricter check here.
+
+    Args:
+        guard_path: The guard file. Callers that serialize against a JSON state
+            file's own mutators pass that file's ``{name}{_GUARD_SUFFIX}`` path;
+            any other caller names its own guard file.
+
+    Raises:
+        TimeoutError: when the guard cannot be acquired within the budget. It
+            propagates to the caller and the block does not run.
+    """
+    fd = _acquire_guard(guard_path)
+    try:
+        yield
+    finally:
+        # Identity is read BEFORE the close: once the fd is closed its inode can
+        # be recycled, and the comparison would no longer name this guard.
+        try:
+            owned = _guard_is_own(fd, guard_path)
+        finally:
+            os.close(fd)
+        if owned:
+            try:
+                os.unlink(str(guard_path))
+            except OSError:
+                pass
+
+
+def _guard_is_own(fd: int, guard_path: Path) -> bool:
+    """Return True when the file at ``guard_path`` is the one ``fd`` has open.
+
+    Compares device and inode of the open fd against the path. A path that is
+    gone, unreadable, or names a different file is not this holder's guard.
+    """
+    try:
+        own = os.fstat(fd)
+        current = os.stat(str(guard_path))
+    except OSError:
+        return False
+    return (own.st_dev, own.st_ino) == (current.st_dev, current.st_ino)
 
 
 def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
@@ -398,19 +495,11 @@ def rmw_json(path: Path, mutate: Callable[[dict[str, Any]], dict[str, Any]]) -> 
     Raises:
         TimeoutError: when the guard cannot be acquired within the budget.
     """
-    guard_path = path.with_name(f'{path.name}{_GUARD_SUFFIX}')
-    fd = _acquire_guard(guard_path)
-    try:
+    with held_guard(path.with_name(f'{path.name}{_GUARD_SUFFIX}')):
         current = _read_json_or_empty(path)
         next_state = mutate(current)
         _atomic_write_json(path, next_state)
         return next_state
-    finally:
-        os.close(fd)
-        try:
-            os.unlink(str(guard_path))
-        except OSError:
-            pass
 
 
 def read_json_guarded(path: Path) -> dict[str, Any]:
@@ -448,16 +537,8 @@ def read_json_guarded(path: Path) -> dict[str, Any]:
     Raises:
         TimeoutError: when the guard cannot be acquired within the budget.
     """
-    guard_path = path.with_name(f'{path.name}{_GUARD_SUFFIX}')
-    fd = _acquire_guard(guard_path)
-    try:
+    with held_guard(path.with_name(f'{path.name}{_GUARD_SUFFIX}')):
         return _read_json_or_empty(path)
-    finally:
-        os.close(fd)
-        try:
-            os.unlink(str(guard_path))
-        except OSError:
-            pass
 
 
 # ---------------------------------------------------------------------------

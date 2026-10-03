@@ -213,8 +213,8 @@ The knob is read from the MAIN checkout's `marshal.json` (`orchestrator_worktree
 
 - **Location**: `<main>/.plan/local/worktrees/_orchestrator` — main-anchored through `marketplace_paths.resolve_main_anchored_path`, under the same `worktrees/` container as the plan worktrees. The location is NAMED there; the tree does not join the bounded main-resident set.
 - **Key**: `_orchestrator` (`marketplace_paths.ORCHESTRATOR_WORKTREE_KEY`). The leading underscore guarantees no plan id can collide with it; every worktree-root enumeration skips it through `marketplace_paths.is_orchestrator_worktree_dir`, never through plan-id validation.
-- **Branch**: `chore/orchestrator-ledger` (`ORCHESTRATOR_WORKTREE_BRANCH`), a long-lived branch created off `origin/{project.default_base_branch}` (default `main`) when no local branch of that name exists, reused when one does.
-- **Lifecycle**: created lazily by the seam on first knob-on use; every later call reuses the existing tree exactly as found — no reset, no rebase, no pull. Nothing in the module removes it; landing its changes on the base branch is a separate concern. A concurrent first use is resolved by `git worktree add` being atomic: the losing session re-checks and returns the tree the winner created.
+- **Branch**: `chore/orchestrator-ledger` (`ORCHESTRATOR_WORKTREE_BRANCH`), a long-lived branch created off `origin/{base}` when no local branch of that name exists, reused when one does. `{base}` is `default_base_branch()` — `project.default_base_branch`, default `main` — the one base-branch read for the shared ledger worktree and its consumers.
+- **Lifecycle**: created lazily by the seam on first knob-on use; every later call reuses the existing tree exactly as found — no reset, no rebase, no pull — provided it is on the ledger branch. A registered tree on any other branch, or on a detached HEAD, is refused with `orchestrator_worktree_wrong_branch`, never switched. Nothing in the module removes it; landing its changes on the base branch is a separate concern. A concurrent first use is resolved by `git worktree add` being atomic: the losing session re-checks and returns the tree the winner created.
 - **First-use cutover check**: before creation, the main checkout's ledger paths are checked for uncommitted, untracked, or committed-but-unlanded state (`detect_ledger_drift` against `origin/{base}`).
 
 **`OrchestratorStoreUnavailable`** is the seam's one typed refusal. It carries a machine-readable `code` and structured `fields`:
@@ -225,6 +225,7 @@ The knob is read from the MAIN checkout's `marshal.json` (`orchestrator_worktree
 | `ledger_drift_unevaluable` | git could not answer the drift question; a check that could not run is never reported as clean. | `checkout`, `base_ref`, `stderr` |
 | `base_ref_unresolvable` | `origin/{base}` could not be fetched or resolved. | `base_ref`, `worktree_path`, `branch`, `stderr` |
 | `orchestrator_worktree_create_failed` | The main checkout could not be resolved, or `git worktree add` failed and no valid worktree exists afterwards. | `worktree_path`, `branch`, `stderr` (as available) |
+| `orchestrator_worktree_wrong_branch` | A worktree is registered at the shared location but is not on `chore/orchestrator-ledger`. The seam never switches the branch: the operator checks out `chore/orchestrator-ledger` in that tree by hand. | `worktree_path`, `branch` (the expected ledger branch), `found_branch` (the branch the tree is on, or `detached`) |
 
 Its base is `Exception` DIRECTLY — deliberately not `RuntimeError`, `ValueError` or `OSError`. The store consumers carry broad `except RuntimeError` / `except ValueError` / `except OSError` handlers that turn a failure into a different verdict (not-found, fail-open empty, silent drop); a subclass of any of those would be intercepted before the refusal reached the caller. A CLI-reachable handler that catches `Exception` on the seam path re-raises it (`except OrchestratorStoreUnavailable: raise` ahead of the broad clause); only the best-effort terminal-title readers in `platform-runtime` are exempt from that obligation. `safe_main` renders it as `status: error` with its own `error` code, `message` and fields, and exit 0 — an operation failure the caller can act on, not a crash.
 
@@ -266,7 +267,7 @@ if __name__ == '__main__':
 | Script | Purpose |
 |--------|---------|
 | `file_ops.py` | Core file operations module (importable) |
-| `orchestrator_worktree.py` | Shared orchestrator ledger worktree substrate: location, knob read, ledger drift detector, idempotent first-use creation, `OrchestratorStoreUnavailable` (importable; stdlib + `marketplace_paths` only) |
+| `orchestrator_worktree.py` | Shared orchestrator ledger worktree substrate: location, knob read, base-branch read (`default_base_branch`), ledger drift detector, idempotent first-use creation, `OrchestratorStoreUnavailable` (importable; stdlib + `marketplace_paths` only) |
 | `jsonl_store.py` | Shared JSONL storage for plan-scoped artifacts: append, read, merge-read, update, find, hash ids (importable) |
 | `constants.py` | Shared constants: status values, phase names, filenames, certainty values, directory names |
 

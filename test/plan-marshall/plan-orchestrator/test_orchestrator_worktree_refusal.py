@@ -15,6 +15,13 @@ the refusal, so every refusal assertion is shown to be able to fail.
 logical ``source_id`` pointer and reads no store, so there is no refusal for it
 to surface. It is pinned separately as succeeding under the refused sandbox.
 
+A second refusal is pinned over the same sample: the shared ledger worktree
+exists but has been moved off the ledger branch
+(``orchestrator_worktree_wrong_branch``). Each consumer must return
+``status: error`` carrying that code and the branch found, with exit 0, and must
+leave the tree on the branch it was found on. The clean control covers this
+code too.
+
 The sandboxes are module-scoped (a refused call writes nothing, and the clean
 control's first call only creates the shared tree every later control reuses);
 the environment is cleared per test so no base-dir override reaches the
@@ -26,7 +33,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from _orchestrator_worktree_fixtures import build_ledger_repo, write_marshal
+from _orchestrator_worktree_fixtures import build_ledger_repo, git, write_marshal
+from orchestrator_worktree import ORCHESTRATOR_WORKTREE_BRANCH
 from toon_parser import parse_toon
 
 from conftest import get_script_path, run_script
@@ -44,6 +52,8 @@ _SENDER = 'plan-sender'
 _POINTER = '.plan/orchestrator/epic-alpha/plans/PLAN-01-alpha.md'
 _DIRTY_PATH = '.plan/orchestrator/epic-alpha/epic.md'
 _REFUSAL = 'ledger_cutover_refused'
+_WRONG_BRANCH = 'orchestrator_worktree_wrong_branch'
+_STRAY_BRANCH = 'feature/stray'
 
 
 def _build(root: Path, *, dirty: bool):
@@ -66,6 +76,24 @@ def refused_repo(tmp_path_factory):
 @pytest.fixture(scope='module')
 def clean_repo(tmp_path_factory):
     return _build(tmp_path_factory.mktemp('clean'), dirty=False)
+
+
+@pytest.fixture(scope='module')
+def wrong_branch_repo(tmp_path_factory):
+    """A clean sandbox whose shared ledger worktree exists but sits on another branch."""
+    repo = _build(tmp_path_factory.mktemp('wrong-branch'), dirty=False)
+    git(
+        repo.main,
+        'worktree',
+        'add',
+        '--no-track',
+        '-b',
+        ORCHESTRATOR_WORKTREE_BRANCH,
+        str(repo.expected_worktree),
+        'origin/main',
+    )
+    git(repo.expected_worktree, 'checkout', '-b', _STRAY_BRANCH)
+    return repo
 
 
 @pytest.fixture(autouse=True)
@@ -158,11 +186,21 @@ def test_refused_seam_surfaces_as_the_typed_error_with_exit_zero(refused_repo, c
 
 
 @pytest.mark.parametrize('case', list(_CONSUMERS), ids=list(_CONSUMERS))
+def test_wrong_branch_seam_surfaces_as_the_typed_error_with_exit_zero(wrong_branch_repo, case):
+    code, payload = _invoke(wrong_branch_repo, case)
+
+    assert code == 0, payload
+    assert (payload.get('status'), payload.get('error')) == ('error', _WRONG_BRANCH), payload
+    assert (payload['found_branch'], payload['branch']) == (_STRAY_BRANCH, ORCHESTRATOR_WORKTREE_BRANCH)
+    assert git(wrong_branch_repo.expected_worktree, 'symbolic-ref', '--short', 'HEAD') == _STRAY_BRANCH
+
+
+@pytest.mark.parametrize('case', list(_CONSUMERS), ids=list(_CONSUMERS))
 def test_clean_control_does_not_report_the_refusal(clean_repo, case):
-    """Matched control: over a clean main checkout the refusal is absent."""
+    """Matched control: over a clean main checkout neither refusal is reported."""
     _code, payload = _invoke(clean_repo, case)
 
-    assert payload.get('error') != _REFUSAL, payload
+    assert payload.get('error') not in (_REFUSAL, _WRONG_BRANCH), payload
     assert clean_repo.expected_worktree.is_dir()
 
 

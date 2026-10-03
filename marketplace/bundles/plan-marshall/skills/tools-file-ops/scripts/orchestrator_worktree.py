@@ -15,7 +15,7 @@ module stays importable on the bootstrap path where only ``script-shared``,
 ``ref-toon-format`` and ``tools-file-ops`` are on ``sys.path``.
 
 The module never removes a worktree, never resets or rebases it, and never
-commits: an existing tree is reused exactly as found, and landing its changes on
+commits: an existing tree on the ledger branch is reused exactly as found, and landing its changes on
 the base branch is not this module's concern.
 
 Every refusal raises :class:`OrchestratorStoreUnavailable`, one typed error
@@ -28,6 +28,9 @@ carrying a machine-readable ``code`` and structured ``fields``:
 - ``base_ref_unresolvable`` — ``origin/{base}`` could not be fetched or resolved.
 - ``orchestrator_worktree_create_failed`` — the main checkout could not be
   resolved, or ``git worktree add`` failed and no valid worktree exists after it.
+- ``orchestrator_worktree_wrong_branch`` — a worktree is registered at the shared
+  location but is not on the ledger branch (``found_branch`` names the branch it
+  is on, or ``detached``); the module never switches the branch itself.
 """
 
 import json
@@ -135,8 +138,13 @@ def orchestrator_use_worktree() -> bool:
     return orchestrator.get('use_worktree') is True
 
 
-def _default_base_branch() -> str:
-    """Return ``project.default_base_branch`` from the main-anchored config, else ``main``."""
+def default_base_branch() -> str:
+    """Return the base branch the shared ledger worktree is created off and lands onto.
+
+    This is the one base-branch read for the shared ledger worktree and every
+    consumer of it: ``project.default_base_branch`` from the main-anchored
+    ``marshal.json``, else ``main`` when the key is absent, empty or not a string.
+    """
     project = _read_knob_config().get('project')
     if isinstance(project, dict):
         value = project.get('default_base_branch')
@@ -284,9 +292,10 @@ def ensure_orchestrator_worktree() -> Path:
     """Return the shared ledger worktree, creating it on first use.
 
     An existing registered worktree at :func:`orchestrator_worktree_path` is
-    returned unchanged — no reset, no rebase, no pull. Otherwise the tree is
-    created off ``origin/{base}`` (``{base}`` is ``project.default_base_branch``,
-    default ``main``):
+    returned unchanged — no reset, no rebase, no pull — provided it is on
+    :data:`ORCHESTRATOR_WORKTREE_BRANCH`; a registered tree on any other branch,
+    or on a detached HEAD, is refused and never switched. Otherwise the tree is
+    created off ``origin/{base}`` (``{base}`` is :func:`default_base_branch`):
 
     1. ``git fetch origin {base}``, then verify ``origin/{base}`` resolves. The
        fetch runs first so the drift check below compares against the base as it
@@ -308,7 +317,8 @@ def ensure_orchestrator_worktree() -> Path:
     Raises:
         OrchestratorStoreUnavailable: ``ledger_cutover_refused`` (with
             ``dirty_paths``), ``ledger_drift_unevaluable``,
-            ``base_ref_unresolvable`` or ``orchestrator_worktree_create_failed``;
+            ``base_ref_unresolvable``, ``orchestrator_worktree_create_failed``
+            or ``orchestrator_worktree_wrong_branch`` (with ``found_branch``);
             the git-backed codes carry git's ``stderr``.
     """
     try:
@@ -321,10 +331,21 @@ def ensure_orchestrator_worktree() -> Path:
             branch=ORCHESTRATOR_WORKTREE_BRANCH,
         ) from exc
 
-    if _registered_worktree_branch(main_root, path) is not None:
+    registered_branch = _registered_worktree_branch(main_root, path)
+    if registered_branch == ORCHESTRATOR_WORKTREE_BRANCH:
         return path
+    if registered_branch is not None:
+        found_branch = registered_branch or 'detached'
+        raise OrchestratorStoreUnavailable(
+            'orchestrator_worktree_wrong_branch',
+            f'the orchestrator ledger worktree at {path} is on {found_branch}, not on '
+            f'{ORCHESTRATOR_WORKTREE_BRANCH}; check out {ORCHESTRATOR_WORKTREE_BRANCH} in that tree by hand',
+            worktree_path=str(path),
+            branch=ORCHESTRATOR_WORKTREE_BRANCH,
+            found_branch=found_branch,
+        )
 
-    base = _default_base_branch()
+    base = default_base_branch()
     base_ref = f'origin/{base}'
     probe = fetch_base_branch(main_root, base)
     if probe.returncode == 0:

@@ -591,3 +591,73 @@ class TestWorktreeCreateReservedKey:
         assert root_calls == ['get_worktree_root']
         assert len(git_calls) == 1
         assert 'worktree' in git_calls[0] and 'add' in git_calls[0]
+
+
+class TestWorktreeRemoveReservedKey:
+    """``worktree-remove`` refuses the reserved shared orchestrator ledger key.
+
+    The refusal is the verb's first check, so no subprocess of any kind is
+    launched on that path. The recorder sits on ``subprocess.run`` itself — the
+    primitive beneath ``run_git``, the manage-status channel and the plan-context
+    resolver alike — so a call routed around any one helper is still observed.
+
+    The reserved tree is staged as REMOVABLE: a ``.git``-carrying directory in
+    the canonical slot (which the structural probe resolves) with the move-back
+    precondition satisfied. Every later check would therefore pass, which leaves
+    the reserved-key refusal as the only thing standing between the call and
+    ``git worktree remove``. The matched control drives an ordinary plan id
+    through the same staging and observes that it DOES reach that git call.
+    """
+
+    @staticmethod
+    def _record_subprocess(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
+        calls: list[list[str]] = []
+
+        def fake_run(argv, *_args, **_kwargs):
+            calls.append([str(part) for part in argv])
+            return subprocess.CompletedProcess(argv, 1, '', 'stubbed failure')
+
+        monkeypatch.setattr(subprocess, 'run', fake_run)
+        return calls
+
+    @staticmethod
+    def _stage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, plan_id: str) -> Path:
+        root = tmp_path / 'main'
+        worktree = _stage_removal(root, monkeypatch, plan_id=plan_id)
+        (worktree / '.git').write_text('gitdir: elsewhere\n')
+        monkeypatch.setattr(git_workflow, 'get_worktree_root', lambda: worktree.parent)
+        return worktree
+
+    @pytest.mark.parametrize('force', [False, True], ids=['without-force', 'with-force'])
+    def test_reserved_key_refused_before_any_subprocess(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, force: bool
+    ) -> None:
+        from marketplace_paths import ORCHESTRATOR_WORKTREE_KEY
+
+        worktree = self._stage(tmp_path, monkeypatch, ORCHESTRATOR_WORKTREE_KEY)
+        calls = self._record_subprocess(monkeypatch)
+
+        result = cmd_worktree_remove(Namespace(plan_id=ORCHESTRATOR_WORKTREE_KEY, force=force))
+
+        assert (result['status'], result['error'], result['plan_id']) == (
+            'error',
+            'reserved_worktree_name',
+            ORCHESTRATOR_WORKTREE_KEY,
+        )
+        assert ORCHESTRATOR_WORKTREE_KEY in result['message']
+        assert calls == []
+        assert (worktree / 'src' / 'main.py').is_file()
+
+    def test_ordinary_plan_id_reaches_git_worktree_remove(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        worktree = self._stage(tmp_path, monkeypatch, 'my-plan')
+        calls = self._record_subprocess(monkeypatch)
+
+        with patch_query_worktree_path(True, str(worktree)):
+            result = cmd_worktree_remove(Namespace(plan_id='my-plan', force=False))
+
+        assert result['error'] == 'worktree_remove_failed'
+        git_calls = [call for call in calls if call[0] == 'git']
+        assert len(git_calls) == 1
+        assert 'worktree' in git_calls[0] and 'remove' in git_calls[0]
