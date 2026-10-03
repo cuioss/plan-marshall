@@ -110,9 +110,6 @@
         "default:create-pr": {
           "lane": "minimal"
         },
-        "project:finalize-step-era-stamp-fill": {
-          "lane": "minimal"
-        },
         "plan-marshall:automatic-review": {
           "review_bot_buffer_seconds": 180,
           "re_review_on_loopback": true,
@@ -187,7 +184,10 @@
         "default": "level-5",
         "verification-feedback": "level-5",
         "post-run-review": "level-5"
-      }
+      },
+      "removed_steps": [
+        "project:finalize-step-era-stamp-fill"
+      ]
     },
     "finding_raw_input_max_bytes": 65536
   },

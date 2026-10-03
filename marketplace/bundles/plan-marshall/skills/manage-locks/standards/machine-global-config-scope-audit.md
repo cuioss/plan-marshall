@@ -218,37 +218,63 @@ passing control reports its own silence.
 | `machine-config` | 0 |
 | `build-queue-limit` | 0 |
 | `build_queue_upper_limit` | 0 |
-| `upper_limit_seconds` | 2 |
-| `home_root` | 3 |
-| `build-queue.json` | 1 |
+| `upper_limit_seconds` | 3 |
+| `home_root` | 4 |
+| `build-queue.json` | 2 |
 
 `build_queue_upper_limit` subsumes the leading-underscore spelling of the retired
 helpers, so one sweep covers both names.
 
-**Method 2 — direct scan at HEAD.** Walk both trees and count occurrences per
-file. **58** files scanned; **3** unreadable, and each of the three is a compiled
-`.pyc` artifact under `__pycache__` whose `.py` source sibling WAS scanned — so the
-unreadable count is a build artifact, not a coverage gap. **2** files carry a hit:
+**What the figures measure.** Each figure counts the commits reachable from HEAD
+that changed the token's occurrence count under the two trees, so it is a
+property of the history's shape as well as of the content: a branch that moves a
+token in several commits contributes one commit once it is squash-merged. Compare
+the commits a re-run lists, not the bare totals.
 
-| File | Tokens |
-|------|--------|
-| `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py` | `upper_limit_seconds` (2), `build-queue.json` (3), `home_root` (2) |
-| `.claude/skills/audit-archived-plan-retrospectives/checks/global-log-analysis.md` | `upper_limit_seconds` (2), `build-queue.json` (2) |
+**Every non-zero population row ends in a deletion.** The commits behind the three
+non-zero rows touch exactly three files — the auditor's `audit.py`, its
+`global-log-analysis.md`, and a `reconcile_daemon.py` that formerly sat under
+`.claude/` — and the newest commit for each file deletes it. A tracked file
+carrying a token at HEAD would have an introducing commit with no later deletion,
+and no row lists one, so Method 1 establishes that **no tracked file under
+`.claude` or `.github` carries a population token at HEAD**. That is a statement
+about tracked files only.
+
+**Method 2 — direct scan at HEAD.** Walk both trees and count occurrences per
+file, reporting the files scanned and every file that could not be read. A
+compiled `.pyc` artifact under `__pycache__` whose `.py` source sibling WAS scanned
+is a build artifact, not a coverage gap. **This document records no Method 2
+figures**: the scan reads the working tree, including untracked files Method 1
+cannot see, so its output belongs to the tree it is run against. The re-deriver
+produces it and holds it against the Method 1 conclusion above and the members
+dispositioned by name below — a file carrying a population token that neither
+accounts for is a finding.
+
+**Two consumers sit outside this repository altogether.** The cross-plan
+auditor's `audit.py` and its `global-log-analysis.md` interpretation guide live in
+the `plan-marshall-telemetry` repository, so neither sweep method over this
+repository's trees reaches them. Both carry `upper_limit_seconds` and
+`build-queue.json`, and `audit.py` additionally carries `home_root`; the non-zero
+pickaxe rows above include the history of those files from when they sat under
+`.claude/`, up to and including the commit that removed them.
 
 **A third consumer sits outside the pinned derivation without sitting in either
-tree.** `marketplace/targets/claude/reconcile_daemon.py` carries `home_root` (2).
+tree.** `marketplace/targets/claude/reconcile_daemon.py` carries `home_root` (2); the
+`home_root` pickaxe row includes the history of its predecessor under `.claude/`.
 `marketplace/targets/` IS crawled, but its files are attributed to the `source`
 category of the `default` module, so the `--category script` sweeps above and the
 `marketplace/bundles/*/skills/*/scripts/**/*.py` AST glob both pass it by.
 
 **The members outside the pinned derivation, dispositioned by name.**
 
-- `audit.py` — `_ratcheted_ci_wait_ceiling` reads the top-level
+- `audit.py` (the cross-plan auditor, in the `plan-marshall-telemetry`
+  repository) — `_ratcheted_ci_wait_ceiling` reads the top-level
   `upper_limit_seconds` of the machine-global `build-queue.json` under the home
   root (`PLAN_MARSHALL_HOME` when set, else `~/.plan-marshall`), inline, per the
-  skill's inline-reader rule. It is a genuine consumer of a population member and
-  it is invisible to the pinned population on **two** independent grounds: the
-  inventory does not walk its tree, and it never calls
+  auditor's own inline-reader rule, which the `plan-marshall-telemetry`
+  repository owns alongside the script. It is a genuine consumer of a population member and
+  it is invisible to the pinned population on **two** independent grounds: it
+  lives outside this repository, and it never calls
   `marketplace_paths.home_root` — it binds a LOCAL name `home_root` to the
   resolved path, which the call-aware classifier correctly reads as a non-call
   reference. Either ground alone would hide it, which is why it is dispositioned
@@ -257,7 +283,8 @@ category of the `default` module, so the `--category script` sweeps above and th
   `.plan/local/run-configuration.json` — the one path that file ever sits at — and
   each of the two reads degrades to the flat floor independently, so an absent or
   unreadable source never suppresses the other.
-- `global-log-analysis.md` — the interpretation guide for that reader. It states
+- `global-log-analysis.md` (same repository as `audit.py`) — the interpretation
+  guide for that reader. It states
   the same two sources, so the guide and the code cannot drift into describing
   different files.
 - `reconcile_daemon.py` — `_daemon_state_dir()` re-implements the home-root
@@ -270,7 +297,7 @@ category of the `default` module, so the `--category script` sweeps above and th
   `--category script` sweeps nor the AST glob can see, and a future key added
   there would be outside every derivation above.
 
-Git-ignored files under `.claude/` are machine-local and outside both methods.
+Git-ignored files under `.claude/` are machine-local and outside Method 1.
 
 ## Member dispositions
 
@@ -366,7 +393,9 @@ by comparing per-file classifications rather than totals.
    scanned and every file that could not be read.
 5. **Compare against the tables above** — the populations, not the counts. A file
    appearing in a derived set that no table dispositions is a new member, and it
-   is a finding.
+   is a finding. The direct scan of step 4 has no recorded table: compare the
+   files it reports against the pickaxe conclusion and the by-name dispositions
+   in § "The supplementary out-of-inventory sweep".
 
 The companion pytest pins exactly this: it re-derives both sets with `ast` and
 asserts each equals the set dispositioned here, publishing the derived population

@@ -26,16 +26,7 @@ there is **no** producer-side marker, so read-BEFORE-produce is not derivable �
 ``reads: [metrics]`` is paired against ``record-metrics`` only by a human reading the
 prose.
 
-A THIRD, non-gate-relative edge family is derived in this module: a **named-step
-adjacency** that no marker expresses, because its producer→consumer relation is a data
-dependency between three specific steps rather than a property either of them declares.
-``project:finalize-step-era-stamp-fill`` resolves the ``PR-PENDING`` era-stamp sentinel to
-the real PR number, so it can only run once ``default:create-pr`` has produced that
-number, and it must run before ``default:ci-verify`` validates the tree that carries the
-correction. That is an ordering obligation stated in prose in the step's own doc and,
-until this module derived it, asserted nowhere.
-
-A FOURTH family closes this module: the **push barrier**. ``default:push`` produces no
+A THIRD family closes this module: the **push barrier**. ``default:push`` produces no
 commit — it asserts a clean tree and ships the converged branch — so every step ordered
 below it has its commits shipped BY it, and must not push on its own. That relation is
 derived from the two orders alone (no marker declares it), and the obligation it carries
@@ -204,29 +195,6 @@ def derive_artifact_edges() -> list[dict]:
     ]
 
 
-_PR_PRODUCER = 'default:create-pr'
-
-_ERA_STAMP_STEP = 'project:finalize-step-era-stamp-fill'
-
-_CI_CONSUMER = 'default:ci-verify'
-
-
-def _order_of(step_name: str) -> int:
-    """Read one discovered step's ``order`` off the registry, never a literal."""
-    for record in _finalize_records():
-        if record.get('name') == step_name:
-            order = record.get('order')
-            assert isinstance(order, int), (
-                f'{step_name} was discovered but its frontmatter ``order`` is '
-                f'{order!r}, not an int, so no ordering assertion can read it.'
-            )
-            return order
-    raise AssertionError(
-        f'{step_name} is not among the discovered {_EXT_POINT} implementors, so the '
-        f'era-stamp adjacency assertion has nothing to read and would pass vacuously.'
-    )
-
-
 _PUSH_BARRIER = 'default:push'
 
 
@@ -361,36 +329,6 @@ def test_every_declared_read_token_is_a_known_artifact():
         f'{_DESTROYS_MARKER}` declaration and is not a known produced artifact, so the '
         f'read-before-destroy pairing finds no edge for them and the gate is vacuous '
         f'there. Known tokens: {sorted(known)}. Offenders: {offenders}'
-    )
-
-
-def test_era_stamp_fill_runs_between_pr_creation_and_ci_verification():
-    """The era-stamp step's order lies STRICTLY between create-pr's and ci-verify's.
-
-    ``project:finalize-step-era-stamp-fill`` rewrites the ``PR-PENDING`` era-stamp
-    sentinel to this plan's real PR number and pushes the correction onto the feature
-    branch. Both bounds are load-bearing and neither is expressed by any frontmatter
-    marker:
-
-    - **After ``default:create-pr``** — the PR number does not exist until the PR is
-      opened, so an earlier order leaves the step with nothing but a guess, which is the
-      guessed-number defect the sentinel was introduced to remove.
-    - **Before ``default:ci-verify``** — the rewritten ``audit.py`` and its test mirror
-      must be on the branch before CI reads the tree, or CI verifies a tree the merge
-      will not contain.
-
-    Every order is READ from discovery, so moving any of the three steps moves the
-    obligation with it and no literal here goes stale.
-    """
-    pr_order = _order_of(_PR_PRODUCER)
-    era_order = _order_of(_ERA_STAMP_STEP)
-    ci_order = _order_of(_CI_CONSUMER)
-
-    assert pr_order < era_order < ci_order, (
-        f'{_ERA_STAMP_STEP} (order {era_order}) must run strictly after '
-        f'{_PR_PRODUCER} (order {pr_order}) — the PR number it resolves the PR-PENDING '
-        f'sentinel to does not exist before then — and strictly before {_CI_CONSUMER} '
-        f'(order {ci_order}), so the rewritten era stamp is on the branch CI reads.'
     )
 
 

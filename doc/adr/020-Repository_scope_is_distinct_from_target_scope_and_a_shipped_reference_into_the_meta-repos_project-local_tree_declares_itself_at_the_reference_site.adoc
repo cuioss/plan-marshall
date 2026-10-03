@@ -32,24 +32,29 @@ validated, and mechanical.
 
 Alongside the shipped bundles, the same repository carries a **project-local
 tree**: `.claude/skills/`, `.claude/commands/`, and `.claude/settings.json`. That
-tree holds this repository's own finalize steps, its cross-plan auditor, its
-cache-sync and review tooling. It is version-controlled, but it **ships to no
-target** — no registered target emits it and no consumer installation ever
-contains it. It is this repository's private surface.
+tree holds this repository's own finalize steps and its cache-sync and review
+tooling. It is version-controlled, but it **ships to no target** — no registered
+target emits it and no consumer installation ever contains it. It is this
+repository's private surface.
 
 The two facts collide wherever **shipped content** names a **specific artifact in
-the project-local tree**. Today the shipped corpus carries references that a
-consumer cannot resolve:
+the project-local tree**. Four reference shapes hand a consumer something it
+cannot resolve:
 
 * Live relative links into `.claude/skills/…` that resolve only inside this
   repository and dangle everywhere else.
-* Lock-step obligations that bind a shipped metric format to
-  `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py` and
-  `checks/billing-composition.md` — two files a consumer project does not have.
-* Docstrings in shipped scripts that cite the same project-local auditor as the
-  authority for a multi-surface contract.
+* Lock-step obligations that bind a shipped metric format to a script and a check
+  document a consumer project does not have.
+* Docstrings in shipped scripts that cite an unshipped tool as the authority for a
+  multi-surface contract.
 * Quality-gate parity cells whose path lists include `.claude/` — data describing
   this repository's own gate, read by that gate's test suite.
+
+The cross-plan auditor is the worked example for the second and third shapes. It lives
+in the separate `plan-marshall-telemetry` repository, which ships to no target
+either, so a shipped reference to it is unresolvable for a consumer in exactly the
+way a reference into `.claude/` is: the referent is a specific artifact outside
+everything a consumer installs.
 
 Three distinct defects follow. A **consumer** reads shipped content that hands it
 instructions it cannot honor and links that cannot resolve. A **maintainer of
@@ -96,14 +101,14 @@ name its own unshipped tree in content a consumer installs.
 **3. The obligation is a documentation rule at the reference site, applied by the
 author.** A site is fixed exactly when one of three dispositions is applied:
 
-* **Declare** — annotate the reference as meta-repo-only. Used where the reference
+* **Declare** — annotate the reference as unreachable for a consumer. Used where the reference
   is load-bearing prose or a coupling contract: a shipped metric-format standard
   that binds five surfaces to move together, or a shipped script docstring that
-  names the project-local auditor as the contract's authority.
-* **Re-point** — replace a live relative link into `.claude/` with prose that
+  names the cross-plan auditor as the contract's authority.
+* **Re-point** — replace a live link a consumer cannot resolve with prose that
   names the concept without a path a consumer cannot resolve. Used where the
   referent is a capability, not a file: the reader needs to know the mechanism
-  exists and that it is project-local, not to navigate to it.
+  exists, not to navigate to it.
 * **Correct as-is** — leave the site alone when it already declares the boundary:
   an explicit "(meta-project)" scope, a roster-addition record that names the
   project-local consumer and its coverage caveat, a generic statement about any
@@ -170,25 +175,25 @@ Every site in scope at this decision, its disposition, and the consequence appli
 |===
 | Reference site | Disposition | Consequence
 
-| `plan-marshall/skills/phase-6-finalize/standards/finalize-step-preference-emitter.md` — preference-pattern hint routing carries a live relative link into `.claude/skills/audit-archived-plan-retrospectives/`
+| `plan-marshall/skills/phase-6-finalize/standards/finalize-step-preference-emitter.md` — preference-pattern hint routing links to the cross-plan auditor's preference check
 | Re-point
-| The link is removed; prose names the cross-plan preference check as a project-local mechanism this repository alone maintains.
+| The link is removed; prose names the cross-plan auditor in the `plan-marshall-telemetry` repository without a path a consumer cannot resolve.
 
-| `plan-marshall/skills/manage-metrics/standards/data-format.md` — the "Restating surfaces" lock-step list names `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py` and `checks/billing-composition.md`
+| `plan-marshall/skills/manage-metrics/standards/data-format.md` — the "Restating surfaces" lock-step list names the cross-plan auditor's script and its billing-composition check
 | Declare
-| Those two surfaces are annotated meta-repo-only; the remaining surfaces keep their lock-step for consumers who carry the format.
+| Those two surfaces are annotated as living in the `plan-marshall-telemetry` repository, outside the shipped tree; the remaining surfaces keep their lock-step for consumers who carry the format.
 
 | `plan-marshall/skills/plan-retrospective/scripts/analyze-logs.py` — the lock-step comment and the cross-plan docstring mirror the same two surfaces
 | Declare
-| Same two surfaces annotated meta-repo-only at the coupling statement; the docstring names the auditor as project-local.
+| Same two surfaces annotated at the coupling statement; the docstring names the auditor as living in the `plan-marshall-telemetry` repository.
 
-| `plan-marshall/skills/manage-findings/scripts/_preference_admissibility.py` — module docstring and comment name `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py`
+| `plan-marshall/skills/manage-findings/scripts/_preference_admissibility.py` — module docstring and comment name the cross-plan auditor's script
 | Declare
-| The auditor's address is annotated project-local; the rule it anchors stays consumer-reachable.
+| The auditor's address is annotated as outside this repository and shipped to no target; the rule it anchors stays consumer-reachable.
 
 | `plan-marshall/skills/manage-execution-manifest/scripts/_manifest_decide.py` — docstring names the auditor as the source of the counters it must match
 | Declare
-| The auditor's address is annotated project-local; the counting contract itself is unchanged.
+| The auditor's address is annotated as outside this repository and shipped to no target; the counting contract itself is unchanged.
 
 | `plan-marshall/skills/manage-lessons/standards/cwd-keyed-store-resolution-audit.md` — roster addition naming `finalize-step-lessons-housekeeping` as a project-local consumer
 | Correct as-is

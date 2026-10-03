@@ -95,8 +95,8 @@ the owed edit, so the work is visible and scheduled rather than lost.
 Guessing a value that is not yet known at edit time (for example, hand-editing a PR
 number before the PR exists) is a special case of the same failure: it produces an
 unpushable or wrong edit that a later reader must silently reconcile. The correct
-shape is a deterministic, self-resolving sentinel filled by a pre-merge step from a
-value the dispatcher already provides.
+shape is to defer the edit until the value exists, and to fill it in a step that
+still runs before the merge.
 
 This rule is also the **sanctioned route for a `post_run_review: true` step that
 derives an architecture hint**. Such a step is ordered post-merge by construction,
@@ -106,41 +106,6 @@ of writing it — the hint is scheduled and visible, and the step keeps
 `mutates_source: false` honestly rather than reproducing the very defect this
 contract exists to prevent.
 
-## Reference implementation
-
-`project:finalize-step-era-stamp-fill` (order 21, between `create-pr` and
-`ci-verify`) is the reference implementation of this contract. It resolves the
-`PR-PENDING` era-stamp sentinel in `audit.py`'s `CHECK_ERA` map (and its
-`test_audit_check_era_model.py` mirror) to the real PR number, then commits and pushes the
-correction pre-merge so it rides the PR and is CI-covered. It exists precisely
-because the prior convention — a prose instruction to hand-edit the PR number after
-merge — was the guessed-PR-number / post-merge-unpushable era-stamp defect: an edit
-that could not be pushed on `main` and was silently reverted or guessed.
-
-### Its post-PR CI run is intrinsic, not a defect to relocate
-
-A `PR-PENDING` fill commits and pushes AFTER `create-pr`, which advances the PR head
-and so provokes one further CI run whenever a sentinel is present. That run is
-**intrinsic to the PR-number dependency**, not an avoidable inefficiency — do not try
-to remove it by relocating the commit:
-
-- **Computing the value before the PR exists is impossible** — the real PR number is
-  not known until `create-pr` (order 20) runs.
-- **Deferring the resolution to after the merge is refused** — a post-merge edit is
-  unpushable on `main`, which is exactly the guessed-PR-number / post-merge-unpushable
-  defect this contract exists to prevent (§ "The discover-after-merge rule").
-- **Riding an existing post-PR commit is not what the current mechanism does** — the fill
-  self-commits and self-pushes at order 21 (`finalize-step-era-stamp-fill` Step 3), and at
-  that point no loop-back fix commit exists to ride: loop-back commits arise only later, from
-  `ci-verify` (22), `automatic-review` (30), or `sonar-roundtrip` (40). So the extra CI run is
-  paid whenever a sentinel is present — not only in a sentinel-only finalize. Deferring the
-  fill's push to ride a co-occurring loop-back commit is a possible future consolidation, not
-  current behaviour, and is not assumed here.
-
-The lever that would collapse the sentinel-only case to a single completed run —
-superseding the pre-fill CI run via workflow concurrency cancellation — lives in the
-CI workflow definition, not in any finalize step, and is out of this contract's scope.
-
 ## Authoring checklist
 
 When authoring a finalize step that edits source:
@@ -148,23 +113,24 @@ When authoring a finalize step that edits source:
 - Declare `mutates_source: true` in the step's frontmatter.
 - Order it before `default:branch-cleanup` (merge), and before `default:ci-verify`
   when the edit must be CI-covered.
-- Commit the edit onto the feature branch within the step. **Whether the step also
-  pushes depends on where it sits relative to the `default:push` barrier (order 11),
-  and only one of the two is correct for any given step:**
+- Get the edit committed onto the feature branch without the step ever pushing on
+  its own. **Who commits it depends on where the step sits relative to the
+  `default:push` barrier (order 11), and only one of the two is correct for any
+  given step:**
   - **Ordered BEFORE `default:push`** — commit only, and let the barrier ship it.
     `default:push` is a *pure push barrier*: it carries no commit logic, asserts a
     clean tree, and pushes the converged branch. A step at a lower order that pushed
     on its own would push the same branch a second time, outside the single-push
     contract the barrier exists to hold. `default:architecture-refresh` (order 9) is
     the reference case — it commits its refreshed descriptor and stops.
-  - **Ordered AFTER `default:push`** — commit **and** push within the step, because no
-    later barrier will ship it. `project:finalize-step-era-stamp-fill` (order 21) is
-    the reference case: it self-commits and self-pushes, which is what makes its edit
-    ride the PR.
+  - **Ordered AFTER `default:push`** — the step makes the edit and returns; the
+    dispatcher's commit instrumentation commits it and then re-invokes `default:push`
+    (the post-PR re-push in [`../SKILL.md`](../SKILL.md) Step 3 item 5f, which covers
+    every step between the barrier and the merge gate), so the edit rides the PR.
 
-  What the checklist item forbids in both cases is the same thing: do not leave the
-  edit uncommitted, and do not defer the *responsibility* for shipping it to the
-  operator. Deferring the push to the barrier is not deferral — the barrier is a
+  What the checklist item forbids in both cases is the same thing: do not let the
+  edit reach the merge gate uncommitted, and do not defer the *responsibility* for
+  shipping it to the operator. Deferring the push to the barrier is not deferral — the barrier is a
   declared step that always runs, so the edit's path to the remote is guaranteed by
   the step order rather than by hope.
 - If the step can only determine the edit after merge, emit an explicit follow-up

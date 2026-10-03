@@ -7,19 +7,25 @@ mode: knowledge
 
 The single, shared contract for turning recurring user gate-dispositions
 (`suppressed` / `accepted` / `taken_into_account`) into durable architecture
-hints. It is consumed by BOTH preference-learning surfaces:
+hints. Two preference-learning surfaces reference it, and they consume different
+parts of it:
 
-- the **meta-only cross-plan auditor** (`audit-archived-plan-retrospectives`
-  Step 4c), which aggregates dispositions across the whole archived-plan corpus,
-  and
 - the **consumer-available per-plan emitter**
   (`default:finalize-step-preference-emitter`), which aggregates one plan's
-  dispositions at phase-6-finalize.
+  dispositions at phase-6-finalize and consumes the WHOLE contract —
+  generalization, routing, privacy, and both gates;
+- the **cross-plan auditor** in the `plan-marshall-telemetry` repository
+  (ADR-020), which aggregates dispositions across the whole archived-plan corpus
+  and is **report-only**: it applies the attribution gate (§ (d)) and the
+  authorship-admissibility gate (§ (e)) and surfaces candidate rows. It
+  generalizes nothing, calls no `architecture enrich` verb, and routes nothing
+  into `enriched.json`. Turning one of its reported rows into a hint is a
+  follow-up performed in the source project under §§ (a)-(c).
 
 Neither surface restates the rules below — they reference this document. This is
 the cross-cutting single source of truth for the generalization rule, the
-routing targets, and the privacy invariant. The THRESHOLD GATE is deliberately
-NOT owned here (see § "Threshold gate is surface-owned").
+routing targets, the privacy invariant, and the two gates. The THRESHOLD GATE is
+deliberately NOT owned here (see § "Threshold gate is surface-owned").
 
 ## (a) Generalization rule
 
@@ -72,9 +78,9 @@ outlines. See `plan-marshall:manage-architecture` for the `enrich` verb surface.
 `suppressed` / `accepted` / `taken_into_account` rows, and no individual finding
 titles are ever written to `enriched.json`. Only the generalized hint string —
 the durable preference framed in the project's voice — is persisted. The raw
-disposition corpus stays in `artifacts/findings/*.jsonl` (the auditor) or behind
-the `manage-findings` query (the emitter); it is never copied into the hint
-store.
+disposition corpus stays in `artifacts/findings/*.jsonl` (the auditor, which
+writes to no hint store at all) or behind the `manage-findings` query (the
+emitter); it is never copied into the hint store.
 
 ## (d) Attribution gate — the unattributed `default` bucket is not promotable
 
@@ -194,15 +200,19 @@ the vocabulary it publishes.
 
 ## Threshold gate is surface-owned
 
-This contract owns generalization and routing ONLY — it does NOT own the
-threshold mechanism that decides which recurrences are surfaced. The threshold
-gate is owned by each surface:
+This contract owns the generalization rule, the routing targets, the privacy
+invariant, and the two gates of §§ (d)-(e) — it does NOT own the threshold
+mechanism that decides which recurrences are surfaced. The threshold gate is
+owned by each surface:
 
 - the **cross-plan auditor** gates via its `THRESHOLDS` script constant
-  (`THRESHOLDS["preference_disposition_occurrences"]` in `scripts/audit.py`) —
-  meta-only; consumers cannot edit it;
+  (`THRESHOLDS["preference_disposition_occurrences"]` in the auditor's own
+  script, in the `plan-marshall-telemetry` repository) — consumers cannot edit
+  it;
 - the **per-plan emitter** gates via its `marshal.json` config knob (its
   `configurable:` block) — consumers CAN edit it.
 
-Both surfaces feed only ALREADY-GATED recurrences into the generalization rule
-above; the routing step never re-applies a threshold.
+Only ALREADY-GATED recurrences reach the generalization rule above, and the
+routing step never re-applies a threshold: the emitter feeds its gated tuples in
+directly, while the report-only auditor stops at its gated candidate rows and
+feeds nothing in.

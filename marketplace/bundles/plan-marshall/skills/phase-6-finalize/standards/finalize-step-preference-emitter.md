@@ -23,13 +23,15 @@ Consumer-available per-plan preference-learning pass for the
 just-finished plan's finding dispositions, aggregates
 `(module, finding-class, disposition)` recurrences WITHIN this single plan,
 threshold-gates them via the `preference_min_recurrence` config knob, and names
-the cleared patterns as owed `architecture enrich` hints — the SAME sink the
-meta-only cross-plan auditor uses, with no new store. Because the step is
+the cleared patterns as owed `architecture enrich` hints — the existing
+architecture-hint sink, with no new store. Because the step is
 `post_run_review: true` and runs after the merge gate, it files those hints as a
 follow-up artifact rather than writing them (see Step 4). This is the cheap
 per-plan path that ships to consumer projects via the standard finalize-step
-discovery mechanism; the richer corpus-wide path is the meta-only
-`audit-archived-plan-retrospectives` auditor (Step 4c).
+discovery mechanism. The corpus-wide counterpart is the cross-plan auditor in
+the `plan-marshall-telemetry` repository (ADR-020), which is report-only: it
+surfaces candidate preferences across the archived-plan corpus and routes
+nothing into `enriched.json`.
 
 Domain-agnostic by construction — it reads dispositions through `manage-findings`
 and generalizes them through the shared disposition-to-hint contract, with no
@@ -163,8 +165,10 @@ generalization rule, the routing target
 concrete module — Step 3 already dropped every unattributed `default`-bucket
 tuple, so no tuple routes to the `default` bucket), and the "generalize, do not
 log raw dispositions" privacy invariant. This step MUST NOT restate those rules
-inline — the shared contract is the single source of truth (the meta-only
-cross-plan auditor's Step 4c references the same contract).
+inline — the shared contract is the single source of truth. (The cross-plan
+auditor in the `plan-marshall-telemetry` repository, ADR-020, applies that
+contract's admissibility and attribution gates only; it generalizes and routes
+nothing.)
 
 **Do NOT call `architecture enrich` from this step.** It is `post_run_review: true`
 and runs after the merge gate, where the enrich write would put tracked source
@@ -294,4 +298,4 @@ no-ops) and skip-clean when the plan has zero promotable dispositions.
 
 - [disposition-to-hint-routing.md](disposition-to-hint-routing.md) — the shared generalization + routing + privacy contract this step consumes (single source of truth)
 - [finalize-step-simplify.md](finalize-step-simplify.md) — the built-in finalize-step exemplar this step is modeled on (frontmatter, configurable block, mark-step-done tail)
-- [../../../../../../.claude/skills/audit-archived-plan-retrospectives/checks/preference-pattern-detector.md](../../../../../../.claude/skills/audit-archived-plan-retrospectives/checks/preference-pattern-detector.md) — the richer meta-only cross-plan preference path sharing the same contract and sink
+- The cross-plan auditor in the `plan-marshall-telemetry` repository (ADR-020) — the report-only cross-plan preference path; it shares the contract's admissibility and attribution gates and writes to no hint sink

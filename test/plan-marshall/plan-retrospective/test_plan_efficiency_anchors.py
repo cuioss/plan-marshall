@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Key-space and population guards for the plan-efficiency calibration anchors.
+"""Key-space guards for the plan-efficiency calibration anchors.
 
 ``plan-retrospective/references/plan-efficiency.md`` § "2. Calibration anchors
 table" is keyed on ``(scope_estimate, change_type)``. Its key space is NOT a
@@ -31,32 +31,9 @@ derived:
    MUTATED copy of the document and assert the corresponding direction fires.
    Set equality that is never observed failing is an assertion nobody has proven
    can fail.
-
-The second cluster guards the POPULATION the audit-side sibling anchors score.
-``audit.py``'s ``lane-lever-effectiveness`` checkpoint verdict scores a plan's
-summed ``metrics.toon`` ``total_tokens`` against
-``THRESHOLDS['checkpoint_token_targets']``. What that sum measures is a
-default-plus-exception population: dispatched-subagent on every phase row except
-those whose ``total_tokens_population`` is ``inline``, where ``manage-metrics
-enrich`` folds a main-context figure in. The guards below pin the two facts that
-are actually true of the built code:
-
-- the sum takes ``total_tokens`` and ONLY ``total_tokens`` — the derived-cost
-  ``billing_weighted_total`` measures what a phase cost to buy, not work done,
-  and folding it in would inflate every checkpoint verdict; and
-- an ``inline``-labelled row IS included, so the sum spans populations and is
-  NOT a dispatched-only total.
-
-The second is stated as a guard rather than left implicit precisely because the
-tempting claim — "the verdict is computed over the dispatched population only" —
-is FALSE of the built code: the inline fold was deliberately retained, so
-asserting a dispatched-only population would pin a false claim into the suite.
 """
 
 from __future__ import annotations
-
-from pathlib import Path
-from typing import Any
 
 from _plan_efficiency_anchors_fixtures import (
     _ANCHORS_DOC,
@@ -67,11 +44,8 @@ from _plan_efficiency_anchors_fixtures import (
     _insert_anchor_row,
     _key_diff,
     _live_change_types,
-    _live_scope_estimates,
-    _load_audit,
     _remove_anchor_row,
     _router_change_types,
-    _write_metrics,
 )
 
 # ===========================================================================
@@ -183,140 +157,3 @@ def test_change_type_axis_is_derived_from_both_owning_sources() -> None:
         'the UNION wording should collapse to the canonical vocabulary.'
     )
     assert _live_change_types() == canonical | router
-
-
-# ===========================================================================
-# Population guard for the audit-side checkpoint anchors
-# ===========================================================================
-
-
-def test_checkpoint_total_sums_total_tokens_and_only_total_tokens(tmp_path: Path) -> None:
-    """``_plan_total_tokens`` sums ``total_tokens`` — and nothing else.
-
-    ``billing_weighted_total`` is a DERIVED-COST measure (what the phase cost to
-    buy) over a different population than the work total the checkpoint targets
-    score. Folding it in would inflate every verdict, so the guard fixes a
-    metrics.toon that carries both fields with deliberately far-apart magnitudes:
-    the summed result can only equal the ``total_tokens`` sum.
-    """
-    audit = _load_audit()
-    plan_dir = _write_metrics(
-        tmp_path / 'plan-a',
-        '[1-init]\n'
-        '  total_tokens: 100000\n'
-        '  billing_weighted_total: 5000000\n'
-        '[5-execute]\n'
-        '  total_tokens: 200000\n'
-        '  billing_weighted_total: 5000000\n',
-    )
-
-    total = audit._plan_total_tokens(audit.PlanInputs(plan_id='plan-a', plan_dir=plan_dir))
-
-    assert total == 300000, (
-        f'Checkpoint total is {total}, expected 300000 (the summed `total_tokens`). '
-        f'A larger value means a second field — most likely the derived-cost '
-        f'`billing_weighted_total` — was folded into the work total.'
-    )
-
-
-def test_checkpoint_total_spans_populations_when_an_inline_row_is_present(
-    tmp_path: Path,
-) -> None:
-    """An ``inline``-labelled phase row IS summed — the total is not dispatched-only.
-
-    This pins the AS-BUILT population honestly. ``manage-metrics enrich`` folds a
-    zero-dispatch phase's main-context figure into ``total_tokens`` and marks the
-    row ``inline``; that fold was deliberately RETAINED, so the checkpoint sum
-    spans populations. Asserting a dispatched-only population here would pin a
-    claim the code does not implement.
-    """
-    audit = _load_audit()
-    plan_dir = _write_metrics(
-        tmp_path / 'plan-b',
-        '[1-init]\n'
-        '  total_tokens: 40000\n'
-        '  total_tokens_population: inline\n'
-        '  inline_main_context_tokens: 40000\n'
-        '[5-execute]\n'
-        '  total_tokens: 60000\n'
-        '  total_tokens_population: dispatched\n',
-    )
-
-    total = audit._plan_total_tokens(audit.PlanInputs(plan_id='plan-b', plan_dir=plan_dir))
-
-    assert total == 100000, (
-        f'Checkpoint total is {total}, expected 100000. The `inline`-labelled row '
-        f'must still be summed — the checkpoint verdict is computed over a '
-        f'default-plus-exception population that SPANS populations, not over the '
-        f'dispatched population alone.'
-    )
-
-
-def test_checkpoint_targets_are_read_from_the_single_thresholds_constant() -> None:
-    """The armed targets live in ``THRESHOLDS`` and cover the classed scope bands.
-
-    The checkpoint classes are a deliberate SUBSET of the live ``scope_estimate``
-    enum — an unlisted band scores ``unclassed`` rather than being silently
-    graded against a borrowed target — so this asserts subset membership, not
-    equality, and would catch a target keyed on a value the enum never had.
-    """
-    audit = _load_audit()
-    targets = audit.THRESHOLDS['checkpoint_token_targets']
-    live_scopes = _live_scope_estimates()
-
-    assert targets, 'THRESHOLDS["checkpoint_token_targets"] is empty.'
-    unknown = set(targets) - live_scopes
-    assert not unknown, (
-        f'THRESHOLDS["checkpoint_token_targets"] is keyed on {sorted(unknown)}, '
-        f'which are not members of the live scope_estimate enum {sorted(live_scopes)} '
-        f'— those targets can never be selected and the class reads `unclassed`.'
-    )
-    assert all(isinstance(value, int) and value > 0 for value in targets.values()), (
-        f'Every checkpoint target must be a positive integer token budget; got {targets}.'
-    )
-
-
-def test_lane_lever_verdict_is_unaffected_by_billing_weighted_total(tmp_path: Path) -> None:
-    """The checkpoint verdict is identical with and without a billing column.
-
-    The magnitudes are chosen so the two answers are distinguishable: the work
-    total (300K) is inside the ``surgical`` target, while a total that folded the
-    billing figures in (10.3M) would blow past it and flip the verdict to ``over``.
-    A green here therefore means the verdict really is computed over the
-    ``total_tokens`` sum alone.
-    """
-    audit = _load_audit()
-    targets = audit.THRESHOLDS['checkpoint_token_targets']
-    work_only = '[1-init]\n  total_tokens: 100000\n[5-execute]\n  total_tokens: 200000\n'
-    with_billing = (
-        '[1-init]\n'
-        '  total_tokens: 100000\n'
-        '  billing_weighted_total: 5000000\n'
-        '[5-execute]\n'
-        '  total_tokens: 200000\n'
-        '  billing_weighted_total: 5000000\n'
-    )
-
-    def _row(name: str, body: str) -> dict[str, Any]:
-        inputs = audit.PlanInputs(
-            plan_id=name,
-            plan_dir=_write_metrics(tmp_path / name, body),
-            scope_estimate='surgical',
-        )
-        row = audit._lane_lever_row(inputs, targets)
-        row.pop('plan_id')
-        return dict(row)
-
-    baseline = _row('plan-work-only', work_only)
-    billed = _row('plan-with-billing', with_billing)
-
-    assert baseline == billed, (
-        'Adding a `billing_weighted_total` column to metrics.toon changed the '
-        'lane-lever checkpoint row; the derived-cost figure must never reach the '
-        'work total the verdict scores.'
-    )
-    assert baseline['verdict'] == 'within', (
-        f'Expected a `within` verdict for a 300K surgical plan against target '
-        f'{targets["surgical"]}; got {baseline["verdict"]}. If this flipped to '
-        f'`over`, a second token field is being summed into the work total.'
-    )
