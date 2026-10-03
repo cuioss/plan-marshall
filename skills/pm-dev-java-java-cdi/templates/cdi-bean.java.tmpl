@@ -1,0 +1,30 @@
+package ${PACKAGE};
+
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
+
+/**
+ * ${DESCRIPTION}.
+ */
+@ApplicationScoped
+public class ${CLASS_NAME} {
+
+    private final ${DEPENDENCY_1} ${dependency1};
+    // private final Instance<${OPTIONAL_DEPENDENCY}> ${optionalDependency};
+
+    public ${CLASS_NAME}(${DEPENDENCY_1} ${dependency1}
+            /* , Instance<${OPTIONAL_DEPENDENCY}> ${optionalDependency} */) {
+        this.${dependency1} = ${dependency1};
+        // this.${optionalDependency} = ${optionalDependency};
+    }
+
+    /**
+     * ${METHOD_DESCRIPTION}.
+     *
+     * @param ${PARAM} ${PARAM_DESCRIPTION}
+     * @return ${RETURN_DESCRIPTION}
+     */
+    public ${RETURN_TYPE} ${METHOD_NAME}(${PARAM_TYPE} ${PARAM}) {
+        return ${dependency1}.${DELEGATE_METHOD}(${PARAM});
+    }
+}

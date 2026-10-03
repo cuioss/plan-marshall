@@ -1,0 +1,263 @@
+{
+  "schema_version": 1,
+  "target": "antigravity",
+  "bundles": {
+    "plan-marshall": {
+      "skills": [
+        "skills/plan-marshall-automatic-review",
+        "skills/plan-marshall-build-gradle",
+        "skills/plan-marshall-build-maven",
+        "skills/plan-marshall-build-npm",
+        "skills/plan-marshall-build-pyproject",
+        "skills/plan-marshall-build-server-client",
+        "skills/plan-marshall-execute-task",
+        "skills/plan-marshall-extension-api",
+        "skills/plan-marshall-lsp-client",
+        "skills/plan-marshall-manage-adr",
+        "skills/plan-marshall-manage-architecture",
+        "skills/plan-marshall-manage-build-server",
+        "skills/plan-marshall-manage-change-ledger",
+        "skills/plan-marshall-manage-ci-artifacts",
+        "skills/plan-marshall-manage-config",
+        "skills/plan-marshall-manage-execution-manifest",
+        "skills/plan-marshall-manage-files",
+        "skills/plan-marshall-manage-findings",
+        "skills/plan-marshall-manage-lessons",
+        "skills/plan-marshall-manage-locks",
+        "skills/plan-marshall-manage-logging",
+        "skills/plan-marshall-manage-metrics",
+        "skills/plan-marshall-manage-personas",
+        "skills/plan-marshall-manage-plan-documents",
+        "skills/plan-marshall-manage-providers",
+        "skills/plan-marshall-manage-references",
+        "skills/plan-marshall-manage-run-config",
+        "skills/plan-marshall-manage-solution-outline",
+        "skills/plan-marshall-manage-status",
+        "skills/plan-marshall-manage-tasks",
+        "skills/plan-marshall-manage-terminal-title",
+        "skills/plan-marshall-marshall-steward",
+        "skills/plan-marshall-persona-auditor",
+        "skills/plan-marshall-persona-code-reviewer",
+        "skills/plan-marshall-persona-documenter",
+        "skills/plan-marshall-persona-implementer",
+        "skills/plan-marshall-persona-integration-tester",
+        "skills/plan-marshall-persona-module-tester",
+        "skills/plan-marshall-persona-plan-marshall-agent",
+        "skills/plan-marshall-persona-plan-orchestrator",
+        "skills/plan-marshall-persona-security-expert",
+        "skills/plan-marshall-phase-1-init",
+        "skills/plan-marshall-phase-2-refine",
+        "skills/plan-marshall-phase-3-outline",
+        "skills/plan-marshall-phase-4-plan",
+        "skills/plan-marshall-phase-5-execute",
+        "skills/plan-marshall-phase-6-finalize",
+        "skills/plan-marshall-plan-doctor",
+        "skills/plan-marshall-plan-marshall",
+        "skills/plan-marshall-plan-marshall-plugin",
+        "skills/plan-marshall-plan-orchestrator",
+        "skills/plan-marshall-plan-retrospective",
+        "skills/plan-marshall-platform-runtime",
+        "skills/plan-marshall-recipe-agentfile-hygiene",
+        "skills/plan-marshall-recipe-code-review",
+        "skills/plan-marshall-recipe-lesson-cleanup",
+        "skills/plan-marshall-recipe-refactor-to-profile-standards",
+        "skills/plan-marshall-recipe-security-audit",
+        "skills/plan-marshall-recipe-simplify-codebase",
+        "skills/plan-marshall-ref-agentfile-hygiene",
+        "skills/plan-marshall-ref-code-quality",
+        "skills/plan-marshall-ref-toon-format",
+        "skills/plan-marshall-ref-workflow-architecture",
+        "skills/plan-marshall-script-shared",
+        "skills/plan-marshall-tools-file-ops",
+        "skills/plan-marshall-tools-input-validation",
+        "skills/plan-marshall-tools-integration-ci",
+        "skills/plan-marshall-tools-permission-doctor",
+        "skills/plan-marshall-tools-permission-fix",
+        "skills/plan-marshall-tools-script-executor",
+        "skills/plan-marshall-untrusted-ingestion",
+        "skills/plan-marshall-workflow-integration-git",
+        "skills/plan-marshall-workflow-integration-github",
+        "skills/plan-marshall-workflow-integration-gitlab",
+        "skills/plan-marshall-workflow-integration-sonar",
+        "skills/plan-marshall-workflow-permission-web",
+        "skills/plan-marshall-workflow-pr-doctor"
+      ],
+      "agents": [
+        "agents/execution-context-level-1.md",
+        "agents/execution-context-level-2.md",
+        "agents/execution-context-level-3.md",
+        "agents/execution-context-level-4.md",
+        "agents/execution-context-level-5.md",
+        "agents/execution-context-level-6.md",
+        "agents/execution-context-level-7.md",
+        "agents/execution-context-reader-level-1.md",
+        "agents/execution-context-reader-level-2.md",
+        "agents/execution-context-reader-level-3.md",
+        "agents/execution-context-reader-level-4.md",
+        "agents/execution-context-reader-level-5.md",
+        "agents/execution-context-reader-level-6.md",
+        "agents/execution-context-reader-level-7.md",
+        "agents/execution-context-reader.md",
+        "agents/execution-context.md"
+      ],
+      "commands": [
+        "commands/plan-marshall-automatic-review.md",
+        "commands/plan-marshall-manage-build-server.md",
+        "commands/plan-marshall-marshall-steward.md",
+        "commands/plan-marshall-plan-doctor.md",
+        "commands/plan-marshall-plan-marshall.md",
+        "commands/plan-marshall-plan-orchestrator.md",
+        "commands/plan-marshall-plan-retrospective.md",
+        "commands/plan-marshall-tools-permission-doctor.md",
+        "commands/plan-marshall-tools-permission-fix.md",
+        "commands/plan-marshall-workflow-permission-web.md",
+        "commands/plan-marshall-workflow-pr-doctor.md",
+        "commands/tools-sync-agents-file.md"
+      ]
+    },
+    "plan-marshall-antigravity": {
+      "skills": [
+        "skills/plan-marshall-antigravity-target-rules"
+      ],
+      "agents": [],
+      "commands": []
+    },
+    "pm-dev-frontend": {
+      "skills": [
+        "skills/pm-dev-frontend-arch-gate-js",
+        "skills/pm-dev-frontend-css",
+        "skills/pm-dev-frontend-ext-triage-js",
+        "skills/pm-dev-frontend-javascript",
+        "skills/pm-dev-frontend-javascript-security",
+        "skills/pm-dev-frontend-jest-testing",
+        "skills/pm-dev-frontend-lint-config",
+        "skills/pm-dev-frontend-plan-marshall-plugin"
+      ],
+      "agents": [],
+      "commands": []
+    },
+    "pm-dev-frontend-cui": {
+      "skills": [
+        "skills/pm-dev-frontend-cui-cui-javascript-project",
+        "skills/pm-dev-frontend-cui-plan-marshall-plugin"
+      ],
+      "agents": [],
+      "commands": []
+    },
+    "pm-dev-java": {
+      "skills": [
+        "skills/pm-dev-java-arch-gate-java",
+        "skills/pm-dev-java-ext-triage-java",
+        "skills/pm-dev-java-java-cdi",
+        "skills/pm-dev-java-java-core",
+        "skills/pm-dev-java-java-lombok",
+        "skills/pm-dev-java-java-maintenance",
+        "skills/pm-dev-java-java-null-safety",
+        "skills/pm-dev-java-java-quarkus",
+        "skills/pm-dev-java-java-security",
+        "skills/pm-dev-java-javadoc",
+        "skills/pm-dev-java-junit-core",
+        "skills/pm-dev-java-junit-integration",
+        "skills/pm-dev-java-junit-weld-testing",
+        "skills/pm-dev-java-manage-maven-profiles",
+        "skills/pm-dev-java-plan-marshall-plugin"
+      ],
+      "agents": [],
+      "commands": []
+    },
+    "pm-dev-java-cui": {
+      "skills": [
+        "skills/pm-dev-java-cui-cui-http",
+        "skills/pm-dev-java-cui-cui-http-testing",
+        "skills/pm-dev-java-cui-cui-logging",
+        "skills/pm-dev-java-cui-cui-testing",
+        "skills/pm-dev-java-cui-parse-rewrite-log",
+        "skills/pm-dev-java-cui-plan-marshall-plugin",
+        "skills/pm-dev-java-cui-recipe-cui-logging-enforce",
+        "skills/pm-dev-java-cui-search-markers"
+      ],
+      "agents": [],
+      "commands": []
+    },
+    "pm-dev-oci": {
+      "skills": [
+        "skills/pm-dev-oci-ext-triage-oci",
+        "skills/pm-dev-oci-oci-security",
+        "skills/pm-dev-oci-oci-standards",
+        "skills/pm-dev-oci-plan-marshall-plugin"
+      ],
+      "agents": [],
+      "commands": []
+    },
+    "pm-dev-python": {
+      "skills": [
+        "skills/pm-dev-python-arch-gate-python",
+        "skills/pm-dev-python-ext-triage-python",
+        "skills/pm-dev-python-plan-marshall-plugin",
+        "skills/pm-dev-python-pytest-testing",
+        "skills/pm-dev-python-python-core",
+        "skills/pm-dev-python-python-security"
+      ],
+      "agents": [],
+      "commands": []
+    },
+    "pm-documents": {
+      "skills": [
+        "skills/pm-documents-ext-triage-docs",
+        "skills/pm-documents-manage-interface",
+        "skills/pm-documents-plan-marshall-plugin",
+        "skills/pm-documents-recipe-doc-verify",
+        "skills/pm-documents-recipe-verify-architecture-diagrams",
+        "skills/pm-documents-recipe-verify-ascii-diagrams",
+        "skills/pm-documents-ref-ascii-diagrams",
+        "skills/pm-documents-ref-asciidoc",
+        "skills/pm-documents-ref-documentation",
+        "skills/pm-documents-ref-narrative-styles",
+        "skills/pm-documents-ref-svg-diagrams"
+      ],
+      "agents": [],
+      "commands": []
+    },
+    "pm-plugin-development": {
+      "skills": [
+        "skills/pm-plugin-development-ext-outline-workflow",
+        "skills/pm-plugin-development-ext-self-review-plan-marshall",
+        "skills/pm-plugin-development-ext-triage-plugin",
+        "skills/pm-plugin-development-plan-marshall-plugin",
+        "skills/pm-plugin-development-plugin-apply-lessons-learned",
+        "skills/pm-plugin-development-plugin-architecture",
+        "skills/pm-plugin-development-plugin-create",
+        "skills/pm-plugin-development-plugin-doctor",
+        "skills/pm-plugin-development-plugin-maintain",
+        "skills/pm-plugin-development-plugin-plan-implement",
+        "skills/pm-plugin-development-plugin-script-architecture",
+        "skills/pm-plugin-development-plugin-security",
+        "skills/pm-plugin-development-plugin-task-plan",
+        "skills/pm-plugin-development-recipe-fix-argparse-rejection",
+        "skills/pm-plugin-development-tools-corpus-language-server",
+        "skills/pm-plugin-development-tools-epic-surface-partition",
+        "skills/pm-plugin-development-tools-marketplace-inventory",
+        "skills/pm-plugin-development-verification-mode"
+      ],
+      "agents": [],
+      "commands": [
+        "commands/pm-plugin-development-plugin-apply-lessons-learned.md",
+        "commands/pm-plugin-development-plugin-create.md",
+        "commands/pm-plugin-development-plugin-doctor.md",
+        "commands/pm-plugin-development-plugin-maintain.md"
+      ]
+    },
+    "pm-requirements": {
+      "skills": [
+        "skills/pm-requirements-ext-triage-reqs",
+        "skills/pm-requirements-plan-marshall-plugin",
+        "skills/pm-requirements-planning",
+        "skills/pm-requirements-requirements-authoring",
+        "skills/pm-requirements-setup",
+        "skills/pm-requirements-traceability"
+      ],
+      "agents": [],
+      "commands": []
+    }
+  }
+}
