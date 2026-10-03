@@ -1,6 +1,6 @@
 # Coverage-Gathering Contract
 
-> **Type**: Reusable Component Contract | **Gather mechanism**: `AskUserQuestion` | **Expander**: `manage-config coverage expand` | **Implementations**: 6 | **Status**: Active
+> **Type**: Reusable Component Contract | **Gather mechanism**: `AskUserQuestion` | **Expander**: `manage-config coverage expand` | **Implementations**: 5 | **Status**: Active
 
 ## Overview
 

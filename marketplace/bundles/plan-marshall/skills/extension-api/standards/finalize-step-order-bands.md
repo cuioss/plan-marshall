@@ -35,7 +35,7 @@ boundaries below track it.
 | Band | Range | Owner of the range | Meaning |
 |------|-------|--------------------|---------|
 | **Settle — pre-push** | 1–11 | Shared bundle + project-local / third-party, densely packed | Steps that prepare, gate quality, review and mutate source before the single `push` barrier at 11. **There is NO guaranteed insertion room in this sub-region today** — every integer from 3 to 11 is occupied by nine steps, leaving only 1–2 free below the whole cluster, which is not insertion room *within* it. A new pre-push step's sanctioned remedy is a deliberate re-space of the sub-cluster (see the alternative named below), not a slot in the post-push gaps, which are all numbered above `push` and so cannot hold a pre-push step. |
-| **Settle — post-push** | 12–69 | The majors anchor on a coarse grid (`create-pr` 20, `ci-verify` 22, `automatic-review` 30, `sonar-roundtrip` 40, `adr-propose` 62); project-local / third-party insert in the interior gaps | Steps that open the PR, run CI, review and re-settle after the push — everything between the push barrier and the merge gate. The interior gaps (12–19, 23–29, 31–39, 41–61, 63–69) are the band's guaranteed insertion room. |
+| **Settle — post-push** | 12–69 | The majors anchor on a coarse grid (`create-pr` 20, `ci-verify` 22, `automatic-review` 30, `sonar-roundtrip` 40, `adr-propose` 62); project-local / third-party insert in the interior gaps | Steps that open the PR, run CI, review and re-settle after the push — everything between the push barrier and the merge gate. The interior gaps (12–19, 21, 23–29, 31–39, 41–61, 63–69) are the band's guaranteed insertion room. |
 | **Merge gate** | 70 | Shared bundle (fixed) | `default:branch-cleanup` — the partition. Not a member of any insertable band. |
 | **Post-merge operational** | 71–899 | project-local / third-party | Post-merge steps that **act** (deploy, cache-sync) but are not backward-looking reports. They fail the post-run band's P1 predicate, so they are ordered here rather than in the post-run band. The `mutates_source` obligation for a step at or after the merge gate is owned by [`ext-point-finalize-step.md`](ext-point-finalize-step.md) § "Implementor Frontmatter" — read it there. |
 | **Post-run review** | 900–999 | Shared bundle + project-local / third-party | `post_run_review: true` backward-looking reports — the band `code-intelligence-substrate` plan 050 owns. Its members' `mutates_source` obligation is owned by that band's contract; this file does not restate it. Existing members cluster at 990–999; **900–989 is reserved insertion room.** |
@@ -56,8 +56,8 @@ without renumbering a neighbour:
   shipped. The sanctioned remedy for a new pre-push step is therefore a **deliberate re-space of the
   sub-cluster** — renumbering the existing members to open a slot — which is a change to this contract,
   made once and recorded, not an insertion into reserved room that does not exist.
-- **Settle — post-push (12–69)** — the gaps between the majors (12–19, 23–29, 31–39, 41–61, 63–69) are
-  open, and this is where the band's guaranteed insertion room lives.
+- **Settle — post-push (12–69)** — the gaps between the majors (12–19, 21, 23–29, 31–39, 41–61,
+  63–69) are open, and this is where the band's guaranteed insertion room lives.
 - **Post-merge operational (71–899)** — almost entirely open; existing members sit at 81 and 85.
 - **Post-run review (900–999)** — 900–989 is open insertion room below the existing 990–999 cluster.
 - **Terminal emission (1000–1099)** — reserved for the one terminal emission; 1001–1099 stays open for a

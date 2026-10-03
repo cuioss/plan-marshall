@@ -146,7 +146,7 @@ distinction that decides it is what the step's body *does*:
 - **A verdict that is a property of NAMED FILES is trivially declarable**, and its surface is a
   superset by construction rather than by survey: the declaration names the files the verdict
   is a claim about, plus every other tracked file whose change could make the recorded claim
-  false — a file that defines the predicate the verdict asserts is the usual third entry. The
+  false — a file that defines the predicate the verdict asserts is the usual such entry. The
   general rule for a declaration is: **name what determines the TRUTH of the recorded claim, not
   what determines the step's future behaviour.** A step's own procedural doc — its staging list,
   its detail wording — governs what it does next time and cannot falsify a verdict already
