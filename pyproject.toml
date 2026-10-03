@@ -453,7 +453,6 @@ exclude = [
     "test/finalize-step-sync-plugin-cache/",
     "test/sync-harnesses/",
     "test/pm-documents/ref-ascii-diagrams/",
-    "test/plan-marshall/audit-archived-plan-retrospectives/",
     "test/plan-marshall/execute-task/",
     "test/plan-marshall/finalize-step-review-retrospective/",
     "test/plan-marshall/finalize-step-sync-baseline/",
