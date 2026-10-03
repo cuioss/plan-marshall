@@ -359,8 +359,9 @@ def test_the_wildcard_free_guard_examines_every_declared_population():
     empty. An empty population is a different zero — there is no declaration for
     a literal glob to hide in — and it is published as ``declaring_steps=0``
     rather than failed. The guard's own ability to fire does not rest on the live
-    population either way: the matched control pair and the wholly-wildcard
-    exhibit below drive the same core synthetically.
+    population either way: the matched control pair in the sibling
+    ``test_verdict_currency_cli`` module and the wholly-wildcard exhibit below
+    drive the same core synthetically.
     """
     surfaces = _declared_surfaces()
     tracked = _tracked_paths()
