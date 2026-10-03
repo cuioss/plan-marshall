@@ -83,9 +83,9 @@ Two boundaries that catch most violations:
 `phase-3-outline` opens its work by reading the affected modules' architecture hints — durable, project-specific guidance surfaced through `get-module-context` from `enriched.json`. Two kinds of signal feed that surface:
 
 * **KNOWLEDGE-lesson hints** — actionable residue distilled from lessons learned, routed to `architecture enrich` so a recurring fix becomes a standing outline bias.
-* **Learned user preferences** — recurring user gate-dispositions (`suppressed`/`accepted`/`taken_into_account`) generalized into best-practice / insight strings and routed to the SAME `architecture enrich` sink. The per-plan `default:finalize-step-preference-emitter` finalize step is the source: it learns them from each finished plan's dispositions. See xref:audit-trail.adoc#_from_dispositions_to_durable_preferences[Audit Trail → From dispositions to durable preferences].
+* **Learned user preferences** — recurring user gate-dispositions (`suppressed`/`accepted`/`taken_into_account`) generalized into best-practice / insight strings bound for the SAME `architecture enrich` sink. The per-plan `default:finalize-step-preference-emitter` finalize step is the source: it learns them from each finished plan's dispositions and records them as owed hints, which a later `architecture enrich` call writes. See xref:audit-trail.adoc#_from_dispositions_to_durable_preferences[Audit Trail → From dispositions to durable preferences].
 
-Both kinds land in the same `enriched.json` `best_practices[]` / `insights[]` schema and surface identically in the phase-3-outline Architecture Hints section — so a future outline is biased not only by what past plans *learned to fix* but by what the project has *demonstrated it prefers*.
+Once written by `architecture enrich`, both kinds land in the same `enriched.json` `best_practices[]` / `insights[]` schema and surface identically in the phase-3-outline Architecture Hints section — so a future outline is biased not only by what past plans *learned to fix* but by what the project has *demonstrated it prefers*.
 
 == Above the lifecycle
 
