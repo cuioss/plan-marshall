@@ -50,7 +50,7 @@ cannot resolve:
 * Quality-gate parity cells whose path lists include `.claude/` — data describing
   this repository's own gate, read by that gate's test suite.
 
-The cross-plan auditor is the worked example for the first three shapes. It lives
+The cross-plan auditor is the worked example for the second and third shapes. It lives
 in the separate `plan-marshall-telemetry` repository, which ships to no target
 either, so a shipped reference to it is unresolvable for a consumer in exactly the
 way a reference into `.claude/` is: the referent is a specific artifact outside
@@ -101,14 +101,14 @@ name its own unshipped tree in content a consumer installs.
 **3. The obligation is a documentation rule at the reference site, applied by the
 author.** A site is fixed exactly when one of three dispositions is applied:
 
-* **Declare** — annotate the reference as meta-repo-only. Used where the reference
+* **Declare** — annotate the reference as unreachable for a consumer. Used where the reference
   is load-bearing prose or a coupling contract: a shipped metric-format standard
   that binds five surfaces to move together, or a shipped script docstring that
   names the cross-plan auditor as the contract's authority.
-* **Re-point** — replace a live relative link into `.claude/` with prose that
+* **Re-point** — replace a live link a consumer cannot resolve with prose that
   names the concept without a path a consumer cannot resolve. Used where the
   referent is a capability, not a file: the reader needs to know the mechanism
-  exists and that it is project-local, not to navigate to it.
+  exists, not to navigate to it.
 * **Correct as-is** — leave the site alone when it already declares the boundary:
   an explicit "(meta-project)" scope, a roster-addition record that names the
   project-local consumer and its coverage caveat, a generic statement about any
