@@ -20,21 +20,37 @@ lie outside the architecture inventory, so they are read by explicit path.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
 
 from _documented_example_scan import BARE_PYTHON_TARGETS_PREFIX, iter_fenced_blocks
 from conftest import PROJECT_ROOT
+from marketplace.targets.sync import SYNC_TARGETS
 
 _COMMAND_NAME = 'sync-harnesses'
 
-#: ``(harness, repository-relative entry point)`` for every harness the engine syncs.
-_ENTRY_POINTS: tuple[tuple[str, str], ...] = (
-    ('claude', '.claude/skills/sync-harnesses/SKILL.md'),
-    ('opencode', '.opencode/commands/sync-harnesses.md'),
-    ('antigravity', '.agents/skills/sync-harnesses/SKILL.md'),
+#: The repository-relative entry point of each harness, keyed by harness name.
+#: The mapping is explicit because each harness reads commands from its own
+#: location; which harnesses must HAVE an entry point is derived below.
+_ENTRY_POINT_PATHS: dict[str, str] = {
+    'claude': '.claude/skills/sync-harnesses/SKILL.md',
+    'opencode': '.opencode/commands/sync-harnesses.md',
+    'antigravity': '.agents/skills/sync-harnesses/SKILL.md',
+}
+
+#: ``(harness, repository-relative entry point)`` for every harness the engine
+#: syncs, derived from the engine's own ``SYNC_TARGETS`` so a harness added there
+#: without an entry point fails here instead of falling outside every check.
+_ENTRY_POINTS: tuple[tuple[str, str], ...] = tuple(
+    (harness, _ENTRY_POINT_PATHS.get(harness, f'<no entry point declared for {harness}>')) for harness in SYNC_TARGETS
 )
+assert _ENTRY_POINTS, 'SYNC_TARGETS resolved no harness, so every entry-point check would be vacuous'
+
+#: A ``./pw`` invocation at any shell command boundary: line start, or after a
+#: command separator. A prefix test alone would pass ``cd repo && ./pw …``.
+_DIRECT_WRAPPER_CALL = re.compile(r'(?:^|[;&|(]\s*)\./pw(?:\s|$)')
 
 #: The entry points that are skills. A skill declares its name in frontmatter; an
 #: OpenCode command is named by its file alone.
@@ -143,6 +159,41 @@ def test_entry_point_invokes_the_engine_with_arguments_passed_through(harness: s
         f'the {harness} entry point {relative} should prescribe exactly one sync call, the engine '
         f'with arguments passed through, got: {sync_calls}'
     )
+
+
+@pytest.mark.parametrize(('harness', 'relative'), _ENTRY_POINTS, ids=[harness for harness, _ in _ENTRY_POINTS])
+def test_entry_point_prescribes_no_direct_wrapper_call(harness: str, relative: str):
+    """No prescribed command runs ``./pw`` directly.
+
+    The enforcement hook denies a direct ``./pw`` call inside a plan context, so
+    the regeneration step goes through the build executor instead. The command
+    must stay runnable from a plan worktree as well as from the main checkout.
+    """
+    prescribed = _prescribed_commands(_read(relative))
+    assert prescribed, f'no prescribed command resolved from the {harness} entry point {relative}'
+
+    direct = [command for command in prescribed if _DIRECT_WRAPPER_CALL.search(command)]
+
+    assert direct == [], f'the {harness} entry point {relative} prescribes a direct ./pw call: {direct}'
+
+
+def test_entry_point_map_covers_exactly_the_synced_harnesses():
+    """Every harness the engine syncs has an entry point, and no entry point names another."""
+    assert set(_ENTRY_POINT_PATHS) == set(SYNC_TARGETS), (
+        f'entry points {sorted(_ENTRY_POINT_PATHS)} should match the engine targets {sorted(SYNC_TARGETS)}'
+    )
+
+
+def test_direct_wrapper_detector_matches_at_command_boundaries_only():
+    """Matched control for the ``./pw`` check: chained calls count, mentions inside a word do not."""
+    assert _DIRECT_WRAPPER_CALL.search('./pw generate-claude')
+    assert _DIRECT_WRAPPER_CALL.search('cd repo && ./pw generate-claude')
+    assert _DIRECT_WRAPPER_CALL.search('true; ./pw verify')
+    assert not _DIRECT_WRAPPER_CALL.search(
+        'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run '
+        '--command-args "generate-claude"'
+    )
+    assert not _DIRECT_WRAPPER_CALL.search('echo x/./pwd')
 
 
 def test_every_entry_point_prescribes_the_same_commands():
