@@ -123,6 +123,13 @@ per-concern layout; no code path here opens a queue row or the anchor itself.
   unconsumed landing message) from no-news from drain state alone.
   (``landing-check`` carries only the surface-expansion delta; the
   queue-wide owed verdict is a ``list``-payload field.)
+- ``land status | snapshot [--extend] | bind --pr-number N | resync --pr-number
+  N --merge-commit-sha SHA`` — the deterministic steps of landing the shared
+  ledger worktree onto the base branch: report the land state, commit and push
+  the ledger paths, record the PR that carries them, and replay the tree onto
+  the new base once that PR has landed. Backed by :mod:`_orchestrator_land`;
+  every verb refuses with ``land_requires_use_worktree`` while
+  ``orchestrator.use_worktree`` is off.
 - ``preflight --plan-id ID`` — invoke ``platform_runtime runtime-info`` and
   write the returned payload as the per-plan ``client.toon`` pre-flight
   artifact, settling the plan's title state best-effort on the way.
@@ -176,6 +183,12 @@ from _orchestrator_inbox import (
     cmd_inbox_validate,
     cmd_inbox_write,
     inbox_counts,
+)
+from _orchestrator_land import (
+    cmd_land_bind,
+    cmd_land_resync,
+    cmd_land_snapshot,
+    cmd_land_status,
 )
 from _orchestrator_ledger import (
     LEDGER_ABSENT,
@@ -5814,8 +5827,9 @@ def _build_arg_parser() -> argparse.ArgumentParser:
             'view, migrate a monolithic ledger, archive a closed epic, reconcile '
             'the staged spec corpus and its re-grounding verdicts, report the '
             'restart-readiness verdict, drive the plan-writable inbox '
-            'OUTBOX, its drain and the plan-side mailbox read, and write the '
-            'per-plan client.toon pre-flight artifact.'
+            'OUTBOX, its drain and the plan-side mailbox read, land the shared '
+            'ledger worktree onto the base branch (snapshot, bind, resync), and '
+            'write the per-plan client.toon pre-flight artifact.'
         ),
         allow_abbrev=False,
     )
@@ -5977,8 +5991,72 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     _add_corpus_group(subparsers)
     _add_cleanup_group(subparsers)
     _add_inbox_group(subparsers)
+    _add_land_group(subparsers)
 
     return parser
+
+
+def _add_land_group(subparsers: Any) -> None:
+    """Register the ``land`` verb group.
+
+    Sub-verbs, in registration order: ``status``, ``snapshot``, ``bind``,
+    ``resync``. The handlers live in :mod:`_orchestrator_land`; this function only
+    wires argv to them. The surface takes no path, no branch and no remote: the
+    tree, its branch and the base branch are all resolved by the handlers.
+    """
+    land = subparsers.add_parser(
+        'land',
+        help=(
+            'Land the shared orchestrator ledger worktree onto the base branch: report '
+            'the land state, snapshot and push the ledger, bind the PR that carries it, '
+            'and resync the tree once the PR has landed.'
+        ),
+        allow_abbrev=False,
+    )
+    actions = land.add_subparsers(dest='land_action', required=True)
+
+    status = actions.add_parser(
+        'status',
+        help='Report the ledger worktree, its pending and unpushed work, and the in-flight land (read-only).',
+        allow_abbrev=False,
+    )
+    status.set_defaults(handler=cmd_land_status)
+
+    snapshot = actions.add_parser(
+        'snapshot',
+        help='Commit the ledger paths, push them without force, and record the pushed commit.',
+        allow_abbrev=False,
+    )
+    snapshot.add_argument(
+        '--extend',
+        action='store_true',
+        help=(
+            'Add to a land that is already in flight instead of returning in_flight; '
+            'the push runs even when nothing new was committed.'
+        ),
+    )
+    snapshot.set_defaults(handler=cmd_land_snapshot)
+
+    bind = actions.add_parser(
+        'bind',
+        help='Record the PR that carries the in-flight land (idempotent).',
+        allow_abbrev=False,
+    )
+    bind.add_argument('--pr-number', required=True, type=int, help='Number of the PR opened for the land.')
+    bind.set_defaults(handler=cmd_land_bind)
+
+    resync = actions.add_parser(
+        'resync',
+        help='After the land PR merged, replay the ledger tree onto the new base and close the land.',
+        allow_abbrev=False,
+    )
+    resync.add_argument('--pr-number', required=True, type=int, help='Number of the PR that landed.')
+    resync.add_argument(
+        '--merge-commit-sha',
+        required=True,
+        help='SHA of the commit the PR landed as on the base branch.',
+    )
+    resync.set_defaults(handler=cmd_land_resync)
 
 
 def _add_corpus_group(subparsers: Any) -> None:
