@@ -155,6 +155,22 @@ cannot express.}
 
 ## Decisions
 
+- 2026-10-03 — **Phase-transition mailbox probe fixed outside the queue: #1685 (`8aa33cfe1`), an ad-hoc
+  operator-run fix, not a plan of this epic.** Found while PLAN-10 ran: its transition probe reported
+  `not_orchestrated` although `inbox detect` classified the same pointer `orchestrated`. Cause:
+  `_resolve_mailbox_checkpoint` (`manage-status/scripts/_cmd_lifecycle.py`) read `source_id` with
+  `file_ops.parse_markdown_metadata`, which reads only leading `key=value` lines and stops at the first blank
+  line or heading — a real `request.md` opens with an HTML comment and a `# Request:` heading and writes
+  `source_id: …`. So every orchestrated plan was misreported at every phase transition. The test fixture
+  pinned the defect by writing `request.md` in `key=value` form. Fix: read through `parse_document_sections`
+  (`_plan_parsing`), the reader behind `request read`; the fixture now renders the production template.
+  Corroborated: `ci pr view` (merged, `8aa33cfe1`), the commit is an ancestor of `origin/main`, its file list
+  is `_cmd_lifecycle.py` plus two `manage-status` test files, and the checked-out probe imports
+  `parse_document_sections`. Same defect as the "transition-mailbox misreports `not_orchestrated`" lesson
+  from PLAN-02's drain (`2026-09-23-15-001`, no longer in the lessons store). Also: #1684
+  (`unified-sync-all-harnesses`) merged as `4962d398b`, so PLAN-10's checked live-plan overlap at emit time is
+  gone.
+
 - 2026-10-02 — **PLAN-10 emitted on operator override ("emit the plan"); not yet confirmed launched.** `next`
   refused it on two counts, read from `corpus cross-check` at emit time: (1) `candidate comparison
   indeterminate — sibling_epic_spec indeterminate: 95` (of 611), the standing repository-wide gate; (2) a
@@ -542,6 +558,12 @@ by the operator — do not re-derive it.
   `truthful-signals` as one cross-cutting hardening plan.
 
 ## Watches
+
+- **Harness sync owed for the #1685 probe fix (2026-10-03).** A running plan executes the synced plugin copy,
+  so PLAN-10 (`orchestrator-land-verbs`) keeps getting `not_orchestrated` at its phase transitions until the
+  operator runs `/sync-harnesses` (#1684 replaced `/sync-plugin-cache`). Consequence while unsynced: a
+  message delivered to its mailbox is not surfaced at a transition. Nothing is in its mailbox today. — trigger:
+  before delivering any mailbox message to a running plan; retire when a sync succeeds.
 
 - **PLAN-11 landing residue (2026-10-02):** (1) the plugin cache is stale relative to `8665ddacf` —
   `finalize-step-sync-plugin-cache` failed on its staleness guard (lesson `2026-10-02-10-006`); `corpus
