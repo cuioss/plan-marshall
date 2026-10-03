@@ -411,6 +411,107 @@ the checked-out branch of the routed working tree; the router-level
 a foreign checkout, which is how a foreign repository's change is polled. Backs
 the phase-6 pre-archive foreign-PR landing gate.
 
+### github_ops pr queue-state
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr queue-state \
+  --pr-number N
+```
+
+Reports a PR's merge-queue membership from one read. `pr merge-queue` reports the
+outcome of one enqueue call; this verb answers where the PR is afterwards.
+
+```toon
+status: success
+operation: pr_queue_state
+pr_number: 123
+pr_state: open
+merge_commit_sha: null
+in_queue: true
+queue_position: 1
+queue_entry_state: AWAITING_CHECKS
+auto_merge_armed: true
+merge_group_run:
+  found: true
+  run_id: 987654321
+  status: in_progress
+  conclusion: null
+  url: "https://github.com/OWNER/REPO/actions/runs/987654321"
+observation: "pullRequest(number: 123).mergeQueueEntry lists the PR at position 1 (state AWAITING_CHECKS); newest merge_group run 987654321 for the PR is in_progress with no conclusion"
+```
+
+| Field | Meaning |
+|-------|---------|
+| `pr_state` | `open` / `merged` / `closed` |
+| `merge_commit_sha` | The landing commit of a merged PR; an explicit `null` when the PR has none |
+| `in_queue` | `true` / `false` / `indeterminate` — whether the PR's own `mergeQueueEntry` is present |
+| `queue_position`, `queue_entry_state` | The entry's position and state; `null` when the PR is not in the queue |
+| `auto_merge_armed` | `true` / `false` / `indeterminate` — whether the PR carries an `autoMergeRequest` |
+| `merge_group_run` | The newest `merge_group`-event workflow run whose head branch belongs to this PR: `found`, `run_id`, `status`, `conclusion`, `url` |
+| `observation` | Names each read and what it saw |
+
+⛔ **`indeterminate` is never collapsed into `false`.** A queue read that failed
+reports `in_queue: indeterminate` and `auto_merge_armed: indeterminate`; a
+merge-group run list that could not be read — or that reached its read bound
+without a run for the PR, so an older one may exist — reports
+`merge_group_run.found: indeterminate`. Each is reported beside a `pr_state` that
+was read, and the verb still returns `status: success`.
+
+A PR that could not be read at all returns `status: error`,
+`error: pr_read_failed`, with `message` and `context` naming the failure.
+
+The verb is **GitHub-only**, registered by this provider's `main()` like
+`landing-state`; the GitLab surface argparse-rejects it.
+
+### github_ops pr wait-for-queue-settle
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr wait-for-queue-settle \
+  --pr-number N [--timeout SECONDS] [--interval SECONDS]
+```
+
+Waits, bounded, until the PR leaves the merge queue. It polls the same
+observation `pr queue-state` reports, through the shared `poll_until` (see
+[`tools-integration-ci/standards/blocking-wait-pattern.md`](../tools-integration-ci/standards/blocking-wait-pattern.md)).
+`--timeout` and `--interval` default to `DEFAULT_CI_TIMEOUT` /
+`DEFAULT_CI_INTERVAL`.
+
+```toon
+status: success
+operation: pr_wait_for_queue_settle
+pr_number: 123
+timed_out: false
+duration_sec: 240
+polls: 8
+settle: merged
+baseline: {the pr queue-state fields observed before polling}
+final: {the pr queue-state fields of the last observation}
+```
+
+`settle` is drawn from a closed set:
+
+| `settle` | Holds when |
+|----------|-----------|
+| `merged` | `pr_state` is `merged` |
+| `closed` | `pr_state` is `closed` |
+| `dequeued` | The PR is `open`, `in_queue` is `false`, `auto_merge_armed` is `false`, AND `merge_group_run` was found with `status: completed` and a conclusion other than `success` |
+| `timeout` | `--timeout` elapsed before any of the three |
+
+- **`settle: timeout` holds exactly when `timed_out` is `true`.** The deadline is
+  reported as `status: success` with `timed_out: true` — there is no
+  `status: timeout`.
+- **An `indeterminate` read never produces `dequeued`.** Every term of the
+  `dequeued` definition is tested against the measured value, so a failed queue
+  read or an unreadable run list keeps the wait polling.
+- **An open PR that is neither queued nor armed is not, by itself, settled.**
+  Without a failed merge-group run that is also what a PR looks like between an
+  enqueue call and its admission, so the wait continues.
+- **A PR read failure returns `status: error`, `error: pr_read_failed`.** When
+  the baseline read fails, nothing is polled. When a read fails during the poll,
+  the return also carries the `polls` and `duration_sec` reached.
+
+GitHub-only, like `pr queue-state`.
+
 ### github_ops pr create
 
 ```bash

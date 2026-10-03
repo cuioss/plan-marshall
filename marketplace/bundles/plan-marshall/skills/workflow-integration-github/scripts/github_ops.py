@@ -7,6 +7,8 @@ Subcommands:
     pr view         View PR for current branch (number, URL, state)
     pr list         List pull requests, reporting whether the listing is complete
     pr landing-state  Classify a branch as merged/pr_open/pushed_no_pr/unpushed
+    pr queue-state  Report a PR's merge-queue membership and newest merge-group run
+    pr wait-for-queue-settle  Wait until a PR leaves the merge queue
     pr reviews      Get PR reviews
     pr comments     Get PR review comments (inline code comments)
     pr reply        Reply to a PR with a comment
@@ -47,6 +49,8 @@ a second plan-less convention of its own:
     python3 github.py pr view
     python3 github.py pr list [--head feature/branch] [--state open|closed|all] [--limit 200]
     python3 github.py pr landing-state [--branch feature/branch]
+    python3 github.py pr queue-state --pr-number 123
+    python3 github.py pr wait-for-queue-settle --pr-number 123 [--timeout 300] [--interval 30]
     python3 github.py pr reviews --pr-number 123
     python3 github.py pr comments --pr-number 123 [--unresolved-only]
     python3 github.py pr reply --pr-number 123 --plan-id EXAMPLE-PLAN
@@ -118,6 +122,8 @@ from _github_checks import (  # noqa: F401 — re-exported for callers and tests
     _run_names_a_different_pr,
 )
 from ci_base import (
+    DEFAULT_CI_INTERVAL,
+    DEFAULT_CI_TIMEOUT,
     MAX_ELAPSED_SECONDS,
     MERGE_QUEUE_ELIGIBLE_CONFIGURED,
     MERGE_QUEUE_ELIGIBLE_UNCONFIGURED,
@@ -1129,6 +1135,48 @@ def _fetch_issue_state_and_labels(issue_number: int) -> tuple[bool, Any]:
     state = str(data.get('state', 'unknown')).lower()
     labels = [label.get('name', '') for label in data.get('labels', []) if label.get('name')]
     return True, {'state': state, 'labels': labels}
+
+
+#: How many ``merge_group``-event workflow runs :func:`list_merge_group_runs`
+#: reads. A bound on the read, not a claim about the population: a listing that
+#: fills it may have older runs behind it, and a consumer that found no match in
+#: a full listing must not report the match as absent.
+MERGE_GROUP_RUN_LIST_LIMIT = 50
+
+
+def list_merge_group_runs(limit: int = MERGE_GROUP_RUN_LIST_LIMIT) -> tuple[bool, list[dict], str]:
+    """List the newest ``merge_group``-event workflow runs of the repository.
+
+    Returns ``(ok, runs, error)``. Each run carries ``databaseId``,
+    ``headBranch``, ``status``, ``conclusion``, ``url`` and ``createdAt`` as
+    ``gh run list`` reports them. ``ok`` is False — with an empty list and the
+    reason — when the call fails or its output is not a JSON list, so a failed
+    read is never returned as an empty listing.
+
+    Reached by handlers via ``github_ops.list_merge_group_runs`` attribute
+    access, so a test's ``monkeypatch.setattr(github_ops, ...)`` is honoured.
+    """
+    returncode, stdout, stderr = run_gh(
+        [
+            'run',
+            'list',
+            '--event',
+            'merge_group',
+            '--limit',
+            str(limit),
+            '--json',
+            'databaseId,headBranch,status,conclusion,url,createdAt',
+        ]
+    )
+    if returncode != 0:
+        return False, [], stderr.strip() or 'gh run list failed'
+    try:
+        runs = json.loads(stdout)
+    except json.JSONDecodeError:
+        return False, [], f'could not parse gh run list output: {stdout[:100]}'
+    if not isinstance(runs, list):
+        return False, [], 'gh run list output was not a list'
+    return True, [run for run in runs if isinstance(run, dict)], ''
 
 
 # ---------------------------------------------------------------------------
@@ -2174,6 +2222,7 @@ from _github_pr import (  # noqa: E402 — bottom import: primitives must be def
     cmd_pr_list,
     cmd_pr_merge,
     cmd_pr_merge_queue,
+    cmd_pr_queue_state,
     cmd_pr_ready,
     cmd_pr_reply,
     cmd_pr_resolve_thread,
@@ -2184,6 +2233,7 @@ from _github_pr import (  # noqa: E402 — bottom import: primitives must be def
     cmd_pr_update_branch,
     cmd_pr_view,
     cmd_pr_wait_for_comments,
+    cmd_pr_wait_for_queue_settle,
     cmd_repo_label_ensure,
     fetch_pr_reviews_with_commits,
     post_pr_comment,
@@ -2245,6 +2295,36 @@ def main() -> int:
         help='Branch to classify (default: the checked-out branch in the routed working tree)',
     )
 
+    # GitHub: pr queue-state / pr wait-for-queue-settle — the merge-queue state
+    # read and its bounded settle wait. Registered provider-specifically, like
+    # landing-state above, so the gitlab surface argparse-rejects them rather
+    # than accepting a verb it does not implement.
+    queue_state_parser = pr_sub.add_parser(
+        'queue-state',
+        help="Report a PR's merge-queue membership, auto-merge state and newest merge-group run",
+        allow_abbrev=False,
+    )
+    queue_state_parser.add_argument('--pr-number', type=int, required=True, help='PR number')
+
+    queue_settle_parser = pr_sub.add_parser(
+        'wait-for-queue-settle',
+        help='Wait until a PR leaves the merge queue (merged / closed / dequeued) or the timeout elapses',
+        allow_abbrev=False,
+    )
+    queue_settle_parser.add_argument('--pr-number', type=int, required=True, help='PR number')
+    queue_settle_parser.add_argument(
+        '--timeout',
+        type=int,
+        default=DEFAULT_CI_TIMEOUT,
+        help=f'Maximum seconds to wait (default: {DEFAULT_CI_TIMEOUT})',
+    )
+    queue_settle_parser.add_argument(
+        '--interval',
+        type=int,
+        default=DEFAULT_CI_INTERVAL,
+        help=f'Seconds between polls (default: {DEFAULT_CI_INTERVAL})',
+    )
+
     # GitHub: --limit on pr list — the explicit enumeration bound whose value the
     # handler reports back alongside the count, so a listing that reached the bound
     # is distinguishable from a complete population. Declared on the SHARED pr list
@@ -2283,6 +2363,8 @@ def main() -> int:
         ('pr', 'view'): cmd_pr_view,
         ('pr', 'list'): cmd_pr_list,
         ('pr', 'landing-state'): cmd_pr_landing_state,
+        ('pr', 'queue-state'): cmd_pr_queue_state,
+        ('pr', 'wait-for-queue-settle'): cmd_pr_wait_for_queue_settle,
         ('pr', 'reply'): cmd_pr_reply,
         ('pr', 'resolve-thread'): cmd_pr_resolve_thread,
         ('pr', 'thread-reply'): cmd_pr_thread_reply,

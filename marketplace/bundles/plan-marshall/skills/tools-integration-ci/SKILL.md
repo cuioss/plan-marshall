@@ -327,7 +327,7 @@ The canonical argparse surface for `ci.py`. The plugin-doctor `missing-canonical
 
 ### pr
 
-Sub-verbs: `view`, `list`, `landing-state`, `reply`, `resolve-thread`, `thread-reply`, `reviews`, `comments`, `wait-for-comments`, `merge`, `auto-merge`, `safe-merge`, `merge-queue`, `update-branch`, `close`, `ready`, `submit-review`, `edit`, `prepare-body`, `prepare-comment`, `create`.
+Sub-verbs: `view`, `list`, `landing-state`, `queue-state`, `wait-for-queue-settle`, `reply`, `resolve-thread`, `thread-reply`, `reviews`, `comments`, `wait-for-comments`, `merge`, `auto-merge`, `safe-merge`, `merge-queue`, `update-branch`, `close`, `ready`, `submit-review`, `edit`, `prepare-body`, `prepare-comment`, `create`.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr landing-state \
@@ -361,6 +361,22 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr merge-q
 `pr merge-queue` enqueues the PR into the platform merge queue so the platform re-tests-and-merges against the latest base, serializing a truly-external commit the session-scoped merge mutex cannot. It takes no `--strategy` or `--delete-branch` flag: the merge queue's own branch-protection configuration dictates the merge method, GitHub rejects `--delete-branch` when a merge queue is enabled, and the platform auto-deletes the head branch after the queue merge. On GitHub it engages the merge queue via `gh pr merge --auto`; on GitLab it performs a real merge-train enqueue via `POST /projects/:id/merge_trains/merge_requests/:iid`. On GitLab the merge train is a Premium/Ultimate-tier feature enabled per-project.
 
 **On BOTH providers** the verb returns the actionable ineligible error rather than silently falling back to an immediate merge. On GitLab it fires when the project/tier does not offer merge trains; on GitHub it fires when the PR's base branch has no configured merge queue, where `gh pr merge --auto` would otherwise exit zero having quietly enabled **plain auto-merge** instead of enqueuing anything. That base-branch probe is the **pre-condition**, not evidence of membership. `enqueued` is `true` only when the PR's own place in the queue was observed, in provider-shaped form: GitHub reads the base branch's merge-queue entry list after the enqueue call (paginated to its end) and, when that list does not carry the PR, the PR's own `mergeQueueEntry` / `autoMergeRequest` state; it returns `enqueued: true` only when one of those reads shows the PR in the queue, naming the read(s) in `enqueue_observation` — otherwise `enqueued: indeterminate` with `enqueue_unobserved_reason` (`membership_read_failed`, `entries_incomplete`, `auto_merge_armed_awaiting_checks`, or `pr_not_listed`), never `true`; the probe's verdict is returned as `queue_precondition`. GitLab's dedicated train endpoint only succeeds against a real train and returns the created car, reported as `merge_train_car_id`; the GitLab arm returns `enqueued: true` on that success and never `indeterminate`. See [`standards/pr-operations.md`](standards/pr-operations.md) § "Workflow: Merge-Queue PR".
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr queue-state \
+  --pr-number PR_NUMBER
+```
+
+`pr queue-state` reports where a PR stands relative to the merge queue, from one read: `pr_state` (`open` / `merged` / `closed`), `merge_commit_sha` (an explicit `null` when the PR has no landing commit), `in_queue`, `queue_position`, `queue_entry_state`, `auto_merge_armed`, and a `merge_group_run` block (`found`, `run_id`, `status`, `conclusion`, `url`) for the newest `merge_group`-event workflow run whose head branch belongs to the PR. `in_queue`, `auto_merge_armed` and `merge_group_run.found` are tri-state — `true` / `false` / `indeterminate` — and a read that failed is `indeterminate`, never `false`. A PR that could not be read returns `status: error`, `error: pr_read_failed`. It takes no verb-level `--plan-id`; a `--plan-id` for it is the router flag and goes before the verb.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr wait-for-queue-settle \
+  --pr-number PR_NUMBER [--timeout SECONDS] [--interval SECONDS]
+```
+
+`pr wait-for-queue-settle` polls that same observation until the PR leaves the queue or `--timeout` elapses, and returns `settle` from the closed set `merged` / `closed` / `dequeued` / `timeout` beside `timed_out`, `duration_sec`, `polls`, and the `baseline` and `final` observations. `dequeued` means the PR is open, is not in the queue, has no auto-merge armed, and its newest merge-group run completed with a conclusion other than success; an `indeterminate` read never yields it. The deadline is `status: success` with `timed_out: true` and `settle: timeout` — there is no `status: timeout`. A PR read failure returns `error: pr_read_failed`. The router `--plan-id` placement is the same as for `pr queue-state`.
+
+Both verbs are **GitHub-only** — registered on the GitHub front-end like `pr landing-state`, so the GitLab surface rejects them. See [`standards/pr-operations.md`](standards/pr-operations.md) § "Workflow: Merge-Queue State and Settle Wait" for the full contract.
 
 ### checks
 

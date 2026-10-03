@@ -2573,6 +2573,317 @@ def cmd_pr_merge_queue(args: argparse.Namespace) -> dict:
     return result
 
 
+# ---------------------------------------------------------------------------
+# Merge-queue state read (`pr queue-state`) and settle wait
+# (`pr wait-for-queue-settle`)
+# ---------------------------------------------------------------------------
+#
+# ``pr merge-queue`` reports the outcome of ONE enqueue call. These two verbs
+# answer the question that follows it: where is the PR now, and has it left the
+# queue. Both are built on one observation (:func:`_observe_pr_queue_state`), so
+# the single read and every poll of the wait report the same fields derived the
+# same way.
+
+#: The value of a tri-state field whose read failed or could not be completed.
+#: Never ``False``: a membership, an armed auto-merge or a merge-group run that
+#: could not be read is unknown, not absent.
+QUEUE_READ_INDETERMINATE = 'indeterminate'
+
+#: The PR states the observation reports, as ``view_pr_data`` spells them.
+QUEUE_PR_STATE_OPEN = 'open'
+QUEUE_PR_STATE_MERGED = 'merged'
+QUEUE_PR_STATE_CLOSED = 'closed'
+QUEUE_PR_STATES = frozenset({QUEUE_PR_STATE_OPEN, QUEUE_PR_STATE_MERGED, QUEUE_PR_STATE_CLOSED})
+
+#: ``settle`` values of ``pr wait-for-queue-settle`` — a closed set.
+QUEUE_SETTLE_MERGED = 'merged'
+QUEUE_SETTLE_CLOSED = 'closed'
+QUEUE_SETTLE_DEQUEUED = 'dequeued'
+QUEUE_SETTLE_TIMEOUT = 'timeout'
+QUEUE_SETTLES = (QUEUE_SETTLE_MERGED, QUEUE_SETTLE_CLOSED, QUEUE_SETTLE_DEQUEUED, QUEUE_SETTLE_TIMEOUT)
+
+#: The error code both verbs return when the PR itself could not be read.
+PR_READ_FAILED = 'pr_read_failed'
+
+#: Status and conclusion of a merge-group workflow run that ran to its end and
+#: passed, as ``gh run list`` spells them.
+_RUN_STATUS_COMPLETED = 'completed'
+_RUN_CONCLUSION_SUCCESS = 'success'
+
+
+def _read_pr_queue_entry(pr_number: int) -> tuple[dict, str]:
+    """Return the PR's own queue fields and the observation naming the read.
+
+    Reads :data:`PULL_REQUEST_QUEUE_STATE_QUERY` — the same read ``pr
+    merge-queue`` performs for an unlisted PR — and reports ``in_queue``,
+    ``queue_position``, ``queue_entry_state`` and ``auto_merge_armed``.
+
+    A read that fails, or returns no ``pullRequest`` object, reports
+    ``in_queue`` and ``auto_merge_armed`` as :data:`QUEUE_READ_INDETERMINATE`.
+    Neither is ever ``False`` on that path: a failed read is not evidence that
+    the PR is outside the queue.
+    """
+    unread = {
+        'in_queue': QUEUE_READ_INDETERMINATE,
+        'queue_position': None,
+        'queue_entry_state': None,
+        'auto_merge_armed': QUEUE_READ_INDETERMINATE,
+    }
+    read_name = f'pullRequest(number: {pr_number})'
+    owner, repo = github_ops.get_repo_info()
+    if not owner or not repo:
+        return unread, f'{read_name} read skipped: repository owner/name unresolvable'
+    returncode, data, err = github_ops.run_graphql(
+        PULL_REQUEST_QUEUE_STATE_QUERY, {'owner': owner, 'repo': repo, 'number': pr_number}
+    )
+    if returncode != 0 or data is None:
+        return unread, f'{read_name} read failed: {err}'
+    try:
+        pull_request = data['repository']['pullRequest']
+    except (KeyError, TypeError):
+        pull_request = None
+    if not isinstance(pull_request, dict):
+        return unread, f'{read_name} read returned no repository.pullRequest'
+
+    auto_merge_armed = isinstance(pull_request.get('autoMergeRequest'), dict)
+    entry = pull_request.get('mergeQueueEntry')
+    if isinstance(entry, dict):
+        return (
+            {
+                'in_queue': True,
+                'queue_position': entry.get('position'),
+                'queue_entry_state': entry.get('state'),
+                'auto_merge_armed': auto_merge_armed,
+            },
+            f'{read_name}.mergeQueueEntry lists the PR at position {entry.get("position")} '
+            f'(state {entry.get("state")})',
+        )
+    return (
+        {
+            'in_queue': False,
+            'queue_position': None,
+            'queue_entry_state': None,
+            'auto_merge_armed': auto_merge_armed,
+        },
+        f'{read_name} carries no mergeQueueEntry and {"an" if auto_merge_armed else "no"} autoMergeRequest',
+    )
+
+
+def _merge_group_run_for_pr(pr_number: int) -> tuple[dict, str]:
+    """Return the ``merge_group_run`` block for the PR and the observation naming the read.
+
+    The block describes the NEWEST ``merge_group``-event workflow run whose head
+    branch belongs to the PR. GitHub runs a merge group on a temporary branch
+    named ``gh-readonly-queue/{base}/pr-{number}-{sha}``, so a run belongs to the
+    PR when its head branch carries the ``pr-{number}-`` segment.
+
+    ``found`` is tri-state. ``True`` carries the run's ``run_id``, ``status``,
+    ``conclusion`` and ``url``. ``False`` means the run list was read to its end
+    and holds no run for the PR. :data:`QUEUE_READ_INDETERMINATE` means the list
+    could not be read, or it was cut off at the read's bound without a match — in
+    which case an older run may exist and its absence is not established.
+    """
+    unread = {'found': QUEUE_READ_INDETERMINATE, 'run_id': None, 'status': None, 'conclusion': None, 'url': None}
+    ok, runs, err = github_ops.list_merge_group_runs()
+    if not ok:
+        return unread, f'merge_group run list read failed: {err}'
+
+    segment = re.compile(rf'(?:^|/)pr-{pr_number}-')
+    matching = [run for run in runs if isinstance(run.get('headBranch'), str) and segment.search(run['headBranch'])]
+    if not matching:
+        if len(runs) >= github_ops.MERGE_GROUP_RUN_LIST_LIMIT:
+            return (
+                unread,
+                f'merge_group run list reached its bound of {github_ops.MERGE_GROUP_RUN_LIST_LIMIT} runs '
+                f'with none for the PR; older runs were not read',
+            )
+        return (
+            {'found': False, 'run_id': None, 'status': None, 'conclusion': None, 'url': None},
+            f'merge_group run list read to its end ({len(runs)} runs); none belongs to the PR',
+        )
+
+    newest = max(matching, key=lambda run: str(run.get('createdAt') or ''))
+    status = str(newest.get('status') or '').lower() or None
+    conclusion = str(newest.get('conclusion') or '').lower() or None
+    return (
+        {
+            'found': True,
+            'run_id': newest.get('databaseId'),
+            'status': status,
+            'conclusion': conclusion,
+            'url': newest.get('url') or None,
+        },
+        f'newest merge_group run {newest.get("databaseId")} for the PR is '
+        f'{status or "of unknown status"} with {conclusion or "no"} conclusion',
+    )
+
+
+def _observe_pr_queue_state(pr_number: int) -> tuple[bool, dict]:
+    """Observe the PR's merge-queue state once; return ``(ok, data)`` in ``poll_until``'s shape.
+
+    ``ok`` is False only when the PR itself could not be read — ``pr view``
+    failed, or reported a state outside :data:`QUEUE_PR_STATES` — and ``data``
+    then carries ``error`` and ``context`` for the caller's
+    :data:`PR_READ_FAILED` return. A failed queue or run read does NOT make the
+    observation fail: it is reported inside the observation as
+    :data:`QUEUE_READ_INDETERMINATE`, because the PR state beside it is still a
+    real answer.
+
+    On success ``data`` carries ``pr_state``, ``merge_commit_sha`` (``None`` when
+    the PR has no landing commit), ``in_queue``, ``queue_position``,
+    ``queue_entry_state``, ``auto_merge_armed``, the ``merge_group_run`` block
+    and ``observation``, which names each read and what it saw.
+    """
+    view = github_ops.view_pr_data(head=str(pr_number))
+    if view.get('status') != 'success':
+        return False, {
+            'error': str(view.get('error') or 'pr view failed'),
+            'context': str(view.get('context') or view.get('error_cause') or ''),
+        }
+    pr_state = str(view.get('state') or '')
+    if pr_state not in QUEUE_PR_STATES:
+        return False, {
+            'error': f'PR {pr_number} reported state {pr_state!r}, which is none of open / merged / closed',
+            'context': '',
+        }
+
+    entry, entry_observation = _read_pr_queue_entry(pr_number)
+    run, run_observation = _merge_group_run_for_pr(pr_number)
+    return True, {
+        'pr_state': pr_state,
+        'merge_commit_sha': view.get('merge_commit_sha'),
+        **entry,
+        'merge_group_run': run,
+        'observation': f'{entry_observation}; {run_observation}',
+    }
+
+
+def _classify_queue_settle(data: dict) -> str | None:
+    """Return the settle an observation establishes, or ``None`` while the PR is still in flight.
+
+    - ``merged`` / ``closed`` — the PR's own state.
+    - ``dequeued`` — the PR is open, ``in_queue`` is exactly ``False``,
+      ``auto_merge_armed`` is exactly ``False``, and its newest merge-group run
+      was found, completed, and concluded with anything but success. Every term
+      is an identity test against the measured value, so an
+      :data:`QUEUE_READ_INDETERMINATE` read on any of them yields ``None`` and
+      never ``dequeued``.
+
+    An open PR that is neither queued nor armed but has no failed merge-group run
+    is NOT settled: that is also what a PR looks like in the instant between an
+    enqueue call and its admission.
+    """
+    pr_state = data.get('pr_state')
+    if pr_state == QUEUE_PR_STATE_MERGED:
+        return QUEUE_SETTLE_MERGED
+    if pr_state == QUEUE_PR_STATE_CLOSED:
+        return QUEUE_SETTLE_CLOSED
+    run = data.get('merge_group_run')
+    if not isinstance(run, dict):
+        return None
+    conclusion = run.get('conclusion')
+    if (
+        pr_state == QUEUE_PR_STATE_OPEN
+        and data.get('in_queue') is False
+        and data.get('auto_merge_armed') is False
+        and run.get('found') is True
+        and run.get('status') == _RUN_STATUS_COMPLETED
+        and isinstance(conclusion, str)
+        and conclusion != _RUN_CONCLUSION_SUCCESS
+    ):
+        return QUEUE_SETTLE_DEQUEUED
+    return None
+
+
+def _pr_read_failed(operation: str, pr_number: int, failure: dict) -> dict:
+    """The :data:`PR_READ_FAILED` return both queue verbs share."""
+    return {
+        'status': 'error',
+        'operation': operation,
+        'error': PR_READ_FAILED,
+        'pr_number': pr_number,
+        'message': str(failure.get('error') or 'the PR could not be read'),
+        'context': str(failure.get('context') or ''),
+    }
+
+
+def cmd_pr_queue_state(args: argparse.Namespace) -> dict:
+    """Handle 'pr queue-state' — report a PR's merge-queue membership from one read.
+
+    Returns ``status: success``, ``operation: pr_queue_state`` and the fields of
+    :func:`_observe_pr_queue_state`. A PR that could not be read returns
+    ``status: error``, ``error: pr_read_failed``. A queue or merge-group read that
+    failed is NOT an error of this verb: it is reported as ``indeterminate`` on
+    the field it would have filled, beside a PR state that was read.
+    """
+    ok, data = _observe_pr_queue_state(args.pr_number)
+    if not ok:
+        return _pr_read_failed('pr_queue_state', args.pr_number, data)
+    return {'status': 'success', 'operation': 'pr_queue_state', 'pr_number': args.pr_number, **data}
+
+
+def cmd_pr_wait_for_queue_settle(args: argparse.Namespace) -> dict:
+    """Handle 'pr wait-for-queue-settle' — wait, bounded, until the PR leaves the merge queue.
+
+    Polls :func:`_observe_pr_queue_state` through the shared ``poll_until`` until
+    :func:`_classify_queue_settle` names a settle or ``--timeout`` elapses. The
+    baseline is observed once before polling; a PR that cannot be read at that
+    point returns ``pr_read_failed`` and nothing is polled.
+
+    The return is ``status: success`` on every path that produced a verdict,
+    including the deadline: ``settle: timeout`` holds exactly when ``timed_out``
+    is true, and there is no ``status: timeout``. A PR read that fails during the
+    poll ends the wait with ``pr_read_failed`` and the ``polls`` / ``duration_sec``
+    reached.
+    """
+    ok, baseline = _observe_pr_queue_state(args.pr_number)
+    if not ok:
+        return _pr_read_failed('pr_wait_for_queue_settle', args.pr_number, baseline)
+
+    def check_fn() -> tuple[bool, dict]:
+        return _observe_pr_queue_state(args.pr_number)
+
+    def is_complete_fn(data: dict) -> bool:
+        return _classify_queue_settle(data) is not None
+
+    poll_result = github_ops.poll_until(check_fn, is_complete_fn, timeout=args.timeout, interval=args.interval)
+
+    polls = poll_result.get('polls', 0)
+    duration_sec = poll_result.get('duration_sec', 0)
+    if poll_result.get('error'):
+        failed = _pr_read_failed(
+            'pr_wait_for_queue_settle',
+            args.pr_number,
+            {'error': poll_result['error'], 'context': (poll_result.get('last_data') or {}).get('context', '')},
+        )
+        failed['polls'] = polls
+        failed['duration_sec'] = duration_sec
+        return failed
+
+    final = poll_result.get('last_data') or baseline
+    timed_out = bool(poll_result.get('timed_out'))
+    settle = QUEUE_SETTLE_TIMEOUT if timed_out else _classify_queue_settle(final)
+    if settle is None:
+        # poll_until returned without a deadline and without a settled
+        # observation. Reporting a settle here would invent one.
+        return make_error(
+            'pr_wait_for_queue_settle',
+            f'Queue-settle poll for PR {args.pr_number} ended without a deadline and without a settled observation',
+            str(final.get('observation') or ''),
+        )
+    return {
+        'status': 'success',
+        'operation': 'pr_wait_for_queue_settle',
+        'pr_number': args.pr_number,
+        'timed_out': timed_out,
+        'duration_sec': duration_sec,
+        'polls': polls,
+        'settle': settle,
+        'baseline': baseline,
+        'final': final,
+    }
+
+
 # Stable fallback label color (GitHub's own default gray) applied when the
 # caller omits --color. Without a stable default, `gh label create --force`
 # passes no --color at all, and `gh`'s own provider default is not guaranteed
