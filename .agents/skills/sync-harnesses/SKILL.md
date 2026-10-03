@@ -27,8 +27,11 @@ When this skill is invoked:
    ```
    Each call runs the `./pw generate-{target}` alias through the build
    executor. Read its outcome from the TOON `status` (the call exits `0` even
-   on failure); on `status: error`, report the TOON's `log_file` and do not
-   sync that target.
+   on failure). When any call reports anything other than `status: success`,
+   STOP: report the failing target and the TOON's `log_file`, and do not run
+   step 2 — the engine would install whatever the failed target left in its
+   tree. To sync only the targets that regenerated, re-run with `--target X`
+   for each of them.
 
 2. Run the sync engine:
    ```bash

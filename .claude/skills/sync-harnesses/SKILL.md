@@ -88,9 +88,14 @@ python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build ru
 Each call runs the matching `./pw generate-{target}` alias through the build
 executor, which is the form the enforcement hook allows inside a plan worktree;
 a direct `./pw` call is denied there. Read each call's outcome from its TOON
-`status` — the executor exits `0` even when the build failed. On `status:
-error`, the TOON's `log_file` holds the generator output; do not run the sync
-for a target whose regeneration failed.
+`status` — the executor exits `0` even when the build failed.
+
+**When any call reports anything other than `status: success`, STOP before
+Step 2.** Report the failing target and the TOON's `log_file`, which holds the
+generator output. Do not run the sync at all: the engine would install whatever
+the failed target left in its tree, which may be stale or partial. Once the
+failure is fixed, re-run the command; to sync only the targets that did
+regenerate, re-run with `--target X` for each of them.
 
 When `--from-worktree PATH` is passed, the Claude source is that worktree's
 `target/claude/`, so the regeneration belongs in that worktree.

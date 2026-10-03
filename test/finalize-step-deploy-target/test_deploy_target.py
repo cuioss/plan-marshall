@@ -133,6 +133,25 @@ def test_skill_body_prescribes_one_generator_call_per_harness_target():
     assert generator_calls == list(_EXECUTOR_INVOCATIONS)
 
 
+def test_every_prescribed_target_has_a_wrapper_alias():
+    """Each prescribed ``generate-{target}`` names an alias ``pyproject.toml`` declares.
+
+    The executor runs the alias by name, so a prescribed target with no alias
+    fails at run time. The alias set is read from ``pyproject.toml`` and compared
+    as a set; the prescribed ORDER stays pinned by the exact-sequence test above.
+    """
+    pyproject = (PROJECT_ROOT / 'pyproject.toml').read_text(encoding='utf-8')
+    aliases = set(re.findall(r'^generate-([a-z][a-z-]*)\s*=', pyproject, re.MULTILINE))
+    assert aliases, 'no generate-{target} alias resolved from pyproject.toml'
+
+    prescribed = set(re.findall(r'"generate-([a-z][a-z-]*)"', ' '.join(_EXECUTOR_INVOCATIONS)))
+
+    assert prescribed == set(_HARNESS_TARGETS)
+    assert prescribed == aliases, (
+        f'prescribed targets {sorted(prescribed)} should match the generate-* aliases {sorted(aliases)}'
+    )
+
+
 def test_skill_body_prescribes_no_direct_wrapper_call():
     """No fenced command line runs ``./pw`` directly.
 
