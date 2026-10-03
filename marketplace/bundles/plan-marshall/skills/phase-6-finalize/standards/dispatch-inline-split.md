@@ -50,7 +50,6 @@ The inline steps are pure scripts or trivial orchestration that earn no envelope
 - `default:finalize-step-print-phase-breakdown` — capture the Phase Breakdown table from `metrics.md`
 - `default:emit-landing` — terminal machine-readable emission; assembles the run's already-recorded facts into the `kind: landing` inbox message the epic drains and writes it via `orchestrator inbox write`, taking no reasoning of its own
 - `default:archive-plan` — archive the completed plan
-- `project:finalize-step-era-stamp-fill` — `mode: script-executor`; resolves the `PR-PENDING` era-stamp sentinel to the real PR number and pushes the correction
 - `project:finalize-step-deploy-target` — generate every harness target tree (`target/claude/`, `target/opencode/`, `target/antigravity/`) via the multi-target generator
 - `project:finalize-step-sync-plugin-cache` — sync every harness install (Claude plugin cache, OpenCode, Antigravity) from `target/` via the unified sync engine; the step id names the Claude cache, the step syncs all three
 

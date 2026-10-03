@@ -301,24 +301,57 @@ def test_resolve_live_head_matches_git(git_repo: Path):
     assert _mod.resolve_live_head(str(git_repo)) == head
 
 
-def test_real_resolver_reads_a_declared_surface_off_the_live_population():
+def test_real_resolver_reads_a_declared_surface_off_a_discovered_step_doc(tmp_path: Path, monkeypatch):
     """The resolution seam itself, unpatched — the riskiest part of the wiring.
 
     Every ``classify_step`` test above patches ``resolve_verdict_inputs``, so none
-    of them exercises the discovery lookup or the ``canonicalize_step_key``
-    matching that bridges discovery's name to the key the dispatcher holds. A
-    rename or an alias change there would break the feature silently while every
-    patched test stayed green.
+    of them exercises the discovery lookup, the frontmatter read, or the
+    ``canonicalize_step_key`` matching that bridges discovery's name to the key
+    the dispatcher holds. A rename or an alias change there would break the
+    feature silently while every patched test stayed green.
 
-    This test covers whichever prefix forms the live declaring population happens
-    to carry; the sibling ``push`` test below covers the ``default:``-prefixed
-    bridge unconditionally, since discovery names that step ``default:push`` while
-    the dispatcher holds the bare key.
+    The declaring step is a synthetic doc handed to the resolver through the
+    discovery seam, so the declared-surface path is exercised whether or not any
+    shipped step currently declares ``verdict_inputs``. Only the population is
+    substituted: the resolver, the frontmatter parser and the key canonicaliser
+    all run for real.
     """
-    declared = _declared_surfaces()
-    assert declared, 'no finalize step declares verdict_inputs'
+    step_doc = tmp_path / 'SKILL.md'
+    step_doc.write_text(
+        '---\n'
+        'name: finalize-step-synthetic-declarer\n'
+        'head_dependent: true\n'
+        'verdict_inputs:\n'
+        "  - 'src/declared.py'\n"
+        "  - 'config/*'\n"
+        '---\n\n# Synthetic declaring step\n',
+        encoding='utf-8',
+    )
+    discovery_name = 'project:finalize-step-synthetic-declarer'
+    monkeypatch.setattr(
+        extension_discovery,
+        'find_implementors',
+        lambda _ext_point: [{'name': discovery_name, 'path': str(step_doc)}],
+    )
 
-    for discovery_name, (expected_globs, _head_dependent) in declared.items():
+    globs, is_head_dependent, unresolved = _mod.resolve_verdict_inputs(canonicalize_step_key(discovery_name))
+
+    assert unresolved is None, f'the synthetic declarer did not resolve: {unresolved}'
+    assert is_head_dependent, 'the synthetic declarer resolved as not head-dependent'
+    assert globs == ['src/declared.py', 'config/*']
+
+
+def test_real_resolver_agrees_with_every_live_declaration():
+    """Every shipped declaration resolves to the surface its own doc states.
+
+    The population is whichever finalize steps declare ``verdict_inputs`` in the
+    live tree, which may be none: the mechanism is opt-in per step. The synthetic
+    test above covers the declared-surface path unconditionally; this one covers
+    whichever prefix forms the live declarers carry, and the sibling ``push`` test
+    covers the ``default:``-prefixed bridge, since discovery names that step
+    ``default:push`` while the dispatcher holds the bare key.
+    """
+    for discovery_name, (expected_globs, _head_dependent) in _declared_surfaces().items():
         # The dispatcher holds the CANONICAL key, not discovery's spelling.
         canonical = canonicalize_step_key(discovery_name)
         globs, is_head_dependent, unresolved = _mod.resolve_verdict_inputs(canonical)

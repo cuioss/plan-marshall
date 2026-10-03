@@ -345,19 +345,22 @@ def test_every_declared_surface_is_non_empty_and_well_formed():
             assert isinstance(glob, str) and glob.strip(), f'{step} declares a blank glob'
 
 
-def test_the_wildcard_free_guard_examines_a_non_empty_population():
-    """Non-vacuity floor: the guard below must have inspected something.
+def test_the_wildcard_free_guard_examines_every_declared_population():
+    """Non-vacuity floor: where steps declare a surface, the guard inspected something.
 
     The existence check reports an empty offender list both when every literal
     glob resolves and when there was no literal glob to check. Only the first is a
-    clean bill of health. This floor fails the second as *"examined 0 of N"*,
-    naming the declaring-step count and the declared-glob count so the zero is
-    reported as the could-not-look zero it is.
+    clean bill of health. Where at least one step declares ``verdict_inputs``,
+    this floor fails the second as *"examined 0 of N"*, naming the declaring-step
+    count and the declared-glob count so the zero is reported as the
+    could-not-look zero it is.
 
-    With exactly one declaring step today, a single frontmatter edit making all of
-    its globs wildcard-bearing collapses the examined set to zero — and the
-    sibling non-vacuity assertion below guards only that ``git ls-files`` returned
-    something, which it would continue to do.
+    ``verdict_inputs`` is opt-in per step, so the declaring population may be
+    empty. An empty population is a different zero — there is no declaration for
+    a literal glob to hide in — and it is published as ``declaring_steps=0``
+    rather than failed. The guard's own ability to fire does not rest on the live
+    population either way: the matched control pair and the wholly-wildcard
+    exhibit below drive the same core synthetically.
     """
     surfaces = _declared_surfaces()
     tracked = _tracked_paths()
@@ -372,7 +375,8 @@ def test_the_wildcard_free_guard_examines_a_non_empty_population():
         f'tracked_paths={len(tracked)}'
     )
 
-    assert examined > 0, (
+    assert tracked, 'git ls-files returned nothing, so the guard had nothing to check against'
+    assert examined > 0 or not surfaces, (
         f'The wildcard-free existence guard examined 0 of {declared_globs} declared '
         f'glob(s) across {len(surfaces)} declaring step(s), so its empty offender '
         f'list certifies nothing — it is a "could not look" zero, not an '
