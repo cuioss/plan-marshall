@@ -1,6 +1,6 @@
 # Extension Point: Finalize Step
 
-> **Type**: Phase-6 Step Doc Extension | **Hook Method**: `implements:` frontmatter on each step doc | **Implementations**: 26 | **Status**: Active
+> **Type**: Phase-6 Step Doc Extension | **Hook Method**: `implements:` frontmatter on each step doc | **Implementations**: 25 | **Status**: Active
 
 ## Exit-code convention for every script call
 

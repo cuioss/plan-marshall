@@ -200,9 +200,10 @@ the vocabulary it publishes.
 
 ## Threshold gate is surface-owned
 
-This contract owns generalization and routing ONLY — it does NOT own the
-threshold mechanism that decides which recurrences are surfaced. The threshold
-gate is owned by each surface:
+This contract owns the generalization rule, the routing targets, the privacy
+invariant, and the two gates of §§ (d)-(e) — it does NOT own the threshold
+mechanism that decides which recurrences are surfaced. The threshold gate is
+owned by each surface:
 
 - the **cross-plan auditor** gates via its `THRESHOLDS` script constant
   (`THRESHOLDS["preference_disposition_occurrences"]` in the auditor's own
