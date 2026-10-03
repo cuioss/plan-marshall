@@ -297,7 +297,7 @@ category of the `default` module, so the `--category script` sweeps above and th
   `--category script` sweeps nor the AST glob can see, and a future key added
   there would be outside every derivation above.
 
-Git-ignored files under `.claude/` are machine-local and outside both methods.
+Git-ignored files under `.claude/` are machine-local and outside Method 1.
 
 ## Member dispositions
 

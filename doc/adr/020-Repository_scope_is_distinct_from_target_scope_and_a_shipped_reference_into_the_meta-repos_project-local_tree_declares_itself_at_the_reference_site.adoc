@@ -104,7 +104,7 @@ author.** A site is fixed exactly when one of three dispositions is applied:
 * **Declare** — annotate the reference as meta-repo-only. Used where the reference
   is load-bearing prose or a coupling contract: a shipped metric-format standard
   that binds five surfaces to move together, or a shipped script docstring that
-  names the project-local auditor as the contract's authority.
+  names the cross-plan auditor as the contract's authority.
 * **Re-point** — replace a live relative link into `.claude/` with prose that
   names the concept without a path a consumer cannot resolve. Used where the
   referent is a capability, not a file: the reader needs to know the mechanism
