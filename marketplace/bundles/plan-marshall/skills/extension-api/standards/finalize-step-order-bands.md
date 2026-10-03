@@ -57,8 +57,7 @@ without renumbering a neighbour:
   sub-cluster** — renumbering the existing members to open a slot — which is a change to this contract,
   made once and recorded, not an insertion into reserved room that does not exist.
 - **Settle — post-push (12–69)** — the gaps between the majors (12–19, 23–29, 31–39, 41–61, 63–69) are
-  open, and this is where the band's guaranteed insertion room lives. `finalize-step-era-stamp-fill` (21)
-  already uses it.
+  open, and this is where the band's guaranteed insertion room lives.
 - **Post-merge operational (71–899)** — almost entirely open; existing members sit at 81 and 85.
 - **Post-run review (900–999)** — 900–989 is open insertion room below the existing 990–999 cluster.
 - **Terminal emission (1000–1099)** — reserved for the one terminal emission; 1001–1099 stays open for a

@@ -51,8 +51,8 @@ Two layers of review-quality signal:
   the deterministic false-positive inference; and a comparative verdict (which
   reviewer added more value on this PR and why).
 
-Cross-plan aggregation is **out of scope** — see
-`audit-archived-plan-retrospectives` for the corpus-wide quality-chain view.
+Cross-plan aggregation is **out of scope** — the corpus-wide quality-chain view
+belongs to the cross-plan auditor in the `plan-marshall-telemetry` repository.
 
 ## Interface Contract
 
@@ -497,5 +497,5 @@ unsubstantiated review as a clean one.
 - [.claude/skills/finalize-step-deploy-target/SKILL.md](../finalize-step-deploy-target/SKILL.md) — sibling project-local finalize step
 - `plan-marshall:manage-findings` — the pr-comment finding store this step reads (first-class `author` / `kind` fields)
 - `plan-marshall:manage-files` — plan-dir artifact persistence
-- `.claude/skills/audit-archived-plan-retrospectives/SKILL.md` — the cross-plan, corpus-wide quality-chain view (this step is single-plan)
+- The cross-plan auditor in the `plan-marshall-telemetry` repository — the cross-plan, corpus-wide quality-chain view (this step is single-plan)
 - [marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md) — finalize phase that invokes this wrapper

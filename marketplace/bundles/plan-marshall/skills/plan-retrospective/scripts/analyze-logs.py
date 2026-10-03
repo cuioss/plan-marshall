@@ -106,7 +106,7 @@ _GLOBAL_LOG_LINE_RE = re.compile(
 # Trailing ``(0.22s)`` script-call duration, anchored to end-of-line.
 #
 # The digit group is deliberately as strict as the cross-plan reader's
-# (`audit.py` `_LOG_DUR_RE`) rather than a loose ``[0-9.]+``: a malformed body
+# (`_LOG_DUR_RE` in the `plan-marshall-telemetry` auditor) rather than a loose ``[0-9.]+``: a malformed body
 # like ``(1.2.3s)`` must NOT match. Under the loose form it matched, ``float()``
 # raised, the duration became ``0.0``, and the line still joined the roll-up —
 # publishing a call that contributed nothing measured to the total it was
@@ -1315,17 +1315,14 @@ def artifact_emission_population(work_log_lines: list[str], plan_dir: Path) -> d
 # block in `manage-metrics/SKILL.md`, the hand-copied `_BC_LEDGER_COLUMNS` /
 # `_BC_LEDGER_UNMEASURED_TOKEN` pair — together with the
 # `_parse_dispatch_boundary_totals` cell read and the row-level provenance gate
-# that consume them — in
-# `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py`, and the
+# that consume them — in the cross-plan auditor's `audit.py`, and the
 # `billing-composition` check's restatement of the column set, the four-way cell
-# read and that same provenance gate in
-# `.claude/skills/audit-archived-plan-retrospectives/checks/billing-composition.md`.
-# The last TWO live in this repository's project-local auditor tree
-# (`.claude/skills/…`), which ships to no target — they are meta-repo-only
-# surfaces of the lock-step, absent from any consumer installation. That tree
-# is also one the architecture inventory does not crawl, so a content sweep
-# will NOT find them — changing the schema here means editing all five by
-# reading the list, never by searching.
+# read and that same provenance gate in that auditor's
+# `checks/billing-composition.md`.
+# The last TWO live in the `plan-marshall-telemetry` repository, outside this
+# one — they ship to no target and are absent from any consumer installation.
+# No content sweep of this repository can find them — changing the schema here
+# means editing all five by reading the list, never by searching.
 _LEGACY_COLUMN_COUNT = 5
 _CONTEXT_LOAD_COLUMNS = (
     'input_tokens',
@@ -1455,9 +1452,9 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
       read at all, because nothing declares what their cells mean.
 
     This is the same strategy the audit reader
-    (``_parse_dispatch_boundary_totals`` in the project-local cross-plan auditor —
-    ``.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py``, which
-    ships to no target and is absent from a consumer installation) applies. The
+    (``_parse_dispatch_boundary_totals`` in the cross-plan auditor, which lives
+    in the ``plan-marshall-telemetry`` repository and is absent from this
+    repository and from a consumer installation) applies. The
     two readers parse the same
     on-disk ledger in separate processes, so the same bytes MUST yield the same
     measured set and the same datability verdict in both; resolving columns two

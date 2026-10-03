@@ -297,7 +297,6 @@ Every step doc that declares the finalize-step interface. Built-in steps live un
 | `default:pre-push-quality-gate` | built-in | 10 | true | `[full]` |
 | `default:push` | built-in | 11 | true | `[local, standard, full]` |
 | `default:create-pr` | built-in | 20 | true | `[standard, full]` |
-| `project:finalize-step-era-stamp-fill` | project | 21 | false | `[]` |
 | `default:ci-verify` | built-in | 22 | true | `[standard, full]` |
 | `plan-marshall:automatic-review` | bundle | 30 | true | `[standard, full]` |
 | `default:sonar-roundtrip` | built-in | 40 | true | `[full]` |

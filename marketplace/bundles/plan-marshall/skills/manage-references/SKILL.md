@@ -636,7 +636,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 | `manage-execution-manifest` (via `phase-4-plan` § Step 7b) | get | Read `affected_files` as the declared **modification** surface the compose-time classification is decided from — read-intent paths are excluded by construction, so a deliverable that only consults a file no longer inflates the classification |
 | `phase-6-finalize` | compute-footprint | Derive the live plan footprint for commit scope and PR body |
 | `phase-6-finalize` (`branch-cleanup`) | capture-footprint, set | Persist `realized_footprint` before worktree removal, and record `merge_commit_sha` after the base pull |
-| `plan-retrospective`, `audit-archived-plan-retrospectives` | (reads `realized_footprint` / `merge_commit_sha` / `pr_number` via the shared footprint resolver) | Resolve the realized footprint for recall and mis-prune checks post-merge. `pr_number` backs the PR-landing tier, which is the only tier that resolves a squash / merge-queue landing — the path on which `realized_footprint` and `merge_commit_sha` are both unwritten |
+| `plan-retrospective`, and the cross-plan auditor in the `plan-marshall-telemetry` repository | (reads `realized_footprint` / `merge_commit_sha` / `pr_number` via the shared footprint resolver) | Resolve the realized footprint for recall and mis-prune checks post-merge. `pr_number` backs the PR-landing tier, which is the only tier that resolves a squash / merge-queue landing — the path on which `realized_footprint` and `merge_commit_sha` are both unwritten |
 
 ## Related
 

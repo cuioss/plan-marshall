@@ -565,14 +565,13 @@ def _resolve_lock_log_path() -> Path:
     directory every other global-log producer and consumer uses, which is
     ``get_base_dir() / 'logs'`` in shape.
 
-    **This previously stepped to the base's PARENT.** ``resolve_main_anchored_path('')``
-    is ``.plan/local``, so appending ``logs/`` to its parent wrote the timeline to
-    ``.plan/logs/`` — the git-TRACKED config directory, one level above where
-    global logs live. Nothing read it there: the merge-window-accounting check in
-    ``audit.py`` scans ``.plan/local/logs/``, so no production emission was ever
-    in scan range and the check's contention count was a STRUCTURAL zero — it
-    reported "no contention" from a directory the emitter never wrote to. The
-    consumer is correct and is left untouched; the producer moves to meet it.
+    **The destination is the producer's own contract.** ``resolve_main_anchored_path('')``
+    is ``.plan/local``, so the timeline belongs in ``.plan/local/logs/`` — never
+    in ``.plan/logs/``, the git-TRACKED config directory one level above where
+    global logs live. Every consumer of the lock-event timeline scans the
+    global-log directory, so an emission anywhere else is out of scan range and a
+    contention count read from it would be a STRUCTURAL zero — "no contention"
+    reported from a directory the emitter never wrote to.
 
     **Main-anchored, not cwd-relative — the resolver is load-bearing.** The
     destination is the one ``get_base_dir()`` names, but this MUST NOT call

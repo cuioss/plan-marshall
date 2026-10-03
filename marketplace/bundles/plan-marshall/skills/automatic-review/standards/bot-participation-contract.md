@@ -926,7 +926,7 @@ study.
 
 ⚠ **"The gates passed" is not the same claim as "the gates saw this tree", and the gap is real on an
 ordinary forward pass.** The gate itself (`order: 10`) commits its own auto-fix output after the tree
-it just certified, and post-push mutating steps (loop-back fixes, era-stamp-fill) advance HEAD after
+it just certified, and post-push mutating steps (loop-back fixes) advance HEAD after
 the gate — and the dispatcher's re-entry check only re-fires a step the loop REACHES. Within the
 settle band the ordering closes the older gap: the code-mutating settle steps (`finalize-step-simplify`
 at 5, `finalize-step-security-audit` at 7) sort strictly before both gates, and `architecture-refresh`
