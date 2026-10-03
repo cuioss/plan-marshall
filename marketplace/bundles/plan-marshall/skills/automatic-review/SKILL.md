@@ -1406,8 +1406,8 @@ Five inputs decide whether the PR is evidence at all, and every absent one fails
 - `--gate-head-sha` and `--reviewed-head-sha` — the tree the gates CERTIFIED and the tree review
   REVIEWED. They must be supplied and must MATCH. ⚠ They can differ, because the gate's own trailing
   auto-fix commit and any loop-back fix advance HEAD after the gates ran, and a forward pass never
-  returns to re-gate them. What can move HEAD between the gates and review is stated once in the
-  governing contract cited above — § "The review-versus-gate delta" — and is not restated here. A
+  returns to re-gate them. The authoritative statement of what can move HEAD between the gates and
+  review is the governing contract cited above — § "The review-versus-gate delta". A
   mismatch is `gates_did_not_cover_reviewed_tree` and an absent SHA is `gate_tree_unsubstantiated` —
   both honest exclusions, not failures of the caller.
 - `--enabled-bots` — the coverage DENOMINATOR (`required_bots ∪ optional_bots`). An empty roster is

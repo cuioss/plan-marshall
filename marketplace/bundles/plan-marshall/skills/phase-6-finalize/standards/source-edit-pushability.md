@@ -113,23 +113,24 @@ When authoring a finalize step that edits source:
 - Declare `mutates_source: true` in the step's frontmatter.
 - Order it before `default:branch-cleanup` (merge), and before `default:ci-verify`
   when the edit must be CI-covered.
-- Commit the edit onto the feature branch within the step. **Whether the step also
-  pushes depends on where it sits relative to the `default:push` barrier (order 11),
-  and only one of the two is correct for any given step:**
+- Get the edit committed onto the feature branch without the step ever pushing on
+  its own. **Who commits it depends on where the step sits relative to the
+  `default:push` barrier (order 11), and only one of the two is correct for any
+  given step:**
   - **Ordered BEFORE `default:push`** — commit only, and let the barrier ship it.
     `default:push` is a *pure push barrier*: it carries no commit logic, asserts a
     clean tree, and pushes the converged branch. A step at a lower order that pushed
     on its own would push the same branch a second time, outside the single-push
     contract the barrier exists to hold. `default:architecture-refresh` (order 9) is
     the reference case — it commits its refreshed descriptor and stops.
-  - **Ordered AFTER `default:push`** — leave the edit to the dispatcher's commit
-    instrumentation, which commits it and then re-invokes `default:push` (the post-PR
-    re-push in [`../SKILL.md`](../SKILL.md) Step 3 item 5f), so the edit rides the PR
-    without the step pushing on its own.
+  - **Ordered AFTER `default:push`** — the step makes the edit and returns; the
+    dispatcher's commit instrumentation commits it and then re-invokes `default:push`
+    (the post-PR re-push in [`../SKILL.md`](../SKILL.md) Step 3 item 5f, which covers
+    every step between the barrier and the merge gate), so the edit rides the PR.
 
-  What the checklist item forbids in both cases is the same thing: do not leave the
-  edit uncommitted, and do not defer the *responsibility* for shipping it to the
-  operator. Deferring the push to the barrier is not deferral — the barrier is a
+  What the checklist item forbids in both cases is the same thing: do not let the
+  edit reach the merge gate uncommitted, and do not defer the *responsibility* for
+  shipping it to the operator. Deferring the push to the barrier is not deferral — the barrier is a
   declared step that always runs, so the edit's path to the remote is guaranteed by
   the step order rather than by hope.
 - If the step can only determine the edit after merge, emit an explicit follow-up
