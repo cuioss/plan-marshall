@@ -12,16 +12,16 @@ contract from four angles:
 2. **Project-local registration** — the skill lives at
    ``.claude/skills/finalize-step-deploy-target/SKILL.md`` (NOT in any
    marketplace bundle, NOT in ``BUILT_IN_FINALIZE_STEPS``).
-3. **Three harness targets** — the skill prescribes one generator call
-   per harness (``claude``, ``opencode``, ``antigravity``) and records
-   ``done`` only when all three exit ``0``.
+3. **Three harness targets** — the skill prescribes one build-executor
+   call per harness (``claude``, ``opencode``, ``antigravity``), never a
+   direct ``./pw`` call, and records ``done`` only when all three report
+   ``status: success``.
 4. **Generator behaviour** — when the live generator runs against a
    fixture marketplace it exits ``0`` and prints a
-   ``{target}: produced {N} entries`` line to stdout with a non-zero
-   ``{N}``; the executor reads its outcome from the exit code and its
-   ``display_detail`` count from that line. The generator emits no
-   machine-readable envelope, so the tests assert the exit code and the
-   stdout line — the two signals the skill body is written against.
+   ``{target}: produced {N} entries`` line with a non-zero ``{N}``. The
+   build executor turns that exit code into the TOON ``status`` the step
+   reads, and the line is the generator output an operator finds in the
+   build log.
 """
 
 from __future__ import annotations
@@ -49,16 +49,18 @@ _GENERATE_PY = PROJECT_ROOT / 'marketplace' / 'targets' / 'generate.py'
 #: The harness targets the step generates, in the order it prescribes them.
 _HARNESS_TARGETS: tuple[str, ...] = ('claude', 'opencode', 'antigravity')
 
-#: The invocations the skill prescribes, one per harness target. ``uv`` is
-#: installed only into the project-local ``.pyprojectx/`` tree and is not on
-#: ``PATH``, so the wrapper alias is the only form that runs from a normal shell.
-_WRAPPER_INVOCATIONS: tuple[str, ...] = (
-    './pw generate-claude',
-    './pw generate-opencode',
-    './pw generate-antigravity',
+#: The build-executor call that runs one ``./pw`` alias. The step prescribes the
+#: executor form rather than ``./pw`` itself, because the enforcement hook denies
+#: a direct ``./pw`` call inside a plan context.
+_EXECUTOR_RUN = 'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args'
+
+#: The invocations the skill prescribes, one per harness target, each running
+#: that target's ``generate-{target}`` wrapper alias through the executor.
+_EXECUTOR_INVOCATIONS: tuple[str, ...] = tuple(
+    f'{_EXECUTOR_RUN} "generate-{target}"' for target in ('claude', 'opencode', 'antigravity')
 )
 
-#: A row of the skill's outcome table: the exit-code condition, then the
+#: A row of the skill's outcome table: the TOON-status condition, then the
 #: ``outcome=`` token it maps to. Any text after the token is the row's remark.
 _OUTCOME_ROW_RE = re.compile(r'^\| (?P<condition>[^|]+?) \| `outcome=(?P<outcome>\w+)`', re.MULTILINE)
 
@@ -117,21 +119,37 @@ def test_skill_body_documents_inline_only_and_no_skip_detector():
 
 
 def test_skill_body_prescribes_one_generator_call_per_harness_target():
-    """The step prescribes exactly the three wrapper calls, one per harness, in order.
+    """The step prescribes exactly the three executor calls, one per harness, in order.
 
     Read off the fenced command lines rather than matched as substrings of the
     whole document, so a call that is only mentioned in prose does not count as
     prescribed, and a fourth generator call would not pass unseen.
     """
-    prescriptions, _ = scan_shell_prescriptions(_SKILL_MD.read_text(encoding='utf-8'))
+    prescriptions, population = scan_shell_prescriptions(_SKILL_MD.read_text(encoding='utf-8'))
+    assert population > 0, 'no fenced command line resolved from the skill body'
 
-    generator_calls = [line for line in prescriptions if line.startswith(WRAPPER_GENERATOR_CALL)]
+    generator_calls = [line for line in prescriptions if 'generate' in line and '--command-args' in line]
 
-    assert generator_calls == list(_WRAPPER_INVOCATIONS)
+    assert generator_calls == list(_EXECUTOR_INVOCATIONS)
+
+
+def test_skill_body_prescribes_no_direct_wrapper_call():
+    """No fenced command line runs ``./pw`` directly.
+
+    The enforcement hook denies a direct ``./pw`` call inside a plan context, so
+    a step that prescribed one would be refused exactly where finalize runs it
+    from a plan worktree.
+    """
+    prescriptions, population = scan_shell_prescriptions(_SKILL_MD.read_text(encoding='utf-8'))
+    assert population > 0, 'no fenced command line resolved from the skill body'
+
+    direct = [line for line in prescriptions if line.startswith(WRAPPER_GENERATOR_CALL)]
+
+    assert direct == [], f'the skill body prescribes a direct wrapper call: {direct}'
 
 
 def test_skill_body_records_done_only_when_all_three_targets_succeed():
-    """The outcome table maps all-three-zero to ``done`` and any non-zero exit to ``failed``.
+    """The outcome table maps all-three-success to ``done`` and anything else to ``failed``.
 
     One failed target must fail the step: recording ``done`` on a partial
     generation would let the sync step consume a tree that was never refreshed.
@@ -140,14 +158,14 @@ def test_skill_body_records_done_only_when_all_three_targets_succeed():
 
     outcome_rows = {match.group('outcome'): match.group('condition') for match in _OUTCOME_ROW_RE.finditer(text)}
 
-    assert outcome_rows == {'done': 'all three `0`', 'failed': 'any call non-zero'}
+    assert outcome_rows == {'done': 'all three `success`', 'failed': 'any call not `success`'}
 
 
-def test_skill_body_display_detail_names_the_per_target_entry_counts():
-    """The ``display_detail`` template carries one produced-line count per harness target."""
+def test_skill_body_display_detail_names_every_harness_target():
+    """The success ``display_detail`` names all three harness targets."""
     text = _SKILL_MD.read_text(encoding='utf-8')
 
-    assert 'claude {N}, opencode {N}, antigravity {N} entries emitted to target/' in text
+    assert 'claude, opencode, antigravity regenerated in target/' in text
 
 
 def test_skill_body_prescribes_no_command_that_fails_as_written():

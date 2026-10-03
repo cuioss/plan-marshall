@@ -74,19 +74,24 @@ current output. With no `--target`, run all three calls; with `--target X`, run
 only the call for `X`.
 
 ```bash
-./pw generate-claude
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "generate-claude"
 ```
 
 ```bash
-./pw generate-opencode
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "generate-opencode"
 ```
 
 ```bash
-./pw generate-antigravity
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "generate-antigravity"
 ```
 
-Always go through the `./pw` wrapper — `uv` lives in the project-local
-`.pyprojectx/` tree and is not on `PATH`, so a bare `uv run …` fails outside it.
+Each call runs the matching `./pw generate-{target}` alias through the build
+executor, which is the form the enforcement hook allows inside a plan worktree;
+a direct `./pw` call is denied there. Read each call's outcome from its TOON
+`status` — the executor exits `0` even when the build failed. On `status:
+error`, the TOON's `log_file` holds the generator output; do not run the sync
+for a target whose regeneration failed.
+
 When `--from-worktree PATH` is passed, the Claude source is that worktree's
 `target/claude/`, so the regeneration belongs in that worktree.
 

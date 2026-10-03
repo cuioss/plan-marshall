@@ -145,6 +145,22 @@ def test_entry_point_invokes_the_engine_with_arguments_passed_through(harness: s
     )
 
 
+@pytest.mark.parametrize(('harness', 'relative'), _ENTRY_POINTS, ids=[harness for harness, _ in _ENTRY_POINTS])
+def test_entry_point_prescribes_no_direct_wrapper_call(harness: str, relative: str):
+    """No prescribed command runs ``./pw`` directly.
+
+    The enforcement hook denies a direct ``./pw`` call inside a plan context, so
+    the regeneration step goes through the build executor instead. The command
+    must stay runnable from a plan worktree as well as from the main checkout.
+    """
+    prescribed = _prescribed_commands(_read(relative))
+    assert prescribed, f'no prescribed command resolved from the {harness} entry point {relative}'
+
+    direct = [command for command in prescribed if command.startswith('./pw')]
+
+    assert direct == [], f'the {harness} entry point {relative} prescribes a direct ./pw call: {direct}'
+
+
 def test_every_entry_point_prescribes_the_same_commands():
     """The three entry points prescribe one command sequence, in one order."""
     prescribed = {harness: _prescribed_commands(_read(relative)) for harness, relative in _ENTRY_POINTS}

@@ -21,8 +21,8 @@ three target trees the sync step consumes: `target/claude/`,
 handles the no-op case (for the `claude` target, the equality engine
 short-circuits the per-bundle write when output already matches
 sources), so this step has **no skip detector**: it always runs, each
-generator call always exits with an outcome code, and this executor
-records the outcome from those exit codes.
+generator call always reports an outcome, and this executor records the
+step outcome from those reports.
 
 The emitted Claude tree contains both per-bundle artifacts
 (`target/claude/{bundle}/`, including each bundle's regenerated
@@ -89,55 +89,46 @@ one fails, so every harness that can be regenerated is, and the failure
 is reported per target:
 
 ```bash
-./pw generate-claude
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "generate-claude"
 ```
 
 ```bash
-./pw generate-opencode
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "generate-opencode"
 ```
 
 ```bash
-./pw generate-antigravity
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "generate-antigravity"
 ```
 
-Always go through the wrapper: `uv` is installed only into the
-project-local `.pyprojectx/` tree and is not on `PATH`, so a bare
-`uv run …` exits 127 outside it, and a bare `python3
-marketplace/targets/generate.py` fails with `ModuleNotFoundError: No
-module named 'yaml'` because PyYAML resolves into the uv-managed venv.
-Each `generate-{target}` alias in `pyproject.toml` carries its own
-`--target {target} --output target/{target}` arguments.
-
-For each call, capture the exit code, stdout AND stderr. The generator
-reports its outcome through the **exit code**, writes a human-readable
-per-target summary to **stdout**, and writes every diagnostic to
-**stderr**. It emits no machine-readable envelope, so there is nothing
-on stdout to parse structurally.
+Each call runs the matching `./pw generate-{target}` alias through the
+build executor. The executor form is required, not a style choice: the
+enforcement hook denies a direct `./pw` call inside a plan context, and
+the wrapper itself is still what runs the generator (`uv` lives only in
+the project-local `.pyprojectx/` tree). Each `generate-{target}` alias in
+`pyproject.toml` carries its own `--target {target} --output
+target/{target}` arguments.
 
 ### 2. Read the result
 
-Read these signals from each of the three calls, where `{target}` is
-`claude`, `opencode` or `antigravity`:
+Each call returns a TOON document. Read its `status` field — the
+executor exits `0` even when the build failed, so the process exit code
+carries no verdict:
 
-| Signal | Stream | Meaning |
-|--------|--------|---------|
-| exit code `0` | process status | Generation of `{target}` completed |
-| exit code `2` | process status | Generation of `{target}` failed |
-| `{target}: produced {N} entries` | stdout | `{N}` is that target's entry count for the display detail |
-| `{target}: stamped version {V} into {M} bundle plugin.json; emitted dist-manifest.json` | stdout | The post-generation stamping summary |
-| `error: {text}` | stderr | The failure text to surface for a failed target |
-| `warning: {text}` | stderr | A tolerated degradation (an unresolvable fingerprint in a partial marketplace checkout); does NOT change the outcome |
+| TOON `status` | Meaning |
+|---------------|---------|
+| `success` | Generation of `{target}` completed |
+| `error` | Generation of `{target}` failed; the generator's `error: …` line is in the build log the TOON's `log_file` names |
 
-The step outcome combines the three exit codes:
+The step outcome combines the three calls:
 
-| Exit codes | Outcome |
-|------------|---------|
-| all three `0` | `outcome=done` |
-| any call non-zero | `outcome=failed`, surfacing the failing target's `error: …` line |
+| TOON status | Outcome |
+|-------------|---------|
+| all three `success` | `outcome=done` |
+| any call not `success` | `outcome=failed`, surfacing the failing target's `error: …` line |
 
-The exit code is the ONLY outcome signal — a run that failed still
-prints any stdout lines it reached before failing, so a `produced` line
-is not evidence of success on its own.
+The generator's own output (`{target}: produced {N} entries`, the
+stamping summary, any `warning: …`) lands in that build log, not on the
+call's stdout.
 
 ### 3. Mark step complete
 
@@ -149,13 +140,12 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   --display-detail "{display_detail}"
 ```
 
-When all three calls exit `0`, `{display_detail}` names the per-target
-entry counts, each `{N}` read from that target's `produced` line:
-`"claude {N}, opencode {N}, antigravity {N} entries emitted to target/"`.
-When any call exits non-zero, set `--outcome failed` and surface the
-failing target's `error: …` stderr line verbatim in `--display-detail`
-so the renderer shows the underlying failure; when more than one target
-failed, name each failed target ahead of its line.
+When all three calls report `status: success`, `{display_detail}` is
+`"claude, opencode, antigravity regenerated in target/"`. When any call
+reports anything else, set `--outcome failed` and surface the failing
+target's `error: …` line from its build log verbatim in
+`--display-detail` so the renderer shows the underlying failure; when
+more than one target failed, name each failed target ahead of its line.
 
 ## Why "always run" instead of a skip detector
 

@@ -17,14 +17,18 @@ When this skill is invoked:
 1. Regenerate the selected targets. With no `--target` in `$ARGUMENTS`, run all
    three; with `--target X`, run only the one for `X`:
    ```bash
-   ./pw generate-claude
+   python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "generate-claude"
    ```
    ```bash
-   ./pw generate-opencode
+   python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "generate-opencode"
    ```
    ```bash
-   ./pw generate-antigravity
+   python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "generate-antigravity"
    ```
+   Each call runs the `./pw generate-{target}` alias through the build
+   executor. Read its outcome from the TOON `status` (the call exits `0` even
+   on failure); on `status: error`, report the TOON's `log_file` and do not
+   sync that target.
 
 2. Run the sync engine:
    ```bash
