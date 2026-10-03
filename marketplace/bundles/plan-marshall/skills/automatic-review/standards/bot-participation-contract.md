@@ -980,12 +980,13 @@ derived, because a rate reported without its population is the defect § "The co
 remove. The two SHAs are echoed for the same reason the reviewer sets are: a reader can then see
 WHICH trees were compared rather than trusting that they were.
 
-⛔ **The provenance names a SELECTION EFFECT, and a consumer must carry it.** On the current finalize
-step ordering the tree check excludes most real PRs, so a column of `excluded` accumulates. That
-column reads, over time, exactly like *"the gates caught everything"* — the misreading this whole
-section exists to prevent. It means the opposite: those PRs were never measurable. A consumer
-reporting this signal states that the measurable population is only those PRs where neither post-gate
-`mutates_source` step committed, and that it is a biased population rather than a sample.
+⛔ **The provenance names a SELECTION EFFECT, and a consumer must carry it.** The tree check excludes
+every PR whose HEAD moved after the gates ran, so a column of `excluded` accumulates. That column
+reads, over time, exactly like *"the gates caught everything"* — the misreading this whole section
+exists to prevent. It means the opposite: those PRs were never measurable. A consumer reporting this
+signal states that the measurable population is only those PRs where neither the gate's own trailing
+commit nor a loop-back fix moved HEAD after the gates, and that it is a biased population rather than
+a sample.
 
 ### What this measures and what it does not
 
