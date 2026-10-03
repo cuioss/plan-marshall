@@ -374,7 +374,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr wait-fo
   --pr-number PR_NUMBER [--timeout SECONDS] [--interval SECONDS]
 ```
 
-`pr wait-for-queue-settle` polls that same observation until the PR leaves the queue or `--timeout` elapses, and returns `settle` from the closed set `merged` / `closed` / `dequeued` / `timeout` beside `timed_out`, `duration_sec`, `polls`, and the `baseline` and `final` observations. `dequeued` means the PR is open, is not in the queue, has no auto-merge armed, and its newest merge-group run completed with a conclusion other than success; an `indeterminate` read never yields it. The deadline is `status: success` with `timed_out: true` and `settle: timeout` — there is no `status: timeout`. A PR read failure returns `error: pr_read_failed`. The router `--plan-id` placement is the same as for `pr queue-state`.
+`pr wait-for-queue-settle` polls that same observation until the PR leaves the queue or `--timeout` elapses, and returns `settle` from the closed set `merged` / `closed` / `dequeued` / `timeout` beside `timed_out`, `duration_sec`, `polls`, and the `baseline` and `final` observations. An `indeterminate` read never yields `dequeued`. The deadline is `status: success` with `timed_out: true` and `settle: timeout` — there is no `status: timeout`. A PR read failure returns `error: pr_read_failed`. The router `--plan-id` placement is the same as for `pr queue-state`.
 
 Both verbs are **GitHub-only** — registered on the GitHub front-end like `pr landing-state`, so the GitLab surface rejects them. See [`standards/pr-operations.md`](standards/pr-operations.md) § "Workflow: Merge-Queue State and Settle Wait" for the full contract.
 

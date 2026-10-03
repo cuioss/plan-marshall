@@ -196,7 +196,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr wait-fo
 | `timeout` | STOP with outcome `timeout`. The land stays in flight; a later `/plan-orchestrator land` resumes it in Step 2. |
 | — (`status: error`) | STOP with outcome `indeterminate`. |
 
-`dequeued` is terminal and distinct from `timeout`: the first means the queue ejected the PR, the second that the wait's budget ran out while the PR was still in flight.
+`dequeued` is terminal and distinct from `timeout`: the first means the queue ejected the PR, the second that the wait's budget ran out.
 
 ⚠ **Unverified assumption.** `dequeued` — here and in the Step 2 ejection gate — rests on matching a merge-group workflow run to the PR by its head branch, assumed to be named `gh-readonly-queue/{base}/pr-{n}-{sha}`. That naming has not been verified against a live merge queue. If a live queue names the branch differently, no run is matched, an ejected PR is not recognised as ejected, and this step reports `timeout` where `dequeued` was the fact.
 

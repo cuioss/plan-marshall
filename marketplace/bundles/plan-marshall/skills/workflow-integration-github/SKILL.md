@@ -494,7 +494,7 @@ final: {the pr queue-state fields of the last observation}
 |----------|-----------|
 | `merged` | `pr_state` is `merged` |
 | `closed` | `pr_state` is `closed` |
-| `dequeued` | The PR is `open`, `in_queue` is `false`, `auto_merge_armed` is `false`, AND `merge_group_run` was found with `status: completed` and a conclusion other than `success` |
+| `dequeued` | The queue ejected the PR — the predicate is defined in [`pr-operations.md`](../tools-integration-ci/standards/pr-operations.md) § "Workflow: Merge-Queue State and Settle Wait" |
 | `timeout` | `--timeout` elapsed before any of the three |
 
 - **`settle: timeout` holds exactly when `timed_out` is `true`.** The deadline is

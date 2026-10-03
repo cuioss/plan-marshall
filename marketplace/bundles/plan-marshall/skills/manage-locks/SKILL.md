@@ -134,8 +134,8 @@ merge acquire.
 `_locks_core.held_guard(guard_path)` is the sanctioned way to hold the shared
 `O_EXCL` guard-file mutex around a critical section that is **not** a JSON
 read-modify-write. It is a context manager: it acquires the guard, runs the
-`with` block, and releases the guard in a `finally` — closing the fd and
-unlinking the guard file — whether the block returns or raises. It is the one
+`with` block, and releases the guard in a `finally` whether the block returns
+or raises. It is the one
 acquire/release implementation in the skill: `rmw_json` and `read_json_guarded`
 are themselves expressed on top of it, with the same spin backoff, timeout and
 stale-reclaim constants. A guard that cannot be acquired within the budget raises
