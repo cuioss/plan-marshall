@@ -401,7 +401,7 @@ Stages every ledger root that exists or is tracked, records the staged ledger pa
 
 `--extend` adds to a land that is already in flight: the push runs even when nothing new was staged, the marker moves forward to the pushed SHA and never backwards, and every existing binding ref follows it. `title` and `body` are the composed PR title and body — the changed ledger paths grouped per epic and, within an epic, by category (queue rows, plan specs, anchor/header, landings, inbox, other) — measured against the land's fork point from `origin/{base_branch}`; the body carries no attribution footer. `land_paths` is `unknown` when that measurement failed.
 
-Refusals, each `status: error`: `ledger_commit_failed` (staging, reading the staged set, recording it, or resolving `HEAD` at `{store_checkout}` failed — `stderr` carries git's message), `ledger_push_rejected` (the non-forced push was refused; the local snapshot is kept, no land is recorded, and `remote_branch` / `remote_branch_contained` report what the remote holds), and `land_ref_write_failed` (the push succeeded but the marker could not be written).
+Refusals, each `status: error`: `ledger_commit_failed` (staging, reading the staged set, recording it, or resolving `HEAD` at `{store_checkout}` failed), `ledger_push_rejected` (the non-forced push was refused; the local snapshot is kept, no land is recorded, and `remote_branch` / `remote_branch_contained` report what the remote holds), and `land_ref_write_failed` (the push succeeded but the marker could not be written).
 
 ### land bind
 
