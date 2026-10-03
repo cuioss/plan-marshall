@@ -260,6 +260,22 @@ class TestDeclaredCommandRuns:
         assert result['worktree_setup'][0]['exit_code'] is None
         assert 'not a list' in result['worktree_setup'][0]['detail']
 
+    def test_invalid_utf8_marshal_is_reported_as_unreadable(self, tmp_path: Path) -> None:
+        """A marshal.json that is not valid UTF-8 is a read failure, not a crash.
+
+        ``read_text`` raises ``UnicodeDecodeError``, which is not an ``OSError``;
+        it must reach the same ``cannot read`` record instead of escaping.
+        """
+        marshal = tmp_path / '.plan' / 'marshal.json'
+        marshal.parent.mkdir(parents=True)
+        marshal.write_bytes(b'{"plan": "\xff\xfe"}')
+
+        entries, error = prepare_execute._read_worktree_setup_commands(tmp_path)
+
+        assert entries == []
+        assert error is not None
+        assert error.startswith(f'cannot read {marshal}:')
+
 
 # =============================================================================
 # (c) a failing command is reported; the move-in is neither failed nor rolled back

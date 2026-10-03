@@ -2881,6 +2881,14 @@ def cmd_pr_wait_for_queue_settle(args: argparse.Namespace) -> dict:
     ``pr queue-state`` reports that state from a single read, and
     ``plan-orchestrator/workflow/land.md`` Step 2's ejection gate reads it before
     Step 7 reaches this wait.
+
+    The same holds for an ejection that completes between the caller's enqueue
+    and this baseline read: the attempt's own failed run is then classified as
+    stale. Reaching it needs the merge-group run to finish and fail inside that
+    gap. The wait then reports ``timeout`` — never a false ``merged`` — and the
+    land stays in flight, so the next ``land`` run's Step 2 ejection gate
+    reports ``dequeued``. Excluding only an earlier attempt's run would need
+    that run's id captured before the enqueue and passed in.
     """
     ok, baseline = _observe_pr_queue_state(args.pr_number)
     if not ok:

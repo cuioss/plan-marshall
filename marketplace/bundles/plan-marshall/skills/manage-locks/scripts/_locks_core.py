@@ -394,7 +394,14 @@ def held_guard(guard_path: Path) -> Iterator[None]:
     exits. The release compares the identity of the fd it opened (device and
     inode) with the file now at the path and unlinks only on a match; a missing
     path or a different file is no longer this holder's guard and is left alone,
-    so the exit does not remove its successor's guard.
+    so the exit does not remove a successor's guard that was already in place.
+
+    **Residual window.** The identity check and the ``os.unlink`` are two
+    pathname operations, not one atomic step: a successor that reclaims the
+    guard between them still loses its guard to this unlink. The window opens
+    only for a holder that already overran ``_GUARD_STALE_SECONDS`` — the
+    short-critical-section contract above — and closing it needs a different
+    primitive (a kernel lock such as ``flock``), not a stricter check here.
 
     Args:
         guard_path: The guard file. Callers that serialize against a JSON state

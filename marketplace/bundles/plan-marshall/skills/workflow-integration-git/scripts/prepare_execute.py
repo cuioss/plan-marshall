@@ -593,7 +593,8 @@ def _read_worktree_setup_commands(worktree_path: Path) -> tuple[list[Any], str |
 
     Returns ``(entries, error)``. An absent file, ``plan`` section,
     ``phase-5-execute`` section, or key yields ``([], None)`` — the no-op
-    default. An unreadable or unparseable file yields ``([], detail)``, and so
+    default. An unreadable file — invalid UTF-8 included — or an unparseable
+    one yields ``([], detail)``, and so
     does a key that is PRESENT with any non-list value: JSON ``null`` is a
     declared value of the wrong shape, not an absent key, and is reported like
     every other non-list.
@@ -603,7 +604,7 @@ def _read_worktree_setup_commands(worktree_path: Path) -> tuple[list[Any], str |
         raw = marshal_path.read_text(encoding='utf-8')
     except FileNotFoundError:
         return [], None
-    except OSError as exc:
+    except (OSError, UnicodeError) as exc:
         return [], f'cannot read {marshal_path}: {exc}'
     try:
         config = json.loads(raw)
