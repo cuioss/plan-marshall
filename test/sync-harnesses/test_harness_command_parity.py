@@ -46,6 +46,7 @@ _ENTRY_POINT_PATHS: dict[str, str] = {
 _ENTRY_POINTS: tuple[tuple[str, str], ...] = tuple(
     (harness, _ENTRY_POINT_PATHS.get(harness, f'<no entry point declared for {harness}>')) for harness in SYNC_TARGETS
 )
+assert _ENTRY_POINTS, 'SYNC_TARGETS resolved no harness, so every entry-point check would be vacuous'
 
 #: A ``./pw`` invocation at any shell command boundary: line start, or after a
 #: command separator. A prefix test alone would pass ``cd repo && ./pw …``.
