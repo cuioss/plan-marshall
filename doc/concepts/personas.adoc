@@ -94,7 +94,7 @@ Two frontmatter fields carry the binding:
 How a persona is selected depends on the dispatch site:
 
 * **Work tasks resolve their persona from their (primary) profile.** A `module_testing` task automatically loads `persona-module-tester`, derived from the frontmatter binding above — no explicit declaration needed.
-* **Entry points declare `persona:` explicitly.** Recipes, finalize steps, and commands have no task profile to derive from, so each declares **exactly one** `persona:`. The declared persona may be a work-activity persona (`finalize-step-security-audit` → `persona: persona-security-expert`) or a meta persona that encapsulates a multi-lens composition internally (`audit-archived-plan-retrospectives` → `persona: persona-auditor`).
+* **Entry points declare `persona:` explicitly.** Recipes, finalize steps, and commands have no task profile to derive from, so each declares **exactly one** `persona:`. The declared persona may be a work-activity persona (`finalize-step-security-audit` → `persona: persona-security-expert`) or a meta persona that encapsulates a multi-lens composition internally (`persona-auditor`, `persona-code-reviewer`).
 
 In human terms, you refer to "the Security Expert persona" or "the Auditor persona" — the name is the anchor the model never had before.
 
