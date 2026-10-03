@@ -385,7 +385,7 @@ def _land_name_status(checkout: Path, base: str, head: str) -> list[tuple[str, s
 @_land_verb
 def cmd_land_snapshot(checkout: Path, args: argparse.Namespace) -> dict[str, Any]:
     """Commit the ledger paths, push them without force, and record the pushed commit."""
-    extend = bool(getattr(args, 'extend', False))
+    extend = args.extend
     base = default_base_branch()
 
     with held_guard(_guard_path()):
@@ -480,7 +480,7 @@ def cmd_land_snapshot(checkout: Path, args: argparse.Namespace) -> dict[str, Any
 @_land_verb
 def cmd_land_bind(checkout: Path, args: argparse.Namespace) -> dict[str, Any]:
     """Point the PR binding ref at the pushed marker; idempotent."""
-    pr_number = int(args.pr_number)
+    pr_number = args.pr_number
     target = f'{BINDING_REF_PREFIX}{pr_number}'
     with held_guard(_guard_path()):
         marker = _rev(checkout, PUSHED_MARKER_REF)
@@ -608,8 +608,8 @@ def _delete_land_refs(checkout: Path) -> None:
 @_land_verb
 def cmd_land_resync(checkout: Path, args: argparse.Namespace) -> dict[str, Any]:
     """Replay the ledger tree onto the base the land merged into and close the cycle."""
-    pr_number = int(args.pr_number)
-    merge_sha = str(args.merge_commit_sha).strip().lower()
+    pr_number = args.pr_number
+    merge_sha = args.merge_commit_sha.strip().lower()
     base = default_base_branch()
     base_ref = f'origin/{base}'
 

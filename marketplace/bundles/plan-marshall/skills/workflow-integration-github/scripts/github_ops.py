@@ -1144,7 +1144,7 @@ def _fetch_issue_state_and_labels(issue_number: int) -> tuple[bool, Any]:
 MERGE_GROUP_RUN_LIST_LIMIT = 50
 
 
-def list_merge_group_runs(limit: int = MERGE_GROUP_RUN_LIST_LIMIT) -> tuple[bool, list[dict], str]:
+def list_merge_group_runs() -> tuple[bool, list[dict], str]:
     """List the newest ``merge_group``-event workflow runs of the repository.
 
     Returns ``(ok, runs, error)``. Each run carries ``databaseId``,
@@ -1163,7 +1163,7 @@ def list_merge_group_runs(limit: int = MERGE_GROUP_RUN_LIST_LIMIT) -> tuple[bool
             '--event',
             'merge_group',
             '--limit',
-            str(limit),
+            str(MERGE_GROUP_RUN_LIST_LIMIT),
             '--json',
             'databaseId,headBranch,status,conclusion,url,createdAt',
         ]
