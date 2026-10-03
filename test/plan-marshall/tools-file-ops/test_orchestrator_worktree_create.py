@@ -3,7 +3,8 @@
 """Creation lifecycle and drift detection of the shared orchestrator ledger worktree.
 
 Covers ``ensure_orchestrator_worktree`` — first-use creation off
-``origin/{base}``, unchanged reuse, local-branch reuse, the switch-on cutover
+``origin/{base}``, unchanged reuse, local-branch reuse, the wrong-branch
+refusal of a registered tree that left the ledger branch, the switch-on cutover
 refusal, the unresolvable-base refusal, and the lost-race recovery — plus
 ``detect_ledger_drift`` directly. The resolution surface lives in
 ``test_orchestrator_worktree.py``.
@@ -95,6 +96,7 @@ class TestReuse:
     """An existing tree or branch is reused exactly as found."""
 
     def test_second_use_returns_the_existing_tree_unchanged(self, ledger_repo):
+        """A tree still on the ledger branch is reused as found; no reset, no pull."""
         first = ensure_orchestrator_worktree()
         head_before = _head(first)
         marker = first / 'untracked-marker.txt'
@@ -103,7 +105,12 @@ class TestReuse:
 
         second = ensure_orchestrator_worktree()
 
-        assert (second, _head(second), marker.is_file()) == (first, head_before, True)
+        assert (second, _branch(second), _head(second), marker.is_file()) == (
+            first,
+            ORCHESTRATOR_WORKTREE_BRANCH,
+            head_before,
+            True,
+        )
 
     def test_reuses_an_existing_local_ledger_branch(self, ledger_repo):
         """An existing ``chore/orchestrator-ledger`` is checked out, not recreated.
@@ -118,6 +125,55 @@ class TestReuse:
         path = ensure_orchestrator_worktree()
 
         assert (_branch(path), _head(path)) == (ORCHESTRATOR_WORKTREE_BRANCH, branch_tip)
+
+
+_STRAY_BRANCH = 'feature/stray'
+_WRONG_BRANCH = 'orchestrator_worktree_wrong_branch'
+
+
+class TestWrongBranchRefusal:
+    """A registered tree is reused only while it is on the ledger branch.
+
+    The three cases share one setup — a real shared tree created by first use —
+    and differ only in what that tree has checked out, so each verdict is
+    attributed to the checked-out branch alone.
+    """
+
+    def test_registered_tree_on_another_branch_is_refused_naming_that_branch(self, ledger_repo):
+        path = ensure_orchestrator_worktree()
+        git(path, 'checkout', '-b', _STRAY_BRANCH)
+
+        with pytest.raises(OrchestratorStoreUnavailable) as exc_info:
+            ensure_orchestrator_worktree()
+
+        assert (exc_info.value.code, exc_info.value.fields['found_branch'], exc_info.value.fields['branch']) == (
+            _WRONG_BRANCH,
+            _STRAY_BRANCH,
+            ORCHESTRATOR_WORKTREE_BRANCH,
+        )
+        assert _branch(path) == _STRAY_BRANCH
+
+    def test_registered_tree_on_a_detached_head_is_refused_as_detached(self, ledger_repo):
+        path = ensure_orchestrator_worktree()
+        head_before = _head(path)
+        git(path, 'checkout', '--detach')
+
+        with pytest.raises(OrchestratorStoreUnavailable) as exc_info:
+            ensure_orchestrator_worktree()
+
+        assert (exc_info.value.code, exc_info.value.fields['found_branch']) == (_WRONG_BRANCH, 'detached')
+        assert (git(path, 'rev-parse', '--abbrev-ref', 'HEAD'), _head(path)) == ('HEAD', head_before)
+
+    def test_registered_tree_back_on_the_ledger_branch_is_returned_unchanged(self, ledger_repo):
+        """Matched control: the same tree is reused once it is on the ledger branch again."""
+        path = ensure_orchestrator_worktree()
+        head_before = _head(path)
+        git(path, 'checkout', '-b', _STRAY_BRANCH)
+        git(path, 'checkout', ORCHESTRATOR_WORKTREE_BRANCH)
+
+        reused = ensure_orchestrator_worktree()
+
+        assert (reused, _branch(reused), _head(reused)) == (path, ORCHESTRATOR_WORKTREE_BRANCH, head_before)
 
 
 class TestCutoverRefusal:
