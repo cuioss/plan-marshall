@@ -199,9 +199,116 @@ def test_acquire_guard_times_out_when_held(tmp_path, monkeypatch):
         guard.unlink()
 
 
+def _fail_unlink_of(monkeypatch, guard, error, *, remove_first=False):
+    """Make ``os.unlink(guard)`` raise ``error``; every other path unlinks normally.
+
+    With ``remove_first`` the guard is really removed before the error is
+    raised, which is the on-disk state a lost reclaim race leaves behind.
+    Returns the list the patched primitive records its guard calls in.
+    """
+    real_unlink = os.unlink
+    calls: list[str] = []
+
+    def patched_unlink(path, *args, **kwargs):
+        if str(path) != str(guard):
+            return real_unlink(path, *args, **kwargs)
+        calls.append(str(path))
+        if remove_first:
+            real_unlink(path)
+        raise error
+
+    monkeypatch.setattr(_mod.os, 'unlink', patched_unlink)
+    return calls
+
+
+def _record_backoff_sleeps(monkeypatch):
+    """Record every backoff sleep the guard spin performs, without waiting."""
+    sleeps: list[float] = []
+    monkeypatch.setattr(_mod.time, 'sleep', sleeps.append)
+    return sleeps
+
+
+def test_acquire_guard_times_out_when_a_stale_guard_cannot_be_removed(tmp_path, monkeypatch):
+    """An unremovable stale guard spends the budget and ends in ``TimeoutError``.
+
+    The reclaim fails with something other than "already gone", so the path is
+    still occupied. The attempt must reach the deadline check and the backoff
+    sleep; a loop that retried the create straight away would never leave.
+    """
+    monkeypatch.setattr(_mod, '_GUARD_STALE_SECONDS', -1.0)
+    monkeypatch.setattr(_mod, '_GUARD_TIMEOUT_SECONDS', 0.05)
+    monkeypatch.setattr(_mod, '_GUARD_BACKOFF_SECONDS', 0.005)
+    guard = tmp_path / 'state.json.lock'
+    guard.write_text('', encoding='utf-8')
+    unlink_calls = _fail_unlink_of(monkeypatch, guard, PermissionError('guard is not removable'))
+    real_sleep = time.sleep
+    sleeps: list[float] = []
+
+    def recording_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        real_sleep(seconds)
+
+    monkeypatch.setattr(_mod.time, 'sleep', recording_sleep)
+
+    with pytest.raises(TimeoutError):
+        _acquire_guard(guard)
+
+    assert unlink_calls, 'the stale guard was never offered for reclaim'
+    assert sleeps and set(sleeps) == {0.005}
+    assert guard.exists()
+
+
+def test_acquire_guard_acquires_a_stale_guard_another_session_reclaimed_first(tmp_path, monkeypatch):
+    """A stale guard that vanishes between the stat and the unlink is still acquired.
+
+    ``FileNotFoundError`` means the path is free, so the create is retried at
+    once: no backoff sleep is spent on a guard that is already gone.
+    """
+    monkeypatch.setattr(_mod, '_GUARD_STALE_SECONDS', -1.0)
+    guard = tmp_path / 'state.json.lock'
+    guard.write_text('', encoding='utf-8')
+    unlink_calls = _fail_unlink_of(monkeypatch, guard, FileNotFoundError(str(guard)), remove_first=True)
+    sleeps = _record_backoff_sleeps(monkeypatch)
+
+    fd = _acquire_guard(guard)
+    try:
+        acquired = guard.exists()
+    finally:
+        os.close(fd)
+
+    assert (acquired, len(unlink_calls), sleeps) == (True, 1, [])
+
+
 # =============================================================================
 # held_guard — the one acquire/release implementation
 # =============================================================================
+
+
+@pytest.mark.parametrize(
+    ('reclaimed_by_successor', 'guard_exists_after_exit'),
+    [
+        pytest.param(True, True, id='successor-guard-is-left-in-place'),
+        pytest.param(False, False, id='own-guard-is-removed'),
+    ],
+)
+def test_held_guard_exit_removes_only_the_guard_it_created(tmp_path, reclaimed_by_successor, guard_exists_after_exit):
+    """A holder that outlived the stale threshold must not release its successor.
+
+    The successor's reclaim is reproduced on disk as it happens: the holder's
+    guard is unlinked and a new file is created at the same path while the
+    holder's fd is still open, so the two are different inodes. The matched
+    control leaves the guard alone and shows the ordinary exit still removes it.
+    """
+    guard = tmp_path / 'section.lock'
+
+    with _mod.held_guard(guard):
+        if reclaimed_by_successor:
+            guard.unlink()
+            guard.write_text('successor', encoding='utf-8')
+
+    assert guard.exists() is guard_exists_after_exit
+    if reclaimed_by_successor:
+        assert guard.read_text(encoding='utf-8') == 'successor'
 
 
 def test_held_guard_holds_the_guard_inside_the_body_and_removes_it_after(tmp_path):
