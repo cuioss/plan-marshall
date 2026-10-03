@@ -16,7 +16,6 @@ from _record_model_representability_fixtures import (
     _data_rows,
     _drive_scenario,
     analyze_logs,
-    audit,
 )
 
 
@@ -53,7 +52,12 @@ def test_unmeasured_dispatch_columns_are_absent_rather_than_zero(plan_context):
 
 
 def test_unmeasured_fixture_separates_measured_zeros_from_unmeasured_in_the_retrospective_reader():
-    """One file, both representations, read per column by the retrospective reader."""
+    """One file, both representations, read per column by the retrospective reader.
+
+    Every row of this fixture carries an `unmeasured` token, so every row is
+    datable and an UNDATABLE literal `0` does not arise here — `undatable/` is the
+    fixture that exercises that state.
+    """
     parsed = analyze_logs._parse_dispatch_boundary_file(_UNMEASURED_FIXTURE)
 
     assert parsed['present'] is True
@@ -83,31 +87,6 @@ def test_unmeasured_fixture_separates_measured_zeros_from_unmeasured_in_the_retr
     assert rows[2]['cache_read_input_tokens'] == 120000
     assert rows[2]['unmeasured_columns'] == ['cache_creation_input_tokens']
     assert rows[2]['unrecognised_columns'] == []
-
-
-def test_unmeasured_fixture_separates_measured_zeros_from_unmeasured_in_the_audit_ledger_reader():
-    """The same file, through the `.claude` audit skill's independent reader.
-
-    The two readers hand-mirror the same `data-format.md` contract from separate
-    trees — one of them in a tree the architecture inventory does not crawl — so
-    they are exercised against the SAME artifact here rather than each against
-    its own.
-
-    Every row of this fixture carries an `unmeasured` token, so every row is
-    datable and the reader's fourth state (an UNDATABLE literal `0`) does not
-    arise here — `undatable/` is the fixture that exercises it.
-    """
-    totals = audit._parse_dispatch_boundary_totals(_UNMEASURED_FIXTURE)
-
-    # Summed over the rows that measured each column.
-    assert totals['total_tokens'] == 90000 + 70000 + 50000
-    assert totals['input_tokens'] == 4000
-    assert totals['cache_read_input_tokens'] == 120000
-    # A column measured as 0 on every row that measured it is PRESENT as 0 ...
-    assert totals['output_tokens'] == 0
-    # ... while a column no row ever measured is OMITTED, not returned as 0.
-    # The two are the same integer and completely different facts.
-    assert 'cache_creation_input_tokens' not in totals
 
 
 # =============================================================================

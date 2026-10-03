@@ -18,8 +18,8 @@ rather than needing a bespoke corpus.
 **But "the gates passed" is not the same claim as "the gates saw this tree", and
 the difference is not hypothetical here.** The gate itself (``order: 10``) commits
 its own auto-fix output via the dispatcher's item-5f instrumentation, so that commit
-lands after the tree it just certified; post-push mutating steps (loop-back fixes,
-``finalize-step-era-stamp-fill``) likewise advance HEAD after the gate. The
+lands after the tree it just certified; post-push mutating steps (loop-back
+fixes) likewise advance HEAD after the gate. The
 dispatcher's re-entry check (``phase-6-finalize/SKILL.md`` Step 3 item 1) only
 re-fires a step the loop REACHES. No count is pinned here: membership is
 whatever each step's declared ``mutates_source`` makes it, so a step that declares

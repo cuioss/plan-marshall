@@ -26,16 +26,7 @@ there is **no** producer-side marker, so read-BEFORE-produce is not derivable �
 ``reads: [metrics]`` is paired against ``record-metrics`` only by a human reading the
 prose.
 
-A THIRD, non-gate-relative edge family is derived in this module: a **named-step
-adjacency** that no marker expresses, because its producer→consumer relation is a data
-dependency between three specific steps rather than a property either of them declares.
-``project:finalize-step-era-stamp-fill`` resolves the ``PR-PENDING`` era-stamp sentinel to
-the real PR number, so it can only run once ``default:create-pr`` has produced that
-number, and it must run before ``default:ci-verify`` validates the tree that carries the
-correction. That is an ordering obligation stated in prose in the step's own doc and,
-until this module derived it, asserted nowhere.
-
-A FOURTH family closes this module: the **push barrier**. ``default:push`` produces no
+A THIRD family closes this module: the **push barrier**. ``default:push`` produces no
 commit — it asserts a clean tree and ships the converged branch — so every step ordered
 below it has its commits shipped BY it, and must not push on its own. That relation is
 derived from the two orders alone (no marker declares it), and the obligation it carries
@@ -202,29 +193,6 @@ def derive_artifact_edges() -> list[dict]:
         for d_name, d_order, d_artifact in destroys
         if d_artifact == artifact
     ]
-
-
-_PR_PRODUCER = 'default:create-pr'
-
-_ERA_STAMP_STEP = 'project:finalize-step-era-stamp-fill'
-
-_CI_CONSUMER = 'default:ci-verify'
-
-
-def _order_of(step_name: str) -> int:
-    """Read one discovered step's ``order`` off the registry, never a literal."""
-    for record in _finalize_records():
-        if record.get('name') == step_name:
-            order = record.get('order')
-            assert isinstance(order, int), (
-                f'{step_name} was discovered but its frontmatter ``order`` is '
-                f'{order!r}, not an int, so no ordering assertion can read it.'
-            )
-            return order
-    raise AssertionError(
-        f'{step_name} is not among the discovered {_EXT_POINT} implementors, so the '
-        f'era-stamp adjacency assertion has nothing to read and would pass vacuously.'
-    )
 
 
 _PUSH_BARRIER = 'default:push'
@@ -394,7 +362,6 @@ def test_no_step_below_the_push_barrier_prescribes_a_push():
 
     Steps ordered ABOVE the barrier are deliberately out of scope: no later
     barrier ships their edits, so they must self-push.
-    ``project:finalize-step-era-stamp-fill`` (order 21) is the reference case.
     """
     edges = derive_push_barrier_edges()
     offenders: list[str] = []

@@ -1,6 +1,6 @@
 # Aspect: Routing-Decision Verification
 
-The routing-decision aspect grades, at finalize, every routing decision the run actually made — recipe-match, aspect-classification, and the execution-profile posture — so the mechanism self-corrects. It is the per-plan analog of the corpus-level `recipe-match` / `track-selection-accuracy` / `token-economics` audit checks, and feeds them.
+The routing-decision aspect grades, at finalize, every routing decision the run actually made — recipe-match, aspect-classification, and the execution-profile posture — so the mechanism self-corrects. It is the per-plan analog of the corpus-level `recipe-match` / `track-selection-accuracy` / `token-economics` checks of the cross-plan auditor in the `plan-marshall-telemetry` repository, and feeds them.
 
 ## Deterministic facts vs LLM judgment
 

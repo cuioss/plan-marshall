@@ -23,9 +23,8 @@ pin that derivation:
 (b) It contains the two long-known members ``default:pre-push-quality-gate`` and
     ``default:ci-verify``.
 (c) It contains the members the hand-maintained literal omitted —
-    ``default:pre-submission-self-review``,
-    ``project:finalize-step-plugin-doctor`` and
-    ``project:finalize-step-era-stamp-fill``.
+    ``default:pre-submission-self-review`` and
+    ``project:finalize-step-plugin-doctor``.
 (d) It contains the project-tier members declared for the first time by the
     project-local sweep — ``project:finalize-step-lessons-housekeeping`` and
     ``project:finalize-step-review-retrospective``. These are a DISTINCT lower
@@ -82,7 +81,6 @@ _KNOWN_MEMBERS = (
 _PREVIOUSLY_OMITTED_MEMBERS = (
     'default:pre-submission-self-review',
     'project:finalize-step-plugin-doctor',
-    'project:finalize-step-era-stamp-fill',
 )
 
 #: Project-tier steps the project-local sweep declares for the FIRST time. They
@@ -166,7 +164,7 @@ def test_derived_set_contains_previously_omitted_member(member):
     """(c) Each member the hand-maintained literal omitted is now derived.
 
     Parametrized per member rather than asserted as one set-containment, so a
-    regression that drops exactly one of the three fails as one identifiable
+    regression that drops exactly one of them fails as one identifiable
     test instead of hiding inside a combined assertion.
     """
     derived = _head_dependent_names()

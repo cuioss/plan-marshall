@@ -38,25 +38,24 @@ raised". A test that asserts only the outcome cannot distinguish a record that
 stated its uncertainty from one that examined nothing.
 
 Fixture-backed companions close the reader side, where the archived history lives
-and cannot be migrated. Each is read by BOTH the ``plan-retrospective`` reader and
-the ``.claude`` audit skill's ledger reader, which hand-mirror one contract from
-separate trees, so a change that moved only one of them fails in the modules this preamble serves:
+and cannot be migrated. Each is read here by the ``plan-retrospective`` reader.
+The cross-plan auditor's ledger reader hand-mirrors the same contract from the
+``plan-marshall-telemetry`` repository, and its half of the contract is pinned by
+that repository's own tests:
 
 * the ``unmeasured/`` dispatch-boundary fixture carries unmeasured columns
   ALONGSIDE measured zeros on one file;
 * the ``undatable/`` fixture carries the pre-token writer's shape — nine columns,
-  every context-load cell a literal ``0``, nothing on the row dating it — so both
-  readers must decline to report those zeros as measurements;
+  every context-load cell a literal ``0``, nothing on the row dating it — so the
+  reader must decline to report those zeros as measurements;
 * the read-only ``legacy/`` five-column fixture is asserted byte-identical and
-  still parses in both readers, proving the positional-backward-compatibility
-  floor survived the representation change.
+  still parses, proving the positional-backward-compatibility floor survived the
+  representation change.
 """
 
 from __future__ import annotations
 
-import importlib
 import json
-import sys
 from argparse import Namespace
 from pathlib import Path
 from typing import Any
@@ -75,7 +74,7 @@ from conftest import PROJECT_ROOT, load_script_module, parse_ns
 # Modules under composition
 # ---------------------------------------------------------------------------
 #
-# Three production surfaces, loaded through the shared loader. `manage-metrics.py`
+# The production surfaces, loaded through the shared loader. `manage-metrics.py`
 # and `analyze-logs.py` have kebab-case filenames (not valid Python identifiers),
 # so they are addressable only by file — which is exactly what the shared loader
 # resolves, and each is published under an explicit test-local name so neither
@@ -122,23 +121,6 @@ read_status = _status_core.read_status
 analyze_logs = load_script_module(
     'plan-marshall', 'plan-retrospective', 'analyze-logs.py', 'analyze_logs_representability'
 )
-
-
-# The `.claude` audit skill is a project-local script, not a marketplace-bundle
-# script, so neither `conftest.get_script_path` nor `conftest.load_script_module`
-# resolves it — both address only `marketplace/bundles/`. Its `scripts/` dir goes
-# on sys.path directly, and this bootstrap therefore survives a sweep that removed
-# every marketplace one. `import_module` (rather than a file-location load) reuses
-# the one canonical module instance, so the schema constants compared against are
-# the same objects the reader returns.
-_AUDIT_SCRIPTS_DIR = PROJECT_ROOT / '.claude' / 'skills' / 'audit-archived-plan-retrospectives' / 'scripts'
-
-
-if str(_AUDIT_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_AUDIT_SCRIPTS_DIR))
-
-
-audit = importlib.import_module('audit')
 
 
 # ---------------------------------------------------------------------------
@@ -464,44 +446,6 @@ def _data_rows(content: str) -> list[str]:
 
 
 # =============================================================================
-# Companion: an OLD-schema archived record, distinguishable from both neighbours
-# =============================================================================
-#
-# Archived `metrics.toon` files are immutable history that still carry the
-# retired keys. The reader must report that state EXPLICITLY — never default it,
-# never read it as a clean verdict, and never fold it into the pre-#812 bucket,
-# which is a different fact about a different corpus.
-
-_PHASE_BODY = '[4-plan]\n  total_tokens: 100\n[5-execute]\n  total_tokens: 0\n'
-
-
-_CURRENT_CLEAN = 'any_phase_missing_end_time: false\nphases_missing_end_time: \n' + _PHASE_BODY
-
-
-_OLD_SCHEMA = 'partial: true\nunrecorded_phases: 5-execute\n' + _PHASE_BODY
-
-
-_PRE_812 = _PHASE_BODY
-
-
-def _archived_plan(repo_root: Path, body: str) -> Any:
-    """Stage a one-plan archived corpus whose metrics.toon carries *body*."""
-    plan_dir = repo_root / '.plan' / 'local' / 'archived-plans' / 'sample-plan'
-    (plan_dir / 'work').mkdir(parents=True, exist_ok=True)
-    (plan_dir / 'references.json').write_text('{"scope_estimate": "surgical"}', encoding='utf-8')
-    (plan_dir / 'status.json').write_text('{"metadata": {"change_type": "bug_fix"}}', encoding='utf-8')
-    (plan_dir / 'work' / 'metrics.toon').write_text(body, encoding='utf-8')
-    return audit.collect_inputs(plan_dir)
-
-
-def _write_metrics(tmp_path: Path, name: str, body: str) -> Path:
-    path = tmp_path / name / 'metrics.toon'
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(body, encoding='utf-8')
-    return path
-
-
-# =============================================================================
 # Fixtures: one file carrying both representations, and the legacy floor
 # =============================================================================
 
@@ -527,7 +471,7 @@ _LEGACY_FIXTURE_BYTES = (
 
 
 # =============================================================================
-# The undatable-zero fixture: one artifact, both readers, one provenance gate
+# The undatable-zero fixture: one artifact, one provenance gate
 # =============================================================================
 
 _UNDATABLE_FIXTURE = _FIXTURES_DIR / 'undatable' / 'work' / 'metrics-dispatch-boundaries-5-execute.toon'
