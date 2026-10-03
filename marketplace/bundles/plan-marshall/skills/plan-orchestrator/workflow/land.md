@@ -46,7 +46,9 @@ The verb is invoked as `/plan-orchestrator land` or `/plan-orchestrator land req
 python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator land status
 ```
 
-The payload fields and their value sets are in [`SKILL.md` § Canonical invocations → land status](../SKILL.md#land-status). Route on them in this order:
+The payload fields and their value sets are in [`SKILL.md` § Canonical invocations → land status](../SKILL.md#land-status). Keep two of them for the rest of the run: `store_checkout`, and `base_branch` — the branch the ledger branch is cut from, the snapshot is composed against, and the resync requires the merge commit to be on. Step 4 opens the PR against it.
+
+Route on the payload in this order:
 
 | Observation | Action |
 |-------------|--------|
@@ -138,10 +140,10 @@ Write the snapshot's `body` verbatim to the returned path with the `Write` tool.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create \
-  --plan-id NO_PLAN --head chore/orchestrator-ledger --title "{title}"
+  --plan-id NO_PLAN --head chore/orchestrator-ledger --base {base_branch} --title "{title}"
 ```
 
-`{title}` is the snapshot's `title`. When Step 2 reached this step through `land snapshot --extend`, the title and body come from that call's return.
+`{title}` is the snapshot's `title` and `{base_branch}` is the value Step 1 kept from `land status`, so the PR merges into the branch the land works against even when that is not the repository's default branch. When Step 2 reached this step through `land snapshot --extend`, the title and body come from that call's return.
 
 Bind the PR the create call returned:
 
