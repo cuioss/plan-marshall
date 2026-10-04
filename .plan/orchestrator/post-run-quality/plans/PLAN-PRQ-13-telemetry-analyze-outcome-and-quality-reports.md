@@ -9,10 +9,13 @@ workstream: WS-05
 
 > ⚠ **MOST OF THIS PLAN'S WORK IS IN ANOTHER REPOSITORY** — the private `cuioss/plan-marshall-telemetry`,
 > created by `PLAN-PRQ-07` (PR #1694, landed 2026-10-03). This spec is staged here because this epic owns
-> WS-05 and created that repo; the implementing plan must clone or be pointed at it. ⛔ **No checkout of it
-> exists on the machine this spec was written on**, so every claim about its *current contents* below is
-> labelled `HYPOTHESIS` and D0 exists to settle them. Claims about what was *relocated into* it are
-> `OBSERVED` from this repository's own merge diff.
+> WS-05 and created that repo.
+>
+> ✅ **CORRECTED 2026-10-04 (same day, before launch): a local checkout DOES exist** at
+> `/home/oliver/git/plan-marshall-telemetry`, and this spec's telemetry-repo claims were read from it
+> directly. The first draft asserted no checkout existed and labelled them all `HYPOTHESIS`; that assertion
+> was wrong and the claims below are now `OBSERVED`. The corrected readings changed the plan's shape — see
+> D1's fix-site correction in particular, which the first draft had pointed at the wrong skill.
 
 > ⚠ **Scope-bloat guard: eight deliverables, over the ~6 presumption, proceeding unsplit by operator
 > decision (2026-10-04).** Recorded rationale: D1–D4 share one subject resolver, one report writer and one
@@ -65,13 +68,22 @@ manual-capable by construction**, and every field distinguishes *not measured* f
 
 Eight deliverables. D0 is a gate.
 
-**D0 — GATE: read the telemetry repo and publish the keep/drop partition with its population.** Clone or
-open `cuioss/plan-marshall-telemetry` and read (a) its current `analyze` project-level skill, (b) its
-`transfer` skill, and (c) the relocated auditor as it now exists there. Then publish, as a table with
-counts, which of the relocated checks are KEPT, RE-SCOPED or DROPPED under this plan, over the whole
-population — never a sample. ⛔ Nothing downstream starts until this gate has run, because every
-`HYPOTHESIS` in this spec is about that repo's current contents and D0 is where they are settled. The
-starting partition proposed below is a PROPOSAL from the check names, not a finding:
+**D0 — GATE: publish the keep/drop partition with its population, and DIFF the relocated corpus.** Open
+`/home/oliver/git/plan-marshall-telemetry` and read the engine
+(`.claude/skills/audit-archived-plan-retrospectives/`), its `checks/` corpus, and the `analyze` and
+`transfer` wrappers. Publish, as a table with counts, which of the 24 checks are KEPT, RE-SCOPED or DROPPED
+under this plan, over the whole population — never a sample.
+
+⛔ **The gate's second obligation, and it is not optional: DIFF the relocated `checks/` against this
+repository's `2de53ba7c` tree before trusting any of them.** `OBSERVED 2026-10-04` — the corpus did **not**
+arrive verbatim. `quality-chain.md` was adapted during relocation at two points: its Tier-1 remedy changed
+from *"file (or, on Gate-1 dedup, extend) a lesson"* to *"report a candidate"* (correct — that repo has no
+lessons store), and its read-only clause changed from *"never edits `.plan/` files"* to *"never edits the
+archive"*, dropping two `.plan/temp/` prototype references. Those edits are sensible, but they prove the
+corpus was **edited in transit**, so a check's behaviour here cannot be inferred from its pre-relocation
+text. Publish the per-check diff verdict (`identical` / `adapted` / `absent`) over all 24.
+
+The starting partition proposed below is a PROPOSAL from the check names, not a finding:
 
 | Disposition | Checks (names `OBSERVED` from the #1694 merge diff; contents unread) |
 |---|---|
@@ -85,10 +97,20 @@ the telemetry repo with a one-line banner naming this plan and the reason; delet
 only record of what the auditor once measured, and this epic's standing rule is that a retired artefact is
 the audit record of why it was retired.
 
-**D1 — The outcome report: one JSON file per subject, from a shared engine.** For each archived plan and
+**D1 — The outcome report: one JSON file per subject, emitted BY THE ENGINE.** For each archived plan and
 each archived orchestrator epic, emit `{subject}/outcome.json`. The format decision is settled: **report
 files are JSON** (durable, queryable across a growing corpus, diffable, readable by tooling that knows
 nothing about plan-marshall) while the **skill's own stdout stays TOON** per the marketplace convention.
+
+⛔ **CORRECTED 2026-10-04 — the fix site is the ENGINE, not the `analyze` wrapper.** `OBSERVED` from that
+repo: `analyze/SKILL.md` declares *"It has no computation and no report format of its own … the engine's
+`scripts/audit.py` is the only analysis path in this repository and its report schema is the only report
+schema. There is no second formatter, so a figure read here and the same figure read from a direct engine
+run are always the same figure."* ⚠ **Writing report files in `analyze` would create exactly the second
+formatter that skill was written to forbid** — and it is the same single-engine guarantee `PLAN-PRQ-07`
+deliverable 4 was built on. So D1, D3 and D4 all land in `audit-archived-plan-retrospectives`; `analyze`
+gains at most a pass-through flag and keeps its no-format-of-its-own property.
+
 Fields, each carrying its own measurement state per D5:
 
 - `wall_seconds`, `worked_seconds` (⚠ the two are different and the anchors warn that the numerator must be
@@ -189,16 +211,30 @@ disabled gate and a clean gate produce different `quality.json` output.
   `PLAN-PRQ-01` D10 was to consume will not be built there — read from that epic's queue 2026-10-04.
 - OBSERVED: `PLAN-PRQ-01` is `parked`; its D2 scoring discipline and D3 corpus report are carried by D4
   above rather than awaited.
-- ⚠ HYPOTHESIS: the telemetry repo's `analyze` skill today runs the relocated checks substantially as they
-  were in this repository — confirm/refute at `plan-marshall-telemetry`'s `analyze` skill entry point
-  (verify-at-outline, D0 owns it).
-- ⚠ HYPOTHESIS: the relocated `checks/` corpus arrived verbatim and no check was altered during relocation
-  — confirm/refute by diffing the telemetry repo's `checks/` against `2de53ba7c`'s tree in this repository
-  (verify-at-outline, D0 owns it).
-- ⚠ HYPOTHESIS: the telemetry repo is main-only with no PR or review-bot workflow (as `PLAN-PRQ-07`
-  deliverable 1 specified), so this plan's finalize lane needs no `create-pr` / `automatic-review` path
-  there — confirm/refute at that repo's branch protection and `.plan/marshal.json`, and settle the finalize
-  lane at outline before `phase-6-finalize` composes a manifest that assumes a PR.
+- OBSERVED (2026-10-04, read from `/home/oliver/git/plan-marshall-telemetry`): the repo carries four skills
+  under `.claude/skills/` — `analyze`, `audit-archived-plan-retrospectives`, `era-stamp-fill`, `transfer` —
+  and all **24** relocated checks are present under the auditor's `checks/`. So `PLAN-PRQ-07`'s
+  deliverables 2 and 4 are PRESENT, not merely claimed; the landing record's `unverifiable` reading for
+  them is superseded and `landings/PLAN-PRQ-07.md` records the correction.
+- OBSERVED: `analyze/SKILL.md` declares itself to have no computation and no report format of its own,
+  invoking the engine once and surfacing its report verbatim, with `scripts/audit.py` named as the only
+  analysis path and only report schema in that repository. This is what moved D1/D3/D4's fix site to the
+  engine.
+- ⛔ CONTRADICTED (the first draft's claim that the corpus arrived verbatim): `quality-chain.md` was
+  **adapted** during relocation — the Tier-1 remedy became "report a candidate" rather than filing a
+  lesson, and the read-only clause dropped its `.plan/` references. The corpus was edited in transit, so
+  D0 must diff all 24 rather than assume. Verified by diffing against
+  `git show 2de53ba7c:.claude/skills/audit-archived-plan-retrospectives/checks/quality-chain.md`.
+- OBSERVED: the repo carries `.coderabbit.yaml`, `.gitignore`, `README.md`, `pyproject.toml` and `test/`,
+  and **no `.github/` and no `.plan/`** — so it has no CI workflow, no `marshal.json` and no
+  `automatic-review` configuration. ⚠ **Consequence for this plan's finalize lane, settle at outline:**
+  `phase-6-finalize` must not compose a manifest that assumes a PR, CI verification or review bots for work
+  landing in that repository. CodeRabbit is disabled there by that `.coderabbit.yaml`
+  (`reviews.auto_review.enabled: false`) and Sourcery in its dashboard; `cuioss-review-bot` never runs
+  there for want of `.github/`.
+- ⚠ HYPOTHESIS: the repo is main-only by branch protection as `PLAN-PRQ-07` deliverable 1 specified —
+  the absence of `.github/` is consistent with it but does not establish the protection setting itself
+  (verify-at-outline; `ci repo` read, or the operator).
 - ⚠ HYPOTHESIS: `worked_seconds` is recoverable for an archived plan at all. The metrics anchors warn the
   numerator must be worked rather than wall time; if no archived artefact carries it, D1 reports it
   `not_measured` by construction rather than substituting wall time — confirm/refute against an archived

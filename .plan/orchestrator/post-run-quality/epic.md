@@ -113,10 +113,15 @@ the machinery that grades us.
   an explicit command in the new repo."* The surface-delta mechanism is what surfaced it — a single
   declared-but-untouched path (`finalize-step-analyze-marshall-quality/`) out of 4 declared against 152
   realized, with 44 undeclared additions (`expansion_detected`, the gate's documented under-declaration
-  class at roughly its documented magnitude). ⚠ **Two of five deliverables are recorded UNVERIFIABLE, not
-  shipped**: the `transfer` and `analyze` skills live in the private `cuioss/plan-marshall-telemetry`, which
-  this machine has no checkout of. The repository's *existence* is corroborated (`ci org list-repos`); its
-  contents are not read, and `deliverables_done=10` cannot make that distinction. ✅ **The emit-time gate
+  class at roughly its documented magnitude). ⚠ **Two of five deliverables were recorded UNVERIFIABLE, not
+  shipped** — the `transfer` and `analyze` skills live in the private `cuioss/plan-marshall-telemetry` —
+  ✅ **and both are now VERIFIED PRESENT**: a local checkout was found at
+  `/home/oliver/git/plan-marshall-telemetry` later the same day, carrying four skills and all 24 relocated
+  checks. ⚠ One sub-claim is refuted in the same reading: the corpus did **not** arrive verbatim
+  (`quality-chain.md` was adapted in transit), so "relocated" is not "unchanged". The landing record
+  carries the correction. ⭐ That is the intended lifecycle of an ADR-019 `unverifiable` verdict — the
+  honest record of what was reachable, revisited the moment the population became reachable, rather than a
+  permanent label. ✅ **The emit-time gate
   override held**: nothing collided, exactly as its stated basis predicted. ⚠ The cross-ledger exposure it
   did not cover also did not materialise — but it was never serialized, so that is luck, not a guarantee,
   and `code-intelligence-substrate`'s five specs now declare a surface this repository no longer contains.
@@ -558,16 +563,22 @@ this epic's.
 
 ## Watches
 
-- ⛔ **OWED, operator-raised during PRQ-07's run: the review bots review every PR regardless of the
-  `automatic-review` lane.** The operator observed it mid-run and the owed follow-up is explicit — analyse
-  how each bot is triggered, then guide the operator through disabling CodeRabbit, Sourcery and
-  cuioss-review-bot for `cuioss/plan-marshall`. ⚠ **This is the one Watch here with a named deadline that
-  has now passed**: it was recorded as owed *after cross-repo-telemetry lands*, and that landed 2026-10-03.
-  Not staged in this epic — review-pipeline configuration is `review-apparatus` territory, and this epic is
-  winding down — but it is due now, not later. ⛔ Read with the standing rule that **CodeRabbit is a
-  required reviewer and must never be moved to `optional_bots` to clear a blocked merge gate**: "opting out
-  of the lane" and "disabling the bot" are different acts, and the finding is precisely that the first does
-  not accomplish the second.
+- ✅ **RESOLVED 2026-10-04 (operator) — and this Watch named the WRONG REPOSITORY, which is the part worth
+  keeping.** The durable finding stands: `plan-marshall:automatic-review` `lane: off` only stops *reading*
+  results and is **not a bot off-switch**, so opting out of the lane and disabling a bot are different acts.
+  ⛔ **What this Watch got wrong**: it proposed disabling CodeRabbit, Sourcery and cuioss-review-bot for
+  `cuioss/plan-marshall`. The operator's ruling is the opposite — *"do not change anything related in this
+  repo (plan-marshall). There the bots are correct."* Disabling was only ever wanted in
+  **`cuioss/plan-marshall-telemetry`**, and it is **done**: CodeRabbit via that repo's `.coderabbit.yaml`
+  (`reviews.auto_review.enabled: false`, commit `b403805`), Sourcery via the operator's dashboard, and
+  `cuioss-review-bot` never ran there for want of a `.github/` tree. ⚠ **Recorded as operator-confirmed,
+  not independently verified** — a GitHub App's installation state is not readable through the CI
+  abstraction from here; the `.coderabbit.yaml` is. ⛔ **The standing rule is untouched and still binds:
+  CodeRabbit is a required reviewer in `plan-marshall` and must never be moved to `optional_bots` to clear
+  a blocked merge gate.** ⇒ The lesson for this epic is about its own practice, not the bots: an owed item
+  carried a target repository it had never checked, and it was restated twice — including in a resume
+  anchor as "overdue" — before anyone corrected it. **Name the repository a change targets before
+  proposing it.**
 - ⚠ **CodeRabbit's `**Actionable comments posted: N**` summary may be counted as an actionable comment.**
   Reported by PRQ-07's `review-retrospective` as a possible defect — the leading bold markers appear to
   defeat the registry's starts-with summary pattern, so every CodeRabbit review would inflate its own

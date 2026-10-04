@@ -26,10 +26,24 @@ which is the **outline's** decomposition of the same work, not a different scope
 | 4 — `analyze` project-level skill (telemetry repo), same report structure as 3 | **unverifiable here**, and its twin-path requirement is **collapsed** | Same reason as 2. The ruling on deliverable 3 collapsed "identical report structure in two paths" to a single path, so the shared-engine-guarantees-identity argument no longer has two consumers to bind |
 | 5 — relocate `audit-archived-plan-retrospectives` into the telemetry repo | **shipped-as-specified** | `git diff 2de53ba7c..b3aba30aa`: `SKILL.md`, all 25 `checks/`, and `scripts/audit.py` deleted, plus the 76-file test mirror (74 in #1692, the last 2 in #1694). `finalize-step-era-stamp-fill/` removed in the same act |
 
-⚠ **Two of five deliverables are recorded as UNVERIFIABLE, not as shipped.** They landed in a private
-sibling repository this envelope cannot read. Per ADR-019 that is a population that could not be reached,
-and it is not evidence of a gap — but neither is it a confirmation, and the distinction is kept because the
-landing's own `deliverables_done=10` cannot make it.
+⚠ **Two of five deliverables were recorded as UNVERIFIABLE, not as shipped**, because they landed in a
+private sibling repository this envelope could not read. Per ADR-019 that is a population that could not be
+reached, and it is not evidence of a gap — but neither is it a confirmation, and the distinction was kept
+because the landing's own `deliverables_done=10` cannot make it.
+
+✅ **CORRECTION, same day: both are now VERIFIED PRESENT.** A local checkout of the telemetry repo was found
+at `/home/oliver/git/plan-marshall-telemetry` while staging `PLAN-PRQ-13`, and it carries four skills under
+`.claude/skills/` — `analyze`, `audit-archived-plan-retrospectives`, `era-stamp-fill`, `transfer` — with all
+**24** relocated checks present. So deliverables 2 and 4 exist as specified, and deliverable 5's relocation
+target arrived intact. ⚠ **One sub-claim is refuted in the same reading**: the corpus did NOT arrive
+verbatim — `quality-chain.md` was adapted in transit (its Tier-1 remedy no longer files a lesson, and its
+read-only clause dropped the `.plan/` references). The adaptations are correct for a repo with no lessons
+store, but "relocated" is not "unchanged", and `PLAN-PRQ-13` D0 now carries a diff-all-24 obligation
+because of it.
+
+⭐ **The reason this correction exists rather than the original reading standing**: `unverifiable` was the
+honest record of what this envelope could reach at the time, and it was revisited the moment the population
+became reachable. That is the intended lifecycle of an ADR-019 verdict — not a permanent label.
 
 ## Metrics and Anomalies
 
