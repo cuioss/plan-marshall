@@ -58,6 +58,16 @@ the machinery that grades us.
 - PLAN-PRQ-01 ↔ PLAN-PRQ-02 — both touch `plan-retrospective/scripts/`; never pair.
 - PLAN-PRQ-03 is the only spec whose surface is entirely project-local (`.claude/skills/`), so it is the
   natural partner if the scope knob is ever raised.
+- ⛔ **PLAN-PRQ-13 — NOT a `next` candidate, and NOT a `/plan-marshall` plan. Do not emit it.** Re-cut
+  2026-10-04 to run as a standalone Claude Code session inside `plan-marshall-telemetry`; the earlier
+  `/plan-marshall` emit is void. Two consequences for this queue, both deliberate: its surface is
+  `derivation_status: prose` (0 resolved, 5 unresolved — every entry prefixed `plan-marshall-telemetry/`
+  so it cannot be mistaken for an in-repo path), so `admits_disjointness_check` is **false** and the gate
+  will refuse it **forever**; and it **does not occupy the `parallelization_scope: 1` slot**, because that
+  knob bounds concurrent plan-marshall plans contending for *this* repository's worktrees and a session in
+  another repository contends for none of them. So a plan-marshall plan MAY run concurrently with it. Its
+  row tracks lifecycle state only — move it to `running` when the operator starts the session, and
+  `shipped` when it lands.
 - ✅ **PLAN-PRQ-07 — SHIPPED 2026-10-04, PR #1694.** Un-parked and emitted 2026-10-02 by operator decision
   with the disjointness gate overridden on a stated basis and the PRQ-01/PRQ-03 dependency discharged; the
   override held and nothing collided. See `landings/PLAN-PRQ-07.md`. **WS-05 is complete** — it was a
@@ -78,6 +88,30 @@ the machinery that grades us.
 
 ## Decisions
 
+- 2026-10-04 — **PLAN-PRQ-13 RE-CUT as a standalone session in the telemetry repo; the `/plan-marshall`
+  emit is VOID.** Operator decision, prompted by the operator's own reading of the Expected Surface — which
+  was the right diagnostic. ⭐ **The repo's README is the evidence, not architectural preference:** it
+  declares the skills *"need neither a plan-marshall checkout nor the plan-marshall plugin"* and that the
+  repo is *"`main` only … no feature branches, no pull requests, no branch protection, and no review
+  bots."* It carries no `.plan/` and no `.github/`, so there is no `marshal.json`, no generated executor
+  and no CI for a lifecycle to drive. ⛔ **The decisive argument is first-party**: PRQ-07 ran this exact
+  shape *through* the lifecycle, and its footprint resolver could not see the sibling repo — 111 declared
+  paths invisible, `affected_files_recall` **27.3%** graded as an *error*, three instruments reporting a
+  silent descope on a plan where everything shipped. Running the plan that **builds outcome measurement**
+  under a lifecycle whose measurement is known-broken for this shape is self-defeating. ✅ **One consequence
+  is a strict improvement**: the in-repo work is split out to a new D4a — if the three new mechanisms need
+  a producer-side `manage-findings` change, that is handed back as a separate `/plan-marshall` task in this
+  repo — so PRQ-13 declares **no in-repo surface** and **the disjointness-gate override is no longer
+  needed**. ⛔ **Three defects in my own rework, caught by re-running the parser rather than trusting the
+  edit**: (1) the first draft wrote reports to `{subject}/outcome.json`, violating the README's invariant
+  that entries under `{project-slug}/` are *"written only by `transfer` and are never modified or deleted
+  by analysis"* — making analysis a writer of the archive it exists to measure; D0 now owns the location
+  call, with honouring the invariant preferred and amending it the only alternative. (2) A draft declared
+  the telemetry paths **relative**, so the parser resolved `test/` and `README.md` against THIS repo —
+  declaring this repo's whole test tree as surface. Every entry is now prefixed `plan-marshall-telemetry/`
+  and resolves to nothing, which is the honest answer. (3) A `⛔ EXCLUDED` bullet naming `manage-findings`
+  was **still declared by the parser** — the section is read mechanically and an annotation excludes
+  nothing. Exclusions now live in D4a and in prose, never as an entry.
 - 2026-10-04 — **PLAN-PRQ-13 staged: re-scope the telemetry `analyze` onto outcomes, plus a unified quality
   report. WS-05 reopened.** Operator-directed, immediately after PRQ-07 landed. Two halves: drop the
   runtime/process aspects and emit one outcome report per plan and per orchestrator (time, tokens, PRs,

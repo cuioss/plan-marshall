@@ -7,9 +7,10 @@ workstream: WS-05
 > The orchestrator EMITS the command below; it never launches the plan inline.
 > This spec is SELF-SUFFICIENT: the emitted command is a one-line pointer and carries no brief.
 
-> ⚠ **MOST OF THIS PLAN'S WORK IS IN ANOTHER REPOSITORY** — the private `cuioss/plan-marshall-telemetry`,
-> created by `PLAN-PRQ-07` (PR #1694, landed 2026-10-03). This spec is staged here because this epic owns
-> WS-05 and created that repo.
+> ⚠ **ALL OF THIS PLAN'S WORK IS IN ANOTHER REPOSITORY** — the private `cuioss/plan-marshall-telemetry`,
+> created by `PLAN-PRQ-07` (PR #1694, landed 2026-10-03), checked out at
+> `/home/oliver/git/plan-marshall-telemetry`. This spec is staged here because this epic owns WS-05 and
+> created that repo; the orchestrator owns the ledger, so the brief lives here and the work happens there.
 >
 > ✅ **CORRECTED 2026-10-04 (same day, before launch): a local checkout DOES exist** at
 > `/home/oliver/git/plan-marshall-telemetry`, and this spec's telemetry-repo claims were read from it
@@ -17,25 +18,32 @@ workstream: WS-05
 > was wrong and the claims below are now `OBSERVED`. The corrected readings changed the plan's shape — see
 > D1's fix-site correction in particular, which the first draft had pointed at the wrong skill.
 
-> ✅ **EMITTED 2026-10-04 by operator decision. The disjointness gate REFUSED this candidate and was
-> overridden on a stated basis — the implementing plan inherits that, and one obligation with it.**
-> `corpus cross-check` returns `candidate_comparison_determinate: false` (96 sibling-epic specs and 3 live
-> plans declare no comparable surface), so the admission test fails closed per ADR-019 rather than calling
-> an unexamined population disjoint. Measured per class rather than from the row total: **zero** `live_plan`
-> overlap rows (and `live_plans_comparable: 0`, so that side was unexaminable regardless), exactly **one**
-> in-corpus overlap — `PLAN-PRQ-01`, `parked` and therefore never in flight — and roughly **forty**
-> sibling-epic-spec rows in other ledgers, all staged rather than running.
-> ⭐ **Every one of those overlaps is driven by a SINGLE declared path, `manage-findings`, which this spec
-> declares as a HYPOTHESIS** (in scope only if D4's three new mechanisms need a producer-side vocabulary
-> change rather than reading-side classification). **If that hypothesis resolves false, this plan has no
-> in-repo surface at all and none of the collisions exist.** ⛔ **So the obligation is concrete: settle the
-> `manage-findings` hypothesis at D0/outline BEFORE touching that file, and if it resolves true, re-check
-> the live plan set and `review-apparatus`'s queue at that moment** — the override was granted against a
-> contingent surface, not a confirmed one.
-> ⚠ **What the override does NOT cover, and neither did PRQ-07's:** nothing serializes across ledgers, so
-> those ~40 sibling specs are unserialized; and the four `plan-marshall-telemetry` entries are *unresolved*
-> to the parser, so **the gate never examined the repository where most of this plan's work lands**.
-> Prep-readiness passed on its own terms (13 specs scanned, all claim sections parsed, 0 blocking).
+> ⛔⛔ **RE-CUT 2026-10-04 (operator): this plan does NOT run as a `/plan-marshall` task. It runs as a
+> standalone Claude Code session INSIDE the telemetry repository.** The 2026-10-04 emit of a
+> `/plan-marshall` command is **VOID** — do not run it.
+>
+> ⭐ **The Expected Surface was the diagnostic, and the telemetry repo's own README is the evidence.** That
+> README declares, in terms: *"Analysis reads the archived files directly. The skills run on a plain Python
+> interpreter with the standard library only, and need neither a plan-marshall checkout nor the
+> plan-marshall plugin."* And: *"This repository uses `main` only. Changes are committed directly to `main`;
+> there are no feature branches, no pull requests, no branch protection, and no review bots."* The repo is
+> **designed** to need no plan-marshall, and it carries no `.plan/` and no `.github/` — so there is no
+> `marshal.json`, no generated executor and no CI for a lifecycle to drive.
+>
+> ⛔ **The decisive argument is first-party, not architectural taste.** `PLAN-PRQ-07` ran exactly this shape
+> of cross-repo work *through* this repository's plan lifecycle, and its own retrospective reported the
+> result: the footprint resolver saw only the final PR, so **111 declared paths that landed in this very
+> telemetry repo were invisible to it**, and three instruments graded a plan in which *every deliverable
+> shipped* as a possible silent descope — `affected_files_recall` **27.3%** as an **error** grade, 186
+> declared-but-unrealized paths, 185 `include_unrealised`. Running the plan that **builds outcome
+> measurement** under a lifecycle whose measurement is known-broken for precisely this shape is both
+> wasteful and self-defeating. (That defect is folded into `PLAN-PRQ-09`, which is parked.)
+>
+> ✅ **One consequence is a strict improvement: the disjointness-gate override is no longer needed.** The
+> earlier emit required overriding a fail-closed gate (`candidate_comparison_determinate: false`) on the
+> strength of a contingent in-repo surface. Under this lane the in-repo work is **split out** (see D4a), so
+> this plan declares **no in-repo surface at all** and collides with nothing in this repository by
+> construction rather than by argument.
 
 > ⚠ **Scope-bloat guard: eight deliverables, over the ~6 presumption, proceeding unsplit by operator
 > decision (2026-10-04).** Recorded rationale: D1–D4 share one subject resolver, one report writer and one
@@ -117,9 +125,25 @@ the telemetry repo with a one-line banner naming this plan and the reason; delet
 only record of what the auditor once measured, and this epic's standing rule is that a retired artefact is
 the audit record of why it was retired.
 
+⛔⛔ **WHERE THE REPORT FILES MAY NOT GO — read this before D1 and D3.** The first draft of this spec said
+`{subject}/outcome.json`, i.e. inside the subject's own archive directory. ⛔ **That violates an invariant
+the telemetry repo's README states outright:** *"Entries under `{project-slug}/` are written only by
+`transfer` and are never modified or deleted by analysis."* Writing a report into the archive tree makes
+**analysis a writer of the archive**, which is exactly what that sentence forbids — and the invariant is
+load-bearing, because an archive that analysis can write is an archive whose contents can no longer be
+trusted as the record of what the source project produced.
+
+So D1 and D3 emit into a **separate top-level tree**, proposed as
+`reports/{project-slug}/{subject}/outcome.json` and `…/quality.json`, leaving `{project-slug}/` untouched.
+⚠ **D0 owns the final call and must make it explicitly**, choosing one of exactly two:
+(a) honour the invariant and emit outside `{project-slug}/` — **preferred**; or (b) amend the README's
+invariant deliberately, with the reason recorded, if there is a compelling argument for co-locating the
+report with its subject. ⛔ What D0 may NOT do is write into `{project-slug}/` while leaving the README
+asserting that nothing does.
+
 **D1 — The outcome report: one JSON file per subject, emitted BY THE ENGINE.** For each archived plan and
-each archived orchestrator epic, emit `{subject}/outcome.json`. The format decision is settled: **report
-files are JSON** (durable, queryable across a growing corpus, diffable, readable by tooling that knows
+each archived orchestrator epic, emit an outcome report at the D0-settled location. The format decision is
+settled: **report files are JSON** (durable, queryable across a growing corpus, diffable, readable by tooling that knows
 nothing about plan-marshall) while the **skill's own stdout stays TOON** per the marketplace convention.
 
 ⛔ **CORRECTED 2026-10-04 — the fix site is the ENGINE, not the `analyze` wrapper.** `OBSERVED` from that
@@ -189,6 +213,20 @@ What this deliverable ADDS, and each addition is a gap in the current axis:
   second, and the two are NEVER folded into one number.** A gate that was DISABLED and a gate that ran and
   found nothing must be distinguishable in the report. Folding them is what makes a disabled gate read as a
   clean one — this epic's founding defect.
+
+**D4a — IF the three new mechanisms need a producer-side change in `plan-marshall`, that is NOT this
+plan's work.** D4 classifies on the READING side, over records already in `artifacts/findings/*.jsonl`, and
+the telemetry repo can do that with no plan-marshall involvement at all. ⚠ But if settling D4 shows that
+`simplify`, `security-review` or `sonar` findings are not *distinguishable in the records as written* —
+i.e. the producer never recorded enough to tell them apart — then the fix is a vocabulary change in
+`plan-marshall`'s `manage-findings`, in **another repository, under a different lane**.
+
+⛔ **Do not do it here, and do not reach across.** Record the requirement, name the fields, and hand it
+back to the orchestrator: it becomes its own small `/plan-marshall` task in the `plan-marshall` repo, where
+that surface lives and where the disjointness gate can actually see it. That split is what lets this plan
+declare no in-repo surface — and it is why this plan no longer needs a gate override. Splitting it also
+keeps the two halves honestly sequenced: reading-side classification can ship and be useful on today's
+records even if the producer side is never changed.
 
 **D5 — Script-first, manual-capable by construction, and every field states its measurement state.** ⭐
 **This is the deliverable that makes the other seven survive a heterogeneous corpus.** Plan structure has
@@ -262,21 +300,38 @@ disabled gate and a clean gate produce different `quality.json` output.
 
 ## Expected Surface
 
-⛔ **This surface is almost entirely OUTSIDE this repository**, which has two consequences stated here
-rather than discovered: the disjointness gate cannot evaluate out-of-repo paths against this repo's live
-plans, and — for exactly that reason — **this plan collides with nothing in this repository by
-construction**. It is also the first spec in this epic to declare such a surface, which is itself the
-condition `PLAN-PRQ-09`'s folded recurrence describes (a resolver that cannot tell out-of-repo from
-untouched).
+⛔ **This surface is ENTIRELY OUTSIDE this repository, and that is now by construction rather than by
+accident.** The one contingent in-repo path the earlier draft declared — `manage-findings` — is split out
+to D4a, so this plan touches no path in `plan-marshall` at all. Two consequences, both stated rather than
+discovered: **this plan collides with nothing in this repository**, and the disjointness gate has nothing
+to evaluate for it — which is the correct reading, not a gap, because there is genuinely no in-repo surface
+to compare.
 
-- OBSERVED (out of repo): `plan-marshall-telemetry/` — the `analyze` skill, its scripts and its SKILL.md: D0, D1, D3, D4, D5, D6
-- OBSERVED (out of repo): `plan-marshall-telemetry/` — the relocated `audit-archived-plan-retrospectives` checks corpus: D0, D6 (banners only; no deletions)
-- OBSERVED (out of repo): `plan-marshall-telemetry/` — the analysis engine shared by the two report writers: D1, D3, D4
-- OBSERVED (out of repo): `plan-marshall-telemetry/` — the test tree: D7
-- ⚠ HYPOTHESIS (in repo): `marketplace/bundles/plan-marshall/skills/manage-findings/` — ONLY if D4's three
-  new mechanisms require a change to the findings type or source vocabulary on the producing side rather
-  than classification on the reading side (verify-at-outline). If they do, that edit lands in THIS
-  repository and this plan acquires an in-repo surface it does not otherwise have.
+⚠ The parser reports these entries as **unresolved** (4 unresolved spans, 0 resolved), because they name
+another repository. That is the honest result and is precisely the condition `PLAN-PRQ-09`'s folded
+recurrence describes — a resolver that cannot tell an out-of-repo path from an untouched in-repo one. This
+spec is the first in the epic to sit entirely on that side of the line.
+
+⛔⛔ **EVERY entry below is PREFIXED with the repository name, and that prefix is load-bearing — do not
+"tidy" it away.** A bare relative path such as `test/` or `README.md` resolves against **this** repository,
+where both exist and mean something entirely different; a draft of this section that omitted the prefix
+made the parser report `test/` (this repo's whole test tree) as a declared surface. The prefixed form
+resolves to nothing instead, which is the honest answer for a path in another repository and is exactly
+what `PLAN-PRQ-09`'s folded recurrence is about.
+
+⚠ **The section is read MECHANICALLY: a path-shaped token here is a declaration, whatever the prose around
+it says.** An earlier draft carried a `⛔ EXCLUDED` bullet naming `manage-findings`, and the parser
+declared it regardless — the annotation excluded nothing. So exclusions are stated in D4a and in prose,
+**never as an entry in this section**.
+
+- OBSERVED: `plan-marshall-telemetry/.claude/skills/audit-archived-plan-retrospectives/` — the engine, `scripts/audit.py` and its `checks/` corpus: D0, D1, D3, D4, D5, D6 (banners only on dropped checks; no deletions)
+- OBSERVED: `plan-marshall-telemetry/.claude/skills/analyze/` — the wrapper, which keeps its no-format-of-its-own property and gains at most a pass-through flag: D6
+- OBSERVED: `plan-marshall-telemetry/reports/` — the new report tree D1 and D3 write, subject to D0's location call: D1, D3, D4
+- OBSERVED: `plan-marshall-telemetry/test/` — the pytest suite: D7
+- OBSERVED: `plan-marshall-telemetry/README.md` — the Layout and Skills sections, which must describe the new report tree; and its archive-write invariant, amended ONLY under D0 option (b): D0, D1, D3
+
+**Nothing in the `plan-marshall` repository is declared, and that is deliberate** — D4a hands the one
+possible in-repo requirement back rather than claiming it.
 
 ## Dependencies and Sequencing
 
@@ -307,18 +362,68 @@ untouched).
   re-grounds those specs onto the telemetry repo they become live neighbours of this plan. Nothing
   serializes across ledgers.
 
-## Hand-Off Command
+## Hand-Off: a standalone session in the telemetry repo
+
+⛔ **NOT a `/plan-marshall` task.** Start a Claude Code session with its working directory in the telemetry
+checkout and hand it this file by absolute path as the brief:
 
 ```text
-/plan-marshall task="implement .plan/orchestrator/post-run-quality/plans/PLAN-PRQ-13-telemetry-analyze-outcome-and-quality-reports.md"
+cd /home/oliver/git/plan-marshall-telemetry
 ```
+
+```text
+Implement the plan at
+/home/oliver/git/plan-marshall/.plan/orchestrator/post-run-quality/plans/PLAN-PRQ-13-telemetry-analyze-outcome-and-quality-reports.md
+Work only in this repository. Read § "What replaces the lifecycle" first.
+```
+
+The brief stays in this epic's ledger because the orchestrator owns the ledger and a plan spec is a ledger
+document. The implementing session MAY copy it into the telemetry repo for its own convenience; that is its
+call, and the ledger copy remains authoritative.
+
+## What replaces the lifecycle
+
+⛔ **Dropping `/plan-marshall` drops real guarantees, and each one is substituted explicitly rather than
+quietly lost.** A lane that silently sheds its gates is worse than no lane.
+
+| What the lifecycle would have given | What replaces it here |
+|---|---|
+| Phased execution with a verification sweep | The deliverable order in this spec, D0 first as a hard gate |
+| `pre-push-quality-gate`, build + tests | `python3 -m pytest` from the repo root — the README names it, and `pyproject.toml` carries `testpaths = ["test"]`, `pythonpath = [".", "test"]`. **Green before every commit.** No `./pw`: this repo has stdlib-only deps and no pyprojectx wrapper |
+| `pre-submission-self-review` | A deliberate self-review pass before the final commit, against this spec's own D7 controls. ⚠ Not mechanised here — state in the run report that it was done and what it found |
+| `create-pr`, `ci-verify`, `automatic-review` | **Nothing, by the repo's design.** Its README: *"`main` only … no feature branches, no pull requests, no branch protection, and no review bots."* Commit directly to `main` and push |
+| `plan-retrospective`, `record-metrics` | **Nothing automated.** ⚠ See the irony clause below |
+| `emit-landing` → an inbox message to this epic | **Nothing.** The epic reconciles from an operator paste instead — `analyze`'s default input mode |
+| `archive-plan` | Not applicable; there is no plan directory |
+
+⚠ **The irony clause, stated because it is a real cost and not a joke.** This is the plan that builds
+outcome and quality measurement, and it will itself produce **no measured outcome**: no token figure, no
+phase breakdown, no retrospective, no recall grade, and no landing facts block. ⛔ **Mitigation, and it is
+an obligation not a suggestion: write a run report in the telemetry repo** naming what shipped, what was
+dropped and why, every D0 partition verdict, the self-review findings, and the test result — then paste it
+to the orchestrator so this epic's landing record is built from something. **This epic has drained exactly
+one complete landing in its life** (PRQ-07's, 2026-10-03, the first that ever arrived through the inbox);
+this plan will not produce a second, and the run report is what stands in for it.
+
+⭐ **Keep the one thing the lifecycle was not giving you anyway: the brief.** This spec's verify-first
+labels, its D0 gate, its measurement-state discipline and its controls are all stated here and do not
+depend on any phase machinery to bind.
 
 ## Write-Boundary
 
-The plan implementing this spec touches the `plan-marshall-telemetry` repository and, only if D4's
-`manage-findings` hypothesis resolves true, this repository's own source and tests. It creates and edits NO
-file under `.plan/orchestrator/` other than its own `inbox/{sender}-{seq}` message — the orchestrator owns
-every other ledger write — and reports its outcome through its PR (or, if the telemetry repo is main-only,
-through its landed commits) and its inbox message. The inbox exception's qualifiers and the sole sanctioned
-write mechanism are stated in `persona-plan-orchestrator/standards/orchestration-model.md` § Ledger
-Write-Boundary.
+⛔ **The implementing session writes ONLY inside `/home/oliver/git/plan-marshall-telemetry`.** It does not
+edit the `plan-marshall` repository at all — not its source, not its tests, and **not this ledger**.
+
+⛔ **The inbox carve-out does NOT apply here.** The rule that lets an executing plan file its own
+`inbox/{sender}-{seq}` message exists for a plan running under the plan-marshall lifecycle with a sender
+identity; this session has neither, and there is no `.plan/` in the telemetry repo to write into. It
+reports by landed commits on `main` plus the run report, and the operator pastes that to the orchestrator.
+
+⚠ **One boundary is easy to cross by accident and must not be.** The telemetry repo contains
+`{project-slug}/archived-orchestrators/` — transferred orchestrator records, including this project's own.
+Those are **archive data**, read-only to analysis per the README invariant, and they are emphatically NOT
+this epic's live ledger. Editing them would corrupt the very record this plan exists to measure.
+
+If D4a's producer-side requirement materialises it is recorded and handed back, never reached across to.
+The orchestrator owns every ledger write; see
+`persona-plan-orchestrator/standards/orchestration-model.md` § Ledger Write-Boundary.
