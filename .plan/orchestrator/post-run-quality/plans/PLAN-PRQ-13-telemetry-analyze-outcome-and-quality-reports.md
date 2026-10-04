@@ -182,9 +182,11 @@ population by terminal status (`shipped` / `landed` / `superseded` / `transferre
 `retired` or `superseded` consumed orchestration effort and shipped nothing**, so an epic report that only
 sums its shipped plans reports an epic as cheaper than it was.
 
-**D4 — The quality report: `{subject}/quality.json`, extending an ontology that already exists.** ⛔ **Do
-NOT invent a new ontology.** `OBSERVED` — the relocated `quality-chain` check already classifies every
-`artifacts/findings/*.jsonl` record on two orthogonal axes, and that classifier is the foundation:
+**D4 — The quality report, at the D0-settled location, extending an ontology that already exists.** ⛔ **Do
+NOT invent a new ontology.** The complete closed vocabularies and the file schema are written out below in
+§ **The taxonomy**, which is normative — this deliverable implements that section rather than re-deriving
+it. `OBSERVED` — the relocated `quality-chain` check already classifies every `artifacts/findings/*.jsonl`
+record on two orthogonal axes, and that classifier is the foundation:
 
 - **Mechanism** (ordered by cost and lateness): `build` → `self-review` → `auto-review` → `human-review`,
   plus `other`.
@@ -253,7 +255,141 @@ distinguishable from a silent one.
 the fields the script cannot reach rather than zeros; a matched positive/negative control for every one of
 the three measurement states; a control asserting a multi-PR subject's `lines_*` sums across all its PRs;
 a control that `project_kind` returns a SET for a subject touching two kinds; and a control asserting a
-disabled gate and a clean gate produce different `quality.json` output.
+disabled gate and a clean gate produce different quality-report output.
+
+⛔ **Three controls the taxonomy specifically owes**, because each guards a claim § The taxonomy makes
+rather than a field it merely lists:
+- **Mechanism order agrees with the composed finalize order.** The order is derived from step orders
+  (`simplify` 5, `security-review` 7, `self-review` 8, `auto-review` 30, `sonar` 40), so a control asserts
+  the two agree and FAILS if a step order moves without the axis following. Without it, "derived" decays
+  into "asserted once".
+- **`not_measured` and `not_applicable` are never interchangeable.** A matched pair: a subject with no PR
+  yields `sonar: not_applicable`; a subject whose findings files are unparseable yields
+  `sonar: not_measured`. The control asserts the two outputs differ.
+- **`pending` is never summed.** A fixture carrying both halves asserts that no emitted figure equals
+  `actionable + structural`.
+
+## The taxonomy
+
+⛔ **NORMATIVE. This section is the taxonomy, written out rather than referenced.** The first draft of this
+spec described the ontology as "extend `quality-chain`'s axes" plus a prose delta — which is not a
+specification, and the reader this plan hands off to is a session in another repository with none of this
+epic's context. Every vocabulary below is CLOSED: a value outside it is `other`, never a new value invented
+at implementation time.
+
+### Axis 1 — Mechanism: which gate surfaced the finding
+
+⭐ **The order is DERIVED, not a matter of taste.** It is the composed finalize step order, read from
+`manage-config list-finalize-steps` (`OBSERVED 2026-10-04`), which is exactly the cost-and-lateness ordering
+`quality-chain` already claims for its four values. A finding's mechanism says how far right in the chain
+the defect slipped before anything caught it.
+
+| # | Mechanism | Surfaced by | Step order | Status |
+|:-:|---|---|:-:|---|
+| 1 | `build` | build/test/compile failure during execute | — (execute) | existing |
+| 2 | `simplify` | `finalize-step-simplify` | 5 | **NEW** |
+| 3 | `security-review` | `finalize-step-security-audit` | 7 | **NEW** |
+| 4 | `self-review` | Q-Gate / assessments / `pre-submission-self-review` | 8 | existing |
+| 5 | `auto-review` | PR review bots — carries `bot` (see below) | 30 | existing, refined |
+| 6 | `sonar` | `sonar-roundtrip`, PR-scoped new-code issues | 40 | **NEW** |
+| 7 | `human-review` | a human PR comment | — (any time, latest) | existing |
+| 8 | `other` | classified by none of the above | — | existing |
+
+⚠ `simplify` and `security-review` land at 2 and 3 **because their steps fire at order 5 and 7**, before
+self-review at 8 — not because anyone judged them cheaper. If the composed order changes, this order
+changes with it, and D7 owns a control asserting the two agree.
+
+⛔ **`bot` is a field on an `auto-review` row, not a mechanism value.** The current classifier
+substring-matches `gemini` / `copilot` / `bot` / `automated`, so CodeRabbit and Sourcery are caught only
+because their handles contain `bot` and are indistinguishable from each other. Carry the identity
+explicitly, over the closed set `coderabbit` / `sourcery` / `cuioss-review-bot` / `copilot` / `gemini` /
+`other`, plus `required: true|false|unknown` — the required/optional distinction is this project's own and
+is invisible to the axis today. ⚠ **`unknown` is required in that triple**, because for an archived plan the
+bot roster at the time it ran is not recoverable from the records.
+
+### Axis 2 — Resolution: what disposition the finding received
+
+Unchanged from `quality-chain`, carried here so the vocabulary is readable without the other repository:
+
+| Bucket | Meaning |
+|---|---|
+| `lesson` | promoted to the lessons corpus. Checked FIRST — it overrides any `resolution` value |
+| `direct_fix` | fixed in place |
+| `loop_back` | fix deferred into a later task or deliverable |
+| `rerun_flake` | a transient / re-run / flake cause. **Not a real defect** |
+| `accepted` | acknowledged, not actioned |
+| `suppressed` | suppressed |
+| `rejected` | the `ext-point-verify` disposition |
+| `pending` | `pending` / `none` / empty, **or any value this table does not name** |
+
+⛔ **`pending` is TWO populations and must never be summed.** `actionable` is a defect-shaped finding
+nobody closed — real chain debt. `structural` is a knowledge-type finding (`tip` / `insight` /
+`best-practice` / `improvement`) filed to be read, not closed by defect-fixing work. Only the actionable
+half is a signal: counting the structural half produced a population no amount of defect-fixing could
+empty, and a backlog the chain's own work cannot drive to zero is a mislabelled population, not a backlog.
+
+### Axis 3 — Scope stability: how much the brief moved under the work
+
+⛔ **NEW — the ontology has no home for this today, and these are NOT findings.** They must never be forced
+into axes 1 and 2. Two counts, each with its instance list:
+
+| Field | Counts | Discovered at |
+|---|---|---|
+| `requirement_changes` | changes to what was ASKED FOR after init closed — refine escalations that moved scope, operator rulings that added or removed a requirement | `2-refine` onward |
+| `specification_changes` | changes to the DELIVERABLE SET after planning closed — a deliverable added, dropped, or materially re-scoped | `5-execute` onward |
+
+Each instance carries `direction` over the closed set `added` / `dropped` / `rescoped`, the `phase` it was
+discovered in, and a one-line `basis` naming the evidence. ⭐ **`PLAN-PRQ-07` is the worked example and the
+reason this axis exists**: its deliverable 3 was dropped by an operator ruling recorded in the plan's own
+`request.md`, and that event appears in **no findings file at all** — so an ontology built only on findings
+cannot see the single largest scope change the plan had.
+
+### The two states that are not values
+
+⛔ **Every field in both reports carries a measurement state, and `not_measured` is NEVER written as a zero
+or left absent.** The three states and their discipline are D5's; restated here only as the binding on
+these fields: `measured`, `not_measured` (the script could not reach it — name the subject and why), and
+`not_applicable` (the subject genuinely has no such thing). A plan with no PR has
+`sonar: not_applicable`; a plan whose findings files are unparseable has `sonar: not_measured`. **Those are
+different facts and the report must not render them alike.** Governing authority: **ADR-019**.
+
+### The file
+
+One quality report per subject, JSON, at the D0-settled location. Skeleton — field names are normative,
+the nesting is the implementer's:
+
+```json
+{
+  "subject": "2026-10-04-cross-repo-telemetry-archive-and-analyze",
+  "subject_kind": "plan",
+  "schema": "quality-report/1",
+  "mechanism_resolution_matrix": { "<mechanism>": { "<resolution>": 0 } },
+  "mechanisms": [
+    { "mechanism": "auto-review", "bot": "coderabbit", "required": "unknown",
+      "count": 0, "state": "measured" }
+  ],
+  "pending_split": { "actionable": 0, "structural": 0, "state": "measured" },
+  "scope_stability": {
+    "requirement_changes": { "count": 0, "state": "measured", "instances": [] },
+    "specification_changes": { "count": 0, "state": "measured", "instances": [] }
+  },
+  "gates": [
+    { "mechanism": "security-review", "ran": false, "findings": 0,
+      "state": "not_applicable", "basis": "step not in the composed manifest" }
+  ]
+}
+```
+
+⛔ **`gates[]` is the scoring discipline made structural, and it is the reason this file exists at all.**
+`ran` is **signal presence**; `findings` is **yield**. They are separate fields and are NEVER folded into
+one number, because a gate that was DISABLED (`ran: false`) and a gate that ran and found nothing
+(`ran: true, findings: 0`) must be distinguishable at a glance. Folding them is what makes a disabled gate
+read as a clean one — this epic's founding defect, carried from `PLAN-PRQ-01` D2.
+
+⚠ **What is PROPOSED rather than OBSERVED here**, and D0 settles each against the real records: that the
+three new mechanisms are *distinguishable in the findings records as written* (if not, see D4a); the exact
+bot-identity token set; and whether `gates[]` can be populated for an archived plan at all, since it needs
+the composed manifest and that may not survive archival.
 
 ## Claim Labels
 

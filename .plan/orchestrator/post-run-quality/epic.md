@@ -88,6 +88,25 @@ the machinery that grades us.
 
 ## Decisions
 
+- 2026-10-04 — **PLAN-PRQ-13's taxonomy written out as a normative section — it had only been
+  REFERENCED.** Operator question: *"is the created taxonomy already part of the plan?"* Honest answer was
+  no. D4 named the existing `quality-chain` axes and described a prose delta — add `simplify`,
+  `security-review`, `sonar`; carry bot identity; add a scope-stability axis — which is not a
+  specification, and the reader this plan hands to is a session in another repository with none of this
+  epic's context, so a reference was the wrong carrier. ⭐ **Three things the writing-out produced that the
+  reference could not.** (1) **The mechanism order is DERIVED, not judged**: it is the composed finalize
+  step order (`simplify` 5, `security-review` 7, `self-review` 8, `auto-review` 30, `sonar` 40), which is
+  the same cost-and-lateness ordering `quality-chain` already claims — so the two new pre-push mechanisms
+  sit before self-review *because their steps fire earlier*, and a D7 control asserts the axis and the step
+  order agree, so "derived" cannot decay into "asserted once". (2) **`bot` is a field on an `auto-review`
+  row, not a mechanism value**, over a closed set plus `required: true|false|unknown` — `unknown` is
+  *required*, because an archived plan's bot roster at run time is not recoverable from the records.
+  (3) **The scope-stability axis is defined for the first time**, with direction, discovering phase and a
+  basis line per instance. ⛔ Its justification is PRQ-07's own drop of deliverable 3 by operator ruling:
+  that event appears in **no findings file at all**, so an ontology built only on findings cannot see the
+  largest scope change that plan had. Also: `gates[]` makes PRQ-01 D2's discipline **structural** — `ran`
+  is signal presence, `findings` is yield, separate fields never folded — and a stale `{subject}/quality.json`
+  path left over from the report-location correction is fixed.
 - 2026-10-04 — **PLAN-PRQ-13 RE-CUT as a standalone session in the telemetry repo; the `/plan-marshall`
   emit is VOID.** Operator decision, prompted by the operator's own reading of the Expected Surface — which
   was the right diagnostic. ⭐ **The repo's README is the evidence, not architectural preference:** it
