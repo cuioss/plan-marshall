@@ -58,10 +58,10 @@ the machinery that grades us.
 - PLAN-PRQ-01 ↔ PLAN-PRQ-02 — both touch `plan-retrospective/scripts/`; never pair.
 - PLAN-PRQ-03 is the only spec whose surface is entirely project-local (`.claude/skills/`), so it is the
   natural partner if the scope knob is ever raised.
-- ✅ **PLAN-PRQ-07 — UN-PARKED AND EMITTED 2026-10-02 (operator). The only live row in the queue.** The
-  dependency below is DISCHARGED, not overridden, and the disjointness gate was overridden on a stated
-  basis; see the 2026-10-02 Decisions entry for both, and the spec's own banner for what the implementing
-  plan must re-check.
+- ✅ **PLAN-PRQ-07 — SHIPPED 2026-10-04, PR #1694.** Un-parked and emitted 2026-10-02 by operator decision
+  with the disjointness gate overridden on a stated basis and the PRQ-01/PRQ-03 dependency discharged; the
+  override held and nothing collided. See `landings/PLAN-PRQ-07.md`. **WS-05 is complete** — it was a
+  single-plan workstream. The queue is back to 9 parked and 3 shipped, with nothing live.
 - PLAN-PRQ-07 ↔ PLAN-PRQ-01, PLAN-PRQ-03 — both touch `.claude/skills/audit-archived-plan-retrospectives/**`,
   the exact skill PRQ-07 relocates out of this repo. PRQ-07 is a hard DEPENDENCY on both landing first, not
   a mere disjointness overlap — never emit PRQ-07 while either is staged/launched/running. ✅ **Discharged
@@ -78,6 +78,43 @@ the machinery that grades us.
 
 ## Decisions
 
+- 2026-10-04 — **PLAN-PRQ-07 SHIPPED — PR #1694 (`b3aba30aa`) after split part #1692, and the inbox channel
+  worked for the first time.** 13.1M tokens, 26.6 h wall, merged via merge queue, `cleanup_owed=false`;
+  `landings/PLAN-PRQ-07.md` is the full record. ⭐ **Three firsts for this epic, and they are the headline
+  rather than the shipping:** the landing arrived *through the inbox* (PRQ-06's never fired; PRQ-02's came as
+  9 messages), `inbox landing-check` returned **`complete: true` with `missing_keys[0]`** — every required
+  fact key present with a real value, no `n/a` and no `unknown` — and the orchestration-detection control
+  recorded at launch **predicted exactly this and held**. ⛔ **Deliverable 3 was DROPPED by an operator
+  ruling at refine**, not silently: `request.md:15-16` records *"Do not create a finalize step. Make it only
+  an explicit command in the new repo."* The surface-delta mechanism is what surfaced it — a single
+  declared-but-untouched path (`finalize-step-analyze-marshall-quality/`) out of 4 declared against 152
+  realized, with 44 undeclared additions (`expansion_detected`, the gate's documented under-declaration
+  class at roughly its documented magnitude). ⚠ **Two of five deliverables are recorded UNVERIFIABLE, not
+  shipped**: the `transfer` and `analyze` skills live in the private `cuioss/plan-marshall-telemetry`, which
+  this machine has no checkout of. The repository's *existence* is corroborated (`ci org list-repos`); its
+  contents are not read, and `deliverables_done=10` cannot make that distinction. ✅ **The emit-time gate
+  override held**: nothing collided, exactly as its stated basis predicted. ⚠ The cross-ledger exposure it
+  did not cover also did not materialise — but it was never serialized, so that is luck, not a guarantee,
+  and `code-intelligence-substrate`'s five specs now declare a surface this repository no longer contains.
+- 2026-10-04 — **Inbox drained: 9 messages, the landing plus 8 candidate lessons, all dispositioned.**
+  Fold (4, every one into a PARKED spec, deliberately — those specs are the PM-MCP carry-over's evidence
+  chain): `-001` re-fire-on-a-verdict-irrelevant-delta → `PLAN-PRQ-10`, supplying the mechanism D1 lacked
+  (`verdict_inputs` already exists; the re-fire rule keys on HEAD movement alone) with
+  `verdict-currency.md` added to its Expected Surface in the same act; `-004` operator escalations
+  classified `error` instead of the already-existing `blocked_user_review` (**1,285,813 tokens** reported as
+  waste that was not) and `-007` all 33 dispatch-boundary rows keyless, **0 of 33** joined, recording dead
+  after 13:16:33Z → `PLAN-PRQ-08`, one onto each half of its title; `-006` the footprint resolver sees
+  neither a split landing's earlier PR nor a sibling repo, so three instruments graded a complete plan as a
+  descope (recall **27.3%**) → `PLAN-PRQ-09`, with `manage-references/scripts/` added in the same act;
+  `-008` lessons-housekeeping Step 1 prescribes the retired `modified_files` read, six firings each
+  improvising a replacement → `PLAN-PRQ-05`. Promote (1): `-002` required-bot size caps and
+  dependency-aware splitting → corpus lesson `2026-10-04-09-001`. Forward-and-discard (2): `-003`
+  rate-window await blocking inside a leaf → `review-apparatus` (PR/CI territory per the standing routing
+  rule); `-005` `scope_creep_check` → `truthful-signals`, as a **recurrence** of the signal routed there on
+  2026-09-26 **plus a second defect** that one did not carry (the residual set is diffed from
+  `plan_creation_sha`, so upstream drift counts as creep — fixing only the finding type would make the
+  guard persist a wrong number instead of failing to persist one). ⚠ The TRUTH-178 ownership claim is read
+  from this epic's own ledger and is **not** independently verified; the forwarded message says so.
 - 2026-10-02 — **PLAN-PRQ-07 started** (operator confirmation, *"plan started"*); `staged → running`, plan id
   `cross-repo-telemetry-archive-and-analyze` stamped on the row, pre-flight `client.toon` written
   (`degraded: false`). The intermediate `launched` state is deliberately not in the row's history: `auto_emit`
@@ -470,6 +507,28 @@ this epic's.
 
 ## Watches
 
+- ⛔ **OWED, operator-raised during PRQ-07's run: the review bots review every PR regardless of the
+  `automatic-review` lane.** The operator observed it mid-run and the owed follow-up is explicit — analyse
+  how each bot is triggered, then guide the operator through disabling CodeRabbit, Sourcery and
+  cuioss-review-bot for `cuioss/plan-marshall`. ⚠ **This is the one Watch here with a named deadline that
+  has now passed**: it was recorded as owed *after cross-repo-telemetry lands*, and that landed 2026-10-03.
+  Not staged in this epic — review-pipeline configuration is `review-apparatus` territory, and this epic is
+  winding down — but it is due now, not later. ⛔ Read with the standing rule that **CodeRabbit is a
+  required reviewer and must never be moved to `optional_bots` to clear a blocked merge gate**: "opting out
+  of the lane" and "disabling the bot" are different acts, and the finding is precisely that the first does
+  not accomplish the second.
+- ⚠ **CodeRabbit's `**Actionable comments posted: N**` summary may be counted as an actionable comment.**
+  Reported by PRQ-07's `review-retrospective` as a possible defect — the leading bold markers appear to
+  defeat the registry's starts-with summary pattern, so every CodeRabbit review would inflate its own
+  actionable count by one. ⛔ **NOT verified by this epic** — recorded as the sender's lead, forwarded to
+  `review-apparatus` with that caveat stated. If real it biases every reviewer-quality comparison, which is
+  `review-apparatus`'s headline metric.
+- ⚠ **`code-intelligence-substrate`'s five specs now declare a surface this repository no longer contains.**
+  `PLAN-CIS-036/050/052/054/056` declare `.claude/skills/audit-archived-plan-retrospectives/**` and its test
+  mirror; PRQ-07 relocated both out of this repo on 2026-10-03. Nothing collided, because nothing was in
+  flight — but nothing serialized it either, so that was luck. Their own epic owns re-grounding them. This
+  Watch is **kept, not retired**: it is the live residue of a disjointness gate that was overridden rather
+  than passed, and it is first-party evidence for the cross-ledger blind spot this epic exists to name.
 - ⚠ **The PM-MCP carry-over now carries at least one stale defect, and this epic cannot see it.**
   `plan-marshall-mcp/doc/known-defects/post-run-quality-carry-over.md` extracted the whole parked corpus on
   2026-09-26. PLAN-PRQ-12's D1 was fixed in this repository on 2026-09-29 (PR #1646), so whatever the

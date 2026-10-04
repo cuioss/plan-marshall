@@ -13,6 +13,41 @@ workstream: WS-01
 > The orchestrator EMITS the command below; it never launches the plan inline.
 > This spec is SELF-SUFFICIENT: the emitted command is a one-line pointer and carries no brief.
 
+## Recurrence: the wrong-population defect fires on a split, cross-repo landing
+
+Folded 2026-10-04 from `cross-repo-telemetry-archive-and-analyze-006.md`, filed first-party by PRQ-07's own
+retrospective. ⭐ **This is the cleanest instance of this spec's own thesis the epic has yet recorded**: a
+plan in which *every deliverable shipped* was graded by three separate instruments as having silently
+descoped, because all three read a denominator that could not see where the work went.
+
+What the instruments published, against a plan that was complete:
+
+| Instrument | Published | Why it was wrong |
+|---|---|---|
+| `artifact_consistency` | `affected_files_recall` **27.3%** (70 of 256) — an *error* grade | denominator counted paths the resolver could not reach |
+| `manifest_decisions` | 186 declared-but-unrealized paths | same |
+| `outline_vs_shipped` | 185 of 255 `include_unrealised`, read as a possible silent descope | same |
+
+⛔ **Two distinct blind spots in ONE resolver, and they must not be conflated.** The footprint resolver
+answered from the `realized_capture` tier, which held only the 78 paths of the final PR:
+
+- **Split landing.** The run shipped as two PRs. Part 1 (#1692, `5ec134b0f`) deleted 74 test-mirror files
+  and was invisible to the resolver — it has no tier that **unions** several PRs landed for one plan.
+- **Sibling repository.** 111 declared paths landed in `plan-marshall-telemetry`, another repository
+  entirely. The resolver cannot tell a declared path **outside** the repository (sibling-repo prefix,
+  `../{repo}` placeholder) from an in-repo path that simply never changed — so out-of-repo work reads as
+  unrealized in-repo work. 74 + 111 accounts for all 185.
+
+The remedy the message names, and which D4 should absorb: union every PR the plan recorded as landed, and
+partition out-of-repository declared paths into an explicit *"out of repo, not measurable here"* bucket
+excluded from the recall denominator and **reported separately, never as a descope** — which is this epic's
+honest-zero rule applied to the resolver.
+
+⚠ **This fold ADDS file surface and the declaration below is updated in the same act.** The resolver is
+`manage-references`, which this spec did not declare; the archived lesson `2026-09-04-08-004` (no
+landed-commit tier) already named the same file from the other direction, and this is its first-party
+recurrence with two new facets.
+
 ## Provenance
 
 Staged 2026-09-17 from a full classification sweep of the 194-lesson corpus (49 candidate files read in
@@ -195,6 +230,7 @@ true retroactively, which is a reason to land them rather than a defect in them.
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/compile-report.py` — `should_emit`, D3(b)/(c) fix sites
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-retrospective/references/` — the logging-gap rules and the recall definitions (D1, D4)
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/manage-tasks/**` — the `changed_files` producer D2 needs, if D2 chooses the writer over retirement (verify-at-outline)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-references/scripts/` — D4 (added 2026-10-04 by the PRQ-07 recurrence fold: the shared footprint resolver whose `realized_capture` tier sees neither a split landing's earlier PRs nor a sibling repository, which is what made three instruments publish a descope against a complete plan)
 - OBSERVED: `test/plan-marshall/plan-retrospective/` — the controls (D5)
 
 ## Dependencies and Sequencing
