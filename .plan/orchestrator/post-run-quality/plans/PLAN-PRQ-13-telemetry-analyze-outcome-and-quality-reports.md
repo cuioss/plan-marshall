@@ -94,7 +94,10 @@ manual-capable by construction**, and every field distinguishes *not measured* f
 
 ## Deliverables
 
-Eight deliverables. D0 is a gate.
+Ten deliverables — D0 a gate, D4a a hand-back, D8 the ontology documentation. ⚠ The scope-bloat rationale
+above was recorded at eight; D4a adds no work (it is an explicit non-goal plus a hand-back) and D8 is the
+documentation half of a taxonomy the plan was already obliged to define, so neither is new scope. The
+guard's presumption is still overridden by the same operator decision and the same coupling argument.
 
 **D0 — GATE: publish the keep/drop partition with its population, and DIFF the relocated corpus.** Open
 `/home/oliver/git/plan-marshall-telemetry` and read the engine
@@ -250,6 +253,28 @@ from the `analyze` run, retain their files with the banner, and make the skill's
 checks ran, how many were dropped by this plan, and how many errored — so a shrinking report is
 distinguishable from a silent one.
 
+**D8 — Document the complete ontology, all four axes, in its own document(s) in the telemetry repo.** ⛔
+**The ontology's home is a document in the repository that implements it, NOT this spec.** § The taxonomy
+below is the *brief* — normative for this plan, and it dies with the plan once the work lands. A corpus
+that will be queried for years needs the vocabulary to live next to the data.
+
+- **One document per axis, or one document with one section per axis** — the implementer's call, but
+  **every axis is covered and the four are named as four**: mechanism, resolution, scope stability,
+  severity. An axis documented only by its field names in a schema is not documented.
+- Each axis states its **closed value set**, what each value MEANS, and — where the axis is derived — the
+  **derivation rule and its inputs**, so a reader can re-derive a published band rather than trust it.
+- ⛔ **Each axis states what it is NOT**, because every one of the four has a near neighbour it is
+  routinely confused with: severity is not scope; scope stability is not a findings axis; mechanism is a
+  gate not a bot; resolution's `pending` is two populations. Those distinctions are the load-bearing part
+  and the first thing lost when an ontology is summarised.
+- **The three measurement states are documented once** and referenced by every axis, not restated four
+  times with four shades of meaning.
+- `README.md` links the document(s) from its Layout and Skills sections, so the ontology is reachable from
+  the repo's front door rather than only from the code that happens to implement it.
+- ⚠ **Record the lossy-mapping fact in the severity document**, with its consequence: for plans archived
+  before any fix, `critical` and `major` are **not separable**, so those subjects report `not_measured`
+  rather than a band. A reader who does not know this will read a corpus-wide `critical: 0` as good news.
+
 **D7 — Controls, and they are the deliverable that outlives the rest.** At minimum: a fixture pair of
 **two archived plans of DIFFERENT vintage/layout** asserting that the older one yields `not_measured` on
 the fields the script cannot reach rather than zeros; a matched positive/negative control for every one of
@@ -268,14 +293,38 @@ rather than a field it merely lists:
   `sonar: not_measured`. The control asserts the two outputs differ.
 - **`pending` is never summed.** A fixture carrying both halves asserts that no emitted figure equals
   `actionable + structural`.
+- **A severity band is re-derivable from its own published inputs.** The control recomputes the band from
+  `derived_from` and asserts it equals the emitted `band` — so a band can never drift from the facts it
+  claims to rest on, which is what separates a derived figure from a self-reported one.
+- **Severity and scope are not folded.** A matched pair asserting that `broad` + `trivial` (a formatting
+  sweep) and `surgical` + `critical` (a one-line contract change) both survive as distinct outputs.
+- **A collapsed-severity subject reports `not_measured`, never a band.** A fixture whose findings carry
+  only the store's `error` asserts `finding_bands.state == "not_measured"` with the
+  `collapsed_at_ingestion` basis — and specifically asserts it does NOT emit `critical: 0`, which would
+  read as a checked zero.
+- **Every axis in D8's document(s) has its value set covered.** A doc-vs-code control asserting that each
+  axis's documented value set equals the constant the code validates against, in both directions, so the
+  documentation cannot drift from the implementation in either direction.
 
 ## The taxonomy
 
-⛔ **NORMATIVE. This section is the taxonomy, written out rather than referenced.** The first draft of this
-spec described the ontology as "extend `quality-chain`'s axes" plus a prose delta — which is not a
-specification, and the reader this plan hands off to is a session in another repository with none of this
-epic's context. Every vocabulary below is CLOSED: a value outside it is `other`, never a new value invented
-at implementation time.
+⛔ **NORMATIVE for this plan, and D8 moves it into the telemetry repo as documentation.** This section is
+the brief; the ontology's durable home is D8's document(s), next to the data that will be queried against
+it for years. The first draft described the ontology as "extend `quality-chain`'s axes" plus a prose delta
+— which is not a specification, and the reader this plan hands off to is a session in another repository
+with none of this epic's context. Every vocabulary below is CLOSED: a value outside it is `other`, never a
+new value invented at implementation time.
+
+**Four axes, and all four are reported — none replaces another.** ⭐ The build-through-human-review
+mechanism axis is KEPT in full (operator, 2026-10-04): axes 3 and 4 are *additions*, and the chain axis
+remains the thing that says how far right a defect slipped before anything caught it.
+
+| # | Axis | Answers | Status |
+|:-:|---|---|---|
+| 1 | Mechanism | which gate surfaced it — `build` first, `human-review` last | existing, extended |
+| 2 | Resolution | what disposition it received | existing, carried verbatim |
+| 3 | Scope stability | how much the brief moved under the work | **NEW** |
+| 4 | Severity | how much the change or finding MATTERS | **NEW** |
 
 ### Axis 1 — Mechanism: which gate surfaced the finding
 
@@ -344,6 +393,56 @@ reason this axis exists**: its deliverable 3 was dropped by an operator ruling r
 `request.md`, and that event appears in **no findings file at all** — so an ontology built only on findings
 cannot see the single largest scope change the plan had.
 
+### Axis 4 — Severity: how much a change or a finding MATTERS
+
+⛔⛔ **This axis is NEW, and the honest answer to "do we already have a unified ontology for this" is NO —
+with one partial vocabulary that is actively LOSSY.** What exists today, all `OBSERVED 2026-10-04`:
+
+| Existing vocabulary | Values | What it actually answers |
+|---|---|---|
+| `scope_estimate` (`references.json`, audited by `scope-estimate-accuracy`) | `none`, `surgical`, `single_module`, `multi_module`, `broad` | **how BIG** — size, not importance |
+| `change_type` (`VALID_CHANGE_TYPES`) | `analysis`, `feature`, `enhancement`, `bug_fix`, `tech_debt`, `verification` | **what KIND** |
+| `track` (`VALID_TRACKS`) | `simple`, `complex` | planning track |
+| finding `severity` (`FINDING_SEVERITIES`) | `error`, `warning`, `info` | a FINDING's level — three values, log-shaped |
+
+⛔ **The lossy mapping, and it is the reason "how many critical findings" cannot be answered today.**
+`workflow-integration-sonar`'s `_map_severity` collapses Sonar's five bands into the store's three:
+`BLOCKER` / `CRITICAL` / `MAJOR` **all become `error`**; `MINOR` → `warning`; `INFO` → `info`; an unknown
+severity is written with **no severity field at all**. So a blocker and a major are indistinguishable in
+the findings store, and the distinction is **destroyed at ingestion, not merely unreported**.
+
+⚠ **The consequence for an ARCHIVED plan is not recoverable and must be reported as such.** For a plan
+already landed, the pre-collapse Sonar severity is gone from the records. Such a subject reports
+`severity_source: collapsed_at_ingestion` with `state: not_measured` — ⛔ **never a guess, and never
+`info`-by-default**. Only subjects whose records carry an un-collapsed severity report `measured`. This is
+ADR-019 at its sharpest: the population was not merely unread, it was overwritten.
+
+**The axis this plan defines**, closed, four bands, and applied at two levels:
+
+| Band | A CHANGE at this band | A FINDING at this band |
+|---|---|---|
+| `critical` | breaks or silently changes a published contract, or lands a security-relevant defect | `BLOCKER` / `CRITICAL` upstream, or a security finding |
+| `major` | changes behaviour a consumer depends on, or spans `multi_module` / `broad` scope | `MAJOR` upstream |
+| `minor` | localised behaviour change, `surgical` or `single_module` scope | `MINOR` upstream |
+| `trivial` | no behaviour change — docs, comments, formatting, version stamps | `INFO` upstream |
+
+⛔ **DERIVED with its inputs published, never self-reported.** A band is emitted together with the facts
+it was computed from — the realized `scope_estimate`, the `change_type`, whether a published contract or a
+security surface was touched, and the finding-severity mix. ⭐ **A self-reported severity is precisely the
+"producer publishes a confident figure over a population it never read" defect this epic was created to
+fight**, so a band a reader cannot re-derive from the published inputs is not admissible. D0 settles the
+exact derivation rule against the real corpus and publishes it; what is fixed here is the vocabulary, the
+two levels, and the derived-with-inputs discipline.
+
+⛔ **Severity is NOT scope, and the two are never folded.** `scope_estimate` already answers "how big" and
+is already audited; this axis answers "how much does it matter". A broad formatting sweep is
+`broad` + `trivial`; a one-line change to a published contract is `surgical` + `critical`. Collapsing them
+would lose exactly the cases that matter most in both directions. Both are reported, side by side.
+
+⭐ **This is the axis that makes the operator's question answerable**: *"how many major changes?"* becomes a
+count over `severity.band == "major"` across the corpus, with `not_measured` subjects named rather than
+silently excluded from the denominator.
+
 ### The two states that are not values
 
 ⛔ **Every field in both reports carries a measurement state, and `not_measured` is NEVER written as a zero
@@ -372,6 +471,21 @@ the nesting is the implementer's:
   "scope_stability": {
     "requirement_changes": { "count": 0, "state": "measured", "instances": [] },
     "specification_changes": { "count": 0, "state": "measured", "instances": [] }
+  },
+  "severity": {
+    "band": "major",
+    "state": "measured",
+    "derived_from": {
+      "scope_estimate": "multi_module",
+      "change_type": "feature",
+      "touches_published_contract": true,
+      "touches_security_surface": false,
+      "finding_severity_mix": { "error": 0, "warning": 0, "info": 0 }
+    },
+    "severity_source": "derived",
+    "finding_bands": { "critical": 0, "major": 0, "minor": 0, "trivial": 0,
+                       "state": "not_measured",
+                       "basis": "collapsed_at_ingestion: Sonar BLOCKER/CRITICAL/MAJOR all stored as error" }
   },
   "gates": [
     { "mechanism": "security-review", "ran": false, "findings": 0,
@@ -429,6 +543,17 @@ the composed manifest and that may not survive archival.
 - ⚠ HYPOTHESIS: the repo is main-only by branch protection as `PLAN-PRQ-07` deliverable 1 specified —
   the absence of `.github/` is consistent with it but does not establish the protection setting itself
   (verify-at-outline; `ci repo` read, or the operator).
+- OBSERVED (2026-10-04): no change-severity ontology exists in `plan-marshall`. What exists is
+  `scope_estimate` (`none`/`surgical`/`single_module`/`multi_module`/`broad`, a SIZE scale, already audited
+  by `scope-estimate-accuracy`), `VALID_CHANGE_TYPES` (a KIND scale), `VALID_TRACKS`
+  (`simple`/`complex`), and `FINDING_SEVERITIES` (`error`/`warning`/`info`) which applies to findings
+  rather than changes. So *"how many major changes"* is not answerable today — read in
+  `tools-file-ops/scripts/constants.py` and `manage-execution-manifest/scripts/_manifest_core.py`.
+- ⛔ OBSERVED (2026-10-04): `workflow-integration-sonar`'s `_map_severity` collapses Sonar's five bands
+  into three — `BLOCKER`, `CRITICAL` and `MAJOR` **all** become `error`; `MINOR` → `warning`; `INFO` →
+  `info`; an unknown severity is written with no severity field. So the critical/major distinction is
+  **destroyed at ingestion**, and for an already-archived plan it is not recoverable. Axis 4 therefore
+  reports `not_measured` with a `collapsed_at_ingestion` basis for such subjects rather than a band.
 - ⚠ HYPOTHESIS: `worked_seconds` is recoverable for an archived plan at all. The metrics anchors warn the
   numerator must be worked rather than wall time; if no archived artefact carries it, D1 reports it
   `not_measured` by construction rather than substituting wall time — confirm/refute against an archived
@@ -460,11 +585,12 @@ it says.** An earlier draft carried a `⛔ EXCLUDED` bullet naming `manage-findi
 declared it regardless — the annotation excluded nothing. So exclusions are stated in D4a and in prose,
 **never as an entry in this section**.
 
-- OBSERVED: `plan-marshall-telemetry/.claude/skills/audit-archived-plan-retrospectives/` — the engine, `scripts/audit.py` and its `checks/` corpus: D0, D1, D3, D4, D5, D6 (banners only on dropped checks; no deletions)
+- OBSERVED: `plan-marshall-telemetry/.claude/skills/audit-archived-plan-retrospectives/` — the engine, `scripts/audit.py` and its `checks/` corpus: D0, D1, D2, D3, D4, D5, D6 (banners only on dropped checks; no deletions)
 - OBSERVED: `plan-marshall-telemetry/.claude/skills/analyze/` — the wrapper, which keeps its no-format-of-its-own property and gains at most a pass-through flag: D6
 - OBSERVED: `plan-marshall-telemetry/reports/` — the new report tree D1 and D3 write, subject to D0's location call: D1, D3, D4
 - OBSERVED: `plan-marshall-telemetry/test/` — the pytest suite: D7
-- OBSERVED: `plan-marshall-telemetry/README.md` — the Layout and Skills sections, which must describe the new report tree; and its archive-write invariant, amended ONLY under D0 option (b): D0, D1, D3
+- OBSERVED: `plan-marshall-telemetry/README.md` — the Layout and Skills sections, which must describe the new report tree and link D8's ontology document(s); and its archive-write invariant, amended ONLY under D0 option (b): D0, D1, D3, D8
+- OBSERVED: `plan-marshall-telemetry/doc/` — D8's ontology document(s), one per axis or one with a section per axis: D8
 
 **Nothing in the `plan-marshall` repository is declared, and that is deliberate** — D4a hands the one
 possible in-repo requirement back rather than claiming it.

@@ -88,6 +88,31 @@ the machinery that grades us.
 
 ## Decisions
 
+- 2026-10-04 — **Severity axis added to PLAN-PRQ-13, and the answer to "do we already have a unified
+  ontology for that" is NO — with one vocabulary that is actively LOSSY.** Operator wanted a
+  minor/major/critical scale so the corpus can be asked *"how many major changes"*. Verified in the code:
+  what exists is `scope_estimate` (`none`/`surgical`/`single_module`/`multi_module`/`broad` — a **SIZE**
+  scale, already audited), `VALID_CHANGE_TYPES` (a **KIND** scale), `VALID_TRACKS` (`simple`/`complex`),
+  and `FINDING_SEVERITIES` (`error`/`warning`/`info`) which grades **findings, not changes**. So that
+  question is unanswerable today. ⛔⛔ **And the real finding is worse than a gap**:
+  `workflow-integration-sonar`'s `_map_severity` collapses Sonar's five bands into three — **`BLOCKER`,
+  `CRITICAL` and `MAJOR` all become `error`** — so the critical/major distinction is **destroyed at
+  ingestion**, not merely unreported, and for an already-archived plan it is unrecoverable. ⇒ Axis 4
+  reports `not_measured` with a `collapsed_at_ingestion` basis for such subjects, and a control
+  specifically asserts it does **not** emit `critical: 0`, which a reader would take as a checked zero.
+  **ADR-019 at its sharpest: the population was overwritten, not merely unread.** The axis itself is a
+  closed four-band set (`trivial`/`minor`/`major`/`critical`) applied to both changes and findings,
+  **derived with its inputs published and never self-reported** — a self-reported severity is exactly the
+  producer-publishes-a-confident-figure defect this epic exists to fight — with a control that recomputes
+  the band from `derived_from` and asserts equality. ⛔ **Severity is NOT scope**: a broad formatting sweep
+  is `broad` + `trivial`, a one-line contract change is `surgical` + `critical`, and folding them would
+  lose exactly the cases that matter most in both directions. Operator also confirmed the
+  build-through-human-review mechanism axis stays in full — axes 3 and 4 are additions, not replacements.
+  **D8 added**: document all four axes in their own document(s) in the telemetry repo, each stating its
+  closed value set, its derivation rule where derived, and ⛔ **what the axis is NOT** — every one of the
+  four has a near neighbour it is confused with, and those distinctions are the first thing lost when an
+  ontology is summarised. A doc-vs-code control asserts each documented value set equals the constant the
+  code validates against, in both directions.
 - 2026-10-04 — **PLAN-PRQ-13's taxonomy written out as a normative section — it had only been
   REFERENCED.** Operator question: *"is the created taxonomy already part of the plan?"* Honest answer was
   no. D4 named the existing `quality-chain` axes and described a prose delta — add `simplify`,
