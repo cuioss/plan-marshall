@@ -96,6 +96,32 @@ the machinery that grades us.
 
 ## Decisions
 
+- 2026-10-04 — **`PLAN-PRQ-15` SHIPPED (telemetry `0965060..0adc341`, 8 commits, no PR), and it found a
+  `PLAN-PRQ-13` defect.** All seven deliverables; `landings/PLAN-PRQ-15.md` is the record; WS-05 complete.
+  Suite **924 passed / 20 skipped** (from 873/20), green before every commit — ⚠ the run's figure, not
+  re-verified here, since the system `python3` has no pytest. **D6 verified in the tree**: skills are now
+  exactly `analysis-engine`, `analyze`, `transfer`; test dirs mirror them exactly and ⭐ **the mirror got
+  stronger** — `test/analyze/` is new, carrying the control that fails if a slash-command usage example
+  returns; the rename commit shows **126 rename-detected paths**, so `git mv` moved both trees in one
+  commit as required; the engine reads `user-invocable: false`. ✅ The rename is complete — the old name
+  survives in exactly two files, both correctly (the two run reports, one historical and one documenting
+  the rename). ⛔ **THE FINDING THAT MATTERS: `plan_rollup` reported `complete: true` over floor
+  summands** — a sum built from lower bounds published as complete, because the roll-up ignored
+  `floor: true`. **A PRQ-13 defect, found by reusing PRQ-13's own pattern**, and it is the
+  *floor-propagation* form of this epic's founding class: not a false zero but a **false certainty**. Also
+  fixed: the severity roll-up silently dropped out-of-vocabulary values, and the engine's usage examples
+  still showed it run as a slash command — a second front door surviving in the docs after D6(a) closed
+  the real one, now with a control. ⭐ **`aborted` is reachable but has never occurred**, and the
+  distinction was preserved: derivable only from an explicit `metadata.archived_reason` other than
+  `normal_completion`, which **none of 70** archived plans has (the 7 that record a reason all say
+  `normal_completion`). Producible-but-never-produced is a different fact from unreachable, and different
+  again from "nothing was ever aborted". ⛔ And the rule held — **a plan with zero deliverables done is
+  never treated as `aborted`**; the 4 `indeterminate` results are exactly where a lesser implementation
+  would have guessed. Completion over the real corpus: 63 fully, 3 partially, 0 aborted, 4 indeterminate.
+  ⚠ **The run corrected my blast-radius figure**: 38 across 14 files, not my 46 across 15, because D6(b)'s
+  fold removed references before (c) ran. My measurement was right when taken and stale when used — **a
+  blast radius measured before an earlier step runs is a moving figure, and a spec quoting one should say
+  which step it was measured at.** Mine did not.
 - 2026-10-04 — **`PLAN-PRQ-15` gains D6: the skill-layout cleanup, three parts.** Operator asked whether
   the telemetry repo's four project skills are all necessary. Read all four. **`transfer` and the engine
   are clearly necessary** (write path, read path). **`analyze` is justified** — its 106 lines and zero
@@ -761,11 +787,22 @@ this epic's.
 
 ## Watches
 
-- ⛔ **The reports are SHIPPED BUT NEVER RUN against real data.** No project has been transferred into the
-  telemetry repo, so `reports/` does not exist yet and D1–D5 have been exercised only by their test suite.
-  ⚠ **The first `transfer` + `analyze` run is the real test**, not the 873 green tests — a corpus of plans
-  of differing vintage is exactly the input D5's three measurement states exist for, and the one thing no
-  fixture fully simulates. — re-check after that first run.
+- ⛔ **TWO plans' worth of reports are SHIPPED BUT NEVER RUN in anger.** No project has been transferred,
+  so no `reports/` tree and no `project-report.adoc` is committed. `PLAN-PRQ-15` checked its work against a
+  **scratch copy of plan-marshall's real archive** plus fixtures — materially better than fixtures alone,
+  and the source of every real figure in its landing (70 plans, 63/3/0/4 completion, 60/70 repository
+  evidence) — but the committed artefact does not exist. ⚠ **`transfer` + `analyze` for one project is
+  the highest-value action in this epic and it needs no plan.** — re-check after that first run.
+- ⛔ **The `.adoc` aggregate has never been RENDERED.** No AsciiDoc renderer is installed in the telemetry
+  repo, so its controls assert the report's *content* and nothing has confirmed its *markup*. ⚠ **A
+  human-readable report nobody has seen rendered is the one deliverable whose purpose is unconfirmed** —
+  every other field in this epic is verified by a parser, but this one is verified by a reader. — render it
+  once; that is the whole re-check.
+- ⚠ **The PRQ-13 tokens extractor writes `measured 0, floor: true`** when every per-phase `total_tokens`
+  line is zero (observed example: `2026-09-17-plan-03-review-currency`). The aggregate renders it correctly
+  as a floor, but a zero floor carries almost no information. Correctly scoped OUT of `PLAN-PRQ-15` as
+  belonging to the tokens extractor. — fold into a future telemetry plan rather than leaving it to be
+  rediscovered a third time.
 - ⚠ **Every plan's finding severity band is `not_measured`, and that is the mechanism working.** The Sonar
   collapse destroyed the `critical`-versus-`major` distinction at ingestion, so no historical plan can ever
   carry a band. `PLAN-PRQ-14` item 3 fixes it **forward only** — and even after it lands, bands appear only

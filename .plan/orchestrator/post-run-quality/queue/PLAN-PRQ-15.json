@@ -2,9 +2,9 @@
   "id": "PLAN-PRQ-15",
   "slug": "project-level-adoc-aggregate-and-outcome-identity-fields",
   "workstream": "WS-05",
-  "status": "staged",
+  "status": "shipped",
   "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "pr": "0adc341",
+  "landing": "landings/PLAN-PRQ-15.md",
   "seq": 15
 }

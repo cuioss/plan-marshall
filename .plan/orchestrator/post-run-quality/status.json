@@ -31,7 +31,7 @@
       "id": "WS-05",
       "slug": "cross-repo-post-run-telemetry",
       "title": "Cross-repo post-run telemetry",
-      "status": "active"
+      "status": "complete"
     }
   ],
   "metadata": {
