@@ -386,8 +386,20 @@ the machinery that grades us.
   half — `recipe-plan-review` persisting nothing. Re-pointing PRQ-01 and PRQ-03 themselves is **not** done:
   they are parked, and re-scoping a parked spec onto another repository is a decision about the PM-MCP
   carry-over, not a reconciliation.
-- ⚠ **NEW 2026-10-04 — the disjointness gate refuses `PLAN-PRQ-13`, and for a different reason than it
-  refused PRQ-07.** `candidate_comparison_determinate: false` again (96 sibling-epic specs and 3 live plans
+- ✅ **RESOLVED 2026-10-04 — `PLAN-PRQ-13` emitted, gate overridden on a stated basis, and my own
+  characterisation of it corrected.** ⛔ **The correction first, because it is the substantive part:** I
+  told the operator this was a *weaker* override case than PRQ-07's, on the strength of the ~45 overlap-row
+  count. Separating the rows by class shows it is **comparable, and arguably safer**. PRQ-07 also carried a
+  large sibling-epic-spec volume (186 rows) with zero live-plan overlaps and in-corpus overlaps only against
+  parked or shipped siblings; PRQ-13 has **zero** live-plan rows, **one** in-corpus row (`PLAN-PRQ-01`,
+  parked), and ~40 sibling-ledger rows. ⭐ **The real difference runs the other way**: every PRQ-13 overlap
+  is driven by ONE declared path, `manage-findings`, which the spec declares a HYPOTHESIS — so if it
+  resolves false the in-repo surface is **empty** and the collisions do not exist. PRQ-07's surface was
+  unconditional. A row count compared across two candidates without separating its classes is exactly the
+  under-derived figure this epic exists to catch, and I published one. ⇒ The emitted spec carries the
+  override, its basis, and a concrete obligation: settle the `manage-findings` hypothesis at D0/outline
+  before touching that file, and re-check the live plan set if it resolves true.
+- ⚠ **SUPERSEDED by the entry above — the original gate-refusal record for `PLAN-PRQ-13`.** `candidate_comparison_determinate: false` again (96 sibling-epic specs and 3 live plans
   declare no comparable surface), so the test fails closed. ⛔ **But unlike PRQ-07, PRQ-13 DOES have overlap
   rows** — roughly 45 of them, including `PLAN-PRQ-01` in this corpus and ~40 sibling-epic specs across
   `review-apparatus`, `truthful-signals` and others. ⭐ **Every one of them is driven by a single path**,

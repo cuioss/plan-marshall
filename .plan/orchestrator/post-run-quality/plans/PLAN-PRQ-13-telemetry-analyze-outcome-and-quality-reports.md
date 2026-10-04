@@ -17,6 +17,26 @@ workstream: WS-05
 > was wrong and the claims below are now `OBSERVED`. The corrected readings changed the plan's shape — see
 > D1's fix-site correction in particular, which the first draft had pointed at the wrong skill.
 
+> ✅ **EMITTED 2026-10-04 by operator decision. The disjointness gate REFUSED this candidate and was
+> overridden on a stated basis — the implementing plan inherits that, and one obligation with it.**
+> `corpus cross-check` returns `candidate_comparison_determinate: false` (96 sibling-epic specs and 3 live
+> plans declare no comparable surface), so the admission test fails closed per ADR-019 rather than calling
+> an unexamined population disjoint. Measured per class rather than from the row total: **zero** `live_plan`
+> overlap rows (and `live_plans_comparable: 0`, so that side was unexaminable regardless), exactly **one**
+> in-corpus overlap — `PLAN-PRQ-01`, `parked` and therefore never in flight — and roughly **forty**
+> sibling-epic-spec rows in other ledgers, all staged rather than running.
+> ⭐ **Every one of those overlaps is driven by a SINGLE declared path, `manage-findings`, which this spec
+> declares as a HYPOTHESIS** (in scope only if D4's three new mechanisms need a producer-side vocabulary
+> change rather than reading-side classification). **If that hypothesis resolves false, this plan has no
+> in-repo surface at all and none of the collisions exist.** ⛔ **So the obligation is concrete: settle the
+> `manage-findings` hypothesis at D0/outline BEFORE touching that file, and if it resolves true, re-check
+> the live plan set and `review-apparatus`'s queue at that moment** — the override was granted against a
+> contingent surface, not a confirmed one.
+> ⚠ **What the override does NOT cover, and neither did PRQ-07's:** nothing serializes across ledgers, so
+> those ~40 sibling specs are unserialized; and the four `plan-marshall-telemetry` entries are *unresolved*
+> to the parser, so **the gate never examined the repository where most of this plan's work lands**.
+> Prep-readiness passed on its own terms (13 specs scanned, all claim sections parsed, 0 blocking).
+
 > ⚠ **Scope-bloat guard: eight deliverables, over the ~6 presumption, proceeding unsplit by operator
 > decision (2026-10-04).** Recorded rationale: D1–D4 share one subject resolver, one report writer and one
 > ontology, and D5's script-plus-manual-fallback structure is a property of the whole skill rather than of
