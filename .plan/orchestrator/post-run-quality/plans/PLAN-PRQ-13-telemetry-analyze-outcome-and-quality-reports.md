@@ -11,19 +11,13 @@ workstream: WS-05
 > created by `PLAN-PRQ-07` (PR #1694, landed 2026-10-03), checked out at
 > `/home/oliver/git/plan-marshall-telemetry`. This spec is staged here because this epic owns WS-05 and
 > created that repo; the orchestrator owns the ledger, so the brief lives here and the work happens there.
->
-> ✅ **CORRECTED 2026-10-04 (same day, before launch): a local checkout DOES exist** at
-> `/home/oliver/git/plan-marshall-telemetry`, and this spec's telemetry-repo claims were read from it
-> directly. The first draft asserted no checkout existed and labelled them all `HYPOTHESIS`; that assertion
-> was wrong and the claims below are now `OBSERVED`. The corrected readings changed the plan's shape — see
-> D1's fix-site correction in particular, which the first draft had pointed at the wrong skill.
+> Every telemetry-repo claim below was read from that checkout directly and is labelled `OBSERVED`.
 
-> ⛔⛔ **RE-CUT 2026-10-04 (operator): this plan does NOT run as a `/plan-marshall` task. It runs as a
-> standalone Claude Code session INSIDE the telemetry repository.** The 2026-10-04 emit of a
-> `/plan-marshall` command is **VOID** — do not run it.
+> ⛔⛔ **This plan does NOT run as a `/plan-marshall` task. It runs as a standalone Claude Code session
+> INSIDE the telemetry repository.** A `/plan-marshall` command for this spec was emitted once and is
+> **VOID** — if you find it in the ledger, do not run it.
 >
-> ⭐ **The Expected Surface was the diagnostic, and the telemetry repo's own README is the evidence.** That
-> README declares, in terms: *"Analysis reads the archived files directly. The skills run on a plain Python
+> ⭐ **Why, and the telemetry repo's own README is the evidence.** It declares, in terms: *"Analysis reads the archived files directly. The skills run on a plain Python
 > interpreter with the standard library only, and need neither a plan-marshall checkout nor the
 > plan-marshall plugin."* And: *"This repository uses `main` only. Changes are committed directly to `main`;
 > there are no feature branches, no pull requests, no branch protection, and no review bots."* The repo is
@@ -39,18 +33,11 @@ workstream: WS-05
 > measurement** under a lifecycle whose measurement is known-broken for precisely this shape is both
 > wasteful and self-defeating. (That defect is folded into `PLAN-PRQ-09`, which is parked.)
 >
-> ✅ **One consequence is a strict improvement: the disjointness-gate override is no longer needed.** The
-> earlier emit required overriding a fail-closed gate (`candidate_comparison_determinate: false`) on the
-> strength of a contingent in-repo surface. Under this lane the in-repo work is **split out** (see D4a), so
-> this plan declares **no in-repo surface at all** and collides with nothing in this repository by
-> construction rather than by argument.
-
-> ⚠ **Scope-bloat guard: eight deliverables, over the ~6 presumption, proceeding unsplit by operator
-> decision (2026-10-04).** Recorded rationale: D1–D4 share one subject resolver, one report writer and one
-> ontology, and D5's script-plus-manual-fallback structure is a property of the whole skill rather than of
-> either report. Splitting would put the shared engine in one plan and its second consumer in another, which
-> is the "two independently-authored formatters" failure `PLAN-PRQ-07` deliverable 4 was explicitly written
-> to prevent. The alternative offered — a schema-first split — was declined for the same reason.
+> ⛔ **DO NOT split this work across two runs.** D1–D4 share one subject resolver, one report writer and
+> one ontology, and D5's script-plus-manual-fallback structure is a property of the whole skill rather than
+> of either report. Putting the shared engine in one run and its second consumer in another recreates the
+> "two independently-authored formatters" failure `PLAN-PRQ-07` deliverable 4 was written to prevent — the
+> same reason `analyze` has no report format of its own.
 
 ## Provenance
 
@@ -94,10 +81,7 @@ manual-capable by construction**, and every field distinguishes *not measured* f
 
 ## Deliverables
 
-Ten deliverables — D0 a gate, D4a a hand-back, D8 the ontology documentation. ⚠ The scope-bloat rationale
-above was recorded at eight; D4a adds no work (it is an explicit non-goal plus a hand-back) and D8 is the
-documentation half of a taxonomy the plan was already obliged to define, so neither is new scope. The
-guard's presumption is still overridden by the same operator decision and the same coupling argument.
+Ten deliverables — D0 a gate, D4a a hand-back, D8 the ontology documentation.
 
 **D0 — GATE: publish the keep/drop partition with its population, and DIFF the relocated corpus.** Open
 `/home/oliver/git/plan-marshall-telemetry` and read the engine
@@ -128,13 +112,12 @@ the telemetry repo with a one-line banner naming this plan and the reason; delet
 only record of what the auditor once measured, and this epic's standing rule is that a retired artefact is
 the audit record of why it was retired.
 
-⛔⛔ **WHERE THE REPORT FILES MAY NOT GO — read this before D1 and D3.** The first draft of this spec said
-`{subject}/outcome.json`, i.e. inside the subject's own archive directory. ⛔ **That violates an invariant
-the telemetry repo's README states outright:** *"Entries under `{project-slug}/` are written only by
-`transfer` and are never modified or deleted by analysis."* Writing a report into the archive tree makes
-**analysis a writer of the archive**, which is exactly what that sentence forbids — and the invariant is
-load-bearing, because an archive that analysis can write is an archive whose contents can no longer be
-trusted as the record of what the source project produced.
+⛔⛔ **WHERE THE REPORT FILES MAY NOT GO — read this before D1 and D3.** ⛔ **Reports must NOT go inside a
+subject's own archive directory**, because the telemetry repo's README states the invariant outright:
+*"Entries under `{project-slug}/` are written only by `transfer` and are never modified or deleted by
+analysis."* Writing a report there makes **analysis a writer of the archive**, which is exactly what that
+sentence forbids — and the invariant is load-bearing, because an archive that analysis can write is an
+archive whose contents can no longer be trusted as the record of what the source project produced.
 
 So D1 and D3 emit into a **separate top-level tree**, proposed as
 `reports/{project-slug}/{subject}/outcome.json` and `…/quality.json`, leaving `{project-slug}/` untouched.
@@ -149,8 +132,7 @@ each archived orchestrator epic, emit an outcome report at the D0-settled locati
 settled: **report files are JSON** (durable, queryable across a growing corpus, diffable, readable by tooling that knows
 nothing about plan-marshall) while the **skill's own stdout stays TOON** per the marketplace convention.
 
-⛔ **CORRECTED 2026-10-04 — the fix site is the ENGINE, not the `analyze` wrapper.** `OBSERVED` from that
-repo: `analyze/SKILL.md` declares *"It has no computation and no report format of its own … the engine's
+⛔ **The fix site is the ENGINE, not the `analyze` wrapper.** `OBSERVED` — `analyze/SKILL.md` declares *"It has no computation and no report format of its own … the engine's
 `scripts/audit.py` is the only analysis path in this repository and its report schema is the only report
 schema. There is no second formatter, so a figure read here and the same figure read from a direct engine
 run are always the same figure."* ⚠ **Writing report files in `analyze` would create exactly the second
@@ -310,14 +292,12 @@ rather than a field it merely lists:
 
 ⛔ **NORMATIVE for this plan, and D8 moves it into the telemetry repo as documentation.** This section is
 the brief; the ontology's durable home is D8's document(s), next to the data that will be queried against
-it for years. The first draft described the ontology as "extend `quality-chain`'s axes" plus a prose delta
-— which is not a specification, and the reader this plan hands off to is a session in another repository
-with none of this epic's context. Every vocabulary below is CLOSED: a value outside it is `other`, never a
-new value invented at implementation time.
+it for years. Every vocabulary below is CLOSED: a value outside it is `other`, never a new value invented
+at implementation time.
 
 **Four axes, and all four are reported — none replaces another.** ⭐ The build-through-human-review
-mechanism axis is KEPT in full (operator, 2026-10-04): axes 3 and 4 are *additions*, and the chain axis
-remains the thing that says how far right a defect slipped before anything caught it.
+mechanism axis is kept in full: axes 3 and 4 are *additions*, and the chain axis remains the thing that
+says how far right a defect slipped before anything caught it.
 
 | # | Axis | Answers | Status |
 |:-:|---|---|---|
@@ -528,10 +508,10 @@ the composed manifest and that may not survive archival.
   invoking the engine once and surfacing its report verbatim, with `scripts/audit.py` named as the only
   analysis path and only report schema in that repository. This is what moved D1/D3/D4's fix site to the
   engine.
-- ⛔ CONTRADICTED (the first draft's claim that the corpus arrived verbatim): `quality-chain.md` was
-  **adapted** during relocation — the Tier-1 remedy became "report a candidate" rather than filing a
-  lesson, and the read-only clause dropped its `.plan/` references. The corpus was edited in transit, so
-  D0 must diff all 24 rather than assume. Verified by diffing against
+- ⛔ OBSERVED: the relocated corpus did NOT arrive verbatim. `quality-chain.md` was **adapted** during
+  relocation — the Tier-1 remedy became "report a candidate" rather than filing a lesson, and the
+  read-only clause dropped its `.plan/` references. The corpus was edited in transit, so D0 must diff all
+  24 rather than assume. Verified by diffing against
   `git show 2de53ba7c:.claude/skills/audit-archived-plan-retrospectives/checks/quality-chain.md`.
 - OBSERVED: the repo carries `.coderabbit.yaml`, `.gitignore`, `README.md`, `pyproject.toml` and `test/`,
   and **no `.github/` and no `.plan/`** — so it has no CI workflow, no `marshal.json` and no
@@ -562,28 +542,24 @@ the composed manifest and that may not survive archival.
 ## Expected Surface
 
 ⛔ **This surface is ENTIRELY OUTSIDE this repository, and that is now by construction rather than by
-accident.** The one contingent in-repo path the earlier draft declared — `manage-findings` — is split out
-to D4a, so this plan touches no path in `plan-marshall` at all. Two consequences, both stated rather than
-discovered: **this plan collides with nothing in this repository**, and the disjointness gate has nothing
-to evaluate for it — which is the correct reading, not a gap, because there is genuinely no in-repo surface
-to compare.
+accident.** The one possible in-repo path — `manage-findings` — is split out to D4a, so this plan touches
+no path in `plan-marshall` at all. Two consequences: **this plan collides with nothing in this
+repository**, and the disjointness gate has nothing to evaluate for it — which is the correct reading, not
+a gap, because there is genuinely no in-repo surface to compare.
 
-⚠ The parser reports these entries as **unresolved** (4 unresolved spans, 0 resolved), because they name
-another repository. That is the honest result and is precisely the condition `PLAN-PRQ-09`'s folded
-recurrence describes — a resolver that cannot tell an out-of-repo path from an untouched in-repo one. This
-spec is the first in the epic to sit entirely on that side of the line.
+⚠ The parser reports these entries as **unresolved**, because they name another repository. That is the
+honest result and is precisely the condition `PLAN-PRQ-09`'s folded recurrence describes — a resolver that
+cannot tell an out-of-repo path from an untouched in-repo one. This spec is the first in the epic to sit
+entirely on that side of the line.
 
-⛔⛔ **EVERY entry below is PREFIXED with the repository name, and that prefix is load-bearing — do not
-"tidy" it away.** A bare relative path such as `test/` or `README.md` resolves against **this** repository,
-where both exist and mean something entirely different; a draft of this section that omitted the prefix
-made the parser report `test/` (this repo's whole test tree) as a declared surface. The prefixed form
-resolves to nothing instead, which is the honest answer for a path in another repository and is exactly
-what `PLAN-PRQ-09`'s folded recurrence is about.
+⛔⛔ **KEEP THE REPOSITORY-NAME PREFIX ON EVERY ENTRY — do not "tidy" it away.** A bare relative path such
+as `test/` or `README.md` resolves against **this** repository, where both exist and mean something
+entirely different, and the parser would declare this repo's whole test tree as surface. The prefixed form
+resolves to nothing instead, which is the honest answer for a path in another repository.
 
 ⚠ **The section is read MECHANICALLY: a path-shaped token here is a declaration, whatever the prose around
-it says.** An earlier draft carried a `⛔ EXCLUDED` bullet naming `manage-findings`, and the parser
-declared it regardless — the annotation excluded nothing. So exclusions are stated in D4a and in prose,
-**never as an entry in this section**.
+it says.** An `EXCLUDED` annotation excludes nothing — the parser declares the path anyway. So exclusions
+are stated in D4a and in prose, **never as an entry in this section**.
 
 - OBSERVED: `plan-marshall-telemetry/.claude/skills/audit-archived-plan-retrospectives/` — the engine, `scripts/audit.py` and its `checks/` corpus: D0, D1, D2, D3, D4, D5, D6 (banners only on dropped checks; no deletions)
 - OBSERVED: `plan-marshall-telemetry/.claude/skills/analyze/` — the wrapper, which keeps its no-format-of-its-own property and gains at most a pass-through flag: D6

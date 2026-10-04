@@ -88,6 +88,24 @@ the machinery that grades us.
 
 ## Decisions
 
+- 2026-10-04 — **PLAN-PRQ-13 trimmed of historical fluff; the brief and the record had been conflated.**
+  Operator challenge: *"is there still historical fluff in the plan, like change at ot the operator said
+  that has no benefit for the plan?"* It was right. Measured rather than eyeballed: 691 → 667 lines, with
+  all **8** self-referential passages removed — *"the first draft said X"*, *"CORRECTED 2026-10-04"*,
+  *"RE-CUT 2026-10-04 (operator)"*, *"an earlier draft carried…"*, the gate-override-no-longer-needed note,
+  and the scope-guard-overridden-by-operator-decision note. ⭐ **Every conclusion was kept and only the
+  narrative around it deleted**: the report-location invariant stays without the story of a draft that
+  broke it; the engine-not-wrapper fix site stays without *"CORRECTED"*; the adapted-in-transit finding
+  stays, re-labelled from the re-grounding token `CONTRADICTED` to the claim-label token `OBSERVED`, which
+  is the correct vocabulary for a spec claim; the prefix and `EXCLUDED` warnings stay as imperatives
+  because both protect a future *editor* of the spec; and *"do not split this work"* stays as a design
+  constraint without the guard/count/operator framing. ⚠ **What stayed is not fluff**: every remaining date
+  is an `OBSERVED 2026-10-04` observation timestamp, which the verify-first contract requires — an
+  `OBSERVED` claim with no date cannot be assessed for staleness by the session that reads it. ⛔ **Root
+  cause, and it is mine: I conflated the brief with the record because I was editing under correction.**
+  The spec is the BRIEF for an implementing session; `epic.md` Decisions and `logs/decision.log` are the
+  RECORD — and they already carried every deleted passage in full, so removing them from the spec lost
+  nothing. **A correction belongs in the ledger, not in the artefact it corrects.**
 - 2026-10-04 — **Severity axis added to PLAN-PRQ-13, and the answer to "do we already have a unified
   ontology for that" is NO — with one vocabulary that is actively LOSSY.** Operator wanted a
   minor/major/critical scale so the corpus can be asked *"how many major changes"*. Verified in the code:
