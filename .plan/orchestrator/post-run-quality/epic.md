@@ -58,7 +58,15 @@ the machinery that grades us.
 - PLAN-PRQ-01 ↔ PLAN-PRQ-02 — both touch `plan-retrospective/scripts/`; never pair.
 - PLAN-PRQ-03 is the only spec whose surface is entirely project-local (`.claude/skills/`), so it is the
   natural partner if the scope knob is ever raised.
-- ⛔ **PLAN-PRQ-13 — NOT a `next` candidate, and NOT a `/plan-marshall` plan. Do not emit it.** Re-cut
+- ⛔ **PLAN-PRQ-15 — NOT a `next` candidate, and NOT a `/plan-marshall` plan. Do not emit it.** Same lane
+  as PRQ-13: a standalone session in `plan-marshall-telemetry`, hand-off in the spec. Its surface is
+  entirely out-of-repo, so it will read `prose` and the gate will refuse it forever — correctly. It does
+  **not** occupy the `parallelization_scope: 1` slot, so `PLAN-PRQ-14` may run concurrently with it.
+- ✅ **PLAN-PRQ-14 — the one ordinary `/plan-marshall` candidate in the queue.** In-repo surface, 7 declared
+  paths, `declarative`. Expect the usual `candidate_comparison_determinate: false` plus a `manage-findings`
+  overlap against `review-apparatus` `PLAN-PR-072` and `truthful-signals` `PLAN-TRUTH-146`/`-178` — all
+  staged, none running.
+- ⛔ **PLAN-PRQ-13 — shipped; was NOT a `next` candidate and never a `/plan-marshall` plan.** Re-cut
   2026-10-04 to run as a standalone Claude Code session inside `plan-marshall-telemetry`; the earlier
   `/plan-marshall` emit is void. Two consequences for this queue, both deliberate: its surface is
   `derivation_status: prose` (0 resolved, 5 unresolved — every entry prefixed `plan-marshall-telemetry/`
@@ -88,6 +96,28 @@ the machinery that grades us.
 
 ## Decisions
 
+- 2026-10-04 — **`PLAN-PRQ-15` staged: a project-level AsciiDoc aggregate, and the three identity facts the
+  outcome report does not carry. WS-05 reopened.** Operator-directed. ⭐ **Two of the three requested facts
+  are genuinely absent and the third is partial** — checked against `doc/outcome-report.md` at `5546bde`
+  rather than assumed: there is **no completion state** (`deliverables_total`/`done` make *partial*
+  derivable, but ⛔ **`aborted` is not** — a zero may mean abandoned, never-started or unmeasurable, which
+  are three different facts); **no repository identity at all**; and `prs` carries numbers, `sources` and
+  `landed` but **no URLs**. ⛔ **A URL cannot be built without the repository, so that ordering is binding
+  inside the plan.** ⛔⛔ **A naming collision had to be caught before anything was written**: the
+  operator's word for the first fact is `state`, but `state` is **already the envelope key on every
+  field** (`measured`/`not_measured`/`not_applicable`), so a top-level `state` would be two different
+  things one key apart — D0 must rename it rather than shadow the envelope. The aggregate is specified as
+  **a VIEW that computes no fact of its own**, generated **by the engine, not `analyze`** (which declares
+  no report format of its own — the same trap PRQ-13 D1 was corrected for), regenerated before every
+  commit so a stale aggregate can never sit beside fresh JSON, and ⛔ **carrying the measurement states
+  through**: it reuses `plan_rollup`'s population-plus-`complete` floor pattern and renders an incomplete
+  sum visibly as a floor, because summing a `not_measured` as zero in *the artefact a human actually
+  reads* would be this epic's founding defect doing maximum damage. It also owes a named
+  could-not-be-measured section. ⚠ Three HYPOTHESES left for outline: whether the archive carries positive
+  evidence for `aborted` at all (if not, the value ships documented-but-unreachable rather than silently
+  never emitted), whether the repo identity is derivable, and that no project has been transferred yet — so
+  a fixture corpus and D5's controls may be the only evidence available, which the plan says rather than
+  claiming a verified aggregate.
 - 2026-10-04 — **PLAN-PRQ-13 SHIPPED in the telemetry repo (commits `5546bde`, `0965060`), and the
   out-of-lifecycle lane worked.** All ten deliverables landed; `landings/PLAN-PRQ-13.md` is the record.
   ⭐ **The first plan this epic landed outside the plan-marshall lifecycle** — no phases, no finalize steps,
