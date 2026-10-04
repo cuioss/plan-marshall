@@ -96,6 +96,27 @@ the machinery that grades us.
 
 ## Decisions
 
+- 2026-10-04 — **`PLAN-PRQ-15` gains D6: the skill-layout cleanup, three parts.** Operator asked whether
+  the telemetry repo's four project skills are all necessary. Read all four. **`transfer` and the engine
+  are clearly necessary** (write path, read path). **`analyze` is justified** — its 106 lines and zero
+  scripts look like a veneer, but the value is behavioural discipline the engine does not hold (run exactly
+  once, add no unrequested flags, surface verbatim, read `corpus-selection` / `run-summary` /
+  `subject-reports` first) — ⛔ **except that BOTH declare `user-invocable: true`, so the engine is a
+  second front door and that discipline is bypassable by design.** **`era-stamp-fill` is the questionable
+  peer**: a sibling skill that rewrites *another skill's source*, which is a layering inversion — and the
+  coupling is already mutual, since the engine's own SKILL.md and `audit.py` reference the era-stamp
+  mechanism in return. ⚠ Separately, **the engine's name no longer describes its job**: inherited from
+  plan-marshall where it audited archived plan retrospectives, while here it writes outcome and quality
+  reports — its own description already opens *"The telemetry repository's single analysis engine"*, so the
+  description has outgrown the name. ⇒ D6 does all three, (c) last and in one commit. ⭐ **The operator
+  caught what I under-specified: the TEST directories rename too.** Verified — `test/` holds a same-named
+  directory for each skill that has tests, so **the test tree mirrors the skill tree one-to-one and that
+  mirror is an invariant, not a coincidence.** D6 now states it as a two-directory move per change, with
+  the rule that a rename leaving `test/audit-archived-plan-retrospectives/` behind is **worse than not
+  renaming**: the tree would assert a mirror it does not have, and the next reader could not tell which
+  name is current. Blast radius measured rather than estimated — **46 occurrences across 15 files**, plus
+  the two directories; `pyproject.toml` does not reference the name, though its `testpaths` means
+  collection must be re-confirmed after the move.
 - 2026-10-04 — **`PLAN-PRQ-15` staged: a project-level AsciiDoc aggregate, and the three identity facts the
   outcome report does not carry. WS-05 reopened.** Operator-directed. ⭐ **Two of the three requested facts
   are genuinely absent and the third is partial** — checked against `doc/outcome-report.md` at `5546bde`

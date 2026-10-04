@@ -1,4 +1,4 @@
-# PLAN-PRQ-15: One AsciiDoc report per project, and the three identity facts the outcome report does not carry
+# PLAN-PRQ-15: One AsciiDoc report per project, the three identity facts the outcome report does not carry, and a skill layout with one front door
 
 epic: post-run-quality
 workstream: WS-05
@@ -42,7 +42,9 @@ was it, and where are the PRs.**
 
 ## Deliverables
 
-Five deliverables. D0 is a gate.
+Seven deliverables. D0 is a gate. ⚠ **Two independent tracks**: D1–D3 add fields, D4–D5 add the aggregate
+and its controls, and **D6 is a self-contained skill-layout cleanup that touches neither**. D6 may land
+first, last or between — but its three parts are internally ordered, and (c) goes last of them.
 
 **D0 — GATE: confirm the three gaps and settle the naming collision.** Read `doc/outcome-report.md`, the
 `report_*.py` extractors and `subject_reports.py`, and publish which of the three requested facts is
@@ -119,12 +121,75 @@ every orchestrator epic of that project.
   measured and why**, because an aggregate that silently omits its gaps is the least honest artefact in the
   repository.
 
+**D6 — The skill layout: one front door, no peer reaching into a peer, and a name that matches the job.**
+Three structural corrections to the four project skills, operator-directed. ⚠ **They are independent of
+D1–D5 and of each other — land them in the order below, each with its own green `pytest`**, so a
+regression is attributable.
+
+**(a) The engine stops being a second front door.** `OBSERVED`: both `analyze` and
+`audit-archived-plan-retrospectives` declare `user-invocable: true`, so there are two user-facing entry
+points to one computation — and `analyze`'s whole value is behavioural discipline it holds and the engine
+does not (run exactly once, add no unrequested flags, surface verbatim, read `corpus-selection` /
+`run-summary` / `subject-reports` first). ⛔ **That discipline is currently bypassable by design.** Drop
+`user-invocable` from the engine so `analyze` is the single front door. ⚠ **This must not break the
+invocation that matters**: `analyze` invokes the engine by *script path*, not as a skill, so it is
+unaffected — confirm that before and after rather than assuming it.
+
+**(b) `era-stamp-fill` folds into the engine as a maintenance verb.** `OBSERVED`: it is a sibling skill
+that rewrites **another skill's source** — `audit.py` and `test/audit-archived-plan-retrospectives/test_audit_check_era_model.py`
+— in lock-step. That is a layering inversion: a peer editing a peer's internals. ⭐ **The coupling is
+already mutual**, which is the argument for folding rather than a matter of taste: the engine's own
+SKILL.md and `audit.py` both reference the era-stamp mechanism. Move it inside the engine (a verb on
+`audit.py`, or a script under the engine's own `scripts/`), where rewriting `audit.py` is a skill touching
+its own code. ⛔ **Keep the behaviour and the test**: `test/era-stamp-fill/test_era_stamp_fill.py` must
+still pass, relocated with it. Retire the standalone skill only once the verb works.
+
+**(c) Rename the engine to match its role — SKILL DIRECTORY AND TEST DIRECTORY TOGETHER.** `OBSERVED`: the
+name was inherited from plan-marshall, where it audited archived plan retrospectives. Here it writes
+outcome and quality reports, which are not retrospective audits — and its own description already opens
+*"The telemetry repository's single analysis engine"*, so **the description has outgrown the name**.
+
+⛔⛔ **The test tree MIRRORS the skill tree one-to-one, and that mirror is the invariant — not a
+coincidence to be broken by a half-done rename.** `OBSERVED`: `.claude/skills/` holds `analyze`,
+`audit-archived-plan-retrospectives`, `era-stamp-fill`, `transfer`, and `test/` holds a directory of the
+same name for each of the three that have tests. So the rename is **two** directories, and both parts of
+D6 move a test directory:
+
+| Change | Skill directory | Test directory |
+|---|---|---|
+| D6(b) fold | `.claude/skills/era-stamp-fill/` → retired | `test/era-stamp-fill/` → folds into the engine's test directory |
+| D6(c) rename | `.claude/skills/audit-archived-plan-retrospectives/` → the new name | `test/audit-archived-plan-retrospectives/` → **the same new name** |
+
+⛔ **A rename that moves the skill and leaves `test/audit-archived-plan-retrospectives/` behind is worse
+than not renaming at all**: the tree then asserts a mirror it does not have, and the next reader cannot
+tell which name is current. Use `git mv` for both so the moves are reviewable as moves rather than as
+delete-plus-add.
+
+⚠ **Measured blast radius, not estimated: 46 occurrences across 15 files** (excluding `__pycache__`), plus
+the two directories. `pyproject.toml` does **not** reference the name (checked), so the test
+configuration needs no change — but ⚠ it does set `pythonpath = [".", "test"]` and `testpaths = ["test"]`,
+so confirm collection still finds the renamed directory before committing. D0 settles the new name;
+`analysis-engine` is the obvious candidate given `analyze` is the wrapper.
+
+⛔ **Do this LAST of the three and in ONE commit** — skill directory, test directory and all 46 references
+together — so the rename is a single reviewable move rather than interleaved with behaviour changes, and so
+reverting it costs nothing if the name turns out wrong.
+
+⚠ **Report files already written under `reports/` may embed the old name in `basis` or `provenance`
+strings** — check, and if so, state plainly that existing report files keep the old name rather than
+rewriting committed output.
+
 **D5 — Controls.** The aggregate is a view, so the controls are mostly agreement controls: every figure in
 the aggregate equals its source JSON field; an incomplete population renders as a floor and never as a bare
 total; a `not_measured` field appears in the could-not-measure section and is **not** summed; a
 `not_measured` repository yields no PR URL; `aborted` is never emitted from a zero without positive
 evidence; and the completion vocabulary's documented value set equals the constant the code validates
 against, in both directions — the doc-vs-code control `PLAN-PRQ-13` D7 established.
+
+**D6 owes two controls of its own**: one asserting the engine is reachable by `analyze` after (a) — the
+single-front-door change must not become a no-front-door change — and the relocated
+`test_era_stamp_fill.py` passing after (b). ⚠ The rename in (c) needs no new control: the existing 873
+tests are the control, and any that still name the old path are the ones that prove the move was complete.
 
 ## Claim Labels
 
@@ -135,6 +200,10 @@ against, in both directions — the doc-vs-code control `PLAN-PRQ-13` D7 establi
 - OBSERVED: `plan_rollup` already establishes the population-plus-`complete` floor pattern D4 reuses.
 - ⚠ HYPOTHESIS: the archive carries positive evidence distinguishing an ABORTED plan from one that never started or cannot be measured — confirm/refute against the archived corpus at outline (D0/D3 own it). If refuted, `aborted` ships documented-but-unreachable rather than silently never emitted.
 - ⚠ HYPOTHESIS: the source repository's identity is derivable from `--source-repo`'s git remote or from the archived plan's own records — confirm/refute at outline (D1). If both fail, D1 is `not_measured` by construction and D2 emits no URLs.
+- OBSERVED (2026-10-04): `analyze` and `audit-archived-plan-retrospectives` BOTH declare `user-invocable: true`, so the engine is a second front door and `analyze`'s surfacing discipline is bypassable — read from both skills' frontmatter.
+- OBSERVED: `era-stamp-fill` rewrites `audit.py` and `test/audit-archived-plan-retrospectives/test_audit_check_era_model.py` — another skill's source and test — and the engine's own SKILL.md and `audit.py` reference the era-stamp mechanism in return, so the coupling is mutual.
+- OBSERVED: `audit-archived-plan-retrospectives` appears **46 times across 15 files** (excluding `__pycache__`), plus its skill directory and `test/audit-archived-plan-retrospectives/`. `pyproject.toml` does NOT reference it, so the test configuration needs no change — measured by grep, not estimated.
+- ⚠ HYPOTHESIS: committed report files under `reports/` may embed the engine's old name in `basis` or `provenance` strings, which D6(c) would otherwise silently orphan — confirm at outline. Since no project has been transferred, the likely answer is that no report files exist yet and the question is moot; check rather than assume.
 - ⚠ HYPOTHESIS: no project has been transferred yet, so the aggregate has no real corpus to run against — the same gap `PLAN-PRQ-13` landed with. Confirm at D0; if still true, D5's controls and a fixture corpus are the only evidence available, and the plan says so rather than claiming a verified aggregate.
 
 ## Expected Surface
@@ -143,12 +212,16 @@ against, in both directions — the doc-vs-code control `PLAN-PRQ-13` D7 establi
 entry** — a bare `test/` or `README.md` resolves against the wrong repository, and the parser reads this
 section mechanically.
 
-- OBSERVED: `plan-marshall-telemetry/.claude/skills/audit-archived-plan-retrospectives/` — the engine: D0, D1, D2, D3, D4
+- OBSERVED: `plan-marshall-telemetry/.claude/skills/audit-archived-plan-retrospectives/` — the engine; its frontmatter at D6(a), the folded era-stamp verb at D6(b), and the whole directory RENAMED at D6(c): D0, D1, D2, D3, D4, D6
+- OBSERVED: `plan-marshall-telemetry/.claude/skills/analyze/` — the engine invocation path, which D6(c)'s rename moves: D6
+- OBSERVED: `plan-marshall-telemetry/.claude/skills/era-stamp-fill/` — RETIRED by D6(b) once the folded verb works: D6
 - OBSERVED: `plan-marshall-telemetry/reports/` — where the aggregate lands, beside the per-subject JSON: D4
 - OBSERVED: `plan-marshall-telemetry/doc/outcome-report.md` — the three new fields and the completion vocabulary: D1, D2, D3
 - OBSERVED: `plan-marshall-telemetry/doc/` — the aggregate's own document, if D4 warrants one: D4
-- OBSERVED: `plan-marshall-telemetry/test/` — D5
-- OBSERVED: `plan-marshall-telemetry/README.md` — the Layout section, which must show the aggregate: D4
+- OBSERVED: `plan-marshall-telemetry/test/audit-archived-plan-retrospectives/` — D5's controls, and RENAMED in lock-step with the skill directory at D6(c): D5, D6
+- OBSERVED: `plan-marshall-telemetry/test/era-stamp-fill/` — folded into the engine's test directory at D6(b): D6
+- OBSERVED: `plan-marshall-telemetry/test/` — the test root, whose per-skill directories mirror `.claude/skills/` one-to-one; that mirror is preserved, not broken: D5, D6
+- OBSERVED: `plan-marshall-telemetry/README.md` — the Layout section (the aggregate, D4) and the Skills table (D6's three changes all alter it): D4, D6
 
 ## Dependencies and Sequencing
 
