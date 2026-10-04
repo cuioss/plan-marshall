@@ -611,13 +611,27 @@ cd /home/oliver/git/plan-marshall-telemetry
 
 ```text
 Implement the plan at
-/home/oliver/git/plan-marshall/.plan/orchestrator/post-run-quality/plans/PLAN-PRQ-13-telemetry-analyze-outcome-and-quality-reports.md
+/home/oliver/git/plan-marshall/.plan/local/worktrees/_orchestrator/.plan/orchestrator/post-run-quality/plans/PLAN-PRQ-13-telemetry-analyze-outcome-and-quality-reports.md
 Work only in this repository. Read § "What replaces the lifecycle" first.
 ```
 
+⚠ **That path is the LEDGER WORKTREE, not the main checkout, and the difference matters.** This spec is
+committed on the unmerged `chore/orchestrator-ledger` branch, so
+`/home/oliver/git/plan-marshall/.plan/orchestrator/…` does **not** contain it. Once that ledger branch
+lands on `main`, the main-checkout path resolves too and is the better one to use. If neither resolves, the
+epic tree has moved — re-resolve it rather than guessing:
+
+```bash
+python3 /home/oliver/git/plan-marshall/.plan/execute-script.py \
+  plan-marshall:plan-orchestrator:orchestrator resolve-path --slug post-run-quality
+```
+
+and read `epic_dir` from the payload. The spec is also pushed, so it is recoverable from
+`origin/chore/orchestrator-ledger` if no local checkout has it.
+
 The brief stays in this epic's ledger because the orchestrator owns the ledger and a plan spec is a ledger
 document. The implementing session MAY copy it into the telemetry repo for its own convenience; that is its
-call, and the ledger copy remains authoritative.
+call, and the ledger copy remains authoritative. ⛔ It does **not** edit the ledger copy.
 
 ## What replaces the lifecycle
 
