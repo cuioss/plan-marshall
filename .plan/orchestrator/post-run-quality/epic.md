@@ -78,6 +78,30 @@ the machinery that grades us.
 
 ## Decisions
 
+- 2026-10-04 — **PLAN-PRQ-13 staged: re-scope the telemetry `analyze` onto outcomes, plus a unified quality
+  report. WS-05 reopened.** Operator-directed, immediately after PRQ-07 landed. Two halves: drop the
+  runtime/process aspects and emit one outcome report per plan and per orchestrator (time, tokens, PRs,
+  lines added/modified/removed, project kind), and add a **separate quality file** on a unified ontology
+  (requirement changes, specification changes discovered at execute, and the review results — simplify,
+  self-review, security-review, PR agents, Sonar), leaving unmeasured and not-applicable distinct.
+  ⭐ **The find that shaped the spec: the ontology already exists and already ships.** The relocated
+  `quality-chain` check classifies every `artifacts/findings/*.jsonl` record on a mechanism axis
+  (`build` → `self-review` → `auto-review` → `human-review`, ordered by cost and lateness) and an 8-bucket
+  resolution axis, and already splits `pending` into an actionable and a structural half. So D4 EXTENDS a
+  shipped classifier — adding `simplify`, `security-review` and `sonar` as mechanisms, carrying bot
+  identity, and adding the scope-stability axis the findings axes have no home for — rather than inventing
+  a vocabulary. ⛔ **Two parked specs' substance is CARRIED rather than awaited, because neither can land**:
+  `PLAN-PRQ-01` D2 (signal presence first, yield second, never folded into one number) and D3 (the corpus
+  quality report) are parked here, and `truthful-signals` `PLAN-TRUTH-146` — the unified findings
+  vocabulary PRQ-01 D10 was to consume and explicitly must not re-implement — is **`parked` in its own
+  epic**, so that vocabulary will never be built there. Waiting on it would have made this plan
+  permanently unstageable. **Format settled** (operator): report files are JSON, the skill's own stdout
+  stays TOON. **Scope-bloat guard overridden** (operator): eight deliverables against the ~6 presumption,
+  rationale recorded — D1–D4 share one subject resolver, one report writer and one ontology, and splitting
+  them would put the shared engine in one plan and its second consumer in another, which is the
+  "two independently-authored formatters" failure PRQ-07's own deliverable 4 was written to prevent.
+  ⚠ **Not emitted.** The staging was the request; the disjointness gate's verdict on it is recorded in the
+  Open Defect below and the emit decision is the operator's.
 - 2026-10-04 — **PLAN-PRQ-07 SHIPPED — PR #1694 (`b3aba30aa`) after split part #1692, and the inbox channel
   worked for the first time.** 13.1M tokens, 26.6 h wall, merged via merge queue, `cleanup_owed=false`;
   `landings/PLAN-PRQ-07.md` is the full record. ⭐ **Three firsts for this epic, and they are the headline
@@ -342,6 +366,33 @@ the machinery that grades us.
 
 ## Open Defects
 
+- ⛔ **NEW 2026-10-04 — two parked specs now point at code this repository no longer contains, and one of
+  them is 80% stranded.** `OBSERVED` from `corpus surfaces` after PRQ-07's relocation landed:
+  **`PLAN-PRQ-03`** declares 5 paths and **4 of them are gone** — the whole
+  `audit-archived-plan-retrospectives` tree plus its test mirror moved to the telemetry repo with PR #1694
+  — leaving only `.claude/skills/recipe-plan-review/SKILL.md`. **`PLAN-PRQ-01`** has 4 of its 21 paths in
+  the same moved tree. ⚠ **Neither is a spec-authoring error**: both declared correctly when staged, and
+  PRQ-07 moved the ground under them. ⛔ **What makes this more than bookkeeping**: PRQ-03's subject is the
+  **suspect-zero census excluding itself from its own population** — the detector-inside-its-own-population
+  failure, which the auditor's own SKILL.md states outright — and that instrument now lives in a
+  repository where this epic stages nothing. ⇒ **Partly addressed, not owned**: `PLAN-PRQ-13` inherits the
+  census defect as a binding constraint on its own reports (its reports cover a corpus containing the
+  subjects that produced them, so it sits in the same blast radius), and explicitly declines PRQ-03's other
+  half — `recipe-plan-review` persisting nothing. Re-pointing PRQ-01 and PRQ-03 themselves is **not** done:
+  they are parked, and re-scoping a parked spec onto another repository is a decision about the PM-MCP
+  carry-over, not a reconciliation.
+- ⚠ **NEW 2026-10-04 — the disjointness gate refuses `PLAN-PRQ-13`, and for a different reason than it
+  refused PRQ-07.** `candidate_comparison_determinate: false` again (96 sibling-epic specs and 3 live plans
+  declare no comparable surface), so the test fails closed. ⛔ **But unlike PRQ-07, PRQ-13 DOES have overlap
+  rows** — roughly 45 of them, including `PLAN-PRQ-01` in this corpus and ~40 sibling-epic specs across
+  `review-apparatus`, `truthful-signals` and others. ⭐ **Every one of them is driven by a single path**,
+  `manage-findings`, which PRQ-13 declares as a **HYPOTHESIS** — it is only in scope if D4's three new
+  mechanisms need a producer-side vocabulary change rather than reading-side classification. The other four
+  declared entries are `plan-marshall-telemetry/` paths the parser reports as **unresolved** (4 unresolved
+  spans, 1 resolved path), because they are outside this repository. So the honest statement is: *if the
+  hypothesis resolves false, this plan has no in-repo surface and collides with nothing; if it resolves
+  true, it joins a crowded file.* The gate cannot express a conditional surface. ⇒ Emit decision is the
+  operator's; D0 and outline settle the hypothesis either way.
 - ✅ **RESOLVED 2026-10-02 — #1641 reverted this epic's ledger state.** Filed as
   `process-compliance-001.md` (2026-09-28), corroborated first-party and repaired the same session; the
   full account is the 2026-10-02 Decisions entry. Retained as the record of why `settled.md`,
