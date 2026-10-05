@@ -605,7 +605,10 @@ the machinery that grades us.
 ## Open Defects
 
 - ⛔ **NEW 2026-10-05 — consuming a stream-end marker DESTROYS the closure it declares; the inbox has a
-  FINISHED state no durable surface can hold.** Found by draining this epic's last message. Before the
+  FINISHED state no durable surface can hold.** ⇒ **FILED as issue
+  [#1697](https://github.com/cuioss/plan-marshall/issues/1697)** together with the `restart-check` defect
+  below, since they share a subject — the two remedies are separate and the issue says it may be split.
+  Both entries stay here as this epic's own evidence trail; the issue is where the fix is tracked. Found by draining this epic's last message. Before the
   drain the queue read `live_count: 0` with `closed_senders: [cross-repo-telemetry-archive-and-analyze]` —
   the **FINISHED** zero, meaning *that sender will send no more*. Archiving the marker, which is exactly
   what the drain contract prescribes for a `stream-end` row, moved it to `count: 0` with
