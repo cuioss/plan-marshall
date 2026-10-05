@@ -604,8 +604,26 @@ the machinery that grades us.
 
 ## Open Defects
 
+- ⛔ **NEW 2026-10-05 — consuming a stream-end marker DESTROYS the closure it declares; the inbox has a
+  FINISHED state no durable surface can hold.** Found by draining this epic's last message. Before the
+  drain the queue read `live_count: 0` with `closed_senders: [cross-repo-telemetry-archive-and-analyze]` —
+  the **FINISHED** zero, meaning *that sender will send no more*. Archiving the marker, which is exactly
+  what the drain contract prescribes for a `stream-end` row, moved it to `count: 0` with
+  `closed_senders: []` — the **EMPTY** zero, which asserts *a later message is still possible*. ⛔ **So a
+  closure declaration is either queued-and-undrained or archived-and-no-longer-declaring; there is no
+  state in which it is both recorded and consumed.** The envelope doc states the mechanism ("a marker the
+  drain has already archived no longer closes the stream") without naming the consequence: a drained queue
+  **cannot** report FINISHED, so the three-zero vocabulary's middle value is unreachable after any complete
+  drain. ⚠ Harmless for this instance — the sender is a landed, archived plan that can never write — but it
+  means `inbox write` would no longer refuse that sender with `stream_closed`. ⇒ **Not owned here**;
+  `plan-orchestrator` inbox mechanics, same family as the two defects below.
 - ⛔ **NEW 2026-10-05 — `cleanup restart-check`'s inbox signal reads `count`, not `live_count`, so a
-  stream-end marker holds an epic at `not_ready` forever.** Found by this epic's own cleanup pass:
+  stream-end marker holds an epic at `not_ready` forever.** ⚠ **STILL REAL after the 2026-10-05 drain, and
+  the drain did not fix it.** Archiving the marker cleared the *instance* — the verdict is now `ready` with
+  `inbox: 0 queued and 51 archived` — but the defect is in the signal, not in the queue: any `stream-end`
+  marker filed and not yet drained will hold its epic at `not_ready` again, and a FINISHED queue is by
+  definition one that still holds its marker. ⛔ **Do not read the green verdict as this defect being
+  resolved.** Found by this epic's own cleanup pass:
   `restart-check` returns `verdict: not_ready` on a single signal — *"1 message(s) still queued"* — and that
   message is the `lifecycle=stream-end` marker filed on the landed `cross-repo-telemetry-archive-and-analyze`
   plan's behalf. `inbox list` reports the same queue as `count: 1, live_count: 0, closed_senders: [that
