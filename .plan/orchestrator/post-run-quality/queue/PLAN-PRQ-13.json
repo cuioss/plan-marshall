@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-PRQ-13",
+  "slug": "telemetry-analyze-outcome-and-quality-reports",
+  "workstream": "WS-05",
+  "status": "shipped",
+  "plan_marshall_plan_id": "",
+  "pr": "5546bde",
+  "landing": "landings/PLAN-PRQ-13.md",
+  "seq": 13
+}

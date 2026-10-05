@@ -4,7 +4,7 @@
 
 ## START HERE
 
-**Resume anchor**: 2026-10-02: cleanup done (17 verdicts at 0a099a1, compact ok, restart ready) + ledger landed on main. Live staged 7 (172, 186, 181-185). Next: emit PLAN-TRUTH-172/186 when operator confirms launch.
+**Resume anchor**: 2026-10-05: cui-http drain (14 msgs: 187 staged, 8 lessons, 1 defect) + cleanup (16 verdicts at 14d624bd, restart ready). Live staged 8. Next: emit PLAN-TRUTH-187/172/186 when operator confirms launch.
 **Phase**: orchestrating
 **Parked**:
 - PLAN-TRUTH-145 (WS-01)
@@ -55,6 +55,7 @@
 5. PLAN-TRUTH-184 (WS-01)
 6. PLAN-TRUTH-185 (WS-01)
 7. PLAN-TRUTH-186 (WS-01)
+8. PLAN-TRUTH-187 (WS-01)
 - PLAN-TRUTH-147 (WS-01) — plan=truth-147-lane-reports-green — PR 1599 — landing=landings/PLAN-TRUTH-147.md — status: shipped
 - PLAN-TRUTH-161 (WS-01) — plan=truth-161-adr-number-allocation — PR 1586 — landing=landings/PLAN-TRUTH-161.md — status: shipped
 - PLAN-TRUTH-167 (WS-01) — status: superseded
@@ -113,3 +114,4 @@
 | 45 | PLAN-TRUTH-184 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md; marketplace/bundles/pm-dev-frontend/.claude-plugin/plugin.json; marketplace/bundles/pm-dev-frontend/README.md; marketplace/bundles/pm-dev-frontend/skills/ext-self-review-javascript/; test/pm-dev-frontend/ext-self-review-javascript/ |
 | 46 | PLAN-TRUTH-185 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md; marketplace/bundles/pm-documents/.claude-plugin/plugin.json; marketplace/bundles/pm-documents/README.md; marketplace/bundles/pm-documents/skills/ext-self-review-documents/; test/pm-documents/ext-self-review-documents/ |
 | 47 | PLAN-TRUTH-186 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md; marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_cmd_pre_commit_verify_freshness.py; marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_freshness_crosscheck.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/pre-push-quality-gate.md; test/plan-marshall/manage-tasks/ |
+| 48 | PLAN-TRUTH-187 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/gitignore_setup.py; test/plan-marshall/marshall-steward/ |

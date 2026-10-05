@@ -2,9 +2,9 @@
   "id": "PLAN-PRQ-07",
   "slug": "cross-repo-telemetry-archive-and-analyze",
   "workstream": "WS-05",
-  "status": "running",
+  "status": "shipped",
   "plan_marshall_plan_id": "cross-repo-telemetry-archive-and-analyze",
-  "pr": "",
-  "landing": "",
+  "pr": "1694",
+  "landing": "landings/PLAN-PRQ-07.md",
   "seq": 7
 }

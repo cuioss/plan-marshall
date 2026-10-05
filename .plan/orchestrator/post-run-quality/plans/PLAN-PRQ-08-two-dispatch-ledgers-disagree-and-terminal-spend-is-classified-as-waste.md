@@ -13,6 +13,42 @@ workstream: WS-01
 > The orchestrator EMITS the command below; it never launches the plan inline.
 > This spec is SELF-SUFFICIENT: the emitted command is a one-line pointer and carries no brief.
 
+## Recurrence: the title's two halves both reproduced on PRQ-07, with figures
+
+Folded 2026-10-04 from two `candidate-lesson` messages filed first-party by PRQ-07's own retrospective
+(PRs #1692/#1694): `cross-repo-telemetry-archive-and-analyze-004.md` and `-007.md`. One lands on each half
+of this spec's title, so between them they are a live end-to-end instance of it.
+
+**"Terminal spend is classified as waste" — now with a measured figure and an identified cause
+(`-004.md`).** Four of PRQ-07's twelve 5-execute dispatch-boundary rows carry
+`termination_cause=error`, totalling **`error_total_tokens=1,285,813`** reported as genuinely wasted spend.
+⛔ **None of the four was a failure.** Each was an orchestrated hand-back to the operator — TASK-1
+`escalate_ask` (no sanctioned GitHub repo-create path), TASK-9 blocked on test-failure triage, envelope 5
+`escalate_ask` (roster-row timing), TASK-16 blocked (Glob not granted) — every one resolved by an operator
+answer, after which the plan continued. ⭐ **The cause is a classification bug with the correct value
+already in the vocabulary**: the after-dispatch classification maps `escalate_ask` and `status: blocked`
+returns onto `error`, while `DISPATCH_TERMINATION_CAUSES` already carries **`blocked_user_review`** for
+exactly this outcome. So the remedy is a mapping fix, not a new class — and 1.29M tokens of correctly-spent
+operator-escalation time stops being reported as waste.
+
+**"Two dispatch ledgers disagree" — the join that was supposed to reconcile them matched NOTHING
+(`-007.md`).** All **33** of PRQ-07's dispatch-boundary rows (1 plan, 12 execute, 20 finalize) are
+**keyless**: no `--step-id` was forwarded, so the key-first join paired **0 of 33** boundary rows against
+the 41 execution-log rows, and `channel_completeness` reported confidence `low`. The 6-finalize boundary
+ledger also **stops dead at 13:16:33Z** while `work.log` shows dispatches until 23:16Z: after the
+self-review ceiling breach and the operator override resumed the phase in main context, nothing recorded
+any later dispatch — the final self-review round, four `automatic-review` dispatches (including the one
+stopped after roughly an hour, see `epic.md` § Watches), and every post-merge step. ⚠ **This is the
+stronger of the two findings for D0**, because it says the two ledgers do not merely disagree: as recorded,
+they are **unjoinable**. The remedy is to pass `--step-id {step key}` on every `record-dispatch-boundary`
+call in both phases, and to make the override/resume path re-enter the same per-dispatch recording,
+including dispatches that end in `harness_cancellation`.
+
+⚠ **Both folds add no file surface.** `-004`'s fix site is the plan-marshall execution workflow's
+after-dispatch classification and `-007`'s is the `record-dispatch-boundary` call sites, which this spec
+already declares via `phase-6-finalize/SKILL.md` and `manage-metrics/scripts/`; the execute-side call site
+is the one path a D0 outline must locate for itself.
+
 ## Provenance
 
 Staged 2026-09-17 from the same corpus classification sweep as `PLAN-PRQ-09`. Six lessons, filed by five

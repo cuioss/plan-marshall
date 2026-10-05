@@ -388,6 +388,15 @@ exists to prevent.
 
 Binding decisions that still govern. Settled ones are removed.
 
+- **2026-10-05 — cui-http drain dispositions (14 messages).** Finding 001
+  staged as PLAN-TRUTH-187 (gitignore defect, corroborated); post-run-quality-002
+  absorbed as Open Defect (parked-178 owner + new baseline half). Lessons
+  promoted: 002 → `2026-10-05-14-001`, 003 → `-002`, 004 → `-003`, 006
+  (marketplace half) → `-004`, 010 → `-005`, 011 → `-006`, 012 → `-007`,
+  013 → `-008` (dedup-checked per component). Discarded: 005 (already-covered
+  by `2026-10-02-16-003`), 007 (sender-flagged unconfirmed), 008 (covered by
+  automatic-review refusal-recovery machinery), 009 (already-covered by
+  `2026-09-21-11-010`).
 - **2026-10-02 — truth-168 drain dispositions.** Landing 005 reconciled
   (PLAN-TRUTH-168 shipped via #1674); candidate-lessons promoted:
   002 → lesson `2026-10-02-16-001` (promoted), 003 → `2026-10-02-16-002`
@@ -603,6 +612,19 @@ standards) and 5 (a working multi-model eval harness, design-input-only prior ar
 > ↪ Relocated to `settled.md` § "Inbox drain — 2026-09-22, 1 message, 18 items dispositioned (no landing)" — settled: the drain/sweep is complete — every message dispositioned and archived, every resulting plan row reconciled
 
 ## Open Defects
+
+### 2026-10-05 — scope_creep second half: residuals diffed from `plan_creation_sha`, not the absorbed baseline (`post-run-quality-002.md`)
+
+Forwarded from `post-run-quality` (second independent instance; first routed to
+parked PLAN-TRUTH-178 on 2026-09-26). Recurrence check: 178 is **parked**, not
+staged — so this folds nowhere live. The message's first half (unguarded
+finding type) belongs to parked 178. Its second half is NEW: `scope_creep_check`
+diffs from `plan_creation_sha` (`scope_creep_check.py:212`) with no
+absorbed-baseline concept, so upstream drift counts as creep (~105 files every
+call) and operators raise `--threshold` to 200/100000 to get a measured result.
+Fixing only the finding type would persist a wrong number. Also tracked: whether
+those threshold overrides persist anywhere later runs inherit. Un-park 178 (or
+stage fresh) only by explicit operator decision per the PM-MCP banner rule.
 
 ### 2026-10-02 — PLAN-211 landing incomplete: `total_tokens` unknown (`implement-plan-211-baseline-reconcile-002.md`)
 

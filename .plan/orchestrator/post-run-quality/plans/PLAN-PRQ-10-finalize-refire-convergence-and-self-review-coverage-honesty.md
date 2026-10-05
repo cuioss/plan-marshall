@@ -13,6 +13,29 @@ workstream: WS-01
 > The orchestrator EMITS the command below; it never launches the plan inline.
 > This spec is SELF-SUFFICIENT: the emitted command is a one-line pointer and carries no brief.
 
+## Recurrence: second independent instance, with a named mechanism
+
+Folded 2026-10-04 from `cross-repo-telemetry-archive-and-analyze-001.md`, filed first-party by PRQ-07's own
+retrospective (PRs #1692/#1694). **The re-fire phenomenon this spec was staged for reproduced on a second
+plan, at a larger scale**, and the second instance supplies the mechanism the first did not:
+
+| | PLAN-PRQ-06 (staging instance) | PRQ-07 (this recurrence) |
+|---|---|---|
+| Finalize share of run | 4,232,432 of 8,444,415 tokens (50%) | ~51% of 13,104,101 tokens |
+| Self-review loop-backs | — | 5, then the ceiling breached at 7 rounds |
+| Re-fired steps | `finalize-step-simplify` ×12, 0 findings each | `lessons-housekeeping`, `simplify`, `plugin-doctor` — `firing_count: 6` each, **zero edits every time** |
+| Per-re-fire cost | — | 92K–154K (housekeeping), 56K–134K (simplify), ~90K (plugin-doctor) |
+
+⭐ **The mechanism, which D1 should adopt rather than re-derive:** the re-fire rule keys on **HEAD movement
+alone** and never asks whether the delta touches anything the step's verdict actually depends on. Every
+loop-back here was driven by a two-line prose fix (`"HEAD advanced cc7177b74 -> 6c9ae01d2, 2-line docs
+fix"`, `"ADR-020 wording fix only"`), and each one paid three full dispatches. The remedy the message names
+is **already-built infrastructure, not new design**: `verdict_inputs` in
+`phase-6-finalize/standards/verdict-currency.md` already expresses a declared input set, so D1 can carry
+the prior verdict forward when the delta touches no declared input, instead of inventing a convergence
+signal. ⚠ **`verdict-currency.md` was NOT in this spec's declared surface and has been added below in the
+same act as this fold** — it is the file the fold's remedy lives in.
+
 ## Provenance
 
 Staged 2026-09-19 from three `candidate-lesson` messages filed first-party by `PLAN-PRQ-06`'s own
@@ -204,6 +227,7 @@ from an empty firing set is the vacuous-guard archetype this epic has recorded a
 - OBSERVED: `marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/scripts/_self_review_patterns.py` — D0(b) (added 2026-09-21 — the ACTUAL `CANDIDATE_LISTS` registry, `:488-541`)
 - OBSERVED: `marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/scripts/self_review.py` — D0(b) (added 2026-09-21 — `CANDIDATE_LISTS`' consumer)
 - OBSERVED: `marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/SKILL.md` — D0(b), D4 (§ Detection Rules, the authoritative enumeration)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/verdict-currency.md` — D1 (added 2026-10-04 by the PRQ-07 recurrence fold: the `verdict_inputs` declared-input mechanism D1's remedy builds on, rather than a new convergence signal)
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-finalize-step.md` — D1, only if the convergence fact rides the step facts contract (verify-at-outline)
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/manage-execution-manifest.py` — D0(a), only if `refire-report` must be read or extended (verify-at-outline)
 - OBSERVED: `doc/user/configuration.adoc` — D4's measured instance (read for the class, not necessarily edited)

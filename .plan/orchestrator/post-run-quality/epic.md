@@ -58,10 +58,28 @@ the machinery that grades us.
 - PLAN-PRQ-01 ↔ PLAN-PRQ-02 — both touch `plan-retrospective/scripts/`; never pair.
 - PLAN-PRQ-03 is the only spec whose surface is entirely project-local (`.claude/skills/`), so it is the
   natural partner if the scope knob is ever raised.
-- ✅ **PLAN-PRQ-07 — UN-PARKED AND EMITTED 2026-10-02 (operator). The only live row in the queue.** The
-  dependency below is DISCHARGED, not overridden, and the disjointness gate was overridden on a stated
-  basis; see the 2026-10-02 Decisions entry for both, and the spec's own banner for what the implementing
-  plan must re-check.
+- ⛔ **PLAN-PRQ-15 — NOT a `next` candidate, and NOT a `/plan-marshall` plan. Do not emit it.** Same lane
+  as PRQ-13: a standalone session in `plan-marshall-telemetry`, hand-off in the spec. Its surface is
+  entirely out-of-repo, so it will read `prose` and the gate will refuse it forever — correctly. It does
+  **not** occupy the `parallelization_scope: 1` slot, so `PLAN-PRQ-14` may run concurrently with it.
+- ✅ **PLAN-PRQ-14 — the one ordinary `/plan-marshall` candidate in the queue.** In-repo surface, 7 declared
+  paths, `declarative`. Expect the usual `candidate_comparison_determinate: false` plus a `manage-findings`
+  overlap against `review-apparatus` `PLAN-PR-072` and `truthful-signals` `PLAN-TRUTH-146`/`-178` — all
+  staged, none running.
+- ⛔ **PLAN-PRQ-13 — shipped; was NOT a `next` candidate and never a `/plan-marshall` plan.** Re-cut
+  2026-10-04 to run as a standalone Claude Code session inside `plan-marshall-telemetry`; the earlier
+  `/plan-marshall` emit is void. Two consequences for this queue, both deliberate: its surface is
+  `derivation_status: prose` (0 resolved, 5 unresolved — every entry prefixed `plan-marshall-telemetry/`
+  so it cannot be mistaken for an in-repo path), so `admits_disjointness_check` is **false** and the gate
+  will refuse it **forever**; and it **does not occupy the `parallelization_scope: 1` slot**, because that
+  knob bounds concurrent plan-marshall plans contending for *this* repository's worktrees and a session in
+  another repository contends for none of them. So a plan-marshall plan MAY run concurrently with it. Its
+  row tracks lifecycle state only — move it to `running` when the operator starts the session, and
+  `shipped` when it lands.
+- ✅ **PLAN-PRQ-07 — SHIPPED 2026-10-04, PR #1694.** Un-parked and emitted 2026-10-02 by operator decision
+  with the disjointness gate overridden on a stated basis and the PRQ-01/PRQ-03 dependency discharged; the
+  override held and nothing collided. See `landings/PLAN-PRQ-07.md`. **WS-05 is complete** — it was a
+  single-plan workstream. The queue is back to 9 parked and 3 shipped, with nothing live.
 - PLAN-PRQ-07 ↔ PLAN-PRQ-01, PLAN-PRQ-03 — both touch `.claude/skills/audit-archived-plan-retrospectives/**`,
   the exact skill PRQ-07 relocates out of this repo. PRQ-07 is a hard DEPENDENCY on both landing first, not
   a mere disjointness overlap — never emit PRQ-07 while either is staged/launched/running. ✅ **Discharged
@@ -78,6 +96,287 @@ the machinery that grades us.
 
 ## Decisions
 
+- 2026-10-05 — **WS-05 closed out for real: the telemetry repo has run against live data for two projects,
+  and all three outstanding Watches are retired.** Operator: *"the repo is there, we did some more
+  iteration in it. Consider the item to be closed."* ⚠ **Checked which Watches the evidence actually
+  closes rather than closing three on one sentence** — two are first-party verified, one is
+  operator-confirmed, and the ledger distinguishes them. ⛔⛔ **The headline is the vindication, not the
+  closure**: the first real run found **false measured zeros** — a recorder placeholder `total_tokens: 0`
+  treated as a figure on **11 plans**, and `main_context_tokens` measured-0 on **45 plans** — the precise
+  defect class this epic exists to eliminate, shipped inside the instrument built to detect it, invisible
+  to 924 green tests, and surfaced only by real data. ⭐ **A fixture corpus cannot contain the shapes a
+  real corpus has**, and this is the epic's own evidence for it.
+  **Iterations beyond the plans, recorded because the ledger describes none of them:** a `doc/audits/`
+  content audit drove most of the fixes; an **`adjudicate`** surface arrived with ground truths, verdicts
+  and worklists — a concept no PRQ spec anticipated; monthly project reports, incremental runs, `--pending`
+  / `--force`, and a `dry-run/` tree were added; the project archives moved from `{project-slug}/` to
+  **`projects/{project-slug}/`**, so the README invariant PRQ-15 honoured now reads one level deeper; and
+  findings handling was corrected repeatedly (process records are not findings, a failing build is one
+  finding not many, a build finding takes no severity band). ⚠ **`54ea27f` deleted both the PRQ-13 and
+  PRQ-15 run reports from the telemetry repo**, so `landings/PLAN-PRQ-13.md` and `landings/PLAN-PRQ-15.md`
+  are now the only durable record of those runs. That is the correct arrangement — the ledger is the record
+  and the repo is the work — but it means the landings must not be trimmed as duplicates of something that
+  no longer exists.
+- 2026-10-04 — **`PLAN-PRQ-15` SHIPPED (telemetry `0965060..0adc341`, 8 commits, no PR), and it found a
+  `PLAN-PRQ-13` defect.** All seven deliverables; `landings/PLAN-PRQ-15.md` is the record; WS-05 complete.
+  Suite **924 passed / 20 skipped** (from 873/20), green before every commit — ⚠ the run's figure, not
+  re-verified here, since the system `python3` has no pytest. **D6 verified in the tree**: skills are now
+  exactly `analysis-engine`, `analyze`, `transfer`; test dirs mirror them exactly and ⭐ **the mirror got
+  stronger** — `test/analyze/` is new, carrying the control that fails if a slash-command usage example
+  returns; the rename commit shows **126 rename-detected paths**, so `git mv` moved both trees in one
+  commit as required; the engine reads `user-invocable: false`. ✅ The rename is complete — the old name
+  survives in exactly two files, both correctly (the two run reports, one historical and one documenting
+  the rename). ⛔ **THE FINDING THAT MATTERS: `plan_rollup` reported `complete: true` over floor
+  summands** — a sum built from lower bounds published as complete, because the roll-up ignored
+  `floor: true`. **A PRQ-13 defect, found by reusing PRQ-13's own pattern**, and it is the
+  *floor-propagation* form of this epic's founding class: not a false zero but a **false certainty**. Also
+  fixed: the severity roll-up silently dropped out-of-vocabulary values, and the engine's usage examples
+  still showed it run as a slash command — a second front door surviving in the docs after D6(a) closed
+  the real one, now with a control. ⭐ **`aborted` is reachable but has never occurred**, and the
+  distinction was preserved: derivable only from an explicit `metadata.archived_reason` other than
+  `normal_completion`, which **none of 70** archived plans has (the 7 that record a reason all say
+  `normal_completion`). Producible-but-never-produced is a different fact from unreachable, and different
+  again from "nothing was ever aborted". ⛔ And the rule held — **a plan with zero deliverables done is
+  never treated as `aborted`**; the 4 `indeterminate` results are exactly where a lesser implementation
+  would have guessed. Completion over the real corpus: 63 fully, 3 partially, 0 aborted, 4 indeterminate.
+  ⚠ **The run corrected my blast-radius figure**: 38 across 14 files, not my 46 across 15, because D6(b)'s
+  fold removed references before (c) ran. My measurement was right when taken and stale when used — **a
+  blast radius measured before an earlier step runs is a moving figure, and a spec quoting one should say
+  which step it was measured at.** Mine did not.
+- 2026-10-04 — **`PLAN-PRQ-15` gains D6: the skill-layout cleanup, three parts.** Operator asked whether
+  the telemetry repo's four project skills are all necessary. Read all four. **`transfer` and the engine
+  are clearly necessary** (write path, read path). **`analyze` is justified** — its 106 lines and zero
+  scripts look like a veneer, but the value is behavioural discipline the engine does not hold (run exactly
+  once, add no unrequested flags, surface verbatim, read `corpus-selection` / `run-summary` /
+  `subject-reports` first) — ⛔ **except that BOTH declare `user-invocable: true`, so the engine is a
+  second front door and that discipline is bypassable by design.** **`era-stamp-fill` is the questionable
+  peer**: a sibling skill that rewrites *another skill's source*, which is a layering inversion — and the
+  coupling is already mutual, since the engine's own SKILL.md and `audit.py` reference the era-stamp
+  mechanism in return. ⚠ Separately, **the engine's name no longer describes its job**: inherited from
+  plan-marshall where it audited archived plan retrospectives, while here it writes outcome and quality
+  reports — its own description already opens *"The telemetry repository's single analysis engine"*, so the
+  description has outgrown the name. ⇒ D6 does all three, (c) last and in one commit. ⭐ **The operator
+  caught what I under-specified: the TEST directories rename too.** Verified — `test/` holds a same-named
+  directory for each skill that has tests, so **the test tree mirrors the skill tree one-to-one and that
+  mirror is an invariant, not a coincidence.** D6 now states it as a two-directory move per change, with
+  the rule that a rename leaving `test/audit-archived-plan-retrospectives/` behind is **worse than not
+  renaming**: the tree would assert a mirror it does not have, and the next reader could not tell which
+  name is current. Blast radius measured rather than estimated — **46 occurrences across 15 files**, plus
+  the two directories; `pyproject.toml` does not reference the name, though its `testpaths` means
+  collection must be re-confirmed after the move.
+- 2026-10-04 — **`PLAN-PRQ-15` staged: a project-level AsciiDoc aggregate, and the three identity facts the
+  outcome report does not carry. WS-05 reopened.** Operator-directed. ⭐ **Two of the three requested facts
+  are genuinely absent and the third is partial** — checked against `doc/outcome-report.md` at `5546bde`
+  rather than assumed: there is **no completion state** (`deliverables_total`/`done` make *partial*
+  derivable, but ⛔ **`aborted` is not** — a zero may mean abandoned, never-started or unmeasurable, which
+  are three different facts); **no repository identity at all**; and `prs` carries numbers, `sources` and
+  `landed` but **no URLs**. ⛔ **A URL cannot be built without the repository, so that ordering is binding
+  inside the plan.** ⛔⛔ **A naming collision had to be caught before anything was written**: the
+  operator's word for the first fact is `state`, but `state` is **already the envelope key on every
+  field** (`measured`/`not_measured`/`not_applicable`), so a top-level `state` would be two different
+  things one key apart — D0 must rename it rather than shadow the envelope. The aggregate is specified as
+  **a VIEW that computes no fact of its own**, generated **by the engine, not `analyze`** (which declares
+  no report format of its own — the same trap PRQ-13 D1 was corrected for), regenerated before every
+  commit so a stale aggregate can never sit beside fresh JSON, and ⛔ **carrying the measurement states
+  through**: it reuses `plan_rollup`'s population-plus-`complete` floor pattern and renders an incomplete
+  sum visibly as a floor, because summing a `not_measured` as zero in *the artefact a human actually
+  reads* would be this epic's founding defect doing maximum damage. It also owes a named
+  could-not-be-measured section. ⚠ Three HYPOTHESES left for outline: whether the archive carries positive
+  evidence for `aborted` at all (if not, the value ships documented-but-unreachable rather than silently
+  never emitted), whether the repo identity is derivable, and that no project has been transferred yet — so
+  a fixture corpus and D5's controls may be the only evidence available, which the plan says rather than
+  claiming a verified aggregate.
+- 2026-10-04 — **PLAN-PRQ-13 SHIPPED in the telemetry repo (commits `5546bde`, `0965060`), and the
+  out-of-lifecycle lane worked.** All ten deliverables landed; `landings/PLAN-PRQ-13.md` is the record.
+  ⭐ **The first plan this epic landed outside the plan-marshall lifecycle** — no phases, no finalize steps,
+  no PR, no CI, no retrospective, no inbox landing — and every substitute the brief named was honoured and
+  is checkable: deliverable order with D0 as gate, `pytest` green before every commit (**873 passed, 20
+  skipped**, from 784/19), one deliberate self-review pass, direct commits to `main`, and a 253-line run
+  report standing in for the machinery. ✅ **The report-location invariant was honoured, not amended** —
+  reports land beside the archive under `reports/{project-slug}/`, so `{project-slug}/` stays written only
+  by `transfer`. ✅ **The mechanism-order control passed against the real thing**: run with
+  `--plan-marshall-root`, it confirms step orders **5, 7, 8, 30, 40** agree with plan-marshall's
+  finalize-step orders — so the taxonomy's claim that its order is *derived* is now mechanically checked
+  across two repositories. ⭐ **D0 corrected my partition in three places and two corrections were against
+  me**, which is a gate behaving as a gate should: `input-integrity` KEPT (it is the no-false-healthy floor
+  the kept `metrics`/`token-*` checks stand on), `merge-window-accounting` DROPPED (its merge-lock logs are
+  never transferred, so it fails *the brief's own* "does not survive archival" test — I had read the name
+  as outcome-shaped), and `cross-check-synthesis` RE-SCOPED (7 of 10 couplings need a retired check; it now
+  reports `evaluated: yes/partial/no` so an unevaluable coupling is never counted as a clean one).
+  ⛔ **Self-review found SEVEN defects and six are this epic's founding class, in the instrument built to
+  detect it**: a measured `0` over an empty population; unknown gates folded into clean ones; a mechanism
+  masked by its gate; a compatibility policy misread as a contract break (19 of 63 plans wrongly
+  `critical`); a leaked machine path; a stale doc count. ⛔ **And the seventh is a pre-existing defect in
+  the relocated check**: all **820** `assessments.jsonl` records were counted as findings, which made **255
+  of PLAN-PRQ-07's 255 "actionable pending" items** assessments rather than findings — so every
+  `quality-chain` reading of this corpus taken before `5546bde` overstated actionable chain debt. See the
+  Watch; re-derive rather than cite any such figure.
+- 2026-10-04 — **`PLAN-PRQ-14` staged from PRQ-13's D4a hand-back: the producers do not say which gate
+  caught it, and Sonar's severity is thrown away at the door.** Five items, three required and two
+  recommended, staged in THIS repository because that is where the producer surfaces live — which is
+  exactly what D4a was for: PRQ-13 classified on the reading side and handed the producer-side work back
+  rather than reaching across for it. ⛔ **Item 3 is the one with a deadline**, because it is lossy rather
+  than merely absent: `simplify` and `security-review` omit a marker that could in principle be
+  back-derived, while Sonar's collapse **destroys information at ingestion**, so every day it does not land
+  is another day of findings whose `critical`-versus-`major` distinction can never be recovered. ⛔ The
+  spec states plainly that it fixes findings from the day it lands and that **every already-archived plan
+  stays `not_measured` forever** — no back-fill from the mapped value, because `error` → `major` would be a
+  fabrication. It also declines to widen `FINDING_SEVERITIES` (a tree-wide blast radius for a provenance
+  problem) and declines to pick up the parked `PLAN-TRUTH-146`'s vocabulary work. ⚠ Two of its claims are
+  the hand-back's own and are labelled HYPOTHESIS rather than inherited as fact: that simplify files *no*
+  findings rather than untagged ones (the two need different fixes), and the `39 of 55` fingerprint figure.
+- 2026-10-04 — **PLAN-PRQ-13 trimmed of historical fluff; the brief and the record had been conflated.**
+  Operator challenge: *"is there still historical fluff in the plan, like change at ot the operator said
+  that has no benefit for the plan?"* It was right. Measured rather than eyeballed: 691 → 667 lines, with
+  all **8** self-referential passages removed — *"the first draft said X"*, *"CORRECTED 2026-10-04"*,
+  *"RE-CUT 2026-10-04 (operator)"*, *"an earlier draft carried…"*, the gate-override-no-longer-needed note,
+  and the scope-guard-overridden-by-operator-decision note. ⭐ **Every conclusion was kept and only the
+  narrative around it deleted**: the report-location invariant stays without the story of a draft that
+  broke it; the engine-not-wrapper fix site stays without *"CORRECTED"*; the adapted-in-transit finding
+  stays, re-labelled from the re-grounding token `CONTRADICTED` to the claim-label token `OBSERVED`, which
+  is the correct vocabulary for a spec claim; the prefix and `EXCLUDED` warnings stay as imperatives
+  because both protect a future *editor* of the spec; and *"do not split this work"* stays as a design
+  constraint without the guard/count/operator framing. ⚠ **What stayed is not fluff**: every remaining date
+  is an `OBSERVED 2026-10-04` observation timestamp, which the verify-first contract requires — an
+  `OBSERVED` claim with no date cannot be assessed for staleness by the session that reads it. ⛔ **Root
+  cause, and it is mine: I conflated the brief with the record because I was editing under correction.**
+  The spec is the BRIEF for an implementing session; `epic.md` Decisions and `logs/decision.log` are the
+  RECORD — and they already carried every deleted passage in full, so removing them from the spec lost
+  nothing. **A correction belongs in the ledger, not in the artefact it corrects.**
+- 2026-10-04 — **Severity axis added to PLAN-PRQ-13, and the answer to "do we already have a unified
+  ontology for that" is NO — with one vocabulary that is actively LOSSY.** Operator wanted a
+  minor/major/critical scale so the corpus can be asked *"how many major changes"*. Verified in the code:
+  what exists is `scope_estimate` (`none`/`surgical`/`single_module`/`multi_module`/`broad` — a **SIZE**
+  scale, already audited), `VALID_CHANGE_TYPES` (a **KIND** scale), `VALID_TRACKS` (`simple`/`complex`),
+  and `FINDING_SEVERITIES` (`error`/`warning`/`info`) which grades **findings, not changes**. So that
+  question is unanswerable today. ⛔⛔ **And the real finding is worse than a gap**:
+  `workflow-integration-sonar`'s `_map_severity` collapses Sonar's five bands into three — **`BLOCKER`,
+  `CRITICAL` and `MAJOR` all become `error`** — so the critical/major distinction is **destroyed at
+  ingestion**, not merely unreported, and for an already-archived plan it is unrecoverable. ⇒ Axis 4
+  reports `not_measured` with a `collapsed_at_ingestion` basis for such subjects, and a control
+  specifically asserts it does **not** emit `critical: 0`, which a reader would take as a checked zero.
+  **ADR-019 at its sharpest: the population was overwritten, not merely unread.** The axis itself is a
+  closed four-band set (`trivial`/`minor`/`major`/`critical`) applied to both changes and findings,
+  **derived with its inputs published and never self-reported** — a self-reported severity is exactly the
+  producer-publishes-a-confident-figure defect this epic exists to fight — with a control that recomputes
+  the band from `derived_from` and asserts equality. ⛔ **Severity is NOT scope**: a broad formatting sweep
+  is `broad` + `trivial`, a one-line contract change is `surgical` + `critical`, and folding them would
+  lose exactly the cases that matter most in both directions. Operator also confirmed the
+  build-through-human-review mechanism axis stays in full — axes 3 and 4 are additions, not replacements.
+  **D8 added**: document all four axes in their own document(s) in the telemetry repo, each stating its
+  closed value set, its derivation rule where derived, and ⛔ **what the axis is NOT** — every one of the
+  four has a near neighbour it is confused with, and those distinctions are the first thing lost when an
+  ontology is summarised. A doc-vs-code control asserts each documented value set equals the constant the
+  code validates against, in both directions.
+- 2026-10-04 — **PLAN-PRQ-13's taxonomy written out as a normative section — it had only been
+  REFERENCED.** Operator question: *"is the created taxonomy already part of the plan?"* Honest answer was
+  no. D4 named the existing `quality-chain` axes and described a prose delta — add `simplify`,
+  `security-review`, `sonar`; carry bot identity; add a scope-stability axis — which is not a
+  specification, and the reader this plan hands to is a session in another repository with none of this
+  epic's context, so a reference was the wrong carrier. ⭐ **Three things the writing-out produced that the
+  reference could not.** (1) **The mechanism order is DERIVED, not judged**: it is the composed finalize
+  step order (`simplify` 5, `security-review` 7, `self-review` 8, `auto-review` 30, `sonar` 40), which is
+  the same cost-and-lateness ordering `quality-chain` already claims — so the two new pre-push mechanisms
+  sit before self-review *because their steps fire earlier*, and a D7 control asserts the axis and the step
+  order agree, so "derived" cannot decay into "asserted once". (2) **`bot` is a field on an `auto-review`
+  row, not a mechanism value**, over a closed set plus `required: true|false|unknown` — `unknown` is
+  *required*, because an archived plan's bot roster at run time is not recoverable from the records.
+  (3) **The scope-stability axis is defined for the first time**, with direction, discovering phase and a
+  basis line per instance. ⛔ Its justification is PRQ-07's own drop of deliverable 3 by operator ruling:
+  that event appears in **no findings file at all**, so an ontology built only on findings cannot see the
+  largest scope change that plan had. Also: `gates[]` makes PRQ-01 D2's discipline **structural** — `ran`
+  is signal presence, `findings` is yield, separate fields never folded — and a stale `{subject}/quality.json`
+  path left over from the report-location correction is fixed.
+- 2026-10-04 — **PLAN-PRQ-13 RE-CUT as a standalone session in the telemetry repo; the `/plan-marshall`
+  emit is VOID.** Operator decision, prompted by the operator's own reading of the Expected Surface — which
+  was the right diagnostic. ⭐ **The repo's README is the evidence, not architectural preference:** it
+  declares the skills *"need neither a plan-marshall checkout nor the plan-marshall plugin"* and that the
+  repo is *"`main` only … no feature branches, no pull requests, no branch protection, and no review
+  bots."* It carries no `.plan/` and no `.github/`, so there is no `marshal.json`, no generated executor
+  and no CI for a lifecycle to drive. ⛔ **The decisive argument is first-party**: PRQ-07 ran this exact
+  shape *through* the lifecycle, and its footprint resolver could not see the sibling repo — 111 declared
+  paths invisible, `affected_files_recall` **27.3%** graded as an *error*, three instruments reporting a
+  silent descope on a plan where everything shipped. Running the plan that **builds outcome measurement**
+  under a lifecycle whose measurement is known-broken for this shape is self-defeating. ✅ **One consequence
+  is a strict improvement**: the in-repo work is split out to a new D4a — if the three new mechanisms need
+  a producer-side `manage-findings` change, that is handed back as a separate `/plan-marshall` task in this
+  repo — so PRQ-13 declares **no in-repo surface** and **the disjointness-gate override is no longer
+  needed**. ⛔ **Three defects in my own rework, caught by re-running the parser rather than trusting the
+  edit**: (1) the first draft wrote reports to `{subject}/outcome.json`, violating the README's invariant
+  that entries under `{project-slug}/` are *"written only by `transfer` and are never modified or deleted
+  by analysis"* — making analysis a writer of the archive it exists to measure; D0 now owns the location
+  call, with honouring the invariant preferred and amending it the only alternative. (2) A draft declared
+  the telemetry paths **relative**, so the parser resolved `test/` and `README.md` against THIS repo —
+  declaring this repo's whole test tree as surface. Every entry is now prefixed `plan-marshall-telemetry/`
+  and resolves to nothing, which is the honest answer. (3) A `⛔ EXCLUDED` bullet naming `manage-findings`
+  was **still declared by the parser** — the section is read mechanically and an annotation excludes
+  nothing. Exclusions now live in D4a and in prose, never as an entry.
+- 2026-10-04 — **PLAN-PRQ-13 staged: re-scope the telemetry `analyze` onto outcomes, plus a unified quality
+  report. WS-05 reopened.** Operator-directed, immediately after PRQ-07 landed. Two halves: drop the
+  runtime/process aspects and emit one outcome report per plan and per orchestrator (time, tokens, PRs,
+  lines added/modified/removed, project kind), and add a **separate quality file** on a unified ontology
+  (requirement changes, specification changes discovered at execute, and the review results — simplify,
+  self-review, security-review, PR agents, Sonar), leaving unmeasured and not-applicable distinct.
+  ⭐ **The find that shaped the spec: the ontology already exists and already ships.** The relocated
+  `quality-chain` check classifies every `artifacts/findings/*.jsonl` record on a mechanism axis
+  (`build` → `self-review` → `auto-review` → `human-review`, ordered by cost and lateness) and an 8-bucket
+  resolution axis, and already splits `pending` into an actionable and a structural half. So D4 EXTENDS a
+  shipped classifier — adding `simplify`, `security-review` and `sonar` as mechanisms, carrying bot
+  identity, and adding the scope-stability axis the findings axes have no home for — rather than inventing
+  a vocabulary. ⛔ **Two parked specs' substance is CARRIED rather than awaited, because neither can land**:
+  `PLAN-PRQ-01` D2 (signal presence first, yield second, never folded into one number) and D3 (the corpus
+  quality report) are parked here, and `truthful-signals` `PLAN-TRUTH-146` — the unified findings
+  vocabulary PRQ-01 D10 was to consume and explicitly must not re-implement — is **`parked` in its own
+  epic**, so that vocabulary will never be built there. Waiting on it would have made this plan
+  permanently unstageable. **Format settled** (operator): report files are JSON, the skill's own stdout
+  stays TOON. **Scope-bloat guard overridden** (operator): eight deliverables against the ~6 presumption,
+  rationale recorded — D1–D4 share one subject resolver, one report writer and one ontology, and splitting
+  them would put the shared engine in one plan and its second consumer in another, which is the
+  "two independently-authored formatters" failure PRQ-07's own deliverable 4 was written to prevent.
+  ⚠ **Not emitted.** The staging was the request; the disjointness gate's verdict on it is recorded in the
+  Open Defect below and the emit decision is the operator's.
+- 2026-10-04 — **PLAN-PRQ-07 SHIPPED — PR #1694 (`b3aba30aa`) after split part #1692, and the inbox channel
+  worked for the first time.** 13.1M tokens, 26.6 h wall, merged via merge queue, `cleanup_owed=false`;
+  `landings/PLAN-PRQ-07.md` is the full record. ⭐ **Three firsts for this epic, and they are the headline
+  rather than the shipping:** the landing arrived *through the inbox* (PRQ-06's never fired; PRQ-02's came as
+  9 messages), `inbox landing-check` returned **`complete: true` with `missing_keys[0]`** — every required
+  fact key present with a real value, no `n/a` and no `unknown` — and the orchestration-detection control
+  recorded at launch **predicted exactly this and held**. ⛔ **Deliverable 3 was DROPPED by an operator
+  ruling at refine**, not silently: `request.md:15-16` records *"Do not create a finalize step. Make it only
+  an explicit command in the new repo."* The surface-delta mechanism is what surfaced it — a single
+  declared-but-untouched path (`finalize-step-analyze-marshall-quality/`) out of 4 declared against 152
+  realized, with 44 undeclared additions (`expansion_detected`, the gate's documented under-declaration
+  class at roughly its documented magnitude). ⚠ **Two of five deliverables were recorded UNVERIFIABLE, not
+  shipped** — the `transfer` and `analyze` skills live in the private `cuioss/plan-marshall-telemetry` —
+  ✅ **and both are now VERIFIED PRESENT**: a local checkout was found at
+  `/home/oliver/git/plan-marshall-telemetry` later the same day, carrying four skills and all 24 relocated
+  checks. ⚠ One sub-claim is refuted in the same reading: the corpus did **not** arrive verbatim
+  (`quality-chain.md` was adapted in transit), so "relocated" is not "unchanged". The landing record
+  carries the correction. ⭐ That is the intended lifecycle of an ADR-019 `unverifiable` verdict — the
+  honest record of what was reachable, revisited the moment the population became reachable, rather than a
+  permanent label. ✅ **The emit-time gate
+  override held**: nothing collided, exactly as its stated basis predicted. ⚠ The cross-ledger exposure it
+  did not cover also did not materialise — but it was never serialized, so that is luck, not a guarantee,
+  and `code-intelligence-substrate`'s five specs now declare a surface this repository no longer contains.
+- 2026-10-04 — **Inbox drained: 9 messages, the landing plus 8 candidate lessons, all dispositioned.**
+  Fold (4, every one into a PARKED spec, deliberately — those specs are the PM-MCP carry-over's evidence
+  chain): `-001` re-fire-on-a-verdict-irrelevant-delta → `PLAN-PRQ-10`, supplying the mechanism D1 lacked
+  (`verdict_inputs` already exists; the re-fire rule keys on HEAD movement alone) with
+  `verdict-currency.md` added to its Expected Surface in the same act; `-004` operator escalations
+  classified `error` instead of the already-existing `blocked_user_review` (**1,285,813 tokens** reported as
+  waste that was not) and `-007` all 33 dispatch-boundary rows keyless, **0 of 33** joined, recording dead
+  after 13:16:33Z → `PLAN-PRQ-08`, one onto each half of its title; `-006` the footprint resolver sees
+  neither a split landing's earlier PR nor a sibling repo, so three instruments graded a complete plan as a
+  descope (recall **27.3%**) → `PLAN-PRQ-09`, with `manage-references/scripts/` added in the same act;
+  `-008` lessons-housekeeping Step 1 prescribes the retired `modified_files` read, six firings each
+  improvising a replacement → `PLAN-PRQ-05`. Promote (1): `-002` required-bot size caps and
+  dependency-aware splitting → corpus lesson `2026-10-04-09-001`. Forward-and-discard (2): `-003`
+  rate-window await blocking inside a leaf → `review-apparatus` (PR/CI territory per the standing routing
+  rule); `-005` `scope_creep_check` → `truthful-signals`, as a **recurrence** of the signal routed there on
+  2026-09-26 **plus a second defect** that one did not carry (the residual set is diffed from
+  `plan_creation_sha`, so upstream drift counts as creep — fixing only the finding type would make the
+  guard persist a wrong number instead of failing to persist one). ⚠ The TRUTH-178 ownership claim is read
+  from this epic's own ledger and is **not** independently verified; the forwarded message says so.
 - 2026-10-02 — **PLAN-PRQ-07 started** (operator confirmation, *"plan started"*); `staged → running`, plan id
   `cross-repo-telemetry-archive-and-analyze` stamped on the row, pre-flight `client.toon` written
   (`degraded: false`). The intermediate `launched` state is deliberately not in the row's history: `auto_emit`
@@ -305,6 +604,59 @@ the machinery that grades us.
 
 ## Open Defects
 
+- ⛔ **NEW 2026-10-05 — `cleanup restart-check`'s inbox signal reads `count`, not `live_count`, so a
+  stream-end marker holds an epic at `not_ready` forever.** Found by this epic's own cleanup pass:
+  `restart-check` returns `verdict: not_ready` on a single signal — *"1 message(s) still queued"* — and that
+  message is the `lifecycle=stream-end` marker filed on the landed `cross-repo-telemetry-archive-and-analyze`
+  plan's behalf. `inbox list` reports the same queue as `count: 1, live_count: 0, closed_senders: [that
+  sender]` — the **FINISHED** zero. ⭐ **So the readiness instrument cannot tell which zero it is looking
+  at**, which is this epic's founding subject reproduced in the instrument that grades restart-readiness.
+  ⛔ **The marker was NOT archived to clear the signal.** Archiving it would delete the closure record —
+  the inbox contract is explicit that a marker the drain has archived no longer closes the stream — and
+  gaming a readiness signal by removing the thing it misreads is precisely the move this epic exists to
+  catch. The `not_ready` verdict therefore stands, honestly, on a defect in the signal rather than on
+  unfinished work. ⇒ **Not owned here** — `plan-orchestrator` mechanics, in the same family as the
+  `registry_parity` row that already reports `not_available` and names another spec as its owner. Small and
+  concrete: read `live_count` and `closed_senders` instead of `count`.
+- ⛔ **NEW 2026-10-04 — two parked specs now point at code this repository no longer contains, and one of
+  them is 80% stranded.** `OBSERVED` from `corpus surfaces` after PRQ-07's relocation landed:
+  **`PLAN-PRQ-03`** declares 5 paths and **4 of them are gone** — the whole
+  `audit-archived-plan-retrospectives` tree plus its test mirror moved to the telemetry repo with PR #1694
+  — leaving only `.claude/skills/recipe-plan-review/SKILL.md`. **`PLAN-PRQ-01`** has 4 of its 21 paths in
+  the same moved tree. ⚠ **Neither is a spec-authoring error**: both declared correctly when staged, and
+  PRQ-07 moved the ground under them. ⛔ **What makes this more than bookkeeping**: PRQ-03's subject is the
+  **suspect-zero census excluding itself from its own population** — the detector-inside-its-own-population
+  failure, which the auditor's own SKILL.md states outright — and that instrument now lives in a
+  repository where this epic stages nothing. ⇒ **Partly addressed, not owned**: `PLAN-PRQ-13` inherits the
+  census defect as a binding constraint on its own reports (its reports cover a corpus containing the
+  subjects that produced them, so it sits in the same blast radius), and explicitly declines PRQ-03's other
+  half — `recipe-plan-review` persisting nothing. Re-pointing PRQ-01 and PRQ-03 themselves is **not** done:
+  they are parked, and re-scoping a parked spec onto another repository is a decision about the PM-MCP
+  carry-over, not a reconciliation.
+- ✅ **RESOLVED 2026-10-04 — `PLAN-PRQ-13` emitted, gate overridden on a stated basis, and my own
+  characterisation of it corrected.** ⛔ **The correction first, because it is the substantive part:** I
+  told the operator this was a *weaker* override case than PRQ-07's, on the strength of the ~45 overlap-row
+  count. Separating the rows by class shows it is **comparable, and arguably safer**. PRQ-07 also carried a
+  large sibling-epic-spec volume (186 rows) with zero live-plan overlaps and in-corpus overlaps only against
+  parked or shipped siblings; PRQ-13 has **zero** live-plan rows, **one** in-corpus row (`PLAN-PRQ-01`,
+  parked), and ~40 sibling-ledger rows. ⭐ **The real difference runs the other way**: every PRQ-13 overlap
+  is driven by ONE declared path, `manage-findings`, which the spec declares a HYPOTHESIS — so if it
+  resolves false the in-repo surface is **empty** and the collisions do not exist. PRQ-07's surface was
+  unconditional. A row count compared across two candidates without separating its classes is exactly the
+  under-derived figure this epic exists to catch, and I published one. ⇒ The emitted spec carries the
+  override, its basis, and a concrete obligation: settle the `manage-findings` hypothesis at D0/outline
+  before touching that file, and re-check the live plan set if it resolves true.
+- ⚠ **SUPERSEDED by the entry above — the original gate-refusal record for `PLAN-PRQ-13`.** `candidate_comparison_determinate: false` again (96 sibling-epic specs and 3 live plans
+  declare no comparable surface), so the test fails closed. ⛔ **But unlike PRQ-07, PRQ-13 DOES have overlap
+  rows** — roughly 45 of them, including `PLAN-PRQ-01` in this corpus and ~40 sibling-epic specs across
+  `review-apparatus`, `truthful-signals` and others. ⭐ **Every one of them is driven by a single path**,
+  `manage-findings`, which PRQ-13 declares as a **HYPOTHESIS** — it is only in scope if D4's three new
+  mechanisms need a producer-side vocabulary change rather than reading-side classification. The other four
+  declared entries are `plan-marshall-telemetry/` paths the parser reports as **unresolved** (4 unresolved
+  spans, 1 resolved path), because they are outside this repository. So the honest statement is: *if the
+  hypothesis resolves false, this plan has no in-repo surface and collides with nothing; if it resolves
+  true, it joins a crowded file.* The gate cannot express a conditional surface. ⇒ Emit decision is the
+  operator's; D0 and outline settle the hypothesis either way.
 - ✅ **RESOLVED 2026-10-02 — #1641 reverted this epic's ledger state.** Filed as
   `process-compliance-001.md` (2026-09-28), corroborated first-party and repaired the same session; the
   full account is the 2026-10-02 Decisions entry. Retained as the record of why `settled.md`,
@@ -470,6 +822,72 @@ this epic's.
 
 ## Watches
 
+- ✅ **RESOLVED 2026-10-05 — the reports have now run in anger, on two projects, and the run vindicated the
+  Watch.** Verified first-party in the telemetry repo: `bcd0da5` transferred **70 archived plans and 16
+  orchestrator records**, `83d1e93` committed the first fully-adjudicated reports, and `reports/` now holds
+  both `plan-marshall` and `cui-http`, each with a `project-report.adoc` plus monthly variants. ⛔⛔ **The
+  first real run found false measured zeros that 924 green tests did not**: `eab509f` records that a
+  recorder placeholder `total_tokens: 0` is no figure — **11 plans carried a measured 0** — and that
+  `main_context_tokens` must be `not_measured` with no phase figure and a floor when a phase is
+  unclassified — **45 plans carried a measured 0**. ⭐ **This is the strongest single argument this epic has
+  produced**: the reports shipped with the exact defect class the epic exists to eliminate, their own test
+  suite could not see it, and only real data exposed it. A fixture corpus cannot contain the shapes a real
+  corpus has.
+- ✅ **RESOLVED 2026-10-05 (operator) — the `.adoc` has been read.** ⚠ **Closed on the operator's word, and
+  that is the right evidence here**: the question was never whether the file exists (it does, 8 of them)
+  but whether a human had seen it rendered, and only the operator can answer that. No renderer is recorded
+  in the repo, so this is operator-confirmed rather than first-party-verified, and the ledger says so.
+- ✅ **RESOLVED 2026-10-05 — the tokens zero-floor is fixed**, by `eab509f` above, with the affected
+  populations named (11 and 45 plans) rather than merely asserted. It was the third rediscovery of this
+  shape; it did not need a third plan.
+- ⚠ **Every plan's finding severity band is `not_measured`, and that is the mechanism working.** The Sonar
+  collapse destroyed the `critical`-versus-`major` distinction at ingestion, so no historical plan can ever
+  carry a band. `PLAN-PRQ-14` item 3 fixes it **forward only** — and even after it lands, bands appear only
+  for plans that run through the fixed producer. ⛔ A corpus-wide `critical: 0` is therefore *never* good
+  news on this corpus; it is the honest zero. — retire when PRQ-14 lands AND a plan has run through it.
+- ⚠ **Lines-changed counts only the source project's PRs.** Work landing in another repository is excluded,
+  so a cross-repo plan under-reports and `PLAN-PRQ-13` itself reports nothing at all, since every line it
+  wrote was in the telemetry repo. ⭐ **This is `PLAN-PRQ-09`'s folded resolver recurrence reproduced in the
+  new instrument** — the same out-of-repo blind spot, in the tool built to measure the tool that had it.
+  Not a regression and not owned here: PRQ-09 is parked, and the new instrument inherited the limitation
+  rather than introducing it. — re-check if the telemetry engine ever gains a multi-repo footprint tier.
+- ⚠ **Every `quality-chain` reading of this corpus taken before `5546bde` overstated actionable chain
+  debt.** All 820 `assessments.jsonl` records were counted as findings; on `PLAN-PRQ-07` that was 255 of
+  255 "actionable pending" items. ⛔ **Re-derive rather than cite** any chain-debt figure from an earlier
+  run — including figures quoted in this epic's own earlier landing records. — no re-check owed; a standing
+  caveat on historical readings.
+- ⚠ **The telemetry repo's branch protection is still unconfirmed.** `PLAN-PRQ-13` could not settle it; the
+  absent `.github/` is consistent with main-only but does not establish the protection setting. Low stakes
+  — the README declares the policy and the repo has no PR workflow — but it remains an asserted rather than
+  observed fact. — re-check opportunistically via a `ci repo` read or the operator.
+- ✅ **RESOLVED 2026-10-04 (operator) — and this Watch named the WRONG REPOSITORY, which is the part worth
+  keeping.** The durable finding stands: `plan-marshall:automatic-review` `lane: off` only stops *reading*
+  results and is **not a bot off-switch**, so opting out of the lane and disabling a bot are different acts.
+  ⛔ **What this Watch got wrong**: it proposed disabling CodeRabbit, Sourcery and cuioss-review-bot for
+  `cuioss/plan-marshall`. The operator's ruling is the opposite — *"do not change anything related in this
+  repo (plan-marshall). There the bots are correct."* Disabling was only ever wanted in
+  **`cuioss/plan-marshall-telemetry`**, and it is **done**: CodeRabbit via that repo's `.coderabbit.yaml`
+  (`reviews.auto_review.enabled: false`, commit `b403805`), Sourcery via the operator's dashboard, and
+  `cuioss-review-bot` never ran there for want of a `.github/` tree. ⚠ **Recorded as operator-confirmed,
+  not independently verified** — a GitHub App's installation state is not readable through the CI
+  abstraction from here; the `.coderabbit.yaml` is. ⛔ **The standing rule is untouched and still binds:
+  CodeRabbit is a required reviewer in `plan-marshall` and must never be moved to `optional_bots` to clear
+  a blocked merge gate.** ⇒ The lesson for this epic is about its own practice, not the bots: an owed item
+  carried a target repository it had never checked, and it was restated twice — including in a resume
+  anchor as "overdue" — before anyone corrected it. **Name the repository a change targets before
+  proposing it.**
+- ⚠ **CodeRabbit's `**Actionable comments posted: N**` summary may be counted as an actionable comment.**
+  Reported by PRQ-07's `review-retrospective` as a possible defect — the leading bold markers appear to
+  defeat the registry's starts-with summary pattern, so every CodeRabbit review would inflate its own
+  actionable count by one. ⛔ **NOT verified by this epic** — recorded as the sender's lead, forwarded to
+  `review-apparatus` with that caveat stated. If real it biases every reviewer-quality comparison, which is
+  `review-apparatus`'s headline metric.
+- ⚠ **`code-intelligence-substrate`'s five specs now declare a surface this repository no longer contains.**
+  `PLAN-CIS-036/050/052/054/056` declare `.claude/skills/audit-archived-plan-retrospectives/**` and its test
+  mirror; PRQ-07 relocated both out of this repo on 2026-10-03. Nothing collided, because nothing was in
+  flight — but nothing serialized it either, so that was luck. Their own epic owns re-grounding them. This
+  Watch is **kept, not retired**: it is the live residue of a disjointness gate that was overridden rather
+  than passed, and it is first-party evidence for the cross-ledger blind spot this epic exists to name.
 - ⚠ **The PM-MCP carry-over now carries at least one stale defect, and this epic cannot see it.**
   `plan-marshall-mcp/doc/known-defects/post-run-quality-carry-over.md` extracted the whole parked corpus on
   2026-09-26. PLAN-PRQ-12's D1 was fixed in this repository on 2026-09-29 (PR #1646), so whatever the

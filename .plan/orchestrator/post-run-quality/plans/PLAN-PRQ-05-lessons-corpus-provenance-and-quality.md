@@ -13,6 +13,27 @@ workstream: WS-03
 > The orchestrator EMITS the command below; it never launches the plan inline.
 > This spec is SELF-SUFFICIENT: the emitted command is a one-line pointer and carries no brief.
 
+## Folded in: the housekeeping step's own input call is retired
+
+Folded 2026-10-04 from `cross-repo-telemetry-archive-and-analyze-008.md`, filed first-party by PRQ-07's own
+retrospective. Smaller and more concrete than this spec's other members, and worth keeping because it is a
+*measured* instance of the corpus's maintenance surface breaking rather than a property of the corpus data:
+
+⛔ **Step 1 of `.claude/skills/finalize-step-lessons-housekeeping/SKILL.md` prescribes a RETIRED call.** It
+says to obtain the changed-file list with `manage-references get --field modified_files`, and that field is
+gone — the call returns `error: field_retired`. The step fired **six** times in PRQ-07, and **each firing
+improvised its own replacement**, trying `get --field realized_footprint` (`field_not_found`) and
+`compute-footprint --help` before arriving at
+`manage-references compute-footprint --plan-id … --worktree-path …`, which returned the 149 changed files.
+
+⭐ **Why this matters beyond the one-line fix:** the step doc forces every firing to violate the
+no-improvisation rule *merely to obtain its input*, and six independent leaves each rediscovered the same
+workaround. The remedy is to rewrite Step 1 around `compute-footprint`, quoting its canonical invocation,
+and to add the doc to whatever sweep guards retired `manage-references` fields — the second half is the
+durable one, since this doc went stale precisely because no sweep covered it.
+
+⚠ **Adds no file surface**: `.claude/skills/finalize-step-lessons-housekeeping/` is already declared below.
+
 ## Provenance
 
 **TRANSFERRED 2026-09-17 from `next-level` PLAN-09** (staged there 2026-09-14 from inbox `next-level-009`
