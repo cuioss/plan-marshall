@@ -4,7 +4,7 @@
 
 ## START HERE
 
-**Resume anchor**: 2026-10-05: cui-http drain (14 msgs: 187 staged, 8 lessons, 1 defect) + cleanup (16 verdicts at 14d624bd, restart ready). Live staged 8. Next: emit PLAN-TRUTH-187/172/186 when operator confirms launch.
+**Resume anchor**: 2026-10-05: cui-http drain 014-020 (4 lessons 17-001..004, 3 discards). Live staged 8. Next: land ledger, then emit PLAN-TRUTH-187/172/186 when operator confirms launch.
 **Phase**: orchestrating
 **Parked**:
 - PLAN-TRUTH-145 (WS-01)

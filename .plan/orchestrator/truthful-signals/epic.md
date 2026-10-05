@@ -388,6 +388,13 @@ exists to prevent.
 
 Binding decisions that still govern. Settled ones are removed.
 
+- **2026-10-05 — cui-http drain dispositions (7 messages, PLAN-13 #262).**
+  Lessons promoted: 014 → `2026-10-05-17-001`, 015 → `-002`, 017 → `-003`,
+  019 → `-004` (dedup-checked per component). Discarded: 016 (recurrence of the
+  tracked scope_creep defect, folded into the 2026-10-05 Open Defect), 018
+  (same quota-override class as the 008 drain, covered by refusal-recovery +
+  rate-window machinery), 020 (already-covered by `2026-10-02-16-003` and
+  `2026-10-05-14-004`).
 - **2026-10-05 — cui-http drain dispositions (14 messages).** Finding 001
   staged as PLAN-TRUTH-187 (gitignore defect, corroborated); post-run-quality-002
   absorbed as Open Defect (parked-178 owner + new baseline half). Lessons
@@ -625,6 +632,10 @@ call) and operators raise `--threshold` to 200/100000 to get a measured result.
 Fixing only the finding type would persist a wrong number. Also tracked: whether
 those threshold overrides persist anywhere later runs inherit. Un-park 178 (or
 stage fresh) only by explicit operator decision per the PM-MCP banner rule.
+
+Recurrence 2026-10-05 (`cui-http-quality-report-remediation-016.md`, PLAN-13
+#262, 3 hits + 52 upstream-drift files): same two halves, folds here — no new
+item.
 
 ### 2026-10-02 — PLAN-211 landing incomplete: `total_tokens` unknown (`implement-plan-211-baseline-reconcile-002.md`)
 
