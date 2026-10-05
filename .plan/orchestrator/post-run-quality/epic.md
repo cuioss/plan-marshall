@@ -604,6 +604,20 @@ the machinery that grades us.
 
 ## Open Defects
 
+- ⛔ **NEW 2026-10-05 — `cleanup restart-check`'s inbox signal reads `count`, not `live_count`, so a
+  stream-end marker holds an epic at `not_ready` forever.** Found by this epic's own cleanup pass:
+  `restart-check` returns `verdict: not_ready` on a single signal — *"1 message(s) still queued"* — and that
+  message is the `lifecycle=stream-end` marker filed on the landed `cross-repo-telemetry-archive-and-analyze`
+  plan's behalf. `inbox list` reports the same queue as `count: 1, live_count: 0, closed_senders: [that
+  sender]` — the **FINISHED** zero. ⭐ **So the readiness instrument cannot tell which zero it is looking
+  at**, which is this epic's founding subject reproduced in the instrument that grades restart-readiness.
+  ⛔ **The marker was NOT archived to clear the signal.** Archiving it would delete the closure record —
+  the inbox contract is explicit that a marker the drain has archived no longer closes the stream — and
+  gaming a readiness signal by removing the thing it misreads is precisely the move this epic exists to
+  catch. The `not_ready` verdict therefore stands, honestly, on a defect in the signal rather than on
+  unfinished work. ⇒ **Not owned here** — `plan-orchestrator` mechanics, in the same family as the
+  `registry_parity` row that already reports `not_available` and names another spec as its owner. Small and
+  concrete: read `live_count` and `closed_senders` instead of `count`.
 - ⛔ **NEW 2026-10-04 — two parked specs now point at code this repository no longer contains, and one of
   them is 80% stranded.** `OBSERVED` from `corpus surfaces` after PRQ-07's relocation landed:
   **`PLAN-PRQ-03`** declares 5 paths and **4 of them are gone** — the whole

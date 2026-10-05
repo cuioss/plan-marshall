@@ -44,14 +44,34 @@ publish, as a table, the field each item below will write and the field name the
 differently-valued field satisfies nothing. This gate exists because the two sides are in different
 repositories and nothing mechanically joins them.
 
-**D1 — `finalize-step-simplify` files its findings with a mechanism marker.** `OBSERVED` via the
-hand-back: it files **none** today. A `simplify` mechanism exists in the ontology and can never be
-populated. Give the step's findings a marker such as `source: finalize-step-simplify`, in whatever form D0
-establishes the consumer reads.
+**D1 — `finalize-step-simplify` PERSISTS the findings it already produces, with a mechanism marker.**
+⭐ **Re-grounded 2026-10-05 at `b3aba30aa`, and the work is smaller than the hand-back implied.** This is
+the **non-filing** case: `finalize-step-simplify.md` contains **zero** `manage-findings` calls on any path.
+But the data already exists — the leaf **produces** `findings[]` carrying `file` / `line` / `anti_pattern`
+/ `action` (standards `:175-181`), the step **parses** it (`:181`), and the step **counts** it into its
+display detail, `"Simplify: {applied_edits} edits, {findings_count} findings"` (`:234`). Then it drops it.
 
-**D2 — the security-audit findings carry the same marker.** `OBSERVED` via the hand-back: they are stored
-as plain `bug` / `anti-pattern` records today, indistinguishable from any other producer's. A
-`security-review` mechanism exists in the ontology and can never be populated.
+So D1 is **not** "add a marker to existing filings" — it is "persist what is already produced and already
+counted", with the marker added in the same act. The extraction work is done.
+
+⛔ **A second defect found with it, and it is this epic's founding class in a producer**: the step
+publishes a findings **count** with **no retrievable population behind it**. A run reports
+`"3 edits, 7 findings"` and the findings store holds zero simplify findings. Fixing D1 closes both, and the
+report should say so.
+
+**D2 — the security-audit findings gain a provenance marker. ⛔ NOT a new type.** ⭐ **Re-grounded
+2026-10-05: this is the opposite case to D1 — filed, but untagged.** The step doc has no
+`manage-findings` call because the filing happens in the shared engine:
+`recipe-security-audit/standards/audit-engine.md:69-70` files via
+`manage-findings add --plan-id {plan_id} --type {bug|anti-pattern} --severity {error|warning|info}`, with
+no producer marker — so a security finding is indistinguishable from any other producer's `bug` or
+`anti-pattern`.
+
+⛔⛔ **A binding constraint came with that reading, and D2 must respect it.** The same engine states at
+`:66` that the `FINDING_TYPES` taxonomy is **closed**, that there is **no `security-issue` type**, and that
+*"a new discovery surface maps onto an existing type, it never adds one."* So D2 adds a **provenance
+field** and never a type — the same reasoning this spec already applies to `FINDING_SEVERITIES`, now with
+a citation rather than an instinct.
 
 **D3 — Sonar's original severity is preserved in an `upstream_severity` field.** ⛔ **The lossy one.**
 `OBSERVED` by direct code read: `workflow-integration-sonar`'s `_map_severity` collapses `BLOCKER`,
@@ -84,7 +104,9 @@ the ontology's **scope-stability axis** (`specification_changes`) needs to move 
 - OBSERVED: `FINDING_SEVERITIES` is `('error', 'warning', 'info')` in `tools-file-ops/scripts/constants.py`, aliased as `SEVERITIES` in `manage-findings/scripts/_findings_core.py`.
 - OBSERVED: the consuming ontology exists and is already landed — `plan-marshall-telemetry` commit `5546bde`, `scripts/ontology.py`, eight mechanisms with bot identity as a field.
 - ⚠ HYPOTHESIS: `finalize-step-simplify` files no findings at all today, rather than filing them untagged — reported by the hand-back and NOT independently verified here. Confirm/refute at `phase-6-finalize`'s simplify step and its findings calls; the two cases need different fixes, since an untagged filing needs a marker and a non-filing needs a filing path (verify-at-outline, D0 owns it).
+  - verdict: corroborated | checked_at: b3aba30aa | by: post-run-quality/cleanup | rescoped: n/a | evidence: CONFIRMED as the non-filing case, and more sharply than the hand-back stated: finalize-step-simplify.md contains ZERO manage-findings calls on any path. Its leaf PRODUCES findings[] (file/line/anti_pattern/action, standards lines 175-181), the step PARSES them (line 181) and COUNTS them into display-detail ('Simplify: {applied_edits} edits, {findings_count} findings', line 234) -- then never persists them. So D1 is not 'add a marker to existing filings' but 'persist findings already produced and already counted'. Second-order defect found with it: the step publishes a findings COUNT with no retrievable population behind it.
 - ⚠ HYPOTHESIS: the security-audit findings are filed as plain `bug` / `anti-pattern` with no producer marker — same provenance, same caveat; confirm at `finalize-step-security-audit`'s findings calls (verify-at-outline, D0 owns it).
+  - verdict: corroborated | checked_at: b3aba30aa | by: post-run-quality/cleanup | rescoped: n/a | evidence: CONFIRMED filed-but-untagged, the opposite case to claim 3. The step doc itself has 0 manage-findings calls because the filing happens in the shared engine: recipe-security-audit/standards/audit-engine.md:69-70 files via 'manage-findings add --plan-id {plan_id} --type {bug|anti-pattern} --severity {error|warning|info}', with no producer marker, so a security finding is indistinguishable from any other producer's bug/anti-pattern. ⛔ BINDING CONSTRAINT found with it, which D2 must respect: that engine states the FINDING_TYPES taxonomy is CLOSED, there is no security-issue type, and 'a new discovery surface maps onto an existing type, it never adds one' (line 66). So D2 may add only a PROVENANCE marker, never a type -- the same reasoning this spec already applies to FINDING_SEVERITIES, now with a citation.
 - ⚠ HYPOTHESIS: the `39 of 55` fingerprint figure. It is the hand-back's count over the archived corpus and is not re-derived here (verify-at-outline, D5).
 - ⚠ HYPOTHESIS: an additional `upstream_severity` field is additive for every current consumer of a finding record — confirm by enumerating the readers before writing it (verify-at-outline, D0).
 
