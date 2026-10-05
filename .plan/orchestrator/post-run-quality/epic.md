@@ -96,6 +96,27 @@ the machinery that grades us.
 
 ## Decisions
 
+- 2026-10-05 — **WS-05 closed out for real: the telemetry repo has run against live data for two projects,
+  and all three outstanding Watches are retired.** Operator: *"the repo is there, we did some more
+  iteration in it. Consider the item to be closed."* ⚠ **Checked which Watches the evidence actually
+  closes rather than closing three on one sentence** — two are first-party verified, one is
+  operator-confirmed, and the ledger distinguishes them. ⛔⛔ **The headline is the vindication, not the
+  closure**: the first real run found **false measured zeros** — a recorder placeholder `total_tokens: 0`
+  treated as a figure on **11 plans**, and `main_context_tokens` measured-0 on **45 plans** — the precise
+  defect class this epic exists to eliminate, shipped inside the instrument built to detect it, invisible
+  to 924 green tests, and surfaced only by real data. ⭐ **A fixture corpus cannot contain the shapes a
+  real corpus has**, and this is the epic's own evidence for it.
+  **Iterations beyond the plans, recorded because the ledger describes none of them:** a `doc/audits/`
+  content audit drove most of the fixes; an **`adjudicate`** surface arrived with ground truths, verdicts
+  and worklists — a concept no PRQ spec anticipated; monthly project reports, incremental runs, `--pending`
+  / `--force`, and a `dry-run/` tree were added; the project archives moved from `{project-slug}/` to
+  **`projects/{project-slug}/`**, so the README invariant PRQ-15 honoured now reads one level deeper; and
+  findings handling was corrected repeatedly (process records are not findings, a failing build is one
+  finding not many, a build finding takes no severity band). ⚠ **`54ea27f` deleted both the PRQ-13 and
+  PRQ-15 run reports from the telemetry repo**, so `landings/PLAN-PRQ-13.md` and `landings/PLAN-PRQ-15.md`
+  are now the only durable record of those runs. That is the correct arrangement — the ledger is the record
+  and the repo is the work — but it means the landings must not be trimmed as duplicates of something that
+  no longer exists.
 - 2026-10-04 — **`PLAN-PRQ-15` SHIPPED (telemetry `0965060..0adc341`, 8 commits, no PR), and it found a
   `PLAN-PRQ-13` defect.** All seven deliverables; `landings/PLAN-PRQ-15.md` is the record; WS-05 complete.
   Suite **924 passed / 20 skipped** (from 873/20), green before every commit — ⚠ the run's figure, not
@@ -787,22 +808,24 @@ this epic's.
 
 ## Watches
 
-- ⛔ **TWO plans' worth of reports are SHIPPED BUT NEVER RUN in anger.** No project has been transferred,
-  so no `reports/` tree and no `project-report.adoc` is committed. `PLAN-PRQ-15` checked its work against a
-  **scratch copy of plan-marshall's real archive** plus fixtures — materially better than fixtures alone,
-  and the source of every real figure in its landing (70 plans, 63/3/0/4 completion, 60/70 repository
-  evidence) — but the committed artefact does not exist. ⚠ **`transfer` + `analyze` for one project is
-  the highest-value action in this epic and it needs no plan.** — re-check after that first run.
-- ⛔ **The `.adoc` aggregate has never been RENDERED.** No AsciiDoc renderer is installed in the telemetry
-  repo, so its controls assert the report's *content* and nothing has confirmed its *markup*. ⚠ **A
-  human-readable report nobody has seen rendered is the one deliverable whose purpose is unconfirmed** —
-  every other field in this epic is verified by a parser, but this one is verified by a reader. — render it
-  once; that is the whole re-check.
-- ⚠ **The PRQ-13 tokens extractor writes `measured 0, floor: true`** when every per-phase `total_tokens`
-  line is zero (observed example: `2026-09-17-plan-03-review-currency`). The aggregate renders it correctly
-  as a floor, but a zero floor carries almost no information. Correctly scoped OUT of `PLAN-PRQ-15` as
-  belonging to the tokens extractor. — fold into a future telemetry plan rather than leaving it to be
-  rediscovered a third time.
+- ✅ **RESOLVED 2026-10-05 — the reports have now run in anger, on two projects, and the run vindicated the
+  Watch.** Verified first-party in the telemetry repo: `bcd0da5` transferred **70 archived plans and 16
+  orchestrator records**, `83d1e93` committed the first fully-adjudicated reports, and `reports/` now holds
+  both `plan-marshall` and `cui-http`, each with a `project-report.adoc` plus monthly variants. ⛔⛔ **The
+  first real run found false measured zeros that 924 green tests did not**: `eab509f` records that a
+  recorder placeholder `total_tokens: 0` is no figure — **11 plans carried a measured 0** — and that
+  `main_context_tokens` must be `not_measured` with no phase figure and a floor when a phase is
+  unclassified — **45 plans carried a measured 0**. ⭐ **This is the strongest single argument this epic has
+  produced**: the reports shipped with the exact defect class the epic exists to eliminate, their own test
+  suite could not see it, and only real data exposed it. A fixture corpus cannot contain the shapes a real
+  corpus has.
+- ✅ **RESOLVED 2026-10-05 (operator) — the `.adoc` has been read.** ⚠ **Closed on the operator's word, and
+  that is the right evidence here**: the question was never whether the file exists (it does, 8 of them)
+  but whether a human had seen it rendered, and only the operator can answer that. No renderer is recorded
+  in the repo, so this is operator-confirmed rather than first-party-verified, and the ledger says so.
+- ✅ **RESOLVED 2026-10-05 — the tokens zero-floor is fixed**, by `eab509f` above, with the affected
+  populations named (11 and 45 plans) rather than merely asserted. It was the third rediscovery of this
+  shape; it did not need a third plan.
 - ⚠ **Every plan's finding severity band is `not_measured`, and that is the mechanism working.** The Sonar
   collapse destroyed the `critical`-versus-`major` distinction at ingestion, so no historical plan can ever
   carry a band. `PLAN-PRQ-14` item 3 fixes it **forward only** — and even after it lands, bands appear only
