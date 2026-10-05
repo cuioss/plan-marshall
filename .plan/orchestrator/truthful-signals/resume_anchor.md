@@ -1,1 +1,1 @@
-2026-10-02: cleanup done (17 verdicts at 0a099a1, compact ok, restart ready) + ledger landed on main. Live staged 7 (172, 186, 181-185). Next: emit PLAN-TRUTH-172/186 when operator confirms launch.
+2026-10-05: cui-http drain (14 msgs: 187 staged, 8 lessons, 1 defect) + cleanup (16 verdicts at 14d624bd, restart ready). Live staged 8. Next: emit PLAN-TRUTH-187/172/186 when operator confirms launch.
