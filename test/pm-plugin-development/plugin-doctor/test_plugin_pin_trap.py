@@ -326,14 +326,14 @@ def test_fail_verdict_states_operator_remedy_including_no_restart_and_in_run():
 def test_every_operator_repair_step_names_an_invocable_surface():
     """All three repair steps name something the operator can actually run.
 
-    Steps (1) and (2) named ``/sync-plugin-cache`` and the steward's
+    Steps (1) and (2) named ``/sync-harnesses`` and the steward's
     ``cache_retention sweep``; step (3) was the bare phrase "regenerate the
     executor" — a goal, not a command, leaving the operator to guess which
     surface performs it.
     """
     remedy = _verdict(_obs(executor_version='0.1.100')).remedy
 
-    assert '/sync-plugin-cache' in remedy
+    assert '/sync-harnesses' in remedy
     assert '/marshall-steward' in remedy
     # The retention sweep must be given in the form that actually PRUNES. Without
     # `--apply` it is a read-only dry run, so a remedy naming the bare verb

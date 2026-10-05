@@ -28,6 +28,20 @@
         "tree_sha": "91f01b389f6954bb3e9f4029dbb4ba41ba3d2701d9f590f57fe05ac0c9265b3a"
       }
     },
+    "plan-marshall-antigravity": {
+      "description": "",
+      "generation": {
+        "by": "architecture",
+        "tree_sha": "6eb2980f1b48801797a81d803529ebfde578627f5c0a752f111ff2fc9580a224"
+      }
+    },
+    "plan-marshall-opencode": {
+      "description": "",
+      "generation": {
+        "by": "architecture",
+        "tree_sha": "6eb2980f1b48801797a81d803529ebfde578627f5c0a752f111ff2fc9580a224"
+      }
+    },
     "pm-dev-frontend": {
       "description": "General frontend development standards bundle providing vanilla JavaScript (ES2022+) and CSS knowledge skills, JSDoc analyzer, ESLint flat-config standards, Jest testing patterns, and the JS/CSS triage extension. TypeScript and frameworks (React/Vue/Angular) are out of scope.",
       "generation": {

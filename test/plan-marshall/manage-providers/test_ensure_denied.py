@@ -34,7 +34,10 @@ def claude_project(tmp_path, monkeypatch):
     """
     plan_dir = tmp_path / '.plan'
     plan_dir.mkdir(parents=True, exist_ok=True)
-    (plan_dir / 'marshal.json').write_text(json.dumps({'runtime': {'target': 'claude'}}), encoding='utf-8')
+    harness_dir = plan_dir / 'local' / 'harness'
+    harness_dir.mkdir(parents=True, exist_ok=True)
+    (harness_dir / 'claude.json').write_text(json.dumps({'schema_version': 1, 'harness': 'claude'}), encoding='utf-8')
+    (plan_dir / 'marshal.json').write_text('{}', encoding='utf-8')
     monkeypatch.chdir(tmp_path)
     return tmp_path
 
@@ -133,7 +136,12 @@ class TestEnsureDeniedCLI:
         import _cred_ensure_denied
 
         plan_dir = claude_project / '.plan'
-        (plan_dir / 'marshal.json').write_text(json.dumps({'runtime': {'target': 'opencode'}}), encoding='utf-8')
+        harness_dir = plan_dir / 'local' / 'harness'
+        harness_dir.mkdir(parents=True, exist_ok=True)
+        (harness_dir / 'opencode.json').write_text(
+            json.dumps({'schema_version': 1, 'harness': 'opencode'}), encoding='utf-8'
+        )
+        (plan_dir / 'marshal.json').write_text('{}', encoding='utf-8')
         # The memoised target read is per-process; drive the router directly.
         monkeypatch.setattr(_cred_ensure_denied, '_read_runtime_target', lambda: 'opencode')
 

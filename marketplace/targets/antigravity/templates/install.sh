@@ -15,6 +15,7 @@ UPDATE=false
 MODE=""
 BUNDLES=""
 WITHOUT_BUNDLES=""
+EMIT_RULES=false
 
 show_help() {
   cat <<'EOF'
@@ -29,6 +30,7 @@ Options:
   -w, --workspace          Install locally to <cwd>/.agents/plugins/plan-marshall
   -t, --target-dir PATH    Install to a custom directory
   -r, --ref REF            Branch or tag to install (default: dist-antigravity)
+  --emit-rules             Copy target rules to <workspace>/.agents/rules/plan-marshall-target-rules.md
   --all                    Install core and all domain bundles (default)
   --core-only              Install only mandatory core (plan-marshall)
   -b, --bundles <csv>      Comma-separated list of bundles or aliases to install
@@ -102,6 +104,10 @@ while [ $# -gt 0 ]; do
       WITHOUT_BUNDLES="$2"
       shift 2
       ;;
+    --emit-rules)
+      EMIT_RULES=true
+      shift
+      ;;
     -U|--update)
       UPDATE=true
       shift
@@ -143,18 +149,6 @@ if [ -z "$TARGET_DIR" ]; then
   fi
 fi
 
-# Full uninstall shortcut for Antigravity (preserves prior behaviour)
-if [ "$UNINSTALL" = true ] && [ -z "$BUNDLES" ]; then
-  if [ -d "$TARGET_DIR" ]; then
-    echo "Uninstalling Plan Marshall Antigravity plugin from: $TARGET_DIR"
-    rm -rf "$TARGET_DIR"
-    echo "Uninstallation complete."
-  else
-    echo "No installation found at: $TARGET_DIR"
-  fi
-  exit 0
-fi
-
 # Interactive bundle selection prompt if no bundle flags provided
 INTERACTIVE=false
 if [ -z "${CI:-}" ] && [ -z "${PLAN_MARSHALL_NON_INTERACTIVE:-}" ] && [ -z "${DEBIAN_FRONTEND:-}" ]; then
@@ -189,10 +183,10 @@ fi
 CLEANUP_TMP=false
 TMP_DIR=""
 
-if [ "$UNINSTALL" = true ] && [ -n "$BUNDLES" ]; then
+if [ "$UNINSTALL" = true ]; then
   if [ ! -d "$TARGET_DIR" ]; then
-    echo "Error: No installation found at: $TARGET_DIR" >&2
-    exit 1
+    echo "No installation found at: $TARGET_DIR"
+    exit 0
   fi
   if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/bundle-components.json" ]; then
     SOURCE_DIR="$SCRIPT_DIR"
@@ -234,7 +228,7 @@ elif [ "$UPDATE" = true ]; then
   ACTION="update"
 fi
 
-python3 - "$SOURCE_DIR" "$TARGET_DIR" "$ACTION" "antigravity" "$SCOPE" "$REF" "$MODE" "$BUNDLES" "$WITHOUT_BUNDLES" << 'EOF_PYTHON'
+python3 - "$SOURCE_DIR" "$TARGET_DIR" "$ACTION" "antigravity" "$SCOPE" "$REF" "$MODE" "$BUNDLES" "$WITHOUT_BUNDLES" "$EMIT_RULES" << 'EOF_PYTHON'
 import hashlib
 import json
 import os
@@ -509,11 +503,61 @@ def tailor_config(
             except Exception:
                 pass
 
+
+def sync_workspace_rules(
+    target_dir: Path,
+    target_name: str,
+    scope: str,
+    emit_rules: bool,
+    action: str,
+    to_remove: set[str] | None = None,
+):
+    marker = '.agents' if target_name == 'antigravity' else '.opencode'
+    if scope != 'workspace' and not emit_rules and marker not in target_dir.parts:
+        return
+
+    if target_name == 'antigravity':
+        target_bundle = 'plan-marshall-antigravity'
+        rules_filename = 'antigravity-rules.md'
+        dest_rel = Path('.agents') / 'rules' / 'plan-marshall-target-rules.md'
+    else:
+        target_bundle = 'plan-marshall-opencode'
+        rules_filename = 'opencode-rules.md'
+        dest_rel = Path('.opencode') / 'rules' / 'plan-marshall-target-rules.md'
+
+    if marker in target_dir.parts:
+        idx = target_dir.parts.index(marker)
+        workspace_root = Path(*target_dir.parts[:idx]) if idx > 0 else Path('/')
+    else:
+        workspace_root = Path.cwd()
+
+    dest_path = workspace_root / dest_rel
+
+    if action == 'uninstall':
+        if to_remove is None or target_bundle in to_remove:
+            if dest_path.is_file():
+                dest_path.unlink(missing_ok=True)
+                print(f"Removed workspace target rules: {dest_path}")
+        return
+
+    src_candidates = [
+        target_dir / 'skills' / f'{target_bundle}-target-rules' / 'standards' / rules_filename,
+        target_dir / 'skill' / f'{target_bundle}-target-rules' / 'standards' / rules_filename,
+    ]
+    src_path = next((p for p in src_candidates if p.is_file()), None)
+    if src_path:
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src_path, dest_path)
+        print(f"Emitted workspace target rules to {dest_path}")
+
+
 def do_selective_uninstall(
     target_dir: Path,
     source_dir: Path,
     target_name: str,
     bundles_csv: str,
+    scope: str = 'global',
+    emit_rules: bool = False,
 ):
     manifest_name = '.install-manifest.json' if target_name == 'antigravity' else '.plan-marshall-manifest.json'
     manifest_path = target_dir / manifest_name
@@ -602,6 +646,7 @@ def do_selective_uninstall(
     manifest_path.write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
 
     tailor_config(target_dir, source_dir, target_name, new_installed, comps)
+    sync_workspace_rules(target_dir, target_name, scope, emit_rules, 'uninstall', to_remove=to_remove)
     print(f"Successfully uninstalled bundles: {', '.join(sorted(to_remove))}")
     print(f"Remaining bundles: {', '.join(sorted(new_installed))}")
 
@@ -769,16 +814,23 @@ def main():
     mode = sys.argv[7]
     bundles_csv = sys.argv[8] if len(sys.argv) > 8 and sys.argv[8] else None
     without_bundles_csv = sys.argv[9] if len(sys.argv) > 9 and sys.argv[9] else None
+    emit_rules_arg = sys.argv[10] if len(sys.argv) > 10 and sys.argv[10] else 'false'
+    emit_rules = emit_rules_arg.lower() in ('true', '1', 'yes')
 
     if action == 'uninstall':
         if bundles_csv:
-            do_selective_uninstall(target_dir, source_dir, target_name, bundles_csv)
+            do_selective_uninstall(target_dir, source_dir, target_name, bundles_csv, scope, emit_rules)
         else:
             if target_name == 'opencode':
                 do_opencode_full_uninstall(target_dir, source_dir)
             else:
                 if target_dir.is_dir():
+                    print(f"Uninstalling Plan Marshall Antigravity plugin from: {target_dir}")
                     shutil.rmtree(target_dir)
+                    print("Uninstallation complete.")
+                else:
+                    print(f"No installation found at: {target_dir}")
+            sync_workspace_rules(target_dir, target_name, scope, emit_rules, 'uninstall')
         sys.exit(0)
 
     bundle_components = load_bundle_components(source_dir, target_name)
@@ -827,6 +879,7 @@ def main():
         manifest_path=manifest_path,
         bundle_components=bundle_components,
     )
+    sync_workspace_rules(target_dir, target_name, scope, emit_rules, action)
 
 if __name__ == '__main__':
     main()

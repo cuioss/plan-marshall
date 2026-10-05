@@ -485,7 +485,7 @@ def test_emit_marker_fingerprint_non_empty_for_real_worktree(tmp_path: Path):
     that cwd. ``ls-files`` matched zero paths and the fingerprint became
     the SHA-1 of empty input
     (``da39a3ee5e6b4b0d3255bfef95601890afd80709``), silently breaking
-    the sync-plugin-cache staleness guard. The fix is
+    the sync-harnesses staleness guard. The fix is
     ``repo_root = marketplace_dir.parent.parent`` so the prefix resolves
     against the project root that contains ``marketplace/``.
 
@@ -552,3 +552,83 @@ def test_claude_target_raises_on_missing_readme_source(tmp_path: Path, monkeypat
     monkeypatch.setattr(Path, 'is_file', fake_is_file)
     with pytest.raises(FileNotFoundError, match='Required README source not found'):
         ClaudeTarget().generate(_REAL_MARKETPLACE_BUNDLES, tmp_path / 'out', bundles=['plan-marshall'])
+
+
+def test_claude_target_skips_bundles_scoped_away(tmp_path: Path):
+    """Bundles scoped away from Claude (e.g. antigravity or opencode only) are not emitted to Claude target."""
+    root = tmp_path / 'repo'
+    bundles = root / 'bundles'
+    bundles.mkdir(parents=True, exist_ok=True)
+
+    # 1. Common bundle
+    _write_bundle(
+        bundles,
+        'common-bundle',
+        {
+            '.claude-plugin/plugin.json': json.dumps(
+                {'name': 'common-bundle', 'version': '0.0.1', 'description': 'common'}
+            )
+            + '\n',
+            'agents/common-agent.md': '---\nname: common-agent\n---\nbody',
+        },
+    )
+
+    # 2. Antigravity bundle
+    _write_bundle(
+        bundles,
+        'plan-marshall-antigravity',
+        {
+            '.claude-plugin/plugin.json': json.dumps(
+                {
+                    'name': 'plan-marshall-antigravity',
+                    'version': '0.0.1',
+                    'description': 'agy',
+                    'targets': ['antigravity'],
+                }
+            )
+            + '\n',
+            'agents/agy-agent.md': '---\nname: agy-agent\n---\nbody',
+        },
+    )
+
+    # 3. OpenCode bundle
+    _write_bundle(
+        bundles,
+        'plan-marshall-opencode',
+        {
+            '.claude-plugin/plugin.json': json.dumps(
+                {'name': 'plan-marshall-opencode', 'version': '0.0.1', 'description': 'oc', 'targets': ['opencode']}
+            )
+            + '\n',
+            'agents/oc-agent.md': '---\nname: oc-agent\n---\nbody',
+        },
+    )
+
+    manifest = {
+        'name': 'test-marketplace',
+        'plugins': [
+            {'name': 'common-bundle', 'description': 'common', 'source': './bundles/common-bundle'},
+            {
+                'name': 'plan-marshall-antigravity',
+                'description': 'agy',
+                'source': './bundles/plan-marshall-antigravity',
+            },
+            {'name': 'plan-marshall-opencode', 'description': 'oc', 'source': './bundles/plan-marshall-opencode'},
+        ],
+    }
+    manifest_path = root / '.claude-plugin' / 'marketplace.json'
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+
+    out_dir = tmp_path / 'out'
+    ClaudeTarget().generate(bundles, out_dir)
+
+    assert (out_dir / 'common-bundle' / 'agents' / 'common-agent.md').is_file()
+    assert not (out_dir / 'plan-marshall-antigravity').exists()
+    assert not (out_dir / 'plan-marshall-opencode').exists()
+
+    generated_manifest = json.loads((out_dir / '.claude-plugin' / 'marketplace.json').read_text(encoding='utf-8'))
+    plugin_names = [p['name'] for p in generated_manifest['plugins']]
+    assert 'common-bundle' in plugin_names
+    assert 'plan-marshall-antigravity' not in plugin_names
+    assert 'plan-marshall-opencode' not in plugin_names

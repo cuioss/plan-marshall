@@ -359,14 +359,18 @@ class TestTargetResolution:
 
         assert seen == [target_context.default_target()]
 
-    def test_declared_marshal_target_reaches_the_lookup(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        """A declared ``runtime.target`` still reaches the lookup — the cascade is not env-only."""
+    def test_declared_local_harness_target_reaches_the_lookup(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """A declared local harness target still reaches the lookup — the cascade is not env-only."""
         seen = self._record_manifest_lookup(monkeypatch)
         cache_root = _make_cache(tmp_path, ['0.1.1', '0.1.2'])
         project_root = tmp_path / 'declared'
-        (project_root / '.plan').mkdir(parents=True)
+        harness_dir = project_root / '.plan' / 'local' / 'harness'
+        harness_dir.mkdir(parents=True)
+        (harness_dir / 'antigravity.json').write_text(
+            json.dumps({'schema_version': 1, 'harness': 'antigravity'}), encoding='utf-8'
+        )
         (project_root / '.plan' / 'marshal.json').write_text(
-            json.dumps({'runtime': {'target': 'antigravity'}, 'system': {'retention': {}}}),
+            json.dumps({'system': {'retention': {}}}),
             encoding='utf-8',
         )
 

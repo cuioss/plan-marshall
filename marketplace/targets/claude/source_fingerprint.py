@@ -20,8 +20,9 @@ relies exclusively on git's native primitives:
 
 The helper is imported by ``marketplace/targets/claude/target.py`` (to
 write the sentinel at the end of every successful emit) and by
-``.claude/skills/sync-plugin-cache/scripts/sync.py`` (to recompute the
-fingerprint inside ``_staleness_guard``). A single source of truth keeps
+``marketplace/targets/claude/cache_sync.py`` (the Claude path of the
+``/sync-harnesses`` engine, to recompute the fingerprint inside
+``_staleness_guard``). A single source of truth keeps
 the two sides byte-symmetric so the guard never trips on a hashing
 discrepancy.
 """

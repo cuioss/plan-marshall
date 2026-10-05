@@ -926,7 +926,7 @@ study.
 
 ⚠ **"The gates passed" is not the same claim as "the gates saw this tree", and the gap is real on an
 ordinary forward pass.** The gate itself (`order: 10`) commits its own auto-fix output after the tree
-it just certified, and post-push mutating steps (loop-back fixes, era-stamp-fill) advance HEAD after
+it just certified, and post-push mutating steps (loop-back fixes) advance HEAD after
 the gate — and the dispatcher's re-entry check only re-fires a step the loop REACHES. Within the
 settle band the ordering closes the older gap: the code-mutating settle steps (`finalize-step-simplify`
 at 5, `finalize-step-security-audit` at 7) sort strictly before both gates, and `architecture-refresh`
@@ -980,12 +980,13 @@ derived, because a rate reported without its population is the defect § "The co
 remove. The two SHAs are echoed for the same reason the reviewer sets are: a reader can then see
 WHICH trees were compared rather than trusting that they were.
 
-⛔ **The provenance names a SELECTION EFFECT, and a consumer must carry it.** On the current finalize
-step ordering the tree check excludes most real PRs, so a column of `excluded` accumulates. That
-column reads, over time, exactly like *"the gates caught everything"* — the misreading this whole
-section exists to prevent. It means the opposite: those PRs were never measurable. A consumer
-reporting this signal states that the measurable population is only those PRs where neither post-gate
-`mutates_source` step committed, and that it is a biased population rather than a sample.
+⛔ **The provenance names a SELECTION EFFECT, and a consumer must carry it.** The tree check excludes
+every PR whose HEAD moved after the gates ran, so a column of `excluded` accumulates. That column
+reads, over time, exactly like *"the gates caught everything"* — the misreading this whole section
+exists to prevent. It means the opposite: those PRs were never measurable. A consumer reporting this
+signal states that the measurable population is only those PRs where neither the gate's own trailing
+commit nor a loop-back fix moved HEAD after the gates, and that it is a biased population rather than
+a sample.
 
 ### What this measures and what it does not
 

@@ -1,6 +1,6 @@
 # Coverage-Gathering Contract
 
-> **Type**: Reusable Component Contract | **Gather mechanism**: `AskUserQuestion` | **Expander**: `manage-config coverage expand` | **Implementations**: 6 | **Status**: Active
+> **Type**: Reusable Component Contract | **Gather mechanism**: `AskUserQuestion` | **Expander**: `manage-config coverage expand` | **Implementations**: 5 | **Status**: Active
 
 ## Overview
 
@@ -93,7 +93,6 @@ Persisting BOTH the identifier and the expansion (rather than the identifier alo
 
 | Component | Scope rung → breadth dial | Thoroughness rung → depth dial |
 |-----------|---------------------------|--------------------------------|
-| `audit-archived-plan-retrospectives` | `change-set`/`artifact` → single plan (`--plan-id`); `component`/`module` → a domain/scope-filtered subset; `overall` → the full corpus (default). | T1 → cheap checks + sample; T2 → all checks once; T3 → add cross-check-synthesis coupling; T4/T5 → add the loop-until-dry / what-did-I-miss completeness pass. |
 | `recipe-plugin-compliance` | `component` → one bundle/skill; `module` → a bundle set; `overall` → all bundles (default). | T1/T2 → frontmatter + enforcement-block surface; T3 → add standards cross-ref tracing; T4/T5 → add cross-skill relation-graph + loop-until-dry. |
 | `recipe-simplify-codebase` | scope rung IS the existing `recipe_scope`. | thoroughness rung IS the existing `recipe_thoroughness`; T4+ triggers the relation-graph pre-deliverable. |
 | `recipe-refactor-to-profile-standards` | scope rung selects the package/module radius in the module filter. | T2 full-read each file; T3 trace callers/tests; T4+ scope-wide relation model before refactor. |

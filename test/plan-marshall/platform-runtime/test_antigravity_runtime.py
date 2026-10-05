@@ -77,6 +77,7 @@ def test_layout_skill_roots(runtime: AntigravityRuntime):
     assert result['status'] == 'success'
     roots = result['roots']
     assert '.agents/skills' in roots
+    assert '.claude/skills' in roots
     assert '.agents/plugins/plan-marshall/skills' in roots
 
 
@@ -94,46 +95,45 @@ def test_layout_bundle_cache_root(runtime: AntigravityRuntime):
 
 
 def test_project_initial_setup(runtime: AntigravityRuntime, tmp_path: Path):
-    """project_initial_setup creates .plan/ and initializes marshal.json with antigravity target."""
+    """project_initial_setup creates .plan/ and leaves marshal.json unwritten."""
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
     assert result['status'] == 'success'
     assert result['target'] == 'antigravity'
-    assert result['marshal_written'] is True
+    assert result['marshal_written'] is False
 
-    marshal_file = tmp_path / '.plan' / 'marshal.json'
-    assert marshal_file.is_file()
-    data = json.loads(marshal_file.read_text(encoding='utf-8'))
-    assert data['runtime']['target'] == 'antigravity'
     assert (tmp_path / '.plan' / 'temp').is_dir()
+    assert not (tmp_path / '.plan' / 'marshal.json').exists()
 
 
 def test_project_initial_setup_preserves_existing_marshal(runtime: AntigravityRuntime, tmp_path: Path):
-    """project_initial_setup merges into existing marshal.json."""
+    """project_initial_setup leaves existing marshal.json untouched."""
     plan_dir = tmp_path / '.plan'
     plan_dir.mkdir(parents=True)
     marshal_file = plan_dir / 'marshal.json'
-    marshal_file.write_text(json.dumps({'custom_key': 'custom_value'}), encoding='utf-8')
+    initial = json.dumps({'custom_key': 'custom_value'})
+    marshal_file.write_text(initial, encoding='utf-8')
 
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
     assert result['status'] == 'success'
+    assert result['marshal_written'] is False
 
-    data = json.loads(marshal_file.read_text(encoding='utf-8'))
-    assert data['custom_key'] == 'custom_value'
-    assert data['runtime']['target'] == 'antigravity'
+    assert marshal_file.read_text(encoding='utf-8') == initial
 
 
 def test_project_install_hook(runtime: AntigravityRuntime, monkeypatch, tmp_path: Path):
-    """project_install_hook creates .agents/hooks.json in project dir."""
+    """project_install_hook is a no-op that does not create .agents/hooks.json."""
     monkeypatch.chdir(tmp_path)
     result = _parse(runtime.project_install_hook('antigravity'))
-    assert result['status'] == 'success'
-    assert result['installed'] is True
-    assert (tmp_path / '.agents' / 'hooks.json').is_file()
+    assert result['status'] == 'no-op'
+    assert result['operation'] == 'project install-hook'
+    assert not (tmp_path / '.agents' / 'hooks.json').exists()
 
-    # Second invocation notes already exists
-    result2 = _parse(runtime.project_install_hook('antigravity'))
-    assert result2['status'] == 'success'
-    assert result2['installed'] is False
+
+def test_project_install_hook_unknown_target(runtime: AntigravityRuntime):
+    """project_install_hook fails for unknown target."""
+    result = _parse(runtime.project_install_hook('unknown_target'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'unknown_target'
 
 
 # =============================================================================
@@ -221,7 +221,7 @@ def test_permission_ensure_defaults(runtime: AntigravityRuntime, tmp_path: Path)
     project_file.write_text(json.dumps(initial_data), encoding='utf-8')
 
     result = runtime.permission_ensure_defaults(initial_data, str(project_file), dry_run=False)
-    assert result['defaults_added_count'] == 4
+    assert result['defaults_added_count'] == 3
     assert 'command(python3 .plan/execute-script.py)' in result['defaults_added']
     assert 'command(./pw)' in result['defaults_added']
     assert result['applied'] is True
@@ -305,7 +305,7 @@ def test_permission_ensure_defaults_dry_run(runtime: AntigravityRuntime, tmp_pat
     project_file.write_text(json.dumps(initial_data), encoding='utf-8')
 
     result = runtime.permission_ensure_defaults(initial_data, str(project_file), dry_run=True)
-    assert result['defaults_added_count'] == 4
+    assert result['defaults_added_count'] == 3
     assert result['applied'] is False
 
     saved_data = json.loads(project_file.read_text(encoding='utf-8'))
@@ -426,7 +426,7 @@ def test_permission_ensure_wildcards(
 def test_project_install_hook_merge_existing(
     runtime: AntigravityRuntime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    """project_install_hook merges plan-marshall-guard into existing hooks.json."""
+    """project_install_hook does not modify existing hooks.json."""
     monkeypatch.chdir(tmp_path)
     hooks_dir = tmp_path / '.agents'
     hooks_dir.mkdir(parents=True)
@@ -435,17 +435,10 @@ def test_project_install_hook_merge_existing(
     hooks_file.write_text(json.dumps(existing), encoding='utf-8')
 
     res = _parse(runtime.project_install_hook('antigravity'))
-    assert res['status'] == 'success'
-    assert res['installed'] is True
+    assert res['status'] == 'no-op'
 
     updated = json.loads(hooks_file.read_text(encoding='utf-8'))
-    assert 'user-hook' in updated
-    assert 'plan-marshall-guard' in updated
-
-    # Calling again is idempotent
-    res2 = _parse(runtime.project_install_hook('antigravity'))
-    assert res2['status'] == 'success'
-    assert res2['installed'] is False
+    assert updated == existing
 
 
 def test_to_antigravity_grant_structured():

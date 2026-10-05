@@ -42,15 +42,17 @@ ROUTING_SCRIPT = (
 )
 
 
-# The project-local skill tree this project's own build map routes as production
-# (``.claude/skills/*.py`` on the Claude target — a single ``*`` spans ``/`` under
-# fnmatch, so the glob covers the nested ``{skill}/scripts/`` layout).
+# Synthetic diff input under the project-local skill tree, which the staged
+# ``build.map`` below routes as production (``.claude/skills/*.py`` on the Claude
+# target — a single ``*`` spans ``/`` under fnmatch, so the glob covers the nested
+# ``{skill}/scripts/`` layout). The first entry is the real surviving
+# project-local script; the other two name no real skill and exist only to match
+# the same glob. The list must hold at least two entries, because D5a tests a
+# MULTI-file footprint.
 PROJECT_LOCAL_PRODUCTION = [
-    '.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py',
-    '.claude/skills/sync-plugin-cache/scripts/sync.py',
-    '.claude/skills/sync-plugin-cache/scripts/reconcile_daemon.py',
-    '.claude/skills/finalize-step-era-stamp-fill/scripts/era_stamp_fill.py',
     '.claude/skills/finalize-step-review-retrospective/scripts/review_retrospective.py',
+    '.claude/skills/example-project-skill/scripts/example_tool.py',
+    '.claude/skills/example-project-skill/scripts/example_helper.py',
 ]
 
 

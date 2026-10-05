@@ -408,7 +408,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
 | `body_file_not_found` | The resolved `--body-file` path does not exist or is not a regular file |
 | `body_file_unreadable` | The resolved `--body-file` path exists but could not be read as UTF-8 text |
 | `validation_failed` | Field validation failed on create |
-| `ledger_cutover_refused`, `ledger_drift_unevaluable`, `base_ref_unresolvable`, `orchestrator_worktree_create_failed` | `--body-file` named an orchestrator ledger pointer with `orchestrator.use_worktree` on and the orchestrator store seam refused (exit 0); see [`tools-file-ops/SKILL.md`](../tools-file-ops/SKILL.md) § "The orchestrator store root" |
+| `ledger_cutover_refused`, `ledger_drift_unevaluable`, `base_ref_unresolvable`, `orchestrator_worktree_create_failed`, `orchestrator_worktree_wrong_branch` | `--body-file` named an orchestrator ledger pointer with `orchestrator.use_worktree` on and the orchestrator store seam refused (exit 0); see [`tools-file-ops/SKILL.md`](../tools-file-ops/SKILL.md) § "The orchestrator store root" |
 
 ---
 

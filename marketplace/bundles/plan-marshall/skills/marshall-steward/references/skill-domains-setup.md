@@ -57,9 +57,9 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 status: success
 count: 2
 skills:
-  - notation: project:sync-plugin-cache
-    name: sync-plugin-cache
-    description: Synchronize all marketplace bundles to the Claude plugin cache
+  - notation: project:sync-harnesses
+    name: sync-harnesses
+    description: Sync the generated plan-marshall trees into every harness install (Claude, OpenCode, Antigravity), or into one harness with --target
   - notation: project:finalize-step-plugin-doctor
     name: finalize-step-plugin-doctor
     description: Finalize-phase wrapper that runs plugin-doctor against skills touched by the plan

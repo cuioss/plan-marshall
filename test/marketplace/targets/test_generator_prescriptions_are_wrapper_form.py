@@ -11,6 +11,12 @@ the sites that happened to be discovered would leave the rest live, so this guar
 makes the repair durable: reintroducing the broken form anywhere in the scanned
 roots fails the suite.
 
+A second sweep covers the host-interpreter spelling of a ``marketplace/targets/``
+script. That form is not forbidden outright, because the stdlib-only harness sync
+engine is prescribed that way on purpose: each such prescription is decided by
+running the script it names where ``yaml`` is unimportable, so a script that
+needs the project environment is still refused.
+
 **The repaired population is not enumerated here.** This guard derives its scope
 by walking :data:`_SCAN_ROOTS`, and a list of sites copied into prose is a second,
 unmaintained count that drifts from that walk the moment a site is added. What the
@@ -32,14 +38,15 @@ branches and contribute nothing to this branch's tree.
 
 from __future__ import annotations
 
+import textwrap
 from pathlib import Path
 
 from _documented_example_scan import (
-    DEFECTIVE_BARE_PYTHON_TARGETS_PREFIX,
+    BARE_PYTHON_TARGETS_PREFIX,
     DEFECTIVE_GENERATOR_CALL,
     WRAPPER_GENERATOR_CALL,
 )
-from conftest import PROJECT_ROOT
+from conftest import PROJECT_ROOT, run_clean_python_subprocess
 
 #: The tracked source roots the guard walks, as ``(label, relative path)``.
 #: Repository-root documents are covered by :data:`_ROOT_FILE_SUFFIXES` below
@@ -168,26 +175,76 @@ def _lines_prescribing_bare_python_targets(text: str) -> list[str]:
     """Lines that OPEN with the host-interpreter invocation of a targets script.
 
     Prefix-matched after stripping, per the discriminator documented beside
-    :data:`DEFECTIVE_BARE_PYTHON_TARGETS_PREFIX`: a prescription is a line the
-    reader copies and therefore begins with the command, while an explanatory
-    mention is introduced by a backtick or by sentence text. Shared by the sweep
-    and by its positive control so the two cannot diverge.
+    :data:`BARE_PYTHON_TARGETS_PREFIX`: a prescription is a line the reader
+    copies and therefore begins with the command, while an explanatory mention is
+    introduced by a backtick or by sentence text. Shared by the sweep and by its
+    positive control so the two cannot diverge.
     """
-    return [line for line in text.splitlines() if line.strip().startswith(DEFECTIVE_BARE_PYTHON_TARGETS_PREFIX)]
+    return [line for line in text.splitlines() if line.strip().startswith(BARE_PYTHON_TARGETS_PREFIX)]
+
+
+def _prescribed_script(line: str) -> str:
+    """The repository-relative script path a bare prescription line names."""
+    return line.strip().split()[1]
+
+
+#: Child program for :func:`_bare_run_failure`. It makes ``yaml`` unimportable —
+#: reproducing a host interpreter with no project virtualenv — and then runs the
+#: script named by ``sys.argv[1]`` as ``__main__`` with ``--help``. ``sys.path[0]``
+#: is set to the script's directory, as the interpreter itself does for
+#: ``python3 path/to/script.py``, so the child resolves imports exactly as the
+#: prescribed command would and not through the working directory.
+_BARE_HELP_PROBE = textwrap.dedent(
+    """
+    import os
+    import runpy
+    import sys
+
+
+    class _Blocker:
+        def find_spec(self, fullname, path=None, target=None):
+            if fullname == 'yaml' or fullname.startswith('yaml.'):
+                raise ModuleNotFoundError(f'No module named {fullname!r}', name=fullname)
+            return None
+
+
+    sys.meta_path.insert(0, _Blocker())
+    script = sys.argv[1]
+    sys.path[0] = os.path.dirname(script)
+    sys.argv = [script, '--help']
+    try:
+        runpy.run_path(script, run_name='__main__')
+    except SystemExit as exc:
+        print('bare_exit=' + str(exc.code))
+    """
+)
+
+
+def _bare_run_failure(script: Path) -> str | None:
+    """Return why ``script --help`` fails on a bare interpreter, else ``None``.
+
+    ``--help`` is enough to decide the question this guard asks: a script that
+    cannot run on the host interpreter dies on a module-level import, before its
+    argument parser is built.
+    """
+    if not script.is_file():
+        return 'names no script file'
+    result = run_clean_python_subprocess(['-c', _BARE_HELP_PROBE, script], text=True, timeout=60)
+    if result.returncode == 0 and 'bare_exit=0' in result.stdout:
+        return None
+    stderr_lines = result.stderr.strip().splitlines()
+    return stderr_lines[-1] if stderr_lines else f'exited {result.returncode} without --help succeeding'
 
 
 def test_the_bare_python_detector_fires_on_a_constructed_prescription():
-    """Positive control: the detector matches the form it is meant to forbid.
+    """Positive control: the detector matches the form the sweep must examine.
 
-    The sweep below passes over a clean tree, and a clean tree cannot show that
-    the needle still matches anything — the failure mode the sibling literal
-    answers with ``pyproject.toml`` as a real matched site. This literal has no
-    such site, because the one prescription that carried it was repaired rather
-    than exempted, so the control is CONSTRUCTED from the shared constant. It is
-    built by concatenation and never re-spelled, so this file stays outside its
-    own sweep.
+    A tree in which every prescription happens to name a runnable script cannot
+    show that the needle still matches anything, so the control is CONSTRUCTED
+    from the shared constant. It is built by concatenation and never re-spelled,
+    so this file stays outside its own sweep.
     """
-    prescription = f'{DEFECTIVE_BARE_PYTHON_TARGETS_PREFIX}claude/content_drift_cli.py'
+    prescription = f'{BARE_PYTHON_TARGETS_PREFIX}claude/content_drift_cli.py'
 
     assert _lines_prescribing_bare_python_targets(prescription) == [prescription], (
         'the detector no longer matches a bare prescription line — the sweep below '
@@ -197,36 +254,58 @@ def test_the_bare_python_detector_fires_on_a_constructed_prescription():
         'an indented prescription (inside a fenced block) must still match'
     )
     assert not _lines_prescribing_bare_python_targets(f'A bare `{prescription}` fails because …'), (
-        'an explanatory prose mention must NOT match — forbidding it would make the '
+        'an explanatory prose mention must NOT match — examining it would make the '
         'repaired sites unable to say which form is broken'
     )
+    assert _prescribed_script(f'  {prescription} --check') == 'marketplace/targets/claude/content_drift_cli.py'
 
 
-def test_no_file_prescribes_the_bare_python_targets_invocation():
-    """No document hands the reader a targets script on the host interpreter.
+def test_the_bare_run_probe_rejects_a_script_that_imports_the_targets_package():
+    """Positive control for the probe: it refuses the script the defect shipped with.
 
-    The sibling sweep above forbids the ``uv run`` spelling; the shared constant's
-    docstring already noted that dropping that prefix fails on ``PyYAML`` instead,
-    but nothing enforced it — and the unenforced half is exactly the one that
-    shipped in the steward upgrade flow. Same walk, same population, second
-    literal.
+    ``content_drift_cli.py`` imports ``marketplace.targets`` and so needs
+    ``yaml``. If the probe accepted it, the sweep below would accept every
+    prescription and guard nothing.
+    """
+    failure = _bare_run_failure(PROJECT_ROOT / 'marketplace' / 'targets' / 'claude' / 'content_drift_cli.py')
+
+    assert failure is not None, 'the probe ran a yaml-dependent script on a bare interpreter'
+    assert 'yaml' in failure
+
+
+def test_every_bare_python_targets_prescription_names_a_script_that_runs_bare():
+    """A targets script prescribed on the host interpreter actually runs there.
+
+    A script that imports ``marketplace.targets`` dies on ``PyYAML`` under a host
+    interpreter, so prescribing it bare hands the reader a command that fails;
+    it belongs behind its ``./pw`` alias. A stdlib-only script does run bare, and
+    the harness sync engine is prescribed that way on purpose. The sweep
+    therefore decides each prescription by running the script it names where
+    ``yaml`` is unimportable, rather than by forbidding the form.
     """
     files, labels = _walk_scanned_files()
     assert files, f'the walk over {labels} read no files at all'
 
-    offenders: list[str] = []
+    prescribers: dict[str, list[str]] = {}
     for path in files:
         try:
             text = path.read_text(encoding='utf-8')
         except (OSError, UnicodeDecodeError):
             continue
-        if _lines_prescribing_bare_python_targets(text):
-            offenders.append(path.relative_to(PROJECT_ROOT).as_posix())
+        for line in _lines_prescribing_bare_python_targets(text):
+            prescribers.setdefault(_prescribed_script(line), []).append(path.relative_to(PROJECT_ROOT).as_posix())
+
+    failures = {script: _bare_run_failure(PROJECT_ROOT / script) for script in sorted(prescribers)}
+    offenders = [
+        f'{script} ({failure}) — prescribed by {", ".join(sorted(set(prescribers[script])))}'
+        for script, failure in failures.items()
+        if failure is not None
+    ]
 
     assert not offenders, (
-        f'{len(offenders)} file(s) of {len(files)} scanned across {labels} prescribe a '
-        f'marketplace/targets script on the host interpreter, which dies on the project '
-        f'PyYAML dependency before running — use the ./pw wrapper alias:\n  ' + '\n  '.join(sorted(offenders))
+        f'{len(offenders)} of {len(failures)} marketplace/targets script(s) prescribed on the host '
+        f'interpreter across {len(files)} files in {labels} do not run there — use the ./pw wrapper '
+        f'alias for a script that needs the project environment:\n  ' + '\n  '.join(offenders)
     )
 
 

@@ -89,6 +89,7 @@ JSON structure and field definitions for project configuration.
         "XXL": "520K"
       },
       "per_envelope_budget_tokens": "400K",
+      "worktree_setup_commands": [],
       "verification_steps": [
         "default:verify:quality-gate",
         "default:verify:module-tests",
@@ -150,10 +151,6 @@ JSON structure and field definitions for project configuration.
     }
   },
   "interaction_mode": "advanced",
-  "project_dir": "/absolute/path/to/project",
-  "runtime": {
-    "target": "claude"
-  },
   "skill_domains": {
     "system": {
       "defaults": ["plan-marshall:persona-plan-marshall-agent"],
@@ -459,31 +456,23 @@ Non-secret per-provider configuration (committed, shared via git), written by `m
 |-------|------|----------|-------------|
 | `<key>` | string | No | A non-secret provider-config field (e.g. `organization`, `project_key` for SonarCloud). Keys are provider-defined; `manage-providers` upserts them idempotently via `--extra KEY=VALUE`. |
 
-## Section: runtime and project_dir
+## Section: Runtime Target Resolution and Legacy Keys
 
-The two top-level keys the platform-runtime seed writes. `platform_runtime project initial-setup --target <id>` is their sole writer: the Claude runtime writes both, the OpenCode runtime writes `runtime` only. Neither is part of `get_default_config()`, so `init` does not seed them and `sync-defaults` does not back-fill them — a project acquires them the first time its runtime is set up, and a project that never ran the seed legitimately carries neither.
+The active runtime target is resolved dynamically via the cascade in `target_context.py` rather than being persisted in the shared `.plan/marshal.json`:
 
-Both are first-party product configuration rather than stray blocks: `platform_runtime._resolve_target` reads `runtime.target` back on every routed operation. `save_config` orders them canonically among the trailing keys — `project_dir` between `project` and `providers`, `runtime` between `providers` and `skill_domains` (see `CANONICAL_TOP_LEVEL_KEY_ORDER` in `_config_core.py`). Omitting them from that constant made `normalize-keys` report the product's own seed as unrecognized, which is why they are listed there rather than left to the append-unrecognized tail.
+1. **Ambient Environment** — platform-injected environment variables (`ANTIGRAVITY_AGENT=1` → `antigravity`, `OPENCODE=1` / `OPENCODE_PID` → `opencode`, `CLAUDE_CODE_SESSION_ID` → `claude`).
+2. **Machine-Local Harness State** — machine-local harness configuration in `.plan/local/harness/{target}.json` (written by `platform_runtime project initial-setup`) or `.plan/run-configuration.json`.
+3. **Fallback** — defaults to `claude`.
 
-### Structure
+Neither `runtime` nor `project_dir` is written to `marshal.json` by `project initial-setup`. Shared repository configuration stays portable and independent of individual developer harnesses.
 
-```json
-{
-  "project_dir": "/absolute/path/to/project",
-  "runtime": {
-    "target": "claude"
-  }
-}
-```
+### Legacy Configuration Keys
 
-### Fields
+For backwards compatibility with projects carrying legacy keys:
+- `project_dir`: Legacy absolute project directory recorded by older setups.
+- `runtime`: Legacy object carrying `{"target": "<id>"}`.
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `runtime.target` | string | none (absent until the seed runs) | The registered runtime the platform router dispatches to — one of the `_REGISTRY` keys in `platform_runtime.py` (`claude`, `opencode`). An absent block, a non-object block, or an empty `target` all resolve to "no target", and the router falls back to its `claude` default rather than failing. |
-| `project_dir` | string | none (absent until the Claude seed runs) | Absolute path of the project root recorded at setup time, written by the Claude runtime seed only. |
-
-The seed is a read-modify-write: it merges these two keys into whatever the project already carries rather than replacing the document, so setting up (or re-targeting) a runtime on an initialized project leaves every other top-level block intact.
+Both keys are tolerated in `marshal.json` and recognized by `CANONICAL_TOP_LEVEL_KEY_ORDER` (in `_config_core.py`) so `normalize-keys` orders them canonically without flagging them as unrecognized. Neither key is required or written during project initialization or setup.
 
 ## Section: skill_domains
 
@@ -788,6 +777,7 @@ Execute phase with integrated verification pipeline. Contains the `commit_and_pu
         "XXL": "520K"
       },
       "per_envelope_budget_tokens": "400K",
+      "worktree_setup_commands": [],
       "verification_steps": {
         "default:verify:quality-gate": {},
         "default:verify:module-tests": {},
@@ -805,6 +795,7 @@ Execute phase with integrated verification pipeline. Contains the `commit_and_pu
 | `per_deliverable_build` | list[string] | `["default:verify:compile","default:verify:module-tests"]` | A list of `default:verify:{canonical}` step IDs — the canonical-verify rungs phase-5-execute runs for the changed module at each per-deliverable chain-tail point (Step 10). The default runs `compile` + the module's scoped `module-tests`. Set to `[]` to disable the focused build (the whole-tree sweep at end-of-phase remains the only build). Each entry must be a `default:verify:{canonical}` ID; the retired enum strings (`off` / `compile-only` / `compile+scoped-test` / `full`) are rejected with a migration error. |
 | `cost_size_token_table` | dict | `{"XS":"5K","S":"25K","M":"60K","L":"130K","XL":"260K","XXL":"520K"}` | Size→token table mapping each T-shirt `cost_size` (`XS`/`S`/`M`/`L`/`XL`/`XXL`) to a predicted-token magnitude. The phase-4-plan bin-packer (`manage-tasks pack-envelopes`) reads it to map a task's derived `cost_size` to its `predicted_cost_tokens`. Keys must be exactly `XS`/`S`/`M`/`L`/`XL`/`XXL`; each value parses via `sensible_number.parse_sensible_int`. Validated by `validate_cost_size_token_table`. The four original magnitudes (`S`≈25K / `M`≈60K / `L`≈130K / `XL`≈260K) are calibrated to the forensic 134K–392K per-dispatch range; `XS`≈5K labels deterministic ≈0-token bookkeeping and `XXL`≈520K the heaviest elements. The magnitudes are tunable to recalibrate the cost model. |
 | `per_envelope_budget_tokens` | string | "400K" | Per-envelope packing budget — the token ceiling the phase-4-plan bin-packer accumulates `predicted_cost_tokens` against before opening a new envelope group. Consumed at PLAN time by the bin-packer (`manage-tasks pack-envelopes`), NOT a runtime comparand. The `_tokens` suffix names the unit; the human-friendly value form (`"400K"`) parses to an int via `sensible_number.parse_sensible_int`. The 400K default leaves headroom below a typical context window. |
+| `worktree_setup_commands` | list[list[string]] | `[]` | Project-declared commands that build git-ignored derived state a fresh plan worktree lacks (a generated output tree, a cache). Each entry is an argv list — e.g. `[["<generator>", "--output", "<dir>"]]` — run by `prepare_execute` with `cwd` pinned to the worktree, without a shell, on both the fresh move-in and the re-entry path. Non-fatal: each command's outcome (command, exit code, last stderr line) is reported in the move-in payload's `worktree_setup[]`, and a failing command never fails or rolls back the move-in. A malformed entry is reported and skipped, never run. The `[]` default is a no-op. Read from the worktree's own `.plan/marshal.json`; the `set --field` verb does not take a nested list, so declare it by editing the tracked file. See [`workflow-integration-git/standards/worktree-handling.md`](../../workflow-integration-git/standards/worktree-handling.md) § "Worktree Setup Commands". |
 
 #### Verify step ID scheme
 

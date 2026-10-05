@@ -2,9 +2,9 @@
   "id": "PLAN-11",
   "slug": "cross-check-dated-archive-self-collision",
   "workstream": "WS-04",
-  "status": "running",
+  "status": "shipped",
   "plan_marshall_plan_id": "cross-check-dated-archive-self-collision",
-  "pr": "",
-  "landing": "",
+  "pr": "#1676",
+  "landing": "landings/PLAN-11.md",
   "seq": 11
 }

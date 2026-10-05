@@ -338,7 +338,7 @@ vocabulary (complete-by-construction over the real tree), not author-shipped
 static literals.
 
 Steps that are **meta-project-only** — e.g. running the multi-target
-generator and pushing the host plugin cache — are NOT default-on built-ins.
+generator and syncing the harness installs — are NOT default-on built-ins.
 They live as project-local skills under
 project skill roots (e.g. `.claude/skills/finalize-step-{name}/SKILL.md`,
 `.agents/skills/finalize-step-{name}/SKILL.md`, or `.opencode/skills/finalize-step-{name}/SKILL.md`) in the meta-project that
@@ -842,8 +842,9 @@ because the emitted agent set may have changed.
 > **session-pinned at session start**: it scans the plugin cache exactly
 > once when the session boots and never re-scans mid-session. Any
 > steward operation that materially alters the agent set — executor
-> regeneration that adds new notations, a `/sync-plugin-cache` run that
-> emits new `execution-context-{level}` variants from the
+> regeneration that adds new notations, a run of the project-local,
+> meta-repo-only `/sync-harnesses` command that emits new
+> `execution-context-{level}` variants from the
 > dynamic-level executor extension point — produces files the
 > already-running session **cannot see**. Dispatching against a freshly
 > emitted variant from the same session fails with
@@ -864,15 +865,15 @@ because the emitted agent set may have changed.
 > session-pinned registry live — only registered monitors force a full
 > session restart, and plan-marshall registers none. On Antigravity or OpenCode the seam
 > returns a `no-op` (Antigravity automatically discovers updated plugins in
-> `~/.gemini/config/plugins/` upon `/sync-antigravity`, while OpenCode requires a session restart).
+> `~/.gemini/config/plugins/` upon `/sync-harnesses --target antigravity`, while OpenCode requires a session restart).
 > The WHY rationale (registry is session-pinned at startup) is unchanged and is
-> documented at the sister surfaces — `/sync-plugin-cache`,
+> documented at the sister surfaces — `/sync-harnesses`,
 > `variant_emitter.py`, and `ext-point-dynamic-level-executor.md` — and
 > MUST stay convergent across all four surfaces.
 
 ## Artifact Landing Cycle
 
-When a plan's deliverables touch marshall-steward-owned artifacts — executor regeneration (`.plan/execute-script.py`), `marshal.json` migrations, or the plugin-cache sync — those changes already commit to the governing plan's feature branch and ship as part of its normal `phase-6-finalize` PR. Whether they ride that PR or split into their own is decided by the same project-wide `pr_strategy` policy every PR-opening surface consults. Call the decision verb with the landing cycle's changed-file count and branch on its verdict:
+When a plan's deliverables touch marshall-steward-owned artifacts — executor regeneration (`.plan/execute-script.py`), `marshal.json` migrations, or the harness sync — those changes already commit to the governing plan's feature branch and ship as part of its normal `phase-6-finalize` PR. Whether they ride that PR or split into their own is decided by the same project-wide `pr_strategy` policy every PR-opening surface consults. Call the decision verb with the landing cycle's changed-file count and branch on its verdict:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config project pr-decision \

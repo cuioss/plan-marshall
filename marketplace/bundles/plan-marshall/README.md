@@ -24,7 +24,7 @@ This bundle provides **core infrastructure** organized into functional areas:
 
 Configuration (`marshall-steward`) and WebFetch permission consolidation (`workflow-permission-web`) are skills, not commands.
 
-### Skills (76)
+### Skills (77)
 
 | Category | Skills |
 |----------|--------|
@@ -34,7 +34,7 @@ Configuration (`marshall-steward`) and WebFetch permission consolidation (`workf
 | **Services (`manage-*`)** | `manage-adr`, `manage-architecture`, `manage-build-server`, `manage-change-ledger`, `manage-ci-artifacts`, `manage-config`, `manage-execution-manifest`, `manage-files`, `manage-findings`, `manage-lessons`, `manage-locks`, `manage-logging`, `manage-metrics`, `manage-personas`, `manage-plan-documents`, `manage-providers`, `manage-references`, `manage-run-config`, `manage-solution-outline`, `manage-status`, `manage-tasks`, `manage-terminal-title` |
 | **Build systems** | `build-gradle`, `build-maven`, `build-npm`, `build-pyproject`, `build-server-client` |
 | **CI & review** | `automatic-review`, `workflow-integration-git`, `workflow-integration-github`, `workflow-integration-gitlab`, `workflow-integration-sonar`, `workflow-pr-doctor`, `workflow-permission-web` |
-| **Tools** | `tools-file-ops`, `tools-input-validation`, `tools-integration-ci`, `tools-permission-doctor`, `tools-permission-fix`, `tools-script-executor` |
+| **Tools** | `lsp-client`, `tools-file-ops`, `tools-input-validation`, `tools-integration-ci`, `tools-permission-doctor`, `tools-permission-fix`, `tools-script-executor` |
 | **Recipes** | `recipe-agentfile-hygiene`, `recipe-code-review`, `recipe-lesson-cleanup`, `recipe-refactor-to-profile-standards`, `recipe-security-audit`, `recipe-simplify-codebase` |
 | **References** | `ref-agentfile-hygiene`, `ref-code-quality`, `ref-toon-format`, `ref-workflow-architecture` |
 | **Extension / infrastructure** | `extension-api`, `plan-marshall-plugin`, `platform-runtime`, `script-shared`, `untrusted-ingestion` |
@@ -68,24 +68,27 @@ The `tools-script-executor` skill generates `.plan/execute-script.py` with embed
 
 The `ref-toon-format` skill documents the Tab-separated Object Notation format used for agent communication and persistent storage.
 
-## Plugin cache sync — meta-project tooling (project-local)
+## Harness sync — meta-project tooling (project-local)
 
-In **this meta-project** (the plan-marshall repo itself), the host
-plugin cache is mirrored from the multi-target generator output at
-`target/claude/`. Both the slash command and the finalize-step
-plumbing live as project-local skills under `.claude/skills/`, not in
-this bundle — they only make sense for the repo that owns marketplace
-bundle sources.
+In **this meta-project** (the plan-marshall repo itself), every harness
+install — the Claude plugin cache, the OpenCode install and the
+Antigravity install — is mirrored from the multi-target generator output
+under `target/`. The `/sync-harnesses` command, its engine and the
+finalize-step plumbing are project-local and meta-repo-only: they live in
+this repository's own tree, not in this bundle — they only make sense for
+the repo that owns marketplace bundle sources.
 
 | Component | Path |
 |-----------|------|
-| `/sync-plugin-cache` slash command + engine | `.claude/skills/sync-plugin-cache/` |
-| Phase-6 cache-sync finalize body | `.claude/skills/finalize-step-sync-plugin-cache/` |
+| `/sync-harnesses` command (one thin file per harness) | `.claude/skills/sync-harnesses/`, `.opencode/commands/sync-harnesses.md`, `.agents/skills/sync-harnesses/` |
+| Sync engine (all harnesses; `--target` narrows to one) | `marketplace/targets/sync.py` |
+| Claude cache path of the engine | `marketplace/targets/claude/` (`cache_sync.py`, `reconcile_daemon.py`, `list_bundles_and_versions.py`) |
+| Phase-6 harness-sync finalize body | `.claude/skills/finalize-step-sync-plugin-cache/` |
 | Phase-6 generator finalize body | `.claude/skills/finalize-step-deploy-target/` |
 | Multi-target generator | `marketplace/targets/` (repo root, outside any bundle) |
 
-**First-time bootstrap on a fresh checkout** (one-time, before this
-repo's first finalize):
+**First-time bootstrap of the Claude plugin cache on a fresh checkout**
+(one-time, before this repo's first finalize):
 
 ```bash
 ./pw generate-claude
@@ -100,7 +103,7 @@ bare `uv run …` fails outside it. The `generate-claude` alias carries the
 `{version}` comes from `.claude-plugin/plugin.json` (this file's
 sibling). After this bootstrap, every subsequent finalize cycle in this
 repo runs `project:finalize-step-deploy-target` → `project:finalize-step-sync-plugin-cache`
-automatically and keeps the cache fresh.
+automatically and keeps every harness install fresh.
 
 Consumer projects do not need any of this — they install the
 plan-marshall plugin via Claude Code's standard plugin path, which

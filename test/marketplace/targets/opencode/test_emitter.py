@@ -706,3 +706,75 @@ def test_install_uninstall_full_fallback_without_manifest_preserves_user_files(
     assert user_skill_1.is_file()
     assert user_skill_2.is_file()
     assert user_agent.is_file()
+
+
+def test_opencode_emitter_skips_bundles_scoped_away(tmp_path: Path, opencode_config_dir: Path):
+    """Bundles scoped to other targets are not emitted to opencode."""
+    marketplace = tmp_path / 'bundles'
+    # 1. Common bundle (unscoped)
+    b_common = marketplace / 'plan-marshall'
+    _write(b_common / '.claude-plugin' / 'plugin.json', json.dumps({'name': 'plan-marshall'}))
+    _write(b_common / 'skills' / 'core-skill' / 'SKILL.md', '---\nname: core-skill\ndescription: core\n---\nbody\n')
+
+    # 2. OpenCode bundle (targets: ["opencode"])
+    b_oc = marketplace / 'plan-marshall-opencode'
+    _write(
+        b_oc / '.claude-plugin' / 'plugin.json',
+        json.dumps({'name': 'plan-marshall-opencode', 'targets': ['opencode']}),
+    )
+    _write(b_oc / 'skills' / 'target-rules' / 'SKILL.md', '---\nname: target-rules\ndescription: oc rules\n---\nbody\n')
+    _write(b_oc / 'skills' / 'target-rules' / 'standards' / 'opencode-rules.md', '# OC Rules\n')
+
+    # 3. Antigravity bundle (targets: ["antigravity"])
+    b_agy = marketplace / 'plan-marshall-antigravity'
+    _write(
+        b_agy / '.claude-plugin' / 'plugin.json',
+        json.dumps({'name': 'plan-marshall-antigravity', 'targets': ['antigravity']}),
+    )
+    _write(
+        b_agy / 'skills' / 'target-rules' / 'SKILL.md', '---\nname: target-rules\ndescription: agy rules\n---\nbody\n'
+    )
+
+    out = tmp_path / 'out'
+    emit_bundles(marketplace, out, opencode_config_dir)
+
+    # Assertions
+    assert (out / 'skill' / 'plan-marshall-core-skill').is_dir()
+    assert (out / 'skill' / 'plan-marshall-opencode-target-rules').is_dir()
+    assert not (out / 'skill' / 'plan-marshall-antigravity-target-rules').exists()
+
+    components = json.loads((out / 'bundle-components.json').read_text(encoding='utf-8'))
+    assert 'plan-marshall' in components['bundles']
+    assert 'plan-marshall-opencode' in components['bundles']
+    assert 'plan-marshall-antigravity' not in components['bundles']
+
+
+def test_opencode_workspace_rule_emission(tmp_path: Path, opencode_config_dir: Path):
+    """install.sh in workspace mode emits .opencode/rules/plan-marshall-target-rules.md."""
+    marketplace = tmp_path / 'bundles'
+    b_oc = marketplace / 'plan-marshall-opencode'
+    _write(
+        b_oc / '.claude-plugin' / 'plugin.json',
+        json.dumps({'name': 'plan-marshall-opencode', 'targets': ['opencode']}),
+    )
+    _write(b_oc / 'skills' / 'target-rules' / 'SKILL.md', '---\nname: target-rules\ndescription: rules\n---\nbody\n')
+    _write(b_oc / 'skills' / 'target-rules' / 'standards' / 'opencode-rules.md', '# OpenCode Rules Content\n')
+
+    out = tmp_path / 'out'
+    emit_bundles(marketplace, out, opencode_config_dir)
+
+    ws = tmp_path / 'workspace'
+    target_dir = ws / '.opencode'
+
+    # Install into workspace
+    subprocess.run([str(out / 'install.sh'), '--workspace', '--target-dir', str(target_dir)], check=True)
+    rule_file = ws / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+    assert rule_file.is_file()
+    assert rule_file.read_text(encoding='utf-8') == '# OpenCode Rules Content\n'
+
+    # Full uninstall cleans up rule file
+    subprocess.run(
+        [str(target_dir / 'plan-marshall-install.sh'), '--workspace', '--uninstall', '--target-dir', str(target_dir)],
+        check=True,
+    )
+    assert not rule_file.exists()

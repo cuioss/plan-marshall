@@ -18,6 +18,7 @@ in the suite at all.
 """
 
 import argparse
+import json
 from pathlib import Path
 
 import pytest
@@ -43,36 +44,36 @@ def bp_env(tmp_path, monkeypatch):
 # =============================================================================
 
 
-def test_read_runtime_target_defaults_to_claude_when_absent(tmp_path: Path):
-    """read_runtime_target falls back to 'claude' when no marshal.json is found."""
-    assert bp.read_runtime_target(cwd=str(tmp_path)) == 'claude'
+def test_read_runtime_target_defaults_to_claude_when_absent(outside_repo_dir: Path):
+    """read_runtime_target falls back to 'claude' when no local config is found."""
+    assert bp.read_runtime_target(cwd=str(outside_repo_dir)) == 'claude'
 
 
-def test_read_runtime_target_reads_configured_target(tmp_path: Path):
-    """read_runtime_target returns the configured runtime.target value."""
-    plan = tmp_path / '.plan'
-    plan.mkdir()
-    (plan / 'marshal.json').write_text('{"runtime": {"target": "opencode"}}')
+def test_read_runtime_target_reads_local_harness_config(outside_repo_dir: Path):
+    """read_runtime_target returns target from machine-local harness config."""
+    harness = outside_repo_dir / '.plan' / 'local' / 'harness'
+    harness.mkdir(parents=True)
+    (harness / 'opencode.json').write_text(json.dumps({'schema_version': 1, 'harness': 'opencode'}), encoding='utf-8')
 
-    assert bp.read_runtime_target(cwd=str(tmp_path)) == 'opencode'
-
-
-def test_read_runtime_target_claude_when_runtime_not_dict(tmp_path: Path):
-    """read_runtime_target returns 'claude' when runtime is not a mapping."""
-    plan = tmp_path / '.plan'
-    plan.mkdir()
-    (plan / 'marshal.json').write_text('{"runtime": "nope"}')
-
-    assert bp.read_runtime_target(cwd=str(tmp_path)) == 'claude'
+    assert bp.read_runtime_target(cwd=str(outside_repo_dir)) == 'opencode'
 
 
-def test_read_runtime_target_claude_when_unparseable(tmp_path: Path):
-    """read_runtime_target returns 'claude' for a malformed marshal.json."""
-    plan = tmp_path / '.plan'
-    plan.mkdir()
-    (plan / 'marshal.json').write_text('{broken')
+def test_read_runtime_target_reads_run_configuration(outside_repo_dir: Path):
+    """read_runtime_target returns target from machine-local run-configuration.json."""
+    plan = outside_repo_dir / '.plan'
+    plan.mkdir(parents=True)
+    (plan / 'run-configuration.json').write_text(json.dumps({'runtime': {'target': 'antigravity'}}), encoding='utf-8')
 
-    assert bp.read_runtime_target(cwd=str(tmp_path)) == 'claude'
+    assert bp.read_runtime_target(cwd=str(outside_repo_dir)) == 'antigravity'
+
+
+def test_read_runtime_target_ignores_shared_marshal_json(outside_repo_dir: Path):
+    """read_runtime_target ignores runtime.target in shared marshal.json."""
+    plan = outside_repo_dir / '.plan'
+    plan.mkdir(parents=True)
+    (plan / 'marshal.json').write_text(json.dumps({'runtime': {'target': 'opencode'}}), encoding='utf-8')
+
+    assert bp.read_runtime_target(cwd=str(outside_repo_dir)) == 'claude'
 
 
 # =============================================================================
@@ -130,16 +131,16 @@ def test_read_runtime_target_opencode_precedence_over_claude(tmp_path: Path, mon
     assert bp.read_runtime_target(cwd=str(tmp_path)) == 'opencode'
 
 
-def test_read_runtime_target_opencode_env_takes_precedence_over_marshal(tmp_path: Path, monkeypatch):
-    """OPENCODE env signal (tier 1) wins over marshal.json config (tier 2)."""
-    plan = tmp_path / '.plan'
-    plan.mkdir()
-    (plan / 'marshal.json').write_text('{"runtime": {"target": "claude"}}')
+def test_read_runtime_target_opencode_env_takes_precedence_over_local_config(outside_repo_dir: Path, monkeypatch):
+    """OPENCODE env signal (tier 1) wins over local config (tier 2)."""
+    harness = outside_repo_dir / '.plan' / 'local' / 'harness'
+    harness.mkdir(parents=True)
+    (harness / 'claude.json').write_text(json.dumps({'schema_version': 1, 'harness': 'claude'}), encoding='utf-8')
     monkeypatch.delenv('ANTIGRAVITY_AGENT', raising=False)
     monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
     monkeypatch.delenv('OPENCODE_PID', raising=False)
     monkeypatch.setenv('OPENCODE', '1')
-    assert bp.read_runtime_target(cwd=str(tmp_path)) == 'opencode'
+    assert bp.read_runtime_target(cwd=str(outside_repo_dir)) == 'opencode'
 
 
 def test_cmd_get_root_auto_detect_returns_opencode_target(tmp_path: Path, monkeypatch):
@@ -314,6 +315,7 @@ def test_detect_opencode_root_via_relative_root(tmp_path: Path, monkeypatch):
 def test_detect_opencode_root_none_when_no_skills(tmp_path: Path, monkeypatch):
     """_detect_opencode_root returns None when no discovery root carries a skill."""
     monkeypatch.setattr(bp, 'get_project_skill_roots', lambda: ('.opencode/skills', '.claude/skills'))
+    monkeypatch.setattr(bp, 'get_bundle_cache_roots', lambda: ())
     empty = tmp_path / 'empty-work'
     empty.mkdir()
     monkeypatch.chdir(empty)

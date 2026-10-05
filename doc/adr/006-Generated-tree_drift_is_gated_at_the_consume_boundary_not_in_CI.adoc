@@ -6,7 +6,7 @@
 // adr-metadata
 // summary: Drift between the marketplace source tree and the generated target/claude/ tree is gated at the consume boundary (the plugin-cache sync guard) using git's own ls-files / hash-object primitives over the whole tree, never as a CI gate, because target/ is gitignored and CI regenerates it from source on every run.
 // tags: generated-tree, drift, git-native, build, ci, worktree
-// affects: default, sync-plugin-cache, finalize-step-deploy-target
+// affects: default, sync-harnesses, finalize-step-deploy-target
 // supersedes:
 // end-adr-metadata
 
@@ -45,8 +45,10 @@ developer worktree — never in CI:
   `hash_objects` primitive so the emit side and the consume side hash
   identically.
 
-* The **consume-boundary staleness guard** in the plugin-cache sync engine
-  (`sync._staleness_guard`, backed by `sync._file_level_drift`) recomputes the
+* The **consume-boundary staleness guard** in the plugin-cache sync, the
+  Claude path of the `sync-harnesses` engine
+  (`cache_sync._staleness_guard`, backed by `cache_sync._file_level_drift`,
+  in `marketplace/targets/claude/cache_sync.py`) recomputes the
   source fingerprint against the live worktree and compares it to the sentinel's
   `source_tree_fingerprint`; on match it then diffs the live `target/claude/`
   tree against the sentinel's `file_hashes` manifest, naming each `missing`,
@@ -109,7 +111,7 @@ violated and therefore observed.
 === Risks
 
 * The consume-boundary guard is only as protective as the workflow steps that
-  invoke it (`finalize-step-deploy-target` to emit, the `sync-plugin-cache` sync
+  invoke it (`finalize-step-deploy-target` to emit, the `sync-harnesses` sync
   to consume). A path that reads `target/claude/` without going through the sync
   guard bypasses the gate; such readers must route through the guarded sync
   rather than reading the generated tree directly.
@@ -171,6 +173,6 @@ boundary, and git already observes it," the CI gate is redundant by construction
 
 * xref:001-Skills_are_the_source_of_truth_for_script_calls_drift_detection_is_dev-time_post-hoc.adoc[ADR-001] — the source-of-truth / no-redundant-gate principle this decision extends from the script-call surface to the generated-tree surface.
 * `marketplace/targets/claude/source_fingerprint.py` — the whole-tree git-native fingerprint (`compute_source_tree_fingerprint`, `list_tracked_files`, `hash_objects`).
-* `.claude/skills/sync-plugin-cache/scripts/sync.py` — the consume-boundary staleness guard (`_staleness_guard`, `_file_level_drift`) and the `.emit-marker.json` sentinel it reads.
+* `marketplace/targets/claude/cache_sync.py` — the Claude path of the `sync-harnesses` engine (`marketplace/targets/sync.py`), holding the consume-boundary staleness guard (`_staleness_guard`, `_file_level_drift`) and the `.emit-marker.json` sentinel it reads.
 * `marketplace/targets/claude/content_drift.py` — the regen-first `*.md` content-drift engine (`run_content_drift_check`).
 * `plan-marshall:finalize-step-deploy-target` — the emit step that writes the sentinel the guard compares against.

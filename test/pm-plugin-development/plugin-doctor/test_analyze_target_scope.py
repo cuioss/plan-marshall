@@ -801,3 +801,81 @@ def test_the_rules_cache_dirs_match_the_builds(tmp_path):
     from marketplace.targets.component_targets import EXCLUDED_DIR_NAMES
 
     assert set(_ats._SKILL_CACHE_DIR_NAMES) == set(EXCLUDED_DIR_NAMES)
+
+
+# ---------------------------------------------------------------------------
+# Bundle manifest target scoping (REQ-HBNDL-1, REQ-HBNDL-2)
+# ---------------------------------------------------------------------------
+
+
+def test_bundle_manifest_empty_targets_is_flagged(tmp_path):
+    """An empty targets list in plugin.json is flagged as targets_empty."""
+    bundles = _marketplace(tmp_path)
+    plugin_json = bundles / 'demo' / '.claude-plugin' / 'plugin.json'
+    _write(plugin_json, '{\n  "name": "demo",\n  "targets": []\n}\n')
+
+    findings = analyze_target_scope(bundles)
+
+    assert len(findings) == 1
+    assert findings[0]['file'] == str(plugin_json)
+    assert findings[0]['line'] == 3
+    assert findings[0]['details']['reason'] == 'targets_empty'
+
+
+def test_bundle_manifest_unknown_targets_is_flagged(tmp_path):
+    """An unknown target name in plugin.json is flagged as targets_unknown."""
+    bundles = _marketplace(tmp_path)
+    plugin_json = bundles / 'demo' / '.claude-plugin' / 'plugin.json'
+    _write(plugin_json, '{\n  "name": "demo",\n  "targets": ["unknown-target"]\n}\n')
+
+    findings = analyze_target_scope(bundles)
+
+    assert len(findings) == 1
+    assert findings[0]['file'] == str(plugin_json)
+    assert findings[0]['line'] == 3
+    assert findings[0]['details']['reason'] == 'targets_unknown'
+    assert findings[0]['details']['unknown_targets'] == ['unknown-target']
+
+
+def test_component_widening_bundle_scope_is_flagged(tmp_path):
+    """A component naming targets its enclosing bundle scopes away is flagged."""
+    bundles = _marketplace(tmp_path)
+    plugin_json = bundles / 'demo' / '.claude-plugin' / 'plugin.json'
+    _write(plugin_json, '{\n  "name": "demo",\n  "targets": ["claude"]\n}\n')
+    agent = _component(bundles, 'agents/a.md', 'targets: [claude, opencode]')
+
+    findings = analyze_target_scope(bundles)
+
+    assert len(findings) == 1
+    assert findings[0]['file'] == str(agent)
+    assert findings[0]['details']['reason'] == 'targets_contradiction'
+    assert findings[0]['details']['bundle_targets'] == ['claude']
+    assert findings[0]['details']['component_targets'] == ['claude', 'opencode']
+    assert findings[0]['details']['contradiction'] == ['opencode']
+
+
+def test_component_narrowing_bundle_scope_is_accepted(tmp_path):
+    """A component narrowing its enclosing bundle scope produces no finding."""
+    bundles = _marketplace(tmp_path)
+    plugin_json = bundles / 'demo' / '.claude-plugin' / 'plugin.json'
+    _write(plugin_json, '{\n  "name": "demo",\n  "targets": ["claude", "opencode"]\n}\n')
+    _component(bundles, 'agents/a.md', 'targets: [claude]')
+
+    assert analyze_target_scope(bundles) == []
+
+
+def test_skill_internal_file_widening_bundle_scope_via_unscoped_skill_is_flagged(tmp_path):
+    """A skill-internal file widening bundle scope when skill is unscoped is flagged."""
+    bundles = _marketplace(tmp_path)
+    plugin_json = bundles / 'demo' / '.claude-plugin' / 'plugin.json'
+    _write(plugin_json, '{\n  "name": "demo",\n  "targets": ["claude"]\n}\n')
+    _component(bundles, 'skills/s/SKILL.md')  # unscoped
+    ref = bundles / 'demo' / 'skills' / 's' / 'references' / 'x.md'
+    _write(ref, '---\nname: x\ndescription: d\ntargets: [opencode]\n---\n# Ref\n')
+
+    findings = analyze_target_scope(bundles)
+
+    assert len(findings) == 1
+    assert findings[0]['file'] == str(ref)
+    assert findings[0]['details']['reason'] == 'targets_contradiction'
+    assert findings[0]['details']['contradiction'] == ['opencode']

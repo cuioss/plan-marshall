@@ -1830,33 +1830,23 @@ def test_build_map_round_trips_at_top_level_build_path(tmp_path, monkeypatch):
 # save_config() in _config_core.py enforces a canonical top-level key order when
 # persisting marshal.json. After the D1–D6 dissolutions and the build_map
 # relocation to the top-level build block, the surviving top-level blocks
-# (ci/ceremony_policy/build_map_overrides removed) lead with ``extension_defaults``
-# (the extension-seeded defaults block), then ``plan`` (the primary user-facing
-# config), then ``build`` (build infrastructure), and finally the remaining
-# top-level keys alphabetically: extension_defaults, plan, build,
-# credentials_config, project, providers, skill_domains, system.
-# ``credentials_config`` (the non-secret per-provider config block written by
-# manage-providers) takes its alphabetical slot between ``build`` and
-# ``project``. These tests pin that contract and prove the committed
-# marshal.json already round-trips through save_config with its key order
-# unchanged.
+# lead with ``extension_defaults`` (the extension-seeded defaults block),
+# then ``plan`` (the primary user-facing config), then ``build`` (build
+# infrastructure), followed by the remaining keys per
+# ``CANONICAL_TOP_LEVEL_KEY_ORDER``. These tests pin that contract and prove
+# the committed marshal.json already round-trips through save_config with
+# its key order unchanged. The expected order below is derived from the
+# production definition, so the contract — not a hand-maintained copy of it
+# — is what is pinned.
 
-_EXPECTED_CANONICAL_KEY_ORDER = [
-    'extension_defaults',
-    'plan',
-    # `orchestrator` (the epic-orchestration config block) is a top-level sibling
-    # of `plan`, emitted immediately after it.
-    'orchestrator',
-    'build',
-    'credentials_config',
-    # `interaction_mode` (the top-level scalar preference) sits in its alphabetical
-    # slot between `credentials_config` and `project`, matching production.
-    'interaction_mode',
-    'project',
-    'providers',
-    'skill_domains',
-    'system',
-]
+# The expected order is DERIVED from the production definition — never
+# restated as a literal. A hand-maintained mirror is how this table fell
+# behind the committed file once already (the `runtime` key arrived via a
+# verify-skipped steward landing); deriving it keeps a production key
+# addition flowing into every assertion below with no test edit. What the
+# tests pin is that `save_config` honors the definition and that the
+# committed file already matches it — not the definition itself.
+_EXPECTED_CANONICAL_KEY_ORDER = list(_config_core_mod.CANONICAL_TOP_LEVEL_KEY_ORDER)
 
 #: The committed marshal.json the repo ships, resolved from the shared project root.
 _COMMITTED_MARSHAL_PATH = PROJECT_ROOT / '.plan' / 'marshal.json'
@@ -1887,10 +1877,13 @@ def test_save_config_emits_canonical_top_level_key_order(tmp_path, monkeypatch):
     scrambled = {
         'system': {},
         'skill_domains': {},
+        'runtime': {},
         'providers': {},
+        'project_dir': {},
         'project': {},
-        'credentials_config': {},
         'interaction_mode': 'advanced',
+        'credentials_config': {},
+        'code_intelligence': {},
         'orchestrator': {},
         'plan': {},
         'extension_defaults': {},
@@ -3014,11 +3007,16 @@ _cmd_sync_defaults_mod = load_script_module(
     *_MANAGE_CONFIG, '_cmd_sync_defaults.py', module_name='_cmd_sync_defaults_for_lane_migration'
 )
 _migrate_run_at_all_to_lane = _cmd_sync_defaults_mod._migrate_run_at_all_to_lane
+_migrate_retired_step_keys = _cmd_sync_defaults_mod._migrate_retired_step_keys
 
 
 def test_migrate_qgate_never_materializes_lane_off():
-    """qgate: never → materialize default:pre-push-quality-gate with lane: off."""
-    live = {'plan': {'phase-6-finalize': {'qgate': 'never', 'steps': {}}}}
+    """qgate: never → materialize default:pre-push-quality-gate with lane: off.
+
+    The steps map is wholly absent here, so there is no curated map to
+    protect and the legacy migration materializes the owner.
+    """
+    live = {'plan': {'phase-6-finalize': {'qgate': 'never'}}}
     migrated: list = []
     _migrate_run_at_all_to_lane(live, migrated)
 
@@ -3029,8 +3027,12 @@ def test_migrate_qgate_never_materializes_lane_off():
 
 
 def test_migrate_qgate_always_materializes_lane_minimal():
-    """qgate: always → lane: minimal on the materialized owning step."""
-    live = {'plan': {'phase-6-finalize': {'qgate': 'always', 'steps': {}}}}
+    """qgate: always → lane: minimal on the materialized owning step.
+
+    The steps map is wholly absent here, so there is no curated map to
+    protect and the legacy migration materializes the owner.
+    """
+    live = {'plan': {'phase-6-finalize': {'qgate': 'always'}}}
     migrated: list = []
     _migrate_run_at_all_to_lane(live, migrated)
 
@@ -3040,17 +3042,60 @@ def test_migrate_qgate_always_materializes_lane_minimal():
 
 
 def test_migrate_qgate_auto_omits_lane_but_removes_legacy_key():
-    """qgate: auto → the legacy key is removed but NO lane override is written."""
-    live = {'plan': {'phase-6-finalize': {'qgate': 'auto', 'steps': {}}}}
+    """qgate: auto → the legacy key is removed but NO lane override is written.
+
+    The steps map is wholly absent here; auto maps to no lane, so nothing is
+    materialized either way.
+    """
+    live = {'plan': {'phase-6-finalize': {'qgate': 'auto'}}}
     migrated: list = []
     _migrate_run_at_all_to_lane(live, migrated)
 
     p6 = live['plan']['phase-6-finalize']
     assert 'qgate' not in p6
     # standard is the lane default — the owning step is NOT materialized with a lane.
-    assert 'default:pre-push-quality-gate' not in p6['steps']
+    assert 'default:pre-push-quality-gate' not in p6.get('steps', {})
     # The removal is still reported so sync-defaults persists the change.
     assert migrated
+
+
+def test_migrate_qgate_defers_when_present_map_lacks_owner():
+    """qgate + present steps map without the owner → defer, retain qgate.
+
+    A present map is never expanded — not even by legacy migration. The
+    legacy value is retained untouched (not popped) and the deferral is
+    reported, so a later run can migrate it after add-step restores
+    membership. Covers the empty-map and populated-without-owner shapes.
+    """
+    for steps in ({}, {'default:finalize-step-simplify': {}}):
+        live = {'plan': {'phase-6-finalize': {'qgate': 'never', 'steps': dict(steps)}}}
+        migrated: list = []
+        _migrate_run_at_all_to_lane(live, migrated)
+
+        p6 = live['plan']['phase-6-finalize']
+        assert p6['qgate'] == 'never'
+        assert 'default:pre-push-quality-gate' not in p6['steps']
+        assert migrated == [
+            'plan.phase-6-finalize.qgate=never -> deferred until steps[default:pre-push-quality-gate] is accepted'
+        ]
+
+
+def test_migrate_qgate_sets_lane_on_present_owner():
+    """qgate + present owner → lane written on the existing entry, key removed."""
+    live = {
+        'plan': {
+            'phase-6-finalize': {
+                'qgate': 'always',
+                'steps': {'default:pre-push-quality-gate': {}},
+            }
+        }
+    }
+    migrated: list = []
+    _migrate_run_at_all_to_lane(live, migrated)
+
+    p6 = live['plan']['phase-6-finalize']
+    assert 'qgate' not in p6
+    assert p6['steps']['default:pre-push-quality-gate']['lane'] == 'minimal'
 
 
 def test_migrate_step_owned_simplify_always_to_lane_minimal():
@@ -3085,8 +3130,11 @@ def test_migrate_all_four_gates_preserve_values():
     _migrate_run_at_all_to_lane(live, migrated)
 
     steps = live['plan']['phase-6-finalize']['steps']
-    # qgate never → materialized lane off.
-    assert steps['default:pre-push-quality-gate']['lane'] == 'off'
+    # qgate never defers: the present map carries no pre-push-quality-gate
+    # entry, so the legacy value is retained for a later run instead of
+    # materializing the missing owner.
+    assert live['plan']['phase-6-finalize']['qgate'] == 'never'
+    assert 'default:pre-push-quality-gate' not in steps
     # self_review always → minimal, sibling escape hatch preserved, legacy removed.
     self_review = steps['default:pre-submission-self-review']
     assert self_review['lane'] == 'minimal'
@@ -3114,12 +3162,19 @@ def test_migrate_bare_owner_key_form_handled():
 
 
 def test_migration_is_idempotent():
-    """A second run reports no migration and leaves the lane values unchanged."""
+    """A second run reports no migration and leaves the lane values unchanged.
+
+    The owner is present here, so the legacy key migrates onto the existing
+    entry and the second run is clean.
+    """
     live = {
         'plan': {
             'phase-6-finalize': {
                 'qgate': 'never',
-                'steps': {'default:finalize-step-simplify': {'simplify': 'always'}},
+                'steps': {
+                    'default:pre-push-quality-gate': {},
+                    'default:finalize-step-simplify': {'simplify': 'always'},
+                },
             }
         }
     }
@@ -3134,6 +3189,58 @@ def test_migration_is_idempotent():
     steps = live['plan']['phase-6-finalize']['steps']
     assert steps['default:pre-push-quality-gate']['lane'] == 'off'
     assert steps['default:finalize-step-simplify']['lane'] == 'minimal'
+
+
+def test_migration_canonicalizes_removed_steps():
+    """Retired ids in `removed_steps` are rewritten to their canonicals.
+
+    A removal recorded under a retired id must keep constraining the map
+    after the retired-key migration renames map keys: the merge compares
+    canonical forms, so an uncanonicalized record would miss and report the
+    held canonical step as a routine new default instead of a re-add.
+    """
+    live = {
+        'plan': {
+            'phase-6-finalize': {
+                'steps': {'default:push': {}},
+                'removed_steps': ['default:automated-review', 'default:push'],
+            }
+        }
+    }
+    renamed: list = []
+    _migrate_retired_step_keys(live, renamed)
+
+    removed = live['plan']['phase-6-finalize']['removed_steps']
+    assert removed == ['plan-marshall:automatic-review', 'default:push']
+
+
+def test_migration_deferral_repeats_stably():
+    """A deferred qgate re-reports identically without changing state.
+
+    The first run also migrates the simplify legacy param; the deferral
+    itself is the stable fixed-point: every later run reports only the
+    deferral against an untouched tree (not a second migration).
+    """
+    live = {
+        'plan': {
+            'phase-6-finalize': {
+                'qgate': 'never',
+                'steps': {'default:finalize-step-simplify': {'simplify': 'always'}},
+            }
+        }
+    }
+    first: list = []
+    _migrate_run_at_all_to_lane(live, first)
+    assert len(first) == 2  # one deferral + one simplify migration
+    snapshot = json.loads(json.dumps(live))
+
+    second: list = []
+    _migrate_run_at_all_to_lane(live, second)
+
+    deferred = 'plan.phase-6-finalize.qgate=never -> deferred until steps[default:pre-push-quality-gate] is accepted'
+    assert second == [deferred]
+    assert live == snapshot
+    assert live['plan']['phase-6-finalize']['qgate'] == 'never'
 
 
 def test_planning_gates_untouched_by_run_at_all_migration():

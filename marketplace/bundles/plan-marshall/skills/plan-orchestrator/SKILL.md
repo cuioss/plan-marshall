@@ -1,6 +1,6 @@
 ---
 name: plan-orchestrator
-description: Resumable epic-orchestration skill - decomposes epics into workstreams and staged plans, emits ready-to-run /plan-marshall commands, tracks plan lifecycles, analyzes landings, owns the append-only inbox channel executing plans write their structured messages to and read their own delivered mailbox from, reconciles the persisted orchestrator ledger, and reviews the epic spec corpus - re-grounding staged specs against HEAD into a persisted per-claim (or per-section) verdict field, cross-checking duplication across sibling epics and live plans, and reporting a restart-readiness verdict; orchestrates, never implements
+description: Resumable epic-orchestration skill - decomposes epics into workstreams and staged plans, emits ready-to-run /plan-marshall commands, tracks plan lifecycles, analyzes landings, owns the append-only inbox channel executing plans write their structured messages to and read their own delivered mailbox from, reconciles the persisted orchestrator ledger, lands the shared ledger worktree onto the base branch, and reviews the epic spec corpus - re-grounding staged specs against HEAD into a persisted per-claim (or per-section) verdict field, cross-checking duplication across sibling epics and live plans, and reporting a restart-readiness verdict; orchestrates, never implements
 user-invocable: true
 mode: workflow
 ---
@@ -28,6 +28,7 @@ The exit-code contract for every `python3 .plan/execute-script.py` call in this 
 /plan-orchestrator lessons                  # Lessons-handling mode (fixed lessons-routing epic)
 /plan-orchestrator cleanup slug={slug}      # Review and reconcile the spec corpus, then ledger, archive, and restart-readiness
 /plan-orchestrator preflight plan={plan_id} # Write the per-plan client.toon pre-flight artifact (best-effort, never blocks)
+/plan-orchestrator land [requeue=true]      # Land the shared ledger worktree onto the base branch through one PR, then resync it
 ```
 
 ## Foundational Practices
@@ -53,10 +54,10 @@ A foundational skill that cannot be loaded **aborts the verb** with a structured
 - Never remove a remote repo's lesson files through the current repo's `manage-lessons` store — its resolution is CWD-keyed (git-common-dir) and would mutate the wrong store. Cross-repo lesson removal happens ONLY via `git -C {remote_repo}` in the remote tree, after the local integration is persisted.
 
 **Constraints:**
-- Inline work is limited to the small-ops carve-out: git commands, read-side `plan-marshall:tools-integration-ci:ci` calls (never `gh`/`glab` directly), and read-only analysis. Read-only analysis is unrestricted in location — repository source, `.plan/local/plans/`, other epics' trees, PRs, and logs are all readable — bounded by the category threshold, not by a path: see the [small-ops carve-out](../persona-plan-orchestrator/standards/orchestration-model.md#carve-outs). Anything larger is staged as a `plans/PLAN-NN-{slug}.md` spec and handed off via an emitted command.
+- Inline work is limited to the small-ops carve-out: git commands, read-side `plan-marshall:tools-integration-ci:ci` calls (never `gh`/`glab` directly), the `land` verb's ci sequence — the one sanctioned write-side ci use, stated in [`workflow/land.md`](workflow/land.md) — and read-only analysis. Read-only analysis is unrestricted in location — repository source, `.plan/local/plans/`, other epics' trees, PRs, and logs are all readable — bounded by the category threshold, not by a path: see the [small-ops carve-out](../persona-plan-orchestrator/standards/orchestration-model.md#carve-outs). Anything larger is staged as a `plans/PLAN-NN-{slug}.md` spec and handed off via an emitted command.
 - Verb sub-steps may be dispatched to an `execution-context-{level}` leaf only under the [Dispatch Decision Rule](../persona-plan-orchestrator/standards/orchestration-model.md#dispatch-decision-rule), and no dispatched leaf writes the ledger.
 - The ledger JSON files (`status.json` header, `queue/{PLAN-ID}.json` rows) and `resume_anchor.md` are the machine authority. START HERE and the Ordered Queue are GENERATED from them into `queue-view.md` — rendered by the orchestrator script alone (the writer set is stated once, in the [Persist / Stop-Resume Contract](../persona-plan-orchestrator/standards/orchestration-model.md#persist--stop-resume-contract)), git-tracked, never hand-edited, and never part of the authority. `epic.md` is hand-written narrative only; nothing is pasted into it. A merge conflict in `queue-view.md` is never merged by hand: merge the source files, run `regenerate-view` on the merged tree, and `git -C {store_checkout} add` the result.
-- Every ledger git operation — each `git add` / `git commit` of a ledger file — runs as `git -C {store_checkout}`, the store checkout `resolve-path` returns; with `orchestrator.use_worktree` on that is the shared ledger worktree, not the checkout the session runs in.
+- Every ledger git operation — each `git add` / `git commit` of a ledger file — runs as `git -C {store_checkout}`, the store checkout `resolve-path` returns; with `orchestrator.use_worktree` on that is the shared ledger worktree, not the checkout the session runs in. With the knob on, the ledger reaches the base branch only through the `land` verb, whose script verbs run `git -C {store_checkout}` themselves; no other verb pushes the ledger branch or opens a PR for it.
 - Keep the resume anchor (`resume_anchor.md`) current — before stopping and whenever the next action changes — and run `regenerate-view` after writing it, because START HERE shows the anchor.
 - Strictly comply with all rules from `persona-plan-orchestrator` and its central standard `standards/orchestration-model.md`; when a workflow doc and the standard disagree, the standard wins.
 
@@ -77,6 +78,7 @@ Resolve the verb from the invocation (default: `status`), then load and follow t
 | `lessons` | `workflow/lessons-handling.md` | Lessons-handling mode: sweeps into the fixed `lessons-routing` epic, local dedup/aggregate, each cluster routed outward to its owning sibling epic over the inbox channel, cross-repo integrate-then-remove |
 | `cleanup` | `workflow/cleanup.md` | Review and reconcile the spec corpus, then call the ledger-compaction stage, the archive step, and the restart-readiness verdict |
 | `preflight` | `workflow/preflight.md` | Write the per-plan `client.toon` pre-flight artifact (best-effort, never blocks) |
+| `land` | `workflow/land.md` | Land the shared ledger worktree onto the base branch through one PR for all epics, then resync the worktree onto the new base (needs `orchestrator.use_worktree` on; takes no slug) |
 
 `status` and `next` share `workflow/orchestrate.md` — the two queue-facing verbs; the doc branches on the invoked verb.
 
@@ -105,7 +107,7 @@ Authoring templates for the ledger documents live in `templates/` and mirror the
 
 | Script | Notation | Purpose |
 |--------|----------|---------|
-| orchestrator | `plan-marshall:plan-orchestrator:orchestrator` | Thin scaffolding: `scaffold` (create the epic tree), `resolve-path` (publish where the store seam places the epic tree and which checkout holds the store — the one sanctioned source of the tree's physical location for a direct-file instruction; read-only, creates no epic tree), `queue` (read the plan queue, transition a plan's status, set one plan row's result field, or stage one new plan row file), `resume-summary` (render START HERE and the Ordered Queue from the ledger, read-only, with the START-HERE self-validation detectors and the `view_current` flag), `regenerate-view` (write the generated `queue-view.md`; the regenerate-on-conflict verb), `migrate-layout` (convert a monolithic-layout ledger into the per-concern files), `archive` (relocate a closed epic tree to `archived-orchestrators/`), `compact` (verify the ledger invariants and regenerate `queue-view.md`, making no `epic.md` write — the ledger-compaction stage `cleanup` Phase B calls; refuses a closed epic), `preflight` (invoke `platform_runtime runtime-info` and write the per-plan `client.toon` pre-flight artifact, best-effort), `corpus` (enumerate the epic population across both store homes, reconcile the staged spec corpus against the queue, cross-check it against sibling epics and live plans, publish every spec's declared Expected Surface with its derivation status and population — the read the disjointness gate decides on — and read or stamp the re-grounding verdict field), `cleanup` (report the restart-readiness verdict), `inbox` (append a message to the epic queue or deliver it to a running target plan's mailbox, amend/supersede/validate a filed message, close a sender's stream, list the queued messages with their lifecycle, read the messages delivered to one plan's mailbox, archive a consumed one under its per-sender subdirectory, migrate a flat archive into that layout, or detect orchestration context from a plan's `source_id`) |
+| orchestrator | `plan-marshall:plan-orchestrator:orchestrator` | Thin scaffolding: `scaffold` (create the epic tree), `resolve-path` (publish where the store seam places the epic tree and which checkout holds the store — the one sanctioned source of the tree's physical location for a direct-file instruction; read-only, creates no epic tree), `queue` (read the plan queue, transition a plan's status, set one plan row's result field, or stage one new plan row file), `resume-summary` (render START HERE and the Ordered Queue from the ledger, read-only, with the START-HERE self-validation detectors and the `view_current` flag), `regenerate-view` (write the generated `queue-view.md`; the regenerate-on-conflict verb), `migrate-layout` (convert a monolithic-layout ledger into the per-concern files), `archive` (relocate a closed epic tree to `archived-orchestrators/`), `compact` (verify the ledger invariants and regenerate `queue-view.md`, making no `epic.md` write — the ledger-compaction stage `cleanup` Phase B calls; refuses a closed epic), `preflight` (invoke `platform_runtime runtime-info` and write the per-plan `client.toon` pre-flight artifact, best-effort), `corpus` (enumerate the epic population across both store homes, reconcile the staged spec corpus against the queue, cross-check it against sibling epics and live plans, publish every spec's declared Expected Surface with its derivation status and population — the read the disjointness gate decides on — and read or stamp the re-grounding verdict field), `cleanup` (report the restart-readiness verdict), `land` (the four deterministic steps of landing the shared ledger worktree: `status` reports where the tree stands in the cycle, `snapshot` records and pushes the pending ledger paths without force, `bind` records which PR carries the in-flight land, and `resync` replays the tree onto the base the PR merged into and closes the cycle — the PR, CI and merge-queue steps between them belong to `workflow/land.md`), `inbox` (append a message to the epic queue or deliver it to a running target plan's mailbox, amend/supersede/validate a filed message, close a sender's stream, list the queued messages with their lifecycle, read the messages delivered to one plan's mailbox, archive a consumed one under its per-sender subdirectory, migrate a flat archive into that layout, or detect orchestration context from a plan's `source_id`) |
 
 ## Canonical invocations
 
@@ -135,7 +137,7 @@ The payload carries `slug`, `epic_dir`, `exists`, `archived`, `store_checkout`, 
 | only the archived tree present | the `archived-orchestrators/{slug}` path | `true` | `true` |
 | neither present | the would-be active path, for the tree `scaffold` is about to create | `false` | `false` |
 
-`store_checkout` is the root of the checkout that holds the store — the current checkout with `orchestrator.use_worktree` off, the shared ledger worktree with it on (see [`tools-file-ops/SKILL.md`](../tools-file-ops/SKILL.md) for its location and lifecycle) — and `use_worktree` reports the knob the seam read. The verb never creates the epic tree. With the knob on, a first call is a first use of the seam and creates the shared worktree exactly as any other store consumer would; nothing else is written. It refuses an unsafe slug (`invalid_slug`) before the seam is touched, and a seam refusal (`ledger_cutover_refused`, `ledger_drift_unevaluable`, `base_ref_unresolvable`, `orchestrator_worktree_create_failed`) reaches the caller as `status: error` carrying that code, with exit 0.
+`store_checkout` is the root of the checkout that holds the store — the current checkout with `orchestrator.use_worktree` off, the shared ledger worktree with it on (see [`tools-file-ops/SKILL.md`](../tools-file-ops/SKILL.md) for its location and lifecycle) — and `use_worktree` reports the knob the seam read. The verb never creates the epic tree. With the knob on, a first call is a first use of the seam and creates the shared worktree exactly as any other store consumer would; nothing else is written. It refuses an unsafe slug (`invalid_slug`) before the seam is touched, and a seam refusal (`ledger_cutover_refused`, `ledger_drift_unevaluable`, `base_ref_unresolvable`, `orchestrator_worktree_create_failed`, `orchestrator_worktree_wrong_branch`) reaches the caller as `status: error` carrying that code, with exit 0.
 
 ### queue
 
@@ -272,7 +274,22 @@ python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator cor
   --slug SLUG
 ```
 
-Cross-checks this epic's specs against sibling epics and live plans for duplicate work — the arm a single ledger structurally cannot perform, since a duplicate held in another ledger is invisible to this epic's queue. Read-only: it reports candidates and applies nothing, and no spec file is ever deleted. Three candidate populations are scanned and each is NAMED in the payload, so a `count: 0` states which zero it is: `epics_scanned` (sibling epics under BOTH the orchestrator store and `archived-orchestrators/`), `plans_scanned` (the active plan set), and `specs_scanned` / `specs_total` (this epic's own corpus, for the within-corpus direction). Candidate pairs are scored on the two `manage-status sibling-collision-check` classes only — a shared source-origin pointer (`source_origin_matches[]`) and a normalized file-path overlap (`file_overlap_matches[]`) that is exact equality plus the stated containment extension (a `recursive_glob` or `directory` entry contains another entry's normalized path when that path equals the glob stem or starts with `stem + '/'`; a `filename_glob` with no `/` never contains and a match without a `/` boundary never counts) — and every returned pair NAMES the overlapping surface rather than carrying a bare similarity score. A spec's surface is read from its `## Expected Surface` section through the single shared reader (`plan-marshall:script-shared`'s `epic_spec_parser`, the same one `corpus surfaces` and the Ordered Queue's Surface cell use, so none of the three can resolve a *different* surface for the same spec); a launched plan's from its `references.json` `affected_files`. What each consumer projects from that one resolution still differs — see the gating in the next paragraph.
+Cross-checks this epic's specs against sibling epics and live plans for duplicate work — the arm a single ledger structurally cannot perform, since a duplicate held in another ledger is invisible to this epic's queue. Read-only: it reports candidates and applies nothing, and no spec file is ever deleted. Three candidate populations are scanned and each is NAMED in the payload, so a `count: 0` states which zero it is: `epics_scanned` (sibling epics under BOTH the orchestrator store and `archived-orchestrators/`, EXCEPT the queried epic's own dated archive snapshot), `plans_scanned` (the active plan set, EXCEPT the plan-less sentinel), and `specs_scanned` / `specs_total` (this epic's own corpus, for the within-corpus direction). The two exceptions are defined in the next paragraph. Candidate pairs are scored on the two `manage-status sibling-collision-check` classes only — a shared source-origin pointer (`source_origin_matches[]`) and a normalized file-path overlap (`file_overlap_matches[]`) that is exact equality plus the stated containment extension (a `recursive_glob` or `directory` entry contains another entry's normalized path when that path equals the glob stem or starts with `stem + '/'`; a `filename_glob` with no `/` never contains and a match without a `/` boundary never counts) — and every returned pair NAMES the overlapping surface rather than carrying a bare similarity score. A spec's surface is read from its `## Expected Surface` section through the single shared reader (`plan-marshall:script-shared`'s `epic_spec_parser`, the same one `corpus surfaces` and the Ordered Queue's Surface cell use, so none of the three can resolve a *different* surface for the same spec); a launched plan's from its `references.json` `affected_files`. What each consumer projects from that one resolution still differs — see the gating below.
+
+Two entries are never candidates, and both are left out BEFORE anything is counted, so `epics_scanned`, `plans_scanned`, `candidate_population[]`, `candidate_derivation_states[]`, `candidates_total`, `candidates_indeterminate`, the live-side lists, and the determinacy verdict are all computed over the post-exclusion populations:
+
+- **The queried epic's own dated archive snapshot.** An entry of `archived-orchestrators/` whose whole name is `{slug}-YY-MM-DD` or `{slug}-YY-MM-DD-NN` — two-digit groups, the prefix equal to the queried slug exactly — is the same epic under another name, so it is not a sibling. A name that another epic present in either store can also claim as its dated snapshot is never excluded — it stays a sibling. The exclusion applies only while the queried epic has a tree in the ACTIVE store; an archived epic queried directly has no live corpus for a dated neighbour to duplicate, and nothing is excluded for it. The match is by directory name because the live and the archived `status.json` of one epic share no identity field, so the exclusion rests on the snapshot naming convention.
+- **The plan-less sentinel.** The active-plan walk admits every directory carrying a `status.json`, including the one plan-less operations write into. That directory is not a plan and never declares a surface, so it is skipped through `marketplace_paths.names_real_plan` — the single predicate for whether an id names an actual plan.
+
+Neither exclusion is silent. Three keys are present on EVERY successful call, so a zero is a stated zero rather than an absent key:
+
+| Key | Carries | A zero means |
+|-----|---------|--------------|
+| `excluded_self_snapshot_count` | How many archived directories were recognised as the queried epic's own dated snapshot | Nothing was recognised as the queried epic's own snapshot under the rule above |
+| `excluded_self_snapshots[]` | Those directory names, sorted | The empty list, on the same condition |
+| `excluded_sentinel_plan_count` | How many active-plan directories were skipped because their id names no real plan | No directory was skipped |
+
+A real live plan with empty `affected_files` is still enumerated and still indeterminate — the sentinel skip is keyed on the id, never on an empty surface, so a pre-footprint plan stays named in `live_indeterminate_plans[]`.
 
 The payload also names the population the file-overlap class actually COMPARED, so `file_overlap_match_count: 0` states which zero it is. `specs_comparable` counts the specs that declared a comparable path set, `specs_indeterminate` those that did not, `compared_path_count` is the total path population compared, and `spec_surface_states[]` tallies the whole five-member derivation vocabulary over `specs_total` — every own spec, including one nothing could read. `spec_surfaces[]` carries the per-spec status for the `specs_scanned` specs that PARSED, so it is the narrower list of the two and the tally is not re-derivable from it. A spec in any indeterminate state contributes no row to the matcher at all — without these counts its absence from `file_overlap_matches[]` is indistinguishable from a checked negative. The live side rides the same separation: `live_indeterminate_plans[]` names the active plans that declared no comparable surface (empty `affected_files`, flagged non-comparable), `live_plan_surfaces[]` carries the per-plan comparability, `live_plans_comparable` / `live_plans_indeterminate` count the two populations, and `live_checked_and_clean_count` (compared, no overlap and no shared origin) versus `live_could_not_check_count` (no comparable surface) keep checked-and-clean apart from could-not-check — an indeterminate live plan never renders as disjoint. Refuses an unsafe slug (`invalid_slug`) and an epic with no store tree (`not_found`).
 
@@ -338,6 +355,82 @@ python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator cle
 ```
 
 Reports whether the session is safe to restart, read-only. Returns one `signals[]` row per observed signal — the epic `phase`, the `running` plan set, the corpus reconciliation figures, the derived inbox state, the repository HEAD plus worktree cleanliness, and `registry_parity` — each carrying its own three-valued verdict, its own evidence, and the population it was derived from, plus `sampled_at` beside the overall `verdict`. **An unreadable or unobservable signal resolves to `indeterminate` and never to `not_ready`**: an unobservable signal is not a failing one. The `running` arm reads the queue rows through the ledger layout module, so a monolithic-layout ledger — or a queue with an unread row file and no readable running row — is `indeterminate`, never `ready`. The overall verdict is the floor over the PARTICIPATING rows (`signals_scored` of `signals_total`); the `registry_parity` row reports `not_available`, names `PLAN-TRUTH-059` as the spec that owns that surface, and is excluded from the floor, so an unowned surface cannot veto a verdict this component can reach. Refuses an unsafe slug (`invalid_slug`) and an epic with no store tree (`not_found`).
+
+### land status
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator land status
+```
+
+Reports where the shared ledger worktree stands in the land cycle, read-only. The four `land` verbs share three properties, stated once here:
+
+- **Knob refusal.** Each returns `land_requires_use_worktree` while `orchestrator.use_worktree` is off, before the tree is touched.
+- **Tree resolution.** Each resolves the worktree through the orchestrator store seam, so a seam refusal — the set listed under [`resolve-path`](#resolve-path) — reaches the caller as `status: error` under its own code.
+- **State and guard.** The land's state lives in two local-only git refs that are never pushed: the pushed marker `refs/plan-marshall/ledger-land/pushed` and the PR binding `refs/plan-marshall/ledger-land/pr/{N}`, both naming the same SHA. A land is in flight exactly while the marker exists. Every check-then-act over those refs runs under one main-anchored guard file, `.plan/local/orchestrator-land.lock`, with network round-trips outside it. `land status` takes no guard; the other three verbs can return `land_guard_timeout`.
+
+The payload:
+
+| Field | Value |
+|-------|-------|
+| `store_checkout` | The worktree root — the same store checkout `resolve-path` returns, and the `{store_checkout}` of [`workflow/land.md`](workflow/land.md) |
+| `branch`, `base_branch` | The branch checked out in the worktree (`unknown` when unreadable) and the repository's default base |
+| `pending_paths`, `pending_count` | Every modified or untracked ledger path not yet recorded at `{store_checkout}`, and their count; both `unknown` when git could not say |
+| `unpushed_commits` | The count since the pushed marker, or since `origin/{base_branch}` when no land is in flight; `unknown` when the range does not resolve |
+| `pushed_marker` | The SHA the in-flight land pushed, or null |
+| `bound_pr` | The PR number of the single binding ref, or null |
+| `bound_pr_conflict` | Present only when more than one binding ref exists, listing the numbers; `bound_pr` is then null |
+| `remote_branch` | `present` / `absent` / `unknown` for `chore/orchestrator-ledger` on the remote — `unknown` when `git ls-remote` failed, never `absent` |
+| `remote_branch_contained` | `true` / `false` / `unknown` — see below |
+
+`remote_branch_contained` answers whether the remote head branch holds anything the local tree lacks. It is `true` for an ABSENT remote branch, so read `remote_branch` beside it to tell that case from a present, contained branch. It is `false` when the remote SHA is not in the local object store at all or is not an ancestor of the worktree's `HEAD`, and `unknown` when the remote could not be read or the ancestry could not be decided.
+
+### land snapshot
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator land snapshot \
+  [--extend]
+```
+
+Stages every ledger root that exists or is tracked, records the staged ledger paths at `git -C {store_checkout}` under a `chore(orchestrator): snapshot ledger (N paths)` subject whose trailer comes from `run_config`'s commit-trailer resolver, pushes the result to `chore/orchestrator-ledger` WITHOUT force, and writes the pushed marker. Only ledger paths are ever staged. `outcome` is drawn from a closed set:
+
+| `outcome` | Holds when | Carries |
+|-----------|-----------|---------|
+| `in_flight` | A pushed marker already exists and `--extend` was not passed; nothing is staged or pushed | `pushed_marker`, `bound_pr` |
+| `nothing_to_land` | No marker, nothing was staged, and the unpushed count is a measured `0` — an unresolvable range is not a zero and falls through to the push | `head_sha` |
+| `pushed` | The push succeeded and the marker was recorded | `head_sha`, `pushed_marker`, `committed_paths`, `bound_pr`, `land_paths`, `title`, `body` |
+
+`--extend` adds to a land that is already in flight: the push runs even when nothing new was staged, the marker moves forward to the pushed SHA and never backwards, and every existing binding ref follows it. `title` and `body` are the composed PR title and body — the changed ledger paths grouped per epic and, within an epic, by category (queue rows, plan specs, anchor/header, landings, inbox, other) — measured against the land's fork point from `origin/{base_branch}`; the body carries no attribution footer. `land_paths` is `unknown` when that measurement failed.
+
+Refusals, each `status: error`: `ledger_commit_failed` (staging, reading the staged set, recording it, or resolving `HEAD` at `{store_checkout}` failed), `ledger_push_rejected` (the non-forced push was refused; the local snapshot is kept, no land is recorded, and `remote_branch` / `remote_branch_contained` report what the remote holds), and `land_ref_write_failed` (the push succeeded but the marker could not be written).
+
+### land bind
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator land bind \
+  --pr-number PR_NUMBER
+```
+
+Points the binding ref for `PR_NUMBER` at the pushed marker and removes every other binding ref, so at most one PR is bound. Idempotent: re-binding the same number returns the same `outcome: bound` with `pr_number` and `pushed_marker`. Refuses with `no_land_in_flight` when no pushed marker exists and `land_ref_write_failed` when the ref could not be written. The verb records the number it is given; it does not query the PR.
+
+### land resync
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator land resync \
+  --pr-number PR_NUMBER --merge-commit-sha MERGE_COMMIT_SHA
+```
+
+Closes the cycle after the land PR merged: verifies the landed content, replays everything written since the snapshot onto the base, and deletes both land refs. The worktree is never removed, never hard-reset, and no stash is dropped. `--pr-number` is echoed into the return and is NOT checked against the binding ref. The steps, in order:
+
+1. **Preconditions.** No pushed marker returns `no_land_in_flight`; a `--merge-commit-sha` that is not hexadecimal returns `invalid_merge_commit_sha`.
+2. **Base check.** `origin/{base_branch}` is fetched (`base_fetch_failed` when it cannot be) and the SHA must be an ancestor of it (`merge_commit_not_on_base` otherwise).
+3. **Content check.** The ledger paths the land changed are measured from the marker's fork point off the merge commit's FIRST PARENT — the base as it stood when the land merged — so the set is the same under a squash, a rebase and a true merge. A path in that set whose content at the merge SHA differs from the marker returns `resync_content_mismatch` with `mismatched_paths`; a measurement git could not perform returns `resync_content_unevaluable`. Both leave the tree untouched.
+4. **Primary checkout and remote branch — never fatal.** The primary checkout's base branch is fast-forwarded to `origin/{base_branch}` (`main_fast_forward`: `done` / `failed`; never forced), and the landed remote head branch is deleted under a lease on the marker (`remote_branch_cleanup`: `deleted` / `already_absent` / `kept_diverged` when the branch moved past the landed SHA / `failed`).
+5. **Replay.** Under the guard, everything after the marker is rebased onto `origin/{base_branch}` at `git -C {store_checkout}` with uncommitted work autostashed and restored. A tree whose `HEAD` no longer contains the marker is already replayed — the state a resync leaves when it stops between the replay and the close; it is reported as `already_resynced: true` with `replayed_commits: 0` and the rebase is skipped.
+6. **Close.** Both land refs are deleted.
+
+Success returns `outcome: resynced` with `pr_number`, `merge_commit_sha`, `head_sha`, `already_resynced`, `replayed_commits`, `carried_uncommitted`, `main_fast_forward` and `remote_branch_cleanup`.
+
+A replay that cannot complete is aborted and returns `resync_conflict` with both land refs kept, `pre_rebase_sha`, and `head_restored` saying whether the tree is back at that SHA. ⚠ Step 4 runs BEFORE the replay, so on `resync_conflict` and on `land_guard_timeout` the primary checkout may already be fast-forwarded and the remote head branch already deleted; the payload reports both in `main_fast_forward` and `remote_branch_cleanup`.
 
 ### inbox write
 

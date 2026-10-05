@@ -17,7 +17,7 @@ marketplace/targets/
 ├── __init__.py                   # TARGET_REGISTRY + register_target()
 ├── base.py                       # TargetBase ABC
 ├── generate.py                   # CLI entry point
-├── sync.py                       # Unified sync engine (antigravity/opencode)
+├── sync.py                       # Single sync engine (claude/opencode/antigravity)
 ├── body_transform_engine.py      # Target-shared data-driven body rewrites
 ├── component_targets.py          # `targets:` frontmatter scope filter
 ├── fs_safety.py                  # Containment primitives for destructive emits
@@ -34,6 +34,9 @@ marketplace/targets/
 │   ├── variant_emitter.py        # Per-level agent variant emission
 │   ├── equality_check.py         # Source ↔ target drift detection
 │   ├── source_fingerprint.py     # Worktree fingerprint for the staleness guard
+│   ├── cache_sync.py             # Plugin-cache sync + staleness guard (sync.py's claude path)
+│   ├── reconcile_daemon.py       # marshalld reconcile after a cache version bump
+│   ├── list_bundles_and_versions.py  # Bundle/version table of target/claude/
 │   ├── content_drift.py          # Live content-drift check engine
 │   └── content_drift_cli.py      # CLI wrapper for the content-drift check
 ├── antigravity/                  # Google Antigravity build target
@@ -116,7 +119,7 @@ so a bare `python3 marketplace/targets/generate.py` fails with
 `ModuleNotFoundError: No module named 'yaml'`. Always invoke it through the
 `./pw` wrapper: `uv` is installed only into the project-local `.pyprojectx/`
 tree and is not on `PATH`, so a bare `uv run …` exits 127 outside it. The
-`generate`, `generate-claude` and `generate-opencode` aliases in
+`generate`, `generate-claude`, `generate-opencode` and `generate-antigravity` aliases in
 `pyproject.toml` are the invocation surface, and `generate` forwards whatever
 arguments follow it. See `component_targets.py` for the frontmatter extraction
 and the shape rules that module owns on top of the YAML load.
@@ -187,9 +190,9 @@ missing flag, generator error, plugin.json drift, unmapped tool, etc.).
    a scoped-out component is absent from its output (file-level exclusions
    included), so a target that skips this step fails the suite rather than
    shipping components it was told not to.
-7. **If the target supports local developer deployment (`sync.py`), register a `TargetSyncConfig`.**
-   Targets that support syncing generated bundles into local developer environments (such as Antigravity's `/sync-antigravity` or OpenCode's `/sync-opencode`) hook into the declarative `marketplace/targets/sync.py` engine (Claude Code uses native rsync cache sync via `/sync-plugin-cache`).
-   Add a `TargetSyncConfig` entry to `TARGET_CONFIGS` in `marketplace/targets/sync.py`:
+7. **If the target supports local developer deployment, register it with the sync engine (`sync.py`).**
+   `marketplace/targets/sync.py` is the single engine that syncs a generated tree into a harness's local install; the `sync-harnesses` command of every harness runs it. A harness whose generated tree deploys as a component tree (as `opencode` and `antigravity` do) hooks in declaratively. The Claude target is the exception: its install is the versioned plugin cache, so its path is the rsync mirror in `marketplace/targets/claude/cache_sync.py` rather than a `TargetSyncConfig`.
+   Add the target's name to `SYNC_TARGETS` and a `TargetSyncConfig` entry to `TARGET_CONFIGS` in `marketplace/targets/sync.py`:
 
    ```python
    TARGET_CONFIGS['{name}'] = TargetSyncConfig(
@@ -206,21 +209,49 @@ missing flag, generator error, plugin.json drift, unmapped tool, etc.).
    )
    ```
 
-   Then register a project-level command (e.g. `.{target}/commands/sync-{target}.md`) invoking `python3 marketplace/targets/sync.py --target {name} "$@"` and add unit tests under `test/sync-{target}/`.
+   The new harness is then reached by `--target {name}` and by every all-targets run. Add the `sync-harnesses` command file in the harness's own project-local command location, running `python3 marketplace/targets/sync.py $ARGUMENTS` like the existing three, and add unit tests under `test/sync-harnesses/`.
 
 ## Target Synchronization Engine (`sync.py`)
 
-`marketplace/targets/sync.py` provides a unified, declarative synchronization engine that deploys generated target artifacts (`target/{name}/`) into a local environment or plugin directory. It replaces ad-hoc per-target sync scripts with a shared, safe, and structured implementation.
+`marketplace/targets/sync.py` is the single sync engine. It deploys the generated trees (`target/{name}/`) of every harness — `claude`, `opencode` and `antigravity` — into that harness's local install location, with one shared, safe, and structured implementation.
 
 ### Architecture & Pipeline
 
 ```text
-marketplace/bundles/  ──[ ./pw generate --target {name} ]──>  target/{name}/  ──[ sync.py --target {name} ]──>  Platform Config/Plugin Dir
+marketplace/bundles/  ──[ generator ]──>  target/{name}/  ──[ sync.py [--target {name}] ]──>  the harness's install location
 ```
+
+The generator hop is `./pw generate-claude`, `./pw generate-opencode` or `./pw generate-antigravity`. `--target` is optional. Without it the engine syncs `claude`, `opencode` and `antigravity` in that fixed order, attempting each one even when an earlier one failed, and reports one aggregate result. With `--target {name}` it syncs exactly that harness.
+
+| Target | Source | Destination | Implementation |
+|--------|--------|-------------|----------------|
+| `claude` | `target/claude/` | `~/.claude/plugins/cache/plan-marshall/{bundle}/{version}/`, plus `dist-manifest.json` at the cache root | `claude/cache_sync.py` — per-bundle rsync mirror behind a staleness guard |
+| `opencode` | `target/opencode/` (singular layout) | `~/.config/opencode/` (plural layout) | `TargetSyncConfig` deploy |
+| `antigravity` | `target/antigravity/` | `~/.gemini/config/plugins/plan-marshall/` | `TargetSyncConfig` deploy |
+
+The engine is stdlib-only and runs under a bare `python3`. It loads `claude/cache_sync.py` by file location, never through the `marketplace.targets` package, whose `__init__` modules import third-party dependencies.
+
+### The Claude path (`claude/`)
+
+The Claude leg lives under `marketplace/targets/claude/`:
+
+* `cache_sync.py` — mirrors each bundle of `target/claude/` into the versioned plugin cache. A staleness guard refuses a tree that is missing, empty, or behind `marketplace/bundles/`. The guard expects exactly the bundles whose `plugin.json` admits `claude` through its `targets` declaration, and it reports `guard_outcome: stale` (regenerate the tree) separately from `guard_outcome: probe_failed` (a probe could not run, so freshness is unknown).
+* `reconcile_daemon.py` — reconciles a running `marshalld` after a Claude sync moved the cache version. It is run once the Claude target reports `status: success`.
+* `list_bundles_and_versions.py` — prints the bundle/version table of `target/claude/`.
+
+### The `sync-harnesses` command files
+
+Each harness carries the same command in its own project-local location. All three are thin pointers that regenerate the selected targets, run the engine with their arguments passed through, and reconcile the build daemon when the Claude target synced:
+
+| Harness | Command file |
+|---------|--------------|
+| Claude Code | `.claude/skills/sync-harnesses/SKILL.md` |
+| OpenCode | `.opencode/commands/sync-harnesses.md` |
+| Antigravity | `.agents/skills/sync-harnesses/SKILL.md` |
 
 ### Declarative Configuration (`TargetSyncConfig`)
 
-Each target is registered in `TARGET_CONFIGS` with a `TargetSyncConfig` dataclass defining:
+Each component-tree target (`opencode`, `antigravity`) is registered in `TARGET_CONFIGS` with a `TargetSyncConfig` dataclass defining:
 * `name`: The target key passed via `--target` (e.g., `'antigravity'`, `'opencode'`).
 * `default_dest`: The target platform's default user/global installation path (e.g., `~/.gemini/config/plugins/plan-marshall` or `~/.config/opencode`). Can be overridden at runtime via `--target-dir`.
 * `source_skills_dir`, `source_agents_dir`, `source_commands_dir`: Source directory names under `target/{name}/`. The engine normalizes both singular layouts (`skill/`, `agent/`, `command/`) and plural layouts (`skills/`, `agents/`, `commands/`) into the standard plural structure expected by target runtimes at destination.
@@ -237,7 +268,9 @@ The sync engine enforces strict safety boundaries when pruning stale files:
 
 ### Output Contract (TOON)
 
-The sync engine serializes its execution report in compact TOON format using `toon_parser.serialize_toon`:
+The sync engine serializes its execution report in compact TOON format using `toon_parser.serialize_toon`. The shape depends on the run.
+
+A single-target `opencode` or `antigravity` run:
 ```text
 status: success
 target: antigravity
@@ -249,7 +282,7 @@ commands_count: 1
 assets_count: 3
 deployed_count: 67
 removed_count: 0
-summary_message: "Deployed 67 items (53 skills, 10 agents, 1 commands, 3 assets) to /Users/.../.gemini/config/plugins/plan-marshall"
+summary_message: "deployed 67 components, removed 0 stale entries to /Users/.../.gemini/config/plugins/plan-marshall"
 ```
 
 When stale items are removed, a structured `removed` array is included:
@@ -259,29 +292,71 @@ removed[1]{kind,name}:
   skills,plan-marshall-stale-skill
 ```
 
+A single-target `claude` run:
+```text
+status: success | partial | error
+synced_count: N
+failed_count: M
+summary_message: "<summary>"
+guard_outcome: stale | probe_failed   # only on a staleness-guard refusal
+synced[N]{bundle,version,status}:
+failed[M]{bundle,error}:              # only when failed_count > 0
+```
+
+An all-targets run (no `--target`) emits one aggregate document: a `targets` table with one row per harness, followed by each harness's own result block.
+```text
+status: success | partial | error
+targets[3]{target,status,summary_message}:
+  claude,success,"..."
+  opencode,success,"..."
+  antigravity,error,"source not found: ..."
+claude:
+  <the claude result block>
+opencode:
+  <the opencode result block>
+antigravity:
+  <the antigravity result block>
+```
+
+The aggregate `status` is `success` only when every harness reported `success`, `partial` when some did, and `error` when none did.
+
+Under `--dry-run` nothing is written, and each result block produced by a harness's own sync code additionally carries `dry_run: true`. The engine-level fallback block for a harness that could not start carries no `dry_run` field.
+
 ### CLI Interface
 
+The engine is invoked directly with the host interpreter; it has no `./pw` alias.
+
 ```bash
-# Sync entire generated target to default global destination
-./pw sync --target antigravity
+# Sync all three harnesses to their default install locations
+python3 marketplace/targets/sync.py
 
-# Sync to a custom or staging directory (non-destructive testing)
-./pw sync --target opencode --target-dir /tmp/opencode-test
+# Sync one harness only
+python3 marketplace/targets/sync.py --target antigravity
 
-# Dry-run preview of deployment and pruning actions
-./pw sync --target antigravity --dry-run
+# Sync to a custom or staging directory (opencode / antigravity; requires --target)
+python3 marketplace/targets/sync.py --target opencode --target-dir /tmp/opencode-test
 
-# Scope sync to specific bundle(s)
-./pw sync --target opencode --bundles plan-marshall,pm-dev-java
+# Dry-run preview: report what would be synced, write nothing
+python3 marketplace/targets/sync.py --dry-run
+
+# Restrict every selected target to a single bundle
+python3 marketplace/targets/sync.py --target opencode --bundles plan-marshall
+
+# Claude path: sync from another worktree's generated tree
+python3 marketplace/targets/sync.py --target claude --from-worktree /path/to/worktree
 ```
+
+`--source` and `--target-dir` are single-target overrides and require `--target`. `--from-worktree`, `--cache-root` and `--skip-staleness-guard` configure the Claude path only. `python3 marketplace/targets/sync.py --help` prints the authoritative flag set.
+
+Exit codes: an all-targets run exits `0` on aggregate `success` and `1` on `partial` or `error`. `--target opencode` and `--target antigravity` exit `0` on `success` and `1` on `error`. `--target claude` exits `0` on `success` or `partial`, `1` on `error`, and `2` on a staleness-guard refusal. Rejected arguments exit `2`.
 
 ## Output directories
 
 `target/claude/`, `target/opencode/`, and `target/antigravity/` are gitignored — they are build
 artifacts, not committed sources. The `project:finalize-step-deploy-target` finalize
-step emits `target/claude/` during the finalize phase; the
-`/sync-plugin-cache` skill consumes that directory when syncing the
-Claude plugin cache.
+step emits all three during the finalize phase; the
+`/sync-harnesses` command consumes those directories when syncing the
+harness installs.
 
 `target/cuioss-review-bot/packs/` is the same kind of output: a build artifact,
 not a committed source. The repository tracks no generated reviewer
@@ -370,5 +445,5 @@ The registered Claude Code marketplace MUST point at `target/claude/`, not
 at the source `marketplace/` directory. The source only declares canonical
 agent files; registering it skips the variant expansion and breaks every
 dispatch site that resolves to `execution-context-{level}`. See the
-"Registered Marketplace Path" section in the top-level `CLAUDE.md` for
-the migration steps.
+"Registered marketplace path" section in `doc/developer/marketplace-build.adoc`
+for the migration steps.

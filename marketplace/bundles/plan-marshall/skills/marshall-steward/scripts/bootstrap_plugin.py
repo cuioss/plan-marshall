@@ -81,6 +81,7 @@ from marketplace_paths import (  # noqa: E402
     get_bundle_cache_roots,
     get_project_skill_roots,
 )
+from target_context import resolve_target  # noqa: E402
 
 # Default plugin name to search for
 PLUGIN_NAME = 'plan-marshall'
@@ -121,44 +122,9 @@ def write_state(state: dict[str, str]) -> None:
 
 
 def read_runtime_target(cwd: str | None = None) -> str:
-    """Read ``runtime.target`` from platform env vars or ``.plan/marshal.json``.
-
-    Resolution cascade:
-
-    1. **Env signal** — ``ANTIGRAVITY_AGENT`` → ``'antigravity'``,
-       ``OPENCODE`` / ``OPENCODE_PID`` → ``'opencode'``,
-       ``CLAUDE_CODE_SESSION_ID`` → ``'claude'``.
-    2. **Config** — ``runtime.target`` from the nearest ``.plan/marshal.json``.
-    3. **Default** — ``'claude'``.
-    """
-    import json as _json
-    import os as _os
-
-    # Tier 1: platform-injected env var (zero-cost, always present).
-    if _os.environ.get('ANTIGRAVITY_AGENT'):
-        return 'antigravity'
-    if _os.environ.get('OPENCODE') or _os.environ.get('OPENCODE_PID'):
-        return 'opencode'
-    if _os.environ.get('CLAUDE_CODE_SESSION_ID'):
-        return 'claude'
-
-    # Tier 2: marshal.json config.
-    start = Path(cwd).resolve() if cwd else Path.cwd().resolve()
-    for parent in [start, *start.parents]:
-        candidate = parent / '.plan' / 'marshal.json'
-        if candidate.is_file():
-            try:
-                data = _json.loads(candidate.read_text(encoding='utf-8'))
-                if isinstance(data, dict):
-                    runtime = data.get('runtime')
-                    if isinstance(runtime, dict):
-                        target = runtime.get('target')
-                        if isinstance(target, str) and target:
-                            return target
-            except (OSError, ValueError):
-                pass
-            return 'claude'
-    return 'claude'
+    """Read target from ambient environment, local harness config, or fallback via target_context."""
+    path_cwd = Path(cwd) if cwd is not None else None
+    return str(resolve_target(path_cwd)['target'])
 
 
 def detect_plugin_root(target: str | None = None) -> Path | None:

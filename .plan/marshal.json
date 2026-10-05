@@ -53,6 +53,16 @@
         "XXL": "520K"
       },
       "per_envelope_budget_tokens": "400K",
+      "worktree_setup_commands": [
+        [
+          "./pw",
+          "generate",
+          "--target",
+          "all",
+          "--output",
+          "target"
+        ]
+      ],
       "verification_steps": {
         "default:verify:quality-gate": {},
         "default:verify:module-tests": {}
@@ -98,9 +108,6 @@
           "lane": "minimal"
         },
         "default:create-pr": {
-          "lane": "minimal"
-        },
-        "project:finalize-step-era-stamp-fill": {
           "lane": "minimal"
         },
         "plan-marshall:automatic-review": {
@@ -177,7 +184,10 @@
         "default": "level-5",
         "verification-feedback": "level-5",
         "post-run-review": "level-5"
-      }
+      },
+      "removed_steps": [
+        "project:finalize-step-era-stamp-fill"
+      ]
     },
     "finding_raw_input_max_bytes": 65536
   },
@@ -304,9 +314,6 @@
       "url": "https://github.com/cuioss/plan-marshall.git"
     }
   ],
-  "runtime": {
-    "target": "opencode"
-  },
   "skill_domains": {
     "system": {
       "defaults": [],
@@ -363,7 +370,7 @@
       "no_plan_body_days": 7,
       "build_results_days": 5
     },
-    "provisioned_version": "0.1.1780",
+    "provisioned_version": "0.1.1818",
     "config_seed_fingerprint": "28c7d1c8"
   }
 }

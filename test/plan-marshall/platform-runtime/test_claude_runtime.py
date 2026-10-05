@@ -202,134 +202,26 @@ class TestProjectInitialSetup:
         assert result['status'] == 'success'
         assert (project_dir / '.plan' / 'temp').is_dir()
 
-    def test_writes_marshal_json_with_runtime_target(self, rt, tmp_path):
-        """project_initial_setup writes .plan/marshal.json with runtime.target=claude."""
+    def test_does_not_write_marshal_json(self, rt, tmp_path):
+        """project_initial_setup leaves .plan/marshal.json unwritten; runtime.target is retired."""
         project_dir = tmp_path / 'proj'
         project_dir.mkdir()
-        rt.project_initial_setup(str(project_dir), 'claude')
-        marshal = json.loads((project_dir / '.plan' / 'marshal.json').read_text())
-        assert marshal['runtime']['target'] == 'claude'
-        assert marshal['project_dir'] == str(project_dir.resolve())
+        result = _parsed(rt.project_initial_setup(str(project_dir), 'claude'))
+        assert result['marshal_written'] is False
+        assert not (project_dir / '.plan' / 'marshal.json').exists()
 
-    def test_preserves_pre_existing_marshal_blocks(self, rt, tmp_path):
-        """An existing marshal.json is MERGED into, never overwritten.
-
-        The write is a read-modify-write: every top-level block an initialized
-        project already carries survives, and only ``runtime.target`` and
-        ``project_dir`` are set. An unconditional write would report
-        ``marshal_written: True`` while silently destroying the whole config —
-        the reported success is exactly what makes the loss invisible, so the
-        surviving block is asserted rather than the status alone.
-
-        Mirrors ``OpenCodeRuntime.project_initial_setup``, which already
-        read-merges; the two targets implement one contract operation and must
-        not disagree on whether it is destructive.
-        """
+    def test_leaves_pre_existing_marshal_json_intact(self, rt, tmp_path):
+        """An existing marshal.json is left untouched and not mutated."""
         project_dir = tmp_path / 'preserve-proj'
         marshal_path = project_dir / '.plan' / 'marshal.json'
         marshal_path.parent.mkdir(parents=True)
-        marshal_path.write_text(
-            json.dumps(
-                {
-                    'plan': {'phase-2-refine': {'compatibility': 'breaking'}},
-                    'build': {'map': {'python': []}},
-                    'runtime': {'target': 'opencode'},
-                }
-            ),
-            encoding='utf-8',
-        )
+        initial = json.dumps({'plan': {'phase-2-refine': {'compatibility': 'breaking'}}})
+        marshal_path.write_text(initial, encoding='utf-8')
 
         result = _parsed(rt.project_initial_setup(str(project_dir), 'claude'))
         assert result['status'] == 'success'
-
-        marshal = json.loads(marshal_path.read_text())
-        # The operation's own effect landed...
-        assert marshal['runtime']['target'] == 'claude'
-        assert marshal['project_dir'] == str(project_dir.resolve())
-        # ...and every pre-existing block survived it.
-        assert marshal['plan'] == {'phase-2-refine': {'compatibility': 'breaking'}}
-        assert marshal['build'] == {'map': {'python': []}}
-
-    def test_unparseable_marshal_yields_io_error_and_leaves_file_intact(self, rt, tmp_path):
-        """A corrupt marshal.json is reported as io_error and left untouched.
-
-        The failure edge is copied from the OpenCode sibling, which catches
-        ``(OSError, json.JSONDecodeError)`` and returns ``io_error``. It
-        deliberately does NOT fall back to ``{}``: starting from an empty
-        document would overwrite precisely the config a corrupt-file path must
-        preserve, turning an unreadable config into a destroyed one.
-        """
-        project_dir = tmp_path / 'corrupt-proj'
-        marshal_path = project_dir / '.plan' / 'marshal.json'
-        marshal_path.parent.mkdir(parents=True)
-        corrupt = '{"plan": {"phase-2-refine": '  # truncated — not valid JSON
-        marshal_path.write_text(corrupt, encoding='utf-8')
-
-        result = _parsed(rt.project_initial_setup(str(project_dir), 'claude'))
-
-        assert result['status'] == 'error'
-        assert result['error'] == 'io_error'
-        # The corrupt bytes are still exactly what they were — not replaced by
-        # a fresh document, and not emptied.
-        assert marshal_path.read_text(encoding='utf-8') == corrupt
-
-    @pytest.mark.parametrize(
-        ('raw', 'case_id'),
-        [
-            pytest.param('[]', 'top-level-list', id='top-level-list'),
-            pytest.param('{"runtime": null}', 'null-runtime', id='null-runtime-block'),
-        ],
-    )
-    def test_parseable_but_wrong_shape_yields_io_error_and_leaves_file_intact(self, rt, tmp_path, raw, case_id):
-        """A PARSEABLE marshal.json of the wrong shape takes the io_error route too.
-
-        The parse edge and the shape edge are distinct: ``json.loads`` succeeds on
-        both documents below, so neither is caught by the
-        ``(OSError, json.JSONDecodeError)`` handler. Before the shape guard each
-        reached the seeding assignments and raised an UNCAUGHT ``TypeError``, so
-        the verb died with a traceback instead of the contract's structured
-        ``io_error`` — and the two arrive by different routes:
-
-        - ``[]`` — ``"runtime" not in []`` is True, so ``data["runtime"] = {}``
-          raises "list indices must be integers".
-        - ``{"runtime": null}`` — the key IS present, so the re-init guard does
-          NOT fire and ``data["runtime"]["target"] = ...`` raises "'NoneType'
-          object does not support item assignment". A ``.get()``-based shape check
-          would read ``None`` as "absent" and miss this one entirely.
-
-        Both assert the file is byte-unchanged: refusing must not overwrite the
-        config the refusal exists to preserve.
-        """
-        project_dir = tmp_path / f'shape-{case_id}'
-        marshal_path = project_dir / '.plan' / 'marshal.json'
-        marshal_path.parent.mkdir(parents=True)
-        marshal_path.write_text(raw, encoding='utf-8')
-
-        result = _parsed(rt.project_initial_setup(str(project_dir), 'claude'))
-
-        assert result['status'] == 'error'
-        assert result['error'] == 'io_error'
-        assert marshal_path.read_text(encoding='utf-8') == raw
-
-    def test_absent_runtime_key_is_not_treated_as_a_shape_violation(self, rt, tmp_path):
-        """Matched negative control: a runtime-less object still initializes.
-
-        Key-absent and key-present-but-null are different states, and only the
-        second is corrupt. Without this control a guard that rejected every
-        document lacking a dict ``runtime`` block would satisfy both rejection
-        cases above while making a first-run initialization impossible.
-        """
-        project_dir = tmp_path / 'no-runtime-key'
-        marshal_path = project_dir / '.plan' / 'marshal.json'
-        marshal_path.parent.mkdir(parents=True)
-        marshal_path.write_text(json.dumps({'plan': {'keep': True}}), encoding='utf-8')
-
-        result = _parsed(rt.project_initial_setup(str(project_dir), 'claude'))
-
-        assert result['status'] == 'success'
-        marshal = json.loads(marshal_path.read_text())
-        assert marshal['runtime']['target'] == 'claude'
-        assert marshal['plan'] == {'keep': True}
+        assert result['marshal_written'] is False
+        assert marshal_path.read_text(encoding='utf-8') == initial
 
     def test_response_includes_target_and_marshal_written(self, rt, tmp_path):
         """Success response includes target, project_dir, marshal_written fields."""
@@ -337,7 +229,7 @@ class TestProjectInitialSetup:
         project_dir.mkdir()
         result = _parsed(rt.project_initial_setup(str(project_dir), 'claude'))
         assert result['target'] == 'claude'
-        assert result['marshal_written'] is True
+        assert result['marshal_written'] is False
 
     def test_hook_not_installed_twice(self, rt, tmp_path):
         """Calling project_initial_setup twice does not duplicate the hook entry."""
@@ -383,18 +275,15 @@ class TestProjectInitialSetupFreshInit:
         # Status
         assert result['status'] == 'success'
         assert result['target'] == 'claude'
-        assert result['marshal_written'] is True
+        assert result['marshal_written'] is False
 
         # Directory structure
         assert (project_dir / '.plan').is_dir()
         assert (project_dir / '.plan' / 'temp').is_dir()
 
-        # marshal.json content
+        # marshal.json is not written by project_initial_setup
         marshal_path = project_dir / '.plan' / 'marshal.json'
-        assert marshal_path.is_file()
-        marshal = json.loads(marshal_path.read_text())
-        assert marshal['runtime']['target'] == 'claude'
-        assert 'project_dir' in marshal
+        assert not marshal_path.exists()
 
         # SessionStart hook in settings.local.json
         settings_path = project_dir / '.claude' / 'settings.local.json'

@@ -112,6 +112,23 @@ change: it first needs generator support (a target registered in
 matrix entry is appended. The matrix list is the final distribution step, not
 the whole change.
 
+=== Target-Scoped Bundles (`targets` field)
+
+Bundles can declare target scoping in their `.claude-plugin/plugin.json`:
+
+[source,json]
+----
+{
+  "name": "plan-marshall-antigravity",
+  "targets": ["antigravity"]
+}
+----
+
+* **Unscoped Bundles (Default)**: If the `targets` array is omitted, the bundle is common to all distribution targets and is emitted into `target/claude`, `target/opencode`, and `target/antigravity`.
+* **Scoped Bundles**: If `targets` is declared, the bundle is emitted *only* into the listed targets. Emitters for all other targets skip the bundle entirely, and the Claude target generator omits it from the generated `.claude-plugin/marketplace.json`.
+* **Fail-Closed Validation**: An empty array (`"targets": []`) or unknown target names are rejected with `TargetScopeError` at build time and flagged by `plugin-doctor` (`targets_empty`, `targets_unknown`). Component-level target declarations must stay within their enclosing bundle's target scope (`targets_contradiction`).
+* **Harness Bundles**: `plan-marshall-antigravity` (`targets: ["antigravity"]`) and `plan-marshall-opencode` (`targets: ["opencode"]`) deliver harness-specific operational rules, tool invariants, and execution constraints to their respective targets.
+
 == See also
 
 * xref:../user/install-claude.adoc[User Guide › Installation (Claude Code)] — operator-side install/update walkthrough

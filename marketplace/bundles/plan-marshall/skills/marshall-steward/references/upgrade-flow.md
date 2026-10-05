@@ -305,8 +305,8 @@ The Stage 1 asymmetry is exactly one entry wide, and it is deliberate:
 plugin cache current through `project:finalize-step-sync-plugin-cache`, which
 runs at the end of every plan's finalize phase and mirrors the freshly-generated
 `target/claude/` tree into the cache. That step is **meta-project-only** (the
-meta project's `sync-plugin-cache` surface — a project-local skill under
-project skill roots, not bundle content): it is a project-local skill under
+finalize-time counterpart of the meta project's `/sync-harnesses` command — a
+project-local, meta-repo-only surface, not bundle content): it is a project-local skill under
 project skill roots, registered in the meta project's own `marshal.json`, and
 consumer projects neither ship it nor have it seeded. So the mechanism that keeps
 the meta cache fresh is invisible to — and does not cover — a consumer, whose
@@ -326,9 +326,9 @@ tree and both leave superseded version dirs behind. The sweep and its
 
 Honor the Stage 2 top-level gate, then run exactly the Stage 2 `sub_steps` the
 plan emitted. That list is kind-invariant — `reconcile-marshal-json`, then
-`migrate-bot-lists`, then `validate-bot-lists`, then
-`migrate-architecture-descriptors` — and all four sub-steps are expanded below,
-in that order. The
+`review-held-defaults`, then `migrate-bot-lists`, then `validate-bot-lists`,
+then `migrate-architecture-descriptors` — and all five sub-steps are expanded
+below, in that order. The
 prose enumerates the emitted set: a sub-step the planner emits but this section
 never names is one a reader completes the documented upgrade without ever
 running.
@@ -378,9 +378,34 @@ When `normalize-keys` returns `status: warning` with a non-empty
 absent from the canonical order and were preserved but appended out of position (a
 stray or consumer-added block) rather than dropped.
 
+### Sub-step `review-held-defaults`
+
+Run immediately after the three reconcile verbs, before `migrate-bot-lists`.
+This is an agent-executed sub-step (no script subcommand): read the
+`held_for_ask` / `re_added` buckets off the `sync-defaults` report returned
+by the immediately-preceding reconcile call IN THE SAME RUN — never a
+re-run's report, which recomputes from the live maps and returns empty
+buckets for ids already answered:
+
+- `held_for_ask[]` — curated-but-never-removed gaps: a present step map that
+  never carried the step id was NOT expanded with it. The id is held for the
+  ask-before-add gate, never auto-added.
+- `re_added[]` — gaps that cross an explicit operator `remove-step` (the id is
+  in the phase's `removed_steps` list). Each entry names the crossed decision
+  (`<dotted-path> (crosses operator removal)`), so a re-add crossing an
+  operator decision never reads as a routine addition.
+
+Word the operator prompt identically to the sync report: `re-add` for an entry
+in `re_added`, `new default` for an entry in `held_for_ask`. Ask once per
+newly-discovered not-yet-selected step; an explicit operator answer adds the
+step via `add-step` (which clears the removal record), and a prior removal
+survives the upgrade untouched because `sync-defaults` is atomic-once-present
+on both step maps. When both buckets are empty there is nothing to ask and the
+sub-step is a no-op.
+
 ### Sub-step `migrate-bot-lists`
 
-Run after the three reconcile verbs and before the `build-map` drift gate below,
+Run after `review-held-defaults` and before the `build-map` drift gate below,
 matching the emitted order:
 
 ```bash

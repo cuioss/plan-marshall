@@ -1,0 +1,1252 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# ruff: noqa: I001
+"""Tests for the staleness guard of the Claude path of the sync engine.
+
+The guard lives in ``marketplace/targets/claude/cache_sync.py`` and is
+reached through ``marketplace/targets/sync.py --target claude``. It reads ``target/claude/.emit-marker.json`` and refuses to mirror
+the cache when the sentinel is absent, unparseable, or carries a
+fingerprint that no longer matches the worktree under
+``marketplace/bundles/``. The fingerprint is computed by the shared
+``marketplace.targets.claude.source_fingerprint.compute_source_tree_fingerprint``
+helper so the emitter (``target.py``) and the guard read the same
+algorithm.
+
+Coverage:
+
+* (a) Fresh emit — sentinel + matching fingerprint → sync passes.
+* (b) Missing sentinel → sync refuses with the documented message.
+* (c) Source modification after emit — fingerprint mismatch → sync refuses.
+* (d) ``--skip-staleness-guard`` still bypasses every refusal branch.
+
+Plus focused unit tests for the fingerprint helper (i)–(v).
+
+The single-digest fingerprint is supplemented by a file-level content-hash
+check (``_file_level_drift``) that compares the live ``target/claude/`` tree
+against the per-file hash manifest the emitter records in the sentinel's
+``file_hashes`` field, naming the specific drifted paths. Those cases keep
+the sentinel fingerprint matching (so the fingerprint branch passes) and
+write a faithful manifest for the emitted fixture tree, then introduce
+manifest-vs-live drift — a deleted manifest file (``missing``), a mutated
+manifest file (``diverged``), a live file absent from the manifest
+(``extra``) — covering the three classes individually and together, the
+intact-tree negative control, and the ``--skip-staleness-guard`` bypass of
+the file-level branch.
+
+A final group pins that the guard reports the failure that OCCURRED rather
+than the failure it hunts for. Two distinct failures reach the same refusal
+point — a probe that RAN and observed staleness (``kind: stale``) and a probe
+that COULD NOT RUN and observed nothing (``kind: probe_failed``) — and the
+second must never be dressed as the first, nor carry the first's regenerate
+remedy. The group covers both refusal kinds, the two probe sites (the
+fingerprint recompute and the file-level re-hash, the latter of which
+previously disabled itself by returning ``None``), the ``guard_outcome`` field
+that makes the kind machine-readable, and its absence on the success path. It
+also pins the root cause that made the misreport observable: the stdlib-only
+fingerprint helper and the Claude cache-sync module are both loaded by file
+location, so a bare interpreter without the project's third-party dependencies
+can still run the dispatcher and its guard — with a matched negative control
+proving the dependency block used in those tests is effective.
+
+The bundle-set check has its own group: the guard expects in ``target/claude/``
+exactly the bundles whose ``plugin.json`` ``targets`` declaration admits the
+Claude target, which is the predicate the Claude emitter applies. The group
+covers a bundle scoped to other harnesses (not expected, no refusal), a
+claude-admitting bundle missing from the emitted tree (``stale``), a manifest
+that cannot be read (``probe_failed`` naming the file), and a lockstep check
+that the guard's expected set equals the emitter's selection over the live
+``marketplace/bundles/`` tree.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import textwrap
+from pathlib import Path
+
+import pytest
+
+from marketplace.targets.claude.emitter import CLAUDE_TARGET_NAME, iter_bundle_dirs
+from marketplace.targets.claude.source_fingerprint import (
+    FingerprintError,
+    compute_source_tree_fingerprint,
+    hash_objects,
+    list_tracked_files,
+)
+from marketplace.targets.component_targets import bundle_emits_to
+from toon_parser import parse_toon
+
+from conftest import _MARKETPLACE_SCRIPT_DIRS, PROJECT_ROOT, ScriptResult, run_script
+
+#: The dispatcher every CLI test drives, always with ``--target claude``.
+_SYNC_PY = PROJECT_ROOT / 'marketplace' / 'targets' / 'sync.py'
+#: The module that owns the guard, loaded by file location for in-process tests.
+_CACHE_SYNC_PY = PROJECT_ROOT / 'marketplace' / 'targets' / 'claude' / 'cache_sync.py'
+_REAL_MARKETPLACE_BUNDLES = PROJECT_ROOT / 'marketplace' / 'bundles'
+_SENTINEL_NAME = '.emit-marker.json'
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _write(path: Path, content: str = '') -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding='utf-8')
+
+
+def _run(*args: str, cwd: Path | None = None) -> ScriptResult:
+    return run_script(_SYNC_PY, '--target', 'claude', *args, cwd=cwd, timeout=60)
+
+
+def _make_marketplace(cwd: Path, bundles: dict[str, str]) -> None:
+    for name, version in bundles.items():
+        plugin_doc = json.dumps({'name': name, 'version': version}, indent=2) + '\n'
+        _write(cwd / 'marketplace' / 'bundles' / name / '.claude-plugin' / 'plugin.json', plugin_doc)
+        _write(cwd / 'marketplace' / 'bundles' / name / 'README.md', f'# {name}\n')
+
+
+def _make_target(cwd: Path, bundles: dict[str, str]) -> None:
+    for name, version in bundles.items():
+        plugin_doc = json.dumps({'name': name, 'version': version}, indent=2) + '\n'
+        _write(cwd / 'target' / 'claude' / name / '.claude-plugin' / 'plugin.json', plugin_doc)
+        _write(cwd / 'target' / 'claude' / name / 'README.md', f'# {name}\n')
+
+
+def _git_init_and_commit(cwd: Path, message: str = 'initial') -> None:
+    """Initialise a git repo at ``cwd`` and commit every staged file.
+
+    The fingerprint helper requires ``cwd`` to be a real git work tree
+    because every primitive shells out to ``git``. Tests run in an
+    isolated ``tmp_path`` and never touch any remote.
+    """
+    subprocess.run(['git', 'init', '-q'], cwd=cwd, check=True)
+    subprocess.run(['git', 'config', 'user.email', 'test@example.invalid'], cwd=cwd, check=True)
+    subprocess.run(['git', 'config', 'user.name', 'Test User'], cwd=cwd, check=True)
+    subprocess.run(['git', 'config', 'commit.gpgsign', 'false'], cwd=cwd, check=True)
+    subprocess.run(['git', 'add', '-A'], cwd=cwd, check=True)
+    subprocess.run(['git', 'commit', '-q', '-m', message], cwd=cwd, check=True)
+
+
+def _target_file_hashes(cwd: Path) -> dict[str, str]:
+    """Compute the per-file blob-hash manifest for ``cwd/target/claude/``.
+
+    Mirrors ``marketplace.targets.claude.target._compute_emit_file_hashes``:
+    walks every regular file under the emitted ``target/claude/`` tree,
+    excludes the sentinel itself, and returns a mapping of
+    target-relative POSIX path to git blob SHA via the shared
+    ``hash_objects`` primitive. Tests use this to construct a faithful
+    manifest for an emitted fixture tree, exactly as the real emitter
+    would have written it.
+    """
+    target_root = cwd / 'target' / 'claude'
+    rel_paths: list[str] = []
+    abs_paths: list[str] = []
+    for path in sorted(target_root.rglob('*')):
+        if not path.is_file() or path.is_symlink():
+            continue
+        rel = path.relative_to(target_root).as_posix()
+        if rel == _SENTINEL_NAME:
+            continue
+        rel_paths.append(rel)
+        abs_paths.append(str(path.resolve()))
+    if not rel_paths:
+        return {}
+    shas = hash_objects(target_root, abs_paths)
+    return dict(zip(rel_paths, shas, strict=True))
+
+
+def _write_sentinel(
+    cwd: Path,
+    fingerprint: str | None,
+    file_hashes: dict[str, str] | None = None,
+) -> Path:
+    """Write the emit-marker sentinel into ``cwd/target/claude/``.
+
+    Mirrors the payload shape that ``marketplace.targets.claude.target``
+    writes at the end of every successful emit. Passing ``None`` for
+    ``fingerprint`` reproduces the degraded sentinel emitted by the
+    non-git fallback (the guard refuses on null too). ``file_hashes``
+    carries the per-file manifest the file-level drift check compares the
+    live target tree against; when omitted it defaults to an empty
+    manifest (no file-level entries to check).
+    """
+    payload: dict[str, object] = {
+        'emit_completed_at': '2026-05-27T12:00:00+00:00',
+        'source_tree_fingerprint': fingerprint,
+        'file_hashes': file_hashes if file_hashes is not None else {},
+    }
+    sentinel = cwd / 'target' / 'claude' / _SENTINEL_NAME
+    _write(sentinel, json.dumps(payload, indent=2) + '\n')
+    return sentinel
+
+
+def _compute_fingerprint_for(cwd: Path) -> str:
+    """Compute the live fingerprint for the test repo's marketplace tree."""
+    return compute_source_tree_fingerprint(cwd)
+
+
+# =============================================================================
+# (a) Fresh emit — sentinel + matching fingerprint passes
+# =============================================================================
+
+
+def test_fresh_emit_with_matching_fingerprint_passes(tmp_path: Path) -> None:
+    """A sentinel written with the live fingerprint lets sync proceed."""
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+
+    fingerprint = _compute_fingerprint_for(cwd)
+    _write_sentinel(cwd, fingerprint, _target_file_hashes(cwd))
+
+    cache = tmp_path / 'cache'
+    result = _run('--cache-root', str(cache), cwd=cwd)
+    assert result.returncode == 0, result.stdout
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'success'
+    # The demo bundle landed in the cache at the version recorded in plugin.json
+    assert (cache / 'demo' / '0.1.0' / 'README.md').is_file()
+
+
+# =============================================================================
+# (b) Missing sentinel → refusal
+# =============================================================================
+
+
+def test_missing_sentinel_refuses(tmp_path: Path) -> None:
+    """Sync refuses with the documented message when the sentinel is absent."""
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+    # Deliberately do NOT write the sentinel.
+
+    result = _run(cwd=cwd)
+    assert result.returncode == 2, result.stdout
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'error'
+    assert 'sentinel missing or unreadable' in data['summary_message']
+    assert 'finalize-step-deploy-target' in data['summary_message']
+
+
+def test_unparseable_sentinel_refuses(tmp_path: Path) -> None:
+    """A corrupted sentinel JSON triggers the same refusal branch."""
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+    _write(cwd / 'target' / 'claude' / _SENTINEL_NAME, 'not-json{')
+
+    result = _run(cwd=cwd)
+    assert result.returncode == 2
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'error'
+    assert 'sentinel' in data['summary_message']
+
+
+def test_sentinel_with_null_fingerprint_refuses(tmp_path: Path) -> None:
+    """The non-git fallback sentinel (null fingerprint) must NOT pass the guard."""
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+    _write_sentinel(cwd, None)
+
+    result = _run(cwd=cwd)
+    assert result.returncode == 2
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'error'
+    assert 'source_tree_fingerprint' in data['summary_message']
+
+
+# =============================================================================
+# (c) Source modification after emit → fingerprint mismatch → refusal
+# =============================================================================
+
+
+def test_source_drift_after_emit_refuses(tmp_path: Path) -> None:
+    """Mutating a tracked file after the sentinel was written trips the guard."""
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+
+    fingerprint = _compute_fingerprint_for(cwd)
+    _write_sentinel(cwd, fingerprint)
+
+    # Mutate the worktree AFTER the sentinel is written — this is the
+    # canonical "source changed since last emit" scenario.
+    tracked = cwd / 'marketplace' / 'bundles' / 'demo' / 'README.md'
+    tracked.write_text('# demo CHANGED\n', encoding='utf-8')
+
+    result = _run(cwd=cwd)
+    assert result.returncode == 2, result.stdout
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'error'
+    assert 'source tree changed since last emit' in data['summary_message']
+    assert 'finalize-step-deploy-target' in data['summary_message']
+
+
+# =============================================================================
+# (d) --skip-staleness-guard bypasses every refusal branch
+# =============================================================================
+
+
+def test_skip_staleness_guard_bypasses_missing_sentinel(tmp_path: Path) -> None:
+    """--skip-staleness-guard reaches the sync path even when the sentinel is missing."""
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    # No marketplace/, no target/ — guard would normally refuse with rc 2.
+    cache = tmp_path / 'cache'
+
+    result = _run(
+        '--skip-staleness-guard',
+        '--cache-root',
+        str(cache),
+        cwd=cwd,
+    )
+    # No bundles to sync → exit 1 with a different message (proves the
+    # guard did not fire; we got past it to the "no bundles" path).
+    assert result.returncode == 1, result.stdout
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'error'
+    assert 'no matching bundles' in data['summary_message']
+
+
+def test_skip_staleness_guard_bypasses_fingerprint_mismatch(tmp_path: Path) -> None:
+    """--skip-staleness-guard reaches the sync path even with a stale sentinel."""
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+    # Sentinel with a wrong fingerprint — guard would refuse without --skip.
+    _write_sentinel(cwd, 'deadbeef' * 5)
+
+    cache = tmp_path / 'cache'
+    result = _run('--skip-staleness-guard', '--cache-root', str(cache), cwd=cwd)
+    assert result.returncode == 0, result.stdout
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'success'
+    assert (cache / 'demo' / '0.1.0' / 'README.md').is_file()
+
+
+# =============================================================================
+# Fingerprint helper — focused unit tests (i)–(v)
+# =============================================================================
+
+
+def test_fingerprint_is_deterministic_across_repeated_calls(tmp_path: Path) -> None:
+    """(i) The fingerprint must be byte-stable for an unchanged tree."""
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0', 'demo2': '0.2.0'})
+    _git_init_and_commit(cwd)
+
+    first = compute_source_tree_fingerprint(cwd)
+    second = compute_source_tree_fingerprint(cwd)
+    third = compute_source_tree_fingerprint(cwd)
+    assert first == second == third
+    assert len(first) == 40  # sha-1 hex
+
+
+def test_fingerprint_sorts_paths_before_folding(tmp_path: Path) -> None:
+    """(ii) The helper folds paths in sorted order, so iteration order is irrelevant.
+
+    Indirect check: the helper sorts paths from ``git ls-files`` and the
+    git output itself is already sorted (alphabetic by full path). We
+    cross-check by computing the digest manually with the same sorted
+    order — a divergence would imply the helper deviates from the
+    documented algorithm.
+    """
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0', 'alpha': '0.5.0', 'zeta': '0.9.0'})
+    _git_init_and_commit(cwd)
+
+    paths = list_tracked_files(cwd)
+    assert paths == sorted(paths), 'list_tracked_files MUST return sorted paths'
+
+    expected = hashlib.sha1()
+    shas = hash_objects(cwd, paths)
+    for path, blob_sha in zip(paths, shas, strict=True):
+        expected.update(f'{path}:{blob_sha}\n'.encode())
+    assert compute_source_tree_fingerprint(cwd) == expected.hexdigest()
+
+
+def test_fingerprint_excludes_untracked_and_gitignored_paths(tmp_path: Path) -> None:
+    """(iii) Untracked + gitignored files MUST NOT contribute to the digest."""
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _write(cwd / '.gitignore', '__pycache__/\n*.pyc\n')
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+
+    baseline = compute_source_tree_fingerprint(cwd)
+
+    # Drop a gitignored .pyc and an untracked (but not gitignored) helper
+    # file under a non-marketplace path. Neither should affect the
+    # fingerprint, the former because git filters it, the latter because
+    # it lives outside marketplace/bundles/ (the helper's prefix).
+    _write(cwd / 'marketplace' / 'bundles' / 'demo' / '__pycache__' / 'x.pyc', 'bytecode')
+    _write(cwd / 'sandbox' / 'scratch.py', '# untracked, outside prefix\n')
+
+    after = compute_source_tree_fingerprint(cwd)
+    assert after == baseline
+
+
+def test_fingerprint_changes_when_tracked_worktree_file_mutates(tmp_path: Path) -> None:
+    """(iv) Mutating a tracked worktree file (without commit) changes the digest.
+
+    This is the canonical worktree-reflection guarantee — the property
+    that motivates using ``git hash-object`` per file rather than the
+    HEAD tree SHA or the INDEX blob SHAs (both of which would miss
+    uncommitted edits and let the guard silently pass on a drifted
+    tree).
+    """
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+    baseline = compute_source_tree_fingerprint(cwd)
+
+    # Mutate the worktree only — do NOT commit or stage.
+    (cwd / 'marketplace' / 'bundles' / 'demo' / 'README.md').write_text('# demo MUTATED\n', encoding='utf-8')
+    drifted = compute_source_tree_fingerprint(cwd)
+    assert drifted != baseline
+
+
+def test_hash_objects_matches_git_native_invocation(tmp_path: Path) -> None:
+    """(v) Per-file blob SHA must equal ``git hash-object`` invoked independently.
+
+    Locks the contract that the helper delegates to git's primitive
+    rather than computing a Python-side hash. A drift here would
+    indicate the helper started reading file bytes itself.
+    """
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+
+    path = 'marketplace/bundles/demo/README.md'
+    helper_sha = hash_objects(cwd, [path])[0]
+    native = subprocess.run(
+        ['git', '-C', str(cwd), 'hash-object', path],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert helper_sha == native
+
+
+def test_fingerprint_raises_outside_git_repo(outside_repo_dir: Path) -> None:
+    """The helper refuses on non-git trees — no silent zero-hash fallback."""
+    # ``cwd`` must be OUTSIDE the repo: pytest's tmp_path now roots under the
+    # repo-local --basetemp, where the dir IS inside a git worktree and
+    # git hash-object succeeds instead of raising FingerprintError.
+    cwd = outside_repo_dir / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    # NO git init — call must raise FingerprintError.
+
+    with pytest.raises(FingerprintError):
+        compute_source_tree_fingerprint(cwd)
+
+
+# =============================================================================
+# File-level content-hash drift (_file_level_drift) — per-file granularity
+# =============================================================================
+#
+# The sentinel fingerprint (step 4 of the guard) only covers tracked files
+# under marketplace/bundles/; the gitignored, TRANSFORMED target/claude/ tree
+# never contributes to it. The file-level drift check (step 5) supplements the
+# single digest by comparing every live file under target/claude/ against the
+# per-file hash manifest the emitter recorded in the sentinel's ``file_hashes``
+# field — naming the offending paths. The manifest, NOT the raw
+# marketplace/bundles/ source, is the comparison baseline because target/claude/
+# is generator output (expanded variants, variant-aware plugin.json, a
+# top-level marketplace.json) with no verbatim source counterpart. These tests
+# isolate step 5 by keeping the sentinel fingerprint matching (so step 4 passes)
+# and writing a faithful manifest for the emitted fixture tree, then introducing
+# manifest-vs-live drift — a mutated manifest file (diverged), a deleted
+# manifest file (missing), or a live file absent from the manifest (extra).
+
+
+def test_file_drift_missing_from_target_refuses(tmp_path: Path) -> None:
+    """A manifest entry whose live target file is deleted is named as missing.
+
+    The manifest is built from the intact emitted tree (so step 4's
+    fingerprint still matches), then a manifest-listed live file is removed
+    — the file-level check (step 5) reports it as missing from the target.
+    """
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+
+    # Manifest captures the intact emitted tree, including demo/README.md.
+    _write_sentinel(cwd, _compute_fingerprint_for(cwd), _target_file_hashes(cwd))
+
+    # Delete a manifest-listed live file AFTER the manifest is captured.
+    (cwd / 'target' / 'claude' / 'demo' / 'README.md').unlink()
+
+    result = _run(cwd=cwd)
+    assert result.returncode == 2, result.stdout
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'error'
+    assert 'drifted from its emit manifest at file level' in data['summary_message']
+    assert 'missing from target: demo/README.md' in data['summary_message']
+    # The refusal carries the regenerate hint so the operator knows the fix.
+    assert 'Regenerate with' in data['summary_message']
+    assert './pw generate-claude' in data['summary_message']
+
+
+def test_file_drift_extra_in_target_refuses(tmp_path: Path) -> None:
+    """A live target file absent from the manifest is named as extra in target.
+
+    The stray file is added AFTER the manifest is captured, so it has no
+    manifest entry — step 4 passes and the file-level check reports the
+    unaccounted-for artefact.
+    """
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+
+    _write_sentinel(cwd, _compute_fingerprint_for(cwd), _target_file_hashes(cwd))
+
+    # Live target carries a file the manifest never recorded.
+    _write(cwd / 'target' / 'claude' / 'demo' / 'STALE.md', '# stale\n')
+
+    result = _run(cwd=cwd)
+    assert result.returncode == 2, result.stdout
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'error'
+    assert 'drifted from its emit manifest at file level' in data['summary_message']
+    assert 'extra in target: demo/STALE.md' in data['summary_message']
+
+
+def test_file_drift_content_diverged_refuses(tmp_path: Path) -> None:
+    """A manifest-listed file whose live bytes change is named as diverged.
+
+    The manifest pins demo/README.md's emit-time hash; mutating the live
+    file afterwards makes the live re-hash diverge — step 4 passes (the
+    source tree is untouched) and the per-file blob-SHA comparison flags it.
+    """
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+
+    _write_sentinel(cwd, _compute_fingerprint_for(cwd), _target_file_hashes(cwd))
+
+    # Mutate the live target copy AFTER the manifest captured its hash.
+    _write(cwd / 'target' / 'claude' / 'demo' / 'README.md', '# demo DIVERGED\n')
+
+    result = _run(cwd=cwd)
+    assert result.returncode == 2, result.stdout
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'error'
+    assert 'drifted from its emit manifest at file level' in data['summary_message']
+    assert 'content diverged: demo/README.md' in data['summary_message']
+
+
+def test_file_drift_reports_all_three_classes_together(tmp_path: Path) -> None:
+    """missing, extra, and diverged drift are reported in one refusal message."""
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    # A second manifest-listed file so the deletion (missing) and the
+    # mutation (diverged) hit distinct paths.
+    _write(cwd / 'target' / 'claude' / 'demo' / 'KEEP.md', '# keep\n')
+    _git_init_and_commit(cwd)
+
+    _write_sentinel(cwd, _compute_fingerprint_for(cwd), _target_file_hashes(cwd))
+
+    # missing: a manifest-listed live file is deleted.
+    (cwd / 'target' / 'claude' / 'demo' / 'KEEP.md').unlink()
+    # diverged: a manifest-listed live file is mutated.
+    _write(cwd / 'target' / 'claude' / 'demo' / 'README.md', '# demo DIVERGED\n')
+    # extra: a live file absent from the manifest is added.
+    _write(cwd / 'target' / 'claude' / 'demo' / 'ONLY_TARGET.md', '# tgt\n')
+
+    result = _run(cwd=cwd)
+    assert result.returncode == 2, result.stdout
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'error'
+    msg = data['summary_message']
+    assert 'missing from target: demo/KEEP.md' in msg
+    assert 'extra in target: demo/ONLY_TARGET.md' in msg
+    assert 'content diverged: demo/README.md' in msg
+
+
+def test_no_file_drift_when_target_matches_manifest_passes(tmp_path: Path) -> None:
+    """An intact tree matching its emit manifest clears the file-level check.
+
+    Beyond the fresh-emit happy path, this asserts the file-level check
+    returns clean (no missing/extra/diverged) when every live file hashes
+    identically to its manifest entry — the negative control for the three
+    refusal branches above.
+    """
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0', 'demo2': '0.2.0'})
+    _make_target(cwd, {'demo': '0.1.0', 'demo2': '0.2.0'})
+    _git_init_and_commit(cwd)
+
+    _write_sentinel(cwd, _compute_fingerprint_for(cwd), _target_file_hashes(cwd))
+
+    cache = tmp_path / 'cache'
+    result = _run('--cache-root', str(cache), cwd=cwd)
+    assert result.returncode == 0, result.stdout
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'success'
+    assert (cache / 'demo' / '0.1.0' / 'README.md').is_file()
+    assert (cache / 'demo2' / '0.2.0' / 'README.md').is_file()
+
+
+def test_skip_staleness_guard_bypasses_file_drift(tmp_path: Path) -> None:
+    """--skip-staleness-guard reaches the sync path even with file-level drift."""
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+    _write_sentinel(cwd, _compute_fingerprint_for(cwd), _target_file_hashes(cwd))
+    # Diverge a manifest-listed live file — guard would refuse with the
+    # file-level message without --skip-staleness-guard.
+    _write(cwd / 'target' / 'claude' / 'demo' / 'README.md', '# demo DRIFTED\n')
+
+    cache = tmp_path / 'cache'
+    result = _run('--skip-staleness-guard', '--cache-root', str(cache), cwd=cwd)
+    assert result.returncode == 0, result.stdout
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'success'
+    assert (cache / 'demo' / '0.1.0' / 'README.md').is_file()
+
+
+# =============================================================================
+# The guard reports the failure that OCCURRED, not the failure it hunts for
+# =============================================================================
+#
+# Two distinct failures reach the same refusal point:
+#
+#   * the probe RAN and observed staleness            -> kind 'stale'
+#   * the probe COULD NOT RUN and observed nothing    -> kind 'probe_failed'
+#
+# Collapsing the second into the first is the defect these tests pin: it
+# reports a target tree as stale on no evidence and hands the operator the
+# staleness remedy ("regenerate") for a fault regeneration cannot fix. The
+# guard's refusal is therefore discriminated by a ``kind`` and surfaced as a
+# ``guard_outcome`` field on the emitted TOON.
+#
+# The first test also pins the ROOT CAUSE that made the misreport observable:
+# the fingerprint helper is stdlib-only, but reaching it through the
+# ``marketplace.targets`` package path executes that package's __init__, which
+# imports every registered target and with them third-party dependencies absent
+# under a bare interpreter. cache_sync.py loads the helper file directly instead,
+# and the dispatcher loads cache_sync.py the same way.
+
+
+def _load_sync_module():
+    """Load ``cache_sync.py`` by file location, exactly as the dispatcher does."""
+    spec = importlib.util.spec_from_file_location('sync_under_test', _CACHE_SYNC_PY)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture
+def sync_module():
+    """A freshly loaded cache_sync.py, with its helper-module cache torn down after.
+
+    ``_load_source_fingerprint_module`` caches the helper in ``sys.modules``
+    under a module name of its own choosing; popping it keeps each test
+    independent of whichever test ran first.
+    """
+    module = _load_sync_module()
+    yield module
+    sys.modules.pop(module.HELPER_MODULE_NAME, None)
+
+
+#: Installs a meta-path finder that makes ``yaml`` unimportable, reproducing a
+#: bare interpreter that has no project virtualenv.
+_BLOCK_YAML = """
+import sys
+
+
+class _Blocker:
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == 'yaml' or fullname.startswith('yaml.'):
+            raise ModuleNotFoundError(f"No module named {fullname!r}", name=fullname)
+        return None
+
+
+sys.meta_path.insert(0, _Blocker())
+"""
+
+
+def _run_python(program: str, *args: str) -> subprocess.CompletedProcess[str]:
+    """Run ``program`` in a child interpreter isolated from the repository.
+
+    ``program`` must already be flat. Dedenting here would be a silent no-op for
+    any caller that concatenates a column-0 fragment (such as
+    :data:`_BLOCK_YAML`) with an indented triple-quoted body: the common leading
+    whitespace prefix across the joined text is then the empty string, so the
+    indented half survives verbatim and the child dies with ``IndentationError``
+    before running a line of the subject code — failing every assertion for a
+    reason that has nothing to do with the behaviour under test. Callers dedent
+    each indented fragment at its own site, where the text is still uniformly
+    indented.
+
+    The child is held off the repository on both routes a ``python -c`` launch
+    would otherwise reach it by. It runs from a temporary directory, so the
+    implicit ``sys.path[0]`` entry — the working directory, for ``-c`` — is not
+    the repository root; and its ``PYTHONPATH`` is rebuilt from
+    :data:`conftest._MARKETPLACE_SCRIPT_DIRS` plus only those inherited entries
+    that are non-empty and resolve outside ``PROJECT_ROOT``. The environment is
+    spelled out here rather than delegated because :func:`conftest.run_script`,
+    which builds the same cross-skill mapping, takes a script PATH and cannot
+    carry a ``-c`` program.
+
+    The ``marketplace.targets`` package route is therefore reachable only by a
+    caller that puts it on ``sys.path`` itself, and the two callers want
+    opposite things from that. The helper-load test needs the route absent, so
+    that a walk into the package surfaces as a failure instead of passing
+    unnoticed. The negative control inserts ``PROJECT_ROOT`` deliberately to
+    reach the package, so that what stops the import is the ``yaml`` blocker
+    rather than a missing ``marketplace``.
+    """
+    env = os.environ.copy()
+    project_root = PROJECT_ROOT.resolve()
+    entries = [
+        *_MARKETPLACE_SCRIPT_DIRS,
+        *(
+            entry
+            for entry in env.get('PYTHONPATH', '').split(os.pathsep)
+            if entry and not Path(entry).resolve().is_relative_to(project_root)
+        ),
+    ]
+    env['PYTHONPATH'] = os.pathsep.join(entries)
+    with tempfile.TemporaryDirectory() as outside_the_repository:
+        return subprocess.run(
+            [sys.executable, '-c', program, *args],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=env,
+            cwd=outside_the_repository,
+        )
+
+
+def test_fingerprint_helper_loads_without_the_marketplace_package() -> None:
+    """The helper import must not walk the ``marketplace.targets`` package.
+
+    Under a bare interpreter the project's third-party dependencies are
+    absent. The helper itself needs none of them — but the package route
+    ``marketplace.targets.claude.source_fingerprint`` executes
+    ``marketplace/targets/__init__.py`` first, which imports every registered
+    target sub-package and, through them, ``yaml``. Loading the helper file
+    directly is what keeps it reachable.
+
+    Run under a ``yaml``-blocking meta-path finder, in a subprocess so the
+    blocker cannot leak into the test session.
+    """
+    result = _run_python(
+        _BLOCK_YAML
+        + textwrap.dedent(
+            """
+            import importlib.util
+            import sys
+
+            spec = importlib.util.spec_from_file_location('sync_under_test', sys.argv[1])
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+
+            module._import_source_fingerprint()
+            module._import_hash_objects()
+
+            print('marketplace_imported=' + str('marketplace.targets' in sys.modules))
+            """
+        ),
+        str(_CACHE_SYNC_PY),
+    )
+
+    assert result.returncode == 0, result.stderr
+    # Both helper accessors returned, and the package chain was never walked.
+    assert 'marketplace_imported=False' in result.stdout
+
+
+def test_dispatcher_runs_the_claude_path_without_the_marketplace_package(tmp_path: Path) -> None:
+    """The dispatcher itself, guard included, runs with third-party imports blocked.
+
+    ``marketplace/targets/sync.py`` reaches the Claude path by loading
+    ``cache_sync.py`` by file location. Importing it through
+    ``marketplace.targets.claude`` would execute the package ``__init__``
+    modules and, through them, ``yaml`` — which a bare interpreter does not
+    have. The run goes through the real guard (no ``--skip-staleness-guard``)
+    so the fingerprint helper is loaded on the same route.
+    """
+    project = tmp_path / 'project'
+    project.mkdir()
+    _make_marketplace(project, {'demo': '0.1.0'})
+    _make_target(project, {'demo': '0.1.0'})
+    _git_init_and_commit(project)
+    _write_sentinel(project, _compute_fingerprint_for(project), _target_file_hashes(project))
+    cache = tmp_path / 'cache'
+
+    result = _run_python(
+        _BLOCK_YAML
+        + textwrap.dedent(
+            """
+            import runpy
+            import sys
+
+            script, worktree, cache_root = sys.argv[1:4]
+            sys.argv = [script, '--target', 'claude', '--from-worktree', worktree, '--cache-root', cache_root]
+            try:
+                runpy.run_path(script, run_name='__main__')
+            except SystemExit as exc:
+                print('exit=' + str(exc.code))
+
+            print('marketplace_imported=' + str('marketplace.targets' in sys.modules))
+            """
+        ),
+        str(_SYNC_PY),
+        str(project),
+        str(cache),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert 'exit=0' in result.stdout
+    assert 'status: success' in result.stdout
+    assert 'marketplace_imported=False' in result.stdout
+    assert (cache / 'demo' / '0.1.0' / 'README.md').is_file()
+
+
+def test_marketplace_package_route_is_blocked_under_the_same_conditions() -> None:
+    """Matched negative control for the test above.
+
+    If ``yaml`` were importable in the child interpreter after all, the
+    previous test would pass without proving anything. This asserts the
+    blocker is effective: under the SAME blocker, the package route that
+    sync.py deliberately avoids does still fail.
+
+    The explicit ``sys.path`` insert is what makes that route reachable at all,
+    since :func:`_run_python` runs the child outside the repository. It is load
+    bearing, not redundant: without it the import would fail for want of
+    ``marketplace`` and prove nothing about ``yaml``, which is why the assertion
+    names ``blocked=yaml`` rather than merely requiring some failure.
+    """
+    result = _run_python(
+        _BLOCK_YAML
+        + textwrap.dedent(
+            """
+            import sys
+
+            sys.path.insert(0, sys.argv[1])
+            try:
+                import marketplace.targets.claude.source_fingerprint  # noqa: F401
+            except ModuleNotFoundError as exc:
+                print('blocked=' + exc.name)
+            else:
+                print('blocked=NONE')
+            """
+        ),
+        str(PROJECT_ROOT),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert 'blocked=yaml' in result.stdout
+
+
+def test_child_cannot_reach_the_repository_by_environment() -> None:
+    """The isolation itself is a regression-tested property.
+
+    The two tests above both hand the repository to the child board — the
+    first by loading the helper file by file location, the second by an
+    explicit ``sys.path`` insert — so neither fails if ``_run_python``
+    regresses to inheriting the caller's ``cwd`` and ``PYTHONPATH``. This
+    test pins the isolation property directly: a bare ``-c`` child given no
+    help MUST NOT import the repository's ``marketplace`` package.
+    """
+    result = _run_python(
+        textwrap.dedent(
+            """
+            try:
+                import marketplace.targets.claude.source_fingerprint  # noqa: F401
+            except ModuleNotFoundError as exc:
+                print('reachable=' + str(exc.name))
+            else:
+                print('reachable=True')
+            """
+        )
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert 'reachable=True' not in result.stdout
+    assert 'reachable=marketplace' in result.stdout
+
+
+def _guard_ready_project(cwd: Path) -> tuple[Path, Path]:
+    """Build a project whose guard reaches the fingerprint-probe branch.
+
+    Every earlier branch is satisfied — the target root exists and holds a
+    bundle, no marketplace bundle is missing from it, and the sentinel parses
+    with a non-empty fingerprint — so the guard's next act is the probe.
+    Returns ``(source_root, marketplace_root)``.
+    """
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+    _write_sentinel(cwd, 'deadbeef' * 5)
+    return cwd / 'target' / 'claude', cwd / 'marketplace' / 'bundles'
+
+
+def test_helper_import_failure_is_reported_as_probe_failed_not_stale(
+    tmp_path: Path, sync_module, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unimportable helper must not be reported as a stale target tree."""
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    source_root, marketplace_root = _guard_ready_project(cwd)
+
+    def _boom():
+        raise ImportError("No module named 'yaml'")
+
+    monkeypatch.setattr(sync_module, '_import_source_fingerprint', _boom)
+
+    refusal = sync_module._staleness_guard(source_root, marketplace_root)
+
+    assert refusal is not None
+    assert refusal.kind == 'probe_failed'
+    assert 'could not run' in refusal.message
+    assert 'not a staleness verdict' in refusal.message
+    # The underlying fault is named, not swallowed.
+    assert "No module named 'yaml'" in refusal.message
+
+
+def test_probe_failure_does_not_borrow_the_staleness_remedy(
+    tmp_path: Path, sync_module, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A probe failure must not tell the operator to regenerate.
+
+    Regeneration is the remedy for staleness. Handing it to an operator whose
+    target tree was never checked sends them to re-run a generator whose
+    output may already be current — the concrete harm of the misreport.
+    """
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    source_root, marketplace_root = _guard_ready_project(cwd)
+
+    def _boom():
+        raise ImportError("No module named 'yaml'")
+
+    monkeypatch.setattr(sync_module, '_import_source_fingerprint', _boom)
+
+    refusal = sync_module._staleness_guard(source_root, marketplace_root)
+
+    assert refusal is not None
+    assert refusal.kind == 'probe_failed'
+    assert sync_module._regenerate_hint() not in refusal.message
+    assert 'Regenerate with' not in refusal.message
+
+
+def test_fingerprint_recompute_failure_is_reported_as_probe_failed(
+    tmp_path: Path, sync_module, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fingerprint that could not be computed yields no staleness verdict.
+
+    The helper imported, but the recompute raised — so there is no live
+    fingerprint to compare against the sentinel, and nothing was observed
+    about the target tree.
+    """
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    source_root, marketplace_root = _guard_ready_project(cwd)
+
+    def _raiser(_repo_root):
+        raise FingerprintError('git binary not found on PATH')
+
+    monkeypatch.setattr(sync_module, '_import_source_fingerprint', lambda: (_raiser, FingerprintError))
+
+    refusal = sync_module._staleness_guard(source_root, marketplace_root)
+
+    assert refusal is not None
+    assert refusal.kind == 'probe_failed'
+    assert 'git binary not found on PATH' in refusal.message
+    assert sync_module._regenerate_hint() not in refusal.message
+
+
+def test_genuine_staleness_is_still_reported_as_stale_with_the_remedy(tmp_path: Path, sync_module) -> None:
+    """Matched positive control: a probe that RAN and saw drift still says stale.
+
+    Without this the tests above could pass against a guard that had simply
+    stopped reporting staleness at all.
+    """
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    source_root, marketplace_root = _guard_ready_project(cwd)
+    # _guard_ready_project writes a deliberately wrong fingerprint, so the
+    # real (unpatched) probe runs and observes the mismatch.
+
+    refusal = sync_module._staleness_guard(source_root, marketplace_root)
+
+    assert refusal is not None
+    assert refusal.kind == 'stale'
+    assert 'source tree changed since last emit' in refusal.message
+    assert sync_module._regenerate_hint() in refusal.message
+
+
+def test_file_level_probe_import_failure_refuses_instead_of_returning_none(
+    tmp_path: Path, sync_module, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The file-level check must not silently disable itself.
+
+    ``None`` from ``_file_level_drift`` is read by the caller as "the check
+    ran and found nothing". Returning it for a check that never ran would let
+    the sync report success as though the supplementary guard had passed.
+    """
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+    source_root = cwd / 'target' / 'claude'
+
+    def _boom():
+        raise ImportError("No module named 'yaml'")
+
+    monkeypatch.setattr(sync_module, '_import_hash_objects', _boom)
+
+    drift = sync_module._file_level_drift(source_root, _target_file_hashes(cwd))
+
+    assert drift is not None, '_file_level_drift silently returned None on a probe failure'
+    assert drift.kind == 'probe_failed'
+    assert 'could not run' in drift.message
+    assert sync_module._regenerate_hint() not in drift.message
+
+
+def test_file_level_hashing_failure_refuses_instead_of_returning_none(
+    tmp_path: Path, sync_module, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A live re-hash that could not run is reported, not swallowed."""
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+    source_root = cwd / 'target' / 'claude'
+    manifest = _target_file_hashes(cwd)
+    assert manifest, 'fixture must produce a non-empty manifest to reach the re-hash'
+
+    def _raiser(_root, _paths):
+        raise FingerprintError('git hash-object exited 128')
+
+    monkeypatch.setattr(sync_module, '_import_hash_objects', lambda: (_raiser, FingerprintError))
+
+    drift = sync_module._file_level_drift(source_root, manifest)
+
+    assert drift is not None, '_file_level_drift silently returned None on a hashing failure'
+    assert drift.kind == 'probe_failed'
+    assert 'git hash-object exited 128' in drift.message
+
+
+def test_file_level_check_still_returns_none_on_an_intact_tree(tmp_path: Path, sync_module) -> None:
+    """Matched negative control for the two refusals above.
+
+    A check that RAN and found nothing still returns ``None`` — so the
+    refusals above are attributable to the probe failing, not to the check
+    having become unconditionally noisy.
+    """
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+
+    drift = sync_module._file_level_drift(cwd / 'target' / 'claude', _target_file_hashes(cwd))
+
+    assert drift is None
+
+
+def test_cli_refusal_surfaces_guard_outcome_on_the_toon(tmp_path: Path) -> None:
+    """The refusal KIND is machine-readable, not only prose in the summary."""
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+    # No sentinel — the guard refuses on a real staleness condition.
+
+    result = _run(cwd=cwd)
+    assert result.returncode == 2, result.stdout
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'error'
+    assert data['guard_outcome'] == 'stale'
+
+
+def test_successful_sync_emits_no_guard_outcome(tmp_path: Path) -> None:
+    """No guard verdict was reached, so no guard verdict is reported.
+
+    The field's ABSENCE is the contract: a default value on a path where the
+    guard never refused would be a verdict nobody rendered.
+    """
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    _git_init_and_commit(cwd)
+    _write_sentinel(cwd, _compute_fingerprint_for(cwd), _target_file_hashes(cwd))
+
+    cache = tmp_path / 'cache'
+    result = _run('--cache-root', str(cache), cwd=cwd)
+    assert result.returncode == 0, result.stdout
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'success'
+    assert 'guard_outcome' not in data
+
+
+# =============================================================================
+# Bundle-set check — the expected set is the Claude emitter's selection
+# =============================================================================
+#
+# The guard expects in target/claude/ the bundles whose own plugin.json admits
+# the claude target through its ``targets`` declaration: field absent means
+# every target, field present means the listed targets only. A bundle scoped to
+# other harnesses is never emitted into target/claude/, so expecting it there
+# would refuse every sync of a healthy tree.
+
+
+def _write_bundle_manifest(cwd: Path, name: str, manifest_text: str) -> Path:
+    """Write ``manifest_text`` as the source ``plugin.json`` of bundle ``name``."""
+    manifest = cwd / 'marketplace' / 'bundles' / name / '.claude-plugin' / 'plugin.json'
+    _write(manifest, manifest_text)
+    return manifest
+
+
+def _manifest(name: str, **fields: object) -> str:
+    return json.dumps({'name': name, 'version': '0.1.0', **fields}) + '\n'
+
+
+def _project_with_emitted_demo(tmp_path: Path) -> Path:
+    """A project whose only emitted bundle, ``demo``, is also in source."""
+    cwd = tmp_path / 'project'
+    cwd.mkdir()
+    _make_marketplace(cwd, {'demo': '0.1.0'})
+    _make_target(cwd, {'demo': '0.1.0'})
+    return cwd
+
+
+def _guard(sync_module, cwd: Path):
+    return sync_module._staleness_guard(cwd / 'target' / 'claude', cwd / 'marketplace' / 'bundles')
+
+
+def test_bundle_scoped_to_other_targets_is_not_expected_in_the_claude_tree(tmp_path: Path, sync_module) -> None:
+    """A bundle declaring only non-claude targets is absent by design, not stale."""
+    cwd = _project_with_emitted_demo(tmp_path)
+    _write_bundle_manifest(cwd, 'opencode-only', _manifest('opencode-only', targets=['opencode']))
+    _git_init_and_commit(cwd)
+    _write_sentinel(cwd, _compute_fingerprint_for(cwd), _target_file_hashes(cwd))
+
+    refusal = _guard(sync_module, cwd)
+
+    assert refusal is None
+
+
+@pytest.mark.parametrize(
+    'declaration',
+    [{}, {'targets': ['claude']}, {'targets': ['claude', 'opencode']}, {'targets': 'claude, opencode'}],
+    ids=['field-absent', 'claude-only', 'claude-among-others', 'comma-separated-string'],
+)
+def test_claude_admitting_bundle_missing_from_the_claude_tree_is_stale(
+    tmp_path: Path, sync_module, declaration: dict[str, object]
+) -> None:
+    """A bundle that ships to claude and was never emitted is still refused."""
+    cwd = _project_with_emitted_demo(tmp_path)
+    _write_bundle_manifest(cwd, 'not-emitted', _manifest('not-emitted', **declaration))
+
+    refusal = _guard(sync_module, cwd)
+
+    assert refusal is not None
+    assert refusal.kind == 'stale'
+    assert 'not-emitted' in refusal.message
+    assert sync_module._regenerate_hint() in refusal.message
+
+
+@pytest.mark.parametrize(
+    'manifest_text',
+    [
+        'not json {',
+        '[]\n',
+        _manifest('broken', targets=5),
+        _manifest('broken', targets=[]),
+        _manifest('broken', targets=[True]),
+    ],
+    ids=['invalid-json', 'not-an-object', 'targets-not-a-list', 'targets-empty', 'targets-item-not-a-name'],
+)
+def test_unreadable_bundle_manifest_is_probe_failed_naming_the_file(
+    tmp_path: Path, sync_module, manifest_text: str
+) -> None:
+    """A declaration nobody could read is neither an include nor an exclude."""
+    cwd = _project_with_emitted_demo(tmp_path)
+    manifest = _write_bundle_manifest(cwd, 'broken', manifest_text)
+
+    refusal = _guard(sync_module, cwd)
+
+    assert refusal is not None
+    assert refusal.kind == 'probe_failed'
+    assert str(manifest) in refusal.message
+    assert 'not a staleness verdict' in refusal.message
+    assert sync_module._regenerate_hint() not in refusal.message
+
+
+def test_cli_reports_an_unreadable_bundle_manifest_as_probe_failed(tmp_path: Path) -> None:
+    """The bundle-set probe failure reaches the result document as its own kind."""
+    cwd = _project_with_emitted_demo(tmp_path)
+    _write_bundle_manifest(cwd, 'broken', 'not json {')
+
+    result = _run(cwd=cwd)
+
+    assert result.returncode == 2, result.stdout
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'error'
+    assert data['guard_outcome'] == 'probe_failed'
+
+
+def test_expected_bundle_set_equals_the_claude_emitter_selection_on_the_live_tree(sync_module) -> None:
+    """The guard and the emitter select the same bundles from the real source tree.
+
+    The guard restates the emitter's predicate with the stdlib because it must
+    not import the emitter's package. This holds the two to one answer on the
+    tree they both run against, and requires that tree to contain at least one
+    bundle scoped away from claude — otherwise equality would also hold for a
+    guard that still expected every bundle.
+    """
+    source_bundles = list(iter_bundle_dirs(_REAL_MARKETPLACE_BUNDLES, None))
+    emitter_selection = sorted(d.name for d in source_bundles if bundle_emits_to(d, CLAUDE_TARGET_NAME))
+
+    expected = sync_module._claude_admitting_bundles(_REAL_MARKETPLACE_BUNDLES)
+
+    assert expected == emitter_selection
+    scoped_away = {d.name for d in source_bundles} - set(expected)
+    assert scoped_away, 'the live tree no longer holds a bundle scoped away from claude'

@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 import target_context
 from conftest import MARKETPLACE_ROOT, _MARKETPLACE_SCRIPT_DIRS, get_scripts_dir
-from target_context import SOURCE_ENV, SOURCE_FALLBACK, SOURCE_MARSHAL_JSON
+from target_context import SOURCE_ENV, SOURCE_FALLBACK, SOURCE_LOCAL_CONFIG
 
 SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'tools-script-executor')
 GENERATE_SCRIPT = SCRIPTS_DIR / 'generate_executor.py'
@@ -163,13 +163,13 @@ class TestVerbTargetPropagationMatrix:
 
         assert set(answers.values()) == {'opencode'}, answers
 
-    def test_marshal_json_tier_reaches_every_verb(self, no_platform_signal, monkeypatch, tmp_path):
-        """With a declared ``runtime.target`` and no env signal, all six answer it."""
+    def test_local_config_tier_reaches_every_verb(self, no_platform_signal, monkeypatch, tmp_path):
+        """With a declared machine-local harness and no env signal, all six answer it."""
         module = _load_generate_executor()
         monkeypatch.chdir(tmp_path)
-        (tmp_path / '.plan').mkdir()
-        (tmp_path / '.plan' / 'marshal.json').write_text(
-            json.dumps({'runtime': {'target': 'antigravity'}}), encoding='utf-8'
+        (tmp_path / '.plan' / 'local' / 'harness').mkdir(parents=True)
+        (tmp_path / '.plan' / 'local' / 'harness' / 'antigravity.json').write_text(
+            json.dumps({'schema_version': 1, 'harness': 'antigravity'}), encoding='utf-8'
         )
 
         answers = self._resolve_all(module, {})
@@ -236,12 +236,11 @@ class TestVerbTargetPropagationMatrix:
         monkeypatch.delenv('CLAUDE_CODE_SESSION_ID')
 
         monkeypatch.chdir(tmp_path)
-        (tmp_path / '.plan').mkdir(exist_ok=True)
-        (tmp_path / '.plan' / 'marshal.json').write_text(
-            json.dumps({'runtime': {'target': 'opencode'}}), encoding='utf-8'
-        )
-        tiers['marshal_json'] = set(self._resolve_all(module, {}).values())
-        (tmp_path / '.plan' / 'marshal.json').unlink()
+        (tmp_path / '.plan' / 'local' / 'harness').mkdir(parents=True, exist_ok=True)
+        harness_cfg = tmp_path / '.plan' / 'local' / 'harness' / 'opencode.json'
+        harness_cfg.write_text(json.dumps({'schema_version': 1, 'harness': 'opencode'}), encoding='utf-8')
+        tiers['local_config'] = set(self._resolve_all(module, {}).values())
+        harness_cfg.unlink()
         tiers['fallback'] = set(self._resolve_all(module, {}).values())
 
         for tier, answers in tiers.items():
@@ -284,21 +283,21 @@ class TestVerbTargetPropagationMatrix:
 
         assert sources == {SOURCE_FALLBACK}
 
-    def test_marshal_tier_is_reported_by_every_verb(self, no_platform_signal, monkeypatch, tmp_path):
-        """A declared ``runtime.target`` is reported as the ``marshal_json`` tier everywhere."""
+    def test_local_config_tier_is_reported_by_every_verb(self, no_platform_signal, monkeypatch, tmp_path):
+        """A declared machine-local harness is reported as the ``local_config`` tier everywhere."""
         module = _load_generate_executor()
         parser = module.build_parser()
         monkeypatch.chdir(tmp_path)
-        (tmp_path / '.plan').mkdir()
-        (tmp_path / '.plan' / 'marshal.json').write_text(
-            json.dumps({'runtime': {'target': 'opencode'}}), encoding='utf-8'
+        (tmp_path / '.plan' / 'local' / 'harness').mkdir(parents=True, exist_ok=True)
+        (tmp_path / '.plan' / 'local' / 'harness' / 'opencode.json').write_text(
+            json.dumps({'schema_version': 1, 'harness': 'opencode'}), encoding='utf-8'
         )
 
         sources = {
             module.resolve_verb_context(parser.parse_args([verb]))['target_source'] for verb in TARGET_RESOLVING_VERBS
         }
 
-        assert sources == {SOURCE_MARSHAL_JSON}
+        assert sources == {SOURCE_LOCAL_CONFIG}
 
 
 class TestSharedResolverIsTheOnlyReader:

@@ -55,7 +55,7 @@ rule the leaf emits a `permissionDecision: deny` envelope carrying a one-line
 |------|----------|-----------------------------|
 | **R1 shell-construct compound** | A Bash command containing an **unquoted, unescaped** `&&`, `;`, `&`, newline, `for`/`while` loop, `$(...)` command substitution, or leading `VAR=val cmd` inline env-var assignment. Quoting and backslash escapes are resolved first, so an operator confined to a quoted argument is data and does not fire — but a `$(...)` or backtick substitution still fires inside **double** quotes, where the shell still executes it | One command per Bash call — use separate Bash calls or dedicated tools |
 | **R2 Bash file-ops** | A Bash command whose program is `cat` / `grep` / `head` / `tail` / `find` / `ls`, **or** `git` whose subcommand (after any global options) is `grep` | Use the Read/Glob/Grep tools, not Bash, for file operations; for a content sweep run `architecture search --content --pattern P` |
-| **R3 generated-executor edit** | An Edit/Write whose path is the generated `.plan/execute-script.py` | Regenerate the executor via `/sync-plugin-cache` + `/marshall-steward`; never edit it |
+| **R3 generated-executor edit** | An Edit/Write whose path is the generated `.plan/execute-script.py` | Regenerate the executor via `/sync-harnesses` + `/marshall-steward`; never edit it |
 | **R4 hard-coded build** | A Bash command invoking `./pw` or a bare `mvn` / `npm` / `gradle` | Resolve build commands via `plan-marshall:manage-architecture:architecture resolve` |
 
 ### R1 — quoting and escape resolution

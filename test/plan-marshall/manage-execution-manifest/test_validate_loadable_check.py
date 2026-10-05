@@ -15,7 +15,8 @@ from _manage_execution_manifest_validate_loadable_fixtures import (
 class TestCheckSeedMode:
     def test_inverted_seed_returns_seed_order_inversion(self, plan_context, monkeypatch):
         """A seed whose phase-6-finalize steps are inverted returns seed_order_inversion."""
-        # An inversion: sync-plugin-cache (85) precedes deploy-target (80).
+        # An inversion: finalize-step-sync-plugin-cache (85) precedes
+        # finalize-step-deploy-target (81).
         inverted = [
             'default:push',
             'project:finalize-step-sync-plugin-cache',

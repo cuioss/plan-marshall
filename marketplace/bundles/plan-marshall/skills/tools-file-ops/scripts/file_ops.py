@@ -710,8 +710,9 @@ def get_orchestrator_store_root() -> Path:
     - ``orchestrator.use_worktree`` on — ``{shared-worktree}/.plan``, where the
       shared worktree is the one fixed, main-anchored ledger worktree returned
       by :func:`orchestrator_worktree.ensure_orchestrator_worktree` (created on
-      first use, reused unchanged afterwards). The answer is the same from the
-      main checkout and from every plan worktree.
+      first use, reused unchanged afterwards while it is on the ledger branch).
+      The answer is the same from the main checkout and from every plan
+      worktree.
 
     The knob is read from the MAIN checkout's ``marshal.json``
     (:func:`orchestrator_worktree.orchestrator_use_worktree`), so every checkout
@@ -723,7 +724,8 @@ def get_orchestrator_store_root() -> Path:
         OrchestratorStoreUnavailable: with the knob on, when the shared worktree
             cannot be provided (``ledger_cutover_refused``,
             ``ledger_drift_unevaluable``, ``base_ref_unresolvable``,
-            ``orchestrator_worktree_create_failed``). Never raised with the knob
+            ``orchestrator_worktree_create_failed``,
+            ``orchestrator_worktree_wrong_branch``). Never raised with the knob
             off.
     """
     if not orchestrator_use_worktree():

@@ -427,7 +427,9 @@ class TestTargetResolution:
 
         assert seen == [expected_target]
 
-    def test_no_signal_falls_back_to_the_reported_default(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    def test_no_signal_falls_back_to_the_reported_default(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, outside_repo_dir: Path
+    ):
         """With no signal anywhere, the lookup uses the registry default.
 
         The paired control: without it, a reader that mapped every env signal to
@@ -437,20 +439,23 @@ class TestTargetResolution:
 
         seen = self._record_manifest_lookup(monkeypatch)
         cache_root = _make_cache(tmp_path, ['0.1.100'])
+        monkeypatch.chdir(outside_repo_dir)
 
         cache_freshness.check_freshness(cache_root)
 
         assert seen == [target_context.default_target()]
 
-    def test_declared_marshal_target_reaches_the_lookup(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        """A declared ``runtime.target`` still reaches the lookup — the cascade is not env-only."""
+    def test_declared_local_harness_target_reaches_the_lookup(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """A declared local harness target still reaches the lookup — the cascade is not env-only."""
         seen = self._record_manifest_lookup(monkeypatch)
         cache_root = _make_cache(tmp_path, ['0.1.100'])
         project = tmp_path / 'project'
-        (project / '.plan').mkdir(parents=True)
-        (project / '.plan' / 'marshal.json').write_text(
-            json.dumps({'runtime': {'target': 'antigravity'}}), encoding='utf-8'
+        harness_dir = project / '.plan' / 'local' / 'harness'
+        harness_dir.mkdir(parents=True)
+        (harness_dir / 'antigravity.json').write_text(
+            json.dumps({'schema_version': 1, 'harness': 'antigravity'}), encoding='utf-8'
         )
+        (project / '.plan' / 'marshal.json').write_text('{}', encoding='utf-8')
         monkeypatch.chdir(project)
 
         cache_freshness.check_freshness(cache_root)

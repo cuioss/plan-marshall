@@ -126,11 +126,18 @@ materialized[2]:
   - plan.phase-6-finalize.steps.default:push -> lane=minimal
   - plan.phase-6-finalize.steps.plan-marshall:automatic-review -> lane=off
 materialized_count: 2
+held_for_ask[0]:
+held_for_ask_count: 0
+re_added[0]:
+re_added_count: 0
 ```
 
 `added[]` lists the dotted paths of every newly-added key; `added_count` is its
-length. An empty `added[]` (with `added_count: 0`) means the live config already
-carried every default. `renamed[]` lists each migrated retired key as a
+length. An empty `added[]` (with `added_count: 0`) means this run added no
+keys — not that the live config already carries every default: a present
+step map can withhold ids that appear in `held_for_ask[]` or `re_added[]`
+while `added[]` stays empty, so readers checking for withheld defaults must
+consult the held-step buckets, never `added[]` alone. `renamed[]` lists each migrated retired key as a
 human-readable dotted-path string (`... -> {canonical}` for a rename in place, or
 `... (dropped duplicate of {canonical})` for a dropped duplicate); `renamed_count`
 is its length, and an empty `renamed[]` means no retired key was present.
@@ -144,7 +151,12 @@ its provenance AND its element class together; the full five-case fill matrix is
 owned by [standards/data-model.md](standards/data-model.md) § `phase-6-finalize`
 and is not restated here. `materialized_count` is its length, and an empty
 `materialized[]` means every finalize step the pass could fill already carried an
-explicit `lane` (idempotent re-run). One case fills nothing and reports nothing: a
+explicit `lane` (idempotent re-run). `held_for_ask[]` lists the dotted paths of
+present-map step ids that were NOT auto-added but held for the ask-before-add
+gate; `held_for_ask_count` is its length. `re_added[]` lists the held ids that
+cross an explicit `remove-step` decision; `re_added_count` is its length, so a
+back-fill that crosses an operator decision never reads as a routine addition.
+One case fills nothing and reports nothing: a
 **pre-existing** lane-less step whose frontmatter lane cannot be resolved to a
 concrete lattice tier — an external `bundle:skill` step, or one whose source doc is
 missing or declares no `lane:` block — is deliberately left untouched and is absent

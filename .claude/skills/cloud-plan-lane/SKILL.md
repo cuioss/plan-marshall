@@ -37,7 +37,7 @@ records the carve-out. Specifically, within this lane:
 | Temp files under `.plan/temp/` | **Superseded** — scratch goes in the system temp dir (`$TMPDIR`), never in the repository and never in `.plan/` |
 | Structured queries before Glob/Grep | **Not applicable** — `architecture` needs the executor; use Glob/Grep/Read |
 | Findings via `manage-findings` + `ext-triage-*` | **Superseded** — findings go in the run report (§ Report) |
-| Plugin Cache Sync after editing `marketplace/bundles/` | **Not applicable — and not owed.** `/sync-plugin-cache` is a machine-local build step: it reads the git-ignored `target/` and writes `~/.claude/`, neither of which this lane has or may touch. A cloud run **neither performs nor owes** a sync — the merged bundle source is authoritative, and refreshing a local cache is a local-developer concern, not a debt this run tracks or records |
+| Harness Sync after editing `marketplace/bundles/` | **Not applicable — and not owed.** `/sync-harnesses` is a machine-local build step: it reads the git-ignored `target/` and writes the harness install locations under the home directory (`~/.claude/` for Claude Code), neither of which this lane has or may touch. A cloud run **neither performs nor owes** a sync — the merged bundle source is authoritative, and refreshing a local cache is a local-developer concern, not a debt this run tracks or records |
 | No shell file operations | **Binds, with one clarification** — `git mv` and `mkdir -p` are permitted for Step 2's directory work; the rule's target is reading and searching file content, which still goes through Read/Glob/Grep |
 | Bash: one command per call / no shell constructs | **Superseded** — ordinary shell use is fine here, loops, `&&`/`;` and heredocs included. That rule is the documented basis for the PreToolUse hook's **R1** family (`platform-runtime/standards/pretooluse-enforcement.md`), and the hook cannot apply in this lane on two independent grounds: its context gate fires only for an `execution-context` sub-agent or a cwd under `.plan/local/worktrees/`, and it is installed machine-locally into `.claude/settings.local.json`, which a fresh clone does not carry. Prefer one heredoc over ten Bash calls where that is genuinely clearer — this epic is about what enters context, and a rule with no enforcer here is pure tool-call overhead |
 
@@ -59,7 +59,7 @@ so the steps below rely on them instead of each run re-deriving them.
 | **Auto-merge arming** | On this merge-queue repo, arming auto-merge while the required checks are green **queues the PR at once** and locks the branch — § Step 8's one-way-door rule. |
 | **Writing the tree** | Normally `git push`. The GitHub MCP server is **also** a write-the-tree surface (`create_or_update_file` / `push_files`), which matters only when push is unavailable — § Step 4, "When `git push` stops working mid-run". |
 | **Local build** | The build gate triggers on `*.py` only; the merge queue's `merge_group` run verifies docs-only changes before they land — § Step 5. |
-| **Plugin cache** | `/sync-plugin-cache` is a machine-local step a cloud run never performs or owes — § Scope and precedence. |
+| **Harness sync** | `/sync-harnesses` is a machine-local step a cloud run never performs or owes — § Scope and precedence. |
 
 **`gh` ↔ GitHub MCP mapping.** This contract writes commands in `gh` form for a precise, quotable
 spelling; in a cloud session use the MCP equivalent. Match by **function**, not by a transcribed name —
@@ -2344,7 +2344,7 @@ where no label was applied; and
 **(5)** the disclosure made to the operator before creation — or that no operator was reachable. The creation-time half of it cannot be taken back — the
 reviewers fire on open — so it leaves a record even though the label itself can later be removed
 (§ Step 7). A cloud run **never owes** a
-`/sync-plugin-cache` — it is a machine-local build step, not a debt a cloud run records (§ Scope and
+`/sync-harnesses` — it is a machine-local build step, not a debt a cloud run records (§ Scope and
 precedence).
 
 ## What have we learned (Step 9)

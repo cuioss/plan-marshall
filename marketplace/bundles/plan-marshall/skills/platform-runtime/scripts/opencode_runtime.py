@@ -54,7 +54,6 @@ from runtime_base import (
     Runtime,
     ensure_steps_without_skill_grants,
     extract_project_steps,
-    marshal_shape_error,
     toon_error,
     toon_noop,
     toon_success,
@@ -65,7 +64,6 @@ OPENCODE_DEFAULT_PERMISSIONS: tuple[str, ...] = (
     'python3 .plan/execute-script.py *',
     './pw *',
     'python3 marketplace/targets/sync.py *',
-    'python3 .opencode/scripts/sync_opencode.py *',
 )
 
 DEFAULT_OPENCODE_COMMANDS = OPENCODE_DEFAULT_PERMISSIONS
@@ -255,7 +253,6 @@ class OpenCodeRuntime(Runtime):
         Creates ``.plan/``, seeds ``marshal.json`` with ``runtime.target``.
         No SessionStart hook is installed because OpenCode has no equivalent.
         """
-        import json
         import pathlib
 
         proj = pathlib.Path(project_dir)
@@ -272,46 +269,6 @@ class OpenCodeRuntime(Runtime):
                 f'Failed to create .plan directory: {exc}',
             )
 
-        marshal_path = plan_dir / 'marshal.json'
-        # Three corrupt-input edges, mirroring the sibling ClaudeRuntime: a MISSING
-        # file starts from {}; an unreadable or unparseable one is caught by the
-        # except clause; and a PARSEABLE file of the wrong SHAPE is refused by the
-        # shared marshal_shape_error guard. The parse edge and the shape edge are
-        # separate — a successful json.loads proves the bytes were valid JSON, not
-        # that they were an object — so `[]` and `{"runtime": null}` used to reach
-        # the seeding assignments and raise an uncaught TypeError here too. The
-        # mirror holds by construction because both runtimes call the ONE shared
-        # guard rather than each carrying its own copy.
-        try:
-            if marshal_path.exists():
-                # Untyped until the shape guard below runs — see marshal_shape_error.
-                existing: Any = json.loads(marshal_path.read_text(encoding='utf-8'))
-            else:
-                existing = {}
-        except (OSError, json.JSONDecodeError) as exc:
-            return toon_error(
-                'project initial-setup',
-                'io_error',
-                f'Failed to read marshal.json: {exc}',
-            )
-
-        shape_error = marshal_shape_error('project initial-setup', marshal_path, existing)
-        if shape_error is not None:
-            return shape_error
-
-        if 'runtime' not in existing or not isinstance(existing['runtime'], dict):
-            existing['runtime'] = {}
-        existing['runtime']['target'] = target
-
-        try:
-            marshal_path.write_text(json.dumps(existing, indent=2), encoding='utf-8')
-        except OSError as exc:
-            return toon_error(
-                'project initial-setup',
-                'io_error',
-                f'Failed to write marshal.json: {exc}',
-            )
-
         # Ensure project settings exist and default executor is allowed
         settings_path = self.permission_settings_path('project', write=True, project_dir=str(proj))
         settings = self.permission_load_settings(settings_path)
@@ -322,7 +279,7 @@ class OpenCodeRuntime(Runtime):
             {
                 'target': target,
                 'project_dir': str(proj.resolve()),
-                'marshal_written': True,
+                'marshal_written': False,
                 'settings_path': settings_path,
                 'hook_installed': False,
                 'hook_skip_reason': ('OpenCode does not support a SessionStart hook equivalent (issue #9292)'),

@@ -385,14 +385,39 @@ def _list_upstream_commits(
     return commits
 
 
+def _parse_merge_tree_paths(stdout: str) -> list[str]:
+    """Return conflict paths from ``git merge-tree --name-only`` stdout.
+
+    Parses by structure: line 1 is the tree SHA, subsequent lines up to
+    the first blank section separator are conflict paths. The blank line
+    starts the informational-messages section (``Auto-merging``,
+    ``CONFLICT`` prose, localized equivalents) which is never parsed.
+    """
+    lines = stdout.splitlines()
+    if not lines:
+        return []
+    paths: list[str] = []
+    for line in lines[1:]:
+        if not line.strip():
+            break
+        stripped = line.strip()
+        if stripped:
+            paths.append(stripped)
+    return paths
+
+
 def _detect_merge_conflicts(
     worktree_path: str,
     base_branch: str,
 ) -> tuple[list[str], str | None]:
     """Run ``git merge-tree`` and return ``(conflicted_files, error_or_None)``.
 
-    Uses modern ``--write-tree --name-only`` syntax. Returns an empty
-    list when the merge is clean (exit 0). Returns an error message
+    Passes ``--no-messages`` so the informational-messages section is
+    suppressed at the source. Parses the remainder by structure (tree SHA,
+    then paths up to the blank section separator) so any surviving prose
+    is never filed as a path. Falls back to the same structural parse
+    without ``--no-messages`` when the flag is unsupported. Returns an
+    empty list when the merge is clean (exit 0). Returns an error message
     (without a list of files) when the git invocation itself fails.
     """
     rc, stdout, stderr = run_git(
@@ -402,6 +427,7 @@ def _detect_merge_conflicts(
             'merge-tree',
             '--write-tree',
             '--name-only',
+            '--no-messages',
             'HEAD',
             f'origin/{base_branch}',
         ]
@@ -409,9 +435,23 @@ def _detect_merge_conflicts(
     if rc == 0:
         return [], None
     if rc == 1:
-        # Conflicts: line 1 is the tree SHA, subsequent lines are paths.
-        lines = stdout.splitlines()
-        return [p.strip() for p in lines[1:] if p.strip()], None
+        return _parse_merge_tree_paths(stdout), None
+    if 'unknown option' in (stderr or '').lower() and 'message' in (stderr or '').lower():
+        rc, stdout, stderr = run_git(
+            [
+                '-C',
+                worktree_path,
+                'merge-tree',
+                '--write-tree',
+                '--name-only',
+                'HEAD',
+                f'origin/{base_branch}',
+            ]
+        )
+        if rc == 0:
+            return [], None
+        if rc == 1:
+            return _parse_merge_tree_paths(stdout), None
     return [], stderr or f'git merge-tree exited {rc}'
 
 

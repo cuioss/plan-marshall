@@ -58,8 +58,8 @@ Self-checking, atomic regeneration:
     commit is **atomic** — written to a sibling temp path and ``os.replace``-d
     onto the real executor, so a partial or broken write can never leave a
     corrupt executor in place. Every regen caller (the meta upgrade path, the
-    consumer upgrade path, and the finalize ``sync-plugin-cache`` path) inherits
-    this protection because it lives inside the generator itself.
+    consumer upgrade path, and the ``finalize-step-sync-plugin-cache`` finalize
+    step) inherits this protection because it lives inside the generator itself.
 
 Context Detection:
     By default, operates in plugin-cache context (~/.claude/plugins/cache/plan-marshall/).
@@ -203,7 +203,7 @@ SCRIPT_DIR = Path(__file__).parent.resolve()
 # same module at edit time. One derivation, two consumers, nothing to drift.
 import argparse_surface as surface_api  # noqa: E402
 import deployed_layout  # noqa: E402
-from command_forms import SYNC_PLUGIN_CACHE_COMMAND  # noqa: E402
+from command_forms import SYNC_HARNESSES_COMMAND  # noqa: E402
 from file_ops import get_base_dir as _get_plan_base_dir  # noqa: E402
 from file_ops import get_tracked_config_dir as _get_tracked_config_dir  # noqa: E402
 from marketplace_bundles import (  # noqa: E402
@@ -2158,7 +2158,7 @@ def generate_executor(
                 f'Template format skew: {executor_template} declares '
                 f'TEMPLATE_FORMAT_VERSION={template_version!r} but this generator supports '
                 f'{_SUPPORTED_TEMPLATE_FORMAT_VERSION}. Re-sync so the template and generator '
-                f'are the same version (run {SYNC_PLUGIN_CACHE_COMMAND}, then regenerate) before '
+                f'are the same version (run {SYNC_HARNESSES_COMMAND}, then regenerate) before '
                 f'regenerating the executor. Existing executor left untouched.'
             ),
         }

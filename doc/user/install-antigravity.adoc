@@ -128,6 +128,17 @@ curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-antigravi
 
 This installs into `<project-root>/.agents/plugins/plan-marshall/`, making the plugin available to anyone working in that workspace.
 
+=== Workspace Rules & Zero-Token Rule Delivery
+
+When installing with `--workspace` (or when `--emit-rules` is explicitly supplied), the installer automatically synchronizes Antigravity operational rules from `plan-marshall-antigravity` into:
+
+`<project-root>/.agents/rules/plan-marshall-target-rules.md`
+
+Antigravity automatically discovers and loads workspace rules from `.agents/rules/` into assistant context, delivering tool invariants, command discipline, and sandbox constraints without consuming tool calls or prompt tokens.
+
+* `--emit-rules`: Explicitly forces target rules synchronization into `.agents/rules/` regardless of scope.
+* Clean Uninstallation: Full uninstallation or removal of `plan-marshall-antigravity` automatically cleans up `.agents/rules/plan-marshall-target-rules.md`.
+
 == Manual Installation (Clone or Download)
 
 If you prefer to inspect the files or install offline, clone the `dist-antigravity` branch directly:

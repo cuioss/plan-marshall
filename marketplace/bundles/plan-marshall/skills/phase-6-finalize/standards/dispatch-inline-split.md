@@ -50,9 +50,8 @@ The inline steps are pure scripts or trivial orchestration that earn no envelope
 - `default:finalize-step-print-phase-breakdown` — capture the Phase Breakdown table from `metrics.md`
 - `default:emit-landing` — terminal machine-readable emission; assembles the run's already-recorded facts into the `kind: landing` inbox message the epic drains and writes it via `orchestrator inbox write`, taking no reasoning of its own
 - `default:archive-plan` — archive the completed plan
-- `project:finalize-step-era-stamp-fill` — `mode: script-executor`; resolves the `PR-PENDING` era-stamp sentinel to the real PR number and pushes the correction
-- `project:finalize-step-deploy-target` — generate Claude Code target output via the multi-target generator
-- `project:finalize-step-sync-plugin-cache` — synchronize the plugin cache from `target/claude/`
+- `project:finalize-step-deploy-target` — generate every harness target tree (`target/claude/`, `target/opencode/`, `target/antigravity/`) via the multi-target generator
+- `project:finalize-step-sync-plugin-cache` — sync every harness install (Claude plugin cache, OpenCode, Antigravity) from `target/` via the unified sync engine; the step id names the Claude cache, the step syncs all three
 
 `default:ci-verify` deserves a note: its green pass-through (`final_status == success` AND no failing checks) marks the step done with ZERO dispatch, and only genuinely-red CI files one taxonomy finding per failing check and returns a per-producer needs-triage signal that the dispatcher routes to `verification-feedback` (the sole LLM step, red-CI only). This green-early-return / no-dispatch bypass is documented BEFORE the red-CI triage dispatch it bypasses.
 

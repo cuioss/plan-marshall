@@ -21,8 +21,8 @@
       "Read(~/.claude/plugins/cache/**)",
       "Skill(finalize-step-plugin-doctor)",
       "Skill(finalize-step-sync-plugin-cache)",
-      "Skill(sync-plugin-cache)",
-      "Skill(sync-plugin-cache:*)"
+      "Skill(sync-harnesses)",
+      "Skill(sync-harnesses:*)"
     ],
     "deny": [],
     "ask": []

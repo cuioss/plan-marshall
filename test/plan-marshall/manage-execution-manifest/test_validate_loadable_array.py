@@ -54,8 +54,9 @@ class TestArrayAuthorityContract:
         cmd_compose(_compose_ns('vl-order-disagree'))
         manifest = _mem.read_manifest('vl-order-disagree')
         assert manifest is not None
-        # Frontmatter order would call this an inversion: sync-plugin-cache (85)
-        # precedes deploy-target (81). The array says this is the intended order.
+        # Frontmatter order would call this an inversion:
+        # finalize-step-sync-plugin-cache (85) precedes
+        # finalize-step-deploy-target (81). The array says this is the intended order.
         manifest['phase_6']['steps'] = [
             'push',
             'project:finalize-step-sync-plugin-cache',
@@ -77,7 +78,8 @@ class TestArrayAuthorityContract:
     def test_project_step_order_resolves_from_project_local_skill_md(self):
         """project: step order is read from .claude/skills/{name}/SKILL.md frontmatter.
 
-        deploy-target sits at order 81 and sync-plugin-cache at 85. The
+        finalize-step-deploy-target sits at order 81 and
+        finalize-step-sync-plugin-cache at 85. The
         consumer-shipped built-in default:finalize-step-preference-emitter now
         sits post-merge at order 992 (the post-run-review band), so the former
         deploy-target-vs-preference-emitter deconfliction that once explained the

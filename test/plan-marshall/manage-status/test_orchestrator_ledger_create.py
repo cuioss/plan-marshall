@@ -66,6 +66,26 @@ class TestCreateRow:
         assert not (root / _ledger.QUEUE_GUARD_FILE).exists()
         assert sorted(path.name for path in _ledger.queue_dir(root).iterdir()) == ['PLAN-01.json']
 
+    def test_should_release_the_queue_guard_when_the_critical_section_raises(self, root, monkeypatch):
+        """A raise inside the guarded section must not wedge the queue for the next staging.
+
+        The scan is made to fail after the guard is taken. The matched control is
+        the staging that follows with the scan restored: it succeeds at once,
+        which it could not do against a guard still held.
+        """
+
+        def _failing_scan(_root):
+            raise OSError('queue scan failed')
+
+        with monkeypatch.context() as patched:
+            patched.setattr(_ledger, 'read_rows', _failing_scan)
+            with pytest.raises(OSError, match='queue scan failed'):
+                _ledger.create_row(root, _row('PLAN-01', 'first'))
+
+        assert not (root / _ledger.QUEUE_GUARD_FILE).exists()
+        assert not _ledger.row_path(root, 'PLAN-01').exists()
+        assert _ledger.create_row(root, _row('PLAN-01', 'first'))['row']['seq'] == 1
+
     @pytest.mark.xdist_group(name='manage_locks_contention')
     def test_should_keep_both_rows_when_two_sessions_stage_concurrently(self, root):
         barrier = threading.Barrier(2, timeout=30)

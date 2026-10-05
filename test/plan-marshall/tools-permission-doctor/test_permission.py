@@ -432,8 +432,8 @@ class TestDetectMissingProjectStepPermissions:
 
     def test_exact_skill_rule_covers_project_step(self, tmp_path):
         """Exact Skill({skill}) rule marks the step as present."""
-        marshal = self._write_marshal(tmp_path, {'phase-6-finalize': ['project:sync-plugin-cache']})
-        settings = self._write_settings(tmp_path, ['Skill(sync-plugin-cache)'])
+        marshal = self._write_marshal(tmp_path, {'phase-6-finalize': ['project:sync-harnesses']})
+        settings = self._write_settings(tmp_path, ['Skill(sync-harnesses)'])
 
         result = cmd_detect_missing_project_step_permissions(
             parse_ns(
@@ -451,7 +451,7 @@ class TestDetectMissingProjectStepPermissions:
         assert result['status'] == 'success'
         assert len(result['missing']) == 0
         assert len(result['present']) == 1
-        assert result['present'][0]['covered_by'] == 'Skill(sync-plugin-cache)'
+        assert result['present'][0]['covered_by'] == 'Skill(sync-harnesses)'
 
     def test_wildcard_skill_rule_covers_project_step(self, tmp_path):
         """Covering wildcard Skill({skill}:*) counts as coverage for bare Skill({skill})."""

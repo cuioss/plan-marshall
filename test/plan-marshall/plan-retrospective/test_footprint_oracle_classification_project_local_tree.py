@@ -29,6 +29,10 @@ class TestProjectLocalTreeSurvivesFilter:
     """``build.map`` routes the project-local skill tree production, so it is kept."""
 
     def test_multi_file_project_local_footprint_is_not_filtered(self, tmp_path, monkeypatch):
+        assert len(PROJECT_LOCAL_PRODUCTION) >= 2, (
+            'PROJECT_LOCAL_PRODUCTION must hold at least two entries: a single-entry '
+            'footprint cannot test the multi-file premise.'
+        )
         plan_id, _ = _setup(
             tmp_path,
             monkeypatch,
@@ -64,7 +68,10 @@ class TestProjectLocalTreeSurvivesFilter:
         )
         diff = _write_diff(
             tmp_path,
-            ['.plan/plans/oracle-plan/status.json', '.claude/skills/sync-plugin-cache/scripts/sync.py'],
+            [
+                '.plan/plans/oracle-plan/status.json',
+                '.claude/skills/finalize-step-review-retrospective/scripts/review_retrospective.py',
+            ],
         )
 
         result = run_script(MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff))

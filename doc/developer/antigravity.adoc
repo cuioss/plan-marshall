@@ -57,6 +57,15 @@ The emitter strictly enforces containment invariants via `marketplace/targets/fs
 * `refuse_tree_overlap(output_dir, marketplace_dir)`: Refuses generation if the output directory overlaps the source marketplace in either direction.
 * Stale output pruning: Removes old bundle artifacts while preserving untouched target outputs.
 
+=== Harness-Specific Rules Bundle (`plan-marshall-antigravity`)
+
+The `plan-marshall-antigravity` bundle (`marketplace/bundles/plan-marshall-antigravity/`) provides harness-specific operational rules, tool invariants, execution discipline, and runtime constraints tailored exclusively for Google Antigravity environments:
+
+* **Target Scoping**: Its `.claude-plugin/plugin.json` declares `"targets": ["antigravity"]`. The multi-target generator includes it in the Antigravity distribution (`target/antigravity/`) while excluding it from other targets (such as Claude Code and OpenCode).
+* **Target Rules Skill**: Contains the `target-rules` knowledge skill (`skills/target-rules/SKILL.md`) and the normative rules standard (`skills/target-rules/standards/antigravity-rules.md`).
+* **Zero-Token Workspace Delivery**: When installed with `./install.sh --workspace` or `--emit-rules`, the installer synchronizes `skills/plan-marshall-antigravity-target-rules/standards/antigravity-rules.md` into `<workspace>/.agents/rules/plan-marshall-target-rules.md`. Antigravity automatically discovers and injects workspace rules into assistant context without requiring runtime tool calls.
+* **Uninstallation Lifecycle**: During full uninstallation (`./install.sh --uninstall`) or selective uninstallation of `plan-marshall-antigravity`, the synchronized `.agents/rules/plan-marshall-target-rules.md` is cleanly pruned.
+
 == Tool & Permission Mapping
 
 Antigravity operates with a distinct set of native tools compared to Claude Code. The mappings are declared in `mapping.json`:
@@ -219,25 +228,28 @@ The `-U` / `--update` flag enables safe, atomic updates for existing installatio
 * **Selective Uninstall (`--uninstall --bundles <csv>`)**:
   Validates dependency closures (refuses removal of core or base bundles whose children remain installed), deletes only the managed files belonging to the specified bundles, updates `.install-manifest.json`, and tailors `plugin.json` accordingly.
 
-== Developer Inner Loop (`sync-antigravity`)
+== Developer Inner Loop (`sync-harnesses`)
 
-For contributors iterating on Plan Marshall bundles, the Antigravity developer workflow matches Claude Code and OpenCode:
+For contributors iterating on Plan Marshall bundles, the Antigravity developer workflow is the same command Claude Code and OpenCode use:
 
 1. Edit bundle sources under `marketplace/bundles/`.
-2. Regenerate the Antigravity distribution target:
+2. Regenerate and deploy into the local Antigravity plugin installation:
 +
+[source]
+----
+/sync-harnesses --target antigravity
+----
+
+Without `--target`, `/sync-harnesses` syncs all three harnesses in one run. The command regenerates the Antigravity distribution target and then runs the sync engine. The same two steps by hand:
+
 [source,bash]
 ----
 ./pw generate-antigravity
-----
-3. Deploy into the local Antigravity plugin installation:
-+
-[source,bash]
-----
-/sync-antigravity
+python3 marketplace/targets/sync.py --target antigravity
 ----
 
-The project-level workspace skill (`.agents/skills/sync-antigravity/SKILL.md`) invokes the unified deploy engine (`marketplace/targets/sync.py --target antigravity`). The engine:
+The project-level workspace skill (`.agents/skills/sync-harnesses/SKILL.md`) is a thin pointer at the single sync engine (`marketplace/targets/sync.py`). For the Antigravity target the engine:
+
 * Deploys `skills/`, `agents/`, `commands/`, `plugin.json`, `install.sh`, and `README.adoc` to `~/.gemini/config/plugins/plan-marshall/` (or `--target-dir`).
 * Prunes stale managed entries in `skills/` and `commands/` belonging to the synced bundles while preserving unmanaged user files and agents.
 * Supports `--bundles <name>` for scoped deployments and `--dry-run` for non-destructive preview.
@@ -252,7 +264,7 @@ Beyond static generation, Plan Marshall integrates Antigravity as a first-class 
 The `AntigravityRuntime` subclass implements target operations:
 
 * **Layout Resolution**:
-  ** `layout_skill_roots()`: Returns `['.agents/skills', '.agents/plugins/plan-marshall/skills']`.
+  ** `layout_skill_roots()`: Returns `['.agents/skills', '.agents/plugins/plan-marshall/skills', '.claude/skills']`.
   ** `layout_bundle_cache_root()`: Returns `['~/.gemini/config/plugins/plan-marshall/skills', '~/.gemini/antigravity/skills']`.
 * **Harness Constraints**: Enforces a 600-second ceiling for bash execution timeouts.
 * **Health Check**: Inspects presence of `~/.gemini/config/config.json` and the installed plugin directory.
@@ -320,7 +332,7 @@ Antigravity permissions use function-call syntax:
   ** Subcommand `determine_mode.py check-harness` verifies `.plan/local/harness/antigravity.json` schema, `dist_manifest_sha` freshness against the installed distribution or `.plan/execute-script.py` SHA fallback, and verifies `checks.rules_emitted`, `checks.harness_paths_valid`, and `checks.executor_ready`.
 * **Deterministic Script Configuration (`configure_harness.py`)**:
   ** `configure_harness.py` runs deterministically with zero conversational LLM prompt overhead.
-  ** Invokes `AntigravityRuntime.project_initial_setup()` and `project_install_hook()` (`.agents/hooks.json`), verifies paths and executor readiness, and atomically writes `.plan/local/harness/antigravity.json`.
+  ** Invokes `AntigravityRuntime.project_initial_setup()` and `project_install_hook()` (a deterministic no-op as Antigravity executes without PreToolUse lifecycle hooks; `.agents/hooks.json` is not created), verifies paths and executor readiness, and atomically writes `.plan/local/harness/antigravity.json`.
   ** In Menu Mode preflight, unconfigured checkouts automatically trigger `configure_harness.py` before presenting the steward menu.
 * **Worktree State Inheritance**:
   ** Harness configuration paths resolve via `marketplace_paths.resolve_main_anchored_path(f'harness/{target}.json')`, enabling linked worktrees under `.plan/local/worktrees/{plan_id}` to inherit the main checkout's configured harness state without duplicate state files.
@@ -334,10 +346,10 @@ The test suite provides complete coverage across:
   ** `test_config_files.py`: JSON schema validation for `mapping.json` and `frontmatter-rules.json`.
   ** `test_frontmatter.py`: Tool transformation, model resolution, and fail-closed error handling (`UnmappedToolError`, `UnmappedFrontmatterError`).
   ** `test_body_transforms.py`: Directive rewriting and slash command expansion.
-  ** `test_emitter.py`: Bundle traversal, verbatim directory copying (`standards/`, `references/`, `templates/`, `scripts/`), stale artifact pruning, `bundle-components.json` attribution emission, and installer lifecycle validation (selective bundle flags, aliases, dependency closure, manifest persistence, `plugin.json` tailoring, atomic update backup/rollback, and selective uninstallation).
+  ** `test_emitter.py`: Bundle traversal, verbatim directory copying (`standards/`, `references/`, `templates/`, `scripts/`), stale artifact pruning, target-scoped bundle emission, `bundle-components.json` attribution emission, and installer lifecycle validation (selective bundle flags, aliases, dependency closure, manifest persistence, `plugin.json` tailoring, atomic update backup/rollback, workspace rule emission, and selective uninstallation).
   ** `test_variant_emitter.py`: Role-eligible subagent variant generation and ADR-021 model pin application.
   ** `test_level_table_lockstep.py`: Table object identity assertion against Claude target and model alias validity.
-* `test/sync-antigravity/`:
+* `test/sync-harnesses/`:
   ** `test_sync_antigravity.py`: Component deployment, root asset handling, dry run semantics, managed entry pruning, unmanaged entry preservation, prefix ambiguity resolution, and error exit codes.
 * `test/plan-marshall/platform-runtime/`:
   ** `test_antigravity_runtime.py`: `AntigravityRuntime` unit tests covering layout, permission paths, settings I/O, default grants, and health checks.

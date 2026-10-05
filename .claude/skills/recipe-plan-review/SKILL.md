@@ -110,4 +110,4 @@ The recipe itself writes no source — the fix plan is the standard plan-marshal
 - [coverage-gathering-contract.md](../../../marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/coverage-gathering-contract.md) — the consume obligation, the pinned-cell expand/persist mechanism, and the cross-reference target this recipe consumes.
 - [ext-point-recipe.md](../../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-recipe.md) — the recipe discovery/registration contract that governs project-local `recipe-*` auto-discovery.
 - `recipe-plugin-compliance` — sibling project-local, LLM-driven recipe; the convention template for frontmatter, the frontmatter recipe_domain discovery key, and the coverage-cell step.
-- `audit-archived-plan-retrospectives` — reads the same `.plan/local/archived-plans/` corpus for a complementary retrospective audit.
+- The cross-plan auditor in the `plan-marshall-telemetry` repository — runs a complementary retrospective audit over the archived-plan corpus.

@@ -60,15 +60,15 @@ Examples:
 - **No duplication** — Cross-reference instead of duplicating
 - **Current state only** — Document present requirements, not transitions
 
-## Plugin Cache Sync
+## Harness Sync
 
-After editing skills/agents/commands in `marketplace/bundles/`, sync to Claude Code plugin cache:
+After editing skills/agents/commands in `marketplace/bundles/`, sync the generated trees into the harness installs:
 
 ```bash
-/sync-plugin-cache
+/sync-harnesses
 ```
 
-This copies to `~/.claude/plugins/cache/plan-marshall/` via rsync `--delete`.
+This syncs Claude Code, OpenCode and Antigravity through one engine, `marketplace/targets/sync.py`; `--target NAME` narrows the run to one harness. The Claude leg copies to `~/.claude/plugins/cache/plan-marshall/` via rsync `--delete`.
 
 ## Multi-Target Distribution
 
