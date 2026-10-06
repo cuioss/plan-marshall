@@ -91,6 +91,7 @@ def _args(
     outcome: str,
     head_at_completion: str | None = None,
     display_detail: str | None = 'test detail',
+    loop_back_target: str | None = None,
 ) -> Namespace:
     return Namespace(
         plan_id=plan_id,
@@ -100,7 +101,7 @@ def _args(
         force=False,
         display_detail=display_detail,
         head_at_completion=head_at_completion,
-        loop_back_target=None,
+        loop_back_target=loop_back_target,
         fact=None,
     )
 
@@ -187,20 +188,28 @@ def test_done_with_tree_anchor_is_refused(plan_context):
 # ---------------------------------------------------------------------------
 
 
-def test_non_done_outcome_with_fabricated_anchor_is_written(plan_context):
-    """A ``failed`` record carrying a bogus anchor stays writable.
+@pytest.mark.parametrize(
+    ('outcome', 'loop_back_target'),
+    [('failed', None), ('skipped', None), ('loop_back', '6-finalize')],
+)
+def test_non_done_outcome_with_fabricated_anchor_is_written(plan_context, outcome, loop_back_target):
+    """A non-``done`` record carrying a bogus anchor stays writable, anchor unchanged.
 
     The resolution validates the anchor of a terminal ``done`` verdict. A
-    ``failed`` record is not a verdict scoped against a tree, so refusing it
-    would break the loop-back path that records failures freely.
+    ``failed`` / ``skipped`` / ``loop_back`` record is not a verdict scoped
+    against a tree, so refusing it would break the loop-back path that records
+    failures freely — and the supplied value is persisted exactly as given,
+    unresolved, which is what the documented contract states.
     """
-    plan_id = 'anchor-failed-fabricated'
+    plan_id = f'anchor-{outcome.replace("_", "-")}-fabricated'
     _make_plan(plan_id)
 
-    result = cmd_mark_step_done(_args(plan_id, 'failed', head_at_completion=_FABRICATED))
+    result = cmd_mark_step_done(
+        _args(plan_id, outcome, head_at_completion=_FABRICATED, loop_back_target=loop_back_target)
+    )
 
-    assert result['status'] == 'success'
-    assert 'anchor-probe-step' in _recorded_steps(plan_id)
+    assert result['status'] == 'success', result
+    assert _recorded_steps(plan_id)['anchor-probe-step']['head_at_completion'] == _FABRICATED
 
 
 # ---------------------------------------------------------------------------

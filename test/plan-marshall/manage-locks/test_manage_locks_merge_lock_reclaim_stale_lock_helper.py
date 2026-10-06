@@ -108,7 +108,8 @@ class TestReclaimStaleLockHelper:
         assert siblings == [], siblings
 
     def test_reclaim_never_clobbers_a_lock_recreated_in_the_restore_window(self, isolated_base: dict) -> None:
-        """The abort/restore branch when a concurrent claimant recreated the path
+        """The abort/restore branch when a writer that bypasses the arbitration
+        guard recreated the path
         between this reclaimer's rename and its restore: the restore must NOT
         overwrite the newer lock. Driven with the real filesystem — the claimant's
         lock is created at the moment the helper reads the sidecar, which is
@@ -127,8 +128,10 @@ class TestReclaimStaleLockHelper:
 
         def _read_then_race(path: Path) -> str:
             holder: str = real_read_holder(path)
-            # A concurrent claimant O_EXCL-creates the freed path in the window.
-            lock_path.write_text('concurrent-claimant\n', encoding='utf-8')
+            # A writer that bypasses the arbitration guard O_EXCL-creates the
+            # freed path in the window. The exclusive create is the real
+            # claimant primitive: it would FAIL if the path were still occupied.
+            assert merge_lock._try_atomic_create(lock_path, 'concurrent-claimant') is True
             return holder
 
         mp = pytest.MonkeyPatch()
@@ -143,6 +146,90 @@ class TestReclaimStaleLockHelper:
         assert lock_path.read_text(encoding='utf-8').strip() == 'concurrent-claimant'
         siblings = list(lock_path.parent.glob(f'{lock_path.name}.reclaim.*'))
         assert siblings == [], siblings
+
+    def test_arbitration_guard_is_held_while_the_lock_is_aside(self, isolated_base: dict) -> None:
+        """While the lock file is renamed aside the path is free, so a cooperating
+        claimant's create must be shut out for that whole window. The acquire leg
+        creates under the same guard this asserts is held, so it cannot win a lock
+        whose previous holder is about to be restored as live."""
+        base = isolated_base['base']
+        lock_path = isolated_base['lock_path']
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        _make_live_plan(base, 'live-winner')
+        lock_path.write_text('live-winner\n', encoding='utf-8')
+        guard_path = lock_path.with_name(f'{lock_path.name}.arbitration.lock')
+        observed: list[tuple[bool, bool]] = []
+        real_read_holder = merge_lock._read_holder
+
+        def _read_and_observe(path: Path) -> str:
+            # (guard held, lock path free) at the moment the sidecar is inspected.
+            observed.append((guard_path.exists(), not lock_path.exists()))
+            holder: str = real_read_holder(path)
+            return holder
+
+        mp = pytest.MonkeyPatch()
+        mp.setattr(merge_lock, '_read_holder', _read_and_observe)
+        try:
+            won = merge_lock._reclaim_stale_lock(lock_path, 'dead-holder', 'plan-b')
+        finally:
+            mp.undo()
+
+        assert won is False
+        assert observed == [(True, True)], observed
+        # The guard is released and the live holder is back in place.
+        assert not guard_path.exists()
+        assert lock_path.read_text(encoding='utf-8').strip() == 'live-winner'
+
+    def test_restore_keeps_the_live_lock_when_hard_links_are_rejected(self, isolated_base: dict) -> None:
+        """A link failure other than ``FileExistsError`` leaves the path free, so
+        discarding the sidecar would strip a live holder of its lock. The restore
+        falls back to a rename and the live holder's lock survives."""
+        base = isolated_base['base']
+        lock_path = isolated_base['lock_path']
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        _make_live_plan(base, 'live-winner')
+        lock_path.write_text('live-winner\n', encoding='utf-8')
+
+        def _no_hard_links(_src: str, _dst: str) -> None:
+            raise PermissionError('hard links not supported')
+
+        mp = pytest.MonkeyPatch()
+        mp.setattr(merge_lock.os, 'link', _no_hard_links)
+        try:
+            won = merge_lock._reclaim_stale_lock(lock_path, 'dead-holder', 'plan-b')
+        finally:
+            mp.undo()
+
+        assert won is False
+        assert lock_path.read_text(encoding='utf-8').strip() == 'live-winner'
+        siblings = list(lock_path.parent.glob(f'{lock_path.name}.reclaim.*'))
+        assert siblings == [], siblings
+
+    def test_restore_leaves_the_sidecar_when_no_restore_path_works(self, isolated_base: dict) -> None:
+        """When neither the link nor the rename can restore the file, the sidecar
+        is left on disk — a stranded sidecar is recoverable, a deleted live lock
+        is not — and the reclaimer still loses."""
+        base = isolated_base['base']
+        lock_path = isolated_base['lock_path']
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        _make_live_plan(base, 'live-winner')
+        lock_path.write_text('live-winner\n', encoding='utf-8')
+
+        def _fails(_src: str, _dst: str) -> None:
+            raise PermissionError('not permitted')
+
+        mp = pytest.MonkeyPatch()
+        mp.setattr(merge_lock.os, 'link', _fails)
+        mp.setattr(merge_lock.os, 'replace', _fails)
+        try:
+            won = merge_lock._reclaim_stale_lock(lock_path, 'dead-holder', 'plan-b')
+        finally:
+            mp.undo()
+
+        assert won is False
+        siblings = list(lock_path.parent.glob(f'{lock_path.name}.reclaim.*'))
+        assert len(siblings) == 1, siblings
+        assert siblings[0].read_text(encoding='utf-8').strip() == 'live-winner'
 
     def test_reclaim_returns_false_when_path_already_gone(self, isolated_base: dict) -> None:
         """When a racing reclaimer already swapped/removed the file, the rename

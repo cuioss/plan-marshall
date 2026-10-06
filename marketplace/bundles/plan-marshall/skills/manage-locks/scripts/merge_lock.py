@@ -195,7 +195,10 @@ this reclaimer names — then re-confirms the renamed-away content is exactly th
 dead holder it decided to evict AND that the holder is still dead. A concurrent
 reclaimer that already swapped a LIVE holder into the path before this rename is
 caught by that re-confirmation: the sidecar is linked back (no-clobber) to restore the
-live holder and the reclaimer loses cleanly. When the path is already gone (a
+live holder and the reclaimer loses cleanly. While the file is aside the path is
+free, so the acquire leg's create, the reclaim and the eviction all run under one
+short arbitration guard (:func:`_arbitration_guard`): no claimant can win the
+freed path of a holder that is about to be restored as live. When the path is already gone (a
 racing reclaimer claimed it a beat earlier) the rename fails with
 ``FileNotFoundError`` and the reclaimer falls through to lose. Only on a confirmed
 dead-holder match does the reclaimer unlink the sidecar and ``O_EXCL``-recreate the
@@ -272,11 +275,13 @@ import sys
 import time
 import uuid
 from argparse import Namespace
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 from _locks_core import (
+    held_guard,
     holder_has_live_worktree,
     holder_is_dead,
     holder_staleness,
@@ -862,8 +867,63 @@ def _try_atomic_create(lock_path: Path, holder: str) -> bool:
     return True
 
 
+@contextmanager
+def _arbitration_guard(lock_path: Path) -> Iterator[None]:
+    """Serialize every operation that creates the lock or moves it aside.
+
+    The sidecar arbitration renames the lock file away while it re-confirms the
+    holder, and for that moment the path is free. A claimant's ``O_EXCL`` create
+    landing in that moment would win a lock whose previous holder turns out to be
+    live — two holders at once, which no restore strategy can undo afterwards. The
+    acquire leg's create, the stale reclaim and the stale eviction therefore all
+    run under this one short guard, so the path is never observably free while a
+    possibly-live lock is aside. The critical section is a handful of local
+    filesystem calls, well inside ``held_guard``'s stale threshold.
+
+    Raises:
+        TimeoutError: when the guard cannot be acquired within its budget; every
+            caller treats that as losing this attempt.
+    """
+    with held_guard(lock_path.with_name(f'{lock_path.name}.arbitration.lock')):
+        yield
+
+
+def _create_lock(lock_path: Path, holder: str) -> bool:
+    """The acquire leg's ``O_EXCL`` create, serialized against sidecar arbitration.
+
+    Returns False both when the lock is held and when the arbitration guard could
+    not be acquired — either way this attempt did not win the lock.
+    """
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with _arbitration_guard(lock_path):
+            return _try_atomic_create(lock_path, holder)
+    except TimeoutError:
+        return False
+
+
 def _reclaim_stale_lock(lock_path: Path, observed_holder: str, new_holder: str) -> bool:
+    """:func:`_reclaim_stale_lock_guarded` under the arbitration guard; False on guard timeout."""
+    try:
+        with _arbitration_guard(lock_path):
+            return _reclaim_stale_lock_guarded(lock_path, observed_holder, new_holder)
+    except TimeoutError:
+        return False
+
+
+def _evict_stale_lock(lock_path: Path, observed_holder: str) -> bool:
+    """:func:`_evict_stale_lock_guarded` under the arbitration guard; False on guard timeout."""
+    try:
+        with _arbitration_guard(lock_path):
+            return _evict_stale_lock_guarded(lock_path, observed_holder)
+    except TimeoutError:
+        return False
+
+
+def _reclaim_stale_lock_guarded(lock_path: Path, observed_holder: str, new_holder: str) -> bool:
     """Atomically reclaim a stale lock by evicting the SPECIFIC observed file.
+
+    Runs with :func:`_arbitration_guard` held (see :func:`_reclaim_stale_lock`).
 
     The reclaim eviction must arbitrate on the exact stale file the caller
     decided to evict, never the bare path — otherwise a concurrent reclaimer that
@@ -920,28 +980,41 @@ def _reclaim_stale_lock(lock_path: Path, observed_holder: str, new_holder: str) 
 def _restore_sidecar(sidecar: Path, lock_path: Path) -> None:
     """Put a renamed-aside lock back at ``lock_path`` WITHOUT clobbering a new one.
 
-    The restore is ``os.link`` + unlink, never ``os.replace``: ``os.replace``
-    succeeds when the target exists, so it would silently overwrite a lock another
-    claimant ``O_EXCL``-created in the window since our rename. ``os.link`` fails
-    with ``FileExistsError`` in exactly that case, so the newer lock survives and
-    the now-stale sidecar is dropped. Best-effort either way: the sidecar never
-    outlives this call, and a failed restore never grants the caller the lock.
+    Called with :func:`_arbitration_guard` held, so no cooperating claimant can
+    have created ``lock_path`` since the rename-aside: the path is expected to be
+    free and the restore to succeed. The restore is still ``os.link`` + unlink
+    rather than ``os.replace``, because ``os.replace`` succeeds when the target
+    exists and would silently overwrite a lock created by a writer that bypassed
+    the guard; ``os.link`` fails with ``FileExistsError`` in exactly that case,
+    so that lock survives and the now-superseded sidecar is dropped.
+
+    Any OTHER link failure (a filesystem that rejects hard links) leaves the path
+    still free, so dropping the sidecar would strip a possibly-live holder of its
+    lock. That case falls back to ``os.replace`` — safe here, where the guard
+    keeps the path free — and if even that fails the sidecar is LEFT on disk
+    rather than discarded: a stranded sidecar is recoverable, a deleted live lock
+    is not. A failed restore never grants the caller the lock.
     """
     try:
         os.link(str(sidecar), str(lock_path))
-    except OSError:
-        # FileExistsError: a concurrent claimant already recreated the path. Any
-        # other OSError (e.g. a filesystem without hard links) is treated the same
-        # way — never fall back to a clobbering rename.
+    except FileExistsError:
         pass
+    except OSError:
+        try:
+            os.replace(str(sidecar), str(lock_path))
+        except OSError:
+            pass
+        return
     try:
         os.unlink(str(sidecar))
     except OSError:
         pass
 
 
-def _evict_stale_lock(lock_path: Path, observed_holder: str) -> bool:
+def _evict_stale_lock_guarded(lock_path: Path, observed_holder: str) -> bool:
     """Atomically EVICT (remove) a provably-stale lock via observed-file arbitration.
+
+    Runs with :func:`_arbitration_guard` held (see :func:`_evict_stale_lock`).
 
     The conditional ``release --require-stale`` recovery path is a check-then-act on
     a cooperative cross-process lock: the ``holder_staleness`` verdict could go live
@@ -1337,7 +1410,7 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
     # This plan is the FIFO front → it is admission-eligible. Attempt the atomic
     # O_EXCL create; the front plan is the only contender, so the kernel race is
     # the sole arbiter of the single winner.
-    if _try_atomic_create(lock_path, plan_id):
+    if _create_lock(lock_path, plan_id):
         # Lock held — surface 🔒 (best-effort, AFTER the atomic create, OUTSIDE
         # the O_EXCL window), emit [LOCK] acquired.
         _surface_lock_owned(plan_id, set_title_token)

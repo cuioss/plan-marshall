@@ -31,6 +31,7 @@ from _loader_contract_fixtures import (
 
 import conftest
 from conftest import (
+    _GUARD_PUBLISHER_MARKERS,
     MARKETPLACE_ROOT,
     TEST_ROOT,
     _discover_guard_publishers,
@@ -402,6 +403,35 @@ def test_the_guard_roster_is_exactly_the_discovered_publishers():
     )
 
     assert [relative for _short_name, relative in _guard_roster()] == publishers
+
+
+def test_every_guard_publisher_assigns_both_halves_of_the_pair():
+    """A publisher that lost its label or its size fails here instead of vanishing.
+
+    Discovery matches either constant, so a half-published module is still on the
+    roster; this asserts the pair is complete, by the same line-start match the
+    discovery walk uses.
+    """
+    publishers = _discover_guard_publishers()
+    assert publishers, 'the discovery walk found no guard publisher at all'
+
+    incomplete = {}
+    for relative in publishers:
+        lines = (TEST_ROOT / relative).read_text(encoding='utf-8').splitlines()
+        missing = [marker for marker in _GUARD_PUBLISHER_MARKERS if not any(line.startswith(marker) for line in lines)]
+        if missing:
+            incomplete[relative] = missing
+
+    assert incomplete == {}, f'guard publishers missing half of the published pair: {incomplete}'
+
+
+def test_a_module_publishing_only_a_size_is_still_discovered(tmp_path, monkeypatch):
+    """Losing the label must not drop a guard from the roster."""
+    (tmp_path / 'test_size_only.py').write_text('GUARD_POPULATION_SIZE = 3\n', encoding='utf-8')
+    (tmp_path / 'test_mentions_only.py').write_text('# mentions GUARD_POPULATION_SIZE\n', encoding='utf-8')
+    monkeypatch.setattr(conftest, 'TEST_ROOT', tmp_path)
+
+    assert _discover_guard_publishers() == ['test_size_only.py']
 
 
 def test_a_newly_discovered_publisher_enters_the_roster_unaided(monkeypatch):

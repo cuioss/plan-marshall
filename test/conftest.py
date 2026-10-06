@@ -1166,6 +1166,12 @@ def pytest_collection_modifyitems(items):
 #: included — is not counted as a publisher.
 _GUARD_PUBLISHER_MARKER = 'GUARD_POPULATION_LABEL'
 
+#: Both halves of the published pair. A module assigning EITHER is a publisher,
+#: so one that keeps its size but loses its label (or the reverse) stays on the
+#: roster — where the header reports it ``UNAVAILABLE`` and the loader-contract
+#: guard fails it — instead of dropping out of the report unseen.
+_GUARD_PUBLISHER_MARKERS: tuple[str, ...] = (_GUARD_PUBLISHER_MARKER, 'GUARD_POPULATION_SIZE')
+
 
 def _discover_guard_publishers() -> list[str]:
     """Every ``TEST_ROOT``-relative test module that publishes a guard population.
@@ -1185,7 +1191,7 @@ def _discover_guard_publishers() -> list[str]:
             text = path.read_text(encoding='utf-8')
         except OSError:
             continue
-        if any(line.startswith(_GUARD_PUBLISHER_MARKER) for line in text.splitlines()):
+        if any(line.startswith(_GUARD_PUBLISHER_MARKERS) for line in text.splitlines()):
             found.append(path.relative_to(TEST_ROOT).as_posix())
     return found
 

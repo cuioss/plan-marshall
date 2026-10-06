@@ -243,8 +243,8 @@ class TestEvictStaleLockArbitration:
     def test_never_clobbers_a_lock_recreated_in_the_restore_window(
         self, isolated_base: dict, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # A claimant recreates the freed path between this eviction's rename and
-        # its restore. The restore must not overwrite the newer lock: it survives,
+        # A writer bypassing the arbitration guard recreates the freed path between
+        # this eviction's rename and its restore. The restore must not overwrite it: it survives,
         # the stale sidecar is dropped, and the eviction loses cleanly.
         lock_path = isolated_base['lock_path']
         _write_lock(lock_path, 'other-holder')
@@ -252,7 +252,9 @@ class TestEvictStaleLockArbitration:
 
         def _read_then_race(path: Path) -> str:
             holder: str = real_read_holder(path)
-            lock_path.write_text('concurrent-claimant\n', encoding='utf-8')
+            # The exclusive create is the real claimant primitive: it would FAIL
+            # if the path were still occupied.
+            assert merge_lock._try_atomic_create(lock_path, 'concurrent-claimant') is True
             return holder
 
         monkeypatch.setattr(merge_lock, '_read_holder', _read_then_race)
