@@ -270,15 +270,9 @@ content: [the matching line]
 
 ### Provider behaviour
 
-| | GitHub | GitLab |
-|---|--------|--------|
-| `--scope failed` | `gh run view {run_id} --log-failed`, then the error-context filter | `glab ci trace {run_id}`, truncated to the head window |
-| `--scope full` | `gh run view {run_id} --log` — every job of the run | `glab ci trace {run_id}`, whole and untruncated |
-| `--match` | Identical contract | Identical contract |
-| `--job NAME` | Name resolved via `gh run view {run_id} --json jobs`, then `gh run view --job {job_id}` with the scope's log flag | Rejected with an explicit error: `--run-id` already addresses one job |
-
-GitLab honours both scopes from the one trace read — `glab ci trace` returns the full trace of
-the addressed job regardless of its conclusion — so neither scope is refused there.
+The per-provider resolution of each flag — including GitLab serving both scopes from the one
+`glab ci trace` read and rejecting `--job` — is stated once in
+[api-contract.md](api-contract.md) § "`checks logs`" → "Provider API shape".
 
 ---
 
