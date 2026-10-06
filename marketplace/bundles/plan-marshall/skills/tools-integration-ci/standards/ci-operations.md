@@ -216,8 +216,8 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks log
 
 | Flag | Default | Meaning |
 |------|---------|---------|
-| `--scope failed` | yes | The failure-only view. Every caller that passes no `--scope` gets this. |
-| `--scope full` | — | The whole log of the run regardless of conclusion. This is the only way to read a **successful** run. |
+| `--scope failed` | yes | The reduced view. Every caller that passes no `--scope` gets this. On GitHub it is failure-only (the failed steps' log); on GitLab it is the head-truncated trace of the addressed job. |
+| `--scope full` | — | The whole log regardless of conclusion. On GitHub this is the only way to read a **successful** run. |
 | `--match TEXT` | — | Return only the lines containing the literal, case-sensitive substring `TEXT`, and report their number as `match_count`. |
 | `--job NAME` | — | **GitHub only.** Read one job of the run, selected by its displayed name — e.g. `review / review` for a job nested in a reusable workflow. |
 
@@ -236,17 +236,18 @@ content: [build log output]
 `match_count` is present when `--match` was given — an absent `match_count` means no match was
 requested, never that zero lines matched.
 
-**`--scope failed`.** `checks logs` returns an **error-context window** rather than the first
-N head lines: the raw `--log-failed` output is filtered to the lines matching
-`ERROR`/`FAIL`/`Exception`/`Traceback` plus surrounding context, with non-adjacent windows
-joined by an elision marker. This guarantees the failure tail is surfaced even when runner-setup
-lines fill the head of the log. `log_lines` reports the filtered line count.
+**`--scope failed`.** The reduction is provider-specific. On GitHub, `checks logs` returns an
+**error-context window** rather than the first N head lines: the raw `--log-failed` output is
+filtered to the lines matching `ERROR`/`FAIL`/`Exception`/`Traceback` plus surrounding context,
+with non-adjacent windows joined by an elision marker. This guarantees the failure tail is
+surfaced even when runner-setup lines fill the head of the log. On GitLab, the job trace is
+truncated to its head window. `log_lines` reports the reduced line count on both.
 
-**`--scope full`.** No error-context filter is applied: `content` is the log as the provider
-returned it, and `log_lines` is its line count.
+**`--scope full`.** No reduction is applied: `content` is the log as the provider returned it,
+and `log_lines` is its line count.
 
 **`--match`.** The literal is applied to the WHOLE log the scope fetched, before any reduction —
-so with `--match` the error-context filter is not applied in either scope, and `match_count`
+so with `--match` neither provider's reduction is applied in either scope, and `match_count`
 is a property of the log rather than of a heuristic. `log_lines` equals `match_count`.
 
 ```toon
