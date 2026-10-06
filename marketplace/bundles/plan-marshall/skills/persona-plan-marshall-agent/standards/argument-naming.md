@@ -200,7 +200,7 @@ The `pr`, `checks`, `issue`, and `branch` subcommand surfaces are common across 
 | Wait for CI to complete | `ci checks wait --pr-number {n} [--timeout {s}] [--interval {s}]` |
 | Wait for CI status flip | `ci checks wait-for-status-flip --pr-number {n} [--timeout {s}] [--interval {s}] [--expected success\|failure\|any]` |
 | Rerun a workflow | `ci checks rerun --run-id {id}` |
-| Get failed run logs | `ci checks logs --run-id {id}` |
+| Get run logs | `ci checks logs --run-id {id} [--scope failed\|full] [--match {text}] [--job {name}]` (`--job` is **GitHub-only**; GitLab rejects it) |
 | Create an issue | `ci issue create --title "{title}" [--labels {csv}] --body-file {path}` |
 | View an issue | `ci issue view --issue {id}` |
 | Close an issue | `ci issue close --issue {id}` |
