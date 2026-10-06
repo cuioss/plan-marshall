@@ -90,11 +90,10 @@ pair:
 
 1. First invocation: writes one `.log` file per job and emits
    `manifest.toon`. Returns `already_persisted: false` plus the per-job
-   log paths. `persist` does not call `checks logs` itself: each job's
-   log content arrives pre-fetched from the caller as `raw_content`
-   (the failing-check download path), and a job handed over without it
-   gets the default fetcher's deferral stub — a note naming the
-   `tools-integration-ci:ci checks logs` verb, not a log.
+   log paths. `persist` does not call `checks logs` itself: a job
+   handed over with `raw_content` has that content written, and a job
+   handed over without it gets the default fetcher's deferral stub — a
+   note naming the `tools-integration-ci:ci checks logs` verb, not a log.
 2. Second invocation for the same `(plan_id, run_id)`: a no-op that
    re-reads the existing manifest and re-emits the per-job log paths.
    Returns `already_persisted: true` and does NOT re-fetch any logs.
@@ -139,6 +138,6 @@ read `glab ci trace`.
 `manage_ci_artifacts.py` exposes a ``log_fetcher`` keyword argument on
 ``persist()`` as a test seam so unit tests can substitute a
 deterministic fetcher without spawning real subprocesses. Production
-callers do not supply the argument and hand `persist` each job's log
-as `raw_content`; the script's default fetcher is the deferral stub
-described under the idempotence contract, and makes no CI call.
+callers do not supply the argument; the script's default fetcher is
+the deferral stub described under the idempotence contract, and makes
+no CI call.

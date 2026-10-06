@@ -12,7 +12,7 @@ Persistence layer for CI run artifacts. The `ci-verify` finalize step
 calls this skill to write a per-job log slice plus a `manifest.toon`
 under `artifacts/ci-runs/{run_id}/` inside the plan directory at
 classification
-time. The eager-fetch model keeps the evidence on disk before
+time. Writing at classification time keeps the evidence on disk before
 retrospectives run, immune to GitHub's 90-day log retention window.
 
 ## Enforcement
@@ -59,7 +59,7 @@ Script: `plan-marshall:manage-ci-artifacts:manage-ci-artifacts`
 
 ### persist
 
-Fetch and write the full run artifacts (eager mode).
+Write the full run artifacts.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-ci-artifacts:manage-ci-artifacts \

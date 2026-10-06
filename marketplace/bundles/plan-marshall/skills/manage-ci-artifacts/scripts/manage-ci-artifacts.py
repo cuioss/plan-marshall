@@ -10,17 +10,15 @@ the evidence.
 
 Subcommands:
 
-    persist  Fetch and write the full run (eager mode). Idempotent — a
-             second invocation for the same (plan_id, run_id) re-emits
-             the existing manifest contents without re-fetching logs.
+    persist  Write the full run. Idempotent — a second invocation for
+             the same (plan_id, run_id) re-emits the existing manifest
+             contents without rewriting logs.
     read     Read a previously persisted manifest.
     list     Enumerate all persisted runs under the plan dir, sorted by
              ``fetched_at``.
 
-The script is deterministic file-IO plus provider-API plumbing — no LLM
-core. Provider integration flows through the
-``plan-marshall:tools-integration-ci:ci`` abstraction (no direct gh/glab
-calls in this script).
+The script is deterministic file-IO — no LLM core, and no direct gh/glab
+calls.
 
 Storage layout (canonical):
 
@@ -439,9 +437,7 @@ def _merge_into_manifest(
 def _default_log_fetcher(provider: str, run_id: str, job: dict) -> str:
     """Default log fetcher — a deferral stub, not a fetch.
 
-    Per-job log content normally arrives pre-fetched from the caller as
-    ``raw_content`` (the failing-check download path), so this fetcher
-    is reached only for a job handed to ``persist`` without it. It does
+    Reached only for a job handed to ``persist`` without ``raw_content``. It does
     not call the CI abstraction: it returns a stub note naming the
     ``tools-integration-ci:ci checks logs`` verb a caller reads the log
     through, so the persistence layer still produces a deterministic

@@ -647,8 +647,8 @@ def test_cmd_ci_logs_match_selects_from_the_whole_failed_log(monkeypatch):
 
     result = github_ops.cmd_ci_logs(_logs_args(scope='failed', match='runner setup line 10'))
 
-    # 'runner setup line 10' plus the nine 'runner setup line 10N' lines the
-    # literal is a prefix of — all far from the traceback the filter would keep.
+    # 'runner setup line 10' plus the 'runner setup line 10N' lines the literal
+    # is a prefix of — all far from the traceback the filter would keep.
     assert result['match_count'] == 11
     assert result['log_lines'] == 11
 
