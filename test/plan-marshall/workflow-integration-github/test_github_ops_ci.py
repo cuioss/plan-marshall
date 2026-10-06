@@ -700,6 +700,17 @@ def test_cmd_ci_logs_empty_match_is_refused_before_any_fetch(monkeypatch):
     assert captured == []
 
 
+def test_cmd_ci_logs_empty_job_is_refused_before_any_fetch(monkeypatch):
+    """An empty --job is a supplied name, not an omitted flag: no run-wide read."""
+    captured = _patch_logs(monkeypatch, 'one\n')
+
+    result = github_ops.cmd_ci_logs(_logs_args(scope='full', job=''))
+
+    assert result['status'] == 'error'
+    assert '--job' in result['error']
+    assert captured == []
+
+
 def test_cmd_ci_logs_default_scope_is_failed_for_a_flagless_caller(monkeypatch):
     """A Namespace carrying only run_id reads exactly what an explicit failed scope reads."""
     lines = _setup_log_with_late_traceback()

@@ -1958,7 +1958,9 @@ def cmd_ci_logs(args: argparse.Namespace) -> dict:
     scope = getattr(args, 'scope', None) or CI_LOG_SCOPE_FAILED
     match = getattr(args, 'match', None)
 
-    if getattr(args, 'job', None):
+    # ``is not None`` rather than truthiness: an empty --job was still supplied,
+    # and must be rejected like any other value instead of read as omitted.
+    if getattr(args, 'job', None) is not None:
         return make_error(
             'ci_logs',
             '--job is not supported on GitLab: --run-id already addresses one job, '

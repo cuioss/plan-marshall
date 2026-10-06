@@ -13,7 +13,11 @@ calls this skill to write a per-job log slice plus a `manifest.toon`
 under `artifacts/ci-runs/{run_id}/` inside the plan directory at
 classification
 time. Writing at classification time keeps the evidence on disk before
-retrospectives run, immune to GitHub's 90-day log retention window.
+retrospectives run. A log written from supplied content — the
+failing-check download path — outlives GitHub's 90-day log retention
+window. A job handed over without log content, as the `ci-verify`
+jobs file hands every check, gets its metadata recorded and a deferral
+note in place of the log, so that log is not preserved here.
 
 ## Enforcement
 
@@ -24,8 +28,9 @@ retrospectives run, immune to GitHub's 90-day log retention window.
 - `--run-id` MUST be a non-empty string; the value is the per-run directory
   key and an empty value would collide every run into the same directory.
 - The `persist` subcommand is idempotent: a second invocation for the same
-  `(plan_id, run_id)` MUST be a no-op that re-emits the existing manifest
-  (no log re-fetching).
+  `(plan_id, run_id)` whose every job stem is already recorded MUST be a
+  no-op that re-emits the existing manifest (no log writing). Only a call
+  supplying a new job stem writes logs and extends the manifest.
 - All CI log fetching MUST flow through the
   `plan-marshall:tools-integration-ci:ci checks logs` abstraction; no
   direct `gh` / `glab` calls inside this skill's scripts.
@@ -83,8 +88,11 @@ log_paths[N]:
 ```
 
 **Idempotence**: when `artifacts/ci-runs/{run_id}/manifest.toon` already
-exists, the script returns `already_persisted: true` and re-emits the
-existing manifest contents (paths and job_count) without re-fetching logs.
+exists and every supplied job stem is already recorded in it, the script
+returns `already_persisted: true` and re-emits the existing manifest
+contents (paths and job_count) without writing logs. When any supplied
+stem is new, the script writes the logs of the supplied jobs, merges the
+new stems into the manifest, and returns `already_persisted: false`.
 
 ### read
 

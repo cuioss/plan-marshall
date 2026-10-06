@@ -310,6 +310,17 @@ def test_ci_logs_job_is_rejected_without_reading_a_trace(monkeypatch):
     assert calls == []
 
 
+def test_ci_logs_empty_job_is_rejected_like_any_supplied_job(monkeypatch):
+    """An empty --job was still supplied, so it is rejected rather than read as omitted."""
+    calls = _patch_trace(monkeypatch, 'never read\n')
+
+    result = gitlab_ops.cmd_ci_logs(_logs_args(scope='full', job=''))
+
+    assert result['status'] == 'error'
+    assert '--job is not supported on GitLab' in result['error']
+    assert calls == []
+
+
 def test_ci_logs_empty_match_is_refused_before_any_fetch(monkeypatch):
     """An empty --match would match every line, so it is refused outright."""
     calls = _patch_trace(monkeypatch, 'one\n')

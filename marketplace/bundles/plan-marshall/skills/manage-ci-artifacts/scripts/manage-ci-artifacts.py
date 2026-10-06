@@ -12,7 +12,10 @@ Subcommands:
 
     persist  Write the full run. Idempotent — a second invocation for
              the same (plan_id, run_id) re-emits the existing manifest
-             contents without rewriting logs.
+             contents without writing logs when every supplied job stem
+             is already recorded. A call supplying a new stem writes the
+             logs of the supplied jobs and merges the new stems into the
+             manifest.
     read     Read a previously persisted manifest.
     list     Enumerate all persisted runs under the plan dir, sorted by
              ``fetched_at``.

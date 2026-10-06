@@ -654,8 +654,12 @@ def cmd_ci_logs(args: argparse.Namespace) -> dict:
     match_error = validate_log_match(match)
     if match_error:
         return make_error('ci_logs', match_error)
+    # An empty --job is a supplied-but-unusable name, not an omitted flag: a
+    # truthiness test would silently widen the read to the whole run.
+    if job == '':
+        return make_error('ci_logs', '--job requires a non-empty job name')
 
-    if job:
+    if job is not None:
         job_id, err_dict = _resolve_job_id(args.run_id, job)
         if err_dict:
             return err_dict
@@ -682,7 +686,7 @@ def cmd_ci_logs(args: argparse.Namespace) -> dict:
         'run_id': args.run_id,
         'scope': scope,
     }
-    if job:
+    if job is not None:
         result['job'] = job
     if match_count is not None:
         result['match_count'] = match_count

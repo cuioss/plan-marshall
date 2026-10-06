@@ -94,9 +94,14 @@ pair:
    handed over with `raw_content` has that content written, and a job
    handed over without it gets the default fetcher's deferral stub — a
    note naming the `tools-integration-ci:ci checks logs` verb, not a log.
-2. Second invocation for the same `(plan_id, run_id)`: a no-op that
-   re-reads the existing manifest and re-emits the per-job log paths.
-   Returns `already_persisted: true` and does NOT re-fetch any logs.
+2. Second invocation for the same `(plan_id, run_id)` whose every job
+   stem is already recorded: a no-op that re-reads the existing manifest
+   and re-emits the per-job log paths. Returns `already_persisted: true`
+   and writes no logs.
+3. Later invocation for the same `(plan_id, run_id)` supplying a job
+   stem the manifest does not yet record: writes the logs of the
+   supplied jobs, appends the new stems to the manifest, and returns
+   `already_persisted: false`. Existing job rows are kept as they are.
 
 The idempotence guarantee covers re-firing `ci-verify` against an
 unchanged HEAD (cache-hit scenario). Loop-back commits that advance
