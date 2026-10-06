@@ -1243,3 +1243,100 @@ class TestReadDocContract:
             'direction but names no read invocation — the claim is unanchored'
         )
         assert 'never reads the ledger' in section
+
+
+# =============================================================================
+# (12) Stream closure survives the drain — closed_senders reads the archive
+# =============================================================================
+
+
+#: The sender whose stream is closed and then drained in the arms below.
+CLOSED_SENDER = 'closed-sender'
+
+
+def _close_stream(plan_context, sender: str = CLOSED_SENDER, slug: str = READ_EPIC):
+    return run_script(
+        SCRIPT_PATH,
+        'inbox',
+        'close-stream',
+        '--slug',
+        slug,
+        '--sender-id',
+        sender,
+        '--sender-type',
+        'plan',
+        env_overrides=_env(plan_context),
+    )
+
+
+def _archive(plan_context, message: str, slug: str = READ_EPIC):
+    return run_script(
+        SCRIPT_PATH,
+        'inbox',
+        'archive',
+        '--slug',
+        slug,
+        '--message',
+        message,
+        env_overrides=_env(plan_context),
+    )
+
+
+class TestStreamClosureSurvivesDrain:
+    """A drained ``stream-end`` marker keeps its sender closed.
+
+    The closure derivation reads the live queue PLUS the retired
+    ``inbox/archive/`` layout (foldered plus flat twin), validating each
+    archived candidate through the same envelope seam as a queued one — so a
+    fully drained queue still reports FINISHED and the write-side
+    ``stream_closed`` refusal stays consistent with what the drain reports.
+    """
+
+    def test_drain_then_list_still_reports_the_sender_closed(self, plan_context):
+        _scaffold(plan_context)
+        marker = _close_stream(plan_context).toon()['message']
+        before = _list(plan_context).toon()
+        assert before['closed_senders'] == [CLOSED_SENDER]
+
+        archived = _archive(plan_context, marker).toon()
+        assert archived['status'] == 'success'
+
+        after = _list(plan_context).toon()
+        assert after['count'] == 0
+        assert after['live_count'] == 0
+        assert after['invalid_count'] == 0
+        assert after['closed_senders'] == [CLOSED_SENDER]
+
+    def test_a_post_drain_write_from_the_closed_sender_is_still_refused(self, plan_context, tmp_path):
+        _scaffold(plan_context)
+        marker = _close_stream(plan_context).toon()['message']
+        assert _archive(plan_context, marker).toon()['status'] == 'success'
+
+        refused = _queue_write(
+            plan_context,
+            _payload(tmp_path, 'late body', 'late.md'),
+            sender=CLOSED_SENDER,
+        ).toon()
+
+        assert refused['status'] == 'error'
+        assert refused['error'] == 'stream_closed'
+        assert marker in refused['message']
+
+    def test_live_queue_closure_is_unchanged(self, plan_context, tmp_path):
+        """The control: pre-drain closure still closes and still refuses."""
+        _scaffold(plan_context)
+        marker = _close_stream(plan_context).toon()['message']
+
+        listing = _list(plan_context).toon()
+        assert listing['live_count'] == 0
+        assert listing['closed_senders'] == [CLOSED_SENDER]
+
+        refused = _queue_write(
+            plan_context,
+            _payload(tmp_path, 'late body', 'control.md'),
+            sender=CLOSED_SENDER,
+        ).toon()
+
+        assert refused['status'] == 'error'
+        assert refused['error'] == 'stream_closed'
+        assert marker in refused['message']
