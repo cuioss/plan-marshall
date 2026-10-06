@@ -1157,69 +1157,22 @@ def pytest_collection_modifyitems(items):
 # Routing-guard population sizes, published on every run
 # =============================================================================
 
-#: The population-derived guards, as
-#: ``(label, path-relative-to-TEST_ROOT)``. The family started as the routing
-#: guards and now also carries the contract-text guards that derive their
-#: population from a shipped document; the constant keeps its original name so
-#: the rows below and the header line stay one identifiable set. Each module
-#: publishes its own
-#: ``GUARD_POPULATION_LABEL`` / ``GUARD_POPULATION_SIZE`` pair; this header reads
-#: those rather than re-deriving anything, so the number reported is the number
-#: the guard actually swept and the two cannot drift apart.
-#:
-#: No count is claimed for this tuple, and membership is NOT read from it. The
-#: tuple supplies ORDER and the short names used in the UNAVAILABLE branch;
-#: which modules are reported is derived from the tree by
-#: :func:`_discover_guard_publishers`. A guard added without a row here is
-#: therefore still reported — as an ``UNLISTED`` entry — rather than being
-#: silent on exactly the run its population matters on, the passing one.
-_ROUTING_GUARD_MODULES: tuple[tuple[str, str], ...] = (
-    ('envelope-plan-id', 'plan-marshall/tools-integration-ci/test_envelope_contract_plan_id_placement.py'),
-    ('gate-derivation', 'plan-marshall/phase-6-finalize/test_gate_derivation_diagnosability.py'),
-    ('gate-arm-provenance', 'plan-marshall/phase-6-finalize/test_gate_arm_resolver_provenance.py'),
-    ('display-detail-ceiling', 'plan-marshall/phase-6-finalize/test_display_detail_ceiling.py'),
-    ('self-review-surface', 'plan-marshall/phase-6-finalize/test_self_review_unclassified_surface.py'),
-    ('pinned-build-tool', 'plan-marshall/phase-6-finalize/test_no_pinned_build_tool_in_shipped_docs.py'),
-    ('exit-code-convention', 'plan-marshall/tools-integration-ci/test_exit_code_convention_population.py'),
-    ('parser-seam', 'test_parser_seam_coverage.py'),
-    ('counted-list-coverage', 'pm-plugin-development/ext-self-review-plan-marshall/test_self_review_check_coverage.py'),
-    ('surface-guard-notations', 'plan-marshall/tools-script-executor/test_population_derived_surface_guard.py'),
-    ('call-graph-dispatch-classes', 'plan-marshall/manage-metrics/test_dispatch_boundary_ledger_population.py'),
-    ('branch-cleanup-routing', 'plan-marshall/phase-6-finalize/test_branch_cleanup_merge_queue_routing_routing.py'),
-    ('branch-cleanup-cleanup', 'plan-marshall/phase-6-finalize/test_branch_cleanup_merge_queue_routing_cleanup.py'),
-    (
-        'branch-cleanup-queue-state',
-        'plan-marshall/phase-6-finalize/test_branch_cleanup_merge_queue_routing_queue_state.py',
-    ),
-    ('review-merge-contract', 'plan-marshall/phase-6-finalize/test_review_merge_invocation_contract_contract.py'),
-    ('review-merge-invocation', 'plan-marshall/phase-6-finalize/test_review_merge_invocation_contract_invocation.py'),
-    ('roster-correctness-roster', 'plan-marshall/phase-6-finalize/test_dispatch_roster_closure_roster.py'),
-    ('roster-correctness-closure', 'plan-marshall/phase-6-finalize/test_dispatch_roster_closure_closure.py'),
-    ('roster-correctness-cli', 'plan-marshall/phase-6-finalize/test_dispatch_roster_closure_cli.py'),
-    ('measured-diff-size-call-sites', 'plan-marshall/automatic-review/test_measured_diff_size_bare_flag_scan.py'),
-    (
-        'offrouting-merge-shape',
-        'plan-marshall/tools-integration-ci/test_merge_shaped_offrouting_refusal_merge_shape.py',
-    ),
-    ('offrouting-offrouting', 'plan-marshall/tools-integration-ci/test_merge_shaped_offrouting_refusal_offrouting.py'),
-    ('api-contract-parity', 'plan-marshall/workflow-integration-github/test_pr_landing_state_states.py'),
-    ('mailbox-check-point-roster', 'plan-marshall/plan-orchestrator/test_inbox_delivery.py'),
-)
-
-
-#: The module-level constant a routing-guard module publishes to opt into the
-#: population header. Matched at the START of a line so a module that merely
-#: MENTIONS the name — this file included — is not counted as a publisher.
+#: The module-level constant a population-derived guard module publishes to opt
+#: into the population header, beside its ``GUARD_POPULATION_SIZE``. The header
+#: reads that pair rather than re-deriving anything, so the number reported is
+#: the number the guard actually swept. Publishing the constant IS the
+#: registration — there is no roster to add a row to, so none can drift. Matched
+#: at the START of a line so a module that merely MENTIONS the name — this file
+#: included — is not counted as a publisher.
 _GUARD_PUBLISHER_MARKER = 'GUARD_POPULATION_LABEL'
 
 
 def _discover_guard_publishers() -> list[str]:
     """Every ``TEST_ROOT``-relative test module that publishes a guard population.
 
-    Derived from the tree, never transcribed. This is what closes the membership
-    gap ``_ROUTING_GUARD_MODULES`` cannot close on its own: a hand-listed tuple
-    omits a live publisher silently, so a green run is indistinguishable from one
-    whose guard vanished from the report.
+    Derived from the tree, never transcribed: a hand-listed roster omits a live
+    publisher silently, so a green run is indistinguishable from one whose guard
+    vanished from the report. The sorted walk is also the report order.
 
     Text-matched rather than imported: this runs before collection, and importing
     every test module in the tree to read one constant would be both far more
@@ -1237,35 +1190,15 @@ def _discover_guard_publishers() -> list[str]:
     return found
 
 
-def _guard_roster() -> tuple[list[tuple[str, str]], list[str]]:
-    """The modules to report, in tuple order, plus any roster discrepancies.
+def _guard_roster() -> list[tuple[str, str]]:
+    """The modules to report, as ``(short_name, relative_path)``, in discovery order.
 
-    Returns ``(entries, discrepancies)`` where ``entries`` is
-    ``(short_name, relative_path)`` — the ``_ROUTING_GUARD_MODULES`` rows first,
-    in their declared order, followed by every discovered publisher that has no
-    row. ``discrepancies`` names both failure directions: a publisher with no
-    row, and a row whose module no longer publishes.
+    Exactly the discovered publishers — membership and order both come from
+    :func:`_discover_guard_publishers`. The short name is the module stem; it is
+    only used in the header's ``UNAVAILABLE`` branch, where the module could not
+    be loaded and so cannot supply its own ``GUARD_POPULATION_LABEL``.
     """
-    listed = list(_ROUTING_GUARD_MODULES)
-    listed_paths = {relative for _short_name, relative in listed}
-    discovered = _discover_guard_publishers()
-
-    unlisted = [relative for relative in discovered if relative not in listed_paths]
-    no_longer_publishing = [relative for relative in listed_paths if relative not in discovered]
-
-    entries = listed + [
-        (f'UNLISTED:{relative.rsplit("/", 1)[-1].removesuffix(".py")}', relative) for relative in unlisted
-    ]
-
-    discrepancies: list[str] = []
-    if unlisted:
-        discrepancies.append(f'{len(unlisted)} publisher(s) with no _ROUTING_GUARD_MODULES row: ' + ', '.join(unlisted))
-    if no_longer_publishing:
-        discrepancies.append(
-            f'{len(no_longer_publishing)} row(s) whose module no longer publishes '
-            f'{_GUARD_PUBLISHER_MARKER}: ' + ', '.join(sorted(no_longer_publishing))
-        )
-    return entries, discrepancies
+    return [(relative.rsplit('/', 1)[-1].removesuffix('.py'), relative) for relative in _discover_guard_publishers()]
 
 
 def _load_never_registering(path: Path):
@@ -1321,9 +1254,8 @@ def pytest_report_header(config):
     cannot read a module pytest has already imported, and it must not leave one
     published under a name collection would then displace.
     """
-    roster, discrepancies = _guard_roster()
     entries: list[str] = []
-    for short_name, relative in roster:
+    for short_name, relative in _guard_roster():
         try:
             module = _load_never_registering(TEST_ROOT / relative)
             label = module.GUARD_POPULATION_LABEL
@@ -1333,12 +1265,6 @@ def pytest_report_header(config):
             continue
         entries.append(f'{label}: {size}')
     lines = ['routing-guard populations: ' + '; '.join(entries)]
-    if discrepancies:
-        # Reported, not raised: this hook runs before collection, and raising here
-        # reshapes a real roster defect into a session-startup error naming
-        # neither the test nor the cause. The line is unconditional when it fires,
-        # so the omission cannot pass unseen on a green run.
-        lines.append('routing-guard roster DRIFT: ' + '; '.join(discrepancies))
     # Published unconditionally, for the same reason the populations above are: a
     # green run reports nothing, so an exception list that grew — each entry one
     # more test the suite no longer runs — would look exactly like one that did

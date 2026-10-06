@@ -204,6 +204,22 @@ class TestBudgetReclaimInvalidInput:
         assert result['hold_budget_seconds'] == 0.0
         assert lock_path.exists()
 
+    def test_unresolvable_lock_path_error_carries_the_audit_fields(
+        self, isolated_base: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The lock-path resolution failure is a branch like any other: the
+        # documented "every branch carries the audit fields" contract covers it.
+        def _unresolvable() -> None:
+            raise RuntimeError('no main checkout')
+
+        monkeypatch.setattr(merge_lock, '_resolve_main_lock_path', _unresolvable)
+
+        result = _reclaim('waiter', time.time() - 10.0, 3600.0)
+
+        assert result['status'] == 'error'
+        assert result['elapsed_seconds'] >= 10.0
+        assert result['hold_budget_seconds'] == 3600.0
+
 
 # =============================================================================
 # --hold-start shape at the CLI boundary — POSIX epoch seconds, never ISO-8601

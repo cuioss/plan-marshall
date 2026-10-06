@@ -90,8 +90,8 @@ DERIVATION = derivation.derive()
 BODY_SWEEP = derivation.sweep_convention_bodies()
 
 #: Published on EVERY run — passing included — by the root conftest's
-#: ``pytest_report_header``. A row naming this module lives in that file's
-#: ``_ROUTING_GUARD_MODULES``; the roster guard fails if the two drift apart.
+#: ``pytest_report_header``, which discovers this module by the constant below
+#: (``_discover_guard_publishers``) — publishing it is the whole registration.
 #:
 #: The label carries the single-body measurement alongside the population because
 #: the header publishes ONE number per module, and both numbers have to survive a

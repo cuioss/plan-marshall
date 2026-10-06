@@ -240,6 +240,28 @@ class TestEvictStaleLockArbitration:
         assert lock_path.is_file()
         assert lock_path.read_text(encoding='utf-8').strip() == 'other-holder'
 
+    def test_never_clobbers_a_lock_recreated_in_the_restore_window(
+        self, isolated_base: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A claimant recreates the freed path between this eviction's rename and
+        # its restore. The restore must not overwrite the newer lock: it survives,
+        # the stale sidecar is dropped, and the eviction loses cleanly.
+        lock_path = isolated_base['lock_path']
+        _write_lock(lock_path, 'other-holder')
+        real_read_holder = merge_lock._read_holder
+
+        def _read_then_race(path: Path) -> str:
+            holder: str = real_read_holder(path)
+            lock_path.write_text('concurrent-claimant\n', encoding='utf-8')
+            return holder
+
+        monkeypatch.setattr(merge_lock, '_read_holder', _read_then_race)
+
+        assert merge_lock._evict_stale_lock(lock_path, 'stale-observed') is False
+        monkeypatch.undo()
+        assert lock_path.read_text(encoding='utf-8').strip() == 'concurrent-claimant'
+        assert list(lock_path.parent.glob(f'{lock_path.name}.reclaim.*')) == []
+
     def test_loses_cleanly_when_lock_already_gone(self, isolated_base: dict) -> None:
         # The path is already gone (a racing reclaimer claimed it a beat earlier) →
         # the rename raises FileNotFoundError → lose cleanly (False).

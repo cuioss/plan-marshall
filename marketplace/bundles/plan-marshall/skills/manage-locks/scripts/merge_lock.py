@@ -194,7 +194,7 @@ to a per-reclaimer unique sidecar (``{lock}.reclaim.{pid}.{uuid}``) — a target
 this reclaimer names — then re-confirms the renamed-away content is exactly the
 dead holder it decided to evict AND that the holder is still dead. A concurrent
 reclaimer that already swapped a LIVE holder into the path before this rename is
-caught by that re-confirmation: the sidecar is ``os.replace``-d back to restore the
+caught by that re-confirmation: the sidecar is linked back (no-clobber) to restore the
 live holder and the reclaimer loses cleanly. When the path is already gone (a
 racing reclaimer claimed it a beat earlier) the rename fails with
 ``FileNotFoundError`` and the reclaimer falls through to lose. Only on a confirmed
@@ -878,7 +878,7 @@ def _reclaim_stale_lock(lock_path: Path, observed_holder: str, new_holder: str) 
        removed it first) → return False to lose.
     2. Read the renamed-away content and confirm it is exactly ``observed_holder``
        AND that the holder is still dead. If the file at the path had changed to a
-       live (or different) holder before our rename, ``os.replace`` the sidecar
+       live (or different) holder before our rename, :func:`_restore_sidecar` the sidecar
        back to restore it intact and return False (lose cleanly).
     3. On a confirmed dead-holder match, unlink the sidecar and ``O_EXCL``-recreate
        the lock for ``new_holder``. The recreate uses ``O_EXCL`` so that even after
@@ -906,15 +906,7 @@ def _reclaim_stale_lock(lock_path: Path, observed_holder: str, new_holder: str) 
         # The file at the path had changed to a different / now-live holder before
         # our rename claimed it. Restore it intact so the live holder keeps its
         # lock, then lose cleanly.
-        try:
-            os.replace(str(sidecar), str(lock_path))
-        except OSError:
-            # Best-effort restore: a concurrent reclaimer already recreated the
-            # path, so the sidecar is now stale. Drop it and lose either way.
-            try:
-                os.unlink(str(sidecar))
-            except OSError:
-                pass
+        _restore_sidecar(sidecar, lock_path)
         return False
 
     # Confirmed dead-holder match — drop the sidecar and recreate the lock for us.
@@ -923,6 +915,29 @@ def _reclaim_stale_lock(lock_path: Path, observed_holder: str, new_holder: str) 
     except OSError:
         pass
     return _try_atomic_create(lock_path, new_holder)
+
+
+def _restore_sidecar(sidecar: Path, lock_path: Path) -> None:
+    """Put a renamed-aside lock back at ``lock_path`` WITHOUT clobbering a new one.
+
+    The restore is ``os.link`` + unlink, never ``os.replace``: ``os.replace``
+    succeeds when the target exists, so it would silently overwrite a lock another
+    claimant ``O_EXCL``-created in the window since our rename. ``os.link`` fails
+    with ``FileExistsError`` in exactly that case, so the newer lock survives and
+    the now-stale sidecar is dropped. Best-effort either way: the sidecar never
+    outlives this call, and a failed restore never grants the caller the lock.
+    """
+    try:
+        os.link(str(sidecar), str(lock_path))
+    except OSError:
+        # FileExistsError: a concurrent claimant already recreated the path. Any
+        # other OSError (e.g. a filesystem without hard links) is treated the same
+        # way — never fall back to a clobbering rename.
+        pass
+    try:
+        os.unlink(str(sidecar))
+    except OSError:
+        pass
 
 
 def _evict_stale_lock(lock_path: Path, observed_holder: str) -> bool:
@@ -944,7 +959,7 @@ def _evict_stale_lock(lock_path: Path, observed_holder: str) -> bool:
     2. Re-confirm the renamed-away content is exactly ``observed_holder`` AND that the
        holder is STILL provably stale (``holder_staleness(...) == 'stale'``). If the
        file had changed to a live / different / no-longer-provably-dead holder before
-       our rename claimed it, ``os.replace`` the sidecar back to restore it intact and
+       our rename claimed it, :func:`_restore_sidecar` the sidecar back to restore it intact and
        return False (lose cleanly, the live holder keeps its lock).
     3. On a confirmed stale-holder match, unlink the sidecar — the lock is now
        removed. Return True.
@@ -969,15 +984,7 @@ def _evict_stale_lock(lock_path: Path, observed_holder: str) -> bool:
         # The file at the path had changed to a different / now-live / unresolvable
         # holder before our rename claimed it. Restore it intact so the holder keeps
         # its lock, then lose cleanly.
-        try:
-            os.replace(str(sidecar), str(lock_path))
-        except OSError:
-            # Best-effort restore: a concurrent reclaimer already recreated the
-            # path, so the sidecar is now stale. Drop it and lose either way.
-            try:
-                os.unlink(str(sidecar))
-            except OSError:
-                pass
+        _restore_sidecar(sidecar, lock_path)
         return False
 
     # Confirmed stale-holder match — drop the sidecar; the lock is now removed.
@@ -1825,7 +1832,13 @@ def run_budget_reclaim(args: Namespace) -> dict[str, Any]:
     try:
         lock_path = _resolve_main_lock_path()
     except RuntimeError as exc:
-        return make_error(str(exc), code=ErrorCode.NOT_FOUND, plan_id=plan_id)
+        return make_error(
+            str(exc),
+            code=ErrorCode.NOT_FOUND,
+            plan_id=plan_id,
+            elapsed_seconds=max(0.0, time.time() - hold_start),
+            hold_budget_seconds=hold_budget_seconds,
+        )
 
     if not lock_path.exists():
         return {

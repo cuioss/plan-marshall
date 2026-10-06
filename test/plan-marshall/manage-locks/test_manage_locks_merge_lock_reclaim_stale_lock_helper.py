@@ -68,7 +68,7 @@ class TestReclaimStaleLockHelper:
         """The abort/restore branch: the file at the path changed to a LIVE holder
         between the liveness observation and the reclaim. The helper renames it
         aside, finds the renamed-away content is NOT the observed dead holder (it
-        is a live holder), restores the file intact via ``os.replace``, and returns
+        is a live holder), restores the file intact (no-clobber link), and returns
         False — the live holder's lock survives unchanged and this reclaimer loses."""
         base = isolated_base['base']
         lock_path = isolated_base['lock_path']
@@ -107,15 +107,14 @@ class TestReclaimStaleLockHelper:
         siblings = list(lock_path.parent.glob(f'{lock_path.name}.reclaim.*'))
         assert siblings == [], siblings
 
-    def test_reclaim_drops_sidecar_and_loses_when_restore_replace_raises(self, isolated_base: dict) -> None:
-        """The abort/restore branch when ``os.replace`` ITSELF raises: the helper
-        observed a dead holder, renamed the file aside, then found the renamed-away
-        content was NOT the observed dead holder — so it tries to restore the file
-        via ``os.replace``, but that restore raises (a concurrent reclaimer already
-        recreated the path). The helper must drop the now-stale sidecar via
-        ``os.unlink`` and still lose cleanly with ``False`` — never granting this
-        reclaimer the lock. This pins the best-effort-restore sub-branch the other
-        abort tests (where ``os.replace`` succeeds) leave unexercised."""
+    def test_reclaim_never_clobbers_a_lock_recreated_in_the_restore_window(self, isolated_base: dict) -> None:
+        """The abort/restore branch when a concurrent claimant recreated the path
+        between this reclaimer's rename and its restore: the restore must NOT
+        overwrite the newer lock. Driven with the real filesystem — the claimant's
+        lock is created at the moment the helper reads the sidecar, which is
+        exactly the window — so the no-clobber property is exercised rather than
+        simulated by a raising stub. The newer lock survives, the stale sidecar is
+        dropped, and the reclaimer loses cleanly with ``False``."""
         base = isolated_base['base']
         lock_path = isolated_base['lock_path']
         lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -124,32 +123,24 @@ class TestReclaimStaleLockHelper:
         _make_live_plan(base, 'live-winner')
         lock_path.write_text('live-winner\n', encoding='utf-8')
 
-        # Make the restore os.replace raise, simulating a concurrent reclaimer
-        # having recreated the path before this loser could restore it.
-        unlinked: list[str] = []
-        real_unlink = merge_lock.os.unlink
+        real_read_holder = merge_lock._read_holder
 
-        def _raising_replace(_src: str, _dst: str) -> None:
-            raise OSError('restore target busy')
-
-        def _recording_unlink(target: str) -> None:
-            unlinked.append(target)
-            real_unlink(target)
+        def _read_then_race(path: Path) -> str:
+            holder: str = real_read_holder(path)
+            # A concurrent claimant O_EXCL-creates the freed path in the window.
+            lock_path.write_text('concurrent-claimant\n', encoding='utf-8')
+            return holder
 
         mp = pytest.MonkeyPatch()
-        mp.setattr(merge_lock.os, 'replace', _raising_replace)
-        mp.setattr(merge_lock.os, 'unlink', _recording_unlink)
+        mp.setattr(merge_lock, '_read_holder', _read_then_race)
         try:
             won = merge_lock._reclaim_stale_lock(lock_path, 'dead-holder', 'plan-b')
         finally:
             mp.undo()
 
-        # The reclaimer lost cleanly despite the restore failing.
         assert won is False
-        # The now-stale sidecar was dropped via os.unlink (best-effort cleanup),
-        # so no reclaim sidecar lingers on disk.
-        assert len(unlinked) == 1, unlinked
-        assert Path(unlinked[0]).name.startswith(f'{lock_path.name}.reclaim.')
+        # The concurrent claimant's lock is intact — never overwritten by the restore.
+        assert lock_path.read_text(encoding='utf-8').strip() == 'concurrent-claimant'
         siblings = list(lock_path.parent.glob(f'{lock_path.name}.reclaim.*'))
         assert siblings == [], siblings
 

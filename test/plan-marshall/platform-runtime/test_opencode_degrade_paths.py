@@ -80,3 +80,6 @@ def test_sentinel_meaning_guard() -> None:
     assert has_session_identity('') is False
     assert has_session_identity('   ') is False
     assert has_session_identity(NO_SESSION_IDENTITY) is False
+    # Whitespace is stripped for the sentinel comparison too, not only for the
+    # emptiness test: a padded sentinel is still the sentinel.
+    assert has_session_identity(f' {NO_SESSION_IDENTITY} ') is False
