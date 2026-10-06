@@ -203,8 +203,8 @@ run_id: 12345
 
 **Pattern**: Provider-Agnostic Router
 
-Get logs from a CI workflow run — the failed steps only (the default), or the whole log of the
-run regardless of its conclusion.
+Get logs from a CI workflow run — the provider's reduced view (the default: the failed steps on
+GitHub, the head of the job trace on GitLab), or the whole log regardless of its conclusion.
 
 ### Step 1: Execute
 
