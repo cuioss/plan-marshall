@@ -4811,6 +4811,13 @@ def _inbox_signal(slug: str) -> dict[str, Any]:
             'inbox/ could not be enumerated so drain readiness is unobservable',
             'inbox/: unreadable',
         )
+    if listed.get('inbox_state') != 'present':
+        return _signal(
+            'inbox',
+            READINESS_INDETERMINATE,
+            'inbox/ is absent so the queue could not be looked at',
+            'inbox/: missing',
+        )
     live_count = int(listed.get('live_count', 0))
     invalid_count = int(listed.get('invalid_count', 0))
     total = int(listed.get('count', 0))
