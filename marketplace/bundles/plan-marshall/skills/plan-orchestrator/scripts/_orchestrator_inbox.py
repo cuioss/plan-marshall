@@ -1896,11 +1896,16 @@ def find_stream_end_marker(inbox_dir: Path, epic: str, sender_id: str) -> tuple[
     what keeps ``closed_senders`` derivable after the drain retires the marker.
 
     The second tuple member reports whether closure could be checked: ``False``
-    when the archived listing failed OR when any candidate file for this sender
-    could not be read in either layout. A ``False`` means the marker result is
+    when the archived listing failed OR when any archived candidate file for
+    this sender could not be read. A ``False`` means the marker result is
     PARTIAL — ``None`` beside ``False`` is *could not look*, never *open* — so
     :func:`cmd_inbox_write` refuses rather than accepting a message from a
-    sender whose closure marker sits in the unreadable directory.
+    sender whose closure marker sits in the unreadable directory. A live-queue
+    file that cannot be read does NOT make closure unreadable: it is already
+    reported as an ``unreadable`` row by :func:`cmd_inbox_list`, it cannot
+    validate as a ``stream-end`` marker, and refusing the sender's next write
+    on its strength would turn one unreadable message into a refusal of every
+    later message from that sender.
 
     **Cost.** The live enumeration is O(n log n) in the queue depth:
     :func:`list_messages` lists the directory once and sorts the result. The
@@ -1936,7 +1941,6 @@ def find_stream_end_marker(inbox_dir: Path, epic: str, sender_id: str) -> tuple[
         try:
             text = path.read_text(encoding='utf-8')
         except (OSError, UnicodeDecodeError):
-            readable = False
             continue
         ok, _, header = validate_envelope(text, expected_epic=epic, filename=path.name)
         if ok and header.get(_LIFECYCLE_FIELD) == LIFECYCLE_STREAM_END:
