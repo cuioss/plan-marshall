@@ -274,11 +274,12 @@ def _resolve_orchestrator_level(
 ) -> tuple[str, str, str | None]:
     """Walk the sibling ``orchestrator.effort`` block to a single level keyword.
 
-    The level returned here is the input to target-local post-resolve
-    provisioning per ADR-021 — a machine-local effort-to-model map may satisfy
-    the exact resolved level and otherwise falls through to inherit. The
-    resolver stays target-neutral: the provisioning hook lives downstream of
-    this return, outside it.
+    The resolver is target-neutral and its return is consumed by exactly one
+    caller, ``cmd_effort``, which serializes it. No provisioning hook sits
+    downstream of this return. The machine-local effort-to-model map of ADR-021
+    is applied on a separate path — ``marshall-steward``'s ``effort_pins``
+    materializes per-level model pins from it — and that path does not read
+    this function's result.
 
     Returns:
         (level, source, error). When ``error`` is set, ``level`` and ``source``

@@ -874,6 +874,9 @@ def cmd_run_common(
             }
             if tests_run is not None:
                 population_fields['tests_run'] = tests_run
+                # Hand the measured count back on the result so the routing
+                # seam's ledger row names the population on every route.
+                result['measured_tests_run'] = tests_run
 
             success_output = success_result(
                 duration_seconds=result['duration_seconds'],
@@ -996,6 +999,9 @@ def cmd_run_common(
         # Add test summary if present
         if test_summary:
             output['tests'] = test_summary
+            # Same hand-back as the green path: a failing run's executed count
+            # is a measurement too, and the ledger row should carry it.
+            result['measured_tests_run'] = test_summary.executed
 
         if qgate_persist_failure is not None:
             output['qgate_persist_failed'] = True

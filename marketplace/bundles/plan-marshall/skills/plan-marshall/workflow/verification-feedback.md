@@ -295,9 +295,10 @@ fix_task_numbers[K]:
   - ...
 overflow_deferred: {O}        # only present when overflow fired
 deferred_user_questions: {Q}   # only present when AskUserQuestion fired
+loop_back_target: 5-execute | 6-finalize   # present on every loop_back return, omitted otherwise
 ```
 
-`status: loop_back` when `fix_tasks_created > 0` OR `overflow_deferred > 0`. `status: ci_failure` is reserved for `producer=pr-state` when the CI wait completed with failed checks AND zero further findings were emitted (the failure itself is the surfaced state). Otherwise `status: success` (every pending finding resolved without creating new tasks).
+`status: loop_back` when `fix_tasks_created > 0` OR `overflow_deferred > 0`. Every `loop_back` return carries `loop_back_target`, and every other status omits it; the value is computed by the rule in [`phase-5-execute/standards/operations.md`](../../phase-5-execute/standards/operations.md) § "Verification-feedback loop-back returns (`loop_back_target`)" — `5-execute` when `fix_tasks_created > 0` OR `overflow_deferred > 0`, otherwise `6-finalize`. The caller forwards it verbatim to `mark-step-done --outcome loop_back --loop-back-target {value}`. `status: ci_failure` is reserved for `producer=pr-state` when the CI wait completed with failed checks AND zero further findings were emitted (the failure itself is the surfaced state). Otherwise `status: success` (every pending finding resolved without creating new tasks).
 
 ## Related
 

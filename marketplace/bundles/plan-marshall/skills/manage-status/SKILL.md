@@ -749,7 +749,10 @@ An unattended-order consent prompt renders with the distinct header
 the gap class and HEAD it authorizes (see
 `format_unattended_consent_prompt` in `_cmd_merge_authorization.py`). The
 wording is visually distinct from a blocking-question prompt; grant/check
-verdicts and gap-class routing are unchanged.
+verdicts and gap-class routing are unchanged. The formatter is a pure
+rendering helper: neither `merge-authorization grant` nor
+`merge-authorization check` calls it, and no `manage-status` verb emits this
+prompt text.
 
 **Output** (TOON):
 ```toon

@@ -470,7 +470,10 @@ def _append_gate_build_row(
     The shared routing seam runs each build on exactly one terminal route —
     ``in_process`` or ``routed`` — and each such run MUST leave a ``kind=build``
     row naming the route, the exit code, and the executed-test population, so a
-    green gate never reads as ungated failures. This append is UNCONDITIONAL on
+    green gate never reads as ungated failures. The population is read from
+    whichever layer measured it — ``routed_tests_run`` on the routed route,
+    ``measured_tests_run`` (written back by ``cmd_run_common``) on the in-process
+    one — and is omitted only when neither measured it. This append is UNCONDITIONAL on
     both terminal routes, and the executor dispatch boundary stamps its own
     sha-bearing row independently — so a build that crosses that boundary leaves
     TWO ``kind=build`` rows, and only a direct ``cmd_run`` call (including the
@@ -500,11 +503,18 @@ def _append_gate_build_row(
         except (TypeError, ValueError):
             exit_code = 0
         log_file = str((result or {}).get('log_file', '') or '')
-        routed_tests = (result or {}).get('routed_tests_run')
+        # The executed-test population, from whichever layer measured it: the
+        # daemon's inner wrapper on the routed route (``routed_tests_run``), or
+        # this process's own renderer on the in-process route
+        # (``measured_tests_run``, written back by ``cmd_run_common``). Absent
+        # on both means unmeasured, and the row then carries no ``tests_run``.
+        measured_tests = (result or {}).get('routed_tests_run')
+        if measured_tests is None:
+            measured_tests = (result or {}).get('measured_tests_run')
         outcome: dict[str, Any] = {'route': route}
-        if routed_tests is not None:
+        if measured_tests is not None:
             try:
-                outcome['tests_run'] = int(routed_tests)
+                outcome['tests_run'] = int(measured_tests)
             except (TypeError, ValueError):
                 pass
         record_args = f'{command_args} [route={route}]' if command_args else f'[route={route}]'
@@ -1223,6 +1233,26 @@ def create_execute_handlers(
                     # string, so its log always has an owning directory.
                     plan_id=plan_id or NO_PLAN_SENTINEL,
                 )
+        except BuildQueueTimeout as exc:
+            return _emit_queue_timeout(config.tool_name, command_args, getattr(args, 'format', 'toon'), exc)
+
+        # The in-process row is appended AFTER the renderer ran, because the
+        # renderer is what measures the executed-test population on this route
+        # (it hands the count back on ``result``). ``finally`` keeps the append
+        # unconditional: a renderer crash still leaves the route/exit-code row.
+        try:
+            return cmd_run_common(
+                result=result,
+                parser_fn=parse_log_fn,
+                tool_name=config.tool_name,
+                output_format=getattr(args, 'format', 'toon'),
+                mode=getattr(args, 'mode', 'actionable'),
+                project_dir=project_dir,
+                parser_needs_command=config.parser_needs_command,
+                plan_id=plan_id,
+                command_args=command_args,
+            )
+        finally:
             _append_gate_build_row(
                 notation=notation,
                 plan_id=plan_id,
@@ -1231,20 +1261,6 @@ def create_execute_handlers(
                 result=result,
                 route='in_process',
             )
-        except BuildQueueTimeout as exc:
-            return _emit_queue_timeout(config.tool_name, command_args, getattr(args, 'format', 'toon'), exc)
-
-        return cmd_run_common(
-            result=result,
-            parser_fn=parse_log_fn,
-            tool_name=config.tool_name,
-            output_format=getattr(args, 'format', 'toon'),
-            mode=getattr(args, 'mode', 'actionable'),
-            project_dir=project_dir,
-            parser_needs_command=config.parser_needs_command,
-            plan_id=plan_id,
-            command_args=command_args,
-        )
 
     # Preserve useful names for debugging
     in_process_execute.__qualname__ = f'{config.tool_name}_execute_direct'
