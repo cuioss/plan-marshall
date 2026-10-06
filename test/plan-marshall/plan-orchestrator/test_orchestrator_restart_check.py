@@ -50,6 +50,8 @@ SCRIPT_PATH = get_script_path(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT)
 
 _orch = load_script_module(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_script')
 
+_inbox = load_script_module(_ORCH_BUNDLE, _ORCH_SKILL, '_orchestrator_inbox.py', 'orchestrator_inbox_for_restart_check')
+
 cmd_cleanup_restart_check = _orch.cmd_cleanup_restart_check
 readiness_floor = _orch._readiness_floor
 READINESS_ORDER = _orch.READINESS_ORDER
@@ -172,17 +174,59 @@ def _make_inbox(plan_context, queued: int = 0, archived: int = 0) -> Path:
 
     Message names follow the channel's own ``{sender}-{NNN}.md`` grammar, so the
     counts the verb derives come from real messages rather than from stray files
-    the counter would ignore.
+    the counter would ignore. Queued messages are valid live envelopes, so they
+    read as drainable work rather than as invalid rows.
     """
     inbox: Path = _epic_dir(plan_context) / INBOX_SUBDIR
     inbox.mkdir(parents=True, exist_ok=True)
     for index in range(queued):
-        (inbox / f'fixture-plan-{index + 1:03d}.md').write_text('queued\n', encoding='utf-8')
+        text = _inbox.compose_envelope(
+            sender_type='plan',
+            sender_id='fixture-plan',
+            epic=SLUG,
+            kind='landing',
+            payload_body='queued\n',
+        )
+        (inbox / f'fixture-plan-{index + 1:03d}.md').write_text(text, encoding='utf-8')
     if archived:
         archive = inbox / 'archive'
         archive.mkdir(parents=True, exist_ok=True)
         for index in range(archived):
             (archive / f'fixture-plan-{index + 900:03d}.md').write_text('done\n', encoding='utf-8')
+    return inbox
+
+
+def _make_finished_inbox(plan_context) -> Path:
+    """Materialize an inbox holding only a valid stream-end marker.
+
+    The marker is valid and closed, with no live and no invalid row, so the
+    drainable reading reports the FINISHED zero.
+    """
+    inbox: Path = _epic_dir(plan_context) / INBOX_SUBDIR
+    inbox.mkdir(parents=True, exist_ok=True)
+    text = _inbox.compose_envelope(
+        sender_type='plan',
+        sender_id='fixture-plan',
+        epic=SLUG,
+        kind='finding',
+        payload_body='closed\n',
+        lifecycle=_inbox.LIFECYCLE_STREAM_END,
+    )
+    (inbox / 'fixture-plan-001.md').write_text(text, encoding='utf-8')
+    return inbox
+
+
+def _make_blocked_inbox(plan_context, malformed: int = 2) -> Path:
+    """Materialize an inbox holding only malformed messages.
+
+    Each file matches the channel's ``{sender}-{NNN}.md`` grammar but carries
+    no valid envelope, so every row is invalid with no live row — the BLOCKED
+    zero the drain declines.
+    """
+    inbox: Path = _epic_dir(plan_context) / INBOX_SUBDIR
+    inbox.mkdir(parents=True, exist_ok=True)
+    for index in range(malformed):
+        (inbox / f'fixture-plan-{index + 1:03d}.md').write_text('queued\n', encoding='utf-8')
     return inbox
 
 
@@ -277,7 +321,7 @@ class TestRestartCheckShape:
 
         assert 'queue rows: 1 row(s) scanned and 0 unreadable' == _signal_row(result, 'running_plans')['population']
         assert '1 queue row(s) and 1 spec file(s)' == _signal_row(result, 'corpus_reconciliation')['population']
-        assert 'inbox/: 0 queued and 3 archived' == _signal_row(result, 'inbox')['population']
+        assert 'inbox/: 0 live of 0 total and 0 closed and 0 invalid' == _signal_row(result, 'inbox')['population']
         assert CLEAN_SHA in _signal_row(result, 'worktree')['population']
 
     def test_should_carry_the_sample_instant_beside_the_verdict(self, plan_context, monkeypatch):
@@ -442,7 +486,7 @@ class TestInboxSignal:
         row = _signal_row(_run(), 'inbox')
 
         assert row['verdict'] == READY
-        assert row['population'] == 'inbox/: 0 queued and 2 archived'
+        assert row['population'] == 'inbox/: 0 live of 0 total and 0 closed and 0 invalid'
 
     def test_a_queued_message_is_not_ready(self, plan_context, monkeypatch):
         _write_status(plan_context, [_row('PLAN-01')])
@@ -454,6 +498,30 @@ class TestInboxSignal:
 
         assert row['verdict'] == NOT_READY
         assert '2 message(s) still queued' in row['evidence']
+
+    def test_a_queued_only_stream_end_marker_is_ready_with_finished_evidence(self, plan_context, monkeypatch):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md')
+        _make_finished_inbox(plan_context)
+        monkeypatch.setattr(_orch, '_git_read', _git_stub())
+
+        row = _signal_row(_run(), 'inbox')
+
+        assert row['verdict'] == READY
+        assert 'FINISHED' in row['evidence']
+        assert row['population'] == 'inbox/: 0 live of 1 total and 1 closed and 0 invalid'
+
+    def test_a_malformed_only_queue_is_not_ready_with_blocked_evidence(self, plan_context, monkeypatch):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md')
+        _make_blocked_inbox(plan_context, malformed=2)
+        monkeypatch.setattr(_orch, '_git_read', _git_stub())
+
+        row = _signal_row(_run(), 'inbox')
+
+        assert row['verdict'] == NOT_READY
+        assert 'BLOCKED' in row['evidence']
+        assert row['population'] == 'inbox/: 0 live of 2 total and 0 closed and 2 invalid'
 
     def test_an_absent_inbox_is_indeterminate_never_a_confident_zero(self, plan_context, monkeypatch):
         # The two zeros are told apart by the payload: an absent inbox/ is
