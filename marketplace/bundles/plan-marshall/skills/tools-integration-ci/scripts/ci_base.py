@@ -1351,12 +1351,13 @@ def build_parser(
 
     # checks logs — one verb, two scopes. `--scope failed` (the default) is the
     # failure-triage read every pre-existing caller relies on; `--scope full` reads
-    # the log of a run regardless of its conclusion, which is the only way to read
-    # a SUCCESSFUL run. `--plan-id` stays router-level: no verb-scoped `--plan-id`
-    # is declared here.
+    # the log of a run regardless of its conclusion, which on GitHub is the only way
+    # to read a SUCCESSFUL run. The reduction `failed` applies is provider-specific
+    # (GitHub: the failed steps; GitLab: the head of the job trace). `--plan-id` stays
+    # router-level: no verb-scoped `--plan-id` is declared here.
     ci_logs = checks_sub.add_parser(
         'logs',
-        help='Get run/job logs: the failed steps only (--scope failed, the default) '
+        help="Get run/job logs: the provider's reduced view (--scope failed, the default) "
         'or the whole log regardless of conclusion (--scope full)',
         allow_abbrev=False,
     )
@@ -1365,8 +1366,9 @@ def build_parser(
         '--scope',
         choices=CI_LOG_SCOPES,
         default=CI_LOG_SCOPE_FAILED,
-        help='Which log to read. "failed" (default) returns the failure-only view; "full" returns '
-        'the whole log of the run regardless of its conclusion, so a successful run is readable.',
+        help='Which log to read. "failed" (default) returns the provider\'s reduced view (GitHub: the '
+        'failed steps; GitLab: the head of the job trace); "full" returns the whole log regardless '
+        'of its conclusion, so a successful run is readable.',
     )
     ci_logs.add_argument(
         '--match',

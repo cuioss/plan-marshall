@@ -416,8 +416,8 @@ question. The consumer-side use is documented in
 
 ### checks logs
 
-Read the log of a workflow run / job: the failure-only view, or the whole log regardless of
-conclusion. Pure read.
+Read the log of a workflow run / job: the provider's reduced view (the failed steps on GitHub,
+the head of the job trace on GitLab), or the whole log regardless of conclusion. Pure read.
 
 **Command**:
 ```bash
@@ -430,7 +430,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks log
 | Argument | Required | Description |
 |----------|----------|-------------|
 | `--run-id` | Yes | Run id (GitHub) / job id (GitLab) |
-| `--scope` | No | `failed` (default) or `full`. A caller that passes no `--scope` gets the failure-only view. `full` reads the log regardless of the run's conclusion, which is what makes a successful run readable |
+| `--scope` | No | `failed` (default) or `full`. A caller that passes no `--scope` gets the provider's reduced view (see **Provider API shape** below). `full` reads the log regardless of the run's conclusion, which is what makes a successful run readable on GitHub |
 | `--match` | No | A literal, case-sensitive substring. Only the lines containing it are returned, and their number is reported as `match_count`. The empty string is refused |
 | `--job` | No | **GitHub only.** The displayed name of one job of the run (e.g. `review / review` for a job nested in a reusable workflow) |
 
