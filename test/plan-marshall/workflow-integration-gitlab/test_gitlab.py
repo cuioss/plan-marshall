@@ -146,7 +146,9 @@ def test_either_or_flags_missing_emits_a_structured_error():
     diagnostic — not the exit code — is the contract. Auth runs first, so its
     error is also admissible.
     """
-    result = run_script(SCRIPT_PATH, 'checks', 'status')
+    # timeout=120: the single unauthenticated `glab auth status` probe allows
+    # 60s (ci_base.run_cli default); the 30s harness default fuses first.
+    result = run_script(SCRIPT_PATH, 'checks', 'status', timeout=120)
     combined = (result.stdout + result.stderr).lower()
     assert 'pr-number' in combined or 'head' in combined or 'auth' in combined, (
         f'Expected pr-number/head/auth in output, got: {combined}'
