@@ -407,7 +407,10 @@ def _record_resolution(
         'in_process': 'in_process_fallback',
         'fail-loud': 'no_build',
     }
-    mechanism = _RESOLVED_TO_MECHANISM.get(resolved, 'in_process_fallback')
+    # An unrecognized ``resolved`` value reports ``unknown`` — the same
+    # fail-closed rule the serialization label below follows, so the two fields
+    # of one record never disagree about a routing branch this map does not know.
+    mechanism = _RESOLVED_TO_MECHANISM.get(resolved, 'unknown')
     # The serialization state names which scheduler serialized this build:
     # the daemon's cross-plan scheduling, the machine-global fallback slot,
     # or nothing (the fail-loud refusal ran no build). A down daemon is

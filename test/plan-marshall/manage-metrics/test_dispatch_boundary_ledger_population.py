@@ -85,7 +85,7 @@ assert _DISPATCH_CLASS_SCAN['dispatch_classes'], (
 )
 
 #: Published on EVERY run — passing included — by the root conftest's
-#: ``pytest_report_header`` (see ``_ROUTING_GUARD_MODULES`` in
+#: ``pytest_report_header`` (see ``_discover_guard_publishers`` in
 #: ``test/conftest.py``). The import-time assertion above fails an EMPTY
 #: population; publishing the size is what makes a SHRUNKEN one visible on the
 #: GREEN run, where no failure message is ever rendered.

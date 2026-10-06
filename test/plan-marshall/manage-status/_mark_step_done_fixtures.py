@@ -97,6 +97,9 @@ def _tmp_repo_two_heads(tmp_path, monkeypatch) -> tuple[str, str]:
     _git('init')
     _git('config', 'user.email', 'fixture@example.test')
     _git('config', 'user.name', 'fixture')
+    # An inherited global commit.gpgsign=true would make the commits below fail
+    # (or prompt) on a machine with signing configured.
+    _git('config', 'commit.gpgsign', 'false')
     (repo / 'f.txt').write_text('one', encoding='utf-8')
     _git('add', '.')
     _git('commit', '-m', 'one')

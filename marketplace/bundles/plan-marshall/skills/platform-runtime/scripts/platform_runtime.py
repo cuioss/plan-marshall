@@ -783,18 +783,7 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     return toon_error(
         operation,
         'unknown_operation',
-        f'Unknown operation {operation!r}; '
-        'valid operations: project initial-setup, project install-hook, '
-        'layout skill-roots, layout bundle-cache-root, harness bash-timeout-ceiling, '
-        'session capture, session render-title, session push-title-token, '
-        'session bind, session resolve-plan, session doctor, session teardown, '
-        'session reload-directive, '
-        'permission configure, permission analyze, permission fix, '
-        'permission ensure-wildcards, permission ensure-steps, '
-        'permission web-analyze, permission web-apply, '
-        'metrics capture, metrics normalized-tokens, chat extract-signal, '
-        'subagent dispatch, '
-        'wait for, health-check, runtime-info',
+        f'Unknown operation {operation!r}; valid operations: ' + ', '.join(OPERATION_REGISTRY),
     )
 
 

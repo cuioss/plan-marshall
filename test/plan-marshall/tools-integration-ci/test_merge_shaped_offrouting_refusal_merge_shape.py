@@ -147,7 +147,7 @@ _IDS = [f'{provider}:{verb}' for provider, verb, _handler in _MEMBERS]
 #: whole of it. Naming the pair uniformly across every registered routing guard is
 #: what lets one header entry publish them all without conftest re-deriving any of
 #: them — the number reported is the number this module actually swept. No count of
-#: those guards is stated here: the roster is ``_ROUTING_GUARD_MODULES`` in the root
+#: those guards is stated here: the roster is ``_discover_guard_publishers`` in the root
 #: conftest and it grows, so a number written here goes stale silently.
 GUARD_POPULATION_LABEL = 'merge-shaped off-routing members'
 GUARD_POPULATION_SIZE = len(_MEMBERS)
