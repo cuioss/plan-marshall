@@ -4816,8 +4816,7 @@ def _inbox_signal(slug: str) -> dict[str, Any]:
     total = int(listed.get('count', 0))
     closed_senders = list(listed.get('closed_senders', []))
     population = (
-        f'inbox/: {live_count} live of {total} total '
-        f'and {len(closed_senders)} closed and {invalid_count} invalid'
+        f'inbox/: {live_count} live of {total} total and {len(closed_senders)} closed and {invalid_count} invalid'
     )
     if live_count:
         return _signal('inbox', NOT_READY, f'{live_count} message(s) still queued', population)
