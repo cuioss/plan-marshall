@@ -806,8 +806,22 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops checks logs \
-  --run-id ID
+  --run-id ID [--scope {failed|full}] [--match TEXT] [--job NAME]
 ```
+
+`--scope` defaults to `failed`, the failure-only view (`gh run view --log-failed` plus the
+error-context filter). `--scope full` reads `gh run view --log` — every job of the run regardless
+of conclusion, which is what makes a successful run readable. `--job NAME` selects one job by its
+displayed name (e.g. `review / review` for a job nested in a reusable workflow); a name matching no
+job of the run returns `error: job_not_found` with the run's job names in `available_jobs`.
+`--match TEXT` returns only the lines containing the literal, case-sensitive substring.
+
+The return carries `scope` beside `run_id`, `log_lines` and `content`, plus `job` when `--job` was
+given and `match_count` when `--match` was given. A fetched log with no matching line is
+`status: success` with `match_count: 0`; a log that could not be fetched is `status: error`. The
+full contract is stated once in
+[`tools-integration-ci/standards/api-contract.md`](../tools-integration-ci/standards/api-contract.md)
+§ "`checks logs`" and is not restated here.
 
 ### github_ops issue create
 

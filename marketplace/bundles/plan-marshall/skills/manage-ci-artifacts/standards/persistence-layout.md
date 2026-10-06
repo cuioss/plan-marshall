@@ -88,10 +88,13 @@ number of loop-back commits.
 The `persist` subcommand is idempotent for the `(plan_id, run_id)`
 pair:
 
-1. First invocation: fetches every job's log via the
-   `tools-integration-ci:ci checks logs` abstraction, writes one
-   `.log` file per job, and emits `manifest.toon`. Returns
-   `already_persisted: false` plus the per-job log paths.
+1. First invocation: writes one `.log` file per job and emits
+   `manifest.toon`. Returns `already_persisted: false` plus the per-job
+   log paths. `persist` does not call `checks logs` itself: each job's
+   log content arrives pre-fetched from the caller as `raw_content`
+   (the failing-check download path), and a job handed over without it
+   gets the default fetcher's deferral stub — a note naming the
+   `tools-integration-ci:ci checks logs` verb, not a log.
 2. Second invocation for the same `(plan_id, run_id)`: a no-op that
    re-reads the existing manifest and re-emits the per-job log paths.
    Returns `already_persisted: true` and does NOT re-fetch any logs.
@@ -126,14 +129,16 @@ re-invent it.
 ## Provider abstraction
 
 All CI log fetching MUST flow through the
-`plan-marshall:tools-integration-ci:ci fetch-logs` abstraction. Direct
+`plan-marshall:tools-integration-ci:ci checks logs` abstraction. Direct
 `gh` or `glab` calls inside `manage_ci_artifacts.py` are forbidden by
-the skill's enforcement block. The abstraction resolves to
-`gh run view --log {run_id}` on GitHub and the equivalent `glab ci
-trace` invocation on GitLab.
+the skill's enforcement block. On GitHub the verb's default
+`--scope failed` resolves to `gh run view {run_id} --log-failed` and
+`--scope full` to `gh run view {run_id} --log`; on GitLab both scopes
+read `glab ci trace`.
 
 `manage_ci_artifacts.py` exposes a ``log_fetcher`` keyword argument on
 ``persist()`` as a test seam so unit tests can substitute a
 deterministic fetcher without spawning real subprocesses. Production
-callers do not supply the argument; the script's default fetcher
-delegates to the CI abstraction.
+callers do not supply the argument and hand `persist` each job's log
+as `raw_content`; the script's default fetcher is the deferral stub
+described under the idempotence contract, and makes no CI call.

@@ -24,7 +24,7 @@ Subcommands:
     ci status       Check CI status for a PR
     ci wait         Wait for CI to complete
     ci rerun        Rerun a workflow run
-    ci logs         Get failed run logs
+    ci logs         Get run logs (failed steps by default, or the full run)
     checks pull-request-runs  Report whether any pull_request-event workflow run
                     exists for the requested PR (the not_triggered observable)
     issue create    Create an issue
@@ -66,7 +66,7 @@ a second plan-less convention of its own:
     python3 github.py ci status --pr-number 123
     python3 github.py ci wait --pr-number 123 [--timeout 300] [--interval 30]
     python3 github.py ci rerun --run-id 12345
-    python3 github.py ci logs --run-id 12345
+    python3 github.py ci logs --run-id 12345 [--scope failed|full] [--match TEXT] [--job NAME]
     python3 github.py issue create --title "Title" --plan-id EXAMPLE-PLAN [--labels "bug,priority:high"]
     python3 github.py issue comment --issue 123 --plan-id EXAMPLE-PLAN [--slot name]
     python3 github.py issue view --issue 123

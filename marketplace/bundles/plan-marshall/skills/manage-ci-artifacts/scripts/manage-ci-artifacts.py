@@ -437,15 +437,17 @@ def _merge_into_manifest(
 
 
 def _default_log_fetcher(provider: str, run_id: str, job: dict) -> str:
-    """Default log fetcher — delegates to ``tools-integration-ci``.
+    """Default log fetcher — a deferral stub, not a fetch.
 
-    This is a thin placeholder. The actual ``ci fetch-logs`` sub-verb
-    on ``tools-integration-ci`` is documented in deliverable 7 as the
-    canonical integration point. Until that sub-verb lands, this
-    fetcher returns a stub note so the persistence layer still produces
-    a deterministic on-disk artifact and tests of the persistence layer
-    do not require live CI access. Tests inject their own ``log_fetcher``
-    via the ``persist()`` keyword argument.
+    Per-job log content normally arrives pre-fetched from the caller as
+    ``raw_content`` (the failing-check download path), so this fetcher
+    is reached only for a job handed to ``persist`` without it. It does
+    not call the CI abstraction: it returns a stub note naming the
+    ``tools-integration-ci:ci checks logs`` verb a caller reads the log
+    through, so the persistence layer still produces a deterministic
+    on-disk artifact and tests of the persistence layer do not require
+    live CI access. Tests inject their own ``log_fetcher`` via the
+    ``persist()`` keyword argument.
     """
     return (
         f'[manage-ci-artifacts] log fetch deferred to '

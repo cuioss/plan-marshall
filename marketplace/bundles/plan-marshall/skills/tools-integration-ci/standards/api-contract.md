@@ -414,6 +414,104 @@ question. The consumer-side use is documented in
 
 ---
 
+### checks logs
+
+Read the log of a workflow run / job: the failure-only view, or the whole log regardless of
+conclusion. Pure read.
+
+**Command**:
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks logs \
+    --run-id 12345 \
+    [--scope failed|full] [--match TEXT] [--job NAME]
+```
+
+**Arguments**:
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--run-id` | Yes | Run id (GitHub) / job id (GitLab) |
+| `--scope` | No | `failed` (default) or `full`. A caller that passes no `--scope` gets the failure-only view. `full` reads the log regardless of the run's conclusion, which is what makes a successful run readable |
+| `--match` | No | A literal, case-sensitive substring. Only the lines containing it are returned, and their number is reported as `match_count`. The empty string is refused |
+| `--job` | No | **GitHub only.** The displayed name of one job of the run (e.g. `review / review` for a job nested in a reusable workflow) |
+
+**Provider API shape**:
+
+| Aspect | GitHub | GitLab |
+|--------|--------|--------|
+| `--scope failed` | `gh run view {run_id} --log-failed`, then the generic error-context filter | `glab ci trace {run_id}`, truncated to the head window |
+| `--scope full` | `gh run view {run_id} --log` — every job of the run; no error-context filter | `glab ci trace {run_id}`, whole and untruncated |
+| `--job NAME` | resolved to a job id via `gh run view {run_id} --json jobs`, then `gh run view --job {job_id}` with the scope's log flag | **rejected** — `--run-id` already addresses one job |
+| `--match` | applied to the whole fetched log | applied to the whole fetched trace |
+
+GitLab honours both scopes rather than refusing one: `glab ci trace` returns the full trace of
+the addressed job regardless of its conclusion.
+
+**Success Output**:
+```toon
+status: success
+operation: ci_logs
+run_id: 12345
+scope: full
+job: review / review
+match_count: 1
+log_lines: 1
+content: [log output, newlines escaped]
+```
+
+| Field | Present | Meaning |
+|-------|---------|---------|
+| `scope` | always | The scope that was read — `failed` or `full`. |
+| `job` | only with `--job` | The job name that was selected. |
+| `match_count` | only with `--match` | The number of lines of the fetched log containing the literal. Absent when no match was requested — never `0` in that case. |
+| `log_lines` | always | The number of lines in `content`. Equals `match_count` when `--match` was given. |
+| `content` | always | The selected lines, joined with escaped newlines. |
+
+**`--match` selects from the whole fetched log.** The scope decides which log is fetched;
+`--match` decides which of its lines are returned. The failed scope's own reduction — the
+error-context filter on GitHub, the head-window truncation on GitLab — is therefore not applied
+when `--match` is given, so `match_count` is a property of the log and never of a heuristic.
+
+**Zero match is a success; a failed fetch is an error.** These are distinct facts and are never
+collapsed:
+
+```toon
+status: success
+operation: ci_logs
+run_id: 12345
+scope: full
+match_count: 0
+log_lines: 0
+content: ""
+```
+
+The log was fetched and holds no line with the literal. Whereas a log that could not be fetched —
+a run still in progress, an unknown run id, a provider failure — returns the standard error
+envelope carrying the provider CLI's stderr in `context`, and establishes nothing about the log's
+content:
+
+```toon
+status: error
+operation: ci_logs
+error: Failed to get logs for run 12345
+context: <provider stderr>
+```
+
+**`job_not_found`** — `--job` named no job of the run. The envelope lists the names the run does
+have, so the selector can be corrected without a second call:
+
+```toon
+status: error
+operation: ci_logs
+error: job_not_found
+run_id: 12345
+job: review
+available_jobs[2]:
+- build
+- review / review
+```
+
+---
+
 ## CI Failure Log Download & Filtering
 
 When one or more CI checks complete with `result: failure`, the `checks status` and `checks wait` operations augment each failing entry with the on-disk paths of its downloaded raw log and its filtered error-extraction variant. The raw download and the parse/filter pass are two distinct provider operations; both persist under the plan-scoped artifact tree so retrospectives and triage can read the logs offline.
@@ -615,7 +713,7 @@ The following subcommands all return the standard success shape (`status: succes
 | `pr edit --pr-number N` | `--pr-number`, `--plan-id` | `--title`, `--slot` | Edits title and/or body; the body comes from the `pr prepare-body --for edit` scratch file. At least one of `--title` or a prepared body must be supplied. |
 | `pr merge-queue` | _exactly one of_ `--pr-number` _or_ `--head` | — | Enqueues into the platform merge queue / merge train. `enqueued` is `true` only when the PR's own queue membership was observed, and otherwise the string `indeterminate` — never `true` on an accepted call alone. The fields are provider-scoped: GitHub adds `base_branch`, `queue_precondition` (its pre-enqueue base-branch probe verdict — the pre-condition, not the membership evidence), `enqueue_observation` (names the post-enqueue `mergeQueue.entries` read — and, when that list does not carry the PR, the PR's own `pullRequest` state read — and what they saw), and — on `indeterminate` only — `enqueue_unobserved_reason` (`membership_read_failed` \| `entries_incomplete` \| `auto_merge_armed_awaiting_checks` \| `pr_not_listed`); `status` stays `success` on `indeterminate` because the enqueue call itself was accepted. GitLab adds `merge_train_car_id` (the created train car, empty when the response carries no id), reports `enqueued: true` on the train endpoint's success, and never returns `indeterminate`. A target with no configured queue/train returns `status: error` on **both** providers rather than enqueuing. `enqueued: true` means the PR is in the queue — it is not a merge. Takes no `--strategy` / `--delete-branch`. |
 | `checks rerun --run-id ID` | `--run-id` | — | Re-runs a failed workflow. |
-| `checks logs --run-id ID` | `--run-id` | — | Success adds `log_lines` and `content` with the log output. |
+| `checks logs --run-id ID` | `--run-id` | `--scope failed\|full` (default `failed`), `--match TEXT`, `--job NAME` (GitHub-only) | Success adds `scope`, `log_lines` and `content`, plus `job` when `--job` was given and `match_count` when `--match` was given. Full contract: § "`checks logs`". |
 | `issue close --issue N` | `--issue` | — | Closes the issue. |
 
 ---

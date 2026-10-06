@@ -27,7 +27,7 @@ retrospectives run, immune to GitHub's 90-day log retention window.
   `(plan_id, run_id)` MUST be a no-op that re-emits the existing manifest
   (no log re-fetching).
 - All CI log fetching MUST flow through the
-  `plan-marshall:tools-integration-ci:ci fetch-logs` abstraction; no
+  `plan-marshall:tools-integration-ci:ci checks logs` abstraction; no
   direct `gh` / `glab` calls inside this skill's scripts.
 
 ## Storage Location

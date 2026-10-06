@@ -425,6 +425,12 @@ DEFAULT_CI_TIMEOUT = _resolve_ci_timeout()  # seconds, see resolver above
 DEFAULT_CI_INTERVAL = 30  # seconds
 CI_LOG_TRUNCATE_LINES = 200
 
+#: The two scopes of the ``checks logs`` verb. ``failed`` is the default and is
+#: the failure-triage read; ``full`` reads a run's log regardless of conclusion.
+CI_LOG_SCOPE_FAILED = 'failed'
+CI_LOG_SCOPE_FULL = 'full'
+CI_LOG_SCOPES: tuple[str, ...] = (CI_LOG_SCOPE_FAILED, CI_LOG_SCOPE_FULL)
+
 #: run-configuration.json command key under which the adaptive CI-wait budget is
 #: persisted. The ``checks wait --adaptive`` path seeds its ceiling from — and
 #: records observed durations back into — this key via ``manage-run-config``'s
@@ -1343,9 +1349,40 @@ def build_parser(
     ci_rerun = checks_sub.add_parser('rerun', help='Rerun a workflow/pipeline', allow_abbrev=False)
     ci_rerun.add_argument('--run-id', required=True, help='Run/pipeline ID')
 
-    # checks logs
-    ci_logs = checks_sub.add_parser('logs', help='Get failed run/job logs', allow_abbrev=False)
+    # checks logs — one verb, two scopes. `--scope failed` (the default) is the
+    # failure-triage read every pre-existing caller relies on; `--scope full` reads
+    # the log of a run regardless of its conclusion, which is the only way to read
+    # a SUCCESSFUL run. `--plan-id` stays router-level: no verb-scoped `--plan-id`
+    # is declared here.
+    ci_logs = checks_sub.add_parser(
+        'logs',
+        help='Get run/job logs: the failed steps only (--scope failed, the default) '
+        'or the whole log regardless of conclusion (--scope full)',
+        allow_abbrev=False,
+    )
     ci_logs.add_argument('--run-id', required=True, help='Run/job ID')
+    ci_logs.add_argument(
+        '--scope',
+        choices=CI_LOG_SCOPES,
+        default=CI_LOG_SCOPE_FAILED,
+        help='Which log to read. "failed" (default) returns the failure-only view; "full" returns '
+        'the whole log of the run regardless of its conclusion, so a successful run is readable.',
+    )
+    ci_logs.add_argument(
+        '--match',
+        default=None,
+        metavar='TEXT',
+        help='Return only the log lines containing this literal, case-sensitive substring, and '
+        'report their number as match_count. A fetched log with no matching line is a success '
+        'with match_count 0; a log that could not be fetched is an error.',
+    )
+    ci_logs.add_argument(
+        '--job',
+        default=None,
+        metavar='NAME',
+        help='Read one job of the run, selected by its displayed name (e.g. "review / review" for a '
+        'nested reusable-workflow job). GitHub only: on GitLab --run-id already addresses one job.',
+    )
 
     # checks wait-for-status-flip — poll until PR CI status flips from pending or timeout
     ci_wait_status_flip = checks_sub.add_parser(
@@ -2035,8 +2072,44 @@ def truncate_log_content(stdout: str, max_lines: int = CI_LOG_TRUNCATE_LINES) ->
     """
     lines = stdout.splitlines()
     truncated = lines[:max_lines]
-    content = '\n'.join(truncated)
-    return content.replace(chr(10), '\\n'), len(truncated)
+    return render_log_lines(truncated), len(truncated)
+
+
+def render_log_lines(lines: list[str]) -> str:
+    """Join log lines into the single-line, newline-escaped ``content`` field."""
+    return '\\n'.join(lines)
+
+
+def select_matching_log_lines(lines: list[str], match: str | None) -> tuple[list[str], int | None]:
+    """Apply the ``checks logs --match`` literal to a fetched log.
+
+    Args:
+        lines: The lines of the log the chosen ``--scope`` fetched, unreduced.
+        match: The literal, case-sensitive substring, or ``None`` when ``--match``
+            was not supplied.
+
+    Returns:
+        ``(lines, None)`` unchanged when no match was requested — ``None`` rather
+        than ``0`` so an unrequested match never reads as a measured zero.
+        Otherwise ``(matching_lines, match_count)``; a log with no matching line
+        yields ``([], 0)``, which is a measurement and not a failure.
+    """
+    if match is None:
+        return lines, None
+    kept = [line for line in lines if match in line]
+    return kept, len(kept)
+
+
+def validate_log_match(match: str | None) -> str | None:
+    """Return an error message for an unusable ``--match`` value, else ``None``.
+
+    The empty string is a substring of every line, so it would report the whole
+    log as matched and its line count as ``match_count`` — a number that says
+    nothing about the log's content.
+    """
+    if match == '':
+        return '--match requires a non-empty literal'
+    return None
 
 
 # ---------------------------------------------------------------------------

@@ -19,7 +19,7 @@ Subcommands:
     ci status       Check pipeline status for a MR
     ci wait         Wait for pipeline to complete
     ci rerun        Retry a pipeline
-    ci logs         Get job logs
+    ci logs         Get job logs (failed scope by default, or the full trace)
     issue create    Create an issue
     issue comment   Post a comment on an existing issue
     issue view      View issue details
@@ -53,7 +53,7 @@ a second plan-less convention of its own:
     python3 gitlab.py ci status --pr-number 123
     python3 gitlab.py ci wait --pr-number 123 [--timeout 300] [--interval 30]
     python3 gitlab.py ci rerun --run-id 12345
-    python3 gitlab.py ci logs --run-id 12345
+    python3 gitlab.py ci logs --run-id 12345 [--scope failed|full] [--match TEXT]
     python3 gitlab.py issue create --title "Title" --plan-id EXAMPLE-PLAN [--labels "bug,priority::high"]
     python3 gitlab.py issue comment --issue 123 --plan-id EXAMPLE-PLAN [--slot name]
     python3 gitlab.py issue view --issue 123
@@ -81,6 +81,7 @@ from ci_base import (
     BODY_KIND_PR_EDIT,
     BODY_KIND_PR_REPLY,
     BODY_KIND_PR_THREAD_REPLY,
+    CI_LOG_SCOPE_FAILED,
     MAX_ELAPSED_SECONDS,
     MERGE_QUEUE_ELIGIBLE_CONFIGURED,
     MERGE_QUEUE_ELIGIBLE_UNCONFIGURED,
@@ -112,11 +113,14 @@ from ci_base import (
     prepare_body,
     read_and_consume_body,
     record_wait_mechanism,
+    render_log_lines,
     run_cli,
     safe_main,
+    select_matching_log_lines,
     serialize_toon,
     set_default_cwd,
     truncate_log_content,
+    validate_log_match,
 )
 from command_forms import STEWARD_COMMAND
 
@@ -1926,10 +1930,43 @@ def cmd_ci_wait_for_status_flip(args: argparse.Namespace) -> dict:
 
 
 def cmd_ci_logs(args: argparse.Namespace) -> dict:
-    """Handle 'ci logs' subcommand - get job logs."""
+    """Handle 'ci logs' subcommand - get a job's trace, in parity with GitHub.
+
+    ``glab ci trace`` returns the full trace of the addressed job regardless of
+    its conclusion, so both scopes are honoured from the one read:
+
+    - ``--scope failed`` (the default) keeps the head-window truncation this verb
+      has always applied.
+    - ``--scope full`` returns the trace whole and untruncated.
+
+    ``--match TEXT`` behaves exactly as on GitHub: it selects from the WHOLE
+    trace, only the lines containing the literal are returned, and
+    ``match_count`` is their number. A fetched trace with no matching line is a
+    success with ``match_count: 0``; a trace that could not be fetched is
+    ``status: error`` carrying the CLI stderr.
+
+    ``--job`` is rejected: ``--run-id`` already addresses exactly one job here,
+    so there is no second job to select.
+
+    The scope/match/job values are read defensively so a direct-Namespace caller
+    that predates the flags gets the default failed-scope read.
+    """
     is_auth, err = check_auth()
     if not is_auth:
         return make_error('ci_logs', err)
+
+    scope = getattr(args, 'scope', None) or CI_LOG_SCOPE_FAILED
+    match = getattr(args, 'match', None)
+
+    if getattr(args, 'job', None):
+        return make_error(
+            'ci_logs',
+            '--job is not supported on GitLab: --run-id already addresses one job, '
+            'so there is no other job of the run to select. Drop --job.',
+        )
+    match_error = validate_log_match(match)
+    if match_error:
+        return make_error('ci_logs', match_error)
 
     # Use subprocess.run directly for longer timeout (120s). Honour the
     # router's process-global default cwd so ci logs are fetched against
@@ -1956,15 +1993,22 @@ def cmd_ci_logs(args: argparse.Namespace) -> dict:
     if returncode != 0:
         return make_error('ci_logs', f'Failed to get logs for job {args.run_id}', stderr.strip())
 
-    content, line_count = truncate_log_content(stdout)
-
-    return {
+    payload: dict[str, Any] = {
         'status': 'success',
         'operation': 'ci_logs',
         'run_id': args.run_id,
-        'log_lines': line_count,
-        'content': content,
+        'scope': scope,
     }
+    if match is None and scope == CI_LOG_SCOPE_FAILED:
+        content, line_count = truncate_log_content(stdout)
+    else:
+        lines, match_count = select_matching_log_lines(stdout.splitlines(), match)
+        if match_count is not None:
+            payload['match_count'] = match_count
+        content, line_count = render_log_lines(lines), len(lines)
+    payload['log_lines'] = line_count
+    payload['content'] = content
+    return payload
 
 
 def cmd_issue_create(args: argparse.Namespace) -> dict:

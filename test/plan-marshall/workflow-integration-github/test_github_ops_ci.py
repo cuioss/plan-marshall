@@ -487,3 +487,243 @@ def test_cmd_ci_logs_returns_error_context_window_not_head(monkeypatch):
     assert 'IndexError: list index out of range' in content
     # Pure runner-setup noise that is far from any error marker is dropped.
     assert 'runner setup line 10' not in content
+
+
+# =============================================================================
+# checks logs — --scope / --match / --job
+# =============================================================================
+#
+# The contract these pin: the scope picks WHICH log gh is asked for, --job
+# narrows it to one job by displayed name, and --match selects lines from the
+# WHOLE fetched log. A fetched log with no matching line is a measured zero; a
+# log that could not be fetched is an error and never an empty success.
+
+_JOBS_JSON = '{"jobs": [{"name": "build", "databaseId": 11}, {"name": "review / review", "databaseId": 22}]}'
+_CHARTER_LINE = 'review / review\tUNKNOWN STEP\t2026-01-01T00:00:00Z Assembled review charter (1234 chars)'
+
+
+def _logs_run_gh(log_text, *, jobs_json=_JOBS_JSON, jobs_rc=0, log_rc=0, log_stderr=''):
+    """Return a ``(run_gh_stub, captured_argv)`` pair for ``cmd_ci_logs``.
+
+    The jobs read (``--json jobs``) and the log read are answered separately so
+    a test can fail either one independently.
+    """
+    captured: list[list[str]] = []
+
+    def run_gh_stub(args, capture_json=False, timeout=60):
+        captured.append(list(args))
+        if '--json' in args:
+            return jobs_rc, jobs_json if jobs_rc == 0 else '', '' if jobs_rc == 0 else 'jobs read failed'
+        return log_rc, log_text if log_rc == 0 else '', log_stderr
+
+    return run_gh_stub, captured
+
+
+def _logs_args(**overrides):
+    values: dict = {'run_id': '999', 'scope': 'failed', 'match': None, 'job': None}
+    values.update(overrides)
+    return argparse.Namespace(**values)
+
+
+def _patch_logs(monkeypatch, log_text, **stub_kwargs):
+    run_gh_stub, captured = _logs_run_gh(log_text, **stub_kwargs)
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+    return captured
+
+
+def _setup_log_with_late_traceback():
+    """260 runner-setup lines with one traceback well past the head window."""
+    lines = [f'runner setup line {i}' for i in range(260)]
+    lines[250] = 'Traceback (most recent call last):'
+    return lines
+
+
+@pytest.mark.parametrize(
+    ('scope', 'log_flag'),
+    [('failed', '--log-failed'), ('full', '--log')],
+)
+def test_cmd_ci_logs_scope_selects_the_gh_log_flag(monkeypatch, scope, log_flag):
+    """Each scope asks gh for its own log: failed → --log-failed, full → --log."""
+    captured = _patch_logs(monkeypatch, 'a line\n')
+
+    result = github_ops.cmd_ci_logs(_logs_args(scope=scope))
+
+    assert result['status'] == 'success', result
+    assert captured == [['run', 'view', '999', log_flag]]
+    assert result['scope'] == scope
+
+
+def test_cmd_ci_logs_job_resolves_name_then_reads_that_job(monkeypatch):
+    """--job reads the run's job list first, then the named job's log by id."""
+    captured = _patch_logs(monkeypatch, _CHARTER_LINE + '\n')
+
+    result = github_ops.cmd_ci_logs(_logs_args(scope='full', job='review / review'))
+
+    assert result['status'] == 'success', result
+    assert captured == [
+        ['run', 'view', '999', '--json', 'jobs'],
+        ['run', 'view', '--job', '22', '--log'],
+    ]
+    assert result['job'] == 'review / review'
+    assert result['scope'] == 'full'
+
+
+def test_cmd_ci_logs_job_honours_the_failed_scope(monkeypatch):
+    """--job narrows the failed scope too: the job read carries --log-failed."""
+    captured = _patch_logs(monkeypatch, 'ERROR boom\n')
+
+    result = github_ops.cmd_ci_logs(_logs_args(job='build'))
+
+    assert result['status'] == 'success', result
+    assert captured[-1] == ['run', 'view', '--job', '11', '--log-failed']
+
+
+def test_cmd_ci_logs_unknown_job_is_job_not_found(monkeypatch):
+    """A name matching no job is job_not_found, lists the run's jobs, fetches no log."""
+    captured = _patch_logs(monkeypatch, 'never read\n')
+
+    result = github_ops.cmd_ci_logs(_logs_args(scope='full', job='review'))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'job_not_found'
+    assert result['job'] == 'review'
+    assert result['available_jobs'] == ['build', 'review / review']
+    # Only the job-list read happened — no log was fetched for a job nobody named.
+    assert captured == [['run', 'view', '999', '--json', 'jobs']]
+
+
+def test_cmd_ci_logs_job_list_read_failure_is_error(monkeypatch):
+    """A failed job-list read is an error, never an empty job population."""
+    captured = _patch_logs(monkeypatch, 'never read\n', jobs_rc=1)
+
+    result = github_ops.cmd_ci_logs(_logs_args(scope='full', job='build'))
+
+    assert result['status'] == 'error'
+    assert result['error'] != 'job_not_found'
+    assert result['context'] == 'jobs read failed'
+    assert len(captured) == 1
+
+
+def test_cmd_ci_logs_full_scope_bypasses_the_error_context_filter(monkeypatch):
+    """--scope full returns the log whole: setup noise the filter drops is kept."""
+    lines = _setup_log_with_late_traceback()
+    _patch_logs(monkeypatch, '\n'.join(lines))
+
+    full = github_ops.cmd_ci_logs(_logs_args(scope='full'))
+    failed = github_ops.cmd_ci_logs(_logs_args(scope='failed'))
+
+    assert full['log_lines'] == len(lines)
+    assert full['content'] == '\\n'.join(lines)
+    # The same log under the failed scope is reduced — proving full bypassed it.
+    assert failed['log_lines'] < len(lines)
+    assert 'runner setup line 10' not in failed['content']
+
+
+def test_cmd_ci_logs_match_returns_only_matching_lines(monkeypatch):
+    """--match keeps only the lines containing the literal, case-sensitively."""
+    log = '\n'.join(
+        [
+            'review / review\tstep\tstarting',
+            _CHARTER_LINE,
+            'review / review\tstep\tassembled review charter in lower case',
+            'review / review\tstep\tdone',
+        ]
+    )
+    _patch_logs(monkeypatch, log)
+
+    result = github_ops.cmd_ci_logs(_logs_args(scope='full', match='Assembled review charter'))
+
+    assert result['status'] == 'success', result
+    assert result['match_count'] == 1
+    assert result['log_lines'] == 1
+    assert result['content'] == _CHARTER_LINE
+
+
+def test_cmd_ci_logs_match_selects_from_the_whole_failed_log(monkeypatch):
+    """Under the failed scope --match reads the unfiltered log, not the error window."""
+    lines = _setup_log_with_late_traceback()
+    _patch_logs(monkeypatch, '\n'.join(lines))
+
+    result = github_ops.cmd_ci_logs(_logs_args(scope='failed', match='runner setup line 10'))
+
+    # 'runner setup line 10' plus the nine 'runner setup line 10N' lines the
+    # literal is a prefix of — all far from the traceback the filter would keep.
+    assert result['match_count'] == 11
+    assert result['log_lines'] == 11
+
+
+def test_cmd_ci_logs_zero_match_is_success_with_measured_zero(monkeypatch):
+    """A fetched log with no matching line is a success carrying match_count 0."""
+    _patch_logs(monkeypatch, 'one\ntwo\n')
+
+    result = github_ops.cmd_ci_logs(_logs_args(scope='full', match='absent literal'))
+
+    assert result['status'] == 'success', result
+    assert result['match_count'] == 0
+    assert result['log_lines'] == 0
+    assert result['content'] == ''
+
+
+def test_cmd_ci_logs_without_match_carries_no_match_count(monkeypatch):
+    """No --match → no match_count key: an unrequested match is never a zero."""
+    _patch_logs(monkeypatch, 'one\ntwo\n')
+
+    result = github_ops.cmd_ci_logs(_logs_args(scope='full'))
+
+    assert 'match_count' not in result
+    assert 'job' not in result
+
+
+@pytest.mark.parametrize('scope', ['failed', 'full'])
+@pytest.mark.parametrize('match', [None, 'anything'])
+def test_cmd_ci_logs_fetch_failure_is_error_never_empty_success(monkeypatch, scope, match):
+    """A non-zero gh exit is status: error with the stderr — with or without --match."""
+    _patch_logs(monkeypatch, '', log_rc=1, log_stderr='run 999 is still in progress\n')
+
+    result = github_ops.cmd_ci_logs(_logs_args(scope=scope, match=match))
+
+    assert result['status'] == 'error'
+    assert result['context'] == 'run 999 is still in progress'
+    assert 'match_count' not in result
+    assert 'content' not in result
+
+
+def test_cmd_ci_logs_empty_match_is_refused_before_any_fetch(monkeypatch):
+    """An empty --match would match every line, so it is refused outright."""
+    captured = _patch_logs(monkeypatch, 'one\n')
+
+    result = github_ops.cmd_ci_logs(_logs_args(scope='full', match=''))
+
+    assert result['status'] == 'error'
+    assert '--match' in result['error']
+    assert captured == []
+
+
+def test_cmd_ci_logs_default_scope_is_failed_for_a_flagless_caller(monkeypatch):
+    """A Namespace carrying only run_id reads exactly what an explicit failed scope reads."""
+    lines = _setup_log_with_late_traceback()
+    captured = _patch_logs(monkeypatch, '\n'.join(lines))
+
+    flagless = github_ops.cmd_ci_logs(argparse.Namespace(run_id='999'))
+    explicit = github_ops.cmd_ci_logs(_logs_args(scope='failed'))
+
+    assert captured == [['run', 'view', '999', '--log-failed']] * 2
+    assert flagless == explicit
+    assert flagless['scope'] == 'failed'
+
+
+def test_checks_logs_parser_defaults_and_scope_choices():
+    """The shared parser defaults --scope to failed and rejects an unknown scope."""
+    parser = ci_base.build_parser('test')[0]
+
+    defaults = parser.parse_args(['checks', 'logs', '--run-id', '1'])
+    assert (defaults.scope, defaults.match, defaults.job) == ('failed', None, None)
+
+    explicit = parser.parse_args(
+        ['checks', 'logs', '--run-id', '1', '--scope', 'full', '--job', 'review / review', '--match', 'x y']
+    )
+    assert (explicit.scope, explicit.match, explicit.job) == ('full', 'x y', 'review / review')
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(['checks', 'logs', '--run-id', '1', '--scope', 'everything'])

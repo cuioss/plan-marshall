@@ -27,10 +27,15 @@ from _github_checks import (
     _extract_run_id_from_link,
 )
 from ci_base import (
+    CI_LOG_SCOPE_FAILED,
+    CI_LOG_SCOPE_FULL,
     enrich_failing_checks_with_logs,
     make_error,
     make_simple_handler,
     record_wait_mechanism,
+    render_log_lines,
+    select_matching_log_lines,
+    validate_log_match,
 )
 
 
@@ -569,35 +574,118 @@ def _load_filter_log():
     return filter_log
 
 
-def cmd_ci_logs(args: argparse.Namespace) -> dict:
-    """Handle 'ci logs' subcommand - get failed run logs.
+def _resolve_job_id(run_id: str, job_name: str) -> tuple[str | None, dict | None]:
+    """Resolve a job's displayed name to its id within one run.
 
-    ``gh run view --log-failed`` already returns failure-only output, but a
-    head window drops the failure tail for long logs (runner-setup lines fill
-    the first N lines). Route the raw stdout through the generic error-context
-    filter (the same ERROR/FAIL/Exception/Traceback context-window heuristic the
-    download path uses) so the failure tail is always surfaced.
+    Reads the run's jobs via ``gh run view {run_id} --json jobs`` and matches
+    ``job_name`` against each job's ``name`` exactly — the name GitHub displays,
+    e.g. ``review / review`` for a job nested in a reusable workflow.
+
+    Returns ``(job_id, None)`` on a match, or ``(None, error_dict)`` otherwise.
+    A name that matches no job is ``error: job_not_found`` carrying the names the
+    run does have, so the caller can correct the selector without a second call.
+    """
+    returncode, stdout, stderr = github_ops.run_gh(['run', 'view', str(run_id), '--json', 'jobs'])
+    if returncode != 0:
+        return None, make_error('ci_logs', f'Failed to list jobs for run {run_id}', stderr.strip())
+    try:
+        data = json.loads(stdout)
+    except json.JSONDecodeError:
+        return None, make_error('ci_logs', 'Failed to parse gh output', stdout[:100])
+    jobs = data.get('jobs') if isinstance(data, dict) else None
+    if not isinstance(jobs, list):
+        return None, make_error('ci_logs', f'gh returned no job list for run {run_id}', stdout[:100])
+
+    available: list[str] = []
+    for job in jobs:
+        if not isinstance(job, dict):
+            continue
+        name = str(job.get('name') or '')
+        available.append(name)
+        if name == job_name and job.get('databaseId'):
+            return str(job['databaseId']), None
+
+    return None, {
+        'status': 'error',
+        'operation': 'ci_logs',
+        'error': 'job_not_found',
+        'run_id': run_id,
+        'job': job_name,
+        'available_jobs': available,
+    }
+
+
+def cmd_ci_logs(args: argparse.Namespace) -> dict:
+    """Handle 'ci logs' subcommand - get a run's logs, failed-only or whole.
+
+    ``--scope failed`` (the default) reads ``gh run view --log-failed``. That is
+    already failure-only output, but a head window drops the failure tail for
+    long logs (runner-setup lines fill the first N lines), so the raw stdout is
+    routed through the generic error-context filter (the same
+    ERROR/FAIL/Exception/Traceback context-window heuristic the download path
+    uses) and the failure tail is always surfaced.
+
+    ``--scope full`` reads ``gh run view --log`` — the log of every job in the
+    run regardless of conclusion, which is what makes a SUCCESSFUL run readable —
+    and applies no error-context filter.
+
+    ``--job NAME`` narrows either scope to one job: the name is resolved to a
+    job id and the read becomes ``gh run view --job {job_id}``.
+
+    ``--match TEXT`` selects from the WHOLE fetched log, before any reduction:
+    only the lines containing the literal are returned, and ``match_count`` is
+    their number. The error-context filter is therefore not applied when a match
+    is requested — ``match_count: 0`` then means the log does not contain the
+    literal, never that a heuristic dropped the line. A log that could not be
+    fetched (e.g. a run still in progress) is ``status: error`` carrying the CLI
+    stderr; it is never reported as an empty success.
+
+    The scope/match/job values are read defensively so a direct-Namespace caller
+    that predates the flags gets the default failed-scope read.
     """
     is_auth, err = github_ops.check_auth()
     if not is_auth:
         return make_error('ci_logs', err)
 
-    returncode, stdout, stderr = github_ops.run_gh(['run', 'view', str(args.run_id), '--log-failed'], timeout=120)
+    scope = getattr(args, 'scope', None) or CI_LOG_SCOPE_FAILED
+    match = getattr(args, 'match', None)
+    job = getattr(args, 'job', None)
+
+    match_error = validate_log_match(match)
+    if match_error:
+        return make_error('ci_logs', match_error)
+
+    if job:
+        job_id, err_dict = _resolve_job_id(args.run_id, job)
+        if err_dict:
+            return err_dict
+        assert job_id is not None  # narrowing after err_dict guard
+        view_args = ['run', 'view', '--job', job_id]
+    else:
+        view_args = ['run', 'view', str(args.run_id)]
+    view_args.append('--log' if scope == CI_LOG_SCOPE_FULL else '--log-failed')
+
+    returncode, stdout, stderr = github_ops.run_gh(view_args, timeout=120)
     if returncode != 0:
         return make_error('ci_logs', f'Failed to get logs for run {args.run_id}', stderr.strip())
 
-    filter_log = _load_filter_log()
-    if filter_log is not None:
-        filtered = filter_log(stdout, 'generic')
+    if match is None and scope == CI_LOG_SCOPE_FAILED:
+        filter_log = _load_filter_log()
+        selected = filter_log(stdout, 'generic') if filter_log is not None else stdout
     else:
-        filtered = stdout
-    filtered_lines = filtered.splitlines()
-    content = '\n'.join(filtered_lines).replace(chr(10), '\\n')
+        selected = stdout
+    lines, match_count = select_matching_log_lines(selected.splitlines(), match)
 
-    return {
+    result: dict[str, Any] = {
         'status': 'success',
         'operation': 'ci_logs',
         'run_id': args.run_id,
-        'log_lines': len(filtered_lines),
-        'content': content,
+        'scope': scope,
     }
+    if job:
+        result['job'] = job
+    if match_count is not None:
+        result['match_count'] = match_count
+    result['log_lines'] = len(lines)
+    result['content'] = render_log_lines(lines)
+    return result

@@ -203,14 +203,23 @@ run_id: 12345
 
 **Pattern**: Provider-Agnostic Router
 
-Get logs from a CI workflow run.
+Get logs from a CI workflow run — the failed steps only (the default), or the whole log of the
+run regardless of its conclusion.
 
 ### Step 1: Execute
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks logs \
-    --run-id 12345
+    --run-id 12345 \
+    [--scope failed|full] [--match TEXT] [--job NAME]
 ```
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `--scope failed` | yes | The failure-only view. Every caller that passes no `--scope` gets this. |
+| `--scope full` | — | The whole log of the run regardless of conclusion. This is the only way to read a **successful** run. |
+| `--match TEXT` | — | Return only the lines containing the literal, case-sensitive substring `TEXT`, and report their number as `match_count`. |
+| `--job NAME` | — | **GitHub only.** Read one job of the run, selected by its displayed name — e.g. `review / review` for a job nested in a reusable workflow. |
 
 ### Step 2: Process Result
 
@@ -218,15 +227,58 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks log
 status: success
 operation: ci_logs
 run_id: 12345
+scope: failed
 log_lines: 142
 content: [build log output]
 ```
 
-For a **failed** run, `checks logs` returns an **error-context window** rather than the first
+`scope` echoes the scope that was read. `job` is present when `--job` was given, and
+`match_count` is present when `--match` was given — an absent `match_count` means no match was
+requested, never that zero lines matched.
+
+**`--scope failed`.** `checks logs` returns an **error-context window** rather than the first
 N head lines: the raw `--log-failed` output is filtered to the lines matching
 `ERROR`/`FAIL`/`Exception`/`Traceback` plus surrounding context, with non-adjacent windows
 joined by an elision marker. This guarantees the failure tail is surfaced even when runner-setup
 lines fill the head of the log. `log_lines` reports the filtered line count.
+
+**`--scope full`.** No error-context filter is applied: `content` is the log as the provider
+returned it, and `log_lines` is its line count.
+
+**`--match`.** The literal is applied to the WHOLE log the scope fetched, before any reduction —
+so with `--match` the error-context filter is not applied in either scope, and `match_count`
+is a property of the log rather than of a heuristic. `log_lines` equals `match_count`.
+
+```toon
+status: success
+operation: ci_logs
+run_id: 12345
+scope: full
+job: review / review
+match_count: 1
+log_lines: 1
+content: [the matching line]
+```
+
+### Step 3: Tell a zero match from a failed fetch
+
+| Result | What it means |
+|--------|---------------|
+| `status: success`, `match_count: 0` | The log WAS fetched and contains no line with the literal. A measurement. |
+| `status: error` | The log could not be fetched — e.g. the run is still in progress — and the provider CLI's stderr is in `context`. Nothing was measured; never read this as "no match". |
+| `status: error`, `error: job_not_found` | `--job` named no job of the run. `available_jobs` lists the names the run does have. |
+
+### Provider behaviour
+
+| | GitHub | GitLab |
+|---|--------|--------|
+| `--scope failed` | `gh run view {run_id} --log-failed`, then the error-context filter | `glab ci trace {run_id}`, truncated to the head window |
+| `--scope full` | `gh run view {run_id} --log` — every job of the run | `glab ci trace {run_id}`, whole and untruncated |
+| `--match` | Identical contract | Identical contract |
+| `--job NAME` | Name resolved via `gh run view {run_id} --json jobs`, then `gh run view --job {job_id}` with the scope's log flag | Rejected with an explicit error: `--run-id` already addresses one job |
+
+GitLab honours both scopes from the one trace read — `glab ci trace` returns the full trace of
+the addressed job regardless of its conclusion — so neither scope is refused there.
 
 ---
 
