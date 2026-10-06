@@ -10,7 +10,8 @@ read the session id from the environment.
 
 Exit codes:
     0 — success (env var written)
-    1 — malformed stdin (not JSON, or session_id field missing)
+    1 — malformed stdin (not JSON, session_id field missing, or session_id
+        equal to the reserved no-session sentinel)
     2 — runtime error (CLAUDE_ENV_FILE not set, or write failure)
 
 Usage (invoked by Claude Code hook mechanism, not directly):
@@ -23,6 +24,12 @@ can surface them without interfering with the hook's env-var delivery channel.
 import json
 import os
 import sys
+
+#: ``runtime_base.NO_SESSION_IDENTITY``, restated because this hook runs
+#: standalone and cannot import ``runtime_base`` (it pulls in ``toon_parser``
+#: from another skill). ``test_claude_hook_reserves_the_sentinel`` pins the two
+#: to each other.
+_RESERVED_NO_SESSION_SENTINEL = 'NO_SESSION_IDENTITY'
 
 
 def main() -> int:
@@ -57,6 +64,16 @@ def main() -> int:
     if not isinstance(session_id, str):
         print(
             f"claude_hook: 'session_id' must be a string, got {type(session_id).__name__}",
+            file=sys.stderr,
+        )
+        return 1
+
+    # The absent-identity sentinel is reserved: a session id equal to it would
+    # be written as a real CLAUDE_CODE_SESSION_ID and then read as "no session"
+    # by every has_session_identity() caller.
+    if session_id.strip() == _RESERVED_NO_SESSION_SENTINEL:
+        print(
+            f"claude_hook: 'session_id' equals the reserved sentinel {_RESERVED_NO_SESSION_SENTINEL!r}",
             file=sys.stderr,
         )
         return 1

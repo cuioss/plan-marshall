@@ -1042,3 +1042,90 @@ class TestCmdRunExecutionModeVerdict:
         assert rc == 0
         assert capture.result is not None
         assert capture.result['status'] == 'success'
+
+
+# =============================================================================
+# Gate ledger row — the executed-test population rides every terminal route
+# =============================================================================
+
+
+class TestGateBuildRowPopulation:
+    """``_append_gate_build_row`` names ``tests_run`` on both routes.
+
+    The routed route reads the inner wrapper's ``routed_tests_run``; the
+    in-process route reads ``measured_tests_run``, which ``cmd_run_common``
+    writes back on the result. Without the second source every in-process row
+    silently omitted the population the helper's contract says each row names.
+    """
+
+    @staticmethod
+    def _capture_rows(monkeypatch) -> list[dict]:
+        import sys
+        import types
+
+        rows: list[dict] = []
+        fake = types.ModuleType('_ledger_core')
+        fake.build_record = lambda **fields: fields  # type: ignore[attr-defined]
+        fake.append_entry = rows.append  # type: ignore[attr-defined]
+        monkeypatch.setitem(sys.modules, '_ledger_core', fake)
+        return rows
+
+    @staticmethod
+    def _append(result: dict, route: str) -> None:
+        factory._append_gate_build_row(
+            notation='plan-marshall:build-pyproject:pyproject_build',
+            plan_id='a-real-plan',
+            command_args='module-tests',
+            command_str='./pw module-tests',
+            result=result,  # type: ignore[arg-type]
+            route=route,
+        )
+
+    @pytest.mark.parametrize(
+        ('result_extra', 'route', 'expected'),
+        [
+            ({'measured_tests_run': 41}, 'in_process', 41),
+            ({'routed_tests_run': 7}, 'routed', 7),
+            # The routed inner count wins when both are present.
+            ({'routed_tests_run': 7, 'measured_tests_run': 41}, 'routed', 7),
+            # A measured zero is a measurement and is carried as such.
+            ({'measured_tests_run': 0}, 'in_process', 0),
+        ],
+        ids=['in-process-measured', 'routed-inner', 'routed-wins', 'measured-zero'],
+    )
+    def test_row_carries_the_measured_population(self, monkeypatch, result_extra, route, expected):
+        rows = self._capture_rows(monkeypatch)
+
+        self._append({'status': 'success', 'exit_code': 0, 'log_file': 'x.log', **result_extra}, route)
+
+        assert len(rows) == 1
+        assert rows[0]['outcome'] == {'route': route, 'tests_run': expected}
+
+    def test_unmeasured_run_carries_no_tests_run(self, monkeypatch):
+        rows = self._capture_rows(monkeypatch)
+
+        self._append({'status': 'success', 'exit_code': 0, 'log_file': 'x.log'}, 'in_process')
+
+        assert rows[0]['outcome'] == {'route': 'in_process'}
+
+    def test_in_process_cmd_run_appends_the_row_after_the_renderer_measured(self, monkeypatch):
+        """End to end through ``cmd_run``: the count the renderer hands back on
+        the result reaches the in-process ledger row."""
+        rows = self._capture_rows(monkeypatch)
+
+        def _rendering(*, result, **_kwargs) -> int:
+            result['measured_tests_run'] = 12
+            return 0
+
+        monkeypatch.setattr(factory, 'cmd_run_common', _rendering)
+        monkeypatch.setattr(
+            factory,
+            'execute_direct_base',
+            lambda **_kwargs: {'status': 'success', 'exit_code': 0, 'log_file': 'x.log', 'command': './pw verify'},
+        )
+        _ed, cmd_run = factory.create_execute_handlers(_make_config(), lambda *_a, **_k: ([], None, 'SUCCESS'))
+
+        rc = cmd_run(argparse.Namespace(command_args='verify', plan_id='', format='toon', execution_mode='in_process'))
+
+        assert rc == 0
+        assert [row['outcome'] for row in rows] == [{'route': 'in_process', 'tests_run': 12}]
