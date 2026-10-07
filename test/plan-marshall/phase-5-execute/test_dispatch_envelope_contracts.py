@@ -80,8 +80,9 @@ def test_loop_back_envelope_states_fields_and_null_envelope_reassigns():
     assert 'project-dir' in omitted
     assert carried.isdisjoint(omitted), 'no field may be both carried and omitted'
 
-    # ... and the null-envelope execution rule is enforced: a fix task
-    # arriving with envelope_id None re-runs the envelope assignment ...
+    # ... and the null-envelope execution rule is REPORTED (the helper has no
+    # production caller, so nothing here enforces it): a fix task arriving
+    # with envelope_id None is told to re-run the envelope assignment ...
     null_result = resolve_loop_back_envelope(PLAN_ID, None)
     assert null_result['action'] == 'assign'
     assert null_result['assignment_required'] is True

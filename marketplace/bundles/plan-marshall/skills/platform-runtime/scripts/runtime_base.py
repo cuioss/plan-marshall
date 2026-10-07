@@ -38,9 +38,10 @@ def has_session_identity(session_id: str | None) -> bool:
         return False
     if not isinstance(session_id, str):
         return False
-    if not session_id.strip():
+    stripped = session_id.strip()
+    if not stripped:
         return False
-    return session_id != NO_SESSION_IDENTITY
+    return stripped != NO_SESSION_IDENTITY
 
 
 #: The marshal.json phases that may carry ``project:{skill}`` step references,

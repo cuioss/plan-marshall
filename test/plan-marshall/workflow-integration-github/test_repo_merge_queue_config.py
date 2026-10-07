@@ -95,10 +95,12 @@ def test_config_reader_never_raises_on_load_error(monkeypatch):
     assert github_ops._read_merge_queue_bypass_config() == (None, [])
 
 
-@pytest.mark.parametrize(
-    ('configured', 'expected'),
-    [('squash', 'SQUASH'), ('merge', 'MERGE'), ('rebase', 'REBASE')],
-)
+#: Derived from the authoritative mapping so a strategy added there is swept here.
+_STRATEGY_CASES = sorted(github_ops._RULESET_MERGE_METHOD.items())
+assert _STRATEGY_CASES, 'the authoritative merge-method mapping is empty'
+
+
+@pytest.mark.parametrize(('configured', 'expected'), _STRATEGY_CASES)
 def test_resolve_merge_method_maps_configured_strategy(monkeypatch, configured, expected):
     import _config_core
 

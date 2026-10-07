@@ -243,5 +243,10 @@ def test_unknown_routing_outcome_is_labeled_unknown(captured, capsys):
     assert len(captured) == 1
     _log_type, _plan_id, _level, message = captured[0]
     assert 'serialization=unknown' in message
+    # The mechanism field fails closed the same way: one record must not name
+    # an in-process realisation beside an unknown serialization.
+    assert 'mechanism=unknown' in message
+    assert 'mechanism=in_process_fallback' not in message
     err = capsys.readouterr().err
     assert 'serialization=unknown' in err
+    assert 'mechanism=unknown' in err

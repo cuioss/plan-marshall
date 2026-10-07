@@ -203,14 +203,23 @@ run_id: 12345
 
 **Pattern**: Provider-Agnostic Router
 
-Get logs from a CI workflow run.
+Get logs from a CI workflow run — the provider's reduced view (the default: the failed steps on
+GitHub, the head of the job trace on GitLab), or the whole log regardless of its conclusion.
 
 ### Step 1: Execute
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks logs \
-    --run-id 12345
+    --run-id 12345 \
+    [--scope failed|full] [--match TEXT] [--job NAME]
 ```
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `--scope failed` | yes | The reduced view. Every caller that passes no `--scope` gets this. On GitHub it is failure-only (the failed steps' log); on GitLab it is the head-truncated trace of the addressed job. |
+| `--scope full` | — | The whole log regardless of conclusion. On GitHub this is the only way to read a **successful** run. |
+| `--match TEXT` | — | Return only the lines containing the literal, case-sensitive substring `TEXT`, and report their number as `match_count`. |
+| `--job NAME` | — | **GitHub only.** Read one job of the run, selected by its displayed name — e.g. `review / review` for a job nested in a reusable workflow. |
 
 ### Step 2: Process Result
 
@@ -218,15 +227,53 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks log
 status: success
 operation: ci_logs
 run_id: 12345
+scope: failed
 log_lines: 142
 content: [build log output]
 ```
 
-For a **failed** run, `checks logs` returns an **error-context window** rather than the first
-N head lines: the raw `--log-failed` output is filtered to the lines matching
-`ERROR`/`FAIL`/`Exception`/`Traceback` plus surrounding context, with non-adjacent windows
-joined by an elision marker. This guarantees the failure tail is surfaced even when runner-setup
-lines fill the head of the log. `log_lines` reports the filtered line count.
+`scope` echoes the scope that was read. `job` is present when `--job` was given, and
+`match_count` is present when `--match` was given — an absent `match_count` means no match was
+requested, never that zero lines matched.
+
+**`--scope failed`.** The reduction is provider-specific. On GitHub, `checks logs` returns an
+**error-context window** rather than the first N head lines: the raw `--log-failed` output is
+filtered to the lines matching `ERROR`/`FAIL`/`Exception`/`Traceback` plus surrounding context,
+with non-adjacent windows joined by an elision marker. This guarantees the failure tail is
+surfaced even when runner-setup lines fill the head of the log. On GitLab, the job trace is
+truncated to its head window. `log_lines` reports the reduced line count on both.
+
+**`--scope full`.** No reduction is applied: `content` is the log as the provider returned it,
+and `log_lines` is its line count.
+
+**`--match`.** The literal is applied to the WHOLE log the scope fetched, before any reduction —
+so with `--match` neither provider's reduction is applied in either scope, and `match_count`
+is a property of the log rather than of a heuristic. `log_lines` equals `match_count`.
+
+```toon
+status: success
+operation: ci_logs
+run_id: 12345
+scope: full
+job: review / review
+match_count: 1
+log_lines: 1
+content: [the matching line]
+```
+
+### Step 3: Tell a zero match from a failed fetch
+
+| Result | What it means |
+|--------|---------------|
+| `status: success`, `match_count: 0` | The log WAS fetched and contains no line with the literal. A measurement. |
+| `status: error` | The log could not be fetched — e.g. the run is still in progress — and the provider CLI's stderr is in `context`. Nothing was measured; never read this as "no match". |
+| `status: error`, `error: job_not_found` | `--job` named no job of the run. `available_jobs` lists the names the run does have. |
+
+### Provider behaviour
+
+The per-provider resolution of each flag — including GitLab serving both scopes from the one
+`glab ci trace` read and rejecting `--job` — is stated once in
+[api-contract.md](api-contract.md) § "`checks logs`" → "Provider API shape".
 
 ---
 

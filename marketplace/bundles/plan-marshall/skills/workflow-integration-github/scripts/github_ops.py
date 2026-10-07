@@ -24,7 +24,7 @@ Subcommands:
     ci status       Check CI status for a PR
     ci wait         Wait for CI to complete
     ci rerun        Rerun a workflow run
-    ci logs         Get failed run logs
+    ci logs         Get run logs (failed steps by default, or the full run)
     checks pull-request-runs  Report whether any pull_request-event workflow run
                     exists for the requested PR (the not_triggered observable)
     issue create    Create an issue
@@ -66,7 +66,7 @@ a second plan-less convention of its own:
     python3 github.py ci status --pr-number 123
     python3 github.py ci wait --pr-number 123 [--timeout 300] [--interval 30]
     python3 github.py ci rerun --run-id 12345
-    python3 github.py ci logs --run-id 12345
+    python3 github.py ci logs --run-id 12345 [--scope failed|full] [--match TEXT] [--job NAME]
     python3 github.py issue create --title "Title" --plan-id EXAMPLE-PLAN [--labels "bug,priority:high"]
     python3 github.py issue comment --issue 123 --plan-id EXAMPLE-PLAN [--slot name]
     python3 github.py issue view --issue 123
@@ -2256,25 +2256,13 @@ _ = (
 # ---------------------------------------------------------------------------
 
 
-def main() -> int:
-    # Consume top-level --plan-id / --project-dir before argparse runs so the
-    # downstream provider parser never sees the router flags. Two-state
-    # contract: --plan-id auto-resolves via manage-status; --project-dir is
-    # the explicit override; both together is a hard error. Any resolved cwd
-    # is installed as the process-global default for run_cli's gh invocations.
-    # Capture the router-level --plan-id (consumed by extract_routing_args for
-    # cwd resolution but not returned) so the failure-path log-download hook can
-    # locate the plan-scoped artifact tree. The checks subcommands declare no
-    # subcommand-level --plan-id, so the first occurrence in the original argv
-    # is unambiguously the router-level flag.
-    router_plan_id = _capture_router_plan_id(sys.argv[1:])
+def build_github_parser() -> argparse.ArgumentParser:
+    """Build the complete GitHub CLI parser: the shared surface plus the GitHub-only additions.
 
-    project_dir, remaining = extract_routing_args(sys.argv[1:])
-    sys.argv = [sys.argv[0], *remaining]
-    if project_dir is not None:
-        set_default_cwd(project_dir)
-
-    parser, pr_sub, checks_sub, issue_sub, branch_sub = build_parser('GitHub operations via gh CLI')
+    The single construction site for the advertised surface, so a test can walk
+    the parser to derive the verb roster instead of transcribing it.
+    """
+    parser, pr_sub, _checks_sub, _issue_sub, _branch_sub = build_parser('GitHub operations via gh CLI')
 
     # GitHub-specific parser additions
     add_pr_create_args(pr_sub)
@@ -2349,6 +2337,29 @@ def main() -> int:
     if resolve_parser:
         resolve_parser.add_argument('--pr-number', type=int, help='PR number (accepted for API uniformity)')
 
+    return parser
+
+
+def main() -> int:
+    # Consume top-level --plan-id / --project-dir before argparse runs so the
+    # downstream provider parser never sees the router flags. Two-state
+    # contract: --plan-id auto-resolves via manage-status; --project-dir is
+    # the explicit override; both together is a hard error. Any resolved cwd
+    # is installed as the process-global default for run_cli's gh invocations.
+    # Capture the router-level --plan-id (consumed by extract_routing_args for
+    # cwd resolution but not returned) so the failure-path log-download hook can
+    # locate the plan-scoped artifact tree. The checks subcommands declare no
+    # subcommand-level --plan-id, so the first occurrence in the original argv
+    # is unambiguously the router-level flag.
+    router_plan_id = _capture_router_plan_id(sys.argv[1:])
+
+    project_dir, remaining = extract_routing_args(sys.argv[1:])
+    sys.argv = [sys.argv[0], *remaining]
+    if project_dir is not None:
+        set_default_cwd(project_dir)
+
+    parser = build_github_parser()
+
     args = parse_ci_args(parser)
     # Surface the router plan_id on args so the checks handlers can pass it to
     # enrich_failing_checks_with_logs without re-parsing argv.
@@ -2401,10 +2412,6 @@ def main() -> int:
         ('org', 'list-repos'): cmd_org_list_repos,
         ('org', 'search-code'): cmd_org_search_code,
     }
-
-    # branch_sub is registered by ci_base.build_parser; acknowledge the returned
-    # handle so static analysis does not flag it as unused.
-    _ = branch_sub
 
     result = dispatch(args, handlers, parser)
     print(serialize_toon(result, table_separator='\t'))

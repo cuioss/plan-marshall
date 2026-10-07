@@ -70,6 +70,8 @@ _MALFORMED_STDIN_CASES = [
     ('{"session_id": null}', 'session_id'),
     ('{"session_id": 42}', 'must be a string'),
     ('{"session_id": ["abc"]}', 'must be a string'),
+    ('{"session_id": "NO_SESSION_IDENTITY"}', 'reserved sentinel'),
+    ('{"session_id": " NO_SESSION_IDENTITY "}', 'reserved sentinel'),
 ]
 
 _MALFORMED_STDIN_IDS = [
@@ -82,7 +84,24 @@ _MALFORMED_STDIN_IDS = [
     'null-session-id',
     'integer-session-id',
     'list-session-id',
+    'reserved-sentinel-session-id',
+    'padded-reserved-sentinel-session-id',
 ]
+
+
+def test_claude_hook_reserves_the_sentinel():
+    """The hook's restated sentinel is the one ``runtime_base`` publishes.
+
+    The hook cannot import ``runtime_base`` at run time, so it restates the
+    literal; this pins the copy to its source so the two cannot drift apart.
+    """
+    from runtime_base import NO_SESSION_IDENTITY
+
+    from conftest import load_script_module
+
+    hook = load_script_module('plan-marshall', 'platform-runtime', 'claude_hook.py', 'claude_hook_sentinel_under_test')
+
+    assert hook._RESERVED_NO_SESSION_SENTINEL == NO_SESSION_IDENTITY
 
 
 @pytest.mark.parametrize(('stdin', 'expected_stderr'), _MALFORMED_STDIN_CASES, ids=_MALFORMED_STDIN_IDS)

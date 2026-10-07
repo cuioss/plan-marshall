@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Contract guards over ``test/conftest.py`` — loader addressing, and roster drift.
+"""Contract guards over ``test/conftest.py`` — loader addressing, and the guard roster.
 
 Three contracts the root conftest carries:
 
@@ -14,11 +14,9 @@ Three contracts the root conftest carries:
   and reloading it fails depending on collection order — a flaky green rather than
   a clean red. The guard below enumerates the names the loaders are actually called
   with and fails when that set of collisions grows.
-* **Roster** — ``_guard_roster`` computes routing-guard drift in both directions,
-  and ``pytest_report_header`` only PRINTS it, deliberately: raising from a hook
-  that runs before collection reshapes a roster defect into a session-startup
-  error naming neither the test nor the cause. Asserting the same value in a
-  COLLECTED test is what makes the drift fail, and it names both.
+* **Roster** — ``_guard_roster``, which ``pytest_report_header`` reads, is exactly
+  the publishers ``_discover_guard_publishers`` derives from the tree. No
+  hand-listed membership sits between the two, so there is no drift to detect.
 """
 
 import sys
@@ -33,6 +31,7 @@ from _loader_contract_fixtures import (
 
 import conftest
 from conftest import (
+    _GUARD_PUBLISHER_MARKERS,
     MARKETPLACE_ROOT,
     TEST_ROOT,
     _discover_guard_publishers,
@@ -388,61 +387,59 @@ def test_unresolved_call_sites_are_reported_not_hidden(tree_scan):
 
 
 # ---------------------------------------------------------------------------
-# Roster — the drift the report header only prints
+# Roster — the report header's membership is the discovery walk
 # ---------------------------------------------------------------------------
 
 
-def test_the_routing_guard_roster_carries_no_drift():
-    """``_guard_roster`` reports no discrepancy in either direction.
+def test_the_guard_roster_is_exactly_the_discovered_publishers():
+    """The reported roster is the discovery walk, with nothing listed by hand.
 
-    The header hook prints drift and does not raise, so a session whose roster has
-    drifted is still green — a guard can vanish from the population report, or a row
-    can outlive the module it names, with nothing failing. Asserting the same value
-    here is what turns either into a red build, from a place that can name the cause
-    without reshaping it into a pre-collection startup error.
+    Membership comes from the tree alone, so a guard can neither vanish from the
+    population report nor outlive the module that published it.
     """
     publishers = _discover_guard_publishers()
     assert publishers, (
-        'the discovery walk found no guard publisher at all, so the emptiness of '
-        'discrepancies below would be a verdict about nothing'
+        'the discovery walk found no guard publisher at all, so the equality below would be a verdict about nothing'
     )
 
-    _entries, discrepancies = _guard_roster()
-
-    assert discrepancies == [], (
-        'routing-guard roster drift:\n  '
-        + '\n  '.join(discrepancies)
-        + '\n\nAdjust _ROUTING_GUARD_MODULES in test/conftest.py so it names exactly the '
-        'modules that publish GUARD_POPULATION_LABEL: add a row for a publisher that has '
-        'none, and drop a row whose module no longer publishes one.'
-    )
+    assert [relative for _short_name, relative in _guard_roster()] == publishers
 
 
-def test_a_publisher_with_no_row_is_reported_as_drift(monkeypatch):
-    """A discovered publisher the tuple does not name is a discrepancy.
+def test_every_guard_publisher_assigns_both_halves_of_the_pair():
+    """A publisher that lost its label or its size fails here instead of vanishing.
 
-    Driven through the same function the header reads, so the control fails when the
-    detection breaks rather than only when the tree happens to drift.
+    Discovery matches either constant, so a half-published module is still on the
+    roster; this asserts the pair is complete, by the same line-start match the
+    discovery walk uses.
     """
-    monkeypatch.setattr(conftest, '_ROUTING_GUARD_MODULES', (('listed', 'listed.py'),))
-    monkeypatch.setattr(conftest, '_discover_guard_publishers', lambda: ['listed.py', 'unlisted.py'])
+    publishers = _discover_guard_publishers()
+    assert publishers, 'the discovery walk found no guard publisher at all'
 
-    entries, discrepancies = _guard_roster()
+    incomplete = {}
+    for relative in publishers:
+        lines = (TEST_ROOT / relative).read_text(encoding='utf-8').splitlines()
+        missing = [marker for marker in _GUARD_PUBLISHER_MARKERS if not any(line.startswith(marker) for line in lines)]
+        if missing:
+            incomplete[relative] = missing
 
-    assert ('UNLISTED:unlisted', 'unlisted.py') in entries
-    assert discrepancies == ['1 publisher(s) with no _ROUTING_GUARD_MODULES row: unlisted.py']
+    assert incomplete == {}, f'guard publishers missing half of the published pair: {incomplete}'
 
 
-def test_a_row_whose_module_stopped_publishing_is_reported_as_drift(monkeypatch):
-    """A row the discovery walk no longer finds is the other direction.
+def test_a_module_publishing_only_a_size_is_still_discovered(tmp_path, monkeypatch):
+    """Losing the label must not drop a guard from the roster."""
+    (tmp_path / 'test_size_only.py').write_text('GUARD_POPULATION_SIZE = 3\n', encoding='utf-8')
+    (tmp_path / 'test_mentions_only.py').write_text('# mentions GUARD_POPULATION_SIZE\n', encoding='utf-8')
+    monkeypatch.setattr(conftest, 'TEST_ROOT', tmp_path)
 
-    Kept as its own control because the remedy is the opposite one — delete the row
-    rather than add one — so a detector that collapsed the two directions into a
-    single "something is off" would still pass the case above.
+    assert _discover_guard_publishers() == ['test_size_only.py']
+
+
+def test_a_newly_discovered_publisher_enters_the_roster_unaided(monkeypatch):
+    """A publisher the walk finds is reported without any further registration.
+
+    Driven through the same function the header reads, so the control fails if a
+    hand-maintained membership filter is ever reintroduced between the two.
     """
-    monkeypatch.setattr(conftest, '_ROUTING_GUARD_MODULES', (('listed', 'listed.py'), ('gone', 'gone.py')))
-    monkeypatch.setattr(conftest, '_discover_guard_publishers', lambda: ['listed.py'])
+    monkeypatch.setattr(conftest, '_discover_guard_publishers', lambda: ['a/test_known.py', 'b/test_new.py'])
 
-    _entries, discrepancies = _guard_roster()
-
-    assert discrepancies == ['1 row(s) whose module no longer publishes GUARD_POPULATION_LABEL: gone.py']
+    assert _guard_roster() == [('test_known', 'a/test_known.py'), ('test_new', 'b/test_new.py')]

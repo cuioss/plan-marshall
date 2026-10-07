@@ -1243,3 +1243,159 @@ class TestReadDocContract:
             'direction but names no read invocation — the claim is unanchored'
         )
         assert 'never reads the ledger' in section
+
+
+# =============================================================================
+# (12) Stream closure survives the drain — closed_senders reads the archive
+# =============================================================================
+
+
+#: The sender whose stream is closed and then drained in the arms below.
+CLOSED_SENDER = 'closed-sender'
+
+
+def _close_stream(plan_context, sender: str = CLOSED_SENDER, slug: str = READ_EPIC):
+    return run_script(
+        SCRIPT_PATH,
+        'inbox',
+        'close-stream',
+        '--slug',
+        slug,
+        '--sender-id',
+        sender,
+        '--sender-type',
+        'plan',
+        env_overrides=_env(plan_context),
+    )
+
+
+def _archive(plan_context, message: str, slug: str = READ_EPIC):
+    return run_script(
+        SCRIPT_PATH,
+        'inbox',
+        'archive',
+        '--slug',
+        slug,
+        '--message',
+        message,
+        env_overrides=_env(plan_context),
+    )
+
+
+class TestStreamClosureSurvivesDrain:
+    """A drained ``stream-end`` marker keeps its sender closed.
+
+    The closure derivation reads the live queue PLUS the retired
+    ``inbox/archive/`` layout (foldered plus flat twin), validating each
+    archived candidate through the same envelope seam as a queued one — so a
+    fully drained queue still reports FINISHED and the write-side
+    ``stream_closed`` refusal stays consistent with what the drain reports.
+    """
+
+    def test_drain_then_list_still_reports_the_sender_closed(self, plan_context):
+        _scaffold(plan_context)
+        marker = _close_stream(plan_context).toon()['message']
+        before = _list(plan_context).toon()
+        assert before['closed_senders'] == [CLOSED_SENDER]
+
+        archived = _archive(plan_context, marker).toon()
+        assert archived['status'] == 'success'
+
+        after = _list(plan_context).toon()
+        assert after['count'] == 0
+        assert after['live_count'] == 0
+        assert after['invalid_count'] == 0
+        assert after['closed_senders'] == [CLOSED_SENDER]
+
+    def test_a_post_drain_write_from_the_closed_sender_is_still_refused(self, plan_context, tmp_path):
+        _scaffold(plan_context)
+        marker = _close_stream(plan_context).toon()['message']
+        assert _archive(plan_context, marker).toon()['status'] == 'success'
+
+        refused = _queue_write(
+            plan_context,
+            _payload(tmp_path, 'late body', 'late.md'),
+            sender=CLOSED_SENDER,
+        ).toon()
+
+        assert refused['status'] == 'error'
+        assert refused['error'] == 'stream_closed'
+        assert marker in refused['message']
+
+    def test_live_queue_closure_is_unchanged(self, plan_context, tmp_path):
+        """The control: pre-drain closure still closes and still refuses."""
+        _scaffold(plan_context)
+        marker = _close_stream(plan_context).toon()['message']
+
+        listing = _list(plan_context).toon()
+        assert listing['live_count'] == 0
+        assert listing['closed_senders'] == [CLOSED_SENDER]
+
+        refused = _queue_write(
+            plan_context,
+            _payload(tmp_path, 'late body', 'control.md'),
+            sender=CLOSED_SENDER,
+        ).toon()
+
+        assert refused['status'] == 'error'
+        assert refused['error'] == 'stream_closed'
+        assert marker in refused['message']
+
+
+# =============================================================================
+# (13) Partial archived scan keeps readable closures while staying unobservable
+# =============================================================================
+
+
+class TestArchivedPartialScanKeepsKnownClosures:
+    """A partial archived listing still yields its validating markers.
+
+    Regression guard for the gap where ``_archived_closed_senders`` returned
+    ``set(), False`` as soon as ``_all_archived_message_paths`` reported
+    ``readable False``, discarding the readable archived markers the scan had
+    already collected. The fixed derivation scans the returned paths anyway and
+    seeds observability from ``readable``, so known closures survive a partial
+    scan while the partial scan stays reported.
+    """
+
+    def _seed_archived_marker(self, inbox_dir, sender: str = CLOSED_SENDER, slug: str = READ_EPIC):
+        sender_dir = inbox_dir / 'archive' / sender
+        sender_dir.mkdir(parents=True)
+        text = _inbox.compose_envelope(
+            'plan',
+            sender,
+            slug,
+            'finding',
+            'closure note',
+            lifecycle=_inbox.LIFECYCLE_STREAM_END,
+        )
+        path = sender_dir / f'{sender}-001.md'
+        path.write_text(text, encoding='utf-8')
+        return path
+
+    def test_partial_archived_listing_still_yields_validating_marker(self, tmp_path, monkeypatch):
+        inbox_dir = tmp_path / 'inbox'
+        self._seed_archived_marker(inbox_dir)
+        original = _inbox._all_archived_message_paths
+
+        def _partial(inbox_dir_arg):
+            paths, _ = original(inbox_dir_arg)
+            assert paths, 'the arrangement produced no archived paths to survive the partial scan'
+            return paths, False
+
+        monkeypatch.setattr(_inbox, '_all_archived_message_paths', _partial)
+
+        closed, observable = _inbox._archived_closed_senders(inbox_dir, READ_EPIC)
+
+        assert CLOSED_SENDER in closed
+        assert observable is False
+
+    def test_readable_archived_listing_reports_observable(self, tmp_path):
+        """Matched control: the same marker on a full scan reads observable."""
+        inbox_dir = tmp_path / 'inbox'
+        self._seed_archived_marker(inbox_dir)
+
+        closed, observable = _inbox._archived_closed_senders(inbox_dir, READ_EPIC)
+
+        assert closed == {CLOSED_SENDER}
+        assert observable is True

@@ -139,6 +139,10 @@ class DirectCommandResult(TypedDict, total=False):
     message: str  # Operator-facing detail (on killed and indeterminate)
     routed_tests_run: int  # Daemon-routed green build: the INNER wrapper's count
     routed_errors: list  # Daemon-routed failing build: the INNER wrapper's errors[]
+    # Written BACK by the renderer (cmd_run_common) once it has measured the
+    # executed-test count, so the routing seam's ledger row can name the
+    # population on the in-process route too. Absent means unmeasured, never zero.
+    measured_tests_run: int
 
 
 # =============================================================================

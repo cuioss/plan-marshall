@@ -72,7 +72,12 @@ def test_payload_weaves_bypass_actors_when_ids_supplied():
     assert 'merge_queue' in [r.get('type') for r in payload['rules']]
 
 
-@pytest.mark.parametrize('method', ['SQUASH', 'MERGE', 'REBASE'])
+#: Derived from the authoritative mapping so a strategy added there is swept here.
+_RULESET_METHODS = sorted(github_ops._RULESET_MERGE_METHOD.values())
+assert _RULESET_METHODS, 'the authoritative merge-method mapping is empty'
+
+
+@pytest.mark.parametrize('method', _RULESET_METHODS)
 def test_payload_emits_mapped_merge_method(method):
     payload = github_ops.build_merge_queue_ruleset_payload('main', merge_method=method)
     merge_queue_rules = [r for r in payload['rules'] if r.get('type') == 'merge_queue']

@@ -512,7 +512,78 @@ another ledger). Both are restated in § Standing Constraints, which is where th
 
 ## Open Defects
 
-### ⛔ 2026-09-29: the reviewer fleet was never rolled out, and legacy repo-local config is still LIVE → `PLAN-PR-078`
+### ⛔ 2026-10-07: `PLAN-PR-078` SHIPPED (#1704), but the fleet rollout is 7 of 20
+
+Full record: [`landings/PLAN-PR-078.md`](landings/PLAN-PR-078.md). Host PR #1704 (`d42dc6a94`) and all nine
+foreign PRs are corroborated merged (API-Sheriff #399, TokenSheriff #782, cui-http #273,
+cui-java-module-template #156, cui-open-rewrite #190, plan-marshall-mcp #33, playwright-test-artifacts #185,
+coderabbit #6, cuioss-organization #307 / v0.36.0).
+
+- **13 repositories are NOT enrolled.** Their existing `.github/project.yml` fails the org schema on keys the
+  rollout does not touch (`github-automation.auto-merge-build-timeout`; two-part versions), and the spec binds
+  "reported, never force-written". Operator decision: fix the schema first. The follow-up — schema fix, then
+  enroll the 13, then re-validate the three migrated repositories whole-file, with a runnable validator — is
+  tracked as lesson **`2026-10-06-15-001`** and is deliberately NOT staged a second time here.
+- **The three migrated repositories were merged on a block-only schema check.** Their whole-file validation is
+  owed under the same lesson.
+- **Only 1 of the 7 enrolled repositories is live-verified** (plan-marshall-mcp). See Watches.
+- ⚠ The schema verdicts were read by hand by the plan; no validator ran, and this pass did not re-read them.
+
+**Every queue row is terminal again (4 shipped, 1 retired, 37 superseded).** The epic is a close candidate
+only if the operator accepts the fleet remainder living in the lessons corpus rather than in this queue.
+
+### ⚠ 2026-10-07 (drain): landing `plan-pr-078-review-bot-fleet-opt-in-001.md` was incomplete
+
+`inbox landing-check` reported `complete: false`, missing `pr`, `merge_state`, `cleanup_owed`, `total_tokens`
+and `steps` (all written as `unknown`). It is the fleet report the plan's own task wrote at the end of
+execute, before a PR existed. The later finalize landing `-011.md` is `complete: true` and supplies every one
+of the five, so nothing is outstanding; the entry records that one run produced two `kind: landing` messages
+and that the first could not have been complete by construction.
+
+### ⛔ 2026-10-07 (drain of `post-run-quality-002.md`): the review-bot rate-window await blocks inside a dispatched leaf
+
+Forwarded by `post-run-quality`; first-party report of the `cross-repo-telemetry-archive-and-analyze` plan
+(PR #1694). The log timings are the sender's and were NOT re-verified here. On a CodeRabbit quota refusal with
+`review_rate_window_await=true`, `automatic-review` claimed the rate window (`seconds_remaining=3600`,
+attempts 1/6) and waited **inside the leaf**: no completion line, no dispatch-boundary row, stopped by the
+orchestrator after more than an hour; a fresh dispatch finished in about 4 minutes. Worst case is 6 × 3600 s
+of an unobservable idle leaf. Proposed: return a signal (window ETA, claim id) and let the orchestrator tier
+own the wait and the re-dispatch.
+
+- **Not staged.** This is Python-bound pipeline behaviour, which the 2026-09-26 PM-MCP supersession parks. It
+  is a carry-over candidate: the invariant "a wait longer than a short bound is never held inside a leaf".
+- It is the same family as promoted lesson `2026-10-07-07-007` (the completion poll's refused `sleep`), from
+  `PLAN-PR-078`'s own run: both are waits a leaf cannot actually perform.
+- **Unverified lead carried with it:** CodeRabbit's `**Actionable comments posted: N**` summary line may be
+  counted as an actionable comment, because the leading bold markers defeat the registry's starts-with
+  summary pattern. Not read at source by either epic.
+
+### ⭐ 2026-10-07 — DRAIN: 13 messages, 13 archived
+
+| Message | Kind | Disposition |
+|---|---|---|
+| `plan-pr-078-review-bot-fleet-opt-in-001.md` | landing | reconciled (incomplete, see above) |
+| `plan-pr-078-review-bot-fleet-opt-in-011.md` | landing | reconciled |
+| `-002.md` self-review loop-backs have no convergence signal | candidate-lesson | promoted → `2026-10-07-07-001` (related: `2026-09-29-17-001`, `2026-10-02-10-005`) |
+| `-003.md` worktree executor goes stale when a plan changes a script's flags | candidate-lesson | promoted → `2026-10-07-07-002` |
+| `-004.md` `post_run_source_guard` called with an undeclared `--plan-id` | candidate-lesson | promoted → `2026-10-07-07-003` |
+| `-005.md` cancelled and operator-blocked dispatches record zero spend and the wrong cause | candidate-lesson | promoted → `2026-10-07-07-004` |
+| `-006.md` foreign-repository paths need their own footprint class | candidate-lesson | promoted → `2026-10-07-07-005` |
+| `-007.md` release and deploy steps are operator steps | candidate-lesson | promoted → `2026-10-07-07-006` |
+| `-008.md` the completion poll's standalone `sleep` is refused in a leaf | candidate-lesson | promoted → `2026-10-07-07-007` |
+| `-009.md` "fixed" was posted before the fix commit existed | candidate-lesson | promoted → `2026-10-07-07-008` |
+| `-010.md` the `WORKTREE` dispatch contract disagrees with the dispatcher | candidate-lesson | promoted → `2026-10-07-07-009` |
+| `post-run-quality-002.md` | finding | observed (Open Defect above) |
+| `orchestrator-refactor-001.md` | finding | discarded — refuted at HEAD |
+
+`-008` and `-009` are this epic's own territory (the review pipeline). They were promoted rather than staged
+because the 2026-09-26 supersession stages no Python-bound pipeline work here; the lessons corpus is the live
+route. `orchestrator-refactor-001.md` claimed `ci checks pull-request-runs` returned `run_count=0` on PR
+#1652; re-run 2026-10-07 it returns `run_count: 11`, `pull_request_run_count: 9`, `not_triggered: false`. The
+original zero is not reproducible, so nothing is tracked; the related, real gap (nested checks omitted by
+`ci checks status`) is already lesson `2026-09-28-17-001`.
+
+### ✅ RESOLVED IN PART 2026-10-07 (see the first entry above) — ex "⛔ 2026-09-29: the reviewer fleet was never rolled out, and legacy repo-local config is still LIVE → `PLAN-PR-078`"
 
 `PLAN-PR-066` shipped the per-repository opt-in, and by design enabled it only in its plan-marshall pilot. A
 2026-09-28 org sweep (30 repositories, 27 active) found:
@@ -2147,6 +2218,32 @@ authority, and duplicating a defect write-up here is the source-of-truth-duplica
   still has no prior-transmission term.
 
 ## Watches
+
+### ⚠ NEW 2026-10-07 (`PLAN-PR-078` landing) — six enrolled repositories are unverified live, and five small items stay open
+
+**Live verification, 1 of 7.** Only plan-marshall-mcp (#34) showed the "Assembled review charter" line with
+its confirmed pack. Unverified, each to be read on its next real pull request (no probe PRs, by operator
+decision):
+
+- API-Sheriff — on the first later PR #400 both `review / changes` and `review / review` were SKIPPED; the
+  reason was not established. PR #401 was not read.
+- cui-http — the reviewer run was not locatable through `ci checks status` for #274 (27 checks, none from the
+  reviewer workflow). This is the known nested-check omission (lesson `2026-09-28-17-001`), not evidence the
+  reviewer did not run.
+- TokenSheriff, cui-java-module-template, cui-open-rewrite, playwright-test-artifacts — no pull request since
+  the merge.
+
+**Open items the plan named and did not fix:**
+
+- the `job_not_found` edge case in `_github_ci.py` (the new `ci checks logs --job` path);
+- a wrong plan-marshall-mcp cell in the persisted pack table (the repository has no release path);
+- leftover local `feature/plan-pr-078-review-bot-fleet-opt-in` branches in the foreign checkouts;
+- the state of `cuioss/coderabbit`'s v0.36.0 pin-bump PR was never established;
+- on #1704 itself, cuioss-review-bot and Sourcery left no judgeable record.
+
+**Plan record still live.** `manage-status list` shows `plan-pr-078-review-bot-fleet-opt-in` at `6-finalize`,
+`in_progress`, although every finalize step is `done`, the PR is merged and the worktree is gone. Retire this
+line once the plan is archived.
 
 ### ⚠ NEW 2026-09-24 (`PLAN-PR-066` landing) — 0.30.0 fleet re-pin population unconfirmed
 

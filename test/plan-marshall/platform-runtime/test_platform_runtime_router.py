@@ -980,6 +980,10 @@ class TestDispatch:
         parsed = _parsed(result)
         assert parsed['status'] == 'error'
         assert 'unknown_operation' in parsed.get('error', '')
+        # The advertised roster is the registry itself, so an operation added
+        # there can never be missing from the refusal that lists the valid ones.
+        missing = [op for op in list_operations() if op not in result]
+        assert missing == [], f'unknown_operation message omits registered operations: {missing}'
         # No runtime methods should have been called.
         rt.project_initial_setup.assert_not_called()
         rt.session_capture.assert_not_called()

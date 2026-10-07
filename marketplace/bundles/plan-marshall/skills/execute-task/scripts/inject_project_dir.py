@@ -199,10 +199,14 @@ def resolve_loop_back_envelope(
 
     States which fields the loop-back dispatch carries
     (:data:`LOOP_BACK_CARRIED_FIELDS`) and which it omits
-    (:data:`LOOP_BACK_OMITTED_FIELDS`), and enforces the null-envelope
+    (:data:`LOOP_BACK_OMITTED_FIELDS`), and REPORTS the null-envelope
     execution rule: an unassigned (``None``) ``envelope_id`` MUST NOT execute
     — the caller re-runs the envelope assignment at loop-back entry instead,
     so the fix task never runs invisible to the envelope-filtered executor.
+
+    This function enforces nothing. It builds a verdict dict and has no
+    production caller: no dispatcher reads the verdict, so a null-envelope fix
+    task is not stopped by this seam.
 
     Args:
         plan_id: Plan identifier carried verbatim on the re-entry dispatch.

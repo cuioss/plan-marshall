@@ -21,14 +21,18 @@ vertical-steps block) can surface user-facing step summaries. An optional
 ``--head-at-completion`` SHA is persisted alongside the outcome so resumable
 phase dispatchers (e.g., phase-6-finalize Step 3 for ``pre-push-quality-gate``)
 can detect when the worktree HEAD has advanced past the SHA at which the
-previous run completed and re-fire the gate accordingly. A supplied SHA is
-resolved against the local object store (``git rev-parse --verify
-{sha}^{commit}``) before anything is persisted, and the PERSISTED value is
-the resolved full-hex commit ID — never the supplied spelling — so symbolic
-anchors (HEAD, a branch, HEAD~1) cannot move under the record: a SHA
-resolving to no commit is refused fail-closed with
-``error: unknown_head_at_completion`` and writes NOTHING, so
-a fabricated anchor can never enter the record. Re-call with same
+previous run completed and re-fire the gate accordingly. On a ``done``
+outcome a supplied SHA is resolved against the local object store
+(``git rev-parse --verify {sha}^{commit}``) before anything is persisted, and
+the PERSISTED value is the resolved full-hex commit ID — never the supplied
+spelling — so symbolic anchors (HEAD, a branch, HEAD~1) cannot move under the
+record: a SHA resolving to no commit is refused fail-closed with
+``error: unknown_head_at_completion`` and writes NOTHING, so a fabricated
+anchor can never enter a ``done`` record. The resolution binds ``done``
+alone: a ``skipped`` / ``failed`` / ``loop_back`` record is not a verdict
+scoped against a tree, so its anchor is persisted exactly as supplied,
+unresolved and unvalidated — refusing it would break the loop-back path that
+records failures freely. Re-call with same
 outcome+display_detail but a
 different head_at_completion is a "changed" overwrite without requiring
 ``--force``.

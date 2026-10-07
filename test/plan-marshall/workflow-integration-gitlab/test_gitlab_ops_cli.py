@@ -6,7 +6,11 @@
 from __future__ import annotations
 
 import argparse
+from types import SimpleNamespace
+
+import ci_base
 import gitlab_ops
+import pytest
 from _ci_wait_contract import _ok_auth
 from _resolve_project_dir_fixtures import worktree_query_result
 
@@ -181,6 +185,163 @@ def test_ci_logs_without_default_cwd_passes_none(monkeypatch):
         ci_base.set_default_cwd(saved_cwd)
 
     assert captured['cwd'] is None
+
+
+# =============================================================================
+# checks logs — --scope / --match / --job (parity with the GitHub handler)
+# =============================================================================
+#
+# ``glab ci trace`` returns the full trace of the addressed job regardless of
+# its conclusion, so both scopes are served from the same read: ``failed`` keeps
+# the head-window truncation, ``full`` returns the trace whole. ``--match``
+# selects from the whole trace, and ``--job`` is rejected because ``--run-id``
+# already addresses exactly one job.
+
+
+def _patch_trace(monkeypatch, stdout='', *, returncode=0, stderr=''):
+    """Stub ``glab ci trace`` and return the list of argv it was called with."""
+    calls: list[list[str]] = []
+
+    fake = SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)
+
+    def fake_run(cmd, **_kwargs):
+        calls.append(list(cmd))
+        return fake
+
+    monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(gitlab_ops.subprocess, 'run', fake_run)
+    return calls
+
+
+def _logs_args(**overrides):
+    values: dict = {'run_id': 'job-1', 'scope': 'failed', 'match': None, 'job': None}
+    values.update(overrides)
+    return argparse.Namespace(**values)
+
+
+def _long_trace(line_count=260):
+    return [f'trace line {i}' for i in range(line_count)]
+
+
+@pytest.mark.parametrize('scope', ['failed', 'full'])
+def test_ci_logs_both_scopes_read_the_same_trace(monkeypatch, scope):
+    """Neither scope is refused: both run ``glab ci trace`` on the addressed job."""
+    calls = _patch_trace(monkeypatch, 'a line\n')
+
+    result = gitlab_ops.cmd_ci_logs(_logs_args(scope=scope))
+
+    assert result['status'] == 'success', result
+    assert calls == [['glab', 'ci', 'trace', 'job-1']]
+    assert result['scope'] == scope
+
+
+def test_ci_logs_failed_scope_truncates_and_full_scope_does_not(monkeypatch):
+    """failed keeps the head-window truncation; full returns the trace whole."""
+    lines = _long_trace()
+    _patch_trace(monkeypatch, '\n'.join(lines))
+
+    failed = gitlab_ops.cmd_ci_logs(_logs_args(scope='failed'))
+    full = gitlab_ops.cmd_ci_logs(_logs_args(scope='full'))
+
+    assert failed['log_lines'] == ci_base.CI_LOG_TRUNCATE_LINES
+    assert failed['log_lines'] < len(lines)
+    assert full['log_lines'] == len(lines)
+    assert full['content'] == '\\n'.join(lines)
+
+
+def test_ci_logs_match_returns_only_matching_lines(monkeypatch):
+    """--match keeps only the lines containing the literal, case-sensitively."""
+    _patch_trace(monkeypatch, 'starting\nAssembled review charter\nassembled review charter\ndone\n')
+
+    result = gitlab_ops.cmd_ci_logs(_logs_args(scope='full', match='Assembled review charter'))
+
+    assert result['status'] == 'success', result
+    assert result['match_count'] == 1
+    assert result['log_lines'] == 1
+    assert result['content'] == 'Assembled review charter'
+
+
+def test_ci_logs_match_selects_from_the_whole_trace_under_failed_scope(monkeypatch):
+    """A match past the head window is still found: --match reads the whole trace."""
+    lines = _long_trace()
+    _patch_trace(monkeypatch, '\n'.join(lines))
+
+    result = gitlab_ops.cmd_ci_logs(_logs_args(scope='failed', match='trace line 259'))
+
+    assert result['match_count'] == 1
+    assert result['content'] == 'trace line 259'
+
+
+def test_ci_logs_zero_match_is_success_with_measured_zero(monkeypatch):
+    """A fetched trace with no matching line is a success carrying match_count 0."""
+    _patch_trace(monkeypatch, 'one\ntwo\n')
+
+    result = gitlab_ops.cmd_ci_logs(_logs_args(scope='full', match='absent literal'))
+
+    assert result['status'] == 'success', result
+    assert result['match_count'] == 0
+    assert result['log_lines'] == 0
+    assert result['content'] == ''
+
+
+@pytest.mark.parametrize('scope', ['failed', 'full'])
+@pytest.mark.parametrize('match', [None, 'anything'])
+def test_ci_logs_fetch_failure_is_error_never_empty_success(monkeypatch, scope, match):
+    """A non-zero glab exit is status: error with the stderr — with or without --match."""
+    _patch_trace(monkeypatch, '', returncode=1, stderr='job is still running\n')
+
+    result = gitlab_ops.cmd_ci_logs(_logs_args(scope=scope, match=match))
+
+    assert result['status'] == 'error'
+    assert result['context'] == 'job is still running'
+    assert 'match_count' not in result
+    assert 'content' not in result
+
+
+def test_ci_logs_job_is_rejected_without_reading_a_trace(monkeypatch):
+    """--job is rejected explicitly: --run-id already addresses exactly one job."""
+    calls = _patch_trace(monkeypatch, 'never read\n')
+
+    result = gitlab_ops.cmd_ci_logs(_logs_args(scope='full', job='review / review'))
+
+    assert result['status'] == 'error'
+    assert '--job is not supported on GitLab' in result['error']
+    assert '--run-id already addresses one job' in result['error']
+    assert calls == []
+
+
+def test_ci_logs_empty_job_is_rejected_like_any_supplied_job(monkeypatch):
+    """An empty --job was still supplied, so it is rejected rather than read as omitted."""
+    calls = _patch_trace(monkeypatch, 'never read\n')
+
+    result = gitlab_ops.cmd_ci_logs(_logs_args(scope='full', job=''))
+
+    assert result['status'] == 'error'
+    assert '--job is not supported on GitLab' in result['error']
+    assert calls == []
+
+
+def test_ci_logs_empty_match_is_refused_before_any_fetch(monkeypatch):
+    """An empty --match would match every line, so it is refused outright."""
+    calls = _patch_trace(monkeypatch, 'one\n')
+
+    result = gitlab_ops.cmd_ci_logs(_logs_args(scope='full', match=''))
+
+    assert result['status'] == 'error'
+    assert '--match' in result['error']
+    assert calls == []
+
+
+def test_ci_logs_default_scope_is_failed_for_a_flagless_caller(monkeypatch):
+    """A Namespace carrying only run_id reads exactly what an explicit failed scope reads."""
+    _patch_trace(monkeypatch, '\n'.join(_long_trace()))
+
+    flagless = gitlab_ops.cmd_ci_logs(argparse.Namespace(run_id='job-1'))
+    explicit = gitlab_ops.cmd_ci_logs(_logs_args(scope='failed'))
+
+    assert flagless == explicit
+    assert flagless['scope'] == 'failed'
+    assert 'match_count' not in flagless
 
 
 def test_format_jobs_toon_skips_go_zero_timestamps():

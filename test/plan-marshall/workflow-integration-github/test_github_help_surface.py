@@ -11,29 +11,39 @@ import pytest
 from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-github', 'github_ops.py')
+
+
+def _derive_verb_roster() -> dict[tuple[str, ...], tuple[str, ...]]:
+    """Every group path in the live parser, mapped to the verbs registered under it.
+
+    Derived by walking the parser ``github_ops`` builds, never transcribed: a
+    hand-listed roster silently omits a verb added later, so its ``--help`` and
+    its presence in the parent's help would go unexercised on a green run.
+    """
+    import argparse
+
+    import github_ops
+
+    roster: dict[tuple[str, ...], tuple[str, ...]] = {}
+
+    def _walk(parser: argparse.ArgumentParser, path: tuple[str, ...]) -> None:
+        for action in parser._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                roster[path] = tuple(action.choices)
+                for verb, child in action.choices.items():
+                    _walk(child, (*path, verb))
+
+    _walk(github_ops.build_github_parser(), ())
+    return roster
+
+
+_VERB_ROSTER = _derive_verb_roster()
+#: Every node of the parser tree — each group and each leaf verb — as an argv path.
+_EVERY_PARSER_PATH = sorted(
+    {(), *_VERB_ROSTER, *((*group, verb) for group, verbs in _VERB_ROSTER.items() for verb in verbs)}
+)
+
 _HELP_SURFACE = [
-    ((), ('pr', 'checks', 'issue'), ()),
-    (
-        ('pr',),
-        (
-            'create',
-            'view',
-            'reply',
-            'resolve-thread',
-            'thread-reply',
-            'merge',
-            'auto-merge',
-            'close',
-            'ready',
-            'edit',
-            'reviews',
-            'comments',
-            'list',
-        ),
-        (),
-    ),
-    (('issue',), ('create', 'view', 'close'), ()),
-    (('checks',), ('status', 'wait', 'rerun', 'logs'), ()),
     # The plan-bound store is the ONE body source: a retired --body-file must be
     # gone from the advertised surface, since help text is what a caller reads to
     # decide how to supply a body. The legacy inline --body is asserted absent at
@@ -89,10 +99,6 @@ def _prepare_thread_reply_body(tmp_path, monkeypatch, body_text='Fixed it', plan
     ('argv', 'advertised', 'absent'),
     _HELP_SURFACE,
     ids=[
-        'root',
-        'pr',
-        'issue',
-        'checks',
         'pr-create',
         'pr-view',
         'pr-reply',
@@ -119,6 +125,21 @@ def test_help_advertises_the_declared_surface(argv, advertised, absent):
         assert token in result.stdout, f'{token!r} missing from {" ".join(argv)} --help'
     for token in absent:
         assert token not in result.stdout, f'{token!r} still advertised by {" ".join(argv)} --help'
+
+
+def test_the_derived_verb_roster_is_not_vacuous():
+    """The parser walk found the group tree, so the parametrization below sweeps something."""
+    assert {'pr', 'checks', 'issue'} <= set(_VERB_ROSTER.get((), ())), _VERB_ROSTER.get(())
+    assert len(_EVERY_PARSER_PATH) > len(_VERB_ROSTER), 'the walk found groups but no leaf verb'
+
+
+@pytest.mark.parametrize('argv', _EVERY_PARSER_PATH, ids=lambda argv: '-'.join(argv) or 'root')
+def test_help_exits_zero_and_advertises_every_registered_verb(argv):
+    """``--help`` works at every parser node, and each group's help names every verb under it."""
+    result = run_script(SCRIPT_PATH, *argv, '--help')
+    assert result.success, f'{" ".join(argv)} --help failed: {result.stderr}'
+    for verb in _VERB_ROSTER.get(argv, ()):
+        assert verb in result.stdout, f'{verb!r} missing from {" ".join(argv)} --help'
 
 
 def test_pr_thread_reply_fails_when_pending_review_remains(monkeypatch, tmp_path):

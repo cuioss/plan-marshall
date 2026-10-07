@@ -1725,8 +1725,153 @@ def compute_surface_delta(declared: set[str] | None, realized: set[str] | None) 
     return report
 
 
-def find_stream_end_marker(inbox_dir: Path, epic: str, sender_id: str) -> str | None:
-    """Return the name of ``sender_id``'s queued stream-end marker, or ``None``.
+def _sender_archived_paths(inbox_dir: Path, sender_id: str) -> tuple[list[Path], bool]:
+    """Return ``sender_id``'s archived message paths plus whether the scan looked.
+
+    The retired-layout counterpart of the live-queue scan: the sender's foldered
+    subdirectory (``inbox/archive/{sender_id}/``) plus any un-migrated flat twin
+    directly under ``inbox/archive/``. Only message-shaped files whose filename
+    sender segment equals ``sender_id`` are returned, in deterministic
+    ``(sender, sequence)`` order via :func:`_sorted_message_paths`. An absent
+    ``archive/`` contributes nothing rather than raising, and an unsafe
+    ``sender_id`` contributes only its flat twins — the foldered directory is
+    never composed for a value :func:`_foldered_archive_dir` refuses.
+
+    The second tuple member is the observability flag: ``True`` when every
+    listing the scan attempted succeeded, ``False`` when any listing raised
+    ``OSError``. A ``False`` here means the returned list is PARTIAL — a closure
+    marker in the unreadable directory would be silently omitted — so callers
+    MUST NOT read an empty list beside ``False`` as proof the sender is open.
+    """
+
+    archive_dir = inbox_dir / INBOX_ARCHIVE_SUBDIR
+    if not archive_dir.is_dir():
+        return [], True
+    candidates: list[Path] = []
+    readable = True
+    foldered_dir = _foldered_archive_dir(archive_dir, sender_id)
+    if foldered_dir is not None and foldered_dir.is_dir():
+        try:
+            foldered_entries = list(foldered_dir.iterdir())
+        except OSError:
+            readable = False
+            foldered_entries = []
+        for entry in foldered_entries:
+            try:
+                if not entry.is_file():
+                    continue
+            except OSError:
+                readable = False
+                continue
+            match = _MESSAGE_NAME_RE.match(entry.name)
+            if match is not None and match.group('sender') == sender_id:
+                candidates.append(entry)
+    try:
+        archive_entries = list(archive_dir.iterdir())
+    except OSError:
+        return _sorted_message_paths(candidates), False
+    for entry in archive_entries:
+        try:
+            if not entry.is_file():
+                continue
+        except OSError:
+            readable = False
+            continue
+        match = _MESSAGE_NAME_RE.match(entry.name)
+        if match is not None and match.group('sender') == sender_id:
+            candidates.append(entry)
+    return _sorted_message_paths(candidates), readable
+
+
+def _all_archived_message_paths(inbox_dir: Path) -> tuple[list[Path], bool]:
+    """Return every archived message path plus whether the scan looked.
+
+    Message-shaped files directly under ``inbox/archive/`` (a flat,
+    pre-migration twin) and those one level down under a per-sender
+    subdirectory (``inbox/archive/{sender}/``) are both returned, in
+    deterministic ``(sender, sequence)`` order. An absent ``archive/``
+    contributes nothing rather than raising. This is the enumeration the
+    ``closed_senders`` derivation reads beside the live queue — the same
+    dual-layout awareness :func:`next_sequence` and
+    :func:`resolve_message_path` already carry.
+
+    The second tuple member is the observability flag: ``True`` when every
+    listing succeeded, ``False`` when any listing raised ``OSError``. A
+    ``False`` means the returned list is PARTIAL, so the ``closed_senders``
+    derived from it is unobservable rather than empty.
+    """
+
+    archive_dir = inbox_dir / INBOX_ARCHIVE_SUBDIR
+    if not archive_dir.is_dir():
+        return [], True
+    try:
+        top_entries = list(archive_dir.iterdir())
+    except OSError:
+        return [], False
+    candidates: list[Path] = []
+    readable = True
+    for entry in top_entries:
+        try:
+            is_file = entry.is_file()
+            is_dir = entry.is_dir() if not is_file else False
+        except OSError:
+            readable = False
+            continue
+        if is_file:
+            if _MESSAGE_NAME_RE.match(entry.name) is not None:
+                candidates.append(entry)
+        elif is_dir:
+            try:
+                sub_entries = list(entry.iterdir())
+            except OSError:
+                readable = False
+                continue
+            for sub in sub_entries:
+                try:
+                    if not sub.is_file():
+                        continue
+                except OSError:
+                    readable = False
+                    continue
+                if _MESSAGE_NAME_RE.match(sub.name) is not None:
+                    candidates.append(sub)
+    return _sorted_message_paths(candidates), readable
+
+
+def _archived_closed_senders(inbox_dir: Path, epic: str) -> tuple[set[str], bool]:
+    """Return senders with a validating archived ``stream-end`` marker plus observability.
+
+    Each archived candidate from :func:`_all_archived_message_paths` is read
+    through :func:`validate_envelope` exactly as a queued message is — with
+    ``expected_epic`` and the filename agreement check — so only a marker the
+    drain would honour counts. Markers that fail validation contribute nothing,
+    mirroring the live-queue derivation.
+
+    The second tuple member reports whether the derivation looked: ``False``
+    when the archive listing failed OR when any archived file could not be
+    read, because an unreadable marker leaves closure unestablished. Callers
+    MUST NOT read an empty set beside ``False`` as proof no sender is closed.
+    """
+
+    closed: set[str] = set()
+    paths, readable = _all_archived_message_paths(inbox_dir)
+    observable = readable
+    for path in paths:
+        try:
+            text = path.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            observable = False
+            continue
+        ok, _, header = validate_envelope(text, expected_epic=epic, filename=path.name)
+        if ok and header.get(_LIFECYCLE_FIELD) == LIFECYCLE_STREAM_END:
+            sender = header.get('sender_id', '')
+            if sender:
+                closed.add(sender)
+    return closed, observable
+
+
+def find_stream_end_marker(inbox_dir: Path, epic: str, sender_id: str) -> tuple[str | None, bool]:
+    """Return ``(marker_name, closure_readable)`` for ``sender_id``.
 
     The ONE predicate behind both stream-closure entry points — the write-side
     refusal (:func:`cmd_inbox_write`) and the close-side idempotence
@@ -1740,27 +1885,38 @@ def find_stream_end_marker(inbox_dir: Path, epic: str, sender_id: str) -> str | 
     treating it as one here would refuse writes on the strength of a message the
     drain will report as invalid.
 
-    ⛔ **The scan covers ``inbox/`` only, never ``inbox/archive/``.** That bound
-    is deliberate and is a real limitation, stated rather than hidden: once the
-    drain consumes and archives a sender's marker, this predicate no longer finds
-    it and that sender may write again. The queue is the live state, and a
-    consumed marker has been acted on; re-refusing against the archive would make
-    the guard depend on drain history rather than on queue state. A sender that
-    must stay closed across a drain is a larger design question this guard does
-    not settle.
+    The scan covers the live queue PLUS the retired layout: ``inbox/`` first,
+    then the sender's foldered ``inbox/archive/{sender_id}/`` subdirectory and
+    any un-migrated flat ``inbox/archive/`` twin. Each archived candidate is
+    validated through :func:`validate_envelope` exactly as a queued one is, so a
+    drained marker keeps the sender closed and a malformed archived file keeps
+    counting as invalid rather than as closure. That surviving-closure rule is
+    what keeps ``closed_senders`` derivable after the drain retires the marker.
 
-    **Cost, stated precisely because the two bounds differ.** The enumeration is
-    O(n log n) in the queue depth: :func:`list_messages` lists the directory once
-    and sorts the result. The FILE READS are
-    not — the loop skips a path whose filename sender segment does not match
-    ``sender_id`` *before* opening it, so ``read_text`` and
+    The second tuple member reports whether closure could be checked: ``False``
+    when the archived listing failed OR when any archived candidate file for
+    this sender could not be read. A ``False`` means the marker result is
+    PARTIAL — ``None`` beside ``False`` is *could not look*, never *open* — so
+    :func:`cmd_inbox_write` refuses rather than accepting a message from a
+    sender whose closure marker sits in the unreadable directory. A live-queue
+    file that cannot be read does NOT make closure unreadable: it is already
+    reported as an ``unreadable`` row by :func:`cmd_inbox_list`, it cannot
+    validate as a ``stream-end`` marker, and refusing the sender's next write
+    on its strength would turn one unreadable message into a refusal of every
+    later message from that sender.
+
+    **Cost.** The live enumeration is O(n log n) in the queue depth:
+    :func:`list_messages` lists the directory once and sorts the result. The
+    FILE READS are not — the loop skips a path whose filename sender segment
+    does not match ``sender_id`` *before* opening it, so ``read_text`` and
     :func:`validate_envelope` run at most once per message **that sender** has
-    queued. So a write costs one directory listing plus O(this sender's queued
-    messages) reads, not O(queue) reads. Both are accepted rather than optimised:
-    the queue is drained between plans and is small by construction, and the
-    alternative (an index, or trusting the filename) would either add a second
-    source of truth or honour a marker the validator would reject. Revisit only
-    if a queue is ever allowed to grow unbounded.
+    queued. The archived half costs one directory listing plus O(this sender's
+    archived messages) reads under the same pre-open sender filter, in both
+    layouts. Both are accepted rather than optimised: the queue is drained
+    between plans and is small by construction, and the alternative (an index,
+    or trusting the filename) would either add a second source of truth or
+    honour a marker the validator would reject. Revisit only if a queue is ever
+    allowed to grow unbounded.
 
     Args:
         inbox_dir: The epic's ``inbox/`` directory.
@@ -1769,9 +1925,13 @@ def find_stream_end_marker(inbox_dir: Path, epic: str, sender_id: str) -> str | 
         sender_id: The sender whose closure is being tested.
 
     Returns:
-        The bare filename of the first validating stream-end marker for that
-        sender in enumeration order, or ``None`` when the sender has none.
+        ``(marker_name, closure_readable)`` — the bare filename of the first
+        validating stream-end marker for that sender in enumeration order
+        (live queue first, then the retired layout), or ``None`` when the
+        sender has none in either layout, plus whether closure could be
+        checked.
     """
+    readable = True
     for path in list_messages(inbox_dir):
         match = _MESSAGE_NAME_RE.match(path.name)
         if match is None or match.group('sender') != sender_id:
@@ -1782,8 +1942,20 @@ def find_stream_end_marker(inbox_dir: Path, epic: str, sender_id: str) -> str | 
             continue
         ok, _, header = validate_envelope(text, expected_epic=epic, filename=path.name)
         if ok and header.get(_LIFECYCLE_FIELD) == LIFECYCLE_STREAM_END:
-            return path.name
-    return None
+            return path.name, True
+    archived_paths, archive_readable = _sender_archived_paths(inbox_dir, sender_id)
+    if not archive_readable:
+        readable = False
+    for path in archived_paths:
+        try:
+            text = path.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            readable = False
+            continue
+        ok, _, header = validate_envelope(text, expected_epic=epic, filename=path.name)
+        if ok and header.get(_LIFECYCLE_FIELD) == LIFECYCLE_STREAM_END:
+            return path.name, True
+    return None, readable
 
 
 def cmd_inbox_write(args: Any) -> dict[str, Any]:
@@ -1820,7 +1992,14 @@ def cmd_inbox_write(args: Any) -> dict[str, Any]:
     check runs BEFORE the ``--target-plan`` routing decision, because it is
     about whether this sender may write at all, which does not depend on where
     the message was aimed. Without it the ``stream-end`` marker declared a
-    closure nothing enforced.
+    closure nothing enforced. The guard reads the same dual-layout predicate
+    as :func:`find_stream_end_marker` — the live queue plus the retired
+    ``inbox/archive/`` layout in both foldered and flat forms — so a drained
+    sender stays refused after its marker is archived. When that predicate
+    cannot be checked (the archive cannot be listed or a candidate file cannot
+    be read), the write is refused with ``archive_unreadable`` rather than
+    accepted on the strength of a partial scan — an unreadable archive is
+    never read as an open stream.
     """
     invalid = _validate_identifier(args.slug)
     if invalid:
@@ -1851,8 +2030,21 @@ def cmd_inbox_write(args: Any) -> dict[str, Any]:
     # declared its stream ended; without this refusal that declaration meant
     # nothing and the sender could keep writing, so every consumer reading
     # ``closed_senders`` as "this sender will send no more" was reading a claim
-    # the machinery did not support.
-    closed_by = find_stream_end_marker(root / INBOX_SUBDIR, args.slug, args.sender_id)
+    # the machinery did not support. The predicate is dual-layout — the live
+    # queue plus the retired ``inbox/archive/`` layout — so a drained sender
+    # stays refused after its marker is archived. When the predicate cannot be
+    # checked, the write is refused rather than accepted: an unreadable archive
+    # is never read as an open stream.
+    closed_by, closure_readable = find_stream_end_marker(root / INBOX_SUBDIR, args.slug, args.sender_id)
+    if not closure_readable:
+        return _error(
+            'archive_unreadable',
+            f'sender {args.sender_id!r} closure cannot be checked in epic {args.slug!r}: '
+            'the archive scan failed, so the write is refused rather than accepted '
+            'on the strength of a partial scan',
+            slug=args.slug,
+            sender_id=args.sender_id,
+        )
     if closed_by is not None:
         return _error(
             'stream_closed',
@@ -2071,8 +2263,10 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
     READ (non-UTF-8 bytes, or the file vanishing mid-drain under a concurrent
     writer) is reported the same way, with the distinct ``unreadable`` code, so
     a read failure never aborts the rest of the enumeration either. Consumed
-    messages already moved under ``inbox/archive/`` are not enumerated, which
-    is what makes a re-scan of a completed drain a no-op.
+    messages already moved under ``inbox/archive/`` are not enumerated as rows,
+    which is what makes a re-scan of a completed drain a no-op for ``count`` —
+    but ``closed_senders`` additionally reads the retired layout (see below),
+    so a drained ``stream-end`` marker keeps its sender closed.
 
     The payload also states WHICH KIND OF ZERO a ``count: 0`` is, so the
     three zeros are separately representable: ``epic_not_found`` (no epic tree
@@ -2087,6 +2281,13 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
     ``inbox_state: missing``. An absent ``inbox/`` is NOT a fault — the verb
     still returns ``status: success`` so a drain is never aborted by it; the
     discriminator rides the payload, not the status.
+
+    ``closed_senders`` carries its own observability flag
+    (``archive_readable``): when the retired ``inbox/archive/`` layout cannot
+    be listed or an archived file cannot be read, the derivation is PARTIAL
+    and the flag is ``False`` — the ``closed_senders`` list beside ``False``
+    is unobservable rather than empty, and MUST NOT be read as proof no sender
+    is closed.
     """
     invalid = _validate_identifier(args.slug)
     if invalid:
@@ -2117,12 +2318,14 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
     # messages the drain declined. See ``standards/inbox-envelope.md`` § Drain
     # semantics, which is the same table for the drain's own reader.
     live_count = _live_count(messages)
+    archived_closed, archive_readable = _archived_closed_senders(inbox_dir, args.slug)
     closed_senders = sorted(
         {
             row['sender_id']
             for row in messages
             if row['valid'] and row['lifecycle'] == LIFECYCLE_STREAM_END and row['sender_id']
         }
+        | archived_closed
     )
     queued_landing_senders = {
         row['sender_id']
@@ -2163,6 +2366,7 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
         'count': len(messages),
         'live_count': live_count,
         'closed_senders': closed_senders,
+        'archive_readable': archive_readable,
         'invalid_count': sum(1 for row in messages if not row['valid']),
         'messages': messages,
         'owed_landing': owed_verdict,
@@ -3139,9 +3343,13 @@ def cmd_inbox_close_stream(args: Any) -> dict[str, Any]:
     # rather than allocating a second one. A second marker would be a second
     # declaration of the same fact, invisible in ``inbox list``'s
     # ``closed_senders`` (a set, so the duplicate dedups away) and visible only as
-    # an unexplained extra message in ``count``.
-    existing = find_stream_end_marker(inbox_dir, args.slug, args.sender_id)
+    # an unexplained extra message in ``count``. When closure cannot be checked
+    # (unreadable archive), the call proceeds to allocate rather than refusing:
+    # a duplicate marker keeps the sender closed, while refusing would block a
+    # legitimate close on the strength of a scan that looked at nothing.
+    existing, _closure_readable = find_stream_end_marker(inbox_dir, args.slug, args.sender_id)
     if existing is not None:
+        existing_path, _ = resolve_message_path(inbox_dir, existing)
         return {
             'status': 'success',
             'operation': 'inbox-close-stream',
@@ -3152,7 +3360,7 @@ def cmd_inbox_close_stream(args: Any) -> dict[str, Any]:
             'lifecycle': LIFECYCLE_STREAM_END,
             'already_closed': True,
             'message': existing,
-            'path': str(inbox_dir / existing),
+            'path': str(existing_path),
         }
     reason = (getattr(args, 'reason', None) or '').strip() or STREAM_END_DEFAULT_NOTE
     text = compose_envelope(
