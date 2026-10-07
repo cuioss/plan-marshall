@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-22-00-001",
+  "removed_at": "2026-07-27T15:47:32.841925+00:00",
+  "reason": "per-task bash_timeout_seconds is now sourced live from architecture resolve's floor-corrected _lookup_bash_timeout at manifest compose time, so the stamp can no longer under-run the engine's real floor (plan build-timeout-learned-value-truthfulness)",
+  "status": "removed"
+}

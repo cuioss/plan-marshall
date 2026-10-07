@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-26-20-001",
+  "removed_at": "2026-08-02T14:50:30.868569+00:00",
+  "reason": "Fix direction shipped in full by plan fail-closed-signal-integrity deliverable 1. build-pyproject classify_paths now claims non-Python test-fixture content under the pytest roots (test/*.xml, test/*.json and siblings) via _TEST_FIXTURE_SUFFIXES, so non-.py fixtures resolve to role test rather than the unknown bucket. The build.py asymmetry the lesson names is also reconciled - build.py and marketplace/targets/*.py are now claimed as production by _CLASSIFY_PATTERNS, matching what classify_globs already routed. The stale prose pointers in doc/developer/testing.adoc and doc/developer/build.adoc were corrected in the same plan",
+  "status": "removed"
+}

@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-27-23-001",
+  "removed_at": "2026-07-28T13:54:01.225890+00:00",
+  "reason": "phase-6-finalize item 7 Completed step emission now paired with every mark-step-done recording site, with named exemptions for no-op re-entry skips, pinned by test_step_completion_emission.py (plan retrospective-completeness-and-phase5-marker)",
+  "status": "removed"
+}

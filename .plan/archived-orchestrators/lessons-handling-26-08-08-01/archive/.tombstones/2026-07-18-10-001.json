@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-18-10-001",
+  "removed_at": "2026-07-25T13:28:22.207645+00:00",
+  "reason": "Audit no-op - leaf-validator yield-to-sibling already shipped #920/#493, zero residual gap. Lessons-triage 2026-07-25 truthful-signals",
+  "status": "removed"
+}

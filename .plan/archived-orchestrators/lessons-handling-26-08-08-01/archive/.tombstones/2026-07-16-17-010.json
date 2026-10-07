@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-16-17-010",
+  "removed_at": "2026-07-17T16:07:03.153753+00:00",
+  "reason": "ci-complete strict-precondition deadlock eliminated by per-signal arm gating (a failed Sonar arm now still FINDs); fix codified in phase-6-finalize docs (plan unified-finalize-triage)",
+  "status": "removed"
+}

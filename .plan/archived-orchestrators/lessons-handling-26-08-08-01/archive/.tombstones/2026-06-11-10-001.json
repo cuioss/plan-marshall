@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-11-10-001",
+  "removed_at": "2026-06-11T09:08:03.786757+00:00",
+  "reason": "Folded into ADR-004 (build_map owned by build-system extensions; documentation deliberately retired). The decision belongs in a tracked ADR, not a gitignored lesson.",
+  "status": "removed"
+}

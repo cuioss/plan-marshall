@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-07-17-001",
+  "removed_at": "2026-08-02T22:10:10.923808+00:00",
+  "reason": "Rules 1-2 promoted into ref-code-quality/standards/error-handling.md clauses (a) and (b) by plan fail-closed-signal-integrity (PR #1082, merged b713fe4b9). Rule 3 residue was promoted in the same run to persona-module-tester/standards/testing-coverage.md, Testing a Classifier section - test the cells rather than the diagonal, since row-ordering defects live only in the unvisited off-diagonal cell",
+  "status": "removed"
+}

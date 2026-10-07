@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-01-18-001",
+  "removed_at": "2026-06-01T19:19:30.165453+00:00",
+  "reason": "Fixed directly: phase-boundary atomic test made deterministic via frozen clock (branch fix/flaky-phase-boundary-atomic-test). No longer an open defect.",
+  "status": "removed"
+}

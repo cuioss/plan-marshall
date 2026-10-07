@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-27-08-006",
+  "removed_at": "2026-08-03T07:35:08.163448+00:00",
+  "reason": "residue promoted to marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/agent-behavior-rules.md (closure-over-enumeration anti-pattern) \u2014 the documented termination-cause set is now complete at all three surfaces and pinned to DISPATCH_TERMINATION_CAUSES by a contract test (plan token-total-is-a-partition-labelled-a-whole)",
+  "status": "removed"
+}

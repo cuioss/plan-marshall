@@ -1,0 +1,183 @@
+{
+  "kind": "orchestrator",
+  "title": "Lessons handling 26-08-26",
+  "phase": "closed",
+  "workstreams": [],
+  "plans": [
+    {
+      "id": "PLAN-LH2-01",
+      "slug": "guard-verdicts-over-empty-populations",
+      "workstream": "WS-01",
+      "status": "transferred",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-02",
+      "slug": "tests-that-cannot-fail",
+      "workstream": "WS-01",
+      "status": "transferred",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-03",
+      "slug": "routed-build-loses-tests-run",
+      "workstream": "WS-01",
+      "status": "transferred",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-04",
+      "slug": "verdict-refuted-by-data-at-the-same-site",
+      "workstream": "WS-01",
+      "status": "transferred",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-05",
+      "slug": "affected-files-is-not-a-footprint",
+      "workstream": "WS-01",
+      "status": "transferred",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-06",
+      "slug": "doc-contract-divergence",
+      "workstream": "WS-01",
+      "status": "transferred",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-07",
+      "slug": "restated-counts-and-underived-completeness",
+      "workstream": "WS-01",
+      "status": "transferred",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-08",
+      "slug": "run-measurement-is-unrecoverable",
+      "workstream": "WS-03",
+      "status": "transferred",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-09",
+      "slug": "self-review-loop-mechanics",
+      "workstream": "WS-02",
+      "status": "transferred",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-10",
+      "slug": "review-bot-participation-and-reliability",
+      "workstream": "WS-02",
+      "status": "transferred",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-11",
+      "slug": "review-triage-discipline",
+      "workstream": "WS-02",
+      "status": "transferred",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-12",
+      "slug": "plugin-cache-and-registry-pin-staleness",
+      "workstream": "WS-01",
+      "status": "transferred",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-13",
+      "slug": "build-and-test-infrastructure",
+      "workstream": "WS-01",
+      "status": "transferred",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-14",
+      "slug": "orchestrator-stops-short",
+      "workstream": "WS-01",
+      "status": "transferred",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-15",
+      "slug": "early-phase-gate-quality",
+      "workstream": "WS-01",
+      "status": "transferred",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-16",
+      "slug": "git-worktree-integrity",
+      "workstream": "WS-01",
+      "status": "transferred",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-17",
+      "slug": "lane-levers-unadopted",
+      "workstream": "WS-03",
+      "status": "transferred",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-18",
+      "slug": "manage-lessons-corpus-integrity",
+      "workstream": "WS-04",
+      "status": "transferred",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-LH2-19",
+      "slug": "manage-tasks-surface-gap",
+      "workstream": "WS-01",
+      "status": "transferred",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    }
+  ],
+  "resume_anchor": "epic closed \u2014 see history.md",
+  "metadata": {},
+  "created": "2026-08-26T20:37:28Z",
+  "updated": "2026-09-21T21:32:12Z"
+}

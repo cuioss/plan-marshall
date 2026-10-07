@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-16-17-014",
+  "removed_at": "2026-07-17T19:14:58.154203+00:00",
+  "reason": "tool-side lever shipped in build-npm check-warnings --warning-baseline gate, npm.py and _build_check_warnings.py, documented in SKILL.md canonical invocations, consumer-CI wiring is out of scope for this component, plan small-tooling-batch",
+  "status": "removed"
+}

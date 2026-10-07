@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-21-22-002",
+  "removed_at": "2026-07-21T22:59:56.689137+00:00",
+  "reason": "completely covered: D2 delivered all three proposed actions \u2014 count-prose removed from all four claims, all 25 registry steps classified exactly once (13 dispatched / 12 inline), and the closure invariant pinned by a regression test (plan finalize-machinery-integrity)",
+  "status": "removed"
+}

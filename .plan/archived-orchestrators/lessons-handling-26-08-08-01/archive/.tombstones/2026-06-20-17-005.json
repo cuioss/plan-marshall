@@ -1,0 +1,7 @@
+{
+  "lesson_id": "2026-06-20-17-005",
+  "removed_at": "2026-06-20T22:09:29.214521+00:00",
+  "reason": "Aggregated into simplify/self-review must remove exception-swallowing in synthetic test fixtures",
+  "status": "superseded",
+  "superseded_by": "2026-06-14-08-001"
+}

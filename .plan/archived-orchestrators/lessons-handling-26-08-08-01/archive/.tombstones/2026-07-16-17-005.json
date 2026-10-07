@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-16-17-005",
+  "removed_at": "2026-07-17T19:14:53.298573+00:00",
+  "reason": "residue promoted to manage-adr SKILL.md File Naming Convention section, parser and width fix shipped in manage-adr.py get_next_number and parse_adr_file, plan small-tooling-batch",
+  "status": "removed"
+}

@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-16-17-001",
+  "removed_at": "2026-07-17T08:25:52.120095+00:00",
+  "reason": "gaps B1/B2 shipped: verify:{verb} routing of unmapped orchestrator-tier verbs + --phase-5-steps documented marshal-authoritative (plan execution-manifest-gaps, PR #916)",
+  "status": "removed"
+}

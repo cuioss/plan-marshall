@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-17-11-001",
+  "removed_at": "2026-07-28T13:53:54.907647+00:00",
+  "reason": "phase-5-execute now always emits the Starting/Re-entering marker paired with the phase_5_first_entry_logged metadata write, pinned by test_execute_phase_markers.py (plan retrospective-completeness-and-phase5-marker)",
+  "status": "removed"
+}

@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-16-16-004",
+  "removed_at": "2026-07-17T07:22:41.174726+00:00",
+  "reason": "Push not HEAD-dependent, loop-back commit stranded unpushed. Remediated by branch-sync-state remote-comparison re-fire in Deliverable 1, rule codified in phase-6-finalize SKILL.md and push.md (plan finalize-commit-integrity, PR 914)",
+  "status": "removed"
+}

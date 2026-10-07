@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-30-21-001",
+  "removed_at": "2026-07-08T20:54:23.634364+00:00",
+  "reason": "Covered by D1 resolution_detail relational-integrity backstop keyed to parent hash_id (plan plan-4-find-triage, PR #852)",
+  "status": "removed"
+}

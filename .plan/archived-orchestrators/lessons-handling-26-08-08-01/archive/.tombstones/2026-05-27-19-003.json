@@ -1,0 +1,7 @@
+{
+  "lesson_id": "2026-05-27-19-003",
+  "removed_at": "2026-05-28T17:46:15.119333+00:00",
+  "reason": "Aggregated into Breaking-change refactors without migration shims yield structurally simpler edits (shared component plan-marshall:phase-3-outline)",
+  "status": "superseded",
+  "superseded_by": "2026-05-05-17-002"
+}

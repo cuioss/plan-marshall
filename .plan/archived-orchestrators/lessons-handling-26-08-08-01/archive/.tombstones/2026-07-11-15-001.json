@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-11-15-001",
+  "removed_at": "2026-08-02T22:09:59.634399+00:00",
+  "reason": "Rule promoted into ref-code-quality/standards/error-handling.md clause (d) by plan fail-closed-signal-integrity (PR #1082, merged b713fe4b9). NOTE the first retirement attempt this run was justified by a worked example that itself branched on a change flag and so demonstrated the anti-pattern the clause forbids. That example was corrected in the same PR - the GOOD example now branches on the success status and annotates both arms, so the succeeded-idempotently versus never-ran ambiguity this lesson names is genuinely covered rather than merely asserted",
+  "status": "removed"
+}

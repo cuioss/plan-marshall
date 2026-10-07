@@ -1,0 +1,7 @@
+{
+  "lesson_id": "2026-05-29-12-002",
+  "removed_at": "2026-05-29T15:23:26.467140+00:00",
+  "reason": "Aggregated into Migration helper scripts for in-flight refactors are an anti-pattern \u2014 prefer clean slate",
+  "status": "superseded",
+  "superseded_by": "2026-05-27-14-001"
+}

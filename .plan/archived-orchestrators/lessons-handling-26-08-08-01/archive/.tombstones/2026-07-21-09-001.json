@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-21-09-001",
+  "removed_at": "2026-07-27T15:47:47.494992+00:00",
+  "reason": "adaptive-cap self-report now unified with architecture-resolved bash_timeout_seconds via max(inner_timeout, config.min_timeout), and every engine now declares its own outer floor, closing the guarded mismatch (plan build-timeout-learned-value-truthfulness)",
+  "status": "removed"
+}

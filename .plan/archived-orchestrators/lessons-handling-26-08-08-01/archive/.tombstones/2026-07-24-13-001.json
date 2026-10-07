@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-24-13-001",
+  "removed_at": "2026-07-27T09:37:39.181518+00:00",
+  "reason": "D4 closed: pre-push-quality-gate.md now runs an unconditional whole-tree quality-gate arm naming all three dimensions (plugin-doctor static analysis, .claude/ ruff coverage, marketplace/targets SPDX coverage), not escalate-only, in lock-step across frontmatter description and both Mark-Step-Complete branches (plan finalize-dispatch-audit-integrity)",
+  "status": "removed"
+}

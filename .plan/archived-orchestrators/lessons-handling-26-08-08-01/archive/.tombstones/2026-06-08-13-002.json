@@ -1,0 +1,7 @@
+{
+  "lesson_id": "2026-06-08-13-002",
+  "removed_at": "2026-06-08T18:48:39.682052+00:00",
+  "reason": "Consolidated into the single config-discipline lesson 2026-06-08-20-001 (Rule 3: new input shape validated through its own boundary)",
+  "status": "superseded",
+  "superseded_by": "2026-06-08-20-001"
+}

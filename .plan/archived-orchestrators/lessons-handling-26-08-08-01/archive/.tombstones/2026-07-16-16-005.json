@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-16-16-005",
+  "removed_at": "2026-07-17T07:22:49.037965+00:00",
+  "reason": "Leaf done plus uncommitted deliverable. Remediated by worktree_dirty_at_boundary transition guard, settlement recovery, and commit-ownership contract in Deliverable 2, codified in _cmd_lifecycle.py, execution.md, execute-task SKILL.md (plan finalize-commit-integrity, PR 914)",
+  "status": "removed"
+}

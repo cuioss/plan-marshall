@@ -1,0 +1,7 @@
+{
+  "lesson_id": "2026-05-29-13-002",
+  "removed_at": "2026-05-29T15:23:25.296363+00:00",
+  "reason": "Aggregated into Unvalidated plan_id flows into filesystem move destination \u2014 path traversal in dormancy move",
+  "status": "superseded",
+  "superseded_by": "2026-05-29-13-001"
+}

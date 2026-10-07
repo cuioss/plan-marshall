@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-05-27-15-001",
+  "removed_at": "2026-05-29T10:57:53.032227+00:00",
+  "reason": "Already-done: proposed Option A fix shipped in PR #473 (a5287018, merged 2026-05-27); expected_invariants() is row-aware and TestDeferredMaterializationWindow passes (module-tests plan-marshall exit 0). Lesson is now redundant.",
+  "status": "removed"
+}

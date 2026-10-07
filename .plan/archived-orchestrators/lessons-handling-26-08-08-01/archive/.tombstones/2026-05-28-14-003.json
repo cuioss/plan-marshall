@@ -1,0 +1,7 @@
+{
+  "lesson_id": "2026-05-28-14-003",
+  "removed_at": "2026-05-28T17:47:50.718946+00:00",
+  "reason": "Aggregated into automated-review inline fix bypasses commit-push by marking done without loop_back when worktree is dirty (shared component plan-marshall:phase-6-finalize)",
+  "status": "superseded",
+  "superseded_by": "2026-05-27-17-004"
+}

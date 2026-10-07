@@ -1,0 +1,27 @@
+envelope_version=1
+sender_type=plan
+sender_id=output-volume-standard
+epic=operator-ux
+kind=candidate-lesson
+created=2026-09-03T16:08:36Z
+
+component=plan-marshall:phase-2-refine
+category=improvement
+
+# The all-dimensions-100 suspicion heuristic fires as the normal outcome, not as a signal
+
+## Observation
+
+The refine Q-Gate emitted a `triage` finding on plan `output-volume-standard` because Correctness, Completeness, Consistency, Non-Duplication, Ambiguity and Module Mapping all scored 100%. The check's own suspicion heuristic flags the maximal-across-all-dimensions pattern for review.
+
+The finding was resolved `taken_into_account` on two grounds: the one substantive premise it named (a stale PLAN-06 landing status) had already been independently verified three times, and the project's architecture-hints store already records this gate's all-dimensions-100 outcome as the NORMAL result and a standing consideration rather than a blocker.
+
+## Recommended rule
+
+A heuristic whose expected outcome on a clean run is "fires" is not a signal — it is a fixed cost. Either give it a discriminator that separates a genuinely suspicious maximal score from a routine one (e.g. fire only when no dimension recorded a resolved ISSUE anywhere in the phase, or only when the scoring agent recorded no judgment-resolved premise), or demote it from a Q-Gate finding to a work-log note. Recording the same disposition against the same heuristic on every clean plan trains the reader to dismiss the finding class.
+
+## Evidence
+
+- Plan: `output-volume-standard` (epic `operator-ux`)
+- Q-Gate finding `9fd59f`, phase `2-refine`, type `triage`
+- Resolution rationale cites project precedent in the architecture hints store recording this outcome as normal

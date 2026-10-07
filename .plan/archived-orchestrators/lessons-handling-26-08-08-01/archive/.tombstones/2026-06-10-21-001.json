@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-10-21-001",
+  "removed_at": "2026-06-11T09:25:59.821594+00:00",
+  "reason": "Fixed: cited extension.py sites (pm-dev-python/pm-documents/pm-dev-oci) now use the 'or []' idiom; present-null passthrough crash resolved",
+  "status": "removed"
+}

@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-09-19-001",
+  "removed_at": "2026-06-10T10:27:43.982924+00:00",
+  "reason": "Not live: both documented doc-glob drift instances were fixed in-run; remaining content was a prevention note (transcribe derived output), not an open defect",
+  "status": "removed"
+}

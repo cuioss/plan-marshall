@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-03-23-003",
+  "removed_at": "2026-06-09T07:01:17.936480+00:00",
+  "reason": "Fixed: whole-repo module-tests auto-routed to orchestrator execution_tier in the manifest composer (phase-4-plan SKILL.md:629)",
+  "status": "removed"
+}

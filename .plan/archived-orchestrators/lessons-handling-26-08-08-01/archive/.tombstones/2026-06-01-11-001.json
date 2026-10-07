@@ -1,0 +1,7 @@
+{
+  "lesson_id": "2026-06-01-11-001",
+  "removed_at": "2026-06-01T09:46:27.334294+00:00",
+  "reason": "Same defect class as 20-002's parallel-safety-blocker isolation leaks (test mutates a real shared .plan/ path without PLAN_BASE_DIR isolation). Folded into 20-002 as confirmed sibling #1 \u2014 the only such leak actively flaking in the field (N=4 plans).",
+  "status": "superseded",
+  "superseded_by": "2026-05-31-20-002"
+}

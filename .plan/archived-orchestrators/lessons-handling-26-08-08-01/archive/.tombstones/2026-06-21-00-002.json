@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-21-00-002",
+  "removed_at": "2026-07-08T20:54:25.071841+00:00",
+  "reason": "Covered by D6 mark-step-done key canonicalization + step-ownership manifest contract (plan plan-4-find-triage, PR #852)",
+  "status": "removed"
+}

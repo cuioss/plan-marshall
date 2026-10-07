@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-05-29-01-001",
+  "removed_at": "2026-05-29T10:08:58.064317+00:00",
+  "reason": "Superseded by PR #499 (merged 2026-05-29): all three string-heuristic defects (first-paragraph-only docstring inspection, sole-docstring SyntaxError, substring param matching) already remediated via AST-based _restates_signature_only/_param_names/_param_arg_nodes and pass-replacement in apply_signature_docstring_fix. Confirmed in-code by q-gate narrative-vs-code-validator.",
+  "status": "removed"
+}

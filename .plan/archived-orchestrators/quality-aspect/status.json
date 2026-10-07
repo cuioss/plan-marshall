@@ -1,0 +1,23 @@
+{
+  "kind": "orchestrator",
+  "title": "Quality-aspect: measurement integrity, gate residuals, and ledger joins",
+  "phase": "closed",
+  "workstreams": [
+    "WS-01",
+    "WS-02",
+    "WS-03",
+    "WS-04",
+    "WS-05",
+    "WS-06",
+    "WS-07",
+    "WS-08",
+    "WS-09"
+  ],
+  "plans": [],
+  "resume_anchor": "epic closed \u2014 merged into truthful-signals, see history.md",
+  "metadata": {
+    "parallelization_scope": "2"
+  },
+  "created": "2026-09-18T21:04:01Z",
+  "updated": "2026-09-21T21:38:29Z"
+}
