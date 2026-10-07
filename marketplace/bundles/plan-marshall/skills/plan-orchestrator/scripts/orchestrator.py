@@ -4793,7 +4793,9 @@ def _inbox_signal(slug: str) -> dict[str, Any]:
     :func:`_live_count`/validation rows the drain itself enumerates — no second
     derivation lives here. An absent ``inbox/`` is *could not look*, not
     *nothing queued* — it renders as ``missing`` and yields ``indeterminate``,
-    never a confident ``ready``.
+    never a confident ``ready``. A partially observed archive is the same kind
+    of could-not-look: ``archive_readable: False`` beside an empty queue is
+    unobservable closure, never proof of EMPTY or FINISHED.
     """
     counts = inbox_counts(_epic_root(slug, allow_archived=True) / INBOX_SUBDIR)
     if not counts.present:
@@ -4832,6 +4834,13 @@ def _inbox_signal(slug: str) -> dict[str, Any]:
             'inbox',
             NOT_READY,
             f'BLOCKED: {invalid_count} invalid message(s) decline the drain',
+            population,
+        )
+    if not listed.get('archive_readable', True):
+        return _signal(
+            'inbox',
+            READINESS_INDETERMINATE,
+            'archive/ could not be fully checked so closure is unobservable',
             population,
         )
     if closed_senders:

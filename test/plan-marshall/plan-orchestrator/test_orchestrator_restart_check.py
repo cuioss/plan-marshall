@@ -537,6 +537,32 @@ class TestInboxSignal:
         assert row['verdict'] != READY
         assert row['population'] == 'inbox/: missing'
 
+    def test_an_unreadable_archive_with_no_live_is_indeterminate_never_empty(self, plan_context, monkeypatch):
+        # An unreadable archive leaves closure unestablished: with no live and
+        # no invalid message the queue reads EMPTY only when the archive was
+        # fully checked, so a partial scan must yield indeterminate.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md')
+        _make_inbox(plan_context, queued=0)
+        monkeypatch.setattr(_orch, '_git_read', _git_stub())
+        original_list = _orch.cmd_inbox_list
+
+        def _partial_archive(args):
+            result = original_list(args)
+            assert result['live_count'] == 0, 'the arrangement queued a live message'
+            assert result['invalid_count'] == 0, 'the arrangement queued an invalid message'
+            result['archive_readable'] = False
+            result['closed_senders'] = []
+            return result
+
+        monkeypatch.setattr(_orch, 'cmd_inbox_list', _partial_archive)
+
+        row = _signal_row(_run(), 'inbox')
+
+        assert row['verdict'] == INDETERMINATE
+        assert row['verdict'] != READY
+        assert 'closure is unobservable' in row['evidence']
+
 
 class TestWorktreeSignal:
     def test_a_clean_worktree_is_ready_and_names_its_head(self, plan_context, monkeypatch):
