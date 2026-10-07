@@ -672,9 +672,13 @@ class Partition:
     def lifecycle_resolved(self) -> tuple[ModuleVerdict, ...]:
         """Every module an owner was found for by retiring a finished plan's claim.
 
-        These are exactly the modules that would read ``contested`` without the
-        lifecycle input, so the population is the input's own effect, measurable
-        per instance rather than asserted as a shrunken total.
+        Each of these would read ``contested`` without the lifecycle input, so
+        the population is measurable per instance rather than asserted as a
+        shrunken total. It is ONE of the input's two effects: a module every
+        claimant of which is finished gets no owner at all and is ``settled`` —
+        read those with ``with_verdict(VERDICT_SETTLED)``. The two are kept
+        apart because a row here always names an owner and a settled row never
+        does.
         """
         return tuple(module for module in self.modules if module.retired and module.verdict == VERDICT_CLAIMED)
 

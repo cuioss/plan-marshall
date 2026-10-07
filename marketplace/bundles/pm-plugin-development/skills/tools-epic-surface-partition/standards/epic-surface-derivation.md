@@ -399,10 +399,13 @@ either — and a rule that quietly picked one would look exactly like a correct
 attribution while inventing an ownership no plan has earned. That overlap is the
 residual the derivation exists to surface, so it survives every rule.
 
-⛔ **A module every one of whose claimants is finished is not narrowed either.**
-This is the same refusal read in the other direction: with no live claimant left
-standing there is no one to narrow to, and narrowing to nothing would manufacture
-an ownerless module out of one that several plans really did claim.
+⛔ **A module every one of whose claimants is finished is `settled`, and no
+winner is picked there either.** With no live claimant left standing there is no
+one to narrow to, so the module is neither handed to one of the finished plans
+nor reported `unclaimed` — several plans really did claim it. It is not
+`contested` either: nobody competes for it, and a follow-up plan finishing its
+predecessor's slice is the normal case, not a disagreement. Its verdict rests on
+no plan, and every finished claim is recorded in `retired`.
 
 The retired claims are recorded beside the verdict as a separate fact, in the
 same way a sweep crossing is — a claim lifecycle set aside is **stated, never
