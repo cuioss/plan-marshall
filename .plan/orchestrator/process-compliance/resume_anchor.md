@@ -1,1 +1,1 @@
-2026-10-07 CLEANUP DONE: 0 applied 5 declined, compact ok, archive refused, restart not_ready on held opencode-003. Emitted PLAN-17 plus PLAN-19 still await operator launch. Next: run the two emitted commands, analyze each landing, then next block.
+2026-10-07 CLEANUP second pass DONE: 0 applied 5 declined, compact ok, archive refused, restart not_ready on held opencode-003. Emitted PLAN-17 plus PLAN-19 still await operator launch. Next: run the two emitted commands, analyze each landing, then next block.

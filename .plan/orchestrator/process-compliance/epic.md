@@ -522,3 +522,7 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
     release + re-enqueue + re-acquire; WARNING at hold time, uncontended so
     harmless. New evidence for PLAN-26 deliverable 3. Folded; expected surface
     unchanged (`manage-locks/`, `branch-cleanup.md` already declared).
+- **Drain 2026-10-07 third pass (1 finding: the held re-file, no new arrivals).**
+  `opencode-bootstrap-executor-fix-003` archival refused a third time with the
+  same code; disposition stands, NOT re-applied. Still awaiting operator
+  `archive --as-name` recovery.
