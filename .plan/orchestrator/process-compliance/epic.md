@@ -367,6 +367,10 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
   --as-name` under a non-colliding sender-preserving name. Left un-archived by
   design so it stays visible to the next drain. Recurrence 2026-10-07: re-filed
   duplicate refused again with the same code; still awaiting the same recovery.
+  **Recovered 2026-10-07** on operator direction ("why not just remove"): retired
+  via `inbox archive --as-name` as `opencode-bootstrap-executor-fix-003-duplicate.md`
+  — both copies preserved, nothing clobbered, inbox now empty. Restart-check
+  verdict flipped to `ready` on this recovery.
 
 ## Watches
 
