@@ -1340,3 +1340,62 @@ class TestStreamClosureSurvivesDrain:
         assert refused['status'] == 'error'
         assert refused['error'] == 'stream_closed'
         assert marker in refused['message']
+
+
+# =============================================================================
+# (13) Partial archived scan keeps readable closures while staying unobservable
+# =============================================================================
+
+
+class TestArchivedPartialScanKeepsKnownClosures:
+    """A partial archived listing still yields its validating markers.
+
+    Regression guard for the gap where ``_archived_closed_senders`` returned
+    ``set(), False`` as soon as ``_all_archived_message_paths`` reported
+    ``readable False``, discarding the readable archived markers the scan had
+    already collected. The fixed derivation scans the returned paths anyway and
+    seeds observability from ``readable``, so known closures survive a partial
+    scan while the partial scan stays reported.
+    """
+
+    def _seed_archived_marker(self, inbox_dir, sender: str = CLOSED_SENDER, slug: str = READ_EPIC):
+        sender_dir = inbox_dir / 'archive' / sender
+        sender_dir.mkdir(parents=True)
+        text = _inbox.compose_envelope(
+            'plan',
+            sender,
+            slug,
+            'finding',
+            'closure note',
+            lifecycle=_inbox.LIFECYCLE_STREAM_END,
+        )
+        path = sender_dir / f'{sender}-001.md'
+        path.write_text(text, encoding='utf-8')
+        return path
+
+    def test_partial_archived_listing_still_yields_validating_marker(self, tmp_path, monkeypatch):
+        inbox_dir = tmp_path / 'inbox'
+        self._seed_archived_marker(inbox_dir)
+        original = _inbox._all_archived_message_paths
+
+        def _partial(inbox_dir_arg):
+            paths, _ = original(inbox_dir_arg)
+            assert paths, 'the arrangement produced no archived paths to survive the partial scan'
+            return paths, False
+
+        monkeypatch.setattr(_inbox, '_all_archived_message_paths', _partial)
+
+        closed, observable = _inbox._archived_closed_senders(inbox_dir, READ_EPIC)
+
+        assert CLOSED_SENDER in closed
+        assert observable is False
+
+    def test_readable_archived_listing_reports_observable(self, tmp_path):
+        """Matched control: the same marker on a full scan reads observable."""
+        inbox_dir = tmp_path / 'inbox'
+        self._seed_archived_marker(inbox_dir)
+
+        closed, observable = _inbox._archived_closed_senders(inbox_dir, READ_EPIC)
+
+        assert closed == {CLOSED_SENDER}
+        assert observable is True

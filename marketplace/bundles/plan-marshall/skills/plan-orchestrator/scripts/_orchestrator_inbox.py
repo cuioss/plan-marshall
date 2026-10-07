@@ -1855,9 +1855,7 @@ def _archived_closed_senders(inbox_dir: Path, epic: str) -> tuple[set[str], bool
 
     closed: set[str] = set()
     paths, readable = _all_archived_message_paths(inbox_dir)
-    if not readable:
-        return set(), False
-    observable = True
+    observable = readable
     for path in paths:
         try:
             text = path.read_text(encoding='utf-8')
