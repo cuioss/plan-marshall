@@ -1,8 +1,34 @@
 {
   "kind": "orchestrator",
   "title": "Live Blockers",
-  "phase": "init",
-  "workstreams": [],
+  "phase": "orchestrating",
+  "workstreams": [
+    {
+      "id": "WS-01",
+      "slug": "finalize-gates",
+      "title": "Finalize and Phase Gates"
+    },
+    {
+      "id": "WS-02",
+      "slug": "build-reliability",
+      "title": "Build Reliability"
+    },
+    {
+      "id": "WS-03",
+      "slug": "orchestrator-launch",
+      "title": "Orchestrator Launch Gate"
+    },
+    {
+      "id": "WS-04",
+      "slug": "harness-and-ci",
+      "title": "Harness Sync and CI"
+    },
+    {
+      "id": "WS-05",
+      "slug": "review-gate",
+      "title": "Automated Review Gate"
+    }
+  ],
   "metadata": {
     "parallelization_scope": "2"
   },

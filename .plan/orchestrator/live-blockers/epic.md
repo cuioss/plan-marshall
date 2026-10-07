@@ -46,6 +46,24 @@ requirements, specification and implementation-watch documents.
   surface in this repository, so the disjointness gate cannot order them against each other;
   LB-21's measurement should inform LB-20's rollout.
 
+- **Queue order** is staging order: PLAN-LB-14 first because it unblocks `next`, then the
+  small ready fixes (LB-01, LB-04, LB-07), then LB-03 before LB-02, LB-05 before LB-18, LB-18
+  before LB-19, and LB-21 before LB-20.
+- **Operator decisions the specs leave open** (each is a verify-first clause in its spec):
+  - PLAN-LB-14 — whether a sibling spec that is only `staged` or `parked` can block a launch.
+  - PLAN-LB-02 — how a plan already in finalize is read once the loop counter is per source.
+  - PLAN-LB-03 — "done, not covered" with a warning, or halt and ask.
+  - PLAN-LB-04 — write the PR title before the refine boundary, or defer the check to outline.
+  - PLAN-LB-08 — sticky resolutions with an opt-in reopen of `fixed`, or always reopen `fixed`.
+  - PLAN-LB-11 — how legitimate out-of-footprint edits by finalize steps get in.
+  - PLAN-LB-13 — what replaces `test -pl X -am` for modules using a sibling test-jar.
+  - PLAN-LB-15 — whether the sync may write Claude Code's plugin registry.
+  - PLAN-LB-16 — what to do if the organisation workflow release is not available.
+  - PLAN-LB-19 — whether Sourcery may lose its credit when its review is not of the merge commit.
+  - PLAN-LB-20 — the two `project.yml` schema decisions and cutting an organisation release.
+  - PLAN-LB-21 — running `gh`-based corpus scripts, posting `/review` on merged PRs, and the
+    roster decision itself.
+
 ## Decisions
 
 - 2026-10-07 — **Epic created by operator instruction** ("create an orchestrator for the
@@ -61,6 +79,16 @@ requirements, specification and implementation-watch documents.
   the same fix, its analysis was reused but every claim was re-read against HEAD and the scope
   cut to what removes the blocker, because the source specs were up to three weeks stale and
   bundled unrelated deliverables. Each spec names the source plan ids it carries forward.
+- 2026-10-07 — **Decomposed into 5 workstreams and 21 staged plans.** Spec bodies were drafted
+  by five read-only agents against HEAD `6edefac32` and adjudicated here: all 21 resolve a
+  declarative surface with no unresolved entry, none exceeds five deliverables, and none was
+  found already fixed. Scope-bloat guard: no split needed. Two specs were amended after
+  drafting — PLAN-LB-14's store figures (measured while the archived root was missing) and
+  PLAN-LB-11 (the #1700 deletion as evidence).
+- 2026-10-07 — **`.plan/archived-orchestrators/` restored.** PR #1700 had deleted all 2038 files
+  of the archived-epic tree from `main` as a side effect of a five-file fix. Restored
+  byte-identical from `78ba60f41^` in the ledger worktree before the eight closed epics were
+  archived into it. Not confirmed with the operator as accidental at the time of writing.
 
 ## Open Defects
 
