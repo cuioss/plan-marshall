@@ -92,6 +92,7 @@ something other than what it says:
 - `plan-12-tool-triage-021.md` (finding): deliverable 3
 - `plan-12-tool-triage-019.md` (finding): deliverable 4
 - PLAN-10 claim (a second same-sender inbox write silently replaced a live message; `implement-opencode-enforcement-parity-003`): deliverable 4 is its mechanism (the allocator reads a cwd-relative ledger copy). Ownership moved here at cleanup 2026-09-29; the regression test covers it
+- `issue-1697-004.md` (finding): merge-mutex hold spanned operator waits without the release + FIFO-re-enqueue + re-acquire cycle invariant 1 requires — recorded as WARNING at hold time, uncontended (`waiting_count=0`) so harmless here. New evidence for deliverable 3 (hold-window behavior at wait boundaries, including triage/CI-gate waits). Folded into deliverable 3; expected surface unchanged by this fold (`manage-locks/` and `branch-cleanup.md` already declared — recorded explicitly)
 
 ## Hand-Off Command
 

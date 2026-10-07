@@ -365,7 +365,8 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
   PLAN-23 at staging; recurrence noted in this drain's Watch entry) and is NOT
   re-applied. Recovery is operator-side: retire the live file via `inbox archive
   --as-name` under a non-colliding sender-preserving name. Left un-archived by
-  design so it stays visible to the next drain.
+  design so it stays visible to the next drain. Recurrence 2026-10-07: re-filed
+  duplicate refused again with the same code; still awaiting the same recovery.
 
 ## Watches
 
@@ -500,3 +501,24 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
     (13) two out-of-spec drive-by commits as landing blockers, named in commit
     messages. Auditable deviations, operator review flagged upstream. Absorbed as
     observed; no spec change.
+- **Drain 2026-10-07 (4 findings, no landings, no invalid; under operator "land now").**
+  - `issue-1697-001` (finding): Tier-1 `--request-text` verbatim breaks on real
+    issue bodies (backticks, quotes) — sharpest restatement of the PLAN-10
+    deliverable 3 gap, with argv-safe workaround and `--request-file` shape named.
+    Folded into PLAN-10 D3 as recurrence; expected surface unchanged.
+  - `issue-1697-002` (finding): light-lane pre-dispatch 2-refine closure refused by
+    the `refine_bare_transition` guard; run stopped, no unilateral exemption.
+    Folded into PLAN-10 deliverable 1 scope as recurrence; expected surface
+    unchanged.
+  - `issue-1697-003` (finding): light-lane pre-dispatch capture fails
+    `pr_title_missing`; run stopped, no invented title, no override. Direct PLAN-10
+    deliverable 1 recurrence. Folded; expected surface unchanged.
+  - `opencode-bootstrap-executor-fix-003` (finding): re-filed duplicate of the
+    archived PLAN-23 source; archival refused again (`archive_conflict`).
+    Disposition stands from staging, NOT re-applied; recurrence folded into the
+    Open Defect below. Left visible by design.
+- **Drain 2026-10-07 second pass (1 late arrival under operator "land now").**
+  - `issue-1697-004` (finding): merge-mutex hold spanned operator waits without
+    release + re-enqueue + re-acquire; WARNING at hold time, uncontended so
+    harmless. New evidence for PLAN-26 deliverable 3. Folded; expected surface
+    unchanged (`manage-locks/`, `branch-cleanup.md` already declared).
