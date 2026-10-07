@@ -604,11 +604,28 @@ the machinery that grades us.
 
 ## Open Defects
 
-- ⛔ **NEW 2026-10-05 — consuming a stream-end marker DESTROYS the closure it declares; the inbox has a
-  FINISHED state no durable surface can hold.** ⇒ **FILED as issue
-  [#1697](https://github.com/cuioss/plan-marshall/issues/1697)** together with the `restart-check` defect
-  below, since they share a subject — the two remedies are separate and the issue says it may be split.
-  Both entries stay here as this epic's own evidence trail; the issue is where the fix is tracked. Found by draining this epic's last message. Before the
+- ✅ **RESOLVED 2026-10-07 — both inbox defects fixed and merged as PR #1700 (`78ba60f41`); issue
+  [#1697](https://github.com/cuioss/plan-marshall/issues/1697) is closed.** ⚠ **Verified behaviourally on
+  this epic's own queue, not from the landing report** — which is the right test, because this epic's
+  inbox is the exact state both defects were found in.
+  - **Closure now survives the drain.** `inbox list` reports `count: 0`, `live_count: 0` and
+    `closed_senders: [cross-repo-telemetry-archive-and-analyze]` — the sender is named **with its marker
+    archived**, where before the fix this read `closed_senders: []`. The FINISHED zero is reachable after a
+    complete drain, which is precisely what the issue said was impossible. ⭐ **The fix also added a
+    coverage discriminator nobody asked for**: `archive_readable: true`, so an archive that could not be
+    scanned can never masquerade as *"no closed senders"* — the honest-zero discipline applied to the fix
+    itself.
+  - **`restart-check` now names the zero, not just the count.** Its inbox row reads
+    `ready, "FINISHED: 1 sender(s) closed (cross-repo-telemetry-archive-and-analyze) with no live
+    message", "inbox/: 0 live of 0 total and 1 closed and 0 invalid"`. ⭐ **That exceeds the remedy the
+    issue proposed** — it was asked to score on `live_count` and report the neighbours; it reports the
+    state by its vocabulary word with the whole population spelled out.
+  ⚠ **One observation from the fixing run, recorded as an instance rather than a complaint**: its own
+  `record-metrics` step reported **`40h31m / 0 tokens`** with every phase blank in the Phase Breakdown. A
+  measured `0` over an unread population — the founding defect of this epic — in the run that fixed two
+  instances of it. Exactly what `PLAN-PRQ-13`'s reports would classify `not_measured` rather than zero.
+  ⚠ The run also filed 4 `process-compliance` findings (`issue-1697-001`..`-004`), **including one against
+  itself** for holding the merge lock across operator waits. Found by draining this epic's last message. Before the
   drain the queue read `live_count: 0` with `closed_senders: [cross-repo-telemetry-archive-and-analyze]` —
   the **FINISHED** zero, meaning *that sender will send no more*. Archiving the marker, which is exactly
   what the drain contract prescribes for a `stream-end` row, moved it to `count: 0` with
@@ -620,9 +637,12 @@ the machinery that grades us.
   drain. ⚠ Harmless for this instance — the sender is a landed, archived plan that can never write — but it
   means `inbox write` would no longer refuse that sender with `stream_closed`. ⇒ **Not owned here**;
   `plan-orchestrator` inbox mechanics, same family as the two defects below.
-- ⛔ **NEW 2026-10-05 — `cleanup restart-check`'s inbox signal reads `count`, not `live_count`, so a
-  stream-end marker holds an epic at `not_ready` forever.** ⚠ **STILL REAL after the 2026-10-05 drain, and
-  the drain did not fix it.** Archiving the marker cleared the *instance* — the verdict is now `ready` with
+- ✅ **RESOLVED 2026-10-07 by PR #1700 — see the entry above for the verified behaviour.** The account
+  below is retained as the evidence trail: it is how the defect was found, and it carries the warning that
+  the green verdict after the 2026-10-05 drain was **not** resolution — which remained true for two days,
+  until the signal itself was fixed. ⛔ **The original entry read:** `cleanup restart-check`'s inbox signal
+  reads `count`, not `live_count`, so a stream-end marker holds an epic at `not_ready` forever. ⚠ **STILL
+  REAL after the 2026-10-05 drain, and the drain did not fix it.** Archiving the marker cleared the *instance* — the verdict is now `ready` with
   `inbox: 0 queued and 51 archived` — but the defect is in the signal, not in the queue: any `stream-end`
   marker filed and not yet drained will hold its epic at `not_ready` again, and a FINISHED queue is by
   definition one that still holds its marker. ⛔ **Do not read the green verdict as this defect being
