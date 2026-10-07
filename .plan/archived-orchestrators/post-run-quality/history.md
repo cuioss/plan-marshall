@@ -157,6 +157,19 @@ is a lead, not a queue entry: nothing emits it any more.
 
 - none
 
+## Landed in parallel with the close
+
+One ledger landing from this epic's own session reached `main` while the close was being
+prepared (#1706). It was integrated into this tree before it was archived; the "Final state"
+block above predates it.
+
+- **Issue #1697 resolved and closed**: both inbox defects (a "sender finished" marker counted
+  as unread mail; closure lost after the drain) were fixed by PR #1700 and verified on this
+  epic's own queue.
+- **Settled-narrative relocation applied** (operator-confirmed): ten items moved verbatim from
+  `epic.md` to `settled.md` under "Resolved defects" and "Retired watches". The Open Defects
+  and Watches counts quoted above were taken before that move.
+
 ## Decision record
 
 `epic.md` § Decisions is the curated view; `logs/decision.log` is the append-only record. Both

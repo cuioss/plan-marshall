@@ -89,6 +89,17 @@ requirements, specification and implementation-watch documents.
   of the archived-epic tree from `main` as a side effect of a five-file fix. Restored
   byte-identical from `78ba60f41^` in the ledger worktree before the eight closed epics were
   archived into it. Not confirmed with the operator as accidental at the time of writing.
+- 2026-10-07 — **Integrated two parallel ledger landings (#1706, #1707)** that touched
+  `post-run-quality` and `process-compliance` after this epic's base. The local commits were
+  rebased onto them; the changed files were verified byte-identical in the archived trees, the
+  two generated views were restored from the closed-state render, and both history files gained
+  a "Landed in parallel with the close" section. Consequences here: `PLAN-LB-04` carries two new
+  recurrences as evidence; issue #1697 is fixed (struck in `backlog.md` § 3.3).
+- 2026-10-07 — **process-compliance `PLAN-17` not adopted, flagged.** That epic's session had
+  emitted `PLAN-17` and `PLAN-19` under an operator "land now" override; neither was launched.
+  `PLAN-19` is `PLAN-LB-06`. `PLAN-17` (clean-checkout assertions against concurrent ledger
+  writes) was ranked medium in the sweep and sits in `backlog.md` § 1.15. Whether to stage it
+  here is the operator's call, given the earlier land-now intent.
 
 ## Open Defects
 

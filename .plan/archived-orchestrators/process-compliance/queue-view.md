@@ -4,13 +4,8 @@
 
 ## START HERE
 
-<<<<<<< HEAD
-**Resume anchor**: 2026-10-07 READY: held opencode-003 retired as duplicate on operator direction, inbox empty, restart-check ready. Emitted PLAN-17 plus PLAN-19 await operator launch. Next: run the two emitted commands, analyze each landing, then next block.
-**Phase**: orchestrating
-=======
 **Resume anchor**: epic closed — see history.md
 **Phase**: closed
->>>>>>> a89c785c8 (chore(orchestrator): close eight epics, open live-blockers)
 **Parked**:
 - PLAN-08 (WS-03)
 - PLAN-09 (WS-03)

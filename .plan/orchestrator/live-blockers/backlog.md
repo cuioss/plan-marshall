@@ -107,7 +107,7 @@ The declared file list is written at outline time and never updated. The plugin-
 ### 1.15 Clean-checkout assertions stop a plan on other actors' writes — MEDIUM
 After init, refine, outline and plan the workflow demands an empty `git status` on the main checkout and tells the agent to revert what it finds. Sibling plans legitimately write there. Partly eased by the shared ledger worktree; the text is unchanged.
 - Category A, C. Verified: `plan-marshall/workflow/planning.md:166-172,442-477`.
-- Sources: PC PLAN-17 D1 (staged). Spec ready; re-check the premise. Size M.
+- Sources: PC PLAN-17 D1. Spec ready; re-check the premise. Size M. Note: process-compliance had emitted PLAN-17 under an operator "land now" override on 2026-10-07 and it was never launched; that epic is closed, so promoting this item means staging it here.
 
 ### 1.16 Phase handshake reports drift when findings are resolved normally — MEDIUM
 Pending-finding counts are compared strictly at each boundary, so resolving a finding at a review gate produces `drift` and needs two override calls the workflow does not mention.
@@ -241,7 +241,7 @@ The block the steward writes ignores `.plan/*` and re-admits three paths, none o
 ### 3.3 Emission and readiness checks — MEDIUM to LOW
 - The free-slot count looks only at `launched` rows, the restart check only at `running` rows; each misses the other state. Verified: `orchestrate.md:81`, `orchestrator.py:4688,4704`.
 - A `###` sub-heading inside "Expected Surface" hides the entries below it. Verified: `epic_spec_parser.py:464-480`.
-- A "sender finished" marker counts as unread mail and blocks readiness; draining it erases the closure. Issue #1697 is open. Verified: `orchestrator.py:4804`. This matters for archiving nine epics.
+- ~~A "sender finished" marker counts as unread mail and blocks readiness; draining it erases the closure.~~ FIXED by PR #1700; issue #1697 is closed and the fix was verified on a live queue.
 - `manage-status list` still shows the plan-less sentinel as in progress.
 - An unreadable main-checkout config silently falls back to the primary checkout. Verified: `orchestrator_worktree.py:116-138`.
 - `worktree-rebase-to` has no reserved-key check for the ledger worktree.

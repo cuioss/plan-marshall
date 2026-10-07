@@ -74,6 +74,7 @@ PLAN-10 deliverable D1.
 - Verify-first clause: reproduce `pr_title_missing` on the documented light-lane sequence at HEAD before changing anything. If a producer has appeared since, close Deliverable 1 with that finding and keep Deliverables 2 and 3.
 - Verify-first clause: settle at outline whether the orchestrator can author a good-enough title before any code is read. The default is yes, from the request narrative, with the envelope free to overwrite it; if the outline rejects that, the alternative is to move the `2-refine` capture's `pr_title` requirement to the `3-outline` boundary for light-lane plans only — a change to the invariant that needs the operator's agreement, because it is the one option that relaxes a gate.
 - Verify-first clause: build the Deliverable 2 matrix from Step 13 and the invariant registry before scoping; whatever it finds beyond `pr_title` and `track` is in scope only if it stops a light-lane plan at a boundary. Anything else is reported, not fixed here.
+- OBSERVED: both halves of this defect recurred on 2026-10-07 in the plan run for issue #1697 and stopped it twice: the light-lane pre-dispatch `phase_handshake capture` failed `pr_title_missing`, and the pre-dispatch `2-refine` closure was refused by the `refine_bare_transition` guard; the run stopped both times instead of inventing a title or passing an override — read at `.plan/archived-orchestrators/process-compliance/inbox/archive/issue-1697/issue-1697-002.md` and `issue-1697-003.md`
 
 ## Expected Surface
 

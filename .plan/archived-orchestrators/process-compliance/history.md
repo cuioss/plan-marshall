@@ -168,7 +168,28 @@ is a lead, not a queue entry: nothing emits it any more.
 
 ### Inbox messages undrained at close
 
-- `inbox/opencode-bootstrap-executor-fix-003.md`
+- none
+
+## Landed in parallel with the close
+
+Two ledger landings from this epic's own session reached `main` while the close was being
+prepared (#1706, #1707). They were integrated into this tree before it was archived; the
+"Final state" block above predates them.
+
+- **Drain of four `issue-1697-*` findings**, folded as recurrences into `PLAN-10` (deliverables
+  1 and 3) and `PLAN-26` (deliverable 3); messages archived under `inbox/archive/issue-1697/`.
+  The two light-lane findings (`-002`, `-003`) are carried as evidence in `PLAN-LB-04`.
+- **`opencode-bootstrap-executor-fix-003` retired as a duplicate** on operator direction; the
+  inbox was empty at archive.
+- **`PLAN-17` and `PLAN-19` were emitted under an operator "land now" override and never
+  launched** (`auto_emit` false; both rows stayed non-`launched`). `PLAN-19` is `transferred`
+  and is carried by `PLAN-LB-06`; its emitted command is void. `PLAN-17` (concurrent-plan
+  isolation) is NOT staged in `live-blockers` — it is in that epic's `backlog.md` § 1.15 and
+  its emitted command is void with this epic closed. The operator's land-now intent for
+  `PLAN-17` is recorded here so it is not lost.
+- The resume anchor on `main` before the close read: "READY: held opencode-003 retired as
+  duplicate on operator direction, inbox empty, restart-check ready. Emitted PLAN-17 plus
+  PLAN-19 await operator launch."
 
 ## Decision record
 
