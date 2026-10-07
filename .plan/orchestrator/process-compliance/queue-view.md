@@ -4,7 +4,7 @@
 
 ## START HERE
 
-**Resume anchor**: 2026-10-07 DRAIN plus OVERRIDE-EMIT: 5 findings drained, 4 archived, opencode-003 still held. 4 folds into PLAN-10x3 and PLAN-26x1, surfaces verified unchanged. Emitted PLAN-17 plus PLAN-19 under operator land-now override, pairwise disjoint in-corpus, deps satisfied. auto_emit false: launched transitions await operator launch confirmation. Next: run the two emitted commands, analyze each landing, then next block.
+**Resume anchor**: 2026-10-07 READY: held opencode-003 retired as duplicate on operator direction, inbox empty, restart-check ready. Emitted PLAN-17 plus PLAN-19 await operator launch. Next: run the two emitted commands, analyze each landing, then next block.
 **Phase**: orchestrating
 **Parked**:
 - PLAN-08 (WS-03)

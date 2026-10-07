@@ -367,6 +367,10 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
   --as-name` under a non-colliding sender-preserving name. Left un-archived by
   design so it stays visible to the next drain. Recurrence 2026-10-07: re-filed
   duplicate refused again with the same code; still awaiting the same recovery.
+  **Recovered 2026-10-07** on operator direction ("why not just remove"): retired
+  via `inbox archive --as-name` as `opencode-bootstrap-executor-fix-003-duplicate.md`
+  — both copies preserved, nothing clobbered, inbox now empty. Restart-check
+  verdict flipped to `ready` on this recovery.
 
 ## Watches
 
@@ -522,3 +526,7 @@ with every remaining gap a logged, visible exemption rather than a silent slip.
     release + re-enqueue + re-acquire; WARNING at hold time, uncontended so
     harmless. New evidence for PLAN-26 deliverable 3. Folded; expected surface
     unchanged (`manage-locks/`, `branch-cleanup.md` already declared).
+- **Drain 2026-10-07 third pass (1 finding: the held re-file, no new arrivals).**
+  `opencode-bootstrap-executor-fix-003` archival refused a third time with the
+  same code; disposition stands, NOT re-applied. Still awaiting operator
+  `archive --as-name` recovery.
