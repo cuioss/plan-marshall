@@ -67,7 +67,7 @@ def _stage_make_args(pr_number: int, plan_id: str):
     return a
 
 
-_SOURCERY_1014_REFUSAL = (
+_SOURCERY_SIZE_LIMIT_REFUSAL = (
     'Sourcery was unable to review this pull request because '
     'your pull request is larger than the review limit of 150000 characters. '
     'Reduce the size of the pull request and request another review.'
@@ -344,7 +344,7 @@ class TestRefusalNoticeProducerFilter:
     never sees.
     """
 
-    def test_sourcery_1014_refusal_recognized_via_registry_data_layer(self):
+    def test_sourcery_size_limit_refusal_recognized_via_registry_data_layer(self):
         """The Sourcery size-limit refusal is seen ONLY because it is filed as data.
 
         This is the case that regressed. The structural recognizer does not match
@@ -357,13 +357,13 @@ class TestRefusalNoticeProducerFilter:
         from _github_pr import _is_rate_limit_notice, _is_refusal_notice
 
         # The structural last-resort layer is BLIND to this phrasing...
-        assert not _is_rate_limit_notice(_SOURCERY_1014_REFUSAL)
+        assert not _is_rate_limit_notice(_SOURCERY_SIZE_LIMIT_REFUSAL)
         # ...so the registry data layer is what recognizes it, bot-scoped.
-        assert _is_refusal_notice(_SOURCERY_1014_REFUSAL, 'sourcery')
+        assert _is_refusal_notice(_SOURCERY_SIZE_LIMIT_REFUSAL, 'sourcery')
         # And it stays bot-scoped: the same text from another bot or a human is
         # not cross-matched by Sourcery's marker.
-        assert not _is_refusal_notice(_SOURCERY_1014_REFUSAL, 'coderabbit')
-        assert not _is_refusal_notice(_SOURCERY_1014_REFUSAL, None)
+        assert not _is_refusal_notice(_SOURCERY_SIZE_LIMIT_REFUSAL, 'coderabbit')
+        assert not _is_refusal_notice(_SOURCERY_SIZE_LIMIT_REFUSAL, None)
 
     def test_coderabbit_review_limit_refusal_recognized(self):
         """CodeRabbit's review-summary ``Review limit reached`` notice is a refusal."""
@@ -452,9 +452,9 @@ class TestRefusalNoticeProducerFilter:
         assert _is_refusal_notice(_SOURCERY_WEEKLY_QUOTA_REFUSAL, 'sourcery')
         # The two modes are genuinely distinct: neither registry marker spans both.
         markers = bot_registry.refusal_patterns('sourcery')
-        matched_by_size_ceiling = [m for m in markers if m in _SOURCERY_1014_REFUSAL]
+        matched_by_size_ceiling = [m for m in markers if m in _SOURCERY_SIZE_LIMIT_REFUSAL]
         matched_by_weekly_quota = [m for m in markers if m in _SOURCERY_WEEKLY_QUOTA_REFUSAL]
-        assert matched_by_size_ceiling, 'the #1014 size-ceiling refusal must stay registered'
+        assert matched_by_size_ceiling, 'the size-ceiling refusal must stay registered'
         assert matched_by_weekly_quota, 'the weekly-quota refusal must be registered too'
         assert not set(matched_by_size_ceiling) & set(matched_by_weekly_quota)
 
@@ -471,7 +471,7 @@ class TestRefusalNoticeProducerFilter:
         registry-recognized bodies below returned True here.
         """
         for body in (
-            _SOURCERY_1014_REFUSAL,
+            _SOURCERY_SIZE_LIMIT_REFUSAL,
             _SOURCERY_WEEKLY_QUOTA_REFUSAL,
             _CODERABBIT_REVIEW_LIMIT_REFUSAL,
             _CODERABBIT_COMMAND_REPLY_REFUSAL,
@@ -521,7 +521,7 @@ class TestRefusalNoticeProducerFilter:
                 'id': 'R1',
                 'kind': 'issue_comment',
                 'author': 'sourcery-ai',
-                'body': _SOURCERY_1014_REFUSAL,
+                'body': _SOURCERY_SIZE_LIMIT_REFUSAL,
                 'path': '',
                 'line': 0,
                 'thread_id': '',
