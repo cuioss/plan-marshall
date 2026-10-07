@@ -1,1 +1,1 @@
-2026-10-07 READY: held opencode-003 retired as duplicate on operator direction, inbox empty, restart-check ready. Emitted PLAN-17 plus PLAN-19 await operator launch. Next: run the two emitted commands, analyze each landing, then next block.
+epic closed — see history.md

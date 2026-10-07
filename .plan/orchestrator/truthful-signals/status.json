@@ -1,7 +1,7 @@
 {
   "kind": "orchestrator",
   "title": "Truthful Signals & Machinery Integrity",
-  "phase": "orchestrating",
+  "phase": "closed",
   "workstreams": [
     {
       "id": "WS-01",

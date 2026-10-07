@@ -1,7 +1,7 @@
 {
   "kind": "orchestrator",
   "title": "Next Level: measured instruction substrate",
-  "phase": "orchestrating",
+  "phase": "closed",
   "workstreams": [
     {
       "id": "WS-01",

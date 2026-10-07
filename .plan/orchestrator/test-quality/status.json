@@ -1,7 +1,7 @@
 {
   "kind": "orchestrator",
   "title": "test-quality: house style and reduction of the Python test corpus",
-  "phase": "orchestrating",
+  "phase": "closed",
   "workstreams": [
     "WS-01-standards-and-harness-foundation",
     "WS-02-slice-reduction",

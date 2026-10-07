@@ -1,7 +1,7 @@
 {
   "kind": "orchestrator",
   "title": "Orchestrator Substrate Refactor",
-  "phase": "orchestrating",
+  "phase": "closed",
   "workstreams": [
     {
       "id": "WS-01",

@@ -1,7 +1,7 @@
 {
   "kind": "orchestrator",
   "title": "Automated PR review apparatus reliability",
-  "phase": "orchestrating",
+  "phase": "closed",
   "workstreams": [
     "WS-01-await-and-participation-detection",
     "WS-02-org-workflow-gates",

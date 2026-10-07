@@ -1,16 +1,48 @@
-<!-- GENERATED FILE — never hand-edit. Rendered from this epic's ledger (status.json, resume_anchor.md, queue/*.json) by `orchestrator regenerate-view --slug process-compliance`. On a merge conflict in this file, do not merge it by hand: merge the source files, run `orchestrator regenerate-view --slug process-compliance`, and `git add` the result. -->
+# History: Process compliance — make rule-following structural, especially on opencode
 
-# Queue view: Process compliance: make rule-following structural, especially on opencode
+slug: process-compliance
+closed: 2026-10-07
 
-## START HERE
+> Frozen record of the epic at close. `epic.md`, the queue rows, the specs, the landings, the
+> inbox and the logs stay in this tree untouched; this file is the summary a later reader
+> starts from. Close freezes and never deletes.
 
-<<<<<<< HEAD
-**Resume anchor**: 2026-10-07 READY: held opencode-003 retired as duplicate on operator direction, inbox empty, restart-check ready. Emitted PLAN-17 plus PLAN-19 await operator launch. Next: run the two emitted commands, analyze each landing, then next block.
+## Closing rationale
+
+Closed by operator instruction on 2026-10-07. plan-marshall's workflow machinery is being
+rewritten as plan-marshall-mcp, which supersedes most of this epic's staged and parked work.
+The work that still matters for plan-marshall itself — defects that block or mislead a normal
+run today, and high-priority work on things the rewrite does not replace — was cut into the
+successor epic `live-blockers` (`.plan/orchestrator/live-blockers/`). Everything else was
+left where it stood.
+
+## Vision as pursued
+
+Across three shipped finalize-machinery plans, every run observed the same governing
+pattern: prevention failed everywhere, detection-and-correction worked everywhere.
+Agents rationalized around prose rules (five simultaneously in force), fell back to
+improvisation wherever the compliant path did not cover the use case, and needed
+repeated nudges for invariants already recorded as active corrections — worst on the
+opencode target, where Claude affordances (session identity, transcripts, hooks) do
+not exist and the abstraction leaks them as hard blocks. This epic moves each guard
+from the boundary where the damage is already done to the earliest point where the
+deviation is decidable, so rule-following is structural rather than disciplinary.
+Too large for one plan: it spans transition gates, worktree machinery, generator and
+wrapper contracts, dispatch registries, persona behavior rules, and opencode-specific
+abstraction repairs. Done looks like a run that cannot skip phases, cannot dirty
+main, cannot invent invocations, and cannot strand on missing Claude concepts —
+with every remaining gap a logged, visible exemption rather than a silent slip.
+
+## Final state
+
+The two blocks below are the generated view at close, verbatim.
+
+### Queue view: Process compliance: make rule-following structural, especially on opencode
+
+#### START HERE
+
+**Resume anchor**: 2026-10-02 NEXT gate-checked: 0 of 2 slots emitted. Prep-ready passes corpus-wide, blocking_count 0. Disjoint fails closed: comparison indeterminate plus 100-plus sibling overlaps per staged spec. Nothing launched. Next: operator decides override-emit in queue order, narrow scope, or close epic. 1 inbox message still queued on archive_conflict.
 **Phase**: orchestrating
-=======
-**Resume anchor**: epic closed — see history.md
-**Phase**: closed
->>>>>>> a89c785c8 (chore(orchestrator): close eight epics, open live-blockers)
 **Parked**:
 - PLAN-08 (WS-03)
 - PLAN-09 (WS-03)
@@ -41,7 +73,7 @@
 - PLAN-24 (WS-07) — status: transferred
 - PLAN-25 (WS-05) — status: transferred
 
-## Ordered Queue
+#### Ordered Queue
 
 | # | Plan | Workstream | Status | Surface (expected) |
 |---|------|------------|--------|--------------------|
@@ -58,3 +90,87 @@
 | 11 | PLAN-23 | WS-07 | staged | build.py; marketplace/bundles/plan-marshall/skills/build-pyproject/scripts/; marketplace/bundles/plan-marshall/skills/build-server-client/; marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md; marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_cmd_pre_commit_verify_freshness.py; marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_freshness_crosscheck.py; marketplace/bundles/plan-marshall/skills/phase-5-execute/; marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/ci_complete_precondition.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/ci-verify.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/pre-push-quality-gate.md; marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/await-long-running.md; marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/execution.md; marketplace/bundles/plan-marshall/skills/script-shared/scripts/build/_build_examined.py; marketplace/bundles/plan-marshall/skills/script-shared/scripts/build/_build_execute_factory.py; pyproject.toml; test/plan-marshall/manage-tasks/; test/plan-marshall/phase-6-finalize/ |
 | 12 | PLAN-26 | WS-02 | staged | marketplace/bundles/plan-marshall/skills/manage-locks/scripts/; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/branch-cleanup.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/_orchestrator_inbox.py; marketplace/bundles/plan-marshall/skills/tools-file-ops/scripts/file_ops.py; marketplace/bundles/plan-marshall/skills/tools-file-ops/scripts/orchestrator_worktree.py; marketplace/bundles/plan-marshall/skills/workflow-integration-git/SKILL.md; marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py; marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/integrate_into_main.py; test/plan-marshall/manage-locks/; test/plan-marshall/plan-orchestrator/; test/plan-marshall/workflow-integration-git/ |
 | 13 | PLAN-27 | WS-05 | staged | marketplace/bundles/plan-marshall/agents/execution-context-reader.md; marketplace/bundles/plan-marshall/agents/execution-context.md; marketplace/bundles/plan-marshall/skills/manage-findings/scripts/; marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md; marketplace/bundles/plan-marshall/skills/phase-5-execute/scripts/scope_creep_check.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md; marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/execution.md; marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/agents.md; marketplace/bundles/plan-marshall/skills/tools-file-ops/scripts/constants.py; test/plan-marshall/manage-findings/; test/plan-marshall/phase-5-execute/ |
+
+## Queue outcome
+
+27 plans: 10 shipped, 4 closed unshipped, 4 parked, 9 at another status.
+
+### Shipped
+
+| Plan | Slug | Status | PR |
+|---|---|---|---|
+| PLAN-01 | phase-gates | shipped | 1540 |
+| PLAN-02 | worktree-discipline | shipped | 1547 |
+| PLAN-03 | compliant-paths | shipped | 1542 |
+| PLAN-04 | persona-behavior | shipped | 1556 |
+| PLAN-05 | dispatch-envelopes | shipped | 1583 |
+| PLAN-06 | dispatch-roster | shipped | 1606 |
+| PLAN-07 | opencode-repairs | shipped | 1554 |
+| PLAN-12 | tool-triage | shipped | 1654 |
+| PLAN-13 | finalize-mechanism-defects | shipped | 1651 |
+| PLAN-15 | opencode-enforcement-parity | shipped | 1618 |
+
+### Closed unshipped
+
+| Plan | Slug | Status |
+|---|---|---|
+| PLAN-19 | execute-verification-loop | transferred |
+| PLAN-20 | self-review-convergence | transferred |
+| PLAN-24 | review-and-pr-record-integrity | transferred |
+| PLAN-25 | build-routing-integrity | transferred |
+
+### Parked at close
+
+| Plan | Slug | Status |
+|---|---|---|
+| PLAN-08 | process-contracts | parked |
+| PLAN-09 | store-access | parked |
+| PLAN-11 | landing-facts | parked |
+| PLAN-14 | persona-conduct-lessons | parked |
+
+### Other status at close
+
+| Plan | Slug | Status |
+|---|---|---|
+| PLAN-10 | entry-capture | staged |
+| PLAN-16 | init-lane-fidelity | staged |
+| PLAN-17 | concurrent-plan-isolation | staged |
+| PLAN-18 | outline-lane-contracts | staged |
+| PLAN-21 | finalize-step-accounting | staged |
+| PLAN-22 | runtime-state-path-migration | staged |
+| PLAN-23 | push-boundary-evidence | staged |
+| PLAN-26 | git-and-worktree-contracts | staged |
+| PLAN-27 | execute-guards-and-dispatch-header | staged |
+
+A row still `staged` or `parked` here was live work that did not finish before the close. It
+is a lead, not a queue entry: nothing emits it any more.
+
+## Carried into `live-blockers`
+
+- `PLAN-19` → `PLAN-LB-06`, `PLAN-20` → `PLAN-LB-02`, `PLAN-24` → `PLAN-LB-18` / `PLAN-LB-19`, `PLAN-25` → `PLAN-LB-12` (rows `transferred`).
+- `PLAN-23` D3 → `PLAN-LB-01`, D4 → `PLAN-LB-05`; its D1/D2 are in `backlog.md` § 2.8.
+- `PLAN-27` D1 → `PLAN-LB-07`; its D2 (dispatch header) is in `backlog.md` § 1.20.
+- `PLAN-21` D2 → `PLAN-LB-10`; the rest is in `backlog.md` §§ 1.13 and 1.20.
+- `PLAN-10` D1 → `PLAN-LB-04`.
+- Open defect "footprint gate treats `.plan/marshal.json` as docs-only" → `PLAN-LB-16`; "installed skill copy carries no workflow documents" → `PLAN-LB-17`.
+
+## Leads carried forward, not staged
+
+- The medium- and low-priority items found in this epic are listed with evidence in
+  `.plan/orchestrator/live-blockers/backlog.md`. They are unstaged.
+- `epic.md` § Open Defects (27 entries) and § Watches (8 entries) are frozen as they
+  stood. Entries not named above or in that backlog were judged to be design input for the
+  rewrite, refactors or measurements of machinery the rewrite replaces, or already fixed.
+- Design input for plan-marshall-mcp lives in that repository's requirements, specification
+  and `doc/implementation-watch/` documents. Ledger pointers to
+  `plan-marshall-mcp/doc/known-defects/…-carry-over.md` name a path that no longer exists.
+- `PLAN-16`, `PLAN-17`, `PLAN-18`, `PLAN-22` and `PLAN-26` are ready specs ranked medium; see `backlog.md` §§ 1.15, 1.18, 1.19, 1.24 and 4.10.
+
+### Inbox messages undrained at close
+
+- `inbox/opencode-bootstrap-executor-fix-003.md`
+
+## Decision record
+
+`epic.md` § Decisions is the curated view; `logs/decision.log` is the append-only record. Both
+are frozen in this tree.

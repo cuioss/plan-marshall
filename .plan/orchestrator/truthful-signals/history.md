@@ -1,11 +1,47 @@
-<!-- GENERATED FILE — never hand-edit. Rendered from this epic's ledger (status.json, resume_anchor.md, queue/*.json) by `orchestrator regenerate-view --slug truthful-signals`. On a merge conflict in this file, do not merge it by hand: merge the source files, run `orchestrator regenerate-view --slug truthful-signals`, and `git add` the result. -->
+# History: Truthful Signals & Machinery Integrity
 
-# Queue view: Truthful Signals & Machinery Integrity
+slug: truthful-signals
+closed: 2026-10-07
 
-## START HERE
+> Frozen record of the epic at close. `epic.md`, the queue rows, the specs, the landings, the
+> inbox and the logs stay in this tree untouched; this file is the summary a later reader
+> starts from. Close freezes and never deletes.
 
-**Resume anchor**: epic closed — see history.md
-**Phase**: closed
+## Closing rationale
+
+Closed by operator instruction on 2026-10-07. plan-marshall's workflow machinery is being
+rewritten as plan-marshall-mcp, which supersedes most of this epic's staged and parked work.
+The work that still matters for plan-marshall itself — defects that block or mislead a normal
+run today, and high-priority work on things the rewrite does not replace — was cut into the
+successor epic `live-blockers` (`.plan/orchestrator/live-blockers/`). Everything else was
+left where it stood.
+
+## Vision as pursued
+
+Close the recurring defect family in which a tool, gate, or hand-off reports a confident
+clean/complete signal while silently suppressing the caveat that makes it wrong — plus the adjacent
+family in which machinery silently loses information it was handed. Fix each instance at the tool
+layer rather than papering over symptoms. Done at the epic level means: every staged plan shipped or
+explicitly retired, no open instance of the flagship archetype, and the closing rename (PLAN-TRUTH-015)
+landed.
+
+2026-09-21: `quality-aspect` (the finalize-lane instance of this same defect archetype)
+merged in. Its 15 live plans joined this queue, renumbered PLAN-205..221 as workstreams
+`WS-QA-01` through `WS-QA-09`. Its terminal history (3 shipped rows, renumbered
+PLAN-204/210/212) and quality-aspect's own `history.md` are in the
+`truthful-signals-26-09-21` archive, alongside this epic's own 196 terminal rows split
+out on the same date.
+
+## Final state
+
+The two blocks below are the generated view at close, verbatim.
+
+### Queue view: Truthful Signals & Machinery Integrity
+
+#### START HERE
+
+**Resume anchor**: 2026-10-05: cui-http drain 014-020 (4 lessons 17-001..004, 3 discards). Live staged 8. Next: land ledger, then emit PLAN-TRUTH-187/172/186 when operator confirms launch.
+**Phase**: orchestrating
 **Parked**:
 - PLAN-TRUTH-145 (WS-01)
 - PLAN-TRUTH-146 (WS-01)
@@ -63,7 +99,7 @@
 - PLAN-TRUTH-179 (WS-01) — plan=truth-179-opencode-target-detection-landed — PR 1619 — landing=landings/PLAN-TRUTH-179.md — status: shipped
 - PLAN-TRUTH-186 (WS-01) — status: transferred
 
-## Ordered Queue
+#### Ordered Queue
 
 | # | Plan | Workstream | Status | Surface (expected) |
 |---|------|------------|--------|--------------------|
@@ -112,3 +148,117 @@
 | 43 | PLAN-TRUTH-184 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md; marketplace/bundles/pm-dev-frontend/.claude-plugin/plugin.json; marketplace/bundles/pm-dev-frontend/README.md; marketplace/bundles/pm-dev-frontend/skills/ext-self-review-javascript/; test/pm-dev-frontend/ext-self-review-javascript/ |
 | 44 | PLAN-TRUTH-185 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md; marketplace/bundles/pm-documents/.claude-plugin/plugin.json; marketplace/bundles/pm-documents/README.md; marketplace/bundles/pm-documents/skills/ext-self-review-documents/; test/pm-documents/ext-self-review-documents/ |
 | 45 | PLAN-TRUTH-187 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/gitignore_setup.py; test/plan-marshall/marshall-steward/ |
+
+## Queue outcome
+
+54 plans: 5 shipped, 4 closed unshipped, 39 parked, 6 at another status.
+
+### Shipped
+
+| Plan | Slug | Status | PR |
+|---|---|---|---|
+| PLAN-TRUTH-147 | a-lane-reports-green-yields-or-transitions-without-the-artifact-its-own-gate-requires | shipped | 1599 |
+| PLAN-TRUTH-161 | adr-number-allocation-reads-the-local-tree-so-two-branches-collide-invisibly | shipped | 1586 |
+| PLAN-TRUTH-168 | sync-defaults-reports-added-while-silently-reverting-a-deliberate-remove-step | shipped | 1674 |
+| PLAN-211 | baseline-reconcile | shipped | 1675 |
+| PLAN-TRUTH-179 | opencode-target-detection-landed-three-gaps-it-exposed-still-stand | shipped | 1619 |
+
+### Closed unshipped
+
+| Plan | Slug | Status |
+|---|---|---|
+| PLAN-TRUTH-167 | self-review-on-a-diff-no-resolvable-surfacer-applies-to-loops-to-the-ceiling-instead-of-reporting-not-covered | superseded |
+| PLAN-TRUTH-172 | the-lane-transition-lacks-the-arrival-path-and-the-artifacts-its-own-entry-gate-requires | transferred |
+| PLAN-TRUTH-178 | scope-creep-guard-emits-a-finding-type-the-ledger-rejects | transferred |
+| PLAN-TRUTH-186 | the-push-freshness-gate-refuses-the-pre-push-gates-own-green-builds | transferred |
+
+### Parked at close
+
+| Plan | Slug | Status |
+|---|---|---|
+| PLAN-TRUTH-145 | declarations-that-cannot-learn-and-cannot-go-stale | parked |
+| PLAN-TRUTH-146 | the-findings-ledger-one-vocabulary-and-an-experiment-told-from-a-regression | parked |
+| PLAN-TRUTH-149 | the-landing-payload-and-what-the-epic-learns-from-it | parked |
+| PLAN-TRUTH-150 | build-and-ci-verdicts-that-mislead-specifically-on-the-healthy-path | parked |
+| PLAN-TRUTH-151 | early-phase-gates-the-outline-parser-and-the-plan-tier-claim-write-back | parked |
+| PLAN-TRUTH-153 | tests-fixtures-and-detectors-that-cannot-fail-and-underived-completeness-claims | parked |
+| PLAN-TRUTH-154 | operator-facing-authority-surfaces-that-answer-confidently-and-wrongly | parked |
+| PLAN-TRUTH-155 | agent-facing-documentation-surfaces-and-the-live-plan-defect-sweep | parked |
+| PLAN-TRUTH-156 | mark-step-done-must-derive-head-at-completion-never-accept-it | parked |
+| PLAN-TRUTH-158 | a-missing-freshness-reconciliation-record-is-reported-as-un-built-source-drift | parked |
+| PLAN-TRUTH-159 | a-documented-finalize-step-command-this-repos-own-hook-denies | parked |
+| PLAN-TRUTH-160 | the-billing-cost-column-undercounts-output-five-fold-in-a-report-of-ten-non-comparable-figures | parked |
+| PLAN-TRUTH-162 | argparse-rejections-recur-despite-documented-signatures-the-canonical-hint-is-not-uniform | parked |
+| PLAN-TRUTH-163 | two-deferred-dispatch-workflow-pin-test-defects-from-plan-truth-157 | parked |
+| PLAN-TRUTH-164 | worktree-remove-leaves-use-worktree-and-worktree-path-stale | parked |
+| PLAN-TRUTH-165 | detect-suspicious-reports-a-clean-allow-list-while-the-harness-warns-on-every-startup | parked |
+| PLAN-TRUTH-169 | a-timeout-verdict-describes-the-wait-not-the-work-and-time-budgets-are-undeclared | parked |
+| PLAN-TRUTH-170 | the-finalize-seam-records-less-than-it-does-and-enforces-less-than-it-documents | parked |
+| PLAN-TRUTH-171 | state-writers-that-fabricate-collide-or-fail-silently | parked |
+| PLAN-TRUTH-173 | the-in-run-self-review-instrument-detector-reach-a-bounded-terminus-and-six-vacuity-modes | parked |
+| PLAN-TRUTH-174 | plan-retrospective-measurement-integrity | parked |
+| PLAN-TRUTH-175 | dispatch-and-phase-boundary-measurement-integrity | parked |
+| PLAN-TRUTH-176 | preflight-invocation-validator | parked |
+| PLAN-TRUTH-177 | orchestration-detection-fails-open-without-source-id | parked |
+| PLAN-205 | build-telemetry | parked |
+| PLAN-206 | verify-first-a | parked |
+| PLAN-207 | verify-first-b | parked |
+| PLAN-208 | review-yield-a | parked |
+| PLAN-209 | review-yield-b | parked |
+| PLAN-213 | plan-execute-mechanics | parked |
+| PLAN-214 | gates-anchors | parked |
+| PLAN-215 | worktree-paths | parked |
+| PLAN-216 | self-review-detectors | parked |
+| PLAN-217 | chat-signal-halt | parked |
+| PLAN-218 | testing-fidelity | parked |
+| PLAN-219 | finalize-self-review | parked |
+| PLAN-220 | cost-mergequeue | parked |
+| PLAN-221 | executor-target-fidelity | parked |
+| PLAN-TRUTH-180 | three-script-internal-error-recurrences-recovered-around-never-fixed | parked |
+
+### Other status at close
+
+| Plan | Slug | Status |
+|---|---|---|
+| PLAN-TRUTH-181 | self-review-surfacing-foundation-shared-envelope-and-per-content-class-dispatch | staged |
+| PLAN-TRUTH-182 | ext-self-review-java-the-java-domain-self-review-surfacer | staged |
+| PLAN-TRUTH-183 | ext-self-review-python-the-python-domain-self-review-surfacer | staged |
+| PLAN-TRUTH-184 | ext-self-review-javascript-the-javascript-domain-self-review-surfacer | staged |
+| PLAN-TRUTH-185 | ext-self-review-documents-the-asciidoc-and-markdown-self-review-surfacer | staged |
+| PLAN-TRUTH-187 | gitignore-setup-never-un-ignores-the-tracked-orchestrator-ledger | staged |
+
+A row still `staged` or `parked` here was live work that did not finish before the close. It
+is a lead, not a queue entry: nothing emits it any more.
+
+## Carried into `live-blockers`
+
+- `PLAN-TRUTH-186` → `PLAN-LB-01` (row `transferred`).
+- `PLAN-TRUTH-172` D2 → `PLAN-LB-04` (row `transferred`).
+- `PLAN-TRUTH-178` → `PLAN-LB-07` (row `transferred`).
+- `PLAN-TRUTH-181` D1–D3 → `PLAN-LB-03`; its D4–D7 and `PLAN-TRUTH-182` to `-185` (domain self-review surfacers) are not carried.
+- `PLAN-TRUTH-150` Maven deliverables (with archived `PLAN-TRUTH-122`) → `PLAN-LB-13`.
+- `PLAN-TRUTH-169` / `-162` wait procedures → `PLAN-LB-05`; `PLAN-TRUTH-170` `ci_verify` fold and D1 → `PLAN-LB-10`, D5 → `PLAN-LB-11`.
+- `PLAN-TRUTH-154` plugin-registry pin → `PLAN-LB-15`.
+- Inbox item `orchestrator-refactor-001.md` § 1 (launch gate) → `PLAN-LB-14`.
+
+## Leads carried forward, not staged
+
+- The medium- and low-priority items found in this epic are listed with evidence in
+  `.plan/orchestrator/live-blockers/backlog.md`. They are unstaged.
+- `epic.md` § Open Defects (58 entries) and § Watches (92 entries) are frozen as they
+  stood. Entries not named above or in that backlog were judged to be design input for the
+  rewrite, refactors or measurements of machinery the rewrite replaces, or already fixed.
+- Design input for plan-marshall-mcp lives in that repository's requirements, specification
+  and `doc/implementation-watch/` documents. Ledger pointers to
+  `plan-marshall-mcp/doc/known-defects/…-carry-over.md` name a path that no longer exists.
+- `PLAN-TRUTH-187` (steward `.gitignore` setup) and `PLAN-TRUTH-165` (permission checks) are ready and small but were ranked medium; they are in `backlog.md` §§ 3.2 and 2.4.
+- The token-reduction roadmap (`roadmap-token-reduction.md`) concerns machinery the rewrite replaces and is not carried.
+
+### Inbox messages undrained at close
+
+- `inbox/orchestrator-refactor-001.md`
+
+## Decision record
+
+`epic.md` § Decisions is the curated view; `logs/decision.log` is the append-only record. Both
+are frozen in this tree.

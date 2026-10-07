@@ -1,7 +1,7 @@
 {
   "kind": "orchestrator",
   "title": "Post-Run Quality Analysis",
-  "phase": "orchestrating",
+  "phase": "closed",
   "workstreams": [
     {
       "id": "WS-01",

@@ -1,7 +1,7 @@
 {
   "kind": "orchestrator",
   "title": "Code-Intelligence Substrate: how the system knows things about the codebase",
-  "phase": "orchestrating",
+  "phase": "closed",
   "workstreams": [
     {
       "id": "WS-01",

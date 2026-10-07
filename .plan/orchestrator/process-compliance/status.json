@@ -1,7 +1,7 @@
 {
   "kind": "orchestrator",
   "title": "Process compliance: make rule-following structural, especially on opencode",
-  "phase": "orchestrating",
+  "phase": "closed",
   "workstreams": [
     "WS-01",
     "WS-02",
