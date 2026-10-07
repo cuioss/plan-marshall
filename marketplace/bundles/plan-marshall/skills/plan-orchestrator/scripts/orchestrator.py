@@ -4786,10 +4786,16 @@ def _corpus_signal(slug: str) -> dict[str, Any]:
 
 
 def _inbox_signal(slug: str) -> dict[str, Any]:
-    """Inbox drain state, reusing :func:`inbox_counts`'s two-kinds-of-zero discriminator.
+    """Inbox drain state, scored on the drainable set from ``inbox list``.
 
-    An absent ``inbox/`` is *could not look*, not *nothing queued* — it renders
-    as ``missing`` and yields ``indeterminate``, never a confident ``ready``.
+    The reading is delegated to :func:`cmd_inbox_list`, so ``live_count``,
+    ``closed_senders`` and ``invalid_count`` come from the same
+    :func:`_live_count`/validation rows the drain itself enumerates — no second
+    derivation lives here. An absent ``inbox/`` is *could not look*, not
+    *nothing queued* — it renders as ``missing`` and yields ``indeterminate``,
+    never a confident ``ready``. A partially observed archive is the same kind
+    of could-not-look: ``archive_readable: False`` beside an empty queue is
+    unobservable closure, never proof of EMPTY or FINISHED.
     """
     counts = inbox_counts(_epic_root(slug, allow_archived=True) / INBOX_SUBDIR)
     if not counts.present:
@@ -4799,10 +4805,53 @@ def _inbox_signal(slug: str) -> dict[str, Any]:
             'inbox/ is absent so the queue could not be looked at',
             'inbox/: missing',
         )
-    population = f'inbox/: {counts.queued} queued and {counts.archived} archived'
-    if counts.queued:
-        return _signal('inbox', NOT_READY, f'{counts.queued} message(s) still queued', population)
-    return _signal('inbox', READY, 'no queued message', population)
+    listed = cmd_inbox_list(argparse.Namespace(slug=slug))
+    if listed.get('status') != 'success':
+        return _signal(
+            'inbox',
+            READINESS_INDETERMINATE,
+            'inbox/ could not be enumerated so drain readiness is unobservable',
+            'inbox/: unreadable',
+        )
+    if listed.get('inbox_state') != 'present':
+        return _signal(
+            'inbox',
+            READINESS_INDETERMINATE,
+            'inbox/ is absent so the queue could not be looked at',
+            'inbox/: missing',
+        )
+    live_count = int(listed.get('live_count', 0))
+    invalid_count = int(listed.get('invalid_count', 0))
+    total = int(listed.get('count', 0))
+    closed_senders = list(listed.get('closed_senders', []))
+    population = (
+        f'inbox/: {live_count} live of {total} total and {len(closed_senders)} closed and {invalid_count} invalid'
+    )
+    if live_count:
+        return _signal('inbox', NOT_READY, f'{live_count} message(s) still queued', population)
+    if invalid_count:
+        return _signal(
+            'inbox',
+            NOT_READY,
+            f'BLOCKED: {invalid_count} invalid message(s) decline the drain',
+            population,
+        )
+    if not listed.get('archive_readable', True):
+        return _signal(
+            'inbox',
+            READINESS_INDETERMINATE,
+            'archive/ could not be fully checked so closure is unobservable',
+            population,
+        )
+    if closed_senders:
+        names = '; '.join(closed_senders)
+        return _signal(
+            'inbox',
+            READY,
+            f'FINISHED: {len(closed_senders)} sender(s) closed ({names}) with no live message',
+            population,
+        )
+    return _signal('inbox', READY, 'EMPTY: no live and no invalid message', population)
 
 
 def _worktree_signal() -> dict[str, Any]:
