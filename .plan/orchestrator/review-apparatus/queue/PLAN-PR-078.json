@@ -2,9 +2,9 @@
   "id": "PLAN-PR-078",
   "slug": "cuioss-review-bot-fleet-opt-in-and-legacy-config-removal",
   "workstream": "WS-02",
-  "status": "staged",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "plan_marshall_plan_id": "plan-pr-078-review-bot-fleet-opt-in",
+  "pr": "#1704",
+  "landing": "landings/PLAN-PR-078.md",
   "seq": 42
 }

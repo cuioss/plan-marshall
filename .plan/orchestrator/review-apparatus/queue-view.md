@@ -4,7 +4,11 @@
 
 ## START HERE
 
-**Resume anchor**: === 2026-09-29 PLAN-PR-078 STAGED + EMITTED (reviewer fleet opt-in + legacy .pr_agent.toml removal). R = 0 of N = 2 until operator confirms launch. ===
+**Resume anchor**: === 2026-10-07 PLAN-PR-078 SHIPPED (#1704, d42dc6a94) + DRAIN 13/13 + CLEANUP. ALL 42 ROWS TERMINAL. ===
+Fleet rollout is 7 of 20: 13 repositories not enrolled (their project.yml fails the org schema on pre-existing keys); follow-up tracked as lesson 2026-10-06-15-001, NOT staged here. 9 candidate lessons promoted (2026-10-07-07-001 .. -009). Inbox EMPTY (0 live, 0 invalid, no closed senders). Restart verdict: ready. Nothing emittable: no staged row.
+NEXT ACTION: `land` the ledger (this drain is committed locally in the shared worktree, not yet on main). Then operator decides: `close` the epic with the fleet remainder living in the lessons corpus, or stage the remainder here first. Watches still open: 6 enrolled repositories unverified live; plan record plan-pr-078-review-bot-fleet-opt-in still listed at 6-finalize.
+
+=== 2026-09-29 PLAN-PR-078 STAGED + EMITTED (reviewer fleet opt-in + legacy .pr_agent.toml removal). R = 0 of N = 2 until operator confirms launch. ===
 Scope: migrate API-Sheriff/TokenSheriff/cui-http (atomic toml removal + project.yml opt-in + caller rename) and enroll 17 named code repos; D0 derives packs and ASKS the operator before writing. Org/infra repos excluded; central cuioss-review-bot/.pr_agent.toml never touched.
 NEXT ACTION: on operator start, stamp PLAN-PR-078 running; on landing corroborate per-repo against the FOREIGN PRs + live 'Assembled review charter' log lines; then close the epic. Ledger (restore + 002 landing + 078) still uncommitted.
 
@@ -146,17 +150,9 @@ PLAN-PR-002 PARKED: cuioss-organization#235 OPEN - corroborate against the FOREI
 ⛔ A pre-existing macOS test defect is OPERATOR-ASSIGNED to a separate plan: test_qgate_closure.py::test_a_declared_glob_escaping_the_repo_is_unmeasured_not_empty asserts == Path(/etc) against a path resolving to /private/etc. Also a pollution-guard teardown flake in test_comments_stage.py under xdist.
 ⚠ The build wrapper reported status: timeout on a run that COMPLETED (17877 passed in 467s). Read the LOG layer, never the outer status.
 ENVIRONMENT (SUPERSEDED 2026-09-22, kept for history): this line claimed the epic tree was GITIGNORED, LOCAL-ONLY. FALSE since the tracked-store migration (#1558-#1578) -- the tree is git-tracked. See the header block above.
-
-
-
-
-
-
-
-
 **Phase**: orchestrating
 **Queue** (staged, in order):
-1. PLAN-PR-078 (WS-02)
+- (empty)
 - PLAN-PR-002 (WS-02) — plan=org-empty-review-guard-too-broad — PR cuioss-organization#297 — landing=landings/PLAN-PR-002.md — status: shipped
 - PLAN-PR-043 (WS-01) — status: superseded
 - PLAN-PR-045 (WS-01) — status: superseded
@@ -198,9 +194,10 @@ ENVIRONMENT (SUPERSEDED 2026-09-22, kept for history): this line claimed the epi
 - PLAN-PR-075 (WS-04) — status: superseded
 - PLAN-PR-076 (WS-03) — status: superseded
 - PLAN-PR-077 (WS-04) — status: superseded
+- PLAN-PR-078 (WS-02) — plan=plan-pr-078-review-bot-fleet-opt-in — PR #1704 — landing=landings/PLAN-PR-078.md — status: shipped
 
 ## Ordered Queue
 
 | # | Plan | Workstream | Status | Surface (expected) |
 |---|------|------------|--------|--------------------|
-| 1 | PLAN-PR-078 | WS-02 | staged | .github/actions/release-guard/; .github/project.yml; .github/workflows/cuioss-review-bot.yml; .github/workflows/pr-agent.yml; .github/workflows/release.yml; .github/workflows/reusable-npm-publish.yml; test/workflow/ |
+| — | (empty) | — | — | — |
