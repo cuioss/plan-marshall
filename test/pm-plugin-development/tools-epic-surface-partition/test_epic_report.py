@@ -160,6 +160,7 @@ def test_partition_tally_reports_every_verdict(disagreeing) -> None:
         'claimed',
         'unclaimed',
         'contested',
+        'settled',
         'swept',
         'not_derivable',
     ]

@@ -1168,21 +1168,27 @@ def test_a_parked_plan_still_competes(repo: Path, tmp_path: Path) -> None:
 # --- near-miss: two finished plans are not silently attributed to either ------
 
 
-def test_a_module_only_terminal_plans_claim_stays_contested(repo: Path, tmp_path: Path) -> None:
-    """Narrowing to nothing would manufacture an ownerless module out of a real claim.
+def test_a_module_only_terminal_plans_claim_is_settled_not_contested(repo: Path, tmp_path: Path) -> None:
+    """Nobody is left to compete, so it is no contest — and no finished plan is picked as owner.
 
     The mirror of the refusal above: with no live claimant left standing there is
-    no one to narrow TO, so the contest is reported unchanged rather than being
-    silently handed to whichever finished plan happens to sort first.
+    no one to narrow TO. The module is neither handed to whichever finished plan
+    happens to sort first nor reported unclaimed; it is ``settled``, with every
+    finished claim retired beside the verdict. Counting it as ``contested`` made
+    the contested figure grow with every follow-up plan that finished its
+    predecessor's slice.
     """
     plans, epic_dir = rival_world(tmp_path, 'both_terminal')
     write_ledger(epic_dir, {_RIVAL_ONE: 'landed', _RIVAL_TWO: 'shipped'})
 
     _, result = rival_partition(repo, plans, epic_dir)
 
-    assert verdict_of(result, _RIVAL_MODULE) == partition_mod.VERDICT_CONTESTED
-    assert plans_of(result, _RIVAL_MODULE) == (_RIVAL_ONE, _RIVAL_TWO)
-    assert retired_of(result, _RIVAL_MODULE) == ()
+    assert verdict_of(result, _RIVAL_MODULE) == partition_mod.VERDICT_SETTLED
+    assert plans_of(result, _RIVAL_MODULE) == ()
+    assert retired_of(result, _RIVAL_MODULE) == (_RIVAL_ONE, _RIVAL_TWO)
+    assert result.tally()[partition_mod.VERDICT_CONTESTED] == 0
+    # Not an owner found by retirement either: that population stays what it was.
+    assert _RIVAL_MODULE not in {module.path for module in result.lifecycle_resolved()}
 
 
 def test_a_sole_terminal_claimant_keeps_the_module(repo: Path, tmp_path: Path) -> None:

@@ -56,7 +56,7 @@ def _stub_provider_calls():
         yield
 
 
-_SOURCERY_1014_REFUSAL = (
+_SOURCERY_SIZE_LIMIT_REFUSAL = (
     'Sourcery was unable to review this pull request because '
     'your pull request is larger than the review limit of 150000 characters. '
     'Reduce the size of the pull request and request another review.'

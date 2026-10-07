@@ -57,6 +57,7 @@ from _epic_partition import (
     VERDICT_CONTESTED,
     VERDICT_NOT_DERIVABLE,
     VERDICT_ORDER,
+    VERDICT_SETTLED,
     VERDICT_UNCLAIMED,
     Partition,
     PlanLifecycle,
@@ -257,6 +258,13 @@ def _lifecycle_resolved_rows(partition: Partition) -> list[dict[str, Any]]:
     ]
 
 
+def _lifecycle_settled_rows(partition: Partition) -> list[dict[str, Any]]:
+    """The modules two or more plans claimed, every one of them finished: nobody competes any more."""
+    return [
+        {'path': module.path, 'retired': ','.join(module.retired)} for module in partition.with_verdict(VERDICT_SETTLED)
+    ]
+
+
 def cmd_classify(args: argparse.Namespace) -> dict[str, Any]:
     """Handle ``classify --epic EPIC``.
 
@@ -345,6 +353,7 @@ def cmd_partition(args: argparse.Namespace) -> dict[str, Any]:
         'lifecycle': _lifecycle_payload(lifecycle),
         'lifecycle_plans': _lifecycle_rows(lifecycle),
         'lifecycle_resolved': _lifecycle_resolved_rows(partition),
+        'lifecycle_settled': _lifecycle_settled_rows(partition),
         'root_claims': [{'plan_id': root.plan_id, 'path': root.path} for root in partition.root_claims],
         'contested': _contested_rows(partition),
         'sweep_crossings': _sweep_crossing_rows(partition),
@@ -637,7 +646,7 @@ def cmd_report(args: argparse.Namespace) -> dict[str, Any]:
         'lifecycle': (
             f'{len(lifecycle.terminal_plans())} finished and {len(lifecycle.active_plans())} '
             f'live plans in the ledger; {len(lifecycle_resolved)} modules attributed by '
-            'retiring a finished claim'
+            f'retiring a finished claim, {tally[VERDICT_SETTLED]} settled between finished plans'
             if lifecycle.available
             else (f'ledger unavailable ({lifecycle.degradation}); every plan treated as live and no claim retired')
         ),
@@ -708,6 +717,7 @@ def cmd_report(args: argparse.Namespace) -> dict[str, Any]:
         'lifecycle': _lifecycle_payload(lifecycle),
         'lifecycle_plans': _lifecycle_rows(lifecycle),
         'lifecycle_resolved': _lifecycle_resolved_rows(partition),
+        'lifecycle_settled': _lifecycle_settled_rows(partition),
         'contested': _contested_rows(partition),
         'sweep_crossings': _sweep_crossing_rows(partition),
         'baseline_drift': {

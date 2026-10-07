@@ -67,7 +67,7 @@ def _stage_make_args(pr_number: int, plan_id: str):
     return a
 
 
-_SOURCERY_1014_REFUSAL = (
+_SOURCERY_SIZE_LIMIT_REFUSAL = (
     'Sourcery was unable to review this pull request because '
     'your pull request is larger than the review limit of 150000 characters. '
     'Reduce the size of the pull request and request another review.'

@@ -115,7 +115,10 @@ python3 .plan/execute-script.py pm-plugin-development:tools-epic-surface-partiti
 Both verbs read the epic ledger alongside the corpus and retire the claims of
 plans whose work is finished, so a module contested only between a finished and a
 live plan is attributed to the live one; the retired claims ride beside the
-verdict in `retired`. Two live plans over one module stay contested.
+verdict in `retired`. Two live plans over one module stay contested. A module
+every one of whose claimants is finished is `settled`: nobody competes for it, no
+finished plan is picked as its owner, and all the finished claims ride in
+`retired`. It is not counted as `contested`.
 
 `attribution` re-derives the over-budget modules from the **current** tree; a
 published baseline is only ever a post-hoc comparison, never an input. A module
@@ -240,6 +243,8 @@ lifecycle_plans[N]{plan_id,status,lifecycle}:
   ...
 lifecycle_resolved[N]{path,owner,retired}:
   ...
+lifecycle_settled[N]{path,retired}:
+  ...
 root_claims[N]{plan_id,path}:
   ...
 contested[N]{path,plans,retired}:
@@ -251,7 +256,8 @@ modules[214]{path,verdict,plans,sweeps,retired}:
 ```
 
 `plans` is a comma-joined list of the SLICE plans the verdict rests on — empty
-for `unclaimed` and `swept`, one id for `claimed`, several for `contested`.
+for `unclaimed`, `swept` and `settled`, one id for `claimed`, several for
+`contested`.
 `sweeps` is the separate, comma-joined list of self-declared sweep plans that
 also cross the module: a crossing is reported beside the verdict, never as
 competing ownership. `retired` is the third such list — the plans whose claim on
@@ -262,6 +268,9 @@ populations a caller reads for different reasons, and `verdict_tally` carries a
 row for every verdict even at zero. `root_claims[]` carries every span excluded
 from claim matching by the root-span rule above; it too is emitted even when
 empty, so an absent root claim reads as measured.
+
+`lifecycle_settled[]` names each module two or more plans claimed that are all
+finished, with those plans in `retired`; it is emitted even when empty.
 
 `lifecycle` is the ledger read as its own block, `lifecycle_plans[]` is every
 queue row with the bucket it fell in, and `lifecycle_resolved[]` names each
@@ -328,6 +337,8 @@ lifecycle{ledger_path,available,degradation,terminal_count,active_count}:
 lifecycle_plans[N]{plan_id,status,lifecycle}:
   ...
 lifecycle_resolved[N]{path,owner,retired}:
+  ...
+lifecycle_settled[N]{path,retired}:
   ...
 contested[N]{path,plans,retired}:
   ...

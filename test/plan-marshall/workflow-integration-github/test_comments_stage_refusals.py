@@ -67,7 +67,7 @@ def _stage_make_args(pr_number: int, plan_id: str):
     return a
 
 
-_SOURCERY_1014_REFUSAL = (
+_SOURCERY_SIZE_LIMIT_REFUSAL = (
     'Sourcery was unable to review this pull request because '
     'your pull request is larger than the review limit of 150000 characters. '
     'Reduce the size of the pull request and request another review.'
@@ -569,7 +569,7 @@ class TestUnrecognisedRefusalPredicate:
             _REWORDED_REFUSAL,
             _SHORT_REVIEW_WITH_ANCHOR,
             _GENUINE_REVIEW_MENTIONING_A_LIMIT,
-            _SOURCERY_1014_REFUSAL,
+            _SOURCERY_SIZE_LIMIT_REFUSAL,
         ):
             for bot_kind in ('coderabbit', 'sourcery', 'cuioss-review-bot', None):
                 assert not _github_pr._is_unrecognised_refusal(body, bot_kind), (bot_kind, body[:40])
@@ -640,8 +640,8 @@ class TestUnrecognisedRefusalPredicate:
         monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', 500)
 
         # Registry arm recognised it...
-        assert _github_pr._is_refusal_notice(_SOURCERY_1014_REFUSAL, 'sourcery')
-        assert not _github_pr._is_unrecognised_refusal(_SOURCERY_1014_REFUSAL, 'sourcery')
+        assert _github_pr._is_refusal_notice(_SOURCERY_SIZE_LIMIT_REFUSAL, 'sourcery')
+        assert not _github_pr._is_unrecognised_refusal(_SOURCERY_SIZE_LIMIT_REFUSAL, 'sourcery')
         # ...and likewise for a structurally-recognised one.
         assert _github_pr._is_refusal_notice(_UNKNOWN_BOT_REFUSAL, 'coderabbit')
         assert not _github_pr._is_unrecognised_refusal(_UNKNOWN_BOT_REFUSAL, 'coderabbit')
@@ -673,7 +673,7 @@ class TestUnrecognisedRefusalPredicate:
             pytest.param(_REWORDED_REFUSAL, id='reworded-refusal'),
             pytest.param(_SHORT_REVIEW_WITH_ANCHOR, id='short-review-with-anchor'),
             pytest.param(_GENUINE_REVIEW_MENTIONING_A_LIMIT, id='genuine-review'),
-            pytest.param(_SOURCERY_1014_REFUSAL, id='registry-recognised-refusal'),
+            pytest.param(_SOURCERY_SIZE_LIMIT_REFUSAL, id='registry-recognised-refusal'),
             pytest.param(_UNKNOWN_BOT_REFUSAL, id='structurally-recognised-refusal'),
             pytest.param('', id='empty'),
         ],

@@ -39,7 +39,7 @@ DRYRUN_ADVISORY_LOG = TEST_DATA_DIR / 'rewrite-run-dryrun-advisory.log'
 
 #: The domain-owned parser's provenance corpus — the single format source of
 #: truth for the ``#118`` WARN lines. parents[2] is the test/ root.
-D1_CORPUS = (
+WARN_CORPUS = (
     Path(__file__).resolve().parents[2]
     / 'pm-dev-java-cui'
     / 'parse-rewrite-log'
@@ -200,13 +200,13 @@ class TestSingleFormatSourceOfTruth:
 
     def test_observed_fixture_carries_every_corpus_finding_line(self):
         observed_text = OBSERVED_LOG.read_text(encoding='utf-8')
-        corpus_lines = _corpus_finding_lines(D1_CORPUS)
+        corpus_lines = _corpus_finding_lines(WARN_CORPUS)
         assert corpus_lines, 'D1 corpus must carry finding lines'
         for line in corpus_lines:
             assert line in observed_text, f'Corpus WARN line missing from observed fixture: {line}'
 
     def test_observed_fixture_finding_count_matches_corpus(self):
-        assert len(_corpus_finding_lines(OBSERVED_LOG)) == len(_corpus_finding_lines(D1_CORPUS))
+        assert len(_corpus_finding_lines(OBSERVED_LOG)) == len(_corpus_finding_lines(WARN_CORPUS))
 
 
 class TestResolveDomainVerb:
