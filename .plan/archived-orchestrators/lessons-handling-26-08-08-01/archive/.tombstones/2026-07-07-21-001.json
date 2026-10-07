@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-07-21-001",
+  "removed_at": "2026-07-09T12:53:39.296865+00:00",
+  "reason": "Completely covered by plan-10 D3 - phase-6-finalize/SKILL.md now carries the structural post-rebase step-doc re-resolution contract with the advances_main_via_rebase frontmatter fact on sync-baseline and branch-cleanup, plus the workflow_not_found-as-first-hypothesis version-skew rule. Guarded failure mode structurally addressed, residue codified into governing skill. Plan plan-10-finalize-contracts",
+  "status": "removed"
+}

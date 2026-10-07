@@ -1,0 +1,53 @@
+{
+  "kind": "orchestrator",
+  "title": "Code-Intelligence Substrate: how the system knows things about the codebase",
+  "phase": "closed",
+  "workstreams": [
+    {
+      "id": "WS-01",
+      "slug": "tier0-inventory-and-search",
+      "title": "Tier 0 - Inventory and Search Foundations",
+      "status": "active"
+    },
+    {
+      "id": "WS-02",
+      "slug": "tier1-derivation-resolver",
+      "title": "Tier 1 - The Derivation Resolver",
+      "status": "active"
+    },
+    {
+      "id": "WS-03",
+      "slug": "tier2-skill-corpus-intelligence",
+      "title": "Tier 2 - Skill-Corpus Intelligence and the LSP Surface",
+      "status": "active"
+    },
+    {
+      "id": "WS-04",
+      "slug": "measurement-integrity",
+      "title": "Measurement Integrity",
+      "status": "active"
+    },
+    {
+      "id": "WS-05",
+      "slug": "detector-and-derivation-integrity",
+      "title": "Detector and Derivation Integrity",
+      "status": "active"
+    },
+    {
+      "id": "WS-06",
+      "slug": "context-economics",
+      "title": "Context Economics",
+      "status": "active"
+    },
+    {
+      "id": "WS-07",
+      "slug": "landed-corpus-remediation",
+      "title": "Landed-Corpus Remediation",
+      "status": "active"
+    }
+  ],
+  "metadata": {
+    "parallelization_scope": "1"
+  },
+  "created": "2026-07-29T06:15:03Z"
+}

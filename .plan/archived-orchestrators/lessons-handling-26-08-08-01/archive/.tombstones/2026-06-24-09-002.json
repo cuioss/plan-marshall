@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-24-09-002",
+  "removed_at": "2026-07-16T13:38:48.583449+00:00",
+  "reason": "Failure mode can no longer occur - executor dispatch boundary stamps kind=build for every build-class invocation including plan_id null orchestrator builds, and the pre-commit freshness gate matches status success fail-closed. The every-build-path-must-stamp rule is codified in manage-change-ledger SKILL.md plus the freshness-gate docstring and regression-tested (plan background-build-kill)",
+  "status": "removed"
+}

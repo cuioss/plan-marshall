@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-05-28-15-003",
+  "removed_at": "2026-05-28T17:31:11.394742+00:00",
+  "reason": "Invalid premise: conflicts with codified output-contract.md (operation failures = exit 0 + status:error in TOON body). Build wrapper cmd_run_common already follows the standard correctly. Caller-side gap (callers must parse TOON status, not rely on exit code) is tracked by lesson 2026-05-27-14-004.",
+  "status": "removed"
+}

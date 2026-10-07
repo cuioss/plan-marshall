@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-22-20-002",
+  "removed_at": "2026-07-22T22:57:56.955355+00:00",
+  "reason": "architecture find/which-module reader boundary now self-scans an in-scope elided category (or reports truncated: true per ADR-009 fail-closed reporting) via _resolve_module_inventory, so a confident count:0 false negative past the elision horizon can no longer occur (plan architecture-find-confident-false-negative)",
+  "status": "removed"
+}

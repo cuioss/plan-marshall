@@ -1,0 +1,356 @@
+{
+  "kind": "orchestrator",
+  "title": "Review Apparatus \u2014 archived 2026-09-21",
+  "phase": "closed",
+  "workstreams": [],
+  "plans": [
+    {
+      "id": "PLAN-PR-014",
+      "slug": "a-crashed-participation-gate-records-a-pass",
+      "workstream": "WS-04",
+      "status": "shipped",
+      "plan_marshall_plan_id": "crashed-participation-gate-records-a-pass",
+      "pr": "1070",
+      "landing": "landings/PLAN-PR-014.md"
+    },
+    {
+      "id": "PLAN-PR-015",
+      "slug": "a-barrier-override-is-not-bound-to-the-head-it-was-granted-against",
+      "workstream": "WS-04",
+      "status": "shipped",
+      "plan_marshall_plan_id": "barrier-override-not-head-bound",
+      "pr": "1077",
+      "landing": "landings/PLAN-PR-015.md"
+    },
+    {
+      "id": "PLAN-PR-016",
+      "slug": "a-correct-review-scores-as-maximally-wrong",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "correct-review-scores-as-maximally-wrong",
+      "pr": "1078",
+      "landing": "landings/PLAN-PR-016.md"
+    },
+    {
+      "id": "PLAN-PR-001",
+      "slug": "wait-for-comments-counts-rows",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "wait-for-comments-counts-rows",
+      "pr": "1071",
+      "landing": "landings/PLAN-PR-001.md"
+    },
+    {
+      "id": "PLAN-PR-009",
+      "slug": "merge-queue-enqueue-does-not-take",
+      "workstream": "WS-04",
+      "status": "shipped",
+      "plan_marshall_plan_id": "merge-queue-enqueue-does-not-take",
+      "pr": "1087",
+      "landing": "landings/PLAN-PR-009.md"
+    },
+    {
+      "id": "PLAN-PR-022",
+      "slug": "a-generic-charter-cannot-see-a-language-specific-defect",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "generic-charter-language-specific-defect",
+      "pr": "1130",
+      "landing": "landings/PLAN-PR-022.md"
+    },
+    {
+      "id": "PLAN-PR-013",
+      "slug": "participation-credited-from-a-superseded-commit",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "cloud/010-participation-credited-from-a-superseded-commit",
+      "pr": "1141",
+      "landing": "landings/PLAN-PR-013.md"
+    },
+    {
+      "id": "PLAN-PR-023",
+      "slug": "a-foreign-task-reports-done-with-no-pr-anywhere",
+      "workstream": "WS-02",
+      "status": "shipped",
+      "plan_marshall_plan_id": "cloud/020-a-foreign-task-reports-done-with-no-pr-anywhere",
+      "pr": "1151",
+      "landing": "landings/PLAN-PR-023.md"
+    },
+    {
+      "id": "PLAN-PR-017",
+      "slug": "a-workflow-doc-prescribes-a-flag-no-script-declares",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "cloud/030-a-workflow-doc-prescribes-a-flag-no-script-declares",
+      "pr": "1157",
+      "landing": "landings/PLAN-PR-017.md"
+    },
+    {
+      "id": "PLAN-PR-006",
+      "slug": "canned-no-op-indistinguishable-from-a-review",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "cloud/040-canned-no-op-indistinguishable-from-a-review",
+      "pr": "1165",
+      "landing": "landings/PLAN-PR-006.md"
+    },
+    {
+      "id": "PLAN-PR-021",
+      "slug": "coverage-shortfall-disclosed-against-the-roster-not-the-required-set",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "cloud/050-coverage-shortfall-disclosed-against-the-roster-not-the-required-set",
+      "pr": "1170",
+      "landing": "landings/PLAN-PR-021.md"
+    },
+    {
+      "id": "PLAN-PR-018",
+      "slug": "self-review-rescans-the-whole-surface-every-round",
+      "workstream": "WS-03",
+      "status": "retired",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-020",
+      "slug": "a-prose-routing-table-is-not-an-enforcement-boundary",
+      "workstream": "WS-04",
+      "status": "shipped",
+      "plan_marshall_plan_id": "cloud/060-a-prose-routing-table-is-not-an-enforcement-boundary",
+      "pr": "1182",
+      "landing": "landings/PLAN-PR-020.md"
+    },
+    {
+      "id": "PLAN-PR-019",
+      "slug": "post-responses-retransmits-already-sent-replies",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "cloud/070-post-responses-retransmits-already-sent-replies",
+      "pr": "1187",
+      "landing": "landings/PLAN-PR-019.md"
+    },
+    {
+      "id": "PLAN-PR-007",
+      "slug": "absent-names-two-states-with-opposite-remedies",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "absent-names-two-states-with-opposite-remedies",
+      "pr": "1118",
+      "landing": "landings/PLAN-PR-007.md"
+    },
+    {
+      "id": "PLAN-PR-010",
+      "slug": "landing-message-carries-the-outcome-post-merge",
+      "workstream": "WS-04",
+      "status": "shipped",
+      "plan_marshall_plan_id": "cloud/080-landing-message-carries-the-outcome-post-merge",
+      "pr": "1196",
+      "landing": "landings/PLAN-PR-010.md"
+    },
+    {
+      "id": "PLAN-PR-012",
+      "slug": "feed-pr-findings-back-into-local-review",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "cloud/090-feed-pr-findings-back-into-local-review",
+      "pr": "1204",
+      "landing": "landings/PLAN-PR-012.md"
+    },
+    {
+      "id": "PLAN-PR-003",
+      "slug": "coderabbit-ai-agent-block-strip-vs-extract",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "cloud/100-coderabbit-ai-agent-block-strip-vs-extract",
+      "pr": "1212",
+      "landing": "landings/PLAN-PR-003.md"
+    },
+    {
+      "id": "PLAN-PR-005",
+      "slug": "participation-derived-from-a-lossy-view",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "cloud/110-participation-derived-from-a-lossy-view",
+      "pr": "1219",
+      "landing": "landings/PLAN-PR-005.md"
+    },
+    {
+      "id": "PLAN-PR-008",
+      "slug": "review-barrier-deadlocks-on-a-refusing-bot",
+      "workstream": "WS-04",
+      "status": "shipped",
+      "plan_marshall_plan_id": "cloud/120-review-barrier-deadlocks-on-a-refusing-bot",
+      "pr": "1241",
+      "landing": "landings/PLAN-PR-008.md"
+    },
+    {
+      "id": "PLAN-PR-011",
+      "slug": "review-bots-catch-what-in-house-gates-cannot",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "cloud/130-review-bots-catch-what-in-house-gates-cannot",
+      "pr": "1239",
+      "landing": "landings/PLAN-PR-011.md"
+    },
+    {
+      "id": "PLAN-PR-004",
+      "slug": "pr-agent-charter-unverified-in-effect",
+      "workstream": "WS-03",
+      "status": "retired",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-027",
+      "slug": "a-failing-ci-call-reports-success-and-a-doc-prescribes-the-rejection",
+      "workstream": "WS-04",
+      "status": "shipped",
+      "plan_marshall_plan_id": "a-failing-ci-call-reports-success",
+      "pr": "1356",
+      "landing": "landings/PLAN-PR-027.md"
+    },
+    {
+      "id": "PLAN-PR-024",
+      "slug": "participation-credit-anchored-to-the-merge-candidate",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "participation-credit-anchored-to-merge-candidate",
+      "pr": "1349",
+      "landing": "landings/PLAN-PR-024.md"
+    },
+    {
+      "id": "PLAN-PR-025",
+      "slug": "a-refusal-is-recorded-as-a-refusal-and-the-contract-says-so",
+      "workstream": "WS-01",
+      "status": "retired",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-025A",
+      "slug": "a-refusal-is-recorded-as-a-refusal-the-record",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "a-refusal-is-recorded-as-a-refusal-the-record",
+      "pr": "1368",
+      "landing": "landings/PLAN-PR-025A.md"
+    },
+    {
+      "id": "PLAN-PR-044",
+      "slug": "a-misconfigured-reviewer-name-reads-as-a-missing-review",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "misconfigured-reviewer-name-reads-missing-review",
+      "pr": "1392",
+      "landing": "landings/PLAN-PR-044.md"
+    },
+    {
+      "id": "PLAN-PR-042",
+      "slug": "the-required-reviewer-returns-an-empty-list-on-a-correct-full-review",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "required-reviewer-returns-empty-list",
+      "pr": "1410",
+      "landing": "landings/PLAN-PR-042.md"
+    },
+    {
+      "id": "PLAN-PR-046",
+      "slug": "a-clean-review-arrives-in-a-shape-the-registry-does-not-credit",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "plan-pr-046",
+      "pr": "1477",
+      "landing": "landings/PLAN-PR-046.md"
+    },
+    {
+      "id": "PLAN-PR-025B",
+      "slug": "arm-the-refusal-recovery-that-has-never-run",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "arm-the-refusal-recovery-that-has-never-run",
+      "pr": "1433",
+      "landing": "landings/PLAN-PR-025B.md"
+    },
+    {
+      "id": "PLAN-PR-032",
+      "slug": "apply-the-cloud-plan-lane-contract-amendments",
+      "workstream": "WS-02",
+      "status": "shipped",
+      "plan_marshall_plan_id": "apply-the-cloud-plan-lane-contract-amendments",
+      "pr": "1416",
+      "landing": "landings/PLAN-PR-032.md"
+    },
+    {
+      "id": "PLAN-PR-034",
+      "slug": "a-refusal-nobody-recognises-is-filed-as-a-finding",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "a-refusal-nobody-recognises-is-filed-as-a-finding",
+      "pr": "1344",
+      "landing": "landings/PLAN-PR-034.md"
+    },
+    {
+      "id": "PLAN-PR-036",
+      "slug": "the-exit-code-convention-stops-at-the-skill-boundary",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "exit-code-convention-stops-at-the-skill-boundary",
+      "pr": "1423,1429",
+      "landing": "landings/PLAN-PR-036.md"
+    },
+    {
+      "id": "PLAN-PR-028",
+      "slug": "a-landing-message-that-cannot-outrun-its-merge",
+      "workstream": "WS-04",
+      "status": "retired",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-PR-033",
+      "slug": "the-foreign-gate-population-and-branch-f-recovery",
+      "workstream": "WS-04",
+      "status": "shipped",
+      "plan_marshall_plan_id": "the-foreign-gate-population-and-branch-f-recovery",
+      "pr": "1473",
+      "landing": "landings/PLAN-PR-033.md"
+    },
+    {
+      "id": "PLAN-PR-038",
+      "slug": "review-packs-become-published-artifacts",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "review-packs-become-published-artifacts",
+      "pr": "1388",
+      "landing": "landings/PLAN-PR-038.md"
+    },
+    {
+      "id": "PLAN-PR-041",
+      "slug": "the-model-ladder-leads-with-a-superseded-flash",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "NO_PLAN",
+      "pr": "cuioss/pr-agent-settings#15",
+      "landing": "landings/PLAN-PR-041.md"
+    },
+    {
+      "id": "PLAN-PR-065",
+      "slug": "the-settings-repo-accumulates-and-never-lands",
+      "workstream": "WS-02",
+      "status": "shipped",
+      "plan_marshall_plan_id": "pr-065-settings-repo-accumulates-never-lands",
+      "pr": "1491",
+      "landing": "landings/PLAN-PR-065.md"
+    }
+  ],
+  "resume_anchor": "epic closed \u2014 see history.md",
+  "metadata": {
+    "parallelization_scope": "1"
+  },
+  "created": "2026-09-21T21:29:13Z",
+  "updated": "2026-09-21T21:31:30Z"
+}

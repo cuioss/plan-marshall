@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-03-20-001",
+  "removed_at": "2026-06-09T07:01:06.427238+00:00",
+  "reason": "Fixed: cmd_locate_plan_checkout whitelists expected-absence substrings and propagates real errors (git-workflow.py:1490)",
+  "status": "removed"
+}

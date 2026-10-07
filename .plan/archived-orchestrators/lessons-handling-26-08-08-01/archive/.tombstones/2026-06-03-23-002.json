@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-03-23-002",
+  "removed_at": "2026-06-09T07:01:12.176385+00:00",
+  "reason": "Fixed: phase_handshake findings-check subcommand wired into argparse (phase_handshake.py:88); automated-review.md invokes the real verb",
+  "status": "removed"
+}

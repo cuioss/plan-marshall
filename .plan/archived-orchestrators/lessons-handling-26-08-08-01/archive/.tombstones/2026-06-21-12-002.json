@@ -1,0 +1,7 @@
+{
+  "lesson_id": "2026-06-21-12-002",
+  "removed_at": "2026-06-24T12:36:59.252133+00:00",
+  "reason": "Aggregated into 2026-06-24-14-004: the MD040 fenced-code-language gate gap folds into the markdown-lint/relative-link plugin-doctor rule (same in-house-markdown-gate face).",
+  "status": "superseded",
+  "superseded_by": "2026-06-24-14-004"
+}

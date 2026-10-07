@@ -1,0 +1,118 @@
+{
+  "kind": "orchestrator",
+  "title": "Unit-Test Suite Quality & Cleanup",
+  "phase": "closed",
+  "workstreams": [
+    {
+      "id": "WS-01",
+      "slug": "discovery-analysis",
+      "title": "Discovery & Analysis"
+    },
+    {
+      "id": "WS-02",
+      "slug": "remediation",
+      "title": "Remediation"
+    },
+    {
+      "id": "WS-03",
+      "slug": "carried-lead-remediation",
+      "title": "Carried-Lead Remediation"
+    }
+  ],
+  "plans": [
+    {
+      "id": "PLAN-01",
+      "slug": "scrupulous-test-suite-analysis",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "#955",
+      "landing": "landings/PLAN-01.md"
+    },
+    {
+      "id": "PLAN-02",
+      "slug": "test-standards-compliance",
+      "workstream": "WS-02",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "#966",
+      "landing": "landings/PLAN-02.md"
+    },
+    {
+      "id": "PLAN-03",
+      "slug": "propagate-parallel-plan-hardening",
+      "workstream": "WS-02",
+      "status": "shipped",
+      "plan_marshall_plan_id": "propagate-parallel-plan-hardening",
+      "pr": "#977",
+      "landing": "landings/PLAN-03.md"
+    },
+    {
+      "id": "PLAN-04",
+      "slug": "enforcement-gates-and-measurement",
+      "workstream": "WS-02",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "#982",
+      "landing": "landings/PLAN-04.md"
+    },
+    {
+      "id": "PLAN-06",
+      "slug": "runtime-dependency-modernization",
+      "workstream": "WS-02",
+      "status": "shipped",
+      "plan_marshall_plan_id": "modernize-python-toolchain",
+      "pr": "#987",
+      "landing": "landings/PLAN-06.md"
+    },
+    {
+      "id": "PLAN-05",
+      "slug": "duration-coverage-remediation",
+      "workstream": "WS-02",
+      "status": "shipped",
+      "plan_marshall_plan_id": "test-suite-measurement-protocol",
+      "pr": "#992",
+      "landing": "landings/PLAN-05.md"
+    },
+    {
+      "id": "PLAN-07",
+      "slug": "unit-test-truthfulness",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "test-suite-quality-unit-testing-residue",
+      "pr": "#1012",
+      "landing": "landings/PLAN-07.md"
+    },
+    {
+      "id": "PLAN-08",
+      "slug": "finalize-dispatch-audit-integrity",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "finalize-dispatch-audit-integrity",
+      "pr": "#1026",
+      "landing": "landings/PLAN-08.md"
+    },
+    {
+      "id": "PLAN-09",
+      "slug": "retrospective-check-correctness",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "repair-plan-retrospective-false-verdicts",
+      "pr": "#998",
+      "landing": "landings/PLAN-09.md"
+    },
+    {
+      "id": "PLAN-10",
+      "slug": "retrospective-completeness-and-phase5-marker",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "retrospective-completeness-and-phase5-marker",
+      "pr": "#1036",
+      "landing": "landings/PLAN-10.md"
+    }
+  ],
+  "resume_anchor": "EPIC CLOSED 2026-07-28 at 10/10 - see history.md. This close SUPERSEDES the 2026-07-24 close (written while PLAN-10 was outstanding and before WS-03 existed). Final: 10 plans shipped across 3 workstreams, PRs #955 #966 #977 #982 #987 #992 #998 #1012 #1026 #1036. Coverage is the demonstrated gain (4 modules lifted, 3 clearing the 80pct gate); duration is honestly reported as BELOW the sub-20s detection limit the capstone documented rather than overclaimed. DO NOT REOPEN - three LIVE defects are listed under Open Defects and need a home in the truthful-signals epic, NOT a third reopen: (1) three CONFIRMED CodeRabbit findings untriaged in merged main (post-merge arrival, 2m42s after #1036 - a 4th finding is CONTRADICTED and must NOT be actioned), (2) architecture-refresh classified BOTH dispatched and inline with the runtime obeying the non-SSoT side, (3) dispatch_boundaries SECTION_SPEC row no producer can fill. 7 corpus lessons carry the transferable knowledge: 2026-07-28-19-002 through -19-007 plus folds into 2026-07-27-23-003 and 2026-07-27-08-005.",
+  "metadata": {},
+  "created": "2026-07-20T20:56:04Z",
+  "updated": "2026-07-28T17:34:56Z"
+}

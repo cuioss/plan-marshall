@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-04-30-18-001",
+  "removed_at": "2026-06-28T20:26:02.935911+00:00",
+  "reason": "Executed observation (2026-06-28) resolved the contingent decision: avoidable Glob/Grep rate 0% strict / 20% intent-class \u2014 at/below the lesson's >20% ship threshold, so do NOT build the architecture-nudge hook. Superseded by Phase-E instruction enforcement plus the R1-R4 PreToolUse deny-hook now in source (R2 covers the raw-bash file-ops sink). CORRECTION to body: that deny-hook is present in source but NOT registered in this project \u2014 health-check reports PreToolUse:enforcement MISSING; activation is operator-gated (marshall-steward / project install-hook) and currently absent. Residual: phase-2/3 sub-agent search surface is unmeasured (sub-agent tool calls not in transcripts) but does not justify disproportionate per-sub-agent instrumentation. Full results in observation report; extraction scripts under .plan/temp/lesson-obs/.",
+  "status": "removed"
+}

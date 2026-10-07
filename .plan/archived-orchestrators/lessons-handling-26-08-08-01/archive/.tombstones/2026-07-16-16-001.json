@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-16-16-001",
+  "removed_at": "2026-07-17T07:55:53.140590+00:00",
+  "reason": "Completely covered: D1 routes Failsafe-only IT paths to the verify build_class + D3 resolves npm-under-Maven-wrapper module ownership by domain affinity; both fixed with tests (plan architecture-resolution, PR #917)",
+  "status": "removed"
+}

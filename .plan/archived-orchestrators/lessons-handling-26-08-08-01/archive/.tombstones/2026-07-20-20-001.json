@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-20-20-001",
+  "removed_at": "2026-07-22T07:44:04.364418+00:00",
+  "reason": "residue promoted to pm-dev-python:pytest-testing standards/testing-pytest.md (plan propagate-parallel-plan-hardening)",
+  "status": "removed"
+}

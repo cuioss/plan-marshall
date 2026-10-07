@@ -1,0 +1,40 @@
+envelope_version=1
+sender_type=plan
+sender_id=user-language-and-vocabulary
+epic=operator-ux
+kind=candidate-lesson
+created=2026-09-03T06:02:30Z
+
+component=finalize-step-sync-plugin-cache
+category=improvement
+confidence=medium
+source_plan=user-language-and-vocabulary
+source_pr=1382
+
+# Name the stamped version so a shipped skill change is not read as in effect this session
+
+## Context
+
+PR #1382's headline deliverable is a new `persona-plan-marshall-agent/standards/user-communication.md`, loaded unconditionally by every persona and every dispatched agent. The finalize lane deployed it correctly: `project:finalize-step-deploy-target` stamped version `0.1.1584` into the bundle manifests, and `project:finalize-step-sync-plugin-cache` mirrored it, reporting `10 bundles synced; on-main executor regenerated`. The file is present and complete at `~/.claude/plugins/cache/plan-marshall/plan-marshall/0.1.1584/skills/persona-plan-marshall-agent/standards/user-communication.md`.
+
+But this session resolves skills from `0.1.1581` — the version fixed when the session started. That directory has no `user-communication.md`, and its `SKILL.md` Step 1 lists only `agent-behavior-rules.md`, with no Standards Reference row for the new file. Every agent dispatched after the sync therefore loaded the **pre-change** persona — including `project:finalize-step-review-retrospective` and `plan-marshall:plan-retrospective`, the two steps that judged the run.
+
+The script-side deliverable was live immediately: `manage-config project get --field user_language` returns `auto` on this checkout, because the executor resolves scripts from the repository source rather than the cache. Only the markdown-served side is affected.
+
+## Root cause
+
+Not a defect in the sync — the sync did its job. It is a property of session-scoped version pinning: a bundle change cannot take effect inside the session that ships it. The step's `display_detail` (`10 bundles synced`) is true and reads as *the change is now live*, which is what makes the property invisible.
+
+## Proposed action
+
+Have the step's `display_detail` name the stamped version it synced, and state that the running session stays on the version it resolved at start. Something of the shape `10 bundles synced at 0.1.1584; this session stays on its start-time version`. Two consequences follow that a reader should not have to discover:
+
+- A plan whose deliverable is a rule loaded by every agent cannot be self-verified in its own run, so no finalize step should claim the rule is in effect.
+- A later self-review or retrospective in the same session is reasoning against the pre-change bundle.
+
+## Evidence
+
+- decision.log `2026-09-03T05:39:11Z` — deploy-target: "1181 entries produced, version 0.1.1584 stamped into 10 bundle plugin.json"
+- `status.metadata.phase_steps` — `project:finalize-step-sync-plugin-cache` `outcome: done`, `display_detail: 10 bundles synced; on-main executor regenerated`
+- Cache at `0.1.1584` carries `standards/user-communication.md`; cache at `0.1.1581`, the version this session loads, does not, and its `SKILL.md` Step 1 omits the added Read line
+- `architecture search --content --pattern "user-communication.md"` confirms the merged source carries 2 references in `persona-plan-marshall-agent/SKILL.md`

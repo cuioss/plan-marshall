@@ -1,0 +1,178 @@
+{
+  "kind": "orchestrator",
+  "title": "Token-Optimization Roadmap",
+  "phase": "closed",
+  "workstreams": [
+    {
+      "id": "WS-01",
+      "slug": "core-token-optimization",
+      "status": "closed"
+    },
+    {
+      "id": "WS-02",
+      "slug": "finalize-integrity",
+      "status": "active"
+    },
+    {
+      "id": "WS-03",
+      "slug": "architecture-and-manifest",
+      "status": "active"
+    },
+    {
+      "id": "WS-04",
+      "slug": "tooling-and-metrics",
+      "status": "active"
+    },
+    {
+      "id": "WS-05",
+      "slug": "standards-and-design",
+      "status": "active"
+    },
+    {
+      "id": "WS-06",
+      "slug": "plan-server-and-orchestration",
+      "status": "active"
+    }
+  ],
+  "plans": [
+    {
+      "id": "PLAN-01",
+      "slug": "p1-finalize-commit-integrity",
+      "workstream": "WS-02",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "914",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-02",
+      "slug": "p2-unified-finalize-triage",
+      "workstream": "WS-02",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "920",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-03",
+      "slug": "p3-architecture-resolution",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "917",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-04",
+      "slug": "p4-execution-manifest-gaps",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "916",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-05",
+      "slug": "p5-consumer-domain-standards",
+      "workstream": "WS-05",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "918",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-06",
+      "slug": "p6-small-tooling-batch",
+      "workstream": "WS-04",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "921",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-07",
+      "slug": "p7-docs-contract-consistency",
+      "workstream": "WS-02",
+      "status": "resolved",
+      "plan_marshall_plan_id": "",
+      "pr": "930",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-08",
+      "slug": "p8-merge-queue-squash-reconcile",
+      "workstream": "WS-04",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "919",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-09",
+      "slug": "p9-metrics-corpus-integrity",
+      "workstream": "WS-04",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "922",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-10",
+      "slug": "ss-survivor-sweep",
+      "workstream": "WS-05",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "913",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-11",
+      "slug": "tt-terminal-title-stale-build-busy",
+      "workstream": "WS-04",
+      "status": "resolved",
+      "plan_marshall_plan_id": "",
+      "pr": "931",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-12",
+      "slug": "marshall-orchestrator-skill",
+      "workstream": "WS-06",
+      "status": "shipped",
+      "plan_marshall_plan_id": "marshall-orchestrator",
+      "pr": "915",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-13",
+      "slug": "rung1-global-home-root",
+      "workstream": "WS-06",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "923",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-14",
+      "slug": "ci-pr-safe-merge",
+      "workstream": "WS-06",
+      "status": "resolved",
+      "plan_marshall_plan_id": "ci-pr-safe-merge",
+      "pr": "929",
+      "landing": ""
+    },
+    {
+      "id": "PLAN-15",
+      "slug": "consumer-upgrade-migrations",
+      "workstream": "WS-06",
+      "status": "resolved",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    }
+  ],
+  "resume_anchor": "epic closed - see history.md",
+  "metadata": {},
+  "created": "2026-07-16T21:55:53Z",
+  "updated": "2026-07-21T16:34:27Z"
+}

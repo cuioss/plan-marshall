@@ -1,0 +1,82 @@
+envelope_version=1
+sender_type=plan
+sender_id=domain-over-provision
+epic=operator-ux
+kind=candidate-lesson
+created=2026-09-02T14:23:28Z
+
+component=plan-marshall:phase-6-finalize
+category=improvement
+created=2026-09-02
+bundle=plan-marshall
+
+# A self-review round is clean only on the proposition it happened to ask; nothing obliges the round to enumerate the propositions
+
+Plan `domain-over-provision` ran seven pre-submission self-review rounds over one
+change set. Every round returned a clean verdict on its own terms, and every round
+except the last was followed by one that found fresh `contract_drift` in files the
+previous round had already read and passed.
+
+The rounds did not differ in file coverage — they read the same files. They differed
+in the **proposition** each was implicitly asking about the same contract:
+
+| Rounds | Proposition the round asked |
+|--------|-----------------------------|
+| 1-5 | What SET does `domain-detect` return? |
+| 6 | How is that set COMPOSED? |
+| 7 | What does `ambiguous: true` OBLIGE THE CALLER to do? |
+
+Each round's search was shaped by its own proposition and structurally could not see
+the next one. Round 6 read `phase-1-init/SKILL.md:746` closely enough to rewrite the
+composition formula in it, and left the prompting clause on the same line untouched —
+because "what must the caller do" was not a question that round was asking. Round 7
+then found it (finding `7abe34`), which states the mechanism in the plan's own words:
+
+> Rounds 1-5 asked what set is returned; round 6 asked how it is composed; neither
+> asked what `ambiguous:true` obliges the caller to do.
+
+## Why this is not already covered
+
+Lesson `2026-09-02-14-001` (a delete-everywhere fix must verify completeness by
+SEARCHING the corpus, not by enumerating the sites the round already knows) fixes
+**site coverage WITHIN a proposition** — it finds the seventh restatement of a
+formula once you know the formula is the thing being deleted. It does nothing for
+this: no amount of searching for `unconditional union` surfaces a defect about what
+the caller must do when `ambiguous` is true, because that phrase is not what the
+round is searching for.
+
+The two failure modes compose badly. A round can be exhaustive on its axis and clean
+on its axis, and both facts are true and both are reported, and the change set still
+carries a live contradiction on an axis nobody named.
+
+## Proposed direction (for the orchestrator to judge)
+
+Before a self-review round declares clean, require the round to name the propositions
+the changed contract admits, and to state which it evaluated. A minimal starting
+vocabulary, drawn from the three this plan actually traversed:
+
+- **Extension** — what values/set does the contract produce?
+- **Composition** — how is that value derived, and does the stated derivation hold on
+  every branch?
+- **Obligation** — what does each producible value require of the CONSUMER, and does
+  every branch that produces it have a reachable consumer path?
+
+A round that evaluated one and is silent on the other two has a coverage gap of the
+same kind `delta_coverage` already publishes for files — an absence claim without the
+population it was drawn against — but on the proposition axis, where nothing currently
+publishes anything.
+
+## Evidence
+
+Q-Gate findings from plan `domain-over-provision`, phase `6-finalize` (all resolved
+`fixed`), grouped by the proposition that produced them:
+
+- Extension axis: `5b0f1b`, `36c7fd`, `8e43ad`, `426868`, `5ca882`, `d6b2d5`, `3ae5bb`,
+  `8fd2af`, `448379`, `dc2f31`, `dce56e`, `192b91`, `836cd5`
+- Composition axis: `065a1e`, `3bc8c3`, `940a06`, `9df09d`, `83fb4c`
+- Obligation axis: `7abe34`
+
+The retrospective held this observation at medium and did not record it, leaving the
+filing judgement to lessons-capture. It is transmitted here rather than filed
+globally because the epic holds the cross-plan context needed to judge whether seven
+rounds on one change set is a recurring shape or a one-off.

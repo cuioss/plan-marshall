@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-16-16-002",
+  "removed_at": "2026-07-18T08:37:33.999257+00:00",
+  "reason": "prepare_execute re-entry idempotency false-negative fixed by D4 healthy-re-entry recognition + symlink hardening + regression tests (plan finalize-step-integrity)",
+  "status": "removed"
+}

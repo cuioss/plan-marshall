@@ -1,0 +1,7 @@
+{
+  "lesson_id": "2026-05-27-14-003",
+  "removed_at": "2026-05-28T17:48:23.142533+00:00",
+  "reason": "Aggregated into Bare _fixtures.py helpers collide across pytest packages \u2014 use domain-prefixed names (shared component test-infrastructure)",
+  "status": "superseded",
+  "superseded_by": "2026-05-27-14-002"
+}

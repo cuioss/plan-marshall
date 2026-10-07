@@ -1,0 +1,41 @@
+envelope_version=1
+sender_type=plan
+sender_id=output-volume-standard
+epic=operator-ux
+kind=candidate-lesson
+created=2026-09-03T16:08:51Z
+
+component=plan-marshall:automatic-review
+category=anti-pattern
+
+# A refuted review-bot claim was filed as accepted, under-counting the bot's false positives
+
+## Observation
+
+PR #1387 promoted 6 review-bot comments into the findings ledger; 3 carried substantive claims (all CodeRabbit inline). Every one was declined — no bot claim produced an edit on this plan — but the dispositions were bucketed inconsistently, and the review retrospective had to correct one after the fact.
+
+Finding `cde958` (CodeRabbit asked to change `bound` to `bounds` in the persona SKILL.md Step 1 summary) was originally filed as `accepted`. Its own rationale REFUTES the claim: the colon list names the three rules in parallel bare-imperative form (answer / say / bound), so changing only the third breaks parallelism with the first two. The retrospective re-bucketed it to `rejected`.
+
+The remaining two show the same boundary is genuinely hard to hold:
+
+- `8a040a` — resolution `accepted`, rationale begins "Declined —" and argues the restatement is barred by the No-duplication documentation standard.
+- `652212` — resolution `taken_into_account`, rationale declines on a standing design decision and records a follow-up candidate.
+
+## Recommended rule
+
+The bucket is decided by what the RATIONALE does to the claim, not by whether an edit was made:
+
+- The rationale **refutes** the claim (it is wrong about the code, the standard, or the intent) → `rejected`. This is what feeds the bot's `false_positives_count`.
+- The rationale **acknowledges** the claim but declines to act now (out of scope, deferred, superseded by a design decision) → `taken_into_account` / `accepted`.
+
+Since a declined-with-no-edit disposition looks identical from the outside in both cases, add the check at triage time rather than leaving it to the retrospective: when a disposition's rationale opens with a refutation ("contradicts", "the claim is wrong", "barred by", "breaks X"), it belongs on `rejected`.
+
+## Why it matters
+
+Leaving a refuted claim on `accepted` under-counts the bot's `false_positives_count` and puts a refuted claim in the acknowledged bucket, which is DEFINED to exclude them. The bot-quality signal the counts exist to produce is silently biased toward the bot.
+
+## Evidence
+
+- Plan: `output-volume-standard` (epic `operator-ux`), PR #1387, reviewed commit `ffc78a3e`
+- Findings `cde958` (re-bucketed `accepted` -> `rejected` by the review retrospective), `8a040a`, `652212`
+- The `automatic-review` step completed `outcome=done`; the signal is the promoted-comment set, not an outstanding state

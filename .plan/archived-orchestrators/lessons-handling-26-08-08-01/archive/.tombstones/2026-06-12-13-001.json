@@ -1,0 +1,7 @@
+{
+  "lesson_id": "2026-06-12-13-001",
+  "removed_at": "2026-06-12T19:54:05.076162+00:00",
+  "reason": "Aggregated into Narrative-vs-code q-gate validator at refine catches a lesson whose premise inverts the actual code",
+  "status": "superseded",
+  "superseded_by": "2026-06-10-22-002"
+}

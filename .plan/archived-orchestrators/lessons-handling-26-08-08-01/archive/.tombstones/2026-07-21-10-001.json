@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-21-10-001",
+  "removed_at": "2026-07-21T13:15:18.956926+00:00",
+  "reason": "guarded failure mode fully eliminated: D1 (SKILL.md Step 4b no-lesson-id-in-prose contract, rationale documented) + D2 (mutates_source:true, order 996->4, pre-merge settle band gives a commit path) + D3 (mutates_source_step_post_merge_order plugin-doctor rule + executable-contract test) shipped PR #962 (plan lessons-housekeeping-plugin-doctor-contract) - residue already codified in shipped source, no separate promotion needed",
+  "status": "removed"
+}

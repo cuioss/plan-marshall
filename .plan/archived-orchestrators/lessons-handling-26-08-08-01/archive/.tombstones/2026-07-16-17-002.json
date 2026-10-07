@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-16-17-002",
+  "removed_at": "2026-07-17T08:25:55.042320+00:00",
+  "reason": "gap A shipped: enhancement added to _SIMPLIFY_CHANGE_TYPES + lane_warnings[] emission on ceremony pre-filter drop (plan execution-manifest-gaps, PR #916)",
+  "status": "removed"
+}

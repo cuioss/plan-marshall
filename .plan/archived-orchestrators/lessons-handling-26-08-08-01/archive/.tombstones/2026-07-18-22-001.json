@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-18-22-001",
+  "removed_at": "2026-07-21T11:04:42.243793+00:00",
+  "reason": "D1 shipped per-task breakable-test pytest at the execute-task leaf via resolve-test-scope --changed-paths; the leaf-blind-to-runtime-regressions failure mode can no longer occur and the residue is codified in execute-task per-task gate + pre-push-quality-gate divergence gate (plan execution-accounting-integrity, PR #961)",
+  "status": "removed"
+}

@@ -1,0 +1,7 @@
+{
+  "lesson_id": "2026-05-28-15-002",
+  "removed_at": "2026-05-28T17:44:18.454483+00:00",
+  "reason": "Aggregated into PreToolUse hook for context injection before Glob/Grep (shared component plan-marshall:manage-architecture)",
+  "status": "superseded",
+  "superseded_by": "2026-04-30-18-001"
+}

@@ -1,0 +1,7 @@
+{
+  "lesson_id": "2026-05-28-12-001",
+  "removed_at": "2026-05-28T17:42:29.801308+00:00",
+  "reason": "Aggregated into Dispatched agents punt long-running builds to background instead of using documented synchronous-with-generous-timeout pattern",
+  "status": "superseded",
+  "superseded_by": "2026-05-27-20-003"
+}

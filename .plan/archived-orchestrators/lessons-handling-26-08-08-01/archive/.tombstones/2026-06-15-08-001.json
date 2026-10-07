@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-15-08-001",
+  "removed_at": "2026-06-20T22:13:15.117538+00:00",
+  "reason": "Fully remediated in code (verified): clean -am exclusion live at _maven_cmd_discover.py:743 (pl_no_am_arg); index-based MAY_MUTATE reorder live at manage-execution-manifest.py:2104-2126. Both fixes (incl. consolidated 2026-06-20-17-004) shipped; closed at user request.",
+  "status": "removed"
+}

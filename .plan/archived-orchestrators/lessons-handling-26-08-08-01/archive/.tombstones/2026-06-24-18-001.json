@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-24-18-001",
+  "removed_at": "2026-07-17T07:22:05.262545+00:00",
+  "reason": "Phase-5 per-deliverable commits silently did not fire (clean-tree post-condition nine-for-nine un-shipped) \u2014 now shipped as worktree_dirty_at_boundary boundary guard + settlement recovery (Deliverable 2) (plan finalize-commit-integrity, PR #914)",
+  "status": "removed"
+}

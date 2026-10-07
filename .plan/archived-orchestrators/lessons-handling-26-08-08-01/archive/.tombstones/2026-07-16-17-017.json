@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-16-17-017",
+  "removed_at": "2026-07-17T14:02:24.621559+00:00",
+  "reason": "Completely codified into cui-http/standards/cui-http.md secure-default-flip rule (config opt-ins on EVERY consuming module) via deliverable 1 (plan consumer-domain-standards)",
+  "status": "removed"
+}

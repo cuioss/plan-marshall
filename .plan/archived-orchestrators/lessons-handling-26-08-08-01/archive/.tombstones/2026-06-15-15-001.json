@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-15-15-001",
+  "removed_at": "2026-06-16T14:24:46.689341+00:00",
+  "reason": "Guarded failure mode fully eliminated: integration-tests/e2e now auto-run via parameterized default:verify:{canonical} step in phase-5 whole-tree verification sweep (plan plan-verification-omits-integration-tests-when-an)",
+  "status": "removed"
+}

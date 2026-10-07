@@ -1,0 +1,424 @@
+{
+  "kind": "orchestrator",
+  "title": "Plan-Optimization \u2014 Token-Usage Analysis & Roadmap",
+  "phase": "closed",
+  "workstreams": [
+    {
+      "id": "WS-01",
+      "slug": "wave2-cleanup",
+      "title": "Wave-2 Cleanup",
+      "status": "complete"
+    },
+    {
+      "id": "WS-02",
+      "slug": "parked-deferred",
+      "title": "Parked / Deferred",
+      "status": "complete"
+    },
+    {
+      "id": "WS-03",
+      "slug": "consumer-surfaced-config-integrity",
+      "title": "Consumer-Surfaced Config Integrity",
+      "status": "complete"
+    },
+    {
+      "id": "WS-04",
+      "slug": "finalize-barrier-hardening",
+      "title": "Finalize-Step & Barrier Hardening",
+      "status": "complete"
+    },
+    {
+      "id": "WS-05",
+      "slug": "build-gating-footprint-awareness",
+      "title": "Build-Gating Footprint Awareness",
+      "status": "complete"
+    },
+    {
+      "id": "WS-06",
+      "slug": "orchestrator-lifecycle-tooling",
+      "title": "Orchestrator Lifecycle Tooling",
+      "status": "complete"
+    },
+    {
+      "id": "WS-07",
+      "slug": "merge-coordination-hardening",
+      "title": "Merge-Coordination Hardening",
+      "status": "complete"
+    },
+    {
+      "id": "WS-08",
+      "slug": "dispatch-topology-guards",
+      "title": "Dispatch-Topology Guards",
+      "status": "complete"
+    },
+    {
+      "id": "WS-09",
+      "slug": "merge-queue-coexistence",
+      "title": "Merge-Queue Coexistence",
+      "status": "complete"
+    },
+    {
+      "id": "WS-10",
+      "slug": "pipeline-integrity-hardening",
+      "title": "Pipeline Integrity Hardening",
+      "status": "active"
+    }
+  ],
+  "plans": [
+    {
+      "id": "PLAN-01",
+      "slug": "manifest-compose-gaps",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "926",
+      "landing": "landings/PLAN-01.md"
+    },
+    {
+      "id": "PLAN-02",
+      "slug": "finalize-step-integrity",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "927",
+      "landing": "landings/PLAN-02.md"
+    },
+    {
+      "id": "PLAN-03",
+      "slug": "leaf-validator-yield",
+      "workstream": "WS-01",
+      "status": "resolved",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": "landings/PLAN-03.md"
+    },
+    {
+      "id": "PLAN-04",
+      "slug": "docs-contract-consistency",
+      "workstream": "WS-01",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "930",
+      "landing": "landings/PLAN-04.md"
+    },
+    {
+      "id": "PLAN-05",
+      "slug": "terminal-title-stale-build-busy",
+      "workstream": "WS-02",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "931",
+      "landing": "landings/PLAN-05.md"
+    },
+    {
+      "id": "PLAN-06",
+      "slug": "ci-pr-safe-merge",
+      "workstream": "WS-02",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "929",
+      "landing": "landings/PLAN-06.md"
+    },
+    {
+      "id": "PLAN-07",
+      "slug": "steward-wizard-config-integrity",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "steward-wizard-config-integrity",
+      "pr": "932",
+      "landing": "landings/PLAN-07.md"
+    },
+    {
+      "id": "PLAN-08",
+      "slug": "executor-manifest-resolution",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "executor-manifest-resolution",
+      "pr": "934",
+      "landing": "landings/PLAN-08.md"
+    },
+    {
+      "id": "PLAN-09",
+      "slug": "merge-queue-merge-group-guard",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "merge-queue-merge-group-guard",
+      "pr": "935",
+      "landing": "landings/PLAN-09.md"
+    },
+    {
+      "id": "PLAN-10",
+      "slug": "review-barrier-noise-filter",
+      "workstream": "WS-04",
+      "status": "shipped",
+      "plan_marshall_plan_id": "review-barrier-noise-filter",
+      "pr": "936",
+      "landing": "landings/PLAN-10.md"
+    },
+    {
+      "id": "PLAN-11",
+      "slug": "footprint-driven-build-gating",
+      "workstream": "WS-05",
+      "status": "shipped",
+      "plan_marshall_plan_id": "footprint-driven-build-gating",
+      "pr": "938",
+      "landing": "landings/PLAN-11.md"
+    },
+    {
+      "id": "PLAN-12",
+      "slug": "orchestrator-archive-verb",
+      "workstream": "WS-06",
+      "status": "shipped",
+      "plan_marshall_plan_id": "orchestrator-archive-verb",
+      "pr": "937",
+      "landing": "landings/PLAN-12.md"
+    },
+    {
+      "id": "PLAN-13",
+      "slug": "steward-provisioning-fail-closed",
+      "workstream": "WS-03",
+      "status": "shipped",
+      "plan_marshall_plan_id": "steward-provisioning-fail-closed",
+      "pr": "950",
+      "landing": "landings/PLAN-13.md"
+    },
+    {
+      "id": "PLAN-14",
+      "slug": "scoped-whole-tree-module-tests",
+      "workstream": "WS-04",
+      "status": "shipped",
+      "plan_marshall_plan_id": "scoped-whole-tree-module-tests",
+      "pr": "942",
+      "landing": "landings/PLAN-14.md"
+    },
+    {
+      "id": "PLAN-15",
+      "slug": "stale-merge-lock-reclaim",
+      "workstream": "WS-07",
+      "status": "shipped",
+      "plan_marshall_plan_id": "stale-merge-lock-reclaim",
+      "pr": "940",
+      "landing": "landings/PLAN-15.md"
+    },
+    {
+      "id": "PLAN-16",
+      "slug": "planning-phase-checkout-guard",
+      "workstream": "WS-08",
+      "status": "shipped",
+      "plan_marshall_plan_id": "planning-phase-checkout-guard",
+      "pr": "945",
+      "landing": "landings/PLAN-16.md"
+    },
+    {
+      "id": "PLAN-17",
+      "slug": "fast-ci-footprint-gating",
+      "workstream": "WS-05",
+      "status": "shipped",
+      "plan_marshall_plan_id": "fast-ci-footprint-gating",
+      "pr": "948",
+      "landing": "landings/PLAN-17.md"
+    },
+    {
+      "id": "PLAN-18",
+      "slug": "merge-queue-coexistence",
+      "workstream": "WS-09",
+      "status": "shipped",
+      "plan_marshall_plan_id": "merge-queue-coexistence",
+      "pr": "952",
+      "landing": "landings/PLAN-18.md"
+    },
+    {
+      "id": "PLAN-19",
+      "slug": "finalize-queue-enforced-enqueue",
+      "workstream": "WS-09",
+      "status": "shipped",
+      "plan_marshall_plan_id": "finalize-queue-enforced-enqueue",
+      "pr": "944",
+      "landing": "landings/PLAN-19.md"
+    },
+    {
+      "id": "PLAN-20",
+      "slug": "execution-accounting-integrity",
+      "workstream": "WS-10",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "961",
+      "landing": "landings/PLAN-20.md"
+    },
+    {
+      "id": "PLAN-21",
+      "slug": "review-barrier-residuals",
+      "workstream": "WS-10",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "957",
+      "landing": "landings/PLAN-21.md"
+    },
+    {
+      "id": "PLAN-22",
+      "slug": "lock-staleness-scope-guard",
+      "workstream": "WS-10",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "959",
+      "landing": "landings/PLAN-22.md"
+    },
+    {
+      "id": "PLAN-23",
+      "slug": "marker-detector-ownership-and-fixture",
+      "workstream": "WS-10",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "986",
+      "landing": "landings/PLAN-23.md"
+    },
+    {
+      "id": "PLAN-24",
+      "slug": "maven-run-truthful-status",
+      "workstream": "WS-10",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "963",
+      "landing": "landings/PLAN-24.md"
+    },
+    {
+      "id": "PLAN-25",
+      "slug": "domain-conditional-loading-concept",
+      "workstream": "WS-10",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "965",
+      "landing": "landings/PLAN-25.md"
+    },
+    {
+      "id": "PLAN-26",
+      "slug": "terminal-title-refresh-cadence",
+      "workstream": "WS-10",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "964",
+      "landing": "landings/PLAN-26.md"
+    },
+    {
+      "id": "PLAN-28",
+      "slug": "lessons-housekeeping-plugin-doctor-contract",
+      "workstream": "WS-10",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "962",
+      "landing": "landings/PLAN-28.md"
+    },
+    {
+      "id": "PLAN-29",
+      "slug": "platform-agnostic-waiting-standard",
+      "workstream": "WS-10",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "969",
+      "landing": "landings/PLAN-29.md"
+    },
+    {
+      "id": "PLAN-30",
+      "slug": "orchestrator-title-push-coverage",
+      "workstream": "WS-10",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "967",
+      "landing": "landings/PLAN-30.md"
+    },
+    {
+      "id": "PLAN-31",
+      "slug": "orchestrator-dispatch-ruleset",
+      "workstream": "WS-10",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "968",
+      "landing": "landings/PLAN-31.md"
+    },
+    {
+      "id": "PLAN-32",
+      "slug": "truthful-build-timeout-accounting",
+      "workstream": "WS-10",
+      "status": "shipped",
+      "plan_marshall_plan_id": "build-timeout-truthful-status",
+      "pr": "972",
+      "landing": "landings/PLAN-32.md"
+    },
+    {
+      "id": "PLAN-33",
+      "slug": "session-binding-caller-and-conflicts",
+      "workstream": "WS-10",
+      "status": "shipped",
+      "plan_marshall_plan_id": "session-binding-gc-and-conflict-semantics",
+      "pr": "974",
+      "landing": "landings/PLAN-33.md"
+    },
+    {
+      "id": "PLAN-34",
+      "slug": "steward-plugin-cache-lifecycle",
+      "workstream": "WS-10",
+      "status": "shipped",
+      "plan_marshall_plan_id": "consumer-upgrade-cache-freshness",
+      "pr": "976",
+      "landing": "landings/PLAN-34.md"
+    },
+    {
+      "id": "PLAN-35",
+      "slug": "one-build-decision-mechanic",
+      "workstream": "WS-10",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "985",
+      "landing": "landings/PLAN-35.md"
+    },
+    {
+      "id": "PLAN-36",
+      "slug": "finalize-machinery-integrity",
+      "workstream": "WS-10",
+      "status": "shipped",
+      "plan_marshall_plan_id": "finalize-machinery-integrity",
+      "pr": "973",
+      "landing": "landings/PLAN-36.md"
+    },
+    {
+      "id": "PLAN-37",
+      "slug": "credentials-key-normalization",
+      "workstream": "WS-10",
+      "status": "shipped",
+      "plan_marshall_plan_id": "credentials-key-normalization",
+      "pr": "978",
+      "landing": "landings/PLAN-37.md"
+    },
+    {
+      "id": "PLAN-38",
+      "slug": "domain-ambiguity-candidate-set",
+      "workstream": "WS-10",
+      "status": "shipped",
+      "plan_marshall_plan_id": "domain-ambiguity-candidate-set",
+      "pr": "975",
+      "landing": "landings/PLAN-38.md"
+    },
+    {
+      "id": "PLAN-39",
+      "slug": "manifest-tier-truthful-stamp",
+      "workstream": "WS-10",
+      "status": "shipped",
+      "plan_marshall_plan_id": "plan-39-manifest-tier-truthful-stamp",
+      "pr": "980",
+      "landing": "landings/PLAN-39.md"
+    },
+    {
+      "id": "PLAN-40",
+      "slug": "orchestrator-standard-hardening",
+      "workstream": "WS-10",
+      "status": "shipped",
+      "plan_marshall_plan_id": "",
+      "pr": "981",
+      "landing": "landings/PLAN-40.md"
+    }
+  ],
+  "resume_anchor": "EPIC CLOSED 2026-07-22 - see HISTORY.md close-freeze record. 21 landings 0 parked. Successor = truthful-signals (carries ALL open leads/watches/candidates). Archived to archived-orchestrators/plan-optimization/. Do NOT reopen - new work goes to truthful-signals.",
+  "metadata": {},
+  "created": "2026-07-17T21:51:26Z",
+  "updated": "2026-07-22T20:08:36Z"
+}

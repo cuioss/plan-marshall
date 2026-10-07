@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-16-17-003",
+  "removed_at": "2026-07-17T07:22:55.796853+00:00",
+  "reason": "Loop-back re-entry strict-verify drift. Remediated by loop_back_reentry marker auto-override in Deliverable 3, codified in _status_query.py, _cmd_lifecycle.py, phase-handshake.md (plan finalize-commit-integrity, PR 914)",
+  "status": "removed"
+}

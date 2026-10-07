@@ -1,0 +1,88 @@
+envelope_version=1
+sender_type=plan
+sender_id=domain-over-provision
+epic=operator-ux
+kind=candidate-lesson
+created=2026-09-02T14:23:35Z
+
+component=plan-marshall:phase-6-finalize
+category=improvement
+created=2026-09-02
+bundle=plan-marshall
+
+# A per-file `files_without_candidates` is read as a benign zero; only the whole-round zero carries an obligation
+
+## The gap
+
+`delta_coverage` publishes two different zeros and the consumer contract acts on only
+one of them:
+
+- **Whole-round zero** — `delta_coverage.files_with_candidates == 0` over a non-zero
+  `files_in_scope`. `pre-submission-self-review.md` § "A clean verdict states what the
+  round observed" (line 284) covers this: the round must log a deviation quoting
+  `delta_coverage.statement` before closing.
+- **Per-file zero** — `files_without_candidates >= 1` inside a round that surfaced
+  plenty elsewhere. **No obligation attaches to this at all.** The aggregate branch
+  never fires, the round looks healthy, and the specific files the surfacer produced
+  nothing for are indistinguishable from files it examined and cleared.
+
+The workflow doc already notes the aggregate branch is "RARE by construction", because
+`contract_sources` credits a modified file on path structure alone — any file under a
+skill directory is credited with no defect signal required. That rarity is exactly
+what makes the per-file zero the one that carries the information: it is the only
+coverage signal that can still fire in a normal round.
+
+## What it cost
+
+In plan `domain-over-provision`, `doc/user/configuration.adoc` was the single file
+with `delta_coverage.files_without_candidates: 1`. It carried **two** real instances
+of the round's defect class:
+
+- Q-Gate `dce56e` (round 5) — two errors in one added sentence: an unconditional
+  "the detector over-provisions instead" that the `inclusion_only_resolve` branch
+  falsifies, plus "every domain the project configures" naming the wrong set.
+- Q-Gate `83fb4c` (round 6) — the composition formula restated in the user doc. Its
+  own note: *"this file is the one the surfacer produced zero candidates for
+  (`delta_coverage.files_without_candidates=1`), so no detector flagged it — a
+  `files_without_candidates` file warrants a mandatory manual read, not a benign
+  zero."*
+
+Both were found by manual reading, one round apart, in a file the coverage block had
+already flagged as unreached before either was found.
+
+## Why that file, mechanically
+
+The per-file zero is not random — it selects for the highest-audience, lowest-coverage
+corner of the tree:
+
+- `doc/user/configuration.adoc` sits outside `marketplace/bundles/*/skills/`, so the
+  `contract_sources` path-structure credit that saves nearly every other file does not
+  apply to it.
+- `_detect_user_facing_strings` handles `.md` and `.py` and skips every other
+  extension (`_self_review_detectors.py:154`), so an `.adoc` file is skipped outright
+  by the prose detector most likely to have caught both instances.
+
+So the files that surface a per-file zero are disproportionately the user-facing docs —
+read by the one audience that cannot check the code against them, which is precisely
+what finding `8fd2af` says about the sibling `--help` surface.
+
+## Proposed direction (for the orchestrator to judge)
+
+Give the per-file zero the same treatment the whole-round zero already has: when a
+round returns `delta_coverage.files_without_candidates >= 1`, the unreached files are
+named and each gets a mandatory manual read before the round closes, rather than
+riding inside an aggregate that looks healthy. The list is bounded by construction —
+it was 1 file here — so the cost is small and it lands on exactly the files no
+detector spoke for.
+
+The honest-reporting half of this is already right and should not change:
+`_compute_delta_coverage`'s docstring is explicit that `files_with_candidates == 0`
+is not a soundness verdict and deliberately leaves both readings open, because
+distinguishing them needs a per-detector reach map nothing in that module can derive.
+The gap is not in what the surfacer publishes — it is that the consumer has no
+instruction for the per-file case, so a published signal is read as noise.
+
+Filing note: the contract text lives in
+`plan-marshall:extension-api/standards/ext-point-self-review-surfacing.md`
+§ `delta_coverage`; the consumer obligation this proposes to extend lives in
+`plan-marshall:phase-6-finalize/workflow/pre-submission-self-review.md` line 284.

@@ -1,0 +1,15 @@
+{
+  "kind": "orchestrator",
+  "title": "Automated PR review apparatus reliability",
+  "phase": "closed",
+  "workstreams": [
+    "WS-01-await-and-participation-detection",
+    "WS-02-org-workflow-gates",
+    "WS-03-review-signal-efficacy",
+    "WS-04-merge-barrier-and-landing-channel"
+  ],
+  "metadata": {
+    "parallelization_scope": "2"
+  },
+  "created": "2026-07-29T19:15:44Z"
+}

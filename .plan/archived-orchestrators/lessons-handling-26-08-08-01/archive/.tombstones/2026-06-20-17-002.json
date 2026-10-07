@@ -1,0 +1,7 @@
+{
+  "lesson_id": "2026-06-20-17-002",
+  "removed_at": "2026-06-20T22:09:28.582153+00:00",
+  "reason": "Aggregated into Read-only boundary/gate verbs must fail closed",
+  "status": "superseded",
+  "superseded_by": "2026-06-20-17-001"
+}

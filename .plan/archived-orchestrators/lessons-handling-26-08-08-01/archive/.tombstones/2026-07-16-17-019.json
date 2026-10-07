@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-16-17-019",
+  "removed_at": "2026-07-17T14:02:37.005182+00:00",
+  "reason": "Completely codified into cui-http-testing/standards/testing-mockwebserver.md thread-safe shared doubles + atomic-state rule via deliverable 2 (plan consumer-domain-standards)",
+  "status": "removed"
+}

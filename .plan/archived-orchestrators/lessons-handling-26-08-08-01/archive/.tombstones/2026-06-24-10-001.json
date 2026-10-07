@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-24-10-001",
+  "removed_at": "2026-07-27T09:37:27.686919+00:00",
+  "reason": "D1 closed: both [DISPATCH] stragglers (finalize-step-plugin-doctor, finalize-step-review-retrospective) now route through the fused emit-to-spawn dispatch branch, wait-region-unified-triage normalized to concrete form, population-derived detector (test_dispatch_roster_closure.py) with mutation guards added (plan finalize-dispatch-audit-integrity)",
+  "status": "removed"
+}

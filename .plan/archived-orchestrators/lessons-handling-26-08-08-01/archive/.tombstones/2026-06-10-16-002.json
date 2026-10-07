@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-10-16-002",
+  "removed_at": "2026-06-11T09:25:54.115934+00:00",
+  "reason": "Fixed: executor template _derive_failure_detail() derives the failure reason from stdout status:error TOON (option-A precedence) and threads stdout_capture into emit_dispatch_failure_work_log",
+  "status": "removed"
+}

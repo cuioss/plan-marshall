@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-06-22-14-001",
+  "removed_at": "2026-07-08T20:54:27.622010+00:00",
+  "reason": "Covered by D3 fail-loud unconfigured-provider contract requirement on fetch_findings/post_responses (plan plan-4-find-triage, PR #852)",
+  "status": "removed"
+}

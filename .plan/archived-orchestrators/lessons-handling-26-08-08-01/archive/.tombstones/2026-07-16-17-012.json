@@ -1,0 +1,6 @@
+{
+  "lesson_id": "2026-07-16-17-012",
+  "removed_at": "2026-07-17T07:56:05.417343+00:00",
+  "reason": "Completely covered: D2 unified the build_map matcher into route_matches (bare-basename routes match at any tree depth); nested pom.xml classification test reproduces the lesson and passes (plan architecture-resolution, PR #917)",
+  "status": "removed"
+}
