@@ -15,6 +15,9 @@ population:
   the module.
 - ``contested`` — two or more such plans cover it. This is the residual
   genuinely-contested set: small enough to enumerate and act on.
+- ``settled`` — two or more slice plans cover it and EVERY one of them is
+  finished. Nobody competes for it any more; the finished claims are recorded
+  in :attr:`ModuleVerdict.retired` and no owner is manufactured.
 - ``swept`` — no slice plan covers it, but one or more SWEEP plans do. The
   crossing is reported and no owner is manufactured.
 - ``not_derivable`` — no plan's resolved entries cover it, but at least one
@@ -87,11 +90,14 @@ the plan list the module forbids, one level down.
 ⛔ **Lifecycle narrows the competing set; it never picks a winner among live
 plans.** A module contested between two or more ACTIVE plans stays contested —
 that overlap is the one class this derivation deliberately refuses to
-adjudicate. A module every one of whose claimants is terminal stays contested
-too: narrowing it to nothing would manufacture an ownerless module out of one
-that several plans really did claim. Both refusals are the same rule read in
-opposite directions — the narrowing applies only when it leaves exactly one live
-claimant standing.
+adjudicate. A module every one of whose claimants is terminal is no contest
+either way: nobody is left to compete, so it is ``settled`` — its own verdict,
+with every finished claim kept in ``retired``. It is neither handed to one of
+the finished plans (lifecycle picks no winner) nor reported ``unclaimed`` (several
+plans really did claim it), and it is not ``contested``: a follow-up plan
+finishing its predecessor's slice is the normal case, and counting every such
+module as a contest made the contested figure grow with each plan that landed
+(186 instead of 11 once two finished plans shared 175 modules).
 
 ⛔ A missing, unreadable, or not-yet-migrated ledger degrades to treating EVERY
 plan as active, which is the behaviour that held before this input existed, and
@@ -129,6 +135,7 @@ from orchestrator import (
 VERDICT_CLAIMED = 'claimed'
 VERDICT_UNCLAIMED = 'unclaimed'
 VERDICT_CONTESTED = 'contested'
+VERDICT_SETTLED = 'settled'
 VERDICT_SWEPT = 'swept'
 VERDICT_NOT_DERIVABLE = 'not_derivable'
 
@@ -138,6 +145,7 @@ VERDICT_ORDER = (
     VERDICT_CLAIMED,
     VERDICT_UNCLAIMED,
     VERDICT_CONTESTED,
+    VERDICT_SETTLED,
     VERDICT_SWEPT,
     VERDICT_NOT_DERIVABLE,
 )
@@ -147,6 +155,7 @@ VERDICT_ORDER = (
 #: partition's refusal to merge them.
 OWNER_UNCLAIMED = '<unclaimed>'
 OWNER_CONTESTED = '<contested>'
+OWNER_SETTLED = '<settled>'
 OWNER_SWEPT = '<swept>'
 OWNER_NOT_DERIVABLE = '<not-derivable>'
 
@@ -623,6 +632,8 @@ class ModuleVerdict:
     narrowing actually applied, so an empty tuple means "no claim was retired
     here", never "the ledger was not consulted"; that question is answered once,
     on :class:`PlanLifecycle`, rather than guessed from a per-module absence.
+    On a ``settled`` module it carries EVERY claimant and ``plans`` is empty:
+    all of them are finished, so none is an owner the verdict could rest on.
     """
 
     path: str
@@ -932,9 +943,10 @@ def derive_partition(
     - two or more owners, two or more of them live — CONTESTED among the live
       plans, with the finished ones retired beside the verdict. ⛔ Lifecycle
       never picks a winner here; that is the whole refusal.
-    - two or more owners, NONE of them live — CONTESTED, unnarrowed and with
-      nothing retired. Narrowing to an empty set would manufacture an ownerless
-      module out of one that several plans really did claim.
+    - two or more owners, NONE of them live — SETTLED: no plan the verdict rests
+      on, every finished claim in :attr:`ModuleVerdict.retired`. Nobody competes
+      for the module, so it is not a contest, and no finished plan is picked as
+      its owner.
 
     An empty ``terminal_plans`` reproduces the behaviour that held before the
     ledger was an input at all, which is exactly what the degraded read yields.
@@ -957,7 +969,7 @@ def derive_partition(
             live = tuple(plan_id for plan_id in owners if plan_id not in terminal_plans)
             retired = tuple(plan_id for plan_id in owners if plan_id in terminal_plans)
             if not live:
-                verdicts.append(ModuleVerdict(module, VERDICT_CONTESTED, owners, crossing))
+                verdicts.append(ModuleVerdict(module, VERDICT_SETTLED, (), crossing, retired))
             elif len(live) == 1:
                 verdicts.append(ModuleVerdict(module, VERDICT_CLAIMED, live, crossing, retired))
             else:
@@ -1010,6 +1022,8 @@ def owner_of(module: ModuleVerdict) -> str:
         return module.plans[0]
     if module.verdict == VERDICT_CONTESTED:
         return OWNER_CONTESTED
+    if module.verdict == VERDICT_SETTLED:
+        return OWNER_SETTLED
     if module.verdict == VERDICT_SWEPT:
         return OWNER_SWEPT
     if module.verdict == VERDICT_NOT_DERIVABLE:

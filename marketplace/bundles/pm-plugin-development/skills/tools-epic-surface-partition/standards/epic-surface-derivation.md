@@ -188,6 +188,7 @@ decision — see [The partition verdicts](#the-partition-verdicts).
 |---------|------|
 | `claimed` | Exactly one SLICE plan's owning entries cover it, once the lifecycle narrowing below has run |
 | `contested` | Two or more slice plans still competing cover it — the residual genuine disagreement |
+| `settled` | Two or more slice plans cover it and every one of them is finished — nobody competes for it any more |
 | `swept` | No slice plan covers it, but one or more SWEEP plans do |
 | `not_derivable` | No plan's owning entries cover it, but a spec names it in an unresolved span or in a lead-shaped entry |
 | `unclaimed` | No plan covers it and no spec names it |
@@ -388,7 +389,7 @@ TERMINAL retires a live one, and neither guess is derivable from the vocabulary.
 | One, whatever its lifecycle | Untouched — `claimed` by that plan |
 | Two or more, exactly one still active | `claimed` by the active plan; the finished plans are recorded in `retired` |
 | Two or more, two or more still active | `contested` among the active plans, finished ones recorded in `retired` |
-| Two or more, none still active | `contested`, unnarrowed, with nothing retired |
+| Two or more, none still active | `settled`: no plan the verdict rests on, every finished claim recorded in `retired` |
 
 ⛔ **An overlap between two ACTIVE plans is deliberately NOT adjudicated.**
 Lifecycle narrows the competing set; it never picks a winner among live plans.
@@ -453,6 +454,7 @@ total, mirroring the partition's refusal to merge the populations:
 |--------|-------|
 | `<unclaimed>` | Over-budget modules no plan claims |
 | `<contested>` | Over-budget modules two or more still-competing slice plans claim |
+| `<settled>` | Over-budget modules two or more plans claimed, all of them finished |
 | `<swept>` | Over-budget modules only self-declared sweeps cover |
 | `<not-derivable>` | Over-budget modules named only in unresolved spans or lead-shaped entries |
 
@@ -469,7 +471,7 @@ adding a section leaves no stale number behind.
 | 2 | `attribution` | Budget findings grouped by owning plan |
 | 3 | `disagreements` | Every unclaimed and contested entry **per instance**, not merely counted |
 | 4 | `contested` | The residual genuine disagreement, isolated from the rest of `disagreements` |
-| 5 | `lifecycle` | The ledger's terminal/active partition, the modules its narrowing attributed, and — when no ledger could be read — the stated degradation |
+| 5 | `lifecycle` | The ledger's terminal/active partition, the modules its narrowing attributed, the modules settled between finished plans, and — when no ledger could be read — the stated degradation |
 | 6 | `swept` | The self-declared sweep plans and the modules they cross |
 | 7 | `not_derivable` | The modules and the specs the derivation cannot resolve — emitted even when empty |
 | 8 | `injected_controls` | The injected-failure demonstrations, each naming the control that demonstrates it |
