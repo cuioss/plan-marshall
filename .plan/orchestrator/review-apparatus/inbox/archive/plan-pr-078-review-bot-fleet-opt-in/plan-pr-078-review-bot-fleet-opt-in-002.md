@@ -1,0 +1,34 @@
+envelope_version=1
+sender_type=plan
+sender_id=plan-pr-078-review-bot-fleet-opt-in
+epic=review-apparatus
+kind=candidate-lesson
+created=2026-10-06T22:20:40Z
+
+component=plan-marshall:phase-6-finalize
+category=improvement
+
+# Bound self-review loop-backs by convergence and stop re-firing unrelated gates
+
+## Context
+
+Plan `plan-pr-078-review-bot-fleet-opt-in` shipped a 14-file host diff (PR #1704). Its `pre-submission-self-review` step ran three rounds and returned `loop_back` each time: 2 findings, then 4, then 6, all `contract_drift`, all real, and each round's findings sat in files the previous round had not read. Every loop-back also re-fired `finalize-step-lessons-housekeeping`, `finalize-step-simplify` and `finalize-step-plugin-doctor`, none of which found anything after the first pass. The operator was told each round cost about 500K tokens and ended it with "Stop reviewing, push now"; the step is recorded `done` with `acceptance=accepted`, `may_close=no`. CodeRabbit then found three further real defects on the pushed tree.
+
+## Root cause
+
+The step has no convergence signal: a round reports what it looked at, and a delta round reads only what the last fix touched, so "found nothing new" and "did not look there" are the same output. The Step 3b verifier that is meant to decide closure needs a second dispatch, which a leaf cannot issue, so `acceptance` / `may_close` were never produced by the workflow in any round. Separately, a loop-back to `6-finalize` re-runs every earlier gate regardless of whether the fix commit could affect it.
+
+## Proposed action
+
+- Make the first round the full-surface round and have it enumerate the sibling population of each defect class before returning, so round 2 is a confirmation and not a second discovery pass.
+- Move the Step 3b verifier dispatch to the orchestrator (the only context that can issue it) and state that in the workflow, so a leaf does not silently omit the facts.
+- On a `6-finalize` loop-back whose fix commit is documentation-only, skip re-firing gates whose inputs the commit cannot change (lessons housekeeping in particular).
+- Publish per-round cost and a findings-per-round trend in the step record, and stop automatically when two consecutive rounds find the same defect class in new files.
+
+## Evidence
+
+- aspect: chat_history_analysis - operator decision "Stop reviewing, push now" after "Three self-review rounds have each found real but doc-only inaccuracies (12 fixed so far) ... ~500k tokens per round; 3 of 5 allowed rounds spent"
+- aspect: plan_efficiency - `6-finalize` 3,073,395 tokens (floor) against `5-execute` 2,861,754; finalize is the dominant phase for a 14-file diff
+- aspect: logging_gap_analysis - 4 `returned_with_findings` dispatch-boundary rows totalling 1,048,208 tokens
+- aspect: execution-context-dispatch-audit - `firing_count` 4 for self-review, 5 for simplify, 3 each for lessons-housekeeping and plugin-doctor
+- status record: `pre-submission-self-review` display_detail "not converged: operator closed after 3 rounds, 12 doc findings fixed"

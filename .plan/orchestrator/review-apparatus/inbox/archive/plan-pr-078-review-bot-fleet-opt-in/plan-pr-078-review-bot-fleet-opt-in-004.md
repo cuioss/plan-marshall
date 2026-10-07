@@ -1,0 +1,33 @@
+envelope_version=1
+sender_type=plan
+sender_id=plan-pr-078-review-bot-fleet-opt-in
+epic=review-apparatus
+kind=candidate-lesson
+created=2026-10-06T22:21:18Z
+
+component=plan-marshall:phase-6-finalize
+category=bug
+
+# Fix the post_run_source_guard call that passes an undeclared --plan-id
+
+## Context
+
+During finalize of plan `plan-pr-078-review-bot-fleet-opt-in`, after the `project:finalize-step-review-retrospective` post-run-review step returned, `phase-6-finalize:post_run_source_guard check` was invoked with `--plan-id plan-pr-078-review-bot-fleet-opt-in` and rejected by argparse (`unrecognized arguments: --plan-id ...`, exit 2). The script's `check` verb declares `--step-id` (required), `--project-dir` (required) and `--fail-on-dirty` only. The guard exists to detect a post-run-review step that edited tracked source after the gates ran; a rejected call means that check did not run at that point.
+
+## Root cause
+
+Not established from the logs whether the dispatcher's documented call carries `--plan-id` or the orchestrator added it. A likely contributor is the finalize entry status line, which states that "all Bucket B script calls MUST pass '--plan-id' or '--project-dir' (mutually exclusive)" - a blanket rule this script is an exception to, because it deliberately requires `--project-dir` with no default and declares no `--plan-id`.
+
+## Proposed action
+
+- Read the six `post_run_source_guard` mentions in `phase-6-finalize/SKILL.md` and confirm every documented call uses `--step-id` + `--project-dir` and never `--plan-id`.
+- Either narrow the blanket "Bucket B calls MUST pass --plan-id or --project-dir" status line so it does not cover scripts that declare only one of the two, or have the guard reject `--plan-id` with a message naming `--project-dir`.
+- Treat a rejected guard call as "not observed", and make the dispatcher retry or record that outcome rather than continuing as if the check had passed.
+
+## Evidence
+
+- aspect: script_failure_analysis - finding `invented_flag` on `plan-marshall:phase-6-finalize:post_run_source_guard` `check`, exit 2, 2026-10-06T22:14:39Z, stderr "unrecognized arguments: --plan-id plan-pr-078-review-bot-fleet-opt-in"
+- aspect: log_analysis - work log ERROR 32da82 at the same timestamp, one second before the next post-run-review dispatch was logged
+- `post_run_source_guard check --help`: `--step-id STEP_ID --project-dir PROJECT_DIR [--fail-on-dirty]`
+- work log 22b7ec (finalize entry): "all Bucket B script calls MUST pass '--plan-id' or '--project-dir' (mutually exclusive)"
+- not verified: whether a corrected call was issued afterwards - the retrospective did not read the script log past the rejection
