@@ -17,6 +17,8 @@ lives here:
   excludes the re-review triggers this workflow itself posted by provenance
   (workflow identity plus an exact registered trigger body, counted in
   ``count_skipped_own_trigger`` and listed in ``own_trigger_exclusions``),
+  drops a reviewer bot's acknowledgment of such a trigger as noise (its registry
+  ``acknowledgment_patterns``, counted in ``count_skipped_noise``),
   then files one ``pr-comment`` finding per surviving comment via ``manage-findings
   add``. The untrusted comment body is quarantined under ``raw_input.{body}``
   (never embedded raw in the top-level ``detail``); the batched ``manage-findings
@@ -117,7 +119,7 @@ from _github_pr import (
     refusal_size_cap,
 )
 from ci_base import extract_routing_args, register_subcommands, set_default_cwd
-from github_re_review import bot_kind_for_author, is_registered_trigger_comment
+from github_re_review import bot_kind_for_author, is_acknowledgment_comment, is_registered_trigger_comment
 from triage_helpers import (
     ErrorCode,
     compile_patterns_from_config,
@@ -435,6 +437,13 @@ def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
       and reported per comment. What remains here is an exact-trigger body from any
       OTHER author, or from the workflow account when its identity could not be
       read — both keep this noise disposition.
+    - ACKNOWLEDGMENT — a reviewer bot's reply that only confirms a command was
+      received (``github_re_review.is_acknowledgment_comment``, derived from that
+      bot's registry ``acknowledgment_patterns``). It is the counterpart of the
+      trigger above — the trigger asks for a review, the acknowledgment confirms
+      the ask arrived — and like it carries no review feedback, so it is dropped
+      here and counted in ``count_skipped_noise``. Reviewer-bot-scoped: only the
+      bot that declared the literal can acknowledge with it.
 
     **A REFUSAL IS NOT NOISE AND NO ARM OF THE REFUSAL-RECOGNITION STACK IS
     CONSULTED HERE.** None of the arms named in ``_github_pr.REFUSAL_LAYERS`` runs
@@ -472,6 +481,10 @@ def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
     if _is_whole_comment_acknowledgment(body):
         return True
     if bot_kind:
+        # The bot's own confirmation that a command was received — the reply to the
+        # trigger above, never review feedback.
+        if is_acknowledgment_comment(body, bot_kind):
+            return True
         if any(marker in body for marker in bot_registry.ignore_patterns(bot_kind)):
             return True
         return _is_contentless_boilerplate(body, bot_kind)
@@ -1326,7 +1339,12 @@ def cmd_fetch_findings(args):
        keeps the noise disposition of stage 4; a body that merely quotes a trigger
        is ingested.
     4. Obvious text noise — matched via ``_is_obvious_noise`` (lgtm, bot sigs, etc.),
-       counted in ``count_skipped_noise``.
+       counted in ``count_skipped_noise``. This is also where a reviewer bot's
+       ACKNOWLEDGMENT reply is dropped — its confirmation that a command was received
+       (the registry ``acknowledgment_patterns``), which is the reply to a trigger and
+       carries no finding. A refusal the stack can read is taken at stage 2 first, and
+       the enumerative arm at stage 5 never sees an acknowledgment, so it is neither
+       stored as a ``pr-comment`` finding nor reported as an unrecognised refusal.
     5. UNRECOGNISED REFUSAL — a comment the enumerative arm
        (``_github_pr._is_unrecognised_refusal``) reads as a refusal no earlier arm
        matched. Counted in ``count_skipped_refusal`` alongside stage 2 (so

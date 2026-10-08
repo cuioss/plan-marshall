@@ -9,8 +9,8 @@ time and exposes stable accessors so the finding store, the re-review strategy
 registry, the producer pre-filter, and the rate-limit detector DERIVE what they
 need (the bot-kind set, the login->bot_kind map, each bot's re-review trigger
 comment, its trigger semantics, its completion check-run name, its
-skip-label-honoring flag, its ignore patterns, its refusal patterns, its
-contentless-review markers, its actionable-content markers, its
+skip-label-honoring flag, its ignore patterns, its acknowledgment patterns, its
+refusal patterns, its contentless-review markers, its actionable-content markers, its
 participation-evidence publish shapes and the content marker each of those
 shapes must carry to count, its severity map, its rate-limit class, and its
 rate-limit ETA patterns) instead of hard-coding three bots across several code
@@ -39,6 +39,8 @@ Data-block shape (one per ``standards/{bot_kind}.md``)::
     ignore_patterns:
       - "## Walkthrough"
       - "No actionable comments were generated"
+    acknowledgment_patterns:          # a reply confirming a command was RECEIVED, never its answer
+      - "Review triggered"
     review_body_summary_patterns:     # a review_body OPENING with one of these is a status summary
       - "Actionable comments posted:"
     refusal_patterns:
@@ -60,7 +62,8 @@ Data-block shape (one per ``standards/{bot_kind}.md``)::
     ```
 
 Stdlib-only (no PyYAML): the block is a tightly-constrained subset — top-level
-scalars, lists (``ignore_patterns``, ``review_body_summary_patterns``,
+scalars, lists (``ignore_patterns``, ``acknowledgment_patterns``,
+``review_body_summary_patterns``,
 ``refusal_patterns``, ``refusal_size_patterns``, ``refusal_size_cap_patterns``,
 ``contentless_review_markers``,
 ``actionable_content_markers``, ``participation_evidence``,
@@ -445,6 +448,32 @@ class BotRegistry:
         value = self._by_kind.get(bot_kind, {}).get('ignore_patterns', [])
         return list(value) if isinstance(value, list) else []
 
+    def acknowledgment_patterns(self, bot_kind: str) -> list[str]:
+        """Return the per-bot literal ACKNOWLEDGMENT markers (``[]`` if unknown/absent).
+
+        Each entry is an exact substring the bot emits in a reply that only confirms
+        a command was RECEIVED — "the review you asked for has started", or "the
+        review you asked for has ended". Such a reply is the bot talking about the
+        command, so it is neither the bot's answer to a re-review request nor review
+        feedback about the code. See
+        ``automatic-review/standards/bot-participation-contract.md`` § "An
+        acknowledgment is not an answer".
+
+        A DEDICATED field, for the reason :meth:`refusal_patterns` is one: the three
+        lists answer different questions. ``ignore_patterns`` names sections of a
+        *successful* review and ``refusal_patterns`` names what a bot posts when it
+        *declines*; an acknowledgment is neither, and reading it from either list
+        would report a bot that merely confirmed a command as having reviewed, or as
+        having refused.
+
+        An empty list is the default and means the bot posts no acknowledgment this
+        pipeline knows of: nothing is classified an acknowledgment for it, so a bot
+        that has not declared the field behaves exactly as it did before the field
+        existed.
+        """
+        value = self._by_kind.get(bot_kind, {}).get('acknowledgment_patterns', [])
+        return list(value) if isinstance(value, list) else []
+
     def refusal_patterns(self, bot_kind: str) -> list[str]:
         """Return the per-bot literal REFUSAL notice markers (``[]`` if unknown/absent).
 
@@ -826,6 +855,11 @@ def honors_skip_label(bot_kind: str) -> bool:
 def ignore_patterns(bot_kind: str) -> list[str]:
     """The per-bot whole-comment ignore patterns for ``bot_kind`` (``[]`` if unknown)."""
     return REGISTRY.ignore_patterns(bot_kind)
+
+
+def acknowledgment_patterns(bot_kind: str) -> list[str]:
+    """The per-bot literal acknowledgment markers for ``bot_kind`` (``[]`` if absent)."""
+    return REGISTRY.acknowledgment_patterns(bot_kind)
 
 
 def refusal_patterns(bot_kind: str) -> list[str]:

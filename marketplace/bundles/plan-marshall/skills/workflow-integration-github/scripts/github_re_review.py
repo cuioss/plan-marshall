@@ -117,6 +117,32 @@ non-match is recoverable, whereas a false ``head_sha_verified: true`` silently
 asserts review coverage that never happened. That skip is now VISIBLE in
 ``refusals`` rather than swallowed.
 
+**An ACKNOWLEDGMENT is not an answer.** A bot may reply to its trigger with a
+comment that only confirms the command was received — CodeRabbit's "Review
+triggered", edited in place to "Review finished". It is authored by the awaited
+bot and post-dates the trigger, so it satisfied every eligibility gate of the
+comment discriminator while naming no commit, and the await ended on it as
+``matched: true`` / ``head_sha_verified: false`` — a decline the bot never made.
+:meth:`_ReReviewStrategy._match_bot_comment` therefore classifies a comment
+carrying one of the bot's registry ``acknowledgment_patterns``
+(:func:`is_acknowledgment_comment`) as ``acknowledged``: it is never returned as
+the match, the poll continues, and the envelope reports it as ``acknowledged`` /
+``acknowledgments`` so a timeout after an acknowledgment is distinguishable from
+a bot that never responded at all. A refusal the stack can READ still outranks
+it; the class displaces only the enumerative arm, which would otherwise read the
+short anchor-less acknowledgment as a refusal nobody could read.
+
+**A non-verifying answer is WITHHELD while the bot's review is still running.**
+When the matched comment does not reference the awaited HEAD and the bot's
+completion check-run is positively observed in progress
+(:func:`read_bot_in_progress`), the await does not complete on it and the
+envelope does not report it as the match — it sets
+``answer_withheld_in_progress`` instead. A review that is still running has not
+answered yet, so a comment naming no commit is not its decline. Only a positive
+``in_progress`` observation withholds: a concluded check, a check never posted,
+a bot declaring no ``completion_check_name``, and a failed read all leave the
+match exactly as it stands.
+
 The second signal exists because a bot that posts its review as one persistent
 issue comment and submits no review object could otherwise only ever time out.
 It is generic: no bot is named in code, and every bot's comment is equally valid
@@ -507,6 +533,44 @@ def read_rate_window(plan_id: str, bot_kind: str, pr_number: int | str) -> dict[
 
 
 # ---------------------------------------------------------------------------
+# The completion read the non-verifying-answer hold consults
+# ---------------------------------------------------------------------------
+
+
+def read_bot_in_progress(pr_number: int | str, bot_kind: str) -> bool:
+    """Return True only on a POSITIVE observation that ``bot_kind``'s review is still running.
+
+    Delegates to the one check-run read ``github_pr bot_completion`` performs
+    (``github_pr._read_bot_completion``), so "in progress" is computed in a single
+    place and never re-derived here. ``github_pr`` is imported at call time: it
+    imports this module at load, so a module-level import would close a cycle.
+
+    Everything that is not a positive ``in_progress: true`` answers ``False``, which
+    is the direction that changes nothing for the caller:
+
+    - a bot whose registry ``completion_check_name`` is empty has no check-run to
+      observe, and is answered without any provider read;
+    - a check that concluded, or was never posted, is not running;
+    - a read that failed for any reason is no observation at all. Reading it as
+      "running" would withhold an answer on the strength of a read that never
+      happened and turn every provider hiccup into a timeout.
+    """
+    check_name = bot_registry.completion_check_name(bot_kind)
+    if not check_name:
+        return False
+    try:
+        import github_pr
+
+        result = github_pr._read_bot_completion(int(pr_number), bot_kind, check_name)
+    # Broad by intent: a hold is armed only by a positive observation, so any
+    # failure of the read reports "not observed running" rather than propagating
+    # out of the poll.
+    except Exception:
+        return False
+    return isinstance(result, dict) and result.get('in_progress') is True
+
+
+# ---------------------------------------------------------------------------
 # Recovery-action selection — DERIVED from the registry, never assumed
 # ---------------------------------------------------------------------------
 
@@ -745,6 +809,7 @@ class _ReReviewStrategy:
         bot_kind: str | None = None,
         timeout: int = DEFAULT_CI_TIMEOUT,
         interval: int = DEFAULT_CI_INTERVAL,
+        in_progress_reader: Any = None,
     ) -> dict:
         """Poll until either completion signal for ``bot_kind`` is observed.
 
@@ -752,6 +817,22 @@ class _ReReviewStrategy:
         both are present. Returns a TOON envelope carrying ``matched``,
         ``matched_signal`` (``review`` | ``issue_comment`` | empty when
         unmatched), the matched record, and ``head_sha_verified``.
+
+        Two observations keep the comment signal from completing the await on
+        something that is not the bot's answer, and both are reported:
+
+        - ``acknowledged`` / ``acknowledgments`` — the bot confirmed the command
+          (:func:`is_acknowledgment_comment`). Never the match; the poll continues.
+        - ``answer_withheld_in_progress`` — a comment matched without referencing
+          ``head_sha`` while the bot's review was positively observed still
+          running. The await does not complete on it and it is not reported as
+          the match, so it can never be consumed as a decline.
+
+        ``in_progress_reader`` is the injection seam for the second: any
+        ``(pr_number, bot_kind) -> bool`` callable, defaulting to
+        :func:`read_bot_in_progress`. It is consulted at most once per poll, and
+        only when the poll's outcome would otherwise be a comment match that does
+        not verify — every other poll costs no completion read.
 
         ``head_sha_verified`` is decided on BOTH paths by the same
         :func:`_references_head_sha` predicate, run over whichever field the matched
@@ -782,6 +863,25 @@ class _ReReviewStrategy:
         if trigger_dt is None:
             return make_error('await_fresh_review', f'Invalid trigger_time: {trigger_time!r}')
 
+        reader = read_bot_in_progress if in_progress_reader is None else in_progress_reader
+
+        def _match(data: dict) -> tuple[str, dict | None, list[dict], list[dict]]:
+            """Return ``(matched_signal, record, refusals, acknowledgments)`` for the strongest signal present."""
+            refusals: list[dict] = []
+            acknowledgments: list[dict] = []
+            review = self._match_review(data.get('reviews') or [], head_sha, trigger_dt, bot_kind, refusals)
+            if review is not None:
+                return 'review', review, refusals, acknowledgments
+            comment = self._match_bot_comment(
+                data.get('comments') or [], head_sha, bot_kind, trigger_dt, refusals, acknowledgments
+            )
+            if comment is not None:
+                return 'issue_comment', comment, refusals, acknowledgments
+            return '', None, refusals, acknowledgments
+
+        def _is_non_verifying_comment(matched_signal: str, record: dict | None) -> bool:
+            return matched_signal == 'issue_comment' and not _verifies_head_sha(matched_signal, record, head_sha)
+
         def _check() -> tuple[bool, dict]:
             envelope = _github.fetch_pr_reviews_with_commits(pr_number)
             if envelope.get('status') != 'success':
@@ -791,18 +891,29 @@ class _ReReviewStrategy:
                 comment_envelope = _github.fetch_pr_comments_data(int(pr_number))
                 if comment_envelope.get('status') == 'success':
                     comments = comment_envelope.get('comments') or []
-            return True, {**envelope, 'comments': comments}
+            data = {**envelope, 'comments': comments}
+            # The completion read rides the poll's own data, so the verdict below is
+            # a pure function of what THIS poll fetched. It is taken only when the
+            # poll would otherwise end on a comment that does not verify — the one
+            # outcome the observation can change.
+            matched_signal, record, _refusals, _acknowledgments = _match(data)
+            data['bot_in_progress'] = bool(
+                bot_kind and _is_non_verifying_comment(matched_signal, record) and reader(pr_number, bot_kind)
+            )
+            return True, data
 
-        def _resolve(data: dict) -> tuple[str, dict | None, list[dict]]:
-            """Return ``(matched_signal, record, refusals)`` for the strongest signal present."""
-            refusals: list[dict] = []
-            review = self._match_review(data.get('reviews') or [], head_sha, trigger_dt, bot_kind, refusals)
-            if review is not None:
-                return 'review', review, refusals
-            comment = self._match_bot_comment(data.get('comments') or [], head_sha, bot_kind, trigger_dt, refusals)
-            if comment is not None:
-                return 'issue_comment', comment, refusals
-            return '', None, refusals
+        def _resolve(data: dict) -> tuple[str, dict | None, list[dict], list[dict], bool]:
+            """Return ``(matched_signal, record, refusals, acknowledgments, withheld)``.
+
+            ``withheld`` is True when a comment matched without referencing the
+            awaited HEAD while the bot's review was observed still running. That
+            comment is then NOT the match: a running review has not answered, so
+            reporting the comment would publish a decline the bot never made.
+            """
+            matched_signal, record, refusals, acknowledgments = _match(data)
+            if data.get('bot_in_progress') and _is_non_verifying_comment(matched_signal, record):
+                return '', None, refusals, acknowledgments, True
+            return matched_signal, record, refusals, acknowledgments, False
 
         def _is_complete(data: dict) -> bool:
             return _resolve(data)[1] is not None
@@ -812,7 +923,7 @@ class _ReReviewStrategy:
         if poll_result.get('error'):
             return make_error('await_fresh_review', poll_result['error'])
 
-        matched_signal, record, refusals = _resolve(poll_result.get('last_data') or {})
+        matched_signal, record, refusals, acknowledgments, withheld = _resolve(poll_result.get('last_data') or {})
         # A detected refusal ARMS a recovery strategy instead of vanishing into an
         # indistinguishable timeout. It never counts as a completed review, so
         # `matched` is unaffected — the caller branches on `matched: false` AND
@@ -840,6 +951,16 @@ class _ReReviewStrategy:
             'matched_review': record if matched_signal == 'review' else {},
             'matched_comment': record if matched_signal == 'issue_comment' else {},
             'head_sha_verified': _verifies_head_sha(matched_signal, record, head_sha),
+            # The bot confirmed the command without answering it. Never a match and
+            # never a refusal — `matched` and `refusal_detected` are unaffected — but
+            # `matched: false` beside `acknowledged: true` says the bot received the
+            # request, which a bare timeout cannot.
+            'acknowledged': bool(acknowledgments),
+            'acknowledgments': acknowledgments,
+            # A comment matched without referencing the awaited HEAD while the bot's
+            # review was observed still running, so it was not reported as the match.
+            # `matched: false` beside this flag is "still reviewing", never a decline.
+            'answer_withheld_in_progress': withheld,
             'refusal_detected': bool(refusals),
             # The recovery strategy the refusal arms, from the bot's registry
             # `rate_limit_class` (fail-closed to `unknown`). Empty when no refusal
@@ -1054,6 +1175,7 @@ class _ReReviewStrategy:
         bot_kind: str | None,
         trigger_dt: datetime | None,
         refusals: list[dict],
+        acknowledgments: list[dict] | None = None,
     ) -> dict | None:
         """Return the eligible ``bot_kind`` comment that best evidences ``head_sha``.
 
@@ -1062,6 +1184,14 @@ class _ReReviewStrategy:
         - ``bot_kind`` is set and the comment's author resolves through
           :func:`bot_kind_for_author` to exactly that kind — a human author, or a
           different bot, never matches;
+        - it is not an ACKNOWLEDGMENT (:func:`is_acknowledgment_comment`) — a reply
+          that only confirms the trigger was received. Such a comment is classified
+          ``acknowledged`` and skipped: it post-dates the trigger and names no
+          commit, so admitting it would end the await on an unverified answer the
+          bot never gave. One posted or edited after ``trigger_dt`` is APPENDED to
+          ``acknowledgments`` (when the caller passes the accumulator) as
+          ``{source, bot_kind, body}``; an older one is skipped without a record,
+          because it acknowledged some earlier command, not this one;
         - the LATER of its ``updated_at`` and ``created_at`` is strictly after
           ``trigger_dt``. Taking the later of the two is what makes an EDITED
           persistent comment count: such a bot updates one comment in place, so
@@ -1111,8 +1241,15 @@ class _ReReviewStrategy:
         for comment in comments:
             if bot_kind_for_author(comment.get('author')) != bot_kind:
                 continue
-            refusal = _ReReviewStrategy._refusal_record(comment.get('body') or '', bot_kind, 'issue_comment')
-            if refusal is not None:
+            body = comment.get('body') or ''
+            refusal = _ReReviewStrategy._refusal_record(body, bot_kind, 'issue_comment')
+            # A refusal the stack could READ outranks an acknowledgment: it is
+            # positive evidence the bot declined and is never dropped. The
+            # enumerative arm is the exception — it reads a short anchor-less body
+            # as a refusal nobody could read, which is exactly what an
+            # acknowledgment looks like — so the acknowledgment test runs ahead of
+            # that one arm. This is the same order the filing pre-filter applies.
+            if refusal is not None and refusal['layer'] != REFUSAL_LAYER_ENUMERATIVE:
                 refusals.append(refusal)
                 continue
             stamps = [
@@ -1120,6 +1257,15 @@ class _ReReviewStrategy:
                 for dt in (_parse_iso(comment.get('updated_at') or ''), _parse_iso(comment.get('created_at') or ''))
                 if dt is not None
             ]
+            if is_acknowledgment_comment(body, bot_kind):
+                if acknowledgments is not None and stamps and max(stamps) > trigger_dt:
+                    acknowledgments.append(
+                        {'source': 'issue_comment', 'bot_kind': bot_kind, 'body': _body_excerpt(body)}
+                    )
+                continue
+            if refusal is not None:
+                refusals.append(refusal)
+                continue
             if not stamps:
                 continue
             if max(stamps) > trigger_dt:
@@ -1204,6 +1350,78 @@ def is_registered_trigger_comment(body: str) -> bool:
     merely quotes a trigger string is not misclassified.
     """
     return body.strip() in _REGISTERED_TRIGGER_COMMENTS
+
+
+# ---------------------------------------------------------------------------
+# Registered acknowledgment recognizer (shared with the producer pre-filter)
+# ---------------------------------------------------------------------------
+#
+# A bot may answer its trigger with a comment that only confirms the command was
+# RECEIVED. Which bodies those are is registry data — each bot's
+# ``acknowledgment_patterns`` — so the re-review matcher above and the producer
+# pre-filter (``github_pr._is_obvious_noise``) both recognise the class through
+# the one function below, exactly as they share the trigger recognizer.
+
+
+def _collapse_whitespace(text: str) -> str:
+    """Return ``text`` with every whitespace run collapsed to one space, ends stripped."""
+    return ' '.join(text.split())
+
+
+def _acknowledgment_patterns(bot_kind: str) -> frozenset[str]:
+    """Return ``bot_kind``'s acknowledgment literals, normalised for comparison.
+
+    Every registry-sourced entry is whitespace-collapsed and an entry that is empty
+    afterwards is dropped, so a doc carrying a stray space or a blank item cannot
+    make the empty string — which every body contains — an acknowledgment. Read on
+    each call rather than cached at import: the registry is an in-memory index, and
+    a per-call read keeps this recogniser and the accessor it reads from answering
+    alike.
+    """
+    return frozenset(
+        collapsed
+        for collapsed in (
+            _collapse_whitespace(entry)
+            for entry in bot_registry.acknowledgment_patterns(bot_kind)
+            if isinstance(entry, str)
+        )
+        if collapsed
+    )
+
+
+def is_acknowledgment_comment(body: str, bot_kind: str | None) -> bool:
+    """Return True when ``body`` is ``bot_kind``'s acknowledgment of a command.
+
+    An acknowledgment confirms a command was received — the review that was asked
+    for has started, or has ended. It is neither the bot's answer to the request nor
+    review feedback, so the re-review matcher never returns it as the match and the
+    producer never files it as a finding. See
+    ``automatic-review/standards/bot-participation-contract.md`` § "An
+    acknowledgment is not an answer".
+
+    The test is substring containment of a declared literal, with BOTH sides
+    whitespace-collapsed: the literal arrives inside a disclosure wrapper and beside
+    a trailing note, and how the provider breaks those lines must not decide the
+    match. It is scoped to the bot that declared the literal — the caller passes the
+    ``bot_kind`` the comment's author resolved to — so a human, or another bot,
+    quoting the phrase is never an acknowledgment.
+
+    ``False`` for an absent ``bot_kind`` and for a bot that declares no
+    ``acknowledgment_patterns``: nothing is classified an acknowledgment on the
+    strength of a literal nobody declared.
+
+    Accepted tradeoff: a genuine comment from the same bot that quotes a declared
+    literal is classified an acknowledgment too. The literals are the bot's own
+    command-reply wording rather than phrasing a review uses, which is what keeps
+    that narrow.
+    """
+    if not bot_kind:
+        return False
+    patterns = _acknowledgment_patterns(bot_kind)
+    if not patterns:
+        return False
+    collapsed = _collapse_whitespace(body)
+    return any(pattern in collapsed for pattern in patterns)
 
 
 # ---------------------------------------------------------------------------

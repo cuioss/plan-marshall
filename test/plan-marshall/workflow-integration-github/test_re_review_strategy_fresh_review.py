@@ -130,6 +130,18 @@ def _neutralize_rate_window(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _neutralize_in_progress_read(monkeypatch):
+    """Hold the completion read at NOT OBSERVED RUNNING for every test here.
+
+    A poll that would end on a comment naming no commit consults
+    ``read_bot_in_progress``, which reads the awaited bot's check-run through ``gh``.
+    Default-on, so no case in this module shells out or depends on a real PR's check.
+    The matched pair proving this fixture lives in ``test_re_review_strategy_match.py``.
+    """
+    monkeypatch.setattr(github_re_review, 'read_bot_in_progress', lambda _pr_number, _bot_kind: False)
+
+
+@pytest.fixture(autouse=True)
 def _no_provider_comments(monkeypatch):
     """Default every test to an empty provider comment list.
 

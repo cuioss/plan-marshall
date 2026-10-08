@@ -14,7 +14,7 @@ Coverage:
 
 1. Shipped-standards contract — the real ``standards/*.md`` docs parse into the
    expected bot set, login map, triggers, skip-label flags, ignore patterns,
-   contentless-review / actionable-content markers, per-shape
+   acknowledgment patterns, contentless-review / actionable-content markers, per-shape
    participation-evidence content markers, rate-limit classes, rate-limit ETA
    patterns, and severity maps.
 2. Derived ``BOT_KINDS`` — ``_findings_core.BOT_KINDS`` equals the registry's
@@ -168,6 +168,91 @@ def test_refusal_size_patterns_is_a_subset_of_refusal_patterns_for_every_bot():
     )
 
 
+def test_acknowledgment_patterns_per_bot():
+    """Only CodeRabbit declares acknowledgment replies; the other two read empty.
+
+    The two literals are the wordings of the ONE command reply CodeRabbit posts to
+    ``@coderabbitai review`` and then edits in place. The other bots' records were not
+    edited, so the field reads as its default for them and nothing they post is
+    classified an acknowledgment.
+    """
+    assert bot_registry.acknowledgment_patterns('coderabbit') == ['Review triggered', 'Review finished']
+    assert bot_registry.acknowledgment_patterns('cuioss-review-bot') == []
+    assert bot_registry.acknowledgment_patterns('sourcery') == []
+
+
+def test_acknowledgment_patterns_cover_every_shipped_bot_with_exactly_one_declarer():
+    """The per-bot assertions above account for the WHOLE shipped population.
+
+    Derived from the registry rather than from the three names above, so a bot added
+    later is not silently outside the claim that only one bot declares the field.
+    """
+    kinds = bot_registry.bot_kinds()
+    assert sorted(kinds) == sorted(_SHIPPED_BOTS)
+
+    declarers = [kind for kind in kinds if bot_registry.acknowledgment_patterns(kind)]
+
+    assert declarers == ['coderabbit']
+
+
+def test_acknowledgment_patterns_absent_is_empty(tmp_path):
+    """A record that declares no acknowledgments, and an unknown bot, both read ``[]``."""
+    (tmp_path / 'demo.md').write_text('```yaml\nbot_kind: demo\nauthor_login: demo-bot\n```\n', encoding='utf-8')
+    reg = bot_registry.BotRegistry(standards_dir=tmp_path)
+
+    assert reg.acknowledgment_patterns('demo') == []
+    assert reg.acknowledgment_patterns('nonexistent-bot') == []
+    assert bot_registry.acknowledgment_patterns('nonexistent-bot') == []
+
+
+def test_acknowledgment_patterns_parse_from_a_declared_block(tmp_path):
+    """MATCHED CONTROL for the case above: the same reader returns a declared list."""
+    (tmp_path / 'demo.md').write_text(
+        '```yaml\nbot_kind: demo\nauthor_login: demo-bot\nacknowledgment_patterns:\n'
+        '  - "Command received"   # the reply while the command runs\n'
+        '  - "Command finished"\n```\n',
+        encoding='utf-8',
+    )
+    reg = bot_registry.BotRegistry(standards_dir=tmp_path)
+
+    assert reg.acknowledgment_patterns('demo') == ['Command received', 'Command finished']
+
+
+def test_acknowledgment_patterns_returns_a_copy():
+    """Mutating the returned list must not edit the registry's own record."""
+    first = bot_registry.acknowledgment_patterns('coderabbit')
+    first.append('planted')
+
+    assert 'planted' not in bot_registry.acknowledgment_patterns('coderabbit')
+
+
+def test_an_acknowledgment_literal_is_neither_a_refusal_nor_an_ignore_marker():
+    """The three lists answer different questions, so no literal may sit in two of them.
+
+    An acknowledgment that was also a ``refusal_patterns`` entry would be reported as
+    a decline, and one that was also an ``ignore_patterns`` entry would be a section
+    of a successful review. Swept over the whole live population; the non-vacuity
+    check keeps the sweep from passing over zero literals.
+    """
+    kinds = bot_registry.bot_kinds()
+    assert kinds, 'the registry declares no bots — the sweep would be vacuous'
+
+    total = 0
+    for kind in kinds:
+        acknowledgments = bot_registry.acknowledgment_patterns(kind)
+        total += len(acknowledgments)
+        for literal in acknowledgments:
+            assert isinstance(literal, str) and literal.strip(), f'{kind}: blank acknowledgment literal'
+            assert all(literal not in refusal for refusal in bot_registry.refusal_patterns(kind)), (
+                f'{kind}: acknowledgment literal {literal!r} is contained in a refusal pattern'
+            )
+            assert all(literal not in marker for marker in bot_registry.ignore_patterns(kind)), (
+                f'{kind}: acknowledgment literal {literal!r} is contained in an ignore pattern'
+            )
+
+    assert total > 0, 'no shipped bot declares an acknowledgment literal — the sweep above is vacuous'
+
+
 def test_rate_limit_eta_patterns_per_bot():
     """Only a bot whose notice states a reset time declares extraction patterns.
 
@@ -260,6 +345,9 @@ def test_module_functions_match_registry_singleton():
         assert bot_registry.trigger_comment(bot_kind) == bot_registry.REGISTRY.trigger_comment(bot_kind)
         assert bot_registry.completion_check_name(bot_kind) == bot_registry.REGISTRY.completion_check_name(bot_kind)
         assert bot_registry.ignore_patterns(bot_kind) == bot_registry.REGISTRY.ignore_patterns(bot_kind)
+        assert bot_registry.acknowledgment_patterns(bot_kind) == (
+            bot_registry.REGISTRY.acknowledgment_patterns(bot_kind)
+        )
         assert bot_registry.contentless_review_markers(bot_kind) == (
             bot_registry.REGISTRY.contentless_review_markers(bot_kind)
         )

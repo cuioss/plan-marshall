@@ -33,6 +33,12 @@ in the review-summary wording ("Next included review available in N minutes"), e
 paired with the reset time it states and that time in seconds, and of the matched
 body that states none. They are literals rather than registry-derived because they
 are the observed notice text the registry's extraction patterns must read.
+
+And of the **CodeRabbit acknowledgment replies** — the command replies that only
+confirm ``@coderabbitai review`` was received (:data:`CODERABBIT_ACKNOWLEDGMENTS`) —
+each carrying the PROVENANCE of its wording, beside the matched bodies that are not
+acknowledgments: a genuine short review comment from the same bot, and a human
+comment that quotes an acknowledgment.
 """
 
 from __future__ import annotations
@@ -181,4 +187,59 @@ CODERABBIT_NOTICE_STATING_NO_RESET_TIME = (
     '> [!WARNING] > ## Review limit reached > '
     'You have reached your review limit for the current billing cycle. '
     'Reviews will resume once the limit resets.'
+)
+
+#: The bot the acknowledgment bodies below belong to, and the login it comments under.
+ACKNOWLEDGMENT_BOT_KIND = 'coderabbit'
+ACKNOWLEDGMENT_BOT_LOGIN = 'coderabbitai'
+
+#: Provenance of an acknowledgment fixture's WORDING. ``observed`` — the statement was
+#: read off a live command reply. ``constructed`` — the statement is the reported
+#: wording and has NOT been read off a live comment: CodeRabbit edits the one reply in
+#: place, so the earlier wording is gone by the time the reply is read.
+ACKNOWLEDGMENT_OBSERVED = 'observed'
+ACKNOWLEDGMENT_CONSTRUCTED = 'constructed'
+
+
+def _command_reply(statement: str) -> str:
+    """Wrap ``statement`` in the disclosure CodeRabbit's command replies arrive in.
+
+    The ``Action performed`` summary and the one-line statement are the parts that
+    carry meaning; the line breaks around them are this builder's own, which is why
+    the recogniser under test collapses whitespace before it compares.
+    """
+    return f'<details>\n<summary>✅ Action performed</summary>\n\n{statement}\n\n</details>'
+
+
+#: ``(case id, body, provenance)`` for each CodeRabbit acknowledgment reply.
+#:
+#: ``Review finished.`` is OBSERVED: it was read off the command replies on
+#: ``cuioss/plan-marshall#1654``, inside the ``Action performed`` disclosure.
+#: ``Review triggered.`` is CONSTRUCTED: those replies had already been edited to their
+#: final wording when they were read, so this body has never been seen on a live
+#: comment. A case that passes only on the constructed body proves the declared literal
+#: is honoured, not that CodeRabbit posts it.
+CODERABBIT_ACKNOWLEDGMENTS: tuple[tuple[str, str, str], ...] = guard_non_empty(
+    (
+        ('review-finished', _command_reply('Review finished.'), ACKNOWLEDGMENT_OBSERVED),
+        ('review-triggered', _command_reply('Review triggered.'), ACKNOWLEDGMENT_CONSTRUCTED),
+    ),
+    'CODERABBIT_ACKNOWLEDGMENTS',
+    'the literal acknowledgment bodies declared in _github_pr_fixtures',
+)
+
+#: The published size of the acknowledgment population.
+CODERABBIT_ACKNOWLEDGMENT_COUNT: int = len(CODERABBIT_ACKNOWLEDGMENTS)
+
+#: NEGATIVE control, same bot: a genuine review comment as short as an acknowledgment.
+#: It carries a code anchor and neither acknowledgment statement, so it is feedback
+#: about the code — matched as the bot's answer, and filed as a finding.
+CODERABBIT_GENUINE_SHORT_REVIEW_COMMENT = 'Guard the bound at `src/idx.py:12` before indexing.'
+
+#: NEGATIVE control, other author: a HUMAN comment quoting an acknowledgment statement.
+#: The class is scoped to the bot that declared the literal, so the quotation does not
+#: make this an acknowledgment.
+HUMAN_COMMENT_QUOTING_AN_ACKNOWLEDGMENT = (
+    'CodeRabbit replied "Review finished." but the retry loop at `src/idx.py:12` '
+    'still spins forever when the backoff cap is zero.'
 )

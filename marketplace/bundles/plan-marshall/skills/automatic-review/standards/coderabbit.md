@@ -16,7 +16,7 @@ The fenced-YAML block below is the machine-readable per-bot record. It is data, 
 a fenced code block that plugin-doctor treats as an example, not an executable directive. Consumers
 read `bot_kind`, `author_login`, `trigger_comment`, `completion_check_name`, `honors_skip_label`,
 `participation_evidence`, `participation_evidence_markers`, `participation_requires_update`, `ignore_patterns`,
-`review_body_summary_patterns`, `refusal_patterns`, `contentless_review_markers`,
+`acknowledgment_patterns`, `review_body_summary_patterns`, `refusal_patterns`, `contentless_review_markers`,
 `actionable_content_markers`, `rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map` from
 it; the prose sections that follow carry the rationale. CodeRabbit declares neither
 `contentless_review_markers` nor `actionable_content_markers`, so the producer's content-aware layer
@@ -63,6 +63,9 @@ ignore_patterns:
   - "<!-- tips_start -->"                                                     # tips block
   - "@coderabbitai help"                                                      # command help echo
   - "✏️ Learnings added"                                                      # learnings-only reply
+acknowledgment_patterns:                                                      # command replies that confirm a command was RECEIVED — never the answer to it, never a finding
+  - "Review triggered"                                                        # the reply to `@coderabbitai review` while the commanded review is running
+  - "Review finished"                                                         # the same reply once that review has ended — it reports that a review ran, and carries none of it
 review_body_summary_patterns:
   - "Actionable comments posted:"   # its review_body STATUS line — excluded from every finding count
 refusal_patterns:
@@ -168,6 +171,45 @@ a *successful* review (`## Walkthrough`, `✏️ Learnings added`), so reusing i
 would classify CodeRabbit's ordinary successful reviews as refusals, and unioning the two collapses
 the distinction. See [`bot-participation-contract.md`](bot-participation-contract.md) §
 "A refusal is never noise — it is a branch".
+
+## Acknowledgment replies — `Review triggered`, `Review finished`
+
+CodeRabbit answers `@coderabbitai review` with a command reply of its own before, and apart from, any
+review it then publishes. The reply is an `issue_comment` wrapped in the `<details>` disclosure every
+auto-generated CodeRabbit reply uses, under an `✅ Action performed` summary, and its whole statement
+is one short line: `Review triggered.` while the commanded review runs, and `Review finished.` once it
+has ended. CodeRabbit **edits that one reply in place** — its `updated_at` moves when the wording
+changes — so the reply post-dates the trigger twice over and would otherwise look like a fresh answer
+each time.
+
+Both wordings are declared in `acknowledgment_patterns`, and both are an **acknowledgment**: a comment
+that confirms a command was received. It is never the bot's answer to the re-review request, and it is
+never a finding:
+
+- **Not an answer.** `github_re_review` classifies a matching comment `acknowledged`, never returns it
+  as the match, and keeps polling. Without the class the reply was the first eligible comment after
+  the trigger; it names no commit, so the await ended on it as an unverified answer — the `declined`
+  member — for a review that was still running or had just published elsewhere.
+- **Not a finding.** `fetch_findings` drops it as noise, beside the trigger comment that asked for it,
+  so the reply is never stored as a `pr-comment` finding for an operator to triage.
+
+`Review finished` is declared as an acknowledgment and not as evidence, on purpose: the reply reports
+that a review ran, and carries no part of it. The review itself is what the participation shapes below
+credit.
+
+The match is a whitespace-normalised substring test against CodeRabbit's own comments only, so the
+wrapper and the trailing note around the line do not matter and a human quoting the phrase is
+unaffected. A reply the recognition stack can READ as a refusal stays a refusal — `Review rate
+limited` arrives in the same wrapper under `⚠️ Action not completed` and contains neither literal.
+
+Provenance of the two literals: `Review finished.` was read verbatim off the command replies on
+`cuioss/plan-marshall#1654`. Those replies had already been edited to their final wording when they
+were read, so `Review triggered` is declared from the reported wording of the same reply and has not
+been read off a live comment.
+
+The class itself is cross-bot vocabulary — see
+[`bot-participation-contract.md`](bot-participation-contract.md) § "An acknowledgment is not an
+answer".
 
 ## Participation evidence — `review_body`, `inline`, `issue_comment`, plus update movement
 

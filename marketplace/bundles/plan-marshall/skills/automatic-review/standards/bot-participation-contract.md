@@ -539,6 +539,49 @@ two permalink rows differ only in which commit they name, the abbreviation row p
 boundary the location widening must not cross, and the comment-body rows differ only in whether the
 body names the awaited commit.
 
+### An acknowledgment is not an answer
+
+An **acknowledgment** is a comment a bot posts to confirm that a command was **received** — that the
+review it was asked for has started, or has ended. It is contract vocabulary, a class of its own
+beside review feedback, noise and refusal, and two rules bind every consumer:
+
+- **An acknowledgment is never an eligible answer.** The re-review matcher classifies it
+  `acknowledged`, never returns it as the match, and keeps polling. It post-dates the trigger by
+  construction and names no commit, so admitting it ends the await on `matched: true` /
+  `head_sha_verified: false` — the `declined` member, whose remedy is to accept the decline — for a
+  bot that had only confirmed the command.
+- **An acknowledgment is never a finding.** The filing pre-filter drops it as noise beside the trigger
+  comment that asked for it, so it is not stored as a `pr-comment` finding. It says nothing about the
+  code, and an operator asked to triage it has nothing to decide.
+
+It is also never participation evidence: confirming a command reports that a review ran, or will run,
+and carries no part of one. The publish shapes in § "What counts as evidence, per publish shape" are
+what credit a review.
+
+Which bodies are acknowledgments is a per-bot registry fact — the `acknowledgment_patterns` list in
+`standards/{bot_kind}.md`, read through `bot_registry.acknowledgment_patterns` and matched as a
+whitespace-normalised substring against that bot's own comments, so no bot name enters the code. A
+bot that declares none has no acknowledgment this pipeline knows of, and nothing is classified one for
+it. The field is separate from `ignore_patterns` and from `refusal_patterns` for the reason those two
+are separate from each other: a section of a successful review, a notice that the bot declined, and a
+confirmation that a command arrived are three different statements.
+
+**A refusal the stack can READ outranks an acknowledgment.** A body matching the bot's
+`refusal_patterns`, or recognised by notice shape, is a refusal even where it also carries an
+acknowledgment literal — a refusal is positive evidence the bot declined, and it is never dropped. The
+acknowledgment class displaces only the enumerative arm, which reads a short anchor-less body as a
+refusal nobody could read; an acknowledgment is exactly such a body, and it is not a refusal.
+
+**While the bot's review is still running, an answer that does not verify is withheld.** When
+`bot_completion` reports `in_progress: true` for the awaited bot, a comment match that does not
+reference the awaited HEAD never produces `declined`: the await does not complete on it and the
+envelope does not report it as the match. A running review has not answered yet, so what the comment
+says about the commit is not the bot's answer to this request. The rule acts only on that positive
+observation — a concluded check, a check that was never posted, a bot that declares no
+`completion_check_name`, and a read that failed all leave the match as it stands. This consumes
+`bot_completion` as the control-flow signal § "Normative prohibition" sanctions; it grants no
+participation credit and feeds no observation set.
+
 ## Participation is not review quality
 
 The quorum proves that every required bot **participated**. It never proves the diff was **reviewed

@@ -21,7 +21,7 @@ implements:
 configurable:
   - key: required_bots
     default: ""
-    description: Comma-separated list of review-bot kinds whose participation is REQUIRED. A required bot's silence is a failure — it gates the step-done participation quorum. Each entry MUST have a machine-readable registry doc at standards/{bot_kind}.md (bot_kind, author_login, trigger_comment, completion_check_name, honors_skip_label, participation_evidence, participation_requires_update, ignore_patterns, refusal_patterns, contentless_review_markers, actionable_content_markers, severity_map). The default is EMPTY so a never-asked key stays distinguishable from an answered-empty value — see standards/bot-participation-contract.md for the required-vs-optional semantics, the ask posture, the evidence taxonomy, and the failure taxonomy.
+    description: Comma-separated list of review-bot kinds whose participation is REQUIRED. A required bot's silence is a failure — it gates the step-done participation quorum. Each entry MUST have a machine-readable registry doc at standards/{bot_kind}.md (bot_kind, author_login, trigger_comment, completion_check_name, honors_skip_label, participation_evidence, participation_requires_update, ignore_patterns, acknowledgment_patterns, refusal_patterns, contentless_review_markers, actionable_content_markers, severity_map). The default is EMPTY so a never-asked key stays distinguishable from an answered-empty value — see standards/bot-participation-contract.md for the required-vs-optional semantics, the ask posture, the evidence taxonomy, and the failure taxonomy.
   - key: optional_bots
     default: ""
     description: Comma-separated list of review-bot kinds whose participation is OPTIONAL. An optional bot's silence is not a failure and never gates mark-done. Same registry-doc requirement as required_bots. The default is EMPTY so a never-asked key stays distinguishable from an answered-empty value. A bot in NEITHER list is warned about but STILL ingested — see standards/bot-participation-contract.md.
@@ -129,15 +129,18 @@ Each entry in either list maps one-to-one to a machine-readable registry doc at
 `standards/{bot_kind}.md` under this skill's `standards/` directory — there is no hard-coded bot
 list in the pipeline. Each registry doc carries a fenced-YAML data block (`bot_kind`,
 `author_login`, `trigger_comment`, `completion_check_name`, `honors_skip_label`, `ignore_patterns[]`,
-`review_body_summary_patterns[]`, `refusal_patterns[]`, `contentless_review_markers[]`,
-`actionable_content_markers[]`, `rate_limit_class`, `rate_limit_eta_patterns[]`, `severity_map`) plus the
+`acknowledgment_patterns[]`, `review_body_summary_patterns[]`, `refusal_patterns[]`,
+`contentless_review_markers[]`, `actionable_content_markers[]`, `rate_limit_class`,
+`rate_limit_eta_patterns[]`, `severity_map`) plus the
 producer / consumer / trust boundary / disposition rationale for that bot, and links to the org
-signal/noise source-of-truth rather than duplicating it.
+signal/noise source-of-truth rather than duplicating it. `acknowledgment_patterns[]` lists the replies
+with which a bot only confirms that a command was received; a bot that posts none leaves the field
+out, and it reads as empty.
 
 The single generic loader `scripts/bot_registry.py` parses every `standards/{bot_kind}.md` data
 block at runtime and exposes the derived registry (`bot_kinds()`, the login→bot_kind map, each
 bot's `trigger_comment`, `completion_check_name`, `honors_skip_label`, `ignore_patterns`,
-`review_body_summary_patterns`, `contentless_review_markers`, `actionable_content_markers`,
+`acknowledgment_patterns`, `review_body_summary_patterns`, `contentless_review_markers`, `actionable_content_markers`,
 `rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map`). The producer
 (`github_pr.py` noise pre-filter), the finding store (`_findings_core.BOT_KINDS`), the re-review
 strategy registry (`github_re_review.py` — both its trigger comments and the `refusal_class` /
@@ -265,6 +268,8 @@ Read `re_review_on_loopback` off the returned `params` object (default: `false`)
       ```
 
    - **When `timed_out: true` (and `matched: false`)**, the await budget expired with no fresh bot review for the new HEAD — proceed to "On re-review timeout (trigger B)" below instead of falling through silently.
+
+   **An acknowledgment is not an answer.** A bot may reply to the trigger with a comment that only confirms the command was received — CodeRabbit's "Review triggered", which it edits to "Review finished". The registry never returns such a comment as the match: it classifies it `acknowledged`, keeps polling, and reports `acknowledged: true` on the returned TOON. So `acknowledged` selects none of the three arms above and is never added to `{declined_bots}` — the arm is still chosen by `matched`, `head_sha_verified` and `timed_out` alone. The same holds for `answer_withheld_in_progress: true`: the bot's comment did not reference `{head_sha}` while its review was still running, so the registry withheld it instead of reporting a decline. Both fields say why a `timed_out: true` return is not a bot that stayed silent; neither changes which arm is taken. Which bodies are acknowledgments is each bot's registry `acknowledgment_patterns` — see [`standards/bot-participation-contract.md`](standards/bot-participation-contract.md) § "An acknowledgment is not an answer".
 
 ### On re-review timeout (trigger B)
 
