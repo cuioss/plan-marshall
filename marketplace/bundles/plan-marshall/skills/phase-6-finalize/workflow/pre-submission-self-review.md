@@ -565,7 +565,7 @@ git -C {worktree_path} rev-parse HEAD
 
 The `{worktree_path}` value is the path resolved by `phase-6-finalize` Step 0 (Resolve Worktree and Main Checkout Paths); do NOT re-resolve it from any other cwd or shell context. Capture the stdout as `{sha}` (a 40-character hex SHA) and forward it via `--head-at-completion`.
 
-**Resolve this step's own state findings before the terminal mark.** A round that reaches this point has closed: the verifier accepted the verdict and answered `may_close: yes`, so every state an earlier round filed — `verdict_refused`, `further_round_owed`, `verifier_unavailable` (§ "Step 3b") — describes a situation that no longer holds. Resolve every pending finding carrying the step's fixed rule key, citing the closing HEAD just captured (see [manage-findings SKILL.md](../../manage-findings/SKILL.md) § "qgate resolve-by-rule"):
+**Resolve this step's own state findings before the terminal mark.** A round that reaches this point has closed: the verifier accepted the verdict and answered `may_close: yes`, so every state finding a preceding round of this review filed — `verdict_refused`, `further_round_owed`, `verifier_unavailable` (§ "Step 3b") — describes a situation that no longer holds. Resolve every pending finding carrying the step's fixed rule key, citing the closing HEAD just captured (see [manage-findings SKILL.md](../../manage-findings/SKILL.md) § "qgate resolve-by-rule"):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate resolve-by-rule \
