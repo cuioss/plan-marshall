@@ -95,7 +95,7 @@ co-tenants the same store, and the storeless ``poll-delay`` computation:
     eviction arbitration (and dequeues it from the FIFO front); a ``fresh`` or
     ``unknown`` holder is refused, and a hold inside budget reports
     ``not_due``. A live-but-slow holder is never force-released here.
-  * ``rate-window {claim,check,release}`` — the cross-plan claim on ONE review
+  * ``rate-window {claim,check,wait,release}`` — the cross-plan claim on ONE review
     bot's rate window, used by the automatic-review recovery sequence to stop two
     concurrently-finalizing plans from both re-triggering a rate-limited bot. State
     lives under a ``rate_windows`` top-level key inside the SAME main-anchored
@@ -105,22 +105,33 @@ co-tenants the same store, and the storeless ``poll-delay`` computation:
     ``--attempt-cap``, defaulting to :data:`_DEFAULT_RECOVERY_ATTEMPT_CAP` — of
     recovery events per bot per PR, returning an explicit ``exhausted`` verdict on
     the attempt past the cap; ``check`` is a pure read that reports the SAME per-PR
-    budget ``claim`` would apply; ``release`` drops the holder while RETAINING the
-    attempt counter so the cap survives the release between attempts.
+    budget ``claim`` would apply; ``wait`` is the bounded read-only poll of that
+    same read, returning once the window plus a caller-supplied grace period has
+    elapsed or its per-call bound lapses; ``release`` drops the holder while
+    RETAINING the attempt counter so the cap survives the release between attempts.
   * ``poll-delay`` — a bounded jittered delay, in seconds, for a caller about to
     wake from an elapsed rate window. It COMPUTES and RETURNS the number; it never
-    sleeps. See "``poll-delay`` computes, the caller waits" below.
+    sleeps. See "No mutating verb sleeps" below.
 
-**``poll-delay`` computes, the caller waits.** This module has no ``time.sleep``
-and must keep none. ``_claim_rate_window`` / ``_release_rate_window`` are
-non-waiting by design — an atomic claim or release, with the caller re-polling —
-so a wait embedded here would hold a process open inside a primitive every
-concurrently-finalizing plan contends on. ``poll-delay`` keeps that split: the
-jitter COMPUTATION is the script seam, and the WAIT stays at the workflow layer
-where it already lives (``automatic-review``'s paced, tool-call-driven poll loop).
-It also touches NO state — no ``--plan-id``, no store read, and no write to
-``merge.lock``, ``merge-queue.json``, or the ``rate_windows`` key — so it is a pure
-function behind a CLI, safe to call from anywhere without contending for anything.
+**No mutating verb sleeps — ``rate-window wait`` is the one verb that waits.** No
+verb that writes the store sleeps, and nothing in this module sleeps while holding
+the guard. ``_claim_rate_window`` / ``_release_rate_window`` are non-waiting by
+design — an atomic claim or release, with the caller re-polling — because a wait
+embedded in one would hold a process open inside a critical section every
+concurrently-finalizing plan contends on. ``rate-window wait`` is outside that
+rule's reach by construction: it is a read-only poll over the non-mutating
+:func:`_read_store`, it takes no guard between reads, and it writes nothing —
+neither the ``rate_windows`` key nor a ``[LOCK]`` event. Its return is a wake
+signal and decides nothing: whoever acts on an elapsed window re-reads the claim
+and goes through the guarded read-modify-write core, so the decision is made on a
+fresh read under the guard, never on this verb's answer (the check-then-act menu
+is ``ref-code-quality/standards/code-organization.md#toctou--check-then-act-hazards``).
+``check`` and ``poll-delay`` stay single reads that return at once. ``poll-delay``
+is the jitter COMPUTATION; its number is waited by ``rate-window wait``, which
+receives it as ``--grace-seconds``. ``poll-delay`` also touches NO state — no
+``--plan-id``, no store read, and no write to ``merge.lock``, ``merge-queue.json``,
+or the ``rate_windows`` key — so it is a pure function behind a CLI, safe to call
+from anywhere without contending for anything.
 
 **The rate window shares the STORE, never the MUTEX.** The rate-window actions
 read and write only the ``rate_windows`` key. They never create, read, reclaim, or
@@ -348,6 +359,21 @@ _DEFAULT_WINDOW_SECONDS = 3600.0
 # § "Rate-limit class".
 _DEFAULT_POLL_DELAY_MIN_SECONDS = 300.0
 _DEFAULT_POLL_DELAY_MAX_SECONDS = 1200.0
+
+# Seconds between two reads of the claim under `rate-window wait` when the caller
+# named no interval of its own. The observable is one local file, so the interval
+# only bounds how late a foreign release or re-claim is noticed.
+_DEFAULT_RATE_WINDOW_WAIT_INTERVAL_SECONDS = 15.0
+
+# The longest a single `rate-window wait` call holds its wait, whatever the caller
+# asked for. The call is issued through a host tool call whose ceiling this verb
+# does not control (600 s on the reference target), so the internal deadline sits
+# a margin below it and the verb — not the caller — owns that margin. A rate window
+# runs to an hour, so the caller re-issues the call until the wake is reached
+# (`plan-marshall/standards/waiting.md` § "The inner ceiling must margin-clear the
+# outer one"). The value matches `bot_completion --wait-seconds`, so a caller of
+# either bounded wait reasons about one per-call magnitude.
+_RATE_WINDOW_WAIT_CEILING_SECONDS = 480.0
 
 # Title-token state names persisted via manage-status (the bare state string;
 # manage-terminal-title owns the state → glyph rendering).
@@ -2072,11 +2098,21 @@ def _run_rate_window_check(args: Namespace) -> dict[str, Any]:
     if refusal is not None:
         return refusal
 
+    return _rate_window_state(args, time.time())
+
+
+def _rate_window_state(args: Namespace, now: float) -> dict[str, Any]:
+    """Read one bot's rate-window state as of ``now`` — the ``check`` payload.
+
+    The single non-mutating read behind both ``rate-window check``, which performs
+    it once, and ``rate-window wait``, which repeats it. Sharing it is what makes
+    "the wait polls the same read ``check`` performs" a property of the code rather
+    than of two bodies kept in step by hand.
+    """
     plan_id: str = args.plan_id
     bot_kind: str = args.bot_kind
     pr_number: int = args.pr_number
     attempt_cap: int = args.attempt_cap
-    now = time.time()
 
     record = _rate_windows(_read_store()).get(bot_kind)
     attempts_for_pr = _attempts_for_pr(record, pr_number)
@@ -2150,9 +2186,104 @@ def _run_rate_window_release(args: Namespace) -> dict[str, Any]:
     }
 
 
+def _run_rate_window_wait(
+    args: Namespace,
+    *,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+    wall_clock: Callable[[], float] = time.time,
+) -> dict[str, Any]:
+    """``rate-window wait`` — bounded read-only wait until one bot's window has elapsed.
+
+    Re-reads the claim's own expiry (:func:`_rate_window_state`, the read ``check``
+    performs) until the WAKE INSTANT — the stored ``expires_at`` plus
+    ``--grace-seconds`` — has passed, or until the per-call bound ``--wait-seconds``
+    lapses first. Returns the ``check`` fields of the last read plus:
+
+      * ``timed_out`` — ``True`` when the per-call bound lapsed before the wake
+        instant. A bound, not a verdict: the caller re-issues the call. ``False``
+        means the wake instant was reached.
+      * ``waited_seconds`` — whole seconds this call spent waiting, which a caller
+        holding a total budget subtracts from it.
+      * ``wake_at`` — the wake instant in epoch seconds, or ``None`` when no window
+        is recorded (never claimed, or released), in which case there is nothing to
+        wait for and the call returns at once.
+
+    The expiry is RE-READ on every iteration rather than captured once, so a
+    release, a renewal, or a takeover by another plan while this call sleeps moves
+    the wake instant with it. Each sleep is cut to whichever comes first — the next
+    interval, the wake instant, or the per-call bound — so the call returns as the
+    window elapses rather than up to one interval late.
+
+    **It decides nothing.** The verb writes nothing — no ``rate_windows`` mutation,
+    no ``[LOCK]`` event — and takes no guard between reads. Its return is a wake
+    signal only: another plan can claim between this call reporting the wake and the
+    caller acting on it, so the actor re-reads the claim and every claim or release
+    still goes through the guarded read-modify-write core.
+
+    The per-call bound is clamped to :data:`_RATE_WINDOW_WAIT_CEILING_SECONDS` so the
+    call returns before the host ceiling it is issued through. Non-finite or negative
+    ``--grace-seconds`` / ``--wait-seconds`` and a non-positive or non-finite
+    ``--interval-seconds`` are refused before the store is read: each is a number a
+    caller computed, and a ``nan`` compares False against every deadline, which would
+    turn the bounded wait into an unbounded one.
+
+    Args:
+        args: Parsed CLI arguments (``plan_id``, ``bot_kind``, ``pr_number``,
+            ``attempt_cap``, ``grace_seconds``, ``wait_seconds``, ``interval_seconds``).
+        sleep: The pause between two reads. Injectable so a test waits no real time.
+        clock: The monotonic clock the per-call bound is measured on.
+        wall_clock: The epoch clock the stored ``expires_at`` is compared against.
+    """
+    refusal = _missing_pr_number(args)
+    if refusal is not None:
+        return refusal
+
+    grace_seconds: float = args.grace_seconds
+    wait_seconds: float = args.wait_seconds
+    interval_seconds: float = args.interval_seconds
+    if (
+        not math.isfinite(grace_seconds)
+        or grace_seconds < 0
+        or not math.isfinite(wait_seconds)
+        or wait_seconds < 0
+        or not math.isfinite(interval_seconds)
+        or interval_seconds <= 0
+    ):
+        return make_error(
+            'rate-window wait requires finite non-negative --grace-seconds and --wait-seconds and a finite '
+            f'positive --interval-seconds: got grace_seconds={grace_seconds}, wait_seconds={wait_seconds}, '
+            f'interval_seconds={interval_seconds}',
+            code=ErrorCode.INVALID_INPUT,
+            plan_id=args.plan_id,
+            bot_kind=args.bot_kind,
+            action=args.action,
+        )
+
+    bound = min(wait_seconds, _RATE_WINDOW_WAIT_CEILING_SECONDS)
+    started = clock()
+    while True:
+        now = wall_clock()
+        result = _rate_window_state(args, now)
+        waited = clock() - started
+        expires_at = result['expires_at']
+        # A released record keeps `expires_at: 0.0` and an unclaimed one has none:
+        # either way no window is recorded, so there is no instant to wait for.
+        wake_at = expires_at + grace_seconds if expires_at else None
+        until_wake = 0.0 if wake_at is None else wake_at - now
+        remaining = bound - waited
+        if until_wake <= 0 or remaining <= 0:
+            result['timed_out'] = until_wake > 0
+            result['waited_seconds'] = int(waited)
+            result['wake_at'] = wake_at
+            return result
+        sleep(min(interval_seconds, until_wake, remaining))
+
+
 _RATE_WINDOW_ACTIONS = {
     'claim': _run_rate_window_claim,
     'check': _run_rate_window_check,
+    'wait': _run_rate_window_wait,
     'release': _run_rate_window_release,
 }
 
@@ -2189,17 +2320,17 @@ def run_poll_delay(args: Namespace) -> dict[str, Any]:
     """``poll-delay`` — compute a bounded jittered delay; NEVER sleep it.
 
     A pure computation behind a CLI: it reads no store, holds no lock, takes no
-    ``--plan-id``, and writes nothing. The returned ``delay_seconds`` is what the
-    CALLER waits — ``automatic-review`` awaits it once at the Branch 3 →
-    trigger-arm boundary, as a single standalone ``sleep`` Bash call. Keeping the wait out of
-    this module is the point; see the module docstring's "``poll-delay`` computes,
-    the caller waits".
+    ``--plan-id``, and writes nothing. The returned ``delay_seconds`` is drawn once
+    per rate-window wait by the main-context caller (``phase-6-finalize`` item 7a)
+    and handed to ``rate-window wait`` as ``--grace-seconds``, which waits it on top
+    of the window. Keeping the draw a pure computation is the point; see the module
+    docstring's "No mutating verb sleeps".
 
     Negative bounds are REFUSED. Both bounds arrive from a CLI flag a human types,
     and the returned ``delay_seconds`` is interpolated straight into the caller's
-    ``sleep`` command — so a negative bound does not stay inside this function as a
-    merely-odd number. It leaves as a malformed shell command at the one site that
-    consumes it. This is the same already-guarded validation path the inversion
+    ``--grace-seconds`` argument — so a negative bound does not stay inside this
+    function as a merely-odd number. It leaves as a refused call at the one site
+    that consumes it. This is the same already-guarded validation path the inversion
     check below occupies, one comparison wider.
 
     Inverted bounds are REFUSED rather than silently swapped. A swap would make
@@ -2211,8 +2342,9 @@ def run_poll_delay(args: Namespace) -> dict[str, Any]:
     of them can see one. ``float('nan')`` compares False against every bound — so it
     is neither negative nor inverted — and ``float('inf')`` as the ceiling is a
     well-ordered pair. Both reach :func:`random.uniform`, which returns a non-finite
-    draw, and that draw is interpolated straight into the caller's ``sleep``: a
-    ``sleep nan`` at the one site that consumes this verb. The ordering also decides
+    draw, and that draw is interpolated straight into the caller's
+    ``--grace-seconds``: a ``nan`` grace at the one site that consumes this verb. The
+    ordering also decides
     which refusal ``-inf`` gets — the accurate "not finite" one rather than the
     narrower "negative" one it would collect from the check below.
     """
@@ -2255,7 +2387,7 @@ def run_poll_delay(args: Namespace) -> dict[str, Any]:
 
 
 def run_rate_window(args: Namespace) -> dict[str, Any]:
-    """Dispatch the ``rate-window {claim,check,release}`` action.
+    """Dispatch the ``rate-window {claim,check,wait,release}`` action.
 
     The rate-window claim coordinates recovery from a review bot's rate-limit
     refusal across concurrently-finalizing plans. It SHARES the merge-lock store
@@ -2286,6 +2418,7 @@ Examples:
   merge_lock.py budget-reclaim --plan-id WAITER-PLAN --hold-start 1699999999.0 --hold-budget-seconds 3600
   merge_lock.py rate-window claim --plan-id EXAMPLE-PLAN --bot-kind coderabbit --pr-number 42 [--window-seconds 3600] [--attempt-cap 6]
   merge_lock.py rate-window check --plan-id EXAMPLE-PLAN --bot-kind coderabbit --pr-number 42
+  merge_lock.py rate-window wait --plan-id EXAMPLE-PLAN --bot-kind coderabbit --pr-number 42 [--grace-seconds 0] [--wait-seconds 480] [--interval-seconds 15]
   merge_lock.py rate-window release --plan-id EXAMPLE-PLAN --bot-kind coderabbit
   merge_lock.py poll-delay [--min-seconds 300] [--max-seconds 1200]
   merge_lock.py queue-list
@@ -2389,13 +2522,16 @@ Examples:
             },
             {
                 'name': 'rate-window',
-                'help': "Claim / check / release one review bot's rate window (shares the merge-lock STORE, never the merge MUTEX)",
+                'help': "Claim / check / wait on / release one review bot's rate window (shares the merge-lock STORE, never the merge MUTEX)",
                 'handler': run_rate_window,
                 'args': [
                     {
                         'flags': ['action'],
-                        'choices': ['claim', 'check', 'release'],
-                        'help': 'claim (idempotent for the self-holder, capped), check (non-mutating), or release',
+                        'choices': ['claim', 'check', 'wait', 'release'],
+                        'help': (
+                            'claim (idempotent for the self-holder, capped), check (non-mutating), '
+                            'wait (bounded read-only wait until the window has elapsed), or release'
+                        ),
                     },
                     {
                         'flags': ['--plan-id'],
@@ -2414,7 +2550,35 @@ Examples:
                         'dest': 'pr_number',
                         'type': int,
                         'default': None,
-                        'help': 'PR the recovery attempts are counted against (required for claim and check; ignored by release)',
+                        'help': 'PR the recovery attempts are counted against (required for claim, check and wait; ignored by release)',
+                    },
+                    {
+                        'flags': ['--grace-seconds'],
+                        'dest': 'grace_seconds',
+                        'type': float,
+                        'default': 0.0,
+                        'help': 'wait only: seconds added to the window expiry to form the wake instant (default: 0)',
+                    },
+                    {
+                        'flags': ['--wait-seconds'],
+                        'dest': 'wait_seconds',
+                        'type': float,
+                        'default': _RATE_WINDOW_WAIT_CEILING_SECONDS,
+                        'help': (
+                            'wait only: per-call bound in seconds. Clamped to '
+                            f'{_RATE_WINDOW_WAIT_CEILING_SECONDS} so the call returns before the host ceiling; '
+                            f're-issue the call until timed_out is false (default: {_RATE_WINDOW_WAIT_CEILING_SECONDS})'
+                        ),
+                    },
+                    {
+                        'flags': ['--interval-seconds'],
+                        'dest': 'interval_seconds',
+                        'type': float,
+                        'default': _DEFAULT_RATE_WINDOW_WAIT_INTERVAL_SECONDS,
+                        'help': (
+                            'wait only: seconds between two reads of the claim '
+                            f'(default: {_DEFAULT_RATE_WINDOW_WAIT_INTERVAL_SECONDS})'
+                        ),
                     },
                     {
                         'flags': ['--window-seconds'],

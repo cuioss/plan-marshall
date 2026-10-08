@@ -31,6 +31,12 @@ This suite closes both directions, and every population is DERIVED:
 which action is a routing decision this document is free to change; pinning the
 pairs would make an intentional restructure fail as though it were a defect. What
 is pinned is that the mapping is TOTAL and its targets EXIST.
+
+One property of the routes IS pinned beside totality, because it is a contract and
+not a layout: the step never waits for a rate window itself. The route for an open
+window hands the wait back to the main context, and the two routes that deliver a
+recovery event are reached only from the re-entry consult that follows that wait.
+Those assertions read the wording of the target cells, never a branch number.
 """
 
 from __future__ import annotations
@@ -159,6 +165,50 @@ class TestTheRouteTableIsTotalOverTheSelectorVocabulary:
         """A row with an empty target cell routes an action to nothing at all."""
         for action_cell, target_cell in _ROUTE_ROWS:
             assert target_cell, f'route row for {action_cell!r} names no destination'
+
+
+def _targets_routing(action: str) -> list[str]:
+    """The target cells of every route row whose action cell names ``action``."""
+    return [target for action_cell, target in _ROUTE_ROWS if f'`{action}`' in action_cell]
+
+
+class TestTheRoutesHandTheWaitBack:
+    """No route leaves the step waiting for a rate window.
+
+    The step is a dispatched leaf and holds no wait that runs to an hour. The open
+    window is therefore routed to a hand-back, and the event-delivering routes are
+    entered only after the main context has held the wait.
+    """
+
+    def test_the_open_window_route_hands_the_wait_to_the_main_context(self):
+        targets = _targets_routing(github_re_review.RECOVERY_ACTION_AWAIT_WINDOW)
+
+        assert len(targets) == 1, f'expected one route for an open window, found {len(targets)}'
+        assert 'hand the wait back to the main context' in targets[0], targets[0]
+
+    def test_no_route_sends_an_action_to_a_poll(self):
+        """The step polls no window: a route that names a poll names a wait it cannot hold."""
+        for action_cell, target_cell in _ROUTE_ROWS:
+            assert 'poll' not in target_cell.lower(), f'route {action_cell!r} still sends to a poll: {target_cell!r}'
+
+    def test_the_event_delivering_routes_are_reached_from_the_re_entry_consult(self):
+        """A recovery event is generated only after the window elapsed, on re-entry."""
+        for action in (
+            github_re_review.RECOVERY_ACTION_CLOSE_AND_REOPEN,
+            github_re_review.RECOVERY_ACTION_GENERATE_TRIGGER,
+        ):
+            targets = _targets_routing(action)
+
+            assert len(targets) == 1, f'expected one route for {action}, found {len(targets)}'
+            assert 're-entry consult' in targets[0], targets[0]
+            assert 'after the window elapsed' in targets[0], targets[0]
+
+    def test_a_route_that_escalates_names_no_re_entry(self):
+        """Matched control: the re-entry wording belongs to the delivering routes only."""
+        targets = _targets_routing(github_re_review.RECOVERY_ACTION_ESCALATE_STRUCTURAL)
+
+        assert len(targets) == 1, f'expected one structural route, found {len(targets)}'
+        assert 're-entry consult' not in targets[0], targets[0]
 
 
 class TestEveryCitedBranchExists:

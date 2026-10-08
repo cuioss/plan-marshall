@@ -222,15 +222,20 @@ CodeRabbit's review limit is a **rolling window that reopens on its own**, so `r
 `automatic-review` opt-in rate-limit refusal recovery (`review_rate_window_await`, bounded by
 `review_rate_window_timeout_seconds`, defaulted to 3600 to match the roughly hourly reset) worth
 enabling for this bot — the class is the field the recovery decision reads, rather than assuming
-every bot's refusal is waitable. For this bot the recovery claims the window, polls it to expiry,
-awaits a bounded jittered delay, and only then RE-DELIVERS the request by closing and re-opening the
+every bot's refusal is waitable. For this bot the recovery claims the window and then stops: the
+`automatic-review` step returns the wait to the main context instead of holding it. The main context
+(`phase-6-finalize` Step 3 item 7a) waits on the claim's own expiry plus a bounded jittered delay —
+one bounded `merge_lock rate-window wait` call at a time, asking the operator nothing — and then
+dispatches the step again. Only that second pass RE-DELIVERS the request by closing and re-opening the
 PR — the elapsed claim resolves through this record's `trigger_semantics` above, and this bot asks
 for an explicit trigger, so a rebase-push or a trigger comment is not what fires. See `../SKILL.md`
 § "Rate-limit refusal recovery (opt-in)" for the branch this lands on, and
 `workflow-integration-github`'s `resolve_recovery_action` for the derivation itself.
 
-**Why the wake is jittered.** The delay (`merge_lock poll-delay`, 5-20 minutes) sits at the
-Branch 3 → trigger-arm boundary and serves two purposes here:
+**Why the wake is jittered.** The delay (`merge_lock poll-delay`, 5-20 minutes) is drawn once by the
+main context and added to the window as the grace period of its `merge_lock rate-window wait`, so the
+step is dispatched again only after the window AND the delay have passed. It serves two purposes
+here:
 
 - **Cross-lane contention.** A `doc/plans/` cloud-lane run is not serialised by `merge_lock`'s
   rate-window claim — it holds no claim and cannot see one — yet it draws on the same CodeRabbit

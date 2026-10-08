@@ -1392,19 +1392,82 @@ FOR each step_id in manifest.phase_6.steps:
       The two classes are exhaustive over every branch below: each one either stamps a
       terminal `done` or deliberately leaves the record absent for re-entry.
 
-      When the dispatched `plan-marshall:automatic-review` step returns `status: escalate_ask`, the leaf has returned an escalation envelope rather than firing an `AskUserQuestion` itself (a dispatched leaf cannot own the prompt — see the leaf/dispatch-topology contract in `ref-workflow-architecture/standards/agents.md`). The dispatcher owns the consumption. Five escalation reasons reach this hook, discriminated by the return TOON's `reason` field. **Four of them are handled identically at the AskUserQuestion layer; the fifth is not, and must not be** — see the `refusal_structural` carve-out below:
+      When the dispatched `plan-marshall:automatic-review` step returns `status: escalate_ask`, the leaf has returned an escalation envelope rather than firing an `AskUserQuestion` itself (a dispatched leaf cannot own the prompt — see the leaf/dispatch-topology contract in `ref-workflow-architecture/standards/agents.md`). The dispatcher owns the consumption. Six escalation reasons are handled in this hook, discriminated by the `reason` field. **Four of them are handled identically at the AskUserQuestion layer; `refusal_structural` is not, and must not be** — see its carve-out below — **and `rate_window_await` never reaches that layer at all: it asks the operator nothing**, and the hook answers it by waiting and re-dispatching:
 
       - **`reason: re_review_timeout`** — the "On re-review timeout (trigger B)" sub-block fired at trigger B (see `../automatic-review/SKILL.md` § "On re-review timeout (trigger B)"). ⛔ **This reason covers TWO distinct entry paths, and the envelope's `outcome` field — never `reason` — is what says which one fired.** `outcome: timed_out` is a genuine budget expiry: `timeout_seconds` elapsed with no fresh bot review. `outcome: declined` is an incremental-review DECLINE: the bot answered the trigger with a comment that does not reference the awaited HEAD — naming no reviewed commit at all, or naming a different one (`matched: true` / `head_sha_verified: false`) — so no budget expired and `declined_bots` names the bot(s) that declined. The envelope's `timed_out` field states the observed fact rather than a constant, so it is `false` on the decline path. **Read `outcome` on every branch below and render a decline AS a decline** — reporting one as a timeout asserts a budget expiry that never happened, which is the false signal this discriminator exists to prevent. The `re_review_on_timeout` policy knob selects `action: defer` vs `action: ask` (or `proceed`, which never returns `escalate_ask`) identically on both paths, so the discrimination is about what is REPORTED, not about which branch runs.
-      - **`reason: rate_window_timeout`** — the rate-window expiry poll exhausted `review_rate_window_timeout_seconds` while the claimed window was still open.
+      - **`reason: rate_window_await`** — ⛔ **the one NON-ASKING reason: no `AskUserQuestion` fires for it.** The step claimed a review bot's rate window and returned instead of waiting for it, because a dispatched step cannot hold a wait that runs to an hour. The envelope carries `bot_kind`, `pr_number`, the claim's `expires_at`, `seconds_remaining`, `timeout_seconds` and the `rate_window_arming[]` row, and no `action` and no `prompt_options[]`. This hook holds the wait and then dispatches the step again — see the `rate_window_await` branch below.
+      - **`reason: rate_window_timeout`** — the rate-window wait exhausted `review_rate_window_timeout_seconds` while the claimed window was still open. This reason is not returned by the step: it arises HERE, when the `rate_window_await` branch below spends its whole budget, and is then handled exactly as the other temporal reasons are.
       - **`reason: rate_window_not_awaitable`** — the refusing bot's `rate_limit_class` is `hard_quota` or `unknown`, so neither awaiting nor generating an event is productive; the leaf escalated without claiming a window.
       - **`reason: rate_window_exhausted`** — the recovery recursion cap for that bot on that PR is spent; the leaf escalated rather than re-triggering a bot it has already re-triggered `attempt_cap` times.
-      - **`reason: refusal_structural`** — ⛔ **the one reason whose option set is DISJOINT from the other four.** The refusing bot's refusal cause is a diff-SIZE ceiling, so it classified `refused_structural` and the limit is on the diff rather than on a window. Its `prompt_options[]` are *split / accept / disable-for-this-PR*, it carries `cap` and `measured_diff_size` instead of `timeout_seconds`, and **it must NEVER be offered a wait** — waiting is an action the operator can take that is guaranteed not to work, because the diff is the same size an hour later. See `../automatic-review/SKILL.md` § "Rate-limit refusal recovery (opt-in)" Branch 0.
+      - **`reason: refusal_structural`** — ⛔ **the one asking reason whose option set is DISJOINT from that of the four temporal ones.** The refusing bot's refusal cause is a diff-SIZE ceiling, so it classified `refused_structural` and the limit is on the diff rather than on a window. Its `prompt_options[]` are *split / accept / disable-for-this-PR*, it carries `cap` and `measured_diff_size` instead of `timeout_seconds`, and **it must NEVER be offered a wait** — waiting is an action the operator can take that is guaranteed not to work, because the diff is the same size an hour later. See `../automatic-review/SKILL.md` § "Rate-limit refusal recovery (opt-in)" Branch 0.
 
-      The three rate-window reasons and `refusal_structural` (see `../automatic-review/SKILL.md` § "Rate-limit refusal recovery (opt-in)") always carry `action: ask` and consult NO policy knob — they always fire the AskUserQuestion.
+      The three asking rate-window reasons (`rate_window_timeout`, `rate_window_not_awaitable`, `rate_window_exhausted`) and `refusal_structural` (see `../automatic-review/SKILL.md` § "Rate-limit refusal recovery (opt-in)") always carry `action: ask` and consult NO policy knob — they always fire the AskUserQuestion. `rate_window_await` consults no policy knob either, and fires none.
 
-      The full field set of the `escalate_ask` return TOON (all five `reason` variants) is defined in [`../automatic-review/SKILL.md`](../automatic-review/SKILL.md) § "`escalate_ask` return (timeout escalations)" — read it there; do NOT restate the field set here.
+      The full field set of the `escalate_ask` return TOON (all six `reason` variants) is defined in [`../automatic-review/SKILL.md`](../automatic-review/SKILL.md) § "`escalate_ask` return (timeout escalations)" — read it there; do NOT restate the field set here.
 
-      For `reason: re_review_timeout`, read the timeout policy from the `plan-marshall:automatic-review` step-params snapshot (the other four variants skip this read — they have no policy knob):
+      **`reason: rate_window_await` — hold the wait here, ask nothing, then dispatch the step again.** Evaluate this branch FIRST: it is the only reason that produces no prompt and reads no policy, and a hook that fell through to the `action` branches below would find no `action` on the envelope to branch on.
+
+      *Termination cause.* Item 5c stamps this return **`blocked_session_restart`** — the existing cause for a dispatch that ended before its step settled and that a fresh dispatch recovers. It is NOT `blocked_user_review`: no review gate is raised and nobody is asked, and stamping that cause would report an operator prompt that never happened. It is not `step_complete` or `returned_with_findings` either, because the step recorded no outcome at all, and it is not `error`, because nothing failed.
+
+      *The wait.* The claim's own expiry is the observable; the stated ETA is not waited out blind. The loop below is driven across tool calls — there is no shell loop and no pause of its own anywhere in it, because `merge_lock rate-window wait` holds each bounded wait itself:
+
+      1. Draw the jittered wake delay ONCE for this wait (see `manage-locks` Canonical invocations → `merge_lock — poll-delay`) and read `delay_seconds`:
+
+            python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock poll-delay
+
+      2. Show the waiting state before the first wait call. Name the bot and the expiry time in the work log, and put the plan's terminal title into the existing `lock-waiting` state through the title-token surface — the `manage-status title-token` verbs and the `platform-runtime` repaint seam, which already render that state as the waiting glyph. No new title state is introduced for this wait, and the `cli` owner keeps the token apart from a merge-lock or build token another surface holds:
+
+            python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+              work --plan-id {plan_id} --level INFO \
+              --message "[STATUS] (plan-marshall:phase-6-finalize) Waiting for the {bot_kind} review rate window on pr {pr_number} — window expires at {expires_at} ({seconds_remaining}s from the claim), plus a {delay_seconds}s wake delay; total wait budget {timeout_seconds}s. No operator action is needed; plan-marshall:automatic-review is dispatched again when the window has elapsed"
+
+            python3 .plan/execute-script.py plan-marshall:manage-status:manage-status title-token set \
+              --plan-id {plan_id} --state lock-waiting --owner cli
+
+            python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime session push-title-token \
+              --plan-id {plan_id}
+
+      3. Start with `{remaining_budget}` = the envelope's `timeout_seconds` and issue ONE bounded wait (see `manage-locks` Canonical invocations → `merge_lock — rate-window wait`). Issue the Bash call with the host's maximum per-call timeout, so the script's own clamped bound is always the one that ends it:
+
+            python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-window wait \
+              --plan-id {plan_id} --bot-kind {bot_kind} --pr-number {pr_number} \
+              --grace-seconds {delay_seconds} --wait-seconds {remaining_budget}
+
+         Branch on the return:
+
+         | `rate-window wait` return | Action |
+         |---------------------------|--------|
+         | `timed_out: false` | The wake is reached — the window and the wake delay have both passed. Go to item 4. |
+         | `timed_out: true`, `{remaining_budget}` still positive after subtracting `waited_seconds` | The call's own per-call bound lapsed first. Re-issue the SAME call with the reduced `{remaining_budget}` and the SAME `{delay_seconds}` — never a fresh draw, which would move the wake instant on every call. |
+         | `timed_out: true`, `{remaining_budget}` spent | `review_rate_window_timeout_seconds` is exhausted with the window still open. Go to item 5. |
+         | `status: error` | The wait could not run. Log the returned message at ERROR, clear the title state as item 4 does, and go to item 5 — a wait that cannot be held is not a wake. |
+
+         The wait's answer is a wake signal and nothing more: it writes nothing and decides nothing. The re-dispatched step re-reads the claim itself and acts on that read, so a claim another plan makes in between is seen there.
+
+      4. **Wake reached.** Clear the waiting state, log, and dispatch `plan-marshall:automatic-review` again from scratch — re-enter the Step 3 dispatch with the SAME role/level resolution, exactly as the "wait again" branch below does. Leave the step record ABSENT across the re-dispatch: the leaf recorded nothing, this branch records nothing, and the terminal record is written by the pass that settles. Do NOT release the claim — the re-dispatched step recognises its own elapsed claim by reading it, and releases it itself once the review request is re-delivered:
+
+            python3 .plan/execute-script.py plan-marshall:manage-status:manage-status title-token clear \
+              --plan-id {plan_id} --owner cli
+
+            python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime session push-title-token \
+              --plan-id {plan_id}
+
+            python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+              work --plan-id {plan_id} --level INFO \
+              --message "[STATUS] (plan-marshall:phase-6-finalize) {bot_kind} review rate window on pr {pr_number} has elapsed after {total_waited_seconds}s — dispatching plan-marshall:automatic-review again"
+
+      5. **Budget exhausted.** Clear the waiting state as item 4 does, release the claim, decision-log, and then proceed exactly as the existing `rate_window_timeout` reason does — the temporal `ask` branch below, with its three options. The envelope that branch consumes is the `rate_window_await` envelope this hook was waiting on, re-labelled: `reason: rate_window_timeout`, `action: ask`, `timed_out: true`, the same `bot_kind` / `refusal_class` / `pr_number` / `timeout_seconds` / `rate_window_arming[]`, and the rate-window `prompt_options[]` defined in [`../automatic-review/SKILL.md`](../automatic-review/SKILL.md) § "`escalate_ask` return (timeout escalations)":
+
+            python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-window release \
+              --plan-id {plan_id} --bot-kind {bot_kind}
+
+            python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+              decision --plan-id {plan_id} --level INFO \
+              --message "(plan-marshall:phase-6-finalize) rate-window wait: review_rate_window_timeout_seconds={timeout_seconds} exhausted with the {bot_kind} window still open on pr {pr_number} — released the claim; handling as rate_window_timeout"
+
+         The release matters for the operator's "Wait another" choice: the fresh dispatch finds no claim of its own, claims again — spending one recovery attempt — and returns a new `rate_window_await`.
+
+      For `reason: re_review_timeout`, read the timeout policy from the `plan-marshall:automatic-review` step-params snapshot (the other five variants skip this read — they have no policy knob):
 
          python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
            step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review
@@ -1418,7 +1481,7 @@ FOR each step_id in manifest.phase_6.steps:
       | `reason: re_review_timeout`, `outcome: timed_out` | `re-review timed out after {timeout_seconds}s with no fresh review` |
       | `reason: re_review_timeout`, `outcome: declined` | `re-review DECLINED by {declined_bots} — the bot answered without referencing this HEAD; no budget expired` |
       | `reason: re_review_timeout`, `outcome` absent or any other value | `re-review outcome UNKNOWN (envelope carried no readable outcome)` |
-      | any of the other four reasons | the bare `{reason}` — each has a single entry path, so there is nothing to discriminate |
+      | any of the other four asking reasons | the bare `{reason}` — each has a single entry path, so there is nothing to discriminate |
 
       ⛔ **An absent or unrecognised `outcome` is UNKNOWN, never a timeout.** Defaulting it to `timed_out` re-creates exactly the false budget-expiry claim the discriminator was added to stop, this time silently. Render it as unknown and let the operator see that the envelope did not say.
 

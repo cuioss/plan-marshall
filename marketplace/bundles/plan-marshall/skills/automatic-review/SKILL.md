@@ -45,10 +45,10 @@ configurable:
     description: "Timeout policy applied at both re-review triggers (A and B) when the await budget expires with no fresh bot review (timed_out: true, matched: false). One of ask|defer|proceed. ask halts and asks the operator (interactive); defer auto-skips the merge without prompting (safe default-action); proceed is the explicit opt-in to advance the unreviewed HEAD, decision-logged at WARNING."
   - key: review_rate_window_await
     default: false
-    description: "Opt-in bool (default-off) arming the rate-limit refusal recovery sequence instead of proceeding on a detected refusal. When enabled and a refusal is detected on a REQUIRED bot (a non-empty rate_limited_bots[] on the pr wait-for-comments return, or refusal_detected on the github_re_review await), the step branches on the refusal's CAUSE first and only then on the bot's rate_limit_class. Cause size is STRUCTURAL — the diff exceeds a ceiling the reviewer declares, so nothing reopens by waiting: it escalates immediately with reason refusal_structural, carrying the stated cap and the measured diff size, and its operator options are split / accept / disable-for-this-PR, never a wait. Otherwise: awaitable_window claims the bot's rate window via merge_lock rate-window claim, polls the claim's own expiry as a bounded paced wait, then GENERATES the event (rebase onto base and push; the registry trigger_comment only as a fallback when main is unchanged and only after the window elapsed); hard_quota and unknown escalate immediately without awaiting; cap exhaustion escalates with reason rate_window_exhausted. A refusal from a bot outside required_bots is an ordinary settle, never an escalation — its silence cannot block, so escalating it asks the operator a question they do not need. When false, a detected refusal is treated as an ordinary settle and the step proceeds."
+    description: "Opt-in bool (default-off) arming the rate-limit refusal recovery sequence instead of proceeding on a detected refusal. When enabled and a refusal is detected on a REQUIRED bot (a non-empty rate_limited_bots[] on the pr wait-for-comments return, or refusal_detected on the github_re_review await), the step branches on the refusal's CAUSE first and only then on the bot's rate_limit_class. Cause size is STRUCTURAL — the diff exceeds a ceiling the reviewer declares, so nothing reopens by waiting: it escalates immediately with reason refusal_structural, carrying the stated cap and the measured diff size, and its operator options are split / accept / disable-for-this-PR, never a wait. Otherwise: awaitable_window claims the bot's rate window via merge_lock rate-window claim, then STOPS and returns escalate_ask with reason rate_window_await — the step itself never waits. The main context holds the wait (phase-6-finalize item 7a re-issues the bounded merge_lock rate-window wait, asking the operator nothing) and re-dispatches this step, which finds its own elapsed claim and GENERATES the event (rebase onto base and push; the registry trigger_comment only as a fallback when main is unchanged and only after the window elapsed); hard_quota and unknown escalate immediately without awaiting; cap exhaustion escalates with reason rate_window_exhausted. A refusal from a bot outside required_bots is an ordinary settle, never an escalation — its silence cannot block, so escalating it asks the operator a question they do not need. When false, a detected refusal is treated as an ordinary settle and the step proceeds."
   - key: review_rate_window_timeout_seconds
     default: 3600
-    description: Await budget (seconds) capping the rate-window expiry poll, defaulting to 3600 to match CodeRabbit's ~hourly rate-window reset. On exhaustion the step releases the claim and returns escalate_ask with reason rate_window_timeout. Only consulted when review_rate_window_await is true.
+    description: Total budget (seconds) for the main-context rate-window wait that follows a rate_window_await return, defaulting to 3600 to match CodeRabbit's ~hourly rate-window reset. The wait is held by phase-6-finalize item 7a, not by this step. On exhaustion item 7a releases the claim and proceeds as the rate_window_timeout reason does, which asks the operator. Only consulted when review_rate_window_await is true.
 ---
 
 # Automatic Review
@@ -177,7 +177,7 @@ The step-done participation guard carries a STRICTER disposition for the `review
 
 ## Timeout Contract
 
-This step runs as inline orchestration (review-bot settle + completion-aware poll + producer FIND + finding enumeration in main context) under a **FIND-only 15-minute (900 s) per-agent timeout budget** enforced by the SKILL.md Step 3 dispatch loop. The budget is **FIND-only**: it covers the review-bot buffer, the completion-aware poll, the optional rate-window await, and the producer `fetch_findings` FIND — and explicitly excludes CI wait wall-clock. It does NOT cover triage or RESPOND: those run once at the dispatcher level as the unified wait-region triage (`producer=finalize-feedback`), under that dispatch's own budget. CI wait time is bounded separately by the dispatcher's per-signal review-arm precondition resolver (600 s ceiling) — splitting the wait out of the FIND-only budget keeps this budget bounded by comment volume rather than CI queue depth.
+This step runs as inline orchestration (review-bot settle + completion-aware poll + producer FIND + finding enumeration in main context) under a **FIND-only 15-minute (900 s) per-agent timeout budget** enforced by the SKILL.md Step 3 dispatch loop. The budget is **FIND-only**: it covers the review-bot buffer, the completion-aware poll, and the producer `fetch_findings` FIND — and explicitly excludes CI wait wall-clock and the rate-window wait. A rate window runs to an hour, far past this budget, so the step never holds that wait: after claiming the window it returns `escalate_ask{reason: rate_window_await}` and the main context waits (§ "Rate-limit refusal recovery (opt-in)" Branch 2). It does NOT cover triage or RESPOND: those run once at the dispatcher level as the unified wait-region triage (`producer=finalize-feedback`), under that dispatch's own budget. CI wait time is bounded separately by the dispatcher's per-signal review-arm precondition resolver (600 s ceiling) — splitting the wait out of the FIND-only budget keeps this budget bounded by comment volume rather than CI queue depth.
 
 **Graceful degradation**: When the wrapper expires:
 
@@ -417,16 +417,16 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
 
 ⛔ **Pass `--cause` only when a cause was actually OBSERVED, and omit the flag entirely when it was not.** `--cause` declares `choices=('size','quota')` and is not `required`, so an unobserved cause has no token to interpolate: substituting an empty or non-choice value is an argparse rejection (exit 2), which this document's exit-code convention turns into a hard STOP — killing the recovery for exactly the refusal this sequence exists to arm. An unobserved cause is a modelled state, not a hypothetical: `bot-participation-contract.md` documents "a refusal NO arm of the recognition stack could READ", and the selector defaults `cause` to the empty string precisely so the omission resolves rather than rejects.
 
-Pass `--window-expired` and `--attempts-remaining` only once a claim exists to report them (Branch 3 polls both); omit them here, where no window has been claimed yet. Read `action` from the returned TOON and enter the branch it names:
+Pass `--window-expired` and `--attempts-remaining` only once a claim exists to report them (the Branch 3 re-entry read observes both); omit them here, where no window has been read yet. Read `action` from the returned TOON and enter the branch it names:
 
 | `action` | Branch |
 |----------|--------|
 | `escalate_structural` | **Branch 0** — escalate, do not await, do not generate |
 | `escalate_not_awaitable` | **Branch 1** — escalate, do not await, do not generate |
-| `await_window` (and the `unmeasured` no-observation reasons, which are what an unclaimed window reads as here) | **Branch 2** — claim the window, then poll it in Branch 3 |
+| `await_window` (and the `unmeasured` no-observation reasons, which are what an unclaimed window reads as here) | **Branch 2** — read this plan's own claim first; claim the window and hand the wait back to the main context, or enter Branch 3 when the claim is already this plan's and has elapsed |
 | `escalate_exhausted` | Branch 2's `recovery_cap_exhausted` arm — `escalate_ask{reason: rate_window_exhausted}` |
-| `close_and_reopen` | **Branch 5** — re-deliver the dropped request (reached from Branch 3, after the window elapsed) |
-| `generate_trigger` | **Branch 4** — generate the event (reached from Branch 3, after the window elapsed) |
+| `close_and_reopen` | **Branch 5** — re-deliver the dropped request (reached from the Branch 3 re-entry consult, after the window elapsed) |
+| `generate_trigger` | **Branch 4** — generate the event (reached from the Branch 3 re-entry consult, after the window elapsed) |
 | `unmeasured` with `reason: registry_empty` | Escalate as Branch 1 does. No verdict was computed, so nothing here authorizes a recovery. |
 
 See [`../workflow-integration-github/SKILL.md`](../workflow-integration-github/SKILL.md) § Canonical invocations → `github_re_review recovery-action` for the full action vocabulary and the fields each return publishes.
@@ -437,7 +437,16 @@ See [`../workflow-integration-github/SKILL.md`](../workflow-integration-github/S
 
 ⛔ **Why this is a GUARD and not guidance.** The rule *do not re-trigger a bot that is refusing for quota reasons* was first written here as prose — and was violated roughly six hours later, in this same epic. A loop posted a trigger comment about every two minutes for most of an hour, some twenty-seven comments on a public PR, which exhausted the bot's **separate chat-message quota** and removed the recovery path entirely. A rule a workflow is merely told to obey is a discretionary call at exactly the moment it costs most. So the posture is now enforced in code at the single point every bot's trigger comment passes through: `request_fresh_review` consults the bot's rate window before posting and returns `status: refused` / `reason: window_open` instead — see [`../workflow-integration-github/SKILL.md`](../workflow-integration-github/SKILL.md) § "The refusal re-trigger guard". The `recovery-action` consult above is a SELECTION this workflow still has to make; it is not a second guard, and skipping it bypasses nothing.
 
-⛔ **A re-trigger inside an open window RESETS it rather than shortening it** — an advertised wait was observed going from 50 to 59 minutes — and spends quota doing so. The bot's own stated ETA is an ESTIMATE, not a contract (observed wrong by roughly 2.4x, then roughly 15x), which is why Branch 3 polls the claim's own observable instead of sleeping through the ETA.
+⛔ **A re-trigger inside an open window RESETS it rather than shortening it** — an advertised wait was observed going from 50 to 59 minutes — and spends quota doing so. The bot's own stated ETA is an ESTIMATE, not a contract (observed wrong by roughly 2.4x, then roughly 15x), which is why the wait that follows a claim polls the claim's own expiry instead of sleeping through the ETA, and why the Branch 3 re-entry read re-observes it before any trigger.
+
+**A pass with no required-bot refusal releases this plan's leftover claim.** When `review_rate_window_await == true` and NO refusal is detected on any bot in `required_bots` on this pass, issue the idempotent release for each required bot before proceeding to "Producer: FIND" — it is a benign no-op when this plan holds nothing:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-window release \
+  --plan-id {plan_id} --bot-kind {bot_kind}
+```
+
+A claim can outlive the refusal it was made for: the step claims and hands the wait back, and the bot answers while the main context waits, so the re-dispatched pass sees no refusal and never reaches Branch 4 or Branch 5, the two places a claim is otherwise released. Left in place, that elapsed claim would be read by the Branch 2 re-entry read as the claim of a LATER, unrelated refusal — sending it straight to a trigger with no wait at all, inside a window that had only just opened.
 
 **Every branch below is decision-logged.** A refusal never leaves this section without an auditable record of what was decided and why.
 
@@ -491,6 +500,31 @@ MUTEX, so the claim can never stall a concurrent plan's merge. See
 [`../manage-locks/SKILL.md`](../manage-locks/SKILL.md) § Canonical invocations →
 `merge_lock — rate-window claim`.
 
+**Read this plan's own claim BEFORE claiming.** This step does not hold the wait — it claims, hands the
+wait back to the main context, and is dispatched again afterwards. The re-dispatched pass therefore
+arrives here a second time for the same refusal, and it must not claim a second time: a self-holder
+re-claim (`action: renewed`) advances the attempt counter and restarts the window exactly as a first
+claim does, so it would spend a recovery attempt and throw the completed wait away. One read tells the
+two passes apart (see [`../manage-locks/SKILL.md`](../manage-locks/SKILL.md) § Canonical invocations →
+`merge_lock — rate-window check`):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-window check \
+  --plan-id {plan_id} --bot-kind {bot_kind} --pr-number {pr_number}
+```
+
+Read `holder`, `pr_number`, `expired`, `expires_at`, `seconds_remaining` and `attempts_remaining`:
+
+| The read reports | This pass |
+|------------------|-----------|
+| `holder` is this plan AND `pr_number` is this PR AND `expired: true` | **Re-entry after the wait.** The claim is this plan's own, elapsed and unreleased. Skip the claim entirely and go to **Branch 3**. |
+| `holder` is this plan AND `pr_number` is this PR AND `expired: false` | **Re-entry before the wake.** The claim is still running. Issue no claim; decision-log, then return `escalate_ask{reason: rate_window_await}` again with the `expires_at` and `seconds_remaining` just read, exactly as the `status: success` arm below does. |
+| anything else — no holder, a holder that is another plan, or this plan's claim for a different PR | **First pass.** Claim the window as described below. A window another live plan holds is reported by the claim itself (`status: blocked`), so it needs no separate arm here. |
+
+The read is a snapshot and decides nothing that mutates the store: every claim and release that follows
+still goes through the guarded read-modify-write core of `merge_lock`, so a claim another plan makes
+between this read and this pass's next call is arbitrated there, not here.
+
 Pass `--window-seconds` derived from the refusal's stated `eta` when it names a duration (e.g. an
 `eta` of `15 minutes` → `900`); omit the flag when the notice stated no ETA, so the claim falls back
 to the verb's default rather than inventing a reset time.
@@ -526,13 +560,28 @@ Branch on the returned `status`:
 
 - **`status: success`** — the window is claimed (`action` is `claimed` / `renewed` / `reclaimed`).
   Decision-log the claim together with the observation that armed it (§ "The arming disclosure"
-  below), then proceed to Branch 3.
+  below), then **stop and hand the wait back**.
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
     decision --plan-id {plan_id} --level INFO \
     --message '(plan-marshall:automatic-review) refusal recovery ARMED — claimed {bot_kind} rate window ({action}), seconds_remaining={seconds_remaining} attempts={attempts}/{attempt_cap}; armed by producer={producer} layer={layer} eta={eta}'
   ```
+
+  **The step does not wait for the window — the main context does.** A dispatched step is a leaf, and
+  the main loop owns waiting (see [`../plan-marshall/standards/waiting.md`](../plan-marshall/standards/waiting.md)
+  § "The main loop owns waiting — leaves never do"): a rate window runs to an hour, which no dispatched
+  step's budget covers. So after the claim this step returns `status: escalate_ask` with
+  `reason: rate_window_await` (see "Output") carrying `bot_kind`, `pr_number`, the claim's `expires_at`,
+  its `seconds_remaining`, and the `rate_window_arming[]` row, and does nothing further on this pass. It
+  polls nothing, paces nothing, and generates no event. Honour the **no-mark invariant**: do NOT call
+  `mark-step-done` before returning — the absent step record is what lets the dispatcher re-dispatch
+  this step once the wait is over.
+
+  The dispatcher's item 7a consumes the return WITHOUT asking the operator anything: it waits on the
+  claim's own expiry through `merge_lock rate-window wait`, then dispatches this step again (see
+  [`../phase-6-finalize/SKILL.md`](../phase-6-finalize/SKILL.md) Step 3 item 7a). That second pass
+  reaches the read at the top of this branch, finds its own elapsed claim, and continues in Branch 3.
 
 **The arming disclosure.** The ARMED line records the OBSERVATION that armed the wait, not only the
 claim it produced. A wait whose arming record names only its own action and clock cannot be read back
@@ -548,8 +597,8 @@ recovery and never re-derived:
 - `{layer}` — the record's `layer`: which recognition arm read the notice, from the shared
   `_github_pr.REFUSAL_LAYERS` vocabulary.
 - `{eta}` — the record's `eta`, the reset time the notice itself stated, or the literal `unknown` when it
-  stated none. It is an estimate the bot published, not a contract — which is why Branch 3 polls the
-  claim rather than sleeping through it.
+  stated none. It is an estimate the bot published, not a contract — which is why the main-context wait
+  polls the claim's own expiry rather than waiting out the stated time.
 - `{body}` — the record's `body`, the notice's whitespace-collapsed, truncated excerpt. It rides the
   envelope row ONLY; the log line above names the other three and stops there.
 
@@ -568,95 +617,31 @@ substitution — refusal notices quote the bot's own trigger (CodeRabbit's names
 All four facts, with `{bot_kind}`, are carried as a `rate_window_arming[]` row on the envelope this step
 returns (see "Output"): the log line names every one but the excerpt, and the envelope row is the
 complete record, because the decision log is a single sink that a resumed run does not read back. The
-disclosure is emitted ONLY here, on a successful claim. Branch 0 and Branch 1 escalate
-without claiming, Branch 2's `recovery_cap_exhausted` and `window_held_by_other_plan` arms claim
-nothing, and a run with `review_rate_window_await: false` never enters this section — none of them
-armed a wait, so none of them discloses an arming record, neither on the log nor on the envelope.
+disclosure is emitted on a successful claim, and the envelope row is repeated on the re-entry-before-wake
+return, whose wait is still armed by the same refusal — that pass claims nothing, so it writes no ARMED
+log line, and its row is read off the refusal record that selected the recovery on that pass. Branch 0
+and Branch 1 escalate without claiming, Branch 2's `recovery_cap_exhausted` and
+`window_held_by_other_plan` arms claim nothing, and a run with `review_rate_window_await: false` never
+enters this section — none of them armed a wait, so none of them discloses an arming record, neither on
+the log nor on the envelope.
 
-#### Branch 3 — poll the claimed window to expiry (bounded, paced, never one long sleep)
+#### Branch 3 — re-entry on this plan's own elapsed claim (no claim, no wait)
 
-Poll the window's **own observable state** — the claim's `seconds_remaining` — until it elapses OR the
-`review_rate_window_timeout_seconds` budget is exhausted. This is a bounded wait over a concrete
-observable, NOT a blind sleep: a single blocking `sleep {parsed_eta}` is prohibited here, because a
-bot's stated ETA is an estimate and sleeping through it is guessing at a condition rather than
-observing one (see [`../plan-marshall/standards/waiting.md`](../plan-marshall/standards/waiting.md)).
+Entered ONLY from the read at the top of Branch 2, on the pass the dispatcher issues after the
+main-context wait: that read found the window claimed by this plan, for this PR, elapsed and never
+released. Nothing is claimed here and nothing is waited for. The claim was made — and its recovery
+attempt spent — on the pass that handed the wait back; the wait itself was held by the dispatcher's
+item 7a, including the jittered wake delay it adds on top of the window (see
+[`../phase-6-finalize/SKILL.md`](../phase-6-finalize/SKILL.md) Step 3 item 7a and
+[`standards/coderabbit.md`](standards/coderabbit.md) § "Rate-limit class" for why the wake is jittered).
 
-The loop is driven across tool calls — **no shell loop**: each poll is exactly one `rate-window check`
-Bash call, and pacing between polls is a single standalone `sleep {interval}` Bash call
-(`{interval}` = 60s). Track elapsed wall-clock against `review_rate_window_timeout_seconds`; stop
-issuing new polls once the budget would be exceeded.
+⛔ **The wait's own answer is not what this branch acts on.** `merge_lock rate-window wait` reports only
+that a wake instant passed; it writes nothing and decides nothing. Between that report and this pass
+another plan may have claimed the window, which is why this branch is selected by a fresh read of the
+claim (the Branch 2 table) rather than by the fact of having been re-dispatched. A pass whose read no
+longer shows this plan's elapsed claim is not on this branch — it is a first pass, and claims.
 
-Each poll:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-window check \
-  --plan-id {plan_id} --bot-kind {bot_kind} --pr-number {pr_number}
-```
-
-- **`expired: true`** (or `status: free`) — the window has elapsed. Cross the **jittered wake
-  boundary** below first; the re-consult at that boundary is what names the destination.
-- **`expired: false`** with budget remaining — pace with a single standalone `sleep` call, then
-  re-poll:
-
-  ```bash
-  sleep 60
-  ```
-
-- **Budget exhausted** (`review_rate_window_timeout_seconds` elapsed with the window still open) —
-  release the claim, decision-log, and return `status: escalate_ask` with
-  `reason: rate_window_timeout` (see "Output"). Honour the **no-mark invariant**: do NOT call
-  `mark-step-done` before returning `escalate_ask` — the dispatcher's item 7a owns the continuation.
-
-  ```bash
-  python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-window release \
-    --plan-id {plan_id} --bot-kind {bot_kind}
-  ```
-
-  ```bash
-  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-    decision --plan-id {plan_id} --level INFO \
-    --message "(plan-marshall:automatic-review) refusal recovery: review_rate_window_timeout_seconds={review_rate_window_timeout_seconds} exhausted with {bot_kind} window still open — released the claim, returning escalate_ask{reason: rate_window_timeout}; orchestrator will fire AskUserQuestion"
-  ```
-
-**The jittered wake boundary (Branch 3 → trigger-arm boundary).** Reached ONLY on the `expired: true`
-arm above, and crossed exactly ONCE per recovery. It is emphatically **not** a per-poll delay: the
-poll loop's own 60 s pacing above is unchanged, and adding this delay to each iteration would stretch
-a bounded poll into a slow one. This fires after the window is observed elapsed and before the
-re-consult below routes.
-
-Compute the delay — see [`../manage-locks/SKILL.md`](../manage-locks/SKILL.md) § Canonical
-invocations → `merge_lock — poll-delay`. The verb is a pure computation: it claims nothing, reads no
-store, and does not itself sleep:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock poll-delay
-```
-
-Read `delay_seconds` from the returned TOON, decision-log it, then pace with a single standalone
-`sleep {delay_seconds}` Bash call — the same tool-call-driven pacing shape the poll loop uses, never
-a shell loop:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:automatic-review) refusal recovery: jittered wake — sleeping {delay_seconds}s (drawn from {min_seconds}-{max_seconds}s) before re-consulting the selector for {bot_kind}, to decorrelate this wake from a concurrent lane's"
-```
-
-```bash
-sleep {delay_seconds}
-```
-
-**Why a delay at a boundary the claim already guards.** The rate-window claim serialises every
-*in-repo* claimant, so no second plan in THIS repository reaches here for the same bot. What it
-cannot see is a `doc/plans/` cloud-lane run: that lane holds no `merge_lock` claim and draws on the
-same reviewer allowance, so both lanes can wake on the same stated ETA and generate their events
-together. The jitter also decorrelates this wake from the moment the claim was released, so a
-recovery that has just finished does not hand the next attempt a synchronised start. ⛔ This is NOT
-the cloud lane's thundering-herd argument, which reasons from several unserialised plans sharing one
-allowance — that rationale does not transfer, because the claim above already rules out the in-repo
-herd. See [`standards/coderabbit.md`](standards/coderabbit.md) § "Rate-limit class".
-
-Then RE-CONSULT the selector, now that both observations exist, and route on the `action` it returns. This is the second and last consult; the first (before Branch 0) had no claim to report:
+RE-CONSULT the selector, now that both observations exist, and route on the `action` it returns. This is the second and last consult; the first (before Branch 0) had no claim to report:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review recovery-action \
@@ -664,11 +649,11 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
   --attempts-remaining {attempts_remaining} --attempt-held true --plan-id {plan_id}
 ```
 
-`{attempts_remaining}` is the field the Branch 3 `rate-window check` poll returned. `--window-expired` and `--attempts-remaining` are supplied here **because both were observed** — omitting either returns `action: unmeasured`, which authorizes nothing and would leave this boundary with no route.
+`{attempts_remaining}` is the field the Branch 2 `rate-window check` read returned. `--window-expired` and `--attempts-remaining` are supplied here **because both were observed** by that read — omitting either returns `action: unmeasured`, which authorizes nothing and would leave this branch with no route.
 
-⛔ **`--attempt-held true` is REQUIRED at this consult, and omitting it silently loses the last recovery event.** Branch 2's claim already spent an attempt — a successful claim increments the ledger before it returns — so the cap-final claim reports `attempts_remaining: 0` the instant it is granted. Feeding that post-claim zero to a selector that reads it as *no budget left* routes to `escalate_exhausted`, and this branch then releases the claim without ever generating the event the claim bought: a cap of 1 delivers zero events, and the default cap of 6 delivers five. The flag tells the selector the attempt is already HELD, so the budget is read as *may a FURTHER claim be made?* rather than as permission for this one. Exhaustion is still enforced — by `rate-window claim`'s own `recovery_cap_exhausted` refusal in Branch 2, which is the single place the cap is decided.
+⛔ **`--attempt-held true` is REQUIRED at this consult, and omitting it silently loses the last recovery event.** Branch 2's claim, made on the pass that handed the wait back, already spent an attempt — a successful claim increments the ledger before it returns — so the cap-final claim reports `attempts_remaining: 0` from the instant it is granted, and the re-entry read reports the same zero. Feeding that post-claim zero to a selector that reads it as *no budget left* routes to `escalate_exhausted`, and this branch then releases the claim without ever generating the event the claim bought: a cap of 1 delivers zero events, and the default cap of 6 delivers five. The flag tells the selector the attempt is already HELD, so the budget is read as *may a FURTHER claim be made?* rather than as permission for this one. Exhaustion is still enforced — by `rate-window claim`'s own `recovery_cap_exhausted` refusal in Branch 2, which is the single place the cap is decided.
 
-⛔ **`--cause` keeps the same conditional treatment it has at the first consult: pass it only when a cause was observed, and omit the flag entirely when it was not.** The rejection is worse here than there — this site fires *after* the window claim and the full poll-to-expiry wait, so an argparse exit 2 discards a completed wait and a spent recovery attempt. Reaching this boundary at all means `cause != size` (a size cause routes to Branch 0), so an absent cause is a live possibility on the path that reaches this line.
+⛔ **`--cause` keeps the same conditional treatment it has at the first consult: pass it only when a cause was observed, and omit the flag entirely when it was not.** The rejection is worse here than there — this site fires *after* the window claim and the full main-context wait, so an argparse exit 2 discards a completed wait and a spent recovery attempt. Reaching this branch at all means `cause != size` (a size cause routes to Branch 0), so an absent cause is a live possibility on the path that reaches this line.
 
 - **`action: generate_trigger`** — the bot re-reviews on push (`trigger_semantics: auto_on_push`), so new commits are an event it honours. Proceed to **Branch 4**.
 - **`action: close_and_reopen`** — the bot reviews only when explicitly asked (`trigger_semantics: requires_explicit_trigger`), so a push is not an event it answers. Proceed to **Branch 5**.
@@ -694,8 +679,8 @@ read rather than recalled. Reading a push as a universal trigger is
 how a recovery comes to rebase, force-push, and then report success while the bot it was recovering
 was never asked anything.
 
-**Reached only after the window has elapsed** (Branch 3 observed `expired: true`) **and the jittered
-wake boundary above has been awaited**. There is no path into this branch while the window is still
+**Reached only after the window has elapsed** (the main-context wait, jitter included, reported the
+wake reached, and the Branch 2 re-entry read observed `expired: true`). There is no path into this branch while the window is still
 open — a trigger comment during an open rate-limit window is structurally unreachable, not merely
 discouraged: the `request_fresh_review` guard refuses it in code.
 
@@ -766,7 +751,7 @@ Then proceed to "Producer: FIND" below, which surfaces whatever the regenerated 
 
 #### Branch 5 — CLOSE and RE-OPEN the PR (re-deliver a request the bot dropped)
 
-Entered on `action: close_and_reopen` from the Branch 3 → trigger-arm boundary above: the claim
+Entered on `action: close_and_reopen` from the Branch 3 re-entry consult above: the claim
 elapsed AND the bot declares `trigger_semantics: requires_explicit_trigger`, so no push is an event it
 answers and Branch 4's rebase would recover nothing.
 
@@ -774,8 +759,8 @@ answers and Branch 4's rebase would recover nothing.
 not closing and re-opening, not opening a fresh PR, not a force-push, not a new SHA. The one observed
 successful reopen worked *only* because the window had already elapsed. So this is a way to
 **re-deliver a request the bot dropped**, and it is worth nothing before the window is up. That is the
-whole reason this branch hangs off the elapsed-window boundary and is unreachable from anywhere else:
-reopen is for the dropped-request case, waiting (Branch 3) is for the active-refusal case, and running
+whole reason this branch hangs off the elapsed-window re-entry and is unreachable from anywhere else:
+reopen is for the dropped-request case, waiting (the main-context wait) is for the active-refusal case, and running
 them in the wrong order spends an attempt to learn what the claim already reported.
 
 The sequence composes from EXISTING `ci pr` verbs — no new CI verb is introduced. See
@@ -1104,7 +1089,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 status: success | error | loop_back | escalate_ask
 display_detail: "<{N} comment(s) found — {review_state_summary} (unified triage pending)>"
 comments_found: {N}
-rate_window_arming[N]{producer,bot_kind,layer,eta,body}:   # present ONLY when Branch 2 armed a wait on this pass
+rate_window_arming[N]{producer,bot_kind,layer,eta,body}:   # present ONLY on a pass that armed a wait — the rate_window_await return
 ```
 
 The `display_detail` carries the `review_state_summary` (the reviewer-state distribution) alongside the count, so *reviewed-and-clean* and *nobody-reviewed* — both `0 comment(s) found` — no longer render identically; the summary segment is omitted when the reviewer roster is empty (nothing to distribute).
@@ -1116,9 +1101,10 @@ that surfaced the refusal, the refusing `bot_kind`, the recognition `layer` that
 excerpt. The ARMED decision-log line names every one of those but the excerpt, which is carried here
 only because a shell argument cannot safely hold untrusted bot text (§ "The arming disclosure"). The row
 rides the envelope because the log is a single sink a resumed run does not read back; on the envelope,
-the observation that armed a wait survives the resume rather than being re-derived. The field is carried
-on EVERY envelope this step returns after a successful Branch 2 claim — this one, and the
-`rate_window_timeout` escalation below, which a claimed window can still end in. ⛔ **It is ABSENT —
+the observation that armed a wait survives the resume rather than being re-derived. A successful Branch 2
+claim always ends the pass in the `rate_window_await` return below, so that envelope is where the row
+rides — on the claiming pass, and again on a re-entry-before-wake pass whose wait the same refusal still
+arms. ⛔ **It is ABSENT —
 the key omitted entirely — on a pass that armed no wait**: never an empty table, and never a row of
 defaulted fields, which a reader would take as a wait armed on nothing. Branch 0 and Branch 1, Branch 2's
 `recovery_cap_exhausted` and `window_held_by_other_plan` arms, and a run with the opt-in off all return
@@ -1128,15 +1114,16 @@ FIND-only producer — this step fetches and files `pr-comment` findings; the pe
 
 ### `escalate_ask` return (timeout escalations)
 
-This step returns `status: escalate_ask` instead of `success`/`loop_back` on five distinct escalations, discriminated by the `reason` field:
+This step returns `status: escalate_ask` instead of `success`/`loop_back` on five distinct reasons, discriminated by the `reason` field. Four of them ask the operator something; `rate_window_await` asks nothing and hands a wait to the main context. A sixth reason, `rate_window_timeout`, reaches the dispatcher's item 7a without being returned by this step — it is listed here because it shares the rate-window envelope shape:
 
 - **`reason: re_review_timeout`** — the "On re-review timeout (trigger B)" sub-block fired with `re_review_on_timeout` of `defer` or `ask`. That sub-block has TWO entry paths and this `reason` covers both: the await budget expired with no fresh bot review (`timed_out: true`), or the bot answered with an **incremental-review decline** (`matched: true` / `head_sha_verified: false`). The envelope's `outcome` field below discriminates them, because the two are not the same observation and a decline reported as a timeout would assert a budget expiry that never happened. The `proceed` policy does NOT return `escalate_ask` on either path — the leaf falls through to "Wait for review-bot comments" and the run terminates normally (`success`/`loop_back`); `proceed` is the documented non-escalating case.
-- **`reason: rate_window_timeout`** — the "Rate-limit refusal recovery" Branch 3 poll exhausted `review_rate_window_timeout_seconds` while the claimed window was still open.
+- **`reason: rate_window_await`** — the "Rate-limit refusal recovery" Branch 2 claimed the bot's rate window (or, on a re-entry before the wake, found this plan's own claim still running). The step stops here: it does not wait for the window. ⛔ **This is the one reason that asks the operator NOTHING** — it carries no `prompt_options[]`, and item 7a answers it by waiting on the claim's expiry and dispatching this step again.
+- **`reason: rate_window_timeout`** — **not returned by this step.** The main-context wait that follows a `rate_window_await` return exhausted `review_rate_window_timeout_seconds` with the window still open; item 7a then releases the claim and takes this reason's handling itself, building the envelope below from the `rate_window_await` return it was waiting on.
 - **`reason: rate_window_not_awaitable`** — the "Rate-limit refusal recovery" Branch 1 fired: the refusing bot's `rate_limit_class` is `hard_quota` or `unknown`, so no await and no event generation is productive. Escalates immediately without claiming a window.
 - **`reason: rate_window_exhausted`** — the "Rate-limit refusal recovery" Branch 2 claim returned `recovery_cap_exhausted`: this PR has already spent its `attempt_cap` recovery events for this bot. Cap exhaustion is an explicit escalation, never a silent give-up.
 - **`reason: refusal_structural`** — the "Rate-limit refusal recovery" Branch 0 fired: the refusal's cause is `size`, so the bot resolved to `refused_structural` and the limit is a ceiling on the diff rather than a window. Escalates immediately, awaiting nothing, and its `prompt_options[]` offer no wait — the only escalation here for which waiting is not merely unproductive but unavailable.
 
-In all cases the dispatched leaf does NOT fire `AskUserQuestion` itself — it returns this envelope and the inline orchestrator (phase-6-finalize SKILL.md Step 3 item 7a) owns the prompt.
+In all cases the dispatched leaf does NOT fire `AskUserQuestion` itself — it returns this envelope and the inline orchestrator (phase-6-finalize SKILL.md Step 3 item 7a) owns the continuation: a prompt for every asking reason, a wait for `rate_window_await`.
 
 `reason: re_review_timeout` variant:
 
@@ -1159,7 +1146,34 @@ prompt_options[3]:              # present only when action: ask — omitted for 
 
 `outcome` is the discriminator between the sub-block's two entry paths, and `timed_out` states the observed fact rather than a constant: reporting `timed_out: true` for a bot that answered would assert a budget expiry that did not occur. On the decline path the operator prompt is still the three options above — the decline disposes exactly as a timeout does — but "Wait another {timeout_seconds}s" is the weakest of the three there, because a bot that declined this HEAD produces another decline rather than a review when re-triggered.
 
-The three rate-window variants (`rate_window_timeout`, `rate_window_not_awaitable`,
+The `rate_window_await` variant carries what the main-context wait needs and nothing an operator would be
+asked:
+
+```toon
+status: escalate_ask
+display_detail: "rate-window await — {bot_kind} until {expires_at} (pr {pr_number})"
+reason: rate_window_await
+timed_out: false
+bot_kind: {the refusing bot whose window is claimed}
+refusal_class: awaitable_window
+pr_number: {pr_number}
+expires_at: {the claim's expiry instant, epoch seconds, as merge_lock reported it}
+seconds_remaining: {seconds until that instant, as merge_lock reported it}
+timeout_seconds: {review_rate_window_timeout_seconds}
+rate_window_arming[N]{producer,bot_kind,layer,eta,body}:
+```
+
+⛔ **There is no `action` and no `prompt_options[]`, deliberately.** Both are absent, not empty: `action`
+is `defer | ask` everywhere else in this document and this variant is neither, so it is routed by its
+`reason` alone, and a consumer that renders whatever options an envelope carries has nothing to render
+and cannot turn a wait into a prompt. `expires_at` and `seconds_remaining` are the values the `rate-window claim` (or, on a
+re-entry before the wake, the `rate-window check`) returned, passed through unrounded; `expires_at` is
+what the work log and the wait name, and `seconds_remaining` is a reading taken at return time that the
+consumer never waits out blind — it waits on the claim's own expiry. `timeout_seconds` is the TOTAL
+budget the main-context wait may spend, not a per-call bound. `timed_out` is `false`: nothing has been
+awaited yet.
+
+The three asking rate-window variants (`rate_window_timeout`, `rate_window_not_awaitable`,
 `rate_window_exhausted`) share one shape. There is no re-review `head_sha` on any of them — the
 escalation is about an unlanded review, not an unreviewed HEAD:
 
@@ -1173,7 +1187,7 @@ bot_kind: {the refusing bot}
 refusal_class: {awaitable_window | hard_quota | unknown}
 timeout_seconds: {review_rate_window_timeout_seconds}
 pr_number: {pr_number}
-rate_window_arming[N]{producer,bot_kind,layer,eta,body}:   # present ONLY when a Branch 2 claim armed a wait on this pass
+rate_window_arming[N]{producer,bot_kind,layer,eta,body}:   # present ONLY on rate_window_timeout, carried over from the rate_window_await return
 prompt_options[3]:
   - "Wait another {review_rate_window_timeout_seconds}s"
   - "Merge anyway — proceed unreviewed"
@@ -1220,17 +1234,18 @@ remedy set from the participation contract, verbatim.
 
 Field contract:
 
-- `action`: `defer` when policy is `defer` (orchestrator skips the merge directly); `ask` when policy is `ask` (orchestrator fires `AskUserQuestion` with `prompt_options[]`). All three rate-window variants and the structural variant always use `action: ask`.
-- `reason`: `re_review_timeout`, `rate_window_timeout`, `rate_window_not_awaitable`, `rate_window_exhausted`, or `refusal_structural` — distinguishes the five escalation triggers. ⛔ **Item 7a routes the four TEMPORAL reasons identically and `refusal_structural` SEPARATELY**: its remedy set is disjoint from theirs, so folding it in is exactly the non-option that member exists to remove. The discrimination also keeps each audit trail specific.
+- `action`: `defer` when policy is `defer` (orchestrator skips the merge directly); `ask` when policy is `ask` (orchestrator fires `AskUserQuestion` with `prompt_options[]`). The three asking rate-window variants and the structural variant always use `action: ask`. ⛔ **Absent on `rate_window_await`**, which neither defers nor asks.
+- `reason`: `re_review_timeout`, `rate_window_await`, `rate_window_timeout`, `rate_window_not_awaitable`, `rate_window_exhausted`, or `refusal_structural` — distinguishes the six reasons item 7a handles. ⛔ **Item 7a routes the four TEMPORAL asking reasons identically, `refusal_structural` SEPARATELY, and `rate_window_await` to a wait with no prompt at all**: the structural remedy set is disjoint from the temporal one, so folding it in is exactly the non-option that member exists to remove, and a wait rendered as a question would put a decision in front of the operator that nobody needs made. The discrimination also keeps each audit trail specific.
 - `head_sha`: present only on the `re_review_timeout` variant — the full worktree HEAD SHA the timed-out re-review was awaiting; the unreviewed commit the operator decision applies to. Omitted on the rate-window and structural variants (no HEAD advance is involved).
-- `timed_out`: `true` only for `rate_window_timeout` (a budget genuinely elapsed). `rate_window_not_awaitable`, `rate_window_exhausted`, and `refusal_structural` escalate WITHOUT awaiting, so they report `false` — reporting a timeout that never happened would misdescribe the escalation.
+- `timed_out`: `true` only for `rate_window_timeout` (a budget genuinely elapsed). `rate_window_await` reports `false` because its wait has not started; `rate_window_not_awaitable`, `rate_window_exhausted`, and `refusal_structural` escalate WITHOUT awaiting, so they report `false` too — reporting a timeout that never happened would misdescribe the escalation.
 - `bot_kind` / `refusal_class`: present on the rate-window and structural variants — which bot refused and under which class, so the operator sees whether the non-participation is awaitable at all.
-- `rate_window_arming[]`: present on a rate-window variant ONLY when a Branch 2 claim armed a wait earlier on this pass — which is `rate_window_timeout` alone. `rate_window_exhausted` is raised by Branch 2's own `recovery_cap_exhausted` refusal, BEFORE any claim exists, so it never carries a row: the only other route to it is the post-claim re-consult, and that consult passes `--attempt-held true`, under which the selector never returns `escalate_exhausted` (Branch 3). Same rows and same absence rule as on the main envelope above; `rate_window_not_awaitable` and `refusal_structural` escalate without claiming, so they never carry it either.
+- `expires_at` / `seconds_remaining`: present ONLY on `rate_window_await` — the claim's expiry instant and the seconds left to it, as `merge_lock` reported them. They name what the main-context wait is waiting for; the wait itself re-reads the claim rather than trusting either.
+- `rate_window_arming[]`: present on `rate_window_await`, and on the `rate_window_timeout` handling item 7a derives from it — the two envelopes a claimed window can produce. `rate_window_exhausted` is raised by Branch 2's own `recovery_cap_exhausted` refusal, BEFORE any claim exists, so it never carries a row: the only other route to it is the Branch 3 re-entry consult, and that consult passes `--attempt-held true`, under which the selector never returns `escalate_exhausted`. Same rows and same absence rule as on the main envelope above; `rate_window_not_awaitable` and `refusal_structural` escalate without claiming, so they never carry it either.
 - `refusal_cause` / `cap` / `measured_diff_size`: present ONLY on the `refusal_structural` variant. `refusal_cause` is always `size` there (it is what selected the variant); `cap` is the ceiling the notice stated and `measured_diff_size` is how big the refused diff was, each the literal `unknown` when unavailable. The pair is what makes an accepted gap auditable rather than asserted — and the two carry different units by design, so read them as an order-of-magnitude comparison, never as an equality check.
-- `timeout_seconds`: the exhausted budget — `re_review_await_timeout_seconds` for `re_review_timeout`, `review_rate_window_timeout_seconds` for the rate-window variants. ⛔ **Absent on `refusal_structural`**: nothing was awaited and nothing is awaitable, so carrying a budget would invite a consumer to render a wait option.
-- `prompt_options[]`: the three operator choices the orchestrator presents when `action: ask`. "Wait another {timeout_seconds}s" is realized by the orchestrator re-dispatching `plan-marshall:automatic-review` from scratch with a fresh budget (the harness cannot resume a spawned agent — see [phase-6-finalize SKILL.md](../phase-6-finalize/SKILL.md) Step 3). ⛔ **The `refusal_structural` variant's option set contains no wait**, and a consumer MUST NOT add one: its limit is a property of the diff, so waiting is an action guaranteed not to work. Present only when `action: ask`; omitted for `action: defer`.
+- `timeout_seconds`: the exhausted budget — `re_review_await_timeout_seconds` for `re_review_timeout`, `review_rate_window_timeout_seconds` for the rate-window variants. On `rate_window_await` it is that same rate-window budget, not yet spent: the total the main-context wait may use. ⛔ **Absent on `refusal_structural`**: nothing was awaited and nothing is awaitable, so carrying a budget would invite a consumer to render a wait option.
+- `prompt_options[]`: the three operator choices the orchestrator presents when `action: ask`. "Wait another {timeout_seconds}s" is realized by the orchestrator re-dispatching `plan-marshall:automatic-review` from scratch with a fresh budget (the harness cannot resume a spawned agent — see [phase-6-finalize SKILL.md](../phase-6-finalize/SKILL.md) Step 3). ⛔ **The `refusal_structural` variant's option set contains no wait**, and a consumer MUST NOT add one: its limit is a property of the diff, so waiting is an action guaranteed not to work. Present only when `action: ask`; omitted for `action: defer` and absent on `rate_window_await`, which asks nothing.
 
-**No-mark invariant (symmetric with the dispatcher's item-5d carve-out)** — before returning `escalate_ask`, the leaf MUST NOT call `mark-step-done`. The continuation — firing the `AskUserQuestion` for the `ask` policy, or skipping the merge for the `defer` policy — is owned exclusively by the dispatcher's item 7a, not by the leaf. Recording a terminal outcome here would pre-empt that continuation. This no-mark contract is the symmetric counterpart of the dispatcher-side completion-guard carve-out: the leaf does not record terminality, and the post-dispatch completion guard does not assert it for an `escalate_ask` return (see [`../phase-6-finalize/SKILL.md`](../phase-6-finalize/SKILL.md) item 5d, the `escalate_ask`-returning steps skip class). Without both halves, the guard would halt the pipeline with `step_record_missing` before item 7a could run.
+**No-mark invariant (symmetric with the dispatcher's item-5d carve-out)** — before returning `escalate_ask`, the leaf MUST NOT call `mark-step-done`. The continuation — firing the `AskUserQuestion` for the `ask` policy, skipping the merge for the `defer` policy, or holding the rate-window wait and re-dispatching for `rate_window_await` — is owned exclusively by the dispatcher's item 7a, not by the leaf. Recording a terminal outcome here would pre-empt that continuation. This no-mark contract is the symmetric counterpart of the dispatcher-side completion-guard carve-out: the leaf does not record terminality, and the post-dispatch completion guard does not assert it for an `escalate_ask` return (see [`../phase-6-finalize/SKILL.md`](../phase-6-finalize/SKILL.md) item 5d, the `escalate_ask`-returning steps skip class). Without both halves, the guard would halt the pipeline with `step_record_missing` before item 7a could run.
 
 The orchestrator-side handling of this return (reading `re_review_on_timeout`, branching on `action`, firing `AskUserQuestion`, and the "wait again" fresh re-dispatch) lives in [`../phase-6-finalize/SKILL.md`](../phase-6-finalize/SKILL.md) Step 3 — this document owns the return shape; the dispatcher owns the consumption.
 

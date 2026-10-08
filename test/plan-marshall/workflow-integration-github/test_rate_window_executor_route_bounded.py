@@ -107,6 +107,27 @@ def test_the_executor_route_is_dispatched_with_a_bound_shorter_than_the_budget(e
     )
 
 
+def test_the_executor_route_reads_the_window_once_and_never_waits_on_it(executor_route):
+    """The guard dispatches the single read ``rate-window check``, not ``rate-window wait``.
+
+    ``merge_lock`` has a verb that waits on this same claim, held by the main
+    context between two dispatches of the step. The guard runs INSIDE the step, so
+    a dispatch of the waiting verb here would hold the step for as long as the
+    window stays open — the wait the step hands back rather than holds. The bound
+    asserted above would still cut such a call short, which is why the verb is
+    pinned separately: a bounded wait in the wrong place is still a wait.
+    """
+    calls = _capture_dispatch(executor_route, _completed(_FREE_WINDOW_TOON))
+
+    github_re_review.read_rate_window(_PLAN_ID, _BOT_KIND, _PR_NUMBER)
+
+    assert len(calls) == 1, 'the executor route was not taken, so its verb was never observed'
+    argv = [str(token) for token in calls[0]['argv']]
+    assert 'rate-window' in argv, argv
+    assert 'check' in argv, argv
+    assert 'wait' not in argv, argv
+
+
 def test_a_stalled_executor_yields_the_unreadable_envelope(executor_route):
     """Expiry becomes the documented envelope, not an exception out of the guard.
 
