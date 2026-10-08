@@ -454,9 +454,7 @@ def _row_count_prose(text: str) -> list[str]:
 
 def _implementor_docs() -> dict[str, Path]:
     """Map each discovered finalize-step implementor to its own document."""
-    return {
-        str(record.get('name', '')): Path(str(record.get('path', ''))) for record in find_implementors(_EXT_POINT)
-    }
+    return {str(record.get('name', '')): Path(str(record.get('path', ''))) for record in find_implementors(_EXT_POINT)}
 
 
 def test_every_project_local_refusal_row_resolves_to_a_project_skill_document():
