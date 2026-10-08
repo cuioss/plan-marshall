@@ -85,6 +85,9 @@
         "project:finalize-step-lessons-housekeeping": {
           "lane": "minimal"
         },
+        "default:finalize-step-simplify": {
+          "lane": "off"
+        },
         "project:finalize-step-plugin-doctor": {
           "lane": "standard"
         },
@@ -107,6 +110,9 @@
         "default:create-pr": {
           "lane": "minimal"
         },
+        "default:ci-verify": {
+          "lane": "minimal"
+        },
         "plan-marshall:automatic-review": {
           "review_bot_buffer_seconds": 180,
           "re_review_on_loopback": true,
@@ -120,9 +126,6 @@
           "required_bots": "cuioss-review-bot,coderabbit",
           "optional_bots": "sourcery",
           "bot_lists_provenance": "answered"
-        },
-        "default:ci-verify": {
-          "lane": "minimal"
         },
         "default:sonar-roundtrip": {
           "touched_file_cleanup": "new_code_only",
@@ -154,14 +157,14 @@
         "project:finalize-step-review-retrospective": {
           "lane": "standard"
         },
-        "plan-marshall:plan-retrospective": {
-          "lane": "minimal"
-        },
         "default:lessons-capture": {
           "lane": "off"
         },
         "default:finalize-step-preference-emitter": {
           "preference_min_recurrence": 2,
+          "lane": "minimal"
+        },
+        "plan-marshall:plan-retrospective": {
           "lane": "minimal"
         },
         "default:record-metrics": {
@@ -183,8 +186,7 @@
         "post-run-review": "level-5"
       },
       "removed_steps": [
-        "project:finalize-step-era-stamp-fill",
-        "default:finalize-step-simplify"
+        "project:finalize-step-era-stamp-fill"
       ]
     },
     "finding_raw_input_max_bytes": 65536
