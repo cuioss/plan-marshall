@@ -2,9 +2,9 @@
   "id": "PLAN-LB-14",
   "slug": "launch-gate-scope",
   "workstream": "WS-03",
-  "status": "staged",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "plan_marshall_plan_id": "lb-14-launch-gate-scope",
+  "pr": "1715",
+  "landing": "landings/PLAN-LB-14.md",
   "seq": 1
 }
