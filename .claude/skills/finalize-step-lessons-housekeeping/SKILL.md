@@ -56,6 +56,18 @@ It matches on the settle-stage shape: this is a pre-merge settle-band step whose
 
 Both `--outcome done` records therefore capture the worktree HEAD immediately before their `mark-step-done` call and forward it via `--head-at-completion {sha}`: the Step 7 completion record and the Step 2 empty-corpus skip-clean record. Re-firing is safe: the classification is a fresh read each time, and the pass is non-fatal throughout.
 
+### Verdict-input surface — deliberately undeclared
+
+This step declares **no** `verdict_inputs`, so the dispatcher's verdict-currency classifier never narrows its re-fire: every HEAD advance re-runs it. The absence is a recorded refusal on evidence, not a declaration left unwritten.
+
+A `verdict_inputs` declaration is a set of globs over **tracked** paths, and the classifier decides currency from the tree difference between two commits (see [verdict-currency.md](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/verdict-currency.md) § "The classification"). Most of what this step's verdict reads is not in any tree:
+
+- **The plan's own records.** Step 1 reads `modified_files` from `references.json` and the request document. Both live in the plan directory under the git-ignored `.plan/local/`, so no commit carries them and no tree difference reports a change to them.
+- **The lessons corpus.** Step 2 enumerates the main-anchored corpus under `.plan/local/lessons-learned/`, and Step 3 classifies every lesson in it. The corpus is git-ignored too: a lesson added, trimmed or removed between two firings changes this step's verdict while the two trees compare equal.
+- **Whichever standards clause a lesson names.** The Evidence bar re-reads the clause a completely-covered verdict cites and that clause's own worked example. Those files are tracked, but which ones are read is decided by the lessons in the corpus at run time, so the set cannot be written down ahead of the run.
+
+A glob can name none of the first two inputs, and the third is discovered rather than fixed. An advance that touches no declared path would therefore be classified `preserved` while the corpus or the plan's records had moved underneath it — a skip the declaration could not license. Declaring nothing keeps the fail-closed default and says so.
+
 ## Direct-file-access allowance
 
 This step is granted **direct `Read`/`Edit` access to `.plan/local/lessons-learned/**`** as a documented exception to the CLAUDE.md "`.plan/` access: scripts only" hard rule. That rule itself carves out the exception: *"Never Read/Write/Edit `.plan/` files directly unless a loaded skill's workflow explicitly documents it."* This section is that explicit documentation.

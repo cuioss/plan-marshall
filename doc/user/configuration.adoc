@@ -127,7 +127,7 @@ See the canonical per-key reference in link:../../marketplace/bundles/plan-marsh
 Two `max_iterations` caps bound the retry loops so a stuck plan cannot spin indefinitely:
 
 * `plan.phase-5-execute.max_iterations` (default `5`) — the maximum verify → execute → verify loops in the execute phase.
-* `plan.phase-6-finalize.max_iterations` (default `3`) — the maximum finalize → verify → finalize loops, counting every `loop_back` re-entry across both tiers — the ones that re-enter execute and the ones that replay a finalize step in place (see <<review-gates>>).
+* `plan.phase-6-finalize.max_iterations` (default `3`) — the number of `loop_back` rounds each requesting finalize step may spend. Every step that asks for a loop-back counts its own rounds, whether the round re-enters execute or replays the step in place, so one step using up its rounds leaves the others' untouched. A step that has spent its rounds is refused a further one and the run halts (see <<review-gates>>).
 
 [#review-gates]
 === Review gates
@@ -142,7 +142,7 @@ Boolean fields under each phase that decide whether the next-phase transition pa
 | `plan.phase-3-outline.plan_without_asking` | `false` | …from the outline review checkpoint to task creation.
 | `plan.phase-4-plan.execute_without_asking` | `true` | …from `phase-4-plan` to `phase-5-execute`.
 | `plan.phase-6-finalize.finalize_without_asking` | `true` | …from `phase-5-execute` to `phase-6-finalize` (forward direction).
-| `plan.phase-6-finalize.loop_back_without_asking` | `true` | …out of a `phase-6-finalize` `loop_back` outcome (reverse direction), along the target that outcome recorded: `5-execute` goes back into `phase-5-execute` for the freshly-allocated fix tasks, while `6-finalize` replays the loop-back-marked step in place and never leaves finalize. Bounded by `plan.phase-6-finalize.max_iterations`, which is what terminates the cycle. Note the mechanics: `loop_back_without_asking=false` *halts and instructs* (a Display + STOP prompt, no `AskUserQuestion`), whereas the similarly-suffixed step-owned `final_merge_without_asking=false` fires a genuine inline pre-merge `AskUserQuestion` confirmation — same suffix, opposite mechanics.
+| `plan.phase-6-finalize.loop_back_without_asking` | `true` | …out of a `phase-6-finalize` `loop_back` outcome (reverse direction), along the target that outcome recorded: `5-execute` goes back into `phase-5-execute` for the freshly-allocated fix tasks, while `6-finalize` replays the loop-back-marked step in place and never leaves finalize. Bounded per requesting step by `plan.phase-6-finalize.max_iterations`, which is what terminates the cycle. Note the mechanics: `loop_back_without_asking=false` *halts and instructs* (a Display + STOP prompt, no `AskUserQuestion`), whereas the similarly-suffixed step-owned `final_merge_without_asking=false` fires a genuine inline pre-merge `AskUserQuestion` confirmation — same suffix, opposite mechanics.
 |===
 
 [NOTE]
@@ -178,7 +178,7 @@ A timeout budget is in the census only when its own exhaustion reaches the opera
 | `plan_without_asking` | `false` | `plan.phase-3-outline.plan_without_asking` | the single deliberate human checkpoint in the plan lifecycle
 | `execute_without_asking` | `true` | `plan.phase-4-plan.execute_without_asking` | halts with `Display` + `STOP`, no prompt
 | `finalize_without_asking` | `true` | `plan.phase-6-finalize.finalize_without_asking` |
-| `loop_back_without_asking` | `true` | `plan.phase-6-finalize.loop_back_without_asking` | halts with `Display` + `STOP`, no prompt; bounded by `max_iterations`
+| `loop_back_without_asking` | `true` | `plan.phase-6-finalize.loop_back_without_asking` | halts with `Display` + `STOP`, no prompt; bounded by `max_iterations` per requesting step
 | `deep_lane` | `auto` | `plan.phase-1-init.deep_lane` |
 | `escalation` | `auto` | `plan.phase-1-init.escalation` |
 | `revalidation` | `auto` | `plan.phase-2-refine.revalidation` |

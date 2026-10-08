@@ -13,9 +13,23 @@ the step on next phase entry rather than treating it as terminal. The
 iteration recorded; dispatcher will re-fire on next phase-6-finalize entry) and signals
 the dispatcher to treat the step as a fresh dispatch on the next phase entry
 rather than skipping it. The operation is idempotent when outcome,
-display_detail, and head_at_completion all match and returns a ``conflict``
-error when a step already has a different outcome unless ``--force`` is
-supplied. An optional ``--display-detail`` one-line string is persisted
+display_detail, and head_at_completion all match. A write that CHANGES a
+recorded outcome is decided by one table,
+:data:`_TRANSITIONS_LEGAL_WITHOUT_FORCE`, which holds the four transition
+groups a retried or re-fired step takes on its ordinary path:
+
+* ``failed`` to any outcome — the dispatcher retries a failed step, and the
+  retry records whatever it produced.
+* ``loop_back`` to any outcome — a looped-back step is re-fired, and the
+  re-fire records whatever it produced.
+* ``done`` to ``failed`` — a completed step that is re-fired and aborts.
+* ``done`` to ``loop_back`` — a completed step that is re-fired and loops back.
+
+A pair outside the table (``done`` to ``skipped``, ``skipped`` to anything
+else) returns a ``conflict`` error and writes nothing unless ``--force`` is
+supplied; ``--force`` admits every transition. The table governs outcome
+changes alone — every well-formedness refusal below is evaluated before it and
+is not overridable. An optional ``--display-detail`` one-line string is persisted
 alongside the outcome so downstream renderers (e.g., phase-6-finalize
 vertical-steps block) can surface user-facing step summaries. An optional
 ``--head-at-completion`` SHA is persisted alongside the outcome so resumable
@@ -95,6 +109,13 @@ omit-when-absent convention as ``head_at_completion`` / ``loop_back_target``:
 they appear only from the second firing onward, so a step fired once writes the
 byte-identical historical record. An unchanged re-call still reports
 ``changed: false`` and appends nothing. See ``_extend_firing_history``.
+
+One further sibling key is written by a different verb. ``refire_waiver``
+(``{head, basis}``) is stamped onto an existing ``done`` record by
+``loop-back close`` through :func:`write_refire_waiver`; it records that the
+operator waived the step's re-fire at one HEAD and leaves the record's outcome,
+anchor and firing history untouched. ``mark-step-done`` never writes it, and the
+entry it builds for a new firing carries none.
 """
 
 import argparse
@@ -117,6 +138,22 @@ VALID_LOOP_BACK_TARGETS = ('5-execute', '6-finalize')
 #: :data:`VALID_OUTCOMES` so the two vocabularies cannot drift apart.
 _CONTROL_TOKENS = frozenset(VALID_OUTCOMES)
 
+#: The ``(recorded outcome, requested outcome)`` pairs a write may take without
+#: ``--force``. This table is the ONLY site that decides an outcome conflict:
+#: a pair inside it is recorded, a pair outside it returns ``error: conflict``
+#: and writes nothing. It holds the transitions a retried or re-fired step takes
+#: on its ordinary path — ``failed`` to any outcome, ``loop_back`` to any
+#: outcome, ``done`` to ``failed``, and ``done`` to ``loop_back``. The two "any
+#: outcome" groups are derived from :data:`VALID_OUTCOMES` so a new outcome
+#: cannot be left out of them. Same-outcome pairs never reach the lookup (a
+#: re-call that keeps the outcome is a re-stamp, not a transition), so their
+#: presence here carries no meaning.
+_TRANSITIONS_LEGAL_WITHOUT_FORCE = frozenset(
+    {('failed', requested) for requested in VALID_OUTCOMES}
+    | {('loop_back', requested) for requested in VALID_OUTCOMES}
+    | {('done', 'failed'), ('done', 'loop_back')}
+)
+
 #: The phase whose dispatcher consumes the ``[STEP] … Completed step:`` marker and
 #: whose Step-3 loop the fused completion emission below serves. Scoping the
 #: emission to this phase keeps the marker's population — and the dispatch audit's
@@ -128,6 +165,10 @@ _FINALIZE_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-fina
 
 #: The frontmatter key that IS the head-dependence declaration.
 _HEAD_DEPENDENT_KEY = 'head_dependent'
+
+#: The sibling key on a step record that carries an operator's re-fire waiver,
+#: ``{head, basis}``. See :func:`write_refire_waiver`.
+REFIRE_WAIVER_KEY = 'refire_waiver'
 
 
 def _derive_head_dependence(step: str) -> tuple[bool, str | None]:
@@ -551,20 +592,10 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
     phase_steps: dict[str, Any] = metadata.setdefault('phase_steps', {})
     phase_entry: dict[str, Any] = phase_steps.setdefault(phase, {})
 
-    # Prefer an exact match under the canonical key. When it misses, fall back to
-    # a canonicalized-match scan so a stale legacy (pre-migration) key such as
-    # ``default:push`` is still located when the caller writes the canonical
-    # ``push``. Tracking ``existing_key`` lets the conflict check fire against the
-    # true existing outcome AND lets the write below pop the stale key so a
+    # Tracking ``existing_key`` lets the conflict check fire against the true
+    # existing outcome AND lets the write below pop a stale legacy key so a
     # duplicate legacy-vs-canonical pair never survives a re-run.
-    existing = phase_entry.get(step)
-    existing_key: str | None = step if existing is not None else None
-    if existing is None:
-        for stored_key, stored_entry in phase_entry.items():
-            if canonicalize_step_key(stored_key) == step:
-                existing = stored_entry
-                existing_key = stored_key
-                break
+    existing, existing_key = _locate_entry(phase_entry, step)
 
     # SHIM(B): status.metadata.phase_steps entries stored as bare strings before step storage became {"outcome": ...} dicts.
     # shim-owner: manage-status
@@ -652,7 +683,7 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
                 },
                 combined_warning,
             )
-        if existing_outcome != outcome and not args.force:
+        if (existing_outcome, outcome) not in _TRANSITIONS_LEGAL_WITHOUT_FORCE and not args.force:
             return {
                 'status': 'error',
                 'plan_id': args.plan_id,
@@ -681,9 +712,12 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
 
     if existing_key is not None and existing_key != step:
         phase_entry.pop(existing_key, None)
-    # The outcome-changing re-fire path (loop_back → done, and the --force
-    # overwrite). A first firing reaches here with `existing` absent, so nothing
-    # is written and the record keeps its historical shape.
+    # The outcome-changing write. It is reached by a transition the
+    # _TRANSITIONS_LEGAL_WITHOUT_FORCE table admits (failed -> any, loop_back ->
+    # any, done -> failed, done -> loop_back) or by a --force overwrite of a pair
+    # outside it; either way the superseded firing joins the trail. A first
+    # firing reaches here with `existing` absent, so nothing is added to the
+    # trail and the record keeps its historical shape.
     _extend_firing_history(existing, new_entry)
     phase_entry[step] = new_entry
     write_status(args.plan_id, status)
@@ -711,6 +745,80 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
     )
 
 
+def _locate_entry(phase_entry: dict[str, Any], step: str) -> tuple[Any, str | None]:
+    """Return ``(entry, stored_key)`` for the canonical ``step`` in one phase's map.
+
+    Prefers an exact match under the canonical key. When it misses, falls back to
+    a canonicalized-match scan so a stale legacy (pre-migration) key such as
+    ``default:push`` is still located when the caller names the canonical
+    ``push``. ``(None, None)`` means the phase holds no record for the step.
+    """
+    entry = phase_entry.get(step)
+    if entry is not None:
+        return entry, step
+    # The exact lookup missed, so the record may still sit under the key shape a
+    # pre-migration run stored: the ``default:``-prefixed step key. The scan
+    # reconciles that stored key with the bare canonical query, and returns the
+    # key it was actually found under so the caller can pop it on rewrite.
+    # SHIM(B): a pre-migration default:-prefixed phase_steps key (canonical form is the bare step key).
+    # shim-owner: manage-status
+    # shim-floor: the step-key canonicalization change (canonicalize_step_key) that made the bare step key canonical, superseding the default:-prefixed form
+    # shim-remove-when: no status.json can still carry a default:-prefixed phase_steps key
+    for stored_key, stored_entry in phase_entry.items():
+        if canonicalize_step_key(stored_key) == step:
+            return stored_entry, stored_key
+    return None, None
+
+
+def find_step_record(status: dict[str, Any], phase: str, step: str) -> Any:
+    """Return the stored record for ``step`` in ``phase``, or ``None`` when absent.
+
+    Read-only. ``step`` is canonicalized here, so a caller may pass either the
+    bare manifest key or its ``default:``-prefixed form.
+    """
+    metadata = status.get('metadata')
+    phase_steps = metadata.get('phase_steps') if isinstance(metadata, dict) else None
+    phase_entry = phase_steps.get(phase) if isinstance(phase_steps, dict) else None
+    if not isinstance(phase_entry, dict):
+        return None
+    entry, _stored_key = _locate_entry(phase_entry, canonicalize_step_key(step))
+    return entry
+
+
+def write_refire_waiver(status: dict[str, Any], phase: str, step: str, head: str, basis: str) -> str | None:
+    """Stamp a ``refire_waiver`` onto ``step``'s existing ``done`` record.
+
+    A head-dependent step whose ``done`` record sits at an older HEAD is re-fired
+    when HEAD advances. The waiver is the operator's recorded decision that the
+    step is NOT re-fired at one specific HEAD: ``head`` is the HEAD the waiver
+    holds for, ``basis`` is why. A reader honours it only while the live HEAD
+    equals ``head``; at any other HEAD it is void.
+
+    The waiver is a SIBLING key. The record's ``outcome``, ``head_at_completion``
+    and firing history are left exactly as they were — the step stays ``done`` at
+    the anchor it actually completed at, and the waiver says only that its
+    staleness at ``head`` was accepted. It is never written as a new outcome.
+
+    Mutates ``status`` in place and does not persist it; the caller writes the
+    document once it has stamped every waiver it owes. Returns ``None`` on
+    success, or the refusal reason when ``step`` holds no ``done`` record — there
+    is no re-fire to waive for a step that has not completed, and a waiver
+    written there would be read as one.
+
+    A later ``mark-step-done`` builds its entry fresh through
+    :func:`_build_entry`, which carries no waiver, so a waiver never survives a
+    real re-fire of the step.
+    """
+    record = find_step_record(status, phase, step)
+    if not isinstance(record, dict) or record.get('outcome') != 'done':
+        found = record.get('outcome') if isinstance(record, dict) else None
+        return (
+            f'step {step!r} in phase {phase!r} has no done record to waive a re-fire of (recorded outcome: {found!r})'
+        )
+    record[REFIRE_WAIVER_KEY] = {'head': head, 'basis': basis}
+    return None
+
+
 def _build_entry(
     outcome: str,
     display_detail: str | None,
@@ -719,6 +827,10 @@ def _build_entry(
     facts: dict[str, str] | None,
 ) -> dict[str, Any]:
     """Build the phase_entry[step] dict, omitting optional keys when None.
+
+    The entry is built from these five arguments alone. A ``refire_waiver`` on
+    the record this entry replaces is deliberately not carried over: a waiver
+    answers for one recorded completion, and a new firing is a new completion.
 
     Legacy compatibility: callers that omit ``--head-at-completion`` produce
     the historical two-key shape ``{"outcome": ..., "display_detail": ...}``.

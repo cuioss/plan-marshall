@@ -316,7 +316,7 @@ manage-config plan phase-5-execute set-domain-step-agent \
 ### phase-6-finalize additional verbs
 
 ```bash
-# Set maximum finalize iterations
+# Set the loop-back ceiling: the number of rounds each requesting step may spend
 manage-config plan phase-6-finalize set-max-iterations --value 5
 ```
 

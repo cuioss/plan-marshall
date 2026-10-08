@@ -11,12 +11,17 @@ runs the bounded ``ci wait`` polling primitive inline.
 Return shape (CLI emits this as TOON; programmatic callers consume the dict
 directly)::
 
-    status: satisfied | wait_succeeded | wait_failed
+    status: satisfied | wait_succeeded | wait_failed | wait_pending
     head_sha: <40-char hex SHA>
     ci_final_status: success | failure | timeout | no_checks | null
     failing_checks: [str, ...]      # present on wait_failed (may be empty)
+    running_checks: [str, ...]      # present on wait_pending (may be empty)
+    rewait_number: <int>            # present on wait_pending
+    rewait_bound: <int>             # present on wait_pending
     wait_outcome: completed | deadline_exceeded   # present on wait_failed
+                                                  # and wait_pending
     mode: strict | consume-failures               # present on wait_failed
+                                                  # and wait_pending
     clamp_state: no-ceiling-fallback  # present on post-wait envelopes only
                                       # when the target declares no harness
                                       # ceiling (the fallback bound engaged)
@@ -46,6 +51,17 @@ Outcome semantics:
   ceiling self-corrects UPWARD across finalizes until it exceeds the true CI
   duration — the starved-ratchet fix (the success path never fired when the
   ceiling sat below the real CI duration).
+* ``wait_pending`` — ``consume-failures`` mode on the ``ci`` arm only. The
+  wait ended on its deadline and no check carries a definitive failing
+  conclusion: CI is still running, so nothing has failed and no finding is
+  owed. ``ci_final_status`` is ``null``, ``running_checks`` carries the checks
+  the wait envelope reported at the deadline, ``rewait_number`` says which
+  re-wait the caller is about to issue and ``rewait_bound`` is
+  :data:`MAX_PENDING_REWAITS`. The caller re-issues the resolver. The count of
+  lapses is kept per HEAD in ``work/ci-precondition-lapses.toon``; a new HEAD
+  starts at zero. Once the count passes the bound, or cannot be written, the
+  same lapse returns ``wait_failed`` / ``ci_final_status: timeout`` instead.
+  ``strict`` mode and the per-signal arms never return ``wait_pending``.
 
 Harness-ceiling clamp:
 
@@ -62,7 +78,7 @@ loud — a stderr warning plus ``clamp_state: no-ceiling-fallback`` on the
 returned envelope. The script-side ceiling is therefore
 NOT unconditionally the binding one: a CI run genuinely longer than the
 clamped ceiling returns a structured ``deadline_exceeded`` envelope
-(``wait_failed`` / ``arm_pending``) and the dispatcher re-polls on re-entry,
+(``wait_failed`` / ``wait_pending`` / ``arm_pending``) and the dispatcher re-polls on re-entry,
 instead of the host platform killing the call mid-flight and reporting a real
 CI outcome as an opaque kill. Only the consumed ceiling is clamped — the
 upward-ratchet ``timeout set`` calls keep recording the true observed /
@@ -122,8 +138,11 @@ Cache lifecycle:
 * Invalidation: implicit. When a loop-back commit advances HEAD, the next
   resolve call sees a fresh SHA, the cache's stored SHA no longer matches,
   and the resolver re-runs ``ci wait`` against the new tree.
-* Failure: no cache entry is written on ``wait_failed``, so a re-entry
-  always polls again — the failure state does not stick.
+* Failure: no cache entry is written on ``wait_failed`` or ``wait_pending``,
+  so a re-entry always polls again — the failure state does not stick.
+* Lapse count: ``work/ci-precondition-lapses.toon`` beside the cache holds
+  the HEAD SHA and the number of ``consume-failures`` lapses counted for it.
+  It is written only on a lapse and is the sole input to the re-wait bound.
 
 Subprocess seams (``_run_git_rev_parse_head``, ``_run_ci_wait``) are split
 out to keep the orchestration body easy to test without a live git
@@ -148,6 +167,11 @@ import sys
 import time
 from pathlib import Path
 
+# Check conclusions that say the check itself ended badly. A lapse is pending
+# only when no check carries one of these. The set is defined once, in
+# ``ci_verify`` beside ``classify_check`` whose definitive rows it is, and is
+# imported here.
+from ci_verify import _DEFINITIVE_FAILING_CONCLUSIONS
 from file_ops import get_executor_path, get_plan_dir
 from platform_runtime import _runtime_for_target
 from toon_parser import parse_toon, serialize_toon
@@ -210,6 +234,17 @@ NO_CEILING_FALLBACK_INNER_SECONDS: int = DEFAULT_CI_WAIT_TIMEOUT_SECONDS
 
 #: Cache file path relative to the plan directory.
 _CACHE_RELATIVE_PATH: str = 'work/ci-precondition-cache.toon'
+
+#: Lapse-count file path relative to the plan directory, beside the cache.
+_LAPSE_RELATIVE_PATH: str = 'work/ci-precondition-lapses.toon'
+
+#: How many times a ``consume-failures`` wait on the ``ci`` arm may lapse over
+#: a still-running CI run and be answered ``wait_pending`` for one HEAD. Three
+#: re-waits is four waits in total. The clamped wait is about 569 seconds on a
+#: target with a 600-second Bash ceiling, so four waits cover about 38 minutes —
+#: enough for a verify job of about 25 minutes plus queue time. The next lapse
+#: after the bound returns ``wait_failed`` / ``ci_final_status: timeout``.
+MAX_PENDING_REWAITS: int = 3
 
 #: The CI-wait notation routed through the executor proxy.
 _CI_WAIT_NOTATION: str = 'plan-marshall:tools-integration-ci:ci'
@@ -360,9 +395,9 @@ def _run_ci_wait(
         # ``timeout_seconds``, so
         # reaching here means the subprocess wedged. Surface a synthetic
         # timeout-like envelope instead of letting subprocess.TimeoutExpired
-        # propagate uncaught — resolve() routes any non-success envelope to
-        # the ``wait_failed`` / ``ci_final_status: timeout`` path, and the
-        # ``wait_outcome: deadline_exceeded`` marker lets downstream
+        # propagate uncaught. The envelope names no check, so resolve() answers
+        # it ``wait_failed`` / ``ci_final_status: timeout`` in every mode, and
+        # the ``wait_outcome: deadline_exceeded`` marker lets downstream
         # consumers classify the precondition decision correctly.
         return {
             'status': 'timeout',
@@ -530,6 +565,78 @@ def _write_cache(plan_id: str, head_sha: str, ci_final_status: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Lapse count (the re-wait bound's only input)
+# ---------------------------------------------------------------------------
+
+
+def _lapse_path(plan_id: str) -> Path:
+    """Return the absolute path of the per-plan lapse-count file."""
+    return get_plan_dir(plan_id) / _LAPSE_RELATIVE_PATH
+
+
+def _read_lapse_count(plan_id: str, head_sha: str) -> int:
+    """Return the lapses already counted for ``head_sha``.
+
+    A missing, unreadable or unparseable file, a record for another HEAD, and a
+    count that is not a non-negative integer all read as zero: the count starts
+    over, and the next lapse rewrites the file.
+    """
+    path = _lapse_path(plan_id)
+    if not path.is_file():
+        return 0
+    try:
+        recorded = parse_toon(path.read_text(encoding='utf-8'))
+    except Exception:
+        return 0
+    if recorded.get('head_sha') != head_sha:
+        return 0
+    try:
+        count = int(recorded.get('lapse_count'))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0
+    return max(0, count)
+
+
+def _record_lapse(plan_id: str, head_sha: str) -> int | None:
+    """Count one more lapse for ``head_sha`` and return the new total.
+
+    Returns ``None`` when the new total could not be written. The caller then
+    answers ``wait_failed``: a count that is not on disk cannot bound anything,
+    and a ``wait_pending`` that nothing bounds would never end.
+    """
+    count = _read_lapse_count(plan_id, head_sha) + 1
+    path = _lapse_path(plan_id)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(serialize_toon({'head_sha': head_sha, 'lapse_count': count}), encoding='utf-8')
+    except OSError:
+        return None
+    return count
+
+
+def _is_lapse_over_running_checks(wait_outcome: str, failing_checks: list) -> bool:
+    """Return True when the wait ended on its deadline with nothing failed.
+
+    The wait envelope lists the checks that were not green at the deadline in
+    ``failing_checks``. The lapse is over a live run when the envelope says
+    ``deadline_exceeded``, names at least one check, and none of those entries
+    carries a definitive failing conclusion. An envelope that names no check —
+    the synthetic one a wedged or crashed wait produces — shows no run, and an
+    entry that is not a mapping is not a readable check; neither is taken as
+    evidence that CI is merely still running.
+    """
+    if wait_outcome != 'deadline_exceeded' or not failing_checks:
+        return False
+    for check in failing_checks:
+        if not isinstance(check, dict):
+            return False
+        conclusion = str(check.get('conclusion') or '').strip().lower()
+        if conclusion in _DEFINITIVE_FAILING_CONCLUSIONS:
+            return False
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
 
@@ -585,6 +692,10 @@ def resolve(
             place of :func:`time.monotonic`. Called once immediately before
             and once immediately after the ``ci wait`` subprocess so the
             elapsed-at-deadline can be measured deterministically in tests.
+        mode: ``'strict'`` (the default) or ``'consume-failures'``. Only
+            ``'consume-failures'`` can return ``wait_pending``, for a wait
+            that lapsed over a still-running CI run, at most
+            :data:`MAX_PENDING_REWAITS` times per HEAD.
         signal_arm: Producer arm to gate on. ``None`` (the default) or
             ``'ci'`` resolves the legacy global ``ci-complete`` precondition,
             honouring ``mode``. ``'review'`` or ``'sonar'`` resolve the
@@ -597,7 +708,8 @@ def resolve(
         Dict matching the return contract documented in the module
         docstring. In the ``signal_arm in {'review', 'sonar'}`` path the
         return is the ``arm_proceed`` / ``arm_pending`` shape instead of the
-        legacy ``satisfied`` / ``wait_succeeded`` / ``wait_failed`` shape.
+        legacy ``satisfied`` / ``wait_succeeded`` / ``wait_failed`` /
+        ``wait_pending`` shape.
     """
     # Per-signal FIND-gate mode: a named producer arm gates on its OWN
     # terminal state, not global CI green. Delegates to the legacy resolver
@@ -776,6 +888,27 @@ def resolve(
         # executor crash), or a wait cut short by the harness clamp, must NOT
         # pull the ratchet down with a sub-request observation.
         timeout_set_fn(elapsed_at_deadline)
+
+    # A lapse over a run that is simply still going is not a failure. In
+    # consume-failures mode it is answered wait_pending so the caller waits
+    # again and no timeout finding is filed, up to MAX_PENDING_REWAITS per
+    # HEAD and only while the lapse can be counted. Strict mode, and so the per-signal arms that delegate here in
+    # strict mode, keep the wait_failed answer below.
+    if mode == 'consume-failures' and _is_lapse_over_running_checks(wait_outcome, failing_checks):
+        lapse_count = _record_lapse(plan_id, head_sha)
+        if lapse_count is not None and lapse_count <= MAX_PENDING_REWAITS:
+            return {
+                'status': 'wait_pending',
+                'head_sha': head_sha,
+                'ci_final_status': None,
+                'running_checks': failing_checks,
+                'rewait_number': lapse_count,
+                'rewait_bound': MAX_PENDING_REWAITS,
+                'wait_outcome': wait_outcome,
+                'mode': mode,
+                **clamp_state,
+            }
+
     return {
         'status': 'wait_failed',
         'head_sha': head_sha,
@@ -980,7 +1113,9 @@ def build_parser() -> argparse.ArgumentParser:
             '(default) short-circuits the consumer step on wait_failed. '
             "'consume-failures' is used by ci-verify — wait_failed threads "
             'the envelope through to the consumer body without short-'
-            'circuiting. See phase-6-finalize/standards/ci-verify.md.'
+            'circuiting, and a wait that lapses over a still-running CI run '
+            f'returns wait_pending for up to {MAX_PENDING_REWAITS} re-waits per '
+            'HEAD. See phase-6-finalize/standards/ci-verify.md.'
         ),
     )
     resolve_parser.add_argument(
@@ -1019,6 +1154,7 @@ if __name__ == '__main__':
 __all__ = [
     'CI_WAIT_OUTER_BUFFER_SECONDS',
     'DEFAULT_CI_WAIT_TIMEOUT_SECONDS',
+    'MAX_PENDING_REWAITS',
     'resolve',
 ]
 

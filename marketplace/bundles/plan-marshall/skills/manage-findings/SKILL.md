@@ -131,7 +131,7 @@ See [standards/jsonl-format.md](standards/jsonl-format.md) for the complete type
 
 ## CLI Commands
 
-**Parser architecture**: This script uses a two-level subparser pattern. Top-level subcommands (`add`, `list`, `get`, `resolve`, `promote`) handle plan-scoped findings directly. The `qgate` subcommand introduces a second parser level with its own subcommands (`qgate add`, `qgate list`, `qgate resolve`, `qgate clear`). The `assessment` subcommand introduces a third command group (`assessment add`, `assessment list`, `assessment get`, `assessment clear`). This mirrors the three storage scopes in the CLI surface.
+**Parser architecture**: This script uses a two-level subparser pattern. Top-level subcommands (`add`, `list`, `get`, `resolve`, `promote`) handle plan-scoped findings directly. The `qgate` subcommand introduces a second parser level with its own subcommands (`qgate add`, `qgate list`, `qgate resolve`, `qgate resolve-evidenced`, `qgate resolve-by-rule`, `qgate clear`). The `assessment` subcommand introduces a third command group (`assessment add`, `assessment list`, `assessment get`, `assessment clear`). This mirrors the three storage scopes in the CLI surface.
 
 ### Plan-Scoped Finding Commands
 
@@ -211,10 +211,22 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   qgate resolve --plan-id {plan_id} --hash-id {hash_id} --resolution {resolution} --phase {phase} \
   [--detail DETAIL]
 
+# Resolve every pending Q-Gate finding of a phase whose file a landed fix touched
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  qgate resolve-evidenced --plan-id {plan_id} --phase {phase} \
+  [--changed-path PATH ...] [--evidence-sha SHA]
+
+# Resolve every pending Q-Gate finding of a phase that carries a given rule key
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  qgate resolve-by-rule --plan-id {plan_id} --phase {phase} --rule {rule} \
+  --resolution {resolution} --detail {detail}
+
 # Clear Q-Gate findings for phase
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   qgate clear --plan-id {plan_id} --phase {phase}
 ```
+
+**Batch resolvers — two selectors, never interchangeable**: `qgate resolve-evidenced` selects by `file_path` (a landed fix touched the file the finding names), and `qgate resolve-by-rule` selects by `rule` (the finding carries the key the caller names). A finding that names no file — a producer's own *state* finding, which describes the producer's situation rather than a defect in a file — is unreachable by the first and is what the second exists for: the producer files every such finding under one fixed `--rule` key and resolves them all with one call once the state they describe no longer holds. The match is exact equality; a pending finding with a different rule, or none, is left untouched and reported as such. See the `## Canonical invocations` → `qgate resolve-by-rule` section for the return shape.
 
 **Phases**: `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-finalize`
 
@@ -485,6 +497,45 @@ landed-fix evidence — the caller computes it (e.g. `git diff --name-only
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate resolve-evidenced \
   --plan-id PLAN_ID --phase PHASE \
   [--changed-path PATH ...] [--evidence-sha SHA]
+```
+
+### qgate resolve-by-rule
+
+Rule-keyed batch resolution. Transitions every pending Q-Gate finding of
+`--phase` whose `rule` equals `--rule` exactly to `--resolution`, stamping
+`--detail` as its `resolution_detail`. A pending finding that carries a different
+rule, or no rule at all, is left untouched; an already-resolved finding is not
+considered. All three of `--rule`, `--resolution` and `--detail` are required, and
+a blank `--rule` is refused before the store is read.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate resolve-by-rule \
+  --plan-id PLAN_ID --phase PHASE --rule RULE --resolution RESOLUTION --detail TEXT
+```
+
+Return shape — `resolved` and `untouched` each carry `{hash_id, rule}` entries,
+where `rule` is the empty string for a finding that carries none. `untouched`
+lists the PENDING findings the key did not reach, so an empty `resolved` beside a
+non-empty `untouched` reads as "nothing carried this key", never as "nothing was
+pending":
+
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+phase: 6-finalize
+rule: example-rule-key
+resolution: taken_into_account
+store_resolution: cwd_relative
+store_path: /repo/.plan/local/plans/EXAMPLE-PLAN/artifacts/findings
+findings_store_state: present
+unresolved_store: false
+
+resolved[2]{hash_id,rule}:
+a3f2c1,example-rule-key
+b4e3d2,example-rule-key
+
+untouched[1]{hash_id,rule}:
+c5f4e3,
 ```
 
 ### qgate clear

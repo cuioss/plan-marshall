@@ -123,13 +123,15 @@ When the user declines all proposals, record nothing new and fall through to the
 
 Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time.
 
-Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the proposal outcome. The payload differs by branch:
+Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the proposal outcome. The payload differs by branch.
+
+Both branches pass `--force`. The dispatcher's Signal Gate records this step `skipped` when no decision-shape signal is present, so on a later firing where a signal has appeared this body's `done` lands on a stored `skipped` — a pair outside the unforced transition table, which `mark-step-done` refuses with `error: conflict` unless the flag is supplied (see [`../standards/external-step-contract.md`](../standards/external-step-contract.md) § "Required termination").
 
 **Branch A — one or more ADRs proposed**: `{N}` is the count of `manage-adr create` calls made in this step. `{adr_numbers}` is the comma-joined list of ADR numbers returned by those calls (e.g. `ADR-004,ADR-005`).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step adr-propose --outcome done \
+  --plan-id {plan_id} --phase 6-finalize --step adr-propose --outcome done --force \
   --display-detail "{N} ADR(s) proposed ({adr_numbers})"
 ```
 
@@ -137,7 +139,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step adr-propose --outcome done \
+  --plan-id {plan_id} --phase 6-finalize --step adr-propose --outcome done --force \
   --display-detail "no ADRs proposed"
 ```
 

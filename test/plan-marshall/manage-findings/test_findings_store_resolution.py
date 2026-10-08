@@ -130,6 +130,9 @@ _SHAPE_A_INVOCATIONS = {
     'resolve_qgate_findings_by_evidence': lambda core, pid: core.resolve_qgate_findings_by_evidence(
         pid, '5-execute', []
     ),
+    'resolve_qgate_findings_by_rule': lambda core, pid: core.resolve_qgate_findings_by_rule(
+        pid, '5-execute', 'roster-rule', 'fixed', 'Detail'
+    ),
     'clear_qgate_findings': lambda core, pid: core.clear_qgate_findings(pid, '5-execute'),
     'query_assessments': lambda core, pid: core.query_assessments(pid),
     'get_assessment': lambda core, pid: core.get_assessment(pid, _ABSENT_HASH),
@@ -165,8 +168,8 @@ def test_the_roster_is_non_empty():
     assert len(_operation_roster()) > 0, 'the derivation found no operation surfaces at all'
 
 
-def test_the_roster_partitions_exhaustively_and_disjointly_into_15_plus_4():
-    """Shape A (15) and Shape C (4) cover the derived roster with no overlap.
+def test_the_roster_partitions_exhaustively_and_disjointly_into_16_plus_4():
+    """Shape A (16) and Shape C (4) cover the derived roster with no overlap.
 
     The two counts are asserted alongside the exhaustiveness so a function added
     to either surface module later fails HERE — landing in neither bucket, or
@@ -180,9 +183,9 @@ def test_the_roster_partitions_exhaustively_and_disjointly_into_15_plus_4():
     assert shape_a | shape_c == set(roster), (
         f'buckets do not cover the roster; unbucketed: {sorted(set(roster) - shape_a - shape_c)}'
     )
-    assert len(shape_a) == 15, f'expected 15 Shape-A surfaces, got {sorted(shape_a)}'
+    assert len(shape_a) == 16, f'expected 16 Shape-A surfaces, got {sorted(shape_a)}'
     assert len(shape_c) == 4, f'expected 4 Shape-C surfaces, got {sorted(shape_c)}'
-    assert len(roster) == 19
+    assert len(roster) == 20
 
 
 def test_the_roster_spans_every_surface_module():

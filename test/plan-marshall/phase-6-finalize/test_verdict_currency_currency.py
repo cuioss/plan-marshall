@@ -45,9 +45,11 @@ Covered:
   otherwise report as a pass.
 * The refusal table's rows: each tabled step's own doc carries the refusal section
   as an ATX HEADING. The match is heading-anchored rather than a bare substring
-  search, because both tabled docs carry the phrase twice — as their own heading
-  and inside a cross-reference to the other step's section — so a substring search
-  survives renaming the heading itself.
+  search, because a tabled doc can carry the phrase twice — as its own heading
+  and inside a cross-reference to another step's section — so a substring search
+  survives renaming the heading itself. A project-local step's row is resolved
+  through the same discovery as a bundled one, and the prose introducing the
+  table states no row count for a later row to falsify.
 """
 
 from __future__ import annotations
@@ -428,3 +430,112 @@ def test_refusal_heading_match_ignores_a_cross_reference():
         'The cross-reference fixture must contain the phrase, or it does not '
         'demonstrate anything about a substring search.'
     )
+
+
+_PROJECT_PREFIX = 'project:'
+
+#: Where a project-local step document lives, relative to its checkout:
+#: ``.claude/skills/{skill}/SKILL.md``.
+_PROJECT_SKILLS_PARTS = ('.claude', 'skills')
+
+#: A number, as a word or a digit, immediately counting the table's rows. The
+#: two alternatives are the two sentences that used to carry the count.
+_ROW_COUNT_PROSE = re.compile(
+    r'\b(?:\d+|two|three|four|five|six|seven|eight|nine|ten)\s+worked\s+negative\s+cases\b'
+    r'|\beach\s+of\s+these\s+(?:\d+|two|three|four|five|six|seven|eight|nine|ten)\b',
+    re.IGNORECASE,
+)
+
+
+def _row_count_prose(text: str) -> list[str]:
+    """Every phrase in ``text`` that states how many rows the refusal table has."""
+    return [match.group(0) for match in _ROW_COUNT_PROSE.finditer(text)]
+
+
+def _implementor_docs() -> dict[str, Path]:
+    """Map each discovered finalize-step implementor to its own document."""
+    return {str(record.get('name', '')): Path(str(record.get('path', ''))) for record in find_implementors(_EXT_POINT)}
+
+
+def test_every_project_local_refusal_row_resolves_to_a_project_skill_document():
+    """A project-local row is reachable by the guard, not silently out of its range.
+
+    The refusal-section guard resolves each tabled step through finalize-step
+    discovery. A ``project:`` step lives outside the marketplace bundles, so a
+    discovery that covered bundled steps alone would leave every such row
+    unresolvable. This pins that each one resolves, to a document that exists
+    under a project skills directory and carries the refusal heading.
+    """
+    records = _implementor_docs()
+    project_rows = [step for step in _tabled_refusals() if step.startswith(_PROJECT_PREFIX)]
+
+    assert project_rows, (
+        'The refusal table names no project-local step, so this guard would be '
+        'vacuous — it exists to cover the rows discovery reaches outside the bundles.'
+    )
+    for step in project_rows:
+        assert step in records, f'{step} is tabled as refusing but finalize-step discovery does not resolve it'
+        document = records[step]
+        assert document.is_file(), f'{step} resolves to {document}, which is not a file'
+        assert _PROJECT_SKILLS_PARTS == document.resolve().parts[-4:-2], (
+            f'{step} carries the project prefix but resolves to {document}, which is not a '
+            f'SKILL.md under a {"/".join(_PROJECT_SKILLS_PARTS)} directory. The prefix would '
+            f'then name a location the row is not at.'
+        )
+        assert _refusal_heading_level(document.read_text(encoding='utf-8')) in _REFUSAL_HEADING_LEVELS, (
+            f'{step} resolves to {document}, which does not carry the refusal heading at an expected level'
+        )
+
+
+def test_every_head_dependent_step_named_in_the_table_declares_no_surface_in_its_own_frontmatter():
+    """A tabled refusal is a step that could declare and does not.
+
+    Read from each resolved document's own frontmatter: the step is
+    head-dependent, so the classifier would consult a declaration if it had one,
+    and it declares none. A row for a step that is not head-dependent would
+    record a refusal of something the step was never offered.
+    """
+    records = _implementor_docs()
+    tabled = _tabled_refusals()
+    assert tabled, 'verdict-currency.md names no refusing step — the assertions below would be vacuous'
+
+    for step in tabled:
+        assert step in records, f'{step} is tabled as refusing but finalize-step discovery does not resolve it'
+        fields = extension_discovery._read_frontmatter_fields(records[step], ('verdict_inputs', 'head_dependent'))
+
+        assert bool(fields.get('head_dependent', False)), (
+            f'{step} is tabled as refusing to declare a verdict surface, but its own '
+            f'frontmatter does not declare head_dependent: true'
+        )
+        assert fields.get('verdict_inputs') is None, f'{step} is tabled as refusing, yet declares verdict_inputs'
+
+
+def test_the_prose_around_the_refusal_table_states_no_row_count():
+    """The table is illustrative and grows; a restated count is what goes stale.
+
+    The sentences introducing the table once counted its rows, so adding a row
+    left them wrong until someone noticed. They now state no count, and this
+    keeps one from returning.
+    """
+    counted = _row_count_prose(_VERDICT_CURRENCY_DOC.read_text(encoding='utf-8'))
+
+    assert not counted, (
+        f'verdict-currency.md counts the rows of the refusal table in prose ({counted}). '
+        f'The table currently has {len(_tabled_refusals())} row(s) and gains more without '
+        f'that sentence being edited — state the cases without counting them.'
+    )
+
+
+def test_the_row_count_detector_fires_on_the_counted_sentences_and_not_on_uncounted_ones():
+    """Mutation guard: both retired sentences are flagged, their replacements are not."""
+    counted = (
+        '**Two worked negative cases are recorded below.** Each refusal is recorded '
+        'in the doc of its own step, and each of these two exhibits more than one shape:'
+    )
+    uncounted = (
+        '**The worked negative cases are recorded below.** Each refusal is recorded '
+        'in the doc of its own step rather than left as an unexplained absence.'
+    )
+
+    assert _row_count_prose(counted) == ['Two worked negative cases', 'each of these two']
+    assert _row_count_prose(uncounted) == []

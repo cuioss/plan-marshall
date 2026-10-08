@@ -89,25 +89,25 @@ ONE RESPOND    post_responses(triaged) → provider (thread-reply / resolve-thre
 
 Triage is removed from the provider surface: the provider verbs are the two pure zero-LLM `fetch_findings` (FIND) and `post_responses` (RESPOND); the LLM judgment lives only in the single consolidated TRIAGE pass.
 
-CI completion is resolved as a **dispatcher-side precondition** before the `plan-marshall:automatic-review` consumer's body runs — consumer steps declare `requires: [ci-complete]` in their YAML frontmatter, and the phase-6-finalize dispatcher invokes `ci_complete_precondition.resolve(plan_id, worktree_path, pr_number)` inline ahead of dispatch. The resolver caches success outcomes per HEAD SHA so subsequent same-HEAD lookups short-circuit. On `wait_failed`, the dispatcher skips the consumer body entirely and records `ci_failure (precondition)` as the consumer step's outcome. The precondition isolates CI wait time from the triage budget without introducing a sibling step:
+CI completion is resolved as a **dispatcher-side precondition** before the `plan-marshall:automatic-review` consumer's body runs — consumer steps declare `requires: [ci-complete]` in their YAML frontmatter, and the phase-6-finalize dispatcher invokes `ci_complete_precondition.resolve(plan_id, worktree_path, pr_number)` inline ahead of dispatch. The resolver caches success outcomes per HEAD SHA so subsequent same-HEAD lookups short-circuit. The dispatcher gates the review step on its own review arm, not on global CI colour: `arm_proceed` on a terminal arm — a red one included — runs the consumer body, and `arm_pending` defers the step without writing a record, so the next finalize entry re-polls it. The outcome handling is stated once, in [`phase-6-finalize/SKILL.md`](../../phase-6-finalize/SKILL.md) § "Precondition resolution". The precondition isolates CI wait time from the triage budget without introducing a sibling step:
 
 ```text
                                                     plan-marshall:automatic-review step
                                                     (phase-6-finalize, requires: [ci-complete])
    ┌─────────────────────────────┐                  ┌─────────────────────┐
-   │ dispatcher Step 3:          │── satisfied ────▶│ fetch_findings      │
-   │ ci_complete_precondition    │   or             │ (producer)          │
-   │ .resolve(plan_id,           │   wait_succeeded │       ▼             │
+   │ dispatcher Step 3:          │── arm_proceed ──▶│ fetch_findings      │
+   │ ci_complete_precondition    │   (terminal arm, │ (producer)          │
+   │ .resolve(plan_id,           │    red included) │       ▼             │
    │   worktree_path,            │                  │ per-finding         │
    │   pr_number,                │                  │ dispatch (consumer) │
-   │   timeout_seconds=600)      │                  │ — overflow path:    │
+   │   signal_arm='review')      │                  │ — overflow path:    │
    │                             │                  │   pr-comment-       │
-   │ per-HEAD cache              │── wait_failed ──▶│   overflow finding  │
-   │ (head_sha-keyed)            │   (skip body;    │   + outcome=        │
-   │                             │    record        │   loop_back         │
-   │ on success: cache populated │    ci_failure    └─────────────────────┘
-   │                             │    (precondition)│
-   └─────────────────────────────┘   on consumer)
+   │ per-HEAD cache              │                  │   overflow finding  │
+   │ (head_sha-keyed)            │                  │   + outcome=        │
+   │                             │                  │   loop_back         │
+   │ on success: cache populated │                  └─────────────────────┘
+   │                             │── arm_pending ──▶ step deferred, no record;
+   └─────────────────────────────┘                   re-polled on re-entry
 ```
 
 The **`pr-comment-overflow` finding** files when the consumer's 900 s triage budget is nearly exhausted before all `pr-comment` findings are processed. Unlike `pr-comment` (a `findings` record produced by `fetch_findings`), `pr-comment-overflow` is filed by the consumer itself — it carries the unprocessed `pr-comment` `hash_id`s in `detail` so the next iteration can prioritise them. The type is non-blocking; the deferred work is handled by `loop_back` re-entry, not by gating the boundary. See [`manage-findings/standards/jsonl-format.md`](../../manage-findings/standards/jsonl-format.md) § `pr-comment-overflow` for the type's full contract.

@@ -1,7 +1,9 @@
 # ci-wait TOON fixtures
 
 Representative `ci checks wait --pr-number {N}` TOON stdout fixtures used
-by `test_ci_complete_precondition.py` to drive the fixture-based
+by `test_ci_complete_precondition_checks.py`,
+`test_ci_complete_precondition_cli.py` and
+`test_ci_complete_precondition_reports.py` to drive the fixture-based
 resolver tests.
 
 Each fixture is a verbatim-shape TOON envelope that mirrors what
@@ -39,7 +41,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
 | `green-success.toon` | All-green (mix of pass + skipping) | Baseline: resolver must return `wait_succeeded / ci_final_status: success`. |
 | `failure-with-failing-checks.toon` | One failing check (rest pass) | `failing_checks[]` enumeration end-to-end. Resolver returns `wait_failed / ci_final_status: failure`. |
 | `no-checks.toon` | Empty `checks[]` (no CI configured) | `final_status: none` → resolver maps to `ci_final_status: no_checks`. |
-| `timeout-deadline-exceeded.toon` | True timeout — checks still running at deadline | `status: error / wait_outcome: deadline_exceeded`. Resolver maps to `ci_final_status: timeout`. |
+| `timeout-deadline-exceeded.toon` | True timeout — checks still running at deadline | `status: error / wait_outcome: deadline_exceeded`. In `strict` mode the resolver maps it to `wait_failed / ci_final_status: timeout`; in `consume-failures` mode on the `ci` arm see "Resolver mapping" below. |
 | `pending-then-cancelled.toon` | Workflow run cancelled before completion | All checks terminal with `result: cancelled`. Exercises non-failure terminal classification. |
 | `mixed-success-failure.toon` | Multiple failing checks alongside passing ones | Multi-row `failing_checks[]` parsing. |
 | `skipped-checks.toon` | Mix of pass + skipping rows | Variant of green-success without the failure-suspect SKIPPED block elsewhere — distinguishes "all pass" from "pass with skips". |
@@ -86,12 +88,21 @@ The wait envelope's top-level keys (per `cmd_ci_wait` in `github_ops.py`):
 
 The resolver
 (`marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/ci_complete_precondition.py`)
-classifies each envelope into one of four outcomes. The fixtures in
-this directory cover every branch:
+classifies each envelope into one of these outcomes: `wait_succeeded`,
+`wait_failed` with `ci_final_status` `failure`, `no_checks` or `timeout`,
+and `wait_pending`. The fixtures in this directory cover every branch:
 
 | Envelope key combination | Resolver outcome |
 |--------------------------|------------------|
 | `status: success`, `final_status: success` | `wait_succeeded / ci_final_status: success` |
 | `status: success`, `final_status: failure` | `wait_failed / ci_final_status: failure` |
 | `status: success`, `final_status: none` | `wait_failed / ci_final_status: no_checks` |
-| `status: error` (timeout) | `wait_failed / ci_final_status: timeout` |
+| `status: error` (timeout) | Depends on the mode — see below |
+
+The timeout mapping differs per mode:
+
+| Mode | Resolver outcome for a timeout envelope |
+|------|------------------------------------------|
+| `strict` | `wait_failed / ci_final_status: timeout`, always. |
+| `consume-failures` on the `ci` arm, lapse over only running checks | `wait_pending` while the lapse can be counted and the re-wait bound is not spent; otherwise `wait_failed / ci_final_status: timeout`. |
+| `consume-failures` on the `ci` arm, a check has definitively failed beside the lapse | `wait_failed / ci_final_status: timeout`. |

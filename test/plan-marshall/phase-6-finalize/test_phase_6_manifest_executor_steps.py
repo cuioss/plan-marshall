@@ -458,34 +458,33 @@ class TestLoopBackWithoutAskingContract:
         """The canonical ``[STATUS] Loop-back iteration {N}/{max}`` work-log
         line MUST be documented so retrospective analysis can grep for it.
 
-        The counter placeholder is the iteration ABOUT to be spent
-        (``{loop_back_iteration + 1}``), because the ceiling is an admission
-        test rather than a report on an iteration already consumed.
+        Both placeholders are fields of the ``loop-back admit`` return: the
+        round the call decided on, and the bound it was compared against —
+        the configured ceiling plus the rounds granted to that source. The
+        line reports the source's own round, so it is written from the
+        admission verdict rather than from ``max_iterations``.
         """
         text = phase_6_skill_md_text
         # The literal line shape — substring match (the runtime substitutes
         # the placeholders).
         assert '[STATUS]' in text, 'SKILL.md must use the canonical [STATUS] log marker'
         assert 'Loop-back iteration' in text, 'SKILL.md must document the "Loop-back iteration" log-line text'
-        # The {N}/{max} shape must be visible (placeholders or actual count
-        # syntax), in either the admission form or the plain-counter form.
-        assert (
-            '{loop_back_iteration + 1}/{max_iterations}' in text
-            or '{loop_back_iteration}/{max_iterations}' in text
-            or '{N}/{max}' in text
-        ), 'SKILL.md must show the iteration counter shape ({N}/{max} or named placeholders)'
+        assert 'Loop-back iteration {iteration}/{effective_ceiling}' in text, (
+            'SKILL.md must show the iteration log line as '
+            '{iteration}/{effective_ceiling}, the two fields the admission call returns'
+        )
 
-    # ---- Ceiling enforceability (persisted counter + admission boundary) ---
+    # ---- Ceiling enforceability (per-source budget + admission boundary) ---
     #
-    # The declared ceiling used to be unenforceable in the DEFAULT
-    # configuration for two compounding reasons: the consult sat INSIDE the
-    # ``loop_back_without_asking == true`` branch, and the counter lived in
-    # model context. With ``loop_back_without_asking: false`` every loop-back
-    # halted and prompted, the operator re-ran finalize, and the count started
-    # again at zero — so a plan could loop indefinitely, one re-run at a time,
-    # while ``max_iterations`` was nominally in force. These three cases pin
-    # the fix: the counter is PERSISTED, the ceiling gates BOTH knob branches,
-    # and a refusal is reported distinctly from an ordinary halt.
+    # A declared ceiling is enforceable only when three things hold together:
+    # the count is PERSISTED rather than held in model context (a halt-and-
+    # prompt cycle would otherwise restart it at zero on every operator
+    # re-run), the gate precedes the ``loop_back_without_asking`` read (nested
+    # under one knob branch it bounds only that branch), and a refusal is
+    # reported distinctly from an ordinary halt. The count is additionally
+    # kept PER REQUESTING SOURCE, so one step spending its rounds cannot
+    # refuse another step a round it never used. These three cases pin all of
+    # it against the bounded item-7b hook section.
 
     @staticmethod
     def _loop_back_hook_section(text: str) -> str:
@@ -502,36 +501,61 @@ class TestLoopBackWithoutAskingContract:
         assert section.strip(), 'Loop-back hook section resolved empty'
         return section
 
-    def test_loop_back_iteration_counter_is_persisted_not_in_model_context(self, phase_6_skill_md_text: str):
-        """The counter MUST live in status metadata, not in model context.
+    def test_loop_back_rounds_are_admitted_per_source_through_one_persisting_call(self, phase_6_skill_md_text: str):
+        """Each source's count MUST live in status metadata and be spent by one call.
 
         An in-memory counter is reset by every session restart, every phase
         re-entry, and every halt-and-prompt cycle — which is precisely the
-        path the default configuration takes on every loop-back.
+        path the default configuration takes on every loop-back. And a read,
+        a comparison and a write issued as three separate steps can come
+        apart; the admission verb decides and persists in one call.
         """
         text = phase_6_skill_md_text
+        section = self._loop_back_hook_section(text)
 
-        assert 'status.metadata.loop_back_iteration' in text, (
-            'SKILL.md must name status.metadata.loop_back_iteration as the '
-            'counter home — the ceiling is unenforceable without a durable count'
+        assert 'status.metadata.loop_back_budgets' in section, (
+            'The loop-back hook must name status.metadata.loop_back_budgets as '
+            'the per-source count home — the ceiling is unenforceable without a durable count'
         )
-        assert '--set --field loop_back_iteration' in text, (
-            'SKILL.md must document persisting the incremented count via '
-            'manage-status metadata --set --field loop_back_iteration'
+        admit_call = 'manage-status loop-back admit'
+        assert admit_call in section, (
+            'The loop-back hook must admit a round through manage-status loop-back admit, '
+            'the one call that reads, compares and persists'
         )
-        assert '--get --field loop_back_iteration' in text, (
-            'SKILL.md must document reading the count back via manage-status metadata --get --field loop_back_iteration'
+        call_at = section.index(admit_call)
+        call_block = section[call_at : call_at + 200]
+        assert '--source {step_ref}' in call_block, (
+            'The admission call must spend from the budget of the step_ref that '
+            'recorded the loop_back outcome, so each source has its own count'
         )
-        # The retired model-context claims must NOT survive anywhere in the doc.
+        assert '--ceiling {max_iterations}' in call_block, (
+            'The admission call must pass the configured max_iterations as the per-source ceiling'
+        )
+        # The dispatcher-owned unified triage is not a manifest step, so it
+        # spends from a fixed source name of its own.
+        assert '--source wait-region-unified-triage' in text, (
+            'Item 7c must admit the unified triage under its own fixed source name'
+        )
+        # The retired scalar is neither read nor written, anywhere in the doc.
         for retired in (
+            '--set --field loop_back_iteration',
+            '--get --field loop_back_iteration',
+            'status.metadata.loop_back_iteration',
             'it is NOT persisted to status.json',
             'starts the counter back at 0',
         ):
             assert retired not in text, (
-                f'SKILL.md still carries the retired in-model-context claim '
-                f'{retired!r}; a counter described as non-persisted contradicts '
-                'the durable-count contract the ceiling depends on'
+                f'SKILL.md still carries the retired shared-counter claim {retired!r}; '
+                'the count is per source and is read and written only by loop-back admit'
             )
+        # The in-flight rule is the one place the retired scalar is named.
+        assert text.count('loop_back_iteration') == 1, (
+            'SKILL.md must name the retired loop_back_iteration scalar exactly once, '
+            'in the in-flight rule that says it is not read'
+        )
+        assert 'loop_back_iteration' in section, (
+            'The in-flight rule naming the retired scalar belongs to the admission gate in item 7b'
+        )
 
     def test_ceiling_is_consulted_before_the_knob_on_both_branches(self, phase_6_skill_md_text: str):
         """The ceiling gate MUST precede the ``loop_back_without_asking`` read.
@@ -589,6 +613,25 @@ class TestLoopBackWithoutAskingContract:
             'The breach message must state that findings raised in the halting '
             'round have no remaining iteration in which their fixes could be '
             'reviewed — otherwise an operator reads the halt as a clean stop'
+        )
+        # The breach display must name the grant verb, pre-filled with the plan
+        # and the refused source. A
+        # display that only says "re-run finalize" sends the operator back
+        # into the same refusal.
+        grant_call = 'manage-status loop-back grant'
+        assert grant_call in section, (
+            'The breach display must name the manage-status loop-back grant verb as the way to obtain a further round'
+        )
+        grant_at = section.index(grant_call)
+        grant_command = section[grant_at : grant_at + 120]
+        assert '--plan-id {plan_id}' in grant_command and '--source {step_ref}' in grant_command, (
+            'The grant command in the breach display must be pre-filled with the plan id and the refused source'
+        )
+        assert '--reason' in grant_command, 'The grant command in the breach display must carry the required reason'
+        refusal_at = section.index('Loop-back ceiling breached')
+        stop_at = section.index('STOP.', refusal_at)
+        assert refusal_at < grant_at < stop_at, (
+            'The grant verb must be named inside the breach display itself, between the refusal and its STOP'
         )
         # And it must be a DIFFERENT string from the ordinary knob halt.
         assert 'returning control to user (loop_back_without_asking=false)' in section, (

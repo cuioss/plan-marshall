@@ -34,15 +34,26 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --display-detail "{one-line summary}"
 ```
 
-⛔ **`--force` is REQUIRED whenever the outcome being written DIFFERS from the one already
-stored**, and a re-fireable step reaches that state on its ordinary happy path: `mark-step-done`
-refuses any such write, so a step that recorded `loop_back` in one round and comes back clean in
-the next cannot record its own `done` without the flag. It receives `error: conflict`, writes
-nothing, and the dispatcher's post-dispatch completion guard then halts the phase on a missing
-terminal record — the round that finally succeeded is the one round unable to say so. Pass
-`--force` on a terminal branch that can overwrite a different stored outcome; omit it where the
-branch can only ever re-write the same value (a `loop_back` over a stored `loop_back` is the
-same-outcome path and needs nothing).
+⛔ **Whether `--force` is needed is decided by the transition table, not by whether the outcome
+differs.** `mark-step-done` decides every outcome change against one table —
+`_TRANSITIONS_LEGAL_WITHOUT_FORCE`, the single source, described in
+[`../../manage-status/SKILL.md`](../../manage-status/SKILL.md) § `mark-step-done` "Semantics" —
+and that table holds the transitions a retried or re-fired step takes on its ordinary path:
+
+- **Retry and re-fire need no flag.** A write over a stored `failed` (the dispatcher's retry) or
+  over a stored `loop_back` (the next round of a re-fireable step) is recorded whatever outcome
+  it carries, and so is a re-fired step's `failed` or `loop_back` over its own stored `done`. A
+  step that recorded `loop_back` in one round and comes back clean in the next records its `done`
+  without `--force`.
+- **The flag is required only on a branch that can write `skipped` over a stored `done`, or any
+  other outcome over a stored `skipped`.** Those pairs are outside the table: without `--force`
+  the call returns `error: conflict`, writes nothing, and the dispatcher's post-dispatch
+  completion guard then halts the phase on a terminal record that does not say what the step
+  did. The reachable case is a step the dispatcher's own signal gate recorded `skipped` and that
+  a later firing runs to completion: its terminal `done` lands on the stored `skipped`.
+
+Pass `--force` on a terminal branch that can reach one of those two pairs; omit it everywhere
+else.
 
 MANDATORY annotations for every argument:
 
@@ -56,7 +67,7 @@ MANDATORY annotations for every argument:
   The same partition is what `record-step` writes into the manifest's `execution_log[]` — see [`../../manage-execution-manifest/standards/manifest-schema.md`](../../manage-execution-manifest/standards/manifest-schema.md) § "Which situation each `outcome` value means", which spells the completed state `executed` rather than `done` and additionally names `error` for a dispatch that raised (a dispatcher-side value no step records for itself).
 - `--loop-back-target` — MANDATORY when `--outcome loop_back`, rejected otherwise. `6-finalize` re-enters the finalize step loop with no phase-5-execute re-dispatch; `5-execute` routes through fix tasks first.
 - `--step` — MANDATORY. Pass the step's **composed manifest catalog key** — the key exactly as `manifest.phase_6.steps` catalogs it, NOT a name read off `marshal.json`. The `default:` prefix is normalised on write by the canonical step-key seam, so a built-in step lands on the same record whether authored bare (`push`) or prefixed (`default:push`). A `bundle:skill` id (e.g. `plan-marshall:automatic-review`) is **preserved verbatim** by that seam and therefore MUST be authored exactly as the manifest catalogs it — the normalisation cannot rescue a mis-authored bundle-prefixed key. A key the seam cannot reconcile creates an orphan status record that the renderer cannot pair with the dispatched step, which the dispatcher-side guard surfaces as `step_record_mismatched_key`.
-- `--force` — MANDATORY on any terminal branch whose write can land on a record already carrying a DIFFERENT outcome; rejected by nothing, but omitting it there is the defect described under the template above. The canonical case is a re-fireable step's clean branch overwriting the `loop_back` its own previous round stored.
+- `--force` — MANDATORY only on a terminal branch whose write can land `skipped` on a stored `done`, or any other outcome on a stored `skipped` — the pairs outside the transition table described under the template above. Retry and re-fire need no flag: a re-fireable step's clean branch overwriting the `loop_back` its own previous round stored is recorded without it. Rejected by nothing, so passing it on a branch that does not need it is harmless, but omitting it on a branch that does is the `conflict` described above.
 - `--display-detail` — MANDATORY. Single-line summary of what the step actually did, authored by the step itself. Subject to the constraints listed below. A missing, empty, or whitespace-only value triggers the `<missing display_detail>` placeholder and contributes a `[FAILED]` headline regardless of the `--outcome` value.
 
 **Notation:** the canonical 3-part notation is `plan-marshall:manage-status:manage-status` — every segment is kebab-case.

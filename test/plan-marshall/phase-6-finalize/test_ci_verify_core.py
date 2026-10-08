@@ -11,7 +11,9 @@ tests pin the deliverable's Success Criteria via the injectable seams
 live plan state:
 
 * Green CI returns ``done`` with zero LLM dispatch (``mark_done`` called,
-  no findings, ``step_marked_done == True``).
+  no findings). ``step_marked_done`` is read off the mark's own result: ``True``
+  when it returned success, ``False`` with ``outcome == green_unrecorded`` when
+  it was refused.
 * Each failing-check partition files exactly one taxonomy finding; the
   ``ci_no_checks`` finding is filed on ``final_status == none``.
 * The required-field guard skips the persist call when any required flag is
@@ -128,14 +130,19 @@ class _StubFindings:
 
 
 class _StubMarkDone:
-    """Record every mark-step-done call; return a success envelope."""
+    """Record every mark-step-done call; return the configured envelope.
 
-    def __init__(self) -> None:
+    Defaults to a success envelope. Pass ``result`` to stand in for a mark the
+    handler refused.
+    """
+
+    def __init__(self, result: dict | None = None) -> None:
+        self.result = result if result is not None else {'status': 'success'}
         self.calls: list[dict] = []
 
     def __call__(self, **kwargs) -> dict:
         self.calls.append(kwargs)
-        return {'status': 'success'}
+        return self.result
 
 
 class _StubGitHead:
@@ -468,16 +475,127 @@ def test_timeout_returns_deadline_exceeded_in_consume_failures_mode(plan_context
                 'wait_outcome': 'deadline_exceeded',
                 'failing_checks': [
                     {'name': 'slow-deploy', 'conclusion': 'PENDING'},
+                    {'name': 'lint', 'conclusion': 'FAILURE'},
                 ],
             }
         ),
         git_head_resolver=_StubGitHead('abc'),
         mode='consume-failures',
     )
+    # A check has definitively failed beside the lapse, so this is the
+    # timeout the executor consumes, not the wait_pending verdict.
     assert result['status'] == 'wait_failed'
     assert result['ci_final_status'] == 'timeout'
     assert result['wait_outcome'] == 'deadline_exceeded'
     assert result['mode'] == 'consume-failures'
+
+
+# ---------------------------------------------------------------------------
+# deadline_exceeded — a still-running check beside a real failure files nothing
+# ---------------------------------------------------------------------------
+
+
+def _verify_deadline(tmp_path, plan_id: str, failing_checks: list[dict] | None, envelope: dict | None = None):
+    """Run the executor on a ``deadline_exceeded`` timeout and return (result, findings)."""
+    findings = _StubFindings()
+    result = verify(
+        plan_id=plan_id,
+        pr_number=_PR,
+        worktree_path=str(tmp_path),
+        provider='github',
+        final_status='timeout',
+        wait_outcome='deadline_exceeded',
+        head_sha=_HEAD_SHA,
+        failing_checks=failing_checks,
+        ci_status_runner=_StubCiStatus(envelope if envelope is not None else _green_envelope()),
+        persist_runner=_StubPersist(),
+        findings_runner=findings,
+        mark_done_runner=_StubMarkDone(),
+        git_head_resolver=_StubGitHead('x'),
+    )
+    return result, findings
+
+
+def test_deadline_with_one_failed_and_one_running_check_files_one_finding(tmp_path):
+    """The running check is dropped: only the check that failed is reported."""
+    failing = [
+        _make_check('verify', 'FAILURE', 'verify / verify'),
+        _make_check('slow-deploy', 'IN_PROGRESS', 'deploy'),
+    ]
+
+    result, findings = _verify_deadline(tmp_path, 'ci-verify-deadline-failed-and-running', failing)
+
+    assert result['outcome'] == 'needs_triage'
+    assert result['findings_filed'] == 1
+    assert result['producers'] == ['ci-verify-build']
+    assert len(findings.calls) == 1
+    assert findings.calls[0]['title'] == '[ci_build_failure] verify failed'
+
+
+def test_deadline_with_a_timed_out_conclusion_still_files_ci_timeout(tmp_path):
+    """A check whose own conclusion is timed_out is definitive and is kept."""
+    failing = [
+        _make_check('verify', 'TIMED_OUT', 'verify / verify'),
+        _make_check('slow-deploy', 'PENDING', 'deploy'),
+    ]
+
+    result, findings = _verify_deadline(tmp_path, 'ci-verify-deadline-timed-out', failing)
+
+    assert result['findings_filed'] == 1
+    assert result['producers'] == ['ci-verify-timeout']
+    assert [call['title'] for call in findings.calls] == ['[ci_timeout] verify failed']
+
+
+def test_deadline_with_only_running_checks_files_ci_timeout_for_each(tmp_path):
+    """The past-bound case: nothing has failed, so every running check is a ci_timeout."""
+    failing = [
+        _make_check('build', 'PENDING', 'verify / verify'),
+        _make_check('slow-deploy', 'IN_PROGRESS', 'deploy'),
+    ]
+
+    result, findings = _verify_deadline(tmp_path, 'ci-verify-deadline-only-running', failing)
+
+    assert result['findings_filed'] == 2
+    assert result['producers'] == ['ci-verify-timeout']
+    assert [call['title'] for call in findings.calls] == [
+        '[ci_timeout] build failed',
+        '[ci_timeout] slow-deploy failed',
+    ]
+
+
+def test_deadline_drops_running_checks_from_a_derived_failing_set(tmp_path):
+    """The same rule holds when no failing set is threaded in and it is derived."""
+    envelope = {
+        'status': 'success',
+        'checks': [
+            {'name': 'verify', 'conclusion': 'failure', 'workflow': 'verify / verify', 'url': _RUN_URL},
+            {'name': 'slow-deploy', 'conclusion': 'in_progress', 'workflow': 'deploy', 'url': _RUN_URL},
+            {'name': 'unstarted', 'conclusion': '', 'workflow': 'deploy', 'url': _RUN_URL},
+            {'name': 'lint', 'conclusion': 'success', 'workflow': 'lint', 'url': _RUN_URL},
+        ],
+    }
+
+    result, findings = _verify_deadline(tmp_path, 'ci-verify-deadline-derived', None, envelope)
+
+    assert result['findings_filed'] == 1
+    assert [call['title'] for call in findings.calls] == ['[ci_build_failure] verify failed']
+
+
+def test_completed_wait_does_not_drop_anything():
+    """Matched control: the rule applies under deadline_exceeded only."""
+    threaded = [
+        _make_check('verify', 'failure', 'verify / verify'),
+        _make_check('slow-deploy', 'pending', 'deploy'),
+    ]
+
+    kept = _resolve_failing_set(threaded=threaded, normalized_all=[], final_status='failure', wait_outcome='completed')
+
+    assert [entry['name'] for entry in kept] == ['verify', 'slow-deploy']
+
+
+def test_resolver_reads_the_executors_own_definitive_failing_conclusions():
+    """The pending verdict reads the executor's set itself, not a second copy of it."""
+    assert _precond._DEFINITIVE_FAILING_CONCLUSIONS is _mod._DEFINITIVE_FAILING_CONCLUSIONS
 
 
 def test_required_steps_lists_ci_verify():
@@ -532,3 +650,198 @@ def test_executor_persists_artifacts_before_classification():
     assert persist_pos < classify_pos, (
         'the persist seam must run before the classification loop so findings can reference persisted per-job log paths'
     )
+
+
+# ---------------------------------------------------------------------------
+# Green path — the mark's own result decides what is reported.
+# ---------------------------------------------------------------------------
+
+_CI_VERIFY_PHASE = '6-finalize'
+_CI_VERIFY_STEP = 'ci-verify'
+
+
+def _live_head_sha() -> str:
+    """Resolve the live HEAD SHA — a real anchor for the persisted record.
+
+    The production ``mark-step-done`` resolves a supplied
+    ``--head-at-completion`` against the object store and refuses a fabricated
+    SHA, so a test that drives the real handler must supply one the local repo
+    actually holds.
+    """
+    import subprocess
+
+    proc = subprocess.run(
+        ['git', 'rev-parse', 'HEAD'],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert proc.returncode == 0, f'Cannot resolve a real HEAD SHA: {proc.stderr.strip()}'
+    sha = proc.stdout.strip()
+    assert sha
+    return sha
+
+
+def _mark_ci_verify(plan_id: str, outcome: str, detail: str, head: str | None = None) -> dict:
+    """Record ``outcome`` on ci-verify through the real mark-step-done handler."""
+    result: dict | None = _cmd_mark_step_done(
+        Namespace(
+            plan_id=plan_id,
+            phase=_CI_VERIFY_PHASE,
+            step=_CI_VERIFY_STEP,
+            outcome=outcome,
+            force=False,
+            display_detail=detail,
+            head_at_completion=head,
+            loop_back_target='6-finalize' if outcome == 'loop_back' else None,
+        )
+    )
+    assert result is not None, 'mark-step-done found no status file for the plan'
+    return result
+
+
+def _real_mark_done_runner(*, plan_id: str, display_detail: str, head_at_completion: str, worktree_path: str) -> dict:
+    """Route the executor's green mark through the real handler, not a stub."""
+    return _mark_ci_verify(plan_id, 'done', display_detail, head_at_completion)
+
+
+def _stored_ci_verify_entry(plan_id: str) -> dict:
+    entry: dict = _read_status(plan_id)['metadata']['phase_steps'][_CI_VERIFY_PHASE][_CI_VERIFY_STEP]
+    return entry
+
+
+def test_refused_mark_reports_green_unrecorded(tmp_path):
+    """A green CI verdict whose mark was refused is not reported as recorded."""
+    # Arrange — the mark seam returns the handler's conflict refusal.
+    refusal_message = 'Step ci-verify already marked as skipped - use --force to overwrite with done'
+    mark_done = _StubMarkDone({'status': 'error', 'error': 'conflict', 'message': refusal_message})
+    findings = _StubFindings()
+
+    # Act
+    result = verify(
+        plan_id='ci-verify-refused-mark',
+        pr_number=_PR,
+        worktree_path=str(tmp_path),
+        provider='github',
+        final_status='success',
+        wait_outcome='completed',
+        head_sha=_HEAD_SHA,
+        ci_status_runner=_StubCiStatus(_green_envelope()),
+        persist_runner=_StubPersist(),
+        findings_runner=findings,
+        mark_done_runner=mark_done,
+        git_head_resolver=_StubGitHead('deadbeef'),
+    )
+
+    # Assert — the mark WAS attempted, and its refusal is what gets reported.
+    assert len(mark_done.calls) == 1
+    assert result['status'] == 'success'
+    assert result['final_status'] == 'success'
+    assert result['outcome'] == 'green_unrecorded'
+    assert result['step_marked_done'] is False
+    assert result['step_mark_error'] == 'conflict'
+    assert result['step_mark_message'] == refusal_message
+    # A refused mark is not a red CI run: nothing is filed and nothing routes to triage.
+    assert result['findings_filed'] == 0
+    assert 'producers' not in result
+    assert len(findings.calls) == 0
+
+
+def test_recorded_mark_carries_no_mark_error_fields(tmp_path):
+    """The refusal fields ride ``green_unrecorded`` alone, never a recorded green."""
+    # Arrange / Act
+    result = verify(
+        plan_id='ci-verify-recorded-mark',
+        pr_number=_PR,
+        worktree_path=str(tmp_path),
+        provider='github',
+        final_status='success',
+        wait_outcome='completed',
+        head_sha=_HEAD_SHA,
+        ci_status_runner=_StubCiStatus(_green_envelope()),
+        persist_runner=_StubPersist(),
+        findings_runner=_StubFindings(),
+        mark_done_runner=_StubMarkDone(),
+        git_head_resolver=_StubGitHead('deadbeef'),
+    )
+
+    # Assert
+    assert result['outcome'] == 'green'
+    assert result['step_marked_done'] is True
+    assert 'step_mark_error' not in result
+    assert 'step_mark_message' not in result
+
+
+def test_green_run_records_done_over_a_stored_loop_back(tmp_path):
+    """End to end: a stored ``loop_back`` record reads ``done`` after a green run.
+
+    The mark is driven through the real ``mark-step-done`` handler against a real
+    status file, so ``step_marked_done`` is checked against the record itself
+    rather than against a stub's say-so.
+    """
+    # Arrange — ci-verify looped back on an earlier red run.
+    plan_id = 'ci-verify-loop-back-to-done'
+    _make_ci_verify_plan(plan_id)
+    _mark_ci_verify(plan_id, 'loop_back', 'CI red, fix pushed')
+    assert _stored_ci_verify_entry(plan_id)['outcome'] == 'loop_back'
+    live_head = _live_head_sha()
+
+    # Act — the re-fired step sees green CI.
+    result = verify(
+        plan_id=plan_id,
+        pr_number=_PR,
+        worktree_path=str(tmp_path),
+        provider='github',
+        final_status='success',
+        wait_outcome='completed',
+        head_sha=_HEAD_SHA,
+        ci_status_runner=_StubCiStatus(_green_envelope()),
+        persist_runner=_StubPersist(),
+        findings_runner=_StubFindings(),
+        mark_done_runner=_real_mark_done_runner,
+        git_head_resolver=_StubGitHead(live_head),
+    )
+
+    # Assert — the reported write and the stored record agree.
+    assert result['outcome'] == 'green'
+    assert result['step_marked_done'] is True
+    assert 'step_mark_error' not in result
+
+    entry = _stored_ci_verify_entry(plan_id)
+    assert entry['outcome'] == 'done'
+    assert entry['head_at_completion'] == live_head
+    assert entry['firing_count'] == 2
+    assert entry['prior_firings'] == [{'outcome': 'loop_back', 'loop_back_target': '6-finalize'}]
+
+
+def test_refused_real_mark_leaves_the_stored_record_untouched(tmp_path):
+    """End to end, negative control: a real refusal is reported and writes nothing."""
+    # Arrange — ci-verify is recorded `skipped`; `skipped` to `done` is a conflict.
+    plan_id = 'ci-verify-skipped-refuses-done'
+    _make_ci_verify_plan(plan_id)
+    _mark_ci_verify(plan_id, 'skipped', 'no PR to verify')
+    stored_before = json.dumps(_stored_ci_verify_entry(plan_id), sort_keys=True)
+
+    # Act
+    result = verify(
+        plan_id=plan_id,
+        pr_number=_PR,
+        worktree_path=str(tmp_path),
+        provider='github',
+        final_status='success',
+        wait_outcome='completed',
+        head_sha=_HEAD_SHA,
+        ci_status_runner=_StubCiStatus(_green_envelope()),
+        persist_runner=_StubPersist(),
+        findings_runner=_StubFindings(),
+        mark_done_runner=_real_mark_done_runner,
+        git_head_resolver=_StubGitHead(_live_head_sha()),
+    )
+
+    # Assert — the handler's own error and message surface verbatim.
+    assert result['outcome'] == 'green_unrecorded'
+    assert result['step_marked_done'] is False
+    assert result['step_mark_error'] == 'conflict'
+    assert 'already marked as' in result['step_mark_message']
+    assert json.dumps(_stored_ci_verify_entry(plan_id), sort_keys=True) == stored_before

@@ -404,7 +404,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 - `--loop-back-target` (REQUIRED when `--outcome=loop_back`, FORBIDDEN otherwise): Loop-back target phase. Must be one of `5-execute` (full phase rollback for fix-task-required dispositions) or `6-finalize` (inline replay for inline-fixable dispositions). See "Loop-back target classification" below.
 - `--fact` (optional, repeatable): Record one structured `KEY=VALUE` per-step fact. See "Structured step facts" below.
 - `--no-completion-log` (optional): Suppress the fused `[STEP] … Completed step: {step} (outcome={outcome})` work-log line this call would otherwise emit for a `6-finalize` step (see "Fused completion emission" below). Pass it ONLY on a call that RE-STAMPS an already-emitted step outcome — the phase-6-finalize item-5f `head_at_completion` re-stamp — so the completion line is emitted exactly once per step. A first terminal recording never passes it.
-- `--force` (optional): Overwrite an existing differing outcome
+- `--force` (optional): Admit an outcome change the unforced transition table refuses. A retry or re-fire needs no flag. It is still needed for two things: a transition outside that table, and the legacy bare-string migration. The table is `_TRANSITIONS_LEGAL_WITHOUT_FORCE` in `scripts/_cmd_mark_step.py` — the single source, described under "Semantics" below and not enumerated a second time here.
 
 **Structured step facts**:
 
@@ -460,9 +460,12 @@ status.metadata.phase_steps[{phase}][{step}] = {
   "loop_back_target": "5-execute" | "6-finalize" | absent,
   "facts": {"<key>": "<value>", ...} | absent,
   "firing_count": <int> | absent,
-  "prior_firings": [{"outcome": ..., "loop_back_target": ... | absent}, ...] | absent
+  "prior_firings": [{"outcome": ..., "loop_back_target": ... | absent}, ...] | absent,
+  "refire_waiver": {"head": <sha>, "basis": <string>} | absent
 }
 ```
+
+`refire_waiver` is the one key in this shape that `mark-step-done` never writes. It is stamped onto an existing `done` record by [`loop-back close`](#loop-back-close) and is described under "Re-fire waiver (`refire_waiver`)" below.
 
 Both the `metadata` and `phase_steps` containers are created on demand. Without `--force`, a non-dict (bare-string) entry is rejected with `error: legacy_string_entry`; `--force` migrates it to the dict shape above and preserves its prior outcome — see conflict semantics below. The `head_at_completion`, `loop_back_target`, and `facts` keys are only present when the corresponding flag was supplied (per the `_build_entry` helper); `loop_back_target` is structurally guaranteed to be present iff `outcome == "loop_back"`.
 
@@ -478,10 +481,20 @@ A step can fire more than once — the ordinary shape for a phase-6-finalize ste
 - Both keys follow the same omit-when-absent convention as `head_at_completion` / `loop_back_target`: they appear only from the **second** firing onward, so a step fired once writes the byte-identical historical record shape.
 - An unchanged re-call is idempotent and appends nothing (see the semantics below) — only a write that CHANGES the entry folds the superseded firing into the trail.
 
+**Re-fire waiver (`refire_waiver`)**:
+
+A head-dependent step whose `done` record sits at an older HEAD is re-fired when HEAD advances. `refire_waiver` is the operator's recorded decision that the step is NOT re-fired at one specific HEAD.
+
+- `head` — the HEAD the waiver holds for, as a full commit SHA. A reader honours the waiver only while the live HEAD equals it; at any other HEAD the waiver is void and the step re-fires as it would with no waiver at all.
+- `basis` — why the re-fire was waived: the step that was closed and the operator's rationale.
+- The waiver is a **sibling** key. The record's `outcome`, `head_at_completion`, `facts` and firing history are left exactly as they were: the step stays `done` at the anchor it actually completed at, and the waiver says only that its staleness at `head` was accepted. It is never recorded as a `skipped` outcome — the `phase_steps_complete` handshake counts `skipped` on a required step as incomplete, and overwriting the anchor would claim the step ran against a tree it never saw.
+- It is written only by `loop-back close`, and only onto a step that already holds a `done` record. A step with any other outcome, or with no record, is refused.
+- It does not survive a real re-fire. A `mark-step-done` that changes the record builds the new entry from its own arguments, so the waiver is dropped with the record it answered for. An unchanged, idempotent re-call writes nothing and so leaves it in place.
+
 **Semantics**:
 - **Idempotent on identical outcome AND display_detail AND head_at_completion AND loop_back_target AND facts**: If the step already has the requested outcome and all five fields match, no file write occurs, `changed: false` is returned, and NO firing is appended to the trail.
 - **Detail / head / loop_back_target / facts update**: If the outcome matches but any of `display_detail`, `head_at_completion`, `loop_back_target`, or `facts` differ, the command updates the entry in place, appends the superseded firing to `prior_firings`, and returns `changed: true`. A re-call that changes ONLY the facts is therefore reported as a change, never silently swallowed.
-- **Conflict on differing outcome**: If the step already has a different outcome and `--force` is not supplied, the command returns `error: conflict` with the existing outcome surfaced in the response. Supplying `--force` overwrites the existing value (and detail / head / loop_back_target / facts) and appends the superseded firing to the trail.
+- **Outcome change — decided by the transition table**: A write that CHANGES a recorded outcome is decided by one table, `_TRANSITIONS_LEGAL_WITHOUT_FORCE` in `scripts/_cmd_mark_step.py`. That table is the single source for which `(recorded, requested)` pairs are legal without `--force`; read the pairs there rather than from a copy in this document. It holds the transitions a retried or re-fired step takes on its ordinary path, so a retry (a stored `failed`) and a re-fire (a stored `loop_back`, or a stored `done` that is re-fired and aborts or loops back) record without the flag. A pair outside the table returns `error: conflict` with the existing outcome surfaced in the response and writes nothing unless `--force` is supplied; the pairs a finalize step can actually reach there are a `skipped` written over a stored `done` and any other outcome written over a stored `skipped`. `--force` admits every transition. Either way the write replaces the stored value (and detail / head / loop_back_target / facts) and appends the superseded firing to the trail. The table governs outcome changes alone: every well-formedness refusal on this command is evaluated before it and is not overridable.
 - **Bare-string entry rejection (without `--force`)**: If the existing entry is a bare string rather than a dict and `--force` is NOT supplied, the command returns `error: legacy_string_entry` and refuses to write; the response surfaces the bare string as `existing_outcome`. Only the dict shape above is written.
 - **Bare-string migration (with `--force`)**: `--force` migrates the legacy entry to the dict shape and PRESERVES its prior outcome — the bare string becomes the first `prior_firings` item (`{"outcome": "<the bare string>"}`) and `firing_count` is `2`. The bare string is a readable firing (it is the very value the rejection above reports back), so the migration folds it into the trail instead of dropping it; otherwise a migrated record would be indistinguishable from a genuine first firing.
 
@@ -773,6 +786,236 @@ records[2]{kind,head,verdict,gap_class,admissible,granted_over,reason,granted_at
   barrier-ask-override,d4f1a02c9,lapsed,review-barrier-gap,false,2 unhandled unproven_bots=cuioss-review-bot,operator accepted the gap,2026-01-15T14:30:00Z
   pre-merge-consent,76c7200b6,valid,merge-action,false,operator confirmed merge of PR #42 at this HEAD,operator selected 'Yes merge',2026-01-15T14:41:00Z
 ```
+
+### loop-back
+
+Budget finalize loop-back rounds **per requesting source**. Every source that can request a loop-back — a finalize step, or the dispatcher-owned unified triage — spends rounds from its own count, so one source exhausting its rounds cannot starve another of rounds it never used. The store lives in `status.metadata.loop_back_budgets`, keyed by source, beside the `phase_steps` and `merge_authorizations` maps.
+
+**Storage shape**:
+
+```json
+status.metadata.loop_back_budgets[{source}] = {
+  "spent": <int>,
+  "granted": <int>,
+  "grants": [
+    {
+      "rounds": <int>,
+      "reason": <string>,
+      "granted_by": <string>,
+      "granted_at": <UTC ISO-8601>,
+      "spent_at_grant": <int>
+    }, ...
+  ] | absent
+}
+```
+
+`spent` is how many rounds the source has been admitted for. `granted` is how many rounds beyond the configured ceiling the source has been given. A source with no entry has spent nothing and been granted nothing, and the entry is created by the first admission or the first grant. `grants` holds one record per `loop-back grant` call, oldest first, and is absent until a round has been granted; `granted` is the sum of the `rounds` those records carry.
+
+**The retired scalar is never read.** A `status.json` that still carries `metadata.loop_back_iteration` is treated as carrying no budget: the scalar is attributed to no source, and every source starts at zero.
+
+#### loop-back admit
+
+The admission gate. Admits the source's next round when `spent + 1 <= ceiling + granted`, and persists the increment in the same call — the decision and the write cannot come apart. A refusal writes nothing.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-back admit \
+  --plan-id {plan_id} \
+  --source {source} \
+  --ceiling {ceiling}
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier
+- `--source` (required): The requesting source whose budget is spent — the finalize `step_ref` that recorded the `loop_back` outcome, or the fixed name the dispatcher passes for its own unified triage. Any non-empty token is accepted and none is checked against the step roster, so a mistyped source gets a budget of its own.
+- `--ceiling` (required, non-negative integer): The configured number of rounds each requesting source may spend (`plan.phase-6-finalize.max_iterations`)
+
+**Return fields**:
+
+| Field | Meaning |
+|-------|---------|
+| `admitted` | `true` when the round was admitted and the increment persisted; `false` when it was refused and nothing was written |
+| `source` | The source the verdict applies to, echoed |
+| `iteration` | The round the call decided on — `spent + 1`. On an admission it is the round now spent; on a refusal it is the round that was requested and not given |
+| `effective_ceiling` | `ceiling + granted` — the bound `iteration` was compared against |
+| `ceiling` | The configured ceiling, echoed |
+| `granted` | The rounds beyond the configured ceiling this source holds |
+
+Both verdicts exit `0` with `status: success` — branch on `admitted`, never on the exit code.
+
+**Output — admitted** (TOON):
+```toon
+status: success
+plan_id: my-feature
+admitted: true
+source: automatic-review
+iteration: 2
+effective_ceiling: 3
+ceiling: 3
+granted: 0
+```
+
+**Output — refused** (TOON, nothing written):
+```toon
+status: success
+plan_id: my-feature
+admitted: false
+source: automatic-review
+iteration: 4
+effective_ceiling: 3
+ceiling: 3
+granted: 0
+```
+
+A store the verb cannot interpret — `loop_back_budgets` that is not a map, a source entry that is not a record, a `spent` / `granted` value that is not a non-negative integer, or a `grants` value that is not a list — returns `error: invalid_budget_store` and writes nothing. It is not read as an empty budget, because that would hand the source rounds it may already have spent. `loop-back grant` refuses the same store on the same terms.
+
+#### loop-back grant
+
+Add rounds to one named source's budget and record who granted them and why. **This verb is one of the two sanctioned ways past a ceiling refusal** — it buys the source another round; [`loop-back close`](#loop-back-close) is the other, and ends the loop instead. A refused `admit` is answered by one of the two, never by editing `loop_back_budgets` through `metadata --set`: a metadata write leaves no record of who extended the budget or why, and a grant leaves both.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-back grant \
+  --plan-id {plan_id} \
+  --source {source} \
+  --reason {reason} \
+  [--rounds {rounds}] \
+  [--granted-by {granted_by}]
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier
+- `--source` (required): The source whose budget is extended — the `source` a refused `admit` returned. A grant to one source never admits another.
+- `--reason` (required): Why the rounds are granted. Persisted on the grant record. A blank reason is refused with `blank_reason` and nothing is written.
+- `--rounds` (optional, integer of at least one; default `1`): How many rounds to add to the source's `granted` total. A value below one is refused with `invalid_rounds` and nothing is written.
+- `--granted-by` (optional; default `operator`): Who granted the rounds. Persisted on the grant record.
+
+Each call adds `--rounds` to the source's `granted` total and appends one record to its `grants` list:
+
+| Record field | Meaning |
+|--------------|---------|
+| `rounds` | The rounds this grant added |
+| `reason` | The stated reason, with surrounding whitespace removed |
+| `granted_by` | Who granted the rounds |
+| `granted_at` | When the grant was recorded, as a UTC ISO-8601 instant |
+| `spent_at_grant` | The source's `spent` value when the grant was recorded — how far past its configured ceiling the source was being let |
+
+The grant changes `granted` only. It does not admit a round: the next `loop-back admit` for the same source does, against the raised `effective_ceiling`.
+
+**Decision-log line.** Once the grant is persisted, the verb writes one line to the plan's `decision.log` naming the source, the rounds, the reason and `granted_by`:
+
+```text
+(plan-marshall:manage-status:loop-back-grant) Granted {rounds} loop-back round(s) to {source}: {reason} (granted_by={granted_by})
+```
+
+The line is written after the grant and cannot undo it. A line that could not be written leaves the grant in place and the call still returns `status: success`; the return says which happened:
+
+- `decision_logged: true` — the line was written.
+- `decision_logged: false` — the grant is persisted but the line is not. `decision_log_error` carries why. The grant record in `loop_back_budgets` still holds every fact the line would have carried.
+
+A refused grant writes no line, and its error return carries no `decision_logged` field.
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: my-feature
+source: automatic-review
+rounds: 1
+granted: 1
+spent: 3
+reason: one more review round for the last fix
+granted_by: operator
+granted_at: "2026-01-15T14:30:00Z"
+grant_count: 1
+decision_logged: true
+```
+
+**Output — blank reason** (TOON, nothing written):
+```toon
+status: error
+plan_id: my-feature
+error: blank_reason
+source: automatic-review
+message: --reason must state why the rounds are granted; a blank reason is refused. Nothing was written.
+```
+
+#### loop-back close
+
+Close a `6-finalize` step on named residual findings, recorded as an **operator override**. Where `grant` extends a source's budget so the loop can run another round, `close` ends the loop: the operator decides the remaining findings are acceptable and the step is recorded `done` on that decision. It reads and writes no budget.
+
+The close is recorded so it can never be mistaken for a close the step reached itself. A step that closes on its own verifier records `may_close=yes` / `acceptance=accepted`; an operator close records `may_close=operator_override` / `acceptance=operator_override`. That pair of facts, not the `done` outcome, is what tells the two apart.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-back close \
+  --plan-id {plan_id} \
+  --step {step} \
+  --head {full_sha} \
+  --rationale {rationale} \
+  [--accept {hash_id}]... \
+  [--waive-refire {step}]...
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier
+- `--step` (required): The `6-finalize` step being closed — a member of the composed manifest `phase_6.steps` roster
+- `--head` (required): The closing HEAD as a **full** commit SHA, resolved with `git rev-parse HEAD`. An abbreviation is refused with `invalid_head`: a re-fire waiver is honoured by comparing this value for equality against the live HEAD, and an abbreviation never equals it.
+- `--rationale` (required): The operator's reason for closing on these findings. A blank rationale is refused with `blank_rationale`.
+- `--accept` (optional, repeatable): Hash id of a pending `6-finalize` Q-Gate finding the operator accepts. A close with no `--accept` closes the step on no residual finding at all.
+- `--waive-refire` (optional, repeatable): A head-dependent step whose re-fire at `--head` is waived. It must be a step other than `--step` that already holds a `done` record.
+
+**Everything is validated before the first write.** A blank rationale, a `--head` that is not a full SHA, a `--waive-refire` step with no `done` record (`step_not_waivable`), or an `--accept` hash id that is not a pending finding of the `6-finalize` Q-Gate store (`finding_not_pending`) refuses the call, and nothing is written — no step record, no finding resolution, no waiver.
+
+**Order of work**, once validation has passed:
+
+1. The step is recorded `done` through the same write `mark-step-done` performs, with `--head` as its `head_at_completion`, the display detail `operator close: {N} finding(s) accepted`, and the facts `may_close=operator_override`, `acceptance=operator_override`, `work_performed=true`. No `--force` is applied: a step whose stored outcome is `skipped` is refused by the transition table, and the refusal is returned as `step_not_recorded` with nothing written.
+2. Exactly the named findings are resolved `accepted`, each with the rationale as its resolution detail. No other finding is touched.
+3. The step's own pending **state findings** are resolved `accepted`, citing the closing HEAD. They are selected by rule key through `manage-findings qgate resolve-by-rule`, and the key is derived from the step name as `{step}-state` — the state findings of `pre-submission-self-review` carry `pre-submission-self-review-state`. A step that files no state findings has none under that key, and the resolution reaches nothing.
+4. Each `--waive-refire` step's `done` record gains `refire_waiver = {head, basis}` — see "Re-fire waiver (`refire_waiver`)" under [mark-step-done](#mark-step-done).
+
+**Return fields**:
+
+| Field | Meaning |
+|-------|---------|
+| `step` | The step that was closed, as its canonical key |
+| `outcome` | Always `done` |
+| `head` | The closing HEAD recorded as the step's `head_at_completion` and as each waiver's `head` |
+| `may_close` / `acceptance` | Both `operator_override` — the facts recorded on the step |
+| `rationale` | The rationale, with surrounding whitespace removed |
+| `accepted_count` / `accepted` | How many named findings were resolved `accepted`, and their hash ids |
+| `state_rule` | The rule key the step's state findings were resolved by |
+| `state_findings_resolved` | How many pending state findings that key reached |
+| `waived_steps` | The steps whose `done` record now carries the waiver |
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: my-feature
+step: pre-submission-self-review
+outcome: done
+head: 76c7200b6f1d2c3a4b5e6f708192a3b4c5d6e7f8
+may_close: operator_override
+acceptance: operator_override
+rationale: operator accepted the two residual findings
+accepted_count: 2
+accepted[2]:
+  - a3f2c1
+  - b4e3d2
+state_rule: pre-submission-self-review-state
+state_findings_resolved: 1
+waived_steps[1]:
+  - pre-push-quality-gate
+```
+
+**Output — a named finding is not pending** (TOON, nothing written):
+```toon
+status: error
+plan_id: my-feature
+error: finding_not_pending
+step: pre-submission-self-review
+message: "Each --accept hash id must name a pending finding of the 6-finalize Q-Gate store; these do not: b4e3d2. Nothing was written."
+not_pending[1]:
+  - b4e3d2
+```
+
+A failure after step 1 is not a refusal, because the step is by then recorded `done`. It returns `error: close_incomplete` carrying the same fields as a success plus `not_accepted`, `state_error` and `waiver_refusals`, so the caller can see exactly which part of the close did not land. A finding already resolved is no longer pending — drop it from `--accept` on a re-run.
 
 ### get-context
 
@@ -1406,12 +1649,16 @@ Phase set, transition rules, and phase-to-skill routing are defined in [standard
 | `update-phase` | `--plan-id --phase --status` | Update specific phase status |
 | `progress` | `--plan-id` | Calculate progress percentage |
 | `metadata` | `--plan-id --get/--set --field [--value]` | Get/set metadata fields |
+| `update-field` | `--plan-id --field --value [--store {orchestrator}]` | Set one field of a `kind=orchestrator` epic ledger (orchestrator store only): the header fields `phase` and `workstreams` (JSON-array `--value`), or `resume_anchor`. The plans store has no generic field setter — plan status mutations go through `set-phase`, `update-phase`, `metadata` and `transition`. |
 | `title-token set` | `--plan-id --state {lock-waiting\|lock-owned\|build-busy} [--owner {build-hook\|merge-lock\|cli}]` | Write the `{owner, state, set_at}` record into `status.title_token`, replacing any existing record (last writer wins). `--owner` defaults to `cli`. No rendering — `manage-terminal-title` owns title composition + glyph/icon vocabulary. `build-busy` is the orchestration-busy state (🔨 icon-slot override). Returns `changed` — `false` when the set re-asserted the `(owner, state)` pair already stored, in which case the `[MANAGE-STATUS] Title token: …` work-log line is suppressed (see § "Title-token log emission is change-gated"). |
 | `title-token clear` | `--plan-id [--owner {build-hook\|merge-lock\|cli}]` | Remove the `status.title_token` record when `--owner` matches the recorded owner or the record is stale (>3600 s). A foreign-owned live record is left intact and reported as `cleared: false, reason: foreign_owner`. Idempotent — a no-op when already absent. |
 | `mark-step-done` | `--plan-id --phase --step --outcome [--display-detail] [--head-at-completion] [--loop-back-target] [--fact KEY=VALUE]... [--force]` | Record phase step outcome (+ optional display detail / HEAD SHA / loop-back target / repeatable structured `facts`) in `metadata.phase_steps` |
 | `assert-step-recorded` | `--plan-id --phase --step [--require-terminal]` | Read-only verdict: reports `recorded: true` iff a terminal `metadata.phase_steps[phase][step]` outcome exists. The phase-6-finalize post-dispatch guard. With `--require-terminal`, a near-miss orphan record under a different key returns `error: step_record_mismatched_key` (carrying `orphan_key`); a truly-absent record returns `error: step_record_missing`. Zero writes. |
 | `merge-authorization grant` | `--plan-id --kind --head --gap-class --granted-over --reason` | Persist a HEAD-bound merge authorization as `metadata.merge_authorizations[{kind}] = {head, gap_class, granted_over, reason, granted_at}`. A re-grant at a new HEAD overwrites the record — that overwrite IS the sanctioned re-seek, so there is no revoke verb. `--kind` and `--gap-class` accept any non-empty token; the population and each row's `authorizes:` class are declared by the Merge-Authorization Roster in `phase-6-finalize/standards/branch-cleanup.md`, not by the parser. |
 | `merge-authorization check` | `--plan-id --head --gap-class` | Return every authorization record with a HEAD verdict (`valid` when `record.head` equals `--head`, `lapsed` otherwise) AND an admissibility verdict (`valid` AND `record.gap_class` equals `--gap-class`), plus `authorized_kinds`, `lapsed_kinds`, `admissible_kinds`, `inadmissible_kinds`, `any_authorized` and `any_admissible`. Deliberately takes **no** `--kind` — a per-kind filter would let one valid authorization mask a lapsed sibling. `--gap-class` is required so no caller can route on HEAD-validity alone: several kinds are granted at earlier sites at the same HEAD over a different gap. Fail-closed: a malformed or superseded record is `lapsed`, a record with no `gap_class` matches no class, and an empty store returns both aggregates false with empty lists (`absent` is never collapsed into `valid`). |
+| `loop-back admit` | `--plan-id --source --ceiling` | Admit or refuse the next loop-back round against the source's own budget in `metadata.loop_back_budgets[{source}]`. Admits when `spent + 1 <= ceiling + granted` and persists the increment in the same call; a refusal returns `admitted: false` and writes nothing. |
+| `loop-back grant` | `--plan-id --source --reason [--rounds] [--granted-by]` | Add rounds (default one) to one source's `granted` total and append the grant record of who granted them and why. A blank reason or fewer than one round is refused and writes nothing. The grant admits no round itself. |
+| `loop-back close` | `--plan-id --step --head --rationale [--accept HASH_ID]... [--waive-refire STEP]...` | Close a `6-finalize` step on named residual findings, recorded `done` at `--head` as an operator override (`may_close=operator_override`). Resolves the named findings and the step's own state findings `accepted`, and stamps a re-fire waiver on each `--waive-refire` step. Every input is validated before the first write; touches no budget. |
 | `get-context` | `--plan-id` | Get combined status context |
 | `get-worktree-path` | `--plan-id` | Resolve persisted worktree path (returns empty string when `use_worktree==false`) |
 | `list` | `[--filter PHASE]` | Discover all plans across the main checkout and its worktrees (each entry tagged `location: current`/`worktree`), optionally filtered by phase |
@@ -1628,6 +1875,35 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-
 
 Returns `any_authorized`, `any_admissible`, `authorized_kinds[]`, `lapsed_kinds[]`, `admissible_kinds[]`, `inadmissible_kinds[]`, and a `records[]` table carrying one `verdict` plus one `admissible` flag per record (`valid` when `record.head` equals `--head`; `admissible` when additionally `record.gap_class` equals `--gap-class`). There is no `--kind` flag. Fail-closed: an empty store returns both aggregates false with empty lists.
 
+### loop-back — admit
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-back admit \
+  --plan-id PLAN_ID --source SOURCE --ceiling CEILING
+```
+
+Admits the source's next loop-back round when `spent + 1 <= CEILING + granted`, persisting the increment to `metadata.loop_back_budgets[SOURCE]` in the same call. Returns `admitted`, `source`, `iteration`, `effective_ceiling`, `ceiling` and `granted`; a refusal carries the same fields with `admitted: false` and writes nothing. See § [loop-back](#loop-back) under Operations for the record shape.
+
+### loop-back — grant
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-back grant \
+  --plan-id PLAN_ID --source SOURCE --reason TEXT \
+  [--rounds ROUNDS] [--granted-by GRANTED_BY]
+```
+
+Adds `ROUNDS` (default `1`) to `metadata.loop_back_budgets[SOURCE].granted` and appends one `{rounds, reason, granted_by, granted_at, spent_at_grant}` record to that source's `grants` list. After the grant is persisted it writes one `decision.log` line naming the source, the rounds, the reason and `granted_by`; a line that cannot be written leaves the grant in place. Returns `source`, `rounds`, `granted`, `spent`, `reason`, `granted_by`, `granted_at`, `grant_count` and `decision_logged`, plus `decision_log_error` when the line was not written. A blank `--reason` (`blank_reason`) or a `--rounds` below one (`invalid_rounds`) is refused and writes nothing. One of the two sanctioned ways past a refused `loop-back admit`; `loop-back close` is the other.
+
+### loop-back — close
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-back close \
+  --plan-id PLAN_ID --step STEP_ID --head FULL_SHA --rationale TEXT \
+  [--accept HASH_ID]... [--waive-refire STEP_ID]...
+```
+
+Records the `6-finalize` step `done` at `FULL_SHA` as an operator override (facts `may_close=operator_override`, `acceptance=operator_override`, `work_performed=true`), resolves exactly the `--accept` findings `accepted` with the rationale, resolves the step's pending state findings by the rule key `{STEP_ID}-state`, and stamps `refire_waiver = {head, basis}` on each `--waive-refire` step's `done` record. Everything is validated before the first write. Returns `step`, `outcome`, `head`, `may_close`, `acceptance`, `rationale`, `accepted_count`, `accepted[]`, `state_rule`, `state_findings_resolved` and `waived_steps[]`. See § [loop-back close](#loop-back-close) under Operations.
+
 ### change-type-heuristic
 
 ```bash
@@ -1719,7 +1995,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status self-t
 | `lesson_carry_back_incomplete` | 1 | `delete-plan`: at least one `lesson-*.md` the plan carries did NOT land in the main-anchored corpus (a destination collision, a traversal-shaped lesson id, or a store that would not resolve), so the plan directory holds the only copy of it. **The directory is NOT deleted.** `skipped_lessons[]` names each un-landed id with its `reason`, and `lesson_store_resolution` reports which substrate was reached. Resolve the collision, or pass `--no-restore-lessons` to delete and discard the lesson deliberately. |
 | `not_found` | 1 | Plan directory not found (archive command) |
 | `not_found` | 0 | Metadata field doesn't exist — valid query result (returns `value: null`), not an error |
-| `conflict` | 1 | `mark-step-done`: step already has a different outcome and `--force` was not supplied |
+| `conflict` | 1 | `mark-step-done`: the requested outcome differs from the recorded one, the `(recorded, requested)` pair is outside the unforced transition table (`_TRANSITIONS_LEGAL_WITHOUT_FORCE` in `scripts/_cmd_mark_step.py`, the single source), and `--force` was not supplied. Nothing is written. |
 | `legacy_string_entry` | 1 | `mark-step-done`: existing entry uses the pre-migration bare-string shape; caller must migrate to dict shape before retrying |
 | `invalid_outcome` | 1 | `mark-step-done`: outcome not in `done`/`skipped`/`loop_back`/`failed` |
 | `invalid_argument` | 1 | `mark-step-done`: empty `--phase` or `--step` |
@@ -1733,6 +2009,16 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status self-t
 | `unknown_head_at_completion` | 1 | `mark-step-done`: `--outcome=done` with a `--head-at-completion` revision that resolves to no commit in the local object store (`git rev-parse --verify {sha}^{commit}` fails — fabricated string, non-commit object, or leading-`-` option-injection shape). The record carries the resolved full-hex commit ID, never the supplied spelling. A fabricated anchor records a verdict nobody can locate in history, so it is refused rather than persisted — nothing is written. Resolve the worktree HEAD immediately before the call and pass the real SHA. |
 | `step_record_missing` | 0 | `assert-step-recorded --require-terminal`: no terminal record exists under any key for the named phase (the dispatched step returned without recording a `mark-step-done` outcome). The verdict carries reportable finding fields (`finding_type: missing-yield`, `finding_severity: error`, `finding_title`, `finding_detail`) so the absent yield is filed to the Q-Gate findings store instead of staying silent. Exit code is 0 — the post-dispatch guard branches on the TOON `error` field, not the process exit code. |
 | `step_record_mismatched_key` | 0 | `assert-step-recorded --require-terminal`: the queried step has no terminal record, but a near-miss orphan terminal record exists under a different key in the same phase (the dispatched step recorded under the wrong key — e.g. a bare skill name instead of its fully-qualified manifest `step_id`). Carries `orphan_key` and `orphan_outcome`. Exit code is 0 — the guard branches on the TOON `error` field. |
+| `invalid_budget_store` | 0 | `loop-back admit` / `loop-back grant`: `metadata.loop_back_budgets`, the source's entry, or its `spent` / `granted` / `grants` value does not have the documented shape. Nothing is written, and the store is not read as an empty budget. Exit code is 0 — the caller branches on the TOON `error` field. |
+| `blank_reason` | 0 | `loop-back grant`: `--reason` is empty or whitespace only. A round beyond the configured ceiling must be traceable to a stated reason, so nothing is written. Exit code is 0. |
+| `invalid_rounds` | 0 | `loop-back grant`: `--rounds` is below one. Nothing is written. Exit code is 0. |
+| `blank_rationale` | 0 | `loop-back close`: `--rationale` is empty or whitespace only. An operator close must be traceable to a stated reason, so nothing is written. Exit code is 0. |
+| `invalid_head` | 0 | `loop-back close`: `--head` is not a full commit SHA. An abbreviation is refused because the re-fire waiver is honoured by equality against the live HEAD. Nothing is written. Exit code is 0. |
+| `step_not_waivable` | 0 | `loop-back close`: a `--waive-refire` step is the step being closed, or holds no `done` record. The offending steps are listed as `not_waivable`. Nothing is written. Exit code is 0. |
+| `finding_not_pending` | 0 | `loop-back close`: an `--accept` hash id names no pending finding of the `6-finalize` Q-Gate store. The offending ids are listed as `not_pending`. Nothing is written. Exit code is 0. |
+| `findings_store_unavailable` / `findings_store_unreadable` | 0 | `loop-back close`: the findings store module could not be imported, or the `6-finalize` Q-Gate store could not be read (`store_error` carries the store's own code). Nothing is written. Exit code is 0. |
+| `step_not_recorded` | 0 | `loop-back close`: the step could not be recorded `done` — the underlying `mark-step-done` write refused, and its code is carried as `mark_error`. Nothing is written. Exit code is 0. |
+| `close_incomplete` | 0 | `loop-back close`: the step WAS recorded `done`, but a later part of the close did not land. `not_accepted`, `state_error` and `waiver_refusals` name what did not. Exit code is 0. |
 | `worktree_unresolved` | 1 | `phase_handshake verify`: `metadata.use_worktree==true` and `metadata.worktree_path` is non-empty but does not resolve on the filesystem. `get-worktree-path` does not emit this error — it returns `worktree_state: pending` for the pre-materialization state. |
 
 ---

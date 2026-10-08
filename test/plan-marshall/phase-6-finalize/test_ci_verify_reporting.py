@@ -11,7 +11,9 @@ tests pin the deliverable's Success Criteria via the injectable seams
 live plan state:
 
 * Green CI returns ``done`` with zero LLM dispatch (``mark_done`` called,
-  no findings, ``step_marked_done == True``).
+  no findings). ``step_marked_done`` is read off the mark's own result: ``True``
+  when it returned success, ``False`` with ``outcome == green_unrecorded`` when
+  it was refused.
 * Each failing-check partition files exactly one taxonomy finding; the
   ``ci_no_checks`` finding is filed on ``final_status == none``.
 * The required-field guard skips the persist call when any required flag is
@@ -128,14 +130,19 @@ class _StubFindings:
 
 
 class _StubMarkDone:
-    """Record every mark-step-done call; return a success envelope."""
+    """Record every mark-step-done call; return the configured envelope.
 
-    def __init__(self) -> None:
+    Defaults to a success envelope. Pass ``result`` to stand in for a mark the
+    handler refused.
+    """
+
+    def __init__(self, result: dict | None = None) -> None:
+        self.result = result if result is not None else {'status': 'success'}
         self.calls: list[dict] = []
 
     def __call__(self, **kwargs) -> dict:
         self.calls.append(kwargs)
-        return {'status': 'success'}
+        return self.result
 
 
 class _StubGitHead:
@@ -306,6 +313,78 @@ def test_required_field_guard_skips_persist_on_empty_run_id(tmp_path):
     assert result['persisted'] is False
     assert result['persist_skipped_reason'] == 'run_id'
     assert len(persist.calls) == 0
+    # A skipped persist does not decide the mark: the succeeding stub recorded it.
+    assert result['outcome'] == 'green'
+    assert result['step_marked_done'] is True
+
+
+def test_refused_mark_keeps_the_persist_report(tmp_path):
+    """The persist fields ride a ``green_unrecorded`` result unchanged.
+
+    Whether the artifacts were persisted and whether the step record was written
+    are independent facts; a refused mark must not drop or rewrite the former.
+    """
+    # Arrange — a non-GitHub URL yields no run_id, so persist is skipped.
+    envelope = {
+        'status': 'success',
+        'overall_status': 'success',
+        'checks': [{'name': 'verify', 'status': 'SUCCESS', 'url': 'https://gitlab/x', 'workflow': 'verify'}],
+    }
+    persist = _StubPersist()
+    mark_done = _StubMarkDone({'status': 'error', 'error': 'conflict', 'message': 'already marked as skipped'})
+
+    # Act
+    result = verify(
+        plan_id='ci-verify-refused-persist-report',
+        pr_number=_PR,
+        worktree_path=str(tmp_path),
+        provider='github',
+        final_status='success',
+        wait_outcome='completed',
+        head_sha=_HEAD_SHA,
+        ci_status_runner=_StubCiStatus(envelope),
+        persist_runner=persist,
+        findings_runner=_StubFindings(),
+        mark_done_runner=mark_done,
+        git_head_resolver=_StubGitHead('x'),
+    )
+
+    # Assert
+    assert result['outcome'] == 'green_unrecorded'
+    assert result['step_marked_done'] is False
+    assert result['step_mark_error'] == 'conflict'
+    assert result['step_mark_message'] == 'already marked as skipped'
+    assert result['persisted'] is False
+    assert result['persist_skipped_reason'] == 'run_id'
+    assert len(persist.calls) == 0
+
+
+def test_refused_mark_without_error_fields_reports_empty_strings(tmp_path):
+    """A refusal envelope carrying no ``error`` / ``message`` still reports both keys."""
+    # Arrange — the proxy boundary's bare error shape: a status and nothing else.
+    mark_done = _StubMarkDone({'status': 'error'})
+
+    # Act
+    result = verify(
+        plan_id='ci-verify-refused-bare',
+        pr_number=_PR,
+        worktree_path=str(tmp_path),
+        provider='github',
+        final_status='success',
+        wait_outcome='completed',
+        head_sha=_HEAD_SHA,
+        ci_status_runner=_StubCiStatus(_green_envelope()),
+        persist_runner=_StubPersist(),
+        findings_runner=_StubFindings(),
+        mark_done_runner=mark_done,
+        git_head_resolver=_StubGitHead('x'),
+    )
+
+    # Assert — present and empty, never absent: the keys mark the outcome.
+    assert result['outcome'] == 'green_unrecorded'
+    assert result['step_marked_done'] is False
+    assert result['step_mark_error'] == ''
+    assert result['step_mark_message'] == ''
 
 
 def test_no_checks_files_single_ci_no_checks_finding(tmp_path):

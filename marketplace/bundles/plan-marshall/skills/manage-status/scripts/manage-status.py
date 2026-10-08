@@ -28,6 +28,9 @@ Usage:
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status assert-step-recorded --plan-id EXAMPLE-PLAN --phase 6-finalize --step ci-verify --require-terminal
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization grant --plan-id EXAMPLE-PLAN --kind barrier-ask-override --head 76c7200b6 --gap-class review-barrier-gap --granted-over "2 unhandled, unproven_bots=cuioss-review-bot" --reason "operator accepted the gap"
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization check --plan-id EXAMPLE-PLAN --head 76c7200b6 --gap-class review-barrier-gap
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-back admit --plan-id EXAMPLE-PLAN --source automatic-review --ceiling 3
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-back grant --plan-id EXAMPLE-PLAN --source automatic-review --rounds 1 --reason "one more review round for the last fix"
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-back close --plan-id EXAMPLE-PLAN --step pre-submission-self-review --head 76c7200b6f1d2c3a4b5e6f708192a3b4c5d6e7f8 --rationale "operator accepted the two residual findings" --accept a3f2c1 --accept b4e3d2 --waive-refire pre-push-quality-gate
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status sibling-collision-check --plan-id EXAMPLE-PLAN
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create --store orchestrator --plan-id example-epic --title "Epic"
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update-field --plan-id example-epic --field resume_anchor --value "next action"
@@ -46,6 +49,7 @@ from _cmd_lifecycle import (
     cmd_transition,
     verify_blocks_transition,
 )
+from _cmd_loop_back import cmd_loop_back_admit, cmd_loop_back_close, cmd_loop_back_grant
 from _cmd_mark_step import VALID_LOOP_BACK_TARGETS, cmd_mark_step_done
 from _cmd_merge_authorization import (
     cmd_merge_authorization_check,
@@ -433,7 +437,19 @@ def main() -> int:
             'the dispatcher will retry the step on next phase entry.'
         ),
     )
-    mark_step_parser.add_argument('--force', action='store_true', help='Overwrite an existing conflicting outcome')
+    mark_step_parser.add_argument(
+        '--force',
+        action='store_true',
+        help=(
+            'Admit an outcome change the unforced transition table refuses. A retry or '
+            're-fire needs no flag: failed to any outcome, loop_back to any outcome, '
+            'done to failed and done to loop_back are recorded without it. The flag is '
+            'still needed for two things: a transition outside that table (done to '
+            'skipped, or skipped to any other outcome), and migrating a legacy '
+            'bare-string entry to the dict shape. The table is '
+            '_TRANSITIONS_LEGAL_WITHOUT_FORCE in _cmd_mark_step.py.'
+        ),
+    )
     mark_step_parser.add_argument(
         '--display-detail',
         default=None,
@@ -655,6 +671,170 @@ def main() -> int:
         ),
     )
     merge_authorization_check_parser.set_defaults(func=cmd_merge_authorization_check)
+
+    # loop-back (admit | grant | close)
+    loop_back_parser = subparsers.add_parser(
+        'loop-back',
+        help=(
+            'Budget finalize loop-back rounds per requesting source in '
+            'status.metadata.loop_back_budgets, or close a step on named findings'
+        ),
+        description=(
+            'Budget finalize loop-back rounds PER REQUESTING SOURCE, so one source '
+            'cannot spend the rounds another never used. The store is '
+            'loop_back_budgets[source] = {spent, granted}; a source with no entry '
+            "has spent and been granted nothing. 'admit' is the admission gate: it "
+            'admits the next round when spent + 1 <= ceiling + granted, persists '
+            'the increment in the same call, and returns admitted, source, '
+            'iteration and effective_ceiling. A refusal returns admitted: false '
+            'with the same fields and writes nothing. The retired scalar '
+            'loop_back_iteration is never read: a status still carrying it is '
+            "attributed to no source, and every source starts at zero. 'grant' is "
+            'the one way past a refusal: it adds rounds to a named source and '
+            'appends a grant record (rounds, reason, granted_by, granted_at, '
+            'spent_at_grant) to that source; a blank reason or fewer than one '
+            "round is refused and writes nothing. 'close' is the other way forward: "
+            'it ends the loop instead of extending it, recording a finalize step '
+            'done on named residual findings as an operator override '
+            '(may_close=operator_override), and touches no budget. Every verb '
+            'exits 0 on every verdict — the verdict travels in the TOON.'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    loop_back_subparsers = loop_back_parser.add_subparsers(dest='loop_back_verb', required=True)
+
+    loop_back_admit_parser = loop_back_subparsers.add_parser(
+        'admit',
+        help="Admit or refuse the next loop-back round against the source's own budget",
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(loop_back_admit_parser)
+    loop_back_admit_parser.add_argument(
+        '--source',
+        required=True,
+        help=(
+            'The requesting source whose budget is spent — the finalize step_ref '
+            'that recorded the loop_back outcome, or the fixed name the dispatcher '
+            'passes for its own unified triage. Any non-empty token is accepted and '
+            'none is checked against the step roster, so a mistyped source gets a '
+            'budget of its own.'
+        ),
+    )
+    loop_back_admit_parser.add_argument(
+        '--ceiling',
+        required=True,
+        type=int,
+        help=(
+            'The configured number of loop-back rounds each requesting source may '
+            'spend (plan.phase-6-finalize.max_iterations). The effective ceiling '
+            'is this value plus the rounds already granted to the source.'
+        ),
+    )
+    loop_back_admit_parser.set_defaults(func=cmd_loop_back_admit)
+
+    loop_back_grant_parser = loop_back_subparsers.add_parser(
+        'grant',
+        help="Add rounds to one source's budget and record who granted them and why",
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(loop_back_grant_parser)
+    loop_back_grant_parser.add_argument(
+        '--source',
+        required=True,
+        help=(
+            'The source whose budget is extended — the source a refused admit '
+            'named. A grant to one source never admits another.'
+        ),
+    )
+    loop_back_grant_parser.add_argument(
+        '--rounds',
+        type=int,
+        default=1,
+        help='How many rounds to add to the granted total of the source. At least one; defaults to one.',
+    )
+    loop_back_grant_parser.add_argument(
+        '--reason',
+        required=True,
+        help=(
+            'Why the rounds are granted. Persisted on the grant record; a blank '
+            'reason is refused with blank_reason and nothing is written.'
+        ),
+    )
+    loop_back_grant_parser.add_argument(
+        '--granted-by',
+        dest='granted_by',
+        default='operator',
+        help='Who granted the rounds. Persisted on the grant record; defaults to operator.',
+    )
+    loop_back_grant_parser.set_defaults(func=cmd_loop_back_grant)
+
+    loop_back_close_parser = loop_back_subparsers.add_parser(
+        'close',
+        help='Close a finalize step on named residual findings, recorded as an operator override',
+        description=(
+            'Record a 6-finalize step done at --head as an operator override, on the '
+            'findings the operator names. Everything is validated before the first '
+            'write: a blank --rationale, a --head that is not a full SHA, an --accept '
+            'hash id that is not a pending finding of the 6-finalize Q-Gate store, or '
+            'a --waive-refire step with no done record refuses the call and writes '
+            'nothing. Then, in order: the step is recorded done with the facts '
+            'may_close=operator_override, acceptance=operator_override and '
+            'work_performed=true; exactly the named findings are resolved accepted '
+            "with the rationale; the step's own pending state findings (rule key "
+            "'{step}-state') are resolved; and each --waive-refire step's done record "
+            'gains a refire_waiver {head, basis} that holds for --head alone.'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(loop_back_close_parser)
+    loop_back_close_parser.add_argument(
+        '--step',
+        required=True,
+        help='The 6-finalize step being closed — a member of the composed manifest phase_6.steps roster.',
+    )
+    loop_back_close_parser.add_argument(
+        '--head',
+        required=True,
+        help=(
+            'The closing HEAD as a full commit SHA, resolved with git rev-parse HEAD. '
+            'An abbreviation is refused with invalid_head and nothing is written.'
+        ),
+    )
+    loop_back_close_parser.add_argument(
+        '--rationale',
+        required=True,
+        help=(
+            "The operator's reason for closing on these findings. Persisted as the "
+            'resolution detail of every accepted finding; a blank rationale is '
+            'refused with blank_rationale and nothing is written.'
+        ),
+    )
+    loop_back_close_parser.add_argument(
+        '--accept',
+        action='append',
+        default=None,
+        metavar='HASH_ID',
+        help=(
+            'Hash id of a pending 6-finalize Q-Gate finding the operator accepts. '
+            'Repeatable; may be omitted. An id that is not pending refuses the whole '
+            'call with finding_not_pending.'
+        ),
+    )
+    loop_back_close_parser.add_argument(
+        '--waive-refire',
+        dest='waive_refire',
+        action='append',
+        default=None,
+        metavar='STEP',
+        help=(
+            'A head-dependent step whose re-fire at --head is waived. Repeatable; may '
+            'be omitted. The step must already hold a done record, which keeps its '
+            'outcome and its own head_at_completion.'
+        ),
+    )
+    loop_back_close_parser.set_defaults(func=cmd_loop_back_close)
 
     # change-type-heuristic
     change_type_parser = subparsers.add_parser(

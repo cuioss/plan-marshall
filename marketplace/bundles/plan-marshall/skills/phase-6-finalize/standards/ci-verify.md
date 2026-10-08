@@ -75,7 +75,8 @@ The executor's steps:
 3. **Persist artifacts** behind the required-field guard (below).
 4. **Green early return** (`final_status == success` AND no failing
    checks): mark the step `done` with `--head-at-completion`, ZERO
-   dispatch, and return `outcome: green`.
+   dispatch, and return `outcome: green` — or `outcome: green_unrecorded`
+   when that mark was refused (see "Return shape" below).
 5. **Red CI**: file exactly one taxonomy finding per failing check (plus
    the `ci_no_checks` finding on `final_status == none`) and return
    `outcome: needs_triage` carrying the distinct per-producer strings.
@@ -92,16 +93,29 @@ red-CI triage dispatch it bypasses (steps 4 → 5 above).
 
 ```toon
 status: success | error
+plan_id: <str>
 final_status: success | failure | none | timeout
-outcome: green | needs_triage
+outcome: green | green_unrecorded | needs_triage
 run_id: <str>
 head_sha: <str>
 persisted: true | false
 persist_skipped_reason: <field>   # present only when persisted == false
 findings_filed: <int>
 producers: [str, ...]             # present only when outcome == needs_triage
-step_marked_done: true | false    # true only on the green path
+step_marked_done: true | false    # true only when the mark returned success
+step_mark_error: <str>            # present only when outcome == green_unrecorded
+step_mark_message: <str>          # present only when outcome == green_unrecorded
 ```
+
+`green_unrecorded` is a green CI verdict whose `mark-step-done` write was
+refused: CI passed, but the step record does not say so. `step_mark_error`
+carries the mark's own `error` and `step_mark_message` its `message`, so a
+recorded green and a refused one are distinguishable from the payload alone.
+
+**Dispatcher action on `green_unrecorded`**: stop with the tool's message
+(`step_mark_message`, naming `step_mark_error`) and do NOT advance past the
+step. The step has no `done` record, so advancing would carry the run past a
+step the record still shows as unfinished.
 
 The canonical argparse surface for the script is published in
 [`../SKILL.md`](../SKILL.md); the script registers its own `run`
@@ -163,6 +177,20 @@ timeout}` and `failing_checks` through to the executor WITHOUT
 short-circuiting the step to `failed`. Existing consumers keep the
 default `strict` mode and observe no behaviour change.
 
+A `status: wait_pending` answer carries the still-running checks
+(`running_checks`), the number of the re-wait about to be issued
+(`rewait_number`) and the bound (`rewait_bound`). The
+executor is NOT run on `wait_pending`: nothing has failed, so there is
+nothing to classify and no finding to file. The dispatcher re-issues the
+resolver instead (see [`../SKILL.md`](../SKILL.md) § "Precondition
+resolution").
+
+The bound is three re-waits per HEAD — four waits in total — held as
+`MAX_PENDING_REWAITS` in `scripts/ci_complete_precondition.py`. The
+resolver counts the lapses itself and resets the count when HEAD changes.
+The lapse after the bound returns `wait_failed` with `ci_final_status:
+timeout`. `strict` mode never returns `wait_pending`.
+
 The flag flows from the dispatcher's resolver invocation:
 
 ```bash
@@ -186,7 +214,7 @@ this order per failing check.
 | e | Cancelled (`conclusion=cancelled`) | per-check conclusion | `ci-verify-cancelled` | `ci_cancelled` | accept (manual cancellation) / retry |
 | f | Action required | per-check conclusion | `ci-verify-action-required` | `ci_action_required` | operator approval; accept after approval |
 | g | Stale (`conclusion=stale`) | per-check conclusion | `ci-verify-stale` | `ci_stale` | re-run CI (HEAD advanced past check's commit) |
-| h | Timeout (`conclusion=timed_out` OR wait-deadline) | per-check conclusion / `wait_outcome=deadline_exceeded` | `ci-verify-timeout` | `ci_timeout` | retry / accept (flaky infra) |
+| h | Timeout (`conclusion=timed_out`, OR a run still not terminal) | per-check conclusion / `wait_outcome=deadline_exceeded` with no definitively failed check | `ci-verify-timeout` | `ci_timeout` | retry / accept (flaky infra) |
 | i | No checks reported (`final_status=none`) | zero checks across PR | `ci-verify-missing` | `ci_no_checks` | confirm CI is configured; accept if intentional |
 | j | CI never ran vs CI ran red | distinguished by (i) vs (b..h) | n/a — handled by row choice | n/a | covered by per-row producer split |
 
@@ -201,6 +229,18 @@ this order per failing check.
   its own definitive producer; only a check WITHOUT a definitive
   failure/cancel/action/stale conclusion (e.g. still pending) falls
   through to the timeout row under `deadline_exceeded`.
+
+- **Row (h) has two meanings.**
+  `ci_timeout` is filed for a check whose own conclusion is `timed_out`,
+  and for a check that is still running when the resolver returns
+  `wait_failed` / `timeout` (see "Precondition mode" above). A wait the
+  resolver answers `wait_pending` files nothing: the executor is not run.
+  When the executor does run under `deadline_exceeded` and at least one check has a definitive
+  failing conclusion, the still-running checks are dropped from the
+  failing set, so they produce no `ci_timeout` finding beside the real
+  failure. Only when no check has definitively failed are the
+  still-running checks kept and classified under row (h). The same rule
+  applies to a failing set threaded in from the precondition.
 
 - **Row (a) is explicitly excluded** from ci-verify's scope. Sonar's
   quality-gate is fetched by `sonar-roundtrip` from the Sonar API, not
