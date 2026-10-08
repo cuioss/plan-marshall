@@ -60,6 +60,23 @@ outrank log content — and a job log carrying no parseable TOON status keeps
 today's exit-code verdict, so a non-wrapper command run through the daemon is
 unaffected.
 
+**A supervisor timeout stops the whole process tree, not one link of it.** The
+build child is the first link of a chain (executor, build wrapper, ``./pw``,
+``uv``, pytest, xdist workers), so signalling only that pid leaves the rest
+running and a re-run stacks a second suite on the first. On POSIX the child is
+therefore launched as the leader of its own session, and on expiry the supervisor
+signals the child's process GROUP: ``SIGTERM``, a grace period of
+:data:`_JOB_KILL_GRACE_SECONDS`, then ``SIGKILL``. The build wrapper runs its own
+build in a separate process group and forwards ``SIGTERM`` to it, so the grace
+period is what lets that forwarded stop complete before the group ``SIGKILL``
+lands; it must stay strictly greater than the wrapper's own forward grace.
+``timed_out`` remains the classification input, so a signal exit the supervisor
+caused is ``timeout``, never ``killed``.
+
+**Windows keeps the single-process kill.** Process groups and ``os.killpg`` are
+POSIX-only, so on Windows the child is launched without a session argument and a
+timeout calls ``proc.kill()`` on the child alone, exactly as before.
+
 The classification and env helpers are pure and unit-testable without spawning a
 process; :func:`run_job` drives a real ``asyncio`` subprocess and is exercised
 against trivial commands.
@@ -74,7 +91,9 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
+import signal
 import time
 from dataclasses import dataclass, field
 from typing import IO, Any
@@ -113,6 +132,16 @@ BASELINE_ENV_KEYS = (
 )
 
 _READ_CHUNK = 4096
+
+_IS_WINDOWS = os.name == 'nt'
+
+# Seconds between the group SIGTERM and the group SIGKILL on a supervisor
+# timeout. The build wrapper forwards SIGTERM to its own build group and then
+# waits its own forward grace before escalating, so this value MUST stay strictly
+# greater than that wrapper grace (``_build_execute._GROUP_KILL_GRACE_SECONDS``):
+# with an equal or smaller value the group SIGKILL here would end the wrapper
+# before its forwarded stop completed, leaving the build group running.
+_JOB_KILL_GRACE_SECONDS = 10
 
 
 def build_baseline_env(source: dict[str, str] | None = None) -> dict[str, str]:
@@ -276,6 +305,44 @@ def _wire_status_from_log_verdict(verdict_status: str) -> str:
         return wire_status_from_result(RESULT_STATUS_INDETERMINATE)
 
 
+def _signal_job_group(pgid: int, signum: int) -> None:
+    """Send ``signum`` to the job's process group; a vanished group is not an error.
+
+    Args:
+        pgid: The process-group id — the child's pid, because the child is
+            launched as the leader of its own session.
+        signum: The signal to deliver to every member of the group.
+    """
+    # ProcessLookupError: every member already exited, so nothing is left to stop.
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(pgid, signum)
+
+
+async def _stop_job_tree(proc: asyncio.subprocess.Process) -> None:
+    """Stop a timed-out job's whole process tree and reap the child.
+
+    On POSIX the child leads its own session, so its pid is the id of a process
+    group holding every descendant that did not move itself elsewhere. The group
+    receives ``SIGTERM``, then — once the child has exited or
+    :data:`_JOB_KILL_GRACE_SECONDS` has passed, whichever comes first —
+    ``SIGKILL``, which also ends any member that outlived the child. On Windows
+    only the child itself is killed.
+
+    Args:
+        proc: The timed-out build child.
+    """
+    if _IS_WINDOWS:
+        proc.kill()
+        await proc.wait()
+        return
+    _signal_job_group(proc.pid, signal.SIGTERM)
+    # TimeoutError: the child ignored the SIGTERM for the whole grace period.
+    with contextlib.suppress(TimeoutError):
+        await asyncio.wait_for(proc.wait(), timeout=_JOB_KILL_GRACE_SECONDS)
+    _signal_job_group(proc.pid, signal.SIGKILL)
+    await proc.wait()
+
+
 async def run_job(
     command: list[str],
     cwd: str,
@@ -290,8 +357,9 @@ async def run_job(
     Args:
         command: The executor-form argv to run (already verified).
         cwd: The working directory (the submitted tree).
-        timeout: Wall-clock timeout in seconds; on expiry the child is killed
-            and the status is ``timeout``.
+        timeout: Wall-clock timeout in seconds; on expiry the child's whole
+            process group is stopped (the child alone on Windows) and the
+            status is ``timeout``.
         log_file: Path to stream combined stdout/stderr into.
         env: The child environment; defaults to :func:`build_baseline_env`.
         progress: Optional liveness tracker updated on each output chunk.
@@ -310,12 +378,15 @@ async def run_job(
     if progress is None:
         progress = JobProgress()
 
+    # On POSIX the child leads its own session, so a timeout can stop every
+    # descendant through the child's process group (see _stop_job_tree).
     proc = await asyncio.create_subprocess_exec(
         *command,
         cwd=cwd,
         env=child_env,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        start_new_session=not _IS_WINDOWS,
     )
 
     timed_out = False
@@ -328,8 +399,7 @@ async def run_job(
             await asyncio.wait_for(proc.wait(), timeout=timeout)
         except TimeoutError:
             timed_out = True
-            proc.kill()
-            await proc.wait()
+            await _stop_job_tree(proc)
         finally:
             await asyncio.gather(*pumps, return_exceptions=True)
 

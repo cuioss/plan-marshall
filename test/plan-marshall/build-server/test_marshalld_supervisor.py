@@ -13,10 +13,15 @@ log content.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import os
+import signal
 import sys
+import time
 from pathlib import Path
 
 import _build_server_protocol as protocol
+import pytest
 
 from conftest import load_script_module
 
@@ -173,6 +178,99 @@ def test_run_job_timeout(tmp_path):
     )
 
     assert payload['status'] == 'timeout'
+
+
+# The grandchild ignores SIGTERM, announces that the handler is installed, and
+# blocks. Its output is detached from the job's pipes so a survivor cannot hold
+# the supervisor's log pumps open — the assertion is about the PROCESS, and a
+# hang would hide it.
+_GRANDCHILD_CODE = (
+    'import signal, sys\n'
+    'signal.signal(signal.SIGTERM, signal.SIG_IGN)\n'
+    "open(sys.argv[1], 'w').close()\n"
+    'while True:\n'
+    '    signal.pause()\n'
+)
+
+# The job child spawns that grandchild, publishes its pid once the grandchild is
+# ready, and blocks until the supervisor's timeout stops it.
+_SPAWN_GRANDCHILD_THEN_BLOCK = (
+    'import os, signal, subprocess, sys, time\n'
+    'ready, pid_file = sys.argv[1], sys.argv[2]\n'
+    'grandchild = subprocess.Popen(\n'
+    '    [sys.executable, "-c", sys.argv[3], ready],\n'
+    '    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,\n'
+    ')\n'
+    'while not os.path.exists(ready):\n'
+    '    time.sleep(0.01)\n'
+    "with open(pid_file + '.tmp', 'w') as handle:\n"
+    '    handle.write(str(grandchild.pid))\n'
+    "os.replace(pid_file + '.tmp', pid_file)\n"
+    'signal.pause()\n'
+)
+
+_GRANDCHILD_EXIT_DEADLINE_SECONDS = 10
+
+
+def _pid_is_gone(pid: int, *, deadline_seconds: float) -> bool:
+    """Report whether ``pid`` stops existing before the deadline passes."""
+    deadline = time.monotonic() + deadline_seconds
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        time.sleep(0.05)
+    return False
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='process groups and os.killpg are POSIX-only')
+class TestRunJobTimeoutStopsTheWholeProcessTree:
+    """A supervisor timeout stops every descendant, not only the job child.
+
+    The job child is the first link of a chain, so stopping its pid alone leaves
+    the rest of the build running. The grandchild here ignores SIGTERM, so it
+    also proves the group SIGKILL follows the group SIGTERM.
+    """
+
+    @pytest.fixture(scope='class')
+    def timed_out_run(self, tmp_path_factory):
+        """Run the grandchild-spawning job to its timeout once for the class."""
+        tmp_path = tmp_path_factory.mktemp('tree-kill')
+        pid_file = tmp_path / 'grandchild.pid'
+        payload = asyncio.run(
+            supervisor.run_job(
+                [
+                    sys.executable,
+                    '-c',
+                    _SPAWN_GRANDCHILD_THEN_BLOCK,
+                    str(tmp_path / 'grandchild.ready'),
+                    str(pid_file),
+                    _GRANDCHILD_CODE,
+                ],
+                str(tmp_path),
+                timeout=3,
+                log_file=str(tmp_path / 'job.log'),
+            )
+        )
+        assert pid_file.exists(), 'the job child never published its grandchild pid before the timeout'
+        grandchild_pid = int(pid_file.read_text())
+        yield payload, grandchild_pid
+        # A grandchild that survived (the defect) must not outlive the test run.
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(grandchild_pid, signal.SIGKILL)
+
+    def test_grandchild_is_gone_after_the_timeout(self, timed_out_run):
+        _payload, grandchild_pid = timed_out_run
+
+        gone = _pid_is_gone(grandchild_pid, deadline_seconds=_GRANDCHILD_EXIT_DEADLINE_SECONDS)
+
+        assert gone, f'grandchild {grandchild_pid} outlived the supervisor timeout'
+
+    def test_group_kill_is_still_classified_as_timeout(self, timed_out_run):
+        payload, _grandchild_pid = timed_out_run
+
+        assert payload['status'] == 'timeout'
 
 
 def test_run_job_clean_env_excludes_secret(tmp_path):
