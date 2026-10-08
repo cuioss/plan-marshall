@@ -348,6 +348,9 @@ def _stamp_refire_waivers(
     that is missing or unreadable is read as empty, which refuses every waiver
     and therefore writes nothing.
 
+    A guard that cannot be taken within its budget also writes nothing: every
+    requested waiver is then returned as a refusal naming the timeout.
+
     Returns ``(waived_steps, waiver_refusals)``.
     """
     waived_steps: list[str] = []
@@ -369,6 +372,12 @@ def _stamp_refire_waivers(
         rmw_json(get_status_path(plan_id), _apply)
     except _NoWaiverStamped:
         pass
+    except TimeoutError as exc:
+        # Nothing was committed, so no waiver landed whatever the callback collected.
+        return [], [
+            f'step {name!r} in phase {CLOSE_PHASE!r} was not waived: the status guard timed out ({exc})'
+            for name in waived
+        ]
     return waived_steps, waiver_refusals
 
 
