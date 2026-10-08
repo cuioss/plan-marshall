@@ -316,7 +316,7 @@ def test_an_empty_candidate_list_is_a_precondition_violation() -> None:
 
     Both answers the code could otherwise reach are wrong: ``refuted`` would
     assert "no row carries a notation" about zero rows, and ``unverified`` would
-    hand the caller a ``chosen`` position addressing nothing. The caller routes
+    hand the caller a ``contributing`` list addressing nothing. The caller routes
     the no-candidate case to ``stale`` before reaching here, so arriving with an
     empty list is a programming error and is reported as one.
     """
@@ -324,12 +324,12 @@ def test_an_empty_candidate_list_is_a_precondition_violation() -> None:
         crosscheck.cross_check_candidates([], '.')
 
 
-def test_the_chosen_position_indexes_the_list_it_was_given(monkeypatch) -> None:
-    """``chosen`` is a position, not the row object — the caller maps it back itself.
+def test_the_contributing_positions_index_the_list_it_was_given(monkeypatch) -> None:
+    """``contributing`` holds positions, not row objects — the caller maps them back itself.
 
-    Returning the dict instead would force the caller to recover the row's ledger
-    index by ``id()``, which is sound only while this function returns one of the
-    very objects it was handed — not a property its signature promises.
+    Returning the dicts instead would force the caller to recover each row's ledger
+    index by ``id()``, which is sound only while this function returns the very
+    objects it was handed — not a property its signature promises.
 
     The resolver is pinned so a failure here is attributable to the position
     contract and not to the live architecture; the real path has its own case.
@@ -339,7 +339,7 @@ def test_the_chosen_position_indexes_the_list_it_was_given(monkeypatch) -> None:
         [_build_entry(notation=_NPM), _build_entry(notation=_PYPROJECT)],
         '/nonexistent-project-dir',
     )
-    assert outcome['chosen'] == 1
+    assert outcome['contributing'] == [1]
     assert 'entry' not in outcome
 
 
@@ -498,9 +498,9 @@ def test_a_module_scoped_verify_covers_its_own_module_but_not_a_tree_wide_change
     tree_wide = crosscheck.cross_check_candidates([row], '/nonexistent-project-dir', _required(whole_tree=True))
 
     assert confined['scope_verdict'] == crosscheck.COVERED, confined
-    assert confined['chosen'] == 0
+    assert confined['contributing'] == [0]
     assert tree_wide['scope_verdict'] == crosscheck.NARROW, tree_wide
-    assert tree_wide['chosen'] is None
+    assert tree_wide['contributing'] == []
     assert tree_wide['row_scopes'] == ['verify plan-marshall: ' + crosscheck.ROW_SCOPE_TOO_NARROW]
 
 
@@ -518,7 +518,7 @@ def test_a_module_scoped_row_does_not_cover_a_different_module(monkeypatch) -> N
     )
 
     assert outcome['scope_verdict'] == crosscheck.NARROW, outcome
-    assert outcome['chosen'] is None
+    assert outcome['contributing'] == []
 
 
 def test_a_zero_test_compile_row_does_not_certify_a_tree_that_needs_tests(
@@ -592,7 +592,7 @@ def test_selection_is_joint_so_an_attributable_narrow_row_is_never_cited(
 
     assert outcome['verdict'] == crosscheck.CORROBORATED, outcome
     assert outcome['scope_verdict'] == crosscheck.COVERED, outcome
-    assert outcome['chosen'] is None
+    assert outcome['contributing'] == []
     assert outcome['joint_reason'] == crosscheck.REASON_NO_ADMISSIBLE_ROW
 
 
@@ -613,7 +613,7 @@ def test_the_notation_property_survives_the_scope_widening(monkeypatch) -> None:
 
     assert outcome['verdict'] == crosscheck.REFUTED, outcome
     assert outcome['scope_verdict'] == crosscheck.COVERED
-    assert outcome['chosen'] is None
+    assert outcome['contributing'] == []
     assert outcome['joint_reason'] == crosscheck.REASON_NOTATION_UNRELATED
 
 
@@ -677,7 +677,7 @@ def test_a_canonical_outside_the_vocabulary_is_undetermined_not_refuted(
 
     assert outcome['scope_verdict'] == crosscheck.UNDETERMINED, outcome
     assert outcome['scope_reason'] == crosscheck.REASON_SCOPE_UNREADABLE
-    assert outcome['chosen'] == 0
+    assert outcome['contributing'] == [0]
 
 
 # =============================================================================
