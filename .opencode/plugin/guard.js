@@ -1,9 +1,10 @@
 /**
  * plan-marshall guard plugin — tool.execute.before enforcement of R1-R4.
  *
- * The opencode host loads every module under `{plugin,plugins}/*.{ts,js}` in the
- * project config directory and imports it with Bun. This plugin registers a
- * `tool.execute.before` hook that inspects each tool invocation against the four
+ * V2 plugin (`Plugin.define` with `ctx.tool.hook("execute.before")`). The
+ * opencode host loads every module under `{plugin,plugins}/*.{ts,js}` in the
+ * project config directory. This plugin registers a
+ * `ctx.tool.hook("execute.before")` hook that inspects each tool invocation against the four
  * plan-marshall hard-rule bypass classes and THROWS to block the execution,
  * appending one audit line to `.plan/temp/guard.log` per blocked invocation.
  *
@@ -50,6 +51,7 @@
  */
 import { appendFileSync, mkdirSync } from "node:fs"
 import path from "node:path"
+import { Plugin } from "@opencode/plugin"
 
 // ---- R1: shell-chaining constructors (declared set, mirrored by D4) ----
 function hasChainingConstructor(command) {
@@ -227,25 +229,26 @@ function auditLine(rule, tool, sessionID, callID, detail) {
   return `${new Date().toISOString()} | tool=${tool} | rule=${rule} | session=${sessionID} | call=${callID} | ${detail}`
 }
 
-export const GuardPlugin = async ({ worktree, directory }) => {
-  const root = worktree || directory || "."
-  const logPath = path.join(root, ".plan", "temp", "guard.log")
+export default Plugin.define({
+  id: "plan-marshall-guard",
+  async setup(ctx) {
+    const root = ctx.location?.directory || "."
+    const logPath = path.join(root, ".plan", "temp", "guard.log")
 
-  function audit(entry) {
-    try {
-      mkdirSync(path.dirname(logPath), { recursive: true })
-      appendFileSync(logPath, entry + "\n", "utf8")
-    } catch {
-      // An audit failure must never mask the throw that triggered it.
+    function audit(entry) {
+      try {
+        mkdirSync(path.dirname(logPath), { recursive: true })
+        appendFileSync(logPath, entry + "\n", "utf8")
+      } catch {
+        // An audit failure must never mask the throw that triggered it.
+      }
     }
-  }
 
-  return {
-    "tool.execute.before": async (input, output) => {
-      const tool = input?.tool ?? ""
-      const sessionID = input?.sessionID ?? "?"
-      const callID = input?.callID ?? "?"
-      const args = (output && output.args) || {}
+    await ctx.tool.hook("execute.before", async (event) => {
+      const tool = event?.tool ?? ""
+      const sessionID = event?.sessionID ?? event?.sessionId ?? "?"
+      const callID = event?.callID ?? event?.callId ?? event?.id ?? "?"
+      const args = (event && (event.input ?? event.args ?? event.params)) || {}
       const command = typeof args.command === "string" ? args.command : ""
 
       if (tool === "edit" || tool === "write" || tool === "patch" || tool === "apply_patch") {
@@ -321,6 +324,6 @@ export const GuardPlugin = async ({ worktree, directory }) => {
           "[plan-marshall-guard] R4: hard-coded build command bypassing python3 .plan/execute-script.py is forbidden",
         )
       }
-    },
-  }
-}
+    })
+  },
+})
