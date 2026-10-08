@@ -728,6 +728,14 @@ GATE_EXCLUSION_REASONS = (
     GATE_EXCLUDED_ROW_NOT_IN_FLIGHT,
 )
 
+#: How many files one own spec must share with a single gate candidate before
+#: the overlap is put to the operator. One shared file is common between plans
+#: that do not collide in practice, so it never fires the prompt; from two files
+#: on, whether the overlap is a problem is the operator's decision. Each entry
+#: of a pair's overlap row counts as one file, a directory or recursive-glob
+#: containment included.
+OVERLAP_PROMPT_MIN_SHARED_FILES = 2
+
 # --- declaration-currency (cross-spec reconciliation) -----------------------
 #
 # The per-spec comparison states for ``corpus declaration-currency``. They mirror
@@ -4001,6 +4009,10 @@ class _GateTally:
     counted exactly once — in ``population`` and ``states`` when it stays a gate
     candidate, in ``excluded`` otherwise — so per kind ``population`` plus the
     sum of ``excluded`` equals the scan population of that kind.
+
+    ``members`` names each gate candidate as ``(kind, name, state)``, under the
+    same name the match lists carry for it, so the per-spec comparison rows can
+    say WHICH candidate blocks a spec rather than only how many do.
     """
 
     population: dict[str, int] = field(default_factory=lambda: dict.fromkeys(CANDIDATE_KINDS, 0))
@@ -4010,14 +4022,67 @@ class _GateTally:
     excluded: dict[str, dict[str, int]] = field(
         default_factory=lambda: {kind: dict.fromkeys(GATE_EXCLUSION_REASONS, 0) for kind in CANDIDATE_KINDS}
     )
+    members: list[tuple[str, str, str]] = field(default_factory=list)
 
-    def count(self, kind: str, state: str, reason: str | None) -> None:
-        """Count one candidate of ``kind`` in derivation ``state`` under its gate outcome."""
+    def count(self, kind: str, name: str, state: str, reason: str | None) -> None:
+        """Count the candidate ``name`` of ``kind`` in derivation ``state`` under its gate outcome."""
         if reason is None:
             self.population[kind] += 1
             self.states[kind][state] += 1
+            self.members.append((kind, name, state))
         else:
             self.excluded[kind][reason] += 1
+
+
+def _spec_comparison_rows(
+    spec_names: list[str], gate: _GateTally, gate_overlap_matches: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Build the per-spec launch-gate verdict: one row per own spec file.
+
+    ``spec_names`` is every own spec file, an unreadable one included, so the
+    row count equals ``specs_total``. A spec's BLOCKING candidates are the gate
+    candidates, other than the spec itself, that contributed no comparable
+    surface: against those the spec was never compared, so its comparison is
+    not determinate. A gate candidate that WAS comparable does not block,
+    whether or not it overlaps; overlap is reported separately.
+
+    ``blocking_candidates`` joins ``{candidate_kind}:{name}:{state}`` entries,
+    sorted. ``reason`` is derived here from the same entries, naming kind, name
+    and state for each, and is the empty string exactly when
+    ``comparison_determinate`` is true — the enforcement site transcribes it
+    and composes nothing.
+
+    The overlap columns read ``gate_overlap_matches``, the overlap rows whose
+    candidate is a gate candidate. ``gate_overlap_count`` is how many of them
+    name the spec, ``max_shared_file_count`` the largest ``overlap_count``
+    among those (0 when there is none), and ``overlap_prompt_required`` whether
+    that reaches :data:`OVERLAP_PROMPT_MIN_SHARED_FILES`.
+    """
+    rows: list[dict[str, Any]] = []
+    for spec in spec_names:
+        blocking = sorted(
+            (kind, name, state)
+            for kind, name, state in gate.members
+            if state in CANDIDATE_NON_CONTRIBUTING_STATES and (kind, name) != (CANDIDATE_KIND_CORPUS_SPEC, spec)
+        )
+        shared = [row['overlap_count'] for row in gate_overlap_matches if row['spec'] == spec]
+        max_shared = max(shared, default=0)
+        named = ', '.join(f'{kind} {name} {state}' for kind, name, state in blocking)
+        rows.append(
+            {
+                'spec': spec,
+                'comparison_determinate': not blocking,
+                'blocking_candidate_count': len(blocking),
+                'blocking_candidates': _OVERLAP_JOIN.join(
+                    sorted(f'{kind}:{name}:{state}' for kind, name, state in blocking)
+                ),
+                'reason': f'candidate comparison indeterminate — {named}' if blocking else '',
+                'gate_overlap_count': len(shared),
+                'max_shared_file_count': max_shared,
+                'overlap_prompt_required': max_shared >= OVERLAP_PROMPT_MIN_SHARED_FILES,
+            }
+        )
+    return rows
 
 
 def _gate_exclusion_reason(path: Path, record: dict[str, Any] | None, facts: _EpicGateFacts) -> str | None:
@@ -4338,12 +4403,16 @@ def _live_candidate_state(record: dict[str, Any]) -> str:
 
 
 def _candidate_indeterminate_reason(tally: dict[str, dict[str, int]]) -> str:
-    """The shortfall reason a blocked ``next`` admission names, derived from the tally.
+    """The epic-wide shortfall reason of the launch verdict, derived from a per-kind tally.
 
-    The empty string when every candidate declared a comparable surface. A
-    non-empty reason is the enforcement point's evidence: it names which kinds
-    contributed which non-contributing state, so a refused admission says WHY
-    rather than only refusing.
+    The caller passes the GATE tally, so the reason speaks about gate
+    candidates only: a spec left out of the gate population contributes
+    nothing to it, whatever its surface. The empty string when every gate
+    candidate declared a comparable surface. A non-empty reason names which
+    kinds contributed which non-contributing state and how many, so the
+    epic-wide verdict says WHY it is false. The per-candidate reason, which
+    names the blocking candidates themselves, is the ``reason`` column of
+    ``spec_comparisons``.
 
     Derived rather than composed by its reader — the enforcement site is a
     workflow doc, and a reason an LLM assembles from a count is a reason that
@@ -4415,13 +4484,26 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
     negative, and the payload names that rule in
     ``candidate_governing_authority``.
 
-    That reading is published as a VERDICT rather than left to its reader:
-    ``candidate_comparison_determinate`` is true only when the whole candidate
-    population was comparable, and ``candidate_indeterminate_reason`` names what
-    was not. The ``next`` admission rule consumes the verdict as a third
-    conjunct alongside the candidate's own declarative surface and the absence
-    of an overlap row, so an indeterminate comparison refuses rather than
-    admitting on an unexamined population.
+    The launch verdict is published per candidate rather than left to its
+    reader. ``spec_comparisons`` carries one row per own spec file
+    (``specs_total`` rows, an unreadable own spec included), built by
+    :func:`_spec_comparison_rows`: ``comparison_determinate`` is true when no
+    gate candidate other than the spec itself is indeterminate or unreadable,
+    ``blocking_candidates`` and ``reason`` name the ones that are, and the
+    overlap columns state how many files the spec shares with the gate
+    candidate it overlaps most and whether that reaches
+    :data:`OVERLAP_PROMPT_MIN_SHARED_FILES`. ``gate_overlap_matches`` is the
+    subset of ``file_overlap_matches`` whose candidate is a gate candidate, row
+    for row. The ``next`` admission rule reads the candidate's own row, so one
+    indeterminate spec refuses only the candidates it was not compared against
+    and a candidate is never admitted on a comparison that did not happen.
+
+    ``candidate_comparison_determinate`` is the epic-wide roll-up of those
+    rows: true exactly when ``gate_candidates_indeterminate`` is zero, in which
+    case every row is determinate. ``candidate_indeterminate_reason`` names the
+    gate candidates that were not comparable, per kind and state, and is empty
+    exactly when the roll-up is true. ``candidates_indeterminate`` keeps its
+    scan-population meaning and decides nothing.
 
     Reports candidates and applies nothing: superseding is the workflow doc's
     inline, ledger-writing act, and no spec file is ever deleted.
@@ -4461,7 +4543,7 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
         state = _spec_candidate_state(record)
         candidate_population[CANDIDATE_KIND_CORPUS_SPEC] += 1
         candidate_tally[CANDIDATE_KIND_CORPUS_SPEC][state] += 1
-        gate.count(CANDIDATE_KIND_CORPUS_SPEC, state, _gate_exclusion_reason(path, record, own_facts))
+        gate.count(CANDIDATE_KIND_CORPUS_SPEC, path.name, state, _gate_exclusion_reason(path, record, own_facts))
         if record is None:
             unreadable.append({'spec': path.name, 'error': 'unreadable'})
         else:
@@ -4475,18 +4557,16 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
         for path in _spec_paths(sibling_root):
             record = _spec_record(sibling_root.name, path, repo_root)
             state = _spec_candidate_state(record)
+            name = f'{sibling_root.name}/{path.name}'
             candidate_population[CANDIDATE_KIND_SIBLING_EPIC_SPEC] += 1
             candidate_tally[CANDIDATE_KIND_SIBLING_EPIC_SPEC][state] += 1
-            gate.count(CANDIDATE_KIND_SIBLING_EPIC_SPEC, state, _gate_exclusion_reason(path, record, sibling_facts))
+            gate.count(
+                CANDIDATE_KIND_SIBLING_EPIC_SPEC, name, state, _gate_exclusion_reason(path, record, sibling_facts)
+            )
             if record is None:
-                unreadable.append({'spec': f'{sibling_root.name}/{path.name}', 'error': 'unreadable'})
+                unreadable.append({'spec': name, 'error': 'unreadable'})
             else:
-                candidates.append(
-                    (
-                        CANDIDATE_KIND_SIBLING_EPIC_SPEC,
-                        {**record, 'name': f'{sibling_root.name}/{path.name}'},
-                    )
-                )
+                candidates.append((CANDIDATE_KIND_SIBLING_EPIC_SPEC, {**record, 'name': name}))
     live, excluded_sentinel_plan_count = _live_plan_records()
     for record in live:
         state = _live_candidate_state(record)
@@ -4494,7 +4574,7 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
         candidate_tally[CANDIDATE_KIND_LIVE_PLAN][state] += 1
         # A live plan is in flight by definition, so every one is a gate
         # candidate and none is ever counted under an exclusion reason.
-        gate.count(CANDIDATE_KIND_LIVE_PLAN, state, None)
+        gate.count(CANDIDATE_KIND_LIVE_PLAN, record['name'], state, None)
     candidates.extend((CANDIDATE_KIND_LIVE_PLAN, record) for record in live)
     origin_matches: list[dict[str, Any]] = []
     overlap_matches: list[dict[str, Any]] = []
@@ -4548,14 +4628,23 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
     live_checked_and_clean = sorted(
         record['name'] for record in live_comparable_records if record['name'] not in live_matched_names
     )
-    # Hoisted out of the payload literal because the determinacy VERDICT and the
-    # shortfall REASON are both derived from the same count, and the ``next``
-    # admission rule consults the verdict rather than re-deriving the comparison
-    # from the tally. Publishing it as a named field is what lets that rule be a
-    # field read instead of arithmetic performed at the enforcement site.
+    # The scan-population roll-up: how many candidates the cross-check read
+    # without getting a comparable surface. It describes the scan and decides
+    # nothing — the launch verdict below is derived from the gate population.
     candidates_indeterminate = sum(
         candidate_tally[kind][state] for kind in CANDIDATE_KINDS for state in CANDIDATE_NON_CONTRIBUTING_STATES
     )
+    # The gate-population roll-up, hoisted because the epic-wide verdict and its
+    # reason are both derived from it.
+    gate_candidates_indeterminate = sum(
+        gate.states[kind][state] for kind in CANDIDATE_KINDS for state in CANDIDATE_NON_CONTRIBUTING_STATES
+    )
+    # The overlap rows the launch gate reads: the subset of the full overlap
+    # list whose candidate is a gate candidate, each row identical to its source
+    # row. The full list stays the duplicate-work read's input.
+    gate_keys = {(kind, name) for kind, name, _ in gate.members}
+    gate_overlap_matches = [row for row in overlap_matches if (row['candidate_kind'], row['candidate']) in gate_keys]
+    spec_comparisons = _spec_comparison_rows([path.name for path in own_paths], gate, gate_overlap_matches)
     return {
         'status': 'success',
         'operation': 'corpus-cross-check',
@@ -4644,18 +4733,25 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
             for kind in CANDIDATE_KINDS
             for state in CANDIDATE_DERIVATION_STATES
         ],
-        'gate_candidates_indeterminate': sum(
-            gate.states[kind][state] for kind in CANDIDATE_KINDS for state in CANDIDATE_NON_CONTRIBUTING_STATES
-        ),
-        # The ``next`` admission rule's third conjunct, published as a VERDICT so
-        # the enforcement site reads a field instead of re-deriving it. Without
-        # it a declarative spec with no overlap row was admitted while another
-        # candidate had never been comparable at all — admission on an
-        # unexamined population, the measured-zero-versus-unmeasured conflation
-        # the rest of this payload exists to prevent. Fails closed: the verdict
-        # is true only when the whole candidate population was comparable.
-        'candidate_comparison_determinate': candidates_indeterminate == 0,
-        'candidate_indeterminate_reason': _candidate_indeterminate_reason(candidate_tally),
+        'gate_candidates_indeterminate': gate_candidates_indeterminate,
+        # The launch verdict, per candidate: one row per own spec file, stating
+        # whether THAT spec was compared against every gate candidate other than
+        # itself, which candidates it was not compared against and why, and how
+        # many files it shares with the gate candidate it overlaps most. The
+        # ``next`` admission rule reads the candidate's own row, so a field read
+        # replaces arithmetic at the enforcement site. ``gate_overlap_matches``
+        # is the overlap evidence those rows were computed from.
+        'spec_comparisons': spec_comparisons,
+        'gate_overlap_matches': gate_overlap_matches,
+        # The epic-wide roll-up of the rows above, kept for a reader that wants
+        # one answer for the whole corpus. It is true exactly when no gate
+        # candidate is indeterminate, and then every row is determinate; the
+        # reason is derived from the same gate tally, so it is empty exactly
+        # when the verdict is true. Fails closed: an indeterminate gate
+        # candidate makes it false even where no row names that candidate — a
+        # corpus whose only own spec is the indeterminate one, or an empty one.
+        'candidate_comparison_determinate': gate_candidates_indeterminate == 0,
+        'candidate_indeterminate_reason': _candidate_indeterminate_reason(gate.states),
         'source_origin_match_count': len(origin_matches),
         'source_origin_matches': origin_matches,
         'file_overlap_match_count': len(overlap_matches),

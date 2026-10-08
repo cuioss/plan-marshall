@@ -2684,6 +2684,14 @@ class TestCrossCheckPublishesTheComparedPopulation:
         )
         assert result['specs_indeterminate'] == 2
         assert result['compared_path_count'] == 0
+        # Both specs sit on staged rows, so the scan counts them as
+        # indeterminate candidates while the gate leaves both out by reason.
+        assert _candidate_tally(result)[(CANDIDATE_KIND_CORPUS_SPEC, CANDIDATE_INDETERMINATE)] == 2
+        assert _excluded_for(result, CANDIDATE_KIND_CORPUS_SPEC) == {
+            **_NO_EXCLUSION,
+            GATE_EXCLUDED_ROW_NOT_IN_FLIGHT: 2,
+        }
+        assert result['gate_candidates_indeterminate'] == 0
 
     def test_a_real_overlap_still_reports_with_a_non_empty_compared_population(self, plan_context):
         # Matched positive control: the counts above must not be green merely
@@ -2907,10 +2915,10 @@ class TestCrossCheckPublishesTheCandidatePopulation:
     def test_an_indeterminate_candidate_refuses_the_determinacy_verdict(self, plan_context):
         """The ENFORCEMENT half: publishing the count never blocked anything.
 
-        The ``next`` admission rule reads this verdict as its third conjunct, so
-        an indeterminate candidate has to make it false — otherwise a
+        The ``next`` admission rule reads the candidate's own comparison row, so
+        an indeterminate GATE candidate has to make that row false — otherwise a
         declarative spec with no overlap row is admitted while part of the
-        comparison never happened.
+        comparison never happened. The epic-wide roll-up follows the rows.
         """
         _write_status(plan_context, [_row('PLAN-01')])
         _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
@@ -2918,23 +2926,28 @@ class TestCrossCheckPublishesTheCandidatePopulation:
 
         result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
-        assert result['candidates_indeterminate'] >= 1, 'the indeterminate candidate did not materialize'
+        assert result['gate_candidates_indeterminate'] == 1, 'the indeterminate gate candidate did not materialize'
         assert result['file_overlap_match_count'] == 0, (
             'the arm is only load-bearing where the overlap list is empty — that is the state a '
             'two-conjunct rule read as clean'
         )
+        assert [row['comparison_determinate'] for row in result['spec_comparisons']] == [False]
         assert result['candidate_comparison_determinate'] is False
 
     def test_the_refused_verdict_names_the_kind_and_state_behind_it(self, plan_context):
         """A refusal that says WHY, derived from the tally rather than composed.
 
-        Asserted against the tally in the same payload, so the reason is checked
-        against the rows it claims to summarise instead of against a literal.
+        Asserted against the GATE tally in the same payload, so the reason is
+        checked against the rows it claims to summarise instead of against a
+        literal. A third candidate — a readable, non-comparable sibling spec on
+        a shipped row — is in the scan tally and left out of the gate, so a
+        reason still derived from the scan tally would name a cell this one
+        must not.
         """
         _write_status(plan_context, [_row('PLAN-01')])
         _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
-        broken = _epic_dir(plan_context, SIBLING_SLUG) / 'plans' / 'PLAN-77-broken.md'
-        broken.parent.mkdir(parents=True, exist_ok=True)
+        broken = _epic_dir(plan_context, SIBLING_SLUG) / 'plans' / 'PLAN-78-broken.md'
+        _seed_gate_sibling(plan_context, 'shipped')
         broken.write_bytes(b'\xff\xfe \xff')
         _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[])
 
@@ -2942,7 +2955,14 @@ class TestCrossCheckPublishesTheCandidatePopulation:
         reason = result['candidate_indeterminate_reason']
 
         assert result['candidate_comparison_determinate'] is False
-        tally = _candidate_tally(result)
+        scan_tally = _candidate_tally(result)
+        tally = _gate_tally(result)
+        excluded_cell = (CANDIDATE_KIND_SIBLING_EPIC_SPEC, CANDIDATE_INDETERMINATE)
+        assert scan_tally[excluded_cell] == 1, 'the excluded sibling did not reach the scan tally'
+        assert tally[excluded_cell] == 0, 'the excluded sibling is still in the gate tally'
+        assert f'{excluded_cell[0]} {excluded_cell[1]}' not in reason, (
+            f'the reason {reason!r} names a candidate the gate left out'
+        )
         non_contributing = [
             (kind, state)
             for kind in CANDIDATE_KINDS
@@ -2968,7 +2988,9 @@ class TestCrossCheckPublishesTheCandidatePopulation:
         result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
         assert result['candidates_comparable'] >= 2, 'the comparable population did not materialize'
-        assert result['candidates_indeterminate'] == 0
+        assert _gate_population(result)[CANDIDATE_KIND_LIVE_PLAN] == 1, 'the gate population did not materialize'
+        assert result['gate_candidates_indeterminate'] == 0
+        assert [row['comparison_determinate'] for row in result['spec_comparisons']] == [True]
         assert result['candidate_comparison_determinate'] is True
         assert result['candidate_indeterminate_reason'] == '', (
             'a determinate comparison must name no shortfall — a non-empty reason beside a true '
@@ -2976,13 +2998,18 @@ class TestCrossCheckPublishesTheCandidatePopulation:
         )
 
     def test_the_verdict_and_the_roll_up_can_never_disagree(self, plan_context):
-        """One fact, two fields — pinned across both arms in one test.
+        """One fact, three readings — pinned across both arms in one test.
 
-        The admission site reads the verdict while a human reads the count, so a
-        payload in which they disagree misleads exactly one of them.
+        The admission site reads the candidate's row, a human reads the gate
+        count, and a whole-corpus reader reads the roll-up, so a payload in
+        which they disagree misleads at least one of them. A readable,
+        non-comparable sibling spec on a shipped row rides in both arms: it
+        keeps the SCAN count non-zero throughout, so an identity still written
+        against that count would fail the determinate arm.
         """
         _write_status(plan_context, [_row('PLAN-01')])
         _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _seed_gate_sibling(plan_context, 'shipped')
         _write_live_plan(plan_context, 'fixture-live-comparable', affected_files=[OTHER_PATH])
         determinate = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
@@ -2990,7 +3017,12 @@ class TestCrossCheckPublishesTheCandidatePopulation:
         indeterminate = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
         for payload in (determinate, indeterminate):
-            assert payload['candidate_comparison_determinate'] == (payload['candidates_indeterminate'] == 0)
+            assert payload['candidates_indeterminate'] >= 1, 'the excluded sibling did not reach the scan count'
+            assert payload['spec_comparisons'], 'the roll-up must be checked against a non-empty row set'
+            assert payload['candidate_comparison_determinate'] == (payload['gate_candidates_indeterminate'] == 0)
+            assert payload['candidate_comparison_determinate'] == all(
+                row['comparison_determinate'] for row in payload['spec_comparisons']
+            )
             assert bool(payload['candidate_indeterminate_reason']) is not payload['candidate_comparison_determinate']
         assert determinate['candidate_comparison_determinate'] is True
         assert indeterminate['candidate_comparison_determinate'] is False
@@ -3081,6 +3113,13 @@ class TestCrossCheckCandidateZeroStatesWhichZeroItIs:
         assert tally[(CANDIDATE_KIND_CORPUS_SPEC, CANDIDATE_COMPARABLE)] == 1
         assert tally[(CANDIDATE_KIND_CORPUS_SPEC, CANDIDATE_INDETERMINATE)] == 1
         assert tally[(CANDIDATE_KIND_CORPUS_SPEC, CANDIDATE_UNREADABLE)] == 0
+        # Both rows are staged: the scan tally above is unchanged by the gate,
+        # which leaves both specs out under ``row_not_in_flight``.
+        assert _excluded_for(result, CANDIDATE_KIND_CORPUS_SPEC) == {
+            **_NO_EXCLUSION,
+            GATE_EXCLUDED_ROW_NOT_IN_FLIGHT: 2,
+        }
+        assert _gate_population(result)[CANDIDATE_KIND_CORPUS_SPEC] == 0
 
 
 class TestCandidateTallyReportsUnobservedStatesAndStandsAlone:
@@ -3369,7 +3408,12 @@ class TestCrossCheckExcludesOwnDatedSnapshot:
         for field in ('file_overlap_matches', 'source_origin_matches'):
             from_snapshot = [row['candidate'] for row in result[field] if row['candidate'].startswith(prefix)]
             assert from_snapshot == [], f'{field} still carries rows scored against the snapshot'
-        assert result['candidates_indeterminate'] == 0, (
+        assert result['candidates_indeterminate'] == 0, "the snapshot's non-declarative spec was still scanned"
+        assert _gate_population(result)[CANDIDATE_KIND_SIBLING_EPIC_SPEC] == 0
+        assert _excluded_for(result, CANDIDATE_KIND_SIBLING_EPIC_SPEC) == _NO_EXCLUSION, (
+            'the snapshot is left out of the scan itself, so it is counted under no gate exclusion reason either'
+        )
+        assert result['gate_candidates_indeterminate'] == 0, (
             "the snapshot's non-declarative spec still holds the comparison indeterminate"
         )
         assert result['candidate_comparison_determinate'] is True
@@ -3537,7 +3581,9 @@ class TestCrossCheckExcludesTheSentinelPlanDirectory:
         ), 'the sentinel still contributes to the live-plan tally'
         assert result['live_indeterminate_plans'] == []
         assert result['live_plan_surfaces'] == []
-        assert result['candidates_indeterminate'] == 0, 'the sentinel still holds the comparison indeterminate'
+        assert result['candidates_indeterminate'] == 0, 'the sentinel was still scanned'
+        assert _gate_population(result)[CANDIDATE_KIND_LIVE_PLAN] == 0
+        assert result['gate_candidates_indeterminate'] == 0, 'the sentinel still holds the comparison indeterminate'
         assert result['candidate_comparison_determinate'] is True
 
     def test_a_real_unfootprinted_plan_beside_the_sentinel_is_still_indeterminate(self, plan_context):
@@ -3560,6 +3606,8 @@ class TestCrossCheckExcludesTheSentinelPlanDirectory:
         assert result['live_plan_surfaces'] == [{'plan': LIVE_PLAN_ID, 'comparable': False}]
         assert _candidate_population(result)[CANDIDATE_KIND_LIVE_PLAN] == 1
         assert _candidate_tally(result)[(CANDIDATE_KIND_LIVE_PLAN, CANDIDATE_INDETERMINATE)] == 1
+        assert _gate_tally(result)[(CANDIDATE_KIND_LIVE_PLAN, CANDIDATE_INDETERMINATE)] == 1
+        assert result['gate_candidates_indeterminate'] == 1
         assert result['candidate_comparison_determinate'] is False
 
     def test_a_store_without_the_sentinel_reports_a_stated_zero(self, plan_context):
@@ -3615,6 +3663,19 @@ def _gate_excluded(result: Any) -> dict:
     return {(row['candidate_kind'], row['reason']): row['count'] for row in result['gate_excluded']}
 
 
+def _gate_tally(result: Any) -> dict:
+    """``{(candidate_kind, derivation_status): count}`` over the gate population."""
+    return {
+        (row['candidate_kind'], row['derivation_status']): row['count']
+        for row in result['gate_candidate_derivation_states']
+    }
+
+
+def _comparisons(result: Any) -> dict:
+    """``{spec: row}`` over the per-spec comparison rows."""
+    return {row['spec']: row for row in result['spec_comparisons']}
+
+
 def _excluded_for(result: Any, kind: str) -> dict:
     """``{reason: count}`` for one candidate kind, over the WHOLE reason vocabulary."""
     excluded = _gate_excluded(result)
@@ -3637,15 +3698,20 @@ def _seed_gate_sibling(
     archived: bool = False,
     surface_lines: list | None = None,
     objective: str = 'Fixture objective.',
+    slug: str | None = None,
 ) -> Path:
     """Seed ONE sibling epic holding ONE spec on ONE row; return the epic tree.
 
     The spec is :data:`_PLANTED_SPEC` on row :data:`_GATE_ROW_ID`. With the
     default surface it declares nothing comparable, so whenever it is a gate
     candidate it is an indeterminate one — which is what makes
-    ``gate_candidates_indeterminate`` move with the gate decision.
+    ``gate_candidates_indeterminate`` move with the gate decision. ``slug``
+    names the epic when a fixture needs more than one sibling in a store root.
     """
-    epic_dir = _archived_epic_dir(plan_context, ARCHIVED_SLUG) if archived else _epic_dir(plan_context, SIBLING_SLUG)
+    if archived:
+        epic_dir = _archived_epic_dir(plan_context, slug or ARCHIVED_SLUG)
+    else:
+        epic_dir = _epic_dir(plan_context, slug or SIBLING_SLUG)
     _write_status(plan_context, [_row(_GATE_ROW_ID, status=status)], phase=phase, epic_dir=epic_dir)
     _write_spec(plan_context, _PLANTED_SPEC, epic_dir=epic_dir, surface_lines=surface_lines, objective=objective)
     return epic_dir
@@ -4049,6 +4115,251 @@ class TestGatePopulationReconcilesWithTheScan:
         assert _gate_population(launched)[CANDIDATE_KIND_SIBLING_EPIC_SPEC] == 1, (
             'the row status must have moved the gate population, or the equality above proves nothing'
         )
+
+
+# =============================================================================
+# corpus cross-check — the per-spec comparison rows
+# =============================================================================
+#
+# The launch verdict is one row per own spec. A row is refused by the gate
+# candidates THAT spec was not compared against — never by a spec the gate left
+# out, and never by the spec itself. Each refusal below therefore rides with the
+# fixture in which the same non-comparable candidate is sheltered by an
+# exclusion reason and refuses nothing.
+
+OVERLAP_PROMPT_MIN_SHARED_FILES = _orch.OVERLAP_PROMPT_MIN_SHARED_FILES
+
+#: The columns one ``spec_comparisons[]`` row carries.
+_COMPARISON_COLUMNS = {
+    'spec',
+    'comparison_determinate',
+    'blocking_candidate_count',
+    'blocking_candidates',
+    'reason',
+    'gate_overlap_count',
+    'max_shared_file_count',
+    'overlap_prompt_required',
+}
+
+_CLOSED_SIBLING_SLUG = 'fixture-closed-epic'
+
+#: A surface the reader classifies ``derived`` — read, and not comparable.
+_DERIVED_SURFACE = ['- DERIVED from the plans this one supersedes.']
+
+
+def _blocking(row: dict) -> list:
+    """The ``{kind}:{name}:{state}`` entries one row names, as a list."""
+    joined = row['blocking_candidates']
+    return joined.split(_orch._OVERLAP_JOIN) if joined else []
+
+
+def _entry(kind: str, name: str, state: str) -> str:
+    return f'{kind}:{name}:{state}'
+
+
+def _seed_two_own_specs(plan_context) -> None:
+    """Two declarative own specs on staged rows — neither is a gate candidate."""
+    _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+    _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+    _write_spec(plan_context, 'PLAN-02-beta.md', surface_lines=_surface(OTHER_PATH))
+
+
+def _seed_sheltered_siblings(plan_context) -> Path:
+    """Three readable, non-comparable sibling specs, each left out of the gate.
+
+    One on a terminal row in an open active epic, one on an in-flight row in a
+    closed active epic, one on an in-flight row under the archived root. Returns
+    the archived epic tree, whose spec the unreadable variant breaks.
+    """
+    _seed_two_own_specs(plan_context)
+    _seed_gate_sibling(plan_context, 'shipped')
+    _seed_gate_sibling(
+        plan_context, 'launched', phase='closed', slug=_CLOSED_SIBLING_SLUG, surface_lines=_DERIVED_SURFACE
+    )
+    return _seed_gate_sibling(plan_context, 'launched', archived=True)
+
+
+def _seed_sheltered_siblings_with_one_unreadable(plan_context) -> None:
+    archived_dir = _seed_sheltered_siblings(plan_context)
+    (archived_dir / 'plans' / _PLANTED_SPEC).write_bytes(_UNDECODABLE)
+
+
+def _seed_one_in_flight_sibling(plan_context) -> None:
+    _seed_two_own_specs(plan_context)
+    _seed_gate_sibling(plan_context, 'launched')
+
+
+#: ``(id, fixture builder, roll-up)`` — the fixtures the row/roll-up identity is
+#: asserted over, spanning both values of the verdict.
+_ROLL_UP_FIXTURES = (
+    ('sheltered-siblings', _seed_sheltered_siblings, True),
+    ('archived-sibling-unreadable', _seed_sheltered_siblings_with_one_unreadable, False),
+    ('in-flight-sibling', _seed_one_in_flight_sibling, False),
+)
+assert _ROLL_UP_FIXTURES, '_ROLL_UP_FIXTURES must not be empty'
+assert {case[2] for case in _ROLL_UP_FIXTURES} == {True, False}, 'the identity must be asserted over both verdicts'
+
+
+class TestSpecComparisonRows:
+    """One row per own spec, refused only by the gate candidates it was not compared against."""
+
+    def test_the_prompt_threshold_is_two_shared_files(self):
+        assert OVERLAP_PROMPT_MIN_SHARED_FILES == 2
+
+    def test_every_row_carries_the_declared_columns(self, plan_context):
+        _seed_two_own_specs(plan_context)
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert [row['spec'] for row in result['spec_comparisons']] == ['PLAN-01-alpha.md', 'PLAN-02-beta.md']
+        for row in result['spec_comparisons']:
+            assert set(row) == _COMPARISON_COLUMNS
+
+    def test_an_in_flight_non_comparable_sibling_refuses_every_own_row(self, plan_context):
+        _seed_one_in_flight_sibling(plan_context)
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        name = f'{SIBLING_SLUG}/{_PLANTED_SPEC}'
+        rows = result['spec_comparisons']
+        assert len(rows) == 2, 'the own corpus did not materialize'
+        for row in rows:
+            assert row['comparison_determinate'] is False
+            assert row['blocking_candidate_count'] == 1
+            assert _blocking(row) == [_entry(CANDIDATE_KIND_SIBLING_EPIC_SPEC, name, CANDIDATE_INDETERMINATE)]
+            assert name in row['reason']
+            assert CANDIDATE_INDETERMINATE in row['reason']
+        assert result['candidate_comparison_determinate'] is False
+
+    def test_readable_non_comparable_siblings_left_out_of_the_gate_refuse_nothing(self, plan_context):
+        _seed_sheltered_siblings(plan_context)
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert _candidate_tally(result)[(CANDIDATE_KIND_SIBLING_EPIC_SPEC, CANDIDATE_INDETERMINATE)] == 3, (
+            'the control needs three siblings the scan could not compare'
+        )
+        assert _excluded_for(result, CANDIDATE_KIND_SIBLING_EPIC_SPEC) == {
+            GATE_EXCLUDED_EPIC_ARCHIVED: 1,
+            GATE_EXCLUDED_EPIC_CLOSED: 1,
+            GATE_EXCLUDED_ROW_TERMINAL: 1,
+            GATE_EXCLUDED_ROW_NOT_IN_FLIGHT: 0,
+        }
+        rows = result['spec_comparisons']
+        assert len(rows) == 2, 'the own corpus did not materialize'
+        for row in rows:
+            assert row['comparison_determinate'] is True
+            assert row['blocking_candidate_count'] == 0
+            assert row['blocking_candidates'] == ''
+        assert result['candidate_comparison_determinate'] is True
+
+    def test_an_unreadable_archived_sibling_spec_refuses_every_own_row(self, plan_context):
+        # The same fixture as the control above with ONE spec made unreadable:
+        # the archived location shelters a readable spec, never an unreadable one.
+        _seed_sheltered_siblings_with_one_unreadable(plan_context)
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        name = f'{ARCHIVED_SLUG}/{_PLANTED_SPEC}'
+        rows = result['spec_comparisons']
+        assert len(rows) == 2, 'the own corpus did not materialize'
+        for row in rows:
+            assert row['comparison_determinate'] is False
+            assert _blocking(row) == [_entry(CANDIDATE_KIND_SIBLING_EPIC_SPEC, name, CANDIDATE_UNREADABLE)]
+        assert result['candidate_comparison_determinate'] is False
+
+    @pytest.mark.parametrize(
+        ('seed', 'roll_up'),
+        [case[1:] for case in _ROLL_UP_FIXTURES],
+        ids=[case[0] for case in _ROLL_UP_FIXTURES],
+    )
+    def test_the_roll_up_is_the_conjunction_of_the_rows(self, plan_context, seed, roll_up):
+        seed(plan_context)
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        rows = result['spec_comparisons']
+        assert rows, 'a conjunction over no rows would hold vacuously'
+        assert result['candidate_comparison_determinate'] is roll_up
+        assert result['candidate_comparison_determinate'] == all(row['comparison_determinate'] for row in rows)
+        assert result['candidate_comparison_determinate'] == (result['gate_candidates_indeterminate'] == 0)
+        assert (result['candidate_indeterminate_reason'] == '') == result['candidate_comparison_determinate']
+        for row in rows:
+            assert (row['reason'] == '') == row['comparison_determinate']
+            assert (row['blocking_candidate_count'] == 0) == row['comparison_determinate']
+
+    def test_an_unreadable_own_spec_has_a_row_and_never_names_itself(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02'), _row('PLAN-03')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        broken = _write_spec(plan_context, 'PLAN-02-broken.md')
+        broken.write_bytes(_UNDECODABLE)
+        _write_spec(plan_context, 'PLAN-03-gamma.md', surface_lines=_surface(OTHER_PATH))
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        rows = _comparisons(result)
+        assert result['specs_total'] == 3, 'the own corpus did not materialize'
+        assert len(result['spec_comparisons']) == result['specs_total']
+        entry = _entry(CANDIDATE_KIND_CORPUS_SPEC, 'PLAN-02-broken.md', CANDIDATE_UNREADABLE)
+        for spec in ('PLAN-01-alpha.md', 'PLAN-03-gamma.md'):
+            assert _blocking(rows[spec]) == [entry]
+            assert rows[spec]['comparison_determinate'] is False
+        assert _blocking(rows['PLAN-02-broken.md']) == [], 'a spec is never its own blocking candidate'
+        assert rows['PLAN-02-broken.md']['comparison_determinate'] is True
+
+    def test_two_staged_own_specs_do_not_refuse_each_other(self, plan_context):
+        # One of the two declares nothing comparable. It is refused on its own
+        # account by the surface conjunct; it does not refuse the other one.
+        _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_spec(plan_context, 'PLAN-02-beta.md')
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert _candidate_tally(result)[(CANDIDATE_KIND_CORPUS_SPEC, CANDIDATE_INDETERMINATE)] == 1, (
+            'the control needs one own spec the scan could not compare'
+        )
+        assert sum(_gate_population(result).values()) == 0, 'the control needs an empty gate population'
+        assert [row['comparison_determinate'] for row in result['spec_comparisons']] == [True, True]
+        assert result['candidate_comparison_determinate'] is True
+
+
+class TestGateOverlapMatches:
+    """The gate reads the overlap rows whose candidate is a gate candidate, row for row."""
+
+    def test_an_overlap_with_a_spec_on_a_shipped_row_stays_out_of_the_gate_rows(self, plan_context):
+        _seed_queried_epic(plan_context)
+        _seed_gate_sibling(plan_context, 'shipped', surface_lines=_surface(SHARED_PATH))
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        name = f'{SIBLING_SLUG}/{_PLANTED_SPEC}'
+        assert [row['candidate'] for row in result['file_overlap_matches']] == [name], (
+            'the overlap must still reach the full list the duplicate-work read uses'
+        )
+        assert result['gate_overlap_matches'] == []
+        row = _comparisons(result)['PLAN-01-alpha.md']
+        assert row['gate_overlap_count'] == 0
+        assert row['max_shared_file_count'] == 0
+        assert row['overlap_prompt_required'] is False
+
+    def test_the_same_overlap_on_a_launched_row_is_a_gate_row(self, plan_context):
+        # Matched control: the subset is decided by the gate, not always empty.
+        _seed_queried_epic(plan_context)
+        _seed_gate_sibling(plan_context, 'launched', surface_lines=_surface(SHARED_PATH))
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[OTHER_PATH])
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert result['gate_overlap_matches'], 'the gate overlap row did not materialize'
+        for gate_row in result['gate_overlap_matches']:
+            assert gate_row in result['file_overlap_matches'], 'a gate row must be identical to its source row'
+        assert [row['candidate'] for row in result['gate_overlap_matches']] == [f'{SIBLING_SLUG}/{_PLANTED_SPEC}']
+        row = _comparisons(result)['PLAN-01-alpha.md']
+        assert row['gate_overlap_count'] == 1
+        assert row['max_shared_file_count'] == 1
+        assert row['overlap_prompt_required'] is False, 'a single shared file never fires the prompt'
+        assert row['comparison_determinate'] is True, 'a comparable overlapping candidate does not block'
 
 
 class TestCorpusSurfacesRefusals:
