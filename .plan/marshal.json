@@ -85,9 +85,6 @@
         "project:finalize-step-lessons-housekeeping": {
           "lane": "minimal"
         },
-        "default:finalize-step-simplify": {
-          "lane": "standard"
-        },
         "project:finalize-step-plugin-doctor": {
           "lane": "standard"
         },
@@ -186,7 +183,8 @@
         "post-run-review": "level-5"
       },
       "removed_steps": [
-        "project:finalize-step-era-stamp-fill"
+        "project:finalize-step-era-stamp-fill",
+        "default:finalize-step-simplify"
       ]
     },
     "finding_raw_input_max_bytes": 65536
@@ -370,7 +368,7 @@
       "no_plan_body_days": 7,
       "build_results_days": 5
     },
-    "provisioned_version": "0.1.1818",
-    "config_seed_fingerprint": "28c7d1c8"
+    "provisioned_version": "0.1.1864",
+    "config_seed_fingerprint": "605fa294"
   }
 }
