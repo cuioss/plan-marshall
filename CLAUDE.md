@@ -18,7 +18,7 @@ Working branches MUST use one of exactly three canonical prefixes (the set is cl
 
 The set is the convention because `.github/workflows/python-verify.yml` restricts its **push-triggered** runs to `main`, `feature/*`, `fix/*`, `chore/*`, and `dependabot/**`; a branch with any other prefix gets no push build. That branch filter governs the `push:` trigger only — the `pull_request:` trigger filters on the **base** branch (`main`), so a PR from any head branch is still verified and still produces the required `verify / conclusion` check. The `docs/` prefix is retired — use `chore/` for documentation-only changes.
 
-`python-verify.yml` opts in to a footprint gate (`skip-on-docs-only: true`): a docs-only change (no buildable source) skips the heavy pyprojectx build while the required `verify / conclusion` check still reports green, so the merge queue admits it without stalling. See `.github/workflows/python-verify.yml` for the non-building path set and the exact skip mechanics.
+`python-verify.yml` opts in to a footprint gate (`skip-on-docs-only: true`): a docs-only change (no buildable source) skips the heavy pyprojectx build on `pull_request` and `merge_group` runs alike while the required `verify / conclusion` check still reports green, so the merge queue admits it without stalling. Test-input paths (`.plan/marshal.json`, `.claude/**`, `marketplace/**/*.md`, `test/**/*.md`) are passed via `extra-buildable` to force a verify build even when only docs/config files change. See `.github/workflows/python-verify.yml` for the non-building path set and the exact skip mechanics.
 
 ## Commit Trailer
 
