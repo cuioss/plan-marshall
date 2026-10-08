@@ -305,7 +305,7 @@ watches_added: {N}
 emitted[E]{plan,command}:
   PLAN-NN,/plan-marshall task="implement .plan/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md"
 shortfall[S]{plan,reason}:
-  PLAN-MM,"overlaps {surface} with PLAN-KK"
+  PLAN-MM,"shares {paths} with PLAN-KK — declined by the operator"
 resume_anchor: "{next action}"
 ```
 

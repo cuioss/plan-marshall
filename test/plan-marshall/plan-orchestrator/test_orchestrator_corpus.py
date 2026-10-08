@@ -75,6 +75,13 @@ an Expected Surface list that still yields every declared path, and a
 ``--claim-index`` that still addresses the intended bullet rather than a line
 inside a fenced example.
 
+A doc-contract group ties the documents that state the launch-gate contract to
+the code: Step 4 of ``orchestrate.md`` names the candidate's own comparison row,
+``SKILL.md`` § ``corpus cross-check`` names every key the handler returns, the
+reading contract names every exclusion reason, and no site still states the
+superseded rule that an overlapping plan is always sequenced. Each of those
+checks has a control that removes the key or restores the phrase.
+
 Non-vacuity is guarded on three fronts rather than assumed: the
 fixture-materialization guard below fails loudly when the fixture epic did not
 land on disk; the single-implementation guard enumerates the marketplace Python
@@ -6262,6 +6269,298 @@ class TestReportShapeRowsAreSynchronizedWithItsDeclaringTuples:
             f'{sorted(set(emitted_pairs) - set(documented_pairs))}, only in the document '
             f'{sorted(set(documented_pairs) - set(emitted_pairs))}'
         )
+
+
+# =============================================================================
+# The per-candidate gate contract, as the documents state it
+# =============================================================================
+#
+# Three documents restate what ``corpus cross-check`` publishes for the launch
+# gate, and one further set of files states what happens to an overlapping
+# candidate. Each check below reads the shipped document and compares it against
+# the code or the payload, and each carries a control that removes or restores
+# the thing it looks for — a check that could not fail would pin nothing.
+
+_ORCHESTRATOR_SKILL_DOC = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-orchestrator' / 'SKILL.md'
+
+#: The sub-headings the three contract sections sit under. A ``###`` heading does
+#: not start with ``'## '``, so both stop prefixes are named.
+_CROSS_CHECK_HEADING = '### corpus cross-check'
+_READING_CONTRACT_HEADING = "### The gate's reading contract"
+_PARALLELIZATION_HEADING = '## Parallelization by Surface Disjointness'
+_CONTRACT_SECTION_STOPS = ('## ', '### ')
+
+#: The Step 4 heading is located by its prefix, because the rest of it carries
+#: typographic characters a transcribed copy would get wrong.
+_STEP_4_HEADING_PREFIX = '### Step 4 '
+
+#: The fields of the candidate's own row that Step 4 decides on.
+_STEP_4_ROW_FIELDS = ('spec_comparisons', 'comparison_determinate', 'overlap_prompt_required')
+
+
+def _contract_section(doc: Path, heading: str) -> str:
+    """Return one heading-bounded section of ``doc`` as a single string."""
+    return '\n'.join(section_lines(doc.read_text(encoding='utf-8'), heading, stop_prefixes=_CONTRACT_SECTION_STOPS))
+
+
+def _step_4_section() -> str:
+    """Return Step 4 of ``orchestrate.md``, located by its heading prefix."""
+    text = _ORCHESTRATE_DOC.read_text(encoding='utf-8')
+    headings = [line.strip() for line in text.splitlines() if line.startswith(_STEP_4_HEADING_PREFIX)]
+    assert len(headings) == 1, (
+        f'{len(headings)} heading(s) in {_ORCHESTRATE_DOC.name} start with {_STEP_4_HEADING_PREFIX!r} — '
+        'expected exactly one'
+    )
+    return _contract_section(_ORCHESTRATE_DOC, headings[0])
+
+
+def _undocumented_keys(keys: Any, section: str) -> list[str]:
+    """Return the members of ``keys`` that ``section`` does not name, sorted.
+
+    A key is named when it appears as a whole backticked token, with or without
+    the ``[]`` suffix the documents write on a list. Matching the whole token is
+    what keeps a key from being found inside a longer one: ``governing_authority``
+    is not named by a section that names only ``candidate_governing_authority``.
+    """
+    return sorted(key for key in keys if re.search(rf'`{re.escape(key)}(?:\[\])?`', section) is None)
+
+
+def _without_token(section: str, key: str) -> str:
+    """Return ``section`` with every backticked occurrence of ``key`` removed."""
+    return re.sub(rf'`{re.escape(key)}(?:\[\])?`', '', section)
+
+
+def _cross_check_fixture_payload(plan_context) -> Any:
+    """Run ``corpus cross-check`` over one own spec and one overlapping live plan."""
+    _write_status(plan_context, [_row('PLAN-01')])
+    _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+    _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[SHARED_PATH])
+    result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+    assert result['status'] == 'success', f'the fixture call did not succeed: {result}'
+    return result
+
+
+class TestStep4ReadsTheCandidatesOwnRow:
+    """Step 4 of ``orchestrate.md`` decides on the candidate's own comparison row."""
+
+    def test_step_4_names_the_row_and_the_two_fields_it_decides_on(self):
+        section = _step_4_section()
+
+        assert _undocumented_keys(_STEP_4_ROW_FIELDS, section) == [], (
+            f'Step 4 of {_ORCHESTRATE_DOC.name} does not name '
+            f'{_undocumented_keys(_STEP_4_ROW_FIELDS, section)} of the {len(_STEP_4_ROW_FIELDS)} row fields '
+            'the admission test reads'
+        )
+
+    @pytest.mark.parametrize('field', _STEP_4_ROW_FIELDS)
+    def test_a_field_removed_from_step_4_is_reported(self, field):
+        # The control for the check above: the same section with one field taken
+        # out must be reported as missing exactly that field.
+        assert _undocumented_keys(_STEP_4_ROW_FIELDS, _without_token(_step_4_section(), field)) == [field]
+
+
+class TestCrossCheckSectionDocumentsThePayload:
+    """``SKILL.md`` § ``corpus cross-check`` names every key the handler returns."""
+
+    def test_every_top_level_payload_key_is_documented(self, plan_context):
+        result = _cross_check_fixture_payload(plan_context)
+        section = _contract_section(_ORCHESTRATOR_SKILL_DOC, _CROSS_CHECK_HEADING)
+
+        undocumented = _undocumented_keys(result, section)
+
+        assert undocumented == [], (
+            f'{len(undocumented)} of the {len(result)} top-level key(s) the handler returned are not named in '
+            f'{_ORCHESTRATOR_SKILL_DOC.name} § {_CROSS_CHECK_HEADING!r}: {undocumented}'
+        )
+
+    def test_the_gate_keys_are_among_the_keys_the_handler_returns(self, plan_context):
+        # Guards the check above against a payload that stopped carrying the gate
+        # keys: it compares whatever the handler returns, so a key the handler
+        # dropped would leave the documentation check green and say nothing.
+        result = _cross_check_fixture_payload(plan_context)
+        gate_keys = {
+            'gate_population',
+            'gate_excluded',
+            'gate_excluded_total',
+            'gate_candidate_derivation_states',
+            'gate_candidates_indeterminate',
+            'spec_comparisons',
+            'gate_overlap_matches',
+        }
+
+        assert gate_keys <= set(result), f'the handler no longer returns {sorted(gate_keys - set(result))}'
+
+    def test_every_row_column_of_the_two_per_candidate_lists_is_documented(self, plan_context):
+        result = _cross_check_fixture_payload(plan_context)
+        section = _contract_section(_ORCHESTRATOR_SKILL_DOC, _CROSS_CHECK_HEADING)
+        assert result['spec_comparisons'] and result['live_plan_surfaces'], (
+            'the fixture produced no spec_comparisons or live_plan_surfaces row, so no column was checked'
+        )
+        columns = set(result['spec_comparisons'][0]) | {'surface_source'}
+        assert 'surface_source' in result['live_plan_surfaces'][0]
+
+        undocumented = _undocumented_keys(columns, section)
+
+        assert undocumented == [], (
+            f'{len(undocumented)} of {len(columns)} row column(s) are not named in '
+            f'{_ORCHESTRATOR_SKILL_DOC.name} § {_CROSS_CHECK_HEADING!r}: {undocumented}'
+        )
+
+    @pytest.mark.parametrize('key', ['gate_excluded', 'spec_comparisons', 'surface_source', 'governing_authority'])
+    def test_a_key_removed_from_the_section_is_reported(self, key):
+        # ``governing_authority`` is the case a substring match would miss: the
+        # section still names ``candidate_governing_authority`` after the removal.
+        section = _without_token(_contract_section(_ORCHESTRATOR_SKILL_DOC, _CROSS_CHECK_HEADING), key)
+
+        assert _undocumented_keys([key], section) == [key]
+
+
+class TestReadingContractNamesEveryExclusionReason:
+    """The reading contract restates ``GATE_EXCLUSION_REASONS``."""
+
+    def test_every_exclusion_reason_is_named(self):
+        section = _contract_section(_ORCHESTRATION_MODEL_DOC, _READING_CONTRACT_HEADING)
+
+        assert _undocumented_keys(GATE_EXCLUSION_REASONS, section) == [], (
+            f'{_ORCHESTRATION_MODEL_DOC.name} § {_READING_CONTRACT_HEADING!r} does not name '
+            f'{_undocumented_keys(GATE_EXCLUSION_REASONS, section)} of the {len(GATE_EXCLUSION_REASONS)} '
+            'declared exclusion reasons'
+        )
+
+    @pytest.mark.parametrize('reason', GATE_EXCLUSION_REASONS)
+    def test_a_reason_removed_from_the_section_is_reported(self, reason):
+        section = _without_token(_contract_section(_ORCHESTRATION_MODEL_DOC, _READING_CONTRACT_HEADING), reason)
+
+        assert _undocumented_keys(GATE_EXCLUSION_REASONS, section) == [reason]
+
+
+# --- the superseded overlap rule ---------------------------------------------
+#
+# The rule that an overlapping plan is always sequenced and never emitted was
+# stated at ten sites in eight files. One case per file-and-phrase pair: a site
+# that stated the rule in several phrases, or a phrase stated in two files,
+# yields one case each.
+
+_SKILLS_DIR = 'marketplace/bundles/plan-marshall/skills'
+_SUPERSEDED_MODEL = f'{_SKILLS_DIR}/persona-plan-orchestrator/standards/orchestration-model.md'
+_SUPERSEDED_PERSONA = f'{_SKILLS_DIR}/persona-plan-orchestrator/SKILL.md'
+_SUPERSEDED_ORCHESTRATE = f'{_SKILLS_DIR}/plan-orchestrator/workflow/orchestrate.md'
+_SUPERSEDED_ANALYZE = f'{_SKILLS_DIR}/plan-orchestrator/workflow/analyze.md'
+_SUPERSEDED_API_REFERENCE = f'{_SKILLS_DIR}/manage-config/standards/api-reference.md'
+_SUPERSEDED_DATA_MODEL = f'{_SKILLS_DIR}/manage-config/standards/data-model.md'
+_SUPERSEDED_MARSHAL_JSON = f'{_SKILLS_DIR}/extension-api/standards/marshal-json-reference.md'
+_SUPERSEDED_CONFIG_DEFAULTS = f'{_SKILLS_DIR}/manage-config/scripts/_config_defaults.py'
+
+_SUPERSEDED_WORDING: list[tuple[str, str]] = [
+    (_SUPERSEDED_MODEL, 'surfaces do not overlap'),
+    (_SUPERSEDED_MODEL, 'overlapping plans are sequenced'),
+    (_SUPERSEDED_MODEL, 'colliding or unprepared plan'),
+    (_SUPERSEDED_MODEL, 'emits the disjoint, prep-ready candidates'),
+    (_SUPERSEDED_MODEL, 'emitting a colliding, blocked, or unprepared plan'),
+    (_SUPERSEDED_PERSONA, 'overlapping plans are sequenced'),
+    (_SUPERSEDED_ORCHESTRATE, 'never emit a colliding, unresolvable, or unprepared plan'),
+    (_SUPERSEDED_ORCHESTRATE, 'never emits a colliding, blocked, or unprepared plan'),
+    (_SUPERSEDED_ORCHESTRATE, 'overlaps {paths} with PLAN-KK'),
+    (_SUPERSEDED_ANALYZE, 'overlaps {surface} with PLAN-KK'),
+    (_SUPERSEDED_API_REFERENCE, 'never emits a colliding, blocked, or unprepared plan'),
+    (_SUPERSEDED_DATA_MODEL, 'never emits a colliding, blocked, or unprepared plan'),
+    (_SUPERSEDED_MARSHAL_JSON, 'a colliding, blocked or unprepared candidate emits nothing'),
+    (_SUPERSEDED_CONFIG_DEFAULTS, 'a colliding, blocked, or unprepared candidate emits nothing'),
+]
+
+# Guarded at import: an empty case list would collect no test and report nothing.
+assert _SUPERSEDED_WORDING, 'the superseded-wording case list must not be empty'
+
+
+def _flattened(text: str) -> str:
+    """Lower-case ``text`` with comment markers dropped and whitespace collapsed.
+
+    A phrase in a Python comment or a wrapped paragraph spans lines, with a
+    ``#`` at the start of each continuation. Searching the raw text would miss
+    it there and report the phrase absent, so the line structure is removed
+    before the search.
+    """
+    without_markers = re.sub(r'(?m)^\s*#+\s?', '', text)
+    return re.sub(r'\s+', ' ', without_markers).lower()
+
+
+def _states_phrase(text: str, phrase: str) -> bool:
+    """Whether ``text`` carries ``phrase``, ignoring case and line wrapping."""
+    return _flattened(phrase) in _flattened(text)
+
+
+def _read_repo_file(relative_path: str) -> str:
+    """Read one repository file, failing when it is missing or empty.
+
+    A file that moved or cannot be read must fail the test that looks inside
+    it: "phrase not found" over a file that was never opened is not a result.
+    """
+    path = Path(PROJECT_ROOT) / relative_path
+    assert path.is_file(), f'{relative_path} does not exist under the repository root {PROJECT_ROOT}'
+    text: str = path.read_text(encoding='utf-8')
+    assert text.strip(), f'{relative_path} is empty'
+    return text
+
+
+def _states_operator_decision(paragraph: str) -> bool:
+    """Whether ``paragraph`` puts an overlap of more than one file to the operator."""
+    return re.search(r'more than one file[^.]*\boperator\b', paragraph, flags=re.IGNORECASE) is not None
+
+
+def _parallelization_lead_paragraph() -> str:
+    """Return the lead paragraph of the parallelization section."""
+    body = section_lines(
+        _ORCHESTRATION_MODEL_DOC.read_text(encoding='utf-8'),
+        _PARALLELIZATION_HEADING,
+        stop_prefixes=_CONTRACT_SECTION_STOPS,
+    )
+    paragraphs = [line for line in body if line.strip()]
+    assert paragraphs, f'{_ORCHESTRATION_MODEL_DOC.name} § {_PARALLELIZATION_HEADING!r} has no lead paragraph'
+    return paragraphs[0]
+
+
+class TestSupersededOverlapRuleIsGoneFromEverySite:
+    """No site still states that an overlapping plan is always sequenced."""
+
+    @pytest.mark.parametrize(('relative_path', 'phrase'), _SUPERSEDED_WORDING)
+    def test_the_superseded_phrase_is_absent(self, relative_path, phrase):
+        text = _read_repo_file(relative_path)
+
+        assert not _states_phrase(text, phrase), f'{relative_path} still states the superseded rule: {phrase!r}'
+
+    @pytest.mark.parametrize(('relative_path', 'phrase'), _SUPERSEDED_WORDING)
+    def test_a_restored_phrase_is_detected(self, relative_path, phrase):
+        # The control for the absence check: the same file with the phrase put
+        # back must be reported. The phrase is restored the way the file would
+        # carry it — wrapped over two comment lines in the Python file.
+        text = _read_repo_file(relative_path)
+        first, _, rest = phrase.partition(' ')
+        restored = f'# {first}\n# {rest}\n' if relative_path.endswith('.py') else f'{phrase}\n'
+
+        assert _states_phrase(text + '\n' + restored, phrase)
+
+    def test_the_eight_files_the_sites_sit_in_are_all_covered(self):
+        files = {relative_path for relative_path, _ in _SUPERSEDED_WORDING}
+
+        assert len(files) == 8, f'the case list covers {len(files)} file(s), expected 8: {sorted(files)}'
+
+    def test_the_lead_paragraph_states_the_operator_decision_for_a_multi_file_overlap(self):
+        lead = _parallelization_lead_paragraph()
+
+        assert _states_operator_decision(lead), (
+            f'the lead paragraph of {_ORCHESTRATION_MODEL_DOC.name} § {_PARALLELIZATION_HEADING!r} does not '
+            'state that an overlap of more than one file is put to the operator'
+        )
+
+    def test_a_lead_paragraph_without_the_operator_sentence_is_rejected(self):
+        # The control: the shipped paragraph with every sentence naming the
+        # operator taken out no longer satisfies the check.
+        sentences = [
+            sentence for sentence in _parallelization_lead_paragraph().split('. ') if 'operator' not in sentence.lower()
+        ]
+        assert sentences, 'removing the operator sentences left nothing to check'
+
+        assert not _states_operator_decision('. '.join(sentences))
 
 
 # =============================================================================
