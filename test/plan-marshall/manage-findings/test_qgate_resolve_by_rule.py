@@ -54,7 +54,7 @@ PLAN_IDS = (
 _ABSENT_PLAN_ID = 'rule-resolve-plan-absent'
 
 _PHASE = '6-finalize'
-_RULE = 'self-review-state'
+_RULE = 'pre-submission-self-review-state'
 _STATES = ('verdict_refused', 'further_round_owed', 'verifier_unavailable')
 _STORE_STATE_KEYS = frozenset({'store_resolution', 'store_path', 'findings_store_state', 'unresolved_store'})
 

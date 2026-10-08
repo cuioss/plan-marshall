@@ -109,6 +109,13 @@ omit-when-absent convention as ``head_at_completion`` / ``loop_back_target``:
 they appear only from the second firing onward, so a step fired once writes the
 byte-identical historical record. An unchanged re-call still reports
 ``changed: false`` and appends nothing. See ``_extend_firing_history``.
+
+One further sibling key is written by a different verb. ``refire_waiver``
+(``{head, basis}``) is stamped onto an existing ``done`` record by
+``loop-back close`` through :func:`write_refire_waiver`; it records that the
+operator waived the step's re-fire at one HEAD and leaves the record's outcome,
+anchor and firing history untouched. ``mark-step-done`` never writes it, and the
+entry it builds for a new firing carries none.
 """
 
 import argparse
@@ -158,6 +165,10 @@ _FINALIZE_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-fina
 
 #: The frontmatter key that IS the head-dependence declaration.
 _HEAD_DEPENDENT_KEY = 'head_dependent'
+
+#: The sibling key on a step record that carries an operator's re-fire waiver,
+#: ``{head, basis}``. See :func:`write_refire_waiver`.
+REFIRE_WAIVER_KEY = 'refire_waiver'
 
 
 def _derive_head_dependence(step: str) -> tuple[bool, str | None]:
@@ -581,20 +592,10 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
     phase_steps: dict[str, Any] = metadata.setdefault('phase_steps', {})
     phase_entry: dict[str, Any] = phase_steps.setdefault(phase, {})
 
-    # Prefer an exact match under the canonical key. When it misses, fall back to
-    # a canonicalized-match scan so a stale legacy (pre-migration) key such as
-    # ``default:push`` is still located when the caller writes the canonical
-    # ``push``. Tracking ``existing_key`` lets the conflict check fire against the
-    # true existing outcome AND lets the write below pop the stale key so a
+    # Tracking ``existing_key`` lets the conflict check fire against the true
+    # existing outcome AND lets the write below pop a stale legacy key so a
     # duplicate legacy-vs-canonical pair never survives a re-run.
-    existing = phase_entry.get(step)
-    existing_key: str | None = step if existing is not None else None
-    if existing is None:
-        for stored_key, stored_entry in phase_entry.items():
-            if canonicalize_step_key(stored_key) == step:
-                existing = stored_entry
-                existing_key = stored_key
-                break
+    existing, existing_key = _locate_entry(phase_entry, step)
 
     # SHIM(B): status.metadata.phase_steps entries stored as bare strings before step storage became {"outcome": ...} dicts.
     # shim-owner: manage-status
@@ -744,6 +745,72 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
     )
 
 
+def _locate_entry(phase_entry: dict[str, Any], step: str) -> tuple[Any, str | None]:
+    """Return ``(entry, stored_key)`` for the canonical ``step`` in one phase's map.
+
+    Prefers an exact match under the canonical key. When it misses, falls back to
+    a canonicalized-match scan so a stale legacy (pre-migration) key such as
+    ``default:push`` is still located when the caller names the canonical
+    ``push``. ``(None, None)`` means the phase holds no record for the step.
+    """
+    entry = phase_entry.get(step)
+    if entry is not None:
+        return entry, step
+    for stored_key, stored_entry in phase_entry.items():
+        if canonicalize_step_key(stored_key) == step:
+            return stored_entry, stored_key
+    return None, None
+
+
+def find_step_record(status: dict[str, Any], phase: str, step: str) -> Any:
+    """Return the stored record for ``step`` in ``phase``, or ``None`` when absent.
+
+    Read-only. ``step`` is canonicalized here, so a caller may pass either the
+    bare manifest key or its ``default:``-prefixed form.
+    """
+    metadata = status.get('metadata')
+    phase_steps = metadata.get('phase_steps') if isinstance(metadata, dict) else None
+    phase_entry = phase_steps.get(phase) if isinstance(phase_steps, dict) else None
+    if not isinstance(phase_entry, dict):
+        return None
+    entry, _stored_key = _locate_entry(phase_entry, canonicalize_step_key(step))
+    return entry
+
+
+def write_refire_waiver(status: dict[str, Any], phase: str, step: str, head: str, basis: str) -> str | None:
+    """Stamp a ``refire_waiver`` onto ``step``'s existing ``done`` record.
+
+    A head-dependent step whose ``done`` record sits at an older HEAD is re-fired
+    when HEAD advances. The waiver is the operator's recorded decision that the
+    step is NOT re-fired at one specific HEAD: ``head`` is the HEAD the waiver
+    holds for, ``basis`` is why. A reader honours it only while the live HEAD
+    equals ``head``; at any other HEAD it is void.
+
+    The waiver is a SIBLING key. The record's ``outcome``, ``head_at_completion``
+    and firing history are left exactly as they were — the step stays ``done`` at
+    the anchor it actually completed at, and the waiver says only that its
+    staleness at ``head`` was accepted. It is never written as a new outcome.
+
+    Mutates ``status`` in place and does not persist it; the caller writes the
+    document once it has stamped every waiver it owes. Returns ``None`` on
+    success, or the refusal reason when ``step`` holds no ``done`` record — there
+    is no re-fire to waive for a step that has not completed, and a waiver
+    written there would be read as one.
+
+    A later ``mark-step-done`` builds its entry fresh through
+    :func:`_build_entry`, which carries no waiver, so a waiver never survives a
+    real re-fire of the step.
+    """
+    record = find_step_record(status, phase, step)
+    if not isinstance(record, dict) or record.get('outcome') != 'done':
+        found = record.get('outcome') if isinstance(record, dict) else None
+        return (
+            f'step {step!r} in phase {phase!r} has no done record to waive a re-fire of (recorded outcome: {found!r})'
+        )
+    record[REFIRE_WAIVER_KEY] = {'head': head, 'basis': basis}
+    return None
+
+
 def _build_entry(
     outcome: str,
     display_detail: str | None,
@@ -752,6 +819,10 @@ def _build_entry(
     facts: dict[str, str] | None,
 ) -> dict[str, Any]:
     """Build the phase_entry[step] dict, omitting optional keys when None.
+
+    The entry is built from these five arguments alone. A ``refire_waiver`` on
+    the record this entry replaces is deliberately not carried over: a waiver
+    answers for one recorded completion, and a new firing is a new completion.
 
     Legacy compatibility: callers that omit ``--head-at-completion`` produce
     the historical two-key shape ``{"outcome": ..., "display_detail": ...}``.

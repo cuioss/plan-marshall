@@ -38,22 +38,62 @@ The retired scalar ``status.metadata.loop_back_iteration`` is never read. A stat
 document still carrying it is treated as carrying no budget at all: the scalar is
 attributed to no source, and every source starts at zero.
 
-The verdict travels in the TOON per the output contract — both verbs exit 0 on
+``close`` is the other way forward from a ceiling refusal. Where ``grant`` buys
+the source another round, ``close`` ends the loop: the operator closes a finalize
+step on named residual findings, and the close is recorded as an override rather
+than as a verdict the step reached. It touches no budget. In one call it records
+the step ``done`` at the closing HEAD with the facts
+``may_close=operator_override`` / ``acceptance=operator_override``, resolves
+exactly the named findings as ``accepted`` with the operator's rationale,
+resolves the step's own pending state findings by their rule key, and stamps a
+re-fire waiver on each head-dependent step the operator names. Every input is
+validated before the first write — a named finding that is not pending in the
+``6-finalize`` Q-Gate store stops the call with nothing written.
+
+The verdict travels in the TOON per the output contract — every verb exits 0 on
 every verdict. A store this module cannot interpret is reported as an error
 rather than read as an empty budget: reading it as empty would hand the source
 rounds it may already have spent.
 """
 
 import argparse
+import re
 from typing import Any
 
+from _cmd_mark_step import cmd_mark_step_done, find_step_record, write_refire_waiver
 from _status_core import require_status, write_status
+from _step_key_canonical import canonicalize_step_key
 from file_ops import now_utc_iso
 
 BUDGETS_KEY = 'loop_back_budgets'
 SPENT_KEY = 'spent'
 GRANTED_KEY = 'granted'
 GRANTS_KEY = 'grants'
+
+#: The phase whose steps ``close`` closes and whose Q-Gate store it resolves in.
+CLOSE_PHASE = '6-finalize'
+
+#: The value ``close`` records for both the ``may_close`` and the ``acceptance``
+#: fact. It is what tells an operator close apart from a close the step's own
+#: verifier granted (``may_close=yes`` / ``acceptance=accepted``).
+OPERATOR_OVERRIDE = 'operator_override'
+
+#: A full object id — 40 hex characters, or 64 in a SHA-256 repository. An
+#: abbreviation is refused: the closing HEAD is compared for equality against the
+#: live HEAD by the re-fire waiver's reader, and an abbreviation never equals it.
+_FULL_SHA_RE = re.compile(r'^(?:[0-9a-f]{40}|[0-9a-f]{64})$')
+
+
+def state_rule_key(step: str) -> str:
+    """Return the rule key a step files its own state findings under.
+
+    A step's state findings describe the step's situation rather than a defect
+    in a file, so they are filed under one fixed rule key and resolved by it.
+    The key is derived from the step name, so ``close`` needs no per-step table
+    to find them: the findings of ``pre-submission-self-review`` carry
+    ``pre-submission-self-review-state``.
+    """
+    return f'{step}-state'
 
 
 def _is_count(value: Any) -> bool:
@@ -215,3 +255,201 @@ def cmd_loop_back_grant(args: argparse.Namespace) -> dict | None:
         'granted_at': record['granted_at'],
         'grant_count': len(grants),
     }
+
+
+def _close_error(plan_id: str, error: str, step: str, message: str, **extra: Any) -> dict[str, Any]:
+    """Build a ``close`` refusal raised BEFORE the first write."""
+    return {
+        'status': 'error',
+        'plan_id': plan_id,
+        'error': error,
+        'step': step,
+        'message': f'{message} Nothing was written.',
+        **extra,
+    }
+
+
+def _unique(values: list[str] | None) -> list[str]:
+    """Return ``values`` with repeats dropped, first occurrence kept, order kept."""
+    return list(dict.fromkeys(values or []))
+
+
+def _load_findings_core() -> Any:
+    """Return the findings storage module, or ``None`` when it cannot be imported.
+
+    Imported lazily, as the manifest reader is in ``_cmd_mark_step``: the two
+    budget verbs in this module need no findings store, and must keep working in
+    an environment where it is not importable.
+    """
+    try:
+        import _findings_core
+    except ImportError:
+        return None
+    return _findings_core
+
+
+def _holds_done_record(status: dict[str, Any], step: str) -> bool:
+    """True when ``step`` already holds a ``done`` record in the close phase."""
+    record = find_step_record(status, CLOSE_PHASE, step)
+    return isinstance(record, dict) and record.get('outcome') == 'done'
+
+
+def cmd_loop_back_close(args: argparse.Namespace) -> dict | None:
+    """Close a finalize step on named residual findings, recorded as an operator override."""
+    status = require_status(args)
+    if status is None:
+        return None
+
+    plan_id = args.plan_id
+    step = canonicalize_step_key(args.step) if args.step else ''
+    rationale = (args.rationale or '').strip()
+    head = (args.head or '').strip()
+    accept = _unique(args.accept)
+    waived = _unique([canonicalize_step_key(name) for name in (args.waive_refire or [])])
+
+    if not step:
+        return _close_error(plan_id, 'invalid_argument', step, '--step must be non-empty.')
+    if not rationale:
+        return _close_error(
+            plan_id,
+            'blank_rationale',
+            step,
+            '--rationale must state why the step is closed on these findings; a blank rationale is refused.',
+        )
+    if not _FULL_SHA_RE.match(head):
+        return _close_error(
+            plan_id,
+            'invalid_head',
+            step,
+            f'--head {head!r} is not a full commit SHA. Resolve it with git rev-parse HEAD; an abbreviation is refused.',
+        )
+
+    # A waiver answers for a completion that already happened, so each waived
+    # step must already hold a done record. The step being closed is recorded
+    # done at --head by this very call, so it has no re-fire to waive.
+    not_waivable = [name for name in waived if name == step or not _holds_done_record(status, name)]
+    if not_waivable:
+        return _close_error(
+            plan_id,
+            'step_not_waivable',
+            step,
+            'Each --waive-refire step must be another step that already holds a done record; '
+            f'these do not: {", ".join(not_waivable)}.',
+            not_waivable=not_waivable,
+        )
+
+    findings_core = _load_findings_core()
+    if findings_core is None:
+        return _close_error(plan_id, 'findings_store_unavailable', step, 'The findings store module is not importable.')
+    pending = findings_core.query_qgate_findings(plan_id, CLOSE_PHASE, resolution='pending')
+    if pending.get('status') != 'success':
+        return _close_error(
+            plan_id,
+            'findings_store_unreadable',
+            step,
+            f'The {CLOSE_PHASE} Q-Gate store could not be read: {pending.get("message", "")}',
+            store_error=pending.get('error'),
+        )
+    pending_ids = {finding.get('hash_id') for finding in pending['findings']}
+    not_pending = [hash_id for hash_id in accept if hash_id not in pending_ids]
+    if not_pending:
+        return _close_error(
+            plan_id,
+            'finding_not_pending',
+            step,
+            f'Each --accept hash id must name a pending finding of the {CLOSE_PHASE} Q-Gate store; '
+            f'these do not: {", ".join(not_pending)}.',
+            not_pending=not_pending,
+        )
+
+    marked = cmd_mark_step_done(
+        argparse.Namespace(
+            plan_id=plan_id,
+            phase=CLOSE_PHASE,
+            step=step,
+            outcome='done',
+            display_detail=f'operator close: {len(accept)} finding(s) accepted',
+            head_at_completion=head,
+            loop_back_target=None,
+            fact=[
+                f'may_close={OPERATOR_OVERRIDE}',
+                f'acceptance={OPERATOR_OVERRIDE}',
+                'work_performed=true',
+            ],
+            force=False,
+            no_completion_log=False,
+        )
+    )
+    if marked is None:
+        return None
+    if marked.get('status') != 'success':
+        return _close_error(
+            plan_id,
+            'step_not_recorded',
+            step,
+            f'The step could not be recorded done: {marked.get("message", "")}',
+            mark_error=marked.get('error'),
+        )
+    closing_head = str(marked.get('head_at_completion') or head)
+
+    # From here on the step IS recorded done, so a failure below is reported as
+    # an incomplete close naming what did and did not land — never as a refusal.
+    accepted: list[str] = []
+    not_accepted: list[str] = []
+    for hash_id in accept:
+        resolved = findings_core.resolve_qgate_finding(plan_id, CLOSE_PHASE, hash_id, 'accepted', detail=rationale)
+        (accepted if resolved.get('status') == 'success' else not_accepted).append(hash_id)
+
+    rule = state_rule_key(step)
+    state = findings_core.resolve_qgate_findings_by_rule(
+        plan_id,
+        CLOSE_PHASE,
+        rule,
+        'accepted',
+        f'operator close of {step} at {closing_head}: {rationale}',
+    )
+    state_resolved = state.get('status') == 'success'
+
+    # The mark above committed its own copy of the document, so the waivers are
+    # stamped onto a fresh read rather than onto the snapshot taken at entry.
+    waived_steps: list[str] = []
+    waiver_refusals: list[str] = []
+    if waived:
+        status = require_status(args)
+        if status is None:
+            return None
+        basis = f'operator close of {step}: {rationale}'
+        for name in waived:
+            refusal = write_refire_waiver(status, CLOSE_PHASE, name, closing_head, basis)
+            if refusal is None:
+                waived_steps.append(name)
+            else:
+                waiver_refusals.append(refusal)
+        write_status(plan_id, status)
+
+    result: dict[str, Any] = {
+        'status': 'success',
+        'plan_id': plan_id,
+        'step': step,
+        'outcome': 'done',
+        'head': closing_head,
+        'may_close': OPERATOR_OVERRIDE,
+        'acceptance': OPERATOR_OVERRIDE,
+        'rationale': rationale,
+        'accepted_count': len(accepted),
+        'accepted': accepted,
+        'state_rule': rule,
+        'state_findings_resolved': len(state.get('resolved', [])) if state_resolved else 0,
+        'waived_steps': waived_steps,
+    }
+    if not_accepted or not state_resolved or waiver_refusals:
+        result['status'] = 'error'
+        result['error'] = 'close_incomplete'
+        result['not_accepted'] = not_accepted
+        result['state_error'] = None if state_resolved else state.get('message', '')
+        result['waiver_refusals'] = waiver_refusals
+        result['message'] = (
+            f'Step {step!r} was recorded done at {closing_head}, but the close did not complete: '
+            'see not_accepted, state_error and waiver_refusals for what did not land.'
+        )
+    return result

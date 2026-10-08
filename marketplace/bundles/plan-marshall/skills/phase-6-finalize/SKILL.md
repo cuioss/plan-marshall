@@ -564,13 +564,29 @@ The version-skew failure mode this contract closes is behavioural: between sessi
 | Persisted state | Live worktree HEAD | Action |
 |-----------------|--------------------|--------|
 | `outcome == done` AND `head_at_completion == HEAD` | matches | SKIP (steady-state — gate already validated this exact tree) |
-| `outcome == done` AND `head_at_completion != HEAD` | differs | **Consult the verdict-currency classifier** (below). `verdict: invalidated` → RE-FIRE (treat as no record). `verdict: preserved` → SKIP, leaving `head_at_completion` at its original SHA |
+| `outcome == done` AND `head_at_completion != HEAD` AND `refire_waiver.head == HEAD` | differs, re-fire waived at this HEAD | SKIP on the **operator's re-fire waiver** (below). Log the skip at INFO with the waiver's `basis`, record the `skipped` execution-log row for it, and leave the record `done` at its original `head_at_completion`. The classifier is not consulted |
+| `outcome == done` AND `head_at_completion != HEAD`, with no `refire_waiver` for this HEAD | differs | **Consult the verdict-currency classifier** (below). `verdict: invalidated` → RE-FIRE (treat as no record). `verdict: preserved` → SKIP, leaving `head_at_completion` at its original SHA |
 | `outcome == done` AND `head_at_completion` absent | n/a | RE-FIRE **and report the prior verdict UNVERIFIED** (see below) — a record with no SHA was never anchored to a tree |
 | `outcome == failed` | n/a | RETRY (unchanged — same as the general rule) |
 | `outcome == loop_back` | n/a | RE-FIRE (treat as no record — same as the general rule for loop_back) |
 | no record OR any other value | n/a | DISPATCH (unchanged — same as the general rule) |
 
 **A head-dependent verdict is never left standing as green for a HEAD it was not computed against.** That is the governing rule the table encodes, and the two RE-FIRE rows are its two halves: a superseded SHA re-fires, and an absent SHA re-fires AND is reported UNVERIFIED. On the absent-SHA row the dispatcher MUST log the prior verdict as unverified rather than discarding it silently, so a `done` record that was never anchored to a SHA stays visibly distinguishable from one that was genuinely validated and later superseded — the two are different facts, and collapsing them hides which gate never ran at all.
+
+**The operator's re-fire waiver — one row ahead of the classifier, and only at the HEAD it names.** A `done` record may carry a `refire_waiver = {head, basis}` sibling key, stamped by `manage-status loop-back close` when the operator closed a step and named this one as a step not to re-fire (see `manage-status` § "Re-fire waiver (`refire_waiver`)"). On the differing-SHA row, read it BEFORE consulting the classifier:
+
+- **`refire_waiver.head` equals the live HEAD** → SKIP. The operator decided this step is not re-run at this HEAD, and that decision is the record; the classifier is not asked a question the operator has already answered. Log the skip with the waiver's `basis`, so the skip is attributable to a stated reason rather than appearing as an unexplained non-run:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO \
+    --message "(plan-marshall:phase-6-finalize) Re-fire of {step_id} waived at head {live_head} — verdict stands from {head_at_completion}; basis: {basis}"
+  ```
+
+  Then record the `skipped` execution-log row every SKIP branch records (item 1 below), and continue to the next step. The execution log has no free-text column, so the row says THAT the step was skipped and the decision line directly above says WHY — the two are written together, by the same branch, and neither is written without the other.
+- **`refire_waiver.head` is any other SHA, or the key is absent or malformed** → the waiver is **void**. Ignore it and consult the classifier exactly as if no waiver existed. A waiver is the operator's answer for one tree; HEAD moving again is a tree the operator never saw, and a waiver honoured across that move would be the standing-green-for-an-unexamined-HEAD this whole section exists to prevent.
+
+⛔ **The record stays `done` at its original `head_at_completion`. Do NOT overwrite it — not with `skipped`, and not with a re-stamped SHA.** `skipped` on a required step is counted as incomplete by the `phase_steps_complete` handshake, so recording the waived step `skipped` would deadlock the very phase transition the operator closed the loop to reach. A re-stamped SHA would claim the step validated a tree it never ran against. The waiver is what carries the operator's decision; the record underneath it keeps saying only what actually happened.
 
 **The verdict-currency classifier — a HEAD advance that cannot change a verdict does not re-run the gate that produced it.** A bare SHA inequality treats EVERY advance as invalidating, which is safe and maximally expensive: one finalize advances HEAD many times (settle-band commits, a replaying rebase, loop-back fixes), and each advance re-stales every verdict recorded before it, mostly to re-confirm the identical answer. On the differing-SHA row above, resolve the question instead of assuming it:
 
@@ -729,7 +745,13 @@ FOR each step_id in manifest.phase_6.steps:
            Resolve the live worktree HEAD via `git -C {worktree_path} rev-parse HEAD`.
            Read this fresh per iteration; do NOT cache across the loop.
              - IF outcome == "done" AND head_at_completion == live HEAD: SKIP this step
-             - IF outcome == "done" AND head_at_completion != live HEAD:
+             - IF outcome == "done" AND head_at_completion != live HEAD
+               AND refire_waiver.head == live HEAD (the operator's re-fire waiver — see
+               "Special case — HEAD-dependent steps"):
+                 SKIP this step. Log at INFO with the waiver's basis. Leave the record done at its
+                 recorded head_at_completion — never overwrite it with skipped, never re-stamp it.
+                 A refire_waiver whose head is any other SHA is void: fall through to the next branch.
+             - IF outcome == "done" AND head_at_completion != live HEAD (no waiver for this HEAD):
                  Consult the verdict-currency classifier (see "Special case — HEAD-dependent steps"):
                    verdict_currency classify --step {step_id} --worktree-path {worktree_path}
                      --head-at-completion {head_at_completion}
@@ -783,9 +805,9 @@ FOR each step_id in manifest.phase_6.steps:
      execution log, while the completion line rides the `phase_steps` handshake write.
 
      **A re-entry SKIP emits NO completion line — structurally.** Every SKIP branch above (the
-     HEAD-dependent `head_at_completion == live HEAD` skip, the HEAD-dependent
-     `verdict: preserved` skip, the `push` parity-driven `state == "synced"` skip, and the
-     general `outcome == "done"` skip) calls NO `mark-step-done`
+     HEAD-dependent `head_at_completion == live HEAD` skip, the HEAD-dependent re-fire-waiver
+     skip, the HEAD-dependent `verdict: preserved` skip, the `push` parity-driven
+     `state == "synced"` skip, and the general `outcome == "done"` skip) calls NO `mark-step-done`
      — it reads a terminal record already on `status.metadata.phase_steps`, whose `mark-step-done`
      write already emitted the step's `[STEP] … Completed step:` line (the fused emission — see
      item 7). Because the completion line rides the handshake write and a SKIP performs no write, a
@@ -1513,11 +1535,14 @@ FOR each step_id in manifest.phase_6.steps:
                and the fix tasks still open for them with 'python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id {plan_id} --status pending'.
                To give {step_ref} another round, grant it one and say why — the reason is kept on the plan's record:
                'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-back grant --plan-id {plan_id} --source {step_ref} --reason "{reason}"'.
-               Then re-run finalize."
+               To stop here instead and ship with the problems you choose to accept, close {step_ref} on them — each one you accept is named, and your reason is kept on the plan's record. Take the full commit id from 'git -C {worktree_path} rev-parse HEAD', then:
+               'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-back close --plan-id {plan_id} --step {step_ref} --head {full_sha} --rationale "{rationale}" --accept {hash_id}'
+               (repeat --accept for each problem you accept; add --waive-refire {other_step} for a check you do not want run again at this commit).
+               Either way, then re-run finalize."
 
              STOP.
 
-      The grant is the only sanctioned way past this refusal (see `manage-status` Canonical invocations → `loop-back — grant`). It adds a round to that one source and records who granted it and why; the re-run's `admit` call then admits against the raised `effective_ceiling`.
+      These two verbs are the only sanctioned ways past this refusal (see `manage-status` Canonical invocations → `loop-back — grant` and `loop-back — close`), and they answer it in opposite directions. The grant adds a round to that one source and records who granted it and why; the re-run's `admit` call then admits against the raised `effective_ceiling`. The close ends the loop for that step: it records the step `done` as an operator override (`may_close=operator_override`), resolves the findings the operator named as `accepted`, and the re-run's re-entry check then finds the step `done` at the live HEAD and skips it. Neither is a `mark-step-done --force` written by hand, and no such mark is a sanctioned way past the ceiling: it would record neither who decided nor on what.
 
       **This refusal is a distinct terminal outcome**, not the ordinary halt-and-prompt of the `loop_back_without_asking: false` branch below. The two are reported separately on purpose: the knob halt means *"a loop-back is available and awaits your go-ahead"*, whereas this one means *"a loop-back was requested and REFUSED, and the work it would have reviewed is unreviewed"*. Collapsing them into one message would tell an operator the run merely paused where in fact the review chain ended one round short.
 
