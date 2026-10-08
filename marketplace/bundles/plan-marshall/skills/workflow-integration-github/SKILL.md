@@ -11,7 +11,7 @@ GitHub provider for the findings-pipeline `pr-comment` producer. The provider su
 
 - **`fetch_findings`** — fetch PR review comments, apply the pre-filter (`comment-patterns.json`), exclude the batched response body `post_responses` itself posted, and file one `pr-comment` finding per surviving comment via `manage-findings add`. The untrusted comment body is quarantined under `raw_input.{body}` (never embedded raw in the top-level `detail`); the batched `manage-findings ingest` pass promotes it to top-level only after `validate_struct`. A bounded guard reports a non-converging respond → re-fetch cycle as a `(self-response-loop)` Q-Gate finding.
 - **`post_responses`** — apply already-decided triage dispositions back to the PR, keyed by each finding's own `hash_id`, via a three-way transmit keyed on the finding's `kind`: thread-reply-then-resolve for a thread-bearing finding (untransmitted, never batched, when its thread is missing), ONE batched PR-level comment for the genuinely threadless kinds, and `skipped` only when there is genuinely nothing to say.
-- **`bot_completion`** — report a review bot's registry `completion_check_name` check-run state (`{status, in_progress, completed}`) for the PR HEAD, so the `automatic-review` completion-aware poll can wait for a slow bot to finish before fetching; a bot with no completion check-run reports `no_check_name` and the caller falls back to the `review_bot_buffer_seconds` wait.
+- **`bot_completion`** — report a review bot's registry `completion_check_name` check-run state (`{status, in_progress, completed}`) for the PR HEAD, so the `automatic-review` completion-aware poll can wait for a slow bot to finish before fetching — with `--wait-seconds`, in one bounded call that also returns `timed_out` and `waited_seconds`; a bot with no completion check-run reports `no_check_name` and the caller falls back to the `review_bot_buffer_seconds` wait.
 - **`pull_request_runs`** — report whether ANY `pull_request`-event workflow run exists for the requested PR. The head branch is how the runs are FETCHED, not what the answer is scoped to: a run is excluded only when its `pull_requests` association reliably names a DIFFERENT PR. This is the PR-WIDE observable behind the `not_triggered` participation state: when no such run exists, nothing ever ran on account of the PR, so no bot could have published and a required bot's silence says nothing about that bot. A run that EXISTS and concluded `skipped` keeps the observable false — the workflow *was* triggered. Never reads `mergeable_state`.
 
 All four verbs FAIL LOUD when GitHub is not configured (a typed `unconfigured` status, never a silent no-op). Uses the `gh` CLI for all GitHub operations.
@@ -988,10 +988,22 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr bot_completion \
-  --pr-number N --bot-kind {coderabbit|sourcery|cuioss-review-bot}
+  --pr-number N --bot-kind {coderabbit|sourcery|cuioss-review-bot} \
+  [--wait-seconds SECONDS] [--interval-seconds SECONDS]
 ```
 
 Pure provider read — reports the bot's registry `completion_check_name` check-run state as `{status, in_progress, completed}` for the PR HEAD. A bot with an empty `completion_check_name` reports status `no_check_name` (the caller falls back to the `review_bot_buffer_seconds` wait); the `automatic-review` completion-aware poll consumes this verb.
+
+**Without `--wait-seconds` the verb reads once and returns.** With it, the one call holds a bounded wait: it re-reads the check-run every `--interval-seconds` (default 15) until the check completes or the bound lapses, and the result carries two further fields:
+
+| Field | Meaning |
+|-------|---------|
+| `timed_out` | `true` when the bound lapsed before the check completed. A bound, not a verdict — `in_progress` / `completed` still report the last state actually read |
+| `waited_seconds` | Whole seconds the call spent waiting |
+
+Both fields are present on every return of a call that supplied `--wait-seconds`, and absent from a single read. Three results end the wait at once, because waiting cannot change them: `no_check_name`, `unconfigured`, and a read whose output could not be parsed. `not_found` does not end it — the check may not be posted yet — so a check that never appears returns `status: not_found` with `timed_out: true`.
+
+The bound is clamped to 480 seconds per call, whatever value is passed, so the call returns before the host's per-call ceiling can cut it off mid-wait (see [`plan-marshall/standards/waiting.md`](../plan-marshall/standards/waiting.md) § "The inner ceiling must margin-clear the outer one"). A caller with a longer budget re-issues the call; `waited_seconds` is what it subtracts from that budget.
 
 ### github_pr pull_request_runs
 

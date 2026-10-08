@@ -43,7 +43,9 @@ Beside the findings contract sits one auxiliary provider read:
 - ``bot_completion`` reports a named bot's check-run completion state
   (``{status, in_progress, completed}``) for the PR HEAD, so the
   ``automatic-review`` wait step can await a slow bot's IN_PROGRESS check to
-  completion instead of racing a fixed buffer. Pure read — files no finding.
+  completion instead of racing a fixed buffer. With ``--wait-seconds`` the one
+  call holds a bounded wait over that check-run and adds ``timed_out`` and
+  ``waited_seconds``. Pure read — files no finding.
 - ``pull_request_runs`` reports whether ANY ``pull_request``-event workflow run
   exists for the PR's head branch — the PR-WIDE observable behind the
   ``not_triggered`` participation state, where nothing ever ran on account of the
@@ -60,7 +62,7 @@ Usage:
     github_pr.py fetch-comments [--pr <number>] [--unresolved-only]
     github_pr.py fetch_findings --pr-number <N> --plan-id <P> [--required-bots [<csv>]] [--optional-bots [<csv>]]
     github_pr.py post_responses --pr-number <N> --plan-id <P>
-    github_pr.py bot_completion --pr-number <N> --bot-kind <kind>
+    github_pr.py bot_completion --pr-number <N> --bot-kind <kind> [--wait-seconds <S> [--interval-seconds <S>]]
     github_pr.py pull_request_runs --pr-number <N>
     github_pr.py --help
 
@@ -93,6 +95,7 @@ import hashlib
 import json
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -2427,7 +2430,22 @@ def cmd_fetch_findings(args):
 _IN_PROGRESS_CHECK_STATES = frozenset({'IN_PROGRESS', 'QUEUED', 'PENDING', 'WAITING', 'REQUESTED'})
 
 
-def cmd_bot_completion(args):
+#: Seconds between two reads of the check-run when ``--wait-seconds`` is supplied
+#: and the caller named no interval of its own.
+_BOT_COMPLETION_DEFAULT_INTERVAL_SECONDS = 15
+
+#: The longest a single ``bot_completion`` call holds its wait, whatever the caller
+#: asked for. The call is issued through a host tool call whose ceiling the verb does
+#: not control (600 s on the reference target), and one read may itself run to the
+#: 60 s ``run_gh`` timeout AFTER the deadline check let it start — so the internal
+#: deadline sits a full read plus a serialisation margin below that ceiling. The verb
+#: owns this margin; a caller with a longer budget re-issues the call
+#: (``plan-marshall/standards/waiting.md`` § "The inner ceiling must margin-clear the
+#: outer one").
+_BOT_COMPLETION_WAIT_CEILING_SECONDS = 480
+
+
+def cmd_bot_completion(args, *, sleep=time.sleep, clock=time.monotonic):
     """Read the named bot's most-recent check-run completion state for the PR HEAD.
 
     Pure provider read — no triage, no LLM. Given ``--pr-number`` and
@@ -2447,32 +2465,92 @@ def cmd_bot_completion(args):
       all) yields status ``not_found`` with both flags ``false`` — the caller
       keeps polling within its bound.
 
+    **Bounded wait (``--wait-seconds``).** Without the flag the verb reads once and
+    returns, exactly as above. With it, the verb re-reads the check-run every
+    ``--interval-seconds`` until the check completes or the bound lapses, and the
+    result additionally carries ``timed_out`` and ``waited_seconds``. The bound is
+    clamped to ``_BOT_COMPLETION_WAIT_CEILING_SECONDS``, so one call never outlives
+    the host ceiling it is issued through; a caller with a longer budget re-issues
+    the call. Three results end the wait at once, because waiting cannot change
+    them: ``no_check_name`` (there is no check to observe), ``unconfigured``, and a
+    read whose output could not be parsed. ``not_found`` does NOT end it — the check
+    may simply not be posted yet.
+
+    ``timed_out: true`` says only that the bound lapsed before the check concluded.
+    It is a bound, not a verdict: the accompanying ``in_progress`` / ``completed``
+    flags still report the last state actually read.
+
     Fail-loud: returns a typed ``unconfigured`` status when GitHub is not
     authenticated.
+
+    Args:
+        args: Parsed CLI arguments (``pr_number``, ``bot_kind``, optional
+            ``wait_seconds`` / ``interval_seconds``).
+        sleep: The pause between two reads. Injectable so a test waits no real time.
+        clock: The monotonic clock the bound is measured on. Injectable together
+            with ``sleep`` so a test can advance time deterministically.
     """
     pr_number: int = args.pr_number
     bot_kind: str = getattr(args, 'bot_kind', '') or ''
     check_name: str = bot_registry.completion_check_name(bot_kind)
+    wait_seconds = getattr(args, 'wait_seconds', None)
+    waiting = wait_seconds is not None
+
+    def _with_wait_fields(result: dict[str, Any], *, timed_out: bool, waited: float) -> dict[str, Any]:
+        if waiting:
+            result['timed_out'] = timed_out
+            result['waited_seconds'] = int(waited)
+        return result
 
     is_auth, auth_err = _github.check_auth()
     if not is_auth:
-        return _unconfigured_result('bot_completion', auth_err)
+        return _with_wait_fields(_unconfigured_result('bot_completion', auth_err), timed_out=False, waited=0)
 
     # A bot with no completion check-run has an empty registry marker. Report
     # neither flag so the caller does not spin polling a check that never appears
     # — it falls back to the review_bot_buffer_seconds wait instead.
     if not check_name:
-        return {
-            'status': 'no_check_name',
-            'operation': 'bot_completion',
-            'provider': 'github',
-            'pr_number': pr_number,
-            'bot_kind': bot_kind,
-            'check_name': '',
-            'in_progress': False,
-            'completed': False,
-        }
+        return _with_wait_fields(
+            {
+                'status': 'no_check_name',
+                'operation': 'bot_completion',
+                'provider': 'github',
+                'pr_number': pr_number,
+                'bot_kind': bot_kind,
+                'check_name': '',
+                'in_progress': False,
+                'completed': False,
+            },
+            timed_out=False,
+            waited=0,
+        )
 
+    if not waiting:
+        return _read_bot_completion(pr_number, bot_kind, check_name)
+
+    bound = min(max(int(wait_seconds), 0), _BOT_COMPLETION_WAIT_CEILING_SECONDS)
+    interval = max(int(getattr(args, 'interval_seconds', None) or _BOT_COMPLETION_DEFAULT_INTERVAL_SECONDS), 1)
+    started = clock()
+    while True:
+        result = _read_bot_completion(pr_number, bot_kind, check_name)
+        waited = clock() - started
+        # A completed check is the awaited terminal state; an unparseable read is
+        # one that further reads cannot be expected to improve.
+        if result.get('completed') or result.get('status') == 'error':
+            return _with_wait_fields(result, timed_out=False, waited=waited)
+        remaining = bound - waited
+        if remaining <= 0:
+            return _with_wait_fields(result, timed_out=True, waited=waited)
+        sleep(min(interval, remaining))
+
+
+def _read_bot_completion(pr_number: int, bot_kind: str, check_name: str) -> dict[str, Any]:
+    """Read ``check_name``'s state on the PR ONCE and report it.
+
+    The single provider read behind :func:`cmd_bot_completion`, which calls it once
+    for a plain read and repeatedly under ``--wait-seconds``. ``check_name`` is
+    non-empty: the markerless-bot case is settled by the caller before any read.
+    """
     _rc, stdout, _stderr = _github.run_gh(['pr', 'checks', str(pr_number), '--json', 'name,state,bucket'])
 
     # gh emits the JSON array whenever checks exist (regardless of the rollup
@@ -2990,6 +3068,31 @@ Examples:
                             'Reviewer bot_kind (e.g. coderabbit). Its registry completion_check_name is '
                             'resolved internally; a bot with an empty completion_check_name reports status '
                             'no_check_name so the caller falls back to the review_bot_buffer_seconds wait.'
+                        ),
+                    },
+                    {
+                        'flags': ['--wait-seconds'],
+                        'dest': 'wait_seconds',
+                        'type': int,
+                        'required': False,
+                        'default': None,
+                        'help': (
+                            'Wait, bounded, until the check-run completes: re-read it until it concludes or '
+                            'this many seconds have passed, and add timed_out and waited_seconds to the '
+                            f'result. Clamped to {_BOT_COMPLETION_WAIT_CEILING_SECONDS} s per call so the call '
+                            'returns before the host ceiling; re-issue the call for a longer budget. Omit for '
+                            'the single read.'
+                        ),
+                    },
+                    {
+                        'flags': ['--interval-seconds'],
+                        'dest': 'interval_seconds',
+                        'type': int,
+                        'required': False,
+                        'default': _BOT_COMPLETION_DEFAULT_INTERVAL_SECONDS,
+                        'help': (
+                            'Seconds between two reads under --wait-seconds '
+                            f'(default: {_BOT_COMPLETION_DEFAULT_INTERVAL_SECONDS}). Ignored without it.'
                         ),
                     },
                     {

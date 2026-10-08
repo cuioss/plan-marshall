@@ -329,6 +329,58 @@ def _run_bot_completion(pr_number, bot_kind):
     return github_pr.cmd_bot_completion(args)
 
 
+class _FakeTime:
+    """A clock that only ``sleep`` advances, so a bounded wait costs no real time.
+
+    ``cmd_bot_completion`` takes its pause and its clock as parameters. Handing it
+    both halves of one fake makes the elapsed time a pure function of the pauses the
+    verb asked for, and records each requested pause for the assertions.
+    """
+
+    def __init__(self):
+        self.now = 0.0
+        self.sleeps: list[float] = []
+
+    def clock(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+class _CheckReads:
+    """A ``run_gh`` stub that answers each successive read with the next payload.
+
+    The last payload repeats once the sequence is spent, which is how a check that
+    never concludes is modelled. ``count`` is the number of provider reads made.
+    """
+
+    def __init__(self, *payloads):
+        self._payloads = payloads
+        self.count = 0
+
+    def __call__(self, args, capture_json=False, timeout=60):
+        payload = self._payloads[min(self.count, len(self._payloads) - 1)]
+        self.count += 1
+        return (0, payload, '')
+
+
+def _run_bot_completion_waiting(pr_number, bot_kind, fake_time, *, wait_seconds, interval_seconds=15):
+    """Drive ``cmd_bot_completion`` under ``--wait-seconds`` on the fake clock."""
+    args = argparse.Namespace(
+        pr_number=pr_number,
+        bot_kind=bot_kind,
+        wait_seconds=wait_seconds,
+        interval_seconds=interval_seconds,
+    )
+    return github_pr.cmd_bot_completion(args, sleep=fake_time.sleep, clock=fake_time.clock)
+
+
+def _refuse_any_read(*_args, **_kwargs):
+    raise AssertionError('the provider was read on a path that must return without reading')
+
+
 _BAD_KIND_COMMENT = {
     'id': 'cbad',
     'author': 'coderabbitai',
@@ -495,6 +547,143 @@ def test_bot_completion_unconfigured_fails_loud(monkeypatch):
 
     result = _run_bot_completion(200, 'coderabbit')
     assert result['status'] == 'unconfigured'
+
+
+def test_bot_completion_single_read_carries_no_wait_fields(monkeypatch):
+    """Without ``--wait-seconds`` the verb reads once and adds neither wait field.
+
+    The two fields report on a wait. A plain read held none, so publishing
+    ``timed_out: false`` there would state a bound that was never applied.
+    """
+    monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+    reads = _CheckReads(_checks_json(('CodeRabbit', 'IN_PROGRESS', 'pending')))
+    monkeypatch.setattr(github_pr._github, 'run_gh', reads)
+
+    result = _run_bot_completion(200, 'coderabbit')
+
+    assert reads.count == 1
+    assert result['in_progress'] is True
+    assert 'timed_out' not in result
+    assert 'waited_seconds' not in result
+
+
+def test_bot_completion_wait_returns_completed_when_check_flips_on_third_read(monkeypatch):
+    """One bounded call outlasts two in-progress reads and reports the completion.
+
+    The check-run is IN_PROGRESS on the first two reads and SUCCESS on the third.
+    A single call under ``--wait-seconds`` returns ``completed: true`` — the caller
+    issues no second call and paces nothing itself.
+    """
+    monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+    reads = _CheckReads(
+        _checks_json(('CodeRabbit', 'IN_PROGRESS', 'pending')),
+        _checks_json(('CodeRabbit', 'IN_PROGRESS', 'pending')),
+        _checks_json(('CodeRabbit', 'SUCCESS', 'pass')),
+    )
+    monkeypatch.setattr(github_pr._github, 'run_gh', reads)
+    fake_time = _FakeTime()
+
+    result = _run_bot_completion_waiting(200, 'coderabbit', fake_time, wait_seconds=120)
+
+    assert reads.count == 3
+    assert result['completed'] is True
+    assert result['in_progress'] is False
+    assert result['timed_out'] is False
+    assert result['waited_seconds'] == 30
+    assert fake_time.sleeps == [15, 15]
+
+
+def test_bot_completion_wait_times_out_when_check_never_completes(monkeypatch):
+    """A check-run still running at the bound returns ``in_progress`` with ``timed_out``.
+
+    The bound is spent exactly: the final pause is shortened to the time left, so
+    the call does not overrun it by a whole interval.
+    """
+    monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+    reads = _CheckReads(_checks_json(('CodeRabbit', 'IN_PROGRESS', 'pending')))
+    monkeypatch.setattr(github_pr._github, 'run_gh', reads)
+    fake_time = _FakeTime()
+
+    result = _run_bot_completion_waiting(200, 'coderabbit', fake_time, wait_seconds=40)
+
+    assert result['in_progress'] is True
+    assert result['completed'] is False
+    assert result['timed_out'] is True
+    assert result['waited_seconds'] == 40
+    assert fake_time.sleeps == [15, 15, 10]
+    assert reads.count == 4
+
+
+def test_bot_completion_wait_keeps_waiting_while_check_is_not_posted(monkeypatch):
+    """``not_found`` does not end the wait — the check may simply not be posted yet."""
+    monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+    reads = _CheckReads(
+        _checks_json(('verify', 'SUCCESS', 'pass')),
+        _checks_json(('verify', 'SUCCESS', 'pass'), ('CodeRabbit', 'SUCCESS', 'pass')),
+    )
+    monkeypatch.setattr(github_pr._github, 'run_gh', reads)
+    fake_time = _FakeTime()
+
+    result = _run_bot_completion_waiting(200, 'coderabbit', fake_time, wait_seconds=120)
+
+    assert reads.count == 2
+    assert result['completed'] is True
+    assert result['timed_out'] is False
+
+
+def test_bot_completion_wait_returns_at_once_for_markerless_bot(monkeypatch):
+    """``no_check_name`` returns without waiting: there is no check-run to observe.
+
+    Neither the provider nor the pause is touched, and the wait fields report a
+    wait of zero that did not time out.
+    """
+    monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+    monkeypatch.setattr(github_pr._github, 'run_gh', _refuse_any_read)
+    fake_time = _FakeTime()
+
+    result = _run_bot_completion_waiting(200, 'sourcery', fake_time, wait_seconds=120)
+
+    assert result['status'] == 'no_check_name'
+    assert result['timed_out'] is False
+    assert result['waited_seconds'] == 0
+    assert fake_time.sleeps == []
+
+
+def test_bot_completion_wait_returns_at_once_when_unconfigured(monkeypatch):
+    """An unauthenticated provider ends the call at once — waiting cannot change it."""
+    monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (False, 'Not authenticated'))
+    monkeypatch.setattr(github_pr._github, 'run_gh', _refuse_any_read)
+    fake_time = _FakeTime()
+
+    result = _run_bot_completion_waiting(200, 'coderabbit', fake_time, wait_seconds=120)
+
+    assert result['status'] == 'unconfigured'
+    assert result['timed_out'] is False
+    assert result['waited_seconds'] == 0
+    assert fake_time.sleeps == []
+
+
+def test_bot_completion_wait_is_clamped_below_the_outer_ceiling(monkeypatch):
+    """A bound larger than one call can hold is clamped to the verb's own ceiling.
+
+    The caller's budget may exceed what one host call allows. The verb returns at
+    its ceiling with ``timed_out`` so the caller re-issues the call, instead of
+    being cut off mid-wait by the host.
+    """
+    monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+    monkeypatch.setattr(
+        github_pr._github,
+        'run_gh',
+        _CheckReads(_checks_json(('CodeRabbit', 'IN_PROGRESS', 'pending'))),
+    )
+    fake_time = _FakeTime()
+    ceiling = github_pr._BOT_COMPLETION_WAIT_CEILING_SECONDS
+
+    result = _run_bot_completion_waiting(200, 'coderabbit', fake_time, wait_seconds=ceiling * 10)
+
+    assert result['timed_out'] is True
+    assert result['waited_seconds'] == ceiling
+    assert sum(fake_time.sleeps) == ceiling
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)

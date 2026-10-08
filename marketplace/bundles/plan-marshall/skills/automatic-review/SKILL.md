@@ -30,7 +30,7 @@ configurable:
     description: Buffer (seconds) before the automatic-review bot comment poll, consumed by the pr wait-for-comments wait. Also the fallback wait for a bot that declares no completion_check_name (empty registry field) — the completion-aware poll only applies to bots that publish an in-progress check-run.
   - key: review_completion_poll_timeout_seconds
     default: 600
-    description: Bound (seconds) on the per-bot completion-aware poll — for each participating bot (required_bots ∪ optional_bots) with a non-empty registry completion_check_name, the wait step polls github_pr bot_completion until the bot's check-run reports completed or this budget elapses. A bot still IN_PROGRESS at the bound is logged loudly (WARNING) and left to the D1 pre-merge comment barrier. Bots without a completion_check_name fall back to review_bot_buffer_seconds.
+    description: Bound (seconds) on the per-bot completion-aware poll — for each participating bot (required_bots ∪ optional_bots) with a non-empty registry completion_check_name, the wait step issues a bounded github_pr bot_completion --wait-seconds call, which waits script-side until the bot's check-run reports completed, and re-issues that call until this budget is spent. A bot that has not completed at the bound is logged loudly (WARNING), named in the step's display_detail and step record, and left to the D1 pre-merge comment barrier. Bots without a completion_check_name fall back to review_bot_buffer_seconds.
   - key: re_review_on_loopback
     default: false
     description: Gate (default-off) for re-requesting a fresh bot review after a phase-5 loop-back fix commit advances HEAD past the reviewed_commit_sha of the staged pr-comment findings (trigger B). When false, a loop-back fix commit is NOT re-reviewed by the automated bots.
@@ -335,31 +335,37 @@ refusal recovery (opt-in)" subsection below.
 
 A fixed buffer out-races a slow bot: a review-bot whose pass is still IN_PROGRESS when the buffer elapses posts its comments AFTER this step moved on, so they are never fetched here (the gap the D1 pre-merge comment barrier is the final net for). To close it at the source, for each participating bot that publishes an in-progress check-run — a non-empty registry `completion_check_name` — additionally poll that bot's check to completion. The bound is the `review_completion_poll_timeout_seconds` param, read off the SAME one-stop `params` object above (default: `600`). A bot with an empty `completion_check_name` publishes no completion check-run and relied on the `review_bot_buffer_seconds` settle above — it is NOT polled here.
 
-For each `{bot_kind}` in `required_bots ∪ optional_bots`, poll the bot's completion state:
+For each `{bot_kind}` in `required_bots ∪ optional_bots`, start with `{remaining_budget}` = `review_completion_poll_timeout_seconds` and issue ONE bounded wait on the bot's completion state:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr \
-  bot_completion --pr-number {pr_number} --bot-kind {bot_kind}
+  bot_completion --pr-number {pr_number} --bot-kind {bot_kind} --wait-seconds {remaining_budget}
 ```
 
-The loop is driven across tool calls — **no shell loop**: each poll is exactly one `bot_completion` Bash call, and pacing between polls is a single standalone `sleep {interval}` Bash call (`{interval}` = 30s). Track elapsed wall-clock per bot against `review_completion_poll_timeout_seconds`; stop issuing new polls for a bot once its budget would be exceeded.
+**The script holds the wait; this step does not pace anything.** The call re-reads the bot's check-run itself until the check completes or its bound lapses, and returns `timed_out` and `waited_seconds` beside the usual `status` / `in_progress` / `completed`. One call never waits longer than the verb's own per-call ceiling, whatever `{remaining_budget}` is — the verb clamps the bound so it returns before the host's per-call limit. Issue the Bash call with the host's maximum per-call timeout so the script's own bound is always the one that ends it. A budget larger than one call can hold is spent by **re-issuing the same call**: after a `timed_out: true` return, subtract the returned `waited_seconds` from `{remaining_budget}` and issue the call again with the reduced value. There is no shell loop and no pause between calls — each re-issue is exactly one `bot_completion` Bash call, and the budget is tracked per bot.
 
 | `bot_completion` return | Action |
 |--------------|--------|
-| `status: no_check_name` | The bot publishes no completion check-run — it relied on the `review_bot_buffer_seconds` settle above; do NOT poll it, move to the next participating bot |
+| `status: no_check_name` | The bot publishes no completion check-run — it relied on the `review_bot_buffer_seconds` settle above; the call returned at once without waiting. Move to the next participating bot |
 | `completed: true` | The bot's review pass has concluded — move to the next participating bot |
-| `in_progress: true` OR `status: not_found` (within budget) | The bot is still running, or has not posted its check-run yet; pace with a single standalone `sleep 30` Bash call, then re-issue the `bot_completion` poll above |
-| budget exhausted with `completed: false` | The bot is still running at the `review_completion_poll_timeout_seconds` bound — log loudly (WARNING) and leave it to the D1 pre-merge comment barrier; move to the next participating bot |
-| `status: unconfigured` | GitHub not authenticated — treat as warning, log, stop polling (best-effort), proceed to the producer-stage |
+| `timed_out: true`, `{remaining_budget}` still positive after subtracting `waited_seconds` | The call's own bound lapsed first; the bot is still running, or has not posted its check-run yet (`status: not_found`). Re-issue the call above with the reduced `{remaining_budget}` |
+| `timed_out: true`, `{remaining_budget}` spent | The bot has not completed at the `review_completion_poll_timeout_seconds` bound — record it as described below and leave it to the D1 pre-merge comment barrier; move to the next participating bot |
+| `status: unconfigured` | GitHub not authenticated — the call returned at once. Treat as warning, log, stop polling (best-effort), proceed to the producer-stage |
+| `status: error` | The check-run could not be read — the call returned at once. Treat as warning, log, move to the next participating bot |
 
-Loud WARNING when a bot is still IN_PROGRESS at the bound:
+**A bot that has not completed at the bound is recorded in three places, not one.** A log line alone is invisible to anyone reading the step's outcome, so the bot is named where the outcome is read as well:
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:automatic-review) Completion-aware poll: bot {bot_kind} still IN_PROGRESS at review_completion_poll_timeout_seconds={review_completion_poll_timeout_seconds}s bound — leaving to the D1 pre-merge comment barrier"
-```
+1. **The work log** — the loud WARNING:
 
-Once every participating bot is completed, markerless (buffer-settled), or logged-at-bound, proceed to the producer-stage.
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:automatic-review) Completion-aware poll: bot {bot_kind} still IN_PROGRESS at review_completion_poll_timeout_seconds={review_completion_poll_timeout_seconds}s bound — leaving to the D1 pre-merge comment barrier"
+   ```
+
+2. **The step's `display_detail`** — add `{bot_kind}` to the accumulating `{poll_unfinished_bots}` list. Whichever "Mark Step Complete" branch closes the step appends `; poll bound hit: {poll_unfinished_bots}` to the `display_detail` it composes, shortening the leading text where needed to keep the whole value within the `display_detail` length limit. An empty list appends nothing.
+3. **The step record** — that `display_detail` is the value passed to `mark-step-done --display-detail`, so the persisted step record names the same bots. An `escalate_ask` return, which marks no step, carries the suffix on its own `display_detail` instead.
+
+Once every participating bot is completed, markerless (buffer-settled), or recorded-at-bound, proceed to the producer-stage.
 
 > **GitLab provider asymmetry:** `bot_completion` is a GitHub-only read verb — the GitLab provider (`gitlab_pr`) has no completion-check-run equivalent (the same asymmetry the FIND stage's `--required-bots` / `--optional-bots` note documents). On a GitLab host, skip the completion-aware poll entirely; every bot relies on the `review_bot_buffer_seconds` settle.
 
