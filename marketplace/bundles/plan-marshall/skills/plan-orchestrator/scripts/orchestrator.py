@@ -275,8 +275,7 @@ IN_FLIGHT_PLAN_STATUSES = ('launched', RUNNING_STATUS)
 
 # An in-flight status is a live one by definition. Checked at construction
 # because the gate classifier reads "live and not in flight" as its last
-# exclusion reason: a member here that is not live would be neither in flight
-# nor excluded, and would drop out of both populations silently.
+# exclusion reason.
 assert set(IN_FLIGHT_PLAN_STATUSES) <= set(LIVE_PLAN_STATUSES), (
     f'IN_FLIGHT_PLAN_STATUSES {IN_FLIGHT_PLAN_STATUSES} must be a subset of LIVE_PLAN_STATUSES {LIVE_PLAN_STATUSES}'
 )
