@@ -69,6 +69,17 @@ The step derives the plan's live footprint on demand from the worktree (via `com
 
 `finalize-step-simplify` declares `head_dependent: true` in its frontmatter — that fact IS the membership declaration the dispatcher's re-entry check reads (see [`../../extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter"). Because it applies edits directly to the worktree — which the dispatcher's commit instrumentation (`phase-6-finalize/SKILL.md` Step 3 item 5f) commits after the step records `done`, advancing HEAD — a loop-back fix task that advances HEAD past the recorded `head_at_completion` MUST re-fire this step so the simplification pass runs against the newer tree. Capture `git rev-parse HEAD` immediately before the terminal `mark-step-done` call and forward it via `--head-at-completion {sha}`.
 
+### Verdict-input surface — deliberately undeclared
+
+This step declares **no** `verdict_inputs`, so the dispatcher's verdict-currency classifier never narrows its re-fire: every HEAD advance re-runs it. The absence is a recorded refusal on evidence, not a declaration left unwritten.
+
+The admissibility bar is that the globs be a **superset** of everything the step's verdict reads (see [`../../extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter"). This step's verdict reads the plan's own footprint, and nothing narrower than the tracked tree contains it:
+
+- **The reviewed file set is derived at run time.** Step 1 takes the `files` list `compute-footprint` returns — the plan's own diff against its base plus the working-tree state — and Step 3 hands that whole list to the review. Which paths are in it depends on what the plan changed, so it is known when the step runs and not before.
+- **No file-type filter narrows it.** Neither Step 1 nor Step 3 drops a path by extension or directory, and the step is domain-agnostic by construction: it applies to Java, Python, JavaScript, documentation and marketplace changesets alike. A plan that touches only `doc/**` is reviewed in full, so a glob covering source trees alone would leave part of the verdict's input outside the declaration.
+
+Any tracked file can therefore be in the reviewed set, and a static glob that covers every such file is a whole-tree glob. A whole-tree declaration preserves nothing — every advance touches it — so declaring nothing keeps the fail-closed default and says so. This is the discovered-input shape [`verdict-currency.md`](verdict-currency.md) § "The classification" names as disqualifying.
+
 ## Settle-band position — edits are reviewed and gated in the same pass
 
 This step sorts FIRST among the code-mutating settle steps (`order: 5`), ahead of `finalize-step-security-audit` (7), `pre-submission-self-review` (8), `architecture-refresh` (9), and `pre-push-quality-gate` (10). That position means its edits are examined by the self-review, captured by the descriptor refresh, and certified by the quality gate within the same pass — no HEAD it produces is shipped without passing every downstream settle check. Security hardening stays after simplification deliberately: a guard the audit adds is a decision, not surplus structure, and must not be offered back to the simplifier in the same pass (the Step 3b reconciliation enforces the same direction for review commitments).

@@ -45,8 +45,8 @@ Covered:
   otherwise report as a pass.
 * The refusal table's rows: each tabled step's own doc carries the refusal section
   as an ATX HEADING. The match is heading-anchored rather than a bare substring
-  search, because both tabled docs carry the phrase twice — as their own heading
-  and inside a cross-reference to the other step's section — so a substring search
+  search, because a tabled doc can carry the phrase twice — as its own heading
+  and inside a cross-reference to another step's section — so a substring search
   survives renaming the heading itself.
 """
 

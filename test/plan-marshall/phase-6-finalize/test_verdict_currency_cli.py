@@ -45,8 +45,8 @@ Covered:
   otherwise report as a pass.
 * The refusal table's rows: each tabled step's own doc carries the refusal section
   as an ATX HEADING. The match is heading-anchored rather than a bare substring
-  search, because both tabled docs carry the phrase twice — as their own heading
-  and inside a cross-reference to the other step's section — so a substring search
+  search, because a tabled doc can carry the phrase twice — as its own heading
+  and inside a cross-reference to another step's section — so a substring search
   survives renaming the heading itself.
 """
 
@@ -436,8 +436,8 @@ def test_every_tabled_refusal_carries_its_section():
         )
         assert level in _REFUSAL_HEADING_LEVELS, (
             f'{step} carries the refusal section at heading level {level!r}, which is not one '
-            f'of {sorted(_REFUSAL_HEADING_LEVELS)}. The two tabled docs differ legitimately — a '
-            f'project SKILL.md nests it one deeper than a standards doc — but a level outside '
+            f'of {sorted(_REFUSAL_HEADING_LEVELS)}. Tabled docs differ legitimately — a section '
+            f'nested under a HEAD-dependency heading sits one deeper than a top-level one — but a level outside '
             f'that set means the section has been re-nested somewhere unexpected, and the '
             f'cross-references pointing at it are the thing to re-check.'
         )

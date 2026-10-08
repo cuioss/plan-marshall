@@ -167,21 +167,24 @@ distinction that decides it is what the step's body *does*:
   A whole-tree declaration in any of these cases would be an inert lever wearing the shape of a
   real one.
 
-**Two worked negative cases are recorded below. The table is ILLUSTRATIVE, not a closed set** — a
+**The worked negative cases are recorded below. The table is ILLUSTRATIVE, not a closed set** — a
 refusal is a judgement about a step's body, not a frontmatter fact, so it cannot be derived the way
-the trigger set above is, and a third refusing step will not appear here automatically. What IS
-pinned by a guard is the link between each row and its evidence: `test_verdict_currency.py` asserts
-that every step named here carries the refusal section this table cites. A row whose section is
-deleted or renamed fails at quality-gate rather than rotting silently; a row this table never gained
-is the residual risk the "illustrative" label exists to disclose.
+the trigger set above is, and a further refusing step will not appear here automatically. What IS
+pinned by a guard is the link between each row and its evidence: the `test_verdict_currency_*`
+modules assert that every step named here carries the refusal section this table cites. A row whose
+section is deleted or renamed fails at quality-gate rather than rotting silently; a row this table
+never gained is the residual risk the "illustrative" label exists to disclose.
 
-Each refusal is recorded in that step's own doc rather than left as an unexplained absence, and each
-of these two exhibits more than one shape:
+Each refusal is recorded in that step's own doc rather than left as an unexplained absence. The
+"Shapes" column names which of the shapes above each step exhibits, and names separately an input
+that no tree difference can see at all:
 
 | Step | Shapes | Refusal recorded at |
 |---|---|---|
 | `default:pre-push-quality-gate` | 1 (its module-tests arm runs the pytest suite), and 2 + 3 inherited (its whole-tree arm invokes the marketplace-wide doctor pass, so it takes on that pass's own disqualifiers) | [`pre-push-quality-gate.md`](pre-push-quality-gate.md) § "Verdict-input surface — deliberately undeclared" |
 | `project:finalize-step-plugin-doctor` | 2 (`broken-relative-link`) and 3 (the agentfile analyzers) | that step's own § "Verdict-input surface — deliberately undeclared" |
+| `default:finalize-step-simplify` | 2 (the reviewed file set is the plan's own footprint, derived at run time and narrowed by no file-type filter) | [`finalize-step-simplify.md`](finalize-step-simplify.md) § "Verdict-input surface — deliberately undeclared" |
+| `project:finalize-step-lessons-housekeeping` | 2 (the Evidence bar re-reads whichever standards clause a lesson names), plus inputs outside every tree: the plan's `modified_files` and request document, and the git-ignored lessons corpus | that step's own § "Verdict-input surface — deliberately undeclared" |
 
 The vocabulary is deliberately static globs; admitting a *derived* surface — a command whose
 output is the path set — would make shape 2 declarable, and is not attempted here.
