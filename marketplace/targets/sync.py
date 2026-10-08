@@ -172,6 +172,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import os
 import shutil
 import sys
 from dataclasses import dataclass
@@ -185,8 +186,6 @@ if _TOON_DIR.is_dir() and str(_TOON_DIR) not in sys.path:
     sys.path.insert(0, str(_TOON_DIR))
 
 from toon_parser import serialize_toon  # noqa: E402
-
-VERBATIM_SKILL_SUBDIRS: tuple[str, ...] = ('standards', 'references', 'templates', 'scripts')
 
 #: The Claude target's name. Its sync path is the plugin-cache mirror in
 #: ``cache_sync.py`` rather than a :class:`TargetSyncConfig` deploy.
@@ -414,20 +413,51 @@ def _prune_managed(
     return removed
 
 
-def _deploy_skill(skill_dir: Path, dest: Path, *, dry_run: bool) -> None:
-    target = dest / 'skills' / skill_dir.name
-    if not dry_run:
-        target.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(skill_dir / 'SKILL.md', target / 'SKILL.md')
+def _remove_absent_from_source(skill_dir: Path, target: Path) -> None:
+    """Remove every entry of ``target`` that ``skill_dir`` does not hold as the same kind.
 
-    for subdir_name in VERBATIM_SKILL_SUBDIRS:
-        src_sub = skill_dir / subdir_name
-        if src_sub.exists() and src_sub.is_dir():
-            dst_sub = target / subdir_name
-            if not dry_run:
-                if dst_sub.exists():
-                    shutil.rmtree(dst_sub)
-                shutil.copytree(src_sub, dst_sub)
+    A destination file survives only where the source has a file at the same
+    relative path, and a destination directory only where the source has a
+    directory there. A removed directory is not descended into.
+    """
+    for root, dirnames, filenames in os.walk(target):
+        installed = Path(root)
+        generated = skill_dir / installed.relative_to(target)
+        for name in filenames:
+            if not (generated / name).is_file():
+                (installed / name).unlink()
+        for name in list(dirnames):
+            if (generated / name).is_dir() and not (installed / name).is_symlink():
+                continue
+            dirnames.remove(name)
+            if (installed / name).is_symlink():
+                (installed / name).unlink()
+            else:
+                shutil.rmtree(installed / name)
+
+
+def _deploy_skill(skill_dir: Path, dest: Path, *, dry_run: bool) -> None:
+    """Mirror the generated skill directory into ``{dest}/skills/{name}/``.
+
+    Every file and directory of the generated skill is installed at the same
+    relative path, whatever it is called, and every destination file and
+    directory the generated skill no longer holds is removed — so the install
+    is the generated tree and nothing else. ``dry_run`` writes nothing.
+    """
+    if dry_run:
+        return
+
+    target = dest / 'skills' / skill_dir.name
+    target.mkdir(parents=True, exist_ok=True)
+    _remove_absent_from_source(skill_dir, target)
+
+    for root, dirnames, filenames in os.walk(skill_dir):
+        generated = Path(root)
+        installed = target / generated.relative_to(skill_dir)
+        for name in dirnames:
+            (installed / name).mkdir(exist_ok=True)
+        for name in filenames:
+            shutil.copy2(generated / name, installed / name)
 
 
 def _deploy_agent(agent_file: Path, dest: Path, *, dry_run: bool) -> None:

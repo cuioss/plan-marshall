@@ -291,3 +291,64 @@ class TestSyncEngineUnit:
         data = parse_toon(buf.getvalue())
         assert data['status'] == 'error'
         assert 'unknown target' in data['summary_message']
+
+
+def _make_generated_skill(source: Path, target_name: str) -> Path:
+    """Build a generated skill holding a non-standard subdirectory and a loose root file."""
+    skill = source / TARGET_CONFIGS[target_name].source_skills_dir / 'demo-skill'
+    _write(skill / 'SKILL.md', '---\nname: demo-skill\n---\n')
+    _write(skill / 'workflow' / 'x.md', '# x\n')
+    _write(skill / 'notes.txt', 'loose\n')
+    return skill
+
+
+def _deploy(target_name: str, source: Path, dest: Path, *, dry_run: bool = False) -> None:
+    exit_code = sync_target(target_name, source=source, dest=dest, dry_run=dry_run, stdout=io.StringIO())
+    assert exit_code == 0
+
+
+def _tree(root: Path) -> list[str]:
+    return sorted(path.relative_to(root).as_posix() for path in root.rglob('*'))
+
+
+@pytest.mark.parametrize('target_name', ['opencode', 'antigravity'])
+class TestDeploySkillMirror:
+    """The deploy step installs the generated skill directory as it is, and nothing else."""
+
+    def test_every_subdirectory_and_loose_file_of_a_generated_skill_is_installed(
+        self, target_name: str, tmp_path: Path
+    ):
+        source, dest = tmp_path / 'source', tmp_path / 'dest'
+        _make_generated_skill(source, target_name)
+
+        _deploy(target_name, source, dest)
+
+        assert _tree(dest / 'skills' / 'demo-skill') == ['SKILL.md', 'notes.txt', 'workflow', 'workflow/x.md']
+        assert (dest / 'skills' / 'demo-skill' / 'workflow' / 'x.md').read_text(encoding='utf-8') == '# x\n'
+
+    def test_subdirectory_removed_from_the_generated_skill_is_removed_from_the_install(
+        self, target_name: str, tmp_path: Path
+    ):
+        source, dest = tmp_path / 'source', tmp_path / 'dest'
+        skill = _make_generated_skill(source, target_name)
+        _deploy(target_name, source, dest)
+        (skill / 'workflow' / 'x.md').unlink()
+        (skill / 'workflow').rmdir()
+        (skill / 'notes.txt').unlink()
+
+        _deploy(target_name, source, dest)
+
+        assert not (dest / 'skills' / 'demo-skill' / 'workflow').exists()
+        assert _tree(dest / 'skills' / 'demo-skill') == ['SKILL.md']
+
+    def test_dry_run_leaves_the_installed_skill_untouched(self, target_name: str, tmp_path: Path):
+        """A dry run neither installs a new file nor removes a stale one."""
+        source, dest = tmp_path / 'source', tmp_path / 'dest'
+        _make_generated_skill(source, target_name)
+        _write(dest / 'skills' / 'demo-skill' / 'SKILL.md', 'installed\n')
+        _write(dest / 'skills' / 'demo-skill' / 'stale' / 'old.md', 'stale\n')
+
+        _deploy(target_name, source, dest, dry_run=True)
+
+        assert _tree(dest / 'skills' / 'demo-skill') == ['SKILL.md', 'stale', 'stale/old.md']
+        assert (dest / 'skills' / 'demo-skill' / 'SKILL.md').read_text(encoding='utf-8') == 'installed\n'
