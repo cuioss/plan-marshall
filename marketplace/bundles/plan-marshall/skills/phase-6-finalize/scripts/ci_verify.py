@@ -28,7 +28,8 @@ Responsibilities (all deterministic Python — no dispatch here):
   validated Python site.
 * Green (``final_status == success`` AND no failing checks) →
   ``mark-step-done --outcome done`` with ``--head-at-completion``, zero
-  dispatch.
+  dispatch. The mark's own result decides what is reported: ``green`` when it
+  returned success, ``green_unrecorded`` when it was refused.
 * Non-green → file exactly ONE taxonomy finding per failing check (plus the
   ``ci_no_checks`` finding on ``final_status == none``) and return a
   per-producer needs-triage signal so the dispatcher runs
@@ -45,14 +46,19 @@ directly)::
     status: success | error
     plan_id: <echo>
     final_status: success | failure | none | timeout
-    outcome: green | needs_triage
+    outcome: green | green_unrecorded | needs_triage
     run_id: <str>              # derived from checks[] run URLs; may be empty
     head_sha: <str>            # threaded from the precondition; may be empty
     persisted: true | false
     persist_skipped_reason: <field>   # present only when persisted == false
     findings_filed: <int>
     producers: [str, ...]      # present only when outcome == needs_triage
-    step_marked_done: true | false    # true only on the green path
+    step_marked_done: true | false    # true only when the mark returned success
+    step_mark_error: <str>     # present only when outcome == green_unrecorded
+    step_mark_message: <str>   # present only when outcome == green_unrecorded
+
+``green_unrecorded`` is a green CI verdict whose ``mark-step-done`` write was
+refused: CI passed, but the step record does not say so.
 
 Subprocess seams (``_run_ci_checks_status``, ``_run_manage_ci_artifacts_persist``,
 ``_run_manage_findings_add``, ``_run_mark_step_done``, ``_run_git_rev_parse_head``)
@@ -421,8 +427,9 @@ def _run_git_rev_parse_head(worktree_path: str) -> str:
     """Return the worktree HEAD SHA, or an empty string on any failure.
 
     A missing HEAD SHA degrades the green ``--head-at-completion`` to an empty
-    string; ``mark-step-done`` still records the terminal outcome (the SHA is
-    only consulted by the resumable HEAD-advance check).
+    string. Whether ``mark-step-done`` then records the outcome is the mark's
+    own decision, not this helper's: :func:`verify` reads the mark's returned
+    ``status`` and reports ``outcome: green_unrecorded`` when it refused.
     """
     try:
         completed = subprocess.run(
@@ -628,24 +635,32 @@ def verify(
     # ----- Green early return -------------------------------------------
     if final_status == 'success' and not (failing_checks or []):
         sha = head_fn(worktree_path)
-        mark_done_fn(
+        mark_result = mark_done_fn(
             plan_id=plan_id,
             display_detail='ci-verify: all checks green',
             head_at_completion=sha,
             worktree_path=worktree_path,
         )
-        return {
+        # The mark is a write that can be refused; report what it returned
+        # rather than that it was attempted. mark_done_fn shares the
+        # contractually-dict _run_proxy boundary, so no isinstance guard.
+        step_marked_done = mark_result.get('status') == 'success'
+        green_result = {
             'status': 'success',
             'plan_id': plan_id,
             'final_status': final_status,
-            'outcome': 'green',
+            'outcome': 'green' if step_marked_done else 'green_unrecorded',
             'run_id': run_id,
             'head_sha': head_sha,
             'persisted': persisted,
             **({'persist_skipped_reason': persist_skipped_reason} if persist_skipped_reason else {}),
             'findings_filed': 0,
-            'step_marked_done': True,
+            'step_marked_done': step_marked_done,
         }
+        if not step_marked_done:
+            green_result['step_mark_error'] = str(mark_result.get('error') or '')
+            green_result['step_mark_message'] = str(mark_result.get('message') or '')
+        return green_result
 
     # ----- No-checks case ------------------------------------------------
     findings_filed = 0

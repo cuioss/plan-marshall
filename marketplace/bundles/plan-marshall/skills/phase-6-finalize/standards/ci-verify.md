@@ -75,7 +75,8 @@ The executor's steps:
 3. **Persist artifacts** behind the required-field guard (below).
 4. **Green early return** (`final_status == success` AND no failing
    checks): mark the step `done` with `--head-at-completion`, ZERO
-   dispatch, and return `outcome: green`.
+   dispatch, and return `outcome: green` — or `outcome: green_unrecorded`
+   when that mark was refused (see "Return shape" below).
 5. **Red CI**: file exactly one taxonomy finding per failing check (plus
    the `ci_no_checks` finding on `final_status == none`) and return
    `outcome: needs_triage` carrying the distinct per-producer strings.
@@ -93,15 +94,27 @@ red-CI triage dispatch it bypasses (steps 4 → 5 above).
 ```toon
 status: success | error
 final_status: success | failure | none | timeout
-outcome: green | needs_triage
+outcome: green | green_unrecorded | needs_triage
 run_id: <str>
 head_sha: <str>
 persisted: true | false
 persist_skipped_reason: <field>   # present only when persisted == false
 findings_filed: <int>
 producers: [str, ...]             # present only when outcome == needs_triage
-step_marked_done: true | false    # true only on the green path
+step_marked_done: true | false    # true only when the mark returned success
+step_mark_error: <str>            # present only when outcome == green_unrecorded
+step_mark_message: <str>          # present only when outcome == green_unrecorded
 ```
+
+`green_unrecorded` is a green CI verdict whose `mark-step-done` write was
+refused: CI passed, but the step record does not say so. `step_mark_error`
+carries the mark's own `error` and `step_mark_message` its `message`, so a
+recorded green and a refused one are distinguishable from the payload alone.
+
+**Dispatcher action on `green_unrecorded`**: stop with the tool's message
+(`step_mark_message`, naming `step_mark_error`) and do NOT advance past the
+step. The step has no `done` record, so advancing would carry the run past a
+step the record still shows as unfinished.
 
 The canonical argparse surface for the script is published in
 [`../SKILL.md`](../SKILL.md); the script registers its own `run`

@@ -11,7 +11,9 @@ tests pin the deliverable's Success Criteria via the injectable seams
 live plan state:
 
 * Green CI returns ``done`` with zero LLM dispatch (``mark_done`` called,
-  no findings, ``step_marked_done == True``).
+  no findings). ``step_marked_done`` is read off the mark's own result: ``True``
+  when it returned success, ``False`` with ``outcome == green_unrecorded`` when
+  it was refused.
 * Each failing-check partition files exactly one taxonomy finding; the
   ``ci_no_checks`` finding is filed on ``final_status == none``.
 * The required-field guard skips the persist call when any required flag is
@@ -128,14 +130,19 @@ class _StubFindings:
 
 
 class _StubMarkDone:
-    """Record every mark-step-done call; return a success envelope."""
+    """Record every mark-step-done call; return the configured envelope.
 
-    def __init__(self) -> None:
+    Defaults to a success envelope. Pass ``result`` to stand in for a mark the
+    handler refused.
+    """
+
+    def __init__(self, result: dict | None = None) -> None:
+        self.result = result if result is not None else {'status': 'success'}
         self.calls: list[dict] = []
 
     def __call__(self, **kwargs) -> dict:
         self.calls.append(kwargs)
-        return {'status': 'success'}
+        return self.result
 
 
 class _StubGitHead:
@@ -532,3 +539,198 @@ def test_executor_persists_artifacts_before_classification():
     assert persist_pos < classify_pos, (
         'the persist seam must run before the classification loop so findings can reference persisted per-job log paths'
     )
+
+
+# ---------------------------------------------------------------------------
+# Green path — the mark's own result decides what is reported.
+# ---------------------------------------------------------------------------
+
+_CI_VERIFY_PHASE = '6-finalize'
+_CI_VERIFY_STEP = 'ci-verify'
+
+
+def _live_head_sha() -> str:
+    """Resolve the live HEAD SHA — a real anchor for the persisted record.
+
+    The production ``mark-step-done`` resolves a supplied
+    ``--head-at-completion`` against the object store and refuses a fabricated
+    SHA, so a test that drives the real handler must supply one the local repo
+    actually holds.
+    """
+    import subprocess
+
+    proc = subprocess.run(
+        ['git', 'rev-parse', 'HEAD'],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert proc.returncode == 0, f'Cannot resolve a real HEAD SHA: {proc.stderr.strip()}'
+    sha = proc.stdout.strip()
+    assert sha
+    return sha
+
+
+def _mark_ci_verify(plan_id: str, outcome: str, detail: str, head: str | None = None) -> dict:
+    """Record ``outcome`` on ci-verify through the real mark-step-done handler."""
+    result: dict | None = _cmd_mark_step_done(
+        Namespace(
+            plan_id=plan_id,
+            phase=_CI_VERIFY_PHASE,
+            step=_CI_VERIFY_STEP,
+            outcome=outcome,
+            force=False,
+            display_detail=detail,
+            head_at_completion=head,
+            loop_back_target='6-finalize' if outcome == 'loop_back' else None,
+        )
+    )
+    assert result is not None, 'mark-step-done found no status file for the plan'
+    return result
+
+
+def _real_mark_done_runner(*, plan_id: str, display_detail: str, head_at_completion: str, worktree_path: str) -> dict:
+    """Route the executor's green mark through the real handler, not a stub."""
+    return _mark_ci_verify(plan_id, 'done', display_detail, head_at_completion)
+
+
+def _stored_ci_verify_entry(plan_id: str) -> dict:
+    entry: dict = _read_status(plan_id)['metadata']['phase_steps'][_CI_VERIFY_PHASE][_CI_VERIFY_STEP]
+    return entry
+
+
+def test_refused_mark_reports_green_unrecorded(tmp_path):
+    """A green CI verdict whose mark was refused is not reported as recorded."""
+    # Arrange — the mark seam returns the handler's conflict refusal.
+    refusal_message = 'Step ci-verify already marked as skipped - use --force to overwrite with done'
+    mark_done = _StubMarkDone({'status': 'error', 'error': 'conflict', 'message': refusal_message})
+    findings = _StubFindings()
+
+    # Act
+    result = verify(
+        plan_id='ci-verify-refused-mark',
+        pr_number=_PR,
+        worktree_path=str(tmp_path),
+        provider='github',
+        final_status='success',
+        wait_outcome='completed',
+        head_sha=_HEAD_SHA,
+        ci_status_runner=_StubCiStatus(_green_envelope()),
+        persist_runner=_StubPersist(),
+        findings_runner=findings,
+        mark_done_runner=mark_done,
+        git_head_resolver=_StubGitHead('deadbeef'),
+    )
+
+    # Assert — the mark WAS attempted, and its refusal is what gets reported.
+    assert len(mark_done.calls) == 1
+    assert result['status'] == 'success'
+    assert result['final_status'] == 'success'
+    assert result['outcome'] == 'green_unrecorded'
+    assert result['step_marked_done'] is False
+    assert result['step_mark_error'] == 'conflict'
+    assert result['step_mark_message'] == refusal_message
+    # A refused mark is not a red CI run: nothing is filed and nothing routes to triage.
+    assert result['findings_filed'] == 0
+    assert 'producers' not in result
+    assert len(findings.calls) == 0
+
+
+def test_recorded_mark_carries_no_mark_error_fields(tmp_path):
+    """The refusal fields ride ``green_unrecorded`` alone, never a recorded green."""
+    # Arrange / Act
+    result = verify(
+        plan_id='ci-verify-recorded-mark',
+        pr_number=_PR,
+        worktree_path=str(tmp_path),
+        provider='github',
+        final_status='success',
+        wait_outcome='completed',
+        head_sha=_HEAD_SHA,
+        ci_status_runner=_StubCiStatus(_green_envelope()),
+        persist_runner=_StubPersist(),
+        findings_runner=_StubFindings(),
+        mark_done_runner=_StubMarkDone(),
+        git_head_resolver=_StubGitHead('deadbeef'),
+    )
+
+    # Assert
+    assert result['outcome'] == 'green'
+    assert result['step_marked_done'] is True
+    assert 'step_mark_error' not in result
+    assert 'step_mark_message' not in result
+
+
+def test_green_run_records_done_over_a_stored_loop_back(tmp_path):
+    """End to end: a stored ``loop_back`` record reads ``done`` after a green run.
+
+    The mark is driven through the real ``mark-step-done`` handler against a real
+    status file, so ``step_marked_done`` is checked against the record itself
+    rather than against a stub's say-so.
+    """
+    # Arrange — ci-verify looped back on an earlier red run.
+    plan_id = 'ci-verify-loop-back-to-done'
+    _make_ci_verify_plan(plan_id)
+    _mark_ci_verify(plan_id, 'loop_back', 'CI red, fix pushed')
+    assert _stored_ci_verify_entry(plan_id)['outcome'] == 'loop_back'
+    live_head = _live_head_sha()
+
+    # Act — the re-fired step sees green CI.
+    result = verify(
+        plan_id=plan_id,
+        pr_number=_PR,
+        worktree_path=str(tmp_path),
+        provider='github',
+        final_status='success',
+        wait_outcome='completed',
+        head_sha=_HEAD_SHA,
+        ci_status_runner=_StubCiStatus(_green_envelope()),
+        persist_runner=_StubPersist(),
+        findings_runner=_StubFindings(),
+        mark_done_runner=_real_mark_done_runner,
+        git_head_resolver=_StubGitHead(live_head),
+    )
+
+    # Assert — the reported write and the stored record agree.
+    assert result['outcome'] == 'green'
+    assert result['step_marked_done'] is True
+    assert 'step_mark_error' not in result
+
+    entry = _stored_ci_verify_entry(plan_id)
+    assert entry['outcome'] == 'done'
+    assert entry['head_at_completion'] == live_head
+    assert entry['firing_count'] == 2
+    assert entry['prior_firings'] == [{'outcome': 'loop_back', 'loop_back_target': '6-finalize'}]
+
+
+def test_refused_real_mark_leaves_the_stored_record_untouched(tmp_path):
+    """End to end, negative control: a real refusal is reported and writes nothing."""
+    # Arrange — ci-verify is recorded `skipped`; `skipped` to `done` is a conflict.
+    plan_id = 'ci-verify-skipped-refuses-done'
+    _make_ci_verify_plan(plan_id)
+    _mark_ci_verify(plan_id, 'skipped', 'no PR to verify')
+    stored_before = json.dumps(_stored_ci_verify_entry(plan_id), sort_keys=True)
+
+    # Act
+    result = verify(
+        plan_id=plan_id,
+        pr_number=_PR,
+        worktree_path=str(tmp_path),
+        provider='github',
+        final_status='success',
+        wait_outcome='completed',
+        head_sha=_HEAD_SHA,
+        ci_status_runner=_StubCiStatus(_green_envelope()),
+        persist_runner=_StubPersist(),
+        findings_runner=_StubFindings(),
+        mark_done_runner=_real_mark_done_runner,
+        git_head_resolver=_StubGitHead(_live_head_sha()),
+    )
+
+    # Assert — the handler's own error and message surface verbatim.
+    assert result['outcome'] == 'green_unrecorded'
+    assert result['step_marked_done'] is False
+    assert result['step_mark_error'] == 'conflict'
+    assert 'already marked as' in result['step_mark_message']
+    assert json.dumps(_stored_ci_verify_entry(plan_id), sort_keys=True) == stored_before

@@ -11,7 +11,9 @@ tests pin the deliverable's Success Criteria via the injectable seams
 live plan state:
 
 * Green CI returns ``done`` with zero LLM dispatch (``mark_done`` called,
-  no findings, ``step_marked_done == True``).
+  no findings). ``step_marked_done`` is read off the mark's own result: ``True``
+  when it returned success, ``False`` with ``outcome == green_unrecorded`` when
+  it was refused.
 * Each failing-check partition files exactly one taxonomy finding; the
   ``ci_no_checks`` finding is filed on ``final_status == none``.
 * The required-field guard skips the persist call when any required flag is
@@ -128,14 +130,19 @@ class _StubFindings:
 
 
 class _StubMarkDone:
-    """Record every mark-step-done call; return a success envelope."""
+    """Record every mark-step-done call; return the configured envelope.
 
-    def __init__(self) -> None:
+    Defaults to a success envelope. Pass ``result`` to stand in for a mark the
+    handler refused.
+    """
+
+    def __init__(self, result: dict | None = None) -> None:
+        self.result = result if result is not None else {'status': 'success'}
         self.calls: list[dict] = []
 
     def __call__(self, **kwargs) -> dict:
         self.calls.append(kwargs)
-        return {'status': 'success'}
+        return self.result
 
 
 class _StubGitHead:
@@ -277,6 +284,82 @@ def test_green_marks_done_no_findings(tmp_path):
     assert result['run_id'] == '987654'
     assert result['persisted'] is True
     assert len(persist.calls) == 1
+
+
+_REFUSAL_MESSAGE = 'Step ci-verify already marked as skipped - use --force to overwrite with done'
+
+
+def _run_cli_green(monkeypatch, capsys, tmp_path, plan_id: str, mark_done: _StubMarkDone) -> tuple[int, dict]:
+    """Drive ``cmd_run`` on a green CI run and return ``(exit_code, parsed TOON)``.
+
+    The subprocess seams are replaced on the module, which is where ``cmd_run``
+    resolves them — it passes no runner through to ``verify``.
+    """
+    from toon_parser import parse_toon
+
+    monkeypatch.setattr(_mod, '_run_ci_checks_status', _StubCiStatus(_green_envelope()))
+    monkeypatch.setattr(_mod, '_run_manage_ci_artifacts_persist', _StubPersist())
+    monkeypatch.setattr(_mod, '_run_manage_findings_add', _StubFindings())
+    monkeypatch.setattr(_mod, '_run_mark_step_done', mark_done)
+    monkeypatch.setattr(_mod, '_run_git_rev_parse_head', _StubGitHead('deadbeef'))
+    args = _mod.build_parser().parse_args(
+        [
+            'run',
+            '--plan-id',
+            plan_id,
+            '--pr-number',
+            str(_PR),
+            '--worktree-path',
+            str(tmp_path),
+            '--provider',
+            'github',
+            '--final-status',
+            'success',
+            '--wait-outcome',
+            'completed',
+            '--head-sha',
+            _HEAD_SHA,
+        ]
+    )
+
+    exit_code = _mod.cmd_run(args)
+
+    return exit_code, parse_toon(capsys.readouterr().out)
+
+
+def test_cli_green_reports_the_recorded_mark(monkeypatch, capsys, tmp_path):
+    """The emitted TOON carries the recorded green when the mark succeeded."""
+    # Arrange
+    mark_done = _StubMarkDone()
+
+    # Act
+    exit_code, payload = _run_cli_green(monkeypatch, capsys, tmp_path, 'ci-verify-cli-green', mark_done)
+
+    # Assert
+    assert exit_code == 0
+    assert len(mark_done.calls) == 1
+    assert payload['outcome'] == 'green'
+    assert payload['step_marked_done'] is True
+    assert 'step_mark_error' not in payload
+    assert 'step_mark_message' not in payload
+
+
+def test_cli_refused_mark_reports_green_unrecorded(monkeypatch, capsys, tmp_path):
+    """The refusing-stub counterpart: the emitted TOON says the mark did not land."""
+    # Arrange
+    mark_done = _StubMarkDone({'status': 'error', 'error': 'conflict', 'message': _REFUSAL_MESSAGE})
+
+    # Act
+    exit_code, payload = _run_cli_green(monkeypatch, capsys, tmp_path, 'ci-verify-cli-refused', mark_done)
+
+    # Assert — the script ran to a verdict, so it exits 0; the refusal rides the payload.
+    assert exit_code == 0
+    assert len(mark_done.calls) == 1
+    assert payload['status'] == 'success'
+    assert payload['outcome'] == 'green_unrecorded'
+    assert payload['step_marked_done'] is False
+    assert payload['step_mark_error'] == 'conflict'
+    assert payload['step_mark_message'] == _REFUSAL_MESSAGE
 
 
 def test_wait_outcome_out_of_enum_clamps_to_completed(tmp_path):
