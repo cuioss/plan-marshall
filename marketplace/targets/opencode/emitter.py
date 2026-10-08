@@ -190,10 +190,9 @@ def _prune_skill_dir(target_skill_dir: Path, expected: set[Path]) -> None:
 def _prune_stale_outputs(output_dir: Path, written: list[Path]) -> None:
     """Remove ``skill/``, ``agent/``, ``command/`` outputs left over from a prior emit.
 
-    The per-component emit only creates directories and overwrites files in
-    place, so a whole skill, or a single agent or command, *removed from
-    source* leaves its previously-emitted output behind and the tree drifts
-    past source. This tracks every path written this run and prunes the
+    A whole skill, or a single agent or command, *removed from source*
+    leaves its previously-emitted output behind and the tree drifts past
+    source. This tracks every path written this run and prunes the
     leftovers at **file** granularity: any emitted file under the three output
     subtrees that was not (re)written this run is unlinked, then the
     directories left empty are removed (deepest first). No broad ``rmtree`` is

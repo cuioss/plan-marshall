@@ -114,8 +114,8 @@ No arguments means all three harnesses; `--target X` means one.
 
 **All-targets run** — the engine prints one aggregate document:
 
-- `status` — `success` when every harness synced, `partial` when some did,
-  `error` when none did.
+- `status` — `success` only when every harness reported `success`, `partial`
+  when some did, `error` when none did.
 - `targets[3]{target,status,summary_message}` — one row per harness.
 - One result block per harness (`claude:`, `opencode:`, `antigravity:`) carrying
   that harness's own fields.

@@ -53,7 +53,7 @@ Every read function takes the path it reads. For a caller that has no path of it
 
 | Consumer | How it loads the module | Reference version it passes |
 |----------|-------------------------|-----------------------------|
-| The harness sync's Claude leg (`marketplace/targets/`) | By file location | The version the sync wrote in this invocation |
+| The harness sync's Claude leg (`marketplace/targets/sync.py`) | By file location | The version the sync wrote in this invocation |
 | The pin-trap detector (`pm-plugin-development:plugin-doctor`) | By name, on the executor's PYTHONPATH | None — it reads the registry and executor values and compares them itself |
 | The restart check (`plan-marshall:plan-orchestrator`) | By name, on the executor's PYTHONPATH | The executor's `MARSHALL_VERSION` |
 

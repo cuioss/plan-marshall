@@ -250,7 +250,7 @@ The block carries one `entries` row per plan-marshall entry of every scope — b
 | `verdict` | Meaning | Effect on the Claude result |
 |-----------|---------|-----------------------------|
 | `in_parity` | Every judged entry is pinned at the synced version. | None. |
-| `behind` | An entry is pinned older than the synced version, and no same-invocation repin closed the gap. | `status` becomes `partial`, `cache_status` keeps the cache-sync outcome, `summary_message` names the pinned version, the synced version and the repin command. |
+| `behind` | An entry is pinned older than the synced version, and no same-invocation repin closed the gap. | `status` becomes `partial`, `cache_status` keeps the cache-sync outcome, `summary_message` names the pinned version and the synced version. |
 | `ahead` | An entry is pinned newer than the synced version. | None — reported, not red. |
 | `unreadable` | Parity could not be established; `reason` says why. | None. |
 

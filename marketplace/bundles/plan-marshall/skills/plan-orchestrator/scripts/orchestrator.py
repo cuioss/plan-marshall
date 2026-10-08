@@ -5461,11 +5461,7 @@ def _registry_parity_signal() -> dict[str, Any]:
     - ``not_ready`` — the registry is pinned BEHIND the executor. This is the
       arm's only definite hazard, and its evidence names both versions and the
       repin command.
-    - ``indeterminate`` — everything else: a store that could not be read, a
-      registry holding no plan-marshall entry (a checkout that does not install
-      plan-marshall through the registry has no pin to be behind), a registry
-      pinned AHEAD of the executor (remedy: regenerate the executor), or a pin
-      that cannot be ordered against the executor version.
+    - ``indeterminate`` — everything else.
     """
     registry_state, rows = plugin_registry.read_registry(plugin_registry.default_registry_path())
     executor_state, executor_version = plugin_registry.read_executor_version(

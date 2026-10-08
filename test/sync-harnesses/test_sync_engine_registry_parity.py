@@ -35,6 +35,7 @@ OLD = '0.1.100'
 SYNCED = '0.1.200'
 NEWER = '0.1.300'
 FOREIGN_KEY = 'other-plugin@other-market'
+REPIN_REMEDY = 're-run the sync with --repin'
 
 
 def _make_registry(registry: Path, cache: Path, pins: dict[str, str]) -> None:
@@ -152,6 +153,7 @@ def test_registry_behind_the_synced_version_is_partial_and_exits_three(tmp_path:
     assert 'repin' not in parity
     for named in (f'pinned {OLD}', f'synced {SYNCED}', 'marketplace/targets/claude/registry_pin.py --apply'):
         assert named in data['summary_message']
+    assert REPIN_REMEDY in data['summary_message']
     assert registry.read_bytes() == before
     assert _backups(registry) == []
 
@@ -253,6 +255,8 @@ def test_dry_run_with_repin_writes_no_registry_and_no_cache(tmp_path: Path):
     parity = data['registry_parity']
     assert data['dry_run'] is True
     assert (parity['verdict'], parity['repin']) == ('behind', 'skipped_dry_run')
+    assert data['summary_message'].endswith(f'(pinned {OLD}, synced {SYNCED})')
+    assert '--repin' not in data['summary_message']
     assert registry.read_bytes() == before
     assert _backups(registry) == []
     assert not cache.exists()

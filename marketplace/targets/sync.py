@@ -82,8 +82,7 @@ Registry parity (Claude path):
     * ``behind`` — an entry is pinned older than the synced version and no
       same-invocation repin closed the gap. The Claude ``status`` becomes
       ``partial`` while ``cache_status`` stays the cache-sync outcome, the
-      ``summary_message`` names the pinned version, the synced version and
-      the repin command.
+      ``summary_message`` names the pinned version and the synced version.
     * ``ahead`` — an entry is pinned newer than the synced version.
       Reported, not red: neither ``status`` nor the exit code changes.
     * ``unreadable`` — parity could not be established (no registry, no
@@ -788,13 +787,15 @@ def _first_behind_pin(
     return None
 
 
-def _behind_summary(summary: str, behind_pin: tuple[str, str] | None) -> str:
-    """Extend ``summary`` with the versions of a ``behind`` registry and its remedy."""
+def _behind_summary(summary: str, behind_pin: tuple[str, str] | None, repin: dict[str, str]) -> str:
+    """Extend ``summary`` with the versions of a ``behind`` registry."""
     versions = f'pinned {behind_pin[0]}, synced {behind_pin[1]}' if behind_pin is not None else 'pinned version older'
-    return (
-        f'{summary}; the plugin registry is behind the synced version ({versions}), so a restarted '
-        f'session still loads the pinned version — run {REPIN_COMMAND}, or re-run the sync with --repin'
-    )
+    behind = f'{summary}; the plugin registry is behind the synced version ({versions})'
+    outcome = repin.get('repin')
+    if outcome == REPIN_SKIPPED_DRY_RUN:
+        return behind
+    remedy = f'{behind}, so a restarted session still loads the pinned version — run {REPIN_COMMAND}'
+    return remedy if outcome is not None else f'{remedy}, or re-run the sync with --repin'
 
 
 def _sync_claude(args: argparse.Namespace) -> tuple[int, dict[str, Any], str]:
@@ -850,7 +851,7 @@ def _sync_claude(args: argparse.Namespace) -> tuple[int, dict[str, Any], str]:
             result = result._replace(
                 status='partial' if result.status == 'success' else result.status,
                 exit_code=EXIT_REGISTRY_BEHIND if result.exit_code == 0 else result.exit_code,
-                summary_message=_behind_summary(result.summary_message, behind_pin),
+                summary_message=_behind_summary(result.summary_message, behind_pin, repin),
             )
 
     return result.exit_code, cache_sync.as_dict(result), cache_sync.render(result)
@@ -1048,13 +1049,17 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.write(rendered)
         return exit_code
 
-    return sync_target(
-        args.target,
-        source=args.source,
-        dest=args.target_dir,
-        only_bundle=args.bundles,
-        dry_run=args.dry_run,
-    )
+    try:
+        return sync_target(
+            args.target,
+            source=args.source,
+            dest=args.target_dir,
+            only_bundle=args.bundles,
+            dry_run=args.dry_run,
+        )
+    except OSError as exc:
+        sys.stdout.write(serialize_toon(_sync_failure_block(args.target, exc)))
+        return 1
 
 
 if __name__ == '__main__':

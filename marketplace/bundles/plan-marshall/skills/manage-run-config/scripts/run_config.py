@@ -1541,8 +1541,8 @@ Examples:
     p_rr_get.set_defaults(func=cmd_registry_repin_get)
 
     # No argparse ``choices`` here: an out-of-enum value must reach the handler
-    # so it is answered with the structured ``invalid_value`` result every other
-    # refusal of this script uses, rather than with an argparse usage error.
+    # so it is answered with the structured ``invalid_value`` result rather than
+    # with an argparse usage error.
     p_rr_set = rr_subparsers.add_parser('set', help='Set the repin opt-in (enabled|disabled)', allow_abbrev=False)
     p_rr_set.add_argument('--value', required=True, help='Repin opt-in (enabled|disabled)')
     p_rr_set.set_defaults(func=cmd_registry_repin_set)
