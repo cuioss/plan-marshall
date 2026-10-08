@@ -27,7 +27,7 @@ EMITTED_FILES = {
     'extension.py': b'VALUE = 1\n',
 }
 
-#: Skill-relative files no component-tree target emits.
+#: Skill-relative files this target does not emit.
 NOT_EMITTED_FILES = ('__pycache__/x.pyc', '.DS_Store')
 
 #: A file whose own ``targets:`` declaration omits this target.
@@ -68,7 +68,7 @@ def _marketplace(source_skill: Path) -> Path:
 
 @pytest.mark.parametrize('rel', sorted(EMITTED_FILES))
 def test_skill_file_is_emitted_byte_identical(rel: str, source_skill: Path, tmp_path: Path, opencode_config_dir: Path):
-    """Every skill file is emitted byte-identical, whatever sub-directory holds it."""
+    """A skill file is emitted byte-identical."""
     out = tmp_path / 'out'
 
     written = emit_bundles(_marketplace(source_skill), out, opencode_config_dir)

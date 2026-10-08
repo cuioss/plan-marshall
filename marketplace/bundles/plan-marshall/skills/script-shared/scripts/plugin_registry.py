@@ -277,7 +277,7 @@ def classify_parity(rows: list[dict[str, str | None]], reference_version: str | 
     unknown = False
     for row in rows:
         for pinned in (row.get('install_path_version'), row.get('version')):
-            if pinned is None:
+            if pinned is None or not version_key(pinned):
                 unknown = True
             elif pinned == reference_version:
                 continue

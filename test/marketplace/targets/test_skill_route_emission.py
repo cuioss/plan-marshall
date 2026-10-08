@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Every file a skill routes to is present in each target's emitted skill.
+"""A file a skill routes to is present in each target's emitted skill.
 
 A ``SKILL.md`` sends its reader to other files of the same skill directory. A
 target that emits the manifest but not the file it routes to ships a skill that
 points at nothing. Each component-tree target is generated from the real
-``marketplace/bundles/`` tree, every route an emitted ``SKILL.md`` carries is
+``marketplace/bundles/`` tree, the routes an emitted ``SKILL.md`` carries are
 extracted, and the routes that name a file of the source skill must name a file
 of the emitted skill too.
 
@@ -37,7 +37,7 @@ from marketplace.targets.component_targets import (
     iter_component_manifests,
 )
 
-# One worker generates the three trees once, instead of each worker that is
+# One worker generates the trees once, instead of each worker that is
 # handed a test of this module regenerating all of them.
 pytestmark = pytest.mark.xdist_group('skill-route-emission')
 

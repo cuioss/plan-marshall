@@ -23,6 +23,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from conftest import PROJECT_ROOT, ScriptResult
 from test_sync_engine import _make_target, _run, _write
 from toon_parser import parse_toon
@@ -328,6 +330,31 @@ def test_orphan_marker_on_the_synced_directory_is_reported(tmp_path: Path):
     parity = parse_toon(result.stdout)['registry_parity']
     assert [row['orphan_marked'] for row in parity['entries']] == [True]
     assert (cache / 'demo' / SYNCED / '.orphaned_at').is_file()
+
+
+@pytest.mark.parametrize(
+    ('version_field', 'exit_code', 'verdict', 'named'),
+    [(SYNCED, 0, 'unreadable', 'synced 1 bundle'), (OLD, 3, 'behind', f'pinned {OLD}')],
+    ids=['beside-the-synced-version', 'beside-an-older-version'],
+)
+def test_digit_free_install_path_version_is_not_judged_behind(
+    tmp_path: Path, version_field: str, exit_code: int, verdict: str, named: str
+):
+    target = tmp_path / 'target' / 'claude'
+    cache = tmp_path / 'cache'
+    registry = tmp_path / 'plugins' / 'installed_plugins.json'
+    _make_target(target, {'demo': SYNCED})
+    entry = {'scope': 'user', 'installPath': str(cache / 'demo' / 'latest'), 'version': version_field}
+    _write(registry, json.dumps({'version': 2, 'plugins': {'demo@plan-marshall': [entry]}}) + '\n')
+
+    result = _run(
+        '--source', str(target), '--cache-root', str(cache), '--registry-path', str(registry), '--skip-staleness-guard'
+    )
+
+    assert result.returncode == exit_code, result.stdout
+    data = parse_toon(result.stdout)
+    assert data['registry_parity']['verdict'] == verdict
+    assert named in data['summary_message']
 
 
 def test_guard_refusal_carries_cache_status_and_no_registry_parity(tmp_path: Path):

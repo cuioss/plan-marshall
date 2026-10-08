@@ -8,8 +8,7 @@ Covers the machine-local registry_repin opt-in:
 - get/set round-trips for both enum values, with the source reported rather
   than left to be inferred from the value
 - An out-of-enum value is rejected with ``invalid_value`` and persists nothing
-- A malformed stored value reads ``disabled`` — the read fails closed, so no
-  damaged store is taken as consent to write the registry
+- A malformed stored value reads ``disabled``
 - Help wiring for the new subcommands
 
 Mirrors the conventions of test_commit_trailer_knob.py.

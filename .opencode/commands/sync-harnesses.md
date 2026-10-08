@@ -96,9 +96,8 @@ the Claude plugin registry to the synced version after the cache sync.
 
 > **After a Claude sync — one sequence, in this order.**
 >
-> 1. **Sync** — the engine call moves every harness install forward. For Claude
->    it writes a new plugin-cache version directory and leaves the plugin
->    registry naming the version it named before.
+> 1. **Sync** — the engine call. For Claude it writes a plugin-cache version
+>    directory.
 > 2. **Repin** — as its own explicit step, point the plugin registry at the
 >    synced version with `python3 marketplace/targets/claude/registry_pin.py --apply`.
 >    Without `--apply` the script only reports and writes nothing.

@@ -4,9 +4,7 @@
 Every fixture is a real file tree under ``tmp_path``: a registry in the shape
 the plugin manager writes, an executor carrying (or not carrying) the
 ``MARSHALL_VERSION`` assignment, and a cache bundle directory holding version
-directories. No reader is mocked — the module's whole value is that three
-consumers resolve the same answer from the same files, so the files are what the
-tests supply.
+directories. No reader is mocked.
 """
 
 import ast
@@ -238,7 +236,7 @@ def test_read_registry_without_plan_marshall_entry(tmp_path, payload):
 
 
 def test_non_ok_registry_states_are_distinct_and_all_classify_unreadable(tmp_path):
-    # Arrange — the three non-ok states the consumers must tell apart.
+    # Arrange — three non-ok states.
     absent = tmp_path / 'absent.json'
     not_json = tmp_path / 'not_json.json'
     not_json.write_text('<<<not json>>>', encoding='utf-8')

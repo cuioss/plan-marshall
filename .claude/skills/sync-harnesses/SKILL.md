@@ -144,8 +144,7 @@ further members:
 - `cache_status` — `success`, `partial` or `error`: the outcome of the cache
   sync alone. `status` differs from it only when a registry that is behind
   lowered a `success` to `partial`.
-- `registry_parity` — the last block of the result, absent when the
-  staleness guard refused or the Claude leg could not start. It lists one
+- `registry_parity` — the last block of the result when present. It lists one
   `entries` row per plan-marshall registry entry and ends with a `verdict`,
   which is exactly one of:
 
@@ -214,9 +213,8 @@ operator asks for it.
 
 > **After a Claude sync — one sequence, in this order.**
 >
-> 1. **Sync** — the engine call moves every harness install forward. For Claude
->    it writes a new plugin-cache version directory and leaves the plugin
->    registry naming the version it named before.
+> 1. **Sync** — the engine call. For Claude it writes a plugin-cache version
+>    directory.
 > 2. **Repin** — as its own explicit step, point the plugin registry at the
 >    synced version with `python3 marketplace/targets/claude/registry_pin.py --apply`.
 >    Without `--apply` the script only reports and writes nothing.

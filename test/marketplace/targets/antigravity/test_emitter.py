@@ -79,7 +79,7 @@ def fixture_bundle(tmp_path: Path) -> Path:
 
 @pytest.mark.parametrize('sub', _SAMPLE_SUBDIRS)
 def test_emit_bundles_copies_skill_subdir(sub: str, fixture_bundle: Path, tmp_path: Path, antigravity_config_dir: Path):
-    """A skill sub-directory is copied verbatim, whatever its name."""
+    """A skill sub-directory is copied verbatim."""
     out = tmp_path / 'out'
 
     emit_bundles(fixture_bundle, out, antigravity_config_dir)

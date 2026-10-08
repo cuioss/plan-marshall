@@ -124,8 +124,8 @@ Single-target output — ``--target claude`` (see ``cache_sync.py``):
     dry_run: true                        # only when --dry-run
     synced[N]{bundle,version,status}:
     failed[M]{bundle,error}:             # only when failed_count > 0
-    registry_parity:                     # absent on a guard refusal
-      <see "Registry parity" above>      # or when the leg could not start
+    registry_parity:                     # only when attached
+      <see "Registry parity" above>
 
 ``cache_status`` is always present and carries the outcome of the cache
 sync alone; ``status`` differs from it only when a ``behind`` registry
@@ -783,7 +783,7 @@ def _first_behind_pin(
         if reference is None:
             continue
         for pinned in (row['install_path_version'], row['version']):
-            if pinned is not None and reader.version_key(pinned) < reader.version_key(reference):
+            if pinned is not None and () < reader.version_key(pinned) < reader.version_key(reference):
                 return pinned, reference
     return None
 
@@ -819,13 +819,7 @@ def _sync_claude(args: argparse.Namespace) -> tuple[int, dict[str, Any], str]:
             REGISTRY_PIN_MODULE_NAME, REGISTRY_PIN_RELPATH, 'claude registry repin module'
         )
     except ImportError as exc:
-        data: dict[str, Any] = {
-            'status': 'error',
-            'cache_status': 'error',
-            'synced_count': 0,
-            'failed_count': 0,
-            'summary_message': f'claude sync could not start: {exc}',
-        }
+        data = _claude_error_block(f'claude sync could not start: {exc}')
         return 1, data, serialize_toon(data) + '\n'
 
     cache_root = args.cache_root if args.cache_root is not None else cache_sync.DEFAULT_CACHE_ROOT
@@ -883,11 +877,21 @@ def _sync_one_for_aggregate(target_name: str, args: argparse.Namespace) -> dict[
 
 def _sync_failure_block(target_name: str, exc: OSError) -> dict[str, Any]:
     """The ``error`` result of a target whose sync raised a filesystem fault."""
-    block: dict[str, Any] = {'status': 'error'}
+    summary_message = f'{target_name} sync failed: {type(exc).__name__}: {exc}'
     if target_name == CLAUDE_TARGET:
-        block['cache_status'] = 'error'
-    block['summary_message'] = f'{target_name} sync failed: {type(exc).__name__}: {exc}'
-    return block
+        return _claude_error_block(summary_message)
+    return {'status': 'error', 'summary_message': summary_message}
+
+
+def _claude_error_block(summary_message: str) -> dict[str, Any]:
+    return {
+        'status': 'error',
+        'cache_status': 'error',
+        'synced_count': 0,
+        'failed_count': 0,
+        'summary_message': summary_message,
+        'synced': [],
+    }
 
 
 def sync_all(args: argparse.Namespace) -> int:

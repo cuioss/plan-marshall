@@ -269,6 +269,7 @@ def test_sync_engine_unwritable_cache_root_is_an_error_result(tmp_path: Path):
     data = parse_toon(result.stdout)
     assert data['status'] == 'error'
     assert data['cache_status'] == 'error'
+    assert (int(data['synced_count']), int(data['failed_count']), data['synced']) == (0, 0, [])
     assert 'claude sync failed' in data['summary_message']
 
 

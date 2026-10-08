@@ -3,7 +3,7 @@
 """Tests for how the staleness guard reads the emit sentinel's bytes.
 
 The guard lives in ``marketplace/targets/claude/cache_sync.py``, which is
-loaded by file location exactly as the sync engine loads it.
+loaded by file location as the sync engine loads it.
 """
 
 from __future__ import annotations

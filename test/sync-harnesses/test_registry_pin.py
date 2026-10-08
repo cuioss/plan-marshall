@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the opt-in plugin-registry repin.
 
-Every test runs against a fixture home under ``tmp_path``: a registry file and a
+The tests run against a fixture home under ``tmp_path``: a registry file and a
 plugin-cache root holding ``{bundle}/{version}/`` directories. The real
 ``~/.claude`` tree is never read or written.
 
@@ -255,9 +255,7 @@ def test_apply_never_touches_an_in_use_file(tmp_path):
 
 
 def test_apply_removes_the_orphan_marker_only_where_an_entry_is_pinned_afterwards(tmp_path):
-    """Only a directory the registry names once the run is over is un-orphaned.
-
-    The matched controls are the directory the entry is moved away from and the
+    """The matched controls are the directory the entry is moved away from and the
     target directory of a bundle whose entry stays ahead of the target.
     """
     home = make_home(

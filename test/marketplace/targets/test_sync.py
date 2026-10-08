@@ -282,15 +282,19 @@ class TestSyncAllTargets:
         assert [sorted(row) for row in data['targets']] == [['status', 'summary_message', 'target']] * 3
 
     @pytest.mark.parametrize(
-        ('target_name', 'raising_seam', 'expected_keys'),
+        ('target_name', 'raising_seam', 'expected_fields'),
         [
-            ('claude', '_load_cache_sync_module', ['cache_status', 'status', 'summary_message']),
-            ('opencode', '_deploy_target', ['status', 'summary_message']),
+            (
+                'claude',
+                '_load_cache_sync_module',
+                {'status': 'error', 'cache_status': 'error', 'synced_count': 0, 'failed_count': 0, 'synced': []},
+            ),
+            ('opencode', '_deploy_target', {'status': 'error'}),
         ],
         ids=['claude-block-carries-cache-status', 'component-tree-block-does-not'],
     )
     def test_filesystem_fault_in_one_leg_is_recorded_as_that_legs_error_block(
-        self, target_name: str, raising_seam: str, expected_keys: list[str], monkeypatch: pytest.MonkeyPatch
+        self, target_name: str, raising_seam: str, expected_fields: dict[str, object], monkeypatch: pytest.MonkeyPatch
     ):
         def _raise(*_args: object, **_kwargs: object) -> None:
             raise PermissionError('denied')
@@ -299,10 +303,8 @@ class TestSyncAllTargets:
 
         block = _sync_one_for_aggregate(target_name, _build_parser().parse_args([]))
 
-        assert sorted(block) == expected_keys
-        assert block['status'] == 'error'
-        assert block.get('cache_status') == ('error' if target_name == 'claude' else None)
-        assert 'PermissionError: denied' in block['summary_message']
+        assert 'PermissionError: denied' in block.pop('summary_message')
+        assert block == expected_fields
 
 
 class TestSyncEngineUnit:
