@@ -484,7 +484,7 @@ The verifier's return is NOT a step verdict and carries no `display_detail`: the
 
 **The stop question is the verifier's, and the author records the answer.** Branch A used to be selected by the bare predicate *the findings list is empty* — the author's own reading of the list it had just produced, so the party that wrote the verdict also decided the review could stop. `may_close` moves that decision to the party that did not write it. The author still composes the verdict string and still performs the bookkeeping; what it no longer does is decide that the round is over.
 
-⛔ **`may_close` is an ADDITIONAL gate, never a substitute for the preconditions Step 4 already carries.** A `yes` does not release Branch A from the full-surface requirement, from the zero-observation verdict substitution, or from `--force` on a terminal write that lands on a differing stored outcome. All of them bind together, and a `yes` obtained over a delta-scoped round still does not close — the verifier answers the stop question, it does not waive the round's own contract. The two answers are also not interchangeable: `acceptance` judges the verdict's *wording* against the round, `may_close` judges whether *another round is owed*, and a verdict can be accurately worded about a round that should still be followed by another.
+⛔ **`may_close` is an ADDITIONAL gate, never a substitute for the preconditions Step 4 already carries.** A `yes` does not release Branch A from the full-surface requirement or from the zero-observation verdict substitution. Both bind together, and a `yes` obtained over a delta-scoped round still does not close — the verifier answers the stop question, it does not waive the round's own contract. The two answers are also not interchangeable: `acceptance` judges the verdict's *wording* against the round, `may_close` judges whether *another round is owed*, and a verdict can be accurately worded about a round that should still be followed by another.
 
 Record both answers on the decision log before Step 4 branches, so the separation is legible in the run record rather than only in the control flow:
 
@@ -582,12 +582,12 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --force
 ```
 
-**`--force` is REQUIRED whenever the outcome about to be written DIFFERS from the live record's, in BOTH directions.** `mark-step-done` refuses to overwrite a live record with a *differing* outcome — and only a differing one; a same-outcome overwrite lands without the flag. The multi-round shape this step is built around produces that refusal on each terminal branch, not only on the closing one:
+**Neither direction of this step's round loop requires `--force`.** `mark-step-done` decides an outcome change against its transition table (`_TRANSITIONS_LEGAL_WITHOUT_FORCE` in `manage-status/scripts/_cmd_mark_step.py`, described in [`../standards/external-step-contract.md`](../standards/external-step-contract.md) § "Required termination"), and both terminal writes the multi-round shape produces are inside it:
 
-- **`loop_back` → `done`** (Branch A): round 1 files findings and records `--outcome loop_back`, the findings are fixed, and the converged round records `done` over that live `loop_back` record. This is the state Branch A is *most often* reached from — the clean round that closes a loop-back is the whole point of re-firing this step.
-- **`done` → `loop_back`** (Branch B): a round records `done`, a later settle-band step advances HEAD, § HEAD-dependency re-fires this step against the newer diff, and the re-fire finds a defect — writing `loop_back` over that live `done` record.
+- **`loop_back` → `done`** (Branch A): round 1 files findings and records `--outcome loop_back`, the findings are fixed, and the converged round records `done` over that live `loop_back` record. This is the state Branch A is *most often* reached from — the clean round that closes a loop-back is the whole point of re-firing this step. A write over a stored `loop_back` is a re-fire and is recorded without the flag.
+- **`done` → `loop_back`** (Branch B): a round records `done`, a later settle-band step advances HEAD, § HEAD-dependency re-fires this step against the newer diff, and the re-fire finds a defect — writing `loop_back` over that live `done` record. A re-fired step's `loop_back` over its own stored `done` is recorded without the flag too.
 
-Both are ordinary terminal writes of the loop this document prescribes, not escape hatches for an unexpected state, and neither round can record its outcome without the flag. Omitting it returns `error: conflict`, the step records nothing, and the dispatcher's post-dispatch completion guard halts the phase reporting a missing terminal record — i.e. the round that finally came back clean is the one that cannot record itself. The trigger is therefore symmetric: add `--force` to a terminal `mark-step-done` whenever a prior round of this step recorded ANY outcome differing from the one about to be written. Branch A's forced form:
+Both are ordinary terminal writes of the loop this document prescribes, so the round that finally comes back clean can always record itself. The calls on this branch and on Branch B still pass `--force`: the flag only widens what the write admits, so it is harmless on a transition the table already allows, and it is not what makes either direction legal. Branch A's call with the flag on the `--head-at-completion` line reads:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
@@ -597,7 +597,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --head-at-completion {sha} --force
 ```
 
-⛔ **Branch B carries it for the same reason** — the mirror case is real, not hypothetical, and the "Branch B only ever re-writes `loop_back` over `loop_back`" reading is FALSE. This step is `head_dependent: true` (§ HEAD-dependency above), so the dispatcher re-fires it on any HEAD advance past the recorded `head_at_completion` — including an advance past a stored `done`. A findings-bearing round after such a re-fire runs Branch B, writes `loop_back` over that `done`, and hits the identical `error: conflict`. The governing rule is [`../standards/external-step-contract.md`](../standards/external-step-contract.md), which makes `--force` mandatory on ANY terminal branch whose write can land on a record carrying a different outcome.
+**Branch B's mirror case is real, not hypothetical** — the "Branch B only ever re-writes `loop_back` over `loop_back`" reading is FALSE. This step is `head_dependent: true` (§ HEAD-dependency above), so the dispatcher re-fires it on any HEAD advance past the recorded `head_at_completion` — including an advance past a stored `done`. A findings-bearing round after such a re-fire runs Branch B and writes `loop_back` over that `done`, which the transition table records as a re-fire. The governing rule is [`../standards/external-step-contract.md`](../standards/external-step-contract.md): `--force` is required only on a branch that can write `skipped` over a stored `done` or any other outcome over a stored `skipped`, and no branch of this step does either.
 
 The overwrite is intended and is not a loss of signal in either direction: a superseded `loop_back` record's findings are already persisted in the finding store by Branch B, a superseded `done` record's verdict was anchored to a SHA the re-fire has left behind, and `mark-step-done` returns `previous_outcome` / `previous_head_at_completion` so the transition it replaced stays legible in the return.
 
@@ -635,7 +635,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 `--loop-back-target 6-finalize` is the inline-fixable tier: the findings are addressed on this branch and the finalize step loop is re-entered, with no phase-5-execute re-dispatch. The target is not a free choice — `5-execute` is the fix-task-required tier, and these findings are amendments to the diff in hand.
 
-Per the symmetric `--force` rule under Branch A, add `--force` to this call whenever a prior round recorded `done` — the `done` → `loop_back` direction the HEAD-dependency re-fire produces:
+The `done` → `loop_back` direction the HEAD-dependency re-fire produces is recorded by the same call; per the transition-table note under Branch A it needs no flag, and the call keeps `--force` unchanged:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \

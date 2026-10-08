@@ -206,13 +206,15 @@ Use the three-step path-allocate flow above (Step 1 `add` → Step 2 Write tool 
 
 Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time.
 
-Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the capture outcome. The payload differs by branch:
+Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the capture outcome. The payload differs by branch.
+
+Every branch passes `--force`. The dispatcher's Signal Gate records this step `skipped` when all three signals are zero, so on a later firing where a signal has become non-zero this body's `done` lands on a stored `skipped` — a pair outside the unforced transition table, which `mark-step-done` refuses with `error: conflict` unless the flag is supplied (see [`../standards/external-step-contract.md`](../standards/external-step-contract.md) § "Required termination").
 
 **Branch A — one or more lessons recorded**: `{N}` is the count of ACTIONABLE **defect lessons** allocated in this step — owed-hint follow-up artifacts (Branch B3) are counted separately and never fold into this number. `{lesson_ids}` is the comma-joined list of lesson identifiers returned by those calls (e.g. `lesson-2026-04-17-005,lesson-2026-04-17-006`).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step lessons-capture --outcome done \
+  --plan-id {plan_id} --phase 6-finalize --step lessons-capture --outcome done --force \
   --display-detail "{N} lesson(s) recorded ({lesson_ids})"
 ```
 
@@ -220,7 +222,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step lessons-capture --outcome done \
+  --plan-id {plan_id} --phase 6-finalize --step lessons-capture --outcome done --force \
   --display-detail "no lessons recorded"
 ```
 
@@ -228,7 +230,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step lessons-capture --outcome done \
+  --plan-id {plan_id} --phase 6-finalize --step lessons-capture --outcome done --force \
   --display-detail "folded into existing lesson/plan, no new lesson"
 ```
 
@@ -236,7 +238,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step lessons-capture --outcome done \
+  --plan-id {plan_id} --phase 6-finalize --step lessons-capture --outcome done --force \
   --display-detail "{N} owed architecture hint(s) filed"
 ```
 
@@ -244,7 +246,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step lessons-capture --outcome done \
+  --plan-id {plan_id} --phase 6-finalize --step lessons-capture --outcome done --force \
   --display-detail "{N} inbox message(s) -> epic {epic}"
 ```
 

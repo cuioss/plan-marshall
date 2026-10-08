@@ -433,7 +433,19 @@ def main() -> int:
             'the dispatcher will retry the step on next phase entry.'
         ),
     )
-    mark_step_parser.add_argument('--force', action='store_true', help='Overwrite an existing conflicting outcome')
+    mark_step_parser.add_argument(
+        '--force',
+        action='store_true',
+        help=(
+            'Admit an outcome change the unforced transition table refuses. A retry or '
+            're-fire needs no flag: failed to any outcome, loop_back to any outcome, '
+            'done to failed and done to loop_back are recorded without it. The flag is '
+            'still needed for two things: a transition outside that table (done to '
+            'skipped, or skipped to any other outcome), and migrating a legacy '
+            'bare-string entry to the dict shape. The table is '
+            '_TRANSITIONS_LEGAL_WITHOUT_FORCE in _cmd_mark_step.py.'
+        ),
+    )
     mark_step_parser.add_argument(
         '--display-detail',
         default=None,
