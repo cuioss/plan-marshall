@@ -826,7 +826,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-b
 
 **Parameters**:
 - `--plan-id` (required): Plan identifier
-- `--source` (required): The requesting source whose budget is spent — the finalize `step_ref` that recorded the `loop_back` outcome, or the fixed name the dispatcher passes for its own unified triage. Any non-empty token is accepted; the membership is the composed step roster, not this parser.
+- `--source` (required): The requesting source whose budget is spent — the finalize `step_ref` that recorded the `loop_back` outcome, or the fixed name the dispatcher passes for its own unified triage. Any non-empty token is accepted and none is checked against the step roster, so a mistyped source gets a budget of its own.
 - `--ceiling` (required, non-negative integer): The configured number of rounds each requesting source may spend (`plan.phase-6-finalize.max_iterations`)
 
 **Return fields**:
@@ -1015,7 +1015,7 @@ not_pending[1]:
   - b4e3d2
 ```
 
-A failure after step 1 is not a refusal, because the step is by then recorded `done`. It returns `error: close_incomplete` carrying the same fields as a success plus `not_accepted`, `state_error` and `waiver_refusals`, so the caller can see exactly which part of the close did not land. Re-running the same call is safe: the step record is unchanged, and a finding already resolved is no longer pending — drop it from `--accept` on the re-run.
+A failure after step 1 is not a refusal, because the step is by then recorded `done`. It returns `error: close_incomplete` carrying the same fields as a success plus `not_accepted`, `state_error` and `waiver_refusals`, so the caller can see exactly which part of the close did not land. A finding already resolved is no longer pending — drop it from `--accept` on a re-run.
 
 ### get-context
 

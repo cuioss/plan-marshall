@@ -716,8 +716,9 @@ def main() -> int:
         help=(
             'The requesting source whose budget is spent — the finalize step_ref '
             'that recorded the loop_back outcome, or the fixed name the dispatcher '
-            'passes for its own unified triage. Any non-empty token is accepted: '
-            'the membership is the composed step roster, not this parser.'
+            'passes for its own unified triage. Any non-empty token is accepted and '
+            'none is checked against the step roster, so a mistyped source gets a '
+            'budget of its own.'
         ),
     )
     loop_back_admit_parser.add_argument(

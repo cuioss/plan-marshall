@@ -235,10 +235,9 @@ this order per failing check.
 
 - **Row (h) has two meanings, and a wait that merely lapsed is neither.**
   `ci_timeout` is filed for a check whose own conclusion is `timed_out`,
-  and for a check that is still running when the run is still not terminal
-  after the re-wait bound (see "Precondition mode" below). A wait that
-  lapses before the bound files nothing: the resolver returns
-  `wait_pending` and the executor is not run. When the executor does run
+  and for a check that is still running when the resolver returns
+  `wait_failed` / `timeout` (see "Precondition mode" above). A wait the
+  resolver answers `wait_pending` files nothing: the executor is not run. When the executor does run
   under `deadline_exceeded` and at least one check has a definitive
   failing conclusion, the still-running checks are dropped from the
   failing set, so they produce no `ci_timeout` finding beside the real
