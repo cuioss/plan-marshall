@@ -145,6 +145,10 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   behavioural check over changed functions, and screens prose candidates. Basis, read from
   the archived plans: about 205 self-review findings in 40 plans, roughly a quarter real
   defects and more than half wording, every one filed at one constant severity.
+  - **Running since 2026-10-08, in Claude Code, not OpenCode** (operator-confirmed). It runs
+    as a standalone `doc/plans/` session in its worktree, without plan-marshall, and stops at
+    an open pull request. It files no inbox message; its outcome reaches this ledger through
+    its PR and the operator.
   - **Released to the operator on 2026-10-08, after PLAN-LB-22 landed.** It had been held
     until then by operator decision. The brief was reconciled with commit `6b00815e0`: it now
     describes the loop-budget, grant, operator-close and rule-keyed state findings as existing
