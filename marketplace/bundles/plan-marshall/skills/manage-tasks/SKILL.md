@@ -81,7 +81,7 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 | `rename-path` | `--plan-id --old-path --new-path [--include-completed]` | Record path rename and rewrite step targets. By default only unfinished work is rewritten — a `done` task is skipped whole, and elsewhere only `pending` steps are touched — so a finished task's record stays a faithful account of the paths it edited. `--include-completed` lifts both guards, for the case that default cannot serve: an upstream rename landing mid-plan, where the path a completed step names no longer exists, so leaving it alone strands the task on a dead path that `declared_set_closure` then flags with no sanctioned way to correct it. Returns `rewritten_completed_count` and, per entry, BOTH the `step_status` and the `task_status` the record carried BEFORE the rewrite, so an edit to finished work is visible in the result rather than merely inferable from the flag. Both statuses are reported, and the count treats an entry as finished work when EITHER is finished, because either guard alone can be the one lifted — a done task whose step rows still read `pending` is finished work just as much as a done step is |
 | `qgate-mechanical-checks` | `--plan-id [--no-emit]` | Run the deterministic Q-Gate checks for phase-4-plan Step 8: coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift, plus the two CLOSURE checks — declared-set-closure and declared-scope-reconciliation. The first six ask whether each declared thing is well-formed and resolves; the closure pair asks whether the declared SET is complete, which none of the others can see. Pure regex + graph + filesystem; no LLM dispatch. Each failure becomes a Q-Gate finding under `--source qgate` so phase-4-plan's existing aggregate consumes it. Returns `total_failed`, per-check counts, a `population` block reporting what each population-publishing check actually scanned (with `population_complete`), and an `ambiguous` flag the caller uses to decide whether the LLM q-gate-validation dispatch still needs to fire — `ambiguous` flips on an unparseable outline OR an incomplete population, since a zero over an unscanned set is not a verdict. The block covers **three** checks, not only the two closure ones: `acyclic` publishes alongside them because it also loses records before it measures — a task number it cannot use is dropped from the graph, and two records claiming one number collapse to a single node — so its `duplicate_task_numbers` / `unusable_task_numbers` / `nodes_indexed` are what keep a "no cycle" from being a verdict over a shortened node set. Also returns `qgate_persist_failed` (bool) and `qgate_persist_failures` (list of `{title, message}`) — a persist the Q-Gate primitive rejected means the check failed but its finding never reached the store, so the caller MUST fail loudly on `qgate_persist_failed: true` rather than trusting `total_failed` alone. |
 | `loop-exit-guard` | `--plan-id` | Script-level enforcement of the phase-5-execute "unfinished > 0 → must continue" invariant. The predicate is the union of `pending` AND `in_progress` tasks. Emits `status: continue` (with `pending_count`, `pending_ids`, `in_progress_count`, `in_progress_ids`) when EITHER bucket is non-empty — the non-success status forces the orchestrator to re-dispatch the execution-context. Emits `status: success` (with all four count/id fields present and zero-valued) only when BOTH counts are zero. See "Loop-Exit Guard" below for the contract. |
-| `pre-commit-verify-freshness` | `--plan-id` | Script-level enforcement that the current working-tree state has been observed by a successful build before any pre-commit transition — but only where a build was necessary at all. Consults the command-free `build-decision` verdict first, then queries the unified change-ledger for a `kind=build` entry with `status == success` whose `worktree_sha` matches the recomputed working-tree currency hash, and finally cross-checks the matching rows on two dimensions — their notations against the build notations this project's architecture resolves, and the canonical + scope they recorded against the blast radius of the change. Emits `status: exempt` (verdict `not_necessary` — no build was owed, so the gate returns BEFORE the ledger scan with the verdict's own `reason` forwarded verbatim; nothing about the tree was examined), `status: fresh` (a matching successful build entry citable on BOTH dimensions — `notation_cross_check` and `scope_cross_check` say whether each was audited or merely undetermined, and the record names the matched row and every candidate's recorded scope), `status: stale` (no successful build matches the current working-tree sha, or every one that does names a build this project never runs, or every one that does is narrower than the change — carrying a `reason` that names WHICH route: `worktree_mutated`, `build_error`, `build_timeout`, `build_killed`, `build_indeterminate`, `notation_unrelated`, `notation_absent`, `build_scope_narrow`, or `no_row_both_attributable_and_adequate`, since the routes need different remedies and a `killed` build must never be blind-retried), or `status: undecidable` (no positive proof — `no_registry` when the ledger is absent/empty, `head_unresolvable` when the working-tree sha cannot be computed). Fail-closed contract: exactly `exempt` and `fresh` permit transition, and they permit on different bases — read the member, never the absence of a refusal. See "Pre-Commit Verify Freshness" below for the contract. |
+| `pre-commit-verify-freshness` | `--plan-id` | Script-level enforcement that the current working-tree state has been observed by a successful build before any pre-commit transition — but only where a build was necessary at all. Consults the command-free `build-decision` verdict first, then queries the unified change-ledger for a `kind=build` entry with `status == success` whose `worktree_sha` matches the recomputed working-tree currency hash, and finally cross-checks the matching rows on two dimensions — their notations against the build notations this project's architecture resolves, and the canonical + scope they recorded against the blast radius of the change. Emits `status: exempt` (verdict `not_necessary` — no build was owed, so the gate returns BEFORE the ledger scan with the verdict's own `reason` forwarded verbatim; nothing about the tree was examined), `status: fresh` (one or more matching successful build entries citable on BOTH dimensions and covering the change, alone or between them — `notation_cross_check` and `scope_cross_check` say whether each was audited or merely undetermined, and the record names every row the verdict rests on and every candidate's recorded scope), `status: stale` (no successful build matches the current working-tree sha, or every one that does names a build this project never runs, or the ones that do fall short of the change alone and combined — carrying a `reason` that names WHICH route: `worktree_mutated`, `build_error`, `build_timeout`, `build_killed`, `build_indeterminate`, `notation_unrelated`, `notation_absent`, `build_scope_narrow`, or `no_row_both_attributable_and_adequate`, since the routes need different remedies and a `killed` build must never be blind-retried), or `status: undecidable` (no positive proof — `no_registry` when the ledger is absent/empty, `head_unresolvable` when the working-tree sha cannot be computed). Fail-closed contract: exactly `exempt` and `fresh` permit transition, and they permit on different bases — read the member, never the absence of a refusal. See "Pre-Commit Verify Freshness" below for the contract. |
 
 ### Loop-Exit Guard (`loop-exit-guard`)
 
@@ -172,7 +172,7 @@ The necessity half is never re-derived here. The gate consults the single
 build/no-build authority through the **command-free** verdict — it asks the
 plan-wide "does anything in this footprint need a build?" question with no
 canonical command, and MUST NOT pick a representative one. A `not_necessary`
-verdict short-circuits to `fresh` carrying the verdict's own `reason` verbatim,
+verdict short-circuits to `exempt` carrying the verdict's own `reason` verbatim,
 because no `kind=build` entry could ever legally be stamped for a footprint that
 needs no build, so demanding one is an impossible demand rather than a gate. A
 `build` verdict falls through to the ledger scan unchanged. The verdict's
@@ -324,14 +324,18 @@ demands no type-check at all of a change that altered no source.
 
 | `scope_cross_check` | Meaning | Gate effect |
 |---|---|---|
-| `covered` | At least one row's canonical performs every required analysis, its scope covers the required modules, and it did not measure zero tests | `fresh` |
-| `narrow` | Every readable row is provably narrower than the change — a weaker canonical, a narrower scope, or a measured zero tests | `stale` (`build_scope_narrow`) |
+| `covered` | Every required analysis was performed by a candidate row at a scope adequate for the change — by one row alone, or by several rows between them (§ "Joint selection" states the rule) | `fresh` |
+| `narrow` | The readable rows provably fall short of the change, alone and combined: at least one required analysis was performed by no row at an adequate scope | `stale` (`build_scope_narrow`) |
 | `undetermined` | The comparison could not be performed on one side or the other | `fresh`, with the inability stated in the record |
 
 The split fail-direction is the same one the attribution dimension takes, for the
 same reason: only a positive refutation fails closed. `row_scopes` publishes what
 each candidate actually recorded (`'{canonical} {scope}: {covered|refusal}'`), so
-a refusal names *which* row was narrow and *how*, rather than only that one was.
+a refusal names *which* row falls short alone and *how*. Each line judges its row
+by itself, so a row that contributes to a covering set still carries its own
+refusal token there — the token says the row does not cover the change alone,
+which stays true. `missing_analyses` names what the rows lack *together*: the
+required analyses no citable row performed at an adequate scope.
 
 The `undetermined` reasons are named apart, again because they have different
 owners:
@@ -354,9 +358,37 @@ is admissible on both — endorsed by a dimension, or unjudged by it. Per-dimens
 selection is what let the 573-test directory row be cited as `corroborated`: it
 was perfectly attributable, and nothing asked whether it covered the change.
 
-Where the two admissible sets are disjoint — every attributable row was narrow
-AND every covering row was unattributable — neither dimension refused, yet
-nothing is citable. That state carries its own reason,
+**The evidence is one row, or a union of rows.** A citable row that covers the
+change alone is the whole evidence — the first such row in ledger file order.
+When there is none, the citable rows are combined, and the change is covered when
+**every required analysis is performed by at least one citable row at a scope
+adequate for the change**: whole-tree when the change's blast radius is
+whole-tree, otherwise a scope containing the change's module set. A gate that
+runs `quality-gate` and `module-tests` as separate whole-tree builds therefore
+covers a `.py` footprint exactly as one `verify` does. The rows the verdict rests
+on are chosen deterministically — per required analysis, the first adequate
+citable row in ledger file order — and the record names them.
+
+Three bounds keep the union from crediting what was not done:
+
+- **Scope is judged per analysis and never pooled.** A module-scoped lint run and
+  a whole-tree test run do not add up to whole-tree lint. Each analysis needs its
+  own row at an adequate scope, and two narrow rows never combine into a wide one.
+- **A row lends only what it did.** A row that measured zero tests lends no test
+  coverage; a row whose `args` cannot be read, or whose canonical is outside the
+  vocabulary, lends nothing.
+- **The union is taken at one worktree sha only.** Every candidate carries the
+  CURRENT sha — that is the primary predicate — and no row at another sha can
+  join. A sha names a tree, so a row at a different sha is evidence about a
+  different tree. The case that makes this bite is an auto-fixing `quality-gate`:
+  a run that rewrites files moves the tree, so the builds on either side of that
+  rewrite carry different shas, and a lint verdict on one tree says nothing about
+  the other. The remedy is to run the gate again on the settled tree, where a run
+  that rewrites nothing leaves the sha where the following builds will find it.
+
+Where no citable rows cover the change although neither dimension refused — the
+attributable rows fall short AND every row that would close the gap was
+unattributable — nothing is citable. That state carries its own reason,
 `no_row_both_attributable_and_adequate`, rather than borrowing either
 dimension's: a reader told `build_scope_narrow` there would go looking for a
 refusal the coverage check never made.
@@ -388,31 +420,42 @@ on observed evidence.
   returns before the scan, the return carries **no** `worktree_sha`, no
   `matched_*` evidence fields, and no `ledger_path` — the absence of those keys is
   itself the record that nothing was examined.
-- `status: fresh` — a `kind=build` entry with `status == success` and a matching
-  `worktree_sha` exists AND one such entry is citable on BOTH cross-check
-  dimensions, so the gate is permitted to pass. The record **names its
-  evidence**: `worktree_sha`, `matched_notation`, `matched_entry_index` (the
-  row's position among the ledger's *parsed* entries — `read_entries` skips blank
-  lines, unparseable lines, and valid-JSON-non-object lines, so this is not a
-  physical line number and a divergence between the two is not by itself evidence
-  of corruption), `matched_plan_id`, `timestamp_iso`, `notation_cross_check`
-  (`corroborated` or `unverified`), `scope_cross_check` (`covered` or
-  `undetermined`), `expected_notations` (the resolved set), `row_scopes` (what
-  each candidate recorded), `worktree_root`, and `ledger_path`. A pass that a
-  dimension could not audit additionally carries that dimension's
-  `notation_cross_check_reason` / `scope_cross_check_reason`. Naming the row is
-  what converts a silent wrong-reason pass into a visible one, and it holds even
-  where a cross-check itself could not run.
+- `status: fresh` — one or more `kind=build` entries with `status == success` and
+  a matching `worktree_sha` exist AND are citable on BOTH cross-check dimensions
+  as § "Joint selection" defines, so the gate is permitted to pass. The record
+  **names its evidence**: `worktree_sha`, `contributing_rows` (every row the
+  verdict rests on, in ledger order — each entry carries `ledger_index`,
+  `notation`, `plan_id`, `canonical`, `scope`, `analyses` and `timestamp_iso`,
+  where `analyses` is what that row is credited with), `matched_notation`,
+  `matched_entry_index` (the row's position among the ledger's *parsed* entries —
+  `read_entries` skips blank lines, unparseable lines, and valid-JSON-non-object
+  lines, so this is not a physical line number and a divergence between the two
+  is not by itself evidence of corruption), `matched_plan_id`, `timestamp_iso`,
+  `notation_cross_check` (`corroborated` or `unverified`), `scope_cross_check`
+  (`covered` or `undetermined`), `expected_notations` (the resolved set),
+  `row_scopes` (what each candidate recorded), `worktree_root`, and
+  `ledger_path`. The four scalar fields `matched_notation`,
+  `matched_entry_index`, `matched_plan_id` and `timestamp_iso` name the **first**
+  entry of `contributing_rows`; when the verdict rests on a single row they name
+  that row, exactly as before. A pass that a dimension could not audit
+  additionally carries that dimension's `notation_cross_check_reason` /
+  `scope_cross_check_reason`. Naming the rows is what converts a silent
+  wrong-reason pass into a visible one, and it holds even where a cross-check
+  itself could not run.
 - `status: stale` — the ledger has entries but none is citable: either none is a
   successful build against the current working-tree sha, or every such build
-  names a notation this project does not resolve, or every such build is narrower
-  than the change, or the attributable and covering rows are disjoint. The gate
+  names a notation this project does not resolve, or such builds fall short of
+  the change alone and combined, or the attributable rows fall short while the
+  rows that would close the gap are unattributable. The gate
   MUST fail closed. Carries `worktree_sha`, `worktree_root`, `ledger_path`, and a
   **`reason` naming which route to `stale` was taken** — plus `observed_status`
   (the offending row's own build status) whenever a row carried a readable status
   string, and `notation_cross_check` / `scope_cross_check` /
-  `expected_notations` / `candidate_notations` / `row_scopes` on every
-  cross-check route. `observed_status` is absent on `worktree_mutated` (no row
+  `expected_notations` / `candidate_notations` / `row_scopes` /
+  `missing_analyses` on every cross-check route. `missing_analyses` is the sorted
+  list of required analyses no citable row performed at an adequate scope; it is
+  empty where what the change requires could not be derived, and
+  `scope_cross_check` then says `undetermined`. `observed_status` is absent on `worktree_mutated` (no row
   was observed), on the `build_indeterminate` sub-case where the row carried no
   readable `status` at all, and on every cross-check route (where every candidate
   was `success`, so reporting it would say nothing); supplying one where none was
@@ -430,8 +473,8 @@ on observed evidence.
   | `build_indeterminate` | Latest row for this sha is `status: unknown`, or a status outside the vocabulary | The outcome could not be read. It supports no conclusion either way; re-run to obtain a readable verdict. |
   | `notation_unrelated` | Successful rows carry this sha, but every notation they name is one the architecture does not resolve | The rows are evidence of some other project's build. Dispatch a real build of THIS project — and establish where the unrelated row came from before trusting the ledger again. |
   | `notation_absent` | Successful rows carry this sha, but **none** carries a usable `notation` — the key is missing, empty, or not a string | `build_record` always emits a non-empty `notation` for a dispatched build, so no such row came from the dispatch boundary. Something other than a build of this project is writing to the ledger; find it. |
-  | `build_scope_narrow` | Successful, attributable rows carry this sha, but every readable one records a build narrower than the change — a canonical performing too few analyses, a scope not covering the change's modules, or a measured zero tests | Re-run a build whose canonical and scope cover this change. `row_scopes` names what each row actually ran, so it says which of the three routes each took. |
-  | `no_row_both_attributable_and_adequate` | Neither dimension refused, yet no single row satisfies both — every attributable row was narrow AND every covering row was unattributable | Both remedies at once: re-run an adequate build, AND establish where the unattributable covering row came from. |
+  | `build_scope_narrow` | Successful, attributable rows carry this sha, but alone and combined they leave a required analysis uncovered — no row performed it, the rows that did were scoped too narrowly for the change, or the only test row measured zero tests | Run the missing analysis — `missing_analyses` names it — at a scope adequate for this change. Do not re-run `verify` by reflex: an analysis a row already covers needs no second run. `row_scopes` names what each row actually ran. |
+  | `no_row_both_attributable_and_adequate` | Neither dimension refused, yet the citable rows do not cover the change — the attributable rows fall short AND every row that would close the gap was unattributable | Both remedies at once: run the analyses `missing_analyses` names, AND establish where the unattributable row came from. |
 
   The two `notation_*` routes are mutually exclusive and `notation_unrelated`
   wins a mixed set: a candidate list holding one notation-less row and one
@@ -448,9 +491,10 @@ on observed evidence.
   precisely the blind retry a `killed` build forbids. On the two `notation_*`
   routes a green **was** recorded against this tree, but by something the
   architecture cannot attribute to this project, so the remedy is an
-  investigation and not only a re-build. On `build_scope_narrow` a green was
-  recorded by a build this project really does perform — it simply did not look
-  at enough of the tree, so the remedy is a wider build and nothing else.
+  investigation and not only a re-build. On `build_scope_narrow` greens were
+  recorded by builds this project really does perform — between them they simply
+  did not perform every analysis the change requires at a wide enough scope, so
+  the remedy is to run what `missing_analyses` names and nothing else.
 - `status: undecidable` — no positive freshness proof can be established. Two
   sub-reasons: (a) `reason: no_registry` — the change-ledger file is absent or
   empty; (b) `reason: head_unresolvable` — the working-tree sha cannot be
@@ -483,7 +527,9 @@ authorised them** — `basis=ledger-verified` for `fresh`, `basis=exempt-unscann
 plus the gate's `reason` for `exempt` — in the outcome record they already emit
 (`push`'s `mark-step-done --display-detail`, Step 12a's transition `[STATUS]`
 line). Without that field the two records are byte-identical, and no reader can
-recover whether the tree was observed or merely exempted. The `--force`
+recover whether the tree was observed or merely exempted. How `push` renders a
+`fresh` basis that rests on two or more rows is owned by
+`phase-6-finalize/standards/push.md` § "Mark Step Complete". The `--force`
 orchestrator escape mirrors the existing pending-tasks-guard escape — deliberate,
 log-recorded override for triage-driven aborts. Never invoked programmatically
 from inside the loop.
@@ -534,22 +580,23 @@ from inside the loop.
      `notation_cross_check: unverified` with its reason. When the set resolved and
      no row is in it the dimension REFUTES, and no row is citable.
    - **Coverage.** Derive what the change needs to be covered (§ "The scope
-     cross-check"). The *coverable* rows are those whose canonical performs every
-     required analysis, whose scope covers the required modules, and which did not
-     measure zero tests (`scope_cross_check: covered`). When the comparison could
+     cross-check") and judge the rows against it by the rule § "Joint selection"
+     states — one row alone, or several between them
+     (`scope_cross_check: covered`). When the comparison could
      not be performed on either side the dimension judges nothing and admits
      **every** row, recording `scope_cross_check: undetermined` with its reason.
-     When every readable row is provably narrower the dimension REFUSES
-     (`scope_cross_check: narrow`), and no row is citable.
+     When the readable rows provably fall short alone and combined the dimension
+     REFUSES (`scope_cross_check: narrow`), and no row is citable.
 
-   The gate cites the **first row in file order that both dimensions admit** →
-   `fresh`. Nothing citable → `stale`, with the reason decided in this order:
+   The gate cites the rows § "Joint selection" selects from those attribution
+   admits → `fresh`, naming them in `contributing_rows`. Nothing citable →
+   `stale`, with the reason decided in this order:
 
    | Condition | `reason` |
    |---|---|
    | Attribution refuted | `notation_unrelated` (some candidate carried a notation) or `notation_absent` (none did) |
    | Coverage refused | `build_scope_narrow` |
-   | Neither refused, yet the two admissible sets are disjoint | `no_row_both_attributable_and_adequate` |
+   | Neither refused, yet the rows attribution admits do not cover the change | `no_row_both_attributable_and_adequate` |
 
    ⛔ **Selection is joint, never per-dimension.** A row endorsed by one
    dimension is not citable unless the other also admits it. Letting attribution
