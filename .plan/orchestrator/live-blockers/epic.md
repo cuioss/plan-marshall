@@ -115,6 +115,10 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   behavioural check over changed functions, and screens prose candidates. Basis, read from
   the archived plans: about 205 self-review findings in 40 plans, roughly a quarter real
   defects and more than half wording, every one filed at one constant severity.
+  - **Held until PLAN-LB-22 has landed** (operator decision, 2026-10-08). It is not handed
+    over before that. When the PLAN-LB-22 landing is analyzed: re-read the brief against what
+    merged (its § "Concurrent work" and D6 describe PLAN-LB-22 as in flight), correct it,
+    move the worktree branch onto the new `main`, and only then give the operator the path.
   - It edits `pre-submission-self-review.md`, which PLAN-LB-22 (running) is editing, and the
     surfacer skill that PLAN-LB-28 will edit. The brief names the sections each owns and
     tells the run to rebase; whichever of it and PLAN-LB-22 merges second resolves the
