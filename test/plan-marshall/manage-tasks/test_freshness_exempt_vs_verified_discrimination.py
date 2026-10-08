@@ -208,6 +208,13 @@ def test_the_exempt_return_carries_no_evidence_it_never_gathered(plan_context, m
 #: to the 33-member surveyed population. Only the branches count bears here.
 _D1_PUBLISHED_BRANCHES_COUNT = 10
 
+#: Branching consumers that joined the class after that survey was recorded. The
+#: surveyed count is a published figure and is not edited to absorb them; the
+#: growth is stated here instead, so the reconciliation below still fails on a
+#: member nobody accounted for. The three are the gate-owning slice's own suites
+#: for rows credited together: union coverage, missing analyses, union controls.
+_JOINED_SINCE_D1_SURVEY = 3
+
 #: The two workflow documents in that class. A document "branches" by carrying a
 #: normative instruction that selects behaviour on the status VALUE.
 _DOC_BRANCHING_CONSUMERS = (
@@ -215,7 +222,7 @@ _DOC_BRANCHING_CONSUMERS = (
     'marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md',
 )
 
-#: The eight code members of the class, declared by the SLICE that owns each one
+#: The code members of the class, declared by the SLICE that owns each one
 #: rather than by filename, so the DERIVED set below has something to be reconciled
 #: against without this module pinning another slice's file names. The derivation is
 #: what makes the check population-derived; this per-slice census is what makes a
@@ -228,7 +235,7 @@ _DOC_BRANCHING_CONSUMERS = (
 _GATE_OWNING_SLICE = 'test/plan-marshall/manage-tasks'
 
 _CODE_CONSUMER_SLICES = {
-    _GATE_OWNING_SLICE: 6,
+    _GATE_OWNING_SLICE: 6 + _JOINED_SINCE_D1_SURVEY,
     'test/plan-marshall/manage-execution-manifest': 1,
     'test/plan-marshall/tools-script-executor': 1,
 }
@@ -355,8 +362,9 @@ def test_the_branching_population_is_derived_non_empty_and_reconciles() -> None:
     appeared or vanished without this class being updated — reconciled by owning
     slice rather than by filename, so a rename inside a slice is not reported as a
     drift it is not. And a total that does not equal deliverable 1's published
-    ``branches`` count means the partition this module reasons over has moved —
-    recorded as a failure rather than absorbed.
+    ``branches`` count plus the members declared as having joined since means the
+    partition this module reasons over has moved — recorded as a failure rather
+    than absorbed.
     """
     derived = _CODE_BRANCHING_CONSUMERS
 
@@ -371,10 +379,12 @@ def test_the_branching_population_is_derived_non_empty_and_reconciles() -> None:
     )
 
     total = len(derived) + len(_DOC_BRANCHING_CONSUMERS)
-    assert total == _D1_PUBLISHED_BRANCHES_COUNT, (
+    expected = _D1_PUBLISHED_BRANCHES_COUNT + _JOINED_SINCE_D1_SURVEY
+    assert total == expected, (
         f'the branching class now measures {total} member(s) '
         f'({len(derived)} code + {len(_DOC_BRANCHING_CONSUMERS)} document) against '
-        f"deliverable 1's published branches count of {_D1_PUBLISHED_BRANCHES_COUNT}"
+        f"deliverable 1's published branches count of {_D1_PUBLISHED_BRANCHES_COUNT} plus "
+        f'{_JOINED_SINCE_D1_SURVEY} declared as joined since'
     )
 
 

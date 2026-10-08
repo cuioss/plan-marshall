@@ -8,10 +8,10 @@ performs every analysis a ``.py`` footprint requires, so the freshness gate
 combines them: the change is covered when every required analysis is performed
 by at least one row at a scope adequate for the change.
 
-The combination is bounded, and each bound is pinned here beside the pass it
-bounds. Scope is judged per analysis and never pooled, a row that measured zero
-tests lends no test coverage, a row the attribution check refuses lends nothing,
-and the rows the verdict rests on are named deterministically.
+Scope is judged per analysis and never pooled, and that bound is pinned here
+beside the pass it bounds, together with the deterministic naming of the rows a
+verdict rests on. The guards on WHICH rows may lend coverage at all have their
+own module, ``test_pre_commit_verify_freshness_union_controls.py``.
 """
 
 from __future__ import annotations
@@ -29,8 +29,6 @@ from _pre_commit_verify_freshness_fixtures import (
     _same_sha_row,
 )
 from _resolve_project_dir_fixtures import worktree_query_result
-
-_GRADLE = 'plan-marshall:build-gradle:gradle'
 
 _TESTS_RUN = 19007
 
@@ -166,25 +164,3 @@ def test_a_row_covering_the_change_alone_is_cited_alone(gate) -> None:
     assert result['status'] == 'fresh', result
     assert _cited(result) == [(1, 'verify', 'whole-tree', 'compile, lint, test')]
     assert result['matched_entry_index'] == 1
-
-
-def test_a_test_row_that_measured_zero_tests_lends_no_test_coverage(gate) -> None:
-    """A measured zero is not test coverage, alone or inside a union."""
-    result = gate([_same_sha_row('quality-gate'), _same_sha_row('module-tests', tests_run=0)])
-
-    assert result['status'] == 'stale', result
-    assert result['reason'] == crosscheck.REASON_SCOPE_NARROW
-
-
-def test_a_row_the_attribution_check_refuses_lends_nothing(gate) -> None:
-    """Only rows naming a build this project performs may close a coverage gap."""
-    result = gate(
-        [
-            _same_sha_row('quality-gate'),
-            _same_sha_row('module-tests', tests_run=_TESTS_RUN, notation=_GRADLE),
-        ]
-    )
-
-    assert result['status'] == 'stale', result
-    assert result['reason'] == crosscheck.REASON_NO_ADMISSIBLE_ROW
-    assert result['scope_cross_check'] == crosscheck.COVERED

@@ -83,20 +83,6 @@ def test_module_scoped_lint_rows_leave_lint_missing_for_a_whole_tree_change(gate
     assert result['missing_analyses'] == ['lint']
 
 
-def test_an_analysis_only_an_unattributable_row_performed_is_still_missing(gate) -> None:
-    """What is missing is judged over the rows that may be cited, not over every row."""
-    result = gate(
-        [
-            _same_sha_row('quality-gate'),
-            _same_sha_row('module-tests', tests_run=_TESTS_RUN, notation='plan-marshall:build-gradle:gradle'),
-        ]
-    )
-
-    assert result['status'] == 'stale', result
-    assert result['reason'] == crosscheck.REASON_NO_ADMISSIBLE_ROW
-    assert result['missing_analyses'] == ['test']
-
-
 def test_a_fresh_verdict_carries_no_missing_analyses(gate) -> None:
     """The control: once every analysis is covered the record names nothing missing."""
     result = gate([_same_sha_row('quality-gate'), _same_sha_row('module-tests', tests_run=_TESTS_RUN)])
