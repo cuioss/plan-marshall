@@ -756,6 +756,14 @@ def _locate_entry(phase_entry: dict[str, Any], step: str) -> tuple[Any, str | No
     entry = phase_entry.get(step)
     if entry is not None:
         return entry, step
+    # The exact lookup missed, so the record may still sit under the key shape a
+    # pre-migration run stored: the ``default:``-prefixed step key. The scan
+    # reconciles that stored key with the bare canonical query, and returns the
+    # key it was actually found under so the caller can pop it on rewrite.
+    # SHIM(B): a pre-migration default:-prefixed phase_steps key (canonical form is the bare step key).
+    # shim-owner: manage-status
+    # shim-floor: the step-key canonicalization change (canonicalize_step_key) that made the bare step key canonical, superseding the default:-prefixed form
+    # shim-remove-when: no status.json can still carry a default:-prefixed phase_steps key
     for stored_key, stored_entry in phase_entry.items():
         if canonicalize_step_key(stored_key) == step:
             return stored_entry, stored_key
