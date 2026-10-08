@@ -3,6 +3,10 @@
 epic: live-blockers
 workstream: WS-01
 
+> ⛔ **SUPERSEDED — do not launch.** Regrouped on 2026-10-08: PLAN-LB-27 (all deliverables).
+> This file is kept as the audit record of the original cut. The successor carries its
+> deliverables, claim labels and surface entries unchanged.
+
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
 > Lives at `plans/PLAN-LB-07-scope-creep-guard.md` and is queued as one row file,
 > `queue/PLAN-LB-07.json`, in the epic ledger. The orchestrator EMITS the command below; it never
@@ -100,6 +104,11 @@ PLAN-TRUTH-178 deliverables D0–D2.
 - Verify-first clause: check what the base ref resolves to in the plan's worktree when `origin/{base_branch}` is absent or stale (offline, or a fork). `resolve_base_ref` falls back to the local branch name; decide whether a stale local base is measured or reported as `could_not_look`.
 
 ## Expected Surface
+
+- DERIVED — this spec is superseded and claims no surface of its own. The entries it declared are
+  recorded in the next section and are now declared by the successor named in the banner above.
+
+## Superseded Surface (record only)
 
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-5-execute/scripts/scope_creep_check.py` — type, diff base, declared set, threshold source (D1–D4)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md` — Step 6.5 only (D1, D2, D4)

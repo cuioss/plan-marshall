@@ -20,12 +20,14 @@ The review bots and the gate that reads them. The workstream closes when a revie
 
 | Plan | Status | Notes |
 |------|--------|-------|
-| PLAN-LB-18-coderabbit-quota-recovery | staged | CodeRabbit quota refusals are read correctly and waited out without a hung agent |
-| PLAN-LB-19-review-gate-currency | staged | The merge gate credits only a review of the current commit |
-| PLAN-LB-20-review-bot-fleet-rollout | staged | The remaining thirteen repositories get the in-house reviewer |
-| PLAN-LB-21-in-house-reviewer-efficacy | staged | Measure whether the in-house reviewer finds anything, then decide the roster |
+| PLAN-LB-24-review-step | staged | Runnable completion poll; CodeRabbit quota recovery that finishes; the gate credits only a review of the merge commit |
+| PLAN-LB-31-in-house-reviewer | staged | Measure the in-house reviewer, decide its roster place, then finish the fleet enrolment |
+| PLAN-LB-18-coderabbit-quota-recovery | superseded | PLAN-LB-24 (all deliverables) |
+| PLAN-LB-19-review-gate-currency | superseded | PLAN-LB-24 (all deliverables) |
+| PLAN-LB-20-review-bot-fleet-rollout | superseded | D1 to D3 to PLAN-LB-30; D4 and D5 to PLAN-LB-31 |
+| PLAN-LB-21-in-house-reviewer-efficacy | superseded | PLAN-LB-31 (all deliverables) |
 
 ## Sequencing and Surface Notes
 
-- LB-18 and LB-19 both edit the GitHub review provider scripts and `automatic-review/`; sequence them.
-- LB-21 before LB-20: the measurement decides whether finishing the rollout is worth it.
+- PLAN-LB-24 shares `phase-6-finalize/SKILL.md` with PLAN-LB-22, PLAN-LB-25 and PLAN-LB-27 and `merge_lock.py` with PLAN-LB-25; it may run beside PLAN-LB-23.
+- PLAN-LB-31 starts its measurement at once; its two enrolment deliverables wait for the schema PLAN-LB-30 releases.

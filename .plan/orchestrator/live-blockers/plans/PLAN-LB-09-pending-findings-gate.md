@@ -3,6 +3,10 @@
 epic: live-blockers
 workstream: WS-01
 
+> ⛔ **SUPERSEDED — do not launch.** Regrouped on 2026-10-08: PLAN-LB-25 (all deliverables).
+> This file is kept as the audit record of the original cut. The successor carries its
+> deliverables, claim labels and surface entries unchanged.
+
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
 > Lives at `plans/PLAN-LB-09-pending-findings-gate.md` and is queued as one row file, `queue/PLAN-LB-09.json`,
 > in the epic ledger. The orchestrator EMITS the command below; it never launches the plan inline.
@@ -43,6 +47,11 @@ A plan must not merge or be archived while an actionable finding is still `pendi
 - Verify-first clause: before scoping D2, enumerate every caller of `manage-status archive` that passes `--reason` (plan-doctor's `orphan-init-incomplete`, the `low_confidence` remediation, `planning.md` § cleanup) and confirm none relies on `normal_completion`; if one does, it moves to the no-reason form in the same change
 
 ## Expected Surface
+
+- DERIVED — this spec is superseded and claims no surface of its own. The entries it declared are
+  recorded in the next section and are now declared by the successor named in the banner above.
+
+## Superseded Surface (record only)
 
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/archive-plan.md` — § Mark Step Complete and § Archive: parse the refusal, suppress the log and the `done` record (D1)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_lifecycle.py` — `cmd_archive` reason handling and exemption reporting (D2); docstrings naming the pre-merge owner (D4)

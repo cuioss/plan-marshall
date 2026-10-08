@@ -3,6 +3,10 @@
 epic: live-blockers
 workstream: WS-04
 
+> ⛔ **SUPERSEDED — do not launch.** Regrouped on 2026-10-08: PLAN-LB-29 (all deliverables).
+> This file is kept as the audit record of the original cut. The successor carries its
+> deliverables, claim labels and surface entries unchanged.
+
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
 > Lives at `plans/PLAN-LB-17-non-claude-workflow-docs.md` and is queued as one row file, `queue/PLAN-LB-17.json`,
 > in the epic ledger. The orchestrator EMITS the command below; it never launches the plan inline.
@@ -52,6 +56,11 @@ The OpenCode and Antigravity generators, and the sync step that installs their o
 - Verify-first clause: confirm at outline whether the content-drift and equality checks under `marketplace/targets/claude/` or any dist-manifest test count emitted files per target; a file-count pin would need updating with deliverable 1.
 
 ## Expected Surface
+
+- DERIVED — this spec is superseded and claims no surface of its own. The entries it declared are
+  recorded in the next section and are now declared by the successor named in the banner above.
+
+## Superseded Surface (record only)
 
 - OBSERVED: `marketplace/targets/opencode/emitter.py` — `VERBATIM_SKILL_SUBDIRS`, `_emit_skill`, `_copy_verbatim`, module docstring, `__all__`
 - OBSERVED: `marketplace/targets/antigravity/emitter.py` — `VERBATIM_SKILL_SUBDIRS`, `_emit_skill`, `_copy_verbatim`, module docstring, `__all__`

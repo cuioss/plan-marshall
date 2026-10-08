@@ -20,21 +20,25 @@ Gates and steps in the plan lifecycle that block a correct run, report a false r
 
 | Plan | Status | Notes |
 |------|--------|-------|
-| PLAN-LB-01-push-freshness-gate | staged | The push freshness gate accepts the pre-push gate's own green builds |
-| PLAN-LB-02-self-review-convergence | staged | Pre-submission self-review converges and stops re-running settled steps |
-| PLAN-LB-03-self-review-consumer-repos | staged | Self-review ends cleanly on a diff no surfacer covers |
-| PLAN-LB-04-light-lane-refine-boundary | staged | Light-lane plans pass the refine boundary without overrides |
-| PLAN-LB-05-unrunnable-waits | staged | Wait procedures the harness can actually run; no false timeouts |
-| PLAN-LB-06-triage-fix-task-loop | staged | Triage can create fix tasks and they get scheduled |
-| PLAN-LB-07-scope-creep-guard | staged | The scope-creep guard records its finding and measures the plan's own changes |
-| PLAN-LB-08-triage-survives-recheck | staged | Re-running a quality check keeps the triage already done |
-| PLAN-LB-09-pending-findings-gate | staged | Pending findings block archive and merge for real |
-| PLAN-LB-10-retried-step-outcome | staged | A retried finalize step records its true outcome |
-| PLAN-LB-11-finalize-staging-allowlist | staged | Finalize commits are staged mechanically, not by prose |
+| PLAN-LB-22-finalize-loop-control | staged | Retried steps record their outcome; loop-backs budgeted per source; self-review can be closed; a live CI run is not a timeout |
+| PLAN-LB-25-phase-and-merge-gates | staged | Findings gate holds at archive and merge; merge waits without sleep; light-lane refine boundary |
+| PLAN-LB-26-execute-loop-triage | staged | Fix tasks get scheduled; triage survives a re-check; one wait rule for long builds |
+| PLAN-LB-27-plan-footprint | staged | Staging allowlist; scope-creep guard measures the plan's own changes |
+| PLAN-LB-02-self-review-convergence | superseded | PLAN-LB-22 (all deliverables) |
+| PLAN-LB-04-light-lane-refine-boundary | superseded | PLAN-LB-25 (all deliverables) |
+| PLAN-LB-05-unrunnable-waits | superseded | D1 and D2 to PLAN-LB-25; D3 to PLAN-LB-24; D4 to PLAN-LB-26; D5 to PLAN-LB-22 |
+| PLAN-LB-06-triage-fix-task-loop | superseded | PLAN-LB-26 (all deliverables) |
+| PLAN-LB-07-scope-creep-guard | superseded | PLAN-LB-27 (all deliverables) |
+| PLAN-LB-08-triage-survives-recheck | superseded | PLAN-LB-26 (all deliverables) |
+| PLAN-LB-09-pending-findings-gate | superseded | PLAN-LB-25 (all deliverables) |
+| PLAN-LB-10-retried-step-outcome | superseded | PLAN-LB-22 (all deliverables) |
+| PLAN-LB-11-finalize-staging-allowlist | superseded | PLAN-LB-27 (all deliverables) |
+| PLAN-LB-01-push-freshness-gate | superseded | PLAN-LB-23 (all deliverables) |
+| PLAN-LB-03-self-review-consumer-repos | superseded | PLAN-LB-28 (all deliverables) |
 
 ## Sequencing and Surface Notes
 
-- LB-02 and LB-03 share `pre-submission-self-review.md`; sequence them.
-- LB-05 and LB-09 both edit `phase-6-finalize/standards/branch-cleanup.md` in different sections.
-- LB-06 and LB-07 both sit in the execute loop; LB-06 edits `execution.md`, LB-07 does not.
-- LB-10 and LB-02 both touch finalize step records (`_cmd_mark_step.py` against the loop counter in `phase-6-finalize/SKILL.md`).
+- PLAN-LB-22 is the hub: it shares `phase-6-finalize/SKILL.md`, `manage-status` or `execution.md` with every other plan of this workstream. Run it first, beside a plan of another workstream.
+- PLAN-LB-25 and PLAN-LB-26 share no file and may run together.
+- PLAN-LB-27 shares `phase-5-execute/SKILL.md` and `execution.md` with PLAN-LB-26 and `phase-6-finalize/SKILL.md` with PLAN-LB-25; run it after both, beside PLAN-LB-28.
+- PLAN-LB-01 and PLAN-LB-03 left this workstream at the regrouping: they were absorbed by PLAN-LB-23 and PLAN-LB-28 in WS-02.

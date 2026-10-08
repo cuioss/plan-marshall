@@ -3,6 +3,10 @@
 epic: live-blockers
 workstream: WS-02
 
+> ⛔ **SUPERSEDED — do not launch.** Regrouped on 2026-10-08: PLAN-LB-23 (all deliverables).
+> This file is kept as the audit record of the original cut. The successor carries its
+> deliverables, claim labels and surface entries unchanged.
+
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
 > Lives at `plans/PLAN-LB-12-build-timeout-and-verify-budget.md` and is queued as one row file,
 > `queue/PLAN-LB-12.json`, in the epic ledger. The orchestrator EMITS the command below; it never
@@ -96,6 +100,11 @@ and the "timeout never reaps the build" finding of truthful-signals PLAN-TRUTH-1
 - Verify-first clause: for D5, enumerate every shipped workflow document that runs a resolved build `executable` (not only the pre-push gate) from a search of `marketplace/bundles/plan-marshall/skills/**/*.md` for the resolve-then-run pattern, and fix the set that search returns; do not assume the gate is the only site.
 
 ## Expected Surface
+
+- DERIVED — this spec is superseded and claims no surface of its own. The entries it declared are
+  recorded in the next section and are now declared by the successor named in the banner above.
+
+## Superseded Surface (record only)
 
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-build-server/scripts/_marshalld_supervisor.py` — `run_job` process-group launch and group kill (D1), bound source on the terminal payload (D4)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-build-server/scripts/marshalld.py` — `_resolve_job_timeout` reports which origin it chose (D4)

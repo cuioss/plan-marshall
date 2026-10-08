@@ -3,6 +3,10 @@
 epic: live-blockers
 workstream: WS-02
 
+> ⛔ **SUPERSEDED — do not launch.** Regrouped on 2026-10-08: PLAN-LB-28 (all deliverables).
+> This file is kept as the audit record of the original cut. The successor carries its
+> deliverables, claim labels and surface entries unchanged.
+
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
 > Lives at `plans/PLAN-LB-13-maven-build-results.md` and is queued as one row file, `queue/PLAN-LB-13.json`,
 > in the epic ledger. The orchestrator EMITS the command below; it never launches the plan inline.
@@ -107,6 +111,11 @@ and truthful-signals PLAN-TRUTH-150 D3 and D5 with its "trailer advice filed as 
 - Verify-first clause: before scoping deliverable 4, derive the epilogue line set from real failing logs of at least two Maven versions rather than from the list in this spec; the list above is a floor.
 
 ## Expected Surface
+
+- DERIVED — this spec is superseded and claims no surface of its own. The entries it declared are
+  recorded in the next section and are now declared by the successor named in the banner above.
+
+## Superseded Surface (record only)
 
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/build-maven/scripts/_maven_cmd_discover.py` — `_build_commands` test-ladder emission, the POM parse that must learn the test-jar dependency, and the false comment above `pl_arg`
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/build-maven/scripts/_maven_cmd_parse.py` — `_extract_test_summary`, `_extract_issues` and `MAVEN_PATTERNS`

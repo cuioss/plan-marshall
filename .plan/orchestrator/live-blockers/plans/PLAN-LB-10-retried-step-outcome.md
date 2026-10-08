@@ -3,6 +3,10 @@
 epic: live-blockers
 workstream: WS-01
 
+> ⛔ **SUPERSEDED — do not launch.** Regrouped on 2026-10-08: PLAN-LB-22 (all deliverables).
+> This file is kept as the audit record of the original cut. The successor carries its
+> deliverables, claim labels and surface entries unchanged.
+
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
 > Lives at `plans/PLAN-LB-10-retried-step-outcome.md` and is queued as one row file, `queue/PLAN-LB-10.json`,
 > in the epic ledger. The orchestrator EMITS the command below; it never launches the plan inline.
@@ -43,6 +47,11 @@ workstream: WS-01
 - Verify-first clause: before scoping D4's sweep, derive the re-fireable population from the finalize step registry (the discovery path `_cmd_mark_step.py` § `_derive_phase_roster` uses) rather than from the file list above, so project-local steps under `.claude/skills/finalize-step-*` and bundle steps are both covered
 
 ## Expected Surface
+
+- DERIVED — this spec is superseded and claims no surface of its own. The entries it declared are
+  recorded in the next section and are now declared by the successor named in the banner above.
+
+## Superseded Surface (record only)
 
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_mark_step.py` — transition table in `cmd_mark_step_done`, module docstring (D1, D4)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-status/scripts/manage-status.py` — `mark-step-done --force` help text (D4)

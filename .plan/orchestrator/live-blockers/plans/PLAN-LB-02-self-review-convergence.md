@@ -3,6 +3,10 @@
 epic: live-blockers
 workstream: WS-01
 
+> ⛔ **SUPERSEDED — do not launch.** Regrouped on 2026-10-08: PLAN-LB-22 (all deliverables).
+> This file is kept as the audit record of the original cut. The successor carries its
+> deliverables, claim labels and surface entries unchanged.
+
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
 > Lives at `plans/PLAN-LB-02-self-review-convergence.md` and is queued as one row file, `queue/PLAN-LB-02.json`,
 > in the epic ledger. The orchestrator EMITS the command below; it never launches the plan inline.
@@ -105,6 +109,11 @@ deliverables D2–D4 and post-run-quality PLAN-PRQ-10 deliverable D1 (the `verdi
 - Verify-first clause: for Deliverable 5, list what each step's verdict actually reads before writing a glob; a declaration that is not a superset buys a false skip, which is worse than the re-fire.
 
 ## Expected Surface
+
+- DERIVED — this spec is superseded and claims no surface of its own. The entries it declared are
+  recorded in the next section and are now declared by the successor named in the banner above.
+
+## Superseded Surface (record only)
 
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md` — Step 3 pre-loop counter read and item 7b admission gate, STOP display (D1, D3)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md` — § "Step 3b" state-finding filing, § "Step 4" Branch B and the closing paragraph, § "Round-loop termination" (D2, D4)

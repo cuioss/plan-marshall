@@ -3,6 +3,10 @@
 epic: live-blockers
 workstream: WS-05
 
+> ⛔ **SUPERSEDED — do not launch.** Regrouped on 2026-10-08: PLAN-LB-31 (all deliverables).
+> This file is kept as the audit record of the original cut. The successor carries its
+> deliverables, claim labels and surface entries unchanged.
+
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
 > Lives at `plans/PLAN-LB-21-in-house-reviewer-efficacy.md` and is queued as one row file,
 > `queue/PLAN-LB-21.json`, in the epic ledger. The orchestrator EMITS the command below; it
@@ -127,6 +131,11 @@ review-apparatus `findings/2026-09-15-pr-agent-vs-coderabbit-vs-sourcery.md`, `r
 - Verify-first clause: do not attribute a difference between the two sides of deliverable 1 to the charter. The diffs differ, the model ladder may have moved, and the last pass already recorded a before/after drop it could not attribute. Only deliverable 2 holds the diff fixed.
 
 ## Expected Surface
+
+- DERIVED — this spec is superseded and claims no surface of its own. The entries it declared are
+  recorded in the next section and are now declared by the successor named in the banner above.
+
+## Superseded Surface (record only)
 
 - HYPOTHESIS: `doc/analysis/in-house-reviewer-efficacy.md` — the written result; a new file in an existing directory (verify-at-outline)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/automatic-review/standards/cuioss-review-bot.md` — § "Signal calibration", the assembled-charter generation

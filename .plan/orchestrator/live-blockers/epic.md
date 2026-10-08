@@ -33,36 +33,91 @@ requirements, specification and implementation-watch documents.
 
 ## Queue annotations
 
-- PLAN-LB-02, PLAN-LB-03 — both edit `phase-6-finalize/workflow/pre-submission-self-review.md`;
-  run them one after the other, never together. LB-03 is the smaller change.
-- PLAN-LB-05, PLAN-LB-18 — both touch the review step's waits. LB-05 owns the short pacing
-  sleeps and the timeout classification; LB-18 owns the CodeRabbit rate-window wait and the
-  notice parsing.
-- PLAN-LB-14 — the launch gate this plan fixes also gates this epic's own `next`. Until it
-  lands, expect `next` to refuse on an indeterminate comparison and each launch to need an
-  operator override. That argues for running it early.
-- PLAN-LB-16, PLAN-LB-20, PLAN-LB-21 — mostly work in other repositories
-  (`cuioss-organization`, the consumer fleet, `cuioss-review-bot`). They declare little or no
-  surface in this repository, so the disjointness gate cannot order them against each other;
-  LB-21's measurement should inform LB-20's rollout.
+The queue was regrouped on 2026-10-08 (see Decisions). Eleven plans are live: PLAN-LB-14 and
+PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 are
+`superseded`; their spec files stay as the record of the first cut.
 
-- **Queue order** is staging order: PLAN-LB-14 first because it unblocks `next`, then the
-  small ready fixes (LB-01, LB-04, LB-07), then LB-03 before LB-02, LB-05 before LB-18, LB-18
-  before LB-19, and LB-21 before LB-20.
+- **Where each earlier plan went.**
+  - PLAN-LB-22 finalize-loop-control — PLAN-LB-10, PLAN-LB-02, PLAN-LB-05 D5.
+  - PLAN-LB-23 verify-builds — PLAN-LB-12, PLAN-LB-01.
+  - PLAN-LB-24 review-step — PLAN-LB-05 D3, PLAN-LB-18, PLAN-LB-19.
+  - PLAN-LB-25 phase-and-merge-gates — PLAN-LB-09, PLAN-LB-05 D1 and D2, PLAN-LB-04.
+  - PLAN-LB-26 execute-loop-triage — PLAN-LB-06, PLAN-LB-05 D4, PLAN-LB-08.
+  - PLAN-LB-27 plan-footprint — PLAN-LB-07, PLAN-LB-11.
+  - PLAN-LB-28 java-consumer-repos — PLAN-LB-13, PLAN-LB-03 (labelled a weak merge in its header).
+  - PLAN-LB-29 harness-sync — PLAN-LB-15, PLAN-LB-17.
+  - PLAN-LB-30 org-ci-release — PLAN-LB-16, PLAN-LB-20 D1 to D3.
+  - PLAN-LB-31 in-house-reviewer — PLAN-LB-21, PLAN-LB-20 D4 and D5.
+  - PLAN-LB-14 launch-gate-scope — unchanged.
+- **Which plans may run together.** Measured with `corpus cross-check` after the regrouping:
+  40 of the 55 pairs of live plans share no declared file. The fifteen pairs that do:
+  - PLAN-LB-22 with each of 23, 24, 25, 26, 27 and 28. It is the hub of the finalize work
+    (`phase-6-finalize/SKILL.md`, `manage-status`, `execution.md`,
+    `pre-submission-self-review.md`, and directory-level entries under `phase-6-finalize/`).
+  - PLAN-LB-24 with 25, 26 and 27 (`phase-6-finalize/SKILL.md`, `merge_lock.py`, `triage.md`).
+  - PLAN-LB-26 with 23, 27 and 28 (`manage-tasks/SKILL.md`, `phase-5-execute/SKILL.md`,
+    `execution.md`, `pre-submission-self-review.md`).
+  - PLAN-LB-25 with 27 (`phase-6-finalize/SKILL.md`).
+  - PLAN-LB-23 with 28 (`_build_shared.py`, which 28 touches only conditionally).
+  - PLAN-LB-14 with 29 (`orchestrator.py`, `plan-orchestrator/SKILL.md`).
+- **Queue order** is built for pairs: PLAN-LB-14 with 22; then 23 with 24; then 25 with 26;
+  then 27 with 28. PLAN-LB-29, 30 and 31 share no file with any of 22 to 28 and fill a slot
+  whenever one is free; 29 waits for PLAN-LB-14. At a parallelization scope above 2, up to five
+  plans are mutually disjoint at once (for example 23, 24, 29, 30 and 31).
+- **Sequencing inside the bundles** that the earlier notes asked for is now internal:
+  PLAN-LB-05 D3 before PLAN-LB-18 before PLAN-LB-19 (all in 24); PLAN-LB-21 before the
+  enrolment of PLAN-LB-20 (both in 31). Two cross-plan orders remain: 31's enrolment
+  deliverables need the schema 30 releases, and 29 follows PLAN-LB-14.
+- PLAN-LB-14 — the launch gate this plan fixes also gates this epic's own `next`. Until it
+  lands, expect `next` to refuse and each launch to need an operator override. Two things
+  were added to its spec on 2026-10-08: Step 4's overlap conjunct is refused by rows against
+  archived sibling specs as well, so the plan must narrow that conjunct too; and the twenty
+  superseded specs of this epic now count as indeterminate own specs until terminal rows are
+  excluded.
+- PLAN-LB-29 — three harness plans outside this epic were in flight on 2026-10-08 with no
+  captured footprint (`harness-bundles-target-rules`, `selective-bundle-installer`,
+  `steward-harness-config`). Check them before launching 29.
+- **Drift since the specs were drafted** (HEAD `6edefac32` to `64b573110`): `planning.md` and
+  `light-lane.md` changed, which affects the PLAN-LB-04 claims carried in 25; and
+  `python-verify.yml` moved to the organisation's v0.37.0, which makes the pin claim carried
+  in 30 stale. Both specs carry a verify-first clause saying so.
+- **Re-grounded on 2026-10-08 at `726ca857a`** (`cleanup`). The eleven live specs carry a
+  verdict on 281 claims: 259 corroborated, 13 unverifiable from this machine, 9 contradicted
+  and re-scoped in place. No verdict blocks. The 151 remaining bullets are hypotheses that
+  need a run or a decision, and verify-first clauses; they stay open for the launched plan.
+  - The PLAN-LB-04 claims carried in 25 hold at HEAD: the light lane still has no `pr_title`
+    producer.
+  - The nine re-scoped claims: 22 (the simplify step reads the whole footprint, so "code
+    files only" is not an admissible `verdict_inputs` declaration); 27 (a sixth staging site,
+    the `land` script's path-bound `git add`); 30 (two claims: the pin is now v0.37.0, which
+    still has no extra-buildable input); 31 (all seven repositories were enrolled on
+    2026-10-06, six were never observed); 29 (four claims, see next bullet).
+  - PLAN-LB-29 — the live state its evidence described has changed: the registry was
+    repinned by hand to `0.1.1865` and is ahead of the executor (`0.1.1864`), and the cache
+    manifest reads `0.1.1859`. The defect itself is confirmed in source (the sync never
+    touches the registry), but it is not observable live today, and the executor now embeds
+    source-tree paths. The plan must prove its parity verdicts on fixtures, cover a registry
+    that is ahead, and read the executor version from `MARSHALL_VERSION`.
+  - Unverifiable here: the dated store measurements in PLAN-LB-14, lessons
+    `2026-10-07-07-007` and `-008` (absent from the lessons store), the `cuioss-review-bot`
+    checkout (not on this machine), and three machine-local files.
+- **Foreign checkout paths.** The specs carried into 28, 30 and 31 name sibling repositories
+  as `/Users/oliver/git/...`. Each of those specs carries a clause to resolve the names under
+  the checkout root of the machine the plan runs on.
 - **Operator decisions the specs leave open** (each is a verify-first clause in its spec):
   - PLAN-LB-14 — whether a sibling spec that is only `staged` or `parked` can block a launch.
-  - PLAN-LB-02 — how a plan already in finalize is read once the loop counter is per source.
-  - PLAN-LB-03 — "done, not covered" with a warning, or halt and ask.
-  - PLAN-LB-04 — write the PR title before the refine boundary, or defer the check to outline.
-  - PLAN-LB-08 — sticky resolutions with an opt-in reopen of `fixed`, or always reopen `fixed`.
-  - PLAN-LB-11 — how legitimate out-of-footprint edits by finalize steps get in.
-  - PLAN-LB-13 — what replaces `test -pl X -am` for modules using a sibling test-jar.
-  - PLAN-LB-15 — whether the sync may write Claude Code's plugin registry.
-  - PLAN-LB-16 — what to do if the organisation workflow release is not available.
-  - PLAN-LB-19 — whether Sourcery may lose its credit when its review is not of the merge commit.
-  - PLAN-LB-20 — the two `project.yml` schema decisions and cutting an organisation release.
-  - PLAN-LB-21 — running `gh`-based corpus scripts, posting `/review` on merged PRs, and the
-    roster decision itself.
+  - PLAN-LB-22 — how a plan already in finalize is read once the loop counter is per source.
+  - PLAN-LB-24 — whether Sourcery may lose its credit when its review is not of the merge commit.
+  - PLAN-LB-25 — write the PR title before the refine boundary, or defer the check to outline.
+  - PLAN-LB-26 — sticky resolutions with an opt-in reopen of `fixed`, or always reopen `fixed`.
+  - PLAN-LB-27 — how legitimate out-of-footprint edits by finalize steps get in.
+  - PLAN-LB-28 — what replaces `test -pl X -am` for modules using a sibling test-jar; and
+    "done, not covered" with a warning, or halt and ask.
+  - PLAN-LB-29 — whether the sync may write Claude Code's plugin registry.
+  - PLAN-LB-30 — what to do if the organisation workflow release is not available; the two
+    `project.yml` schema decisions; cutting the organisation release.
+  - PLAN-LB-31 — running `gh`-based corpus scripts, posting `/review` on merged PRs, the
+    roster decision itself, and whether to enrol after it.
 
 ## Decisions
 
@@ -100,6 +155,46 @@ requirements, specification and implementation-watch documents.
   `PLAN-19` is `PLAN-LB-06`. `PLAN-17` (clean-checkout assertions against concurrent ledger
   writes) was ranked medium in the sweep and sits in `backlog.md` § 1.15. Whether to stage it
   here is the operator's call, given the earlier land-now intent.
+
+- 2026-10-08 — **Queue regrouped from 21 plans to 11 by operator instruction** ("make a full
+  review of all plans. Rearrange that: adjacent plans (same component / topics) are bundled
+  together; the plans aggregate a larger amount of deliverables (up to 12 are authorized); the
+  plans are structured in a way to provide high parallelism"). Twenty specs were absorbed into
+  ten new ones, PLAN-LB-22 to PLAN-LB-31, of 7 to 11 deliverables each; PLAN-LB-14 is
+  unchanged. All 90 deliverables of the absorbed specs were carried, each exactly once, with
+  their claim labels and surface entries copied unchanged; the move list is in Queue
+  annotations. Scope-bloat guard: every new spec is above six deliverables and proceeds
+  unsplit on the operator's authorization of up to twelve.
+  - Two specs were cut at the deliverable level, because each spanned components that belong
+    to different plans: PLAN-LB-05 (five waits in five components) and PLAN-LB-20 (schema work
+    in the organisation repository, then enrolment gated on PLAN-LB-21's decision).
+  - Alternatives considered and not chosen: cutting PLAN-LB-02 and PLAN-LB-09 by deliverable
+    (it freed no additional pair); keeping PLAN-LB-12 with PLAN-LB-13 and PLAN-LB-05 D4 as one
+    build plan (it made the build plan collide with the review plan through
+    `await-long-running.md` and with the execute plan through `execution.md`).
+  - No spec file was deleted. The twenty absorbed rows are `superseded`; each old spec carries
+    a banner naming its successor, and its `## Expected Surface` was replaced by a `DERIVED`
+    marker with the original entries kept under "Superseded Surface (record only)", so a
+    retired spec no longer collides with the plan that carries its work.
+  - What limits parallelism: `phase-6-finalize/SKILL.md` is edited by four of the new plans
+    and `plan-marshall/workflow/execution.md` by three. Those two files, not the bundling,
+    are why the finalize plans still run in sequence.
+- 2026-10-08 — **Ledger worktree fast-forwarded to `main`** (`6c676de29` to `64b573110`) by
+  operator instruction, after it was found three commits behind with nothing pending. Three
+  leftover directories under the active root holding only an ignored `logs/decision.log`
+  (`post-run-quality`, `process-compliance`, `truthful-signals`) were removed on the same
+  instruction; their tracked trees are in the archived root.
+- 2026-10-08 — **Cleanup run by operator instruction, then landed.** Re-grounding covered the
+  eleven live specs at `726ca857a`; the twenty superseded specs were not re-grounded, because
+  every claim they hold is carried, and now verdict-stamped, in a successor. Nine contradicted
+  claims were re-scoped in place: the original text is kept and a dated note states what is
+  true and what it changes for the plan. No spec was found already fixed, none lacks an
+  objective, a surface or claim labels, and no relocation to `settled.md` was proposed (no
+  subject of this epic is closed yet). The inbox drain was refused as the workflow requires.
+  Restart verdict `indeterminate`, for one reason: the epic has no `inbox/` directory yet.
+  - Deviation, recorded: the eleven verification agents were each allowed to write one result
+    file under `.plan/temp/`, and the verdicts were stamped from those files by a driver that
+    calls `corpus set-verdict` once per claim. No agent wrote to the ledger.
 
 ## Open Defects
 

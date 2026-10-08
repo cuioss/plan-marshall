@@ -3,6 +3,10 @@
 epic: live-blockers
 workstream: WS-05
 
+> ⛔ **SUPERSEDED — do not launch.** Regrouped on 2026-10-08: D1 to D3 to PLAN-LB-30; D4 and D5 to PLAN-LB-31.
+> This file is kept as the audit record of the original cut. The successor carries its
+> deliverables, claim labels and surface entries unchanged.
+
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
 > Lives at `plans/PLAN-LB-20-review-bot-fleet-rollout.md` and is queued as one row file,
 > `queue/PLAN-LB-20.json`, in the epic ledger. The orchestrator EMITS the command below; it
@@ -120,6 +124,11 @@ directive of lesson `2026-10-06-15-001`.
 - Verify-first clause: every count in the final report ("N of 13", "N of 20") is computed from a read of each repository's default branch after the last merge, with the list of repositories read printed beside it.
 
 ## Expected Surface
+
+- DERIVED — this spec is superseded and claims no surface of its own. The entries it declared are
+  recorded in the next section and are now declared by the successor named in the banner above.
+
+## Superseded Surface (record only)
 
 - HYPOTHESIS: `.github/project.yml` — this repository's own file is validated whole-file with the new validator and edited only if it fails; by reading, it passes and stays unchanged (verify-at-outline)
 - HYPOTHESIS: `.github/workflows/python-verify.yml` — only if the org release of deliverable 2 must be pinned here by hand; normally the org's own pin-update PR does it and this plan does not touch the file (verify-at-outline)

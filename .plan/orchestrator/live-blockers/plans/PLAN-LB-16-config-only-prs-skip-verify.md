@@ -3,6 +3,10 @@
 epic: live-blockers
 workstream: WS-04
 
+> ⛔ **SUPERSEDED — do not launch.** Regrouped on 2026-10-08: PLAN-LB-30 (all deliverables).
+> This file is kept as the audit record of the original cut. The successor carries its
+> deliverables, claim labels and surface entries unchanged.
+
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
 > Lives at `plans/PLAN-LB-16-config-only-prs-skip-verify.md` and is queued as one row file,
 > `queue/PLAN-LB-16.json`, in the epic ledger. The orchestrator EMITS the command below; it
@@ -113,6 +117,11 @@ verify) — see the verify-first clause on the interim.
 - Verify-first clause: confirm the input's value format against the released workflow (space-separated globs, as the sibling `paths-ignore-extra` input uses, or another shape) and its glob-safety rule before writing it; the structural test of deliverable 3 parses that same format.
 
 ## Expected Surface
+
+- DERIVED — this spec is superseded and claims no surface of its own. The entries it declared are
+  recorded in the next section and are now declared by the successor named in the banner above.
+
+## Superseded Surface (record only)
 
 - OBSERVED: `.github/workflows/python-verify.yml` — pin bump, the extra-buildable input, and the corrected `skip-on-docs-only` comment
 - OBSERVED: `test/plan-marshall/manage-config/test_config_defaults.py` — home of the existing committed-`marshal.json` contract tests; the machine-local-key test joins them or sits beside them

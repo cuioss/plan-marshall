@@ -2,7 +2,7 @@
   "id": "PLAN-LB-01",
   "slug": "push-freshness-gate",
   "workstream": "WS-01",
-  "status": "staged",
+  "status": "superseded",
   "plan_marshall_plan_id": "",
   "pr": "",
   "landing": "",
