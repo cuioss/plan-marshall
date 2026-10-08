@@ -70,7 +70,7 @@ reading contract.
 
 ⛔ **A `HYPOTHESIS` entry is swept against the tree BEFORE the spec is staged — and nothing but
 the author enforces that.** An unswept guess here is not a neutral placeholder: it is either
-over-declaration, which serializes siblings behind files the plan never touches, or
+over-declaration, which raises overlap questions over files the plan never touches, or
 under-declaration, which admits a plan that genuinely collides. Sweep it, then label what the
 sweep found.
 

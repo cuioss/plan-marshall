@@ -4202,8 +4202,8 @@ def _seed_one_in_flight_sibling(plan_context) -> None:
     _seed_gate_sibling(plan_context, 'launched')
 
 
-#: ``(id, fixture builder, roll-up)`` — the fixtures the row/roll-up identity is
-#: asserted over, spanning both values of the verdict.
+#: ``(id, fixture builder, roll-up)`` — fixtures whose blocking candidate is a
+#: sibling, spanning both values of the verdict.
 _ROLL_UP_FIXTURES = (
     ('sheltered-siblings', _seed_sheltered_siblings, True),
     ('archived-sibling-unreadable', _seed_sheltered_siblings_with_one_unreadable, False),
@@ -4286,7 +4286,7 @@ class TestSpecComparisonRows:
         [case[1:] for case in _ROLL_UP_FIXTURES],
         ids=[case[0] for case in _ROLL_UP_FIXTURES],
     )
-    def test_the_roll_up_is_the_conjunction_of_the_rows(self, plan_context, seed, roll_up):
+    def test_the_roll_up_agrees_with_the_rows_when_a_sibling_blocks(self, plan_context, seed, roll_up):
         seed(plan_context)
 
         result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
