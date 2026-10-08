@@ -20,14 +20,50 @@ Plus the D1 conjunct properties (content as a count not a boolean; the unmarked
 set reported as registry-derived; sampling instant / population / marker age
 published), the D3 remedy text, the D4 loader-selection model, and the live
 adapters.
+
+Every registry and executor FIXTURE is in the shape that occurs live: a registry
+keyed ``{bundle}@{marketplace}`` under ``plugins`` whose value is a LIST of scope
+entries, and an executor carrying a module-level ``MARSHALL_VERSION`` assignment.
+Shapes that do not occur live appear only as negative controls — the adapters
+must report them as "nothing there", never read a version out of them.
 """
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
 from conftest import load_script_module
 
 _ppt = load_script_module('pm-plugin-development', 'plugin-doctor', '_plugin_pin_trap.py', 'plugin_pin_trap')
+
+REPIN_COMMAND = 'python3 marketplace/targets/claude/registry_pin.py --apply'
+
+
+def _scope_entry(version: str, *, scope: str = 'user', bundle: str = 'plan-marshall', path_version: str | None = None):
+    """One registry scope entry in the shape the plugin manager writes."""
+    return {
+        'scope': scope,
+        'installPath': f'/h/.claude/plugins/cache/plan-marshall/{bundle}/{path_version or version}',
+        'version': version,
+    }
+
+
+def _write_live_registry(path: Path, plugins: dict) -> Path:
+    """Write a registry in the live shape: ``plugins`` keyed ``{bundle}@{marketplace}``."""
+    path.write_text(json.dumps({'version': 2, 'plugins': plugins}), encoding='utf-8')
+    return path
+
+
+def _write_pinned_registry(path: Path, version: str) -> Path:
+    """The common case: plan-marshall pinned at ``version`` in one user-scope entry."""
+    return _write_live_registry(path, {'plan-marshall@plan-marshall': [_scope_entry(version)]})
+
+
+def _write_live_executor(path: Path, version: str) -> Path:
+    """Write an executor in the live shape: a module-level ``MARSHALL_VERSION``."""
+    path.write_text(f"#!/usr/bin/env python3\nMARSHALL_VERSION = '{version}'\nSCRIPTS = {{}}\n", encoding='utf-8')
+    return path
+
 
 VersionDir = _ppt.VersionDir
 ContentComparison = _ppt.ContentComparison
@@ -311,36 +347,64 @@ def test_assert_loaded_version_unparseable_is_indeterminate():
 # ---------------------------------------------------------------------------
 # D3 — the operator remedy is stated, not implied.
 # ---------------------------------------------------------------------------
-def test_fail_verdict_states_operator_remedy_including_no_restart_and_in_run():
+def test_fail_verdict_states_operator_remedy_including_repin_restart_and_in_run():
     verdict = _verdict(_obs(executor_version='0.1.100'))
     assert 'operator-only' in verdict.remedy
-    assert 'restart does NOT fix' in verdict.remedy
-    assert 'read the pinned skill file' in verdict.remedy.lower() or 'installPath' in verdict.remedy
-    assert 'Do NOT write the plugin registry' in verdict.remedy
-    # Step (3) was the bare phrase "regenerate the executor" — a goal, not a
-    # command. The surface that performs it is named here as well as in the
-    # all-three-steps test below, because this is the test the gap names.
-    assert '/marshall-steward' in verdict.remedy
+    assert 'this detector writes nothing' in verdict.remedy
+    assert REPIN_COMMAND in verdict.remedy
+    assert 'restart WITHOUT a repin does not fix this' in verdict.remedy
+    assert 'read the pinned skill file' in verdict.remedy.lower()
+    assert 'installPath (0.1.200)' in verdict.remedy
 
 
-def test_every_operator_repair_step_names_an_invocable_surface():
-    """All three repair steps name something the operator can actually run.
+def test_operator_remedy_states_the_one_sequence_in_order():
+    """The repair is ONE sequence — sync, repin, full restart — in that order.
 
-    Steps (1) and (2) named ``/sync-harnesses`` and the steward's
-    ``cache_retention sweep``; step (3) was the bare phrase "regenerate the
-    executor" — a goal, not a command, leaving the operator to guess which
-    surface performs it.
+    Each step names something the operator can type as given. The repin is given
+    in the form that actually WRITES: without ``--apply`` it is a read-only dry
+    run, so a remedy naming the bare script would describe a repin that does not
+    happen and reports no error while not happening — the false-clean shape this
+    whole module exists to prevent, committed by its own remedy text.
     """
-    remedy = _verdict(_obs(executor_version='0.1.100')).remedy
+    remedy = _ppt.REMEDY_OPERATOR
 
-    assert '/sync-harnesses' in remedy
-    assert '/marshall-steward' in remedy
-    # The retention sweep must be given in the form that actually PRUNES. Without
-    # `--apply` it is a read-only dry run, so a remedy naming the bare verb
-    # describes a repair that does not happen and reports no error while not
-    # happening — the false-clean shape this whole module exists to prevent,
-    # committed by its own remedy text.
-    assert 'python3 .plan/execute-script.py plan-marshall:marshall-steward:cache_retention sweep --apply' in remedy
+    sync_at = remedy.index('/sync-harnesses')
+    repin_at = remedy.index(REPIN_COMMAND)
+    restart_at = remedy.index('fully restart the session')
+    assert sync_at < repin_at < restart_at
+    assert 'WITHOUT `--apply` the repin is a read-only dry run' in remedy
+
+
+def test_both_remedy_constants_name_the_repin_step():
+    """Neither constant carries the superseded claims; both name the repin.
+
+    The old operator text forbade writing the registry at all, and the old
+    restart text said a restart never helps. Both are false once the repin
+    exists: the registry is repinned as an explicit operator step, and a full
+    restart AFTER it is exactly what loads the new version.
+    """
+    for remedy in (_ppt.REMEDY_OPERATOR, _ppt.REMEDY_NO_RESTART):
+        assert REPIN_COMMAND in remedy
+        assert 'Do NOT write the plugin registry' not in remedy
+        assert 'A session restart does NOT fix this' not in remedy
+
+
+def test_no_restart_remedy_distinguishes_restart_before_and_after_the_repin():
+    remedy = _ppt.REMEDY_NO_RESTART
+
+    assert 'restart WITHOUT a repin does not fix this' in remedy
+    assert 're-reads the same stale registry' in remedy
+    assert remedy.index('WITHOUT a repin') < remedy.index('AFTER the repin')
+    assert 'loads the new version' in remedy
+
+
+def test_non_pinned_load_remedy_names_the_repin_step():
+    """The mid-run assertion's remedy carries the same qualifier, not a bare 'restart is useless'."""
+    verdict = assert_loaded_version('/h/.claude/plugins/cache/plan-marshall/0.1.050/skills/persona/x', '0.1.200')
+
+    assert verdict.outcome == FAIL
+    assert REPIN_COMMAND in verdict.remedy
+    assert 'restart WITHOUT a repin does not fix this' in verdict.remedy
 
 
 # ---------------------------------------------------------------------------
@@ -469,83 +533,226 @@ def test_observe_cache_version_dirs_missing_bundle_is_empty(tmp_path):
     assert marker_age is None
 
 
-def test_read_registry_entry_top_level_keyed(tmp_path):
-    registry = tmp_path / 'config.json'
-    registry.write_text(
-        '{"plan-marshall": {"installPath": "/c/plan-marshall/0.1.200", "version": "0.1.200"},'
-        ' "third-party": {"installPath": "/c/tp/1.0.0", "version": "1.0.0"}}',
-        encoding='utf-8',
+def test_live_shape_registry_and_executor_return_their_versions(tmp_path):
+    """The regression this file exists for: the LIVE shapes read back as versions.
+
+    A registry whose ``plan-marshall@plan-marshall`` value is a list holding a
+    user-scope and a project-scope entry, and an executor that states its version
+    in ``MARSHALL_VERSION`` and embeds no cache path. Both adapters returned
+    "unreadable" for exactly this pair, so on a real machine the detector could
+    only ever answer ``indeterminate``.
+    """
+    registry = _write_live_registry(
+        tmp_path / 'installed_plugins.json',
+        {
+            'plan-marshall@plan-marshall': [
+                _scope_entry('0.1.200', scope='user'),
+                _scope_entry('0.1.200', scope='project'),
+            ]
+        },
     )
-    assert _ppt.read_registry_entry(registry, 'plan-marshall') == ('0.1.200', '0.1.200')
-    assert _ppt.read_registry_entry(registry, 'third-party') == ('1.0.0', '1.0.0')
+    executor = _write_live_executor(tmp_path / 'execute-script.py', '0.1.200')
 
-
-def test_read_registry_entry_under_plugins_and_list_forms(tmp_path):
-    nested = tmp_path / 'nested.json'
-    nested.write_text('{"plugins": {"plan-marshall": {"installPath": "/c/pm/0.1.9", "version": "0.1.9"}}}', 'utf-8')
-    assert _ppt.read_registry_entry(nested, 'plan-marshall') == ('0.1.9', '0.1.9')
-
-    listed = tmp_path / 'list.json'
-    listed.write_text('[{"name": "plan-marshall", "installPath": "/c/pm/0.1.8", "version": "0.1.8"}]', 'utf-8')
-    assert _ppt.read_registry_entry(listed, 'plan-marshall') == ('0.1.8', '0.1.8')
-
-
-def test_read_registry_entry_missing_or_unreadable_is_none(tmp_path):
-    assert _ppt.read_registry_entry(tmp_path / 'absent.json', 'plan-marshall') == (None, None)
-    bad = tmp_path / 'bad.json'
-    bad.write_text('{not json', encoding='utf-8')
-    assert _ppt.read_registry_entry(bad, 'plan-marshall') == (None, None)
-
-
-def test_read_executor_anchored_version_extracts_single_version(tmp_path):
-    executor = tmp_path / 'execute-script.py'
-    executor.write_text(
-        'SCRIPTS = {\n'
-        '  "a:b:c": "/h/.claude/plugins/cache/plan-marshall/0.1.200/skills/b/scripts/c.py",\n'
-        '  "d:e:f": "/h/.claude/plugins/cache/plan-marshall/0.1.200/skills/e/scripts/f.py",\n'
-        '}\n',
-        encoding='utf-8',
-    )
+    entry = _ppt.read_registry_entry(registry, 'plan-marshall')
     anchor = _ppt.read_executor_anchored_version(executor)
+
+    assert entry.status == _ppt.REGISTRY_ENTRY_AGREED
+    assert entry.install_path_version == '0.1.200'
+    assert entry.version == '0.1.200'
+    assert [scope.scope for scope in entry.scopes] == ['user', 'project']
     assert anchor.status == _ppt.EXECUTOR_ANCHORED
     assert anchor.version == '0.1.200'
 
 
-def test_read_executor_anchored_version_split_names_the_conflicting_versions(tmp_path):
-    """A version-split executor is reported as SPLIT, naming every version found.
+def test_read_registry_entry_reports_install_path_and_version_separately(tmp_path):
+    """An entry disagreeing with ITSELF still agrees across scopes — that is shape 5's job."""
+    registry = _write_live_registry(
+        tmp_path / 'installed_plugins.json',
+        {'plan-marshall@plan-marshall': [_scope_entry('0.1.200', path_version='0.1.199')]},
+    )
 
-    It is not "unreadable": the file was read and its embedded paths disagree
-    with each other, which is a demonstrated divergence rather than an absence of
-    evidence. ``version`` stays ``None`` so the load-safety gate remains
-    fail-closed.
+    entry = _ppt.read_registry_entry(registry, 'plan-marshall')
+
+    assert entry.status == _ppt.REGISTRY_ENTRY_AGREED
+    assert entry.install_path_version == '0.1.199'
+    assert entry.version == '0.1.200'
+
+
+def test_read_registry_entry_disagreeing_scopes_are_never_collapsed_to_the_first(tmp_path):
+    """Scope entries naming different versions are a distinct, non-agreeing result.
+
+    Neither field carries the first entry's answer: reporting the user scope's
+    version as "the registry's" would hide that the project scope pins another.
     """
+    registry = _write_live_registry(
+        tmp_path / 'installed_plugins.json',
+        {
+            'plan-marshall@plan-marshall': [
+                _scope_entry('0.1.200', scope='user'),
+                _scope_entry('0.1.100', scope='project'),
+            ]
+        },
+    )
+
+    entry = _ppt.read_registry_entry(registry, 'plan-marshall')
+
+    assert entry.status == _ppt.REGISTRY_ENTRY_SCOPES_DISAGREE
+    assert entry.install_path_version is None
+    assert entry.version is None
+    assert [(scope.scope, scope.install_path_version, scope.version) for scope in entry.scopes] == [
+        ('user', '0.1.200', '0.1.200'),
+        ('project', '0.1.100', '0.1.100'),
+    ]
+
+
+def test_read_registry_entry_selects_one_bundle_and_ignores_foreign_marketplaces(tmp_path):
+    registry = _write_live_registry(
+        tmp_path / 'installed_plugins.json',
+        {
+            'plan-marshall@plan-marshall': [_scope_entry('0.1.200')],
+            'pm-dev-java@plan-marshall': [_scope_entry('0.1.150', bundle='pm-dev-java')],
+            'plan-marshall@some-other-marketplace': [_scope_entry('0.0.1')],
+        },
+    )
+
+    # A sibling bundle pinned elsewhere, and a same-named plugin of a foreign
+    # marketplace, are not scope entries of this plugin and cause no disagreement.
+    entry = _ppt.read_registry_entry(registry, 'plan-marshall')
+    assert entry.status == _ppt.REGISTRY_ENTRY_AGREED
+    assert entry.version == '0.1.200'
+    assert _ppt.read_registry_entry(registry, 'pm-dev-java').version == '0.1.150'
+
+
+def test_read_registry_entry_accepts_the_full_registry_key(tmp_path):
+    registry = _write_live_registry(
+        tmp_path / 'installed_plugins.json',
+        {
+            'plan-marshall@plan-marshall': [_scope_entry('0.1.200')],
+            'plan-marshall@some-other-marketplace': [_scope_entry('0.0.1')],
+        },
+    )
+
+    assert _ppt.read_registry_entry(registry, 'plan-marshall@plan-marshall').version == '0.1.200'
+    assert _ppt.read_registry_entry(registry, 'plan-marshall@some-other-marketplace').version == '0.0.1'
+
+
+def test_read_registry_entry_keeps_unreadable_and_absent_apart(tmp_path):
+    """A registry that could not be read is not one that was read and held nothing."""
+    missing = _ppt.read_registry_entry(tmp_path / 'absent.json', 'plan-marshall')
+    assert missing.status == _ppt.REGISTRY_ENTRY_UNREADABLE
+    assert (missing.install_path_version, missing.version) == (None, None)
+
+    bad = tmp_path / 'bad.json'
+    bad.write_text('{not json', encoding='utf-8')
+    corrupt = _ppt.read_registry_entry(bad, 'plan-marshall')
+    assert corrupt.status == _ppt.REGISTRY_ENTRY_UNREADABLE
+    assert corrupt.read_state != missing.read_state
+
+    other_bundle_only = _write_live_registry(
+        tmp_path / 'other.json', {'pm-dev-java@plan-marshall': [_scope_entry('0.1.200', bundle='pm-dev-java')]}
+    )
+    foreign_only = _write_live_registry(tmp_path / 'foreign.json', {'thing@elsewhere': [_scope_entry('1.0.0')]})
+    for registry in (other_bundle_only, foreign_only):
+        absent = _ppt.read_registry_entry(registry, 'plan-marshall')
+        assert absent.status == _ppt.REGISTRY_ENTRY_ABSENT
+        assert (absent.install_path_version, absent.version) == (None, None)
+        assert absent.scopes == ()
+
+
+def test_read_registry_entry_reads_no_version_out_of_shapes_that_do_not_occur_live(tmp_path):
+    """The negative control for the shapes the old liberal reader accepted.
+
+    A top-level object keyed by plugin name, a ``plugins`` object whose value is
+    ONE entry rather than a list, and a list of named objects never occur live.
+    The adapter has no parser of its own to recognise them with, so each reads
+    as "no entry" — never as a pinned version.
+    """
+    pinned = '{"installPath": "/c/plan-marshall/0.1.200", "version": "0.1.200"}'
+    shapes = {
+        'top-level.json': f'{{"plan-marshall": {pinned}}}',
+        'single-object.json': f'{{"plugins": {{"plan-marshall@plan-marshall": {pinned}}}}}',
+        'bare-key.json': f'{{"plugins": {{"plan-marshall": [{pinned}]}}}}',
+        'named-list.json': '[{"name": "plan-marshall", "installPath": "/c/pm/0.1.8", "version": "0.1.8"}]',
+    }
+    for name, body in shapes.items():
+        registry = tmp_path / name
+        registry.write_text(body, encoding='utf-8')
+
+        entry = _ppt.read_registry_entry(registry, 'plan-marshall')
+
+        assert entry.status == _ppt.REGISTRY_ENTRY_ABSENT, name
+        assert (entry.install_path_version, entry.version) == (None, None), name
+
+
+def test_read_executor_anchored_version_reads_marshall_version(tmp_path):
+    executor = _write_live_executor(tmp_path / 'execute-script.py', '0.1.200')
+
+    anchor = _ppt.read_executor_anchored_version(executor)
+
+    assert anchor.status == _ppt.EXECUTOR_ANCHORED
+    assert anchor.version == '0.1.200'
+    assert anchor.versions == ('0.1.200',)
+
+
+def test_read_executor_anchored_version_ignores_embedded_cache_paths(tmp_path):
+    """Cache-path segments are not the anchor, and the adapter never reports SPLIT.
+
+    The old reader scanned for ``/cache/{plugin}/{version}/skills/`` segments,
+    which the live executor does not embed. Here two such paths name two
+    different versions beside a ``MARSHALL_VERSION`` naming a third: the
+    assignment alone is read, so the result is anchored at it, not split.
+    """
+    executor = tmp_path / 'execute-script.py'
+    executor.write_text(
+        "MARSHALL_VERSION = '0.1.300'\n"
+        'SCRIPTS = {\n'
+        '  "a:b:c": "/h/.claude/plugins/cache/plan-marshall/0.1.200/skills/b/scripts/c.py",\n'
+        '  "d:e:f": "/h/.claude/plugins/cache/plan-marshall/0.1.100/skills/e/scripts/f.py",\n'
+        '}\n',
+        encoding='utf-8',
+    )
+
+    anchor = _ppt.read_executor_anchored_version(executor)
+
+    assert anchor.status == _ppt.EXECUTOR_ANCHORED
+    assert anchor.version == '0.1.300'
+
+
+def test_read_executor_anchor_without_the_assignment_is_unanchored_not_split(tmp_path):
+    """Cache paths alone establish no anchor — two of them included."""
     executor = tmp_path / 'execute-script.py'
     executor.write_text(
         '"/h/.claude/plugins/cache/plan-marshall/0.1.200/skills/b/scripts/c.py"\n'
         '"/h/.claude/plugins/cache/plan-marshall/0.1.100/skills/e/scripts/f.py"\n',
         encoding='utf-8',
     )
+
     anchor = _ppt.read_executor_anchored_version(executor)
-    assert anchor.status == _ppt.EXECUTOR_SPLIT
+
+    assert anchor.status == _ppt.EXECUTOR_NO_ANCHOR
     assert anchor.version is None
-    assert anchor.versions == ('0.1.100', '0.1.200')
+    assert anchor.versions == ()
 
 
 def test_read_executor_anchor_distinguishes_unreadable_from_unanchored(tmp_path):
     """A missing executor and an anchor-less one are DIFFERENT states.
 
-    Both leave ``version`` at ``None``, and the old reader collapsed them — and
-    a split executor — into that single ``None``.
+    Both leave ``version`` at ``None``. The empty fresh-install sentinel is
+    anchor-less too: the assignment is present and names no version.
     """
     missing = tmp_path / 'absent' / 'execute-script.py'
     assert _ppt.read_executor_anchored_version(missing).status == _ppt.EXECUTOR_UNREADABLE
 
     unanchored = tmp_path / 'execute-script.py'
-    unanchored.write_text('"marketplace/bundles/b/skills/s/scripts/c.py"\n', encoding='utf-8')
+    unanchored.write_text('#!/usr/bin/env python3\nSCRIPTS = {}\n', encoding='utf-8')
     anchor = _ppt.read_executor_anchored_version(unanchored)
     assert anchor.status == _ppt.EXECUTOR_NO_ANCHOR
     assert anchor.version is None
     assert anchor.versions == ()
+
+    sentinel = tmp_path / 'fresh-install.py'
+    sentinel.write_text("MARSHALL_VERSION = ''\n", encoding='utf-8')
+    assert _ppt.read_executor_anchored_version(sentinel).status == _ppt.EXECUTOR_NO_ANCHOR
 
 
 def test_compare_pin_content_reports_counts(tmp_path):
@@ -576,11 +783,8 @@ def test_observe_assembles_full_observation(tmp_path):
     (source / 'skills' / 's' / 'scripts').mkdir(parents=True)
     (source / 'skills' / 's' / 'scripts' / 'a.py').write_text('print(1)\n', encoding='utf-8')
 
-    registry = tmp_path / 'config.json'
-    registry.write_text('{"plan-marshall": {"installPath": "/c/plan-marshall/0.1.200", "version": "0.1.200"}}', 'utf-8')
-
-    executor = tmp_path / 'execute-script.py'
-    executor.write_text('"/x/cache/plan-marshall/0.1.200/skills/s/scripts/a.py"\n', encoding='utf-8')
+    registry = _write_pinned_registry(tmp_path / 'installed_plugins.json', '0.1.200')
+    executor = _write_live_executor(tmp_path / 'execute-script.py', '0.1.200')
 
     obs = _ppt.observe(
         cache_bundle_dir=bundle,
@@ -593,6 +797,10 @@ def test_observe_assembles_full_observation(tmp_path):
     assert obs.install_path_version == '0.1.200'
     assert obs.registry_version == '0.1.200'
     assert obs.executor_version == '0.1.200'
+    assert obs.registry_entry is not None
+    assert obs.registry_entry.status == _ppt.REGISTRY_ENTRY_AGREED
+    assert obs.executor_anchor is not None
+    assert obs.executor_anchor.status == _ppt.EXECUTOR_ANCHORED
     assert obs.content is not None and obs.content.diverged == 0
     verdict = evaluate(obs, obs, sampling_instant='2026-08-13T00:00:00Z')
     assert verdict.outcome == PASS
@@ -745,8 +953,72 @@ def test_unreadable_executor_is_still_indeterminate():
     assert 'executor' in verdict.reason
 
 
-def test_observe_reports_a_split_executor_end_to_end(tmp_path):
-    """``observe`` carries the anchor through, so the oracle sees the split."""
+def test_disagreeing_registry_scopes_fail_naming_every_scope():
+    """Scope entries that disagree are a FAIL on the divergence axis, not a could-not-look.
+
+    The registry was read successfully; what it says is inconsistent across
+    scopes. Both registry fields are ``None`` in that state, so without the
+    entry's status the oracle would file it as two unreadable fields.
+    """
+    disagreeing = _ppt.RegistryEntry(
+        status=_ppt.REGISTRY_ENTRY_SCOPES_DISAGREE,
+        scopes=(
+            _ppt.RegistryScopeEntry(scope='user', install_path_version='0.1.200', version='0.1.200'),
+            _ppt.RegistryScopeEntry(scope='project', install_path_version='0.1.100', version='0.1.100'),
+        ),
+    )
+
+    verdict = _verdict(_obs(install_path_version=None, registry_version=None, registry_entry=disagreeing))
+
+    assert verdict.outcome == FAIL
+    assert any('scope entries disagree' in d for d in verdict.divergences)
+    assert any('user(installPath=0.1.200' in d and 'project(installPath=0.1.100' in d for d in verdict.divergences)
+    assert 'could not read' not in verdict.reason
+
+
+def test_unreadable_registry_is_still_indeterminate():
+    """The control: a registry that could not be read keeps its could-not-look outcome."""
+    unreadable = _ppt.RegistryEntry(status=_ppt.REGISTRY_ENTRY_UNREADABLE, read_state='absent')
+
+    verdict = _verdict(_obs(install_path_version=None, registry_version=None, registry_entry=unreadable))
+
+    assert verdict.outcome == INDET
+    assert 'could_not_look' in verdict.reason
+    assert 'registry.installPath' in verdict.reason
+    assert 'registry.version' in verdict.reason
+
+
+def test_samples_differing_only_in_which_scopes_disagree_are_indeterminate():
+    """The double-sample guard covers the registry entry too.
+
+    Two differently-disagreeing registry reads both leave the two registry
+    fields at ``None``, so without the entry in the volatile signature they
+    would compare equal.
+    """
+
+    def _disagreeing(project_version: str):
+        return _obs(
+            install_path_version=None,
+            registry_version=None,
+            registry_entry=_ppt.RegistryEntry(
+                status=_ppt.REGISTRY_ENTRY_SCOPES_DISAGREE,
+                scopes=(
+                    _ppt.RegistryScopeEntry(scope='user', install_path_version='0.1.200', version='0.1.200'),
+                    _ppt.RegistryScopeEntry(
+                        scope='project', install_path_version=project_version, version=project_version
+                    ),
+                ),
+            ),
+        )
+
+    verdict = evaluate(_disagreeing('0.1.100'), _disagreeing('0.1.150'), sampling_instant='2026-08-13T00:00:00Z')
+
+    assert verdict.outcome == INDET
+    assert 'read_during_write' in verdict.reason
+
+
+def test_observe_reports_disagreeing_registry_scopes_end_to_end(tmp_path):
+    """``observe`` carries the registry entry through, so the oracle sees the disagreement."""
     cache = tmp_path / 'cache'
     bundle = cache / 'plan-marshall'
     _make_version_dir(bundle, '0.1.200', marked=False, files={'skills/s/scripts/a.py': 'print(1)\n'})
@@ -754,17 +1026,16 @@ def test_observe_reports_a_split_executor_end_to_end(tmp_path):
     (source / 'skills' / 's' / 'scripts').mkdir(parents=True)
     (source / 'skills' / 's' / 'scripts' / 'a.py').write_text('print(1)\n', encoding='utf-8')
 
-    registry = tmp_path / 'config.json'
-    registry.write_text(
-        '{"plan-marshall": {"installPath": "/c/plan-marshall/0.1.200", "version": "0.1.200"}}',
-        encoding='utf-8',
+    registry = _write_live_registry(
+        tmp_path / 'installed_plugins.json',
+        {
+            'plan-marshall@plan-marshall': [
+                _scope_entry('0.1.200', scope='user'),
+                _scope_entry('0.1.100', scope='project'),
+            ]
+        },
     )
-    executor = tmp_path / 'execute-script.py'
-    executor.write_text(
-        '"/x/cache/plan-marshall/0.1.200/skills/s/scripts/a.py"\n'
-        '"/x/cache/plan-marshall/0.1.100/skills/s/scripts/b.py"\n',
-        encoding='utf-8',
-    )
+    executor = _write_live_executor(tmp_path / 'execute-script.py', '0.1.200')
 
     obs = _ppt.observe(
         cache_bundle_dir=bundle,
@@ -774,10 +1045,13 @@ def test_observe_reports_a_split_executor_end_to_end(tmp_path):
         source_dir=source,
     )
 
-    assert obs.executor_version is None
-    assert obs.executor_anchor is not None
-    assert obs.executor_anchor.status == _ppt.EXECUTOR_SPLIT
-    assert evaluate(obs, obs, sampling_instant='2026-08-13T00:00:00Z').outcome == FAIL
+    assert obs.install_path_version is None
+    assert obs.registry_version is None
+    assert obs.registry_entry is not None
+    assert obs.registry_entry.status == _ppt.REGISTRY_ENTRY_SCOPES_DISAGREE
+    verdict = evaluate(obs, obs, sampling_instant='2026-08-13T00:00:00Z')
+    assert verdict.outcome == FAIL
+    assert any('scope entries disagree' in d for d in verdict.divergences)
 
 
 # ---------------------------------------------------------------------------
@@ -817,13 +1091,8 @@ def test_observe_populates_eligibility_from_the_requested_subpath(tmp_path):
     _make_version_dir(bundle, '0.1.300', marked=False, files={'skills/s/scripts/other.py': 'x\n'})
     _make_version_dir(bundle, '0.1.100', marked=False, files={subpath: 'print(1)\n'})
 
-    registry = tmp_path / 'config.json'
-    registry.write_text(
-        '{"plan-marshall": {"installPath": "/c/plan-marshall/0.1.300", "version": "0.1.300"}}',
-        encoding='utf-8',
-    )
-    executor = tmp_path / 'execute-script.py'
-    executor.write_text('"/x/cache/plan-marshall/0.1.300/skills/s/scripts/a.py"\n', encoding='utf-8')
+    registry = _write_pinned_registry(tmp_path / 'installed_plugins.json', '0.1.300')
+    executor = _write_live_executor(tmp_path / 'execute-script.py', '0.1.300')
 
     obs = _ppt.observe(
         cache_bundle_dir=bundle,
@@ -851,13 +1120,8 @@ def test_observe_without_a_subpath_leaves_every_dir_eligible(tmp_path):
     _make_version_dir(bundle, '0.1.300', marked=False, files={'skills/s/scripts/other.py': 'x\n'})
     _make_version_dir(bundle, '0.1.100', marked=False, files={'skills/s/scripts/a.py': 'print(1)\n'})
 
-    registry = tmp_path / 'config.json'
-    registry.write_text(
-        '{"plan-marshall": {"installPath": "/c/plan-marshall/0.1.300", "version": "0.1.300"}}',
-        encoding='utf-8',
-    )
-    executor = tmp_path / 'execute-script.py'
-    executor.write_text('"/x/cache/plan-marshall/0.1.300/skills/s/scripts/a.py"\n', encoding='utf-8')
+    registry = _write_pinned_registry(tmp_path / 'installed_plugins.json', '0.1.300')
+    executor = _write_live_executor(tmp_path / 'execute-script.py', '0.1.300')
 
     obs = _ppt.observe(
         cache_bundle_dir=bundle,
@@ -908,13 +1172,8 @@ def _pin_trap_fixture(tmp_path):
     source = tmp_path / 'source'
     (source / 'skills' / 's' / 'scripts').mkdir(parents=True)
     (source / 'skills' / 's' / 'scripts' / 'a.py').write_text('print(1)\n', encoding='utf-8')
-    registry = tmp_path / 'config.json'
-    registry.write_text(
-        '{"plan-marshall": {"installPath": "/c/plan-marshall/0.1.200", "version": "0.1.200"}}',
-        encoding='utf-8',
-    )
-    executor = tmp_path / 'execute-script.py'
-    executor.write_text('"/x/cache/plan-marshall/0.1.200/skills/s/scripts/a.py"\n', encoding='utf-8')
+    registry = _write_pinned_registry(tmp_path / 'installed_plugins.json', '0.1.200')
+    executor = _write_live_executor(tmp_path / 'execute-script.py', '0.1.200')
     return {
         'cache_bundle_dir': bundle,
         'registry_path': registry,
