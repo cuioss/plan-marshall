@@ -10,8 +10,9 @@ fixture — and pins the defect shape the check exists for:
 * **Case (a)** — the pre-fix *scanning* form of ``_split_bundle_version``,
   together with the ``_check_emitted_path_provenance`` guard it feeds, IS
   surfaced as a ``scan_derived_keys`` candidate. The same case asserts the
-  complementary negative as a REAL assertion (never a docstring claim): **none**
-  of the nineteen sibling candidate lists surfaces it. Without that half,
+  complementary negative as a REAL assertion (never a docstring claim): **no**
+  sibling DETECTOR list surfaces it. The one sibling that is an index of touched
+  functions rather than a detector is asserted positively instead. Without that half,
   a green case (a) would not distinguish "the new check closes the gap" from
   "a sibling detector happened to flag the same hunk anyway".
 * **Case (b)** — the shipped post-fix *anchored* form surfaces NO
@@ -114,6 +115,14 @@ _NEW_LIST = 'scan_derived_keys'
 #: emitter against the registry, and the sibling-sweep-coverage test guards the
 #: helper against an empty or mis-excluded population.
 _SIBLING_LISTS = sibling_keys(_NEW_LIST)
+
+#: Sibling lists that are an INDEX of what the diff touched rather than a
+#: detector. ``changed_code_units`` names every touched function by design, so it
+#: is populated by any ``.py`` hunk and says nothing about which check found the
+#: defect. It stays inside the swept population (the three-way vocabulary
+#: assertion below still covers it) and is asserted positively instead of
+#: negatively.
+_UNIT_INDEX_LISTS = ('changed_code_units',)
 
 # =============================================================================
 # Fixture sources — the diff the surfacer reads
@@ -294,13 +303,23 @@ class TestPreFixScanningFormIsSurfaced:
             'identity-consumption flag must resolve true'
         )
 
-    def test_no_sibling_candidate_list_surfaces_the_pre_fix_form(self, tmp_path):
+    def test_no_sibling_detector_list_surfaces_the_pre_fix_form(self, tmp_path):
         # The complementary negative, as a REAL assertion. If a sibling detector
         # also flagged this hunk, a green case (a) would not attribute the
         # reachability to the new check.
         data = _surface(_fixture_repo(tmp_path, _PRE_FIX_SOURCE))
 
-        populated = {key: _list_entries(data, key) for key in _SIBLING_LISTS if _list_entries(data, key)}
+        populated = {
+            key: _list_entries(data, key)
+            for key in _SIBLING_LISTS
+            if key not in _UNIT_INDEX_LISTS and _list_entries(data, key)
+        }
+
+        # The index lists are excluded from the negative above, so pin what they
+        # DO say: the deriving function is named, as every touched function is.
+        for key in _UNIT_INDEX_LISTS:
+            assert key in _SIBLING_LISTS, f'{key} is not a registered sibling list'
+            assert '_split_bundle_version' in {e['name'] for e in _list_entries(data, key)}
 
         assert not populated, (
             f'A sibling candidate list surfaced the #1013 pre-fix form, so '

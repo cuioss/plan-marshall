@@ -45,6 +45,7 @@ from _references_core import (
 from _self_review_detectors import (
     _compute_delta_coverage,
     _detect_advertised_form_help_strings,
+    _detect_changed_code_units,
     _detect_contract_sources,
     _detect_count_prose,
     _detect_description_vs_body,
@@ -152,27 +153,25 @@ def _format_structural_limit() -> str:
     round, not a re-run.
 
     The two are emitted as two fields precisely because collapsing them is the
-    defect. This surface detects patterns over the diff's ADDED LINES and adjudicates
-    the statements it finds against each other, so its whole reach is *internal
-    consistency between statements present in the diff*: a claim narrower than the
-    code, a sentence contradicting an instruction above it, a count restated in three
-    places and retired in one. What it structurally cannot reach is the behaviour of
-    the code under inputs the diff does not contain — a binary read of a three-valued
-    observable, a documented remedy with no reachable invocation, an observable
-    scoped per-branch whose meaning is per-PR. Those are a different search problem,
-    and a clean full-scope round is exactly the verdict most likely to be misread as
-    covering them.
+    defect. This surface detects patterns over the diff's ADDED LINES, and the
+    review it feeds adjudicates the statements those patterns find against each
+    other and reads each changed function against four fixed failure questions.
+    What that structurally cannot reach is anything that needs the code to RUN,
+    and anything inside a function the diff did not touch: the review executes
+    nothing and follows no call out of a changed function. A clean full-scope
+    round is exactly the verdict most likely to be misread as covering both.
 
     Emitted UNCONDITIONALLY, for the same reason the scope statement is: the round
     most in need of the disclaimer is the clean one.
     """
     return (
-        "structural limit: this pass matches patterns over the diff's added lines "
-        'and adjudicates the statements it finds against each other, so it reaches '
-        'INTERNAL CONSISTENCY between statements present in the diff. It does NOT '
-        'evaluate the behaviour of the code under inputs the diff does not contain — '
-        'a fallible observable read as a binary, a documented remedy with no '
-        'reachable invocation, an observable whose scope and whose meaning disagree. '
+        "structural limit: this pass matches patterns over the diff's added lines, "
+        'adjudicates the statements it finds against each other, and reads each '
+        'changed function against four fixed failure questions (absent or unreadable '
+        'input, truthful result, reachable and exercised branches, shared state). It '
+        'does NOT execute code and does NOT follow calls into functions the diff did '
+        'not touch, so a defect that shows only at run time or inside an untouched '
+        'callee is outside its reach. '
         'That is a property of the analysis, not of its file set: widening the scope '
         'does not reach it, so a clean round here is not evidence the diff is sound.'
     )
@@ -376,6 +375,7 @@ def _cmd_surface(args: argparse.Namespace) -> int:
     duplicate_claimable_keys = _detect_duplicate_claimable_keys(added, project_dir)
     discard_without_report = _detect_discard_without_report(added, project_dir)
     hoisted_binding_shadows = _detect_hoisted_binding_shadows(added, project_dir)
+    changed_code_units = _detect_changed_code_units(added, project_dir)
 
     # Detector bindings keyed by registry key. ``detected`` below is built by
     # iterating ``CANDIDATE_LISTS``, so a registry entry without a binding
@@ -405,6 +405,7 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         'duplicate_claimable_keys': lambda: duplicate_claimable_keys,
         'discard_without_report': lambda: discard_without_report,
         'hoisted_binding_shadows': lambda: hoisted_binding_shadows,
+        'changed_code_units': lambda: changed_code_units,
     }
 
     detected: dict[str, list] = {spec.key: bindings[spec.key]() for spec in CANDIDATE_LISTS}

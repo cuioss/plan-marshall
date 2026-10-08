@@ -3025,8 +3025,8 @@ class TestCountsTotalInvariant:
         assert int(data['counts']['advertised_form_help_strings']) >= 1
         assert len(data['advertised_form_help_strings']) >= 1
 
-        # counts.total equals the sum of every count EXCEPT the four review-anchor
-        # lists — proving the advertised-form list is excluded.
+        # counts.total equals the sum of every count EXCEPT the lists the registry
+        # keeps out of it — proving the advertised-form list is excluded.
         counts = data['counts']
         included_sum = sum(
             int(v)
@@ -3636,8 +3636,8 @@ class TestStructuralLimit:
     analysis never see, however many files it searches* — and nothing cures it. The
     two are kept apart because collapsing them is the defect: a reader who sees only
     the file-scope statement reads a full-scope clean round as assurance the diff is
-    sound, when the round only ever compared statements INSIDE the diff against each
-    other.
+    sound, when the round executed nothing and read no function the diff left
+    untouched.
     """
 
     @staticmethod
@@ -3674,10 +3674,11 @@ class TestStructuralLimit:
         assert statement
         # It names what the analysis does...
         assert 'added lines' in statement
-        # ...and the class it therefore cannot reach: runtime behaviour under
-        # inputs the diff does not contain.
-        assert 'does NOT evaluate' in statement
-        assert 'inputs the diff does not contain' in statement
+        assert 'four fixed failure questions' in statement
+        # ...and the two things it therefore cannot reach: anything that needs
+        # the code to run, and anything inside a function the diff left alone.
+        assert 'does NOT execute code' in statement
+        assert 'functions the diff did not touch' in statement
 
     def test_structural_limit_is_not_a_file_scope_statement(self):
         """It must not be curable by widening the file set — that is the other axis.
@@ -3704,7 +3705,7 @@ class TestStructuralLimit:
         data = result.toon()
 
         assert data['structural_limit']
-        assert 'inputs the diff does not contain' in data['structural_limit']
+        assert 'functions the diff did not touch' in data['structural_limit']
 
     def test_structural_limit_and_scope_statement_are_distinct_fields(self, tmp_path):
         """Two different honesty claims, emitted as two fields — never one.

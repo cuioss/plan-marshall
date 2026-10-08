@@ -170,7 +170,14 @@ def test_a_close_records_done_over_a_live_loop_back_with_the_override_facts(plan
     plan_id = 'loop-back-close-records-done'
     _make_plan(plan_id)
     head = _real_head()
-    _mark(plan_id, _STEP, 'loop_back', head, 'self-review found 2 issues in 1 classes', loop_back_target=_PHASE)
+    _mark(
+        plan_id,
+        _STEP,
+        'loop_back',
+        head,
+        'self-review found 2 blocking in 1 classes, 0 advisory',
+        loop_back_target=_PHASE,
+    )
     first = _file_finding(plan_id, 'ambiguous_wording at doc/a.md:12')
     second = _file_finding(plan_id, 'ambiguous_wording at doc/a.md:40')
 
@@ -265,7 +272,14 @@ def test_an_unknown_hash_id_refuses_the_whole_close_and_writes_nothing(plan_cont
     plan_id = 'loop-back-close-unknown-hash'
     _make_plan(plan_id)
     head = _real_head()
-    _mark(plan_id, _STEP, 'loop_back', head, 'self-review found 1 issues in 1 classes', loop_back_target=_PHASE)
+    _mark(
+        plan_id,
+        _STEP,
+        'loop_back',
+        head,
+        'self-review found 1 blocking in 1 classes, 0 advisory',
+        loop_back_target=_PHASE,
+    )
     real = _file_finding(plan_id, 'ambiguous_wording at doc/a.md:12')
     state = _file_finding(plan_id, 'verdict_refused at pre-submission-self-review', rule=_STATE_RULE)
     before = read_status(plan_id)

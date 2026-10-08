@@ -1699,22 +1699,9 @@ def _detect_scan_derived_keys(
     and ``key_consumed`` (the Tier-2 identity-consumption flag). The list is
     surfacing-only — it records candidates and never blocks or self-adjudicates.
     """
-    added_by_file: dict[str, dict[int, str]] = {}
-    for path, lineno, content in added:
-        if path.endswith('.py'):
-            added_by_file.setdefault(path, {})[lineno] = content
-    if not added_by_file:
-        return []
-
-    scan_lines_by_file: dict[str, list[tuple[int, str]]] = {}
-    for path in added_by_file:
-        post_image = _read_post_image(project_dir, path) if project_dir is not None else []
-        if post_image:
-            scan_lines_by_file[path] = list(enumerate(post_image, start=1))
-        else:
-            scan_lines_by_file[path] = sorted(added_by_file[path].items())
-
-    blocks_by_file = {path: _function_blocks(scan_lines) for path, scan_lines in scan_lines_by_file.items()}
+    scanned = _scan_py_function_blocks(added, project_dir)
+    added_by_file = {path: touched for path, (touched, _blocks) in scanned.items()}
+    blocks_by_file = {path: blocks for path, (_touched, blocks) in scanned.items()}
 
     out: list[dict[str, Any]] = []
     for path in sorted(added_by_file):
@@ -2254,8 +2241,7 @@ def _scan_py_function_blocks(
     the file, the FULL post-image is walked so a block whose header or report
     channel sits outside the diff still resolves; otherwise the diff's added lines
     alone are walked (the unit-test path). Files with no touched ``.py`` lines are
-    absent. Shared by the D1 and D2 detectors, whose only difference is the
-    per-block predicate.
+    absent. Shared by every detector that walks function blocks.
     """
     added_by_file: dict[str, dict[int, str]] = {}
     for path, lineno, content in added:
@@ -2315,6 +2301,105 @@ def _detect_duplicate_claimable_keys(
                     continue
                 seen.add(key)
                 out.append({'file': path, **hit})
+    return out
+
+
+def _is_test_path(rel_path: str) -> bool:
+    """Return True when ``rel_path`` names a test module rather than production code."""
+    pure = PurePosixPath(rel_path)
+    if {'test', 'tests'} & set(pure.parts[:-1]):
+        return True
+    return pure.name == 'conftest.py' or pure.name.startswith('test_') or pure.name.endswith('_test.py')
+
+
+def _parsed_code_units(post_image: list[str]) -> list[dict[str, Any]] | None:
+    """Return every function and method of a parsed post-image, or ``None``.
+
+    Each unit carries ``name``, ``line`` (the ``def`` line), ``first`` / ``last``
+    (its whole span, decorators included), ``depth`` (how many functions and
+    classes enclose it), and ``kind`` — ``method`` when the nearest function or
+    class enclosing it is a class, ``function`` otherwise. ``None`` means the source did not parse, which
+    the caller keeps apart from a parsed file that defines no function.
+    """
+    try:
+        tree = ast.parse('\n'.join(post_image))
+    except (SyntaxError, ValueError):
+        return None
+
+    units: list[dict[str, Any]] = []
+
+    def visit(node: ast.AST, depth: int, in_class: bool) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef):
+                first = min([child.lineno, *(decorator.lineno for decorator in child.decorator_list)])
+                units.append(
+                    {
+                        'name': child.name,
+                        'line': child.lineno,
+                        'first': first,
+                        'last': child.end_lineno or child.lineno,
+                        'depth': depth,
+                        'kind': 'method' if in_class else 'function',
+                    }
+                )
+                visit(child, depth + 1, False)
+            elif isinstance(child, ast.ClassDef):
+                visit(child, depth + 1, True)
+            else:
+                visit(child, depth, in_class)
+
+    visit(tree, 0, False)
+    return units
+
+
+def _detect_changed_code_units(
+    added: list[tuple[str, int, str]], project_dir: Path | None = None
+) -> list[dict[str, Any]]:
+    """List every function or method the diff touched in a non-test ``.py`` file.
+
+    The review anchor for the behavioural check: one entry per function the diff
+    adds a line to, so the cognitive pass reads each changed function whole
+    instead of meeting it only through whichever line-level heuristic happened
+    to fire on it.
+
+    When the file's post-image parses, units come from its syntax tree: an added
+    line is attributed to the INNERMOST function whose span (decorators through
+    last body line) contains it, and a line outside every function names no
+    unit. When there is no post-image, or it does not parse, the shared
+    line-based split (``_scan_py_function_blocks`` / ``_block_is_diff_touched``)
+    is used instead and every unit is reported as ``function``, since that split
+    does not track classes.
+
+    Test modules are excluded: a test is evidence the behavioural check reads,
+    not a unit it grades.
+
+    Each entry carries ``file``, ``line`` (the ``def`` line in the post-image),
+    ``name``, and ``kind`` (``function`` / ``method``). The list is
+    surfacing-only — it names what changed and adjudicates nothing.
+    """
+    out: list[dict[str, Any]] = []
+    for path, (touched, blocks) in _scan_py_function_blocks(added, project_dir).items():
+        if _is_test_path(path):
+            continue
+        post_image = _read_post_image(project_dir, path) if project_dir is not None else []
+        units = _parsed_code_units(post_image) if post_image else None
+        if units is None:
+            out.extend(
+                {'file': path, 'line': block['line'], 'name': block['name'], 'kind': 'function'}
+                for block in blocks
+                if _block_is_diff_touched(block, touched)
+            )
+            continue
+        hit: dict[int, dict[str, Any]] = {}
+        for lineno in touched:
+            enclosing = [unit for unit in units if unit['first'] <= lineno <= unit['last']]
+            if enclosing:
+                innermost = max(enclosing, key=lambda unit: unit['depth'])
+                hit[innermost['line']] = innermost
+        out.extend(
+            {'file': path, 'line': unit['line'], 'name': unit['name'], 'kind': unit['kind']}
+            for _line, unit in sorted(hit.items())
+        )
     return out
 
 
