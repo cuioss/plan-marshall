@@ -652,8 +652,7 @@ STALENESS_GOVERNING_AUTHORITY = (
 #: The three CANDIDATE classes one spec is scored against, named once and in
 #: reporting order. ``sibling_epic_spec`` and ``corpus_spec`` are spec candidates
 #: resolved through :func:`_spec_record`; ``live_plan`` is the cross-ledger
-#: candidate whose surface is an active plan's ``references.json``
-#: ``affected_files``. The per-kind tally is derived from this tuple rather than
+#: candidate, an active plan. The per-kind tally is derived from this tuple rather than
 #: from the kinds a given corpus happens to hold, so a kind with no candidates
 #: publishes stated zeros instead of vanishing from the breakdown.
 CANDIDATE_KIND_SIBLING_EPIC_SPEC = 'sibling_epic_spec'
@@ -669,8 +668,8 @@ CANDIDATE_KINDS = (
 #: comparable surface to the file-overlap matcher, and — when it did not — which
 #: of the two different zeros it is. ``indeterminate`` is a candidate that WAS
 #: read and declared nothing comparable (a spec in any
-#: :data:`SURFACE_INDETERMINATE_STATES` state, or a live plan with no captured
-#: footprint); ``unreadable`` is a candidate nothing could read at all. Collapsing
+#: :data:`SURFACE_INDETERMINATE_STATES` state, or a live plan neither surface
+#: source supplied a surface for); ``unreadable`` is a candidate nothing could read at all. Collapsing
 #: them would report an unread candidate as a read-and-empty one.
 #:
 #: This vocabulary is INDEPENDENT of :data:`SURFACE_STATES` — it measures
@@ -4427,8 +4426,7 @@ def _contains(container: str, contained: str) -> bool:
     with it. Every other kind — ``file`` and ``filename_glob`` — never
     contains: a ``filename_glob`` with no ``'/'`` never contains across
     directories, and matching without a ``'/'`` boundary (bare
-    substring/prefix) never counts, so the matcher does not loosen into
-    serializing non-colliding plans.
+    substring/prefix) never counts.
     """
     if not container or not contained or container == contained:
         return False

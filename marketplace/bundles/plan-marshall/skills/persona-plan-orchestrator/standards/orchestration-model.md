@@ -465,7 +465,7 @@ The declared surface is a **spec-authored** quantity, so the gate's precision is
 | Residual class | What it costs | Magnitude measured over the corpus |
 |---|---|---|
 | **Under-declaration** — the plan touches files the spec never declared | Admits plans that genuinely collide — the failure the gate exists to prevent | The dominant class by roughly an order of magnitude: about two thirds of the files a landing touched were never declared |
-| **Over-declaration** — the spec declares paths the plan never touched | Serializes siblings behind files the plan never used — lost throughput, not unsafety | About a quarter of declared entries were never realized |
+| **Over-declaration** — the spec declares paths the plan never touched | Raises an overlap question over files the plan never used — lost throughput, not unsafety | About a quarter of declared entries were never realized |
 | **Unresolvable declaration** — the section resolves to no comparable path | The candidate is `indeterminate` and sequenced; the gate reports rather than guesses | About a quarter of specs, all of them `prose` |
 | **Mechanical sweep** — version-stamp-class edits of a few lines | Excluded from the realized side, because it would swamp every other class | Excluded and counted, never silently dropped |
 
