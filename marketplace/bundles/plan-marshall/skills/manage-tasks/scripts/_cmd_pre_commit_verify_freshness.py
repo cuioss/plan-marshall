@@ -123,7 +123,9 @@ Outcomes:
                      ``notation_unrelated`` / ``notation_absent`` /
                      ``build_scope_narrow`` /
                      ``no_row_both_attributable_and_adequate`` from the
-                     cross-check.
+                     cross-check. A cross-check refusal also carries
+                     ``missing_analyses``: the required analyses no citable row
+                     performed at an adequate scope, which is what to run.
 - ``undecidable``  — no positive freshness proof can be established. Two
                      sub-reasons: ``no_registry`` (the ledger file is absent or
                      empty) and ``head_unresolvable`` (the working-tree sha
@@ -441,7 +443,10 @@ def _verdict_for_candidates(
       (``notation_cross_check: unverified`` / ``scope_cross_check: undetermined``
       plus its reason), so a pass on unaudited evidence stays legible as one.
     * ``contributing`` is empty → ``stale``, carrying the cross-check's
-      ``joint_reason`` as the gate's own ``reason``.
+      ``joint_reason`` as the gate's own ``reason`` and, beside ``row_scopes``,
+      ``missing_analyses`` — the required analyses no citable row performed at an
+      adequate scope. The message names them, because running the missing
+      analysis is the remedy and the per-row tokens do not say which one it is.
 
     Args:
         candidates: ``(parsed_index, entry)`` pairs in ledger file order.
@@ -470,6 +475,17 @@ def _verdict_for_candidates(
     contributing: list[int] = outcome['contributing']
 
     if not contributing:
+        missing: list[str] = outcome['missing_analyses']
+        named = ', '.join(missing)
+        if missing:
+            uncovered = f'No row that may be cited performed {named} at a scope adequate for this change. '
+            remedy = (
+                f'Run the missing analysis ({named}) at that scope against this tree; '
+                f'repeating an analysis a row already covers adds nothing. '
+            )
+        else:
+            uncovered = ''
+            remedy = 'Re-run a build whose canonical and scope cover this change. '
         return {
             'status': 'stale',
             'plan_id': plan_id,
@@ -480,6 +496,7 @@ def _verdict_for_candidates(
             'expected_notations': outcome['expected_notations'],
             'candidate_notations': outcome['candidate_notations'],
             'row_scopes': outcome['row_scopes'],
+            'missing_analyses': missing,
             'worktree_root': str(worktree_root),
             'ledger_path': str(ledger_path),
             'message': (
@@ -491,10 +508,10 @@ def _verdict_for_candidates(
                 f'matching rows carry '
                 f'{", ".join(outcome["candidate_notations"]) or "no notation at all"}. '
                 f'Coverage: the matching rows recorded '
-                f'{"; ".join(outcome["row_scopes"]) or "no readable build scope"}. The gate '
-                f'MUST fail closed. Re-run a build whose canonical and scope cover this '
-                f'change; if the refusal is an attribution one, establish where the '
-                f'unattributable row came from before trusting the ledger again.'
+                f'{"; ".join(outcome["row_scopes"]) or "no readable build scope"}. '
+                f'{uncovered}The gate MUST fail closed. {remedy}If the refusal is an '
+                f'attribution one, establish where the unattributable row came from '
+                f'before trusting the ledger again.'
             ),
         }
 

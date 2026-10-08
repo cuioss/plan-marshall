@@ -79,6 +79,12 @@ The contributing set is deterministic: per required analysis, the first adequate
 admissible row in ledger file order. Only rows the attribution dimension admits
 may contribute; where attribution could not judge, every row stays admissible.
 
+When the rows still fall short, the refusal names WHICH required analyses no
+admissible row performed at an adequate scope (``missing_analyses``). The
+per-row tokens alone do not say that once several rows each cover part of the
+change, and it is the fact that names the remedy: run the missing analysis,
+rather than repeat one already covered.
+
 Three-valued verdict, never collapsed
 =====================================
 
@@ -660,6 +666,35 @@ def union_contributors(
     return {position: credited[position] for position in sorted(credited)}
 
 
+def uncovered_analyses(
+    candidates: list[dict[str, Any]],
+    required: RequiredCoverage,
+    vocabulary: AnalysisVocabulary,
+    admissible: list[int],
+) -> list[str]:
+    """Name the required analyses no admissible row performed at an adequate scope.
+
+    This is what a refusal owes its reader. Per-row tokens say why each row falls
+    short alone; with rows that each perform part of what the change requires,
+    they do not say which analysis is still missing — and that is the one fact
+    that names the remedy.
+
+    Args:
+        candidates: Matching ``kind=build`` rows in ledger file order.
+        required: What the change needs covered.
+        vocabulary: The canonical→analyses map.
+        admissible: The positions in ``candidates`` that may contribute.
+
+    Returns:
+        The sorted uncovered analyses. Empty when the admissible rows cover the
+        change between them.
+    """
+    covered: set[str] = set()
+    for position in admissible:
+        covered |= row_contribution(candidates[position], required, vocabulary)
+    return sorted(required.analyses - covered)
+
+
 def scope_check_candidates(
     candidates: list[dict[str, Any]],
     required: RequiredCoverage | None,
@@ -692,13 +727,18 @@ def scope_check_candidates(
         whether it covers the change alone rather than only the aggregate. A row
         that contributes to a union still carries its own per-row refusal token
         there: the token says the row does not cover the change by itself, which
-        stays true.
+        stays true. ``missing_analyses`` is the sorted list of required analyses
+        no row performed at an adequate scope. It is populated only on
+        :data:`NARROW`: it is empty on :data:`COVERED`, and empty on
+        :data:`UNDETERMINED`, where nothing could be judged and so nothing is
+        known to be missing.
     """
     if vocabulary is None:
         return {
             'verdict': UNDETERMINED,
             'covered_positions': [],
             'union_positions': [],
+            'missing_analyses': [],
             'reason': REASON_VOCABULARY_UNIMPORTABLE,
             'row_scopes': [],
         }
@@ -707,6 +747,7 @@ def scope_check_candidates(
             'verdict': UNDETERMINED,
             'covered_positions': [],
             'union_positions': [],
+            'missing_analyses': [],
             'reason': unavailable_reason or REASON_REQUIRED_COVERAGE_UNKNOWN,
             'row_scopes': [],
         }
@@ -729,6 +770,7 @@ def scope_check_candidates(
             'verdict': COVERED,
             'covered_positions': covered,
             'union_positions': [],
+            'missing_analyses': [],
             'reason': None,
             'row_scopes': row_scopes,
         }
@@ -736,12 +778,14 @@ def scope_check_candidates(
     # cover it between them, each analysis judged at its own row's scope.
     # An empty mapping is an empty requirement no row could be read for — nothing
     # was established, so it falls through to the refusal classification below.
-    union = union_contributors(candidates, required, vocabulary, list(range(len(candidates))))
+    every_row = list(range(len(candidates)))
+    union = union_contributors(candidates, required, vocabulary, every_row)
     if union:
         return {
             'verdict': COVERED,
             'covered_positions': [],
             'union_positions': list(union),
+            'missing_analyses': [],
             'reason': None,
             'row_scopes': row_scopes,
         }
@@ -752,10 +796,13 @@ def scope_check_candidates(
     # exactly as one corroborating row is enough to pass on the attribution
     # dimension.
     if not refusals or all(refusal in _INABILITY_REFUSALS for refusal in refusals):
+        # Nothing could be read, so nothing is known to be missing either: naming
+        # an analysis here would assert a gap no row was shown to have.
         return {
             'verdict': UNDETERMINED,
             'covered_positions': [],
             'union_positions': [],
+            'missing_analyses': [],
             'reason': REASON_SCOPE_UNREADABLE,
             'row_scopes': row_scopes,
         }
@@ -763,6 +810,7 @@ def scope_check_candidates(
         'verdict': NARROW,
         'covered_positions': [],
         'union_positions': [],
+        'missing_analyses': uncovered_analyses(candidates, required, vocabulary, every_row),
         'reason': REASON_SCOPE_NARROW,
         'row_scopes': row_scopes,
     }
@@ -945,7 +993,13 @@ def cross_check_candidates(
         dimension refused or no admissible rows cover the change — and
         ``contributing_analyses``, a list parallel to ``contributing`` naming the
         sorted required analyses each of those rows is credited with (an empty
-        list for a row cited while the coverage dimension could not judge).
+        list for a row cited while the coverage dimension could not judge) — and
+        ``missing_analyses``, the sorted required analyses that no row
+        attribution admits performed at an adequate scope. That list is empty
+        whenever ``contributing`` is not, and empty where the requirement or the
+        vocabulary was unavailable, since nothing can then be named. On an
+        attribution refusal no row is admissible, so it names every required
+        analysis.
 
         ``contributing`` holds positions rather than row objects so the caller
         can map each back to its own addressing (a ledger index) without either
@@ -1016,10 +1070,19 @@ def cross_check_candidates(
     else:
         joint_reason = REASON_NO_ADMISSIBLE_ROW
 
+    # What a refusal still lacks is judged over the rows that MAY be cited: an
+    # analysis only an unattributable row performed is still missing. Where the
+    # requirement or the vocabulary is unavailable nothing can be named.
+    if contributing or required is None or vocabulary is None:
+        missing_analyses: list[str] = []
+    else:
+        missing_analyses = uncovered_analyses(candidates, required, vocabulary, attributable)
+
     return {
         'verdict': notation_verdict,
         'contributing': contributing,
         'contributing_analyses': [credited[position] for position in contributing],
+        'missing_analyses': missing_analyses,
         'expected_notations': expected_notations,
         'candidate_notations': candidate_notations,
         'reason': notation_reason,
