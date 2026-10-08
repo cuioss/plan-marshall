@@ -190,9 +190,7 @@ The bound is three re-waits per HEAD — four waits in total — held as
 `MAX_PENDING_REWAITS` in `scripts/ci_complete_precondition.py`. The
 resolver counts the lapses itself and resets the count when HEAD changes.
 The lapse after the bound returns `wait_failed` with `ci_final_status:
-timeout`, and only then does the executor run and file `ci_timeout` for
-the checks that are still running. `strict` mode never returns
-`wait_pending`.
+timeout`. `strict` mode never returns `wait_pending`.
 
 The flag flows from the dispatcher's resolver invocation:
 
@@ -217,7 +215,7 @@ this order per failing check.
 | e | Cancelled (`conclusion=cancelled`) | per-check conclusion | `ci-verify-cancelled` | `ci_cancelled` | accept (manual cancellation) / retry |
 | f | Action required | per-check conclusion | `ci-verify-action-required` | `ci_action_required` | operator approval; accept after approval |
 | g | Stale (`conclusion=stale`) | per-check conclusion | `ci-verify-stale` | `ci_stale` | re-run CI (HEAD advanced past check's commit) |
-| h | Timeout (`conclusion=timed_out`, OR a run still not terminal after the re-wait bound) | per-check conclusion / `wait_outcome=deadline_exceeded` with no definitively failed check | `ci-verify-timeout` | `ci_timeout` | retry / accept (flaky infra) |
+| h | Timeout (`conclusion=timed_out`, OR a run still not terminal) | per-check conclusion / `wait_outcome=deadline_exceeded` with no definitively failed check | `ci-verify-timeout` | `ci_timeout` | retry / accept (flaky infra) |
 | i | No checks reported (`final_status=none`) | zero checks across PR | `ci-verify-missing` | `ci_no_checks` | confirm CI is configured; accept if intentional |
 | j | CI never ran vs CI ran red | distinguished by (i) vs (b..h) | n/a — handled by row choice | n/a | covered by per-row producer split |
 
@@ -237,8 +235,8 @@ this order per failing check.
   `ci_timeout` is filed for a check whose own conclusion is `timed_out`,
   and for a check that is still running when the resolver returns
   `wait_failed` / `timeout` (see "Precondition mode" above). A wait the
-  resolver answers `wait_pending` files nothing: the executor is not run. When the executor does run
-  under `deadline_exceeded` and at least one check has a definitive
+  resolver answers `wait_pending` files nothing: the executor is not run.
+  When the executor does run under `deadline_exceeded` and at least one check has a definitive
   failing conclusion, the still-running checks are dropped from the
   failing set, so they produce no `ci_timeout` finding beside the real
   failure. Only when no check has definitively failed are the
