@@ -4,13 +4,19 @@
 Layout written under ``output_dir``::
 
     output_dir/
-    ├── skills/{bundle}-{skill}/SKILL.md  (+ standards/ references/ templates/ scripts/ verbatim)
+    ├── skills/{bundle}-{skill}/SKILL.md  (+ every other file of the skill directory, verbatim)
     ├── agents/{agent}.md
     ├── commands/{command}.md
     └── plugin.json
 
 Body text is emitted verbatim — body-text rewrites are owned by the
 target-shared ``body_transform_engine``.
+
+Beside the transformed ``SKILL.md`` a skill ships its whole directory: every
+file ``component_targets.iter_emitted_skill_files`` yields is copied
+byte-identical. That function holds the one statement of what is left out
+(cache directories, dot-files, ``targets:``-scoped files); there is no
+allow-list of sub-directory names here.
 """
 
 from __future__ import annotations
@@ -31,14 +37,13 @@ from marketplace.targets.antigravity.frontmatter import (
 )
 from marketplace.targets.antigravity.variant_emitter import emit_agent_variants
 from marketplace.targets.component_targets import (
-    EXCLUDED_DIR_NAMES,
     bundle_emits_to,
     emits_to,
     excluded_emission_roots,
-    is_under_any,
+    iter_emitted_skill_files,
     validate_component_scopes,
 )
-from marketplace.targets.fs_safety import refuse_tree_overlap, safe_rmtree
+from marketplace.targets.fs_safety import refuse_tree_overlap
 
 # Path to templates used by emitter.
 _TEMPLATES_DIR = Path(__file__).resolve().parent / 'templates'
@@ -47,8 +52,6 @@ _INSTALL_SCRIPT_TEMPLATE = _TEMPLATES_DIR / 'install.sh'
 
 ANTIGRAVITY_TARGET_NAME = 'antigravity'
 BUNDLE_COMPONENTS_FILENAME = 'bundle-components.json'
-
-VERBATIM_SKILL_SUBDIRS = ('standards', 'references', 'templates', 'scripts')
 
 BodyTransformer = Callable[[str, str, str], str]
 
@@ -99,35 +102,38 @@ def _read_plugin_json(bundle_dir: Path) -> dict:
         return {}
 
 
-def _copy_verbatim(
-    src: Path,
-    dst: Path,
-    *,
-    output_dir: Path,
-    bundle_dir: Path,
-    excluded: frozenset[Path],
-    written: list[Path],
-) -> None:
-    """Copy ``src`` (a skill sub-directory) into ``dst``, file by file."""
-    if dst.exists():
-        safe_rmtree(dst, output_dir)
-    dst.mkdir(parents=True, exist_ok=False)
-    for source in src.rglob('*'):
-        if not source.is_file():
-            continue
-        rel = source.relative_to(src)
-        if any(part in EXCLUDED_DIR_NAMES for part in rel.parts):
-            continue
-        if is_under_any(source.relative_to(bundle_dir), excluded):
-            continue
-        target = dst / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, target)
-        written.append(target)
+def _remove_empty_dirs(root: Path) -> None:
+    """Remove every directory under ``root`` left empty, deepest first; ``root`` is kept."""
+    for directory in sorted(
+        (p for p in root.rglob('*') if p.is_dir()),
+        key=lambda p: len(p.parts),
+        reverse=True,
+    ):
+        if not any(directory.iterdir()):
+            directory.rmdir()
+
+
+def _prune_skill_dir(target_skill_dir: Path, expected: set[Path]) -> None:
+    """Unlink every file under ``target_skill_dir`` this emit will not write.
+
+    An emitted skill directory belongs to exactly one source skill — its name
+    is ``{bundle}-{skill}`` — so the sweep is safe on a scoped emit too,
+    unlike :func:`_prune_stale_outputs`. It runs BEFORE the copy, so a path
+    that changed kind in source (a file where a directory now is, or the
+    reverse) is cleared rather than colliding with the write.
+    """
+    for path in sorted(target_skill_dir.rglob('*')):
+        if (path.is_file() or path.is_symlink()) and path not in expected:
+            path.unlink()
+    _remove_empty_dirs(target_skill_dir)
 
 
 def _prune_stale_outputs(output_dir: Path, written: list[Path]) -> None:
-    """Remove ``skills/``, ``agents/``, ``commands/`` outputs left over from a prior emit."""
+    """Remove ``skills/``, ``agents/``, ``commands/`` outputs left over from a prior emit.
+
+    Full regenerations only. A file removed from a SURVIVING skill is cleared
+    by :func:`_prune_skill_dir` on every emit, scoped ones included.
+    """
     written_set = {p.resolve() for p in written}
 
     for subdir in ('skills', 'agents', 'commands'):
@@ -137,13 +143,7 @@ def _prune_stale_outputs(output_dir: Path, written: list[Path]) -> None:
         for path in sorted(root.rglob('*')):
             if path.is_file() and path.resolve() not in written_set:
                 path.unlink()
-        for directory in sorted(
-            (p for p in root.rglob('*') if p.is_dir()),
-            key=lambda p: len(p.parts),
-            reverse=True,
-        ):
-            if not any(directory.iterdir()):
-                directory.rmdir()
+        _remove_empty_dirs(root)
 
 
 def _is_user_invocable(fm: dict[str, str]) -> bool:
@@ -206,21 +206,19 @@ def _emit_skill(
     target_skill_dir = output_dir / 'skills' / f'{bundle_name}-{skill_name}'
     target_skill_dir.mkdir(parents=True, exist_ok=True)
     target_skill_md = target_skill_dir / 'SKILL.md'
+    copies = [
+        (source, target_skill_dir / source.relative_to(skill_dir))
+        for source in iter_emitted_skill_files(skill_dir, bundle_dir, excluded)
+    ]
+    _prune_skill_dir(target_skill_dir, {target_skill_md, *(target for _, target in copies)})
+
     target_skill_md.write_text(new_fm + '\n\n' + new_body, encoding='utf-8')
     written.append(target_skill_md)
 
-    for subdir_name in VERBATIM_SKILL_SUBDIRS:
-        src_subdir = skill_dir / subdir_name
-        if src_subdir.exists() and src_subdir.is_dir():
-            dst_subdir = target_skill_dir / subdir_name
-            _copy_verbatim(
-                src_subdir,
-                dst_subdir,
-                output_dir=output_dir,
-                bundle_dir=bundle_dir,
-                excluded=excluded,
-                written=written,
-            )
+    for source, target in copies:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+        written.append(target)
 
     skill_rel = f'skills/{bundle_name}-{skill_name}'
     wrapper_rel: str | None = None
@@ -508,7 +506,6 @@ def emit_bundles(
 __all__ = [
     'ANTIGRAVITY_TARGET_NAME',
     'BUNDLE_COMPONENTS_FILENAME',
-    'VERBATIM_SKILL_SUBDIRS',
     'emit_bundles',
     'iter_bundle_dirs',
 ]

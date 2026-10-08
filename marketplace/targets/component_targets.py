@@ -740,8 +740,46 @@ def is_under_any(rel: Path, roots: frozenset[Path]) -> bool:
     return rel in roots or any(parent in roots for parent in rel.parents)
 
 
+def iter_emitted_skill_files(skill_dir: Path, bundle_dir: Path, excluded: frozenset[Path]) -> Iterator[Path]:
+    """Yield the files of ``skill_dir`` a component-tree target emits beside ``SKILL.md``.
+
+    This is the one statement of the skill-directory emission rule. A target
+    that re-shapes a skill (rather than mirroring the bundle wholesale) writes
+    the transformed ``SKILL.md`` itself and copies every file this yields
+    byte-identical, so a skill's sub-directories need no allow-list: a new
+    one ships the moment it exists. A file is yielded unless it is:
+
+    * the skill's own ``SKILL.md`` — the manifest the target transforms;
+    * under a directory named in :data:`EXCLUDED_DIR_NAMES`;
+    * a dot-file, or under a dot-directory;
+    * scoped away from the emitting target by a ``targets:`` declaration,
+      i.e. it equals or lies beneath an entry of ``excluded``.
+
+    Args:
+        skill_dir: The source skill directory.
+        bundle_dir: The bundle root ``skill_dir`` lives in; ``excluded`` is
+            relative to it.
+        excluded: The emitting target's :func:`excluded_emission_roots` for
+            ``bundle_dir``.
+
+    Yields:
+        Absolute source paths, in sorted order.
+    """
+    manifest = skill_dir / _SKILL_MANIFEST
+    for source in sorted(skill_dir.rglob('*')):
+        if not source.is_file() or source == manifest:
+            continue
+        rel = source.relative_to(skill_dir)
+        if any(part in EXCLUDED_DIR_NAMES or part.startswith('.') for part in rel.parts):
+            continue
+        if is_under_any(source.relative_to(bundle_dir), excluded):
+            continue
+        yield source
+
+
 __all__ = [
     'EXCLUDED_DIR_NAMES',
+    'iter_emitted_skill_files',
     'validate_component_scopes',
     'TargetScopeError',
     'bundle_emits_to',

@@ -12,7 +12,6 @@ import pytest
 
 from conftest import PROJECT_ROOT
 from marketplace.targets.antigravity.emitter import (
-    VERBATIM_SKILL_SUBDIRS,
     emit_bundles,
     iter_bundle_dirs,
 )
@@ -28,6 +27,12 @@ def _write(path: Path, content: str | bytes) -> None:
         path.write_bytes(content)
     else:
         path.write_text(content, encoding='utf-8')
+
+
+#: Sub-directories the shared fixture skill carries one sample file in. The
+#: emitter keeps no list of its own, so the mix deliberately includes names it
+#: was never told about.
+_SAMPLE_SUBDIRS = ('standards', 'scripts', 'workflow', 'assets')
 
 
 @pytest.fixture()
@@ -58,7 +63,7 @@ def fixture_bundle(tmp_path: Path) -> Path:
         bundle / 'skills' / 'demo-skill' / 'SKILL.md',
         '---\nname: demo-skill\ndescription: a demo skill\n---\n# Skill body\n',
     )
-    for sub in VERBATIM_SKILL_SUBDIRS:
+    for sub in _SAMPLE_SUBDIRS:
         _write(bundle / 'skills' / 'demo-skill' / sub / f'{sub}-sample.txt', f'{sub} content')
 
     _write(
@@ -72,16 +77,16 @@ def fixture_bundle(tmp_path: Path) -> Path:
     return marketplace
 
 
-def test_emit_bundles_copies_verbatim_subdirs(fixture_bundle: Path, tmp_path: Path, antigravity_config_dir: Path):
+@pytest.mark.parametrize('sub', _SAMPLE_SUBDIRS)
+def test_emit_bundles_copies_skill_subdir(sub: str, fixture_bundle: Path, tmp_path: Path, antigravity_config_dir: Path):
+    """A skill sub-directory is copied verbatim, whatever its name."""
     out = tmp_path / 'out'
+
     emit_bundles(fixture_bundle, out, antigravity_config_dir)
 
     skill_out = out / 'skills' / 'demo-demo-skill'
     assert (skill_out / 'SKILL.md').is_file()
-    for sub in VERBATIM_SKILL_SUBDIRS:
-        sample = skill_out / sub / f'{sub}-sample.txt'
-        assert sample.is_file(), f'expected verbatim file {sample}'
-        assert sample.read_text() == f'{sub} content'
+    assert (skill_out / sub / f'{sub}-sample.txt').read_text(encoding='utf-8') == f'{sub} content'
 
 
 def test_emit_bundles_prunes_stale_files(fixture_bundle: Path, tmp_path: Path, antigravity_config_dir: Path):
