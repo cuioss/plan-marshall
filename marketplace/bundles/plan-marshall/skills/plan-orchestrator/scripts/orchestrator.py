@@ -4334,13 +4334,13 @@ def _live_footprint(plan_dir: Path) -> set[str] | None:
     ``references.json``, the empty set when the plan has no footprint yet, and
     ``None`` when the footprint could not be read:
 
-    * a non-empty set — ``affected_files`` is a list with at least one
-      non-blank string entry; other entries are dropped;
+    * a non-empty set — ``affected_files`` is a list with at least one string
+      entry that normalizes to a non-empty path; other entries are dropped;
     * the empty set — ``references.json`` does not exist, or it is a JSON
       object whose ``affected_files`` key is absent or an empty list;
     * ``None`` — the file exists and cannot be read or decoded, is not valid
       JSON, is not a JSON object, carries an ``affected_files`` that is not a
-      list, or carries a non-empty list with no non-blank string entry.
+      list, or carries a non-empty list with no such entry.
     """
     try:
         references = json.loads((plan_dir / 'references.json').read_text(encoding='utf-8'))
@@ -4356,6 +4356,7 @@ def _live_footprint(plan_dir: Path) -> set[str] | None:
     if not isinstance(affected, list):
         return None
     paths = {_normalize_path(entry) for entry in affected if isinstance(entry, str) and entry.strip()}
+    paths.discard('')
     if affected and not paths:
         return None
     return paths

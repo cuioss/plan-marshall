@@ -4539,6 +4539,7 @@ _UNREAD_FOOTPRINTS = (
     ('affected-files-string', b'{"affected_files": "a/b.py"}'),
     ('affected-files-null', b'{"affected_files": null}'),
     ('no-path-entry', b'{"affected_files": [7, "  "]}'),
+    ('entry-normalizes-to-empty', b'{"affected_files": ["./"]}'),
 )
 assert _UNREAD_FOOTPRINTS, '_UNREAD_FOOTPRINTS must not be empty'
 
@@ -4547,7 +4548,6 @@ assert _UNREAD_FOOTPRINTS, '_UNREAD_FOOTPRINTS must not be empty'
 _NO_FOOTPRINT_YET = (
     ('no-references-file', None),
     ('affected-files-absent', b'{}'),
-    ('affected-files-empty', b'{"affected_files": []}'),
 )
 assert _NO_FOOTPRINT_YET, '_NO_FOOTPRINT_YET must not be empty'
 
