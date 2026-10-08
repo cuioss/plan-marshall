@@ -4530,6 +4530,99 @@ class TestLivePlanSurfaceSource:
         assert set(sources) == set(LIVE_SURFACE_SOURCES), 'the fixture must exercise every declared source'
 
 
+#: ``(id, references.json bytes)`` — a footprint file that exists and cannot be
+#: read as a footprint.
+_UNREAD_FOOTPRINTS = (
+    ('invalid-json', b'{not json'),
+    ('undecodable', b'\xff'),
+    ('json-array', b'[]'),
+    ('affected-files-string', b'{"affected_files": "a/b.py"}'),
+    ('affected-files-null', b'{"affected_files": null}'),
+    ('no-path-entry', b'{"affected_files": [7, "  "]}'),
+)
+assert _UNREAD_FOOTPRINTS, '_UNREAD_FOOTPRINTS must not be empty'
+
+#: ``(id, references.json bytes)`` — a plan with no footprint yet. ``None``
+#: removes the file.
+_NO_FOOTPRINT_YET = (
+    ('no-references-file', None),
+    ('affected-files-absent', b'{}'),
+    ('affected-files-empty', b'{"affected_files": []}'),
+)
+assert _NO_FOOTPRINT_YET, '_NO_FOOTPRINT_YET must not be empty'
+
+
+def _seed_plan_launched_from_a_declarative_spec(plan_context) -> Path:
+    """Seed two own specs and one live plan whose source spec is declarative.
+
+    The source spec sits on a finished row, so it is not a gate candidate and
+    the live plan is the only one. Returns the live plan's directory.
+    """
+    _seed_two_own_specs(plan_context)
+    _seed_gate_sibling(plan_context, 'shipped', surface_lines=_surface(OUTSIDE_PATH))
+    plan_dir = _write_live_plan(plan_context, LIVE_PLAN_ID, source_id=_SOURCE_SPEC_POINTER, affected_files=[])
+    result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+    assert _live_surfaces(result)[LIVE_PLAN_ID]['surface_source'] == LIVE_SURFACE_SOURCE_SPEC, (
+        'the fixture plan must be comparable through its source spec before its footprint file is replaced'
+    )
+    assert [row['comparison_determinate'] for row in result['spec_comparisons']] == [True, True]
+    return plan_dir
+
+
+def _replace_footprint_file(plan_dir: Path, content: bytes | None) -> None:
+    path = plan_dir / 'references.json'
+    if content is None:
+        path.unlink()
+    else:
+        path.write_bytes(content)
+
+
+class TestUnreadLiveFootprint:
+    """A footprint that could not be read is not a footprint that does not exist yet."""
+
+    @pytest.mark.parametrize(
+        'content',
+        [case[1] for case in _UNREAD_FOOTPRINTS],
+        ids=[case[0] for case in _UNREAD_FOOTPRINTS],
+    )
+    def test_an_unread_footprint_is_indeterminate_and_the_source_spec_is_not_consulted(self, plan_context, content):
+        plan_dir = _seed_plan_launched_from_a_declarative_spec(plan_context)
+        _replace_footprint_file(plan_dir, content)
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert _live_surfaces(result)[LIVE_PLAN_ID] == {
+            'plan': LIVE_PLAN_ID,
+            'comparable': False,
+            'surface_source': LIVE_SURFACE_NONE,
+        }
+        assert result['live_indeterminate_plans'] == [LIVE_PLAN_ID]
+        rows = result['spec_comparisons']
+        assert len(rows) == 2, 'the own corpus did not materialize'
+        for row in rows:
+            assert row['comparison_determinate'] is False
+            assert _blocking(row) == [_entry(CANDIDATE_KIND_LIVE_PLAN, LIVE_PLAN_ID, CANDIDATE_INDETERMINATE)]
+
+    @pytest.mark.parametrize(
+        'content',
+        [case[1] for case in _NO_FOOTPRINT_YET],
+        ids=[case[0] for case in _NO_FOOTPRINT_YET],
+    )
+    def test_a_plan_with_no_footprint_yet_is_compared_on_its_source_spec(self, plan_context, content):
+        plan_dir = _seed_plan_launched_from_a_declarative_spec(plan_context)
+        _replace_footprint_file(plan_dir, content)
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert _live_surfaces(result)[LIVE_PLAN_ID] == {
+            'plan': LIVE_PLAN_ID,
+            'comparable': True,
+            'surface_source': LIVE_SURFACE_SOURCE_SPEC,
+        }
+        assert result['live_indeterminate_plans'] == []
+        assert [row['comparison_determinate'] for row in result['spec_comparisons']] == [True, True]
+
+
 class TestCorpusSurfacesRefusals:
     def test_an_unsafe_slug_is_refused(self):
         result = cmd_corpus_surfaces(_variant(_SURFACES_ARGS, slug='../escape'))

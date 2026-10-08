@@ -150,6 +150,7 @@ ledger. No implementation-side capability (no build/CI/source verbs) exists here
 
 import argparse
 import importlib.util
+import json
 import os
 import re
 import shutil
@@ -165,7 +166,7 @@ from typing import Any
 from _cmd_sibling_collision import (
     _OVERLAP_JOIN,
     _iter_active_plan_dirs,
-    _read_affected_files,
+    _normalize_path,
     _read_request_source,
 )
 from _orchestrator_inbox import (
@@ -757,7 +758,8 @@ GATE_UNREAD_CAUSES = (
 #: order the sources are tried. ``affected_files`` is the plan's captured
 #: footprint; ``source_spec`` is the declared surface of the one spec the plan
 #: was launched from, used only while no footprint has been captured; ``none``
-#: is a plan neither source supplied a surface for, which stays indeterminate.
+#: is a plan no surface was established for — its source spec supplied none, or
+#: its footprint could not be read — which stays indeterminate.
 LIVE_SURFACE_AFFECTED_FILES = 'affected_files'
 LIVE_SURFACE_SOURCE_SPEC = 'source_spec'
 LIVE_SURFACE_NONE = 'none'
@@ -4325,6 +4327,40 @@ def _source_spec_surface(pointers: set[str], repo_root: Path) -> set[str] | None
     return set(record['paths'])
 
 
+def _live_footprint(plan_dir: Path) -> set[str] | None:
+    """Read one live plan's captured footprint, telling "none yet" from "could not read".
+
+    Returns the normalized ``affected_files`` set of the plan's
+    ``references.json``, the empty set when the plan has no footprint yet, and
+    ``None`` when the footprint could not be read:
+
+    * a non-empty set — ``affected_files`` is a list with at least one
+      non-blank string entry; other entries are dropped;
+    * the empty set — ``references.json`` does not exist, or it is a JSON
+      object whose ``affected_files`` key is absent or an empty list;
+    * ``None`` — the file exists and cannot be read or decoded, is not valid
+      JSON, is not a JSON object, carries an ``affected_files`` that is not a
+      list, or carries a non-empty list with no non-blank string entry.
+    """
+    try:
+        references = json.loads((plan_dir / 'references.json').read_text(encoding='utf-8'))
+    except FileNotFoundError:
+        return set()
+    except (OSError, ValueError):
+        return None
+    if not isinstance(references, dict):
+        return None
+    if 'affected_files' not in references:
+        return set()
+    affected = references['affected_files']
+    if not isinstance(affected, list):
+        return None
+    paths = {_normalize_path(entry) for entry in affected if isinstance(entry, str) and entry.strip()}
+    if affected and not paths:
+        return None
+    return paths
+
+
 def _live_plan_records(repo_root: Path) -> tuple[list[dict[str, Any]], int]:
     """Build one comparable record per REAL active plan — the cross-ledger direction.
 
@@ -4340,12 +4376,16 @@ def _live_plan_records(repo_root: Path) -> tuple[list[dict[str, Any]], int]:
     record names the one that supplied it in ``surface_source``
     (:data:`LIVE_SURFACE_SOURCES`):
 
-    * ``affected_files`` — the plan's captured footprint in ``references.json``.
-      A plan that has one is always compared on it, whatever its source spec
-      declares.
-    * ``source_spec`` — for a plan with no footprint yet, the declared surface
-      of the one spec it was launched from (:func:`_source_spec_surface`).
-    * ``none`` — neither source supplied a surface; the plan is indeterminate.
+    * ``affected_files`` — the plan's captured footprint in ``references.json``
+      (:func:`_live_footprint` returned a non-empty set). A plan that has one
+      is always compared on it, whatever its source spec declares.
+    * ``source_spec`` — for a plan with no footprint yet
+      (:func:`_live_footprint` returned the empty set), the declared surface of
+      the one spec it was launched from (:func:`_source_spec_surface`).
+    * ``none`` — the plan is indeterminate. Either it has no footprint yet and
+      its source spec supplied no surface, or its footprint could not be read
+      (:func:`_live_footprint` returned ``None``), in which case the source
+      spec is not consulted.
 
     That walk admits every directory carrying a ``status.json``, and the
     plan-less operations sentinel's directory carries one. It is not a plan: it
@@ -4362,12 +4402,11 @@ def _live_plan_records(repo_root: Path) -> tuple[list[dict[str, Any]], int]:
     match neither collision class.
 
     The skip is keyed on the id and NEVER on an empty path set. A real plan
-    that neither source supplies a surface for is still enumerated and flagged
-    ``comparable: False`` with ``surface_source: none`` — the live-side analog
-    of a spec in any :data:`SURFACE_INDETERMINATE_STATES` state. It contributes
-    no overlap row at all, so without the flag its absence from the match list
-    is indistinguishable from a checked negative; dropping such a plan instead
-    would hide exactly the pre-footprint plan the flag exists to name.
+    with ``surface_source: none`` is still enumerated and flagged
+    ``comparable: False`` — the live-side analog of a spec in any
+    :data:`SURFACE_INDETERMINATE_STATES` state. It contributes no overlap row
+    at all, so without the flag its absence from the match list is
+    indistinguishable from a checked negative.
 
     ``comparable`` is decided by whether a source supplied a surface, not by
     whether that surface is non-empty: a declarative source spec that resolves
@@ -4381,9 +4420,10 @@ def _live_plan_records(repo_root: Path) -> tuple[list[dict[str, Any]], int]:
             continue
         _, source_id = _read_request_source(plan_dir)
         pointers = _spec_pointers(source_id) if source_id else set()
-        paths = _read_affected_files(plan_dir)
+        footprint = _live_footprint(plan_dir)
+        paths = footprint or set()
         surface_source = LIVE_SURFACE_AFFECTED_FILES if paths else LIVE_SURFACE_NONE
-        if not paths:
+        if footprint is not None and not footprint:
             declared = _source_spec_surface(pointers, repo_root)
             if declared is not None:
                 paths = declared
@@ -4541,12 +4581,10 @@ def _live_candidate_state(record: dict[str, Any]) -> str:
 
     Reads the ``comparable`` flag :func:`_live_plan_records` already derives, so
     the live side's contribution rule lives in one place: a plan is comparable
-    when its captured footprint or its declarative source spec supplied a
-    surface, and indeterminate when neither did. ``unreadable`` is structurally
-    unreachable here — that walk degrades an unreadable plan directory to an
-    empty footprint rather than to no record — which is exactly why the tally is
-    derived from the whole vocabulary: the live kind's ``unreadable`` row is a
-    STATED zero rather than a missing row a reader must interpret.
+    when its ``surface_source`` is ``affected_files`` or ``source_spec``, and
+    indeterminate when it is ``none``. A plan whose footprint could not be read
+    is ``none`` and therefore ``indeterminate``; this function never returns
+    ``unreadable``, so the live kind's ``unreadable`` tally row is always zero.
     """
     return CANDIDATE_COMPARABLE if record['comparable'] else CANDIDATE_INDETERMINATE
 
