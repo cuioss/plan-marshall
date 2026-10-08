@@ -167,6 +167,11 @@ import sys
 import time
 from pathlib import Path
 
+# Check conclusions that say the check itself ended badly. A lapse is pending
+# only when no check carries one of these. The set is defined once, in
+# ``ci_verify`` beside ``classify_check`` whose definitive rows it is, and is
+# imported here.
+from ci_verify import _DEFINITIVE_FAILING_CONCLUSIONS
 from file_ops import get_executor_path, get_plan_dir
 from platform_runtime import _runtime_for_target
 from toon_parser import parse_toon, serialize_toon
@@ -240,14 +245,6 @@ _LAPSE_RELATIVE_PATH: str = 'work/ci-precondition-lapses.toon'
 #: enough for a verify job of about 25 minutes plus queue time. The next lapse
 #: after the bound returns ``wait_failed`` / ``ci_final_status: timeout``.
 MAX_PENDING_REWAITS: int = 3
-
-#: Check conclusions that say the check itself ended badly. A lapse is pending
-#: only when no check carries one of these. Lower-case; compared against the
-#: lower-cased ``conclusion`` of each ``failing_checks`` entry. Mirrors the
-#: definitive rows of ``ci_verify.classify_check``.
-_DEFINITIVE_FAILING_CONCLUSIONS: frozenset[str] = frozenset(
-    {'failure', 'failed', 'cancelled', 'canceled', 'action_required', 'stale', 'timed_out', 'timeout'}
-)
 
 #: The CI-wait notation routed through the executor proxy.
 _CI_WAIT_NOTATION: str = 'plan-marshall:tools-integration-ci:ci'

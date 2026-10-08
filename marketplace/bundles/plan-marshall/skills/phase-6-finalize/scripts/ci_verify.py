@@ -146,8 +146,9 @@ _PASSING_CONCLUSIONS: frozenset[str] = frozenset({'success', 'skipped', 'neutral
 _RUNNING_CONCLUSIONS: frozenset[str] = frozenset({'pending', 'in_progress', 'queued', 'waiting'})
 
 #: Conclusions that say the check itself ended badly — the definitive rows of
-#: :func:`classify_check`. ``ci_complete_precondition`` holds the same set for
-#: its pending verdict.
+#: :func:`classify_check`. Lower-case; compared against a lower-cased
+#: ``conclusion``. This is the one definition of the set:
+#: ``ci_complete_precondition`` imports it for its pending verdict.
 _DEFINITIVE_FAILING_CONCLUSIONS: frozenset[str] = frozenset(
     {'failure', 'failed', 'cancelled', 'canceled', 'action_required', 'stale', 'timed_out', 'timeout'}
 )

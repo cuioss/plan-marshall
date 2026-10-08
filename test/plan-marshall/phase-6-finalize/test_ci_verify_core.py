@@ -593,9 +593,9 @@ def test_completed_wait_does_not_drop_anything():
     assert [entry['name'] for entry in kept] == ['verify', 'slow-deploy']
 
 
-def test_resolver_and_executor_agree_on_definitive_failing_conclusions():
-    """The pending verdict and the drop rule read one set of conclusions."""
-    assert _precond._DEFINITIVE_FAILING_CONCLUSIONS == _mod._DEFINITIVE_FAILING_CONCLUSIONS
+def test_resolver_reads_the_executors_own_definitive_failing_conclusions():
+    """The pending verdict reads the executor's set itself, not a second copy of it."""
+    assert _precond._DEFINITIVE_FAILING_CONCLUSIONS is _mod._DEFINITIVE_FAILING_CONCLUSIONS
 
 
 def test_required_steps_lists_ci_verify():
