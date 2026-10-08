@@ -21,8 +21,10 @@ later firing runs to completion: its ``done`` lands on the stored ``skipped``.
 This module sweeps every step document the finalize registry discovers and
 checks each terminal ``mark-step-done`` invocation against that rule:
 
-(1) The examined population is **non-empty**, checked first and alone, and its
-    size is published. Every later assertion would pass vacuously over an empty
+(1) The examined population is **non-empty**. That is asserted at the binding
+    site, where an empty derivation fails collection instead of parametrizing
+    the sweep over no case, and again by the first test, which publishes the
+    population's size. Every later assertion would pass vacuously over an empty
     derivation.
 (2) The dispatcher-recorded ``skipped`` set is **non-empty**. It is what makes
     rule (4) reachable at all, so a parse that silently returned nothing would
@@ -185,6 +187,11 @@ def _records_skipped_for(record: dict) -> bool:
 
 
 _RECORDS = _step_records()
+assert _RECORDS, (
+    f'find_implementors({_EXT_POINT!r}) resolved no step document at import, so the '
+    'per-document parametrization below would collect no case and report a skip '
+    'rather than a failure.'
+)
 
 
 def test_sweep_examines_a_non_empty_step_document_population(record_property):
