@@ -124,7 +124,7 @@ Single-target output — ``--target claude`` (see ``cache_sync.py``):
     dry_run: true                        # only when --dry-run
     synced[N]{bundle,version,status}:
     failed[M]{bundle,error}:             # only when failed_count > 0
-    registry_parity:                     # absent only on a guard refusal
+    registry_parity:                     # absent on a guard refusal
       <see "Registry parity" above>      # or when the leg could not start
 
 ``cache_status`` is always present and carries the outcome of the cache
@@ -878,10 +878,11 @@ def _sync_one_for_aggregate(target_name: str, args: argparse.Namespace) -> dict[
         )
         return data
     except OSError as exc:
-        return {
-            'status': 'error',
-            'summary_message': f'{target_name} sync failed: {type(exc).__name__}: {exc}',
-        }
+        block: dict[str, Any] = {'status': 'error'}
+        if target_name == CLAUDE_TARGET:
+            block['cache_status'] = 'error'
+        block['summary_message'] = f'{target_name} sync failed: {type(exc).__name__}: {exc}'
+        return block
 
 
 def sync_all(args: argparse.Namespace) -> int:

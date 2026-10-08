@@ -328,7 +328,7 @@ summary_message: "<summary>"
 guard_outcome: stale | probe_failed   # only on a staleness-guard refusal
 synced[N]{bundle,version,status}:
 failed[M]{bundle,error}:              # only when failed_count > 0
-registry_parity:                      # absent only on a staleness-guard refusal or when the leg could not start
+registry_parity:                      # absent on a staleness-guard refusal or when the leg could not start
   registry_path: "<path>"             # absent when no registry was read
   registry_state: ok | absent | io_error | not_json | no_plan_marshall_entry | not_read
   reason: "<why>"                     # only on an unreadable verdict

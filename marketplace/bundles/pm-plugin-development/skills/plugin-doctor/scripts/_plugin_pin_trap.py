@@ -626,10 +626,9 @@ def _evaluate_single(obs: StoreObservation, sampling_instant: str) -> Verdict:
     # would issue a verdict over an axis nothing looked at.
     if content is not None and content.usable and content.diverged > 0:
         divergences.append(f'pin content diverges from source: {content.render()}')
-    # Conjunct 5 — the executor read succeeded and its embedded paths disagree
-    # with EACH OTHER. Distinct from an unreadable executor: this is a
-    # demonstrated disagreement, so it belongs on the divergence axis rather than
-    # on the could-not-look list.
+    # Conjunct 5 — the executor anchor is SPLIT. Distinct from an unreadable
+    # executor: this is a demonstrated disagreement, so it belongs on the
+    # divergence axis rather than on the could-not-look list.
     if executor_anchor is not None and executor_anchor.status == EXECUTOR_SPLIT:
         divergences.append(
             'executor is version-SPLIT across its embedded paths: ' + ', '.join(executor_anchor.versions)
@@ -938,8 +937,7 @@ def read_executor_anchored_version(executor_path: Path) -> ExecutorAnchor:
 
     The generated executor states the version it was generated at in one
     module-level ``MARSHALL_VERSION`` assignment, read here through
-    ``plugin_registry.read_executor_version``. It does not embed plugin-cache
-    paths, so nothing is scanned for path-shaped version segments.
+    ``plugin_registry.read_executor_version``.
 
     The adapter reports one of three states:
 

@@ -772,7 +772,7 @@ def _staleness_guard(source_root: Path, marketplace_root: Path) -> GuardRefusal 
         )
     try:
         sentinel = json.loads(sentinel_path.read_text(encoding='utf-8'))
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         return _stale(
             f'staleness_guard: sentinel missing or unreadable at {sentinel_path} ({exc}). {_regenerate_hint()}'
         )

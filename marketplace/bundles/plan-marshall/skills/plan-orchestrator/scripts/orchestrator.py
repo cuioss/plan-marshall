@@ -891,7 +891,7 @@ _RATIO_CLAIM_RE = re.compile(r'R\s*=\s*(?P<numerator>\d+)\s+of\s+(?P<denominator
 # --- cleanup group ---------------------------------------------------------
 
 #: The readiness vocabulary, ordered WORST-FIRST. The order IS the floor: the
-#: overall verdict is ``min`` over the participating signals under this order,
+#: overall verdict is ``min`` over the signals under this order,
 #: so a single unobservable signal degrades the report to ``indeterminate`` and
 #: only a definite hazard reaches ``not_ready``. Keeping the two apart is the
 #: point — collapsing an unobservable signal into a failing one is the
@@ -5166,9 +5166,9 @@ def _signal(name: str, verdict: str, evidence: str, population: str) -> dict[str
 
 
 def _readiness_floor(verdicts: list[str]) -> str:
-    """The floor over the PARTICIPATING verdicts, under :data:`READINESS_ORDER`.
+    """The floor over the verdicts, under :data:`READINESS_ORDER`.
 
-    An empty participating set yields ``indeterminate`` rather than ``ready``:
+    An empty set yields ``indeterminate`` rather than ``ready``:
     nothing was observed, which is not the same as everything being fine.
     """
     if not verdicts:

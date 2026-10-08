@@ -177,11 +177,11 @@ class TestReadinessFloor:
         assert verdicts['inbox'] == INDETERMINATE
         assert result['verdict'] == NOT_READY
 
-    def test_the_floor_over_no_participating_signal_is_indeterminate(self):
+    def test_the_floor_over_no_signal_is_indeterminate(self):
         # Nothing observed is not the same as everything fine.
         assert readiness_floor([]) == INDETERMINATE
 
-    def test_the_floor_is_the_worst_participating_verdict(self):
+    def test_the_floor_is_the_worst_verdict(self):
         assert readiness_floor([READY, READY]) == READY
         assert readiness_floor([READY, INDETERMINATE]) == INDETERMINATE
         assert readiness_floor([READY, INDETERMINATE, NOT_READY]) == NOT_READY

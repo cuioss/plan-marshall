@@ -538,7 +538,7 @@ def test_live_shape_registry_and_executor_return_their_versions(tmp_path):
 
     A registry whose ``plan-marshall@plan-marshall`` value is a list holding a
     user-scope and a project-scope entry, and an executor that states its version
-    in ``MARSHALL_VERSION`` and embeds no cache path. Both adapters returned
+    in ``MARSHALL_VERSION``. Both adapters returned
     "unreadable" for exactly this pair, so on a real machine the detector could
     only ever answer ``indeterminate``.
     """
