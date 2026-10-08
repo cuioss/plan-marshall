@@ -33,7 +33,10 @@ Covers the four sub-verbs against a SCAFFOLDED FIXTURE EPIC under
   near-miss that keeps the same spec in the gate population — an unreadable row
   file, header, queue or spec file, a spec joining no row or two, and a row
   status outside the vocabulary. The scan-population keys and both match lists
-  are pinned as unchanged by the row status the gate reads.
+  are pinned as unchanged by the row status the gate reads. A store-shaped
+  fixture — several archived sibling epics, one active sibling epic, one live
+  plan — pins the verdict two own candidates get against mostly finished work,
+  and the overlap threshold is pinned on both sides of two shared files.
 - ``corpus verdicts``: the sole interpreter of the re-grounding verdict field —
   one control per row of the admission table in
   ``persona-plan-orchestrator/standards/orchestration-model.md``
@@ -106,7 +109,7 @@ from typing import Any
 
 import pytest
 from _dispatch_roster import section_lines
-from _ledger_fixtures import write_ledger, write_legacy_status
+from _ledger_fixtures import epic_spec_name, write_epic_tree, write_ledger, write_legacy_status
 from marketplace_paths import NO_PLAN_SENTINEL
 
 from conftest import (
@@ -6269,6 +6272,268 @@ class TestReportShapeRowsAreSynchronizedWithItsDeclaringTuples:
             f'{sorted(set(emitted_pairs) - set(documented_pairs))}, only in the document '
             f'{sorted(set(documented_pairs) - set(emitted_pairs))}'
         )
+
+
+# =============================================================================
+# corpus cross-check — a store-shaped regression and the overlap threshold
+# =============================================================================
+#
+# The gate tests above each seed one sibling spec. The fixture here has the
+# shape of a real store instead: several archived sibling epics, one active
+# sibling epic whose only non-comparable spec is not in flight, one comparable
+# live plan, and a queried epic with two declarative specs. Before the gate
+# population existed, a store of this shape refused every candidate.
+
+_STORE_ARCHIVED_SLUGS = ('fixture-archived-a', 'fixture-archived-b', 'fixture-archived-c')
+
+#: The one non-comparable spec of the active sibling epic, and its row.
+_STORE_ACTIVE_BLOCKER_ID = 'PLAN-21'
+
+#: The non-comparable spec of the first archived sibling epic.
+_STORE_ARCHIVED_PROSE_ID = 'PLAN-12'
+
+_STORE_OWN_SPECS = (epic_spec_name('PLAN-01', SLUG), epic_spec_name('PLAN-02', SLUG))
+
+
+def _store_root(plan_context, *, archived: bool = False) -> Path:
+    """One of the two orchestrator store roots of the fixture."""
+    return Path(plan_context.fixture_dir) / ('archived-orchestrators' if archived else 'orchestrator')
+
+
+def _blocking_entry(slug: str, plan_id: str, state: str) -> str:
+    """The ``blocking_candidates`` entry of one sibling spec in ``state``."""
+    return f'{CANDIDATE_KIND_SIBLING_EPIC_SPEC}:{slug}/{epic_spec_name(plan_id, slug)}:{state}'
+
+
+def _seed_store(plan_context) -> None:
+    """Materialise the store-shaped fixture and check that it landed.
+
+    The counts asserted here are the fixture's own: four sibling epics and ten
+    sibling specs on disk. A fixture that did not land would leave every
+    payload assertion in the callers checking an empty store.
+    """
+    write_epic_tree(
+        _store_root(plan_context),
+        SLUG,
+        phase='orchestrating',
+        plans=[('PLAN-01', 'staged', _surface(SHARED_PATH)), ('PLAN-02', 'staged', _surface(OTHER_PATH))],
+    )
+    for slug in _STORE_ARCHIVED_SLUGS:
+        write_epic_tree(
+            _store_root(plan_context, archived=True),
+            slug,
+            phase='closed',
+            plans=[
+                ('PLAN-11', 'shipped', _surface(OUTSIDE_PATH)),
+                (_STORE_ARCHIVED_PROSE_ID, 'superseded', _DEFAULT_SURFACE),
+            ],
+        )
+    write_epic_tree(
+        _store_root(plan_context),
+        SIBLING_SLUG,
+        phase='orchestrating',
+        plans=[
+            (_STORE_ACTIVE_BLOCKER_ID, 'staged', _DEFAULT_SURFACE),
+            ('PLAN-22', 'staged', _surface(OUTSIDE_PATH)),
+            ('PLAN-23', 'retired', _surface(OUTSIDE_PATH)),
+            ('PLAN-24', 'shipped', _surface(OUTSIDE_PATH)),
+        ],
+    )
+    _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[OUTSIDE_PATH])
+
+    sibling_dirs = [
+        path
+        for archived in (False, True)
+        for path in sorted(_store_root(plan_context, archived=archived).iterdir())
+        if path.is_dir() and path.name != SLUG
+    ]
+    sibling_specs = [spec for path in sibling_dirs for spec in sorted((path / 'plans').glob('PLAN-*.md'))]
+    assert len(sibling_dirs) == 4, f'the fixture wrote {len(sibling_dirs)} sibling epic(s), expected 4'
+    assert len(sibling_specs) == 10, f'the fixture wrote {len(sibling_specs)} sibling spec(s), expected 10'
+
+
+class TestStoreShapedGateRegression:
+    """Two own candidates judged against a store of mostly finished work."""
+
+    def test_finished_and_idle_work_leaves_both_own_candidates_determinate(self, plan_context):
+        _seed_store(plan_context)
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert result['epics_scanned'] == 4
+        assert _candidate_population(result)[CANDIDATE_KIND_SIBLING_EPIC_SPEC] == 10
+        assert result['candidates_indeterminate'] == 4, 'the non-comparable sibling specs did not reach the scan'
+        rows = _comparisons(result)
+        assert sorted(rows) == sorted(_STORE_OWN_SPECS)
+        assert [rows[spec]['comparison_determinate'] for spec in _STORE_OWN_SPECS] == [True, True]
+        assert result['candidate_comparison_determinate'] is True
+        assert _excluded_for(result, CANDIDATE_KIND_SIBLING_EPIC_SPEC) == {
+            GATE_EXCLUDED_EPIC_ARCHIVED: 6,
+            GATE_EXCLUDED_EPIC_CLOSED: 0,
+            GATE_EXCLUDED_ROW_TERMINAL: 2,
+            GATE_EXCLUDED_ROW_NOT_IN_FLIGHT: 2,
+        }
+        assert _excluded_for(result, CANDIDATE_KIND_CORPUS_SPEC) == {
+            **_NO_EXCLUSION,
+            GATE_EXCLUDED_ROW_NOT_IN_FLIGHT: 2,
+        }
+
+    def test_launching_the_one_non_comparable_sibling_refuses_both_own_candidates(self, plan_context):
+        _seed_store(plan_context)
+        _set_row_status(_store_root(plan_context) / SIBLING_SLUG, 'launched', _STORE_ACTIVE_BLOCKER_ID)
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        blocker = _blocking_entry(SIBLING_SLUG, _STORE_ACTIVE_BLOCKER_ID, CANDIDATE_INDETERMINATE)
+        rows = _comparisons(result)
+        for spec in _STORE_OWN_SPECS:
+            assert rows[spec]['comparison_determinate'] is False
+            assert rows[spec]['blocking_candidates'] == blocker
+            assert rows[spec]['reason'] != ''
+        assert result['candidate_comparison_determinate'] is False
+
+    def test_a_readable_non_comparable_spec_under_the_archived_root_refuses_nobody(self, plan_context):
+        # The negative half of the pair below: the same spec, readable.
+        _seed_store(plan_context)
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        rows = _comparisons(result)
+        assert [rows[spec]['blocking_candidates'] for spec in _STORE_OWN_SPECS] == ['', '']
+        assert result['unreadable_count'] == 0
+
+    def test_an_unreadable_spec_under_the_archived_root_refuses_both_own_candidates(self, plan_context):
+        # The archived location does not shelter a spec file nothing could read.
+        _seed_store(plan_context)
+        slug = _STORE_ARCHIVED_SLUGS[0]
+        spec = (
+            _store_root(plan_context, archived=True) / slug / 'plans' / epic_spec_name(_STORE_ARCHIVED_PROSE_ID, slug)
+        )
+        assert spec.is_file(), f'the spec to break was not written: {spec}'
+        spec.write_bytes(_UNDECODABLE)
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        blocker = _blocking_entry(slug, _STORE_ARCHIVED_PROSE_ID, CANDIDATE_UNREADABLE)
+        rows = _comparisons(result)
+        for own in _STORE_OWN_SPECS:
+            assert rows[own]['comparison_determinate'] is False
+            assert rows[own]['blocking_candidates'] == blocker
+        assert _excluded_for(result, CANDIDATE_KIND_SIBLING_EPIC_SPEC)[GATE_EXCLUDED_EPIC_ARCHIVED] == 5
+
+    def test_a_zero_gate_overlap_rides_beside_the_population_and_the_exclusions(self, plan_context):
+        _seed_store(plan_context)
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        rows = _comparisons(result)
+        assert [rows[spec]['gate_overlap_count'] for spec in _STORE_OWN_SPECS] == [0, 0]
+        assert result['gate_overlap_matches'] == []
+        assert _gate_population(result)[CANDIDATE_KIND_LIVE_PLAN] == 1
+        assert result['gate_excluded_total'] == 12
+        assert sum(row['count'] for row in result['gate_excluded']) == result['gate_excluded_total']
+
+
+def _seed_overlap_pair(plan_context, sibling_status: str, sibling_paths: tuple[str, ...]) -> tuple[str, str]:
+    """Seed one own spec and one sibling spec; return ``(own spec, sibling candidate name)``.
+
+    The own spec declares :data:`SHARED_PATH` and :data:`OTHER_PATH`, so the
+    number of files the pair shares is decided by ``sibling_paths`` alone.
+    """
+    write_epic_tree(
+        _store_root(plan_context),
+        SLUG,
+        phase='orchestrating',
+        plans=[('PLAN-01', 'staged', _surface(SHARED_PATH, OTHER_PATH))],
+    )
+    write_epic_tree(
+        _store_root(plan_context),
+        SIBLING_SLUG,
+        phase='orchestrating',
+        plans=[('PLAN-31', sibling_status, _surface(*sibling_paths))],
+    )
+    return epic_spec_name('PLAN-01', SLUG), f'{SIBLING_SLUG}/{epic_spec_name("PLAN-31", SIBLING_SLUG)}'
+
+
+class TestOverlapPromptThreshold:
+    """The prompt fires from two shared files on, and only against in-flight work."""
+
+    def test_one_file_shared_with_an_in_flight_candidate_does_not_fire_the_prompt(self, plan_context):
+        own, _ = _seed_overlap_pair(plan_context, 'launched', (SHARED_PATH, OUTSIDE_PATH))
+
+        row = _comparisons(cmd_corpus_cross_check(_CROSS_CHECK_ARGS))[own]
+
+        assert row['gate_overlap_count'] == 1
+        assert row['max_shared_file_count'] == 1
+        assert row['overlap_prompt_required'] is False
+
+    def test_two_files_shared_with_an_in_flight_candidate_fire_the_prompt(self, plan_context):
+        own, candidate = _seed_overlap_pair(plan_context, 'launched', (SHARED_PATH, OTHER_PATH))
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        row = _comparisons(result)[own]
+        assert row['max_shared_file_count'] == 2
+        assert row['overlap_prompt_required'] is True
+        assert [(match['spec'], match['candidate']) for match in result['gate_overlap_matches']] == [(own, candidate)]
+
+    def test_two_files_shared_with_a_candidate_that_is_not_in_flight_do_not_fire_the_prompt(self, plan_context):
+        own, candidate = _seed_overlap_pair(plan_context, 'staged', (SHARED_PATH, OTHER_PATH))
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        row = _comparisons(result)[own]
+        assert row['gate_overlap_count'] == 0
+        assert row['max_shared_file_count'] == 0
+        assert row['overlap_prompt_required'] is False
+        scanned = [match for match in result['file_overlap_matches'] if match['candidate'] == candidate]
+        assert [match['overlap_count'] for match in scanned] == [2], (
+            'the overlap with the idle sibling must stay in the full match list the duplicate-work read uses'
+        )
+        assert result['gate_overlap_matches'] == []
+
+
+class TestGateFailClosedControls:
+    """Work that may be in flight and cannot be compared refuses every own candidate."""
+
+    def _seed(self, plan_context, sibling_status: str) -> Path:
+        write_epic_tree(
+            _store_root(plan_context),
+            SLUG,
+            phase='orchestrating',
+            plans=[('PLAN-01', 'staged', _surface(SHARED_PATH)), ('PLAN-02', 'staged', _surface(OTHER_PATH))],
+        )
+        return write_epic_tree(
+            _store_root(plan_context),
+            SIBLING_SLUG,
+            phase='orchestrating',
+            plans=[('PLAN-41', sibling_status, _DEFAULT_SURFACE)],
+        )
+
+    def test_an_in_flight_sibling_with_no_comparable_surface_refuses_every_own_row(self, plan_context):
+        self._seed(plan_context, 'running')
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert [row['comparison_determinate'] for row in result['spec_comparisons']] == [False, False]
+
+    def test_the_same_sibling_on_a_finished_row_refuses_nobody(self, plan_context):
+        # The near-miss for the two refusals in this class.
+        self._seed(plan_context, 'shipped')
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert [row['comparison_determinate'] for row in result['spec_comparisons']] == [True, True]
+
+    def test_an_unreadable_row_is_treated_as_in_flight_and_refuses_every_own_row(self, plan_context):
+        sibling_dir = self._seed(plan_context, 'shipped')
+        _row_file(sibling_dir, 'PLAN-41').write_text(_NOT_JSON, encoding='utf-8')
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        blocker = _blocking_entry(SIBLING_SLUG, 'PLAN-41', CANDIDATE_INDETERMINATE)
+        assert [row['blocking_candidates'] for row in result['spec_comparisons']] == [blocker, blocker]
+        assert _excluded_for(result, CANDIDATE_KIND_SIBLING_EPIC_SPEC) == _NO_EXCLUSION
 
 
 # =============================================================================
