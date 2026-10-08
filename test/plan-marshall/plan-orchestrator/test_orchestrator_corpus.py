@@ -3603,7 +3603,9 @@ class TestCrossCheckExcludesTheSentinelPlanDirectory:
         assert result['excluded_sentinel_plan_count'] == 1
         assert result['plans_scanned'] == 1
         assert result['live_indeterminate_plans'] == [LIVE_PLAN_ID]
-        assert result['live_plan_surfaces'] == [{'plan': LIVE_PLAN_ID, 'comparable': False}]
+        assert result['live_plan_surfaces'] == [
+            {'plan': LIVE_PLAN_ID, 'comparable': False, 'surface_source': LIVE_SURFACE_NONE}
+        ]
         assert _candidate_population(result)[CANDIDATE_KIND_LIVE_PLAN] == 1
         assert _candidate_tally(result)[(CANDIDATE_KIND_LIVE_PLAN, CANDIDATE_INDETERMINATE)] == 1
         assert _gate_tally(result)[(CANDIDATE_KIND_LIVE_PLAN, CANDIDATE_INDETERMINATE)] == 1
@@ -4360,6 +4362,163 @@ class TestGateOverlapMatches:
         assert row['max_shared_file_count'] == 1
         assert row['overlap_prompt_required'] is False, 'a single shared file never fires the prompt'
         assert row['comparison_determinate'] is True, 'a comparable overlapping candidate does not block'
+
+
+# =============================================================================
+# corpus cross-check — the surface source of a live plan
+# =============================================================================
+#
+# A live plan is compared on its captured footprint. Before it has one it is
+# compared on the declared surface of the ONE spec it was launched from, when
+# that spec is readable and declarative; otherwise it stays indeterminate. The
+# payload names the source per plan, so the three are never conflated.
+
+LIVE_SURFACE_SOURCES = _orch.LIVE_SURFACE_SOURCES
+LIVE_SURFACE_AFFECTED_FILES = _orch.LIVE_SURFACE_AFFECTED_FILES
+LIVE_SURFACE_SOURCE_SPEC = _orch.LIVE_SURFACE_SOURCE_SPEC
+LIVE_SURFACE_NONE = _orch.LIVE_SURFACE_NONE
+
+#: The pointer a live plan's ``source_id`` carries to the sibling source spec.
+_SOURCE_SPEC_POINTER = _pointer(_PLANTED_SPEC, slug=SIBLING_SLUG)
+
+
+def _write_source_spec(plan_context, surface_lines: list | None) -> Path:
+    """Write the sibling spec a live plan's ``source_id`` points at."""
+    return _write_spec(
+        plan_context, _PLANTED_SPEC, epic_dir=_epic_dir(plan_context, SIBLING_SLUG), surface_lines=surface_lines
+    )
+
+
+def _live_surfaces(result: Any) -> dict:
+    """``{plan: row}`` over ``live_plan_surfaces[]``."""
+    return {row['plan']: row for row in result['live_plan_surfaces']}
+
+
+def _live_overlap_candidates(result: Any, field: str = 'file_overlap_matches') -> list:
+    return [row['candidate'] for row in result[field] if row['candidate_kind'] == CANDIDATE_KIND_LIVE_PLAN]
+
+
+def _write_no_source_spec(plan_context) -> None:
+    """Leave the pointed-at spec file absent, with its epic tree present."""
+    (_epic_dir(plan_context, SIBLING_SLUG) / 'plans').mkdir(parents=True)
+
+
+def _write_non_comparable_source_spec(plan_context) -> None:
+    _write_source_spec(plan_context, None)
+
+
+def _write_unreadable_source_spec(plan_context) -> None:
+    _write_source_spec(plan_context, _surface(SHARED_PATH)).write_bytes(_UNDECODABLE)
+
+
+#: ``(id, seed)`` — the ways a pre-footprint plan's ``source_id`` pointer fails
+#: to supply a surface. Each leaves the plan indeterminate.
+_UNUSABLE_SOURCE_SPECS = (
+    ('non-comparable-spec', _write_non_comparable_source_spec),
+    ('missing-spec-file', _write_no_source_spec),
+    ('unreadable-spec', _write_unreadable_source_spec),
+)
+assert _UNUSABLE_SOURCE_SPECS, '_UNUSABLE_SOURCE_SPECS must not be empty'
+
+
+class TestLivePlanSurfaceSource:
+    """A pre-footprint live plan is compared through its declarative source spec."""
+
+    def test_the_source_vocabulary_is_declared_in_the_order_the_sources_are_tried(self):
+        assert LIVE_SURFACE_SOURCES == ('affected_files', 'source_spec', 'none')
+
+    def test_a_pre_footprint_plan_is_compared_on_its_declarative_source_spec(self, plan_context):
+        _seed_queried_epic(plan_context)
+        _write_source_spec(plan_context, _surface(SHARED_PATH))
+        _write_live_plan(plan_context, LIVE_PLAN_ID, source_id=_SOURCE_SPEC_POINTER, affected_files=[])
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert result['live_plan_surfaces'] == [
+            {'plan': LIVE_PLAN_ID, 'comparable': True, 'surface_source': LIVE_SURFACE_SOURCE_SPEC}
+        ]
+        assert result['live_indeterminate_plans'] == []
+        assert _live_overlap_candidates(result) == [LIVE_PLAN_ID], (
+            'the plan shares a path with the own spec through its source spec, so it must be scored'
+        )
+        assert _live_overlap_candidates(result, 'gate_overlap_matches') == [LIVE_PLAN_ID], (
+            'a live plan is a gate candidate, so its overlap row is a gate row'
+        )
+        assert _gate_tally(result)[(CANDIDATE_KIND_LIVE_PLAN, CANDIDATE_COMPARABLE)] == 1
+
+    def test_a_pre_footprint_plan_with_no_source_id_stays_indeterminate(self, plan_context):
+        # Matched control for the test above: the same empty footprint, with
+        # nothing to compare the plan through.
+        _seed_two_own_specs(plan_context)
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[])
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert _live_surfaces(result)[LIVE_PLAN_ID] == {
+            'plan': LIVE_PLAN_ID,
+            'comparable': False,
+            'surface_source': LIVE_SURFACE_NONE,
+        }
+        assert result['live_indeterminate_plans'] == [LIVE_PLAN_ID]
+        rows = result['spec_comparisons']
+        assert len(rows) == 2, 'the own corpus did not materialize'
+        for row in rows:
+            assert row['comparison_determinate'] is False
+            assert _blocking(row) == [_entry(CANDIDATE_KIND_LIVE_PLAN, LIVE_PLAN_ID, CANDIDATE_INDETERMINATE)]
+
+    @pytest.mark.parametrize(
+        'seed',
+        [case[1] for case in _UNUSABLE_SOURCE_SPECS],
+        ids=[case[0] for case in _UNUSABLE_SOURCE_SPECS],
+    )
+    def test_an_unusable_source_spec_supplies_no_surface(self, plan_context, seed):
+        _seed_queried_epic(plan_context)
+        seed(plan_context)
+        _write_live_plan(plan_context, LIVE_PLAN_ID, source_id=_SOURCE_SPEC_POINTER, affected_files=[])
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert _live_surfaces(result)[LIVE_PLAN_ID] == {
+            'plan': LIVE_PLAN_ID,
+            'comparable': False,
+            'surface_source': LIVE_SURFACE_NONE,
+        }
+        assert result['live_indeterminate_plans'] == [LIVE_PLAN_ID]
+        assert _live_overlap_candidates(result) == []
+        assert _gate_tally(result)[(CANDIDATE_KIND_LIVE_PLAN, CANDIDATE_INDETERMINATE)] == 1
+
+    def test_a_captured_footprint_wins_over_the_source_spec(self, plan_context):
+        # The source spec declares the own spec's path; the footprint does not.
+        # A plan compared on its footprint therefore forms no overlap row.
+        _seed_queried_epic(plan_context)
+        _write_source_spec(plan_context, _surface(SHARED_PATH))
+        _write_live_plan(plan_context, LIVE_PLAN_ID, source_id=_SOURCE_SPEC_POINTER, affected_files=[OTHER_PATH])
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert _live_surfaces(result)[LIVE_PLAN_ID] == {
+            'plan': LIVE_PLAN_ID,
+            'comparable': True,
+            'surface_source': LIVE_SURFACE_AFFECTED_FILES,
+        }
+        assert _live_overlap_candidates(result) == [], 'the plan was compared on its source spec, not its footprint'
+        assert result['live_checked_and_clean'] == [LIVE_PLAN_ID]
+
+    def test_every_row_names_a_declared_source(self, plan_context):
+        # One plan per source, so the membership sweep ranges over the whole
+        # vocabulary rather than over whichever source a single plan lands on.
+        _seed_queried_epic(plan_context)
+        _write_source_spec(plan_context, _surface(SHARED_PATH))
+        _write_live_plan(plan_context, 'fixture-live-footprint', affected_files=[OTHER_PATH])
+        _write_live_plan(plan_context, 'fixture-live-source-spec', source_id=_SOURCE_SPEC_POINTER, affected_files=[])
+        _write_live_plan(plan_context, 'fixture-live-unmeasured', affected_files=[])
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        sources = [row['surface_source'] for row in result['live_plan_surfaces']]
+        assert len(sources) == 3, 'the live plans did not materialize'
+        assert all(source in LIVE_SURFACE_SOURCES for source in sources)
+        assert set(sources) == set(LIVE_SURFACE_SOURCES), 'the fixture must exercise every declared source'
 
 
 class TestCorpusSurfacesRefusals:

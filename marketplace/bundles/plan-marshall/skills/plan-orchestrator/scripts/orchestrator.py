@@ -728,6 +728,20 @@ GATE_EXCLUSION_REASONS = (
     GATE_EXCLUDED_ROW_NOT_IN_FLIGHT,
 )
 
+#: Where one live plan's comparison surface came from, named once and in the
+#: order the sources are tried. ``affected_files`` is the plan's captured
+#: footprint; ``source_spec`` is the declared surface of the one spec the plan
+#: was launched from, used only while no footprint has been captured; ``none``
+#: is a plan neither source supplied a surface for, which stays indeterminate.
+LIVE_SURFACE_AFFECTED_FILES = 'affected_files'
+LIVE_SURFACE_SOURCE_SPEC = 'source_spec'
+LIVE_SURFACE_NONE = 'none'
+LIVE_SURFACE_SOURCES = (
+    LIVE_SURFACE_AFFECTED_FILES,
+    LIVE_SURFACE_SOURCE_SPEC,
+    LIVE_SURFACE_NONE,
+)
+
 #: How many files one own spec must share with a single gate candidate before
 #: the overlap is put to the operator. One shared file is common between plans
 #: that do not collide in practice, so it never fires the prompt; from two files
@@ -4196,7 +4210,44 @@ def _spec_record(epic_slug: str, path: Path, repo_root: Path) -> dict[str, Any] 
     }
 
 
-def _live_plan_records() -> tuple[list[dict[str, Any]], int]:
+def _source_spec_surface(pointers: set[str], repo_root: Path) -> set[str] | None:
+    """The declared surface of the ONE spec a live plan was launched from, else ``None``.
+
+    The second surface source of a live plan, consulted only when the plan has
+    captured no footprint yet. ``pointers`` is the plan's normalized
+    ``source_id`` pointer set. A surface is returned only when that set names
+    exactly one spec, the spec file exists inside its epic's ``plans/``
+    directory (active tree, else the archived one), it is readable, and
+    :func:`_spec_record` reports it ``declarative``. The returned set is that
+    record's comparison paths, so the plan is compared on exactly what its
+    source spec contributes to the overlap matcher.
+
+    Every other case returns ``None`` and the plan stays indeterminate: no
+    pointer, more than one pointer, a slug that is not a valid epic slug, a
+    path that does not exist or resolves outside ``plans/``, an unreadable
+    spec, and a spec in any :data:`SURFACE_INDETERMINATE_STATES` state. A
+    surface is never guessed from a spec that did not declare one.
+    """
+    if len(pointers) != 1:
+        return None
+    slug, separator, spec_name = next(iter(pointers)).partition(f'/{PLANS_SUBDIR}/')
+    if not separator or _validate_slug(slug):
+        return None
+    root = _epic_root(slug, allow_archived=True)
+    path = root / PLANS_SUBDIR / spec_name
+    try:
+        plans_dir = (root / PLANS_SUBDIR).resolve()
+    except (OSError, RuntimeError):
+        return None
+    if not path.is_file() or not _spec_within_corpus(path, plans_dir):
+        return None
+    record = _spec_record(slug, path, repo_root)
+    if record is None or record['derivation_status'] != SURFACE_DECLARATIVE:
+        return None
+    return set(record['paths'])
+
+
+def _live_plan_records(repo_root: Path) -> tuple[list[dict[str, Any]], int]:
     """Build one comparable record per REAL active plan — the cross-ledger direction.
 
     Returns ``(records, excluded_sentinel_plan_count)``: the records, and how
@@ -4206,8 +4257,17 @@ def _live_plan_records() -> tuple[list[dict[str, Any]], int]:
 
     A single ledger structurally cannot see a duplicate held in another ledger,
     so the live plan set is enumerated through ``_cmd_sibling_collision``'s own
-    active-plan walk and each plan contributes its ``source_id`` origin and its
-    ``references.json`` ``affected_files`` surface.
+    active-plan walk and each plan contributes its ``source_id`` origin and a
+    comparison surface. The surface has two sources, tried in order, and the
+    record names the one that supplied it in ``surface_source``
+    (:data:`LIVE_SURFACE_SOURCES`):
+
+    * ``affected_files`` — the plan's captured footprint in ``references.json``.
+      A plan that has one is always compared on it, whatever its source spec
+      declares.
+    * ``source_spec`` — for a plan with no footprint yet, the declared surface
+      of the one spec it was launched from (:func:`_source_spec_surface`).
+    * ``none`` — neither source supplied a surface; the plan is indeterminate.
 
     That walk admits every directory carrying a ``status.json``, and the
     plan-less operations sentinel's directory carries one. It is not a plan: it
@@ -4223,14 +4283,17 @@ def _live_plan_records() -> tuple[list[dict[str, Any]], int]:
     not affect, since an entry with no traceable source and no surface can
     match neither collision class.
 
-    The skip is keyed on the id and NEVER on an empty path set. A real plan with
-    an empty path set declares no comparable surface (before footprint capture
-    it has nothing to compare), so it is still enumerated and flagged
-    ``comparable: False`` — the live-side analog of a spec in any
-    :data:`SURFACE_INDETERMINATE_STATES` state. An empty set contributes no
-    overlap row at all, so without the flag its absence from the match list is
-    indistinguishable from a checked negative; dropping such a plan instead
+    The skip is keyed on the id and NEVER on an empty path set. A real plan
+    that neither source supplies a surface for is still enumerated and flagged
+    ``comparable: False`` with ``surface_source: none`` — the live-side analog
+    of a spec in any :data:`SURFACE_INDETERMINATE_STATES` state. It contributes
+    no overlap row at all, so without the flag its absence from the match list
+    is indistinguishable from a checked negative; dropping such a plan instead
     would hide exactly the pre-footprint plan the flag exists to name.
+
+    ``comparable`` is decided by whether a source supplied a surface, not by
+    whether that surface is non-empty: a declarative source spec that resolves
+    no entry was compared and matched nothing, which is a checked negative.
     """
     records: list[dict[str, Any]] = []
     excluded_sentinel_plan_count = 0
@@ -4241,12 +4304,19 @@ def _live_plan_records() -> tuple[list[dict[str, Any]], int]:
         _, source_id = _read_request_source(plan_dir)
         pointers = _spec_pointers(source_id) if source_id else set()
         paths = _read_affected_files(plan_dir)
+        surface_source = LIVE_SURFACE_AFFECTED_FILES if paths else LIVE_SURFACE_NONE
+        if not paths:
+            declared = _source_spec_surface(pointers, repo_root)
+            if declared is not None:
+                paths = declared
+                surface_source = LIVE_SURFACE_SOURCE_SPEC
         records.append(
             {
                 'name': plan_id,
                 'pointers': pointers,
                 'paths': paths,
-                'comparable': bool(paths),
+                'comparable': surface_source != LIVE_SURFACE_NONE,
+                'surface_source': surface_source,
             }
         )
     return records, excluded_sentinel_plan_count
@@ -4393,13 +4463,15 @@ def _live_candidate_state(record: dict[str, Any]) -> str:
     """Classify one LIVE-PLAN candidate into the same vocabulary.
 
     Reads the ``comparable`` flag :func:`_live_plan_records` already derives, so
-    the live side's contribution rule lives in one place. ``unreadable`` is
-    structurally unreachable here — that walk degrades an unreadable plan
-    directory to an empty surface rather than to no record — which is exactly why
-    the tally is derived from the whole vocabulary: the live kind's ``unreadable``
-    row is a STATED zero rather than a missing row a reader must interpret.
+    the live side's contribution rule lives in one place: a plan is comparable
+    when its captured footprint or its declarative source spec supplied a
+    surface, and indeterminate when neither did. ``unreadable`` is structurally
+    unreachable here — that walk degrades an unreadable plan directory to an
+    empty footprint rather than to no record — which is exactly why the tally is
+    derived from the whole vocabulary: the live kind's ``unreadable`` row is a
+    STATED zero rather than a missing row a reader must interpret.
     """
-    return CANDIDATE_COMPARABLE if record.get('comparable', bool(record['paths'])) else CANDIDATE_INDETERMINATE
+    return CANDIDATE_COMPARABLE if record['comparable'] else CANDIDATE_INDETERMINATE
 
 
 def _candidate_indeterminate_reason(tally: dict[str, dict[str, int]]) -> str:
@@ -4567,7 +4639,7 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
                 unreadable.append({'spec': name, 'error': 'unreadable'})
             else:
                 candidates.append((CANDIDATE_KIND_SIBLING_EPIC_SPEC, {**record, 'name': name}))
-    live, excluded_sentinel_plan_count = _live_plan_records()
+    live, excluded_sentinel_plan_count = _live_plan_records(repo_root)
     for record in live:
         state = _live_candidate_state(record)
         candidate_population[CANDIDATE_KIND_LIVE_PLAN] += 1
@@ -4607,21 +4679,22 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
     own_tally[SURFACE_UNREADABLE] += own_unreadable_count
     comparable = [record for record in own if record['paths']]
     # The live-side population the file-overlap class actually COMPARED. A live
-    # plan with an empty path set declares no comparable surface, so it can form
-    # no overlap row at all — the live-side analog of a spec in any
+    # plan neither surface source supplied a surface for can form no overlap
+    # row at all — the live-side analog of a spec in any
     # SURFACE_INDETERMINATE_STATES state. Without these keys a
     # ``file_overlap_match_count: 0`` over live candidates cannot state which
     # zero it is: nothing collided, or nothing was comparable. An indeterminate
     # live plan never renders as disjoint: it is named in
     # ``live_indeterminate_plans`` and counted in ``live_could_not_check_count``,
-    # never in the checked-and-clean count.
+    # never in the checked-and-clean count. Each row names the source its
+    # surface came from, so a plan compared through its source spec is
+    # distinguishable from one compared on a captured footprint.
     live_plan_surfaces = [
-        {'plan': record['name'], 'comparable': bool(record.get('comparable', bool(record['paths'])))} for record in live
+        {'plan': record['name'], 'comparable': record['comparable'], 'surface_source': record['surface_source']}
+        for record in live
     ]
-    live_indeterminate_plans = sorted(
-        record['name'] for record in live if not record.get('comparable', bool(record['paths']))
-    )
-    live_comparable_records = [record for record in live if record.get('comparable', bool(record['paths']))]
+    live_indeterminate_plans = sorted(record['name'] for record in live if not record['comparable'])
+    live_comparable_records = [record for record in live if record['comparable']]
     live_matched_names = {
         row['candidate'] for row in origin_matches if row.get('candidate_kind') == CANDIDATE_KIND_LIVE_PLAN
     } | {row['candidate'] for row in overlap_matches if row.get('candidate_kind') == CANDIDATE_KIND_LIVE_PLAN}
