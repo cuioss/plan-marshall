@@ -251,9 +251,17 @@ def _run_bounded(
                 _signal_build_group(proc.pid, signal.SIGTERM)
                 _kill_build_group_after_grace(proc)
                 raise subprocess.TimeoutExpired(cmd_parts, timeout_seconds)
-            # TimeoutExpired: this slice ended with the child still running.
-            with contextlib.suppress(subprocess.TimeoutExpired):
-                return proc.wait(timeout=min(remaining, _WAIT_SLICE_SECONDS))
+            try:
+                finished = proc.wait(timeout=min(remaining, _WAIT_SLICE_SECONDS))
+            except subprocess.TimeoutExpired:
+                # This slice ended with the child still running.
+                continue
+            # The child ending is not proof that no signal was forwarded: a
+            # handler that ran during this very wait usually ends the child at
+            # once, while group members that ignore the signal keep running.
+            # Only an exit with no forwarded signal is an ordinary finish.
+            if not received:
+                return finished
         returncode = _kill_build_group_after_grace(proc)
         log_entry(
             'script',
