@@ -16,7 +16,7 @@ Canonical Steps 1-6 for the per-finding triage decision loop (FIX / SUPPRESS / A
 | `plan_id` | Yes | Forwarded to every `manage-findings` / `manage-tasks` / `tools-integration-ci` call. |
 | `WORKTREE` | Yes | Used verbatim for `git -C {WORKTREE}` and as the root for every Edit/Write/Read. |
 | `pr_number` | Conditional | Required when `finding_type=pr-comment` (and for `sonar-issue` when triage needs thread replies on the active PR). |
-| `iteration` | No | Loop-back iteration number (1..3). Surfaced in `display_detail` on `loop_back` outcomes. |
+| `iteration` | No | The requesting source's own loop-back round number, forwarded by the dispatcher. It counts that source's rounds only and has no fixed upper bound. Surfaced in `display_detail` on `loop_back` outcomes. |
 
 Skills the caller MUST forward in `skills[]`:
 - `plan-marshall:manage-findings` — store queries and disposition resolutions
@@ -304,7 +304,7 @@ Triage runs under the dispatcher's 900 s per-agent wrapper. When the budget is n
      --detail "All deferred {finding_type} findings resolved across iterations {start}..{end}"
    ```
 
-The overflow path counts against the calling step's iteration cap (3) — at cap exhaustion the step is marked `failed` and the user is prompted on next phase entry.
+An overflow `loop_back` spends one of the requesting source's own rounds. Whether that round is admitted is decided by the admission gate in [`phase-6-finalize/SKILL.md`](../../phase-6-finalize/SKILL.md) Step 3 item 7b, not here.
 
 ## Step 6: Scope-Deviation Escalation guard
 

@@ -59,7 +59,7 @@ Activate when:
 
 See [references/workflow-overview.md](references/workflow-overview.md) for the visual phase flow diagram.
 
-**Iteration limit**: 3 cycles max for PR issue resolution.
+**Iteration limit**: each step that requests a loop-back may spend `max_iterations` rounds of its own (default 3) — see Step 3 item 7b.
 
 ---
 
@@ -106,8 +106,8 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `phase-6-finalize.max_iterations` | integer | Maximum finalize-verify loops (default: 3) |
-| `phase-6-finalize.loop_back_without_asking` | bool | Symmetric counterpart to `phase-6-finalize.finalize_without_asking`. When `true` (default), a `loop_back` outcome from any phase-6-finalize step (FIX disposition, `pr-comment-overflow`, sonar-roundtrip FIX) continues inline along that step's recorded `loop_back_target` — `5-execute` dispatches the execute pipeline against the freshly-allocated fix tasks and then re-enters the finalize loop, whereas `6-finalize` re-enters the finalize loop directly and dispatches no execute pipeline at all — capped by `max_iterations`. When `false`, the dispatcher halts and returns control to the user. Read at runtime via `manage-config plan phase-6-finalize get --field loop_back_without_asking`. See Step 3 § "Loop-back continuation" for the dispatch shape. |
+| `phase-6-finalize.max_iterations` | integer | Number of loop-back rounds each requesting step may spend (default: 3). The count is per requesting source, not shared — see Step 3 item 7b |
+| `phase-6-finalize.loop_back_without_asking` | bool | Symmetric counterpart to `phase-6-finalize.finalize_without_asking`. When `true` (default), a `loop_back` outcome from any phase-6-finalize step (FIX disposition, `pr-comment-overflow`, sonar-roundtrip FIX) continues inline along that step's recorded `loop_back_target` — `5-execute` dispatches the execute pipeline against the freshly-allocated fix tasks and then re-enters the finalize loop, whereas `6-finalize` re-enters the finalize loop directly and dispatches no execute pipeline at all — each requesting step capped by its own `max_iterations` rounds. When `false`, the dispatcher halts and returns control to the user. Read at runtime via `manage-config plan phase-6-finalize get --field loop_back_without_asking`. See Step 3 § "Loop-back continuation" for the dispatch shape. |
 | `phase-5-execute.commit_and_push` | bool | When `true` (default), the unconditional per-deliverable commits made in phase-5 are pushed and a PR is created. When `false`, the run is local-only — the manifest's `commit_push_disabled` pre-filter strips `push`, `pre-push-quality-gate`, and `pre-submission-self-review` so no push happens. |
 | `phase-6-finalize.finalize_without_asking` | bool | Forward-direction auto-continuation: when `true`, after `5-execute → 6-finalize` transition the orchestrator dispatches `phase-6-finalize` inline rather than halting and prompting the user. Read at runtime via `manage-config plan phase-6-finalize get --field finalize_without_asking`. The reverse-direction symmetric counterpart is `phase-6-finalize.loop_back_without_asking`. |
 | `phase-1-init.branch_strategy` | string | feature / direct |
@@ -707,18 +707,9 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 The WARNING changes the SILENCE, not the branch: the verdict stays `orchestrated: false` and the run proceeds down the non-orchestrated path exactly as before. The three lesson-emitting consumers (`default:lessons-capture`, `plan-marshall:plan-retrospective` Step 5b, and `default:finalize-step-preference-emitter` Step 4) keep receiving `orchestrated` and `epic` unchanged — `detection` is read here and is not added to their runtime inputs. The fourth consumer, `default:emit-landing`, is not among them on this path: an `orchestrated: false` verdict means the compose gate dropped it, so it is absent from a non-orchestrated plan and receives nothing. Emit the WARNING for `unrecognised_id` only: `orchestrated` and `not_orchestrator_pointer` are the ordinary paths and stay quiet.
 
-**Read the persisted `loop_back_iteration` count BEFORE entering the FOR loop** (i.e., here, at the start of Step 3 — outside the loop body). The count lives in `status.metadata.loop_back_iteration`, so it survives FOR-loop re-entries from the loop-back continuation hook (step 7b below), phase re-entries, session restarts, AND the halt-and-prompt cycle of the default `loop_back_without_asking: false` configuration. That durability is what makes the `max_iterations` ceiling enforceable across the plan's whole review chain rather than across one uninterrupted dispatch:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
-  --plan-id {plan_id} --get --field loop_back_iteration
-```
-
-An absent field reads as `0`. Item 7b re-reads the persisted value at its admission gate and writes the incremented value back on every admitted iteration, so this read is the loop's starting view, never the authority — do NOT carry a model-context counter forward as a substitute for the re-read.
+**The `{iteration}` value forwarded to a step is that step's OWN next round.** Wherever this loop forwards `{iteration}` to a dispatched or inline step, the value is `loop_back_budgets[step_ref].spent + 1`, read from `status.metadata.loop_back_budgets` in the `manage-status read` payload the item-1 re-entry check already fetches. An absent entry reads as round 1. It is the requesting step's own round number, not a plan-wide count, so it has no fixed upper bound of its own: the bound is the `loop-back admit` call (item 7b for a step, item 7c for the unified triage), which is the only place a round is counted and spent. No count is read before the loop, and none is carried in model context.
 
 ```text
-loop_back_iteration = <status.metadata.loop_back_iteration, or 0 when absent>   # re-read and re-written at the item-7b admission gate
-
 FOR each step_id in manifest.phase_6.steps:
   # Resolve full step reference. Manifest entries may be:
   #   - bare names (e.g. `push`) — built-in, prepend `default:`
@@ -1496,24 +1487,28 @@ FOR each step_id in manifest.phase_6.steps:
 
       **(i) Ceiling admission gate — the FIRST thing item 7b evaluates, on BOTH knob branches.**
 
-      The ceiling is evaluated BEFORE the `loop_back_without_asking` knob is even read, so it bounds both knob branches on the same terms. Placing it inside the `value == true` branch — as it was — left `loop_back_without_asking: false` with a declared ceiling that could never be reached: each halt-and-prompt returned control, the operator re-ran finalize, and the count started again from zero, so `max_iterations` bounded only one of the two configurations. The knob decides HOW a loop-back continues; the ceiling decides WHETHER one is admitted at all, and the second question comes first.
+      The ceiling is evaluated BEFORE the `loop_back_without_asking` knob is even read, so it bounds both knob branches on the same terms. Nested inside the `value == true` branch it would leave `loop_back_without_asking: false` with a declared ceiling that could never be reached: each halt-and-prompt returns control, the operator re-runs finalize, and a count that did not survive the halt would start again from zero. The knob decides HOW a loop-back continues; the ceiling decides WHETHER one is admitted at all, and the second question comes first.
 
-      Read the persisted iteration count. It lives in `status.metadata.loop_back_iteration`, NOT in model context — an in-memory counter is reset by every session restart, every phase re-entry, and every halt-and-prompt cycle, which is exactly what made the declared ceiling unenforceable:
+      **The budget is per requesting source.** Each source that requests a loop-back spends rounds from its own count in `status.metadata.loop_back_budgets`, so a source that exhausts its rounds cannot starve another of rounds it never used. The source here is `{step_ref}` — the step whose `mark-step-done` recorded the `loop_back` outcome. The ceiling `phase-6-finalize.max_iterations` (default 3, read in Step 2) is therefore the number of rounds EACH requesting step may spend, not a total shared across them.
 
-         python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
-           --plan-id {plan_id} --get --field loop_back_iteration
+      **Admission is ONE call.** It reads the source's persisted count, runs the comparison, and on an admission persists the increment in the same call — the count lives in status metadata, never in model context, and the decision cannot come apart from the write (see `manage-status` Canonical invocations → `loop-back — admit`):
 
-      An absent field reads as `0` (no loop-back has been admitted for this plan yet). Capture the value as `{loop_back_iteration}`.
+         python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-back admit \
+           --plan-id {plan_id} --source {step_ref} --ceiling {max_iterations}
 
-      **The comparison is an ADMISSION test over the iteration about to be spent, not a report on one already spent.** Admitting this loop-back would spend iteration `{loop_back_iteration} + 1`. Refuse to admit it when doing so would exceed the ceiling:
+      Capture `admitted`, `iteration` and `effective_ceiling` from the returned TOON. `iteration` is the round this call decided on (the source's spent count plus one), and `effective_ceiling` is the bound it was compared against. On any `status` other than `success`, log the returned `error` and `message` at ERROR and STOP — an unreadable budget is not an admission.
 
-         WHEN `{loop_back_iteration} + 1 > max_iterations` (`phase-6-finalize.max_iterations`, default 3, read in Step 2):
+      **In-flight rule.** A status that still carries the retired scalar `loop_back_iteration` is not read: the scalar is attributed to no source, and every source starts at zero.
+
+      **The comparison is an ADMISSION test over the round about to be spent, not a report on one already spent.** Branch on `admitted`:
+
+         WHEN `admitted == false` (the source has spent every round it holds):
 
              python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
                work --plan-id {plan_id} --level WARNING \
-               --message "[STATUS] (plan-marshall:phase-6-finalize) Loop-back ceiling breached — {step_ref} requested iteration {loop_back_iteration + 1} against a ceiling of {max_iterations}; refusing to admit it. The findings this round raised have no remaining iteration in which their fixes could be reviewed."
+               --message "[STATUS] (plan-marshall:phase-6-finalize) Loop-back ceiling breached — {step_ref} requested iteration {iteration} against a ceiling of {effective_ceiling}; refusing to admit it. The findings this round raised have no remaining iteration in which their fixes could be reviewed."
 
-             Display: "Stopped one round short. This run allows {max_iterations} rounds of fix-and-recheck; all {max_iterations} are spent, and {step_ref} asked for another, so the run halted instead of granting it. What that costs you: the problems found in this last round ARE recorded, but nothing checked the fixes for them — there was no round left to do it in. Nothing was merged.
+             Display: "Stopped one round short. {step_ref} is allowed {effective_ceiling} rounds of fix-and-recheck; all {effective_ceiling} are spent, and it asked for another, so the run halted instead of granting it. What that costs you: the problems found in this last round ARE recorded, but nothing checked the fixes for them — there was no round left to do it in. Nothing was merged.
                See exactly what is unreviewed with 'python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate list --plan-id {plan_id} --phase 6-finalize --resolution pending',
                and the fix tasks still open for them with 'python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id {plan_id} --status pending'.
                Then re-run finalize when you are ready to give it another round."
@@ -1522,18 +1517,13 @@ FOR each step_id in manifest.phase_6.steps:
 
       **This refusal is a distinct terminal outcome**, not the ordinary halt-and-prompt of the `loop_back_without_asking: false` branch below. The two are reported separately on purpose: the knob halt means *"a loop-back is available and awaits your go-ahead"*, whereas this one means *"a loop-back was requested and REFUSED, and the work it would have reviewed is unreviewed"*. Collapsing them into one message would tell an operator the run merely paused where in fact the review chain ended one round short.
 
-      Otherwise the iteration IS admitted. Persist the incremented count BEFORE continuing, so a session lost mid-iteration cannot silently return the plan a free round:
-
-         python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
-           --plan-id {plan_id} --set --field loop_back_iteration --value {loop_back_iteration + 1}
-
-      Then emit the canonical iteration log line:
+      Otherwise (`admitted == true`) the round IS admitted, and the `admit` call has ALREADY persisted the increment — there is no separate write, so a session lost mid-round cannot silently return the source a free one. Emit the canonical iteration log line:
 
          python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
            work --plan-id {plan_id} --level INFO \
-           --message "[STATUS] (plan-marshall:phase-6-finalize) Loop-back iteration {loop_back_iteration + 1}/{max_iterations}"
+           --message "[STATUS] (plan-marshall:phase-6-finalize) Loop-back iteration {iteration}/{effective_ceiling} for {step_ref}"
 
-      `max_iterations` keeps its declared default — this gate makes the existing value load-bearing and does not change it.
+      `max_iterations` keeps its declared default — this gate makes the existing value load-bearing per requesting step and does not change it.
 
       **(i-b) Declared-footprint refresh — re-derive `references.affected_files` on the admitted loop-back.**
 
@@ -1550,7 +1540,7 @@ FOR each step_id in manifest.phase_6.steps:
 
          python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
            work --plan-id {plan_id} --level INFO \
-           --message "[STATUS] (plan-marshall:phase-6-finalize) Declared-footprint refresh on loop-back iteration {loop_back_iteration + 1}: {added_count} path(s) added, total {total} — added: {added}"
+           --message "[STATUS] (plan-marshall:phase-6-finalize) Declared-footprint refresh on loop-back iteration {iteration} for {step_ref}: {added_count} path(s) added, total {total} — added: {added}"
 
       On any error status — the `sync-affected-files` error set, whose single source of truth is [`../manage-references/SKILL.md`](../manage-references/SKILL.md) § "Error Responses" (the rows tagged `sync-affected-files`); it is cross-referenced rather than restated so this call site cannot drift out of agreement with its sibling consumers — the refresh wrote nothing. This is **non-blocking** — the loop-back still proceeds, because the `affected_files` union never removes anything and a failed refresh leaves the key exactly as the last successful derivation left it. Log the failure at WARNING so the re-entry is not silently reading an unrefreshed value, then continue to (ii):
 
@@ -1567,19 +1557,19 @@ FOR each step_id in manifest.phase_6.steps:
 
       Read the returned `value`:
 
-      - IF `value == false`: halt the FOR loop, mark the finalize phase as needing a re-entry, and emit the user-facing prompt (named for the persisted `loop_back_target`). The iteration has already been admitted and persisted, so the operator's re-run resumes against the incremented count rather than a fresh zero:
+      - IF `value == false`: halt the FOR loop, mark the finalize phase as needing a re-entry, and emit the user-facing prompt (named for the persisted `loop_back_target`). The round has already been admitted and persisted, so the operator's re-run resumes against the source's incremented count rather than a fresh zero:
           python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
             work --plan-id {plan_id} --level INFO \
-            --message "[STATUS] (plan-marshall:phase-6-finalize) Loop-back signalled by {step_ref} (target={loop_back_target}), iteration {loop_back_iteration + 1}/{max_iterations} admitted: returning control to user (loop_back_without_asking=false)"
+            --message "[STATUS] (plan-marshall:phase-6-finalize) Loop-back signalled by {step_ref} (target={loop_back_target}), iteration {iteration}/{effective_ceiling} admitted: returning control to user (loop_back_without_asking=false)"
         IF `loop_back_target == "5-execute"`:
           Display: "Review turned up problems, and tasks to fix them have been written. Nothing is merged yet. Run '/plan-marshall action=execute plan={plan_id}' when you are ready to work through them."
         IF `loop_back_target == "6-finalize"`:
           Display: "Review turned up problems that can be settled without changing any code. Nothing is merged yet. Run '/plan-marshall action=finalize plan={plan_id}' to pick the run back up at the step that raised them."
         STOP.
 
-      - IF `value == true` (default): proceed directly to the granularity branch below. The ceiling has already been evaluated and the iteration already persisted at (i), so this branch performs no counting of its own.
+      - IF `value == true` (default): proceed directly to the granularity branch below. The ceiling has already been evaluated and the round already persisted at (i), so this branch performs no counting of its own.
 
-      **Granularity branch (AFTER the symmetric-knob and ceiling gates have passed)** — the `loop_back_target` value selects only the dispatch shape. Both branches share the same iteration counter and ceiling.
+      **Granularity branch (AFTER the symmetric-knob and ceiling gates have passed)** — the `loop_back_target` value selects only the dispatch shape. It does not select the budget: a source spends from its one count whichever target its loop-back names, so both branches are bound by that source's count and ceiling.
 
       - IF `loop_back_target == "6-finalize"` (inline replay for inline-fixable dispositions): the calling step did NOT issue a `manage-status set-phase --phase 5-execute` call, so the persisted `current_phase` is still `6-finalize`. The continuation hook **skips the phase-5-execute re-dispatch entirely** — do NOT call `manage-status set-phase`, do NOT load `Skill: phase-5-execute`. Just BREAK out of the current FOR iteration and RE-ENTER the FOR loop from the start of `manifest.phase_6.steps`. The resumable re-entry check (item 1 above) sees the `loop_back`-marked step and re-fires it directly.
 
@@ -1599,7 +1589,7 @@ FOR each step_id in manifest.phase_6.steps:
 
              Note: the BREAK + RE-ENTER above is a control-flow construct, not a per-step skip. The FOR loop re-iteration uses the same manifest list and the same per-step resumable check; the only state that changes is the `phase_steps["6-finalize"][step_id]` records (the dispatched agent will record a fresh outcome on its next run).
 
-      The `loop_back_iteration` counter is PERSISTED to `status.metadata.loop_back_iteration` and read back at (i) on every evaluation. It is deliberately NOT held in model context: a counter that lives only for the duration of one dispatch is reset by a session restart, by a phase re-entry, and — most importantly — by every halt-and-prompt cycle of the `loop_back_without_asking: false` configuration, which is precisely the path that loops most. A fresh phase-6-finalize entry therefore resumes against the count the previous entry left behind rather than starting over at 0, so the ceiling bounds the plan's whole review chain instead of one uninterrupted dispatch. The manifest's resumable re-entry check is unchanged: it still skips already-`done` steps, so re-entering after a restart re-runs only the steps that recorded `loop_back` or `failed` on the previous invocation.
+      Each source's count is PERSISTED in `status.metadata.loop_back_budgets` and read back by the `admit` call at (i) on every evaluation. It is deliberately NOT held in model context: a count that lives only for the duration of one dispatch is reset by a session restart, by a phase re-entry, and — most importantly — by every halt-and-prompt cycle of the `loop_back_without_asking: false` configuration, which is precisely the path that loops most. A fresh phase-6-finalize entry therefore resumes against the counts the previous entry left behind, so each source's ceiling bounds that source's whole review chain instead of one uninterrupted dispatch. The manifest's resumable re-entry check is unchanged: it still skips already-`done` steps, so re-entering after a restart re-runs only the steps that recorded `loop_back` or `failed` on the previous invocation.
 
   7c. Wait-region unified triage hook (fires after the LATER wait-region producer completes):
 
@@ -1637,7 +1627,7 @@ FOR each step_id in manifest.phase_6.steps:
 
               WORKTREE: {worktree_path}
           ```
-      (4) Consume the return. The unified triage owns the RESPOND loop (both `github_pr post_responses` for `pr-comment` thread-replies AND `sonar post_responses` for `sonar-issue` server-side dismissals, each keyed by `hash_id`). On `status: loop_back` (FIX dispositions created fix tasks OR overflow deferred), route it through the SAME continuation machinery as item 7b: read `loop_back_target` from the return, apply the symmetric `loop_back_without_asking` knob + the `max_iterations` ceiling, then re-enter per the granularity branch (`5-execute` full-phase rollback / `6-finalize` inline replay). A `6-finalize` re-entry re-fires the wait-region producers (they are HEAD-dependent — a fix commit advanced HEAD), which re-FIND against the new tree, and this hook runs the unified triage again. On `status: success`, every pending finding resolved with no loop-back — continue the FOR loop.
+      (4) Consume the return. The unified triage owns the RESPOND loop (both `github_pr post_responses` for `pr-comment` thread-replies AND `sonar post_responses` for `sonar-issue` server-side dismissals, each keyed by `hash_id`). On `status: loop_back` (FIX dispositions created fix tasks OR overflow deferred), route it through the SAME continuation machinery as item 7b: read `loop_back_target` from the return, run the item-7b admission gate, then apply the symmetric `loop_back_without_asking` knob. The unified triage is dispatcher-owned and is not a manifest step, so it has no `step_ref` to spend from — the admission call passes the fixed source name `wait-region-unified-triage` (`loop-back admit --source wait-region-unified-triage --ceiling {max_iterations}`), which gives the triage a budget of its own, separate from every step's. Re-enter per the granularity branch (`5-execute` full-phase rollback / `6-finalize` inline replay). A `6-finalize` re-entry re-fires the wait-region producers (they are HEAD-dependent — a fix commit advanced HEAD), which re-FIND against the new tree, and this hook runs the unified triage again. On `status: success`, every pending finding resolved with no loop-back — continue the FOR loop.
 
       This hook is dispatcher-owned and produces NO `phase_steps["6-finalize"]` record of its own (it is not a manifest step); the wait-region producer steps carry the `done` records. The single unified pass is the ONLY place `pr-comment` and `sonar-issue` findings are triaged in finalize — the retired per-producer `producer=pr-comment` and `producer=sonar` dispatches no longer run.
 END FOR
@@ -1654,11 +1644,11 @@ END FOR
 | `finalize_without_asking` | `loop_back_without_asking` | Behaviour |
 |---------------------------|----------------------------|-----------|
 | `false` | any | The forward `5-execute → 6-finalize` transition halts and prompts the user. Loop-back never fires inline because finalize is not entered in the same orchestration cycle. |
-| `true` (default) | `false` | Forward auto-continuation; loop-back halts at the inline execute re-entry point and prompts the user. Bounded by `max_iterations` exactly as the row below — the ceiling is evaluated before this knob is read, and the count is persisted, so the operator's re-run resumes against it instead of restarting at zero. |
-| `true` (default) | `true` (default) | Full unattended cycle — the default shape. A loop_back outcome re-dispatches execute inline up to `max_iterations` times, then refuses to admit a further one even with the flag set. |
+| `true` (default) | `false` | Forward auto-continuation; loop-back halts at the inline execute re-entry point and prompts the user. Each requesting step is bounded by `max_iterations` exactly as in the row below — the ceiling is evaluated before this knob is read, and each source's count is persisted, so the operator's re-run resumes against it instead of restarting at zero. |
+| `true` (default) | `true` (default) | Full unattended cycle — the default shape. A loop_back outcome continues inline until the step that requested it has spent its `max_iterations` rounds, then a further one from that step is refused even with the flag set. |
 | `false` | `true` | Effectively `false`/`false` from the user's perspective: forward halts and prompts before phase-6-finalize ever runs, so the loop-back hook is unreachable in the same orchestration cycle. |
 
-**The ceiling binds both rows.** It is evaluated at the item-7b admission gate BEFORE `loop_back_without_asking` is consulted, and its count is persisted to `status.metadata.loop_back_iteration`. Evaluating it ahead of the knob read is what makes it bind the auto-continuing default, where the ceiling is the ONLY terminator of the cycle. Persisting the count is what makes it bind the `false` configuration too: a ceiling counted in model context would leave that shape unbounded in practice, because every halt-and-prompt returns control and a re-entry that restarted the count at zero would let a plan loop indefinitely one operator re-run at a time while `max_iterations` was nominally in force.
+**The ceiling binds both rows, per requesting source.** It is evaluated at the item-7b admission gate BEFORE `loop_back_without_asking` is consulted, and each source's count is persisted to `status.metadata.loop_back_budgets` by the same `loop-back admit` call that decides the admission. Evaluating it ahead of the knob read is what makes it bind the auto-continuing default, where the ceiling is the ONLY terminator of a source's cycle. Persisting the count is what makes it bind the `false` configuration too: a ceiling counted in model context would leave that shape unbounded in practice, because every halt-and-prompt returns control and a re-entry that restarted the count at zero would let a plan loop indefinitely one operator re-run at a time while `max_iterations` was nominally in force. Because the count is kept per source, the plan's total number of rounds is not `max_iterations` — it is at most `max_iterations` for each source that requests any.
 
 Note the mechanics differ from the same-suffixed merge knob: `loop_back_without_asking=false` halts the dispatcher and *instructs* the operator via a Display + STOP prompt (no `AskUserQuestion` is fired — see § "Loop-back continuation hook" item 7b), whereas `final_merge_without_asking=false` fires a genuine inline pre-merge `AskUserQuestion` gate (see [standards/branch-cleanup.md](standards/branch-cleanup.md) § "Pre-Merge Confirmation Gate") — same suffix, opposite mechanics.
 
@@ -1816,12 +1806,12 @@ archive_path: .plan/local/archived-plans/{date}-{plan_id}
 next_state: complete
 ```
 
-**Loop Back** (PR issues found, iteration < 3):
+**Loop Back** (PR issues found, and the requesting step still held a round — `iteration` is that step's own round):
 
 ```toon
 status: loop_back
 plan_id: {plan_id}
-iteration: {current_iteration}
+iteration: {iteration}
 reason: {ci_failure|review_comments|sonar_issues}
 next_phase: 5-execute
 fix_tasks_created: {count}

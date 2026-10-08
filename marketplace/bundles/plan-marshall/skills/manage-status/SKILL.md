@@ -774,6 +774,78 @@ records[2]{kind,head,verdict,gap_class,admissible,granted_over,reason,granted_at
   pre-merge-consent,76c7200b6,valid,merge-action,false,operator confirmed merge of PR #42 at this HEAD,operator selected 'Yes merge',2026-01-15T14:41:00Z
 ```
 
+### loop-back
+
+Budget finalize loop-back rounds **per requesting source**. Every source that can request a loop-back — a finalize step, or the dispatcher-owned unified triage — spends rounds from its own count, so one source exhausting its rounds cannot starve another of rounds it never used. The store lives in `status.metadata.loop_back_budgets`, keyed by source, beside the `phase_steps` and `merge_authorizations` maps.
+
+**Storage shape**:
+
+```json
+status.metadata.loop_back_budgets[{source}] = {
+  "spent": <int>,
+  "granted": <int>
+}
+```
+
+`spent` is how many rounds the source has been admitted for. `granted` is how many rounds beyond the configured ceiling the source has been given. A source with no entry has spent nothing and been granted nothing, and the entry is created by the first admission.
+
+**The retired scalar is never read.** A `status.json` that still carries `metadata.loop_back_iteration` is treated as carrying no budget: the scalar is attributed to no source, and every source starts at zero.
+
+#### loop-back admit
+
+The admission gate. Admits the source's next round when `spent + 1 <= ceiling + granted`, and persists the increment in the same call — the decision and the write cannot come apart. A refusal writes nothing.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-back admit \
+  --plan-id {plan_id} \
+  --source {source} \
+  --ceiling {ceiling}
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier
+- `--source` (required): The requesting source whose budget is spent — the finalize `step_ref` that recorded the `loop_back` outcome, or the fixed name the dispatcher passes for its own unified triage. Any non-empty token is accepted; the membership is the composed step roster, not this parser.
+- `--ceiling` (required, non-negative integer): The configured number of rounds each requesting source may spend (`plan.phase-6-finalize.max_iterations`)
+
+**Return fields**:
+
+| Field | Meaning |
+|-------|---------|
+| `admitted` | `true` when the round was admitted and the increment persisted; `false` when it was refused and nothing was written |
+| `source` | The source the verdict applies to, echoed |
+| `iteration` | The round the call decided on — `spent + 1`. On an admission it is the round now spent; on a refusal it is the round that was requested and not given |
+| `effective_ceiling` | `ceiling + granted` — the bound `iteration` was compared against |
+| `ceiling` | The configured ceiling, echoed |
+| `granted` | The rounds beyond the configured ceiling this source holds |
+
+Both verdicts exit `0` with `status: success` — branch on `admitted`, never on the exit code.
+
+**Output — admitted** (TOON):
+```toon
+status: success
+plan_id: my-feature
+admitted: true
+source: automatic-review
+iteration: 2
+effective_ceiling: 3
+ceiling: 3
+granted: 0
+```
+
+**Output — refused** (TOON, nothing written):
+```toon
+status: success
+plan_id: my-feature
+admitted: false
+source: automatic-review
+iteration: 4
+effective_ceiling: 3
+ceiling: 3
+granted: 0
+```
+
+A store the verb cannot interpret — `loop_back_budgets` that is not a map, a source entry that is not a record, or a `spent` / `granted` value that is not a non-negative integer — returns `error: invalid_budget_store` and writes nothing. It is not read as an empty budget, because that would hand the source rounds it may already have spent.
+
 ### get-context
 
 Get combined status context (phase, progress, metadata) in one call.
@@ -1628,6 +1700,15 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-
 
 Returns `any_authorized`, `any_admissible`, `authorized_kinds[]`, `lapsed_kinds[]`, `admissible_kinds[]`, `inadmissible_kinds[]`, and a `records[]` table carrying one `verdict` plus one `admissible` flag per record (`valid` when `record.head` equals `--head`; `admissible` when additionally `record.gap_class` equals `--gap-class`). There is no `--kind` flag. Fail-closed: an empty store returns both aggregates false with empty lists.
 
+### loop-back — admit
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-back admit \
+  --plan-id PLAN_ID --source SOURCE --ceiling CEILING
+```
+
+Admits the source's next loop-back round when `spent + 1 <= CEILING + granted`, persisting the increment to `metadata.loop_back_budgets[SOURCE]` in the same call. Returns `admitted`, `source`, `iteration`, `effective_ceiling`, `ceiling` and `granted`; a refusal carries the same fields with `admitted: false` and writes nothing. See § [loop-back](#loop-back) under Operations for the record shape.
+
 ### change-type-heuristic
 
 ```bash
@@ -1733,6 +1814,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status self-t
 | `unknown_head_at_completion` | 1 | `mark-step-done`: `--outcome=done` with a `--head-at-completion` revision that resolves to no commit in the local object store (`git rev-parse --verify {sha}^{commit}` fails — fabricated string, non-commit object, or leading-`-` option-injection shape). The record carries the resolved full-hex commit ID, never the supplied spelling. A fabricated anchor records a verdict nobody can locate in history, so it is refused rather than persisted — nothing is written. Resolve the worktree HEAD immediately before the call and pass the real SHA. |
 | `step_record_missing` | 0 | `assert-step-recorded --require-terminal`: no terminal record exists under any key for the named phase (the dispatched step returned without recording a `mark-step-done` outcome). The verdict carries reportable finding fields (`finding_type: missing-yield`, `finding_severity: error`, `finding_title`, `finding_detail`) so the absent yield is filed to the Q-Gate findings store instead of staying silent. Exit code is 0 — the post-dispatch guard branches on the TOON `error` field, not the process exit code. |
 | `step_record_mismatched_key` | 0 | `assert-step-recorded --require-terminal`: the queried step has no terminal record, but a near-miss orphan terminal record exists under a different key in the same phase (the dispatched step recorded under the wrong key — e.g. a bare skill name instead of its fully-qualified manifest `step_id`). Carries `orphan_key` and `orphan_outcome`. Exit code is 0 — the guard branches on the TOON `error` field. |
+| `invalid_budget_store` | 0 | `loop-back admit`: `metadata.loop_back_budgets`, the source's entry, or its `spent` / `granted` value does not have the documented shape. Nothing is written, and the store is not read as an empty budget. Exit code is 0 — the caller branches on the TOON `error` field. |
 | `worktree_unresolved` | 1 | `phase_handshake verify`: `metadata.use_worktree==true` and `metadata.worktree_path` is non-empty but does not resolve on the filesystem. `get-worktree-path` does not emit this error — it returns `worktree_state: pending` for the pre-materialization state. |
 
 ---

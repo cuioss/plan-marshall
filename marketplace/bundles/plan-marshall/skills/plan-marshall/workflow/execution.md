@@ -649,7 +649,7 @@ When `phase-6-finalize` returns `status: loop_back` — a step recorded `outcome
 - `loop_back_target == "5-execute"`: re-dispatches phase-5-execute against the freshly-allocated fix tasks, then transitions `5-execute → 6-finalize` via the standard `finalize_without_asking` gate. This tier is **doubly-gated**: both `loop_back_without_asking` AND `finalize_without_asking` must be `true` for a full unattended cycle — when `finalize_without_asking` is `false` the inline cycle halts at the same prompt the forward path uses.
 - `loop_back_target == "6-finalize"`: skips the phase-5-execute re-dispatch entirely and re-enters the finalize step loop. This tier is single-gated by `loop_back_without_asking` only.
 
-Both branches are capped by `phase-6-finalize.max_iterations` (default 3, counted across both tiers).
+Both branches are capped by `phase-6-finalize.max_iterations` (default 3), counted **per requesting source**: each step that requests a loop-back spends rounds from its own count, whichever of the two targets its loop-back names, so one step exhausting its rounds leaves every other step's rounds untouched. The count is kept and the round admitted by the `manage-status loop-back admit` call in `phase-6-finalize/SKILL.md` Step 3 item 7b.
 
 **ELSE (`loop_back_without_asking == false`)** — assert the persisted `current_phase` matches the recorded `loop_back_target` (else log the invariant violation and **STOP** without prompting), then display the explicit target-named user prompt and **STOP**:
 

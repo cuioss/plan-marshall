@@ -32,7 +32,7 @@ The exit-code contract for every `python3 .plan/execute-script.py` call in this 
 | `WORKTREE` | Yes | Used verbatim for `git -C {WORKTREE}` and as the root for every Edit/Write/Read. |
 | `pr_number` | Conditional | Required for `pr-comment` (thread replies) and for `pr-state` (CI wait + multi-source fetch). |
 | `caller_phase` | Optional | Explicit caller-phase override the main-context orchestrator passes when dispatching this phase-agnostic workflow, so the level resolver tracks the caller's phase. See `ext-point-execution-context-workflow.md` § Phase-context propagation for phase-agnostic workflows. |
-| `iteration` | No | Loop-back iteration number (1..3). Surfaced in `display_detail` on `loop_back` outcomes. |
+| `iteration` | No | The requesting source's own loop-back round number, forwarded by the dispatcher. It counts that source's rounds only and has no fixed upper bound. Surfaced in `display_detail` on `loop_back` outcomes. |
 
 Skills the caller MUST forward in `skills[]`:
 

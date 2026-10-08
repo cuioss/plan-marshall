@@ -505,7 +505,7 @@ If `set-steps` returns `missing_order` or `order_collision`, resolve it at the *
 
 The steward MUST NEVER mutate a shared skill's source `order:` frontmatter to resolve a config-layer ordering concern. Editing a shared skill's `order:` to break a sort tie leaves an uncommitted source mutation in the worktree that risks leaking into an unrelated plan's commit, and changes the global seed order for every project — a config-layer concern resolved by a source-layer side effect. Sequence the array, never the source.
 
-For max iterations (verification default 5, finalize default 3):
+For max iterations (verification default 5; finalize default 3, the rounds each requesting step may spend):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -638,7 +638,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize set --field loop_back_without_asking --value {true|false}
 ```
 
-The `loop_back_without_asking` knob is the structural counterpart to `finalize_without_asking`: forward gates the `5-execute → 6-finalize` transition, reverse gates both loop-back tiers when a phase-6-finalize step records `outcome: loop_back` (FIX disposition, `pr-comment-overflow`, sonar-roundtrip FIX) — the `5-execute` target's inline re-dispatch, and the `6-finalize` target's in-place replay of the loop-back-marked step, which never enters execute at all. Both default to `true`, so the lifecycle runs unattended in both directions once planning has been approved. Set either to `false` to be asked at that boundary. Reverse loop-back is bounded by `phase-6-finalize.max_iterations` (default 3) — the dispatcher refuses to admit a further loop-back once the cap is reached, even with the flag set, and halts on a distinct terminal outcome: the findings that round raised are recorded, but their fixes are unreviewed. That refusal is what keeps the auto-continuing default from looping without end, and it is deliberately not the ordinary halt-and-prompt of the `false` branch — reporting it as one would tell an operator the run merely paused where in fact the review chain ended a round short.
+The `loop_back_without_asking` knob is the structural counterpart to `finalize_without_asking`: forward gates the `5-execute → 6-finalize` transition, reverse gates both loop-back tiers when a phase-6-finalize step records `outcome: loop_back` (FIX disposition, `pr-comment-overflow`, sonar-roundtrip FIX) — the `5-execute` target's inline re-dispatch, and the `6-finalize` target's in-place replay of the loop-back-marked step, which never enters execute at all. Both default to `true`, so the lifecycle runs unattended in both directions once planning has been approved. Set either to `false` to be asked at that boundary. Reverse loop-back is bounded by `phase-6-finalize.max_iterations` (default 3), counted per requesting step — the dispatcher refuses a further loop-back from the step that has spent its own rounds, even with the flag set, and leaves every other step's rounds untouched. It halts on a distinct terminal outcome: the findings that round raised are recorded, but their fixes are unreviewed. That refusal is what keeps the auto-continuing default from looping without end, and it is deliberately not the ordinary halt-and-prompt of the `false` branch — reporting it as one would tell an operator the run merely paused where in fact the review chain ended a round short.
 
 ---
 
