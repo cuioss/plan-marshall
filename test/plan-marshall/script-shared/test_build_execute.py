@@ -711,6 +711,7 @@ class TestExplicitOverrideAgainstRealRunConfig:
 _RESULT_PATHS = [
     (0, None, _LOG_FILE, 'success'),
     (1, None, _LOG_FILE, 'error'),
+    (-signal.SIGKILL, None, _LOG_FILE, 'killed'),
     (None, subprocess.TimeoutExpired(cmd='test', timeout=300), _LOG_FILE, 'timeout'),
     (None, FileNotFoundError(), _LOG_FILE, 'error'),
     (None, OSError('denied'), _LOG_FILE, 'error'),
@@ -720,6 +721,7 @@ _RESULT_PATHS = [
 _RESULT_PATH_IDS = [
     'build-succeeded',
     'build-exited-non-zero',
+    'build-killed-by-signal',
     'build-timed-out',
     'wrapper-executable-not-found',
     'os-error-during-execution',
@@ -1033,7 +1035,7 @@ def test_execute_direct_base_preserves_explicit_project_dir(monkeypatch):
 
 
 # =============================================================================
-# The launch helper stops the whole build process tree
+# The launch helper stops the build process group
 # =============================================================================
 #
 # These cases run REAL processes: the property under test is which processes are
@@ -1192,7 +1194,7 @@ def _stop_wrapper(wrapper):
 
 @_POSIX_ONLY
 class TestTimeoutStopsTheBuildTree:
-    """An expired bound stops every descendant of the build, not only its child."""
+    """An expired bound stops the build's process group, not only its child."""
 
     def test_timed_out_build_leaves_no_grandchild_and_teaches_the_learner(self, tmp_path):
         build_argv, pid_file = _tree_build_argv(tmp_path)
@@ -1296,6 +1298,74 @@ class TestForwardedSignalStopsTheBuildTree:
         assert len(error_messages) == 1
         assert 'SIGTERM' in error_messages[0]
         assert 'SIGKILL of this wrapper cannot be forwarded' in error_messages[0]
+
+
+#: The pid the mocked build child reports. ``os.killpg`` is mocked wherever this
+#: is used, so the value is only ever compared, never signalled.
+_TRAPPING_CHILD_PID = 424242
+
+#: ``(exit code the child chooses, status that code yields when no signal was
+#: forwarded)``. The first is the shell convention for "ended by SIGTERM", the
+#: second a clean exit — the two shapes a child that traps the signal can take.
+_TRAPPED_EXITS = [(128 + signal.SIGTERM, 'error'), (0, 'success')]
+
+_TRAPPED_EXIT_IDS = ['child-exits-non-zero', 'child-exits-zero']
+
+
+def _execute_against_trapping_child(tmp_path, exit_code, *, forward):
+    """Run ``execute_direct_base`` against a mocked child that exits with ``exit_code``.
+
+    With ``forward`` set, the SIGTERM handler the launch helper installed is run
+    while the child is first waited for — what a SIGTERM delivered to the wrapper
+    does — and the child then ends with ``exit_code`` instead of dying by the
+    signal. Returns ``(result, learner mock, killpg mock)``.
+    """
+    child = MagicMock()
+    child.pid = _TRAPPING_CHILD_PID
+    pending = iter([forward])
+
+    def _wait(timeout=None):
+        if next(pending, False):
+            handler = signal.getsignal(signal.SIGTERM)
+            assert callable(handler), 'the launch helper installed no SIGTERM handler to forward with'
+            handler(signal.SIGTERM, None)
+        return exit_code
+
+    child.wait.side_effect = _wait
+    with (
+        patch('_build_execute.create_log_file', return_value=str(tmp_path / 'build.log')),
+        patch('_build_execute.timeout_resolve', return_value=(300, 'learned')),
+        patch('_build_execute.timeout_set') as mock_tset,
+        patch('_build_execute.log_entry'),
+        patch.object(_build_execute.subprocess, 'Popen', return_value=child),
+        patch.object(_build_execute.os, 'killpg') as mock_killpg,
+    ):
+        result = _call_execute(project_dir=str(tmp_path))
+    return result, mock_tset, mock_killpg
+
+
+@_POSIX_ONLY
+class TestForwardedStopIsANonFinishWhateverTheChildExitsWith:
+    """A forwarded signal makes the run ``killed`` even when the child exits by itself."""
+
+    @pytest.mark.parametrize(('exit_code', '_finish_status'), _TRAPPED_EXITS, ids=_TRAPPED_EXIT_IDS)
+    def test_forwarded_stop_is_killed_and_does_not_teach_the_learner(self, tmp_path, exit_code, _finish_status):
+        result, mock_tset, mock_killpg = _execute_against_trapping_child(tmp_path, exit_code, forward=True)
+
+        assert mock_killpg.call_args_list[0] == call(_TRAPPING_CHILD_PID, signal.SIGTERM)
+        assert result['status'] == 'killed'
+        assert result['exit_code'] == -signal.SIGTERM
+        mock_tset.assert_not_called()
+
+    @pytest.mark.parametrize(('exit_code', 'finish_status'), _TRAPPED_EXITS, ids=_TRAPPED_EXIT_IDS)
+    def test_control_same_exit_code_with_no_forwarded_signal_is_a_finish(self, tmp_path, exit_code, finish_status):
+        """CONTROL: the exit code alone does not make a run ``killed``."""
+        result, mock_tset, mock_killpg = _execute_against_trapping_child(tmp_path, exit_code, forward=False)
+
+        mock_killpg.assert_not_called()
+        assert result['status'] == finish_status
+        assert result['exit_code'] == exit_code
+        mock_tset.assert_called_once()
 
 
 @_POSIX_ONLY

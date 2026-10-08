@@ -60,7 +60,7 @@ outrank log content — and a job log carrying no parseable TOON status keeps
 today's exit-code verdict, so a non-wrapper command run through the daemon is
 unaffected.
 
-**A supervisor timeout stops the whole process tree, not one link of it.** The
+**A supervisor timeout stops the child's process group, not only the child.** The
 build child is the first link of a chain (executor, build wrapper, ``./pw``,
 ``uv``, pytest, xdist workers), so signalling only that pid leaves the rest
 running and a re-run stacks a second suite on the first. On POSIX the child is
@@ -335,7 +335,7 @@ def _signal_job_group(pgid: int, signum: int) -> None:
 
 
 async def _stop_job_tree(proc: asyncio.subprocess.Process) -> None:
-    """Stop a timed-out job's whole process tree and reap the child.
+    """Stop a timed-out job's process group and reap the child.
 
     On POSIX the child leads its own session, so its pid is the id of a process
     group holding every descendant that did not move itself elsewhere. The group
@@ -406,8 +406,8 @@ async def run_job(
     if progress is None:
         progress = JobProgress()
 
-    # On POSIX the child leads its own session, so a timeout can stop every
-    # descendant through the child's process group (see _stop_job_tree).
+    # On POSIX the child leads its own session, so a timeout can stop the
+    # child's process group (see _stop_job_tree).
     proc = await asyncio.create_subprocess_exec(
         *command,
         cwd=cwd,

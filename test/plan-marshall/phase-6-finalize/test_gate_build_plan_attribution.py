@@ -150,8 +150,14 @@ def test_routing_seam_submits_the_resolved_build_for_the_plan(resolved_for_plan,
 # ---------------------------------------------------------------------------
 
 #: A resolve call on one folded line. ``top`` is everything between the notation
-#: and the ``resolve`` verb — the only place the top-level flag is accepted.
-_RESOLVE_CALL = re.compile(r'manage-architecture:architecture\s+(?P<top>(?:\S+\s+)*?)resolve\s+--command\s')
+#: and the ``resolve`` verb — the only place the top-level flag is accepted. It
+#: admits only flags, each with at most one value, so ``resolve`` is matched as
+#: the VERB and never as another verb's argument. Nothing after the verb is
+#: constrained: where ``--command`` sits among the leaf flags does not decide
+#: whether a call is in the population.
+_RESOLVE_CALL = re.compile(
+    r'manage-architecture:architecture[ \t]+(?P<top>(?:--\S+[ \t]+(?:(?!--)\S+[ \t]+)?)*?)resolve(?=\s|$)'
+)
 
 _TOP_LEVEL_PLAN_ID = re.compile(r'(?:^|\s)--plan-id(?:\s+|=)\S+')
 
@@ -214,7 +220,7 @@ GUARD_POPULATION_SIZE = len(_POPULATION)
 def test_gate_documents_carry_resolve_calls_at_all():
     """An empty population would let the sweep below pass over nothing."""
     assert _POPULATION, (
-        f'No fenced `architecture ... resolve --command` call was derived from '
+        f'No fenced `architecture ... resolve` call was derived from '
         f'{[path.relative_to(PROJECT_ROOT).as_posix() for path in _gate_documents()]}'
     )
 
@@ -236,9 +242,19 @@ _SYNTHETIC_CALLS = [
     ('resolve --command quality-gate --audit-plan-id {plan_id}', False),
     ('resolve --command quality-gate --plan-id {plan_id}', False),
     ('--plan-id {plan_id} resolve --command quality-gate --audit-plan-id {plan_id}', True),
+    ('--plan-id={plan_id} resolve --command quality-gate --audit-plan-id {plan_id}', True),
+    ('resolve --module {bundle} --command quality-gate --audit-plan-id {plan_id}', False),
+    ('--plan-id {plan_id} resolve --module {bundle} --command quality-gate', True),
 ]
 
-_SYNTHETIC_IDS = ['no-flag', 'flag-after-the-verb', 'flag-before-the-verb']
+_SYNTHETIC_IDS = [
+    'no-flag',
+    'flag-after-the-verb',
+    'flag-before-the-verb',
+    'equals-form-before-the-verb',
+    'no-flag-with-command-not-adjacent-to-the-verb',
+    'flag-before-the-verb-with-command-not-adjacent',
+]
 
 
 @pytest.mark.parametrize(('tail', 'accepted'), _SYNTHETIC_CALLS, ids=_SYNTHETIC_IDS)
@@ -248,3 +264,10 @@ def test_detector_accepts_only_a_plan_id_written_before_the_verb(tail, accepted)
     calls = _resolve_calls(document)
 
     assert [attributed for _call, attributed in calls] == [accepted]
+
+
+def test_control_resolve_as_another_verbs_argument_is_not_in_the_population():
+    """CONTROL: the population is keyed on the verb, not on the word appearing in the call."""
+    document = f'```bash\n{_NOTATION_PREFIX} \\\n  commands --module resolve\n```\n'
+
+    assert _resolve_calls(document) == []

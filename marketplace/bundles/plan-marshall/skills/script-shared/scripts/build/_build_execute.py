@@ -191,7 +191,7 @@ def _run_bounded(
     log_prefix: str,
     command_str: str,
 ) -> int:
-    """Run the build command under its bound and stop its whole process tree on expiry.
+    """Run the build command under its bound and stop its process group on expiry.
 
     On POSIX the command is started as the leader of its own process group. When
     the bound expires the group receives ``SIGTERM``, then — after
@@ -218,7 +218,11 @@ def _run_bounded(
         command_str: Printable command for the forwarded-signal log line.
 
     Returns:
-        The child's returncode.
+        The child's returncode when the child ended with no signal forwarded.
+        After a forwarded signal the value is always negative: the child's own
+        returncode when the child died by a signal, otherwise the negated
+        number of the first forwarded signal — whatever exit code the child
+        chose. A forwarded stop is therefore never reported as a finish.
 
     Raises:
         subprocess.TimeoutExpired: The bound expired and the build was stopped.
@@ -271,7 +275,10 @@ def _run_bounded(
             f'process group and stopped that group: {command_str}. A SIGKILL of this wrapper '
             f'cannot be forwarded and leaves the build group running.',
         )
-        return returncode
+        # A child that traps the forwarded signal ends with an exit code of its
+        # own choosing — zero included. The run was stopped all the same, so the
+        # stop is reported in the form the caller already reads as a kill.
+        return returncode if returncode < 0 else -received[0]
     finally:
         for forwarded, handler in previous.items():
             signal.signal(forwarded, handler)
@@ -323,8 +330,9 @@ def execute_direct_base(
     * ``error`` — the build ran to completion and reported a failure.
     * ``timeout`` — the build exceeded the bound resolved above, so the kill
       signal was OURS and the elapsed equals the bound.
-    * ``killed`` — the child died by a signal this stack did not send
-      (``returncode < 0``). The build reported nothing, so this is neither a
+    * ``killed`` — the run was stopped by a signal this stack did not decide
+      on: the child died by one, or the wrapper forwarded one it received
+      (``_run_bounded`` returned a negative value). The build reported nothing, so this is neither a
       failure nor a timeout, and its elapsed is a truncation rather than a
       measurement — it is therefore NOT fed to the adaptive learner.
 

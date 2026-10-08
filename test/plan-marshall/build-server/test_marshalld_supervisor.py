@@ -274,7 +274,7 @@ def timed_out_run(tmp_path_factory):
 
 @pytest.mark.skipif(os.name == 'nt', reason='process groups and os.killpg are POSIX-only')
 class TestRunJobTimeoutStopsTheWholeProcessTree:
-    """A supervisor timeout stops every descendant, not only the job child.
+    """A supervisor timeout stops the job's process group, not only the job child.
 
     The job child is the first link of a chain, so stopping its pid alone leaves
     the rest of the build running. The grandchild here ignores SIGTERM, so it

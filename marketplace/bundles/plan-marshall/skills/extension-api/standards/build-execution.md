@@ -281,13 +281,13 @@ This matters for **flag-parameterised commands**. When a caller introduces a new
 
 * Treat each distinct `--command-args` string as its own learning curve — adding a flag does **not** carry over the unflagged variant's learned duration.
 * When introducing a new flag combination for a command known to run long, pass an explicit generous `--timeout` sized for the cold/un-learned case so the first run does not time out before any history exists.
-* An explicit `--timeout` **overrides** the learned value for that run (`timeout_source: explicit`); only the minimum still binds it (`timeout_source: floor` when it raised the value). It does not change what is learned: the next run without the flag resolves the learned value again.
+* An explicit `--timeout` **overrides** the learned value for that run (`timeout_source: explicit`); only the minimum still binds it (`timeout_source: floor` when it raised the value).
 
 ### Timeout Enforcement and Signals
 
 How a bound is enforced depends on the platform, and the difference decides what is left running afterwards.
 
-**POSIX.** The build wrapper starts the build as the leader of its **own process group**. When the bound expires the wrapper sends `SIGTERM` to that group, waits a short grace period, then sends `SIGKILL` to the group and reaps the build, so no descendant of the build survives a timeout. While the build runs, a `SIGTERM`, `SIGINT` or `SIGHUP` delivered to the wrapper is **forwarded** to the build group, which is then stopped the same way. A `SIGKILL` addressed to the wrapper's pid or to the wrapper's process group **does not reach the build group**: it cannot be caught and so cannot be forwarded, and the build runs in a different group. A caller that must stop a build therefore sends the wrapper a forwardable signal, never `SIGKILL`.
+**POSIX.** The build wrapper starts the build as the leader of its **own process group**. When the bound expires the wrapper sends `SIGTERM` to that group, waits a short grace period, then sends `SIGKILL` to the group and reaps the build. While the build runs, a `SIGTERM`, `SIGINT` or `SIGHUP` delivered to the wrapper is **forwarded** to the build group, which is then stopped the same way. A `SIGKILL` addressed to the wrapper's pid or to the wrapper's process group **does not reach the build group**: it cannot be caught and so cannot be forwarded, and the build runs in a different group. A caller that must stop a build therefore sends the wrapper a forwardable signal, never `SIGKILL`.
 
 The build daemon applies the same rule one level out: it starts each job as the leader of its own session and, on its own timeout, signals the job's process group — `SIGTERM`, a grace period longer than the wrapper's, then `SIGKILL`.
 
