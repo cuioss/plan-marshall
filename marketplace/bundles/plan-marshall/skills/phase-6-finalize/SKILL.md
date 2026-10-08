@@ -504,6 +504,15 @@ The helper returns a TOON envelope whose shape depends on the resolution mode. F
 | `wait_failed` | `no_checks` | `strict` | CI never produced any checks (`final_status: none` from `ci wait`). Distinct from real failure so the dispatcher can surface "no CI configured for this branch" rather than "CI ran red". Same skip-and-mark action; downstream consumers route this to `ci-verify-missing`. |
 | `wait_failed` | `failure` \| `timeout` \| `no_checks` | `consume-failures` | Do NOT skip the consumer step. Thread `failing_checks[]`, `wait_outcome`, and `ci_final_status` into the consumer step's runtime inputs and run it normally; the consumer (currently only `default:ci-verify`, an inline deterministic script) classifies the failures into structured findings and returns a per-producer needs-triage signal. The structured-finding emission below STILL fires so the precondition decision remains audit-traceable; the difference vs `strict` is purely "skip step" → "run the deterministic classifier with the envelope". |
 
+**Parse the failed-record result** (the three `strict` skip-and-mark rows above). After the `manage-status mark-step-done … --outcome failed --display-detail "ci_failure (precondition): {failing_check_names}"` call, read the returned `status`. On anything other than `success`, log the returned `error` and `message` at ERROR and STOP — do NOT continue as though the failure had been recorded:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Failed record for step {step_ref} was refused: {error} — {message}"
+```
+
+The STOP returns control to the orchestrator: the structured finding emission below and the rest of the FOR loop are reached only on `status: success`.
+
 **Per-signal arm outcome mapping** (`--signal-arm review|sonar`, consumed by `plan-marshall:automatic-review` / `default:sonar-roundtrip`):
 
 | Resolver `status` | `arm_state` | Dispatcher action |
@@ -996,6 +1005,14 @@ FOR each step_id in manifest.phase_6.steps:
             python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
               --plan-id {plan_id} --phase 6-finalize --step {step_id} --outcome failed \
               --display-detail "timed out after {budget}s"
+
+            **Parse the failed-record result.** Read the returned `status`. On anything
+            other than `success`, log the returned `error` and `message` at ERROR and STOP —
+            do NOT continue as though the failure had been recorded:
+            python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+              work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Failed record for step {step_ref} was refused: {error} — {message}"
+            The STOP returns control to the orchestrator; item c is reached only on
+            `status: success`.
          c. Continue to the next step in the loop — DO NOT abort the pipeline. The (b)
             `outcome=failed` recording already emitted this step's `[STEP] … Completed step:`
             line (`mark-step-done` fuses the line to the handshake write — see item 7), so a
@@ -1160,6 +1177,15 @@ FOR each step_id in manifest.phase_6.steps:
            python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
              --plan-id {plan_id} --phase 6-finalize --step {step_id} --outcome failed \
              --display-detail "step-record-missing: agent returned no outcome"
+
+           **Parse the failed-record result.** Read the returned `status`. On anything
+           other than `success`, log the returned `error` and `message` at ERROR and STOP —
+           do NOT continue as though the failure had been recorded:
+           python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+             work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Failed record for step {step_ref} was refused: {error} — {message}"
+           The STOP returns control to the orchestrator; items b and c are reached only on
+           `status: success`, so the (b) line never claims a `failed` record that was not
+           written.
         b. Log the attributed error:
            python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
              work --plan-id {plan_id} --level ERROR \
