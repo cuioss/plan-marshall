@@ -18,8 +18,8 @@ made every non-green build benign — a far worse gate than the one it replaced.
 Four seams are driven, none of them re-implemented here:
 
 1. ``_build_execute.execute_direct_base`` — the in-process classifier: a
-   negative ``subprocess`` returncode is an external kill, a positive one is a
-   failure, and only the finish teaches the adaptive learner.
+   negative returncode from the launch helper is an external kill, a positive
+   one is a failure, and only the finish teaches the adaptive learner.
 2. ``_build_shared.cmd_run_common`` — the emit choke point: neither non-finish
    may reach the build-failure path, which stores findings and synthesises an
    ``errors[]`` row.
@@ -138,17 +138,13 @@ class TestExecuteClassifiesSignalDeath:
         )
         run_config_mock.timeout_get.return_value = 330
 
-        completed = MagicMock()
-        completed.returncode = returncode
-
         with (
             patch.object(_build_execute, 'timeout_get', run_config_mock.timeout_get),
             patch.object(_build_execute, 'timeout_set', run_config_mock.timeout_set),
             patch.object(_build_execute, 'create_log_file', return_value='/tmp/kill-test.log'),
             patch.object(_build_execute, 'log_entry'),
-            patch.object(_build_execute, 'subprocess') as subprocess_mock,
+            patch.object(_build_execute, '_run_bounded', return_value=returncode),
         ):
-            subprocess_mock.run.return_value = completed
             return _build_execute.execute_direct_base(
                 args='verify',
                 command_key='python:verify',

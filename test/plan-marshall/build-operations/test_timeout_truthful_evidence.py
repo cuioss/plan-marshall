@@ -31,10 +31,8 @@ fixture figure; the shared ``.plan/run-configuration.json`` is never read or
 mutated.
 """
 
-import subprocess
 import tempfile
 import tomllib
-import types
 from pathlib import Path
 
 import _build_execute
@@ -159,30 +157,22 @@ def test_pyproject_config_wires_the_outer_floor():
 
 
 def _drive_execute_direct_base(monkeypatch, tmp_path, stub_learned, floor, explicit_timeout=None):
-    """Drive ``execute_direct_base`` against a stubbed subprocess and learner.
+    """Drive ``execute_direct_base`` against a stubbed launch helper and learner.
 
     The learned value is stubbed with the caller's arbitrary fixture figure — the
     shared run-configuration is never consulted, and no learned figure is encoded
-    in this module. Returns ``(observed_subprocess_timeout, result)``.
+    in this module. Returns ``(observed_launch_timeout, result)``.
     """
     observed: dict[str, int] = {}
 
-    def _fake_run(cmd_parts, **kwargs):
-        observed['timeout'] = kwargs['timeout']
-        return types.SimpleNamespace(returncode=0)
+    def _fake_run_bounded(cmd_parts, **kwargs):
+        observed['timeout'] = kwargs['timeout_seconds']
+        return 0
 
     monkeypatch.setattr(_build_execute, 'create_log_file', lambda *a, **k: str(tmp_path / 'run.log'))
     monkeypatch.setattr(_build_execute, 'timeout_get', _stub_timeout_get(stub_learned))
     monkeypatch.setattr(_build_execute, 'timeout_set', lambda *a, **k: None)
-    monkeypatch.setattr(
-        _build_execute,
-        'subprocess',
-        types.SimpleNamespace(
-            run=_fake_run,
-            TimeoutExpired=subprocess.TimeoutExpired,
-            STDOUT=subprocess.STDOUT,
-        ),
-    )
+    monkeypatch.setattr(_build_execute, '_run_bounded', _fake_run_bounded)
 
     result = _build_execute.execute_direct_base(
         args='module-tests',

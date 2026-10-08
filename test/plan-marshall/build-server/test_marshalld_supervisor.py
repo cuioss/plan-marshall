@@ -220,6 +220,11 @@ def _pid_is_gone(pid: int, *, deadline_seconds: float) -> bool:
             os.kill(pid, 0)
         except ProcessLookupError:
             return True
+        # A zombie still answers signal 0: it has exited and only awaits reaping.
+        # Without procfs (macOS) the signal probe above is the whole check.
+        with contextlib.suppress(OSError), open(f'/proc/{pid}/stat') as handle:
+            if handle.read().rpartition(')')[2].split()[0] == 'Z':
+                return True
         time.sleep(0.05)
     return False
 

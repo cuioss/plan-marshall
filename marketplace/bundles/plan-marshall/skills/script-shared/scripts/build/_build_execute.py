@@ -25,14 +25,18 @@ Usage:
 
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
+import signal
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
+from typing import IO, Any
 
 from _build_result import DirectCommandResult, create_log_file, killed_result
 from plan_logging import log_entry
@@ -110,6 +114,18 @@ MIN_TIMEOUT = 60
 # 30 minutes is a reasonable upper bound for any single build command.
 MAX_TIMEOUT = 1800
 
+# Seconds between the group SIGTERM and the group SIGKILL when the wrapper stops
+# its build group — on its own timeout, or after forwarding a signal it received.
+# MUST stay strictly less than ``_marshalld_supervisor._JOB_KILL_GRACE_SECONDS``:
+# the daemon supervisor SIGKILLs the wrapper once that longer grace has passed,
+# and a SIGKILL of the wrapper cannot be forwarded, so the wrapper's own stop of
+# the build group has to complete first.
+_GROUP_KILL_GRACE_SECONDS = 5
+
+# Upper bound (seconds) on one blocking wait for the build child. The wait is
+# sliced so a forwarded signal is noticed promptly instead of after the bound.
+_WAIT_SLICE_SECONDS = 0.5
+
 
 class CaptureStrategy(Enum):
     """How build output is captured to the log file."""
@@ -132,6 +148,125 @@ ScopeFn = Callable[[str], str]
 def _default_scope_fn(args: str) -> str:
     """Default scope extraction - always returns 'default'."""
     return 'default'
+
+
+def _signal_build_group(pgid: int, signum: int) -> None:
+    """Send ``signum`` to the build's process group; a vanished group is not an error.
+
+    Args:
+        pgid: The process-group id — the build child's pid, because the child
+            is launched as the leader of its own group.
+        signum: The signal to deliver to every member of the group.
+    """
+    # ProcessLookupError: every member already exited, so nothing is left to stop.
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(pgid, signum)
+
+
+def _kill_build_group_after_grace(proc: subprocess.Popen[bytes]) -> int:
+    """Give an already-signalled build group its grace, then SIGKILL it and reap.
+
+    Args:
+        proc: The build child, leader of the build process group.
+
+    Returns:
+        The child's returncode.
+    """
+    # TimeoutExpired: the child outlived the whole grace period.
+    with contextlib.suppress(subprocess.TimeoutExpired):
+        proc.wait(timeout=_GROUP_KILL_GRACE_SECONDS)
+    # Sent even when the child already exited: other group members may remain.
+    _signal_build_group(proc.pid, signal.SIGKILL)
+    return proc.wait()
+
+
+def _run_bounded(
+    cmd_parts: list[str],
+    *,
+    timeout_seconds: int,
+    stdout: IO[Any] | None,
+    stderr: int | None,
+    cwd: str,
+    env: dict[str, str] | None,
+    log_prefix: str,
+    command_str: str,
+) -> int:
+    """Run the build command under its bound and stop its whole process tree on expiry.
+
+    On POSIX the command is started as the leader of its own process group. When
+    the bound expires the group receives ``SIGTERM``, then — after
+    :data:`_GROUP_KILL_GRACE_SECONDS` — ``SIGKILL``, the child is reaped and
+    ``subprocess.TimeoutExpired`` is raised. While the child runs, ``SIGTERM``,
+    ``SIGINT`` and ``SIGHUP`` delivered to this process are forwarded to the
+    group, which is then stopped with the same grace and ``SIGKILL``; the
+    previous handlers are restored before returning. Handlers can only be
+    installed from the main thread, so a call from any other thread runs
+    without forwarding. A ``SIGKILL`` addressed to the wrapper's pid or to the
+    wrapper's process group does not reach the build group.
+
+    On Windows there are no process groups to signal: the command runs as a
+    plain child and an expired bound kills that one process, as before.
+
+    Args:
+        cmd_parts: The build argv.
+        timeout_seconds: The resolved bound in seconds.
+        stdout: Where the child's stdout goes; ``None`` inherits.
+        stderr: Where the child's stderr goes; ``None`` inherits.
+        cwd: The child's working directory.
+        env: The child's environment; ``None`` inherits.
+        log_prefix: Tool prefix for the forwarded-signal log line.
+        command_str: Printable command for the forwarded-signal log line.
+
+    Returns:
+        The child's returncode.
+
+    Raises:
+        subprocess.TimeoutExpired: The bound expired and the build was stopped.
+    """
+    if IS_WINDOWS:
+        child = subprocess.Popen(cmd_parts, stdout=stdout, stderr=stderr, cwd=cwd, env=env)
+        try:
+            return child.wait(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            child.wait()
+            raise
+
+    proc = subprocess.Popen(cmd_parts, stdout=stdout, stderr=stderr, cwd=cwd, env=env, process_group=0)
+    received: list[int] = []
+
+    def _forward(signum: int, _frame: object) -> None:
+        received.append(signum)
+        _signal_build_group(proc.pid, signum)
+
+    previous: dict[signal.Signals, Any] = {}
+    if threading.current_thread() is threading.main_thread():
+        for forwarded in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            previous[forwarded] = signal.signal(forwarded, _forward)
+    try:
+        deadline = time.monotonic() + timeout_seconds
+        while not received:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                _signal_build_group(proc.pid, signal.SIGTERM)
+                _kill_build_group_after_grace(proc)
+                raise subprocess.TimeoutExpired(cmd_parts, timeout_seconds)
+            # TimeoutExpired: this slice ended with the child still running.
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                return proc.wait(timeout=min(remaining, _WAIT_SLICE_SECONDS))
+        returncode = _kill_build_group_after_grace(proc)
+        log_entry(
+            'script',
+            'global',
+            'ERROR',
+            f'[{log_prefix}] Received {signal.Signals(received[0]).name}, forwarded it to the build '
+            f'process group and stopped that group: {command_str}. A SIGKILL of this wrapper '
+            f'cannot be forwarded and leaves the build group running.',
+        )
+        return returncode
+    finally:
+        for forwarded, handler in previous.items():
+            signal.signal(forwarded, handler)
 
 
 def execute_direct_base(
@@ -258,49 +393,52 @@ def execute_direct_base(
     try:
         if capture_strategy == CaptureStrategy.TOOL_LOG_FLAG:
             # Maven uses -l flag; no stdout capture needed
-            result = subprocess.run(
+            returncode = _run_bounded(
                 cmd_parts,
-                timeout=timeout_seconds,
-                capture_output=False,
-                check=False,
+                timeout_seconds=timeout_seconds,
+                stdout=None,
+                stderr=None,
                 cwd=cwd,
                 env=env,
+                log_prefix=log_prefix,
+                command_str=command_str,
             )
         else:
             # stdout_redirect: pipe stdout+stderr to log file
             with open(log_file, 'w') as log:
-                result = subprocess.run(
+                returncode = _run_bounded(
                     cmd_parts,
-                    timeout=timeout_seconds,
+                    timeout_seconds=timeout_seconds,
                     stdout=log,
                     stderr=subprocess.STDOUT,
-                    check=False,
                     cwd=cwd,
                     env=env,
+                    log_prefix=log_prefix,
+                    command_str=command_str,
                 )
         duration_seconds = int(time.time() - start_time)
 
-        # Step 7: Classify the exit BEFORE learning from it. ``subprocess.run``
-        # reports a child terminated by POSIX signal N as returncode ``-N``, and
-        # the outer timeout above did NOT send it (that path raises
-        # TimeoutExpired instead). So a negative returncode here is an EXTERNAL
-        # kill: the build reported nothing, and its elapsed is a truncation of a
+        # Step 7: Classify the exit BEFORE learning from it. A child terminated
+        # by POSIX signal N is reported as returncode ``-N``, and the outer
+        # timeout above did NOT send it (that path raises TimeoutExpired
+        # instead). So a negative returncode here is a kill this stack did not
+        # decide on — an external one, or a signal the wrapper only forwarded:
+        # the build reported nothing, and its elapsed is a truncation of a
         # run that never finished — not a measurement of what this command
         # costs. Feeding that truncation to the adaptive learner would blend a
         # non-measurement into the budget at 20% weight (see
         # ``run_config.compute_weighted_timeout``), so the learner is fed only
         # by a genuine finish. This is a truthfulness rule, not a budget
         # adjustment: no bound, margin, floor, or cap is changed here.
-        if result.returncode < 0:
+        if returncode < 0:
             log_entry(
                 'script',
                 'global',
                 'ERROR',
-                f'[{log_prefix}] Externally killed by signal {-result.returncode} '
-                f'after {duration_seconds}s: {command_str}',
+                f'[{log_prefix}] Externally killed by signal {-returncode} after {duration_seconds}s: {command_str}',
             )
             return killed_result(  # type: ignore[return-value]
-                exit_code=result.returncode,
+                exit_code=returncode,
                 duration_seconds=duration_seconds,
                 log_file=log_file,
                 command=command_str,
@@ -312,7 +450,7 @@ def execute_direct_base(
         timeout_set(command_key, duration_seconds, project_dir)
 
         # Step 9: Return structured result
-        if result.returncode == 0:
+        if returncode == 0:
             return {
                 'status': 'success',
                 'exit_code': 0,
@@ -325,12 +463,12 @@ def execute_direct_base(
         else:
             return {
                 'status': 'error',
-                'exit_code': result.returncode,
+                'exit_code': returncode,
                 'duration_seconds': duration_seconds,
                 'timeout_used_seconds': timeout_seconds,
                 'log_file': log_file,
                 'command': command_str,
-                'error': f'Build failed with exit code {result.returncode}',
+                'error': f'Build failed with exit code {returncode}',
                 **extras,
             }
 

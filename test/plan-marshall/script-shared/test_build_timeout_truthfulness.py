@@ -217,7 +217,7 @@ def test_passing_near_learned_value_build_reports_success_not_timeout(tool_name,
             patch('_build_execute.create_log_file', return_value='/tmp/regression.log'),
             patch('_build_execute.timeout_get', return_value=learned),
             patch('_build_execute.timeout_set'),
-            patch('_build_execute.subprocess.run', return_value=MagicMock(returncode=0)),
+            patch('_build_execute._run_bounded', return_value=0),
             patch('builtins.open', MagicMock()),
         ):
             result = execute_direct_base(
@@ -283,14 +283,14 @@ def test_explicit_timeout_binds_end_to_end_through_cmd_run(
     with (
         patch('_build_execute.create_log_file', return_value=str(tmp_path / 'build.log')),
         patch('_build_execute.timeout_set'),
-        patch('_build_execute.subprocess.run', return_value=MagicMock(returncode=0)) as mock_run,
+        patch('_build_execute._run_bounded', return_value=0) as mock_run,
     ):
         module.cmd_run(args)
 
     assert mock_run.call_args is not None, f'{tool_name}: the in-process leg never ran'
-    assert mock_run.call_args[1]['timeout'] == explicit, (
+    assert mock_run.call_args[1]['timeout_seconds'] == explicit, (
         f'{tool_name}: the explicit --timeout {explicit} must bind end-to-end; '
-        f'the subprocess was bounded by {mock_run.call_args[1]["timeout"]} '
+        f'the subprocess was bounded by {mock_run.call_args[1]["timeout_seconds"]} '
         "instead — a learned value discarded the caller's override"
     )
 
@@ -324,14 +324,14 @@ def test_below_floor_explicit_timeout_still_resolves_up_to_the_engine_floor(
     with (
         patch('_build_execute.create_log_file', return_value=str(tmp_path / 'build.log')),
         patch('_build_execute.timeout_set'),
-        patch('_build_execute.subprocess.run', return_value=MagicMock(returncode=0)) as mock_run,
+        patch('_build_execute._run_bounded', return_value=0) as mock_run,
     ):
         module.cmd_run(args)
 
-    assert mock_run.call_args[1]['timeout'] == config.min_timeout, (
+    assert mock_run.call_args[1]['timeout_seconds'] == config.min_timeout, (
         f'{tool_name}: an explicit --timeout 120 below the declared floor '
         f'{config.min_timeout} must resolve UP to the floor, got '
-        f'{mock_run.call_args[1]["timeout"]}'
+        f'{mock_run.call_args[1]["timeout_seconds"]}'
     )
 
 
@@ -373,7 +373,7 @@ def test_resolve_stamp_equals_the_floored_bound_the_run_measures_against(
             patch('_build_execute.create_log_file', return_value='/tmp/regression.log'),
             patch('_build_execute.timeout_get', return_value=learned),
             patch('_build_execute.timeout_set'),
-            patch('_build_execute.subprocess.run', return_value=MagicMock(returncode=0)),
+            patch('_build_execute._run_bounded', return_value=0),
             patch('builtins.open', MagicMock()),
         ):
             result = execute_direct_base(

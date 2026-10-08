@@ -182,20 +182,16 @@ def test_execute_direct_absent_wrapper_resolves_system_fallback():
     The require_wrapper gate was removed: an absent project wrapper now
     auto-detects the system binary rather than erroring out. This mirrors
     test_pyproject_execute.py::test_execute_direct_absent_wrapper_resolves_system_binary
-    at the real subprocess seam (that sibling test mocks the factory base; this
-    one drives execute_direct through subprocess.run)."""
+    at the launch seam (that sibling test mocks the factory base; this one
+    drives execute_direct through the shared launch helper)."""
     with BuildContext() as ctx:
         # No ./pw wrapper in the project dir; pwx absent from PATH. No log
         # directory is pre-created: the production resolver creates its own,
         # and create_log_file is patched out below in any case.
 
-        # Mock subprocess.run to return success
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-
         with (
             patch('shutil.which', return_value=None),
-            patch('subprocess.run', return_value=mock_result),
+            patch('_build_execute._run_bounded', return_value=0),
             patch('_build_execute.create_log_file', return_value=str(ctx.temp_dir / 'test.log')),
         ):
             result = execute_direct(
@@ -222,12 +218,8 @@ def test_execute_direct_returns_success_on_zero_exit():
         # No log directory is pre-created: the production resolver creates its
         # own, and create_log_file is patched out below in any case.
 
-        # Mock subprocess.run to return success
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-
         with (
-            patch('subprocess.run', return_value=mock_result),
+            patch('_build_execute._run_bounded', return_value=0),
             patch('_build_execute.create_log_file', return_value=str(ctx.temp_dir / 'test.log')),
         ):
             result = execute_direct(
@@ -251,12 +243,8 @@ def test_execute_direct_returns_error_on_nonzero_exit():
         pw.write_text('#!/bin/bash\nexit 1')
         pw.chmod(0o755)
 
-        # Mock subprocess.run to return failure
-        mock_result = MagicMock()
-        mock_result.returncode = 1
-
         with (
-            patch('subprocess.run', return_value=mock_result),
+            patch('_build_execute._run_bounded', return_value=1),
             patch('_build_execute.create_log_file', return_value=str(ctx.temp_dir / 'test.log')),
         ):
             result = execute_direct(
@@ -283,7 +271,10 @@ def test_execute_direct_returns_timeout_on_timeout():
         pw.chmod(0o755)
 
         with (
-            patch('subprocess.run', side_effect=subprocess.TimeoutExpired(cmd='./pw verify', timeout=60)),
+            patch(
+                '_build_execute._run_bounded',
+                side_effect=subprocess.TimeoutExpired(cmd='./pw verify', timeout=60),
+            ),
             patch('_build_execute.create_log_file', return_value=str(ctx.temp_dir / 'test.log')),
         ):
             result = execute_direct(
