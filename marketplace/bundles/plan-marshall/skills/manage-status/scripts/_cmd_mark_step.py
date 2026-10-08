@@ -13,9 +13,23 @@ the step on next phase entry rather than treating it as terminal. The
 iteration recorded; dispatcher will re-fire on next phase-6-finalize entry) and signals
 the dispatcher to treat the step as a fresh dispatch on the next phase entry
 rather than skipping it. The operation is idempotent when outcome,
-display_detail, and head_at_completion all match and returns a ``conflict``
-error when a step already has a different outcome unless ``--force`` is
-supplied. An optional ``--display-detail`` one-line string is persisted
+display_detail, and head_at_completion all match. A write that CHANGES a
+recorded outcome is decided by one table,
+:data:`_TRANSITIONS_LEGAL_WITHOUT_FORCE`, which holds the four transition
+groups a retried or re-fired step takes on its ordinary path:
+
+* ``failed`` to any outcome — the dispatcher retries a failed step, and the
+  retry records whatever it produced.
+* ``loop_back`` to any outcome — a looped-back step is re-fired, and the
+  re-fire records whatever it produced.
+* ``done`` to ``failed`` — a completed step that is re-fired and aborts.
+* ``done`` to ``loop_back`` — a completed step that is re-fired and loops back.
+
+A pair outside the table (``done`` to ``skipped``, ``skipped`` to anything
+else) returns a ``conflict`` error and writes nothing unless ``--force`` is
+supplied; ``--force`` admits every transition. The table governs outcome
+changes alone — every well-formedness refusal below is evaluated before it and
+is not overridable. An optional ``--display-detail`` one-line string is persisted
 alongside the outcome so downstream renderers (e.g., phase-6-finalize
 vertical-steps block) can surface user-facing step summaries. An optional
 ``--head-at-completion`` SHA is persisted alongside the outcome so resumable
@@ -116,6 +130,22 @@ VALID_LOOP_BACK_TARGETS = ('5-execute', '6-finalize')
 #: yield's progress channel carries nothing. Derived from
 #: :data:`VALID_OUTCOMES` so the two vocabularies cannot drift apart.
 _CONTROL_TOKENS = frozenset(VALID_OUTCOMES)
+
+#: The ``(recorded outcome, requested outcome)`` pairs a write may take without
+#: ``--force``. This table is the ONLY site that decides an outcome conflict:
+#: a pair inside it is recorded, a pair outside it returns ``error: conflict``
+#: and writes nothing. It holds the transitions a retried or re-fired step takes
+#: on its ordinary path — ``failed`` to any outcome, ``loop_back`` to any
+#: outcome, ``done`` to ``failed``, and ``done`` to ``loop_back``. The two "any
+#: outcome" groups are derived from :data:`VALID_OUTCOMES` so a new outcome
+#: cannot be left out of them. Same-outcome pairs never reach the lookup (a
+#: re-call that keeps the outcome is a re-stamp, not a transition), so their
+#: presence here carries no meaning.
+_TRANSITIONS_LEGAL_WITHOUT_FORCE = frozenset(
+    {('failed', requested) for requested in VALID_OUTCOMES}
+    | {('loop_back', requested) for requested in VALID_OUTCOMES}
+    | {('done', 'failed'), ('done', 'loop_back')}
+)
 
 #: The phase whose dispatcher consumes the ``[STEP] … Completed step:`` marker and
 #: whose Step-3 loop the fused completion emission below serves. Scoping the
@@ -652,7 +682,7 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
                 },
                 combined_warning,
             )
-        if existing_outcome != outcome and not args.force:
+        if (existing_outcome, outcome) not in _TRANSITIONS_LEGAL_WITHOUT_FORCE and not args.force:
             return {
                 'status': 'error',
                 'plan_id': args.plan_id,
@@ -681,9 +711,12 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
 
     if existing_key is not None and existing_key != step:
         phase_entry.pop(existing_key, None)
-    # The outcome-changing re-fire path (loop_back → done, and the --force
-    # overwrite). A first firing reaches here with `existing` absent, so nothing
-    # is written and the record keeps its historical shape.
+    # The outcome-changing write. It is reached by a transition the
+    # _TRANSITIONS_LEGAL_WITHOUT_FORCE table admits (failed -> any, loop_back ->
+    # any, done -> failed, done -> loop_back) or by a --force overwrite of a pair
+    # outside it; either way the superseded firing joins the trail. A first
+    # firing reaches here with `existing` absent, so nothing is added to the
+    # trail and the record keeps its historical shape.
     _extend_firing_history(existing, new_entry)
     phase_entry[step] = new_entry
     write_status(args.plan_id, status)
