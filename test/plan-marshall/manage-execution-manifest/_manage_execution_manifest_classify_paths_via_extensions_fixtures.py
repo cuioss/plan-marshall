@@ -101,11 +101,24 @@ _CONTAINER_SERVICE_YAML = 'src/main/docker/application.yaml'
 _REVIEW_BOT_DESCRIPTOR = '.pr_agent.toml'
 _PLANNING_SYSTEM_CONFIG = '.plan/marshal.json'
 
-#: The matched negative control for :data:`_PLANNING_SYSTEM_CONFIG`. A
-#: git-tracked JSON file that lives under the SAME directory but carries a
-#: different basename, so it is recognized only if the planning-system entry were
-#: a directory-tree or a suffix rule rather than the basename rule it is.
-_PLANNING_SYSTEM_SIBLING_JSON = '.plan/project-architecture/plan-marshall.json'
+#: The matched negative control for the planning-system entries. A JSON file
+#: directly under ``.plan/`` — the SAME directory as :data:`_PLANNING_SYSTEM_CONFIG`,
+#: a different basename, and OUTSIDE the architecture-data tree. It is the control
+#: against two wider rules at once: it would be recognized only if the planning
+#: system were matched by a ``('.plan',)`` directory rule or by a ``.json`` suffix
+#: rule, rather than by the basename entry and the two-segment tree entry it is.
+_PLANNING_SYSTEM_SIBLING_JSON = '.plan/notes.json'
+
+#: The planning system's tracked architecture data, recognized by LOCATION: every
+#: file under ``.plan/project-architecture/`` at any depth. One constant per depth
+#: — the index file directly under the tree, and a per-module file one level down.
+_ARCHITECTURE_INDEX_JSON = '.plan/project-architecture/_project.json'
+_ARCHITECTURE_MODULE_JSON = '.plan/project-architecture/plan-marshall-opencode/enriched.json'
+
+#: The matched negative control for the architecture-data tree entry: the same
+#: tree name WITHOUT the ``.plan`` parent. The entry is a two-segment run, so a
+#: ``project-architecture/`` directory elsewhere is not a member.
+_ARCHITECTURE_TREE_WITHOUT_PLAN_PARENT = 'project-architecture/_project.json'
 
 #: The opencode tool's own configuration — the two basenames the opencode CLI
 #: resolves at the project root by that fixed name. Root-anchored (not merely
@@ -138,6 +151,7 @@ _INFRA_ONLY_FOOTPRINT = (
     '.coderabbit.yaml',
     '.coderabbit.yml',
     _PLANNING_SYSTEM_CONFIG,
+    _ARCHITECTURE_INDEX_JSON,
     _OPENCODE_CONFIG_JSON,
     _OPENCODE_CONFIG_JSONC,
 )

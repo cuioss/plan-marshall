@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 
 from _manage_execution_manifest_classify_paths_via_extensions_fixtures import (
+    _ARCHITECTURE_INDEX_JSON,
+    _ARCHITECTURE_MODULE_JSON,
+    _ARCHITECTURE_TREE_WITHOUT_PLAN_PARENT,
     _CI_WORKFLOW_YAML,
     _COMPOSE_YAML,
     _CONTAINER_SERVICE_YAML,
@@ -40,6 +43,8 @@ def test_infra_config_family_is_location_or_basename_anchored_never_bare_suffix(
         '.coderabbit.yaml',
         '.coderabbit.yml',
         _PLANNING_SYSTEM_CONFIG,
+        _ARCHITECTURE_INDEX_JSON,
+        _ARCHITECTURE_MODULE_JSON,
         _OPENCODE_CONFIG_JSON,
         _OPENCODE_CONFIG_JSONC,
     ):
@@ -51,6 +56,7 @@ def test_infra_config_family_is_location_or_basename_anchored_never_bare_suffix(
         'marketplace/bundles/foo/skills/bar/scripts/thing.py',
         'mystery.xyz',
         _PLANNING_SYSTEM_SIBLING_JSON,
+        _ARCHITECTURE_TREE_WITHOUT_PLAN_PARENT,
         _OPENCODE_SUFFIX_SIBLING_JSON,
     ):
         assert not _is_infrastructure_config_path(path), path
@@ -64,6 +70,8 @@ def test_each_infra_config_family_resolves_to_a_non_unknown_bucket():
         _CONTAINER_SERVICE_YAML,
         _REVIEW_BOT_DESCRIPTOR,
         _PLANNING_SYSTEM_CONFIG,
+        _ARCHITECTURE_INDEX_JSON,
+        _ARCHITECTURE_MODULE_JSON,
         _OPENCODE_CONFIG_JSON,
         _OPENCODE_CONFIG_JSONC,
     ):
