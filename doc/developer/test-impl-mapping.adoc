@@ -1,0 +1,42 @@
+= Test-to-Implementation Mapping
+:nofooter:
+:toc: left
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[Developer Guide]
+
+The list of intentional cross-module test pairings in this repository.
+
+== Who reads this list
+
+The module-mapping check of the plan-time quality gate reads the table below. That check expects a task's test file and the implementation file it covers to belong to the same architecture module, and reports a pair whose modules differ. A row here tells it that one such pair is intended. The check, the shape of a row and the rule by which a row covers a pair are defined in link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/q-gate-validation.md[`q-gate-validation.md`] § 2.11 Module-Mapping Validator; this document holds only the data.
+
+A row is warranted when a test must live in one module while it reads files owned by another. It is not a way to silence a finding about a test that was placed in the wrong directory: such a test is moved, not listed.
+
+== Pairings
+
+One row per test. A cell lists more than one path where the test covers several files.
+
+[cols="2,2,3", options="header"]
+|===
+| Test path | Implementation path | Reason
+
+| `test/sync-harnesses/test_harness_command_parity.py`
+a|
+
+* `.claude/skills/sync-harnesses/SKILL.md`
+* `.opencode/commands/sync-harnesses.md`
+* `.agents/skills/sync-harnesses/SKILL.md`
+| The three harness-local command files have no test tree of their own module, so the test that holds them identical lives under `test/` in the default module.
+
+| `test/finalize-step-sync-plugin-cache/test_sync_plugin_cache_step.py`
+| `.claude/skills/finalize-step-sync-plugin-cache/SKILL.md`
+| The project-local finalize step file has no test tree of its own module, so its contract test lives under `test/` in the default module.
+|===
+
+== Related
+
+* xref:testing.adoc[Testing] — how marketplace scripts are tested
