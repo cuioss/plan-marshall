@@ -29,6 +29,7 @@ Usage:
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization grant --plan-id EXAMPLE-PLAN --kind barrier-ask-override --head 76c7200b6 --gap-class review-barrier-gap --granted-over "2 unhandled, unproven_bots=cuioss-review-bot" --reason "operator accepted the gap"
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization check --plan-id EXAMPLE-PLAN --head 76c7200b6 --gap-class review-barrier-gap
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-back admit --plan-id EXAMPLE-PLAN --source automatic-review --ceiling 3
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-back grant --plan-id EXAMPLE-PLAN --source automatic-review --rounds 1 --reason "one more review round for the last fix"
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status sibling-collision-check --plan-id EXAMPLE-PLAN
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create --store orchestrator --plan-id example-epic --title "Epic"
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update-field --plan-id example-epic --field resume_anchor --value "next action"
@@ -47,7 +48,7 @@ from _cmd_lifecycle import (
     cmd_transition,
     verify_blocks_transition,
 )
-from _cmd_loop_back import cmd_loop_back_admit
+from _cmd_loop_back import cmd_loop_back_admit, cmd_loop_back_grant
 from _cmd_mark_step import VALID_LOOP_BACK_TARGETS, cmd_mark_step_done
 from _cmd_merge_authorization import (
     cmd_merge_authorization_check,
@@ -670,7 +671,7 @@ def main() -> int:
     )
     merge_authorization_check_parser.set_defaults(func=cmd_merge_authorization_check)
 
-    # loop-back (admit)
+    # loop-back (admit | grant)
     loop_back_parser = subparsers.add_parser(
         'loop-back',
         help='Budget finalize loop-back rounds per requesting source in status.metadata.loop_back_budgets',
@@ -684,8 +685,12 @@ def main() -> int:
             'iteration and effective_ceiling. A refusal returns admitted: false '
             'with the same fields and writes nothing. The retired scalar '
             'loop_back_iteration is never read: a status still carrying it is '
-            'attributed to no source, and every source starts at zero. The verb '
-            'exits 0 on both verdicts — the verdict travels in the TOON.'
+            "attributed to no source, and every source starts at zero. 'grant' is "
+            'the one way past a refusal: it adds rounds to a named source and '
+            'appends a grant record (rounds, reason, granted_by, granted_at, '
+            'spent_at_grant) to that source; a blank reason or fewer than one '
+            'round is refused and writes nothing. Both verbs exit 0 on every '
+            'verdict — the verdict travels in the TOON.'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,
@@ -719,6 +724,42 @@ def main() -> int:
         ),
     )
     loop_back_admit_parser.set_defaults(func=cmd_loop_back_admit)
+
+    loop_back_grant_parser = loop_back_subparsers.add_parser(
+        'grant',
+        help="Add rounds to one source's budget and record who granted them and why",
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(loop_back_grant_parser)
+    loop_back_grant_parser.add_argument(
+        '--source',
+        required=True,
+        help=(
+            'The source whose budget is extended — the source a refused admit '
+            'named. A grant to one source never admits another.'
+        ),
+    )
+    loop_back_grant_parser.add_argument(
+        '--rounds',
+        type=int,
+        default=1,
+        help='How many rounds to add to the granted total of the source. At least one; defaults to one.',
+    )
+    loop_back_grant_parser.add_argument(
+        '--reason',
+        required=True,
+        help=(
+            'Why the rounds are granted. Persisted on the grant record; a blank '
+            'reason is refused with blank_reason and nothing is written.'
+        ),
+    )
+    loop_back_grant_parser.add_argument(
+        '--granted-by',
+        dest='granted_by',
+        default='operator',
+        help='Who granted the rounds. Persisted on the grant record; defaults to operator.',
+    )
+    loop_back_grant_parser.set_defaults(func=cmd_loop_back_grant)
 
     # change-type-heuristic
     change_type_parser = subparsers.add_parser(

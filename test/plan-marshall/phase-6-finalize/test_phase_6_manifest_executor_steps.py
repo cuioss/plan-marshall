@@ -614,6 +614,25 @@ class TestLoopBackWithoutAskingContract:
             'round have no remaining iteration in which their fixes could be '
             'reviewed — otherwise an operator reads the halt as a clean stop'
         )
+        # The breach display must name the one sanctioned way past the refusal:
+        # the grant verb, pre-filled with the plan and the refused source. A
+        # display that only says "re-run finalize" sends the operator back
+        # into the same refusal.
+        grant_call = 'manage-status loop-back grant'
+        assert grant_call in section, (
+            'The breach display must name the manage-status loop-back grant verb as the way to obtain a further round'
+        )
+        grant_at = section.index(grant_call)
+        grant_command = section[grant_at : grant_at + 120]
+        assert '--plan-id {plan_id}' in grant_command and '--source {step_ref}' in grant_command, (
+            'The grant command in the breach display must be pre-filled with the plan id and the refused source'
+        )
+        assert '--reason' in grant_command, 'The grant command in the breach display must carry the required reason'
+        refusal_at = section.index('Loop-back ceiling breached')
+        stop_at = section.index('STOP.', refusal_at)
+        assert refusal_at < grant_at < stop_at, (
+            'The grant verb must be named inside the breach display itself, between the refusal and its STOP'
+        )
         # And it must be a DIFFERENT string from the ordinary knob halt.
         assert 'returning control to user (loop_back_without_asking=false)' in section, (
             'The ordinary knob halt message must still exist, so the two '

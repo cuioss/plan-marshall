@@ -783,11 +783,20 @@ Budget finalize loop-back rounds **per requesting source**. Every source that ca
 ```json
 status.metadata.loop_back_budgets[{source}] = {
   "spent": <int>,
-  "granted": <int>
+  "granted": <int>,
+  "grants": [
+    {
+      "rounds": <int>,
+      "reason": <string>,
+      "granted_by": <string>,
+      "granted_at": <UTC ISO-8601>,
+      "spent_at_grant": <int>
+    }, ...
+  ] | absent
 }
 ```
 
-`spent` is how many rounds the source has been admitted for. `granted` is how many rounds beyond the configured ceiling the source has been given. A source with no entry has spent nothing and been granted nothing, and the entry is created by the first admission.
+`spent` is how many rounds the source has been admitted for. `granted` is how many rounds beyond the configured ceiling the source has been given. A source with no entry has spent nothing and been granted nothing, and the entry is created by the first admission or the first grant. `grants` holds one record per `loop-back grant` call, oldest first, and is absent until a round has been granted; `granted` is the sum of the `rounds` those records carry.
 
 **The retired scalar is never read.** A `status.json` that still carries `metadata.loop_back_iteration` is treated as carrying no budget: the scalar is attributed to no source, and every source starts at zero.
 
@@ -844,7 +853,62 @@ ceiling: 3
 granted: 0
 ```
 
-A store the verb cannot interpret — `loop_back_budgets` that is not a map, a source entry that is not a record, or a `spent` / `granted` value that is not a non-negative integer — returns `error: invalid_budget_store` and writes nothing. It is not read as an empty budget, because that would hand the source rounds it may already have spent.
+A store the verb cannot interpret — `loop_back_budgets` that is not a map, a source entry that is not a record, a `spent` / `granted` value that is not a non-negative integer, or a `grants` value that is not a list — returns `error: invalid_budget_store` and writes nothing. It is not read as an empty budget, because that would hand the source rounds it may already have spent. `loop-back grant` refuses the same store on the same terms.
+
+#### loop-back grant
+
+Add rounds to one named source's budget and record who granted them and why. **This verb is the only sanctioned way past a ceiling refusal.** A refused `admit` is answered by a grant to the source it named, never by editing `loop_back_budgets` through `metadata --set`: a metadata write leaves no record of who extended the budget or why, and a grant leaves both.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-back grant \
+  --plan-id {plan_id} \
+  --source {source} \
+  --reason {reason} \
+  [--rounds {rounds}] \
+  [--granted-by {granted_by}]
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier
+- `--source` (required): The source whose budget is extended — the `source` a refused `admit` returned. A grant to one source never admits another.
+- `--reason` (required): Why the rounds are granted. Persisted on the grant record. A blank reason is refused with `blank_reason` and nothing is written.
+- `--rounds` (optional, integer of at least one; default `1`): How many rounds to add to the source's `granted` total. A value below one is refused with `invalid_rounds` and nothing is written.
+- `--granted-by` (optional; default `operator`): Who granted the rounds. Persisted on the grant record.
+
+Each call adds `--rounds` to the source's `granted` total and appends one record to its `grants` list:
+
+| Record field | Meaning |
+|--------------|---------|
+| `rounds` | The rounds this grant added |
+| `reason` | The stated reason, with surrounding whitespace removed |
+| `granted_by` | Who granted the rounds |
+| `granted_at` | When the grant was recorded, as a UTC ISO-8601 instant |
+| `spent_at_grant` | The source's `spent` value when the grant was recorded — how far past its configured ceiling the source was being let |
+
+The grant changes `granted` only. It does not admit a round: the next `loop-back admit` for the same source does, against the raised `effective_ceiling`.
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: my-feature
+source: automatic-review
+rounds: 1
+granted: 1
+spent: 3
+reason: one more review round for the last fix
+granted_by: operator
+granted_at: "2026-01-15T14:30:00Z"
+grant_count: 1
+```
+
+**Output — blank reason** (TOON, nothing written):
+```toon
+status: error
+plan_id: my-feature
+error: blank_reason
+source: automatic-review
+message: --reason must state why the rounds are granted; a blank reason is refused. Nothing was written.
+```
 
 ### get-context
 
@@ -1709,6 +1773,16 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-b
 
 Admits the source's next loop-back round when `spent + 1 <= CEILING + granted`, persisting the increment to `metadata.loop_back_budgets[SOURCE]` in the same call. Returns `admitted`, `source`, `iteration`, `effective_ceiling`, `ceiling` and `granted`; a refusal carries the same fields with `admitted: false` and writes nothing. See § [loop-back](#loop-back) under Operations for the record shape.
 
+### loop-back — grant
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-back grant \
+  --plan-id PLAN_ID --source SOURCE --reason TEXT \
+  [--rounds ROUNDS] [--granted-by GRANTED_BY]
+```
+
+Adds `ROUNDS` (default `1`) to `metadata.loop_back_budgets[SOURCE].granted` and appends one `{rounds, reason, granted_by, granted_at, spent_at_grant}` record to that source's `grants` list. Returns `source`, `rounds`, `granted`, `spent`, `reason`, `granted_by`, `granted_at` and `grant_count`. A blank `--reason` (`blank_reason`) or a `--rounds` below one (`invalid_rounds`) is refused and writes nothing. The only sanctioned way past a refused `loop-back admit`.
+
 ### change-type-heuristic
 
 ```bash
@@ -1814,7 +1888,9 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status self-t
 | `unknown_head_at_completion` | 1 | `mark-step-done`: `--outcome=done` with a `--head-at-completion` revision that resolves to no commit in the local object store (`git rev-parse --verify {sha}^{commit}` fails — fabricated string, non-commit object, or leading-`-` option-injection shape). The record carries the resolved full-hex commit ID, never the supplied spelling. A fabricated anchor records a verdict nobody can locate in history, so it is refused rather than persisted — nothing is written. Resolve the worktree HEAD immediately before the call and pass the real SHA. |
 | `step_record_missing` | 0 | `assert-step-recorded --require-terminal`: no terminal record exists under any key for the named phase (the dispatched step returned without recording a `mark-step-done` outcome). The verdict carries reportable finding fields (`finding_type: missing-yield`, `finding_severity: error`, `finding_title`, `finding_detail`) so the absent yield is filed to the Q-Gate findings store instead of staying silent. Exit code is 0 — the post-dispatch guard branches on the TOON `error` field, not the process exit code. |
 | `step_record_mismatched_key` | 0 | `assert-step-recorded --require-terminal`: the queried step has no terminal record, but a near-miss orphan terminal record exists under a different key in the same phase (the dispatched step recorded under the wrong key — e.g. a bare skill name instead of its fully-qualified manifest `step_id`). Carries `orphan_key` and `orphan_outcome`. Exit code is 0 — the guard branches on the TOON `error` field. |
-| `invalid_budget_store` | 0 | `loop-back admit`: `metadata.loop_back_budgets`, the source's entry, or its `spent` / `granted` value does not have the documented shape. Nothing is written, and the store is not read as an empty budget. Exit code is 0 — the caller branches on the TOON `error` field. |
+| `invalid_budget_store` | 0 | `loop-back admit` / `loop-back grant`: `metadata.loop_back_budgets`, the source's entry, or its `spent` / `granted` / `grants` value does not have the documented shape. Nothing is written, and the store is not read as an empty budget. Exit code is 0 — the caller branches on the TOON `error` field. |
+| `blank_reason` | 0 | `loop-back grant`: `--reason` is empty or whitespace only. A round beyond the configured ceiling must be traceable to a stated reason, so nothing is written. Exit code is 0. |
+| `invalid_rounds` | 0 | `loop-back grant`: `--rounds` is below one. Nothing is written. Exit code is 0. |
 | `worktree_unresolved` | 1 | `phase_handshake verify`: `metadata.use_worktree==true` and `metadata.worktree_path` is non-empty but does not resolve on the filesystem. `get-worktree-path` does not emit this error — it returns `worktree_state: pending` for the pre-materialization state. |
 
 ---

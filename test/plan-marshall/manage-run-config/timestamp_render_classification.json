@@ -86,6 +86,13 @@
       "reason": "Stamps a lifecycle transition, and separately slices the first ten characters into a date prefix used as an identifier component. The prefix is the same trap the lessons-identifier entry names: it doubles as a sort key, so converting it would silently reorder records."
     },
     {
+      "file": "marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_loop_back.py",
+      "classification": "STORE",
+      "reached_via": "now_utc_iso",
+      "stored_as": "granted_at",
+      "reason": "Stamps granted_at on a loop-back grant record appended to a source's grants list. The value is a persisted record field that orders the grants and dates each one for audit; it is echoed back as a TOON field, never formatted into text an operator is shown as a wall-clock time."
+    },
+    {
       "file": "marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_merge_authorization.py",
       "classification": "STORE",
       "reached_via": "now_utc_iso",
