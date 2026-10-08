@@ -20,11 +20,13 @@ Things the rewrite does not replace: how the harness installs are kept current, 
 
 | Plan | Status | Notes |
 |------|--------|-------|
-| PLAN-LB-15-plugin-registry-pin | staged | A harness sync leaves the plugin registry current, or says loudly that it is not |
-| PLAN-LB-16-config-only-prs-skip-verify | staged | A change to test-relevant config cannot skip the test build |
-| PLAN-LB-17-non-claude-workflow-docs | staged | OpenCode and Antigravity installs carry every document a skill routes to |
+| PLAN-LB-29-harness-sync | staged | Registry pin follows every Claude sync; non-Claude installs ship every routed file |
+| PLAN-LB-30-org-ci-release | staged | Test-input paths force a verify build; project.yml validates against a truthful schema; one organisation release |
+| PLAN-LB-15-plugin-registry-pin | superseded | PLAN-LB-29 (all deliverables) |
+| PLAN-LB-16-config-only-prs-skip-verify | superseded | PLAN-LB-30 (all deliverables) |
+| PLAN-LB-17-non-claude-workflow-docs | superseded | PLAN-LB-29 (all deliverables) |
 
 ## Sequencing and Surface Notes
 
-- LB-15 and LB-17 both edit `marketplace/targets/sync.py`; sequence them.
-- LB-16 is mostly foreign-repo work in `cuioss-organization`.
+- PLAN-LB-29 runs after PLAN-LB-14 (shared `orchestrator.py`). PLAN-LB-30 shares no file with any plan of the epic.
+- PLAN-LB-30 needs an organisation release, which the operator cuts; start it early because of that lead time.

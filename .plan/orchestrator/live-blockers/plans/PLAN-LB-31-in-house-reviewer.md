@@ -1,22 +1,27 @@
-# PLAN-LB-21: Measure whether the in-house reviewer finds anything, and decide its place in the roster
+# PLAN-LB-31: In-house reviewer: measure whether it finds anything, decide its place in the roster, then finish the fleet enrolment
 
 epic: live-blockers
 workstream: WS-05
 
-> ⛔ **SUPERSEDED — do not launch.** Regrouped on 2026-10-08: PLAN-LB-31 (all deliverables).
-> This file is kept as the audit record of the original cut. The successor carries its
-> deliverables, claim labels and surface entries unchanged.
-
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
-> Lives at `plans/PLAN-LB-21-in-house-reviewer-efficacy.md` and is queued as one row file,
-> `queue/PLAN-LB-21.json`, in the epic ledger. The orchestrator EMITS the command below; it
-> never launches the plan inline.
+> Lives at `plans/PLAN-LB-31-in-house-reviewer.md` and is queued as one row file, `queue/PLAN-LB-31.json`,
+> in the epic ledger. The orchestrator EMITS the command below; it never launches the plan inline.
 > This spec is SELF-SUFFICIENT: the emitted command is a one-line pointer and carries no
 > brief, so every per-plan carry is authored here and nowhere else.
 > See `persona-plan-orchestrator/standards/orchestration-model.md` for the tier and
 > hand-off contract.
 
+> Assembled on 2026-10-08 from PLAN-LB-21, PLAN-LB-20, which this spec supersedes in whole or in part.
+> Deliverables, claim labels, surface entries and the carried sequencing notes are copied from those
+> specs unchanged. Each deliverable is tagged with the spec and number it came from; inside carried
+> text, "deliverable 2" or "D2" means that number of the SAME source spec, and a plan id below
+> PLAN-LB-22 resolves through the id map at the end of § Dependencies and Sequencing.
+
 ## Objective
+
+`cuioss-review-bot` is a required reviewer whose last measurement showed a canned review 152 times out of 156, and thirteen repositories are still waiting to be enrolled in it. Nothing has been measured since its charter changed, so nobody knows whether it should stay required or whether the enrolment is worth finishing. This plan repeats the measurement with the earlier method, re-runs the reviewer on a fixed set of diffs with known defects, writes the result down, puts the roster question to the operator, and only then, if the answer says so, enrols the thirteen deferred repositories and checks each on its first real pull request. The sources are one plan because the enrolment is gated on the measurement's decision and both report on the same reviewer.
+
+### Carried from PLAN-LB-21: Measure whether the in-house reviewer finds anything, and decide its place in the roster
 
 This plan is a measurement and a decision, not a code fix. `cuioss-review-bot` is a required
 reviewer: a merge waits for it. In the last measurement, over a window of about two weeks, 152 of
@@ -33,9 +38,23 @@ what the operator chooses. There is no earlier spec; the method is carried forwa
 review-apparatus `findings/2026-09-15-pr-agent-vs-coderabbit-vs-sourcery.md`, `review-practice.md`
 § 1 and Recommendation B of `findings/2026-08-01-sweep-4day.md`.
 
+### Carried from PLAN-LB-20: Finish the review-bot fleet rollout — schema first, then the thirteen repositories
+
+The in-house reviewer (`cuioss-review-bot`) is enrolled in 7 of the 20 repositories it was meant to
+cover. The other 13 were left unwritten because their `.github/project.yml` fails the organisation's
+schema on keys the rollout never touches: `github-automation.auto-merge-build-timeout`, which ten of
+them carry and the schema does not admit, and two-part versions such as `2.7-SNAPSHOT`, which fail a
+three-part pattern. The three repositories migrated earlier carry the same failures and were merged
+on a check of the added block only. All of these verdicts were read by hand, because no validator can
+be run locally. This plan settles each failing key at the source in `cuioss/cuioss-organization`,
+ships a validator anyone can run, re-validates the three migrated repositories whole-file, and then
+enrols the thirteen. Almost all of the work is in other repositories; this repository changes little
+or not at all. Carries forward review-apparatus PLAN-PR-078 D1 and D2 (the unfinished part) and the
+directive of lesson `2026-10-06-15-001`.
+
 ## Deliverables
 
-1. **A repeat corpus pass with the earlier method, over pull requests opened since the charter
+1. **[PLAN-LB-21 D1]** **A repeat corpus pass with the earlier method, over pull requests opened since the charter
    change.** Population: every pull request opened after `2026-09-15T09:50:16Z` (the stamp the last
    pass left for its successor) in the repositories that pass covered, plus any repository enrolled
    since; pull requests labelled `skip-bot-review` and Dependabot pull requests are excluded and
@@ -53,7 +72,7 @@ review-apparatus `findings/2026-09-15-pr-agent-vs-coderabbit-vs-sourcery.md`, `r
    is stated; every repository with fewer than 20 reviews on a side is reported as "coverage only,
    no quality claim"; the pass states its own upper-bound instant for the next pass.
 
-2. **A fixed-diff experiment on pull requests with known defects.** The corpus compares different
+2. **[PLAN-LB-21 D2]** **A fixed-diff experiment on pull requests with known defects.** The corpus compares different
    diffs under different configurations, so it cannot show what the charter change did. Take a
    fixed set of already-merged pull requests on which another reviewer found a Major defect and the
    bot's review was canned: plan-marshall #1065, #1066, #1068 and API-Sheriff #133 (the set the
@@ -68,7 +87,7 @@ review-apparatus `findings/2026-09-15-pr-agent-vs-coderabbit-vs-sourcery.md`, `r
    started is reported as "not triggered" with the run list read, not as a canned review; the
    experiment's comments are listed so they can be found later.
 
-3. **A written result in this repository.** A document at `doc/analysis/in-house-reviewer-efficacy.md`,
+3. **[PLAN-LB-21 D3]** **A written result in this repository.** A document at `doc/analysis/in-house-reviewer-efficacy.md`,
    beside the one analysis already there and in its form: the question, the method, what the
    evidence supports, what it does not support, and the decision once made. Following that
    document's precedent and the documentation standards, it carries the durable reasoning and the
@@ -80,7 +99,7 @@ review-apparatus `findings/2026-09-15-pr-agent-vs-coderabbit-vs-sourcery.md`, `r
    re-run it, and has an explicit "not supported" section; the PR description carries the tables of
    deliverables 1 and 2.
 
-4. **A recorded operator decision on the required-bot roster.** Put the result to the operator with
+4. **[PLAN-LB-21 D4]** **A recorded operator decision on the required-bot roster.** Put the result to the operator with
    the options and what each costs: keep `cuioss-review-bot` required as it is; make it optional so
    its silence or canned output no longer holds a merge; keep it required but only where its
    measured yield is above a stated bar; change `/improve` (the only surface that produced
@@ -95,7 +114,7 @@ review-apparatus `findings/2026-09-15-pr-agent-vs-coderabbit-vs-sourcery.md`, `r
    tests that pin the roster pass; the inbox message tells PLAN-LB-20 in one line whether to
    proceed with enrolment.
 
-5. **The registry's calibration section agrees with the measurement.**
+5. **[PLAN-LB-21 D5]** **The registry's calibration section agrees with the measurement.**
    `automatic-review/standards/cuioss-review-bot.md` § "Signal calibration" describes the
    reviewer's configuration generations and what was measured under each. Add the assembled-charter
    generation with the measured result, or correct the section where the measurement contradicts
@@ -103,7 +122,36 @@ review-apparatus `findings/2026-09-15-pr-agent-vs-coderabbit-vs-sourcery.md`, `r
    *Done when:* the section names the assembled-charter generation and points at the result
    document; `test/plan-marshall/automatic-review/` passes.
 
+6. **[PLAN-LB-20 D4]** **The thirteen deferred repositories are enrolled.** In this order — first those that pass the
+   released schema unchanged, then those that need a version or key correction in the same PR:
+   cui-core-ui-model, cui-jsf-components, cui-portal-ui, cui-java-tools, cui-jsf-test-basic,
+   cui-portal-core, cui-reference-documentation, cui-test-keycloak-integration, nifi-extensions,
+   cui-test-generator, cui-test-juli-logger, cui-test-mockwebserver-junit5, cui-test-value-objects.
+   Each PR adds `.github/workflows/cuioss-review-bot.yml` calling the org reusable workflow at the
+   current release pin, and a `cuioss-review-bot:` block in `.github/project.yml` with
+   `enabled: true`, the confirmed packs from the table below and `additional_rules: []`. Before each
+   merge: the validator passes on the PR's whole file, and the repository's release path is checked
+   to be guarded so that a merge to the default branch cannot publish. A repository that fails
+   either check is reported and left unwritten.
+   *Done when:* for each of the thirteen, the default branch carries the caller workflow and the
+   block with exactly the confirmed packs, read back after merge; or the report names the
+   repository, the check it failed and what is needed. The report states the count enrolled out of
+   13 and out of 20 and does not round a partial rollout up.
+
+7. **[PLAN-LB-20 D5]** **Each newly enrolled repository is checked on its first real pull request, or listed as
+   unchecked.** For each repository enrolled by deliverable 4 and for the six enrolled earlier and
+   never observed (API-Sheriff, TokenSheriff, cui-http, cui-java-module-template, cui-open-rewrite,
+   playwright-test-artifacts), read the reviewer run on the first pull request opened after
+   enrolment and confirm the log line "Assembled review charter (spine; packs: …)" names the
+   confirmed packs. No probe pull request is opened and no `/review` comment is posted for this
+   purpose. Why both reviewer jobs were skipped on API-Sheriff #400 is established or stated as
+   unknown.
+   *Done when:* the report has one row per enrolled repository with the pull request and run read
+   and the charter line found, or the reason no observation was possible.
+
 ## Claim Labels
+
+Carried in source order: bullets 1 to 24 from PLAN-LB-21; bullets 25 to 34 from PLAN-LB-20; bullets 35 to 36 added at the regrouping.
 
 - OBSERVED: the last pass covered 181 pull requests in four contributing repositories over `2026-08-30T20:16:39Z` to `2026-09-15T09:50:16Z`, found 156 bot reviews of which 152 were the canned table and 4 substantive, a populated security cell on 0 of 156, paired recall of 4 of 123 (9 of 123 counting `/improve`), and 7 distinct findings CodeRabbit did not file — read in the review-apparatus ledger at `findings/2026-09-15-pr-agent-vs-coderabbit-vs-sourcery.md` § "Yield", § "Paired recall", § "Delta vs the 2026-08-30 pass"
 - OBSERVED: that pass left an explicit lower bound for its successor (`2026-09-15T09:50:16Z`) and persisted its scripts (`collect.py`, `classify.py`, `report.py`, `confound.py`, `adjudicate.py`, `final_tables.py`) but not its raw dumps — read at the same file § header and § "Reproduction", and the directory `findings/2026-09-15-corpus-scripts/` beside it
@@ -129,13 +177,20 @@ review-apparatus `findings/2026-09-15-pr-agent-vs-coderabbit-vs-sourcery.md`, `r
 - Verify-first clause: the experiment posts `/review` on real, merged pull requests in two repositories and spends reviewer tokens. List the pull requests and get the operator's go-ahead before posting; post each command once.
 - Verify-first clause: keep three things apart in every table, as `review-practice.md` § 1 requires: a canned review, a review that was never triggered, and a diff no other reviewer covered. A ratio that mixes them is not reported.
 - Verify-first clause: do not attribute a difference between the two sides of deliverable 1 to the charter. The diffs differ, the model ladder may have moved, and the last pass already recorded a before/after drop it could not attribute. Only deliverable 2 holds the diff fixed.
+- OBSERVED: the schema's top level is `additionalProperties: true`, and its `cuioss-review-bot` block admits `enabled`, `packs` and `additional_rules` only — read at the same file
+- OBSERVED: in the local checkouts, ten of the thirteen deferred repositories carry `auto-merge-build-timeout` (all but cui-java-tools, cui-test-generator and cui-test-juli-logger), and seven carry a two-part version (cui-java-tools `2.7-SNAPSHOT`, cui-jsf-test-basic `4.4-SNAPSHOT`, cui-portal-core `1.5-SNAPSHOT`, cui-test-generator `3.1-SNAPSHOT`, cui-test-juli-logger `2.2-SNAPSHOT`, cui-test-mockwebserver-junit5 `1.6` and `1.7-SNAPSHOT`, cui-test-value-objects `2.1-SNAPSHOT`). This matches the hand-read table of the earlier rollout — read at `/Users/oliver/git/<repo>/.github/project.yml` for each; local checkouts may lag the default branch
+- OBSERVED: the operator decision is "fix schema first": the thirteen repositories stay unwritten until the schema is settled, and a failing repository is reported, never force-written — recorded in the review-apparatus ledger at `epic.md` § "2026-10-07: `PLAN-PR-078` SHIPPED (#1704), but the fleet rollout is 7 of 20", `landings/PLAN-PR-078.md` § Verdict, and inbox message `plan-pr-078-review-bot-fleet-opt-in-011.md` § Residue
+- OBSERVED: the confirmed packs per deferred repository — java for all thirteen; additionally javascript for cui-jsf-components and nifi-extensions; additionally docs for cui-reference-documentation — recorded in inbox message `plan-pr-078-review-bot-fleet-opt-in-001.md` § "The 13 deferred repositories"
+- OBSERVED: the seven enrolled repositories pin the caller to `reusable-cuioss-review-bot.yml` at org release v0.36.0, and only plan-marshall-mcp was observed running the assembled charter — recorded in the same message § "The 7 repositories carrying the opt-in"
+- HYPOTHESIS: the default-branch `project.yml` of each of the 20 repositories equals its local checkout for the failing keys — confirm/refute by running deliverable 1's remote mode, which reads the default branch (verify-at-outline)
+- HYPOTHESIS: all thirteen deferred repositories have a guarded release path at the current org pin, as the seven enrolled ones had — confirm/refute per repository at its default-branch `.github/workflows/release.yml` and the reusable workflow it pins (verify-at-outline)
+- HYPOTHESIS: nifi-extensions' plan configuration still lists the retired `pr-agent` bot name and four repositories have no required bot at all, so enrolling the reviewer there does not by itself make it gate a merge — confirm/refute at `.plan/marshal.json` in each consumer checkout; fixing it is out of this plan's scope (verify-at-outline)
+- Verify-first clause: before deliverable 4, read PLAN-LB-21's recorded decision. If no result exists yet, stop after deliverable 3 and report; do not enrol thirteen more repositories in a reviewer whose usefulness is unmeasured, unless the operator explicitly says to proceed.
+- Verify-first clause: every count in the final report ("N of 13", "N of 20") is computed from a read of each repository's default branch after the last merge, with the list of repositories read printed beside it.
+- Verify-first clause: the carried claims name foreign checkouts as `/Users/oliver/git/<repo>`. Resolve the same repository names under the checkout root of the machine the plan runs on.
+- Verify-first clause: PLAN-LB-20 D1 to D3, the whole-file validator, the two schema decisions with their organisation release, and the re-validation of the three migrated repositories, are not in this plan. They moved to PLAN-LB-30. Carried text that speaks of "the validator" or "the released schema" refers to what that plan ships.
 
 ## Expected Surface
-
-- DERIVED — this spec is superseded and claims no surface of its own. The entries it declared are
-  recorded in the next section and are now declared by the successor named in the banner above.
-
-## Superseded Surface (record only)
 
 - HYPOTHESIS: `doc/analysis/in-house-reviewer-efficacy.md` — the written result; a new file in an existing directory (verify-at-outline)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/automatic-review/standards/cuioss-review-bot.md` — § "Signal calibration", the assembled-charter generation
@@ -143,6 +198,19 @@ review-apparatus `findings/2026-09-15-pr-agent-vs-coderabbit-vs-sourcery.md`, `r
 - HYPOTHESIS: `test/plan-marshall/automatic-review/test_bot_participation_contract_config.py` — pins on the configured roster, only if the roster changes (verify-at-outline)
 
 ## Dependencies and Sequencing
+
+- Depends on: PLAN-LB-30 for the two enrolment deliverables only (PLAN-LB-20 D4 and D5 in the carried numbering): they need the released schema and the validator. The five measurement and decision deliverables depend on nothing and start at once.
+- Stop point: after the recorded operator decision. If the decision is not to proceed, or PLAN-LB-30 has not released the schema, the plan reports and ends there with the enrolment deliverables recorded as not done; it does not enrol against an unsettled schema.
+- Overlaps with: none. If the operator's decision changes `.plan/marshal.json`, that change is a config-only pull request of the kind PLAN-LB-30 fixes the verify gate for: land it after PLAN-LB-30, or make sure it gets a real build.
+- May run together with: every other plan of this epic.
+
+### Carried sequencing notes
+
+Copied from the source specs. They use the plan ids from before the regrouping; resolve each through
+the id map below. Where a carried "Depends on" or "Overlaps with" line disagrees with the bullets above,
+the bullets above are current.
+
+From PLAN-LB-21:
 
 - Depends on: none. It reads pull requests and posts review commands; it needs no other plan's change.
 - Overlaps with: PLAN-LB-18 and PLAN-LB-19 on nothing they edit — they change `coderabbit.md`, `sourcery.md` and the contract, this plan changes `cuioss-review-bot.md` § "Signal calibration" only. If the operator's decision changes `.plan/marshal.json`, land that as its own small PR: a config-only PR is exactly what PLAN-LB-16 is fixing the verify gate for, so wait for PLAN-LB-16 or make sure the PR gets a real build.
@@ -152,10 +220,46 @@ review-apparatus `findings/2026-09-15-pr-agent-vs-coderabbit-vs-sourcery.md`, `r
 - Left out on purpose: changing the charter, the packs or the model ladder; fixing the reviewer's missing re-review on push and its missed-open-event gap; changing consumer repositories' rosters; adding date filters to the CI abstraction; an independent adjudication of CodeRabbit's findings (the comparison stays "our own disposition", stated as such).
 - Operator decisions needed: go-ahead to run the `gh`-based instrument; go-ahead for the experiment's `/review` comments; the roster decision of deliverable 4, which is the point of the plan.
 
+From PLAN-LB-20:
+
+- Depends on: PLAN-LB-21 (in-house reviewer efficacy) for deliverables 4 and 5 only. Deliverables 1 to 3 do not depend on it and should run first: a validator and a truthful schema are worth having whatever the reviewer turns out to be worth, and the three migrated repositories already run it.
+- Adjacent to: `marketplace/bundles/plan-marshall/skills/tools-integration-ci/` — the `ci repo file read` and `ci checks logs --scope --match --job` verbs this plan uses to read foreign default branches and reviewer logs. They are used as they are. The known gap that `ci checks status` can omit a reusable workflow's nested checks (cui-http #274) is worked around by reading the run list, not fixed here.
+- Foreign-repo work, the thirteen deferred repositories (`/Users/oliver/git/<repo>` for each name in deliverable 4): `.github/project.yml` (add the block; correct failing keys if deliverable 2 chose correction) and a new `.github/workflows/cuioss-review-bot.yml`.
+- Order: (1) validator against the current schema, to turn the hand-read verdicts into derived ones; (2) the two key decisions, schema and docs, org release; (3) re-validate and, where needed, fix the three migrated repositories; (4) enrol the thirteen, passing repositories first; (5) observe.
+- Left out on purpose: making `project.yml` schema validation a required CI check in every repository (a fleet-wide policy change); the bot rosters in consumer plan configurations (retired `pr-agent` name, missing `required_bots`); re-review after a push and the missed-open-event gap in the reviewer workflow; the leftover local `feature/plan-pr-078-review-bot-fleet-opt-in` branches in the foreign checkouts.
+- Operator decisions needed: the two schema decisions of deliverable 2; cutting the org release; and whether to enrol before PLAN-LB-21 reports.
+- Reporting: if the host PR is empty, the plan reports through its inbox message alone, with the per-repository table of deliverables 3 to 5 as the body and one line per foreign PR with its merge commit.
+
+### Id map
+
+| Id before the regrouping | Now |
+|---|---|
+| PLAN-LB-01 | PLAN-LB-23 (all deliverables) |
+| PLAN-LB-02 | PLAN-LB-22 (all deliverables) |
+| PLAN-LB-03 | PLAN-LB-28 (all deliverables) |
+| PLAN-LB-04 | PLAN-LB-25 (all deliverables) |
+| PLAN-LB-05 | D1 and D2 to PLAN-LB-25; D3 to PLAN-LB-24; D4 to PLAN-LB-26; D5 to PLAN-LB-22 |
+| PLAN-LB-06 | PLAN-LB-26 (all deliverables) |
+| PLAN-LB-07 | PLAN-LB-27 (all deliverables) |
+| PLAN-LB-08 | PLAN-LB-26 (all deliverables) |
+| PLAN-LB-09 | PLAN-LB-25 (all deliverables) |
+| PLAN-LB-10 | PLAN-LB-22 (all deliverables) |
+| PLAN-LB-11 | PLAN-LB-27 (all deliverables) |
+| PLAN-LB-12 | PLAN-LB-23 (all deliverables) |
+| PLAN-LB-13 | PLAN-LB-28 (all deliverables) |
+| PLAN-LB-14 | unchanged, still PLAN-LB-14 |
+| PLAN-LB-15 | PLAN-LB-29 (all deliverables) |
+| PLAN-LB-16 | PLAN-LB-30 (all deliverables) |
+| PLAN-LB-17 | PLAN-LB-29 (all deliverables) |
+| PLAN-LB-18 | PLAN-LB-24 (all deliverables) |
+| PLAN-LB-19 | PLAN-LB-24 (all deliverables) |
+| PLAN-LB-20 | D1 to D3 to PLAN-LB-30; D4 and D5 to PLAN-LB-31 |
+| PLAN-LB-21 | PLAN-LB-31 (all deliverables) |
+
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/orchestrator/live-blockers/plans/PLAN-LB-21-in-house-reviewer-efficacy.md"
+/plan-marshall task="implement .plan/orchestrator/live-blockers/plans/PLAN-LB-31-in-house-reviewer.md"
 ```
 
 ## Write-Boundary

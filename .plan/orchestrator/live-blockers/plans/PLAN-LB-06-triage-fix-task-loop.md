@@ -3,6 +3,10 @@
 epic: live-blockers
 workstream: WS-01
 
+> ⛔ **SUPERSEDED — do not launch.** Regrouped on 2026-10-08: PLAN-LB-26 (all deliverables).
+> This file is kept as the audit record of the original cut. The successor carries its
+> deliverables, claim labels and surface entries unchanged.
+
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
 > Lives at `plans/PLAN-LB-06-triage-fix-task-loop.md` and is queued as one row file,
 > `queue/PLAN-LB-06.json`, in the epic ledger. The orchestrator EMITS the command below; it never
@@ -97,6 +101,11 @@ keep the loop from terminating. Carries forward process-compliance PLAN-19 deliv
 - Verify-first clause: for deliverable 5, list which task profiles can have an orchestrator-owed verification at close time before choosing between "stay open" and "reopen path"; a rule keyed on the literal profile name `module_testing` alone must be justified against that list.
 
 ## Expected Surface
+
+- DERIVED — this spec is superseded and claims no surface of its own. The entries it declared are
+  recorded in the next section and are now declared by the successor named in the banner above.
+
+## Superseded Surface (record only)
 
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/triage.md` — § FIX task shape (D1), structured task reference on resolve (D3)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_tasks_core.py` — `deliverable: 0` rule (D1)

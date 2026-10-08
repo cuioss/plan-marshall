@@ -3,6 +3,10 @@
 epic: live-blockers
 workstream: WS-01
 
+> ⛔ **SUPERSEDED — do not launch.** Regrouped on 2026-10-08: D1 and D2 to PLAN-LB-25; D3 to PLAN-LB-24; D4 to PLAN-LB-26; D5 to PLAN-LB-22.
+> This file is kept as the audit record of the original cut. The successor carries its
+> deliverables, claim labels and surface entries unchanged.
+
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
 > Lives at `plans/PLAN-LB-05-unrunnable-waits.md` and is queued as one row file,
 > `queue/PLAN-LB-05.json`, in the epic ledger. The orchestrator EMITS the command below; it never
@@ -112,6 +116,11 @@ member).
 - Verify-first clause: for deliverable 5, read how the dispatcher consumes `consume-failures` at `phase-6-finalize/SKILL.md` § "Precondition resolution" and decide whether the re-wait is driven by the precondition (returning a pending status the dispatcher loops on) or by the executor; one owner only.
 
 ## Expected Surface
+
+- DERIVED — this spec is superseded and claims no surface of its own. The entries it declared are
+  recorded in the next section and are now declared by the successor named in the banner above.
+
+## Superseded Surface (record only)
 
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/branch-cleanup.md` — admission loops and landing loop (D1, D2)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-locks/scripts/merge_lock.py` — bounded admission wait and the no-sleep paragraph (D1)

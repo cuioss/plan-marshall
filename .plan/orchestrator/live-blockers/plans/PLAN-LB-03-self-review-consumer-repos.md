@@ -3,6 +3,10 @@
 epic: live-blockers
 workstream: WS-01
 
+> ⛔ **SUPERSEDED — do not launch.** Regrouped on 2026-10-08: PLAN-LB-28 (all deliverables).
+> This file is kept as the audit record of the original cut. The successor carries its
+> deliverables, claim labels and surface entries unchanged.
+
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
 > Lives at `plans/PLAN-LB-03-self-review-consumer-repos.md` and is queued as one row file, `queue/PLAN-LB-03.json`,
 > in the epic ledger. The orchestrator EMITS the command below; it never launches the plan inline.
@@ -97,6 +101,11 @@ Carries forward truthful-signals PLAN-TRUTH-181 deliverables D1–D3.
 - Verify-first clause: the terminal outcome in Deliverables 2 and 3 is `done` with a not-covered verdict and a WARNING. If the operator wants an unattended run to halt and ask instead, that is a one-line change of the recorded outcome; settle it at outline and record the choice.
 
 ## Expected Surface
+
+- DERIVED — this spec is superseded and claims no surface of its own. The entries it declared are
+  recorded in the next section and are now declared by the successor named in the banner above.
+
+## Superseded Surface (record only)
 
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md` — § "Domain-Aware Candidate Surfacing", § "Step 1" selection, § "Dispatched-envelope output" verdict vocabulary, Step 3b verifier-prompt boundary lines, new not-covered branch in § "Step 4"
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md` — declared coverage, applicability, the not-covered outcome beside the not-run fallback

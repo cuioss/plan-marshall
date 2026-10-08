@@ -3,6 +3,10 @@
 epic: live-blockers
 workstream: WS-01
 
+> ⛔ **SUPERSEDED — do not launch.** Regrouped on 2026-10-08: PLAN-LB-23 (all deliverables).
+> This file is kept as the audit record of the original cut. The successor carries its
+> deliverables, claim labels and surface entries unchanged.
+
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
 > Lives at `plans/PLAN-LB-01-push-freshness-gate.md` and is queued as one row file, `queue/PLAN-LB-01.json`,
 > in the epic ledger. The orchestrator EMITS the command below; it never launches the plan inline.
@@ -86,6 +90,11 @@ deliverables) and process-compliance PLAN-23 deliverable D3.
 - Verify-first clause: decide the shape of the multi-row evidence fields once and check every reader of the `fresh` record (`push.md` display-detail basis, phase-5 Step 12a, tests) before changing `_evidence_fields`.
 
 ## Expected Surface
+
+- DERIVED — this spec is superseded and claims no surface of its own. The entries it declared are
+  recorded in the next section and are now declared by the successor named in the banner above.
+
+## Superseded Surface (record only)
 
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_freshness_crosscheck.py` — union rule in `scope_check_candidates` / `cross_check_candidates`, missing-analysis reporting
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_cmd_pre_commit_verify_freshness.py` — `fresh` / `stale` record rendering for a multi-row basis

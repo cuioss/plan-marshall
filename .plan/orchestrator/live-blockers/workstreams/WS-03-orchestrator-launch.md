@@ -20,8 +20,9 @@ The orchestrator's own emission gate, which this epic runs on. The workstream cl
 
 | Plan | Status | Notes |
 |------|--------|-------|
-| PLAN-LB-14-launch-gate-scope | staged | An indeterminate candidate blocks only what it could collide with |
+| PLAN-LB-14-launch-gate-scope | staged | The launch gate judges each candidate against the plans that can collide with it |
 
 ## Sequencing and Surface Notes
 
-- Run early: it unblocks this epic's own `next`.
+- PLAN-LB-14 is unchanged by the regrouping and stays first in the queue: until it lands, `next` refuses every candidate and each launch is an operator override.
+- PLAN-LB-29 (WS-04) also edits `plan-orchestrator/scripts/orchestrator.py`; it runs after this plan.

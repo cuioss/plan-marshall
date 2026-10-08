@@ -3,6 +3,10 @@
 epic: live-blockers
 workstream: WS-01
 
+> ⛔ **SUPERSEDED — do not launch.** Regrouped on 2026-10-08: PLAN-LB-25 (all deliverables).
+> This file is kept as the audit record of the original cut. The successor carries its
+> deliverables, claim labels and surface entries unchanged.
+
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
 > Lives at `plans/PLAN-LB-04-light-lane-refine-boundary.md` and is queued as one row file, `queue/PLAN-LB-04.json`,
 > in the epic ledger. The orchestrator EMITS the command below; it never launches the plan inline.
@@ -77,6 +81,11 @@ PLAN-10 deliverable D1.
 - OBSERVED: both halves of this defect recurred on 2026-10-07 in the plan run for issue #1697 and stopped it twice: the light-lane pre-dispatch `phase_handshake capture` failed `pr_title_missing`, and the pre-dispatch `2-refine` closure was refused by the `refine_bare_transition` guard; the run stopped both times instead of inventing a title or passing an override — read at `.plan/archived-orchestrators/process-compliance/inbox/archive/issue-1697/issue-1697-002.md` and `issue-1697-003.md`
 
 ## Expected Surface
+
+- DERIVED — this spec is superseded and claims no surface of its own. The entries it declared are
+  recorded in the next section and are now declared by the successor named in the banner above.
+
+## Superseded Surface (record only)
 
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/planning.md` — light-lane branch: `pr_title` producer before the capture, capture-source matrix
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-3-outline/workflow/light-lane.md` — `track` persist, optional title refinement after the bounded read

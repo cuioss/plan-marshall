@@ -3,6 +3,10 @@
 epic: live-blockers
 workstream: WS-01
 
+> ⛔ **SUPERSEDED — do not launch.** Regrouped on 2026-10-08: PLAN-LB-26 (all deliverables).
+> This file is kept as the audit record of the original cut. The successor carries its
+> deliverables, claim labels and surface entries unchanged.
+
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
 > Lives at `plans/PLAN-LB-08-triage-survives-recheck.md` and is queued as one row file,
 > `queue/PLAN-LB-08.json`, in the epic ledger. The orchestrator EMITS the command below; it never
@@ -100,6 +104,11 @@ No earlier spec covers this; the evidence is two lessons, `2026-09-02-19-001` an
 - Verify-first clause: decide with the operator whether `fixed` is kept by default (this spec's choice, matching the lessons' directive) or always reopened non-destructively. The case for keeping it: triage records `fixed` when it allocates the fix task, before the fix lands, so a check re-run in between would reopen the finding and a second triage would allocate a second task. The cost: outside self-review, a fix that did not work is reported by deliverable 3's count rather than by a pending finding.
 
 ## Expected Surface
+
+- DERIVED — this spec is superseded and claims no surface of its own. The entries it declared are
+  recorded in the next section and are now declared by the successor named in the banner above.
+
+## Superseded Surface (record only)
 
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-findings/scripts/_findings_core.py` — `add_qgate_finding` match branch, `QGATE_PERSIST_OK`, `add_qgate_finding_checked`, the `resolve_qgate_findings_by_evidence` docstring (D1, D2)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-findings/scripts/manage-findings.py` — `qgate add` opt-in flag and result fields (D2)

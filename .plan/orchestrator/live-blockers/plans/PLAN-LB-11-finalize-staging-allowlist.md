@@ -3,6 +3,10 @@
 epic: live-blockers
 workstream: WS-01
 
+> ⛔ **SUPERSEDED — do not launch.** Regrouped on 2026-10-08: PLAN-LB-27 (all deliverables).
+> This file is kept as the audit record of the original cut. The successor carries its
+> deliverables, claim labels and surface entries unchanged.
+
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
 > Lives at `plans/PLAN-LB-11-finalize-staging-allowlist.md` and is queued as one row file, `queue/PLAN-LB-11.json`,
 > in the epic ledger. The orchestrator EMITS the command below; it never launches the plan inline.
@@ -50,6 +54,11 @@ Every commit a plan makes — the per-deliverable commits of the execute phase a
 - Verify-first clause: the staging guard must treat a DELETION of a tracked path outside the plan's footprint as out-of-footprint exactly like an addition, and must not let the tracked-modified allowance (the default escape for finalize steps) cover deletions. Settle this before scoping the escape for legitimate out-of-footprint edits
 
 ## Expected Surface
+
+- DERIVED — this spec is superseded and claims no surface of its own. The entries it declared are
+  recorded in the next section and are now declared by the successor named in the banner above.
+
+## Superseded Surface (record only)
 
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py` — new `stage` verb and handler; never-stage class wired into the pattern loader and `scan_artifacts` / `cmd_detect_artifacts` output (D1, D2, D3)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/artifact-patterns.json` — `never_stage_patterns` class (D2)

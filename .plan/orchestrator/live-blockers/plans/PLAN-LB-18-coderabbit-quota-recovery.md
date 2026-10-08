@@ -3,6 +3,10 @@
 epic: live-blockers
 workstream: WS-05
 
+> ⛔ **SUPERSEDED — do not launch.** Regrouped on 2026-10-08: PLAN-LB-24 (all deliverables).
+> This file is kept as the audit record of the original cut. The successor carries its
+> deliverables, claim labels and surface entries unchanged.
+
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
 > Lives at `plans/PLAN-LB-18-coderabbit-quota-recovery.md` and is queued as one row file,
 > `queue/PLAN-LB-18.json`, in the epic ledger. The orchestrator EMITS the command below; it
@@ -129,6 +133,11 @@ PLAN-PR-043 § D2, § D6, § D7 and PLAN-PR-052 § D1, § 3a).
 - Verify-first clause: before adding any pattern, re-read the refusal-recognition tests for a control in both directions. A pattern that reads a genuine short review as an acknowledgment hides a finding; one that reads an acknowledgment as a review credits a review that has not happened. Each new list needs a positive and a negative fixture.
 
 ## Expected Surface
+
+- DERIVED — this spec is superseded and claims no surface of its own. The entries it declared are
+  recorded in the next section and are now declared by the successor named in the banner above.
+
+## Superseded Surface (record only)
 
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/automatic-review/SKILL.md` — § "Rate-limit refusal recovery" Branch 2, Branch 3 and the jittered wake; § "Timeout Contract"; § "`escalate_ask` return"; trigger B's handling of an acknowledgment
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/automatic-review/standards/coderabbit.md` — reset-time patterns, acknowledgment list, escalated command, no-new-commit bodies

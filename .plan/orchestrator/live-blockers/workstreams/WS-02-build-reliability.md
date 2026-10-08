@@ -20,10 +20,12 @@ Build execution and build-result parsing that produce false failures or wrong nu
 
 | Plan | Status | Notes |
 |------|--------|-------|
-| PLAN-LB-12-build-timeout-and-verify-budget | staged | Timeouts kill the whole build and say which budget fired |
-| PLAN-LB-13-maven-build-results | staged | Maven module-tests, test counts and warning classification are correct |
+| PLAN-LB-23-verify-builds | staged | A timed-out build stops completely and names its bound; the freshness gate credits the gate's own green builds |
+| PLAN-LB-28-java-consumer-repos | staged | Maven build results are right; self-review ends on a diff no surfacer covers (weak merge) |
+| PLAN-LB-12-build-timeout-and-verify-budget | superseded | PLAN-LB-23 (all deliverables) |
+| PLAN-LB-13-maven-build-results | superseded | PLAN-LB-28 (all deliverables) |
 
 ## Sequencing and Surface Notes
 
-- LB-12 and LB-13 both touch `script-shared/scripts/build/`; LB-13 owns the parsers, LB-12 the execution and timeout path.
-- LB-01 reads build records LB-12 writes; LB-12 must not change the record shape LB-01 relies on without saying so.
+- PLAN-LB-23 and PLAN-LB-28 meet only at `script-shared/scripts/build/_build_shared.py`, which PLAN-LB-28 touches conditionally. Sequence them unless that plan's outline leaves the file alone.
+- PLAN-LB-23 may run beside PLAN-LB-24 (WS-05); PLAN-LB-28 beside PLAN-LB-27 (WS-01).

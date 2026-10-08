@@ -3,6 +3,10 @@
 epic: live-blockers
 workstream: WS-05
 
+> ⛔ **SUPERSEDED — do not launch.** Regrouped on 2026-10-08: PLAN-LB-24 (all deliverables).
+> This file is kept as the audit record of the original cut. The successor carries its
+> deliverables, claim labels and surface entries unchanged.
+
 > Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
 > Lives at `plans/PLAN-LB-19-review-gate-currency.md` and is queued as one row file,
 > `queue/PLAN-LB-19.json`, in the epic ledger. The orchestrator EMITS the command below; it
@@ -119,6 +123,11 @@ Carries forward review-apparatus PLAN-PR-069 D1 and PLAN-PR-070 D0, D5 and D6 (b
 - Verify-first clause: deliverable 4 must not strand a reply. Enumerate every path that ends a plan after a `fixed` disposition without a fix commit (fix task dropped, plan abandoned, finding re-resolved) and state what the reviewer sees on each.
 
 ## Expected Surface
+
+- DERIVED — this spec is superseded and claims no surface of its own. The entries it declared are
+  recorded in the next section and are now declared by the successor named in the banner above.
+
+## Superseded Surface (record only)
 
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/automatic-review/SKILL.md` — trigger B stale-set derivation and per-bot loop; step-done guard's `participated_stale` remedy
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/automatic-review/scripts/review_completeness.py` — `select_stale_bot_for_trigger`, `cmd_trigger_bot`
