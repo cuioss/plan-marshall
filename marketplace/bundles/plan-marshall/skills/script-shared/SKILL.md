@@ -45,6 +45,8 @@ Do NOT add a second parser of that section in either consumer. It also defines `
 - **The executor**, for the value of its `MARSHALL_VERSION` assignment (`read_executor_version`).
 - **The cache**, for the newest version directory of a bundle (`newest_cache_version`) and whether a version directory carries the `.orphaned_at` marker (`is_orphan_marked`). The marker is reported, never used for selection.
 
+Every read function takes the path it reads. For a caller that has no path of its own, `default_registry_path`, `default_cache_root` and `default_executor_path` state where the three stores are: the registry and the cache root under the user's home directory, resolved on each call, and the executor under the checkout root the caller passes.
+
 `classify_parity` takes the registry rows and one reference version and returns exactly one verdict. The verdict set is closed and declared once, as the `PARITY_*` constants and the `PARITY_VERDICTS` tuple in this module; a consumer imports those names rather than restating the strings. The read states are likewise the module's `REGISTRY_*` and `EXECUTOR_VERSION_*` constants. `version_key` orders versions by digit runs, with the same semantics as `marketplace_bundles._version_sort_key`.
 
 ### Consumers

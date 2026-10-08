@@ -90,9 +90,11 @@ per-concern layout; no code path here opens a queue row or the anchor itself.
   is the only one that interprets one.
 - ``cleanup restart-check --slug S`` — the restart-readiness verdict: one row
   per observed signal, each carrying its own three-valued verdict, its own
-  evidence, and the population it was derived from, plus the floor over the
-  participating rows and the sample instant. An unreadable or disagreeing
-  observation resolves to ``indeterminate`` and never to ``not_ready``.
+  evidence, and the population it was derived from, plus the floor over every
+  row and the sample instant. The ``registry_parity`` row compares the plugin
+  registry pin against the executor version through the shared
+  ``plugin_registry`` reader. An unreadable or disagreeing observation resolves
+  to ``indeterminate`` and never to ``not_ready``.
 - ``inbox {write,amend,supersede,close-stream,validate,list,read,archive,
   migrate-archive,detect,landing-check}`` — the epic's plan-writable channel and
   its orchestrator-side drain: append one ``inbox/{sender_id}-{NNN}.md`` message
@@ -163,6 +165,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import plugin_registry
 from _cmd_sibling_collision import (
     _OVERLAP_JOIN,
     _iter_active_plan_dirs,
@@ -901,17 +904,10 @@ NOT_READY = 'not_ready'
 #: two vocabularies coincide in spelling only, so each carries its own binding.
 READINESS_INDETERMINATE = 'indeterminate'
 
-#: The verdict an arm reports when the surface it would observe is owned by
-#: another component. It is deliberately NOT a member of
-#: :data:`READINESS_ORDER`: such an arm is neither ready nor not-ready, so it is
-#: excluded from the floor — a floor over an unowned surface would let another
-#: component's gap veto this one's verdict.
-NOT_AVAILABLE = 'not_available'
-
-#: The spec that owns the registry/executor parity surface. Named in the
-#: ``registry_parity`` arm's evidence so the report points at the owner rather
-#: than leaving a silent gap. This component observes that surface not at all.
-REGISTRY_PARITY_OWNER = 'PLAN-TRUTH-059'
+#: The remedy the ``registry_parity`` arm names when the plugin registry is pinned
+#: behind the executor. The script lives in the plan-marshall meta-repository
+#: only (ADR-020), and the arm's evidence says so beside the command.
+REGISTRY_REPIN_COMMAND = 'python3 marketplace/targets/claude/registry_pin.py --apply'
 
 # --- the generated view and the compact stage -------------------------------
 #
@@ -5402,19 +5398,124 @@ def _worktree_signal() -> dict[str, Any]:
     return _signal('worktree', READY, f'clean worktree at {head}', population)
 
 
-def _registry_parity_signal() -> dict[str, Any]:
-    """The one arm whose surface this component does not own.
+def _parity_signal(verdict: str, evidence: str, population: str) -> dict[str, Any]:
+    """Build the ``registry_parity`` row, folding any comma a read value carries.
 
-    Reported in a three-part unowned-surface shape — the field is present, its
-    value is ``not_available``, and it names the spec that owns the surface — so
-    a real signal this component does not own is disclosed rather than dropped.
-    Being outside :data:`READINESS_ORDER`, it never reaches the floor.
+    A version name is read from a file this component does not write, so it is
+    folded rather than trusted to keep the row one well-formed TOON record.
     """
-    return _signal(
-        'registry_parity',
-        NOT_AVAILABLE,
-        f'this component observes no parity surface; it is owned by {REGISTRY_PARITY_OWNER}',
-        'not_applicable — the surface belongs to another component',
+    return _signal('registry_parity', verdict, evidence.replace(',', ';'), population.replace(',', ';'))
+
+
+def _pinned_versions(rows: list[dict[str, str | None]]) -> str:
+    """Every distinct version the registry rows pin, in version order, for evidence."""
+    pinned = {value for row in rows for value in (row.get('install_path_version'), row.get('version')) if value}
+    return ' / '.join(sorted(pinned, key=plugin_registry.version_key)) or 'no readable version'
+
+
+def _cache_parity_signal(rows: list[dict[str, str | None]], version: str, population: str) -> dict[str, Any]:
+    """Score the cache against a registry and an executor that already agree on ``version``.
+
+    A cache that cannot be read, or whose newest version directory names another
+    version, is ``indeterminate``: the pin and the executor agree, so nothing is
+    demonstrably behind, yet the three stores were not seen to agree.
+    """
+    cache_root = plugin_registry.default_cache_root()
+    newest = {
+        bundle: plugin_registry.newest_cache_version(cache_root / bundle)
+        for bundle in sorted({str(row['bundle']) for row in rows})
+    }
+    population = f'{population} and cache: {len(newest)} bundle directory(ies) read'
+    unread = [bundle for bundle, found in newest.items() if found is None]
+    if unread:
+        return _parity_signal(
+            READINESS_INDETERMINATE,
+            f'the registry and the executor agree on {version} but the cache holds no readable version '
+            f'directory for: {_OVERLAP_JOIN.join(unread)}',
+            population,
+        )
+    differing = [f'{bundle}={found}' for bundle, found in newest.items() if found != version]
+    if differing:
+        return _parity_signal(
+            READINESS_INDETERMINATE,
+            f'the registry and the executor agree on {version} but the newest cache version differs: '
+            f'{_OVERLAP_JOIN.join(differing)}',
+            population,
+        )
+    return _parity_signal(
+        READY,
+        f'the registry pin and the executor version and the newest cache version all read {version}',
+        population,
+    )
+
+
+def _registry_parity_signal() -> dict[str, Any]:
+    """Whether a restarted session would load the version the executor was generated at.
+
+    Reads the plugin registry, the executor and the cache through the shared
+    reader (``plugin_registry``), at the locations that module states, and
+    compares the registry pin against the executor version:
+
+    - ``ready`` — the registry pin, the executor version and the newest cache
+      version directory all name one version.
+    - ``not_ready`` — the registry is pinned BEHIND the executor. This is the
+      arm's only definite hazard, and its evidence names both versions and the
+      repin command.
+    - ``indeterminate`` — everything else: a store that could not be read, a
+      registry holding no plan-marshall entry (a checkout that does not install
+      plan-marshall through the registry has no pin to be behind), a registry
+      pinned AHEAD of the executor (remedy: regenerate the executor), or a pin
+      that cannot be ordered against the executor version.
+    """
+    registry_state, rows = plugin_registry.read_registry(plugin_registry.default_registry_path())
+    executor_state, executor_version = plugin_registry.read_executor_version(
+        plugin_registry.default_executor_path(Path(cwd_checkout_root()))
+    )
+    population = (
+        f'registry: {len(rows)} plan-marshall scope entr(y/ies) read ({registry_state}) '
+        f'and executor version: {executor_state}'
+    )
+    if registry_state == plugin_registry.REGISTRY_NO_PLAN_MARSHALL_ENTRY:
+        return _parity_signal(
+            READINESS_INDETERMINATE,
+            'plan-marshall is not installed through the plugin registry so there is no pin to compare',
+            population,
+        )
+    if registry_state != plugin_registry.REGISTRY_OK:
+        return _parity_signal(
+            READINESS_INDETERMINATE,
+            f'the plugin registry could not be read ({registry_state})',
+            population,
+        )
+    if executor_state != plugin_registry.EXECUTOR_VERSION_FOUND or executor_version is None:
+        return _parity_signal(
+            READINESS_INDETERMINATE,
+            f'the executor version could not be read ({executor_state})',
+            population,
+        )
+    parity = plugin_registry.classify_parity(rows, executor_version)
+    pinned = _pinned_versions(rows)
+    if parity == plugin_registry.PARITY_IN_PARITY:
+        return _cache_parity_signal(rows, executor_version, population)
+    if parity == plugin_registry.PARITY_BEHIND:
+        return _parity_signal(
+            NOT_READY,
+            f'the registry pins {pinned} which is behind the executor version {executor_version}; '
+            f'repin with: {REGISTRY_REPIN_COMMAND} (the command exists in the plan-marshall '
+            'meta-repository only - ADR-020)',
+            population,
+        )
+    if parity == plugin_registry.PARITY_AHEAD:
+        return _parity_signal(
+            READINESS_INDETERMINATE,
+            f'the registry pins {pinned} which is ahead of the executor version {executor_version}; '
+            'regenerate the executor so it states the version the registry pins',
+            population,
+        )
+    return _parity_signal(
+        READINESS_INDETERMINATE,
+        f'the registry pin ({pinned}) could not be ordered against the executor version {executor_version}',
+        population,
     )
 
 
@@ -5422,11 +5523,10 @@ def cmd_cleanup_restart_check(args: argparse.Namespace) -> dict[str, Any]:
     """Report whether the session is safe to restart. Read-only.
 
     One row per signal, each carrying its own verdict, its own evidence, and the
-    population it was derived from, plus the sample instant. The overall verdict
-    is the floor over the rows whose verdict is a member of
-    :data:`READINESS_ORDER`; a ``not_available`` arm is excluded, so an unowned
-    surface cannot veto a verdict this component CAN reach. Every unreadable or
-    unobservable arm resolves to ``indeterminate`` and never to ``not_ready``.
+    population it was derived from, plus the sample instant. Every row's verdict
+    is a member of :data:`READINESS_ORDER`, and the overall verdict is the floor
+    over all of them. Every unreadable or unobservable arm resolves to
+    ``indeterminate`` and never to ``not_ready``.
     """
     invalid = _validate_slug(args.slug)
     if invalid:
@@ -5455,7 +5555,7 @@ def cmd_cleanup_restart_check(args: argparse.Namespace) -> dict[str, Any]:
         _worktree_signal(),
         _registry_parity_signal(),
     ]
-    scored = [row['verdict'] for row in signals if row['verdict'] in READINESS_ORDER]
+    scored = [row['verdict'] for row in signals]
     return {
         'status': 'success',
         'operation': 'cleanup-restart-check',

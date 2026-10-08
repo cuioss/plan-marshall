@@ -22,6 +22,13 @@ What it reads
   newest version directory and for whether a version directory carries the
   ``.orphaned_at`` marker.
 
+Where the stores live
+---------------------
+Every read function takes the path it reads, so a caller that already knows a
+path passes it. The three ``default_*`` functions state where the stores are on
+a machine for a caller that does not: the registry and the cache root under the
+user's home directory, the executor under a checkout root.
+
 The authoritative reference version, per caller
 -----------------------------------------------
 :func:`classify_parity` compares the registry rows against ONE reference version
@@ -93,6 +100,30 @@ EXECUTOR_VERSION_EMPTY = 'empty'
 _DIGITS_RE = re.compile(r'\d+')
 _VERSION_DIR_RE = re.compile(r'^\d+\.\d+')
 _MARSHALL_VERSION_RE = re.compile(r'^MARSHALL_VERSION\s*=\s*([\'"])(.*?)\1\s*$', re.MULTILINE)
+
+
+def default_registry_path() -> Path:
+    """Where the plugin manager keeps the registry on this machine.
+
+    The home directory is resolved on every call, never at import, so a caller
+    that redirects it — a test pointing ``HOME`` at a fixture tree — is honoured.
+    """
+    return Path.home() / '.claude' / 'plugins' / 'installed_plugins.json'
+
+
+def default_cache_root() -> Path:
+    """The directory holding one cache directory per bundle of this marketplace.
+
+    ``default_cache_root() / bundle`` is the ``bundle_dir`` that
+    :func:`newest_cache_version` and :func:`is_orphan_marked` take. The home
+    directory is resolved on every call, as in :func:`default_registry_path`.
+    """
+    return Path.home() / '.claude' / 'plugins' / 'cache' / MARKETPLACE_NAME
+
+
+def default_executor_path(project_root: Path) -> Path:
+    """Where the generated executor of the checkout at ``project_root`` lives."""
+    return project_root / '.plan' / 'execute-script.py'
 
 
 def version_key(version_name: str) -> tuple[int, ...]:
@@ -283,6 +314,9 @@ __all__ = [
     'REGISTRY_NO_PLAN_MARSHALL_ENTRY',
     'REGISTRY_OK',
     'classify_parity',
+    'default_cache_root',
+    'default_executor_path',
+    'default_registry_path',
     'is_orphan_marked',
     'newest_cache_version',
     'read_executor_version',
