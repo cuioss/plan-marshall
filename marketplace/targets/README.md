@@ -36,6 +36,7 @@ marketplace/targets/
 │   ├── source_fingerprint.py     # Worktree fingerprint for the staleness guard
 │   ├── cache_sync.py             # Plugin-cache sync + staleness guard (sync.py's claude path)
 │   ├── reconcile_daemon.py       # marshalld reconcile after a cache version bump
+│   ├── registry_pin.py           # Opt-in plugin-registry repin to the synced cache version
 │   ├── list_bundles_and_versions.py  # Bundle/version table of target/claude/
 │   ├── content_drift.py          # Live content-drift check engine
 │   └── content_drift_cli.py      # CLI wrapper for the content-drift check
