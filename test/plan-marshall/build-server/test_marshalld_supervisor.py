@@ -229,6 +229,37 @@ def _pid_is_gone(pid: int, *, deadline_seconds: float) -> bool:
     return False
 
 
+# Module-level on purpose: pytest rejects a class-scoped fixture declared as an
+# instance method. The class scope still shares one run between both tests of
+# the class that requests it.
+@pytest.fixture(scope='class')
+def timed_out_run(tmp_path_factory):
+    """Run the grandchild-spawning job to its timeout once for the requesting class."""
+    tmp_path = tmp_path_factory.mktemp('tree-kill')
+    pid_file = tmp_path / 'grandchild.pid'
+    payload = asyncio.run(
+        supervisor.run_job(
+            [
+                sys.executable,
+                '-c',
+                _SPAWN_GRANDCHILD_THEN_BLOCK,
+                str(tmp_path / 'grandchild.ready'),
+                str(pid_file),
+                _GRANDCHILD_CODE,
+            ],
+            str(tmp_path),
+            timeout=3,
+            log_file=str(tmp_path / 'job.log'),
+        )
+    )
+    assert pid_file.exists(), 'the job child never published its grandchild pid before the timeout'
+    grandchild_pid = int(pid_file.read_text())
+    yield payload, grandchild_pid
+    # A grandchild that survived (the defect) must not outlive the test run.
+    with contextlib.suppress(ProcessLookupError):
+        os.kill(grandchild_pid, signal.SIGKILL)
+
+
 @pytest.mark.skipif(os.name == 'nt', reason='process groups and os.killpg are POSIX-only')
 class TestRunJobTimeoutStopsTheWholeProcessTree:
     """A supervisor timeout stops every descendant, not only the job child.
@@ -237,33 +268,6 @@ class TestRunJobTimeoutStopsTheWholeProcessTree:
     the rest of the build running. The grandchild here ignores SIGTERM, so it
     also proves the group SIGKILL follows the group SIGTERM.
     """
-
-    @pytest.fixture(scope='class')
-    def timed_out_run(self, tmp_path_factory):
-        """Run the grandchild-spawning job to its timeout once for the class."""
-        tmp_path = tmp_path_factory.mktemp('tree-kill')
-        pid_file = tmp_path / 'grandchild.pid'
-        payload = asyncio.run(
-            supervisor.run_job(
-                [
-                    sys.executable,
-                    '-c',
-                    _SPAWN_GRANDCHILD_THEN_BLOCK,
-                    str(tmp_path / 'grandchild.ready'),
-                    str(pid_file),
-                    _GRANDCHILD_CODE,
-                ],
-                str(tmp_path),
-                timeout=3,
-                log_file=str(tmp_path / 'job.log'),
-            )
-        )
-        assert pid_file.exists(), 'the job child never published its grandchild pid before the timeout'
-        grandchild_pid = int(pid_file.read_text())
-        yield payload, grandchild_pid
-        # A grandchild that survived (the defect) must not outlive the test run.
-        with contextlib.suppress(ProcessLookupError):
-            os.kill(grandchild_pid, signal.SIGKILL)
 
     def test_grandchild_is_gone_after_the_timeout(self, timed_out_run):
         _payload, grandchild_pid = timed_out_run
