@@ -73,7 +73,11 @@ def _parse_verify_with_via_regex(workflow_text: str) -> dict[str, Any]:
         re.MULTILINE | re.DOTALL,
     )
     if extra_match:
-        lines = [line.strip() for line in extra_match.group(1).splitlines() if line.strip() and not line.strip().startswith('#')]
+        lines = [
+            line.strip()
+            for line in extra_match.group(1).splitlines()
+            if line.strip() and not line.strip().startswith('#')
+        ]
         result['extra-buildable'] = ' '.join(lines)
 
     return result
