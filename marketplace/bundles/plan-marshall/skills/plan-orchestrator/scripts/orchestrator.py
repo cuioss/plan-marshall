@@ -4126,8 +4126,8 @@ def _spec_comparison_rows(
     ``blocking_candidates`` joins ``{candidate_kind}:{name}:{state}`` entries,
     sorted. ``reason`` is derived here from the same entries, naming kind, name
     and state for each — followed, in parentheses, by the
-    :data:`GATE_UNREAD_CAUSES` member when the candidate is blocking because
-    something about it could not be read — and is the empty string exactly when
+    :data:`GATE_UNREAD_CAUSES` member when the member carries one — and is the
+    empty string exactly when
     ``comparison_determinate`` is true. The enforcement site transcribes it and
     composes nothing.
 
