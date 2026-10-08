@@ -118,6 +118,8 @@ PLAN-10 deliverable D1.
    Done when: two tests, one per lane, read the refusal payload and find the lane-correct producer named;
    the `verify` and `capture` payloads stay identical in shape.
 
+10. **[folded in from inbox message `lb-22-finalize-loop-control-014.md`]** **The merge lock stays held across `integrate_into_main`.** `branch-cleanup` acquires the cross-plan merge lock and then calls `integrate_into_main`, which acquires the same lock under the same plan id and releases it on every exit path. Release is not counted, so the lock file is removed at that point and the worktree removal and the pull that follow run without the lock. Make the inner call leave a lock it did not take: either `integrate_into_main` skips its release when its own acquire answered `already_held`, or holds are counted per plan id so that only the outermost release removes the file. *Done when:* a test holds the lock, runs `integrate_into_main`, and asserts the lock is still held afterwards (it fails at HEAD); and the existing reentrant-acquire test stays green.
+
 ## Claim Labels
 
 Carried in source order: bullets 1 to 14 from PLAN-LB-09; bullets 15 to 23 from PLAN-LB-05; bullets 24 to 39 from PLAN-LB-04; bullets 40 to 40 added at the regrouping.
@@ -189,6 +191,8 @@ Carried in source order: bullets 1 to 14 from PLAN-LB-09; bullets 15 to 23 from 
 - OBSERVED: both halves of this defect recurred on 2026-10-07 in the plan run for issue #1697 and stopped it twice: the light-lane pre-dispatch `phase_handshake capture` failed `pr_title_missing`, and the pre-dispatch `2-refine` closure was refused by the `refine_bare_transition` guard; the run stopped both times instead of inventing a title or passing an override — read at `.plan/archived-orchestrators/process-compliance/inbox/archive/issue-1697/issue-1697-002.md` and `issue-1697-003.md`
   - verdict: corroborated | checked_at: 726ca857a | by: live-blockers/cleanup | rescoped: n/a | evidence: issue-1697-002.md (refine_bare_transition refusal, run stopped) and issue-1697-003.md (capture pr_title_missing, no override, no invented title) hold as cited; created stamps are 2026-10-05 and 2026-10-06, not 10-07
 - Verify-first clause: `plan-marshall/workflow/planning.md` and `phase-3-outline/workflow/light-lane.md` both changed between `6edefac32`, the HEAD the PLAN-LB-04 claims were read at, and `64b573110`. Re-read both files and re-derive every line reference before scoping the PLAN-LB-04 deliverables; if a `pr_title` producer has appeared on the light lane, the first of them closes with that finding.
+- HYPOTHESIS: folded in on 2026-10-08 from inbox message `lb-22-finalize-loop-control-014.md`: a second `merge_lock acquire` by the same plan id returns `already_held`, release is idempotent and not counted, and `integrate_into_main` releases on every exit path including success, so the first release to run is the inner one. Recorded call order in that plan: acquire 20:05:12, worktree removal 20:43:52, switch-and-pull 20:43:57, documented release 20:44:02. Reported from two source readings and a script log; the inner call itself was not in the log window read — confirm/refute at `marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/integrate_into_main.py` § `_release_and` and `marketplace/bundles/plan-marshall/skills/manage-locks/scripts/merge_lock.py` § the module docstring bullet on reentrant acquire (verify-at-outline)
+- Verify-first clause: the folded-in lock deliverable and PLAN-LB-05 D1 both change how the merge lock is held during branch cleanup. Design them together at outline: the waiting form of `acquire` must not change what a reentrant acquire returns, and the release rule must hold whether the outer acquire waited or not.
 
 ## Expected Surface
 
@@ -226,6 +230,8 @@ Carried in source order: bullets 1 to 14 from PLAN-LB-09; bullets 15 to 23 from 
 - OBSERVED: `test/plan-marshall/plan-marshall/test_phase_handshake_capture_verify.py` — per-lane refusal payload beside the existing `pr_title_present` cases
 - OBSERVED: `test/plan-marshall/plan-marshall/test_invariants.py` — `PrTitleMissing` message cases
 - HYPOTHESIS: `test/plan-marshall/plan-marshall/test_light_lane_capture_sources.py` — new derived test for the capture-source matrix (verify-at-outline)
+- HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/integrate_into_main.py` — release only a lock this call took (folded-in lock deliverable) (verify-at-outline)
+- HYPOTHESIS: `test/plan-marshall/manage-locks/test_manage_locks_merge_lock_reentrant_acquire.py` — release-side case beside the existing acquire test (folded-in lock deliverable) (verify-at-outline)
 
 ## Dependencies and Sequencing
 

@@ -1,0 +1,47 @@
+envelope_version=1
+sender_type=plan
+sender_id=lb-22-finalize-loop-control
+epic=live-blockers
+kind=candidate-lesson
+created=2026-10-08T20:57:06Z
+
+component=plan-marshall:phase-6-finalize
+category=improvement
+source_plan=lb-22-finalize-loop-control
+confidence=high
+
+# Declare verdict inputs on head-dependent finalize steps so small fixes skip re-runs
+
+## Context
+
+A head-dependent finalize step re-runs whenever HEAD moves, unless it declares a `verdict_inputs` surface that lets the verdict-currency classifier prove the new commit did not touch what the step judged. No step declares one. This plan's own deliverable 9 examined two of them (simplify, lessons-housekeeping) and recorded a refusal for both.
+
+The cost showed in the same run. Step record at the end of finalize:
+
+| Step | Firings |
+|------|---------|
+| lessons-housekeeping | 7 |
+| plugin-doctor | 7 |
+| pre-submission self-review | 7 |
+| automatic-review | 4 |
+| pre-push quality gate | 3 |
+| ci-verify | 3 |
+
+The last fix commit (`f42bd6b85`) changed three files: four table rows in one document, one exception handler, one new test. It re-ran every step above. Lessons-housekeeping re-classified 58 lessons and wrote 58 decision-log entries on each firing, with an identical result (0 removed, 0 promoted, 0 adapted) every time.
+
+## Root cause
+
+The fail-closed default (re-run on any HEAD advance) is the only behaviour available, because the declaration that would narrow it exists for no step. For some steps a declaration is genuinely impossible (lessons-housekeeping reads untracked state); for others it has not been attempted.
+
+## Proposed action
+
+- Go through the head-dependent steps one by one and declare `verdict_inputs` where the judged surface is a set of tracked paths: plugin-doctor (the gated skill directories) and the pre-push quality gate (source and test trees) are the first candidates.
+- For steps whose input cannot be a glob, look for a cheaper re-fire instead of a skip - for lessons-housekeeping, re-classify only when the corpus or the footprint actually changed since the last firing.
+- Consider a size-aware path for review-fix commits: the operator already chose "review only the 2 new commits" by hand for the self-review; that choice could be the default for a delta below a threshold.
+
+## Evidence
+
+- aspect: plan_efficiency - 6-finalize is 5.93M of 15.3M tokens.
+- aspect: chat_history_analysis - seven hand-backs each from lessons-housekeeping and plugin-doctor with identical results.
+- aspect: request_result_alignment - deliverable 9 delivered the recorded refusal the spec permits, so the cost is unchanged by this plan.
+- source: the literal `verdict_inputs:` appears in no step document in the content inventory at main `6b00815e0` (only in `verdict_currency.py` and one test); of the project-local steps under `.claude/`, only lessons-housekeeping was read (it declares none).

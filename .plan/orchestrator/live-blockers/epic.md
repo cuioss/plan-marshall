@@ -104,7 +104,37 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
     verify-first clause on PLAN-LB-12 D5: routed builds left no change-ledger row for the
     plan. Expected surface unchanged; `_build_shared.py` was already declared.
   - `lb-22-finalize-loop-control-001.md` (finding) — absorbed as an Open Defect, below.
-- PLAN-LB-22 — running; the operator confirmed the start on 2026-10-08.
+- **PLAN-LB-22 shipped on 2026-10-08 (#1718, `6b00815e0`)** — record at `landings/PLAN-LB-22.md`.
+  All ten deliverables landed; the `verdict_inputs` deliverable landed as the recorded refusal
+  the spec allowed, so head-dependent finalize steps still re-fire on every fix commit. Its
+  own self-review never converged and was closed with the operator-close verb it built.
+- **Inbox drain of 2026-10-08 (second), fifteen messages from PLAN-LB-22:**
+  - `-016` (landing) — reconciled; complete.
+  - `-002` (scope-creep guard cannot persist, measures upstream history) and `-004`
+    (`affected_files` does not grow with fix tasks) — folded into PLAN-LB-27. No surface added.
+  - `-005` (triage `deliverable: 0` rejected; three runs chose three rules) — folded into
+    PLAN-LB-26. No surface added.
+  - `-014` (the merge lock is released early during branch cleanup) — folded into PLAN-LB-25
+    as its tenth deliverable; `integrate_into_main.py` and the reentrant-acquire test added to
+    its Expected Surface.
+  - `-007` (the pre-push gate's builds are not accepted by the freshness check) — a recurrence
+    of what PLAN-LB-23 fixes. That plan is running, so it is recorded here and not in the
+    spec: with green rows for a bundle compile, the whole-tree quality gate and two bundle
+    verifies, the check still answered `build_scope_narrow`, and each fix commit owed a
+    whole-tree `verify` of 17 to 23 minutes.
+  - `-009` (the re-review procedure triggers one stale bot of two) and `-010` (CodeRabbit's
+    reply to our own trigger is stored as a blocking finding) — recurrences of what PLAN-LB-24
+    fixes (PLAN-LB-19 D1; PLAN-LB-18 D3 and D4). That plan is running, so they are recorded
+    here and not in the spec. `-009` cost one loop-back round with nothing wrong.
+  - `-012` (the self-review has no stopping rule on prose-heavy plans; Step 2a's read-all
+    instruction is not achievable) — folded into the standalone self-review plan's brief.
+  - Promoted to the lessons corpus, none with an owning plan here: `-003` as
+    `2026-10-08-21-001` (lessons-housekeeping still reads the retired `modified_files` field),
+    `-006` as `-21-002` (pass self-review candidates by file path), `-008` as `-21-003`
+    (declare `verdict_inputs` on head-dependent steps), `-011` as `-21-004` (a wrong bot
+    comment needs a `rejected` disposition), `-013` as `-21-005` (six `manage-status`
+    documentation and behaviour gaps left by PLAN-LB-22), `-015` as `-21-006` (the PR Intent
+    section drops the non-goals when over budget).
 - **Standalone plan outside the queue, commissioned by the operator on 2026-10-08:** "the
   pre-submission self-review blocks on real defects, not on wording". It has no queue row and
   is not run through plan-marshall; the operator hands it to OpenCode. Brief:
@@ -115,10 +145,12 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   behavioural check over changed functions, and screens prose candidates. Basis, read from
   the archived plans: about 205 self-review findings in 40 plans, roughly a quarter real
   defects and more than half wording, every one filed at one constant severity.
-  - **Held until PLAN-LB-22 has landed** (operator decision, 2026-10-08). It is not handed
-    over before that. When the PLAN-LB-22 landing is analyzed: re-read the brief against what
-    merged (its § "Concurrent work" and D6 describe PLAN-LB-22 as in flight), correct it,
-    move the worktree branch onto the new `main`, and only then give the operator the path.
+  - **Released to the operator on 2026-10-08, after PLAN-LB-22 landed.** It had been held
+    until then by operator decision. The brief was reconciled with commit `6b00815e0`: it now
+    describes the loop-budget, grant, operator-close and rule-keyed state findings as existing
+    and to be left alone; it gained a bounded Step 2a and an advisory channel for observations
+    outside a round's candidates (from inbox message `-012` and the note in `-013`); the branch
+    was moved onto `964d0bb4d`.
   - It edits `pre-submission-self-review.md`, which PLAN-LB-22 (running) is editing, and the
     surfacer skill that PLAN-LB-28 will edit. The brief names the sections each owns and
     tells the run to rebase; whichever of it and PLAN-LB-22 merges second resolves the
@@ -280,6 +312,16 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
 
 ## Watches
 
+- **PLAN-LB-23 and PLAN-LB-24 must rebase onto PLAN-LB-22's landing** (`6b00815e0`). It
+  changed `phase-6-finalize/SKILL.md`, `automatic-review/SKILL.md`, `triage.md` and
+  `verification-feedback.md`, which PLAN-LB-24 declares, and standards under
+  `phase-6-finalize/` beside PLAN-LB-23's. — trigger: each plan's pre-merge rebase; retire
+  when both have landed.
+- **Head-dependent finalize steps re-fire in full on every fix commit.** PLAN-LB-22 recorded
+  a refusal to declare `verdict_inputs` for the two steps it examined; lessons-housekeeping
+  and plugin-doctor fired seven times each with identical results. Lesson
+  `2026-10-08-21-003` carries the proposal. — trigger: stage it as a plan if the next two
+  landings report the same cost.
 - **PLAN-LB-29 must rebase onto PLAN-LB-14's landing** in `orchestrator.py` and
   `plan-orchestrator/SKILL.md`. — trigger: when PLAN-LB-29 reaches its pre-merge rebase or
   reports a conflict; retire when it lands.

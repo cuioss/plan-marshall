@@ -1,0 +1,40 @@
+envelope_version=1
+sender_type=plan
+sender_id=lb-22-finalize-loop-control
+epic=live-blockers
+kind=candidate-lesson
+created=2026-10-08T20:57:13Z
+
+component=plan-marshall:manage-status
+category=improvement
+source_plan=lb-22-finalize-loop-control
+confidence=high
+
+# Close the manage-status documentation gaps the self-review listed but could not file
+
+## Context
+
+The last self-review round on PR #1718 was a delta round over three files. It found nothing inside its scope and listed six gaps outside it, which the step's surface-only rule did not let it file. The step was then closed, so none of them was fixed. They shipped in `6b00815e0`:
+
+1. `manage-status/SKILL.md` Scripts table: the `mark-step-done` row omits `[--no-completion-log]` and the `assert-step-recorded` row omits `[--min-firing-count]`. The Canonical invocations blocks for both have the same gaps.
+2. Canonical invocations has no section for `title-token` or `list-orphans`, and `planning-lane escalate` lacks `[--persist]`, although the section calls itself the canonical argparse surface.
+3. The "legacy drift" example message in the document differs from the live message in `_cmd_mark_step.py` ("re-run with --force to migrate" versus "migrate ... before retrying").
+4. `update-field`'s error codes (`invalid_field`, `legacy_layout`, `header_unreadable`) are absent from the Error Responses table.
+5. `--waive-refire` is documented, in the document and in the parser help, as naming a head-dependent step. `cmd_loop_back_close` only checks that the step has a `done` record.
+6. Only the waiver stamp converts a status-guard timeout into `close_incomplete`. The step-recording write and the finding resolutions inside the same handler take the same guard and are not covered.
+
+An earlier round also noted that the comment at `ci_complete_precondition.py` lines 399-404 describes routing this plan changed; the operator had the behaviour fixed, and whether the comment was updated with it was not re-checked.
+
+## Root cause
+
+A delta round may see a defect and has no way to record it: filing is limited to surfaced candidates, and the closing full pass that would have picked these up did not run because the step ended by operator close.
+
+## Proposed action
+
+- Fix items 1 to 4 as a documentation pass over `manage-status/SKILL.md`; decide items 5 and 6 as behaviour (either check head-dependence and cover the other two writes, or narrow the documentation to what the code does).
+- Give the self-review a way to file an out-of-scope observation as a non-blocking finding, so it is tracked instead of living only in a hand-back.
+
+## Evidence
+
+- aspect: chat_history_analysis - the final delta-round hand-back, section "Seen outside the delta, not filed", lists all six with line numbers (Scripts table rows 1655-1656, Canonical invocations 1842-1857, example at 601, parser description at 962).
+- not re-verified line by line: a content search at main `6b00815e0` shows `--min-firing-count` once and `list-orphans` twice in `manage-status/SKILL.md`, which is consistent with the reported omissions but does not prove which table lacks them.

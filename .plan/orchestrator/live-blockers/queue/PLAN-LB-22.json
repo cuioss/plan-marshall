@@ -2,9 +2,9 @@
   "id": "PLAN-LB-22",
   "slug": "finalize-loop-control",
   "workstream": "WS-01",
-  "status": "running",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "plan_marshall_plan_id": "lb-22-finalize-loop-control",
+  "pr": "1718",
+  "landing": "landings/PLAN-LB-22.md",
   "seq": 22
 }

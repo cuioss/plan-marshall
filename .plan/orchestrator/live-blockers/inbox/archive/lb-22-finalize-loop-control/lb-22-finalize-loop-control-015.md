@@ -1,0 +1,34 @@
+envelope_version=1
+sender_type=plan
+sender_id=lb-22-finalize-loop-control
+epic=live-blockers
+kind=candidate-lesson
+created=2026-10-08T20:57:16Z
+
+component=plan-marshall:phase-6-finalize
+category=improvement
+source_plan=lb-22-finalize-loop-control
+confidence=high
+
+# Keep the non-goals when the PR Intent section exceeds its length budget
+
+## Context
+
+The `create-pr` step drafted an Intent section of 2064 characters for PR #1718. The renderer's budget for the section is 1500, so 918 characters were not shown. The cut is positional: what survived was the problem statement and the first two sentences of the approach. What was lost was the rest of the approach (per-source budgets, the grant verb, the operator close, resolvable findings, pending CI) and the entire non-goals paragraph.
+
+The Changes section repeats the approach, so that half was recoverable. Nothing else in the body states the non-goals. The step's own hand-back named the consequence: a reviewer may report a scoped-out concern as a gap.
+
+## Root cause
+
+Truncation takes the tail of the section, and the template puts the non-goals last. The part with no second home in the body is the part that is dropped first.
+
+## Proposed action
+
+- Give the non-goals their own section with their own budget, outside Intent; or
+- when the draft is over budget, have the step shorten the approach (which the Changes section restates) and keep the non-goals; or
+- refuse an over-budget draft and ask the author for a shorter one, since the step is already running an LLM that can rewrite it.
+
+## Evidence
+
+- aspect: chat_history_analysis - the create-pr hand-back: "the Intent section was truncated by the renderer, and the non-goals paragraph is not in the PR body. The draft was 2064 chars against a 1500 budget; 918 chars are not shown ... I did not shorten and re-render."
+- aspect: request_result_alignment - the PR body carried no statement of what was scoped out.
