@@ -59,9 +59,9 @@ Outcome semantics:
   re-wait the caller is about to issue and ``rewait_bound`` is
   :data:`MAX_PENDING_REWAITS`. The caller re-issues the resolver. The count of
   lapses is kept per HEAD in ``work/ci-precondition-lapses.toon``; a new HEAD
-  starts at zero. Once the count passes the bound the same lapse returns
-  ``wait_failed`` / ``ci_final_status: timeout`` instead. ``strict`` mode and
-  the per-signal arms never return ``wait_pending``.
+  starts at zero. Once the count passes the bound, or cannot be written, the
+  same lapse returns ``wait_failed`` / ``ci_final_status: timeout`` instead.
+  ``strict`` mode and the per-signal arms never return ``wait_pending``.
 
 Harness-ceiling clamp:
 
@@ -893,7 +893,7 @@ def resolve(
     # A lapse over a run that is simply still going is not a failure. In
     # consume-failures mode it is answered wait_pending so the caller waits
     # again and no timeout finding is filed, up to MAX_PENDING_REWAITS per
-    # HEAD. Strict mode, and so the per-signal arms that delegate here in
+    # HEAD and only while the lapse can be counted. Strict mode, and so the per-signal arms that delegate here in
     # strict mode, keep the wait_failed answer below.
     if mode == 'consume-failures' and _is_lapse_over_running_checks(wait_outcome, failing_checks):
         lapse_count = _record_lapse(plan_id, head_sha)

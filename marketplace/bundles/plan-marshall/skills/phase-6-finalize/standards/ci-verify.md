@@ -176,11 +176,9 @@ timeout}` and `failing_checks` through to the executor WITHOUT
 short-circuiting the step to `failed`. Existing consumers keep the
 default `strict` mode and observe no behaviour change.
 
-**A lapsed wait on a live run is `wait_pending`, not a timeout.** When
-the wait ends on its deadline and no check carries a definitive failing
-conclusion, the resolver returns `status: wait_pending` with the
-still-running checks (`running_checks`), the number of the re-wait about
-to be issued (`rewait_number`) and the bound (`rewait_bound`). The
+A `status: wait_pending` answer carries the still-running checks
+(`running_checks`), the number of the re-wait about to be issued
+(`rewait_number`) and the bound (`rewait_bound`). The
 executor is NOT run on `wait_pending`: nothing has failed, so there is
 nothing to classify and no finding to file. The dispatcher re-issues the
 resolver instead (see [`../SKILL.md`](../SKILL.md) § "Precondition
@@ -231,7 +229,7 @@ this order per failing check.
   failure/cancel/action/stale conclusion (e.g. still pending) falls
   through to the timeout row under `deadline_exceeded`.
 
-- **Row (h) has two meanings, and a wait that merely lapsed is neither.**
+- **Row (h) has two meanings.**
   `ci_timeout` is filed for a check whose own conclusion is `timed_out`,
   and for a check that is still running when the resolver returns
   `wait_failed` / `timeout` (see "Precondition mode" above). A wait the
