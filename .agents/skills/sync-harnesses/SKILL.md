@@ -59,8 +59,9 @@ When this skill is invoked:
    OpenCode and Antigravity a `status` other than `success`, for Claude a
    `cache_status` other than `success`. A Claude row that is `partial` with
    `cache_status: success` has a complete cache install and only a stale
-   registry pin, so its remedy is the repin step, not a `--target claude`
-   re-run.
+   registry pin, so its remedy is the repin, not a `--target claude` re-run.
+   The repin is the operator's explicit `registry_pin.py --apply` named in the
+   block at the end of this file; step 5 only reports the pin.
 
 4. When the Claude result reports `cache_status: success`, reconcile the build
    daemon. Read the field from the `claude:` result block on an all-targets

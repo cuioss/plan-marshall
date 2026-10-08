@@ -96,7 +96,7 @@ Registry parity (Claude path):
     reports the verdict against the versions it would sync and writes
     nothing — no registry write happens under ``--dry-run --repin`` either.
     A staleness-guard refusal synced nothing and carries no
-    ``registry_parity`` block.
+    ``registry_parity`` block; neither does a leg that could not start.
 
 Single-target output — ``--target opencode`` / ``--target antigravity``:
     status: success | error
@@ -807,7 +807,8 @@ def _sync_claude(args: argparse.Namespace) -> tuple[int, dict[str, Any], str]:
     The cache sync runs first and is not influenced by the registry. The
     registry is then repinned when ``--repin`` asks for it, and read LAST,
     so the ``registry_parity`` block states the registry as the run leaves
-    it. A staleness-guard refusal synced nothing and carries no block.
+    it. A staleness-guard refusal synced nothing and carries no block;
+    neither does a leg whose modules could not be loaded.
     """
     try:
         cache_sync = _load_cache_sync_module()

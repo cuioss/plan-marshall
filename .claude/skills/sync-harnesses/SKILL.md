@@ -152,14 +152,18 @@ further members:
 | `verdict` | Meaning | What to do |
 |-----------|---------|------------|
 | `in_parity` | Every judged registry entry is pinned at the synced version. | Nothing. |
-| `behind` | An entry is pinned older than the synced version. The Claude `status` is `partial`, and a `--target claude` run exits `3`. | Run the repin (Step 5). |
+| `behind` | An entry is pinned older than the synced version. The Claude `status` is `partial`, and a `--target claude` run exits `3`. | Repin with `registry_pin.py --apply` — see [After the sync](#after-the-sync). Step 5 only reports the pin. |
 | `ahead` | An entry is pinned newer than the synced version. | Nothing — reported, not an error. A repin never moves a pin backwards. |
 | `unreadable` | Parity could not be established; the block's `reason` says why. | Nothing — reported, not an error. |
 
 Read a Claude row that is `partial` through its `cache_status`. With
 `cache_status: success` the cache install is complete and only the registry pin
-is stale, so the remedy is the repin step, **not** a `--target claude` re-run —
+is stale, so the remedy is the repin, **not** a `--target claude` re-run —
 re-running the sync would mirror the same cache again and leave the same pin.
+The repin is a write the operator asks for: `registry_pin.py --apply`, as
+[After the sync](#after-the-sync) describes, or the opt-in of the
+`project:finalize-step-sync-plugin-cache` step at finalize. Step 5 runs the
+same script without `--apply`, which reports the pin and writes nothing.
 An all-targets run reports that case as aggregate `partial` and exits `1`; exit
 code `3` is the `--target claude` form of the same finding.
 

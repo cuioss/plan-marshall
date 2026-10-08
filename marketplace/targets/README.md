@@ -263,7 +263,7 @@ Two Claude-only flags govern the block:
 * `--registry-path PATH` names the registry file to read. When `--cache-root` is overridden and `--registry-path` is not, no registry is read and the verdict is `unreadable` with the reason stated, so a fixture cache root is never judged against the machine's live registry.
 * `--repin` repins the registry to the synced version after the cache sync, before the block is computed. A repin that closes the gap yields `in_parity` and exit `0`. The block then also carries `repin` — `applied`, `failed` (with `repin_message`), or one of the `skipped_*` values naming why nothing was written.
 
-`--dry-run` reports the verdict against the versions it would sync and writes nothing, including under `--repin`. A staleness-guard refusal synced nothing and carries no `registry_parity` block.
+`--dry-run` reports the verdict against the versions it would sync and writes nothing, including under `--repin`. A staleness-guard refusal synced nothing and carries no `registry_parity` block; neither does a Claude leg that could not start.
 
 ### The `sync-harnesses` command files
 
@@ -328,7 +328,7 @@ summary_message: "<summary>"
 guard_outcome: stale | probe_failed   # only on a staleness-guard refusal
 synced[N]{bundle,version,status}:
 failed[M]{bundle,error}:              # only when failed_count > 0
-registry_parity:                      # absent only on a staleness-guard refusal
+registry_parity:                      # absent only on a staleness-guard refusal or when the leg could not start
   registry_path: "<path>"             # absent when no registry was read
   registry_state: ok | absent | io_error | not_json | no_plan_marshall_entry | not_read
   reason: "<why>"                     # only on an unreadable verdict

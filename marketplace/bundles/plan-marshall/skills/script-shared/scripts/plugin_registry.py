@@ -159,7 +159,8 @@ def read_registry(registry_path: Path, marketplace: str = MARKETPLACE_NAME) -> t
         text = registry_path.read_text(encoding='utf-8')
     except FileNotFoundError:
         return REGISTRY_ABSENT, []
-    except OSError:
+    except (OSError, UnicodeDecodeError):
+        # Bytes that are not UTF-8 are a file that exists and cannot be read.
         return REGISTRY_IO_ERROR, []
     try:
         data = json.loads(text)
@@ -201,14 +202,15 @@ def read_executor_version(executor_path: Path) -> tuple[str, str | None]:
     Returns ``(state, version)``. ``version`` is set only for
     :data:`EXECUTOR_VERSION_FOUND`. The other states are distinct facts:
 
-    - :data:`EXECUTOR_VERSION_UNREADABLE` — the file is absent or could not be read;
+    - :data:`EXECUTOR_VERSION_UNREADABLE` — the file is absent, could not be read,
+      or is not UTF-8 text;
     - :data:`EXECUTOR_VERSION_NOT_FOUND` — it was read and carries no such assignment;
     - :data:`EXECUTOR_VERSION_EMPTY` — the assignment is present and empty, the
       sentinel of an executor generated before any manifest existed.
     """
     try:
         text = executor_path.read_text(encoding='utf-8')
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return EXECUTOR_VERSION_UNREADABLE, None
     match = _MARSHALL_VERSION_RE.search(text)
     if match is None:
