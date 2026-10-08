@@ -514,8 +514,13 @@ Every one of the three routes to the SAME recorded outcome:
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add \
   --plan-id {plan_id} --phase 6-finalize --source qgate --type bug \
   --title "{state} at pre-submission-self-review" --detail "{rationale}" \
+  --rule self-review-state [--file-path "{file}"] \
   --component pm-plugin-development:ext-self-review-plan-marshall --severity warning
 ```
+
+**`--rule self-review-state` is fixed, and it is what makes these findings resolvable.** The three state findings describe the ROUND's situation, not a defect in a file, so nothing about the diff ever evidences them fixed: `qgate resolve-evidenced` (Step 1) keys on `file_path`, and a finding that names no file is unreachable by it. Filed without a key they stayed `pending` after the very round that closed the review — a record of a state that no longer held, blocking on nothing anyone could amend. The literal `self-review-state` is the one key every state finding of this step carries, whichever `{state}` it names, and Step 4 Branch A resolves by exactly that key before it records `done`. It is not interpolated and not varied per state: a second spelling would be a finding the closing round's resolve call cannot reach.
+
+**`--file-path` is conditional.** Pass `--file-path "{file}"` when — and only when — the verifier's `rationale` names a repo-relative file, with `{file}` that path verbatim; a round whose non-close traces to one file then also resolves through the evidence path once a fix touches it. Omit the flag entirely when the rationale names no file. Never pass an empty value, a directory, or a path inferred from the findings list: the flag asserts that the verifier named this file, and a guessed path would let an unrelated landed change evidence the state finding `fixed`.
 
 ⛔ **Every non-closing state above records `loop_back`, never `done` and never `failed`** — the table above is not aspirational, it is the whole outcome column. It is a productive non-completion of exactly the shape § "Dispatched-envelope output" describes — the round examined its surface and handed back something for the next round to act on. Recording any of the three `failed` would grade a working independence check as a broken step, which is the same mis-classification the loop-back convention above exists to prevent.
 
@@ -559,6 +564,19 @@ git -C {worktree_path} rev-parse HEAD
 ```
 
 The `{worktree_path}` value is the path resolved by `phase-6-finalize` Step 0 (Resolve Worktree and Main Checkout Paths); do NOT re-resolve it from any other cwd or shell context. Capture the stdout as `{sha}` (a 40-character hex SHA) and forward it via `--head-at-completion`.
+
+**Resolve this step's own state findings before the terminal mark.** A round that reaches this point has closed: the verifier accepted the verdict and answered `may_close: yes`, so every state an earlier round filed — `verdict_refused`, `further_round_owed`, `verifier_unavailable` (§ "Step 3b") — describes a situation that no longer holds. Resolve every pending finding carrying the step's fixed rule key, citing the closing HEAD just captured (see [manage-findings SKILL.md](../../manage-findings/SKILL.md) § "qgate resolve-by-rule"):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate resolve-by-rule \
+  --plan-id {plan_id} --phase 6-finalize --rule self-review-state \
+  --resolution taken_into_account \
+  --detail "self-review closed at {sha}: the verifier accepted the verdict and answered may_close=yes"
+```
+
+The call runs BEFORE `mark-step-done`, never after: a `done` record written over findings still `pending` is the stuck state this resolution exists to remove, and resolving first means a refused resolve call leaves the step un-closed rather than closed over an unresolved store. `taken_into_account` is the resolution because nothing was *fixed* — no file changed to answer a state finding; the round the finding asked for was run, and its answer is the closing verdict. The match is exact on the rule key, so the structural findings Branch B filed (which carry no `--rule`) are untouched and reported under `untouched` — they resolve through the evidence path in Step 1, on a landed fix, and never here. An empty `resolved` list is the ordinary result on a review that closed in its first round.
+
+On a non-`success` return, do NOT record `done`: surface the returned error and halt, exactly as any refused script call in this step does. The **zero-generator fallback path** skips this call — it ran no round, so Step 3b never filed a state finding for it to resolve.
 
 **The `--fact acceptance=… --fact may_close=…` pair is conditional on this round having actually run Step 3b.** On every ordinary Branch A close a verifier answer exists and both flags are forwarded. On the **zero-generator fallback path** (§ "Step 4: Mark Step Complete" ⛔ note above) Step 3b never fired, so there is no acceptance and no stop answer to report — OMIT both `--fact` flags on that path rather than inventing a value or forwarding an unresolved placeholder, mirroring the `--head-at-completion` omission rule Branch C already applies when `{sha}` cannot be resolved.
 
@@ -673,7 +691,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --force
 ```
 
-Branch A persists nothing — there are no findings to write. Branch B always forwards `--head-at-completion`; Branch C forwards it whenever the SHA resolved and omits it when it did not. The two are forwarded for different reasons, and only ONE of the two SHAs is ever read as an anchor.
+Branch A files nothing — there are no findings to write; its one store write is the rule-keyed resolution of this step's own state findings above. Branch B always forwards `--head-at-completion`; Branch C forwards it whenever the SHA resolved and omits it when it did not. The two are forwarded for different reasons, and only ONE of the two SHAs is ever read as an anchor.
 
 - **Branch B** — the SHA carries no *re-fire* decision value (the dispatcher re-fires `loop_back` records unconditionally), but it IS the delta anchor the NEXT round reads in Step 1. A `loop_back` record written without it leaves the following round with no anchor, which silently degrades that round to a full sweep — the exact re-sweep this scoping exists to remove.
 - **Branch C** — the SHA is recorded for the audit record of where the failure happened, and because an unresolved `{sha}` placeholder would otherwise persist verbatim in its place. When git cannot resolve it at all the field is omitted rather than filled, so the record distinguishes a HEAD nobody could read from a HEAD read as blank. Either way it is **NOT** an anchor: Step 1 admits an anchor only from a `done` or `loop_back` record, because a round that aborted before surfacing anything reviewed nothing and cannot assert that everything up to its HEAD was examined. See Step 1's ⛔ note for the false-green that reading it would produce.

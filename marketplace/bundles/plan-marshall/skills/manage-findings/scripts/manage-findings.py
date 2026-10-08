@@ -14,6 +14,8 @@ Usage:
     python3 manage-findings.py qgate add --plan-id <plan_id> --phase <phase> --source <source> --type <type> --title <title> --detail <detail> [options]
     python3 manage-findings.py qgate list --plan-id <plan_id> --phase <phase> [--any-checkout] [options]
     python3 manage-findings.py qgate resolve --plan-id <plan_id> --hash-id <hash_id> --resolution <resolution> --phase <phase> [options]
+    python3 manage-findings.py qgate resolve-evidenced --plan-id <plan_id> --phase <phase> [--changed-path PATH ...] [--evidence-sha SHA]
+    python3 manage-findings.py qgate resolve-by-rule --plan-id <plan_id> --phase <phase> --rule <rule> --resolution <resolution> --detail <detail>
     python3 manage-findings.py qgate clear --plan-id <plan_id> --phase <phase>
 
     python3 manage-findings.py assessment add --plan-id <plan_id> --file-path <path> --certainty <certainty> --confidence <confidence> [options]
@@ -71,6 +73,7 @@ from _findings_core import (
     resolve_finding,
     resolve_qgate_finding,
     resolve_qgate_findings_by_evidence,
+    resolve_qgate_findings_by_rule,
 )
 from _findings_ingest import ingest_findings
 from file_ops import output_toon, safe_main
@@ -285,6 +288,17 @@ def cmd_qgate_resolve_evidenced(args: argparse.Namespace) -> dict:
         phase=args.phase,
         changed_paths=args.changed_path or [],
         evidence_sha=args.evidence_sha,
+    )
+
+
+def cmd_qgate_resolve_by_rule(args: argparse.Namespace) -> dict:
+    """Handle: qgate resolve-by-rule"""
+    return resolve_qgate_findings_by_rule(
+        plan_id=args.plan_id,
+        phase=args.phase,
+        rule=args.rule,
+        resolution=args.resolution,
+        detail=args.detail,
     )
 
 
@@ -519,6 +533,23 @@ def main() -> int:
         help='Commit SHA evidencing the landed fix (recorded in the resolution detail)',
     )
     q_resolve_ev_parser.set_defaults(func=cmd_qgate_resolve_evidenced)
+
+    # qgate resolve-by-rule
+    q_resolve_rule_parser = qgate_sub.add_parser(
+        'resolve-by-rule',
+        help='Resolve every pending Q-Gate finding of a phase that carries a given rule key',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(q_resolve_rule_parser)
+    add_phase_arg(q_resolve_rule_parser, choices=QGATE_PHASES)
+    q_resolve_rule_parser.add_argument(
+        '--rule', required=True, help='Rule key to match exactly; findings with another rule, or none, are untouched'
+    )
+    q_resolve_rule_parser.add_argument(
+        '--resolution', required=True, choices=RESOLUTIONS, dest='resolution', help='Resolution status'
+    )
+    q_resolve_rule_parser.add_argument('--detail', required=True, help='Resolution detail recorded on each match')
+    q_resolve_rule_parser.set_defaults(func=cmd_qgate_resolve_by_rule)
 
     # qgate clear
     q_clear_parser = qgate_sub.add_parser('clear', help='Clear Q-Gate findings for a phase', allow_abbrev=False)

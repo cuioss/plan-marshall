@@ -1318,6 +1318,86 @@ def resolve_qgate_findings_by_evidence(
     }
 
 
+def resolve_qgate_findings_by_rule(
+    plan_id: str,
+    phase: str,
+    rule: str,
+    resolution: str,
+    detail: str,
+) -> dict[str, Any]:
+    """Resolve every pending Q-Gate finding of a phase that carries a given rule key.
+
+    The rule-keyed counterpart of :func:`resolve_qgate_findings_by_evidence`. That
+    resolver keys on ``file_path``, so a finding that names no file — a producer's
+    own STATE finding, which describes the producer's situation rather than a
+    defect in a file — can never be resolved by it. A producer that files such
+    findings under one fixed ``rule`` key resolves them all through this call once
+    the state they describe no longer holds.
+
+    The match is exact equality on ``rule``. A pending finding carrying a
+    different rule, or no rule at all, is left untouched and reported in
+    ``untouched`` — the key is the only selector, so a finding the caller did not
+    name is never swept up alongside the ones it did.
+
+    Returns ``{status, plan_id, phase, rule, resolution, resolved[], untouched[]}``
+    where each list carries ``{hash_id, rule}`` entries (``rule`` is the empty
+    string for a finding that carries none), so the caller can report exactly
+    which findings the key reached and which pending ones it left alone.
+    """
+    if phase not in QGATE_PHASES:
+        return {'status': 'error', 'message': f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}'}
+
+    if resolution not in RESOLUTIONS:
+        return {'status': 'error', 'message': f'Invalid resolution: {resolution}. Must be one of {RESOLUTIONS}'}
+
+    # A blank key selects nothing meaningful: no record stores an empty rule (the
+    # add path omits the field), so it would report a clean "nothing matched" for
+    # a call that never named a key.
+    if not rule or not rule.strip():
+        return {'status': 'error', 'message': 'Invalid rule: a non-empty rule key is required'}
+
+    store = resolve_findings_store(plan_id)
+    if store_unreached(store):
+        return unresolved_store_error(plan_id, store)
+
+    path = _store_qgate_path(store, phase)
+
+    resolved: list[dict[str, str]] = []
+    untouched: list[dict[str, str]] = []
+    for record in read_jsonl(path):
+        if record.get('resolution') != 'pending':
+            continue
+        record_rule = record.get('rule')
+        entry = {'hash_id': str(record.get('hash_id', '')), 'rule': str(record_rule or '')}
+        if record_rule != rule:
+            untouched.append(entry)
+            continue
+        updated = update_jsonl(
+            path,
+            record['hash_id'],
+            {
+                'resolution': resolution,
+                'resolution_timestamp': timestamp(),
+                'resolution_detail': detail,
+            },
+        )
+        # Only claim the resolution when the write actually took — the same rule
+        # the evidence resolver applies. A record that vanished between the read
+        # and the write is reported as untouched, never as resolved.
+        (resolved if updated else untouched).append(entry)
+
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'phase': phase,
+        'rule': rule,
+        'resolution': resolution,
+        'resolved': resolved,
+        'untouched': untouched,
+        **store_state_fields(store),
+    }
+
+
 def clear_qgate_findings(
     plan_id: str,
     phase: str,
