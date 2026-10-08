@@ -45,9 +45,17 @@ jobs:
       # Opt in to the footprint gate: skip the heavy build+tests when every
       # changed path is non-building (docs/config). The always-reporting
       # `verify / conclusion` job still reports green on a skipped run, so the
-      # required check is satisfied and the merge queue never stalls. A
-      # merge_group run and any change touching buildable source still verify.
+      # required check is satisfied and the merge queue never stalls. A docs-only
+      # entry is skipped in the merge queue (merge_group) as well. Paths listed in
+      # `extra-buildable` (.plan/marshal.json, .claude/**, marketplace/**/*.md,
+      # and test/**/*.md) are test inputs in this repository and force a verify
+      # build even when only docs/config files change.
       skip-on-docs-only: true
+      extra-buildable: >-
+        .plan/marshal.json
+        .claude/**
+        marketplace/**/*.md
+        test/**/*.md
       # Generate the target trees BEFORE verify, in this same job and workspace.
       #
       # `test_target_tree_foundational_skill_freshness.py` asserts that no

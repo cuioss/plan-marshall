@@ -188,9 +188,11 @@ A `…/.venv/bin/python3` path reporting 3.12 means the pin held. A `.pyprojectx
 
 ==== CI
 
-`.github/workflows/python-verify.yml` delegates to the SHA-pinned reusable workflow `cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@6278bbd7280a6e94b4914aa9e8c61cf23ea1abbe`, whose `actions/setup-python` step is conditional: it runs only when a Python version is supplied, through either the reusable workflow's `python-version` input or the `pyprojectx.python-version` key of `.github/project.yml`. This repository sets neither, so `setup-python` is skipped and `./pw` bootstraps on the runner's default `python3`.
+`.github/workflows/python-verify.yml` delegates to the SHA-pinned reusable workflow `cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@47273b80f2d215fd277883956000407eb708db15` (v0.39.0), whose `actions/setup-python` step is conditional: it runs only when a Python version is supplied, through either the reusable workflow's `python-version` input or the `pyprojectx.python-version` key of `.github/project.yml`. This repository sets neither, so `setup-python` is skipped and `./pw` bootstraps on the runner's default `python3`.
 
 That is deliberate and sufficient. `setup-python` would pin only the *bootstrap* interpreter — the one that runs Pyprojectx, which now installs nothing but `uv` — while `UV_PYTHON` pins the interpreter the tools actually run on. Adding a `pyprojectx.python-version` key would therefore introduce a second interpreter declaration that governs a layer whose version no longer matters, inviting exactly the misreading this section previously documented: that the Pyprojectx venv is where the build happens. The single pin is the honest one.
+
+The workflow also opts in to the organization's footprint gate (`skip-on-docs-only: true`), skipping heavy verify runs on `pull_request` and `merge_group` when only docs/config change, while passing test-input paths (`.plan/marshal.json`, `.claude/**`, `marketplace/**/*.md`, `test/**/*.md`) via `extra-buildable` to ensure tests run whenever test inputs change.
 
 ==== The related declarations
 
