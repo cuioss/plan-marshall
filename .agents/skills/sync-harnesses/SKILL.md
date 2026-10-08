@@ -44,7 +44,7 @@ When this skill is invoked:
    - one result block per harness; the Claude block also carries:
      - `cache_status` (`success` | `partial` | `error`) — the outcome of the
        cache sync alone
-     - `registry_parity` — the last block, ending with a `verdict` that is
+     - `registry_parity` — when present, the last block, ending with a `verdict` that is
        exactly one of `in_parity`, `behind`, `ahead` or `unreadable`
 
    A single-target run prints that harness's own document. Report the aggregate

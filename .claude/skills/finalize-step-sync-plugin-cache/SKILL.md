@@ -158,7 +158,7 @@ sync from the registry pin:
 - `cache_status` — `success` | `partial` | `error`: the outcome of the
   cache sync alone. The block's `status` differs from it only when a
   registry that is behind lowered a `success` to `partial`.
-- `registry_parity` — the last block, ending with the engine's `verdict`:
+- `registry_parity` — when present, the last block, ending with the engine's `verdict`:
   `in_parity`, `behind`, `ahead` or `unreadable`. This is the registry as
   the engine saw it, **before** Step 3c; the verdict the step records is
   the one Step 3c reads afterwards.

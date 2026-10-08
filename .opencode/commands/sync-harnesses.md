@@ -45,7 +45,7 @@ Run every command with the `bash` tool, one command per call.
 
    The Claude result carries two members that separate the cache sync from the
    registry pin. `cache_status` (`success` | `partial` | `error`) is the
-   outcome of the cache sync alone. `registry_parity` is the last block of the
+   outcome of the cache sync alone. `registry_parity`, when present, is the last block of the
    result and ends with a `verdict`, exactly one of `in_parity`, `behind`,
    `ahead` or `unreadable`. `behind` means a registry entry is pinned older
    than the synced version: the Claude `status` is then `partial` and a
