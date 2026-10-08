@@ -121,8 +121,15 @@ def test_resolved_executable_is_read_by_the_run_parser_as_the_plans_build(resolv
     assert run_args.command_args == 'quality-gate'
 
 
+@pytest.mark.allow_daemon_routing
 def test_routing_seam_submits_the_resolved_build_for_the_plan(resolved_for_plan, monkeypatch, tmp_path):
-    """The plan id the daemon is handed is the one the resolve call named."""
+    """The plan id the daemon is handed is the one the resolve call named.
+
+    The routing seam is the subject, so the test runs against the real
+    ``_route_to_daemon``. No daemon is reachable from it: the build-server client
+    the seam loads is replaced by ``_ReadyClient``, which answers preflight,
+    submit and wait from memory.
+    """
     run_argv = _run_argv(resolved_for_plan['executable'])
     run_args = parse_ns('plan-marshall', 'build-pyproject', 'pyproject_build.py', *run_argv, register=False)
     pyproject_execute = load_script_module('plan-marshall', 'build-pyproject', '_pyproject_execute.py', register=False)
