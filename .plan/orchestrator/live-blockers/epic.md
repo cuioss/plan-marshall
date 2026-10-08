@@ -74,6 +74,57 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   is. One order remains between the two: PLAN-LB-31 starts with its measurement and stops
   after the recorded roster decision until PLAN-LB-30 has released the schema. All four rows
   stay `staged` until the operator confirms each launch.
+- **Order swapped on 2026-10-08: PLAN-LB-29 before PLAN-LB-14.** PLAN-LB-30 was started on a
+  second machine on the Antigravity harness, whose installs are missing every skill
+  `workflow/` file until PLAN-LB-29 lands. The operator had PLAN-LB-29 emitted at once for
+  that reason. The two plans share `plan-orchestrator/scripts/orchestrator.py` and
+  `plan-orchestrator/SKILL.md`, so PLAN-LB-14, emitted earlier but not launched, now waits for
+  PLAN-LB-29 and is not launched beside it. `next` keeps refusing for that much longer.
+- **PLAN-LB-14 shipped on 2026-10-08 (#1715, `3fe828c84`)** — record at `landings/PLAN-LB-14.md`.
+  It ran and landed while PLAN-LB-29 was running, although the ledger held it until 29 had
+  landed. Nothing collided at its merge; PLAN-LB-29 now rebases onto it in
+  `plan-orchestrator/scripts/orchestrator.py` and `plan-orchestrator/SKILL.md`. The gate it
+  ships judges each candidate against in-flight work only, and puts an overlap of more than
+  one shared entry to the operator instead of refusing.
+- **Inbox drain of 2026-10-08, six messages** (five from PLAN-LB-14, one from PLAN-LB-22):
+  - `lb-14-launch-gate-scope-005.md` (landing) — reconciled; complete.
+  - `lb-14-launch-gate-scope-001.md` — folded into PLAN-LB-22 as a recurrence, recorded here
+    and not in the spec because that plan is in flight: on this epic's first landing
+    `finalize-step-lessons-housekeeping` and `finalize-step-plugin-doctor` each fired five
+    times with identical verdicts. PLAN-LB-22 already carries the `verdict_inputs` declaration
+    for lessons-housekeeping (PLAN-LB-02 D5). It leaves plugin-doctor's recorded refusal to
+    declare standing; the message proposes declaring the scoped skill directories for it,
+    which that plan's outline should weigh against the refusal's evidence. No surface added.
+  - `lb-14-launch-gate-scope-002.md` — promoted to the lessons corpus as `2026-10-08-15-001`:
+    a rule corrected at many sites needs one canonical statement and pointers elsewhere. It
+    applies to every plan here that makes several documents state one rule (22, 24, 25, 26).
+  - `lb-14-launch-gate-scope-003.md` — promoted as `2026-10-08-15-002`: the retrospective's
+    outline-vs-shipped aspect counts a superseded exclusion as violated. No owner in this epic.
+  - `lb-14-launch-gate-scope-004.md` — folded into PLAN-LB-23 as a hypothesis and a
+    verify-first clause on PLAN-LB-12 D5: routed builds left no change-ledger row for the
+    plan. Expected surface unchanged; `_build_shared.py` was already declared.
+  - `lb-22-finalize-loop-control-001.md` (finding) — absorbed as an Open Defect, below.
+- PLAN-LB-22 — running; the operator confirmed the start on 2026-10-08.
+- **Standalone plan outside the queue, commissioned by the operator on 2026-10-08:** "the
+  pre-submission self-review blocks on real defects, not on wording". It has no queue row and
+  is not run through plan-marshall; the operator hands it to OpenCode. Brief:
+  `doc/plans/live-blockers/self-review-materiality/plan.md` in the worktree
+  `.plan/local/worktrees/self-review-materiality` (branch `fix/self-review-materiality`, cut
+  from `3fe828c84`; the brief is untracked and is not to be committed). It adds a severity
+  rubric, lets only `medium` and above loop, rewrites the verifier's stop question, adds a
+  behavioural check over changed functions, and screens prose candidates. Basis, read from
+  the archived plans: about 205 self-review findings in 40 plans, roughly a quarter real
+  defects and more than half wording, every one filed at one constant severity.
+  - **Held until PLAN-LB-22 has landed** (operator decision, 2026-10-08). It is not handed
+    over before that. When the PLAN-LB-22 landing is analyzed: re-read the brief against what
+    merged (its § "Concurrent work" and D6 describe PLAN-LB-22 as in flight), correct it,
+    move the worktree branch onto the new `main`, and only then give the operator the path.
+  - It edits `pre-submission-self-review.md`, which PLAN-LB-22 (running) is editing, and the
+    surfacer skill that PLAN-LB-28 will edit. The brief names the sections each owns and
+    tells the run to rebase; whichever of it and PLAN-LB-22 merges second resolves the
+    overlap. PLAN-LB-28's outline must read what this plan shipped before scoping its
+    PLAN-LB-03 deliverables, and PLAN-LB-26's PLAN-LB-08 deliverables keep their one-call
+    edit in that file.
 - **Sequencing inside the bundles** that the earlier notes asked for is now internal:
   PLAN-LB-05 D3 before PLAN-LB-18 before PLAN-LB-19 (all in 24); PLAN-LB-21 before the
   enrolment of PLAN-LB-20 (both in 31). Two cross-plan orders remain: 31's enrolment
@@ -216,8 +267,32 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   and into `backlog.md`; two lessons describe defects already fixed and should be retired
   (`2026-09-27-07-001`, `2026-10-02-21-006`), and `2026-09-27-19-001` has no metadata header.
   — source: sweep of the lessons store, 2026-10-07.
+- **The outline leaf has no signal for an ambiguous change type, and two documents disagree on
+  the skills the detection dispatch carries.** When `change-type-heuristic` ties,
+  `phase-3-outline` Step 4b prescribes a dispatch the outline leaf cannot issue; the leaf
+  returns `blocked` with a free-form field and `planning-outline.md` Step 2 has no handler for
+  it. PLAN-LB-22 hit this, lost one outline dispatch (about 198K tokens) and got past it with
+  three moves no document prescribes. Separately, `outline-workflow-detail.md` lists one skill
+  for the `detect-change-type` dispatch where the workflow's own Inputs require three. Reach:
+  every deep-lane, non-recipe plan whose heuristic ties. Not owned by any staged plan; stage it
+  if it recurs. — source: inbox message `lb-22-finalize-loop-control-001.md`, 2026-10-08, read
+  at bundle version 0.1.1867; not verified against the source here.
 
 ## Watches
+
+- **PLAN-LB-29 must rebase onto PLAN-LB-14's landing** in `orchestrator.py` and
+  `plan-orchestrator/SKILL.md`. — trigger: when PLAN-LB-29 reaches its pre-merge rebase or
+  reports a conflict; retire when it lands.
+- **The archived-epic tree left `main`** (#1717, `1e556f15d`: archived plans and orchestrator
+  records moved to plan-marshall-telemetry). Claims in the live specs that cite a file under
+  `.plan/archived-orchestrators/` were corroborated before that move and can no longer be read
+  in this repository. — trigger: when a launched plan's outline reports such a claim as
+  unreadable, point it at the telemetry repository.
+- **Three plans outside this epic had no captured footprint** when last read
+  (`harness-bundles-target-rules`, `selective-bundle-installer`, `steward-harness-config`).
+  The gate PLAN-LB-14 shipped still refuses while a live plan has neither a footprint nor an
+  orchestrated source spec. — trigger: the first `next` run on the new gate; retire when it
+  reports the comparison determinate.
 
 - **Harness installs lag the source after every landing** until PLAN-LB-15 ships: the plugin
   registry pin is behind the executor. A session may run stale skill text. — trigger: before
