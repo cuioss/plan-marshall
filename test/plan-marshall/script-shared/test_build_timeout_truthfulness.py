@@ -32,9 +32,19 @@ seam rather than re-implementing the resolution logic:
    from the floor, where an over-provisioned floor empties the runnable slice
    and an unmeasured slow command can be run in-leaf on its very first run.)
 
+4. **A non-finish names the bound it was measured against and where that bound
+   came from.** An in-process ``timeout`` or ``killed`` result carries
+   ``timeout_used_seconds`` (the applied bound), ``timeout_source`` (``explicit``
+   / ``learned`` / ``default`` / ``floor``) and ``command_key``, on the result
+   AND on the rendered TOON. (The failure this forbids: a timeout that states a
+   number while withholding whose number it was, so the reader cannot tell a
+   learned value from a tool default.)
+
 The engine list itself is the coverage guarantee: every case is parameterised
 over :data:`_ENGINES`, so adding a fifth engine without a declared floor fails
-the parity case rather than passing by omission.
+the parity case rather than passing by omission. Property 4 is engine-agnostic —
+the source is decided in the shared ``execute_direct_base`` — so it is driven
+once per source rather than once per engine.
 
 ``_build_execute.py`` and ``_cmd_client_build.py`` are the two seams this
 module drives; neither is modified here.
@@ -43,6 +53,7 @@ module drives; neither is modified here.
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import tempfile
 from argparse import Namespace
@@ -53,8 +64,9 @@ import pytest
 from conftest import load_script_module
 
 from _build_execute import execute_direct_base
-from _build_shared import DEFAULT_BUILD_TIMEOUT, OUTER_TIMEOUT_BUFFER, get_bash_timeout
+from _build_shared import DEFAULT_BUILD_TIMEOUT, OUTER_TIMEOUT_BUFFER, cmd_run_common, get_bash_timeout
 from _build_execute_factory import compute_command_key
+from toon_parser import parse_toon
 
 #: The plan these timeout regressions attribute their builds to. ``plan_id`` is
 #: mandatory on ``execute_direct_base``; ``create_log_file`` is patched out in
@@ -66,8 +78,8 @@ _PLAN_ID = 'timeout-truthfulness-test-plan'
 # regression cases assert the OPPOSITE — the resolution the production path
 # actually performs against a real ``run-configuration.json`` — so the genuine
 # module is loaded here under a private name and re-bound per test (see
-# ``_isolate_run_config``). Without this, a mocked ``timeout_get`` would return
-# a canned value and every "the learned value resolves to X" claim below would
+# ``_isolate_run_config``). Without this, a mocked resolver would return a
+# canned value and every "the learned value resolves to X" claim below would
 # pass vacuously, depending only on collection order.
 _real_run_config = load_script_module(
     'plan-marshall', 'manage-run-config', 'run_config.py', '_real_run_config_for_truthfulness'
@@ -130,10 +142,10 @@ def _isolate_run_config(tmp_path, monkeypatch, entries: dict[str, int]) -> None:
 
     monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
     # Re-bind BOTH consumers to the genuine module: ``_build_execute`` bound
-    # ``timeout_get`` at import time, while ``_lookup_bash_timeout`` imports it
-    # lazily from ``sys.modules`` on every call.
+    # ``timeout_resolve`` at import time, while ``_lookup_bash_timeout`` imports
+    # ``timeout_get`` lazily from ``sys.modules`` on every call.
     monkeypatch.setitem(sys.modules, 'run_config', _real_run_config)
-    monkeypatch.setattr('_build_execute.timeout_get', _real_run_config.timeout_get)
+    monkeypatch.setattr('_build_execute.timeout_resolve', _real_run_config.timeout_resolve)
     config = {
         'version': 1,
         'commands': {key: {'timeout_seconds': value} for key, value in entries.items()},
@@ -215,7 +227,7 @@ def test_passing_near_learned_value_build_reports_success_not_timeout(tool_name,
     with tempfile.TemporaryDirectory() as tmpdir:
         with (
             patch('_build_execute.create_log_file', return_value='/tmp/regression.log'),
-            patch('_build_execute.timeout_get', return_value=learned),
+            patch('_build_execute.timeout_resolve', return_value=(learned, 'learned')),
             patch('_build_execute.timeout_set'),
             patch('_build_execute._run_bounded', return_value=0),
             patch('builtins.open', MagicMock()),
@@ -336,6 +348,157 @@ def test_below_floor_explicit_timeout_still_resolves_up_to_the_engine_floor(
 
 
 # ---------------------------------------------------------------------------
+# Property 4 — a non-finish names its bound, the bound's source, and the key.
+# ---------------------------------------------------------------------------
+
+#: The command key every property-4 case resolves and must see echoed back.
+_SOURCE_COMMAND_KEY = 'test:verify'
+
+#: ``(persisted seconds or None, explicit bound or None, engine floor, expected
+#: bound, expected source)``. One row per origin ``execute_direct_base`` can
+#: report, with BOTH floors that produce ``floor`` — the run-config minimum (120)
+#: and the engine's own ``min_timeout`` — because they are raised in two
+#: different places and a regression in either would be invisible to the other.
+_SOURCE_CASES = [
+    # persisted 400 * 1.25 = 500, above both floors.
+    (400, None, 60, 500, 'learned'),
+    # an explicit bound wins over the persisted value outright.
+    (400, 1800, 60, 1800, 'explicit'),
+    # nothing persisted: the caller's default is the bound.
+    (None, None, 60, DEFAULT_BUILD_TIMEOUT, 'default'),
+    # persisted 40 * 1.25 = 50, raised by the run-config minimum of 120.
+    (40, None, 60, 120, 'floor'),
+    # persisted 400 * 1.25 = 500, raised by the engine floor of 600.
+    (400, None, 600, 600, 'floor'),
+]
+
+_SOURCE_CASE_IDS = ['learned', 'explicit', 'default', 'floor-run-config-minimum', 'floor-engine-minimum']
+
+
+def _no_evidence_parser(_log_file):
+    """A log parser that finds nothing — the non-finish carries no test evidence."""
+    return [], None, 'UNKNOWN'
+
+
+def _in_process_non_finish(tmp_path, monkeypatch, *, persisted, explicit, min_timeout, run_patch):
+    """Run ``execute_direct_base`` to a non-finish against a REAL isolated run-config.
+
+    The resolver is NOT mocked: the source under assertion is the one the
+    production path derives from the persisted state.
+    """
+    entries = {} if persisted is None else {_SOURCE_COMMAND_KEY: persisted}
+    _isolate_run_config(tmp_path, monkeypatch, entries)
+    with (
+        patch('_build_execute.create_log_file', return_value=str(tmp_path / 'build.log')),
+        patch('_build_execute.timeout_set'),
+        patch('_build_execute.log_entry'),
+        run_patch,
+    ):
+        return execute_direct_base(
+            args='verify',
+            command_key=_SOURCE_COMMAND_KEY,
+            default_timeout=DEFAULT_BUILD_TIMEOUT,
+            project_dir=str(tmp_path),
+            tool_name='test',
+            build_command_fn=_build_command_fn,
+            wrapper='tool',
+            plan_id=_PLAN_ID,
+            min_timeout=min_timeout,
+            explicit_timeout=explicit,
+        )
+
+
+def _rendered_toon(result, capsys) -> dict:
+    """Render ``result`` through the shared run path and parse the emitted TOON."""
+    capsys.readouterr()
+    cmd_run_common(result, parser_fn=_no_evidence_parser, tool_name='test', project_dir='.')
+    return parse_toon(capsys.readouterr().out)
+
+
+@pytest.mark.parametrize(
+    ('persisted', 'explicit', 'min_timeout', 'expected_bound', 'expected_source'),
+    _SOURCE_CASES,
+    ids=_SOURCE_CASE_IDS,
+)
+def test_in_process_timeout_names_its_bound_source_and_key(
+    persisted, explicit, min_timeout, expected_bound, expected_source, tmp_path, monkeypatch, capsys
+):
+    """A timeout result carries the applied bound, its source and the command key."""
+    result = _in_process_non_finish(
+        tmp_path,
+        monkeypatch,
+        persisted=persisted,
+        explicit=explicit,
+        min_timeout=min_timeout,
+        run_patch=patch(
+            '_build_execute._run_bounded',
+            side_effect=subprocess.TimeoutExpired(cmd='tool', timeout=expected_bound),
+        ),
+    )
+
+    assert result['status'] == 'timeout'
+    assert result['timeout_used_seconds'] == expected_bound
+    assert result['timeout_source'] == expected_source
+    assert result['command_key'] == _SOURCE_COMMAND_KEY
+
+    rendered = _rendered_toon(result, capsys)
+
+    assert rendered['status'] == 'timeout'
+    assert rendered['timeout_used_seconds'] == expected_bound
+    assert rendered['timeout_source'] == expected_source
+    assert rendered['command_key'] == _SOURCE_COMMAND_KEY
+
+
+def test_in_process_killed_result_carries_all_three_bound_fields(tmp_path, monkeypatch, capsys):
+    """A kill names the bound that did NOT fire, its source and the key.
+
+    The bound is not what ended the run, so it is diagnostic rather than causal:
+    it says how much headroom the run had when the signal arrived. A learned
+    value is seeded so the source cannot be satisfied by the default path.
+    """
+    result = _in_process_non_finish(
+        tmp_path,
+        monkeypatch,
+        persisted=400,
+        explicit=None,
+        min_timeout=60,
+        run_patch=patch('_build_execute._run_bounded', return_value=-9),
+    )
+
+    assert result['status'] == 'killed'
+    assert result['timeout_used_seconds'] == 500
+    assert result['timeout_source'] == 'learned'
+    assert result['command_key'] == _SOURCE_COMMAND_KEY
+
+    rendered = _rendered_toon(result, capsys)
+
+    assert rendered['status'] == 'killed'
+    assert rendered['timeout_used_seconds'] == 500
+    assert rendered['timeout_source'] == 'learned'
+    assert rendered['command_key'] == _SOURCE_COMMAND_KEY
+
+
+def test_a_finished_build_carries_no_bound_source(tmp_path, monkeypatch):
+    """CONTROL: the source and key are non-finish fields, not stamped on everything.
+
+    Without it the two cases above are satisfied by a wrapper that attaches the
+    fields unconditionally, which would put a ``timeout_source`` on a green build.
+    """
+    result = _in_process_non_finish(
+        tmp_path,
+        monkeypatch,
+        persisted=400,
+        explicit=None,
+        min_timeout=60,
+        run_patch=patch('_build_execute._run_bounded', return_value=0),
+    )
+
+    assert result['status'] == 'success'
+    assert 'timeout_source' not in result
+    assert 'command_key' not in result
+
+
+# ---------------------------------------------------------------------------
 # Property 3 — the resolve stamp agrees with the run, and the derived tier
 # follows the FLOORED value.
 # ---------------------------------------------------------------------------
@@ -371,7 +534,7 @@ def test_resolve_stamp_equals_the_floored_bound_the_run_measures_against(
     with tempfile.TemporaryDirectory() as tmpdir:
         with (
             patch('_build_execute.create_log_file', return_value='/tmp/regression.log'),
-            patch('_build_execute.timeout_get', return_value=learned),
+            patch('_build_execute.timeout_resolve', return_value=(learned, 'learned')),
             patch('_build_execute.timeout_set'),
             patch('_build_execute._run_bounded', return_value=0),
             patch('builtins.open', MagicMock()),

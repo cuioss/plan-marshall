@@ -40,7 +40,7 @@ from typing import IO, Any
 
 from _build_result import DirectCommandResult, create_log_file, killed_result
 from plan_logging import log_entry
-from run_config import timeout_get, timeout_set
+from run_config import TIMEOUT_SOURCE_FLOOR, timeout_resolve, timeout_set
 
 # ---------------------------------------------------------------------------
 # Platform-aware build wrapper detection (merged from _build_wrapper.py)
@@ -301,6 +301,14 @@ def execute_direct_base(
     value — no learned value can reduce it — while the engine's declared floor
     still binds, because the floor protects against under-specification.
 
+    The bound is resolved through ``run_config.timeout_resolve``, which returns
+    the same integer ``timeout_get`` does together with its origin. A ``timeout``
+    or ``killed`` result carries that pair as ``timeout_used_seconds`` (the
+    applied bound, never the elapsed time) and ``timeout_source`` (``explicit``,
+    ``learned``, ``default``, or ``floor`` when either the run-config minimum or
+    ``min_timeout`` raised the value), plus the ``command_key`` the learned value
+    is stored under.
+
     **Three non-green outcomes, three statuses.** The returned ``status``
     separates the conditions the caller must act on differently:
 
@@ -369,10 +377,11 @@ def execute_direct_base(
 
     # Step 2: Resolve the bound — an explicit override wins over the learned
     # value; the caller's floor binds on either path (see the docstring).
-    timeout_seconds = max(
-        timeout_get(command_key, default_timeout, project_dir, explicit_timeout),
-        min_timeout,
-    )
+    # The source travels with the bound so a timeout or killed result can name
+    # which of the paths produced the number it was measured against.
+    timeout_seconds, timeout_source = timeout_resolve(command_key, default_timeout, project_dir, explicit_timeout)
+    if timeout_seconds < min_timeout:
+        timeout_seconds, timeout_source = min_timeout, TIMEOUT_SOURCE_FLOOR
 
     # Step 3: Build command using tool-specific function
     # log_file is passed so Maven can embed it via -l flag
@@ -443,6 +452,8 @@ def execute_direct_base(
                 log_file=log_file,
                 command=command_str,
                 timeout_used_seconds=timeout_seconds,
+                timeout_source=timeout_source,
+                command_key=command_key,
                 **extras,
             )
 
@@ -483,6 +494,8 @@ def execute_direct_base(
             'exit_code': -1,
             'duration_seconds': duration_seconds,
             'timeout_used_seconds': timeout_seconds,
+            'timeout_source': timeout_source,
+            'command_key': command_key,
             'log_file': log_file,
             'command': command_str,
             'error': f'Command timed out after {timeout_seconds} seconds',

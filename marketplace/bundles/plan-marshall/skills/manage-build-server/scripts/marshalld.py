@@ -52,6 +52,8 @@ from _build_server_protocol import (
     STATUS_REFUSED,
     STATUS_RUNNING,
     TERMINAL_STATUSES,
+    TIMEOUT_SOURCE_DAEMON_DEFAULT,
+    TIMEOUT_SOURCE_EXPLICIT,
     FrameError,
     JobSpec,
     read_frame,
@@ -597,8 +599,8 @@ class Daemon:
             self._progress[entry.job_id] = JobProgress()
             self._tasks[entry.job_id] = asyncio.create_task(self._execute(entry.job_id, entry.spec))
 
-    def _resolve_job_timeout(self, requested: int | None) -> int:
-        """Return the supervisory bound for a job: the default, raised by a request.
+    def _resolve_job_timeout(self, requested: int | None) -> tuple[int, str]:
+        """Return the supervisory bound for a job together with its origin.
 
         A submit that stated no bound (``requested is None``) gets this daemon's
         configured default unchanged. A submit that DID state one raises the
@@ -608,25 +610,36 @@ class Daemon:
         because the child already enforces the smaller bound itself and an outer
         kill underneath it would only destroy the child's diagnosis.
 
+        The origin names which of the two produced the returned number:
+        :data:`TIMEOUT_SOURCE_DAEMON_DEFAULT` when the daemon's own default is
+        the bound — including a request too small to raise it — and
+        :data:`TIMEOUT_SOURCE_EXPLICIT` only when a request actually raised it.
+
         Args:
             requested: The spec's explicit bound in seconds, or ``None``.
 
         Returns:
-            The wall-clock bound in seconds to run the child under.
+            ``(bound_seconds, source)`` — the wall-clock bound to run the child
+            under, and where it came from.
         """
         if requested is None:
-            return self._job_timeout
-        return max(requested + _JOB_TIMEOUT_MARGIN_SECONDS, self._job_timeout)
+            return self._job_timeout, TIMEOUT_SOURCE_DAEMON_DEFAULT
+        raised = requested + _JOB_TIMEOUT_MARGIN_SECONDS
+        if raised > self._job_timeout:
+            return raised, TIMEOUT_SOURCE_EXPLICIT
+        return self._job_timeout, TIMEOUT_SOURCE_DAEMON_DEFAULT
 
     async def _execute(self, job_id: str, spec_dict: dict[str, Any]) -> None:
         try:
             spec = JobSpec.from_dict(spec_dict)
             self._log_dir.mkdir(mode=_DIR_MODE, parents=True, exist_ok=True)
             log_file = str(self._log_dir / f'{job_id}.log')
+            timeout, timeout_source = self._resolve_job_timeout(spec.timeout)
             payload = await run_job(
                 spec.command,
                 spec.project_path,
-                timeout=self._resolve_job_timeout(spec.timeout),
+                timeout=timeout,
+                timeout_source=timeout_source,
                 log_file=log_file,
                 progress=self._progress.get(job_id),
             )

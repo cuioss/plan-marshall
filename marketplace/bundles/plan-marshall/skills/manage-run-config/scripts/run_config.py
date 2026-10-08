@@ -26,6 +26,15 @@ SAFETY_MARGIN = 1.25  # Multiplier applied to persisted values on retrieval
 HIGHER_WEIGHT = 0.80  # Weight given to higher value during update
 MINIMUM_TIMEOUT_SECONDS = 120  # Floor for timeout values - prevents unreasonably short timeouts
 
+# Origin of a resolved timeout bound, as reported by ``timeout_resolve``. These
+# are four of the five ``timeout_source`` values a build result carries; the
+# fifth (``daemon_default``) is produced by the build daemon, which never
+# consults this resolver.
+TIMEOUT_SOURCE_EXPLICIT = 'explicit'
+TIMEOUT_SOURCE_LEARNED = 'learned'
+TIMEOUT_SOURCE_DEFAULT = 'default'
+TIMEOUT_SOURCE_FLOOR = 'floor'
+
 # Architecture-refresh enums and defaults
 ARCHITECTURE_REFRESH_TIER_0_VALUES = ('enabled', 'disabled')
 ARCHITECTURE_REFRESH_TIER_0_DEFAULT = 'enabled'
@@ -266,12 +275,50 @@ def timeout_get(command_key: str, default: int, project_dir: str = '.', explicit
     Returns:
         The resolved timeout in seconds.
     """
+    return timeout_resolve(command_key, default, project_dir, explicit=explicit)[0]
+
+
+def timeout_resolve(
+    command_key: str, default: int, project_dir: str = '.', explicit: int | None = None
+) -> tuple[int, str]:
+    """Resolve the timeout for a command together with the path that produced it.
+
+    The bound is exactly what :func:`timeout_get` returns — that function
+    delegates here — so the two can never disagree. The second element names the
+    origin of the returned value:
+
+    - :data:`TIMEOUT_SOURCE_EXPLICIT` — the caller-supplied ``explicit`` bound.
+    - :data:`TIMEOUT_SOURCE_LEARNED` — the persisted value scaled by
+      ``SAFETY_MARGIN``.
+    - :data:`TIMEOUT_SOURCE_DEFAULT` — ``default``, because nothing is persisted.
+    - :data:`TIMEOUT_SOURCE_FLOOR` — ``MINIMUM_TIMEOUT_SECONDS`` RAISED the value
+      one of the three paths above produced. The floor replaces the origin
+      because the floor, not that path, is the number that was applied; a value
+      that merely equals the floor was not raised and keeps its own origin.
+
+    Args:
+        command_key: Command identifier the learned value is keyed under.
+        default: Timeout (seconds) used when no value is persisted for the key.
+        project_dir: Kept for API compatibility; the config location is
+            main-anchored (see :func:`get_run_config_path`).
+        explicit: Caller-supplied bound (seconds) that overrides the learned
+            value. ``None`` means "not supplied" and selects the learned path.
+
+    Returns:
+        ``(timeout_seconds, source)``.
+    """
     if explicit is not None:
-        return max(explicit, MINIMUM_TIMEOUT_SECONDS)
-    config = read_run_config(get_run_config_path(project_dir))
-    persisted = config.get('commands', {}).get(command_key, {}).get('timeout_seconds')
-    timeout = default if persisted is None else int(persisted * SAFETY_MARGIN)
-    return max(timeout, MINIMUM_TIMEOUT_SECONDS)
+        timeout, source = explicit, TIMEOUT_SOURCE_EXPLICIT
+    else:
+        config = read_run_config(get_run_config_path(project_dir))
+        persisted = config.get('commands', {}).get(command_key, {}).get('timeout_seconds')
+        if persisted is None:
+            timeout, source = default, TIMEOUT_SOURCE_DEFAULT
+        else:
+            timeout, source = int(persisted * SAFETY_MARGIN), TIMEOUT_SOURCE_LEARNED
+    if timeout < MINIMUM_TIMEOUT_SECONDS:
+        return MINIMUM_TIMEOUT_SECONDS, TIMEOUT_SOURCE_FLOOR
+    return timeout, source
 
 
 def timeout_measured(command_key: str, project_dir: str = '.') -> int | None:

@@ -136,10 +136,10 @@ class TestExecuteClassifiesSignalDeath:
             'build/_build_execute.py',
             '_build_execute_for_non_finish',
         )
-        run_config_mock.timeout_get.return_value = 330
+        run_config_mock.timeout_resolve.return_value = (330, 'learned')
 
         with (
-            patch.object(_build_execute, 'timeout_get', run_config_mock.timeout_get),
+            patch.object(_build_execute, 'timeout_resolve', run_config_mock.timeout_resolve),
             patch.object(_build_execute, 'timeout_set', run_config_mock.timeout_set),
             patch.object(_build_execute, 'create_log_file', return_value='/tmp/kill-test.log'),
             patch.object(_build_execute, 'log_entry'),
@@ -173,6 +173,15 @@ class TestExecuteClassifiesSignalDeath:
         self._run(-9, run_config)
 
         run_config.timeout_set.assert_not_called()
+
+    def test_killed_result_names_the_bound_its_source_and_the_key(self):
+        """A kill reports the bound it ran under, not only that it was killed."""
+        run_config = MagicMock()
+        result = self._run(-9, run_config)
+
+        assert result['timeout_used_seconds'] == 330
+        assert result['timeout_source'] == 'learned'
+        assert result['command_key'] == 'python:verify'
 
     # --- matched control: a genuinely failing build ------------------------
 
@@ -334,8 +343,13 @@ class TestEmitChokePointKeepsTheThreeApart:
 class TestDaemonVerdictSurvivesTheMapping:
     """The daemon already classifies correctly; the client must not undo it."""
 
+    #: The elapsed time every routed payload below reports. Deliberately unlike
+    #: any bound used here, so a result that substituted the elapsed time for the
+    #: bound is unmistakable.
+    _ELAPSED = 42
+
     @staticmethod
-    def _map(job_status, **extra):
+    def _map(job_status, command_key=None, **extra):
         factory = load_script_module(
             'plan-marshall',
             'script-shared',
@@ -345,11 +359,61 @@ class TestDaemonVerdictSurvivesTheMapping:
         waited = {
             'job_status': job_status,
             'log_file': '/tmp/routed.log',
-            'duration_seconds': 42,
+            'duration_seconds': TestDaemonVerdictSurvivesTheMapping._ELAPSED,
             'exit_code': -9 if job_status == 'killed' else 1,
         }
         waited.update(extra)
-        return factory._daemon_result_to_direct(waited, './pw verify')
+        if command_key is None:
+            # The two-positional form every pre-existing caller uses.
+            return factory._daemon_result_to_direct(waited, './pw verify')
+        return factory._daemon_result_to_direct(waited, './pw verify', command_key)
+
+    # --- the bound is the daemon's, never the elapsed time ------------------
+
+    @pytest.mark.parametrize('job_status', ['timeout', 'killed'])
+    def test_routed_non_finish_carries_the_daemons_bound_and_source(self, job_status):
+        """The bound and its source arrive as the daemon stated them."""
+        result = self._map(job_status, timeout_used_seconds=1800, timeout_source='daemon_default')
+
+        assert result['timeout_used_seconds'] == 1800
+        assert result['timeout_source'] == 'daemon_default'
+        assert result['duration_seconds'] == self._ELAPSED
+
+    @pytest.mark.parametrize('job_status', ['timeout', 'killed'])
+    def test_routed_non_finish_without_a_bound_carries_neither_field(self, job_status):
+        """A daemon that states no bound yields none — the elapsed is not one.
+
+        This is the version-skew case: a daemon predating the field. The result
+        must omit ``timeout_used_seconds`` rather than report the 42 s the job
+        ran, which is a different measurement and was never a bound.
+        """
+        result = self._map(job_status)
+
+        assert 'timeout_used_seconds' not in result
+        assert 'timeout_source' not in result
+        assert result['duration_seconds'] == self._ELAPSED
+
+    @pytest.mark.parametrize('job_status', ['timeout', 'killed'])
+    def test_a_source_without_a_bound_is_not_carried(self, job_status):
+        """A source names a number; with no number there is nothing to name."""
+        result = self._map(job_status, timeout_source='daemon_default')
+
+        assert 'timeout_used_seconds' not in result
+        assert 'timeout_source' not in result
+
+    @pytest.mark.parametrize('job_status', ['timeout', 'killed'])
+    def test_routed_non_finish_carries_the_clients_command_key(self, job_status):
+        """The daemon has no command key; the routing client supplies its own."""
+        result = self._map(job_status, command_key='python:verify', timeout_used_seconds=1800)
+
+        assert result['command_key'] == 'python:verify'
+
+    @pytest.mark.parametrize('job_status', ['timeout', 'killed'])
+    def test_control_no_command_key_is_carried_when_none_is_supplied(self, job_status):
+        """CONTROL: the key appears only because a caller supplied one."""
+        result = self._map(job_status, timeout_used_seconds=1800)
+
+        assert 'command_key' not in result
 
     def test_daemon_killed_maps_to_killed(self):
         """A daemon-side kill arrives as ``killed``, not as a build failure."""
@@ -403,8 +467,15 @@ class TestCrossCheckPreservesTheLogVerdict:
     """
 
     @staticmethod
-    def _map_with_log_verdict(verdict_status, exit_code=-9, tests_run=None):
+    def _map_with_log_verdict(verdict_status, exit_code=-9, tests_run=None, client_key=None, **verdict_fields):
         """Drive the routed mapping with a stand-in log verdict.
+
+        ``verdict_fields`` are forwarded onto the :class:`LogVerdict` as the
+        INNER wrapper's applied-bound triple (``timeout_used_seconds`` /
+        ``timeout_source`` / ``command_key``). ``client_key`` is the ROUTING
+        CLIENT's own command key, handed to the mapping as its third argument;
+        left ``None`` the mapping is called in its two-positional form.
+
 
         The stand-in is a REAL :class:`LogVerdict`, not a ``SimpleNamespace``
         shaped by hand. A hand-shaped double carries only the attributes its
@@ -432,17 +503,17 @@ class TestCrossCheckPreservesTheLogVerdict:
             # an AttributeError raised deep inside the production read. Same
             # convention as the sibling ``test_daemon_routed_test_count``, which
             # drives a real on-disk job log for the same reason.
-            verdict = LogVerdict(status=verdict_status, exit_code=exit_code, tests_run=tests_run)
+            verdict = LogVerdict(status=verdict_status, exit_code=exit_code, tests_run=tests_run, **verdict_fields)
+        waited = {
+            'job_status': 'success',
+            'log_file': '/tmp/routed.log',
+            'duration_seconds': 42,
+            'exit_code': 0,
+        }
         with patch.object(factory, 'read_log_verdict', return_value=verdict):
-            return factory._daemon_result_to_direct(
-                {
-                    'job_status': 'success',
-                    'log_file': '/tmp/routed.log',
-                    'duration_seconds': 42,
-                    'exit_code': 0,
-                },
-                './pw verify',
-            )
+            if client_key is None:
+                return factory._daemon_result_to_direct(waited, './pw verify')
+            return factory._daemon_result_to_direct(waited, './pw verify', client_key)
 
     def test_log_killed_survives_the_cross_check(self):
         result = self._map_with_log_verdict('killed')
@@ -462,6 +533,71 @@ class TestCrossCheckPreservesTheLogVerdict:
 
         assert result['status'] == STATUS_INDETERMINATE
         assert 'speculative' in result['message']
+
+    # --- the bound on a cross-checked non-finish is the INNER wrapper's -----
+
+    @pytest.mark.parametrize(('verdict_status', 'exit_code'), [('timeout', -1), ('killed', -9)])
+    def test_log_non_finish_carries_the_inner_wrappers_bound(self, verdict_status, exit_code):
+        """The bound, source and key the inner wrapper published cross the boundary.
+
+        The elapsed the daemon reports is 42 s; the inner wrapper's bound was
+        330 s. The result names 330, because that is what the run was measured
+        against, and it names where 330 came from.
+        """
+        result = self._map_with_log_verdict(
+            verdict_status,
+            exit_code=exit_code,
+            timeout_used_seconds=330,
+            timeout_source='learned',
+            command_key='python:verify',
+        )
+
+        assert result['status'] == verdict_status
+        assert result['timeout_used_seconds'] == 330
+        assert result['timeout_source'] == 'learned'
+        assert result['command_key'] == 'python:verify'
+        assert result['duration_seconds'] == 42
+
+    @pytest.mark.parametrize(('verdict_status', 'exit_code'), [('timeout', -1), ('killed', -9)])
+    def test_log_non_finish_without_a_bound_carries_neither_field(self, verdict_status, exit_code):
+        """A log that states no bound yields none — the elapsed is not substituted."""
+        result = self._map_with_log_verdict(verdict_status, exit_code=exit_code)
+
+        assert result['status'] == verdict_status
+        assert 'timeout_used_seconds' not in result
+        assert 'timeout_source' not in result
+
+    def test_log_source_without_a_bound_is_not_carried(self):
+        """A source read off the log is dropped when the log states no bound."""
+        result = self._map_with_log_verdict('timeout', exit_code=-1, timeout_source='learned')
+
+        assert 'timeout_used_seconds' not in result
+        assert 'timeout_source' not in result
+
+    def test_the_inner_wrappers_command_key_wins_over_the_clients(self):
+        """The log's own key is the one the inner bound was resolved under."""
+        result = self._map_with_log_verdict(
+            'timeout',
+            exit_code=-1,
+            client_key='client:key',
+            timeout_used_seconds=330,
+            timeout_source='learned',
+            command_key='inner:key',
+        )
+
+        assert result['command_key'] == 'inner:key'
+
+    def test_the_clients_command_key_is_the_fallback_when_the_log_states_none(self):
+        """A log without a key leaves the routing client's own key in place."""
+        result = self._map_with_log_verdict(
+            'timeout',
+            exit_code=-1,
+            client_key='client:key',
+            timeout_used_seconds=330,
+            timeout_source='learned',
+        )
+
+        assert result['command_key'] == 'client:key'
 
     # --- matched controls --------------------------------------------------
 

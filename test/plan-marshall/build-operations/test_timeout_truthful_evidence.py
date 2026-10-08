@@ -26,7 +26,7 @@ The bound assertions read the inner backstop out of ``pyproject.toml`` at test
 time (authoritative, never edited here) and never encode a learned adaptive
 timeout figure — those are rewritten by the run-config weighted average after
 every run, so a literal would be stale by construction. Where a floor
-comparison needs a learned value, ``timeout_get`` is stubbed with an arbitrary
+comparison needs a learned value, ``timeout_resolve`` is stubbed with an arbitrary
 fixture figure; the shared ``.plan/run-configuration.json`` is never read or
 mutated.
 """
@@ -170,7 +170,7 @@ def _drive_execute_direct_base(monkeypatch, tmp_path, stub_learned, floor, expli
         return 0
 
     monkeypatch.setattr(_build_execute, 'create_log_file', lambda *a, **k: str(tmp_path / 'run.log'))
-    monkeypatch.setattr(_build_execute, 'timeout_get', _stub_timeout_get(stub_learned))
+    monkeypatch.setattr(_build_execute, 'timeout_resolve', _stub_timeout_resolve(stub_learned))
     monkeypatch.setattr(_build_execute, 'timeout_set', lambda *a, **k: None)
     monkeypatch.setattr(_build_execute, '_run_bounded', _fake_run_bounded)
 
@@ -194,17 +194,18 @@ def _drive_execute_direct_base(monkeypatch, tmp_path, stub_learned, floor, expli
     return observed['timeout'], result
 
 
-def _stub_timeout_get(stub_learned):
-    """A ``timeout_get`` stub honouring the explicit-override contract.
+def _stub_timeout_resolve(stub_learned):
+    """A ``timeout_resolve`` stub honouring the explicit-override contract.
 
     Mirrors the production resolution rule so the seam under test is
     ``execute_direct_base``'s floor application, not the stub: an explicit bound
     (4th positional / ``explicit`` kwarg) wins over the learned value, which is
-    otherwise returned verbatim.
+    otherwise returned verbatim. Like the resolver it returns the bound together
+    with the path that produced it.
     """
 
     def _stub(command_key, default, project_dir='.', explicit=None):
-        return stub_learned if explicit is None else explicit
+        return (stub_learned, 'learned') if explicit is None else (explicit, 'explicit')
 
     return _stub
 

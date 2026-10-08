@@ -111,6 +111,55 @@ def _job_rows() -> list[dict]:
 
 
 # =============================================================================
+# _render_job_status — the applied bound passes through to the client TOON
+# =============================================================================
+
+#: A daemon terminal payload for a job that ran 300 s under an 1800 s bound. The
+#: two numbers differ on purpose: a renderer that dropped the bound would leave a
+#: consumer nothing but the elapsed time to mistake for it.
+_TIMED_OUT_DAEMON_PAYLOAD = {
+    'status': 'timeout',
+    'duration_seconds': 300,
+    'log_file': '/tmp/job.log',
+    'exit_code': -1,
+    'timeout_used_seconds': 1800,
+    'timeout_source': 'daemon_default',
+}
+
+
+@pytest.mark.parametrize('job_status', ['timeout', 'killed'])
+def test_render_job_status_passes_the_applied_bound_through(job_status):
+    """The bound and its source reach the client-facing TOON unchanged."""
+    rendered = client._render_job_status({**_TIMED_OUT_DAEMON_PAYLOAD, 'status': job_status})
+
+    assert rendered['job_status'] == job_status
+    assert rendered['timeout_used_seconds'] == 1800
+    assert rendered['timeout_source'] == 'daemon_default'
+    assert rendered['duration_seconds'] == 300
+
+
+def test_render_job_status_renders_no_bound_the_daemon_did_not_send():
+    """CONTROL: a daemon predating the fields yields neither, not a default."""
+    payload = {
+        key: value
+        for key, value in _TIMED_OUT_DAEMON_PAYLOAD.items()
+        if key not in ('timeout_used_seconds', 'timeout_source')
+    }
+
+    rendered = client._render_job_status(payload)
+
+    assert rendered['job_status'] == 'timeout'
+    assert 'timeout_used_seconds' not in rendered
+    assert 'timeout_source' not in rendered
+
+
+def test_the_applied_bound_fields_are_named_passthrough_fields():
+    """The passthrough list is a whitelist: an unlisted field is dropped silently."""
+    assert 'timeout_used_seconds' in client._PASSTHROUGH_STATUS_FIELDS
+    assert 'timeout_source' in client._PASSTHROUGH_STATUS_FIELDS
+
+
+# =============================================================================
 # preflight — the three-way F2 contract
 # =============================================================================
 

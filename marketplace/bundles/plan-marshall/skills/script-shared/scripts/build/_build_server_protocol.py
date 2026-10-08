@@ -207,6 +207,35 @@ _WIRE_STATUS_TO_RESULT = {
 ERROR_FIELDS = ('file', 'line', 'message', 'category')
 """Canonical field order for a single ``errors[]`` entry on the wire."""
 
+TIMEOUT_SOURCE_DAEMON_DEFAULT = 'daemon_default'
+"""``timeout_source`` of a bound the daemon applied from its OWN default.
+
+One of the five ``timeout_source`` values a build result can carry. The other
+four (``explicit`` / ``learned`` / ``default`` / ``floor``) are produced by
+``run_config.timeout_resolve`` for the in-process wrapper; this one exists only
+on the daemon's supervisory bound, which never consults that resolver.
+"""
+
+TIMEOUT_SOURCE_EXPLICIT = 'explicit'
+"""``timeout_source`` of a daemon bound a submit's explicit ``timeout`` raised.
+
+Spelled identically to ``run_config.TIMEOUT_SOURCE_EXPLICIT`` on purpose: both
+name a bound the caller stated. It is restated here rather than imported because
+this module is the daemon/client wire contract and takes no dependency on the
+run-configuration store.
+"""
+
+APPLIED_BOUND_WIRE_FIELDS = ('timeout_used_seconds', 'timeout_source')
+"""The applied-bound fields a terminal wire payload carries when known.
+
+``timeout_used_seconds`` is the bound the job was measured against — never the
+elapsed time — and ``timeout_source`` names where it came from. Both are omitted
+when the producer does not know the bound, so a client talking to a daemon that
+predates them sees neither rather than a substituted value. ``command_key`` is
+deliberately NOT a wire field: the daemon has no notion of it, and the routing
+client supplies its own.
+"""
+
 
 # =============================================================================
 # Frame errors
@@ -847,6 +876,11 @@ def status_from_result(result: dict[str, Any], *, killed: bool = False, **extra:
     marks an externally-killed job out of band and it must never be folded into
     ``failure``.
 
+    The applied-bound fields (:data:`APPLIED_BOUND_WIRE_FIELDS`) carry over too
+    when the result holds them, and are omitted when it does not — an absent
+    bound is never rendered as a value. An explicit ``extra`` wins over the
+    result's own field.
+
     Args:
         result: A ``DirectCommandResult``-shaped dict.
         killed: When ``True``, force the ``killed`` terminal status.
@@ -856,13 +890,14 @@ def status_from_result(result: dict[str, Any], *, killed: bool = False, **extra:
         The wire status payload dict.
     """
     status = STATUS_KILLED if killed else wire_status_from_result(result.get('status', ''))
+    bound = {name: result[name] for name in APPLIED_BOUND_WIRE_FIELDS if result.get(name) is not None}
     return status_payload(
         status,
         duration_seconds=result.get('duration_seconds'),
         log_file=result.get('log_file'),
         exit_code=result.get('exit_code'),
         errors=result.get('errors'),
-        **extra,
+        **{**bound, **extra},
     )
 
 
@@ -923,12 +958,29 @@ class LogVerdict:
             were parsed"*, discarding per-test findings the inner wrapper had
             already produced correctly. The reader's job is to carry them, not to
             recompute them.
+        timeout_used_seconds: The ``timeout_used_seconds:`` value — the bound the
+            INNER wrapper applied to its build. ``None`` when the log carried no
+            parseable positive one, which means UNKNOWN: a consumer must then
+            omit the bound rather than substitute the elapsed time for it.
+        timeout_source: The ``timeout_source:`` value — where the inner wrapper's
+            bound came from (``explicit`` / ``learned`` / ``default`` /
+            ``floor``). ``None`` when absent or empty.
+        command_key: The ``command_key:`` value — the run-configuration key the
+            inner wrapper's learned bound is stored under. ``None`` when absent
+            or empty.
+
+            The inner wrapper publishes these three only on a ``timeout`` or
+            ``killed`` result, so ``None`` is the normal value on every other
+            verdict.
     """
 
     status: str
     exit_code: int | None
     tests_run: int | None = None
     errors: tuple[dict[str, Any], ...] = field(default_factory=tuple)
+    timeout_used_seconds: int | None = None
+    timeout_source: str | None = None
+    command_key: str | None = None
 
 
 # The wrapper's emitted ``errors[N]{cols}:`` table header, matched at column 0 so
@@ -1008,10 +1060,12 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
     """Read the build wrapper's emitted TOON verdict back from a job log.
 
     Pure with respect to any daemon/client state — it only reads the log the
-    supervisor already streamed. Four top-level (column-0) keys are parsed:
-    ``status:``, ``exit_code:``, ``tests_run:``, and the ``errors[N]{...}:`` table
-    header, whose indented rows are then collected as that table's body. Every
-    other key is ignored. The LAST occurrence of each wins, because the wrapper
+    supervisor already streamed. Seven top-level (column-0) keys are parsed:
+    ``status:``, ``exit_code:``, ``tests_run:``, the applied-bound triple
+    ``timeout_used_seconds:`` / ``timeout_source:`` / ``command_key:``, and the
+    ``errors[N]{...}:`` table header, whose indented rows are then collected as
+    that table's body. Every other key is ignored. An applied-bound key that is
+    absent, empty or (for the bound) not a positive integer reads as ``None``. The LAST occurrence of each wins, because the wrapper
     emits its result TOON after any progress output it already wrote to the same
     log.
 
@@ -1041,6 +1095,9 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
     status: str | None = None
     exit_code: int | None = None
     tests_run: int | None = None
+    timeout_used_seconds: int | None = None
+    timeout_source: str | None = None
+    command_key: str | None = None
     errors: tuple[dict[str, Any], ...] = ()
     # Non-None only while an `errors[N]{...}:` header has been seen and its
     # indented rows are still being collected.
@@ -1084,6 +1141,19 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
                         # "this run executed no tests", a different fact from
                         # "the log stated no count".
                         tests_run = parsed_count if parsed_count >= 0 else None
+                elif line.startswith('timeout_used_seconds:'):
+                    try:
+                        parsed_bound = int(_toon_scalar(line))
+                    except ValueError:
+                        timeout_used_seconds = None
+                    else:
+                        # A bound is a positive number of seconds; anything else
+                        # is not one, and UNKNOWN is the honest reading of it.
+                        timeout_used_seconds = parsed_bound if parsed_bound > 0 else None
+                elif line.startswith('timeout_source:'):
+                    timeout_source = _toon_scalar(line) or None
+                elif line.startswith('command_key:'):
+                    command_key = _toon_scalar(line) or None
             # A table that ran to end-of-file is closed by the file's end.
             if errors_block is not None:
                 errors = _parse_errors_table(errors_block)
@@ -1091,4 +1161,12 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
         return None
     if status is None:
         return None
-    return LogVerdict(status=status, exit_code=exit_code, tests_run=tests_run, errors=errors)
+    return LogVerdict(
+        status=status,
+        exit_code=exit_code,
+        tests_run=tests_run,
+        errors=errors,
+        timeout_used_seconds=timeout_used_seconds,
+        timeout_source=timeout_source,
+        command_key=command_key,
+    )

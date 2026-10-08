@@ -46,9 +46,20 @@ _EMIT_SUCCESS_THEN_HANG = "print('status: success', flush=True); import time; ti
 _EMIT_SUCCESS_THEN_SUICIDE = (
     "import os, signal; print('status: success', flush=True); os.kill(os.getpid(), signal.SIGKILL)"
 )
+# The two NON-FINISHES again, this time as a wrapper that also states the bound
+# it applied and where that bound came from. 330 / learned are deliberately
+# unlike any bound the supervisor is handed in these tests, so a payload that
+# reported the supervisor's own bound instead is unmistakable.
+_INNER_BOUND_SECONDS = 330
+_INNER_BOUND_SOURCE = 'learned'
+_INNER_BOUND_LINES = (
+    f"print('timeout_used_seconds: {_INNER_BOUND_SECONDS}'); print('timeout_source: {_INNER_BOUND_SOURCE}')"
+)
+_EMIT_TIMEOUT_TOON_WITH_BOUND = f'{_EMIT_TIMEOUT_TOON}; {_INNER_BOUND_LINES}'
+_EMIT_KILLED_TOON_WITH_BOUND = f'{_EMIT_KILLED_TOON}; {_INNER_BOUND_LINES}'
 
 
-def _run(code: str, tmp_path: Path, *, timeout: int = 30) -> dict:
+def _run(code: str, tmp_path: Path, *, timeout: int = 30, timeout_source: str | None = None) -> dict:
     """Run one trivial child through run_job and return its terminal payload."""
     log_file = tmp_path / 'job.log'
     return asyncio.run(
@@ -56,6 +67,7 @@ def _run(code: str, tmp_path: Path, *, timeout: int = 30) -> dict:
             [sys.executable, '-c', code],
             str(tmp_path),
             timeout=timeout,
+            timeout_source=timeout_source,
             log_file=str(log_file),
         )
     )
@@ -460,3 +472,88 @@ class TestRunJobNarrowingPreservesTheNonFinish:
 
         assert payload['status'] == 'failure'
         assert payload['exit_code'] == 3
+
+
+#: The supervisory bound and origin the daemon hands ``run_job`` in the cases
+#: below. Neither coincides with the inner wrapper's 330 / ``learned``.
+_DAEMON_BOUND_SOURCE = 'daemon_default'
+
+
+class TestRunJobNamesTheBoundItMeasuredAgainst:
+    """A ``timeout`` or ``killed`` payload names the bound that actually applied.
+
+    Two bounds exist on a routed build — the supervisor's own and the inner
+    wrapper's — and a non-finish was measured against exactly one of them. The
+    supervisor's own timeout and an external kill of the child ran under the
+    supervisor's bound; a non-finish narrowed from the job log ran under the
+    inner wrapper's, which is the smaller one and the one that fired. Every case
+    drives the REAL :func:`run_job` against a real child process.
+    """
+
+    def test_own_timeout_carries_the_supervisors_bound_and_its_source(self, tmp_path):
+        payload = _run(_EMIT_SUCCESS_THEN_HANG, tmp_path, timeout=1, timeout_source=_DAEMON_BOUND_SOURCE)
+
+        assert payload['status'] == 'timeout'
+        assert payload['timeout_used_seconds'] == 1
+        assert payload['timeout_source'] == _DAEMON_BOUND_SOURCE
+
+    def test_own_timeout_without_a_stated_source_carries_the_bound_alone(self, tmp_path):
+        """A caller that names no origin gets none invented for it."""
+        payload = _run(_EMIT_SUCCESS_THEN_HANG, tmp_path, timeout=1)
+
+        assert payload['status'] == 'timeout'
+        assert payload['timeout_used_seconds'] == 1
+        assert 'timeout_source' not in payload
+
+    def test_external_kill_carries_the_bound_that_did_not_fire(self, tmp_path):
+        """The kill was not the bound firing, but the bound is still what applied."""
+        payload = _run(_EMIT_SUCCESS_THEN_SUICIDE, tmp_path, timeout=30, timeout_source=_DAEMON_BOUND_SOURCE)
+
+        assert payload['status'] == 'killed'
+        assert payload['timeout_used_seconds'] == 30
+        assert payload['timeout_source'] == _DAEMON_BOUND_SOURCE
+
+    @pytest.mark.parametrize(
+        ('code', 'expected_status'),
+        [(_EMIT_TIMEOUT_TOON_WITH_BOUND, 'timeout'), (_EMIT_KILLED_TOON_WITH_BOUND, 'killed')],
+        ids=['narrowed-timeout', 'narrowed-kill'],
+    )
+    def test_narrowed_non_finish_carries_the_inner_wrappers_bound(self, tmp_path, code, expected_status):
+        """A payload narrowed from the job log reports the INNER bound and source.
+
+        The supervisor was handed 30 s / ``daemon_default``; the wrapper it ran
+        reported a non-finish under 330 s / ``learned``. The payload names the
+        wrapper's pair, because the supervisor's bound never came into it.
+        """
+        payload = _run(code, tmp_path, timeout=30, timeout_source=_DAEMON_BOUND_SOURCE)
+
+        assert payload['status'] == expected_status
+        assert payload['timeout_used_seconds'] == _INNER_BOUND_SECONDS
+        assert payload['timeout_source'] == _INNER_BOUND_SOURCE
+
+    @pytest.mark.parametrize(
+        ('code', 'expected_status'),
+        [(_EMIT_TIMEOUT_TOON, 'timeout'), (_EMIT_KILLED_TOON, 'killed')],
+        ids=['narrowed-timeout', 'narrowed-kill'],
+    )
+    def test_narrowed_non_finish_without_a_logged_bound_carries_none(self, tmp_path, code, expected_status):
+        """A log that states no bound yields none — not the supervisor's own.
+
+        Reporting the supervisor's 30 s here would name a bound that did not
+        apply to the run the wrapper described.
+        """
+        payload = _run(code, tmp_path, timeout=30, timeout_source=_DAEMON_BOUND_SOURCE)
+
+        assert payload['status'] == expected_status
+        assert 'timeout_used_seconds' not in payload
+        assert 'timeout_source' not in payload
+
+    # --- matched control ---------------------------------------------------
+
+    @pytest.mark.parametrize('code', [_EMIT_SUCCESS_TOON, _EMIT_ERROR_TOON], ids=['success', 'failure'])
+    def test_control_a_finished_job_carries_no_bound(self, tmp_path, code):
+        """CONTROL: the bound is a non-finish field, not stamped on every payload."""
+        payload = _run(code, tmp_path, timeout=30, timeout_source=_DAEMON_BOUND_SOURCE)
+
+        assert 'timeout_used_seconds' not in payload
+        assert 'timeout_source' not in payload

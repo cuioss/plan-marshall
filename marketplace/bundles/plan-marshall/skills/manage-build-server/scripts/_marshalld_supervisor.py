@@ -226,7 +226,8 @@ def _terminal_payload(
     duration: int,
     log_file: str,
     command_str: str,
-    timeout_seconds: int,
+    applied_bound: int | None,
+    bound_source: str | None,
 ) -> dict[str, Any]:
     """Render a terminal status payload reusing the _build_result shape.
 
@@ -237,15 +238,30 @@ def _terminal_payload(
     a status this function does not recognise must not be rendered as a build
     that ran and failed, which is the fold-into-a-neighbour the whole
     non-finish separation exists to prevent.
+
+    ``applied_bound`` / ``bound_source`` name the bound the two NON-FINISH arms
+    report as ``timeout_used_seconds`` / ``timeout_source``. The caller decides
+    whose bound that is — the supervisor's own for its own timeout or kill, the
+    INNER wrapper's for a payload narrowed from the job log — and passes ``None``
+    when it does not know one. An unknown bound emits neither field; the elapsed
+    ``duration`` is never substituted for it. A source is emitted only beside a
+    bound, because a source with no number names nothing.
     """
+    bound: dict[str, Any] = {}
+    if applied_bound is not None:
+        bound['timeout_used_seconds'] = applied_bound
+        if bound_source:
+            bound['timeout_source'] = bound_source
     if status == 'timeout':
-        return status_from_result(timeout_result(timeout_seconds, duration, log_file, command_str))
+        source = {name: value for name, value in bound.items() if name == 'timeout_source'}
+        return status_from_result(timeout_result(applied_bound, duration, log_file, command_str, **source))
     if status == STATUS_KILLED:
         return status_payload(
             STATUS_KILLED,
             duration_seconds=duration,
             log_file=log_file,
             exit_code=returncode if returncode is not None else -1,
+            **bound,
         )
     if status == 'success':
         return status_from_result(success_result(duration, log_file, command_str))
@@ -349,10 +365,18 @@ async def run_job(
     *,
     timeout: int,
     log_file: str,
+    timeout_source: str | None = None,
     env: dict[str, str] | None = None,
     progress: JobProgress | None = None,
 ) -> dict[str, Any]:
     """Run one build child and return its terminal status payload.
+
+    A ``timeout`` or ``killed`` payload names the bound the job was measured
+    against as ``timeout_used_seconds`` / ``timeout_source``. For the
+    supervisor's OWN timeout or kill that is ``timeout`` with ``timeout_source``;
+    for a payload narrowed from the job log it is the INNER wrapper's own bound
+    and source as the log stated them, and neither field when the log stated no
+    bound.
 
     Args:
         command: The executor-form argv to run (already verified).
@@ -361,6 +385,10 @@ async def run_job(
             process group is stopped (the child alone on Windows) and the
             status is ``timeout``.
         log_file: Path to stream combined stdout/stderr into.
+        timeout_source: Where ``timeout`` came from (``daemon_default`` or
+            ``explicit``, see ``marshalld.Daemon._resolve_job_timeout``).
+            ``None`` means the caller did not say, and the supervisor's own
+            non-finish payloads then carry the bound without a source.
         env: The child environment; defaults to :func:`build_baseline_env`.
         progress: Optional liveness tracker updated on each output chunk.
 
@@ -420,16 +448,27 @@ async def run_job(
     # those to `failure` here would re-collapse, at the daemon, exactly what the
     # wrapper just took care to distinguish: a routed timeout and a routed kill
     # would both reach every downstream gate as a red build.
+    #
+    # The bound travels with the verdict it belongs to. The supervisor's own
+    # timeout or kill was measured against the supervisor's bound; a narrowed
+    # non-finish was measured against the INNER wrapper's, which is the smaller
+    # one and the one that fired, so reporting the daemon's bound there would
+    # name a number that never applied.
+    applied_bound: int | None = timeout
+    bound_source = timeout_source
     if status == 'success':
         verdict = read_log_verdict(log_file)
         if verdict is not None and verdict.status != RESULT_STATUS_SUCCESS:
             status = _wire_status_from_log_verdict(verdict.status)
             returncode = verdict.exit_code
+            applied_bound = verdict.timeout_used_seconds
+            bound_source = verdict.timeout_source
     return _terminal_payload(
         status,
         returncode=returncode,
         duration=duration,
         log_file=log_file,
         command_str=command_str,
-        timeout_seconds=timeout,
+        applied_bound=applied_bound,
+        bound_source=bound_source,
     )

@@ -115,6 +115,130 @@ def test_init_output_includes_structure(plan_context):
 
 
 # =============================================================================
+# timeout_resolve — the bound together with the path that produced it
+# =============================================================================
+
+#: The command key every resolver case below is keyed under.
+_RESOLVE_KEY = 'test:resolve'
+
+
+@pytest.fixture
+def seed_timeouts(tmp_path, monkeypatch):
+    """Isolate run-configuration.json in ``tmp_path``; return a seeding callable.
+
+    The callable takes the persisted ``timeout_seconds`` for :data:`_RESOLVE_KEY`,
+    or ``None`` for a key that has never been measured.
+    """
+    import file_ops
+
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    monkeypatch.setenv('PLAN_DIR_NAME', '.plan')
+    monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
+
+    def _seed(persisted):
+        commands = {} if persisted is None else {_RESOLVE_KEY: {'timeout_seconds': persisted}}
+        (tmp_path / 'run-configuration.json').write_text(json.dumps({'version': 1, 'commands': commands}))
+
+    return _seed
+
+
+#: ``(persisted, default, explicit, expected bound, expected source)``. The first
+#: three rows are the three resolution paths; the next three are the same paths
+#: with a value BELOW the 120 s minimum, where the minimum replaces the origin;
+#: the last sits exactly ON the minimum, which is not a raise and keeps its own.
+_RESOLVE_CASES = [
+    (None, 300, 1800, 1800, 'explicit'),
+    (400, 300, None, 500, 'learned'),
+    (None, 300, None, 300, 'default'),
+    (400, 300, 30, 120, 'floor'),
+    (40, 300, None, 120, 'floor'),
+    (None, 60, None, 120, 'floor'),
+    (96, 300, None, 120, 'learned'),
+]
+
+_RESOLVE_CASE_IDS = [
+    'explicit',
+    'learned',
+    'default',
+    'floor-raises-an-explicit-bound',
+    'floor-raises-a-learned-value',
+    'floor-raises-the-default',
+    'a-value-on-the-floor-is-not-raised',
+]
+
+
+@pytest.mark.parametrize(
+    ('persisted', 'default', 'explicit', 'expected_bound', 'expected_source'),
+    _RESOLVE_CASES,
+    ids=_RESOLVE_CASE_IDS,
+)
+def test_timeout_resolve_names_the_path_that_produced_the_bound(
+    seed_timeouts, persisted, default, explicit, expected_bound, expected_source
+):
+    seed_timeouts(persisted)
+
+    assert run_config.timeout_resolve(_RESOLVE_KEY, default, explicit=explicit) == (expected_bound, expected_source)
+
+
+def test_timeout_resolve_reports_each_of_its_four_sources():
+    """The case table reaches every source the resolver can report.
+
+    A table that silently lost a row would leave a source under no coverage
+    while every remaining case kept passing.
+    """
+    reported = {expected_source for *_inputs, expected_source in _RESOLVE_CASES}
+
+    assert reported == {
+        run_config.TIMEOUT_SOURCE_EXPLICIT,
+        run_config.TIMEOUT_SOURCE_LEARNED,
+        run_config.TIMEOUT_SOURCE_DEFAULT,
+        run_config.TIMEOUT_SOURCE_FLOOR,
+    }
+    assert reported == {'explicit', 'learned', 'default', 'floor'}
+
+
+#: ``(persisted, default, explicit, the integer timeout_get returned before the
+#: resolver existed)``. The expected values are LITERALS, computed by hand from
+#: the prior formula — ``max(explicit, 120)`` on the override path, otherwise
+#: ``max(int(persisted * 1.25), 120)`` or ``max(default, 120)`` — so the case
+#: cannot pass merely because ``timeout_get`` agrees with the resolver it now
+#: delegates to.
+_TIMEOUT_GET_CASES = [
+    (400, 300, 1800, 1800),
+    (400, 300, 30, 120),
+    (400, 300, None, 500),
+    (40, 300, None, 120),
+    (None, 300, None, 300),
+    (None, 60, None, 120),
+]
+
+_TIMEOUT_GET_CASE_IDS = [
+    'explicit-overrides-a-persisted-value',
+    'explicit-below-the-minimum',
+    'persisted-with-safety-margin',
+    'persisted-below-the-minimum',
+    'default-when-unmeasured',
+    'default-below-the-minimum',
+]
+
+
+@pytest.mark.parametrize(
+    ('persisted', 'default', 'explicit', 'expected'),
+    _TIMEOUT_GET_CASES,
+    ids=_TIMEOUT_GET_CASE_IDS,
+)
+def test_timeout_get_returns_the_same_integer_it_always_did(seed_timeouts, persisted, default, explicit, expected):
+    """Delegating to the resolver changes nothing ``timeout_get`` returns."""
+    seed_timeouts(persisted)
+
+    resolved = run_config.timeout_get(_RESOLVE_KEY, default, explicit=explicit)
+
+    assert resolved == expected
+    assert isinstance(resolved, int)
+    assert resolved == run_config.timeout_resolve(_RESOLVE_KEY, default, explicit=explicit)[0]
+
+
+# =============================================================================
 # Validate Subcommand Tests
 # =============================================================================
 

@@ -104,7 +104,7 @@ class TestStdoutRedirectSuccess:
     @pytest.mark.parametrize('key,expected', _SUCCESS_RESULT_FIELDS, ids=_SUCCESS_RESULT_FIELD_IDS)
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_success_result_carries_the_field(self, mock_log_file, mock_tget, mock_run, mock_tset, key, expected):
         mock_log_file.return_value = _LOG_FILE
@@ -116,7 +116,7 @@ class TestStdoutRedirectSuccess:
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_success_calls_timeout_set_with_duration(self, mock_log_file, mock_tget, mock_run, mock_tset):
         mock_log_file.return_value = '/tmp/test.log'
@@ -130,7 +130,7 @@ class TestStdoutRedirectSuccess:
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_stdout_redirect_opens_log_file(self, mock_log_file, mock_tget, mock_run, mock_tset):
         mock_log_file.return_value = '/tmp/test.log'
@@ -146,7 +146,7 @@ class TestMavenLogFlagSuccess:
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_maven_flag_leaves_output_uncaptured(self, mock_log_file, mock_tget, mock_run, mock_tset):
         mock_log_file.return_value = '/tmp/test.log'
@@ -161,7 +161,7 @@ class TestMavenLogFlagSuccess:
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_maven_flag_does_not_open_log_file(self, mock_log_file, mock_tget, mock_run, mock_tset):
         mock_log_file.return_value = '/tmp/test.log'
@@ -173,7 +173,7 @@ class TestMavenLogFlagSuccess:
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_maven_flag_success_returns_status(self, mock_log_file, mock_tget, mock_run, mock_tset):
         mock_log_file.return_value = '/tmp/test.log'
@@ -190,7 +190,7 @@ class TestBuildFailure:
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_failure_returns_error_status(self, mock_log_file, mock_tget, mock_run, mock_tset):
         mock_log_file.return_value = '/tmp/test.log'
@@ -203,7 +203,7 @@ class TestBuildFailure:
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_failure_includes_error_message(self, mock_log_file, mock_tget, mock_run, mock_tset):
         mock_log_file.return_value = '/tmp/test.log'
@@ -216,7 +216,7 @@ class TestBuildFailure:
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_failure_still_records_duration(self, mock_log_file, mock_tget, mock_run, mock_tset):
         mock_log_file.return_value = '/tmp/test.log'
@@ -234,7 +234,7 @@ class TestTimeoutHandling:
     @patch('_build_execute.log_entry')
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded', side_effect=subprocess.TimeoutExpired(cmd='test', timeout=300))
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_timeout_returns_timeout_status(self, mock_log_file, mock_tget, mock_run, mock_tset, mock_log):
         mock_log_file.return_value = '/tmp/test.log'
@@ -247,7 +247,7 @@ class TestTimeoutHandling:
     @patch('_build_execute.log_entry')
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded', side_effect=subprocess.TimeoutExpired(cmd='test', timeout=300))
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_timeout_includes_error_message(self, mock_log_file, mock_tget, mock_run, mock_tset, mock_log):
         mock_log_file.return_value = '/tmp/test.log'
@@ -259,7 +259,7 @@ class TestTimeoutHandling:
     @patch('_build_execute.log_entry')
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded', side_effect=subprocess.TimeoutExpired(cmd='test', timeout=300))
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_timeout_doubles_timeout_for_learning(self, mock_log_file, mock_tget, mock_run, mock_tset, mock_log):
         mock_log_file.return_value = '/tmp/test.log'
@@ -272,7 +272,7 @@ class TestTimeoutHandling:
     @patch('_build_execute.log_entry')
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded', side_effect=subprocess.TimeoutExpired(cmd='test', timeout=300))
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_timeout_logs_error(self, mock_log_file, mock_tget, mock_run, mock_tset, mock_log):
         mock_log_file.return_value = '/tmp/test.log'
@@ -291,7 +291,7 @@ class TestFileNotFoundError:
     @patch('_build_execute.log_entry')
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded', side_effect=FileNotFoundError())
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_file_not_found_returns_error(self, mock_log_file, mock_tget, mock_run, mock_tset, mock_log):
         mock_log_file.return_value = '/tmp/test.log'
@@ -304,7 +304,7 @@ class TestFileNotFoundError:
     @patch('_build_execute.log_entry')
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded', side_effect=FileNotFoundError())
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_file_not_found_error_message(self, mock_log_file, mock_tget, mock_run, mock_tset, mock_log):
         mock_log_file.return_value = '/tmp/test.log'
@@ -316,7 +316,7 @@ class TestFileNotFoundError:
 
     @patch('_build_execute.log_entry')
     @patch('_build_execute._run_bounded', side_effect=FileNotFoundError())
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_file_not_found_does_not_set_timeout(self, mock_log_file, mock_tget, mock_run, mock_log):
         mock_log_file.return_value = '/tmp/test.log'
@@ -328,7 +328,7 @@ class TestFileNotFoundError:
     @patch('_build_execute.log_entry')
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded', side_effect=FileNotFoundError())
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_file_not_found_duration_is_zero(self, mock_log_file, mock_tget, mock_run, mock_tset, mock_log):
         mock_log_file.return_value = '/tmp/test.log'
@@ -344,7 +344,7 @@ class TestOSError:
     @patch('_build_execute.log_entry')
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded', side_effect=OSError('Permission denied'))
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_os_error_returns_error_status(self, mock_log_file, mock_tget, mock_run, mock_tset, mock_log):
         mock_log_file.return_value = '/tmp/test.log'
@@ -357,7 +357,7 @@ class TestOSError:
     @patch('_build_execute.log_entry')
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded', side_effect=OSError('Permission denied'))
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_os_error_includes_message(self, mock_log_file, mock_tget, mock_run, mock_tset, mock_log):
         mock_log_file.return_value = '/tmp/test.log'
@@ -369,7 +369,7 @@ class TestOSError:
     @patch('_build_execute.log_entry')
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded', side_effect=OSError('Permission denied'))
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_os_error_logs_error(self, mock_log_file, mock_tget, mock_run, mock_tset, mock_log):
         mock_log_file.return_value = '/tmp/test.log'
@@ -403,7 +403,7 @@ class TestLogFileFailure:
         _LOG_FILE_FAILURE_RESULT_FIELDS,
         ids=_LOG_FILE_FAILURE_RESULT_FIELD_IDS,
     )
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file', return_value=None)
     def test_log_file_failure_result_carries_the_field(self, mock_log_file, mock_tget, key, expected):
         result = _call_execute()
@@ -416,7 +416,7 @@ class TestCustomScopeFn:
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_custom_scope_fn_called_with_args(self, mock_log_file, mock_tget, mock_run, mock_tset):
         mock_log_file.return_value = '/tmp/test.log'
@@ -430,7 +430,7 @@ class TestCustomScopeFn:
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_default_scope_fn_returns_default(self, mock_log_file, mock_tget, mock_run, mock_tset):
         mock_log_file.return_value = '/tmp/test.log'
@@ -455,7 +455,7 @@ class TestPlanIdReachesCreateLogFile:
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_plan_id_forwarded_as_keyword(self, mock_log_file, mock_tget, mock_run, mock_tset):
         mock_log_file.return_value = '/tmp/test.log'
@@ -468,7 +468,7 @@ class TestPlanIdReachesCreateLogFile:
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_sentinel_plan_id_is_forwarded_unchanged(self, mock_log_file, mock_tget, mock_run, mock_tset):
         """A plan-less build forwards the sentinel, never an empty string."""
@@ -481,7 +481,7 @@ class TestPlanIdReachesCreateLogFile:
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_plan_id_is_independent_of_project_dir(self, mock_log_file, mock_tget, mock_run, mock_tset):
         """Attribution follows the plan, not the directory the build runs in.
@@ -518,7 +518,7 @@ class TestEnvVarsInjection:
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_env_vars_passed_to_subprocess(self, mock_log_file, mock_tget, mock_run, mock_tset):
         mock_log_file.return_value = '/tmp/test.log'
@@ -532,7 +532,7 @@ class TestEnvVarsInjection:
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_no_env_vars_passes_none(self, mock_log_file, mock_tget, mock_run, mock_tset):
         mock_log_file.return_value = '/tmp/test.log'
@@ -549,7 +549,7 @@ class TestMinTimeoutEnforcement:
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=30)
+    @patch('_build_execute.timeout_resolve', return_value=(30, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_floor_enforced_when_learned_too_low(self, mock_log_file, mock_tget, mock_run, mock_tset):
         mock_log_file.return_value = '/tmp/test.log'
@@ -562,7 +562,7 @@ class TestMinTimeoutEnforcement:
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=120)
+    @patch('_build_execute.timeout_resolve', return_value=(120, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_floor_no_effect_when_learned_higher(self, mock_log_file, mock_tget, mock_run, mock_tset):
         mock_log_file.return_value = '/tmp/test.log'
@@ -584,10 +584,10 @@ class TestExplicitTimeoutOverride:
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=1800)
+    @patch('_build_execute.timeout_resolve', return_value=(1800, 'explicit'))
     @patch('_build_execute.create_log_file')
-    def test_explicit_override_is_forwarded_to_timeout_get(self, mock_log_file, mock_tget, mock_run, mock_tset):
-        """The explicit bound is handed to timeout_get as the override argument."""
+    def test_explicit_override_is_forwarded_to_the_resolver(self, mock_log_file, mock_tget, mock_run, mock_tset):
+        """The explicit bound is handed to timeout_resolve as the override argument."""
         mock_log_file.return_value = '/tmp/test.log'
         mock_run.return_value = 0
 
@@ -600,7 +600,7 @@ class TestExplicitTimeoutOverride:
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=1800)
+    @patch('_build_execute.timeout_resolve', return_value=(1800, 'explicit'))
     @patch('_build_execute.create_log_file')
     def test_explicit_override_reaches_the_subprocess_timeout_argument(
         self, mock_log_file, mock_tget, mock_run, mock_tset
@@ -616,9 +616,9 @@ class TestExplicitTimeoutOverride:
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
-    def test_absent_override_still_consults_timeout_get(self, mock_log_file, mock_tget, mock_run, mock_tset):
+    def test_absent_override_still_consults_the_resolver(self, mock_log_file, mock_tget, mock_run, mock_tset):
         """Without an override the learned path is unchanged (explicit stays None)."""
         mock_log_file.return_value = '/tmp/test.log'
         mock_run.return_value = 0
@@ -632,7 +632,7 @@ class TestExplicitTimeoutOverride:
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=120)
+    @patch('_build_execute.timeout_resolve', return_value=(120, 'explicit'))
     @patch('_build_execute.create_log_file')
     def test_engine_floor_still_binds_a_below_floor_explicit_override(
         self, mock_log_file, mock_tget, mock_run, mock_tset
@@ -654,7 +654,7 @@ class TestExplicitTimeoutOverride:
 class TestExplicitOverrideAgainstRealRunConfig:
     """End-to-end: the override beats a REAL persisted learned value.
 
-    ``timeout_get`` is NOT mocked here — the persisted value is written into an
+    ``timeout_resolve`` is NOT mocked here — the persisted value is written into an
     isolated ``run-configuration.json`` so the property under test is the actual
     resolution the production path performs. This is the case that is red against
     the pre-change code, where a persisted value discarded the caller's bound.
@@ -738,7 +738,7 @@ class TestExtraResultFields:
     @patch('_build_execute.log_entry')
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_extras_reach_every_result_path(
         self,
@@ -766,7 +766,7 @@ class TestExtraResultFields:
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_no_extras_omits_extra_fields(self, mock_log_file, mock_tget, mock_run, mock_tset):
         """Matched control: the fields appear only because a caller supplied them."""
@@ -804,7 +804,7 @@ class TestWorkingDir:
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_custom_working_dir_passed_to_subprocess(self, mock_log_file, mock_tget, mock_run, mock_tset):
         mock_log_file.return_value = '/tmp/test.log'
@@ -817,7 +817,7 @@ class TestWorkingDir:
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_no_working_dir_uses_project_dir(self, mock_log_file, mock_tget, mock_run, mock_tset):
         mock_log_file.return_value = '/tmp/test.log'
@@ -850,7 +850,7 @@ class TestProjectDirPropagation:
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_project_dir_propagates_to_subprocess_cwd(self, mock_log_file, mock_tget, mock_run, mock_tset):
         """The explicit project_dir must become subprocess.run's cwd."""
@@ -865,7 +865,7 @@ class TestProjectDirPropagation:
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_project_dir_default_dot_propagates(self, mock_log_file, mock_tget, mock_run, mock_tset):
         """When CLI default '.' is passed, subprocess inherits '.' as cwd."""
@@ -889,7 +889,7 @@ class TestProjectDirPropagation:
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_working_dir_overrides_project_dir_for_cwd(self, mock_log_file, mock_tget, mock_run, mock_tset):
         """Explicit working_dir should win over project_dir for subprocess cwd."""
@@ -904,7 +904,7 @@ class TestProjectDirPropagation:
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute._run_bounded')
-    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_project_dir_absolute_path_propagates(self, mock_log_file, mock_tget, mock_run, mock_tset):
         """Absolute worktree-style paths must round-trip to subprocess cwd unchanged."""
@@ -1200,7 +1200,7 @@ class TestTimeoutStopsTheBuildTree:
 
         with (
             patch('_build_execute.create_log_file', return_value=str(tmp_path / 'build.log')),
-            patch('_build_execute.timeout_get', return_value=bound),
+            patch('_build_execute.timeout_resolve', return_value=(bound, 'learned')),
             patch('_build_execute.timeout_set') as mock_tset,
             patch('_build_execute.log_entry'),
         ):
@@ -1241,7 +1241,7 @@ class TestTimeoutLearnerCallIsUnchanged:
         with (
             tempfile.TemporaryDirectory() as project_dir,
             patch('_build_execute.create_log_file', return_value=_LOG_FILE),
-            patch('_build_execute.timeout_get', return_value=bound),
+            patch('_build_execute.timeout_resolve', return_value=(bound, 'learned')),
             patch('_build_execute.timeout_set') as mock_tset,
             patch('_build_execute.log_entry'),
             patch(
@@ -1255,29 +1255,33 @@ class TestTimeoutLearnerCallIsUnchanged:
         assert mock_tset.call_args_list == [call('test:verify', expected, project_dir)]
 
 
+# Module-level on purpose: pytest rejects a class-scoped fixture declared as an
+# instance method. The class scope still shares one run between the tests of the
+# class that requests it.
+@pytest.fixture(scope='class')
+def sigterm_run(tmp_path_factory):
+    """Start a wrapper, SIGTERM it once its build tree is up, and collect the outcome."""
+    tmp_path = tmp_path_factory.mktemp('forwarded-sigterm')
+    wrapper, child_pid, grandchild_pid = _start_wrapper(tmp_path)
+    try:
+        os.kill(wrapper.pid, signal.SIGTERM)
+        wrapper.wait(timeout=_TREE_EXIT_DEADLINE_SECONDS)
+        log_path = tmp_path / 'log-entries.jsonl'
+        entries = [json.loads(line) for line in log_path.read_text().splitlines()] if log_path.exists() else []
+        yield {
+            'returncode': wrapper.returncode,
+            'child_pid': child_pid,
+            'grandchild_pid': grandchild_pid,
+            'entries': entries,
+        }
+    finally:
+        _stop_wrapper(wrapper)
+        _reap_build_tree(child_pid, grandchild_pid)
+
+
 @_POSIX_ONLY
 class TestForwardedSignalStopsTheBuildTree:
     """A SIGTERM delivered to the wrapper is forwarded and ends the build tree."""
-
-    @pytest.fixture(scope='class')
-    def sigterm_run(self, tmp_path_factory):
-        """Start a wrapper, SIGTERM it once its build tree is up, and collect the outcome."""
-        tmp_path = tmp_path_factory.mktemp('forwarded-sigterm')
-        wrapper, child_pid, grandchild_pid = _start_wrapper(tmp_path)
-        try:
-            os.kill(wrapper.pid, signal.SIGTERM)
-            wrapper.wait(timeout=_TREE_EXIT_DEADLINE_SECONDS)
-            log_path = tmp_path / 'log-entries.jsonl'
-            entries = [json.loads(line) for line in log_path.read_text().splitlines()] if log_path.exists() else []
-            yield {
-                'returncode': wrapper.returncode,
-                'child_pid': child_pid,
-                'grandchild_pid': grandchild_pid,
-                'entries': entries,
-            }
-        finally:
-            _stop_wrapper(wrapper)
-            _reap_build_tree(child_pid, grandchild_pid)
 
     def test_wrapper_survives_the_forwarded_signal_and_returns(self, sigterm_run):
         assert sigterm_run['returncode'] == 0

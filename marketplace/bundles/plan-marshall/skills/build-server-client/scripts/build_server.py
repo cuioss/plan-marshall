@@ -111,6 +111,13 @@ _PASSTHROUGH_STATUS_FIELDS = (
     'exit_code',
     'duration_seconds',
     'log_file',
+    # The bound a `timeout` / `killed` job was measured against and where it came
+    # from. Without them the client-facing TOON names a non-finish while
+    # withholding which bound applied, and a consumer falls back to reading
+    # `duration_seconds` as if it were the bound. A daemon that predates the
+    # fields sends neither, and neither is rendered.
+    'timeout_used_seconds',
+    'timeout_source',
     # A daemon status_payload(STATUS_REFUSED, reason=...) carries its refusal
     # detail in `reason`; without it here the wait path silently drops the only
     # field saying WHY the job was refused.

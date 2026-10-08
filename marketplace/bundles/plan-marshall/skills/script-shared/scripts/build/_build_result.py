@@ -77,7 +77,19 @@ class DirectCommandResult(TypedDict, total=False):
         command: Full command that was executed.
 
     Optional fields (build-system specific):
-        timeout_used_seconds: Timeout that was applied.
+        timeout_used_seconds: The bound that was APPLIED to the run — never the
+            elapsed time. A producer that does not know the bound omits the
+            field rather than substituting ``duration_seconds``.
+        timeout_source: Which path produced ``timeout_used_seconds``. One of
+            ``explicit`` (a caller-supplied bound), ``learned`` (the persisted
+            value with its safety margin), ``default`` (the tool default, nothing
+            persisted), ``floor`` (a minimum raised the value) or
+            ``daemon_default`` (the build daemon's own default). Carried on
+            ``timeout`` and ``killed`` results; omitted together with the bound
+            when the bound is unknown.
+        command_key: The key the learned bound is stored under, so a timeout can
+            be traced to the ``run-configuration.json`` entry that produced it.
+            Carried on ``timeout`` and ``killed`` results.
         wrapper: Maven/Gradle/Python wrapper path used.
         command_type: npm command type ("npm" or "npx").
         error: Error type identifier (on error / timeout / killed /
@@ -132,7 +144,9 @@ class DirectCommandResult(TypedDict, total=False):
     log_file: str
     command: str
     # Optional fields
-    timeout_used_seconds: int
+    timeout_used_seconds: int  # The APPLIED bound — never the elapsed time
+    timeout_source: str  # Origin of that bound: explicit/learned/default/floor/daemon_default
+    command_key: str  # Key the learned bound is stored under in run-configuration.json
     wrapper: str  # Maven/Gradle/Python: wrapper path used
     command_type: str  # npm: "npm" or "npx"
     error: str  # Error type id (on error/timeout/killed/indeterminate only)
@@ -367,11 +381,22 @@ def error_result(error: str, exit_code: int, duration_seconds: int, log_file: st
     return result
 
 
-def timeout_result(timeout_used_seconds: int, duration_seconds: int, log_file: str, command: str, **extra) -> dict:
+def timeout_result(
+    timeout_used_seconds: int | None, duration_seconds: int, log_file: str, command: str, **extra
+) -> dict:
     """Build timeout result dict.
 
+    ``timeout_used_seconds`` is the APPLIED BOUND and never the elapsed time.
+    The two are different measurements — a job that ran 300 s under an 1800 s
+    bound timed out against 1800, not 300 — so a caller that does not know the
+    bound passes ``None`` and the key is OMITTED from the result; it must not
+    pass ``duration_seconds`` here. Pass ``timeout_source`` and ``command_key``
+    through ``**extra`` to name where the bound came from.
+
     Args:
-        timeout_used_seconds: Timeout that was applied.
+        timeout_used_seconds: The bound that was applied (seconds), or ``None``
+            when the producer does not know it — the result then carries no
+            ``timeout_used_seconds`` key at all.
         duration_seconds: Actual execution time before timeout.
         log_file: Path to captured output file.
         command: Full command that was executed.
@@ -387,15 +412,20 @@ def timeout_result(timeout_used_seconds: int, duration_seconds: int, log_file: s
         >>> result["exit_code"]
         -1
     """
-    result = {
+    result: dict = {
         'status': STATUS_TIMEOUT,
         'error': ERROR_TIMEOUT,
         'exit_code': -1,
-        'timeout_used_seconds': timeout_used_seconds,
-        'duration_seconds': duration_seconds,
-        'log_file': log_file,
-        'command': command,
     }
+    if timeout_used_seconds is not None:
+        result['timeout_used_seconds'] = timeout_used_seconds
+    result.update(
+        {
+            'duration_seconds': duration_seconds,
+            'log_file': log_file,
+            'command': command,
+        }
+    )
     result.update(extra)
     return result
 
@@ -425,7 +455,11 @@ def killed_result(exit_code: int, duration_seconds: int, log_file: str, command:
             adaptive-timeout learner).
         log_file: Path to the partial captured output.
         command: Full command that was executed.
-        **extra: Additional fields to include.
+        **extra: Additional fields to include. A ``timeout_used_seconds``
+            passed here is the bound that was APPLIED to the run and never the
+            elapsed time — the kill was not that bound firing, so the field
+            records only what the run was being measured against. Pass
+            ``timeout_source`` and ``command_key`` beside it.
 
     Returns:
         Result dict with status="killed", error="killed", and the shared
