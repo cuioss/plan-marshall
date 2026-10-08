@@ -1233,6 +1233,20 @@ def test_lapse_beside_a_definitive_failure_is_not_pending(plan_context):
     assert not _lapse_path(plan_id).exists()
 
 
+def test_lapse_naming_no_check_is_not_pending(plan_context):
+    """A wedged wait names no check, so it is a timeout at once, not a live run."""
+    plan_id = 'ci-precond-lapse-no-checks'
+
+    result = _resolve_lapse(plan_id, _SHA_A, [])
+
+    assert result['status'] == 'wait_failed'
+    assert result['ci_final_status'] == 'timeout'
+    assert result['wait_outcome'] == 'deadline_exceeded'
+    assert result['failing_checks'] == []
+    # Nothing was counted: a wait that shows no run spends none of the bound.
+    assert not _lapse_path(plan_id).exists()
+
+
 def test_signal_arm_lapse_stays_arm_pending(plan_context):
     """The per-signal arms are unchanged: a lapse is arm_pending, uncounted."""
     plan_id = 'ci-precond-lapse-signal-arm'

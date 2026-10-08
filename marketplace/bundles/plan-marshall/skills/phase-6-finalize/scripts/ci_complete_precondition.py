@@ -398,9 +398,9 @@ def _run_ci_wait(
         # ``timeout_seconds``, so
         # reaching here means the subprocess wedged. Surface a synthetic
         # timeout-like envelope instead of letting subprocess.TimeoutExpired
-        # propagate uncaught — resolve() routes any non-success envelope to
-        # the ``wait_failed`` / ``ci_final_status: timeout`` path, and the
-        # ``wait_outcome: deadline_exceeded`` marker lets downstream
+        # propagate uncaught. The envelope names no check, so resolve() answers
+        # it ``wait_failed`` / ``ci_final_status: timeout`` in every mode, and
+        # the ``wait_outcome: deadline_exceeded`` marker lets downstream
         # consumers classify the precondition decision correctly.
         return {
             'status': 'timeout',
@@ -622,11 +622,13 @@ def _is_lapse_over_running_checks(wait_outcome: str, failing_checks: list) -> bo
 
     The wait envelope lists the checks that were not green at the deadline in
     ``failing_checks``. The lapse is over a live run when the envelope says
-    ``deadline_exceeded`` and none of those entries carries a definitive
-    failing conclusion. An entry that is not a mapping is not a readable check,
-    so it is not taken as evidence that CI is merely still running.
+    ``deadline_exceeded``, names at least one check, and none of those entries
+    carries a definitive failing conclusion. An envelope that names no check —
+    the synthetic one a wedged or crashed wait produces — shows no run, and an
+    entry that is not a mapping is not a readable check; neither is taken as
+    evidence that CI is merely still running.
     """
-    if wait_outcome != 'deadline_exceeded':
+    if wait_outcome != 'deadline_exceeded' or not failing_checks:
         return False
     for check in failing_checks:
         if not isinstance(check, dict):
