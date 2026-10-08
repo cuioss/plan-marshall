@@ -188,7 +188,7 @@ Read `complete` and `missing_keys` from the TOON. A `landing` message carries a 
 
    The regenerated `queue-view.md` is committed together with the queue change it renders, as `git -C {store_checkout}`. A `row_unreadable` or `ledger_unreadable` refusal writes nothing: resolve the named source file first, then regenerate.
 
-7. **Conclude with the proactive emit.** Run the [`orchestrate.md` `next` selection](orchestrate.md) — its `parallelization_scope` read, `N − R` slot count, and disjoint-plus-prep-ready admission tests govern; do not restate them — and emit the resulting queue-filling copy-paste block. When nothing qualifies, state "nothing emittable, blocked on {X}" instead, enumerating each unemittable candidate and its blocking reason. The emit-only rule holds: the block is handed to the operator, never launched. The [`orchestrate.md` Step 5 `auto_emit` gate](orchestrate.md) applies unchanged: under `orchestrator.auto_emit == true` the emitted block's `launched` transitions are auto-recorded; under `false` (default) they stay operator-confirmed — and under **both** values the started/`running` transition remains operator-owned (emit≠running).
+7. **Conclude with the proactive emit.** Run the [`orchestrate.md` `next` selection](orchestrate.md) — its `parallelization_scope` read, `N − R` slot count, admission tests and overlap prompt govern; do not restate them — and emit the resulting queue-filling copy-paste block. An overlap prompt asked during this emit is recorded exactly as [`orchestrate.md`](orchestrate.md) Step 4 § The overlap prompt requires: each answer rides this verb's Step 6 log line and the `overlap_prompts[]` rows of its Output. When nothing qualifies, state "nothing emittable, blocked on {X}" instead, enumerating each unemittable candidate and its blocking reason. The emit-only rule holds: the block is handed to the operator, never launched. The [`orchestrate.md` Step 5 `auto_emit` gate](orchestrate.md) applies unchanged: under `orchestrator.auto_emit == true` the emitted block's `launched` transitions are auto-recorded; under `false` (default) they stay operator-confirmed — and under **both** values the started/`running` transition remains operator-owned (emit≠running).
 
 ### Step 5: Mid-flight observation — minimal reconciliation
 
@@ -264,8 +264,10 @@ Log the analysis decisions and reconciliations:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging decision \
-  --plan-id {slug} --level INFO --message "{analysis decision / reconciliation statement}" --store orchestrator
+  --plan-id {slug} --level INFO --message "{analysis decision / reconciliation statement, each operator overlap answer}" --store orchestrator
 ```
+
+When the proactive emit (Step 4 item 7 / Step 5 item 4) asked an overlap prompt, the message names each operator answer, with the content [`orchestrate.md`](orchestrate.md) Step 6 states for its own log line — not restated here.
 
 The anchor is written to the anchor file, `resume_anchor.md`:
 
@@ -302,10 +304,12 @@ drained[D]{message,kind,disposition}:
 queue_items_retired: {N}
 defects_added: {N}
 watches_added: {N}
+overlap_prompts[P]{plan,candidate,shared_file_count,answer}:
+  PLAN-NN,PLAN-KK,2,emit
 emitted[E]{plan,command}:
   PLAN-NN,/plan-marshall task="implement .plan/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md"
 shortfall[S]{plan,reason}:
-  PLAN-MM,"overlaps {surface} with PLAN-KK"
+  PLAN-MM,"shares {paths} with PLAN-KK — declined by the operator"
 resume_anchor: "{next action}"
 ```
 
@@ -318,4 +322,4 @@ The block carries a singular half and a plural half, and `mode` says which half 
 
 This is a clean break, not a shim: there is one Output block, and a consumer reads `mode` to know which half to trust.
 
-`emitted[]`/`shortfall[]` mirror the `orchestrate.md` `next` verb output shape (see there) for every mode, with one blocking reason per unemittable candidate.
+`overlap_prompts[]`, `emitted[]` and `shortfall[]` mirror the `orchestrate.md` `next` verb output shape (see there, which owns the row schemas) for every mode, with one blocking reason per unemittable candidate and one `overlap_prompts[]` row per overlap prompt the proactive emit asked — empty when it asked none.

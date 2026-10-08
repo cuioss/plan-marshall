@@ -11,13 +11,17 @@ back, and :func:`write_ledger` materialises such a dict into the per-concern
 files through the PRODUCTION conversion, so a layout change reaches every
 fixture at once and no test hand-writes a queue into ``status.json``.
 
+:func:`write_epic_tree` builds a whole epic — header, rows and one spec file per
+row — from a compact description, for fixtures that need several epics across
+both store roots.
+
 :func:`write_legacy_status` is the deliberate exception: it writes the retired
 monolithic document verbatim, for the ``legacy_layout`` refusal controls and the
 negative arms that must reproduce the old layout on purpose.
 """
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -53,6 +57,78 @@ def write_ledger(root: Path, doc: Mapping[str, Any]) -> Path:
     _ledger.write_layout(root, migrated.header, migrated.anchor, migrated.rows)
     header_file: Path = _ledger.header_path(root)
     return header_file
+
+
+def epic_spec_name(plan_id: str, slug: str) -> str:
+    """The spec file name :func:`write_epic_tree` writes for ``plan_id`` in epic ``slug``."""
+    return f'{plan_id}-{slug}.md'
+
+
+def write_epic_tree(
+    store_root: Path,
+    slug: str,
+    *,
+    phase: str,
+    plans: Sequence[tuple[str, str, Sequence[str]]],
+) -> Path:
+    """Materialise one epic tree under ``store_root`` from a compact description.
+
+    ``store_root`` is the active or the archived orchestrator store root, and
+    the epic lands at ``store_root / slug`` with ``phase`` as its header phase.
+    Each ``plans`` entry is ``(plan_id, row_status, surface_lines)``: the row is
+    seeded through :func:`write_ledger`, and one spec file named by
+    :func:`epic_spec_name` is written beside it under ``plans/``, carrying
+    ``surface_lines`` as the body of its ``## Expected Surface`` section.
+
+    The builder decides nothing about the population it writes: how many epics,
+    which statuses and which surfaces are the caller's. Returns the epic tree.
+    """
+    epic_dir = store_root / slug
+    rows = [
+        {
+            'id': plan_id,
+            'slug': plan_id.lower(),
+            'workstream': 'WS-01',
+            'status': status,
+            'plan_marshall_plan_id': '',
+            'pr': '',
+            'landing': '',
+        }
+        for plan_id, status, _ in plans
+    ]
+    write_ledger(
+        epic_dir,
+        {
+            'kind': 'orchestrator',
+            'title': slug,
+            'phase': phase,
+            'workstreams': ['WS-01'],
+            'plans': rows,
+            'resume_anchor': 'fixture',
+            'metadata': {},
+            'created': '2020-01-01T00:00:00Z',
+        },
+    )
+    plans_dir = epic_dir / 'plans'
+    plans_dir.mkdir(parents=True, exist_ok=True)
+    for plan_id, _, surface_lines in plans:
+        lines = [
+            f'# {plan_id}: Fixture',
+            '',
+            '## Objective',
+            '',
+            'Fixture objective.',
+            '',
+            '## Claim Labels',
+            '',
+            '- OBSERVED: a claim — read at `a.py` § `f`',
+            '',
+            '## Expected Surface',
+            '',
+            *surface_lines,
+        ]
+        (plans_dir / epic_spec_name(plan_id, slug)).write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    return epic_dir
 
 
 def write_legacy_status(root: Path, doc: Mapping[str, Any]) -> Path:

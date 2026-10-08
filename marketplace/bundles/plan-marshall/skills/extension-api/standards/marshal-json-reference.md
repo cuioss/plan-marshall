@@ -159,7 +159,7 @@ The `reader` surface resolves a LEVEL like the others; the dispatch site compose
 
 ### `orchestrator.auto_emit`
 
-`orchestrator.auto_emit` is a scalar boolean, seeded at its default of `false`, read and written through the same `manage-config orchestrator get/set --field` verb as `parallelization_scope` and governed by its `reject_unknown_provisioning_field` whitelist. When `false` the orchestrator's post-landing queue-fill emit stays **stage-and-wait**: it produces the copy-paste block and records the `launched` transition only on operator confirmation. When `true` the emit fires automatically under the existing disjointness, prep-readiness and "only if sensible" guards. The knob automates the *emit*, never the *start* — the emit≠running invariant is absolute, and a colliding, blocked or unprepared candidate emits nothing and logs the shortfall rather than filling a slot with a bad emit.
+`orchestrator.auto_emit` is a scalar boolean, seeded at its default of `false`, read and written through the same `manage-config orchestrator get/set --field` verb as `parallelization_scope` and governed by its `reject_unknown_provisioning_field` whitelist. When `false` the orchestrator's post-landing queue-fill emit stays **stage-and-wait**: it produces the copy-paste block and records the `launched` transition only on operator confirmation. When `true` the emit fires automatically under the existing disjointness, prep-readiness and "only if sensible" guards. The knob automates the *emit*, never the *start* — the emit≠running invariant is absolute, a candidate the launch gate did not admit emits nothing and logs the shortfall, and a multi-file overlap is the operator's decision under both knob values.
 
 ### `orchestrator.use_worktree`
 

@@ -72,7 +72,10 @@ per-concern layout; no code path here opens a queue row or the anchor itself.
   ledger structurally cannot perform, scored on ``manage-status
   sibling-collision-check``'s two classes; the queried epic's own dated archive
   snapshot and the plan-less sentinel's directory are never candidates, and the
-  payload names each exclusion with a stated count), publish every spec's DECLARED
+  payload names each exclusion with a stated count; beside that scan population
+  the payload publishes the launch-gate population — in-flight rows, anything
+  unreadable and every live plan — and counts every spec left out of it under a
+  declared exclusion reason), publish every spec's DECLARED
   ``## Expected Surface`` with its derivation status and the population the
   comparison was drawn from (``surfaces`` — the read verb the disjointness gate
   decides on, so that verdict is a parser decision rather than a reader's
@@ -147,6 +150,7 @@ ledger. No implementation-side capability (no build/CI/source verbs) exists here
 
 import argparse
 import importlib.util
+import json
 import os
 import re
 import shutil
@@ -155,14 +159,14 @@ import sys
 import time
 from collections import Counter
 from collections.abc import Callable, Collection
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from _cmd_sibling_collision import (
     _OVERLAP_JOIN,
     _iter_active_plan_dirs,
-    _read_affected_files,
+    _normalize_path,
     _read_request_source,
 )
 from _orchestrator_inbox import (
@@ -195,8 +199,10 @@ from _orchestrator_ledger import (
     LEDGER_LEGACY,
     LEDGER_OK,
     LEDGER_UNREADABLE,
+    QUEUE_UNLISTABLE,
     ROW_FIELDS,
     LedgerRead,
+    QueueRead,
     assemble_view,
     create_row,
     legacy_layout_error,
@@ -259,6 +265,21 @@ PLAN_ROW_FIELDS = frozenset({'plan_marshall_plan_id', 'pr', 'landing'})
 #: live by the same reading: paused work is unfinished work, and a parked plan
 #: resumes onto the surface it declared.
 LIVE_PLAN_STATUSES = ('staged', 'launched', 'running', 'parked')
+
+#: The live statuses at which a plan row is IN FLIGHT — its plan has been handed
+#: to an executing session, so its surface is being written right now. These and
+#: only these make a spec a launch-gate candidate by row status: a ``staged`` or
+#: ``parked`` row is live but nobody is working on it, so it cannot collide with
+#: a plan about to be launched. Built from the shared :data:`RUNNING_STATUS`
+#: binding plus the ``launched`` token, so the running token is not re-spelled.
+IN_FLIGHT_PLAN_STATUSES = ('launched', RUNNING_STATUS)
+
+# An in-flight status is a live one by definition. Checked at construction
+# because the gate classifier reads "live and not in flight" as its last
+# exclusion reason.
+assert set(IN_FLIGHT_PLAN_STATUSES) <= set(LIVE_PLAN_STATUSES), (
+    f'IN_FLIGHT_PLAN_STATUSES {IN_FLIGHT_PLAN_STATUSES} must be a subset of LIVE_PLAN_STATUSES {LIVE_PLAN_STATUSES}'
+)
 
 #: The terminal statuses at which a row SHIPPED. These and ONLY these owe the
 #: result links :data:`SHIPPED_REQUIRED_FIELDS`, so they alone drive the
@@ -631,8 +652,7 @@ STALENESS_GOVERNING_AUTHORITY = (
 #: The three CANDIDATE classes one spec is scored against, named once and in
 #: reporting order. ``sibling_epic_spec`` and ``corpus_spec`` are spec candidates
 #: resolved through :func:`_spec_record`; ``live_plan`` is the cross-ledger
-#: candidate whose surface is an active plan's ``references.json``
-#: ``affected_files``. The per-kind tally is derived from this tuple rather than
+#: candidate, an active plan. The per-kind tally is derived from this tuple rather than
 #: from the kinds a given corpus happens to hold, so a kind with no candidates
 #: publishes stated zeros instead of vanishing from the breakdown.
 CANDIDATE_KIND_SIBLING_EPIC_SPEC = 'sibling_epic_spec'
@@ -648,8 +668,8 @@ CANDIDATE_KINDS = (
 #: comparable surface to the file-overlap matcher, and — when it did not — which
 #: of the two different zeros it is. ``indeterminate`` is a candidate that WAS
 #: read and declared nothing comparable (a spec in any
-#: :data:`SURFACE_INDETERMINATE_STATES` state, or a live plan with no captured
-#: footprint); ``unreadable`` is a candidate nothing could read at all. Collapsing
+#: :data:`SURFACE_INDETERMINATE_STATES` state, or a live plan neither surface
+#: source supplied a surface for); ``unreadable`` is a candidate nothing could read at all. Collapsing
 #: them would report an unread candidate as a read-and-empty one.
 #:
 #: This vocabulary is INDEPENDENT of :data:`SURFACE_STATES` — it measures
@@ -685,6 +705,77 @@ CANDIDATE_GOVERNING_AUTHORITY = (
     'ADR-019 — a file-overlap count of 0 beside a non-zero candidate-indeterminate '
     'count is an unchecked negative, never a clean pass'
 )
+
+#: Why one spec candidate is left OUT of the launch-gate population, named once
+#: and in EVALUATION order — the first reason that applies is the one reported.
+#: The scan population above is every candidate the cross-check read; the gate
+#: population is the part of it that can still collide with a plan about to be
+#: launched. ``epic_archived`` and ``epic_closed`` are facts about the epic the
+#: spec sits in (its store location, its header phase); ``row_terminal`` and
+#: ``row_not_in_flight`` are facts about the spec's own queue row. The vocabulary
+#: is closed, and the per-kind exclusion tally is derived from this tuple rather
+#: than from the reasons a given store happens to produce, so a reason nothing
+#: fell under publishes a stated zero.
+GATE_EXCLUDED_EPIC_ARCHIVED = 'epic_archived'
+GATE_EXCLUDED_EPIC_CLOSED = 'epic_closed'
+GATE_EXCLUDED_ROW_TERMINAL = 'row_terminal'
+GATE_EXCLUDED_ROW_NOT_IN_FLIGHT = 'row_not_in_flight'
+GATE_EXCLUSION_REASONS = (
+    GATE_EXCLUDED_EPIC_ARCHIVED,
+    GATE_EXCLUDED_EPIC_CLOSED,
+    GATE_EXCLUDED_ROW_TERMINAL,
+    GATE_EXCLUDED_ROW_NOT_IN_FLIGHT,
+)
+
+#: What the gate classifier could NOT read for one spec that stays a gate
+#: candidate, named once and in the order the reads are attempted. A spec with
+#: one of these causes may be in flight and nothing established that it is not,
+#: so it counts as a non-comparable gate candidate whatever its surface
+#: declares: an unknown row status says nothing about whether the declared
+#: surface is still the one being written. ``spec_file_unreadable`` is the spec
+#: file itself; ``epic_status_unreadable`` is a sibling epic's header that
+#: cannot be read or carries no phase; the remaining five are facts about the
+#: queue row the spec should join. The per-spec ``reason`` names the cause, so a
+#: refusal says which read failed rather than blaming the surface.
+GATE_UNREAD_SPEC_FILE = 'spec_file_unreadable'
+GATE_UNREAD_EPIC_STATUS = 'epic_status_unreadable'
+GATE_UNREAD_QUEUE = 'queue_unlistable'
+GATE_UNREAD_ROW_FILE = 'row_file_unreadable'
+GATE_UNREAD_ROW_MISSING = 'row_not_joined'
+GATE_UNREAD_ROW_AMBIGUOUS = 'row_ambiguous'
+GATE_UNREAD_ROW_STATUS = 'row_status_unknown'
+GATE_UNREAD_CAUSES = (
+    GATE_UNREAD_SPEC_FILE,
+    GATE_UNREAD_EPIC_STATUS,
+    GATE_UNREAD_QUEUE,
+    GATE_UNREAD_ROW_FILE,
+    GATE_UNREAD_ROW_MISSING,
+    GATE_UNREAD_ROW_AMBIGUOUS,
+    GATE_UNREAD_ROW_STATUS,
+)
+
+#: Where one live plan's comparison surface came from, named once and in the
+#: order the sources are tried. ``affected_files`` is the plan's captured
+#: footprint; ``source_spec`` is the declared surface of the one spec the plan
+#: was launched from, used only while no footprint has been captured; ``none``
+#: is a plan no surface was established for — its source spec supplied none, or
+#: its footprint could not be read — which stays indeterminate.
+LIVE_SURFACE_AFFECTED_FILES = 'affected_files'
+LIVE_SURFACE_SOURCE_SPEC = 'source_spec'
+LIVE_SURFACE_NONE = 'none'
+LIVE_SURFACE_SOURCES = (
+    LIVE_SURFACE_AFFECTED_FILES,
+    LIVE_SURFACE_SOURCE_SPEC,
+    LIVE_SURFACE_NONE,
+)
+
+#: How many files one own spec must share with a single gate candidate before
+#: the overlap is put to the operator. One shared file is common between plans
+#: that do not collide in practice, so it never fires the prompt; from two files
+#: on, whether the overlap is a problem is the operator's decision. Each entry
+#: of a pair's overlap row counts as one file, a directory or recursive-glob
+#: containment included.
+OVERLAP_PROMPT_MIN_SHARED_FILES = 2
 
 # --- declaration-currency (cross-spec reconciliation) -----------------------
 #
@@ -3844,21 +3935,28 @@ def _is_own_dated_snapshot(name: str, slug: str, epic_names: set[str]) -> bool:
     )
 
 
-def _sibling_epic_roots(slug: str) -> tuple[list[Path], list[str]]:
+def _sibling_epic_roots(slug: str) -> tuple[list[tuple[str, Path]], list[str]]:
     """Enumerate the OTHER epics' store roots, and name what was left out of them.
 
     Returns ``(roots, excluded_self_snapshots)``: the sibling epic trees in name
-    order, and the sorted directory names that were recognised as the queried
-    epic's own dated archive snapshot and therefore NOT yielded. The second
-    element is handed back so the caller can publish the exclusion; a smaller
-    sibling population that nothing names is indistinguishable from a store that
-    simply holds fewer epics.
+    order, each paired with the scope of the store root it was found under
+    (:data:`SCOPE_ACTIVE` or :data:`SCOPE_ARCHIVED`), and the sorted directory
+    names that were recognised as the queried epic's own dated archive snapshot
+    and therefore NOT yielded. The second element is handed back so the caller
+    can publish the exclusion; a smaller sibling population that nothing names
+    is indistinguishable from a store that simply holds fewer epics.
+
+    The walk yields the SCAN population — every sibling the duplication check
+    reads. The scope rides with each root so the launch-gate filter can take the
+    archived fact from this walk instead of deriving it a second time from the
+    path: an archived sibling is scanned for duplicate work and left out of the
+    gate population (see :func:`_gate_outcome`).
 
     Mirrors the on-query store scan the read verbs document: both
     ``.plan/orchestrator/`` and ``.plan/archived-orchestrators/`` are walked, so
     an archived sibling stays visible to the duplication check. An epic present
-    in both homes is yielded once. Two entries are not siblings of the queried
-    epic:
+    in both homes is yielded once, from the active root, and carries the active
+    scope. Two entries are not siblings of the queried epic:
 
     * the queried epic itself, by exact directory-name equality; and
     * the queried epic's own DATED ARCHIVE SNAPSHOT — an entry of the ARCHIVED
@@ -3883,7 +3981,7 @@ def _sibling_epic_roots(slug: str) -> tuple[list[Path], list[str]]:
     that another epic present in either root can also claim is never excluded
     (:func:`_is_own_dated_snapshot`).
     """
-    roots: dict[str, Path] = {}
+    roots: dict[str, tuple[str, Path]] = {}
     excluded: set[str] = set()
     store_roots = _epic_store_roots()
     has_active_tree = any((base / slug).is_dir() for scope, base in store_roots if scope == SCOPE_ACTIVE)
@@ -3897,8 +3995,258 @@ def _sibling_epic_roots(slug: str) -> tuple[list[Path], list[str]]:
             if scope == SCOPE_ARCHIVED and has_active_tree and _is_own_dated_snapshot(child.name, slug, epic_names):
                 excluded.add(child.name)
                 continue
-            roots[child.name] = child
+            roots[child.name] = (scope, child)
     return [roots[name] for name in sorted(roots)], sorted(excluded)
+
+
+@dataclass(frozen=True)
+class _EpicGateFacts:
+    """What the launch-gate filter knows about ONE epic, read once per epic.
+
+    ``sibling`` says whether the epic-level reasons apply at all: they do for a
+    sibling epic and never for the queried epic's own corpus. ``archived`` is
+    the location fact taken from the store walk. ``phase`` is the header phase,
+    or ``None`` when the header could not be read as a per-concern header or
+    carries no phase. ``queue`` is the epic's row listing, or ``None`` when it
+    was not read because the archived location already decides every readable
+    spec of the epic.
+    """
+
+    sibling: bool
+    archived: bool
+    phase: str | None
+    queue: QueueRead | None
+
+
+def _epic_gate_facts(root: Path, sibling_scope: str | None) -> _EpicGateFacts:
+    """Read the header and the queue of one epic for the launch-gate filter.
+
+    ``root`` is the same epic directory the spec read uses, so the ledger and
+    the specs are addressed through one path. ``sibling_scope`` is the scope the
+    sibling walk found the epic under, or ``None`` for the queried epic's own
+    corpus. An archived sibling reads nothing: its location is decided by the
+    walk that found it. The own corpus reads the queue only, because the
+    queried epic's own phase and location are not exclusion reasons for its own
+    specs.
+    """
+    sibling = sibling_scope is not None
+    if sibling_scope == SCOPE_ARCHIVED:
+        return _EpicGateFacts(sibling=True, archived=True, phase=None, queue=None)
+    phase: str | None = None
+    if sibling:
+        state, header, _ = read_header(root)
+        value = header.get('phase') if state == LEDGER_OK else None
+        phase = value if isinstance(value, str) and value else None
+    return _EpicGateFacts(sibling=sibling, archived=False, phase=phase, queue=read_rows(root))
+
+
+@dataclass(frozen=True)
+class _GateOutcome:
+    """Where the gate classifier put ONE spec candidate.
+
+    ``excluded`` is the :data:`GATE_EXCLUSION_REASONS` member the spec is left
+    out under, or ``None`` when it stays a gate candidate. ``unread`` is the
+    :data:`GATE_UNREAD_CAUSES` member naming what could not be read, or ``None``
+    when the spec stays in on an established in-flight row. The two are never
+    both set: a spec is excluded only when every read behind the reason
+    succeeded.
+    """
+
+    excluded: str | None = None
+    unread: str | None = None
+
+
+#: The outcome of a candidate that is in flight on established facts — a spec on
+#: a ``launched`` or ``running`` row, and every live plan.
+_GATE_IN_FLIGHT = _GateOutcome()
+
+
+@dataclass
+class _GateTally:
+    """The launch-gate counts of one cross-check call, per candidate kind.
+
+    Seeded over the WHOLE declared vocabularies, so a kind holding no gate
+    candidate, a derivation state no gate candidate is in and an exclusion
+    reason nothing fell under each publish a stated zero. Every candidate is
+    counted exactly once — in ``population`` and ``states`` when it stays a gate
+    candidate, in ``excluded`` otherwise — so per kind ``population`` plus the
+    sum of ``excluded`` equals the scan population of that kind.
+
+    ``members`` names each gate candidate as ``(kind, name, state, cause)``,
+    under the same name the match lists carry for it, so the per-spec
+    comparison rows can say WHICH candidate blocks a spec rather than only how
+    many do. ``state`` is the candidate's GATE state and ``cause`` the
+    :data:`GATE_UNREAD_CAUSES` member behind it, or the empty string.
+
+    The gate state fails closed. A candidate the classifier could not place —
+    one carrying an unread cause — may be in flight on a surface nobody
+    confirmed, so it is counted as :data:`CANDIDATE_INDETERMINATE` even when
+    its own surface is comparable. A candidate that is already non-comparable
+    keeps its state, so an unreadable spec file stays ``unreadable``. The scan
+    tally is untouched by this: it keeps reporting the surface as derived.
+    """
+
+    population: dict[str, int] = field(default_factory=lambda: dict.fromkeys(CANDIDATE_KINDS, 0))
+    states: dict[str, dict[str, int]] = field(
+        default_factory=lambda: {kind: dict.fromkeys(CANDIDATE_DERIVATION_STATES, 0) for kind in CANDIDATE_KINDS}
+    )
+    excluded: dict[str, dict[str, int]] = field(
+        default_factory=lambda: {kind: dict.fromkeys(GATE_EXCLUSION_REASONS, 0) for kind in CANDIDATE_KINDS}
+    )
+    members: list[tuple[str, str, str, str]] = field(default_factory=list)
+
+    def count(self, kind: str, name: str, state: str, outcome: _GateOutcome) -> None:
+        """Count the candidate ``name`` of ``kind`` in derivation ``state`` under its gate outcome."""
+        if outcome.excluded is not None:
+            self.excluded[kind][outcome.excluded] += 1
+            return
+        cause = outcome.unread or ''
+        gate_state = CANDIDATE_INDETERMINATE if cause and state == CANDIDATE_COMPARABLE else state
+        self.population[kind] += 1
+        self.states[kind][gate_state] += 1
+        self.members.append((kind, name, gate_state, cause))
+
+
+def _spec_comparison_rows(
+    spec_names: list[str], gate: _GateTally, gate_overlap_matches: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Build the per-spec launch-gate verdict: one row per own spec file.
+
+    ``spec_names`` is every own spec file, an unreadable one included, so the
+    row count equals ``specs_total``. A spec's BLOCKING candidates are the gate
+    candidates, other than the spec itself, that contributed no comparable
+    surface: against those the spec was never compared, so its comparison is
+    not determinate. A gate candidate that WAS comparable does not block,
+    whether or not it overlaps; overlap is reported separately.
+
+    A gate candidate whose row or epic status could not be read is one of
+    them whatever its surface declares: :class:`_GateTally` counts it as
+    ``indeterminate``, so it blocks here like any other.
+
+    ``blocking_candidates`` joins ``{candidate_kind}:{name}:{state}`` entries,
+    sorted. ``reason`` is derived here from the same entries, naming kind, name
+    and state for each — followed, in parentheses, by the
+    :data:`GATE_UNREAD_CAUSES` member when the member carries one — and is the
+    empty string exactly when
+    ``comparison_determinate`` is true. The enforcement site transcribes it and
+    composes nothing.
+
+    The overlap columns read ``gate_overlap_matches``, the overlap rows whose
+    candidate is a gate candidate. ``gate_overlap_count`` is how many of them
+    name the spec, ``max_shared_file_count`` the largest ``overlap_count``
+    among those (0 when there is none), and ``overlap_prompt_required`` whether
+    that reaches :data:`OVERLAP_PROMPT_MIN_SHARED_FILES`.
+    """
+    rows: list[dict[str, Any]] = []
+    for spec in spec_names:
+        blocking = sorted(
+            member
+            for member in gate.members
+            if member[2] in CANDIDATE_NON_CONTRIBUTING_STATES and member[:2] != (CANDIDATE_KIND_CORPUS_SPEC, spec)
+        )
+        shared = [row['overlap_count'] for row in gate_overlap_matches if row['spec'] == spec]
+        max_shared = max(shared, default=0)
+        named = ', '.join(
+            f'{kind} {name} {state} ({cause})' if cause else f'{kind} {name} {state}'
+            for kind, name, state, cause in blocking
+        )
+        rows.append(
+            {
+                'spec': spec,
+                'comparison_determinate': not blocking,
+                'blocking_candidate_count': len(blocking),
+                'blocking_candidates': _OVERLAP_JOIN.join(
+                    sorted(f'{kind}:{name}:{state}' for kind, name, state, _ in blocking)
+                ),
+                'reason': f'candidate comparison indeterminate — {named}' if blocking else '',
+                'gate_overlap_count': len(shared),
+                'max_shared_file_count': max_shared,
+                'overlap_prompt_required': max_shared >= OVERLAP_PROMPT_MIN_SHARED_FILES,
+            }
+        )
+    return rows
+
+
+def _gate_outcome(path: Path, record: dict[str, Any] | None, facts: _EpicGateFacts) -> _GateOutcome:
+    """Place the spec at ``path`` in or out of the launch gate, and say on what basis.
+
+    An outcome with ``excluded`` set leaves the spec out under exactly one
+    member of :data:`GATE_EXCLUSION_REASONS`. Every other outcome makes the
+    spec a GATE CANDIDATE: it can still refuse a plan about to be launched.
+    ``record`` is the spec's :func:`_spec_record` result and ``facts`` the
+    per-epic read of the epic the spec sits in.
+
+    The classifier fails closed. Whenever it cannot establish a reason the spec
+    stays in the gate population rather than being excluded on an assumption,
+    and the outcome names what could not be read in ``unread``
+    (:data:`GATE_UNREAD_CAUSES`). :class:`_GateTally` counts such a candidate as
+    non-comparable whatever its surface declares, so it refuses every own
+    candidate:
+
+    1. ``spec_file_unreadable`` — the spec file itself is unreadable
+       (``record`` is ``None``). This is decided FIRST and precedes
+       ``epic_archived``: an unreadable spec file is treated as in flight
+       whatever its row status and whatever its epic's location or phase — on a
+       staged, parked or terminal row, in a closed epic and under the archived
+       root alike. It applies to sibling specs and to the own corpus.
+    2. ``epic_status_unreadable`` — the epic header cannot be read, or carries
+       no phase (sibling epics in the active root only).
+    3. ``queue_unlistable`` — the epic's queue cannot be listed.
+    4. ``row_file_unreadable`` — a row file the spec joins is unreadable.
+    5. ``row_not_joined`` / ``row_ambiguous`` — the spec joins no row, or more
+       than one row, under :func:`_spec_matches_row`.
+    6. ``row_status_unknown`` — the row status is outside
+       :data:`VALID_STATUS_VOCABULARY`.
+
+    A spec on a ``launched`` or ``running`` row carries neither field: it is in
+    flight on established facts and is counted with its own derivation state.
+
+    For a readable spec the reasons are evaluated in declared order and the
+    first match wins. Both epic reasons are decided BEFORE any row is read, so
+    a readable spec in an archived or a closed sibling epic is excluded
+    whatever its queue row can or cannot be read as:
+
+    * ``epic_archived`` — the epic root came from the archived store root. A
+      location fact that needs no file read, so a readable spec under the
+      archived root is ``epic_archived`` whatever else in that epic can or
+      cannot be read.
+    * ``epic_closed`` — an active epic whose header phase is
+      :data:`CLOSED_PHASE`.
+    * ``row_terminal`` — the row status is in :data:`TERMINAL_PLAN_STATUSES`.
+    * ``row_not_in_flight`` — the row status is live and not in
+      :data:`IN_FLIGHT_PLAN_STATUSES`, that is staged or parked.
+
+    The two epic reasons apply to sibling specs only. For the queried epic's
+    own corpus (``facts.sibling`` false) only the two row reasons are
+    evaluated: the queried epic's own phase and location do not exclude its own
+    specs, and its header is not consulted.
+    """
+    if record is None:
+        return _GateOutcome(unread=GATE_UNREAD_SPEC_FILE)
+    if facts.sibling:
+        if facts.archived:
+            return _GateOutcome(excluded=GATE_EXCLUDED_EPIC_ARCHIVED)
+        if facts.phase is None:
+            return _GateOutcome(unread=GATE_UNREAD_EPIC_STATUS)
+        if facts.phase == CLOSED_PHASE:
+            return _GateOutcome(excluded=GATE_EXCLUDED_EPIC_CLOSED)
+    queue = facts.queue
+    if queue is None or queue.state == QUEUE_UNLISTABLE:
+        return _GateOutcome(unread=GATE_UNREAD_QUEUE)
+    readable = [row for row in queue.rows if (row_id := str(row.get('id', ''))) and _spec_matches_row(path, row_id)]
+    unreadable = [entry for entry in queue.unreadable_rows if _spec_matches_row(path, Path(entry['file']).stem)]
+    if unreadable:
+        return _GateOutcome(unread=GATE_UNREAD_ROW_FILE)
+    if len(readable) != 1:
+        return _GateOutcome(unread=GATE_UNREAD_ROW_AMBIGUOUS if readable else GATE_UNREAD_ROW_MISSING)
+    row_status = readable[0].get('status')
+    if not isinstance(row_status, str) or row_status not in VALID_STATUS_VOCABULARY:
+        return _GateOutcome(unread=GATE_UNREAD_ROW_STATUS)
+    if row_status in TERMINAL_PLAN_STATUSES:
+        return _GateOutcome(excluded=GATE_EXCLUDED_ROW_TERMINAL)
+    if row_status in LIVE_PLAN_STATUSES and row_status not in IN_FLIGHT_PLAN_STATUSES:
+        return _GateOutcome(excluded=GATE_EXCLUDED_ROW_NOT_IN_FLIGHT)
+    return _GATE_IN_FLIGHT
 
 
 def _spec_record(epic_slug: str, path: Path, repo_root: Path) -> dict[str, Any] | None:
@@ -3942,7 +4290,79 @@ def _spec_record(epic_slug: str, path: Path, repo_root: Path) -> dict[str, Any] 
     }
 
 
-def _live_plan_records() -> tuple[list[dict[str, Any]], int]:
+def _source_spec_surface(pointers: set[str], repo_root: Path) -> set[str] | None:
+    """The declared surface of the ONE spec a live plan was launched from, else ``None``.
+
+    The second surface source of a live plan, consulted only when the plan has
+    captured no footprint yet. ``pointers`` is the plan's normalized
+    ``source_id`` pointer set. A surface is returned only when that set names
+    exactly one spec, the spec file exists inside its epic's ``plans/``
+    directory (active tree, else the archived one), it is readable, and
+    :func:`_spec_record` reports it ``declarative``. The returned set is that
+    record's comparison paths, so the plan is compared on exactly what its
+    source spec contributes to the overlap matcher.
+
+    Every other case returns ``None`` and the plan stays indeterminate: no
+    pointer, more than one pointer, a slug that is not a valid epic slug, a
+    path that does not exist or resolves outside ``plans/``, an unreadable
+    spec, and a spec in any :data:`SURFACE_INDETERMINATE_STATES` state. A
+    surface is never guessed from a spec that did not declare one.
+    """
+    if len(pointers) != 1:
+        return None
+    slug, separator, spec_name = next(iter(pointers)).partition(f'/{PLANS_SUBDIR}/')
+    if not separator or _validate_slug(slug):
+        return None
+    root = _epic_root(slug, allow_archived=True)
+    path = root / PLANS_SUBDIR / spec_name
+    try:
+        plans_dir = (root / PLANS_SUBDIR).resolve()
+    except (OSError, RuntimeError):
+        return None
+    if not path.is_file() or not _spec_within_corpus(path, plans_dir):
+        return None
+    record = _spec_record(slug, path, repo_root)
+    if record is None or record['derivation_status'] != SURFACE_DECLARATIVE:
+        return None
+    return set(record['paths'])
+
+
+def _live_footprint(plan_dir: Path) -> set[str] | None:
+    """Read one live plan's captured footprint, telling "none yet" from "could not read".
+
+    Returns the normalized ``affected_files`` set of the plan's
+    ``references.json``, the empty set when the plan has no footprint yet, and
+    ``None`` when the footprint could not be read:
+
+    * a non-empty set — ``affected_files`` is a list with at least one string
+      entry that normalizes to a non-empty path; other entries are dropped;
+    * the empty set — ``references.json`` does not exist, or it is a JSON
+      object whose ``affected_files`` key is absent or an empty list;
+    * ``None`` — the file exists and cannot be read or decoded, is not valid
+      JSON, is not a JSON object, carries an ``affected_files`` that is not a
+      list, or carries a non-empty list with no such entry.
+    """
+    try:
+        references = json.loads((plan_dir / 'references.json').read_text(encoding='utf-8'))
+    except FileNotFoundError:
+        return set()
+    except (OSError, ValueError):
+        return None
+    if not isinstance(references, dict):
+        return None
+    if 'affected_files' not in references:
+        return set()
+    affected = references['affected_files']
+    if not isinstance(affected, list):
+        return None
+    paths = {_normalize_path(entry) for entry in affected if isinstance(entry, str) and entry.strip()}
+    paths.discard('')
+    if affected and not paths:
+        return None
+    return paths
+
+
+def _live_plan_records(repo_root: Path) -> tuple[list[dict[str, Any]], int]:
     """Build one comparable record per REAL active plan — the cross-ledger direction.
 
     Returns ``(records, excluded_sentinel_plan_count)``: the records, and how
@@ -3952,8 +4372,21 @@ def _live_plan_records() -> tuple[list[dict[str, Any]], int]:
 
     A single ledger structurally cannot see a duplicate held in another ledger,
     so the live plan set is enumerated through ``_cmd_sibling_collision``'s own
-    active-plan walk and each plan contributes its ``source_id`` origin and its
-    ``references.json`` ``affected_files`` surface.
+    active-plan walk and each plan contributes its ``source_id`` origin and a
+    comparison surface. The surface has two sources, tried in order, and the
+    record names the one that supplied it in ``surface_source``
+    (:data:`LIVE_SURFACE_SOURCES`):
+
+    * ``affected_files`` — the plan's captured footprint in ``references.json``
+      (:func:`_live_footprint` returned a non-empty set). A plan that has one
+      is always compared on it, whatever its source spec declares.
+    * ``source_spec`` — for a plan with no footprint yet
+      (:func:`_live_footprint` returned the empty set), the declared surface of
+      the one spec it was launched from (:func:`_source_spec_surface`).
+    * ``none`` — the plan is indeterminate. Either it has no footprint yet and
+      its source spec supplied no surface, or its footprint could not be read
+      (:func:`_live_footprint` returned ``None``), in which case the source
+      spec is not consulted.
 
     That walk admits every directory carrying a ``status.json``, and the
     plan-less operations sentinel's directory carries one. It is not a plan: it
@@ -3969,14 +4402,16 @@ def _live_plan_records() -> tuple[list[dict[str, Any]], int]:
     not affect, since an entry with no traceable source and no surface can
     match neither collision class.
 
-    The skip is keyed on the id and NEVER on an empty path set. A real plan with
-    an empty path set declares no comparable surface (before footprint capture
-    it has nothing to compare), so it is still enumerated and flagged
+    The skip is keyed on the id and NEVER on an empty path set. A real plan
+    with ``surface_source: none`` is still enumerated and flagged
     ``comparable: False`` — the live-side analog of a spec in any
-    :data:`SURFACE_INDETERMINATE_STATES` state. An empty set contributes no
-    overlap row at all, so without the flag its absence from the match list is
-    indistinguishable from a checked negative; dropping such a plan instead
-    would hide exactly the pre-footprint plan the flag exists to name.
+    :data:`SURFACE_INDETERMINATE_STATES` state. It contributes no overlap row
+    at all, so without the flag its absence from the match list is
+    indistinguishable from a checked negative.
+
+    ``comparable`` is decided by whether a source supplied a surface, not by
+    whether that surface is non-empty: a declarative source spec that resolves
+    no entry was compared and matched nothing, which is a checked negative.
     """
     records: list[dict[str, Any]] = []
     excluded_sentinel_plan_count = 0
@@ -3986,13 +4421,21 @@ def _live_plan_records() -> tuple[list[dict[str, Any]], int]:
             continue
         _, source_id = _read_request_source(plan_dir)
         pointers = _spec_pointers(source_id) if source_id else set()
-        paths = _read_affected_files(plan_dir)
+        footprint = _live_footprint(plan_dir)
+        paths = footprint or set()
+        surface_source = LIVE_SURFACE_AFFECTED_FILES if paths else LIVE_SURFACE_NONE
+        if footprint is not None and not footprint:
+            declared = _source_spec_surface(pointers, repo_root)
+            if declared is not None:
+                paths = declared
+                surface_source = LIVE_SURFACE_SOURCE_SPEC
         records.append(
             {
                 'name': plan_id,
                 'pointers': pointers,
                 'paths': paths,
-                'comparable': bool(paths),
+                'comparable': surface_source != LIVE_SURFACE_NONE,
+                'surface_source': surface_source,
             }
         )
     return records, excluded_sentinel_plan_count
@@ -4023,8 +4466,7 @@ def _contains(container: str, contained: str) -> bool:
     with it. Every other kind — ``file`` and ``filename_glob`` — never
     contains: a ``filename_glob`` with no ``'/'`` never contains across
     directories, and matching without a ``'/'`` boundary (bare
-    substring/prefix) never counts, so the matcher does not loosen into
-    serializing non-colliding plans.
+    substring/prefix) never counts.
     """
     if not container or not contained or container == contained:
         return False
@@ -4139,22 +4581,26 @@ def _live_candidate_state(record: dict[str, Any]) -> str:
     """Classify one LIVE-PLAN candidate into the same vocabulary.
 
     Reads the ``comparable`` flag :func:`_live_plan_records` already derives, so
-    the live side's contribution rule lives in one place. ``unreadable`` is
-    structurally unreachable here — that walk degrades an unreadable plan
-    directory to an empty surface rather than to no record — which is exactly why
-    the tally is derived from the whole vocabulary: the live kind's ``unreadable``
-    row is a STATED zero rather than a missing row a reader must interpret.
+    the live side's contribution rule lives in one place: a plan is comparable
+    when its ``surface_source`` is ``affected_files`` or ``source_spec``, and
+    indeterminate when it is ``none``. A plan whose footprint could not be read
+    is ``none`` and therefore ``indeterminate``; this function never returns
+    ``unreadable``, so the live kind's ``unreadable`` tally row is always zero.
     """
-    return CANDIDATE_COMPARABLE if record.get('comparable', bool(record['paths'])) else CANDIDATE_INDETERMINATE
+    return CANDIDATE_COMPARABLE if record['comparable'] else CANDIDATE_INDETERMINATE
 
 
 def _candidate_indeterminate_reason(tally: dict[str, dict[str, int]]) -> str:
-    """The shortfall reason a blocked ``next`` admission names, derived from the tally.
+    """The epic-wide shortfall reason of the launch verdict, derived from a per-kind tally.
 
-    The empty string when every candidate declared a comparable surface. A
-    non-empty reason is the enforcement point's evidence: it names which kinds
-    contributed which non-contributing state, so a refused admission says WHY
-    rather than only refusing.
+    The caller passes the GATE tally, so the reason speaks about gate
+    candidates only: a spec left out of the gate population contributes
+    nothing to it, whatever its surface. The empty string when every gate
+    candidate declared a comparable surface. A non-empty reason names which
+    kinds contributed which non-contributing state and how many, so the
+    epic-wide verdict says WHY it is false. The per-candidate reason, which
+    names the blocking candidates themselves, is the ``reason`` column of
+    ``spec_comparisons``.
 
     Derived rather than composed by its reader — the enforcement site is a
     workflow doc, and a reason an LLM assembles from a count is a reason that
@@ -4196,6 +4642,27 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
     the determinacy verdict are all computed over the post-exclusion
     populations.
 
+    Those figures describe the SCAN population: everything the cross-check read,
+    archived siblings and finished rows included, which is what the duplicate
+    work read needs. Beside it the payload publishes the GATE population — the
+    part of the scan population that can still collide with a plan about to be
+    launched. A sibling or own spec is a gate candidate when its row is in
+    :data:`IN_FLIGHT_PLAN_STATUSES` or when something about it could not be
+    read; every live plan is one. Each other spec is counted under exactly one
+    :data:`GATE_EXCLUSION_REASONS` member, decided by
+    :func:`_gate_outcome`: all four reasons for a sibling spec, the two
+    row reasons for an own spec. A spec that stays in because its row or its
+    epic status could not be read is counted as ``indeterminate`` in the gate
+    tally whatever its surface declares, and its ``spec_comparisons`` reason
+    names the :data:`GATE_UNREAD_CAUSES` member behind it; the scan tally keeps
+    its surface state. ``gate_excluded`` carries those counts over the
+    whole kind × reason cross-product, ``gate_excluded_total`` their sum,
+    ``gate_population`` the per-kind gate population, and
+    ``gate_candidate_derivation_states`` with ``gate_candidates_indeterminate``
+    the derivation tally over it. Per kind, ``gate_population`` plus the sum of
+    ``gate_excluded`` equals ``candidate_population``. The gate keys are added
+    beside the scan keys; no scan key and neither match list changes.
+
     BOTH sides of the comparison publish a derivation-status tally over their
     whole state vocabulary. The spec side is ``spec_surface_states`` over
     :data:`SURFACE_STATES`; the candidate side is ``candidate_derivation_states``
@@ -4209,13 +4676,26 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
     negative, and the payload names that rule in
     ``candidate_governing_authority``.
 
-    That reading is published as a VERDICT rather than left to its reader:
-    ``candidate_comparison_determinate`` is true only when the whole candidate
-    population was comparable, and ``candidate_indeterminate_reason`` names what
-    was not. The ``next`` admission rule consumes the verdict as a third
-    conjunct alongside the candidate's own declarative surface and the absence
-    of an overlap row, so an indeterminate comparison refuses rather than
-    admitting on an unexamined population.
+    The launch verdict is published per candidate rather than left to its
+    reader. ``spec_comparisons`` carries one row per own spec file
+    (``specs_total`` rows, an unreadable own spec included), built by
+    :func:`_spec_comparison_rows`: ``comparison_determinate`` is true when no
+    gate candidate other than the spec itself is indeterminate or unreadable,
+    ``blocking_candidates`` and ``reason`` name the ones that are, and the
+    overlap columns state how many files the spec shares with the gate
+    candidate it overlaps most and whether that reaches
+    :data:`OVERLAP_PROMPT_MIN_SHARED_FILES`. ``gate_overlap_matches`` is the
+    subset of ``file_overlap_matches`` whose candidate is a gate candidate, row
+    for row. The ``next`` admission rule reads the candidate's own row, so one
+    indeterminate spec refuses only the candidates it was not compared against
+    and a candidate is never admitted on a comparison that did not happen.
+
+    ``candidate_comparison_determinate`` is the epic-wide roll-up of those
+    rows: true exactly when ``gate_candidates_indeterminate`` is zero, in which
+    case every row is determinate. ``candidate_indeterminate_reason`` names the
+    gate candidates that were not comparable, per kind and state, and is empty
+    exactly when the roll-up is true. ``candidates_indeterminate`` keeps its
+    scan-population meaning and decides nothing.
 
     Reports candidates and applies nothing: superseding is the workflow doc's
     inline, ledger-writing act, and no spec file is ever deleted.
@@ -4236,6 +4716,11 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
         kind: dict.fromkeys(CANDIDATE_DERIVATION_STATES, 0) for kind in CANDIDATE_KINDS
     }
     candidate_population = dict.fromkeys(CANDIDATE_KINDS, 0)
+    # The GATE population, counted beside the scan tallies above and never
+    # instead of them: each candidate the scan counts is also handed to the gate
+    # tally, which files it as a gate candidate or under one exclusion reason.
+    gate = _GateTally()
+    own_facts = _epic_gate_facts(root, None)
     own_paths = _spec_paths(root)
     own: list[dict[str, Any]] = []
     unreadable: list[dict[str, str]] = []
@@ -4247,32 +4732,39 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
         # The figure states how many own specs DECLARED a comparable surface, not
         # how many pairs formed: a single-spec corpus reports population 1 while
         # forming no pair at all, because self-comparison is excluded below.
+        state = _spec_candidate_state(record)
         candidate_population[CANDIDATE_KIND_CORPUS_SPEC] += 1
-        candidate_tally[CANDIDATE_KIND_CORPUS_SPEC][_spec_candidate_state(record)] += 1
+        candidate_tally[CANDIDATE_KIND_CORPUS_SPEC][state] += 1
+        gate.count(CANDIDATE_KIND_CORPUS_SPEC, path.name, state, _gate_outcome(path, record, own_facts))
         if record is None:
             unreadable.append({'spec': path.name, 'error': 'unreadable'})
         else:
             own.append(record)
     sibling_roots, excluded_self_snapshots = _sibling_epic_roots(args.slug)
     candidates: list[tuple[str, dict[str, Any]]] = []
-    for sibling_root in sibling_roots:
+    for sibling_scope, sibling_root in sibling_roots:
+        # Header and rows are read ONCE per sibling epic, through the same
+        # ``sibling_root`` the spec read below uses.
+        sibling_facts = _epic_gate_facts(sibling_root, sibling_scope)
         for path in _spec_paths(sibling_root):
             record = _spec_record(sibling_root.name, path, repo_root)
+            state = _spec_candidate_state(record)
+            name = f'{sibling_root.name}/{path.name}'
             candidate_population[CANDIDATE_KIND_SIBLING_EPIC_SPEC] += 1
-            candidate_tally[CANDIDATE_KIND_SIBLING_EPIC_SPEC][_spec_candidate_state(record)] += 1
+            candidate_tally[CANDIDATE_KIND_SIBLING_EPIC_SPEC][state] += 1
+            gate.count(CANDIDATE_KIND_SIBLING_EPIC_SPEC, name, state, _gate_outcome(path, record, sibling_facts))
             if record is None:
-                unreadable.append({'spec': f'{sibling_root.name}/{path.name}', 'error': 'unreadable'})
+                unreadable.append({'spec': name, 'error': 'unreadable'})
             else:
-                candidates.append(
-                    (
-                        CANDIDATE_KIND_SIBLING_EPIC_SPEC,
-                        {**record, 'name': f'{sibling_root.name}/{path.name}'},
-                    )
-                )
-    live, excluded_sentinel_plan_count = _live_plan_records()
+                candidates.append((CANDIDATE_KIND_SIBLING_EPIC_SPEC, {**record, 'name': name}))
+    live, excluded_sentinel_plan_count = _live_plan_records(repo_root)
     for record in live:
+        state = _live_candidate_state(record)
         candidate_population[CANDIDATE_KIND_LIVE_PLAN] += 1
-        candidate_tally[CANDIDATE_KIND_LIVE_PLAN][_live_candidate_state(record)] += 1
+        candidate_tally[CANDIDATE_KIND_LIVE_PLAN][state] += 1
+        # A live plan is in flight by definition, so every one is a gate
+        # candidate and none is ever counted under an exclusion reason.
+        gate.count(CANDIDATE_KIND_LIVE_PLAN, record['name'], state, _GATE_IN_FLIGHT)
     candidates.extend((CANDIDATE_KIND_LIVE_PLAN, record) for record in live)
     origin_matches: list[dict[str, Any]] = []
     overlap_matches: list[dict[str, Any]] = []
@@ -4305,35 +4797,45 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
     own_tally[SURFACE_UNREADABLE] += own_unreadable_count
     comparable = [record for record in own if record['paths']]
     # The live-side population the file-overlap class actually COMPARED. A live
-    # plan with an empty path set declares no comparable surface, so it can form
-    # no overlap row at all — the live-side analog of a spec in any
+    # plan neither surface source supplied a surface for can form no overlap
+    # row at all — the live-side analog of a spec in any
     # SURFACE_INDETERMINATE_STATES state. Without these keys a
     # ``file_overlap_match_count: 0`` over live candidates cannot state which
     # zero it is: nothing collided, or nothing was comparable. An indeterminate
     # live plan never renders as disjoint: it is named in
     # ``live_indeterminate_plans`` and counted in ``live_could_not_check_count``,
-    # never in the checked-and-clean count.
+    # never in the checked-and-clean count. Each row names the source its
+    # surface came from, so a plan compared through its source spec is
+    # distinguishable from one compared on a captured footprint.
     live_plan_surfaces = [
-        {'plan': record['name'], 'comparable': bool(record.get('comparable', bool(record['paths'])))} for record in live
+        {'plan': record['name'], 'comparable': record['comparable'], 'surface_source': record['surface_source']}
+        for record in live
     ]
-    live_indeterminate_plans = sorted(
-        record['name'] for record in live if not record.get('comparable', bool(record['paths']))
-    )
-    live_comparable_records = [record for record in live if record.get('comparable', bool(record['paths']))]
+    live_indeterminate_plans = sorted(record['name'] for record in live if not record['comparable'])
+    live_comparable_records = [record for record in live if record['comparable']]
     live_matched_names = {
         row['candidate'] for row in origin_matches if row.get('candidate_kind') == CANDIDATE_KIND_LIVE_PLAN
     } | {row['candidate'] for row in overlap_matches if row.get('candidate_kind') == CANDIDATE_KIND_LIVE_PLAN}
     live_checked_and_clean = sorted(
         record['name'] for record in live_comparable_records if record['name'] not in live_matched_names
     )
-    # Hoisted out of the payload literal because the determinacy VERDICT and the
-    # shortfall REASON are both derived from the same count, and the ``next``
-    # admission rule consults the verdict rather than re-deriving the comparison
-    # from the tally. Publishing it as a named field is what lets that rule be a
-    # field read instead of arithmetic performed at the enforcement site.
+    # The scan-population roll-up: how many candidates the cross-check read
+    # without getting a comparable surface. It describes the scan and decides
+    # nothing — the launch verdict below is derived from the gate population.
     candidates_indeterminate = sum(
         candidate_tally[kind][state] for kind in CANDIDATE_KINDS for state in CANDIDATE_NON_CONTRIBUTING_STATES
     )
+    # The gate-population roll-up, hoisted because the epic-wide verdict and its
+    # reason are both derived from it.
+    gate_candidates_indeterminate = sum(
+        gate.states[kind][state] for kind in CANDIDATE_KINDS for state in CANDIDATE_NON_CONTRIBUTING_STATES
+    )
+    # The overlap rows the launch gate reads: the subset of the full overlap
+    # list whose candidate is a gate candidate, each row identical to its source
+    # row. The full list stays the duplicate-work read's input.
+    gate_keys = {member[:2] for member in gate.members}
+    gate_overlap_matches = [row for row in overlap_matches if (row['candidate_kind'], row['candidate']) in gate_keys]
+    spec_comparisons = _spec_comparison_rows([path.name for path in own_paths], gate, gate_overlap_matches)
     return {
         'status': 'success',
         'operation': 'corpus-cross-check',
@@ -4402,15 +4904,45 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
         'candidates_total': sum(candidate_population.values()),
         'candidates_comparable': sum(candidate_tally[kind][CANDIDATE_COMPARABLE] for kind in CANDIDATE_KINDS),
         'candidates_indeterminate': candidates_indeterminate,
-        # The ``next`` admission rule's third conjunct, published as a VERDICT so
-        # the enforcement site reads a field instead of re-deriving it. Without
-        # it a declarative spec with no overlap row was admitted while another
-        # candidate had never been comparable at all — admission on an
-        # unexamined population, the measured-zero-versus-unmeasured conflation
-        # the rest of this payload exists to prevent. Fails closed: the verdict
-        # is true only when the whole candidate population was comparable.
-        'candidate_comparison_determinate': candidates_indeterminate == 0,
-        'candidate_indeterminate_reason': _candidate_indeterminate_reason(candidate_tally),
+        # The GATE population: the part of the scan population above that can
+        # still collide with a plan about to be launched. Every spec candidate
+        # the scan counted is either a gate candidate or counted under exactly
+        # one exclusion reason, so per kind ``gate_population`` plus the sum of
+        # that kind's ``gate_excluded`` rows equals ``candidate_population``.
+        # ``gate_excluded`` spans the whole kind × reason cross-product in
+        # declared order, so a reason nothing fell under is a stated zero, and
+        # the ``live_plan`` rows are stated zeros by construction.
+        'gate_population': [{'candidate_kind': kind, 'population': gate.population[kind]} for kind in CANDIDATE_KINDS],
+        'gate_excluded': [
+            {'candidate_kind': kind, 'reason': reason, 'count': gate.excluded[kind][reason]}
+            for kind in CANDIDATE_KINDS
+            for reason in GATE_EXCLUSION_REASONS
+        ],
+        'gate_excluded_total': sum(sum(by_reason.values()) for by_reason in gate.excluded.values()),
+        'gate_candidate_derivation_states': [
+            {'candidate_kind': kind, 'derivation_status': state, 'count': gate.states[kind][state]}
+            for kind in CANDIDATE_KINDS
+            for state in CANDIDATE_DERIVATION_STATES
+        ],
+        'gate_candidates_indeterminate': gate_candidates_indeterminate,
+        # The launch verdict, per candidate: one row per own spec file, stating
+        # whether THAT spec was compared against every gate candidate other than
+        # itself, which candidates it was not compared against and why, and how
+        # many files it shares with the gate candidate it overlaps most. The
+        # ``next`` admission rule reads the candidate's own row, so a field read
+        # replaces arithmetic at the enforcement site. ``gate_overlap_matches``
+        # is the overlap evidence those rows were computed from.
+        'spec_comparisons': spec_comparisons,
+        'gate_overlap_matches': gate_overlap_matches,
+        # The epic-wide roll-up of the rows above, kept for a reader that wants
+        # one answer for the whole corpus. It is true exactly when no gate
+        # candidate is indeterminate, and then every row is determinate; the
+        # reason is derived from the same gate tally, so it is empty exactly
+        # when the verdict is true. Fails closed: an indeterminate gate
+        # candidate makes it false even where no row names that candidate — a
+        # corpus whose only own spec is the indeterminate one, or an empty one.
+        'candidate_comparison_determinate': gate_candidates_indeterminate == 0,
+        'candidate_indeterminate_reason': _candidate_indeterminate_reason(gate.states),
         'source_origin_match_count': len(origin_matches),
         'source_origin_matches': origin_matches,
         'file_overlap_match_count': len(overlap_matches),

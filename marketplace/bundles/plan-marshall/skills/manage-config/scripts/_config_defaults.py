@@ -247,9 +247,10 @@ DEFAULT_PROJECT = {
 # `launched` transition for every emitted candidate toward `parallelization_scope`.
 # The emit≠running invariant is ABSOLUTE and this knob NEVER weakens it: `auto_emit`
 # automates the *emit* (marking each emitted plan `launched`), never the *start*
-# (the operator-confirmed `launched → running` transition). A colliding, blocked, or
-# unprepared candidate emits nothing and logs the shortfall — never a bad emit to
-# fill a slot. Boolean coercion is handled by `_coerce_value` (exactly as
+# (the operator-confirmed `launched → running` transition). A candidate the launch
+# gate did not admit emits nothing and logs the shortfall, and a multi-file overlap
+# is the operator's decision under both knob values. Boolean coercion is handled by
+# `_coerce_value` (exactly as
 # `merge_queue_managed_externally` is), so no bespoke `validate_*` helper is
 # warranted.
 #
