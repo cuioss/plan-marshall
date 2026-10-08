@@ -237,7 +237,7 @@ The engine is stdlib-only and runs under a bare `python3`. It loads `claude/cach
 The Claude leg lives under `marketplace/targets/claude/`:
 
 * `cache_sync.py` — mirrors each bundle of `target/claude/` into the versioned plugin cache. A staleness guard refuses a tree that is missing, empty, or behind `marketplace/bundles/`. The guard expects exactly the bundles whose `plugin.json` admits `claude` through its `targets` declaration, and it reports `guard_outcome: stale` (regenerate the tree) separately from `guard_outcome: probe_failed` (a probe could not run, so freshness is unknown).
-* `reconcile_daemon.py` — reconciles a running `marshalld` after a Claude sync moved the cache version. It is run once the Claude target reports `status: success`.
+* `reconcile_daemon.py` — reconciles a running `marshalld` after a Claude sync moved the cache version. It is run once the Claude block reports `cache_status: success` — the gate is the cache sync alone, so a `status: partial` caused only by a `behind` registry does not skip it.
 * `registry_pin.py` — repins the plugin registry to the synced cache version. It is a dry run unless `--apply` is passed; the engine runs its apply mode only under `--repin`.
 * `list_bundles_and_versions.py` — prints the bundle/version table of `target/claude/`.
 
@@ -267,7 +267,7 @@ Two Claude-only flags govern the block:
 
 ### The `sync-harnesses` command files
 
-Each harness carries the same command in its own project-local location. All three are thin pointers that regenerate the selected targets, run the engine with their arguments passed through, and reconcile the build daemon when the Claude target synced:
+Each harness carries the same command in its own project-local location. All three are thin pointers that regenerate the selected targets, run the engine with their arguments passed through, and — when the Claude cache synced (`cache_status: success`) — reconcile the build daemon and report the registry pin:
 
 | Harness | Command file |
 |---------|--------------|
