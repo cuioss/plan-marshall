@@ -14,6 +14,8 @@ exact and recognisable afterwards:
   call writes nothing: no step record, no resolution, no waiver;
 * a waived step keeps its ``done`` outcome and the anchor it completed at, and
   gains the waiver beside them;
+* the waivers are stamped onto the status document as last committed, and a
+  close that stamps none does not rewrite it;
 * a blank or missing rationale is refused.
 
 Each test uses its own ``plan_id`` so no test reads another's status document or
@@ -47,6 +49,8 @@ _PHASE = '6-finalize'
 _STEP = 'pre-submission-self-review'
 _WAIVED_STEP = 'pre-push-quality-gate'
 _STATE_RULE = 'pre-submission-self-review-state'
+#: A budget source another writer spends from while a close is in flight.
+_OTHER_SOURCE = 'wait-region-unified-triage'
 _RATIONALE = 'the two residual findings are wording nits the operator accepts'
 
 #: The facts a close reached by the step's own verifier records. An operator
@@ -402,3 +406,61 @@ def test_a_real_re_fire_of_a_waived_step_drops_the_waiver(plan_context, tmp_path
     record = _step_record(plan_id, _WAIVED_STEP)
     assert 'refire_waiver' not in record
     assert record['head_at_completion'] == closing_head
+
+
+def test_a_close_whose_every_waiver_is_refused_does_not_rewrite_the_status_document(
+    plan_context, tmp_path, monkeypatch
+):
+    """With no waiver stamped there is nothing to commit, so the file is left as it was."""
+    plan_id = 'loop-back-close-waiver-all-refused'
+    _make_plan(plan_id)
+    closing_head, completed_at = _tmp_repo_two_heads(tmp_path, monkeypatch)
+    _mark(plan_id, _WAIVED_STEP, 'done', completed_at, 'quality gate green')
+    status_path = _status_core.get_status_path(plan_id)
+    after_mark: dict[str, Any] = {}
+    real_mark = _loop_back.cmd_mark_step_done
+
+    def _mark_then_loop_the_waived_step_back(args: Namespace) -> Any:
+        # Another writer re-fires the waived step once the close has validated it.
+        result = real_mark(args)
+        _mark(plan_id, _WAIVED_STEP, 'loop_back', completed_at, 'quality gate re-fired', loop_back_target=_PHASE)
+        after_mark.update(content=status_path.read_bytes(), inode=status_path.stat().st_ino)
+        return result
+
+    monkeypatch.setattr(_loop_back, 'cmd_mark_step_done', _mark_then_loop_the_waived_step_back)
+
+    result = _close(plan_id, closing_head, waive_refire=[_WAIVED_STEP])
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'close_incomplete'
+    assert result['waived_steps'] == []
+    assert len(result['waiver_refusals']) == 1
+    assert _WAIVED_STEP in result['waiver_refusals'][0]
+    assert status_path.read_bytes() == after_mark['content']
+    # A commit replaces the file, so an unchanged inode means none happened.
+    assert status_path.stat().st_ino == after_mark['inode']
+
+
+def test_a_change_committed_before_the_waiver_stamp_survives_it(plan_context, tmp_path, monkeypatch):
+    """The waivers are stamped onto the document as last committed, not onto an earlier read."""
+    plan_id = 'loop-back-close-waiver-keeps-commit'
+    _make_plan(plan_id)
+    closing_head, completed_at = _tmp_repo_two_heads(tmp_path, monkeypatch)
+    _mark(plan_id, _WAIVED_STEP, 'done', completed_at, 'quality gate green')
+    real_rmw_json = _loop_back.rmw_json
+
+    def _admit_a_round_then_update(path: Any, mutate: Any) -> Any:
+        # Another writer commits a budget change after the close's mark and
+        # before the close takes the guard for its waiver stamp.
+        _loop_back.cmd_loop_back_admit(Namespace(plan_id=plan_id, source=_OTHER_SOURCE, ceiling=1))
+        return real_rmw_json(path, mutate)
+
+    monkeypatch.setattr(_loop_back, 'rmw_json', _admit_a_round_then_update)
+
+    result = _close(plan_id, closing_head, waive_refire=[_WAIVED_STEP])
+
+    assert result['status'] == 'success', result
+    assert result['waived_steps'] == [_WAIVED_STEP]
+    assert _step_record(plan_id, _WAIVED_STEP)['refire_waiver']['head'] == closing_head
+    budgets = read_status(plan_id)['metadata']['loop_back_budgets']
+    assert budgets[_OTHER_SOURCE]['spent'] == 1

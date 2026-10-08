@@ -65,7 +65,8 @@ import re
 from typing import Any
 
 from _cmd_mark_step import cmd_mark_step_done, find_step_record, write_refire_waiver
-from _status_core import require_status, write_status
+from _locks_core import rmw_json
+from _status_core import get_status_path, require_status, write_status
 from _step_key_canonical import canonicalize_step_key
 from file_ops import now_utc_iso
 from plan_logging import log_decision
@@ -327,6 +328,50 @@ def _holds_done_record(status: dict[str, Any], step: str) -> bool:
     return isinstance(record, dict) and record.get('outcome') == 'done'
 
 
+class _NoWaiverStamped(Exception):
+    """Raised inside the waiver critical section so the document is not committed."""
+
+
+def _stamp_refire_waivers(
+    plan_id: str, waived: list[str], closing_head: str, basis: str
+) -> tuple[list[str], list[str]]:
+    """Stamp the re-fire waivers onto the current status document in one locked update.
+
+    The read, the stamps and the commit are one ``rmw_json`` critical section on
+    the guard ``write_status`` commits through, so the waivers land on the
+    document as it is at that moment and a change another writer committed
+    beforehand is kept.
+
+    The document is committed only when at least one waiver was stamped.
+    ``rmw_json`` commits whatever its callback returns, so the callback raises
+    to leave the file untouched when every waiver was refused. A status document
+    that is missing or unreadable is read as empty, which refuses every waiver
+    and therefore writes nothing.
+
+    Returns ``(waived_steps, waiver_refusals)``.
+    """
+    waived_steps: list[str] = []
+    waiver_refusals: list[str] = []
+
+    def _apply(current: dict[str, Any]) -> dict[str, Any]:
+        for name in waived:
+            refusal = write_refire_waiver(current, CLOSE_PHASE, name, closing_head, basis)
+            if refusal is None:
+                waived_steps.append(name)
+            else:
+                waiver_refusals.append(refusal)
+        if not waived_steps:
+            raise _NoWaiverStamped
+        current['updated'] = now_utc_iso()
+        return current
+
+    try:
+        rmw_json(get_status_path(plan_id), _apply)
+    except _NoWaiverStamped:
+        pass
+    return waived_steps, waiver_refusals
+
+
 def cmd_loop_back_close(args: argparse.Namespace) -> dict | None:
     """Close a finalize step on named residual findings, recorded as an operator override."""
     status = require_status(args)
@@ -444,21 +489,13 @@ def cmd_loop_back_close(args: argparse.Namespace) -> dict | None:
     state_resolved = state.get('status') == 'success'
 
     # The mark above committed its own copy of the document, so the waivers are
-    # stamped onto a fresh read rather than onto the snapshot taken at entry.
+    # stamped onto the document as it is now, not onto the snapshot taken at entry.
     waived_steps: list[str] = []
     waiver_refusals: list[str] = []
     if waived:
-        status = require_status(args)
-        if status is None:
-            return None
-        basis = f'operator close of {step}: {rationale}'
-        for name in waived:
-            refusal = write_refire_waiver(status, CLOSE_PHASE, name, closing_head, basis)
-            if refusal is None:
-                waived_steps.append(name)
-            else:
-                waiver_refusals.append(refusal)
-        write_status(plan_id, status)
+        waived_steps, waiver_refusals = _stamp_refire_waivers(
+            plan_id, waived, closing_head, f'operator close of {step}: {rationale}'
+        )
 
     result: dict[str, Any] = {
         'status': 'success',
