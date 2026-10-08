@@ -64,6 +64,16 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   then 27 with 28. PLAN-LB-29, 30 and 31 share no file with any of 22 to 28 and fill a slot
   whenever one is free; 29 waits for PLAN-LB-14. At a parallelization scope above 2, up to five
   plans are mutually disjoint at once (for example 23, 24, 29, 30 and 31).
+- **Emitted on 2026-10-08, two blocks.** PLAN-LB-14 and PLAN-LB-22 were emitted first, under
+  operator override of the launch gate. For a second machine, PLAN-LB-30 and PLAN-LB-31 were
+  identified as the two further plans that can run beside them: each shares no declared file
+  with PLAN-LB-14, with PLAN-LB-22, or with the other (measured with `corpus cross-check`),
+  and they are the only two live plans for which that holds — PLAN-LB-23 to 28 each overlap
+  PLAN-LB-22, and PLAN-LB-29 overlaps PLAN-LB-14. Four plans in flight is above the
+  parallelization scope of 2; that is the operator's instruction, and the knob was left as it
+  is. One order remains between the two: PLAN-LB-31 starts with its measurement and stops
+  after the recorded roster decision until PLAN-LB-30 has released the schema. All four rows
+  stay `staged` until the operator confirms each launch.
 - **Sequencing inside the bundles** that the earlier notes asked for is now internal:
   PLAN-LB-05 D3 before PLAN-LB-18 before PLAN-LB-19 (all in 24); PLAN-LB-21 before the
   enrolment of PLAN-LB-20 (both in 31). Two cross-plan orders remain: 31's enrolment
