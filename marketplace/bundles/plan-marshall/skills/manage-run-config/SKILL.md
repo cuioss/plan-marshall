@@ -21,6 +21,7 @@ Run configuration handling for persistent command configuration storage.
 - Architecture-refresh operations use the noun-verb pattern (`architecture-refresh get-tier-0`, `architecture-refresh set-tier-0`, etc.)
 - CI-duration operations use the noun-verb pattern (`ci-duration record`, `ci-duration p50`)
 - Commit-trailer operations use the noun-verb pattern (`commit-trailer get`, `commit-trailer set`)
+- Registry-repin operations use the noun-verb pattern (`registry-repin get`, `registry-repin set`)
 
 ## Run Configuration Structure
 
@@ -52,6 +53,7 @@ Run configuration handling for persistent command configuration storage.
     "name": "plan-marshall",
     "email": "noreply@cuioss.de"
   },
+  "registry_repin": "disabled",
   "ci": {
     "authenticated_tools": [],
     "verified_at": null
@@ -84,8 +86,20 @@ See [standards/run-config-standard.md](standards/run-config-standard.md) for com
 | architecture-refresh set-tier-1 | `plan-marshall:manage-run-config:run_config architecture-refresh set-tier-1` |
 | ci-duration record | `plan-marshall:manage-run-config:run_config ci-duration record` |
 | ci-duration p50 | `plan-marshall:manage-run-config:run_config ci-duration p50` |
+| language-server get | `plan-marshall:manage-run-config:run_config language-server get` |
+| language-server set | `plan-marshall:manage-run-config:run_config language-server set` |
+| language-server list | `plan-marshall:manage-run-config:run_config language-server list` |
+| language-server remove | `plan-marshall:manage-run-config:run_config language-server remove` |
+| derivation-resolver get | `plan-marshall:manage-run-config:run_config derivation-resolver get` |
+| derivation-resolver set | `plan-marshall:manage-run-config:run_config derivation-resolver set` |
+| derivation-resolver list | `plan-marshall:manage-run-config:run_config derivation-resolver list` |
+| derivation-resolver remove | `plan-marshall:manage-run-config:run_config derivation-resolver remove` |
+| display-timezone get | `plan-marshall:manage-run-config:run_config display-timezone get` |
+| display-timezone set | `plan-marshall:manage-run-config:run_config display-timezone set` |
 | commit-trailer get | `plan-marshall:manage-run-config:run_config commit-trailer get` |
 | commit-trailer set | `plan-marshall:manage-run-config:run_config commit-trailer set` |
+| registry-repin get | `plan-marshall:manage-run-config:run_config registry-repin get` |
+| registry-repin set | `plan-marshall:manage-run-config:run_config registry-repin set` |
 | cleanup | `plan-marshall:manage-run-config:run_config cleanup` |
 | cleanup-status | `plan-marshall:manage-run-config:run_config cleanup-status` |
 
@@ -289,6 +303,25 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config commi
 
 Because run-configuration.json is git-ignored, a fresh clone and every cloud session resolve to the defaults. That is why repository documentation states the **default** identity rather than a configured override.
 
+### registry-repin get / set
+
+Manage the **machine-local opt-in** that lets the project-local finalize sync step write the plugin registry — a single top-level `registry_repin` value, `enabled` or `disabled` (default `disabled`). It is machine-local because the registry it gates is machine-local: the pin lives in the plugin manager's own file under the operator's home directory, so consent to rewrite it is a per-machine decision. It sits beside `commit_trailer` in the same main-anchored `run-configuration.json`. See [run-config-standard.md](standards/run-config-standard.md) § "Registry-Repin Section".
+
+```bash
+# Read the opt-in (default disabled when absent)
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config registry-repin get
+
+# Allow the finalize sync step to repin the registry on this machine
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config registry-repin set \
+  --value enabled
+```
+
+`get` returns `value` and `source` (`configured` or `default`). A missing key and a malformed stored value — a non-string, or a string other than `enabled` / `disabled` — both read as `value: disabled` with `source: default`, so a damaged store is never read as consent to write.
+
+`set` rejects any value other than `enabled` / `disabled` with an `invalid_value` error and persists nothing.
+
+The setting gates one write only. With `disabled`, the finalize sync step still runs the repin script in its report-only form and still reports the pin's state; it simply never passes `--apply`. It has no effect on a manual `registry_pin.py --apply`, which is the operator's own explicit act.
+
 ### cleanup / cleanup-status
 
 Directory cleanup using retention settings from marshal.json.
@@ -329,7 +362,7 @@ See [`manage-config` data-model.md](../manage-config/standards/data-model.md) §
 | Error Code | Cause |
 |------------|-------|
 | `key_not_found` | Configuration key doesn't exist |
-| `invalid_value` | Value fails type/enum validation (e.g., non-numeric timeout, architecture-refresh enum mismatch) |
+| `invalid_value` | Value fails type/enum validation (e.g., non-numeric timeout, architecture-refresh or registry-repin enum mismatch) |
 | `not_initialized` | run-config.json missing (run `init` first) |
 | `invalid_category` | Warning category not in: transitive_dependency, plugin_compatibility, platform_specific |
 | `marshal_not_found` | marshal.json missing (cleanup needs retention settings) |
@@ -359,6 +392,7 @@ See [`manage-config` data-model.md](../manage-config/standards/data-model.md) §
 | `manage-locks` `build_queue limit get` | (reads the file directly) | Report a surviving per-repo `build.queue.upper_limit_seconds` as `per_repo_value` with `in_effect: false` — a report only; it never resolves the applied threshold from here |
 | CI-wait handlers (`_github_ci`, `gitlab_ops`) | ci-duration p50 | Read the p50 seed for the adaptive CI-wait first-sleep (skip on a null window) |
 | `workflow-integration-git` commit workflow | commit-trailer get | Resolve the `Co-Authored-By` line appended at `git commit` time |
+| `project:finalize-step-sync-plugin-cache` (the project-local finalize sync step) | registry-repin get | Decide whether the step's repin runs with `--apply` (`enabled`) or report-only (`disabled`) |
 
 ---
 
@@ -494,6 +528,17 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config commi
 
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config commit-trailer set \
   [--name NAME] [--email EMAIL]
+```
+
+### registry-repin
+
+`registry-repin` carries the nested sub-verbs `get` and `set`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config registry-repin get
+
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config registry-repin set \
+  --value {enabled,disabled}
 ```
 
 ### cleanup

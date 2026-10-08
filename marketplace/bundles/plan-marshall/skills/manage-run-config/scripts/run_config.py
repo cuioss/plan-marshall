@@ -58,6 +58,16 @@ DISPLAY_TIMEZONE_DEFAULT = 'UTC'
 COMMIT_TRAILER_NAME_DEFAULT = 'plan-marshall'
 COMMIT_TRAILER_EMAIL_DEFAULT = 'noreply@cuioss.de'
 
+# Plugin-registry repin opt-in. Decides whether the project-local finalize sync
+# step may WRITE the plugin registry (apply the repin) or only report the pin's
+# state. Machine-local because the registry it gates is machine-local: the pin
+# lives in the plugin manager's own file under the operator's home directory, so
+# consent to rewrite it is a per-machine decision that no checked-in file can
+# make for another machine. The default is ``'disabled'`` — an unconfigured
+# machine reports and never writes.
+REGISTRY_REPIN_VALUES = ('enabled', 'disabled')
+REGISTRY_REPIN_DEFAULT = 'disabled'
+
 DEFAULT_STRUCTURE = {
     'version': 1,
     'commands': {},
@@ -1105,6 +1115,53 @@ def cmd_commit_trailer_set(args: argparse.Namespace) -> dict:
 
 
 # =============================================================================
+# Registry-Repin Knob
+# =============================================================================
+
+
+def read_registry_repin() -> dict[str, str]:
+    """Resolve the registry-repin opt-in against the stored config.
+
+    Only a stored value that is exactly one of :data:`REGISTRY_REPIN_VALUES`
+    counts as configured. A missing key and a malformed one (wrong type, or a
+    string outside the enum) both read as :data:`REGISTRY_REPIN_DEFAULT`, so no
+    damaged store can be read as consent to write the registry.
+
+    Returns:
+        A mapping with ``value`` (``'enabled'`` or ``'disabled'``) and
+        ``source`` (``'configured'`` or ``'default'``).
+    """
+    config = read_run_config(get_run_config_path())
+    stored = config.get('registry_repin')
+    if isinstance(stored, str) and stored in REGISTRY_REPIN_VALUES:
+        return {'value': stored, 'source': 'configured'}
+    return {'value': REGISTRY_REPIN_DEFAULT, 'source': 'default'}
+
+
+def cmd_registry_repin_get(args: argparse.Namespace) -> dict:
+    """Report the registry-repin opt-in and whether it was configured."""
+    del args  # unused — fixed-shape verb
+    try:
+        return {'status': 'success', 'field': 'registry_repin', **read_registry_repin()}
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def cmd_registry_repin_set(args: argparse.Namespace) -> dict:
+    """Persist the registry-repin opt-in; any value outside the enum writes nothing."""
+    try:
+        if args.value not in REGISTRY_REPIN_VALUES:
+            return _invalid_value_error(args.value, REGISTRY_REPIN_VALUES)
+        config_path = get_run_config_path()
+        config = read_run_config(config_path)
+        config['registry_repin'] = args.value
+        _write_json_file(config_path, config)
+        return {'status': 'success', 'field': 'registry_repin', **read_registry_repin()}
+    except Exception as e:
+        return _output_error(str(e))
+
+
+# =============================================================================
 # Cleanup Subcommands (delegates to cleanup.py functions)
 # =============================================================================
 
@@ -1197,6 +1254,12 @@ Examples:
 
   # Set the commit co-author identity (either half, or both)
   %(prog)s commit-trailer set --name my-system --email noreply@example.org
+
+  # Get the machine-local plugin-registry repin opt-in (default: disabled)
+  %(prog)s registry-repin get
+
+  # Allow the finalize sync step to repin the plugin registry on this machine
+  %(prog)s registry-repin set --value enabled
 
   # Report whether a derivation resolver is active (unconfigured => enabled)
   %(prog)s derivation-resolver get --resolver markdown
@@ -1463,6 +1526,26 @@ Examples:
     p_ct_set.add_argument('--name', help=f'Co-author name (default: {COMMIT_TRAILER_NAME_DEFAULT})')
     p_ct_set.add_argument('--email', help=f'Co-author email (default: {COMMIT_TRAILER_EMAIL_DEFAULT})')
     p_ct_set.set_defaults(func=cmd_commit_trailer_set)
+
+    # registry-repin command with subcommands
+    p_rr = subparsers.add_parser(
+        'registry-repin',
+        help='Manage the machine-local plugin-registry repin opt-in (default: disabled)',
+        allow_abbrev=False,
+    )
+    rr_subparsers = p_rr.add_subparsers(dest='registry_repin_command', required=True, help='Registry-repin operation')
+
+    p_rr_get = rr_subparsers.add_parser(
+        'get', help='Get the repin opt-in and whether it was configured', allow_abbrev=False
+    )
+    p_rr_get.set_defaults(func=cmd_registry_repin_get)
+
+    # No argparse ``choices`` here: an out-of-enum value must reach the handler
+    # so it is answered with the structured ``invalid_value`` result every other
+    # refusal of this script uses, rather than with an argparse usage error.
+    p_rr_set = rr_subparsers.add_parser('set', help='Set the repin opt-in (enabled|disabled)', allow_abbrev=False)
+    p_rr_set.add_argument('--value', required=True, help='Repin opt-in (enabled|disabled)')
+    p_rr_set.set_defaults(func=cmd_registry_repin_set)
 
     # cleanup command
     p_cleanup = subparsers.add_parser(
