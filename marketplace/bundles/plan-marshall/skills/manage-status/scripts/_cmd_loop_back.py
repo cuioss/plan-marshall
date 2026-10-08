@@ -32,7 +32,11 @@ between the decision and the write. A refusal writes nothing.
 source's ``granted`` total and appends the record of who granted them, why, when,
 and how many rounds the source had spent at that moment. A grant with a blank
 reason or fewer than one round is refused and writes nothing, so every round
-beyond the configured ceiling is traceable to a stated reason.
+beyond the configured ceiling is traceable to a stated reason. Once the grant is
+persisted, one decision-log line names the source, the rounds, the reason and who
+granted them. A line that could not be written leaves the grant in place; the
+return carries ``decision_logged`` either way, and ``decision_log_error`` when the
+line did not land.
 
 The retired scalar ``status.metadata.loop_back_iteration`` is never read. A status
 document still carrying it is treated as carrying no budget at all: the scalar is
@@ -64,6 +68,7 @@ from _cmd_mark_step import cmd_mark_step_done, find_step_record, write_refire_wa
 from _status_core import require_status, write_status
 from _step_key_canonical import canonicalize_step_key
 from file_ops import now_utc_iso
+from plan_logging import log_decision
 
 BUDGETS_KEY = 'loop_back_budgets'
 SPENT_KEY = 'spent'
@@ -243,7 +248,11 @@ def cmd_loop_back_grant(args: argparse.Namespace) -> dict | None:
     entry[GRANTS_KEY] = grants
     _store_entry(status, args.plan_id, source, entry)
 
-    return {
+    # The grant is persisted above. The decision line is written after it and
+    # cannot undo it: a line that did not land is reported, never raised.
+    log_error = _log_grant_decision(args.plan_id, source, rounds, reason, granted_by)
+
+    result: dict[str, Any] = {
         'status': 'success',
         'plan_id': args.plan_id,
         'source': source,
@@ -254,7 +263,31 @@ def cmd_loop_back_grant(args: argparse.Namespace) -> dict | None:
         'granted_by': granted_by,
         'granted_at': record['granted_at'],
         'grant_count': len(grants),
+        'decision_logged': log_error is None,
     }
+    if log_error is not None:
+        result['decision_log_error'] = log_error
+    return result
+
+
+def _log_grant_decision(plan_id: str, source: str, rounds: int, reason: str, granted_by: str) -> str | None:
+    """Write the decision-log line for one persisted grant.
+
+    Returns ``None`` when the line was written, or the reason it was not. Never
+    raises: the grant this line describes is already in the status document, so
+    a failure here is a missing log line and nothing more.
+    """
+    message = (
+        f'(plan-marshall:manage-status:loop-back-grant) Granted {rounds} loop-back round(s) '
+        f'to {source}: {reason} (granted_by={granted_by})'
+    )
+    try:
+        logged = log_decision(plan_id, message, CLOSE_PHASE)
+    except Exception as exc:  # a failed log write must not fail the persisted grant
+        return f'{type(exc).__name__}: {exc}'
+    if logged.get('status') != 'success':
+        return str(logged.get('message') or logged.get('error') or 'decision log write failed')
+    return None
 
 
 def _close_error(plan_id: str, error: str, step: str, message: str, **extra: Any) -> dict[str, Any]:

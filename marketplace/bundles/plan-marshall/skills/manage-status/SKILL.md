@@ -900,6 +900,19 @@ Each call adds `--rounds` to the source's `granted` total and appends one record
 
 The grant changes `granted` only. It does not admit a round: the next `loop-back admit` for the same source does, against the raised `effective_ceiling`.
 
+**Decision-log line.** Once the grant is persisted, the verb writes one line to the plan's `decision.log` naming the source, the rounds, the reason and `granted_by`:
+
+```text
+(plan-marshall:manage-status:loop-back-grant) Granted {rounds} loop-back round(s) to {source}: {reason} (granted_by={granted_by})
+```
+
+The line is written after the grant and cannot undo it. A line that could not be written leaves the grant in place and the call still returns `status: success`; the return says which happened:
+
+- `decision_logged: true` — the line was written.
+- `decision_logged: false` — the grant is persisted but the line is not. `decision_log_error` carries why. The grant record in `loop_back_budgets` still holds every fact the line would have carried.
+
+A refused grant writes no line, and its error return carries no `decision_logged` field.
+
 **Output** (TOON):
 ```toon
 status: success
@@ -912,6 +925,7 @@ reason: one more review round for the last fix
 granted_by: operator
 granted_at: "2026-01-15T14:30:00Z"
 grant_count: 1
+decision_logged: true
 ```
 
 **Output — blank reason** (TOON, nothing written):
@@ -1874,7 +1888,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-b
   [--rounds ROUNDS] [--granted-by GRANTED_BY]
 ```
 
-Adds `ROUNDS` (default `1`) to `metadata.loop_back_budgets[SOURCE].granted` and appends one `{rounds, reason, granted_by, granted_at, spent_at_grant}` record to that source's `grants` list. Returns `source`, `rounds`, `granted`, `spent`, `reason`, `granted_by`, `granted_at` and `grant_count`. A blank `--reason` (`blank_reason`) or a `--rounds` below one (`invalid_rounds`) is refused and writes nothing. One of the two sanctioned ways past a refused `loop-back admit`; `loop-back close` is the other.
+Adds `ROUNDS` (default `1`) to `metadata.loop_back_budgets[SOURCE].granted` and appends one `{rounds, reason, granted_by, granted_at, spent_at_grant}` record to that source's `grants` list. After the grant is persisted it writes one `decision.log` line naming the source, the rounds, the reason and `granted_by`; a line that cannot be written leaves the grant in place. Returns `source`, `rounds`, `granted`, `spent`, `reason`, `granted_by`, `granted_at`, `grant_count` and `decision_logged`, plus `decision_log_error` when the line was not written. A blank `--reason` (`blank_reason`) or a `--rounds` below one (`invalid_rounds`) is refused and writes nothing. One of the two sanctioned ways past a refused `loop-back admit`; `loop-back close` is the other.
 
 ### loop-back — close
 

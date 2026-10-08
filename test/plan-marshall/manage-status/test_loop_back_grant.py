@@ -10,11 +10,15 @@ pinned here are the ones that make it both effective and traceable:
   many rounds the source had spent at that moment;
 * a blank reason, or fewer than one round, is refused and writes nothing;
 * a grant to one source does not admit another;
-* grants accumulate, and a later admission does not discard their records.
+* grants accumulate, and a later admission does not discard their records;
+* a persisted grant writes one decision-log line naming the source, the rounds,
+  the reason and who granted them, a refused grant writes none, and a line that
+  cannot be written leaves the grant in place and is reported in the return.
 
 Each test uses its own ``plan_id`` so no test reads another's status document.
 """
 
+import sys
 from argparse import Namespace
 from typing import Any, cast
 
@@ -30,6 +34,9 @@ cmd_create = _lifecycle.cmd_create
 cmd_loop_back_admit = _loop_back.cmd_loop_back_admit
 cmd_loop_back_grant = _loop_back.cmd_loop_back_grant
 read_status = _status_core.read_status
+# The logging module the grant handler itself writes through, so the log read
+# back here is the one the handler wrote to.
+read_decision_log = sys.modules[_loop_back.log_decision.__module__].read_decision_log
 
 _SELF_REVIEW = 'default:pre-submission-self-review'
 _AUTOMATIC_REVIEW = 'plan-marshall:automatic-review'
@@ -208,3 +215,102 @@ def test_a_grant_before_any_admission_creates_the_record(plan_context):
     assert budget['granted'] == 1
     assert budget['grants'][0]['spent_at_grant'] == 0
     assert _admit(plan_id, _SELF_REVIEW)['effective_ceiling'] == _MAX_ITERATIONS + 1
+
+
+# =============================================================================
+# The decision-log line
+# =============================================================================
+
+
+def _grant_lines(plan_id: str) -> list[str]:
+    """The decision-log messages the grant verb wrote for ``plan_id``."""
+    logged = read_decision_log(plan_id)
+    assert logged['status'] == 'success', logged
+    return [entry['message'] for entry in logged['entries'] if 'loop-back-grant' in entry['message']]
+
+
+def test_a_grant_writes_one_decision_line_naming_source_rounds_reason_and_granter(plan_context):
+    """One persisted grant is one line, and the line carries all four facts."""
+    plan_id = 'loop-back-grant-decision-line'
+    _make_plan(plan_id)
+
+    result = _grant(plan_id, _SELF_REVIEW, reason='the last fix needs a look', rounds=2, granted_by='release-manager')
+
+    assert result['status'] == 'success'
+    assert result['decision_logged'] is True
+    assert 'decision_log_error' not in result
+    lines = _grant_lines(plan_id)
+    assert len(lines) == 1, lines
+    line = lines[0]
+    assert _SELF_REVIEW in line
+    assert 'Granted 2 loop-back round(s)' in line
+    assert 'the last fix needs a look' in line
+    assert 'granted_by=release-manager' in line
+
+
+def test_each_grant_writes_its_own_decision_line(plan_context):
+    """Two grants are two lines, in the order they were granted."""
+    plan_id = 'loop-back-grant-two-lines'
+    _make_plan(plan_id)
+
+    _grant(plan_id, _SELF_REVIEW, reason='first extension')
+    _grant(plan_id, _AUTOMATIC_REVIEW, reason='second extension')
+
+    lines = _grant_lines(plan_id)
+    assert len(lines) == 2, lines
+    assert _SELF_REVIEW in lines[0] and 'first extension' in lines[0]
+    assert _AUTOMATIC_REVIEW in lines[1] and 'second extension' in lines[1]
+
+
+def test_a_refused_grant_writes_no_decision_line(plan_context):
+    """Matched control: nothing was granted, so nothing is logged as granted."""
+    plan_id = 'loop-back-grant-refused-no-line'
+    _make_plan(plan_id)
+
+    result = _grant(plan_id, _SELF_REVIEW, reason='   ')
+
+    assert result['status'] == 'error'
+    assert 'decision_logged' not in result
+    assert _grant_lines(plan_id) == []
+
+
+def test_a_log_write_that_raises_leaves_the_grant_in_place_and_is_reported(plan_context, monkeypatch):
+    """The grant is persisted before the line is written, and survives its failure."""
+    plan_id = 'loop-back-grant-log-raises'
+    _make_plan(plan_id)
+    _drive_to_ceiling(plan_id, _SELF_REVIEW)
+
+    def _raise(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        raise OSError('decision log is not writable')
+
+    monkeypatch.setattr(_loop_back, 'log_decision', _raise)
+
+    result = _grant(plan_id, _SELF_REVIEW)
+
+    assert result['status'] == 'success'
+    assert result['granted'] == 1
+    assert result['decision_logged'] is False
+    assert 'decision log is not writable' in result['decision_log_error']
+    budget = _budget(plan_id, _SELF_REVIEW)
+    assert budget['granted'] == 1
+    assert len(budget['grants']) == 1
+    # The round the grant bought is still spendable.
+    assert _admit(plan_id, _SELF_REVIEW)['admitted'] is True
+
+
+def test_a_log_write_that_reports_an_error_leaves_the_grant_in_place_and_is_reported(plan_context, monkeypatch):
+    """A logger that returns an error instead of raising is reported the same way."""
+    plan_id = 'loop-back-grant-log-error'
+    _make_plan(plan_id)
+    monkeypatch.setattr(
+        _loop_back,
+        'log_decision',
+        lambda *_args, **_kwargs: {'status': 'error', 'error': 'write_failed', 'message': 'disk full'},
+    )
+
+    result = _grant(plan_id, _SELF_REVIEW)
+
+    assert result['status'] == 'success'
+    assert result['decision_logged'] is False
+    assert result['decision_log_error'] == 'disk full'
+    assert _budget(plan_id, _SELF_REVIEW)['granted'] == 1
