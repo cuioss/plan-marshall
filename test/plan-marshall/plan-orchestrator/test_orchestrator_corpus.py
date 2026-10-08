@@ -3780,17 +3780,18 @@ def _drop_header_phase(epic_dir: Path) -> None:
     path.write_text(json.dumps(header), encoding='utf-8')
 
 
-#: ``(id, mutation)`` — one entry per way the filter can fail to establish a
-#: reason for a readable spec in an active sibling epic. Each mutation is applied
-#: to a fixture whose spec is otherwise excluded as ``row_terminal``.
+#: ``(id, mutation, unread cause)`` — one entry per way the filter can fail to
+#: establish a reason for a readable spec in an active sibling epic, with the
+#: cause the refusal must name. Each mutation is applied to a fixture whose spec
+#: is otherwise excluded as ``row_terminal``.
 _GATE_FAIL_CLOSED_CASES = (
-    ('unreadable-row-file', _break_row_file),
-    ('status-outside-vocabulary', _set_status_outside_the_vocabulary),
-    ('spec-with-no-row', _remove_row_file),
-    ('spec-joining-two-rows', _add_second_joining_row),
-    ('unlistable-queue', _make_queue_unlistable),
-    ('unreadable-header', _break_header),
-    ('header-without-phase', _drop_header_phase),
+    ('unreadable-row-file', _break_row_file, _orch.GATE_UNREAD_ROW_FILE),
+    ('status-outside-vocabulary', _set_status_outside_the_vocabulary, _orch.GATE_UNREAD_ROW_STATUS),
+    ('spec-with-no-row', _remove_row_file, _orch.GATE_UNREAD_ROW_MISSING),
+    ('spec-joining-two-rows', _add_second_joining_row, _orch.GATE_UNREAD_ROW_AMBIGUOUS),
+    ('unlistable-queue', _make_queue_unlistable, _orch.GATE_UNREAD_QUEUE),
+    ('unreadable-header', _break_header, _orch.GATE_UNREAD_EPIC_STATUS),
+    ('header-without-phase', _drop_header_phase, _orch.GATE_UNREAD_EPIC_STATUS),
 )
 assert _GATE_FAIL_CLOSED_CASES, '_GATE_FAIL_CLOSED_CASES must not be empty'
 
@@ -6536,6 +6537,109 @@ class TestGateFailClosedControls:
         assert _excluded_for(result, CANDIDATE_KIND_SIBLING_EPIC_SPEC) == _NO_EXCLUSION
 
 
+class TestUnreadStatusBlocksWhateverTheSurface:
+    """A spec whose row or epic status could not be read blocks even with a comparable surface.
+
+    Every fixture here gives the affected spec a declarative surface that
+    overlaps nothing. Counted on its surface alone it would be a comparable
+    gate candidate and refuse nobody, so each refusal below is owed to the
+    failed read and to nothing else — and the scan tally, which still reports
+    the spec ``comparable``, is asserted beside it to prove that.
+    """
+
+    def test_the_cases_and_the_spec_file_cover_the_whole_cause_vocabulary(self):
+        # Coverage guard: a cause added to the vocabulary without a case here
+        # fails loudly instead of going unexercised.
+        causes = {case[2] for case in _GATE_FAIL_CLOSED_CASES} | {_orch.GATE_UNREAD_SPEC_FILE}
+
+        assert causes == set(_orch.GATE_UNREAD_CAUSES)
+
+    @pytest.mark.parametrize(
+        ('mutate', 'cause'),
+        [case[1:] for case in _GATE_FAIL_CLOSED_CASES],
+        ids=[case[0] for case in _GATE_FAIL_CLOSED_CASES],
+    )
+    def test_a_comparable_sibling_spec_refuses_every_own_row_and_names_the_cause(self, plan_context, mutate, cause):
+        _seed_two_own_specs(plan_context)
+        epic_dir = _seed_gate_sibling(plan_context, 'shipped', surface_lines=_surface(OUTSIDE_PATH))
+        readable = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+        comparable_cell = (CANDIDATE_KIND_SIBLING_EPIC_SPEC, CANDIDATE_COMPARABLE)
+        assert _candidate_tally(readable)[comparable_cell] == 1, 'the control needs a sibling with a comparable surface'
+        assert [row['comparison_determinate'] for row in readable['spec_comparisons']] == [True, True]
+
+        mutate(epic_dir)
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        name = f'{SIBLING_SLUG}/{_PLANTED_SPEC}'
+        assert _candidate_tally(result)[comparable_cell] == 1, 'the mutation must leave the surface itself comparable'
+        assert _gate_tally(result)[comparable_cell] == 0
+        assert _gate_tally(result)[(CANDIDATE_KIND_SIBLING_EPIC_SPEC, CANDIDATE_INDETERMINATE)] == 1
+        assert result['gate_candidates_indeterminate'] == 1
+        rows = result['spec_comparisons']
+        assert len(rows) == 2, 'the own corpus did not materialize'
+        for row in rows:
+            assert row['comparison_determinate'] is False
+            assert _blocking(row) == [_entry(CANDIDATE_KIND_SIBLING_EPIC_SPEC, name, CANDIDATE_INDETERMINATE)]
+            assert f'{name} {CANDIDATE_INDETERMINATE} ({cause})' in row['reason']
+        assert result['candidate_comparison_determinate'] is False
+
+    def test_a_comparable_own_spec_on_an_unreadable_row_refuses_the_other_own_spec(self, plan_context):
+        _seed_two_own_specs(plan_context)
+        _row_file(_epic_dir(plan_context), 'PLAN-02').write_text(_NOT_JSON, encoding='utf-8')
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        rows = _comparisons(result)
+        assert _candidate_tally(result)[(CANDIDATE_KIND_CORPUS_SPEC, CANDIDATE_COMPARABLE)] == 2, (
+            'both own specs must keep a comparable surface'
+        )
+        blocker = _entry(CANDIDATE_KIND_CORPUS_SPEC, 'PLAN-02-beta.md', CANDIDATE_INDETERMINATE)
+        assert _blocking(rows['PLAN-01-alpha.md']) == [blocker]
+        assert _orch.GATE_UNREAD_ROW_FILE in rows['PLAN-01-alpha.md']['reason']
+        assert _blocking(rows['PLAN-02-beta.md']) == [], 'a spec is never its own blocking candidate'
+
+    def test_the_queried_epics_own_unreadable_header_refuses_nobody(self, plan_context):
+        # The own header is not consulted for the own specs, so breaking it is
+        # not a failed read the gate depends on.
+        _seed_two_own_specs(plan_context)
+        _break_header(_epic_dir(plan_context))
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert result['status'] == 'success'
+        assert _excluded_for(result, CANDIDATE_KIND_CORPUS_SPEC) == {
+            **_NO_EXCLUSION,
+            GATE_EXCLUDED_ROW_NOT_IN_FLIGHT: 2,
+        }
+        assert [row['comparison_determinate'] for row in result['spec_comparisons']] == [True, True]
+
+    def test_a_closed_epic_shelters_a_readable_spec_whose_row_cannot_be_read(self, plan_context):
+        # The carve-out: a closed epic excludes its readable specs before any
+        # row is read, so the unreadable row file is never a failed read here.
+        _seed_two_own_specs(plan_context)
+        epic_dir = _seed_gate_sibling(plan_context, 'launched', phase='closed', surface_lines=_surface(OUTSIDE_PATH))
+        _break_row_file(epic_dir)
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert _excluded_for(result, CANDIDATE_KIND_SIBLING_EPIC_SPEC) == _only(GATE_EXCLUDED_EPIC_CLOSED)
+        assert [row['comparison_determinate'] for row in result['spec_comparisons']] == [True, True]
+
+    def test_an_unreadable_spec_file_in_a_closed_epic_names_the_spec_file(self, plan_context):
+        # The other half of the carve-out: the closed phase does not shelter a
+        # spec FILE nothing could read.
+        _seed_two_own_specs(plan_context)
+        epic_dir = _seed_gate_sibling(plan_context, 'launched', phase='closed', surface_lines=_surface(OUTSIDE_PATH))
+        (epic_dir / 'plans' / _PLANTED_SPEC).write_bytes(_UNDECODABLE)
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        name = f'{SIBLING_SLUG}/{_PLANTED_SPEC}'
+        for row in result['spec_comparisons']:
+            assert _blocking(row) == [_entry(CANDIDATE_KIND_SIBLING_EPIC_SPEC, name, CANDIDATE_UNREADABLE)]
+            assert f'({_orch.GATE_UNREAD_SPEC_FILE})' in row['reason']
+
+
 # =============================================================================
 # The per-candidate gate contract, as the documents state it
 # =============================================================================
@@ -6722,6 +6826,10 @@ _SUPERSEDED_WORDING: list[tuple[str, str]] = [
     (_SUPERSEDED_MODEL, 'colliding or unprepared plan'),
     (_SUPERSEDED_MODEL, 'emits the disjoint, prep-ready candidates'),
     (_SUPERSEDED_MODEL, 'emitting a colliding, blocked, or unprepared plan'),
+    (_SUPERSEDED_MODEL, 'disjointness is necessary but not sufficient'),
+    (_SUPERSEDED_MODEL, 'disjoint, prep-ready candidates'),
+    (_SUPERSEDED_ORCHESTRATE, 'disjoint + prep-ready'),
+    (_SUPERSEDED_ANALYZE, 'disjoint-plus-prep-ready'),
     (_SUPERSEDED_PERSONA, 'overlapping plans are sequenced'),
     (_SUPERSEDED_ORCHESTRATE, 'never emit a colliding, unresolvable, or unprepared plan'),
     (_SUPERSEDED_ORCHESTRATE, 'never emits a colliding, blocked, or unprepared plan'),
@@ -6826,6 +6934,39 @@ class TestSupersededOverlapRuleIsGoneFromEverySite:
         assert sentences, 'removing the operator sentences left nothing to check'
 
         assert not _states_operator_decision('. '.join(sentences))
+
+
+#: The header of the rows that carry the operator's overlap answers in a return.
+_OVERLAP_PROMPTS_HEADER_RE = re.compile(r'(?m)^overlap_prompts\[P\]\{[^}\n]+\}:$')
+
+
+def _overlap_prompt_headers(text: str) -> list[str]:
+    """Every ``overlap_prompts[P]{...}:`` row header ``text`` carries."""
+    return _OVERLAP_PROMPTS_HEADER_RE.findall(text)
+
+
+class TestAnalyzeCarriesTheOverlapAnswers:
+    """``analyze.md`` runs the ``next`` selection, so its return carries the overlap answers too."""
+
+    def test_the_output_block_carries_the_same_overlap_rows_as_next(self):
+        owner = _overlap_prompt_headers(_read_repo_file(_SUPERSEDED_ORCHESTRATE))
+        assert len(owner) == 1, f'orchestrate.md declares {len(owner)} overlap_prompts row header(s), expected 1'
+
+        assert _overlap_prompt_headers(_read_repo_file(_SUPERSEDED_ANALYZE)) == owner
+
+    def test_the_log_line_names_the_overlap_answers(self):
+        text = _read_repo_file(_SUPERSEDED_ANALYZE)
+        messages = re.findall(r'--message "(\{analysis decision[^"]*)"', text)
+        assert len(messages) == 1, f'analyze.md carries {len(messages)} Step 6 log message(s), expected 1'
+
+        assert 'overlap answer' in messages[0]
+
+    def test_a_document_without_the_rows_is_reported(self):
+        # The control: the shipped document with the row header taken out no
+        # longer carries the rows the first check looks for.
+        text = _OVERLAP_PROMPTS_HEADER_RE.sub('', _read_repo_file(_SUPERSEDED_ANALYZE))
+
+        assert _overlap_prompt_headers(text) == []
 
 
 # =============================================================================

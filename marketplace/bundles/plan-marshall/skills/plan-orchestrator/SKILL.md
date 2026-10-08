@@ -306,7 +306,7 @@ Everything above describes the SCAN population — every candidate the cross-che
 | `gate_population[]` | One row per `candidate_kind` with the number of gate candidates of that kind |
 | `gate_excluded[]` | One row per (`candidate_kind`, `reason`) pair over the whole kind × reason cross-product, in declared order, with the number of scanned specs left out of the gate population under that reason — `epic_archived`, `epic_closed`, `row_terminal` or `row_not_in_flight`. A pair nothing fell under is a stated zero; the `live_plan` rows are zeros by construction, and so are the two epic reasons for `corpus_spec` |
 | `gate_excluded_total` | The sum of every `gate_excluded[]` count |
-| `gate_candidate_derivation_states[]` | The `comparable` / `indeterminate` / `unreadable` tally of `candidate_derivation_states[]`, computed over the gate population instead of the scan population |
+| `gate_candidate_derivation_states[]` | The `comparable` / `indeterminate` / `unreadable` tally of `candidate_derivation_states[]`, computed over the gate population instead of the scan population. One state differs from the scan tally by rule: a spec that stays a gate candidate because its queue row or its epic status could not be read is counted `indeterminate` here whatever its surface declares, while `candidate_derivation_states[]` keeps reporting the surface |
 | `gate_candidates_indeterminate` | How many gate candidates are `indeterminate` or `unreadable` |
 | `gate_overlap_matches[]` | The rows of `file_overlap_matches[]` whose candidate is a gate candidate, each identical to its source row |
 | `spec_comparisons[]` | The launch verdict, one row per own spec file — see below |
@@ -319,7 +319,7 @@ Per kind, the `gate_population[]` figure plus the sum of that kind's `gate_exclu
 |--------|---------|
 | `comparison_determinate` | `true` when no gate candidate other than the spec itself is `indeterminate` or `unreadable` |
 | `blocking_candidate_count`, `blocking_candidates` | How many gate candidates block the spec, and their `{candidate_kind}:{name}:{state}` entries, sorted and joined into one string with the same separator `overlapping_files` uses |
-| `reason` | The derived shortfall string naming each blocking candidate by kind, name and state; the empty string exactly when `comparison_determinate` is `true` |
+| `reason` | The derived shortfall string naming each blocking candidate by kind, name and state; the empty string exactly when `comparison_determinate` is `true`. A candidate that blocks because something about it could not be read carries the cause in parentheses after its state — `spec_file_unreadable`, `epic_status_unreadable`, `queue_unlistable`, `row_file_unreadable`, `row_not_joined`, `row_ambiguous` or `row_status_unknown` — so the refusal names the failed read rather than the surface |
 | `gate_overlap_count` | How many `gate_overlap_matches[]` rows name the spec |
 | `max_shared_file_count` | The largest `overlap_count` among those rows, `0` when there is none. Each entry of a pair's overlap row counts as one file, a directory or recursive-glob containment included |
 | `overlap_prompt_required` | `true` when `max_shared_file_count` is 2 or more — a single shared file never sets it |

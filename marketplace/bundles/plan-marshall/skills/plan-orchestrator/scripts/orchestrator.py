@@ -728,6 +728,33 @@ GATE_EXCLUSION_REASONS = (
     GATE_EXCLUDED_ROW_NOT_IN_FLIGHT,
 )
 
+#: What the gate classifier could NOT read for one spec that stays a gate
+#: candidate, named once and in the order the reads are attempted. A spec with
+#: one of these causes may be in flight and nothing established that it is not,
+#: so it counts as a non-comparable gate candidate whatever its surface
+#: declares: an unknown row status says nothing about whether the declared
+#: surface is still the one being written. ``spec_file_unreadable`` is the spec
+#: file itself; ``epic_status_unreadable`` is a sibling epic's header that
+#: cannot be read or carries no phase; the remaining five are facts about the
+#: queue row the spec should join. The per-spec ``reason`` names the cause, so a
+#: refusal says which read failed rather than blaming the surface.
+GATE_UNREAD_SPEC_FILE = 'spec_file_unreadable'
+GATE_UNREAD_EPIC_STATUS = 'epic_status_unreadable'
+GATE_UNREAD_QUEUE = 'queue_unlistable'
+GATE_UNREAD_ROW_FILE = 'row_file_unreadable'
+GATE_UNREAD_ROW_MISSING = 'row_not_joined'
+GATE_UNREAD_ROW_AMBIGUOUS = 'row_ambiguous'
+GATE_UNREAD_ROW_STATUS = 'row_status_unknown'
+GATE_UNREAD_CAUSES = (
+    GATE_UNREAD_SPEC_FILE,
+    GATE_UNREAD_EPIC_STATUS,
+    GATE_UNREAD_QUEUE,
+    GATE_UNREAD_ROW_FILE,
+    GATE_UNREAD_ROW_MISSING,
+    GATE_UNREAD_ROW_AMBIGUOUS,
+    GATE_UNREAD_ROW_STATUS,
+)
+
 #: Where one live plan's comparison surface came from, named once and in the
 #: order the sources are tried. ``affected_files`` is the plan's captured
 #: footprint; ``source_spec`` is the declared surface of the one spec the plan
@@ -3923,7 +3950,7 @@ def _sibling_epic_roots(slug: str) -> tuple[list[tuple[str, Path]], list[str]]:
     reads. The scope rides with each root so the launch-gate filter can take the
     archived fact from this walk instead of deriving it a second time from the
     path: an archived sibling is scanned for duplicate work and left out of the
-    gate population (see :func:`_gate_exclusion_reason`).
+    gate population (see :func:`_gate_outcome`).
 
     Mirrors the on-query store scan the read verbs document: both
     ``.plan/orchestrator/`` and ``.plan/archived-orchestrators/`` are walked, so
@@ -4013,6 +4040,27 @@ def _epic_gate_facts(root: Path, sibling_scope: str | None) -> _EpicGateFacts:
     return _EpicGateFacts(sibling=sibling, archived=False, phase=phase, queue=read_rows(root))
 
 
+@dataclass(frozen=True)
+class _GateOutcome:
+    """Where the gate classifier put ONE spec candidate.
+
+    ``excluded`` is the :data:`GATE_EXCLUSION_REASONS` member the spec is left
+    out under, or ``None`` when it stays a gate candidate. ``unread`` is the
+    :data:`GATE_UNREAD_CAUSES` member naming what could not be read, or ``None``
+    when the spec stays in on an established in-flight row. The two are never
+    both set: a spec is excluded only when every read behind the reason
+    succeeded.
+    """
+
+    excluded: str | None = None
+    unread: str | None = None
+
+
+#: The outcome of a candidate that is in flight on established facts — a spec on
+#: a ``launched`` or ``running`` row, and every live plan.
+_GATE_IN_FLIGHT = _GateOutcome()
+
+
 @dataclass
 class _GateTally:
     """The launch-gate counts of one cross-check call, per candidate kind.
@@ -4024,9 +4072,18 @@ class _GateTally:
     candidate, in ``excluded`` otherwise — so per kind ``population`` plus the
     sum of ``excluded`` equals the scan population of that kind.
 
-    ``members`` names each gate candidate as ``(kind, name, state)``, under the
-    same name the match lists carry for it, so the per-spec comparison rows can
-    say WHICH candidate blocks a spec rather than only how many do.
+    ``members`` names each gate candidate as ``(kind, name, state, cause)``,
+    under the same name the match lists carry for it, so the per-spec
+    comparison rows can say WHICH candidate blocks a spec rather than only how
+    many do. ``state`` is the candidate's GATE state and ``cause`` the
+    :data:`GATE_UNREAD_CAUSES` member behind it, or the empty string.
+
+    The gate state fails closed. A candidate the classifier could not place —
+    one carrying an unread cause — may be in flight on a surface nobody
+    confirmed, so it is counted as :data:`CANDIDATE_INDETERMINATE` even when
+    its own surface is comparable. A candidate that is already non-comparable
+    keeps its state, so an unreadable spec file stays ``unreadable``. The scan
+    tally is untouched by this: it keeps reporting the surface as derived.
     """
 
     population: dict[str, int] = field(default_factory=lambda: dict.fromkeys(CANDIDATE_KINDS, 0))
@@ -4036,16 +4093,18 @@ class _GateTally:
     excluded: dict[str, dict[str, int]] = field(
         default_factory=lambda: {kind: dict.fromkeys(GATE_EXCLUSION_REASONS, 0) for kind in CANDIDATE_KINDS}
     )
-    members: list[tuple[str, str, str]] = field(default_factory=list)
+    members: list[tuple[str, str, str, str]] = field(default_factory=list)
 
-    def count(self, kind: str, name: str, state: str, reason: str | None) -> None:
+    def count(self, kind: str, name: str, state: str, outcome: _GateOutcome) -> None:
         """Count the candidate ``name`` of ``kind`` in derivation ``state`` under its gate outcome."""
-        if reason is None:
-            self.population[kind] += 1
-            self.states[kind][state] += 1
-            self.members.append((kind, name, state))
-        else:
-            self.excluded[kind][reason] += 1
+        if outcome.excluded is not None:
+            self.excluded[kind][outcome.excluded] += 1
+            return
+        cause = outcome.unread or ''
+        gate_state = CANDIDATE_INDETERMINATE if cause and state == CANDIDATE_COMPARABLE else state
+        self.population[kind] += 1
+        self.states[kind][gate_state] += 1
+        self.members.append((kind, name, gate_state, cause))
 
 
 def _spec_comparison_rows(
@@ -4060,11 +4119,17 @@ def _spec_comparison_rows(
     not determinate. A gate candidate that WAS comparable does not block,
     whether or not it overlaps; overlap is reported separately.
 
+    A gate candidate whose row or epic status could not be read is one of
+    them whatever its surface declares: :class:`_GateTally` counts it as
+    ``indeterminate``, so it blocks here like any other.
+
     ``blocking_candidates`` joins ``{candidate_kind}:{name}:{state}`` entries,
     sorted. ``reason`` is derived here from the same entries, naming kind, name
-    and state for each, and is the empty string exactly when
-    ``comparison_determinate`` is true — the enforcement site transcribes it
-    and composes nothing.
+    and state for each — followed, in parentheses, by the
+    :data:`GATE_UNREAD_CAUSES` member when the candidate is blocking because
+    something about it could not be read — and is the empty string exactly when
+    ``comparison_determinate`` is true. The enforcement site transcribes it and
+    composes nothing.
 
     The overlap columns read ``gate_overlap_matches``, the overlap rows whose
     candidate is a gate candidate. ``gate_overlap_count`` is how many of them
@@ -4075,20 +4140,23 @@ def _spec_comparison_rows(
     rows: list[dict[str, Any]] = []
     for spec in spec_names:
         blocking = sorted(
-            (kind, name, state)
-            for kind, name, state in gate.members
-            if state in CANDIDATE_NON_CONTRIBUTING_STATES and (kind, name) != (CANDIDATE_KIND_CORPUS_SPEC, spec)
+            member
+            for member in gate.members
+            if member[2] in CANDIDATE_NON_CONTRIBUTING_STATES and member[:2] != (CANDIDATE_KIND_CORPUS_SPEC, spec)
         )
         shared = [row['overlap_count'] for row in gate_overlap_matches if row['spec'] == spec]
         max_shared = max(shared, default=0)
-        named = ', '.join(f'{kind} {name} {state}' for kind, name, state in blocking)
+        named = ', '.join(
+            f'{kind} {name} {state} ({cause})' if cause else f'{kind} {name} {state}'
+            for kind, name, state, cause in blocking
+        )
         rows.append(
             {
                 'spec': spec,
                 'comparison_determinate': not blocking,
                 'blocking_candidate_count': len(blocking),
                 'blocking_candidates': _OVERLAP_JOIN.join(
-                    sorted(f'{kind}:{name}:{state}' for kind, name, state in blocking)
+                    sorted(f'{kind}:{name}:{state}' for kind, name, state, _ in blocking)
                 ),
                 'reason': f'candidate comparison indeterminate — {named}' if blocking else '',
                 'gate_overlap_count': len(shared),
@@ -4099,34 +4167,44 @@ def _spec_comparison_rows(
     return rows
 
 
-def _gate_exclusion_reason(path: Path, record: dict[str, Any] | None, facts: _EpicGateFacts) -> str | None:
-    """Why the spec at ``path`` is left out of the launch gate, or ``None`` when it stays in.
+def _gate_outcome(path: Path, record: dict[str, Any] | None, facts: _EpicGateFacts) -> _GateOutcome:
+    """Place the spec at ``path`` in or out of the launch gate, and say on what basis.
 
-    ``None`` means the spec is a GATE CANDIDATE: it can still refuse a plan
-    about to be launched. A returned reason is exactly one member of
-    :data:`GATE_EXCLUSION_REASONS`. ``record`` is the spec's :func:`_spec_record`
-    result and ``facts`` the per-epic read of the epic the spec sits in.
+    An outcome with ``excluded`` set leaves the spec out under exactly one
+    member of :data:`GATE_EXCLUSION_REASONS`. Every other outcome makes the
+    spec a GATE CANDIDATE: it can still refuse a plan about to be launched.
+    ``record`` is the spec's :func:`_spec_record` result and ``facts`` the
+    per-epic read of the epic the spec sits in.
 
-    The classifier fails closed. Whenever it cannot establish a reason it
-    returns ``None``, so anything it could not read stays in the gate
-    population rather than being excluded on an assumption:
+    The classifier fails closed. Whenever it cannot establish a reason the spec
+    stays in the gate population rather than being excluded on an assumption,
+    and the outcome names what could not be read in ``unread``
+    (:data:`GATE_UNREAD_CAUSES`). :class:`_GateTally` counts such a candidate as
+    non-comparable whatever its surface declares, so it refuses every own
+    candidate:
 
-    1. The spec file itself is unreadable (``record`` is ``None``). This is
-       decided FIRST and precedes ``epic_archived``: an unreadable spec file is
-       treated as in flight whatever its row status and whatever its epic's
-       location or phase — on a staged, parked or terminal row, in a closed
-       epic and under the archived root alike. It applies to sibling specs and
-       to the own corpus.
-    2. The epic header cannot be read, or carries no phase (sibling epics in
-       the active root only).
-    3. The epic's queue cannot be listed.
-    4. The spec joins no row, or more than one row, under
-       :func:`_spec_matches_row`.
-    5. The joined row file is unreadable.
-    6. The row status is outside :data:`VALID_STATUS_VOCABULARY`.
+    1. ``spec_file_unreadable`` — the spec file itself is unreadable
+       (``record`` is ``None``). This is decided FIRST and precedes
+       ``epic_archived``: an unreadable spec file is treated as in flight
+       whatever its row status and whatever its epic's location or phase — on a
+       staged, parked or terminal row, in a closed epic and under the archived
+       root alike. It applies to sibling specs and to the own corpus.
+    2. ``epic_status_unreadable`` — the epic header cannot be read, or carries
+       no phase (sibling epics in the active root only).
+    3. ``queue_unlistable`` — the epic's queue cannot be listed.
+    4. ``row_file_unreadable`` — a row file the spec joins is unreadable.
+    5. ``row_not_joined`` / ``row_ambiguous`` — the spec joins no row, or more
+       than one row, under :func:`_spec_matches_row`.
+    6. ``row_status_unknown`` — the row status is outside
+       :data:`VALID_STATUS_VOCABULARY`.
+
+    A spec on a ``launched`` or ``running`` row carries neither field: it is in
+    flight on established facts and is counted with its own derivation state.
 
     For a readable spec the reasons are evaluated in declared order and the
-    first match wins:
+    first match wins. Both epic reasons are decided BEFORE any row is read, so
+    a readable spec in an archived or a closed sibling epic is excluded
+    whatever its queue row can or cannot be read as:
 
     * ``epic_archived`` — the epic root came from the archived store root. A
       location fact that needs no file read, so a readable spec under the
@@ -4144,29 +4222,31 @@ def _gate_exclusion_reason(path: Path, record: dict[str, Any] | None, facts: _Ep
     specs, and its header is not consulted.
     """
     if record is None:
-        return None
+        return _GateOutcome(unread=GATE_UNREAD_SPEC_FILE)
     if facts.sibling:
         if facts.archived:
-            return GATE_EXCLUDED_EPIC_ARCHIVED
+            return _GateOutcome(excluded=GATE_EXCLUDED_EPIC_ARCHIVED)
         if facts.phase is None:
-            return None
+            return _GateOutcome(unread=GATE_UNREAD_EPIC_STATUS)
         if facts.phase == CLOSED_PHASE:
-            return GATE_EXCLUDED_EPIC_CLOSED
+            return _GateOutcome(excluded=GATE_EXCLUDED_EPIC_CLOSED)
     queue = facts.queue
     if queue is None or queue.state == QUEUE_UNLISTABLE:
-        return None
+        return _GateOutcome(unread=GATE_UNREAD_QUEUE)
     readable = [row for row in queue.rows if (row_id := str(row.get('id', ''))) and _spec_matches_row(path, row_id)]
     unreadable = [entry for entry in queue.unreadable_rows if _spec_matches_row(path, Path(entry['file']).stem)]
-    if unreadable or len(readable) != 1:
-        return None
+    if unreadable:
+        return _GateOutcome(unread=GATE_UNREAD_ROW_FILE)
+    if len(readable) != 1:
+        return _GateOutcome(unread=GATE_UNREAD_ROW_AMBIGUOUS if readable else GATE_UNREAD_ROW_MISSING)
     row_status = readable[0].get('status')
     if not isinstance(row_status, str) or row_status not in VALID_STATUS_VOCABULARY:
-        return None
+        return _GateOutcome(unread=GATE_UNREAD_ROW_STATUS)
     if row_status in TERMINAL_PLAN_STATUSES:
-        return GATE_EXCLUDED_ROW_TERMINAL
+        return _GateOutcome(excluded=GATE_EXCLUDED_ROW_TERMINAL)
     if row_status in LIVE_PLAN_STATUSES and row_status not in IN_FLIGHT_PLAN_STATUSES:
-        return GATE_EXCLUDED_ROW_NOT_IN_FLIGHT
-    return None
+        return _GateOutcome(excluded=GATE_EXCLUDED_ROW_NOT_IN_FLIGHT)
+    return _GATE_IN_FLIGHT
 
 
 def _spec_record(epic_slug: str, path: Path, repo_root: Path) -> dict[str, Any] | None:
@@ -4534,8 +4614,12 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
     :data:`IN_FLIGHT_PLAN_STATUSES` or when something about it could not be
     read; every live plan is one. Each other spec is counted under exactly one
     :data:`GATE_EXCLUSION_REASONS` member, decided by
-    :func:`_gate_exclusion_reason`: all four reasons for a sibling spec, the two
-    row reasons for an own spec. ``gate_excluded`` carries those counts over the
+    :func:`_gate_outcome`: all four reasons for a sibling spec, the two
+    row reasons for an own spec. A spec that stays in because its row or its
+    epic status could not be read is counted as ``indeterminate`` in the gate
+    tally whatever its surface declares, and its ``spec_comparisons`` reason
+    names the :data:`GATE_UNREAD_CAUSES` member behind it; the scan tally keeps
+    its surface state. ``gate_excluded`` carries those counts over the
     whole kind × reason cross-product, ``gate_excluded_total`` their sum,
     ``gate_population`` the per-kind gate population, and
     ``gate_candidate_derivation_states`` with ``gate_candidates_indeterminate``
@@ -4615,7 +4699,7 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
         state = _spec_candidate_state(record)
         candidate_population[CANDIDATE_KIND_CORPUS_SPEC] += 1
         candidate_tally[CANDIDATE_KIND_CORPUS_SPEC][state] += 1
-        gate.count(CANDIDATE_KIND_CORPUS_SPEC, path.name, state, _gate_exclusion_reason(path, record, own_facts))
+        gate.count(CANDIDATE_KIND_CORPUS_SPEC, path.name, state, _gate_outcome(path, record, own_facts))
         if record is None:
             unreadable.append({'spec': path.name, 'error': 'unreadable'})
         else:
@@ -4632,9 +4716,7 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
             name = f'{sibling_root.name}/{path.name}'
             candidate_population[CANDIDATE_KIND_SIBLING_EPIC_SPEC] += 1
             candidate_tally[CANDIDATE_KIND_SIBLING_EPIC_SPEC][state] += 1
-            gate.count(
-                CANDIDATE_KIND_SIBLING_EPIC_SPEC, name, state, _gate_exclusion_reason(path, record, sibling_facts)
-            )
+            gate.count(CANDIDATE_KIND_SIBLING_EPIC_SPEC, name, state, _gate_outcome(path, record, sibling_facts))
             if record is None:
                 unreadable.append({'spec': name, 'error': 'unreadable'})
             else:
@@ -4646,7 +4728,7 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
         candidate_tally[CANDIDATE_KIND_LIVE_PLAN][state] += 1
         # A live plan is in flight by definition, so every one is a gate
         # candidate and none is ever counted under an exclusion reason.
-        gate.count(CANDIDATE_KIND_LIVE_PLAN, record['name'], state, None)
+        gate.count(CANDIDATE_KIND_LIVE_PLAN, record['name'], state, _GATE_IN_FLIGHT)
     candidates.extend((CANDIDATE_KIND_LIVE_PLAN, record) for record in live)
     origin_matches: list[dict[str, Any]] = []
     overlap_matches: list[dict[str, Any]] = []
@@ -4715,7 +4797,7 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
     # The overlap rows the launch gate reads: the subset of the full overlap
     # list whose candidate is a gate candidate, each row identical to its source
     # row. The full list stays the duplicate-work read's input.
-    gate_keys = {(kind, name) for kind, name, _ in gate.members}
+    gate_keys = {member[:2] for member in gate.members}
     gate_overlap_matches = [row for row in overlap_matches if (row['candidate_kind'], row['candidate']) in gate_keys]
     spec_comparisons = _spec_comparison_rows([path.name for path in own_paths], gate, gate_overlap_matches)
     return {
