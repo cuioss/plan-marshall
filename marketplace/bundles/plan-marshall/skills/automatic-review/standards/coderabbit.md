@@ -78,6 +78,8 @@ rate_limit_eta_patterns:
   - "wait ([0-9]+ minutes? and [0-9]+ seconds?) before requesting another review"
   - "wait ([0-9]+ (?:minutes?|seconds?|hours?)) before requesting another review"
   - "([0-9]+ (?:minutes?|hours?)) before (?:the )?(?:rate )?limit resets"
+  - "Next included review available in ([0-9]+ (?:hours?|minutes?) and [0-9]+ (?:minutes?|seconds?))"   # the review-summary notice's own wording, compound form first so the longer figure wins
+  - "Next included review available in ([0-9]+ (?:minutes?|seconds?|hours?))"
 severity_map:
   potential_issue_critical: critical   # 🔴 potential_issue, or 🔒 with real impact
   potential_issue_major: high          # 🟠 Major potential_issue
@@ -263,6 +265,12 @@ place, `_github_pr.REFUSAL_LAYERS`, and a `False` from the seam is on its own no
 reviewed. See [`bot-participation-contract.md`](bot-participation-contract.md) § "Refusal recognition is
 ENUMERATIVE, and a rewording nobody enumerated is its own state". A notice that states no ETA simply
 yields an empty `eta`, which the caller reports as unknown rather than as "reopens now".
+
+The extracted text is also carried as a duration: the refusal record states it as `eta_seconds`
+("38 minutes" is `2280`), which is the figure the recovery claims the window with, and as
+`eta_extracted`, which is `false` when no reset time could be read. Both wordings CodeRabbit uses are
+declared above — the command reply's "wait N minutes before requesting another review" and the
+review-summary notice's "Next included review available in N minutes".
 
 ## Consumer stage — classify a surviving CodeRabbit finding
 

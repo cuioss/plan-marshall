@@ -203,8 +203,9 @@ _AR_SKILL = (
     / 'automatic-review'
     / 'SKILL.md'
 )
-_DISCLOSED = {'producer', 'layer', 'eta', 'body'}
+_DISCLOSED = {'producer', 'layer', 'eta', 'eta_extracted', 'body'}
 _LOGGED = _DISCLOSED - {'body'}
+_RESET_TIME_FIELDS = {'eta', 'eta_seconds', 'eta_extracted'}
 
 
 def _section(heading_prefix: str) -> str:
@@ -579,11 +580,17 @@ class TestBothProducersCarryOneObservationShape:
             set(refusal) - _PRODUCER_ONLY_FIELDS['refusals']
         )
         assert {'layer', 'body'} <= set(detected)
+        # The reset time rides both records three ways — text, seconds, and the
+        # explicit statement of whether one was read — and is producer-specific on
+        # neither, so it is inside the shared comparison above.
+        assert _RESET_TIME_FIELDS <= set(detected)
+        assert _RESET_TIME_FIELDS <= set(refusal)
+        assert not _RESET_TIME_FIELDS & (_PRODUCER_ONLY_FIELDS['rate_limited_bots'] | _PRODUCER_ONLY_FIELDS['refusals'])
 
     @pytest.mark.parametrize('bot_kind', _registered_bots())
     @pytest.mark.parametrize('body_kind', ['declared_or_shape', 'shape_only'])
     def test_the_two_producers_name_one_observation_for_one_notice(self, bot_kind, body_kind):
-        """Same notice, same bot: the same layer, excerpt, ETA, cause and cap.
+        """Same notice, same bot: the same layer, excerpt, reset time, cause and cap.
 
         Swept over a body the bot's own wording reads (where it declares any) AND
         the shape-only notice, so both pre-filter arms are exercised — a producer
@@ -619,7 +626,7 @@ class TestTheArmingDisclosureIsEmittedOnlyWhenAWaitIsArmed:
     """
 
     def test_the_armed_line_names_the_observation_that_armed_the_wait(self):
-        """EMIT: producer, layer and ETA ride the ARMED decision-log line."""
+        """EMIT: producer, layer, ETA and whether one was read ride the ARMED line."""
         placeholders = dict(re.findall(r'(\w+)=\{(\w+)\}', _armed_line()))
 
         assert _LOGGED <= set(placeholders), sorted(placeholders)

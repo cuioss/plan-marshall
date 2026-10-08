@@ -663,6 +663,9 @@ class TestRefusalNoticeProducerFilter:
                 'bot_kind': 'sourcery',
                 'rate_limit_class': 'hard_quota',
                 'eta': '',
+                # This notice states no reset time: no seconds, and the record says so.
+                'eta_seconds': None,
+                'eta_extracted': False,
                 'cause': 'quota',
                 'cap': '',
                 'layer': REFUSAL_LAYER_STRUCTURAL,

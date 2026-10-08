@@ -141,7 +141,7 @@ bot's `trigger_comment`, `completion_check_name`, `honors_skip_label`, `ignore_p
 `rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map`). The producer
 (`github_pr.py` noise pre-filter), the finding store (`_findings_core.BOT_KINDS`), the re-review
 strategy registry (`github_re_review.py` — both its trigger comments and the `refusal_class` /
-`refusal_eta` it surfaces on a detected refusal), and the per-bot rate-limit detector
+`refusal_eta` / `refusal_eta_seconds` / `refusal_eta_extracted` it surfaces on a detected refusal), and the per-bot rate-limit detector
 (`_github_pr._detect_rate_limited_bots`) all DERIVE from this loader — adding, removing, or
 re-configuring a bot is a pure `standards/{bot_kind}.md` edit with no code change.
 
@@ -370,7 +370,7 @@ Once every participating bot is completed, markerless (buffer-settled), or recor
 > **GitLab provider asymmetry:** `bot_completion` is a GitHub-only read verb — the GitLab provider (`gitlab_pr`) has no completion-check-run equivalent (the same asymmetry the FIND stage's `--required-bots` / `--optional-bots` note documents). On a GitLab host, skip the completion-aware poll entirely; every bot relies on the `review_bot_buffer_seconds` settle.
 
 The `pr wait-for-comments` return carries a **`rate_limited_bots[]`** discriminator — one
-`{bot_kind, rate_limit_class, eta, cause, cap, layer, body}` record per REGISTERED bot whose newest
+`{bot_kind, rate_limit_class, eta, eta_seconds, eta_extracted, cause, cap, layer, body}` record per REGISTERED bot whose newest
 comment is a rate-limit status notice posted in place of a review. A non-empty list signals that those specific bots did not
 review because their limit was hit, rather than that a genuine review landed or the buffer timed out
 cleanly. An empty list means no registered bot is rate-limited. See
@@ -392,16 +392,19 @@ below acts on this discriminator when the opt-in is enabled; when the opt-in is 
 A detected refusal is a **branchable signal, never a silent drop**. Two producers surface one:
 
 - **`rate_limited_bots[]`** on the "Wait for review-bot comments" return — one
-  `{bot_kind, rate_limit_class, eta, cause, cap, layer, body}` record per registered bot whose newest
-  comment is a rate-limit notice.
-- **`refusal_detected` / `refusal_class` / `refusal_eta` / `refusals[]`** on the
-  `github_re_review re-review` return — the re-review await recorded a refusal instead of collapsing
-  it into a bare `matched: false` / `timed_out: true`.
+  `{bot_kind, rate_limit_class, eta, eta_seconds, eta_extracted, cause, cap, layer, body}` record per
+  registered bot whose newest comment is a rate-limit notice.
+- **`refusal_detected` / `refusal_class` / `refusal_eta` / `refusal_eta_seconds` /
+  `refusal_eta_extracted` / `refusals[]`** on the `github_re_review re-review` return — the re-review
+  await recorded a refusal instead of collapsing it into a bare `matched: false` / `timed_out: true`.
 
 Both carry the same discriminators, so this section treats them uniformly: `{bot_kind}`, its
 `rate_limit_class` (`awaitable_window` / `hard_quota` / `unknown`), the refusal's `cause` (`size` /
 `quota`, from the `refused_causes[]` overlay), plus the stated `eta` when the bot's registry
 `rate_limit_eta_patterns` matched and the stated `cap` when its `refusal_size_cap_patterns` matched.
+The reset time is carried three ways on every record: `eta` is the text the notice stated,
+`eta_seconds` is that time as whole seconds, and `eta_extracted` is `false` when no reset time could
+be read — the explicit statement of that, so nothing has to be inferred from an empty `eta`.
 Both records also carry the OBSERVATION behind the refusal: `layer`, the recognition arm that read the
 notice, and `body`, the notice itself as a whitespace-collapsed, truncated excerpt. Branch 2 discloses
 those two fields when it arms a wait — see § "The arming disclosure" below.
@@ -525,9 +528,9 @@ The read is a snapshot and decides nothing that mutates the store: every claim a
 still goes through the guarded read-modify-write core of `merge_lock`, so a claim another plan makes
 between this read and this pass's next call is arbitrated there, not here.
 
-Pass `--window-seconds` derived from the refusal's stated `eta` when it names a duration (e.g. an
-`eta` of `15 minutes` → `900`); omit the flag when the notice stated no ETA, so the claim falls back
-to the verb's default rather than inventing a reset time.
+Pass the refusal record's `eta_seconds` as `--window-seconds` when the record reports
+`eta_extracted: true`. Omit the flag when it reports `eta_extracted: false`, so the claim falls back to
+the verb's default rather than inventing a reset time.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-window claim \
@@ -565,7 +568,7 @@ Branch on the returned `status`:
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
     decision --plan-id {plan_id} --level INFO \
-    --message '(plan-marshall:automatic-review) refusal recovery ARMED — claimed {bot_kind} rate window ({action}), seconds_remaining={seconds_remaining} attempts={attempts}/{attempt_cap}; armed by producer={producer} layer={layer} eta={eta}'
+    --message '(plan-marshall:automatic-review) refusal recovery ARMED — claimed {bot_kind} rate window ({action}), seconds_remaining={seconds_remaining} attempts={attempts}/{attempt_cap}; armed by producer={producer} layer={layer} eta={eta} eta_extracted={eta_extracted}'
   ```
 
   **The step does not wait for the window — the main context does.** A dispatched step is a leaf, and
@@ -586,21 +589,24 @@ Branch on the returned `status`:
 **The arming disclosure.** The ARMED line records the OBSERVATION that armed the wait, not only the
 claim it produced. A wait whose arming record names only its own action and clock cannot be read back
 on a resume: the run re-derives what it is waiting on, and a cancelled wait becomes indistinguishable
-from a spent one. So the disclosure names four facts, read off the ONE refusal record that selected this
+from a spent one. So the disclosure names five facts, read off the ONE refusal record that selected this
 recovery and never re-derived:
 
 - `{producer}` — which producer surfaced the refusal: `wait-for-comments` when the record came from
   the `rate_limited_bots[]` list on the "Wait for review-bot comments" return, `re-review` when it came
   from the `refusals[]` list on the `github_re_review re-review` return. On the `re-review` producer the
-  record is the one the envelope's `refusal_eta` was read from — the first record carrying a non-empty
-  `eta`, and the first record when none does.
+  record is the one the envelope's `refusal_eta` was read from — the first record reporting
+  `eta_extracted: true`, else the first carrying a non-empty `eta`, and the first record when none does.
 - `{layer}` — the record's `layer`: which recognition arm read the notice, from the shared
   `_github_pr.REFUSAL_LAYERS` vocabulary.
 - `{eta}` — the record's `eta`, the reset time the notice itself stated, or the literal `unknown` when it
   stated none. It is an estimate the bot published, not a contract — which is why the main-context wait
   polls the claim's own expiry rather than waiting out the stated time.
+- `{eta_extracted}` — the record's `eta_extracted`: `true` when the claim's window was taken from the
+  reset time the notice stated, `false` when none could be read and the claim ran on the verb's default
+  window. It is what tells a reader whether the armed wait rests on the bot's own figure.
 - `{body}` — the record's `body`, the notice's whitespace-collapsed, truncated excerpt. It rides the
-  envelope row ONLY; the log line above names the other three and stops there.
+  envelope row ONLY; the log line above names the other four and stops there.
 
 ⛔ **The excerpt never enters the log command.** A refusal notice is bot-authored text of arbitrary
 shape and the `--message` value is a shell argument, so an apostrophe in ordinary English ("doesn't",
@@ -614,7 +620,7 @@ time the notice itself stated, and inside a double-quoted argument a backtick or
 substitution — refusal notices quote the bot's own trigger (CodeRabbit's names
 `` `@coderabbitai review` ``), which would run as a command.
 
-All four facts, with `{bot_kind}`, are carried as a `rate_window_arming[]` row on the envelope this step
+All five facts, with `{bot_kind}`, are carried as a `rate_window_arming[]` row on the envelope this step
 returns (see "Output"): the log line names every one but the excerpt, and the envelope row is the
 complete record, because the decision log is a single sink that a resumed run does not read back. The
 disclosure is emitted on a successful claim, and the envelope row is repeated on the re-entry-before-wake
@@ -1089,7 +1095,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 status: success | error | loop_back | escalate_ask
 display_detail: "<{N} comment(s) found — {review_state_summary} (unified triage pending)>"
 comments_found: {N}
-rate_window_arming[N]{producer,bot_kind,layer,eta,body}:   # present ONLY on a pass that armed a wait — the rate_window_await return
+rate_window_arming[N]{producer,bot_kind,layer,eta,eta_extracted,body}:   # present ONLY on a pass that armed a wait — the rate_window_await return
 ```
 
 The `display_detail` carries the `review_state_summary` (the reviewer-state distribution) alongside the count, so *reviewed-and-clean* and *nobody-reviewed* — both `0 comment(s) found` — no longer render identically; the summary segment is omitted when the reviewer roster is empty (nothing to distribute).
@@ -1097,8 +1103,8 @@ The `display_detail` carries the `review_state_summary` (the reviewer-state dist
 `rate_window_arming[]` is the envelope half of the arming disclosure ("Rate-limit refusal recovery"
 Branch 2, § "The arming disclosure"): one row per rate window this pass CLAIMED, carrying the producer
 that surfaced the refusal, the refusing `bot_kind`, the recognition `layer` that read the notice, the
-`eta` the notice stated (the literal `unknown` when it stated none), and the notice's truncated `body`
-excerpt. The ARMED decision-log line names every one of those but the excerpt, which is carried here
+`eta` the notice stated (the literal `unknown` when it stated none), `eta_extracted` (whether a reset
+time was read at all), and the notice's truncated `body` excerpt. The ARMED decision-log line names every one of those but the excerpt, which is carried here
 only because a shell argument cannot safely hold untrusted bot text (§ "The arming disclosure"). The row
 rides the envelope because the log is a single sink a resumed run does not read back; on the envelope,
 the observation that armed a wait survives the resume rather than being re-derived. A successful Branch 2
@@ -1160,7 +1166,7 @@ pr_number: {pr_number}
 expires_at: {the claim's expiry instant, epoch seconds, as merge_lock reported it}
 seconds_remaining: {seconds until that instant, as merge_lock reported it}
 timeout_seconds: {review_rate_window_timeout_seconds}
-rate_window_arming[N]{producer,bot_kind,layer,eta,body}:
+rate_window_arming[N]{producer,bot_kind,layer,eta,eta_extracted,body}:
 ```
 
 ⛔ **There is no `action` and no `prompt_options[]`, deliberately.** Both are absent, not empty: `action`
@@ -1187,7 +1193,7 @@ bot_kind: {the refusing bot}
 refusal_class: {awaitable_window | hard_quota | unknown}
 timeout_seconds: {review_rate_window_timeout_seconds}
 pr_number: {pr_number}
-rate_window_arming[N]{producer,bot_kind,layer,eta,body}:   # present ONLY on rate_window_timeout, carried over from the rate_window_await return
+rate_window_arming[N]{producer,bot_kind,layer,eta,eta_extracted,body}:   # present ONLY on rate_window_timeout, carried over from the rate_window_await return
 prompt_options[3]:
   - "Wait another {review_rate_window_timeout_seconds}s"
   - "Merge anyway — proceed unreviewed"

@@ -199,6 +199,47 @@ def test_rate_limit_eta_patterns_per_bot():
     assert bot_registry.rate_limit_eta_patterns('cuioss-review-bot') == []
 
 
+@pytest.mark.parametrize(
+    ('notice', 'stated'),
+    [
+        ('Next included review available in 38 minutes.', '38 minutes'),
+        ('Next included review available in 1 minute.', '1 minute'),
+        ('Next included review available in 2 hours.', '2 hours'),
+        ('Next included review available in 12 minutes and 30 seconds.', '12 minutes and 30 seconds'),
+        ('Next included review available in 1 hour and 5 minutes.', '1 hour and 5 minutes'),
+    ],
+)
+def test_coderabbit_declares_the_next_included_review_wording(notice, stated):
+    """The review-summary notice's own reset-time wording is declared, in every form.
+
+    Each declared pattern is parsed out of the registry block and compiled here, and
+    the first one that matches must capture the WHOLE stated time: the compound
+    pattern is declared ahead of the single-unit one, so "12 minutes and 30 seconds"
+    is not cut short to "12 minutes".
+    """
+    patterns = bot_registry.rate_limit_eta_patterns('coderabbit')
+    declared = [pattern for pattern in patterns if pattern.startswith('Next included review available in')]
+    assert len(declared) >= 2, 'the compound and the single-unit form must both be declared'
+
+    captured = [match.group(1) for pattern in patterns if (match := re.compile(pattern).search(notice))]
+
+    assert captured, f'no declared pattern reads {notice!r}'
+    assert captured[0] == stated
+
+
+def test_the_next_included_review_wording_does_not_read_an_unrelated_sentence():
+    """Matched control: the new patterns are anchored on the notice's own wording."""
+    patterns = [
+        pattern
+        for pattern in bot_registry.rate_limit_eta_patterns('coderabbit')
+        if pattern.startswith('Next included review available in')
+    ]
+    assert patterns
+
+    for pattern in patterns:
+        assert re.search(pattern, 'The retry loop sleeps for 38 minutes between attempts.') is None
+
+
 def test_rate_limit_eta_patterns_are_valid_regexes():
     """Every declared ETA pattern compiles — a bad data edit is caught here, not at runtime.
 

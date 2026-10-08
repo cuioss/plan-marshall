@@ -4,8 +4,8 @@
 ``cmd_pr_wait_for_comments`` (in ``_github_pr.py``, dispatched via ``github_ops``)
 surfaces a ``rate_limited_bots[]`` field: after the poll settles it inspects EVERY
 REGISTERED bot's newest comment for a rate-limit status notice and returns one
-``{bot_kind, rate_limit_class, eta, cause, cap, layer, body}`` record per detected
-bot. A boolean cannot carry that answer: it collapses a three-bot pipeline into one
+``{bot_kind, rate_limit_class, eta, eta_seconds, eta_extracted, cause, cap, layer,
+body}`` record per detected bot. A boolean cannot carry that answer: it collapses a three-bot pipeline into one
 CodeRabbit-shaped verdict, leaving a rate-limited Sourcery or PR-Agent invisible.
 
 The generalization is registry-driven end to end and carries NO bot-name literal
@@ -16,7 +16,9 @@ in the detection path:
 - ``rate_limit_class`` is registry data (``awaitable_window`` / ``hard_quota``),
   fail-closed to ``unknown`` for a bot that declares none (ADR-009);
 - ``eta`` is extracted with that bot's registry ``rate_limit_eta_patterns``, and is
-  ``''`` when the bot declares none or its notice states none;
+  ``''`` when the bot declares none or its notice states none; ``eta_seconds`` is
+  that time as whole seconds (``None`` when none was read) and ``eta_extracted``
+  states which of the two it is;
 - ``cause`` / ``cap`` are the orthogonal SIZE-vs-QUOTA axis, derived from that bot's
   ``refusal_size_patterns`` / ``refusal_size_cap_patterns``. They are INDEPENDENT of
   ``rate_limit_class``: one bot can refuse for both causes at one class, so the
@@ -172,6 +174,9 @@ def test_bot_without_declared_class_fails_closed_to_unknown(monkeypatch):
             'bot_kind': 'cuioss-review-bot',
             'rate_limit_class': 'unknown',
             'eta': '',
+            # PR-Agent declares no reset-time patterns, so none can be read.
+            'eta_seconds': None,
+            'eta_extracted': False,
             'cause': 'quota',
             'cap': '',
             # PR-Agent declares no refusal_patterns, so only the notice SHAPE can
@@ -195,6 +200,9 @@ def test_coderabbit_notice_yields_registry_extracted_eta(monkeypatch):
             'bot_kind': 'coderabbit',
             'rate_limit_class': 'awaitable_window',
             'eta': '12 minutes and 30 seconds',
+            # The stated duration converted to seconds: 12 * 60 + 30.
+            'eta_seconds': 750,
+            'eta_extracted': True,
             'cause': 'quota',
             'cap': '',
             # The "## Rate limit exceeded" phrasing is not among CodeRabbit's

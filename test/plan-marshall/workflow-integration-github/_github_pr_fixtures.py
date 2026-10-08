@@ -27,6 +27,12 @@ evidence pairing is either GATED on a content marker (:data:`MARKER_GATED_EVIDEN
 or credited on the shape alone (:data:`UNGATED_EVIDENCE`). Both halves are derived from
 one registry read, guarded non-empty, and sized, so a marker newly declared by a bot
 moves its pairing from one half to the other with no test edit.
+
+It is also the home of the **CodeRabbit quota-notice bodies** that state a reset time
+in the review-summary wording ("Next included review available in N minutes"), each
+paired with the reset time it states and that time in seconds, and of the matched
+body that states none. They are literals rather than registry-derived because they
+are the observed notice text the registry's extraction patterns must read.
 """
 
 from __future__ import annotations
@@ -128,3 +134,51 @@ UNGATED_EVIDENCE: tuple[tuple[str, str], ...] = guard_non_empty(
 
 #: The published size of the ungated evidence population.
 UNGATED_EVIDENCE_COUNT: int = len(UNGATED_EVIDENCE)
+
+#: The bot the quota-notice bodies below belong to.
+QUOTA_NOTICE_BOT_KIND = 'coderabbit'
+
+#: ``(body, stated reset time, that time in seconds)`` for CodeRabbit's review-summary
+#: quota notice. Every body carries the bot's declared ``Review limit reached`` wording
+#: and states its reset time as "Next included review available in ...": in minutes, in
+#: hours, and in the two compound forms.
+CODERABBIT_NEXT_REVIEW_NOTICES: tuple[tuple[str, str, int], ...] = guard_non_empty(
+    (
+        (
+            '> [!WARNING] > ## Review limit reached > '
+            'You have reached your review limit. Next included review available in 38 minutes.',
+            '38 minutes',
+            2280,
+        ),
+        (
+            '> [!WARNING] > ## Review limit reached > '
+            'You have reached your review limit. Next included review available in 2 hours.',
+            '2 hours',
+            7200,
+        ),
+        (
+            '> [!WARNING] > ## Review limit reached > '
+            'You have reached your review limit. Next included review available in 12 minutes and 30 seconds.',
+            '12 minutes and 30 seconds',
+            750,
+        ),
+        (
+            '> [!WARNING] > ## Review limit reached > '
+            'You have reached your review limit. Next included review available in 1 hour and 5 minutes.',
+            '1 hour and 5 minutes',
+            3900,
+        ),
+    ),
+    'CODERABBIT_NEXT_REVIEW_NOTICES',
+    'the literal notice bodies declared in _github_pr_fixtures',
+)
+
+#: The published size of the stated-reset-time notice population.
+CODERABBIT_NEXT_REVIEW_NOTICE_COUNT: int = len(CODERABBIT_NEXT_REVIEW_NOTICES)
+
+#: The matched body: the same declared wording, stating NO reset time at all.
+CODERABBIT_NOTICE_STATING_NO_RESET_TIME = (
+    '> [!WARNING] > ## Review limit reached > '
+    'You have reached your review limit for the current billing cycle. '
+    'Reviews will resume once the limit resets.'
+)

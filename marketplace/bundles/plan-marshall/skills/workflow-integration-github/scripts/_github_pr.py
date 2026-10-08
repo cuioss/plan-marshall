@@ -642,6 +642,42 @@ def _extract_rate_limit_eta(body: str, bot_kind: str) -> str:
     return ''
 
 
+#: One ``<number> <unit>`` term of a stated reset time. The unit is matched on its
+#: stem, so ``minute`` / ``minutes`` and the abbreviations a notice may use
+#: (``min``, ``sec``, ``hr``) all read as the same unit. Days are included because
+#: a budget notice states its reset days ahead ("3 days and 17 hours").
+_ETA_TERM = re.compile(r'([0-9]+)\s*(days?|hours?|hrs?|minutes?|mins?|seconds?|secs?)\b', re.IGNORECASE)
+
+#: Seconds per unit, keyed by the first letter of the matched unit word.
+_ETA_UNIT_SECONDS = {'d': 86400, 'h': 3600, 'm': 60, 's': 1}
+
+
+def rate_limit_eta_seconds(eta: str) -> int | None:
+    """Return the stated reset time ``eta`` as whole seconds, or ``None`` when unreadable.
+
+    The duration counterpart of :func:`_extract_rate_limit_eta`: that function reads
+    the reset time off the notice as the text the bot wrote (``"38 minutes"``), this
+    one converts that text into the number a caller claims a window with (``2280``).
+    Doing the conversion here, once, is what keeps it out of the calling prose.
+
+    Every ``<number> <unit>`` term in ``eta`` is summed, so the compound form
+    ``"12 minutes and 30 seconds"`` reads as ``750`` and ``"3 days and 17 hours"`` as
+    ``320400``.
+
+    ``None`` — never ``0`` — is returned for an empty ``eta`` and for text carrying no
+    readable term. Zero is a real duration ("the window is open now"); a caller that
+    received it for a notice nobody could read would act on a reset time the bot never
+    stated. The explicit statement that nothing was read is the record's
+    ``eta_extracted`` field, which is derived from this return.
+    """
+    if not eta:
+        return None
+    terms = _ETA_TERM.findall(eta)
+    if not terms:
+        return None
+    return sum(int(number) * _ETA_UNIT_SECONDS[unit[0].lower()] for number, unit in terms)
+
+
 def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
     """Return one record per registered bot whose newest comment is a rate-limit notice.
 
@@ -664,14 +700,21 @@ def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
     currently defines — including the enumerative arm, which sits after the noise
     filter and so is deliberately outside this seam.
 
-    Each detected bot yields ``{bot_kind, rate_limit_class, eta, cause, cap, layer,
-    body}``:
+    Each detected bot yields ``{bot_kind, rate_limit_class, eta, eta_seconds,
+    eta_extracted, cause, cap, layer, body}``:
 
     - ``rate_limit_class`` distinguishes a window the caller can usefully await
       from a quota it cannot; it is registry data and fails closed to ``unknown``
       for a bot that declares none.
     - ``eta`` is the reset time the notice itself stated, or ``''`` when the
       notice stated none.
+    - ``eta_seconds`` is that reset time as whole seconds
+      (:func:`rate_limit_eta_seconds`), or ``None`` when none could be read. It is
+      the figure a caller claims the rate window with.
+    - ``eta_extracted`` is ``True`` exactly when ``eta_seconds`` is a number. Its
+      ``False`` is the explicit statement that a recognised refusal yielded no
+      reset time — a field of its own, so a consumer never has to infer that from
+      an empty ``eta`` or an absent number.
     - ``cause`` is the orthogonal SIZE-vs-QUOTA axis (:func:`refusal_cause`). A
       refusal caused by a per-PR diff ceiling is answered by a smaller diff, one
       caused by a rate/budget quota by backoff. The axes are INDEPENDENT — a size
@@ -727,11 +770,15 @@ def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
         layers = refusal_layers(body, bot_kind)
         if not layers:
             continue
+        eta = _extract_rate_limit_eta(body, bot_kind)
+        eta_seconds = rate_limit_eta_seconds(eta)
         detected.append(
             {
                 'bot_kind': bot_kind,
                 'rate_limit_class': bot_registry.rate_limit_class(bot_kind),
-                'eta': _extract_rate_limit_eta(body, bot_kind),
+                'eta': eta,
+                'eta_seconds': eta_seconds,
+                'eta_extracted': eta_seconds is not None,
                 'cause': refusal_cause(body, bot_kind),
                 'cap': refusal_size_cap(body, bot_kind),
                 'layer': layers[0],

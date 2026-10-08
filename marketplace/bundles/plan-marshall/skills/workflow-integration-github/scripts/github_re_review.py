@@ -99,9 +99,11 @@ registry ``rate_limit_class`` — ``awaitable_window`` / ``hard_quota`` /
 the enumerative arm, because an unread notice supports no claim about its own
 awaitability and the completeness site applies the same per-bot override; see
 :func:`_resolve_refusal_class`), ``refusal_eta`` (the reset time the notice itself stated, parsed
-through the bot's registry ``rate_limit_eta_patterns``), and ``refusals`` (one
+through the bot's registry ``rate_limit_eta_patterns``), ``refusal_eta_seconds`` (that
+reset time as whole seconds) with ``refusal_eta_extracted`` (``false`` when no reset
+time could be read), and ``refusals`` (one
 record per detected refusal carrying its source, detecting layer, awaited
-``bot_kind``, ETA, the refusal ``cause``, the stated size ``cap``, and a
+``bot_kind``, ETA with its seconds and extracted fields, the refusal ``cause``, the stated size ``cap``, and a
 truncated body excerpt — see :meth:`_ReReviewStrategy._refusal_record` for the
 authoritative per-member contract). The refusal still does NOT
 count as a completed review — ``matched`` is unaffected — but the caller can now
@@ -187,6 +189,7 @@ from _github_pr import (
     _extract_rate_limit_eta,
     _is_rate_limit_notice,
     _is_unrecognised_refusal,
+    rate_limit_eta_seconds,
     refusal_cause,
     refusal_size_cap,
 )
@@ -816,7 +819,16 @@ class _ReReviewStrategy:
         # `refusal_detected: true` to enter the recovery sequence, and on
         # `matched: false` with `refusal_detected: false` to treat the run as a
         # genuine no-response timeout.
-        refusal_eta = next((r['eta'] for r in refusals if r['eta']), '')
+        # The reset time the envelope reports is taken from ONE refusal record — the
+        # first that states a readable duration, else the first that states any text
+        # at all — so `refusal_eta`, `refusal_eta_seconds` and `refusal_eta_extracted`
+        # always describe the same notice and never mix two.
+        eta_source = next(
+            (r for r in refusals if r['eta_extracted']),
+            next((r for r in refusals if r['eta']), None),
+        )
+        refusal_eta = eta_source['eta'] if eta_source else ''
+        refusal_eta_seconds = eta_source['eta_seconds'] if eta_source else None
         return {
             'status': 'success',
             'operation': 'await_fresh_review',
@@ -847,6 +859,12 @@ class _ReReviewStrategy:
             # more than once. See `_resolve_refusal_class`.
             'refusal_class': _resolve_refusal_class(bot_kind, refusals),
             'refusal_eta': refusal_eta,
+            # The same reset time as whole seconds, and the explicit statement of
+            # whether one was read. `refusal_eta_extracted: false` beside
+            # `refusal_detected: true` says the bot refused and stated no reset time
+            # this pipeline could read; `refusal_eta_seconds` is then `None`, never 0.
+            'refusal_eta_seconds': refusal_eta_seconds,
+            'refusal_eta_extracted': refusal_eta_seconds is not None,
             'refusals': refusals,
             # The declared population of ``layer`` values, published so a consumer or
             # test asserts against the vocabulary the producer actually emits rather
@@ -923,6 +941,13 @@ class _ReReviewStrategy:
         - ``eta`` — the reset time the notice itself stated, parsed through the
           bot's registry ``rate_limit_eta_patterns``, or ``''`` when the bot
           declares no patterns or the notice states no ETA;
+        - ``eta_seconds`` — that reset time as whole seconds
+          (:func:`_github_pr.rate_limit_eta_seconds`), or ``None`` when none could
+          be read;
+        - ``eta_extracted`` — ``True`` exactly when ``eta_seconds`` is a number. Its
+          ``False`` is the explicit statement that this refusal yielded no reset
+          time. Both fields carry the same meaning as on the producer's
+          ``rate_limited_bots`` record;
         - ``cause`` — the orthogonal SIZE-vs-QUOTA axis (:func:`refusal_cause`),
           carrying the SAME discriminators the producer's ``rate_limited_bots``
           record carries, so a consumer reads one vocabulary from both. It is
@@ -961,11 +986,15 @@ class _ReReviewStrategy:
             layer = REFUSAL_LAYER_ENUMERATIVE
         else:
             return None
+        eta = _extract_rate_limit_eta(body, bot_kind) if bot_kind else ''
+        eta_seconds = rate_limit_eta_seconds(eta)
         return {
             'source': source,
             'bot_kind': bot_kind or '',
             'layer': layer,
-            'eta': _extract_rate_limit_eta(body, bot_kind) if bot_kind else '',
+            'eta': eta,
+            'eta_seconds': eta_seconds,
+            'eta_extracted': eta_seconds is not None,
             'cause': refusal_cause(body, bot_kind),
             'cap': refusal_size_cap(body, bot_kind),
             'body': _body_excerpt(body),

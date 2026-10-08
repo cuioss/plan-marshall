@@ -281,12 +281,14 @@ The refusal is a **returned envelope, never an exception** — a caller branches
 
 ⛔ **The enumerative arm is what closes this path's worst failure.** Before it, a refusal no arm recognised fell through to the review matcher, which admits any body that is "not a refusal notice" — so the envelope reported `head_sha_verified: true` for a HEAD the bot had explicitly declined to review. It is also fail-safe: the arm requires a measured threshold, and with none derived it never fires, so this path behaves exactly as it did before the arm existed.
 
-Every rejected refusal is **RECORDED, never a silent skip**. The envelope carries `refusal_detected`, `refusal_class`, `refusal_eta` (the reset time the notice itself stated, or `""`), a `refusals[]` record per detected refusal, and **`refusal_layers[]`** — the declared `layer` vocabulary the producer emits, published so a consumer validates a value against the producer's own population rather than a hand-copied list:
+Every rejected refusal is **RECORDED, never a silent skip**. The envelope carries `refusal_detected`, `refusal_class`, `refusal_eta` (the reset time the notice itself stated, or `""`), `refusal_eta_seconds` (that reset time as whole seconds, or `null`), `refusal_eta_extracted` (`false` when no reset time could be read), a `refusals[]` record per detected refusal, and **`refusal_layers[]`** — the declared `layer` vocabulary the producer emits, published so a consumer validates a value against the producer's own population rather than a hand-copied list:
 
 ```toon
-refusals[N]{source,bot_kind,layer,eta,cause,cap,body}:
+refusals[N]{source,bot_kind,layer,eta,eta_seconds,eta_extracted,cause,cap,body}:
 refusal_layers[N]: [the declared layer vocabulary]
 ```
+
+`eta`, `eta_seconds` and `eta_extracted` state one reset time three ways, on every refusal record. `eta` is the text the notice stated (`"38 minutes"`), or `""`. `eta_seconds` is that time as whole seconds (`2280`), or `null` when none could be read — never `0`, which is a real duration. `eta_extracted` is `true` exactly when `eta_seconds` is a number; its `false` is the explicit statement that a recognised refusal yielded no reset time, so a consumer reads the field rather than inferring it from an empty `eta`. The three envelope fields describe one record — the first reporting `eta_extracted: true`, else the first carrying a non-empty `eta` — and share the vocabulary the `pr wait-for-comments` `rate_limited_bots[]` record carries.
 
 `cause` and `cap` are on EVERY refusal record, not only a size one, so the shape does not vary by cause. `cause` names WHY the bot declined on the axis a recovery branches on — a `size` refusal is a structural ceiling that waiting does not move, so it is not derivable from `rate_limit_class` and shares the vocabulary the `pr wait-for-comments` `rate_limited_bots[]` record carries. `cap` is the ceiling the size notice itself stated, or `""` when it stated none; empty reports as UNKNOWN and is never defaulted, because a figure nobody observed would make the recorded gap look audited when it was not.
 
@@ -639,7 +641,7 @@ timeout, NOT an unanswerable one.
 comment on the PR is a rate-limit / service notice posted in place of a review:
 
 ```toon
-rate_limited_bots[N]{bot_kind,rate_limit_class,eta,cause,cap,layer,body}:
+rate_limited_bots[N]{bot_kind,rate_limit_class,eta,eta_seconds,eta_extracted,cause,cap,layer,body}:
 ```
 
 - `bot_kind` — the registry key of the refusing bot. The bot set, and each bot's login, are derived
@@ -652,6 +654,12 @@ rate_limited_bots[N]{bot_kind,rate_limit_class,eta,cause,cap,layer,body}:
 - `eta` — the reset time the notice itself stated, extracted via that bot's registry
   `rate_limit_eta_patterns`, or `""` when the notice stated none. An empty `eta` means *unknown*,
   never *reopens now*.
+- `eta_seconds` — that reset time as whole seconds (`"38 minutes"` is `2280`), or `null` when none
+  could be read. Never `0` for an unread time: zero is a real duration. It is the figure a caller
+  claims the rate window with.
+- `eta_extracted` — `true` exactly when `eta_seconds` is a number. `false` is the explicit statement
+  that a recognised refusal yielded no reset time; read this field rather than inferring it from an
+  empty `eta`.
 - `cause` — WHY the bot declined: `size` (the diff is over a per-PR ceiling) or `quota` (a
   rate/budget limit). Derived from the bot's registry `refusal_size_patterns`, a subset overlay on
   `refusal_patterns`; a refusal matching no declared size marker is `quota`, the default.
@@ -665,7 +673,7 @@ rate_limited_bots[N]{bot_kind,rate_limit_class,eta,cause,cap,layer,body}:
 - `body` — the notice itself, whitespace-collapsed and truncated to one TOON-safe line: the same
   excerpt the `github_re_review` `refusals[]` record carries.
 
-`layer` and `body` give this record the same observation fields as the `refusals[]` record, so a
+`eta_seconds`, `eta_extracted`, `layer` and `body` give this record the same reset-time and observation fields as the `refusals[]` record, so a
 consumer that arms a wait on either producer's refusal can state which arm read the notice and what the
 notice said, rather than re-deriving it after the fact. `body` is untrusted bot text; a consumer that
 interpolates it into a shell argument owns its quoting.
