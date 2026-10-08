@@ -230,7 +230,7 @@ The generator hop is `./pw generate-claude`, `./pw generate-opencode` or `./pw g
 | `opencode` | `target/opencode/` (singular layout) | `~/.config/opencode/` (plural layout) | `TargetSyncConfig` deploy |
 | `antigravity` | `target/antigravity/` | `~/.gemini/config/plugins/plan-marshall/` | `TargetSyncConfig` deploy |
 
-The engine is stdlib-only and runs under a bare `python3`. It loads `claude/cache_sync.py` by file location, never through the `marketplace.targets` package, whose `__init__` modules import third-party dependencies.
+The engine is stdlib-only and runs under a bare `python3`. It loads `claude/cache_sync.py`, `claude/registry_pin.py` and the shared registry reader by file location, never through the `marketplace.targets` package, whose `__init__` modules import third-party dependencies.
 
 ### The Claude path (`claude/`)
 
@@ -238,7 +238,32 @@ The Claude leg lives under `marketplace/targets/claude/`:
 
 * `cache_sync.py` — mirrors each bundle of `target/claude/` into the versioned plugin cache. A staleness guard refuses a tree that is missing, empty, or behind `marketplace/bundles/`. The guard expects exactly the bundles whose `plugin.json` admits `claude` through its `targets` declaration, and it reports `guard_outcome: stale` (regenerate the tree) separately from `guard_outcome: probe_failed` (a probe could not run, so freshness is unknown).
 * `reconcile_daemon.py` — reconciles a running `marshalld` after a Claude sync moved the cache version. It is run once the Claude target reports `status: success`.
+* `registry_pin.py` — repins the plugin registry to the synced cache version. It is a dry run unless `--apply` is passed; the engine runs its apply mode only under `--repin`.
 * `list_bundles_and_versions.py` — prints the bundle/version table of `target/claude/`.
+
+### Registry parity (`registry_parity`)
+
+The cache sync moves the plugin *cache* forward. The plugin *registry* (`~/.claude/plugins/installed_plugins.json`) still names the version it was pinned at, and a restarted session loads what the registry names. After the cache sync the Claude leg therefore reads the registry and reports, as the last block of its result, whether the pin follows the version this invocation synced. `cache_sync.py` itself reads no registry and writes none; the engine computes the block after `sync_cache` returns.
+
+The block carries one `entries` row per plan-marshall entry of every scope — bundle, scope, the version in `installPath`, the `version` field, the version just synced for that bundle, and whether the synced directory carries `.orphaned_at` — and one `verdict`. The reference a row is judged against is the version this invocation synced, never `dist-manifest.json`. An entry whose bundle was not part of the run is listed with `synced_version: not_synced` and takes no part in the verdict.
+
+| `verdict` | Meaning | Effect on the Claude result |
+|-----------|---------|-----------------------------|
+| `in_parity` | Every judged entry is pinned at the synced version. | None. |
+| `behind` | An entry is pinned older than the synced version, and no same-invocation repin closed the gap. | `status` becomes `partial`, `cache_status` keeps the cache-sync outcome, `summary_message` names the pinned version, the synced version and the repin command, and the run exits `3`. |
+| `ahead` | An entry is pinned newer than the synced version. | None — reported, not red. |
+| `unreadable` | Parity could not be established; `reason` says why. | None. |
+
+The four verdicts are the constants of the shared reader, `plan-marshall:script-shared`'s `plugin_registry` module, which the engine loads by file location.
+
+`cache_status` is always present in the Claude block and carries the outcome of the cache sync alone (`success`, `partial` or `error`). `status` differs from it only when a `behind` registry lowered a `success` to `partial`.
+
+Two Claude-only flags govern the block:
+
+* `--registry-path PATH` names the registry file to read. When `--cache-root` is overridden and `--registry-path` is not, no registry is read and the verdict is `unreadable` with the reason stated, so a fixture cache root is never judged against the machine's live registry.
+* `--repin` repins the registry to the synced version after the cache sync, before the block is computed. A repin that closes the gap yields `in_parity` and exit `0`. The block then also carries `repin` — `applied`, `failed` (with `repin_message`), or one of the `skipped_*` values naming why nothing was written.
+
+`--dry-run` reports the verdict against the versions it would sync and writes nothing, including under `--repin`. A staleness-guard refusal synced nothing and carries no `registry_parity` block.
 
 ### The `sync-harnesses` command files
 
@@ -296,15 +321,25 @@ removed[1]{kind,name}:
 A single-target `claude` run:
 ```text
 status: success | partial | error
+cache_status: success | partial | error
 synced_count: N
 failed_count: M
 summary_message: "<summary>"
 guard_outcome: stale | probe_failed   # only on a staleness-guard refusal
 synced[N]{bundle,version,status}:
 failed[M]{bundle,error}:              # only when failed_count > 0
+registry_parity:                      # absent only on a staleness-guard refusal
+  registry_path: "<path>"             # absent when no registry was read
+  registry_state: ok | absent | io_error | not_json | no_plan_marshall_entry | not_read
+  reason: "<why>"                     # only on an unreadable verdict
+  repin: applied | failed | skipped_dry_run | skipped_registry_not_read | skipped_nothing_synced   # only under --repin
+  repin_message: "<error>"            # only when repin is failed
+  entries[K]{bundle,scope,install_path_version,version,synced_version,orphan_marked}:
+    plan-marshall,user,0.1.100,0.1.100,0.1.200,false
+  verdict: in_parity | behind | ahead | unreadable
 ```
 
-An all-targets run (no `--target`) emits one aggregate document: a `targets` table with one row per harness, followed by each harness's own result block.
+An all-targets run (no `--target`) emits one aggregate document: a `targets` table with one row per harness, followed by each harness's own result block. The `targets` table keeps exactly the columns `target`, `status` and `summary_message`; `cache_status` and `registry_parity` appear in the `claude` block only.
 ```text
 status: success | partial | error
 targets[3]{target,status,summary_message}:
@@ -345,11 +380,14 @@ python3 marketplace/targets/sync.py --target opencode --bundles plan-marshall
 
 # Claude path: sync from another worktree's generated tree
 python3 marketplace/targets/sync.py --target claude --from-worktree /path/to/worktree
+
+# Claude path: sync, then repin the plugin registry to the synced version
+python3 marketplace/targets/sync.py --target claude --repin
 ```
 
-`--source` and `--target-dir` are single-target overrides and require `--target`. `--from-worktree`, `--cache-root` and `--skip-staleness-guard` configure the Claude path only. `python3 marketplace/targets/sync.py --help` prints the authoritative flag set.
+`--source` and `--target-dir` are single-target overrides and require `--target`. `--from-worktree`, `--cache-root`, `--skip-staleness-guard`, `--registry-path` and `--repin` configure the Claude path only. `python3 marketplace/targets/sync.py --help` prints the authoritative flag set.
 
-Exit codes: an all-targets run exits `0` on aggregate `success` and `1` on `partial` or `error`. `--target opencode` and `--target antigravity` exit `0` on `success` and `1` on `error`. `--target claude` exits `0` on `success` or `partial`, `1` on `error`, and `2` on a staleness-guard refusal. Rejected arguments exit `2`.
+Exit codes: an all-targets run exits `0` on aggregate `success` and `1` on `partial` or `error` — a Claude leg whose registry is `behind` reports `partial`, so such a run exits `1`. `--target opencode` and `--target antigravity` exit `0` on `success` and `1` on `error`. `--target claude` exits `0` on `success` or `partial` with the registry not `behind`, `1` on `error`, `2` on a staleness-guard refusal, and `3` when the cache sync itself exited `0` and the `registry_parity` verdict is `behind`. Rejected arguments exit `2`.
 
 ## Output directories
 

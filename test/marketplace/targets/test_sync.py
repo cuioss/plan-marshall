@@ -44,6 +44,23 @@ def _make_claude_tree(project: Path) -> None:
     _write(project / 'target' / 'claude' / 'demo' / 'README.md', '# demo\n')
 
 
+def _pin_registry(home: Path, version: str) -> Path:
+    """Write the sandboxed home's plugin registry, pinning ``demo`` at ``version``.
+
+    The path is the registry's default location under ``home``, which is where
+    an all-targets run reads it when ``HOME`` points at the sandbox.
+    """
+    plugins_dir = home / '.claude' / 'plugins'
+    entry = {
+        'scope': 'user',
+        'installPath': str(plugins_dir / 'cache' / 'plan-marshall' / 'demo' / version),
+        'version': version,
+    }
+    registry = plugins_dir / 'installed_plugins.json'
+    _write(registry, json.dumps({'version': 2, 'plugins': {'demo@plan-marshall': [entry]}}) + '\n')
+    return registry
+
+
 def _make_opencode_tree(project: Path) -> None:
     _write(project / 'target' / 'opencode' / 'skill' / 'demo-skill' / 'SKILL.md', '---\nname: demo-skill\n---\n')
 
@@ -86,6 +103,10 @@ class TestSyncCli:
             ['--target', 'opencode', '--cache-root', '/nonexistent-cache'],
             ['--target', 'antigravity', '--from-worktree', '/nonexistent-worktree'],
             ['--target', 'opencode', '--skip-staleness-guard'],
+            ['--target', 'opencode', '--repin'],
+            ['--target', 'antigravity', '--repin'],
+            ['--target', 'opencode', '--registry-path', '/nonexistent-registry'],
+            ['--target', 'antigravity', '--registry-path', '/nonexistent-registry'],
         ],
         ids=[
             'source-without-target',
@@ -94,6 +115,10 @@ class TestSyncCli:
             'cache-root-with-opencode',
             'from-worktree-with-antigravity',
             'skip-guard-with-opencode',
+            'repin-with-opencode',
+            'repin-with-antigravity',
+            'registry-path-with-opencode',
+            'registry-path-with-antigravity',
         ],
     )
     def test_flag_that_would_be_ignored_is_rejected(self, argv: list[str], sandbox: tuple[Path, Path]):
@@ -123,6 +148,11 @@ class TestSyncAllTargets:
         for name in ALL_TARGETS:
             assert data[name]['status'] == 'error'
             assert data[name]['summary_message']
+        # The Claude leg was refused by the staleness guard: nothing was synced,
+        # so the cache outcome is an error and there is no version to judge a
+        # registry against.
+        assert data['claude']['cache_status'] == 'error'
+        assert 'registry_parity' not in data['claude']
 
     def test_all_targets_succeeding_reports_success_and_syncs_each_install(self, sandbox: tuple[Path, Path]):
         project, home = sandbox
@@ -136,6 +166,11 @@ class TestSyncAllTargets:
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
         assert [row['status'] for row in data['targets']] == ['success', 'success', 'success']
+        # The sandboxed home holds no plugin registry: parity is unreadable,
+        # which is reported and leaves the Claude leg green.
+        assert data['claude']['cache_status'] == 'success'
+        assert data['claude']['registry_parity']['verdict'] == 'unreadable'
+        assert data['claude']['registry_parity']['registry_state'] == 'absent'
         assert int(data['claude']['synced_count']) == 1
         assert int(data['opencode']['skills_count']) == 1
         assert int(data['antigravity']['skills_count']) == 1
@@ -179,6 +214,66 @@ class TestSyncAllTargets:
             assert data[name]['dry_run'] is True
         assert int(data['claude']['synced_count']) == 0
         assert list(home.iterdir()) == []
+
+    def test_registry_behind_makes_the_claude_row_partial_and_the_run_exit_nonzero(self, sandbox: tuple[Path, Path]):
+        """A registry pinned behind the synced tree is not a green all-targets run.
+
+        Every cache and component tree synced, so ``cache_status`` is
+        ``success`` and the other two harnesses are green; the Claude row is
+        ``partial`` because a restarted session would still load the old pin.
+        """
+        project, home = sandbox
+        _make_claude_tree(project)
+        _make_opencode_tree(project)
+        _make_antigravity_tree(project)
+        registry = _pin_registry(home, '0.0.9')
+        before = registry.read_bytes()
+
+        result = _run_cli('--skip-staleness-guard', cwd=project, home=home)
+
+        assert result.returncode == 1, result.stdout
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'partial'
+        assert [(row['target'], row['status']) for row in data['targets']] == [
+            ('claude', 'partial'),
+            ('opencode', 'success'),
+            ('antigravity', 'success'),
+        ]
+        assert (data['claude']['status'], data['claude']['cache_status']) == ('partial', 'success')
+        assert data['claude']['registry_parity']['verdict'] == 'behind'
+        for named in ('pinned 0.0.9', 'synced 0.1.0', 'registry_pin.py --apply'):
+            assert named in data['claude']['summary_message']
+        assert registry.read_bytes() == before
+
+    def test_registry_ahead_leaves_the_claude_block_green_and_the_run_exit_zero(self, sandbox: tuple[Path, Path]):
+        """CONTROL: a pin newer than the synced tree is reported and is not red."""
+        project, home = sandbox
+        _make_claude_tree(project)
+        _make_opencode_tree(project)
+        _make_antigravity_tree(project)
+        _pin_registry(home, '0.2.0')
+
+        result = _run_cli('--skip-staleness-guard', cwd=project, home=home)
+
+        assert result.returncode == 0, result.stdout
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'
+        assert (data['claude']['status'], data['claude']['cache_status']) == ('success', 'success')
+        assert data['claude']['registry_parity']['verdict'] == 'ahead'
+
+    def test_targets_table_keeps_exactly_its_three_columns(self, sandbox: tuple[Path, Path]):
+        """``cache_status`` and ``registry_parity`` live in the Claude block, not in the table."""
+        project, home = sandbox
+        _make_claude_tree(project)
+        _make_opencode_tree(project)
+        _make_antigravity_tree(project)
+        _pin_registry(home, '0.0.9')
+
+        result = _run_cli('--skip-staleness-guard', cwd=project, home=home)
+
+        assert 'targets[3]{target,status,summary_message}:' in result.stdout.splitlines()
+        data = parse_toon(result.stdout)
+        assert [sorted(row) for row in data['targets']] == [['status', 'summary_message', 'target']] * 3
 
 
 class TestSyncEngineUnit:

@@ -80,6 +80,7 @@ current is a misreport, not a fix. Both kinds refuse (exit 2), and
 Result document (rendered by :func:`render`):
 
     status: success | partial | error
+    cache_status: success | partial | error
     synced_count: N
     failed_count: M
     summary_message: "<human-readable summary>"
@@ -89,12 +90,29 @@ Result document (rendered by :func:`render`):
       bundle1,0.1.0,success
     failed[M]{bundle,error}:
       bundle3,"rsync exited 23"
+    registry_parity:                      # only when the engine attached one
+      ...
+      entries[K]{bundle,scope,install_path_version,version,synced_version,orphan_marked}:
+        bundle1,user,0.1.0,0.1.0,0.1.0,false
+      verdict: in_parity | behind | ahead | unreadable
 
 ``guard_outcome`` is present only when the staleness guard refused; its
 absence on every other path means no guard verdict was reached. Under
 ``--dry-run`` the guard and the bundle selection still run, nothing is
 written, and every selected bundle's row carries the status ``dry_run``
 (so ``synced_count`` stays 0 — nothing was synced).
+
+``cache_status`` is always present and is the outcome of the cache sync
+alone. ``status`` equals it unless the engine lowered ``status`` for a
+reason that is not a cache-sync failure — a plugin registry pinned behind
+the synced version. The ``registry_parity`` block is always the LAST member
+of the document and its ``verdict`` the last line of the block.
+
+This module reads no plugin registry and writes none: :func:`sync_cache`
+mirrors the cache and nothing else. The ``registry_parity`` block is
+computed by the engine (``marketplace/targets/sync.py``) after
+:func:`sync_cache` returns and attached to the result; :func:`render` and
+:func:`as_dict` only carry it.
 
 Exit codes (carried on :class:`CacheSyncResult`):
 
@@ -103,6 +121,9 @@ Exit codes (carried on :class:`CacheSyncResult`):
       as a hard failure based on the failure table).
     1 on ``status: error`` (nothing synced, hard failure).
     2 on a staleness-guard refusal.
+
+:func:`sync_cache` returns only these three. The engine replaces a ``0``
+with ``3`` when the attached ``registry_parity`` verdict is ``behind``.
 """
 
 from __future__ import annotations
@@ -150,6 +171,14 @@ class CacheSyncResult(NamedTuple):
     ``guard_outcome`` is set only on a staleness-guard refusal and
     carries the refusal KIND (``stale`` / ``probe_failed``); ``None`` on
     every other path means no guard verdict was reached.
+
+    ``cache_status`` and ``registry_parity`` are never set by
+    :func:`sync_cache`; the engine attaches them afterwards. A ``None``
+    ``cache_status`` means ``status`` IS the cache-sync outcome, which is
+    how :func:`render` and :func:`as_dict` report it. ``registry_parity``
+    is a mapping whose ``entries`` member is a list of rows carrying the
+    :data:`REGISTRY_PARITY_ENTRY_FIELDS` keys; ``None`` means the engine
+    attached no block.
     """
 
     exit_code: int
@@ -159,6 +188,8 @@ class CacheSyncResult(NamedTuple):
     failed: list[dict[str, str]]
     guard_outcome: str | None = None
     dry_run: bool = False
+    cache_status: str | None = None
+    registry_parity: dict[str, Any] | None = None
 
 
 def _stale(message: str) -> GuardRefusal:
@@ -329,6 +360,19 @@ TARGET_SCOPE_FIELD = 'targets'
 #: Status a bundle row carries under ``--dry-run``: selected, not synced.
 DRY_RUN_ROW_STATUS = 'dry_run'
 
+#: Columns of the ``registry_parity`` block's ``entries`` table, in order.
+REGISTRY_PARITY_ENTRY_FIELDS: tuple[str, ...] = (
+    'bundle',
+    'scope',
+    'install_path_version',
+    'version',
+    'synced_version',
+    'orphan_marked',
+)
+
+#: Members of the ``registry_parity`` block that hold free text and are quoted.
+REGISTRY_PARITY_TEXT_FIELDS: frozenset[str] = frozenset({'registry_path', 'reason', 'repin_message'})
+
 
 def _read_version(plugin_json: Path) -> str:
     try:
@@ -350,11 +394,15 @@ def render(result: CacheSyncResult) -> str:
     without parsing prose. It is absent on every non-guard path, because
     no guard verdict was reached there — an absent field is honest about
     that, where a default value would not be.
+
+    ``cache_status`` is always emitted. The ``registry_parity`` block,
+    when the engine attached one, is emitted last.
     """
     synced_count = sum(1 for row in result.synced if row['status'] == 'success')
     summary = result.summary_message.replace('"', '\\"')
     lines = [
         f'status: {result.status}',
+        f'cache_status: {_cache_status(result)}',
         f'synced_count: {synced_count}',
         f'failed_count: {len(result.failed)}',
         f'summary_message: "{summary}"',
@@ -371,7 +419,42 @@ def render(result: CacheSyncResult) -> str:
         for row in result.failed:
             err = row['error'].replace('"', '\\"')
             lines.append(f'  {row["bundle"]},"{err}"')
+    if result.registry_parity is not None:
+        lines.extend(_render_registry_parity(result.registry_parity))
     return '\n'.join(lines) + '\n'
+
+
+def _cache_status(result: CacheSyncResult) -> str:
+    """The cache-sync outcome: the attached value, else ``status`` itself."""
+    return result.cache_status if result.cache_status is not None else result.status
+
+
+def _render_registry_parity(block: dict[str, Any]) -> list[str]:
+    """Render the ``registry_parity`` block in the mapping's own key order.
+
+    The engine builds the mapping with ``entries`` and ``verdict`` as its last
+    two members, so the verdict is the last line of the document. ``entries``
+    is rendered as a table; a free-text member is quoted; every other member
+    is a bare token.
+    """
+    lines = ['registry_parity:']
+    for key, value in block.items():
+        if key == 'entries':
+            lines.append(f'  entries[{len(value)}]{{{",".join(REGISTRY_PARITY_ENTRY_FIELDS)}}}:')
+            for entry in value:
+                lines.append('    ' + ','.join(_table_cell(entry[field]) for field in REGISTRY_PARITY_ENTRY_FIELDS))
+        elif key in REGISTRY_PARITY_TEXT_FIELDS:
+            text = str(value).replace('"', '\\"')
+            lines.append(f'  {key}: "{text}"')
+        else:
+            lines.append(f'  {key}: {value}')
+    return lines
+
+
+def _table_cell(value: object) -> str:
+    if isinstance(value, bool):
+        return 'true' if value else 'false'
+    return str(value)
 
 
 def as_dict(result: CacheSyncResult) -> dict[str, Any]:
@@ -380,10 +463,12 @@ def as_dict(result: CacheSyncResult) -> dict[str, Any]:
     The all-targets run of the sync engine nests each target's result in
     one aggregate document, which needs the fields as data rather than
     as rendered text. The field set and its conditional members
-    (``guard_outcome``, ``dry_run``, ``failed``) match :func:`render`.
+    (``guard_outcome``, ``dry_run``, ``failed``, ``registry_parity``)
+    match :func:`render`.
     """
     data: dict[str, Any] = {
         'status': result.status,
+        'cache_status': _cache_status(result),
         'synced_count': sum(1 for row in result.synced if row['status'] == 'success'),
         'failed_count': len(result.failed),
         'summary_message': result.summary_message,
@@ -395,6 +480,8 @@ def as_dict(result: CacheSyncResult) -> dict[str, Any]:
     data['synced'] = result.synced
     if result.failed:
         data['failed'] = result.failed
+    if result.registry_parity is not None:
+        data['registry_parity'] = result.registry_parity
     return data
 
 
