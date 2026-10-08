@@ -104,8 +104,23 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
     verify-first clause on PLAN-LB-12 D5: routed builds left no change-ledger row for the
     plan. Expected surface unchanged; `_build_shared.py` was already declared.
   - `lb-22-finalize-loop-control-001.md` (finding) — absorbed as an Open Defect, below.
-- PLAN-LB-22 — its inbox finding was written from the `3-outline` phase, so the plan is in
-  flight, although its row is still `staged`: the operator has not confirmed the start.
+- PLAN-LB-22 — running; the operator confirmed the start on 2026-10-08.
+- **Standalone plan outside the queue, commissioned by the operator on 2026-10-08:** "the
+  pre-submission self-review blocks on real defects, not on wording". It has no queue row and
+  is not run through plan-marshall; the operator hands it to OpenCode. Brief:
+  `doc/plans/live-blockers/self-review-materiality/plan.md` in the worktree
+  `.plan/local/worktrees/self-review-materiality` (branch `fix/self-review-materiality`, cut
+  from `3fe828c84`; the brief is untracked and is not to be committed). It adds a severity
+  rubric, lets only `medium` and above loop, rewrites the verifier's stop question, adds a
+  behavioural check over changed functions, and screens prose candidates. Basis, read from
+  the archived plans: about 205 self-review findings in 40 plans, roughly a quarter real
+  defects and more than half wording, every one filed at one constant severity.
+  - It edits `pre-submission-self-review.md`, which PLAN-LB-22 (running) is editing, and the
+    surfacer skill that PLAN-LB-28 will edit. The brief names the sections each owns and
+    tells the run to rebase; whichever of it and PLAN-LB-22 merges second resolves the
+    overlap. PLAN-LB-28's outline must read what this plan shipped before scoping its
+    PLAN-LB-03 deliverables, and PLAN-LB-26's PLAN-LB-08 deliverables keep their one-call
+    edit in that file.
 - **Sequencing inside the bundles** that the earlier notes asked for is now internal:
   PLAN-LB-05 D3 before PLAN-LB-18 before PLAN-LB-19 (all in 24); PLAN-LB-21 before the
   enrolment of PLAN-LB-20 (both in 31). Two cross-plan orders remain: 31's enrolment
