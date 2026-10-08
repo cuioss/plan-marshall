@@ -9,7 +9,7 @@
 // Progressive-disclosure metadata block (see manage-adr SKILL.md → "ADR Template
 // Structure"). Read by `manage-adr.py scan` so a caller can assess an ADR's
 // relevance without reading the full file. List fields are comma-separated.
-// summary: The harness sync always reports whether the plugin registry follows the cache version it just synced, as one of four verdicts (in_parity, behind, ahead, unreadable), but writes the registry only on explicit operator opt-in — a flag on the command, a machine-local setting for the finalize step, disabled by default — and that write is a separate step that is never part of the cache sync and never moves a pin backwards.
+// summary: The harness sync reports whether the plugin registry follows the cache version it just synced, as one of four verdicts (in_parity, behind, ahead, unreadable), but writes the registry only on explicit operator opt-in — a flag on the command, a machine-local setting for the finalize step, disabled by default — and that write is a separate step that is never part of the cache sync and never moves a pin backwards.
 // tags: harness-sync, plugin-registry, plugin-cache, opt-in, machine-local, dry-run, fail-closed, third-state, verdict
 // affects: plan-marshall, sync-harnesses, finalize-step-sync-plugin-cache, script-shared, manage-run-config, plugin-doctor, plan-orchestrator, marketplace/targets
 // supersedes:
@@ -63,10 +63,9 @@ two is the default, and what the report has to say for the answer to be usable.
 
 == Decision
 
-**The sync always reports the registry's relation to the version it synced, and
-writes the registry only when the operator has opted in.** The report is
-unconditional and printed on every path; the write is a separate, explicitly
-requested step.
+**The sync reports the registry's relation to the version it synced, and
+writes the registry only when the operator has opted in.** The write is a
+separate, explicitly requested step.
 
 === (a) The report is a four-value verdict, computed after the cache sync
 
@@ -99,9 +98,8 @@ version present in the cache.
 
 The four values are the constants of one shared reader, the `plugin_registry`
 module of `plan-marshall:script-shared`. Every consumer that asks the parity
-question — the sync engine, the repin script, the orchestrator's restart check,
-the plugin-doctor pin-trap rule — classifies through it, so the verdict set has
-one definition.
+question — the sync engine, the repin script, the orchestrator's restart check
+— classifies through it, so the verdict set has one definition.
 
 The cache outcome and the registry outcome are reported as separate facts. The
 Claude result always carries `cache_status`, the outcome of the cache sync alone;
@@ -116,7 +114,7 @@ stale pin never suppresses work the completed cache makes correct.
 own script, `marketplace/targets/claude/registry_pin.py`, which is a dry run
 unless told otherwise: without a flag it prints, per entry, the version before
 and the version an apply would leave, then the verdict, and writes nothing. The
-dry-run report is always printed — the command runs it after every Claude cache
+command runs the dry-run report after a Claude cache
 sync whether or not a write is wanted — so an operator sees what a repin would
 do before deciding to run one.
 
@@ -129,8 +127,8 @@ does not run under a dry-run sync.
 === (c) `ahead` is reported and never closed
 
 The repin never moves a pin backwards. An entry already newer than the target is
-left alone, and the verdict after the run is still `ahead`. This makes `ahead`
-the one verdict no step of the sequence resolves, by design: it is the state in
+left alone. This makes `ahead`
+a verdict no step of the sequence resolves, by design: it is the state in
 which the registry knows something the sync does not, and overwriting it would
 replace the operator's later choice with the tool's earlier output.
 
@@ -164,25 +162,23 @@ documentation as one ordered procedure rather than as three independent hints.
 
 === Positive
 
-* The gap between cache and registry is always visible. Every Claude sync ends
+* The gap between cache and registry is visible. A Claude sync ends
   with a verdict, so a stale pin is a reported state with a named remedy rather
   than a symptom to be diagnosed from mismatched skill text.
 * The tool writes host-owned state only with consent, and the consent is scoped
   to the machine the state lives on.
 * A deliberate pin survives. An operator holding a newer or a specific version
   is not overridden by a routine sync, and is told so by the `ahead` verdict.
-* The verdict has one definition. Four consumers ask the same question through
-  one reader, so they cannot disagree about what `behind` means.
+* The verdict has one definition.
 * Cache-dependent follow-ups are decoupled from the pin. A machine that never
   opts in still gets a regenerated executor and a reconciled daemon after every
   successful cache sync.
 
 === Negative
 
-* On a default-configured machine the finalize step fails whenever a sync
-  produces a new version, until the operator repins or enables the setting. This
-  is the intended cost of a loud default, and it is paid on every landing by an
-  operator who never opts in.
+* On a default-configured machine the finalize step fails when a sync
+  leaves the registry behind, until the operator repins or enables the setting. This
+  is the intended cost of a loud default.
 * The install is a three-step procedure where a single command would be simpler
   to explain. The sequence must be learned, and two of its steps are outside the
   sync.
@@ -241,8 +237,7 @@ The two rejected extremes fail in the same way from opposite sides. Each
 collapses two questions — *is the install current?* and *may the tool change
 it?* — into one. Report-only answers the first and refuses the second for
 everyone; always-apply answers the second for everyone in order to make the
-first disappear. Keeping the report unconditional and the write consensual is
-what keeps them separate.
+first disappear. Keeping the write consensual is what keeps them separate.
 
 == Generalisation
 

@@ -93,7 +93,7 @@ per-concern layout; no code path here opens a queue row or the anchor itself.
   evidence, and the population it was derived from, plus the floor over every
   row and the sample instant. The ``registry_parity`` row compares the plugin
   registry pin against the executor version through the shared
-  ``plugin_registry`` reader. An unreadable or disagreeing observation resolves
+  ``plugin_registry`` reader. An unreadable observation resolves
   to ``indeterminate`` and never to ``not_ready``.
 - ``inbox {write,amend,supersede,close-stream,validate,list,read,archive,
   migrate-archive,detect,landing-check}`` — the epic's plan-writable channel and

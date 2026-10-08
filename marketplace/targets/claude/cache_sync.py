@@ -776,6 +776,11 @@ def _staleness_guard(source_root: Path, marketplace_root: Path) -> GuardRefusal 
         return _stale(
             f'staleness_guard: sentinel missing or unreadable at {sentinel_path} ({exc}). {_regenerate_hint()}'
         )
+    if not isinstance(sentinel, dict):
+        return _stale(
+            f'staleness_guard: sentinel missing or unreadable at {sentinel_path} '
+            f'(the sentinel is not a JSON object). {_regenerate_hint()}'
+        )
     stored_fingerprint = sentinel.get('source_tree_fingerprint')
     if not isinstance(stored_fingerprint, str) or not stored_fingerprint:
         return _stale(

@@ -255,6 +255,23 @@ def test_sync_engine_failure_path_when_rsync_missing(tmp_path: Path, monkeypatch
     assert 'rsync not found on PATH' in result.stdout
 
 
+def test_sync_engine_unwritable_cache_root_is_an_error_result(tmp_path: Path):
+    """A filesystem fault raised by the cache sync is reported as an error document."""
+    target = tmp_path / 'target' / 'claude'
+    cache = tmp_path / 'cache'
+    _make_target(target, {'demo': '0.1.0'})
+    _write(cache, 'a regular file where the cache root directory belongs\n')
+
+    result = _run('--source', str(target), '--cache-root', str(cache), '--skip-staleness-guard')
+
+    assert result.returncode == 1
+    assert 'Traceback' not in result.stderr
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'error'
+    assert data['cache_status'] == 'error'
+    assert 'claude sync failed' in data['summary_message']
+
+
 # ---------------------------------------------------------------------------
 # dist-manifest.json mirrored into the plugin-cache root after a successful sync
 # ---------------------------------------------------------------------------

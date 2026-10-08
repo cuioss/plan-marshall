@@ -59,9 +59,8 @@ a defect. It is recorded as a proposal for an operator rather than decided here.
 
 The live filesystem adapters (``observe_*``, ``read_*``, ``compare_pin_content``)
 read the three stores into these structures. The registry and the executor are
-read through ``plan-marshall:script-shared``'s ``plugin_registry`` module — the
-single reader of the registry shape and of the executor's ``MARSHALL_VERSION``,
-shared with the harness sync and the orchestrator's restart check — so this
+read through ``plan-marshall:script-shared``'s ``plugin_registry`` module,
+shared with the harness sync and the orchestrator's restart check, so this
 detector carries no parser of either store of its own. The live plugin cache is
 not present in a fresh clone, so the module is exercised against FIXTURE trees;
 the adapters are written to be driven by ``tmp_path`` fixtures rather than the
@@ -869,7 +868,7 @@ def read_registry_entry(registry_path: Path, plugin_name: str) -> RegistryEntry:
 
     The registry is the plugin manager's JSON file. Its live shape —
     ``{"plugins": {"{bundle}@{marketplace}": [scope entry, ...]}}`` — is parsed
-    by ``plugin_registry.read_registry`` and nowhere else; this adapter only
+    by ``plugin_registry.read_registry``; this adapter only
     selects the rows of one plugin and decides whether they agree.
 
     ``plugin_name`` is the bundle name (``plan-marshall``), read under the shared

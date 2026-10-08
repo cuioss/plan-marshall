@@ -4,8 +4,7 @@ Shared reader of the plugin registry, the executor version and the cache version
 
 Three consumers ask the same question — "is the plugin registry pinned at the
 version it should be?" — and each used to answer it from its own parser. This
-module is the one reader they share, so no two of them can resolve a different
-answer from the same files:
+module is the reader they share:
 
 - the harness sync's Claude leg and its repin step (``marketplace/targets/``),
 - the pin-trap detector (``pm-plugin-development:plugin-doctor``),

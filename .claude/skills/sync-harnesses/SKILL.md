@@ -164,7 +164,7 @@ The repin is a write the operator asks for: `registry_pin.py --apply`, as
 [After the sync](#after-the-sync) describes, or the opt-in of the
 `project:finalize-step-sync-plugin-cache` step at finalize. Step 5 runs the
 same script without `--apply`, which reports the pin and writes nothing.
-An all-targets run reports that case as aggregate `partial` and exits `1`; exit
+An all-targets run reports that case and exits `1`; exit
 code `3` is the `--target claude` form of the same finding.
 
 ### Step 4: Reconcile the build daemon when the Claude cache synced

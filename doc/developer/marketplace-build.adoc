@@ -190,7 +190,7 @@ The command exists once per harness: `.claude/skills/sync-harnesses/SKILL.md`, `
 [#after-a-claude-sync]
 === After a Claude sync: sync, repin, full restart
 
-A Claude sync writes a new versioned directory into the plugin *cache*. It does not move the plugin *registry* (`~/.claude/plugins/installed_plugins.json`), which still names the version it was pinned at, and a session loads what the registry names. A synced cache therefore takes effect only through one sequence, in this order:
+A Claude sync writes a new versioned directory into the plugin *cache*. It does not move the plugin *registry* (`~/.claude/plugins/installed_plugins.json`), which still names the version it was pinned at, and a session loads what the registry names. A synced cache therefore takes effect through one sequence, in this order:
 
 . **Sync** — `/sync-harnesses` moves the cache forward.
 . **Repin** — point the registry at the synced version, as its own explicit step: `python3 marketplace/targets/claude/registry_pin.py --apply`. Without `--apply` the script prints the same report and writes nothing.
@@ -198,7 +198,7 @@ A Claude sync writes a new versioned directory into the plugin *cache*. It does 
 
 `/reload-plugins` is not a substitute for any of the three. It can make newly emitted agents visible to a running session, but skill bodies are still loaded from the version the registry named when that session started. A restart without the repin changes nothing either: the new session reads the same pin.
 
-The Claude result of every sync separates the two things the sequence is about:
+The Claude result of a sync separates the two things the sequence is about:
 
 `cache_status`::
 `success`, `partial` or `error` — the outcome of the cache sync alone. It is always present in the Claude result. The daemon reconcile (`marketplace/targets/claude/reconcile_daemon.py`) and the registry report both run when it reads `success`, not when the Claude `status` does.
@@ -216,7 +216,7 @@ The last block of the Claude result: one row per plan-marshall registry entry, e
 
 | `behind`
 | An entry is pinned older than the synced version.
-| The Claude `status` is lowered from `success` to `partial` while `cache_status` stays `success`. The remedy is the repin, not a second sync.
+| The Claude `status` is lowered to `partial`. The remedy is the repin, not a second sync.
 
 | `ahead`
 | An entry is pinned newer than the synced version.

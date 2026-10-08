@@ -83,7 +83,7 @@ Registry parity (Claude path):
       same-invocation repin closed the gap. The Claude ``status`` becomes
       ``partial`` while ``cache_status`` stays the cache-sync outcome, the
       ``summary_message`` names the pinned version, the synced version and
-      the repin command, and the exit code is 3.
+      the repin command.
     * ``ahead`` — an entry is pinned newer than the synced version.
       Reported, not red: neither ``status`` nor the exit code changes.
     * ``unreadable`` — parity could not be established (no registry, no
@@ -441,8 +441,8 @@ def _deploy_skill(skill_dir: Path, dest: Path, *, dry_run: bool) -> None:
 
     Every file and directory of the generated skill is installed at the same
     relative path, whatever it is called, and every destination file and
-    directory the generated skill no longer holds is removed — so the install
-    is the generated tree and nothing else. ``dry_run`` writes nothing.
+    directory the generated skill no longer holds is removed. ``dry_run``
+    writes nothing.
     """
     if dry_run:
         return
@@ -878,11 +878,16 @@ def _sync_one_for_aggregate(target_name: str, args: argparse.Namespace) -> dict[
         )
         return data
     except OSError as exc:
-        block: dict[str, Any] = {'status': 'error'}
-        if target_name == CLAUDE_TARGET:
-            block['cache_status'] = 'error'
-        block['summary_message'] = f'{target_name} sync failed: {type(exc).__name__}: {exc}'
-        return block
+        return _sync_failure_block(target_name, exc)
+
+
+def _sync_failure_block(target_name: str, exc: OSError) -> dict[str, Any]:
+    """The ``error`` result of a target whose sync raised a filesystem fault."""
+    block: dict[str, Any] = {'status': 'error'}
+    if target_name == CLAUDE_TARGET:
+        block['cache_status'] = 'error'
+    block['summary_message'] = f'{target_name} sync failed: {type(exc).__name__}: {exc}'
+    return block
 
 
 def sync_all(args: argparse.Namespace) -> int:
@@ -1032,7 +1037,10 @@ def main(argv: list[str] | None = None) -> int:
         return sync_all(args)
 
     if args.target == CLAUDE_TARGET:
-        exit_code, _data, rendered = _sync_claude(args)
+        try:
+            exit_code, _data, rendered = _sync_claude(args)
+        except OSError as exc:
+            exit_code, rendered = 1, serialize_toon(_sync_failure_block(CLAUDE_TARGET, exc)) + '\n'
         sys.stdout.write(rendered)
         return exit_code
 

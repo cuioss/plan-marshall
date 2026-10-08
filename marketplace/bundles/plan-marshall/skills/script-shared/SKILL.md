@@ -18,7 +18,7 @@ scripts/
   marketplace_paths.py    # Path/root resolution constants and helpers; defines NO_PLAN_SENTINEL
   resolve_project_dir.py  # The --plan-id / --project-dir argv routing layer
   epic_spec_parser.py     # The marketplace's SINGLE reader of a plan spec's `## Expected Surface`
-  plugin_registry.py      # The SINGLE reader of the plugin registry, the executor version and the cache versions
+  plugin_registry.py      # Shared reader of the plugin registry, the executor version and the cache versions
   build/        # Build system utilities (_build_*.py, _coverage_parse.py)
   extension/    # Extension framework (extension_base.py, extension_discovery.py, ...)
   workflow/     # Workflow helpers (triage_helpers.py)
@@ -37,9 +37,9 @@ Alongside the spec's class, the reader resolves each entry's own **shape** — w
 
 Do NOT add a second parser of that section in either consumer. It also defines `PLAN_ID_SEGMENT`, the plan-id grammar used to group specs by plan, which `plan-orchestrator`'s inbox seam imports from here rather than restating.
 
-## `plugin_registry` — one reader for the registry pin
+## `plugin_registry` — shared reader for the registry pin
 
-`plugin_registry.py` answers "is the plugin registry pinned at the version it should be?" from one place. It reads three stores and writes none:
+`plugin_registry.py` answers "is the plugin registry pinned at the version it should be?". It reads three stores and writes none:
 
 - **The registry** (`installed_plugins.json`) in the shape the plugin manager writes — `"plugins": {"{bundle}@plan-marshall": [scope entry, ...]}`. `read_registry` returns one row per scope entry (`bundle`, `scope`, `install_path_version`, `version`) plus a read state. Scope entries are never collapsed: a user-scope and a project-scope entry that disagree are two rows. Keys of any other marketplace are ignored.
 - **The executor**, for the value of its `MARSHALL_VERSION` assignment (`read_executor_version`).
@@ -65,8 +65,6 @@ The cache-root `dist-manifest.json` is never a reference version: it describes w
 
 - ⛔ **No import of a sibling module** — only the standard library. A sibling import resolves on the executor's PYTHONPATH and fails when the module is loaded by file location.
 - ⛔ **No `@dataclass`.** A module loaded by file location is not registered in `sys.modules`, where the dataclass machinery looks its defining module up. Rows are plain dicts and read results are plain tuples.
-
-Do NOT add a second parser of the registry or of the executor version in any consumer.
 
 ## Import Resolution
 

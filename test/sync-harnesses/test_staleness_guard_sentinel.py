@@ -28,14 +28,21 @@ def cache_sync() -> ModuleType:
     return module
 
 
-def test_sentinel_that_is_not_utf8_is_refused_as_stale(tmp_path: Path, cache_sync: ModuleType) -> None:
-    """A sentinel whose bytes do not decode is a refusal, not an exception."""
+@pytest.mark.parametrize(
+    'sentinel_bytes',
+    [b'\xff\xfe{"source_tree_fingerprint": "abc"}', b'[]'],
+    ids=['not-utf8', 'json-non-object'],
+)
+def test_sentinel_that_cannot_be_read_as_an_object_is_refused_as_stale(
+    tmp_path: Path, cache_sync: ModuleType, sentinel_bytes: bytes
+) -> None:
+    """A sentinel that does not decode to a JSON object is a refusal, not an exception."""
     source_root = tmp_path / 'target' / 'claude'
     manifest = source_root / 'demo' / '.claude-plugin' / 'plugin.json'
     manifest.parent.mkdir(parents=True)
     manifest.write_text('{"name": "demo", "version": "0.1.0"}\n', encoding='utf-8')
     sentinel = source_root / cache_sync.EMIT_MARKER_FILENAME
-    sentinel.write_bytes(b'\xff\xfe{"source_tree_fingerprint": "abc"}')
+    sentinel.write_bytes(sentinel_bytes)
 
     refusal = cache_sync._staleness_guard(source_root, tmp_path / 'no-marketplace')
 

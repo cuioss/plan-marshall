@@ -116,7 +116,7 @@ def _remove_empty_dirs(root: Path) -> None:
 def _prune_skill_dir(target_skill_dir: Path, expected: set[Path]) -> None:
     """Unlink every file under ``target_skill_dir`` this emit will not write.
 
-    An emitted skill directory belongs to exactly one source skill — its name
+    An emitted skill directory belongs to one source skill — its name
     is ``{bundle}-{skill}`` — so the sweep is safe on a scoped emit too,
     unlike :func:`_prune_stale_outputs`. It runs BEFORE the copy, so a path
     that changed kind in source (a file where a directory now is, or the
@@ -132,7 +132,7 @@ def _prune_stale_outputs(output_dir: Path, written: list[Path]) -> None:
     """Remove ``skills/``, ``agents/``, ``commands/`` outputs left over from a prior emit.
 
     Full regenerations only. A file removed from a SURVIVING skill is cleared
-    by :func:`_prune_skill_dir` on every emit, scoped ones included.
+    by :func:`_prune_skill_dir`.
     """
     written_set = {p.resolve() for p in written}
 

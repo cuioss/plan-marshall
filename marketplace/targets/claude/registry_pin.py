@@ -5,7 +5,7 @@
 The harness sync moves the plugin CACHE forward: it writes a new
 ``{cache_root}/{bundle}/{version}/`` directory per bundle. It does not touch the
 plugin REGISTRY (``installed_plugins.json``), which still names the previous
-version in every scope entry — so a restarted session re-reads the same stale
+version — so a restarted session re-reads the same stale
 pin and loads the same stale body. This script is the explicit, opt-in step that
 closes that gap: it rewrites the registry's plan-marshall entries to the synced
 version.
@@ -22,8 +22,7 @@ Order of operations under ``--apply``
 2. Back the registry up, once, beside itself.
 3. Rewrite ``installPath``, ``version`` and ``lastUpdated`` — and
    ``gitCommitSha`` when the cache-root ``dist-manifest.json`` names a
-   ``source_sha`` — on every plan-marshall entry whose bundle has the target
-   version directory. The write goes through a temp file in the registry's own
+   ``source_sha``. The write goes through a temp file in the registry's own
    directory and an atomic ``os.replace``.
 4. Re-read the registry and FAIL when any repinned entry is not at the target
    version.
@@ -37,8 +36,7 @@ What is never touched
   unchanged.
 - Every ``.in_use`` file.
 - An entry already NEWER than the target version. The repin never moves a pin
-  backwards: such an entry gets the action ``noop`` and the final verdict is
-  ``ahead``.
+  backwards.
 
 Concurrency
 -----------
@@ -66,14 +64,13 @@ The last field is ``registry_parity`` — the shared classifier's verdict over t
 registry as it stands when the run ends: ``in_parity``, ``behind``, ``ahead`` or
 ``unreadable``.
 
-Exit code: non-zero when the final verdict is ``behind`` or the run failed, zero
-for ``in_parity``, ``ahead`` and ``unreadable``.
+Exit code: non-zero when the final verdict is ``behind`` or the run failed.
 
 Constraints on this module
 --------------------------
 Standard library only, and nothing imported from the ``marketplace.targets``
-package: it is run as a standalone file under a bare ``python3``. The registry
-shape, the version ordering and the parity verdicts come from
+package: it is run as a standalone file under a bare ``python3``. The
+version ordering and the parity verdicts come from
 ``plan-marshall:script-shared``'s ``plugin_registry`` module, loaded BY FILE
 LOCATION. No ``@dataclass`` is defined, because this module is itself loadable
 by file location and is then not registered in ``sys.modules``.
