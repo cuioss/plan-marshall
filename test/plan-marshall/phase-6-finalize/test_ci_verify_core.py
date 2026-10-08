@@ -475,16 +475,127 @@ def test_timeout_returns_deadline_exceeded_in_consume_failures_mode(plan_context
                 'wait_outcome': 'deadline_exceeded',
                 'failing_checks': [
                     {'name': 'slow-deploy', 'conclusion': 'PENDING'},
+                    {'name': 'lint', 'conclusion': 'FAILURE'},
                 ],
             }
         ),
         git_head_resolver=_StubGitHead('abc'),
         mode='consume-failures',
     )
+    # A check has definitively failed beside the lapse, so this is the
+    # timeout the executor consumes, not the wait_pending verdict.
     assert result['status'] == 'wait_failed'
     assert result['ci_final_status'] == 'timeout'
     assert result['wait_outcome'] == 'deadline_exceeded'
     assert result['mode'] == 'consume-failures'
+
+
+# ---------------------------------------------------------------------------
+# deadline_exceeded — a still-running check beside a real failure files nothing
+# ---------------------------------------------------------------------------
+
+
+def _verify_deadline(tmp_path, plan_id: str, failing_checks: list[dict] | None, envelope: dict | None = None):
+    """Run the executor on a ``deadline_exceeded`` timeout and return (result, findings)."""
+    findings = _StubFindings()
+    result = verify(
+        plan_id=plan_id,
+        pr_number=_PR,
+        worktree_path=str(tmp_path),
+        provider='github',
+        final_status='timeout',
+        wait_outcome='deadline_exceeded',
+        head_sha=_HEAD_SHA,
+        failing_checks=failing_checks,
+        ci_status_runner=_StubCiStatus(envelope if envelope is not None else _green_envelope()),
+        persist_runner=_StubPersist(),
+        findings_runner=findings,
+        mark_done_runner=_StubMarkDone(),
+        git_head_resolver=_StubGitHead('x'),
+    )
+    return result, findings
+
+
+def test_deadline_with_one_failed_and_one_running_check_files_one_finding(tmp_path):
+    """The running check is dropped: only the check that failed is reported."""
+    failing = [
+        _make_check('verify', 'FAILURE', 'verify / verify'),
+        _make_check('slow-deploy', 'IN_PROGRESS', 'deploy'),
+    ]
+
+    result, findings = _verify_deadline(tmp_path, 'ci-verify-deadline-failed-and-running', failing)
+
+    assert result['outcome'] == 'needs_triage'
+    assert result['findings_filed'] == 1
+    assert result['producers'] == ['ci-verify-build']
+    assert len(findings.calls) == 1
+    assert findings.calls[0]['title'] == '[ci_build_failure] verify failed'
+
+
+def test_deadline_with_a_timed_out_conclusion_still_files_ci_timeout(tmp_path):
+    """A check whose own conclusion is timed_out is definitive and is kept."""
+    failing = [
+        _make_check('verify', 'TIMED_OUT', 'verify / verify'),
+        _make_check('slow-deploy', 'PENDING', 'deploy'),
+    ]
+
+    result, findings = _verify_deadline(tmp_path, 'ci-verify-deadline-timed-out', failing)
+
+    assert result['findings_filed'] == 1
+    assert result['producers'] == ['ci-verify-timeout']
+    assert [call['title'] for call in findings.calls] == ['[ci_timeout] verify failed']
+
+
+def test_deadline_with_only_running_checks_files_ci_timeout_for_each(tmp_path):
+    """The past-bound case: nothing has failed, so every running check is a ci_timeout."""
+    failing = [
+        _make_check('build', 'PENDING', 'verify / verify'),
+        _make_check('slow-deploy', 'IN_PROGRESS', 'deploy'),
+    ]
+
+    result, findings = _verify_deadline(tmp_path, 'ci-verify-deadline-only-running', failing)
+
+    assert result['findings_filed'] == 2
+    assert result['producers'] == ['ci-verify-timeout']
+    assert [call['title'] for call in findings.calls] == [
+        '[ci_timeout] build failed',
+        '[ci_timeout] slow-deploy failed',
+    ]
+
+
+def test_deadline_drops_running_checks_from_a_derived_failing_set(tmp_path):
+    """The same rule holds when no failing set is threaded in and it is derived."""
+    envelope = {
+        'status': 'success',
+        'checks': [
+            {'name': 'verify', 'conclusion': 'failure', 'workflow': 'verify / verify', 'url': _RUN_URL},
+            {'name': 'slow-deploy', 'conclusion': 'in_progress', 'workflow': 'deploy', 'url': _RUN_URL},
+            {'name': 'unstarted', 'conclusion': '', 'workflow': 'deploy', 'url': _RUN_URL},
+            {'name': 'lint', 'conclusion': 'success', 'workflow': 'lint', 'url': _RUN_URL},
+        ],
+    }
+
+    result, findings = _verify_deadline(tmp_path, 'ci-verify-deadline-derived', None, envelope)
+
+    assert result['findings_filed'] == 1
+    assert [call['title'] for call in findings.calls] == ['[ci_build_failure] verify failed']
+
+
+def test_completed_wait_does_not_drop_anything():
+    """Matched control: the rule applies under deadline_exceeded only."""
+    threaded = [
+        _make_check('verify', 'failure', 'verify / verify'),
+        _make_check('slow-deploy', 'pending', 'deploy'),
+    ]
+
+    kept = _resolve_failing_set(threaded=threaded, normalized_all=[], final_status='failure', wait_outcome='completed')
+
+    assert [entry['name'] for entry in kept] == ['verify', 'slow-deploy']
+
+
+def test_resolver_and_executor_agree_on_definitive_failing_conclusions():
+    """The pending verdict and the drop rule read one set of conclusions."""
+    assert _precond._DEFINITIVE_FAILING_CONCLUSIONS == _mod._DEFINITIVE_FAILING_CONCLUSIONS
 
 
 def test_required_steps_lists_ci_verify():

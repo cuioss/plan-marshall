@@ -1111,3 +1111,174 @@ def test_no_ceiling_upward_ratchet_records_full_request_elapsed(plan_context, mo
     assert result['ci_final_status'] == 'timeout'
     assert result['clamp_state'] == 'no-ceiling-fallback'
     assert timeout_set_stub.recorded == [fallback]
+
+
+# ---------------------------------------------------------------------------
+# A lapsed wait on a live CI run — wait_pending and its re-wait bound
+# ---------------------------------------------------------------------------
+
+MAX_PENDING_REWAITS = _resolver_mod.MAX_PENDING_REWAITS
+_lapse_path = _resolver_mod._lapse_path
+
+_RUNNING_CHECKS = [
+    {'name': 'build', 'conclusion': 'PENDING'},
+    {'name': 'test', 'conclusion': 'IN_PROGRESS'},
+    {'name': 'deploy', 'conclusion': None},
+]
+
+
+def _lapse_envelope(failing_checks: list[dict]) -> dict:
+    """A ``ci wait`` envelope for a wait that ended on its deadline."""
+    return {
+        'status': 'error',
+        'operation': 'ci_wait',
+        'error': 'Timeout waiting for CI',
+        'wait_outcome': 'deadline_exceeded',
+        'last_status': 'pending',
+        'failing_checks': failing_checks,
+    }
+
+
+def _resolve_lapse(plan_id: str, head_sha: str, failing_checks: list[dict], mode: str = 'consume-failures') -> dict:
+    """Resolve one lapsed wait for ``plan_id`` at ``head_sha``."""
+    result: dict = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=_StubCiWait([_lapse_envelope(failing_checks)]),
+        git_head_resolver=_StubGitHead(head_sha),
+        timeout_set_runner=_StubTimeoutSet(),
+        mode=mode,
+    )
+    return result
+
+
+def test_lapse_over_only_running_checks_returns_wait_pending(plan_context):
+    """Before the bound, a lapse over a live run is pending, not a timeout."""
+    plan_id = 'ci-precond-lapse-pending'
+
+    result = _resolve_lapse(plan_id, _SHA_A, _RUNNING_CHECKS)
+
+    assert result['status'] == 'wait_pending'
+    assert result['head_sha'] == _SHA_A
+    assert result['ci_final_status'] is None
+    assert result['running_checks'] == _RUNNING_CHECKS
+    assert result['rewait_number'] == 1
+    assert result['rewait_bound'] == MAX_PENDING_REWAITS
+    assert result['wait_outcome'] == 'deadline_exceeded'
+    assert result['mode'] == 'consume-failures'
+    assert 'failing_checks' not in result
+    # A pending verdict is not cached: the re-issued resolver must poll again.
+    assert not _cache_path(plan_id).exists()
+    assert _lapse_path(plan_id).is_file()
+
+
+def test_lapse_after_the_bound_returns_wait_failed_timeout(plan_context):
+    """The bound is three re-waits; the fourth lapse is today's timeout."""
+    plan_id = 'ci-precond-lapse-past-bound'
+    assert MAX_PENDING_REWAITS == 3
+
+    pending = [_resolve_lapse(plan_id, _SHA_A, _RUNNING_CHECKS) for _ in range(MAX_PENDING_REWAITS)]
+    past_bound = _resolve_lapse(plan_id, _SHA_A, _RUNNING_CHECKS)
+
+    assert [r['status'] for r in pending] == ['wait_pending'] * MAX_PENDING_REWAITS
+    assert [r['rewait_number'] for r in pending] == [1, 2, 3]
+    assert past_bound['status'] == 'wait_failed'
+    assert past_bound['ci_final_status'] == 'timeout'
+    assert past_bound['wait_outcome'] == 'deadline_exceeded'
+    assert past_bound['failing_checks'] == _RUNNING_CHECKS
+    assert past_bound['mode'] == 'consume-failures'
+    assert 'running_checks' not in past_bound
+    # Past the bound the answer stays wait_failed; it does not wrap around.
+    assert _resolve_lapse(plan_id, _SHA_A, _RUNNING_CHECKS)['status'] == 'wait_failed'
+
+
+def test_head_change_resets_the_lapse_count(plan_context):
+    """Lapses are counted per HEAD: a new HEAD starts at re-wait one."""
+    plan_id = 'ci-precond-lapse-head-reset'
+    for _ in range(MAX_PENDING_REWAITS):
+        _resolve_lapse(plan_id, _SHA_A, _RUNNING_CHECKS)
+
+    on_new_head = _resolve_lapse(plan_id, _SHA_B, _RUNNING_CHECKS)
+
+    assert on_new_head['status'] == 'wait_pending'
+    assert on_new_head['head_sha'] == _SHA_B
+    assert on_new_head['rewait_number'] == 1
+
+
+def test_strict_mode_lapse_still_returns_wait_failed(plan_context):
+    """Matched control: the same lapse in strict mode is never pending."""
+    plan_id = 'ci-precond-lapse-strict'
+
+    result = _resolve_lapse(plan_id, _SHA_A, _RUNNING_CHECKS, mode='strict')
+
+    assert result['status'] == 'wait_failed'
+    assert result['ci_final_status'] == 'timeout'
+    assert result['failing_checks'] == _RUNNING_CHECKS
+    assert result['mode'] == 'strict'
+    # Strict mode counts nothing, so it cannot spend the consume-failures bound.
+    assert not _lapse_path(plan_id).exists()
+
+
+def test_lapse_beside_a_definitive_failure_is_not_pending(plan_context):
+    """One check that has really failed makes the first lapse a wait_failed."""
+    plan_id = 'ci-precond-lapse-with-failure'
+    checks = [{'name': 'build', 'conclusion': 'PENDING'}, {'name': 'lint', 'conclusion': 'FAILURE'}]
+
+    result = _resolve_lapse(plan_id, _SHA_A, checks)
+
+    assert result['status'] == 'wait_failed'
+    assert result['ci_final_status'] == 'timeout'
+    assert result['failing_checks'] == checks
+    assert not _lapse_path(plan_id).exists()
+
+
+def test_signal_arm_lapse_stays_arm_pending(plan_context):
+    """The per-signal arms are unchanged: a lapse is arm_pending, uncounted."""
+    plan_id = 'ci-precond-lapse-signal-arm'
+
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=_StubCiWait([_lapse_envelope(_RUNNING_CHECKS)]),
+        git_head_resolver=_StubGitHead(_SHA_A),
+        timeout_set_runner=_StubTimeoutSet(),
+        signal_arm='review',
+    )
+
+    assert result['status'] == 'arm_pending'
+    assert result['arm_state'] == 'pending'
+    assert not _lapse_path(plan_id).exists()
+
+
+def test_lapse_whose_count_cannot_be_written_returns_wait_failed(plan_context, monkeypatch):
+    """A count that is not on disk bounds nothing, so the lapse is not pending."""
+    plan_id = 'ci-precond-lapse-unwritable'
+    monkeypatch.setattr(_resolver_mod, '_record_lapse', lambda _plan_id, _head_sha: None)
+
+    result = _resolve_lapse(plan_id, _SHA_A, _RUNNING_CHECKS)
+
+    assert result['status'] == 'wait_failed'
+    assert result['ci_final_status'] == 'timeout'
+
+
+def test_fixture_timeout_deadline_exceeded_is_pending_in_consume_failures_mode(plan_context):
+    """The representative timeout fixture: strict fails, consume-failures waits."""
+    parsed = _parse_toon((_FIXTURE_DIR / 'timeout-deadline-exceeded.toon').read_text())
+    strict = _run_fixture_through_resolver(_FIXTURE_DIR / 'timeout-deadline-exceeded.toon', 'ci-fixture-timeout-strict')
+
+    consume = resolve(
+        plan_id='ci-fixture-timeout-consume',
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=_make_fixture_wait_runner(parsed),
+        git_head_resolver=_StubGitHead(_SHA_A),
+        timeout_set_runner=_StubTimeoutSet(),
+        mode='consume-failures',
+    )
+
+    assert strict['status'] == 'wait_failed'
+    assert strict['ci_final_status'] == 'timeout'
+    assert consume['status'] == 'wait_pending'
+    assert [check['name'] for check in consume['running_checks']] == ['build', 'test']

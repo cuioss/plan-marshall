@@ -35,7 +35,9 @@ Responsibilities (all deterministic Python — no dispatch here):
   per-producer needs-triage signal so the dispatcher runs
   ``verification-feedback`` (the sole LLM step, red-CI only). The script does
   NOT mark the step done on the red path — the dispatcher marks it after the
-  triage returns.
+  triage returns. Under ``wait_outcome == deadline_exceeded`` a still-running
+  check is a failing check only when nothing has definitively failed: beside
+  a real failure it is dropped and produces no finding.
 
 ``mark-step-done --step`` uses the bare manifest key ``ci-verify`` (NOT a
 ``default:``-prefixed key).
@@ -136,6 +138,19 @@ _REQUIRED_PERSIST_FIELDS: tuple[str, ...] = (
 #: The only two legal ``--wait-outcome`` enum values. The guard NEVER copies
 #: ``--final-status``'s value into ``--wait-outcome``.
 _WAIT_OUTCOME_ENUM: frozenset[str] = frozenset({'completed', 'deadline_exceeded'})
+
+#: Conclusions that mean a check passed or did not need to run.
+_PASSING_CONCLUSIONS: frozenset[str] = frozenset({'success', 'skipped', 'neutral'})
+
+#: Conclusions that mean a check has not finished.
+_RUNNING_CONCLUSIONS: frozenset[str] = frozenset({'pending', 'in_progress', 'queued', 'waiting'})
+
+#: Conclusions that say the check itself ended badly — the definitive rows of
+#: :func:`classify_check`. ``ci_complete_precondition`` holds the same set for
+#: its pending verdict.
+_DEFINITIVE_FAILING_CONCLUSIONS: frozenset[str] = frozenset(
+    {'failure', 'failed', 'cancelled', 'canceled', 'action_required', 'stale', 'timed_out', 'timeout'}
+)
 
 #: Run-URL segment that precedes the numeric run id in a GitHub check link.
 _RUN_ID_MARKER: str = '/actions/runs/'
@@ -745,28 +760,58 @@ def _resolve_failing_set(
        present; here we derive the failing set from ``normalized_all`` by
        dropping every check whose conclusion is a success/skip/neutral/pending
        state. On the ``timeout`` path (``wait_outcome == deadline_exceeded``)
-       the still-pending checks are retained so they classify as ``ci_timeout``.
+       the still-pending checks are retained at this point.
+
+    Either set then passes through :func:`_drop_running_beside_failures`, so a
+    still-running check is classified only when nothing has definitively
+    failed.
     """
     if threaded:
-        return [_normalize_check_entry(c) for c in threaded]
+        return _drop_running_beside_failures([_normalize_check_entry(c) for c in threaded], wait_outcome)
 
     # An empty/unknown conclusion is NOT passing — it must fall through to the
     # classifier's ci_policy_failure defense-in-depth row (fail-closed).
-    passing = {'success', 'skipped', 'neutral'}
     failing_set: list[dict] = []
     for entry in normalized_all:
         conclusion = (entry.get('conclusion') or '').strip().lower()
-        is_pending = conclusion in ('pending', 'in_progress', 'queued', 'waiting')
         if wait_outcome == 'deadline_exceeded':
             # Retain everything not clearly green — pending checks are the
             # timed-out ones.
-            if conclusion not in ('success', 'skipped', 'neutral'):
+            if conclusion not in _PASSING_CONCLUSIONS:
                 failing_set.append(entry)
             continue
-        if conclusion in passing or is_pending:
+        if conclusion in _PASSING_CONCLUSIONS or conclusion in _RUNNING_CONCLUSIONS:
             continue
         failing_set.append(entry)
-    return failing_set
+    return _drop_running_beside_failures(failing_set, wait_outcome)
+
+
+def _drop_running_beside_failures(failing_set: list[dict], wait_outcome: str) -> list[dict]:
+    """Drop still-running checks when a check has definitively failed.
+
+    Applies only under ``wait_outcome == deadline_exceeded``. When at least one
+    check carries a definitive failing conclusion, the still-running checks are
+    removed: they have not failed, and a ``ci_timeout`` finding beside the real
+    failure would report a check that is merely not finished. When no check
+    carries one, the set is returned unchanged — this is the past-bound case,
+    where the run is still not terminal after the resolver's re-wait bound and
+    each running check is a ``ci_timeout``. A check whose own conclusion is
+    ``timed_out`` is definitive and is never dropped.
+
+    Still running means a conclusion in :data:`_RUNNING_CONCLUSIONS`, or no
+    conclusion at all: a check that has not finished at a wait deadline has
+    none yet. A conclusion that is present but unrecognised is kept.
+    """
+    if wait_outcome != 'deadline_exceeded':
+        return failing_set
+    conclusions = [(entry.get('conclusion') or '').strip().lower() for entry in failing_set]
+    if not any(conclusion in _DEFINITIVE_FAILING_CONCLUSIONS for conclusion in conclusions):
+        return failing_set
+    return [
+        entry
+        for entry, conclusion in zip(failing_set, conclusions, strict=True)
+        if conclusion and conclusion not in _RUNNING_CONCLUSIONS
+    ]
 
 
 # ---------------------------------------------------------------------------

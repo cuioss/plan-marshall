@@ -605,10 +605,12 @@ def test_resolve_records_observed_duration_after_successful_wait(plan_context):
 
 
 def test_consume_failures_mode_preserves_timeout_envelope(plan_context):
-    """A timeout under consume-failures MUST still surface as wait_failed
-    with ci_final_status=timeout — the consume-failures path is for
-    *all* wait_failed shapes (failure, timeout, no_checks), not just
-    final_status=failure.
+    """A timeout under consume-failures still surfaces as wait_failed with
+    ci_final_status=timeout when a check has definitively failed beside the
+    lapse — the consume-failures path carries every wait_failed shape
+    (failure, timeout, no_checks), not just final_status=failure. A lapse over
+    only running checks is the separate wait_pending verdict, pinned in
+    test_ci_complete_precondition_checks.py.
     """
     plan_id = 'ci-precond-consume-failures-timeout'
     git_stub = _StubGitHead(_SHA_A)
@@ -621,6 +623,7 @@ def test_consume_failures_mode_preserves_timeout_envelope(plan_context):
                 'wait_outcome': 'deadline_exceeded',
                 'failing_checks': [
                     {'name': 'slow-deploy', 'conclusion': 'PENDING'},
+                    {'name': 'lint', 'conclusion': 'FAILURE'},
                 ],
             }
         ]
@@ -639,7 +642,7 @@ def test_consume_failures_mode_preserves_timeout_envelope(plan_context):
     assert result['ci_final_status'] == 'timeout'
     assert result['mode'] == 'consume-failures'
     assert result['wait_outcome'] == 'deadline_exceeded'
-    assert [c['name'] for c in result['failing_checks']] == ['slow-deploy']
+    assert [c['name'] for c in result['failing_checks']] == ['slow-deploy', 'lint']
 
 
 def test_fixture_dir_present():
