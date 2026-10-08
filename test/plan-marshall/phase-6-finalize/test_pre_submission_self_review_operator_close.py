@@ -191,9 +191,7 @@ def _unclaimed_bullets(bullets: dict[str, str]) -> list[str]:
 
 def _verifier_vocabulary(section: str) -> dict[str, set[str]]:
     """The values the verifier may return for each of its two answers."""
-    return {
-        field: {value.strip() for value in values.split('|')} for field, values in _VERIFIER_ENUM.findall(section)
-    }
+    return {field: {value.strip() for value in values.split('|')} for field, values in _VERIFIER_ENUM.findall(section)}
 
 
 # ---------------------------------------------------------------------------
@@ -273,7 +271,9 @@ def test_the_operator_close_sits_inside_the_termination_section():
     doc = _doc_text()
     termination = _section(doc, _TERMINATION_HEADING, _SECTION_STOPS)
 
-    outside = [block.strip() for kind, _verb, block in _closes(doc) if kind == _KIND_OPERATOR and block not in termination]
+    outside = [
+        block.strip() for kind, _verb, block in _closes(doc) if kind == _KIND_OPERATOR and block not in termination
+    ]
 
     assert not outside, (
         f'The operator close is invoked outside {_TERMINATION_HEADING!r}. That '
