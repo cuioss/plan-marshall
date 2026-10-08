@@ -793,10 +793,9 @@ def _drop_running_beside_failures(failing_set: list[dict], wait_outcome: str) ->
     check carries a definitive failing conclusion, the still-running checks are
     removed: they have not failed, and a ``ci_timeout`` finding beside the real
     failure would report a check that is merely not finished. When no check
-    carries one, the set is returned unchanged — this is the past-bound case,
-    where the run is still not terminal after the resolver's re-wait bound and
-    each running check is a ``ci_timeout``. A check whose own conclusion is
-    ``timed_out`` is definitive and is never dropped.
+    carries one, the set is returned unchanged and each running check is a
+    ``ci_timeout``. A check whose own conclusion is ``timed_out`` is definitive
+    and is never dropped.
 
     Still running means a conclusion in :data:`_RUNNING_CONCLUSIONS`, or no
     conclusion at all: a check that has not finished at a wait deadline has

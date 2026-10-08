@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the ``loop-back grant`` verb of manage-status.
 
-The grant is the one recorded way past a ceiling refusal, so the properties
-pinned here are the ones that make it both effective and traceable:
+The properties pinned here are the ones that make a grant both effective and
+traceable:
 
 * a grant to a refused source lets that source's next admission through, and
   leaves a record of the rounds, the reason, who granted them, when, and how

@@ -93,6 +93,7 @@ red-CI triage dispatch it bypasses (steps 4 → 5 above).
 
 ```toon
 status: success | error
+plan_id: <str>
 final_status: success | failure | none | timeout
 outcome: green | green_unrecorded | needs_triage
 run_id: <str>

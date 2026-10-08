@@ -129,10 +129,18 @@ def _manage_status_calls(text: str) -> list[tuple[str, str]]:
 
 
 def _records_done(verb: str, block: str) -> bool:
-    """Whether a fenced call records the step ``done``."""
+    """Whether a fenced call records the step ``done``.
+
+    A templated mark such as ``--outcome {done|failed}`` names ``done`` among
+    its alternatives and so counts: read as no outcome at all, it would drop
+    out of the sweep.
+    """
     if verb == _VERB_CLOSE:
         return True
-    return verb == _VERB_MARK and bool(re.search(r'--outcome\s+done\b', block))
+    if verb != _VERB_MARK:
+        return False
+    outcomes = re.findall(r'--outcome\s+(\{[^}]*\}|[a-z_]+)', block)
+    return any('done' in outcome.strip('{}').split('|') for outcome in outcomes)
 
 
 def _close_kind(verb: str, block: str) -> str:

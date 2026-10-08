@@ -614,8 +614,8 @@ class TestLoopBackWithoutAskingContract:
             'round have no remaining iteration in which their fixes could be '
             'reviewed — otherwise an operator reads the halt as a clean stop'
         )
-        # The breach display must name the one sanctioned way past the refusal:
-        # the grant verb, pre-filled with the plan and the refused source. A
+        # The breach display must name the grant verb, pre-filled with the plan
+        # and the refused source. A
         # display that only says "re-run finalize" sends the operator back
         # into the same refusal.
         grant_call = 'manage-status loop-back grant'
