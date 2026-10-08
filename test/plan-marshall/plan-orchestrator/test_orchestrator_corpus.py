@@ -3008,11 +3008,9 @@ class TestCrossCheckPublishesTheCandidatePopulation:
         )
 
     def test_the_verdict_and_the_roll_up_can_never_disagree(self, plan_context):
-        """One fact, three readings — pinned across both arms in one test.
+        """The gate count and the roll-up are one fact — pinned across both arms.
 
-        The admission site reads the candidate's row, a human reads the gate
-        count, and a whole-corpus reader reads the roll-up, so a payload in
-        which they disagree misleads at least one of them. A readable,
+        The rows agree with them on this fixture only. A readable,
         non-comparable sibling spec on a shipped row rides in both arms: it
         keeps the SCAN count non-zero throughout, so an identity still written
         against that count would fail the determinate arm.
