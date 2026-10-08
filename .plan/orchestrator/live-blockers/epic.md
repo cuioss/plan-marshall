@@ -74,6 +74,12 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   is. One order remains between the two: PLAN-LB-31 starts with its measurement and stops
   after the recorded roster decision until PLAN-LB-30 has released the schema. All four rows
   stay `staged` until the operator confirms each launch.
+- **Order swapped on 2026-10-08: PLAN-LB-29 before PLAN-LB-14.** PLAN-LB-30 was started on a
+  second machine on the Antigravity harness, whose installs are missing every skill
+  `workflow/` file until PLAN-LB-29 lands. The operator had PLAN-LB-29 emitted at once for
+  that reason. The two plans share `plan-orchestrator/scripts/orchestrator.py` and
+  `plan-orchestrator/SKILL.md`, so PLAN-LB-14, emitted earlier but not launched, now waits for
+  PLAN-LB-29 and is not launched beside it. `next` keeps refusing for that much longer.
 - **Sequencing inside the bundles** that the earlier notes asked for is now internal:
   PLAN-LB-05 D3 before PLAN-LB-18 before PLAN-LB-19 (all in 24); PLAN-LB-21 before the
   enrolment of PLAN-LB-20 (both in 31). Two cross-plan orders remain: 31's enrolment
