@@ -80,8 +80,27 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
 - **Drift since the specs were drafted** (HEAD `6edefac32` to `64b573110`): `planning.md` and
   `light-lane.md` changed, which affects the PLAN-LB-04 claims carried in 25; and
   `python-verify.yml` moved to the organisation's v0.37.0, which makes the pin claim carried
-  in 30 stale. Both specs carry a verify-first clause saying so. No claim was re-verified
-  against HEAD at the regrouping; that is `cleanup`'s re-grounding pass and has not run.
+  in 30 stale. Both specs carry a verify-first clause saying so.
+- **Re-grounded on 2026-10-08 at `726ca857a`** (`cleanup`). The eleven live specs carry a
+  verdict on 281 claims: 259 corroborated, 13 unverifiable from this machine, 9 contradicted
+  and re-scoped in place. No verdict blocks. The 151 remaining bullets are hypotheses that
+  need a run or a decision, and verify-first clauses; they stay open for the launched plan.
+  - The PLAN-LB-04 claims carried in 25 hold at HEAD: the light lane still has no `pr_title`
+    producer.
+  - The nine re-scoped claims: 22 (the simplify step reads the whole footprint, so "code
+    files only" is not an admissible `verdict_inputs` declaration); 27 (a sixth staging site,
+    the `land` script's path-bound `git add`); 30 (two claims: the pin is now v0.37.0, which
+    still has no extra-buildable input); 31 (all seven repositories were enrolled on
+    2026-10-06, six were never observed); 29 (four claims, see next bullet).
+  - PLAN-LB-29 — the live state its evidence described has changed: the registry was
+    repinned by hand to `0.1.1865` and is ahead of the executor (`0.1.1864`), and the cache
+    manifest reads `0.1.1859`. The defect itself is confirmed in source (the sync never
+    touches the registry), but it is not observable live today, and the executor now embeds
+    source-tree paths. The plan must prove its parity verdicts on fixtures, cover a registry
+    that is ahead, and read the executor version from `MARSHALL_VERSION`.
+  - Unverifiable here: the dated store measurements in PLAN-LB-14, lessons
+    `2026-10-07-07-007` and `-008` (absent from the lessons store), the `cuioss-review-bot`
+    checkout (not on this machine), and three machine-local files.
 - **Foreign checkout paths.** The specs carried into 28, 30 and 31 name sibling repositories
   as `/Users/oliver/git/...`. Each of those specs carries a clause to resolve the names under
   the checkout root of the machine the plan runs on.
@@ -165,6 +184,17 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   leftover directories under the active root holding only an ignored `logs/decision.log`
   (`post-run-quality`, `process-compliance`, `truthful-signals`) were removed on the same
   instruction; their tracked trees are in the archived root.
+- 2026-10-08 — **Cleanup run by operator instruction, then landed.** Re-grounding covered the
+  eleven live specs at `726ca857a`; the twenty superseded specs were not re-grounded, because
+  every claim they hold is carried, and now verdict-stamped, in a successor. Nine contradicted
+  claims were re-scoped in place: the original text is kept and a dated note states what is
+  true and what it changes for the plan. No spec was found already fixed, none lacks an
+  objective, a surface or claim labels, and no relocation to `settled.md` was proposed (no
+  subject of this epic is closed yet). The inbox drain was refused as the workflow requires.
+  Restart verdict `indeterminate`, for one reason: the epic has no `inbox/` directory yet.
+  - Deviation, recorded: the eleven verification agents were each allowed to write one result
+    file under `.plan/temp/`, and the verdicts were stamped from those files by a driver that
+    calls `corpus set-verdict` once per claim. No agent wrote to the ledger.
 
 ## Open Defects
 
