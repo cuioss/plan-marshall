@@ -144,9 +144,11 @@ If a needed operation is missing from the CI abstraction, extend the scripts —
 **Build commands** (MUST resolve via architecture API first):
 ```text
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  resolve --command compile --module {module} --audit-plan-id {plan_id}
+  --plan-id {plan_id} resolve --command compile --module {module} --audit-plan-id {plan_id}
 # Then execute the returned 'executable' value
 ```
+
+The top-level `--plan-id` goes **before** the verb: it makes the returned `executable` carry the plan id, so the build is recorded under the plan. `--audit-plan-id` alone attributes nothing — see [`manage-architecture/standards/resolve-command.md`](../../manage-architecture/standards/resolve-command.md) § "Plan attribution of the resolved build".
 
 Never hard-code build commands (`./pw`, `./mvnw`, `mvn`, `npm`, `gradle`). The architecture API is the single source of truth.
 

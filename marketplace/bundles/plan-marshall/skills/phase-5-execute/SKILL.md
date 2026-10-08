@@ -820,7 +820,7 @@ The mid-execute per-deliverable build is **focused** by design: it runs the `per
      --message "(plan-marshall:phase-5-execute) per_deliverable_build=[] — skipping focused build for deliverable {deliverable}; end-of-phase sweep is the only build"
    ```
 
-3. **For each `default:verify:{canonical}` entry in the list**, invoke the **canonical-verify step module-scoped** over the changed module(s): resolve `architecture resolve --command {canonical} --module {changed_module}` and run the resolved executable, honouring the returned `execution_tier` / `bash_timeout_seconds`. Do NOT restate the resolution/execution-tier logic here — see [`standards/canonical_verify.md`](standards/canonical_verify.md) § "Module-scoped vs whole-tree invocation" and § "Workflow" for the authoritative step body (module-scoped invocation supplies `--module {changed_module}`; the unresolved-canonical skip and the tier hand-off apply identically). After each build call, inspect the result TOON — read `status` and the `errors[]` rows, not the harness exit code (the build wrapper exits 0 even on failure).
+3. **For each `default:verify:{canonical}` entry in the list**, invoke the **canonical-verify step module-scoped** over the changed module(s): resolve `architecture --plan-id {plan_id} resolve --command {canonical} --module {changed_module}` and run the resolved executable, honouring the returned `execution_tier` / `bash_timeout_seconds`. Do NOT restate the resolution/execution-tier logic here — see [`standards/canonical_verify.md`](standards/canonical_verify.md) § "Module-scoped vs whole-tree invocation" and § "Workflow" for the authoritative step body (module-scoped invocation supplies `--module {changed_module}`; the unresolved-canonical skip and the tier hand-off apply identically). After each build call, inspect the result TOON — read `status` and the `errors[]` rows, not the harness exit code (the build wrapper exits 0 even on failure).
 
    **Documentation-only short-circuit**: a changed-path set with no buildable module yields no module-scoped run (the canonical does not resolve / there is no changed module). Log:
 
@@ -1116,8 +1116,10 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-     resolve --command quality-gate --audit-plan-id {plan_id}
+     --plan-id {plan_id} resolve --command quality-gate --audit-plan-id {plan_id}
    ```
+
+   The top-level `--plan-id`, written before the verb, makes the returned `executable` carry the plan id, so the sweep is recorded under this plan — see [`standards/canonical_verify.md`](standards/canonical_verify.md) § Workflow step 1.
 
 2. **Branch on the tier the resolve in step 1 just returned.** That live `execution_tier` is the routing authority (see **Per-step `execution_tier`** above); the manifest's `verify:quality-gate` stamp is the advisory expectation, not the decision. When the live `tier == orchestrator`, the sweep is NOT in the leaf's runnable slice — do NOT run it; return the orchestrator-tier yield signal (`status: blocked`, `voluntary_checkpoint`) naming the sweep so the orchestrator runs it via `await-long-running`. Only when the live `tier == per_task` does the leaf execute the returned `executable` inline. On non-zero exit, persist the failures to the Q-Gate findings store (`manage-findings qgate add --type lint-issue …`) and **return the `triage_required` signal to the orchestrator** with `producer=build-runner` and `finding_type=lint-issue` — same leaf-returns-signal shape as Step 11d above, only the finding type changes. The leaf does NOT dispatch `verification-feedback` itself; the orchestrator owns the dispatch (see [`../plan-marshall/workflow/execution.md`](../plan-marshall/workflow/execution.md) § "Verification-feedback triage (leaf returned triage_required)") and drives the same fix-task / suppress / accept branch (Step 11e). After the orchestrator's triage resolves, the sweep is NOT re-run — Step 11b runs at most once per phase entry.
 
@@ -1161,7 +1163,7 @@ This gate runs after Step 11b's quality sweep and before Step 12.
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-     resolve --command verify --module {bundle} --audit-plan-id {plan_id}
+     --plan-id {plan_id} resolve --command verify --module {bundle} --audit-plan-id {plan_id}
    ```
 
    Branch on the `execution_tier` this resolve just returned — the live tier is the routing authority (the manifest's `verify:module-tests` stamp, which backs the `verify` canonical, is the advisory expectation only). For `tier=per_task` run the build inline with `timeout: bash_timeout_seconds * 1000`; for `tier=orchestrator` the step is NOT in the leaf's runnable slice — return control to the orchestrator to run the long build via `await-long-running` (do NOT run it inline, do NOT background it). After each build call the leaf runs, inspect the result TOON — read `status` and the `errors[]` rows, not the harness exit code.

@@ -138,9 +138,11 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level WARNING --message "[VERIFY] (plan-marshall:execute-task) TASK-{N} missing verification — falling back to architecture resolve"
 
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  resolve --command {resolve_command} --module {module} \
+  --plan-id {plan_id} resolve --command {resolve_command} --module {module} \
   --audit-plan-id {plan_id}
 ```
+
+The top-level `--plan-id`, written before the verb, makes the returned `executable` carry the plan id, so the fallback build is recorded under the plan — see [`../manage-architecture/standards/resolve-command.md`](../manage-architecture/standards/resolve-command.md) § "Plan attribution of the resolved build".
 
 Where `{resolve_command}` depends on profile: `implementation` → `quality-gate`, `module_testing` → `verify`. Verification profile uses commands from task steps directly.
 

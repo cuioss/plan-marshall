@@ -48,7 +48,9 @@ _GATE_DOC = (
 #: An ``architecture resolve`` call — the marker that makes a section an ARM.
 #: Matched on the verb plus its ``--command`` flag rather than on the notation
 #: alone, so a prose mention of the script name does not promote a section.
-_RESOLVE_CALL = re.compile(r'architecture\s+resolve\s+--command\s+[a-z-]+')
+#: The notation's top-level ``--plan-id {value}`` may sit between the notation
+#: and the verb; the verb-plus-``--command`` anchor is what identifies the call.
+_RESOLVE_CALL = re.compile(r'architecture\s+(?:--plan-id\s+\S+\s+)?resolve\s+--command\s+[a-z-]+')
 
 #: The instruction that ties the arm's invocation to the resolve RETURN. An arm
 #: that resolves and then runs something else would satisfy ``_RESOLVE_CALL``
@@ -176,7 +178,7 @@ def test_arm_detector_fires_on_a_resolver_backed_section_and_not_on_a_prose_one(
         '\n'
         '```bash\n'
         'python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \\\n'
-        '  resolve --command quality-gate --module {bundle} --audit-plan-id {plan_id}\n'
+        '  --plan-id {plan_id} resolve --command quality-gate --module {bundle} --audit-plan-id {plan_id}\n'
         '```\n'
     )
     prose_only = (
@@ -192,6 +194,26 @@ def test_arm_detector_fires_on_a_resolver_backed_section_and_not_on_a_prose_one(
     assert not _is_arm(prose_only), (
         'The arm detector fires on a PROSE mention of resolution, so sections that run no build would be swept as arms'
     )
+
+
+_FENCED_RESOLVE_TEMPLATE = (
+    '```bash\n'
+    'python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \\\n'
+    '  {top_level}resolve --command quality-gate --audit-plan-id {{plan_id}}\n'
+    '```\n'
+)
+
+
+@pytest.mark.parametrize(
+    'top_level',
+    ['--plan-id {plan_id} ', ''],
+    ids=['top-level-plan-id-before-the-verb', 'no-top-level-flag'],
+)
+def test_arm_detector_fires_with_and_without_the_top_level_plan_id(top_level):
+    """The top-level ``--plan-id`` is optional to the arm detector, in both directions."""
+    section = _FENCED_RESOLVE_TEMPLATE.format(top_level=top_level)
+
+    assert _is_arm(section)
 
 
 # ---------------------------------------------------------------------------
@@ -249,7 +271,7 @@ def test_pinned_token_detector_fires_on_a_synthetic_pre_fix_arm():
         '\n'
         '```bash\n'
         'python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \\\n'
-        '  resolve --command quality-gate --module {bundle} --audit-plan-id {plan_id}\n'
+        '  --plan-id {plan_id} resolve --command quality-gate --module {bundle} --audit-plan-id {plan_id}\n'
         '```\n'
     )
 

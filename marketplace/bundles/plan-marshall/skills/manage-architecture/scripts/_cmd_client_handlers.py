@@ -42,6 +42,7 @@ import hashlib
 import io
 import json
 import re
+import shlex
 import subprocess
 import tarfile
 import tempfile
@@ -77,6 +78,7 @@ from _cmd_client_build import (
     _classify_build_executable,
     _compute_execution_tier_fields,
     _lookup_bash_timeout,
+    _parse_build_executable,
 )
 from _cmd_client_query import (
     NEIGHBORS_DEPTH_CAP,
@@ -107,6 +109,8 @@ from constants import (
     DIR_PER_MODULE_ENRICHED,
     FILE_PROJECT_META,
 )
+from input_validation import validate_plan_id
+from marketplace_paths import names_real_plan
 
 # =============================================================================
 # CLI Handlers
@@ -397,13 +401,18 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
     executables return today's TOON
     shape unchanged. See the module-level "Build-executable classification"
     section for the full contract.
+
+    When the top-level ``--plan-id`` names a real plan, a build ``executable``
+    is returned carrying that plan id (see :func:`_attribute_build_executable`);
+    a plan id that violates the plan-id grammar yields ``status: error`` with
+    ``error: invalid_plan_id``. Without a plan id, or with the ``NO_PLAN``
+    sentinel, the executable is exactly what the architecture resolves.
     """
     try:
         result = resolve_command(args.resolve_command, args.module, args.project_dir)
         # Augment with adaptive-timeout / execution-tier fields when the
         # executable is a Bucket B build notation.
         augmented = {'status': 'success', **_augment_resolved(result, args.project_dir)}
-        return augmented
     except DataNotFoundError:
         return require_project_meta_result(args.project_dir)
     except ModuleNotFoundInProjectError:
@@ -430,6 +439,70 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         return error_result_command_not_found(resolved_module, args.resolve_command, commands)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
+
+    # Attribution runs outside the try above on purpose: its ValueError means
+    # "the plan id is malformed", which the handler above would misreport as a
+    # command that could not be found.
+    plan_id = getattr(args, 'plan_id', None)
+    executable = augmented.get('executable')
+    if isinstance(executable, str):
+        try:
+            augmented['executable'] = _attribute_build_executable(executable, plan_id)
+        except ValueError as e:
+            return {'status': 'error', 'error': 'invalid_plan_id', 'plan_id': plan_id, 'message': str(e)}
+    return augmented
+
+
+_ROUTING_FLAGS: tuple[str, ...] = ('--plan-id', '--project-dir')
+
+
+def _attribute_build_executable(executable: str, plan_id: str | None) -> str:
+    """Make a resolved build executable carry the plan it is attributed to.
+
+    Inserts ``--plan-id {plan_id}`` immediately after the build notation's
+    ``run`` subcommand — the position ``inject_project_dir`` uses. The rest of
+    the string, quoting included, is left exactly as resolved.
+
+    The executable is returned unchanged when ``plan_id`` does not name a real
+    plan (absent, or the ``NO_PLAN`` sentinel), when it is not a build
+    executable, and when it already carries ``--plan-id`` or ``--project-dir``.
+
+    Args:
+        executable: The resolved command string.
+        plan_id: The top-level ``--plan-id`` value, or ``None`` when not given.
+
+    Returns:
+        The executable, attributed where the rules above call for it.
+
+    Raises:
+        ValueError: ``plan_id`` names a real plan but violates the plan-id
+            grammar, so it must not enter a command string.
+    """
+    if not names_real_plan(plan_id):
+        return executable
+    parsed = _parse_build_executable(executable)
+    if parsed is None:
+        return executable
+    assert plan_id is not None  # for mypy
+    validate_plan_id(plan_id)
+    notation = parsed[0]
+    # _parse_build_executable already proved the string tokenises.
+    tokens = shlex.split(executable)
+    if any(token == flag or token.startswith(f'{flag}=') for token in tokens for flag in _ROUTING_FLAGS):
+        return executable
+    attributed, replaced = re.subn(
+        rf'({re.escape(notation)}\s+run)(?=\s)',
+        lambda match: f'{match.group(1)} --plan-id {plan_id}',
+        executable,
+        count=1,
+    )
+    if replaced:
+        return attributed
+    # The notation or ``run`` is quoted in the source string, so the textual
+    # anchor missed. Rebuild from tokens; the parse guarantees ``run`` follows
+    # the notation.
+    run_index = tokens.index(notation) + 1
+    return shlex.join([*tokens[: run_index + 1], '--plan-id', plan_id, *tokens[run_index + 1 :]])
 
 
 def _augment_resolved(executable_result: dict[str, Any], project_dir: str) -> dict[str, Any]:

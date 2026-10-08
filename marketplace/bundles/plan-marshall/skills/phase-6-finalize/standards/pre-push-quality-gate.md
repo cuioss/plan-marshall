@@ -239,7 +239,7 @@ For each `bundle` in `bundles` (in sorted order), resolve the canonical **module
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  resolve --command quality-gate --module {bundle} --audit-plan-id {plan_id}
+  --plan-id {plan_id} resolve --command quality-gate --module {bundle} --audit-plan-id {plan_id}
 ```
 
 Capture `executable`, `execution_tier` and `bash_timeout_seconds` from the returned TOON, then run the captured `executable` with the Bash timeout set to `bash_timeout_seconds * 1000` milliseconds. When `execution_tier` is `orchestrator` the invocation exceeds the Bash ceiling and MUST NOT be run here — hand it to the orchestrator's `await-long-running` seam and resume this loop on its result. A `status: error` from the resolve is handled exactly as the whole-tree arm's availability probe below prescribes: only the exact `error: architecture_error` + `message: Command not found` + `available[]`-omits-`quality-gate` shape proves the bundle exposes no `quality-gate` target (skip that bundle and record it in the same `[WARNING]` idiom § "Derive unique bundle set" uses — that `[WARNING]` carries no length ceiling and is therefore the COMPLETE record of every skipped bundle. A skipped bundle was NOT gated, so it does not count toward the gated total in Branch A's detail; report the outcome with the **bundles skipped** detail variant under § "Mark Step Complete", which states the gated and skipped counts and names at most one bundle plus an overflow count. Do NOT enumerate the skipped set inside the `display_detail`: both the number of skipped bundles and each bundle name are unbounded, so an enumeration there cannot be sized against the length ceiling at all); every other error shape did not answer, so STOP the step per § "Exit-code convention for every script call".
@@ -256,7 +256,7 @@ The per-bundle loop above cannot reach the whole-tree-only dimensions named in t
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  resolve --command quality-gate --audit-plan-id {plan_id}
+  --plan-id {plan_id} resolve --command quality-gate --audit-plan-id {plan_id}
 ```
 
 Branch on the **probe's** TOON, not on the build wrapper's — and on the probe's **exact shape**, not on a bare `status: error`. The resolver (`manage-architecture`'s `cmd_resolve`) returns `status: error` from four distinct paths, and only one of them says anything about whether the target exists: a missing project architecture (nothing was ever discovered), a module that does not exist, the command not being registered at the resolved module, and a catch-all for any other resolver failure. Only the third is proof of unavailability. Branching on the bare status would let an un-crawled project, a resolver IO error, or a malformed command entry downgrade a merge-gating check to a WARNING on evidence that proves nothing about availability — an unknown collapsing into a positive answer, which is the fail-open class ADR-009 forbids:
@@ -306,7 +306,7 @@ Run it **whole-tree, not per-bundle**. The gap being closed is specifically a wh
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  resolve --command test-compile --audit-plan-id {plan_id}
+  --plan-id {plan_id} resolve --command test-compile --audit-plan-id {plan_id}
 ```
 
 Branch on the probe with the same exact-shape discipline the whole-tree `quality-gate` availability probe uses:
@@ -319,7 +319,7 @@ Branch on the probe with the same exact-shape discipline the whole-tree `quality
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  resolve --command test-compile --module {module} --audit-plan-id {plan_id}
+  --plan-id {plan_id} resolve --command test-compile --module {module} --audit-plan-id {plan_id}
 ```
 
 Branch on this resolve with the same exact-shape discipline:
@@ -353,7 +353,7 @@ The guards above run mypy + ruff over production sources and mypy over `test/` �
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-     resolve --command module-tests --audit-plan-id {plan_id}
+     --plan-id {plan_id} resolve --command module-tests --audit-plan-id {plan_id}
    ```
 
    Capture `executable`, `execution_tier` and `bash_timeout_seconds`. The captured `executable` IS branch 4's whole-tree invocation, used verbatim. It is NOT the source of branch 6's scoped invocation — branch 6 re-resolves module-scoped, for the reason stated there. What this resolve additionally yields is the **build-skill notation** (the `{bundle}:{skill}:{script}` prefix of the executable), which is the notation branch 1 calls `resolve-test-scope` on. A project whose build skill exposes no `resolve-test-scope` verb cannot answer the divergence question at all — branch 1 defines the exact response shape that proves this, and it is the only shape that reaches the WARNING below. That case does NOT route to branch 3: branch 3's mandatory WARNING interpolates `{scoped_modules}`, which only branch 1's seam call produces and this path never makes, so borrowing it would prescribe an instruction the path structurally cannot satisfy. Emit its own WARNING instead — naming the un-gated dimension without a footprint it cannot know — and proceed to **Mark Step Complete (Success)** using the **module-tests DEGRADED** detail variant under § "Mark Step Complete", which names this arm as degraded in the recorded verdict rather than leaving it to a work-log warning no consumer of the step record reads:
@@ -431,7 +431,7 @@ The guards above run mypy + ruff over production sources and mypy over `test/` �
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-     resolve --command module-tests --module {recommended_target} --audit-plan-id {plan_id}
+     --plan-id {plan_id} resolve --command module-tests --module {recommended_target} --audit-plan-id {plan_id}
    ```
 
    Capture `executable`, `execution_tier` and `bash_timeout_seconds`, run the captured `executable` verbatim, and apply the same `orchestrator`-tier hand-off. Branch on this resolve's error shapes exactly as branch 0 prescribes.
