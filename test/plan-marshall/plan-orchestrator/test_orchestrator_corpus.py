@@ -26,6 +26,14 @@ Covers the four sub-verbs against a SCAFFOLDED FIXTURE EPIC under
   compared — a distinct archived epic, another slug's dated snapshot, names
   outside the suffix grammar, the dated name in the active root, an
   archived-only queried slug, and a real plan with no captured footprint.
+  Beside that scan population the payload publishes the launch-gate population:
+  a spec on a ``launched`` or ``running`` row, anything that could not be read,
+  and every live plan. Every other spec is counted under one declared exclusion
+  reason, and each reason is pinned as a matched pair with the fail-closed
+  near-miss that keeps the same spec in the gate population — an unreadable row
+  file, header, queue or spec file, a spec joining no row or two, and a row
+  status outside the vocabulary. The scan-population keys and both match lists
+  are pinned as unchanged by the row status the gate reads.
 - ``corpus verdicts``: the sole interpreter of the re-grounding verdict field —
   one control per row of the admission table in
   ``persona-plan-orchestrator/standards/orchestration-model.md``
@@ -152,6 +160,17 @@ CANDIDATE_COMPARABLE = _orch.CANDIDATE_COMPARABLE
 CANDIDATE_INDETERMINATE = _orch.CANDIDATE_INDETERMINATE
 CANDIDATE_UNREADABLE = _orch.CANDIDATE_UNREADABLE
 CANDIDATE_NON_CONTRIBUTING_STATES = _orch.CANDIDATE_NON_CONTRIBUTING_STATES
+GATE_EXCLUSION_REASONS = _orch.GATE_EXCLUSION_REASONS
+GATE_EXCLUDED_EPIC_ARCHIVED = _orch.GATE_EXCLUDED_EPIC_ARCHIVED
+GATE_EXCLUDED_EPIC_CLOSED = _orch.GATE_EXCLUDED_EPIC_CLOSED
+GATE_EXCLUDED_ROW_TERMINAL = _orch.GATE_EXCLUDED_ROW_TERMINAL
+GATE_EXCLUDED_ROW_NOT_IN_FLIGHT = _orch.GATE_EXCLUDED_ROW_NOT_IN_FLIGHT
+IN_FLIGHT_PLAN_STATUSES = _orch.IN_FLIGHT_PLAN_STATUSES
+LIVE_PLAN_STATUSES = _orch.LIVE_PLAN_STATUSES
+VALID_STATUS_VOCABULARY = _orch.VALID_STATUS_VOCABULARY
+# Non-vacuity guard for the cross-product sweeps over the exclusion vocabulary —
+# an empty tuple would reduce every such sweep to zero rows instead of failing.
+assert GATE_EXCLUSION_REASONS, 'GATE_EXCLUSION_REASONS must not be empty'
 CURRENCY_AGREE = _orch.CURRENCY_AGREE
 CURRENCY_DISAGREE = _orch.CURRENCY_DISAGREE
 CURRENCY_VACUOUS = _orch.CURRENCY_VACUOUS
@@ -379,23 +398,35 @@ def _row(plan_id: str, status: str = 'staged') -> dict:
     }
 
 
-def _write_status(plan_context, rows: list, slug: str = SLUG) -> Path:
+def _write_status(
+    plan_context,
+    rows: list,
+    slug: str = SLUG,
+    *,
+    phase: str = 'orchestrating',
+    epic_dir: Path | None = None,
+) -> Path:
     """Seed a per-concern kind=orchestrator ledger; return the header path.
 
     Seeded through ``_ledger_fixtures.write_ledger``, so the queue lands as one
     ``queue/{PLAN-ID}.json`` per row rather than as a ``plans[]`` array.
+
+    ``phase`` is the header phase the launch-gate filter reads for a sibling
+    epic. ``epic_dir`` retargets the write at an explicit epic tree — the
+    archived root in particular, which ``slug`` alone cannot address — exactly
+    as :func:`_write_spec`'s parameter of the same name does.
     """
     doc = {
         'kind': 'orchestrator',
         'title': 'Fixture Corpus Epic',
-        'phase': 'orchestrating',
+        'phase': phase,
         'workstreams': ['WS-01'],
         'plans': rows,
         'resume_anchor': 'fixture',
         'metadata': {},
         'created': FIXED_TIMESTAMP,
     }
-    return write_ledger(_epic_dir(plan_context, slug), doc)
+    return write_ledger(_epic_dir(plan_context, slug) if epic_dir is None else epic_dir, doc)
 
 
 #: The default ``## Expected Surface`` body. ``a.py`` carries no ``/`` segment,
@@ -3545,6 +3576,479 @@ class TestCrossCheckExcludesTheSentinelPlanDirectory:
         assert result['plans_scanned'] == 1, 'the live population must be non-empty for the zero to mean anything'
         assert result['excluded_self_snapshot_count'] == 0
         assert result['excluded_self_snapshots'] == []
+
+
+# =============================================================================
+# corpus cross-check — the launch-gate population
+# =============================================================================
+#
+# The scan population above is everything the cross-check read. The GATE
+# population is the part of it that can still collide with a plan about to be
+# launched: a spec on a ``launched`` or ``running`` row, anything that could not
+# be read, and every live plan. Every other spec is counted under exactly one
+# declared exclusion reason, so an exclusion is never silent.
+#
+# The filter fails closed, and every control below is a matched pair for that
+# reason: the readable, joinable spec that IS excluded rides beside the same
+# spec with one thing made unreadable, which must put it back in the gate
+# population. An exclusion asserted alone would also be satisfied by a filter
+# that excluded everything.
+
+#: The row id :data:`_PLANTED_SPEC` joins under the exact-or-prefix rule.
+_GATE_ROW_ID = 'PLAN-77'
+
+#: Bytes no spec or ledger reader can decode.
+_UNDECODABLE = b'\xff\xfe \xff'
+
+#: Text that is not a JSON document — a merge-conflict marker, the shape an
+#: unreadable ledger file takes in practice.
+_NOT_JSON = '<<<<<<< ours\n'
+
+
+def _gate_population(result: Any) -> dict:
+    """``{candidate_kind: population}`` over the gate population."""
+    return {row['candidate_kind']: row['population'] for row in result['gate_population']}
+
+
+def _gate_excluded(result: Any) -> dict:
+    """``{(candidate_kind, reason): count}`` over the published exclusion rows."""
+    return {(row['candidate_kind'], row['reason']): row['count'] for row in result['gate_excluded']}
+
+
+def _excluded_for(result: Any, kind: str) -> dict:
+    """``{reason: count}`` for one candidate kind, over the WHOLE reason vocabulary."""
+    excluded = _gate_excluded(result)
+    return {reason: excluded[(kind, reason)] for reason in GATE_EXCLUSION_REASONS}
+
+
+def _only(reason: str) -> dict:
+    """The per-reason counts of a kind holding exactly ONE spec, excluded under ``reason``."""
+    return {member: int(member == reason) for member in GATE_EXCLUSION_REASONS}
+
+
+_NO_EXCLUSION = dict.fromkeys(GATE_EXCLUSION_REASONS, 0)
+
+
+def _seed_gate_sibling(
+    plan_context,
+    status: str = 'shipped',
+    *,
+    phase: str = 'orchestrating',
+    archived: bool = False,
+    surface_lines: list | None = None,
+    objective: str = 'Fixture objective.',
+) -> Path:
+    """Seed ONE sibling epic holding ONE spec on ONE row; return the epic tree.
+
+    The spec is :data:`_PLANTED_SPEC` on row :data:`_GATE_ROW_ID`. With the
+    default surface it declares nothing comparable, so whenever it is a gate
+    candidate it is an indeterminate one — which is what makes
+    ``gate_candidates_indeterminate`` move with the gate decision.
+    """
+    epic_dir = _archived_epic_dir(plan_context, ARCHIVED_SLUG) if archived else _epic_dir(plan_context, SIBLING_SLUG)
+    _write_status(plan_context, [_row(_GATE_ROW_ID, status=status)], phase=phase, epic_dir=epic_dir)
+    _write_spec(plan_context, _PLANTED_SPEC, epic_dir=epic_dir, surface_lines=surface_lines, objective=objective)
+    return epic_dir
+
+
+def _row_file(epic_dir: Path, plan_id: str = _GATE_ROW_ID) -> Path:
+    return epic_dir / 'queue' / f'{plan_id}.json'
+
+
+def _set_row_status(epic_dir: Path, status: str, plan_id: str = _GATE_ROW_ID) -> None:
+    """Rewrite one row file's ``status`` in place, leaving every other field."""
+    path = _row_file(epic_dir, plan_id)
+    row = json.loads(path.read_text(encoding='utf-8'))
+    row['status'] = status
+    path.write_text(json.dumps(row), encoding='utf-8')
+
+
+def _break_row_file(epic_dir: Path) -> None:
+    _row_file(epic_dir).write_text(_NOT_JSON, encoding='utf-8')
+
+
+def _set_status_outside_the_vocabulary(epic_dir: Path) -> None:
+    status = 'fixture-unknown-status'
+    assert status not in VALID_STATUS_VOCABULARY, 'the control needs a status the vocabulary does not hold'
+    _set_row_status(epic_dir, status)
+
+
+def _remove_row_file(epic_dir: Path) -> None:
+    _row_file(epic_dir).unlink()
+
+
+def _add_second_joining_row(epic_dir: Path) -> None:
+    # The spec stem itself is a second id the exact-or-prefix rule joins, so
+    # the spec now has two rows and neither can be taken as its status.
+    plan_id = Path(_PLANTED_SPEC).stem
+    _row_file(epic_dir, plan_id).write_text(json.dumps({**_row(plan_id, status='shipped'), 'seq': 2}), encoding='utf-8')
+
+
+def _make_queue_unlistable(epic_dir: Path) -> None:
+    queue = epic_dir / 'queue'
+    _row_file(epic_dir).unlink()
+    queue.rmdir()
+    queue.write_text('not a directory', encoding='utf-8')
+
+
+def _break_header(epic_dir: Path) -> None:
+    (epic_dir / 'status.json').write_text(_NOT_JSON, encoding='utf-8')
+
+
+def _drop_header_phase(epic_dir: Path) -> None:
+    path = epic_dir / 'status.json'
+    header = json.loads(path.read_text(encoding='utf-8'))
+    del header['phase']
+    path.write_text(json.dumps(header), encoding='utf-8')
+
+
+#: ``(id, mutation)`` — one entry per way the filter can fail to establish a
+#: reason for a readable spec in an active sibling epic. Each mutation is applied
+#: to a fixture whose spec is otherwise excluded as ``row_terminal``.
+_GATE_FAIL_CLOSED_CASES = (
+    ('unreadable-row-file', _break_row_file),
+    ('status-outside-vocabulary', _set_status_outside_the_vocabulary),
+    ('spec-with-no-row', _remove_row_file),
+    ('spec-joining-two-rows', _add_second_joining_row),
+    ('unlistable-queue', _make_queue_unlistable),
+    ('unreadable-header', _break_header),
+    ('header-without-phase', _drop_header_phase),
+)
+assert _GATE_FAIL_CLOSED_CASES, '_GATE_FAIL_CLOSED_CASES must not be empty'
+
+#: Every legal row status, with the gate outcome a readable sibling spec on that
+#: row owes: an exclusion reason, or ``None`` for a gate candidate. Written out
+#: rather than derived, so the table is an independent statement of the rule;
+#: the coverage test below fails when the vocabulary gains a status this table
+#: does not decide.
+_GATE_OUTCOME_BY_ROW_STATUS = {
+    'staged': GATE_EXCLUDED_ROW_NOT_IN_FLIGHT,
+    'parked': GATE_EXCLUDED_ROW_NOT_IN_FLIGHT,
+    'launched': None,
+    'running': None,
+    'shipped': GATE_EXCLUDED_ROW_TERMINAL,
+    'landed': GATE_EXCLUDED_ROW_TERMINAL,
+    'superseded': GATE_EXCLUDED_ROW_TERMINAL,
+    'transferred': GATE_EXCLUDED_ROW_TERMINAL,
+    'retired': GATE_EXCLUDED_ROW_TERMINAL,
+    'resolved': GATE_EXCLUDED_ROW_TERMINAL,
+}
+assert _GATE_OUTCOME_BY_ROW_STATUS, '_GATE_OUTCOME_BY_ROW_STATUS must not be empty'
+
+#: ``(id, row status, header phase, archived root?, exclusion reason)`` — the five
+#: placements at which a READABLE sibling spec is excluded, each under the reason
+#: named. The same spec made unreadable must be a gate candidate at every one.
+_UNREADABLE_SPEC_PLACEMENTS = (
+    ('active-staged-row', 'staged', 'orchestrating', False, GATE_EXCLUDED_ROW_NOT_IN_FLIGHT),
+    ('active-parked-row', 'parked', 'orchestrating', False, GATE_EXCLUDED_ROW_NOT_IN_FLIGHT),
+    ('active-shipped-row', 'shipped', 'orchestrating', False, GATE_EXCLUDED_ROW_TERMINAL),
+    ('active-closed-epic', 'launched', 'closed', False, GATE_EXCLUDED_EPIC_CLOSED),
+    ('archived-root', 'launched', 'orchestrating', True, GATE_EXCLUDED_EPIC_ARCHIVED),
+)
+assert _UNREADABLE_SPEC_PLACEMENTS, '_UNREADABLE_SPEC_PLACEMENTS must not be empty'
+
+#: ``(row status, exclusion reason)`` for the own corpus — the two row reasons,
+#: which are the only ones an own spec can be excluded under.
+_OWN_ROW_EXCLUSIONS = (
+    ('staged', GATE_EXCLUDED_ROW_NOT_IN_FLIGHT),
+    ('superseded', GATE_EXCLUDED_ROW_TERMINAL),
+)
+assert _OWN_ROW_EXCLUSIONS, '_OWN_ROW_EXCLUSIONS must not be empty'
+
+
+class TestGateVocabulary:
+    """The two gate vocabularies, and the cross-product the payload publishes."""
+
+    def test_the_in_flight_statuses_are_live_statuses(self):
+        assert IN_FLIGHT_PLAN_STATUSES == ('launched', 'running')
+        assert set(IN_FLIGHT_PLAN_STATUSES) <= set(LIVE_PLAN_STATUSES)
+
+    def test_the_exclusion_reasons_are_declared_in_evaluation_order(self):
+        assert GATE_EXCLUSION_REASONS == ('epic_archived', 'epic_closed', 'row_terminal', 'row_not_in_flight')
+
+    def test_the_outcome_table_decides_every_legal_status(self):
+        # Coverage guard for the parametrization below: a status added to the
+        # vocabulary without a row here fails loudly instead of going unexercised.
+        assert set(_GATE_OUTCOME_BY_ROW_STATUS) == set(VALID_STATUS_VOCABULARY)
+
+    def test_gate_excluded_spans_the_whole_cross_product_in_declared_order(self, plan_context):
+        # One sibling spec on a shipped row and one own spec on a staged row:
+        # two populated cells, ten unpopulated ones that must still be present.
+        _seed_queried_epic(plan_context)
+        _seed_gate_sibling(plan_context, 'shipped')
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert result['status'] == 'success'
+        assert [(row['candidate_kind'], row['reason']) for row in result['gate_excluded']] == [
+            (kind, reason) for kind in CANDIDATE_KINDS for reason in GATE_EXCLUSION_REASONS
+        ]
+        populated = {
+            (CANDIDATE_KIND_SIBLING_EPIC_SPEC, GATE_EXCLUDED_ROW_TERMINAL): 1,
+            (CANDIDATE_KIND_CORPUS_SPEC, GATE_EXCLUDED_ROW_NOT_IN_FLIGHT): 1,
+        }
+        excluded = _gate_excluded(result)
+        assert {cell: count for cell, count in excluded.items() if count} == populated
+        assert all(isinstance(count, int) for count in excluded.values()), 'an unpopulated cell must be a stated zero'
+        assert result['gate_excluded_total'] == sum(populated.values())
+
+    def test_the_gate_tally_spans_the_whole_kind_by_state_cross_product(self, plan_context):
+        _seed_queried_epic(plan_context)
+        _seed_gate_sibling(plan_context, 'launched')
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        rows = result['gate_candidate_derivation_states']
+        assert [(row['candidate_kind'], row['derivation_status']) for row in rows] == [
+            (kind, state) for kind in CANDIDATE_KINDS for state in CANDIDATE_DERIVATION_STATES
+        ]
+        assert [row['candidate_kind'] for row in result['gate_population']] == list(CANDIDATE_KINDS)
+        assert sum(row['count'] for row in rows) == sum(_gate_population(result).values()) == 1
+
+
+class TestGateRowReasons:
+    """A readable sibling spec in an active, open epic is decided by its row status."""
+
+    def test_a_non_comparable_spec_on_a_shipped_row_is_excluded_as_terminal(self, plan_context):
+        _seed_queried_epic(plan_context)
+        _seed_gate_sibling(plan_context, 'shipped')
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert _candidate_population(result)[CANDIDATE_KIND_SIBLING_EPIC_SPEC] == 1, 'the sibling did not materialize'
+        assert _candidate_tally(result)[(CANDIDATE_KIND_SIBLING_EPIC_SPEC, CANDIDATE_INDETERMINATE)] == 1, (
+            'the control is only load-bearing when the excluded spec would otherwise be indeterminate'
+        )
+        assert _excluded_for(result, CANDIDATE_KIND_SIBLING_EPIC_SPEC) == _only(GATE_EXCLUDED_ROW_TERMINAL)
+        assert _gate_population(result)[CANDIDATE_KIND_SIBLING_EPIC_SPEC] == 0
+        assert result['gate_candidates_indeterminate'] == 0
+
+    @pytest.mark.parametrize(
+        'mutate',
+        [case[1] for case in _GATE_FAIL_CLOSED_CASES],
+        ids=[case[0] for case in _GATE_FAIL_CLOSED_CASES],
+    )
+    def test_a_spec_whose_reason_cannot_be_established_stays_a_gate_candidate(self, plan_context, mutate):
+        # The matched pair in one test: the fixture is first shown to exclude
+        # the spec, so the mutation alone is what brings it back.
+        _seed_queried_epic(plan_context)
+        epic_dir = _seed_gate_sibling(plan_context, 'shipped')
+        excluded = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+        assert _excluded_for(excluded, CANDIDATE_KIND_SIBLING_EPIC_SPEC) == _only(GATE_EXCLUDED_ROW_TERMINAL)
+
+        mutate(epic_dir)
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert _candidate_population(result)[CANDIDATE_KIND_SIBLING_EPIC_SPEC] == 1, 'the sibling spec was lost'
+        assert _excluded_for(result, CANDIDATE_KIND_SIBLING_EPIC_SPEC) == _NO_EXCLUSION
+        assert _gate_population(result)[CANDIDATE_KIND_SIBLING_EPIC_SPEC] == 1
+        assert result['gate_candidates_indeterminate'] == 1
+
+    @pytest.mark.parametrize(
+        ('status', 'reason'),
+        sorted(_GATE_OUTCOME_BY_ROW_STATUS.items()),
+        ids=sorted(_GATE_OUTCOME_BY_ROW_STATUS),
+    )
+    def test_the_row_status_decides_the_gate_outcome(self, plan_context, status, reason):
+        _seed_queried_epic(plan_context)
+        _seed_gate_sibling(plan_context, status)
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        in_gate = reason is None
+        assert _excluded_for(result, CANDIDATE_KIND_SIBLING_EPIC_SPEC) == (_NO_EXCLUSION if in_gate else _only(reason))
+        assert _gate_population(result)[CANDIDATE_KIND_SIBLING_EPIC_SPEC] == int(in_gate)
+        assert result['gate_candidates_indeterminate'] == int(in_gate)
+
+
+class TestGateEpicReasons:
+    """A sibling epic's location and phase exclude its readable specs before any row is read."""
+
+    def test_a_closed_active_epic_excludes_a_spec_on_an_in_flight_row(self, plan_context):
+        # The row is ``launched``, so only the epic's phase can exclude the spec.
+        _seed_queried_epic(plan_context)
+        _seed_gate_sibling(plan_context, 'launched', phase='closed')
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert _excluded_for(result, CANDIDATE_KIND_SIBLING_EPIC_SPEC) == _only(GATE_EXCLUDED_EPIC_CLOSED)
+        assert result['gate_candidates_indeterminate'] == 0
+
+    def test_the_same_spec_in_an_open_epic_is_a_gate_candidate(self, plan_context):
+        # Matched control for both epic reasons: active root, open phase.
+        _seed_queried_epic(plan_context)
+        _seed_gate_sibling(plan_context, 'launched')
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert _excluded_for(result, CANDIDATE_KIND_SIBLING_EPIC_SPEC) == _NO_EXCLUSION
+        assert _gate_population(result)[CANDIDATE_KIND_SIBLING_EPIC_SPEC] == 1
+        assert result['gate_candidates_indeterminate'] == 1
+
+    def test_the_archived_root_excludes_a_spec_on_an_in_flight_row(self, plan_context):
+        _seed_queried_epic(plan_context)
+        _seed_gate_sibling(plan_context, 'launched', archived=True)
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert _excluded_for(result, CANDIDATE_KIND_SIBLING_EPIC_SPEC) == _only(GATE_EXCLUDED_EPIC_ARCHIVED)
+        assert result['gate_candidates_indeterminate'] == 0
+
+    def test_the_archived_location_holds_when_the_ledger_cannot_be_read(self, plan_context):
+        # A readable spec under the archived root is ``epic_archived`` whatever
+        # else in that epic can or cannot be read: the location needs no file.
+        _seed_queried_epic(plan_context)
+        epic_dir = _seed_gate_sibling(plan_context, 'launched', archived=True)
+        _break_header(epic_dir)
+        _break_row_file(epic_dir)
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert _excluded_for(result, CANDIDATE_KIND_SIBLING_EPIC_SPEC) == _only(GATE_EXCLUDED_EPIC_ARCHIVED)
+        assert result['gate_candidates_indeterminate'] == 0
+
+
+class TestGateUnreadableSpecFile:
+    """An unreadable spec file is a gate candidate wherever it sits."""
+
+    @pytest.mark.parametrize(
+        ('status', 'phase', 'archived', 'reason'),
+        [case[1:] for case in _UNREADABLE_SPEC_PLACEMENTS],
+        ids=[case[0] for case in _UNREADABLE_SPEC_PLACEMENTS],
+    )
+    def test_no_placement_shelters_an_unreadable_sibling_spec(self, plan_context, status, phase, archived, reason):
+        _seed_queried_epic(plan_context)
+        epic_dir = _seed_gate_sibling(plan_context, status, phase=phase, archived=archived)
+        readable = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+        assert _excluded_for(readable, CANDIDATE_KIND_SIBLING_EPIC_SPEC) == _only(reason)
+        assert readable['gate_candidates_indeterminate'] == 0
+
+        (epic_dir / 'plans' / _PLANTED_SPEC).write_bytes(_UNDECODABLE)
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert _candidate_tally(result)[(CANDIDATE_KIND_SIBLING_EPIC_SPEC, CANDIDATE_UNREADABLE)] == 1, (
+            'the spec file was not read as unreadable'
+        )
+        assert _excluded_for(result, CANDIDATE_KIND_SIBLING_EPIC_SPEC) == _NO_EXCLUSION
+        assert _gate_population(result)[CANDIDATE_KIND_SIBLING_EPIC_SPEC] == 1
+        assert result['gate_candidates_indeterminate'] == 1
+
+    @pytest.mark.parametrize(('status', 'reason'), _OWN_ROW_EXCLUSIONS, ids=[case[0] for case in _OWN_ROW_EXCLUSIONS])
+    def test_no_row_status_shelters_an_unreadable_own_spec(self, plan_context, status, reason):
+        _write_status(plan_context, [_row('PLAN-01', status=status)])
+        spec = _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        readable = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+        assert _excluded_for(readable, CANDIDATE_KIND_CORPUS_SPEC) == _only(reason)
+        assert _gate_population(readable)[CANDIDATE_KIND_CORPUS_SPEC] == 0
+
+        spec.write_bytes(_UNDECODABLE)
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert result['specs_total'] == 1, 'the own spec was lost'
+        assert _excluded_for(result, CANDIDATE_KIND_CORPUS_SPEC) == _NO_EXCLUSION
+        assert _gate_population(result)[CANDIDATE_KIND_CORPUS_SPEC] == 1
+        assert result['gate_candidates_indeterminate'] == 1
+
+
+class TestGateOwnCorpusAndLivePlans:
+    """The own corpus takes the row reasons only, and a live plan is never excluded."""
+
+    def test_the_queried_epics_own_phase_is_not_an_exclusion_reason(self, plan_context):
+        # A closed queried epic with a running row: the phase that would exclude
+        # a SIBLING spec leaves the own spec in the gate population.
+        _write_status(plan_context, [_row('PLAN-01', status='running')], phase='closed')
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert _excluded_for(result, CANDIDATE_KIND_CORPUS_SPEC) == _NO_EXCLUSION
+        assert _gate_population(result)[CANDIDATE_KIND_CORPUS_SPEC] == 1
+
+    def test_the_queried_epics_own_location_is_not_an_exclusion_reason(self, plan_context):
+        # An archived epic queried directly, its spec on a running row: the
+        # location that would exclude a SIBLING spec leaves the own spec in.
+        own_dir = _archived_epic_dir(plan_context, SLUG)
+        _write_status(plan_context, [_row('PLAN-01', status='running')], epic_dir=own_dir)
+        _write_spec(plan_context, 'PLAN-01-alpha.md', epic_dir=own_dir, surface_lines=_surface(SHARED_PATH))
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert not _epic_dir(plan_context).exists(), 'the control needs the queried slug in the archived root alone'
+        assert result['specs_total'] == 1, 'the archived own corpus did not materialize'
+        assert _excluded_for(result, CANDIDATE_KIND_CORPUS_SPEC) == _NO_EXCLUSION
+        assert _gate_population(result)[CANDIDATE_KIND_CORPUS_SPEC] == 1
+
+    def test_every_live_plan_is_a_gate_candidate(self, plan_context):
+        _seed_queried_epic(plan_context)
+        _write_live_plan(plan_context, 'fixture-live-unmeasured', affected_files=[])
+        _write_live_plan(plan_context, 'fixture-live-comparable', affected_files=[OTHER_PATH])
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert _candidate_population(result)[CANDIDATE_KIND_LIVE_PLAN] == 2, 'the live plans did not materialize'
+        assert _gate_population(result)[CANDIDATE_KIND_LIVE_PLAN] == 2
+        assert _excluded_for(result, CANDIDATE_KIND_LIVE_PLAN) == _NO_EXCLUSION
+        assert result['gate_candidates_indeterminate'] == 1, 'only the unmeasured live plan is indeterminate'
+
+
+class TestGatePopulationReconcilesWithTheScan:
+    """The gate keys are added beside the scan keys and never change them."""
+
+    def test_gate_population_plus_exclusions_equals_the_scan_population(self, plan_context):
+        # A mixed store: own specs in and out of flight, an active sibling with
+        # an excluded and an in-flight spec, an archived sibling, and a live plan.
+        _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02', status='running')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_spec(plan_context, 'PLAN-02-beta.md', surface_lines=_surface(OTHER_PATH))
+        sibling_dir = _epic_dir(plan_context, SIBLING_SLUG)
+        _write_status(
+            plan_context,
+            [_row('PLAN-77', status='shipped'), _row('PLAN-78', status='launched')],
+            epic_dir=sibling_dir,
+        )
+        _write_spec(plan_context, 'PLAN-77-sibling.md', epic_dir=sibling_dir)
+        _write_spec(plan_context, 'PLAN-78-sibling.md', epic_dir=sibling_dir)
+        _seed_gate_sibling(plan_context, 'launched', archived=True)
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[OTHER_PATH])
+
+        result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        scan = _candidate_population(result)
+        gate = _gate_population(result)
+        assert scan[CANDIDATE_KIND_SIBLING_EPIC_SPEC] == 3, 'the sibling specs did not materialize'
+        assert scan[CANDIDATE_KIND_CORPUS_SPEC] == 2, 'the own specs did not materialize'
+        for kind in CANDIDATE_KINDS:
+            assert gate[kind] + sum(_excluded_for(result, kind).values()) == scan[kind], (
+                f'{kind}: every scanned candidate must be a gate candidate or counted under one reason'
+            )
+        assert gate[CANDIDATE_KIND_SIBLING_EPIC_SPEC] == 1
+        assert gate[CANDIDATE_KIND_CORPUS_SPEC] == 1
+        assert result['gate_excluded_total'] == 3
+
+    def test_the_match_lists_do_not_move_with_the_row_status(self, plan_context):
+        # A comparable sibling spec that both overlaps the own spec's surface and
+        # cites its pointer, on a shipped row and then on a launched one. The
+        # duplicate-work read is over the scan population, so neither list moves.
+        _seed_queried_epic(plan_context)
+        epic_dir = _seed_gate_sibling(
+            plan_context,
+            'shipped',
+            surface_lines=_surface(SHARED_PATH),
+            objective=f'Follows {_pointer("PLAN-01-alpha.md")}.',
+        )
+        shipped = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        _set_row_status(epic_dir, 'launched')
+        launched = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
+
+        assert shipped['file_overlap_matches'], 'the overlap row did not materialize'
+        assert shipped['source_origin_matches'], 'the origin row did not materialize'
+        assert launched['file_overlap_matches'] == shipped['file_overlap_matches']
+        assert launched['source_origin_matches'] == shipped['source_origin_matches']
+        assert _gate_population(shipped)[CANDIDATE_KIND_SIBLING_EPIC_SPEC] == 0
+        assert _gate_population(launched)[CANDIDATE_KIND_SIBLING_EPIC_SPEC] == 1, (
+            'the row status must have moved the gate population, or the equality above proves nothing'
+        )
 
 
 class TestCorpusSurfacesRefusals:
