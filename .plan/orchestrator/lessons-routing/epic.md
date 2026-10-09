@@ -172,10 +172,12 @@ high/critical fix nor domain-bundle content. It runs three steps, in order:
    `plan-marshall`), at any severity. Each applicable item is filed as ONE message:
    `orchestrator inbox write --slug live-blockers --sender-type orchestrator --sender-id lessons-routing
    --kind finding`, the body naming its severity, its bundle, and every source lesson id.
-3. **Archive everything else here.** Every other item is written to
+3. **Archive everything else here.** Every other lesson file is copied verbatim to
    `{epic_dir}/lessons-archive/{level}/{lesson-id}.md`, where `{level}` is the graded severity —
-   `medium`, `low` — or `stale` for a lesson ground truth refutes. A consolidated cluster is archived
-   as one file under its primary lesson id, listing the ids it absorbed.
+   `medium`, `low` — or `stale` for a lesson that is already fixed or that ground truth refutes. The
+   files stay one per lesson id; `lessons-archive/INDEX.md` records each cluster, its level and the
+   reason. A lesson filed at step 2 is also copied, to `lessons-archive/filed-live-blockers/`, so the
+   inbox message can stay short and point at the full body.
 
 A lesson is removed from the corpus only AFTER its inbox message or its archive file exists, and only
 through `manage-lessons remove` (never a raw `rm`). Severity is the orchestrator's graded judgement,
@@ -195,6 +197,29 @@ own PLAN-LR-NN queue.
 > 2026-09-24, operator-confirmed relocation.)
 
 > ↪ Relocated to `settled.md` § "Lesson Sweeps — 2026-09-26" — closed: every swept lesson was retired (2026-09-27) and its content carried to PM-MCP.
+
+### 2026-10-09 — first `ingest` run
+
+Corpus at start: 34 lessons, all about the `plan-marshall` bundle or this repository's own tooling;
+none was a domain-bundle content issue. Also graded: the six PLAN-09 carry-over rows held as a Watch.
+Per-lesson dispositions, clusters and reasons: `lessons-archive/INDEX.md`.
+
+| Disposition | Lessons | Where |
+|---|---|---|
+| high, filed to `live-blockers` | 9 (in 4 messages, `lessons-routing-001`..`-004`), plus carry-over row 3 | `live-blockers/inbox/`; bodies in `lessons-archive/filed-live-blockers/` |
+| medium, archived | 16, plus carry-over rows 1, 2, 4 | `lessons-archive/medium/` |
+| low, archived | 7, plus carry-over rows 5, 6 | `lessons-archive/low/` |
+| stale, archived | 2 | `lessons-archive/stale/` |
+
+All 34 were removed through `manage-lessons remove` after their copy existed (verdict `superseded` for
+the filed ones, `obsolete` for the rest; `2026-09-27-19-001` needed `--allow-unreadable`). Corpus after
+the run: 0.
+
+Grading basis: `live-blockers` `backlog.md` had already graded this corpus when that epic was cut, so
+its grade was used wherever it lists the subject. Every high lesson turned out to be owned by a
+`live-blockers` plan already (PLAN-LB-22/32, -27, -24/25, -31), so each message asks that epic to check
+for a residual rather than to open new work. Only the filed and stale lessons were checked against code
+or ledger at this run; the medium and low grades rest on the lesson text and the backlog.
 
 ## START HERE
 
@@ -341,3 +366,6 @@ own PLAN-LR-NN queue.
   archived `orchestrator-refactor` epic, `findings/2026-09-28-plan-09-lesson-carry-over.md`. The sender
   flags possible overlap with lessons `2026-09-23-05-001`/`-002`/`-007` — dedupe at ingest. Retire this
   watch once all six are filed to `live-blockers` or archived.
+  **Retired 2026-10-09:** all six graded by the first `ingest` run — row 3 filed in
+  `lessons-routing-001`, the other five recorded in `lessons-archive/INDEX.md`. The three lessons the
+  sender named for dedup were no longer in the corpus.
