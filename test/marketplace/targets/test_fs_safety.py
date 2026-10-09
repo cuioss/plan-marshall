@@ -12,9 +12,12 @@ import pytest
 
 from marketplace.targets.fs_safety import (
     is_within,
+    iter_tree_without_following_links,
+    refuse_escaping_output_dir,
     refuse_tree_overlap,
     safe_rmtree,
     trees_overlap,
+    unlink_if_symlink,
 )
 
 
@@ -152,3 +155,150 @@ def test_safe_rmtree_refuses_outside(tmp_path: Path):
     with pytest.raises(ValueError, match='not within output directory'):
         safe_rmtree(outside, root)
     assert (outside / 'keep.txt').exists()
+
+
+# =============================================================================
+# refuse_escaping_output_dir — a NESTED output directory, not the two roots
+# =============================================================================
+#
+# ``refuse_tree_overlap`` looks at the output root and the source root only. A
+# per-component directory beneath the output root can still be a symlink, or
+# sit under a symlinked ancestor, and ``mkdir(exist_ok=True)`` accepts either.
+
+
+def test_refuse_escaping_output_dir_raises_for_a_symlinked_directory(tmp_path: Path):
+    root = tmp_path / 'out'
+    outside = tmp_path / 'outside'
+    root.mkdir()
+    outside.mkdir()
+    link = root / 'skill-dir'
+    link.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ValueError, match='symbolic link') as excinfo:
+        refuse_escaping_output_dir(link, root)
+
+    assert str(link) in str(excinfo.value)
+
+
+def test_refuse_escaping_output_dir_raises_for_a_symlink_pointing_inside_the_output(tmp_path: Path):
+    """A link is refused wherever it points — containment of the target is not enough."""
+    root = tmp_path / 'out'
+    (root / 'real').mkdir(parents=True)
+    link = root / 'skill-dir'
+    link.symlink_to(root / 'real', target_is_directory=True)
+
+    with pytest.raises(ValueError, match='symbolic link'):
+        refuse_escaping_output_dir(link, root)
+
+
+def test_refuse_escaping_output_dir_raises_under_a_symlinked_ancestor(tmp_path: Path):
+    """A not-yet-created directory beneath a symlinked ancestor resolves outside the output."""
+    root = tmp_path / 'out'
+    outside = tmp_path / 'outside'
+    root.mkdir()
+    outside.mkdir()
+    (root / 'skills').symlink_to(outside, target_is_directory=True)
+    nested = root / 'skills' / 'skill-dir'
+
+    with pytest.raises(ValueError, match='outside output directory') as excinfo:
+        refuse_escaping_output_dir(nested, root)
+
+    assert str(nested) in str(excinfo.value)
+    assert not (outside / 'skill-dir').exists()
+
+
+@pytest.mark.parametrize('create', [True, False], ids=['existing', 'not-yet-created'])
+def test_refuse_escaping_output_dir_permits_a_real_directory(create: bool, tmp_path: Path):
+    """Positive control: a real nested directory passes, whether or not it exists yet."""
+    root = tmp_path / 'out'
+    nested = root / 'skills' / 'skill-dir'
+    if create:
+        nested.mkdir(parents=True)
+
+    refuse_escaping_output_dir(nested, root)  # must not raise
+
+
+def test_refuse_escaping_output_dir_permits_a_symlinked_output_root(tmp_path: Path):
+    """Both operands are resolved, so an output root reached through a link is not an escape."""
+    real_root = tmp_path / 'real-out'
+    (real_root / 'skills' / 'skill-dir').mkdir(parents=True)
+    root = tmp_path / 'out'
+    root.symlink_to(real_root, target_is_directory=True)
+
+    refuse_escaping_output_dir(root / 'skills' / 'skill-dir', root)  # must not raise
+
+
+# =============================================================================
+# unlink_if_symlink — clear a link before a write would go through it
+# =============================================================================
+
+
+def test_unlink_if_symlink_removes_the_link_and_keeps_its_target(tmp_path: Path):
+    target = tmp_path / 'target.txt'
+    target.write_text('important', encoding='utf-8')
+    link = tmp_path / 'link.txt'
+    link.symlink_to(target)
+
+    unlink_if_symlink(link)
+
+    assert not link.is_symlink()
+    assert target.read_text(encoding='utf-8') == 'important'
+
+
+def test_unlink_if_symlink_removes_a_dangling_link(tmp_path: Path):
+    link = tmp_path / 'link.txt'
+    link.symlink_to(tmp_path / 'missing')
+
+    unlink_if_symlink(link)
+
+    assert not link.is_symlink()
+
+
+@pytest.mark.parametrize('create', [True, False], ids=['real-file', 'missing'])
+def test_unlink_if_symlink_leaves_a_non_link_alone(create: bool, tmp_path: Path):
+    """Control: only a link is removed — a real file survives, a missing path does not raise."""
+    path = tmp_path / 'file.txt'
+    if create:
+        path.write_text('kept', encoding='utf-8')
+
+    unlink_if_symlink(path)
+
+    assert path.exists() is create
+
+
+# =============================================================================
+# iter_tree_without_following_links — the walk a destructive sweep may use
+# =============================================================================
+
+
+def test_iter_tree_yields_a_symlinked_directory_without_walking_its_target(tmp_path: Path):
+    root = tmp_path / 'out'
+    outside = tmp_path / 'outside'
+    (root / 'real').mkdir(parents=True)
+    (root / 'real' / 'f.txt').write_text('x', encoding='utf-8')
+    outside.mkdir()
+    (outside / 'keep.txt').write_text('important', encoding='utf-8')
+    (root / 'link').symlink_to(outside, target_is_directory=True)
+
+    walked = list(iter_tree_without_following_links(root))
+
+    assert walked == [root / 'link', root / 'real', root / 'real' / 'f.txt']
+
+
+def test_iter_tree_tolerates_unlinking_each_entry_as_it_is_yielded(tmp_path: Path):
+    """The sweep's own usage: removing a yielded link neither breaks the walk nor reaches its target."""
+    root = tmp_path / 'out'
+    outside = tmp_path / 'outside'
+    (root / 'real').mkdir(parents=True)
+    (root / 'real' / 'f.txt').write_text('x', encoding='utf-8')
+    outside.mkdir()
+    (outside / 'keep.txt').write_text('important', encoding='utf-8')
+    (root / 'link').symlink_to(outside, target_is_directory=True)
+
+    for entry in iter_tree_without_following_links(root):
+        if entry.is_symlink() or entry.is_file():
+            entry.unlink()
+
+    assert [p.name for p in root.iterdir()] == ['real']
+    assert not any((root / 'real').iterdir())
+    assert (outside / 'keep.txt').read_text(encoding='utf-8') == 'important'

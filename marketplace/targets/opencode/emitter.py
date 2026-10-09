@@ -54,7 +54,12 @@ from marketplace.targets.component_targets import (
     iter_emitted_skill_files,
     validate_component_scopes,
 )
-from marketplace.targets.fs_safety import refuse_tree_overlap
+from marketplace.targets.fs_safety import (
+    iter_tree_without_following_links,
+    refuse_escaping_output_dir,
+    refuse_tree_overlap,
+    unlink_if_symlink,
+)
 from marketplace.targets.opencode.frontmatter import (
     OPENCODE_MODEL_PREFIX,
     UnmappedFrontmatterError,
@@ -66,7 +71,11 @@ from marketplace.targets.opencode.frontmatter import (
     transform_command_frontmatter,
     transform_skill_frontmatter,
 )
-from marketplace.targets.opencode.variant_emitter import emit_agent_variants
+from marketplace.targets.opencode.variant_emitter import (
+    emit_agent_variants,
+    is_role_eligible,
+    selected_levels,
+)
 
 # Path to templates used by emitter.
 _TEMPLATES_DIR = Path(__file__).resolve().parent / 'templates'
@@ -156,10 +165,11 @@ def _remove_empty_dirs(root: Path) -> None:
     """Remove every directory under ``root`` left empty, deepest first.
 
     Deepest first so a parent is considered only after its emptied children
-    are gone. ``root`` itself is kept.
+    are gone. ``root`` itself is kept. A symlinked directory is neither walked
+    nor removed here — it is not a directory this emitter made.
     """
     for directory in sorted(
-        (p for p in root.rglob('*') if p.is_dir()),
+        (p for p in iter_tree_without_following_links(root) if p.is_dir() and not p.is_symlink()),
         key=lambda p: len(p.parts),
         reverse=True,
     ):
@@ -180,9 +190,12 @@ def _prune_skill_dir(target_skill_dir: Path, expected: set[Path]) -> None:
     It runs BEFORE the copy, so a path that changed kind in source (a file
     where a directory now is, or the reverse) is cleared rather than colliding
     with the write.
+
+    A symlink is unlinked as the link it is — never traversed, and never kept
+    even at an expected path, since the write would then go through it.
     """
-    for path in sorted(target_skill_dir.rglob('*')):
-        if (path.is_file() or path.is_symlink()) and path not in expected:
+    for path in iter_tree_without_following_links(target_skill_dir):
+        if path.is_symlink() or (path.is_file() and path not in expected):
             path.unlink()
     _remove_empty_dirs(target_skill_dir)
 
@@ -207,16 +220,24 @@ def _prune_stale_outputs(output_dir: Path, written: list[Path]) -> None:
     specific bundle from its name alone, so pruning a subset would risk
     deleting a non-emitted bundle's output; the normal build and the
     drift checks both run full regenerations.
+
+    A stale symlink is unlinked as the link it is and never traversed, so the
+    sweep cannot reach a file outside ``output_dir`` through one.
     """
+    written_paths = set(written)
     written_set = {p.resolve() for p in written}
 
     for subdir in ('skill', 'agent', 'command'):
         root = output_dir / subdir
         if not root.is_dir():
             continue
+        refuse_escaping_output_dir(root, output_dir)
         # Unlink every emitted file not (re)written this run.
-        for path in sorted(root.rglob('*')):
-            if path.is_file() and path.resolve() not in written_set:
+        for path in iter_tree_without_following_links(root):
+            if path.is_symlink():
+                if path not in written_paths:
+                    path.unlink()
+            elif path.is_file() and path.resolve() not in written_set:
                 path.unlink()
         _remove_empty_dirs(root)
 
@@ -244,12 +265,15 @@ def _emit_skill(
     new_body = body_transformer(body, bundle_name, 'skill')
 
     target_skill_dir = output_dir / 'skill' / f'{bundle_name}-{skill_name}'
-    target_skill_dir.mkdir(parents=True, exist_ok=True)
-    target_skill_md = target_skill_dir / 'SKILL.md'
+    refuse_escaping_output_dir(target_skill_dir, output_dir)
+    # Materialized before the first mkdir, prune or write: the walk refuses a
+    # source symlink by raising, and that must leave the previous output as it was.
     copies = [
         (source, target_skill_dir / source.relative_to(skill_dir))
         for source in iter_emitted_skill_files(skill_dir, bundle_dir, excluded)
     ]
+    target_skill_dir.mkdir(parents=True, exist_ok=True)
+    target_skill_md = target_skill_dir / 'SKILL.md'
     _prune_skill_dir(target_skill_dir, {target_skill_md, *(target for _, target in copies)})
 
     target_skill_md.write_text(new_fm + '\n\n' + new_body, encoding='utf-8')
@@ -334,8 +358,10 @@ def _emit_user_invocable_wrapper(
     rendered = _render_user_invocable_template(description, model, skill_id)
 
     command_dir = output_dir / 'command'
+    refuse_escaping_output_dir(command_dir, output_dir)
     command_dir.mkdir(parents=True, exist_ok=True)
     target = command_dir / f'{skill_id}.md'
+    unlink_if_symlink(target)
     target.write_text(rendered, encoding='utf-8')
     written.append(target)
 
@@ -361,8 +387,10 @@ def _emit_agent(
     new_body = body_transformer(body, bundle_name, 'agent')
 
     agent_dir = output_dir / 'agent'
+    refuse_escaping_output_dir(agent_dir, output_dir)
     agent_dir.mkdir(parents=True, exist_ok=True)
     target_agent = agent_dir / agent_md.name
+    unlink_if_symlink(target_agent)
     target_agent.write_text(new_fm + '\n\n' + new_body, encoding='utf-8')
     written.append(target_agent)
 
@@ -379,6 +407,12 @@ def _emit_agent(
     # (no model/effort pin); with a materialized pin map a pinned level carries
     # its configured ``model:`` — see variant_emitter's "Per-level model pins".
     # Non-eligible agents leave this a no-op (None).
+    #
+    # The variant emitter writes its files itself, so a link at any path it is
+    # about to write is cleared here, before it runs.
+    if is_role_eligible(fm):
+        for level in selected_levels(fm):
+            unlink_if_symlink(agent_dir / f'{agent_id}-{level}.md')
     result = emit_agent_variants(
         fm,
         new_body,
@@ -420,8 +454,10 @@ def _emit_command(
     new_body = body_transformer(body, bundle_name, 'command')
 
     command_dir = output_dir / 'command'
+    refuse_escaping_output_dir(command_dir, output_dir)
     command_dir.mkdir(parents=True, exist_ok=True)
     target_command = command_dir / command_md.name
+    unlink_if_symlink(target_command)
     target_command.write_text(new_fm + '\n\n' + new_body, encoding='utf-8')
     written.append(target_command)
     return f'command/{command_md.name}'
@@ -491,6 +527,7 @@ def _generate_opencode_json(
         config['agent'] = {agent_id: {} for agent_id in sorted(agent_index)}
     config_path = output_dir / 'opencode.json'
     config_path.parent.mkdir(parents=True, exist_ok=True)
+    unlink_if_symlink(config_path)
     config_path.write_text(json.dumps(config, indent=2) + '\n', encoding='utf-8')
     return config_path
 
@@ -508,6 +545,7 @@ def _generate_bundle_components_json(
     }
     config_path = output_dir / BUNDLE_COMPONENTS_FILENAME
     config_path.parent.mkdir(parents=True, exist_ok=True)
+    unlink_if_symlink(config_path)
     config_path.write_text(json.dumps(config, indent=2) + '\n', encoding='utf-8')
     return config_path
 
@@ -655,6 +693,7 @@ def emit_bundles(
     if not _INSTALL_SCRIPT_TEMPLATE.is_file():
         raise FileNotFoundError(f'Required install.sh template not found: {_INSTALL_SCRIPT_TEMPLATE}')
     install_target = output_dir / 'install.sh'
+    unlink_if_symlink(install_target)
     shutil.copyfile(_INSTALL_SCRIPT_TEMPLATE, install_target)
     install_target.chmod(0o755)
     written.append(install_target)
@@ -670,6 +709,7 @@ def emit_bundles(
     if not doc_src.is_file():
         raise FileNotFoundError(f'Required README source not found: {doc_src}')
     readme_target = output_dir / 'README.adoc'
+    unlink_if_symlink(readme_target)
     shutil.copyfile(doc_src, readme_target)
     written.append(readme_target)
 
