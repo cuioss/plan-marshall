@@ -2,9 +2,9 @@
   "id": "PLAN-LB-30",
   "slug": "org-ci-release",
   "workstream": "WS-04",
-  "status": "running",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "plan_marshall_plan_id": "plan-lb-30-org-ci-release",
+  "pr": "1722",
+  "landing": "landings/PLAN-LB-30.md",
   "seq": 30
 }

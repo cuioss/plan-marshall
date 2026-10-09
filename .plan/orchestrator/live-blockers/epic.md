@@ -86,6 +86,15 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   `plan-orchestrator/scripts/orchestrator.py` and `plan-orchestrator/SKILL.md`. The gate it
   ships judges each candidate against in-flight work only, and puts an overlap of more than
   one shared entry to the operator instead of refusing.
+- **PLAN-LB-30 shipped on 2026-10-08 (#1722, `2cb0f8c3f`)** — record at `landings/PLAN-LB-30.md`.
+  Reconciled on 2026-10-09 from inbox message `plan-lb-30-org-ci-release-001.md` (landing,
+  complete), the only message of that drain. The organisation release it owed exists:
+  `cuioss-organization` `v0.39.0` carries the extra-buildable input, the whole-file validator
+  and the settled schema keys, so PLAN-LB-31 no longer has to stop after its roster decision.
+  Nothing collided with PLAN-LB-23, 24 or 29. All seven deliverables were checked against
+  the code on 2026-10-09: the released validator passes API-Sheriff, TokenSheriff and
+  cui-http unchanged, and the gate was seen skipping a ledger-only PR (#1728) and building a
+  Markdown-only one (#1727). Three small gaps remain (see Open Defects).
 - **Inbox drain of 2026-10-08, six messages** (five from PLAN-LB-14, one from PLAN-LB-22):
   - `lb-14-launch-gate-scope-005.md` (landing) — reconciled; complete.
   - `lb-14-launch-gate-scope-001.md` — folded into PLAN-LB-22 as a recurrence, recorded here
@@ -345,13 +354,16 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   every deep-lane, non-recipe plan whose heuristic ties. Not owned by any staged plan; stage it
   if it recurs. — source: inbox message `lb-22-finalize-loop-control-001.md`, 2026-10-08, read
   at bundle version 0.1.1867; not verified against the source here.
-- **Stale text left by the self-review change (#1726), named in its report and not edited:**
-  `doc/analyzis-cloud-plan/capability-gaps.adoc` still describes the self-seeding class as
-  present; `dispatch-granularity.md` and `unreachable-guard-detection.md` carry check counts
-  that were already inexact. Not owned by any staged plan. — source: the run's final report,
-  2026-10-09; not verified here. **Being fixed:** on 2026-10-09 the operator told that same
-  session to correct these texts as well. Close this entry when its pull request has merged;
-  no number is known here yet.
+- **Two tests PLAN-LB-30 shipped check less than they say.**
+  `test_committed_marshal_machine_local_keys.py` states in its docstring that it catches
+  `C:/` paths and `token` keys; its path pattern has no drive-letter form and its key pattern
+  matches only compound names such as `auth_token`. `test_python_verify_buildable_paths.py`
+  checks the two Markdown globs by substring, so `marketplace/**/*.mdx` would pass. In
+  `cuioss-organization`, the test meant to keep four files in agreement on
+  `auto-merge-build-timeout` asserts only that each contains the string. The first two were
+  raised in review on #1722 and answered "accepted" without a change. Not owned by any staged
+  plan; small enough to fold into the next plan that touches those files. — source: the
+  files read at `2d9fc981f` and at `cuioss-organization` `v0.39.0`, 2026-10-09.
 - **A routed build leaves no change-ledger row for its plan, and it is not the missing plan
   id.** PLAN-LB-23 examined the hypothesis folded into its spec on 2026-10-08 and reports it
   as a separate defect it does not fix: the 84 routed builds of the PLAN-LB-14 run carried a
@@ -374,6 +386,9 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   — trigger: the landings of PLAN-LB-23, 24 and 29, if they rebased onto it; retire after
   two landings that closed by verifier.
 
+- **A landing from the Antigravity harness reported `total_tokens=0`** (PLAN-LB-30) and still
+  passed the completeness check, which accepts any value that is not `n/a` or `unknown`.
+  — trigger: stage it if a second landing from that harness reports zero.
 - **PLAN-LB-23 and PLAN-LB-24 must rebase onto PLAN-LB-22's landing** (`6b00815e0`). It
   changed `phase-6-finalize/SKILL.md`, `automatic-review/SKILL.md`, `triage.md` and
   `verification-feedback.md`, which PLAN-LB-24 declares, and standards under
