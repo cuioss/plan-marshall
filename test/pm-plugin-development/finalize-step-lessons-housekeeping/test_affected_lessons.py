@@ -192,6 +192,27 @@ def _assert_full(payload: dict[str, Any], reason: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Citation shapes
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ('span', 'expected'),
+    [
+        ('src/app.py:598', ['src/app.py']),
+        ('src/app.py:10:4', ['src/app.py']),
+        ('doc/guide/*.md', ['doc/guide']),
+        ('plans/{plan_id}/request.md', ['plans']),
+        ('*/standards/rule.md', []),
+    ],
+    ids=['line-suffix', 'line-and-column-suffix', 'glob', 'placeholder', 'pattern-first-segment'],
+)
+def test_cited_span_is_reduced_to_the_literal_path_it_stands_for(span: str, expected: list[str]) -> None:
+    """A citation git could never report verbatim still names a literal path."""
+    assert _mod.named_paths(f'See `{span}` for the rule.') == expected
+
+
+# ---------------------------------------------------------------------------
 # Delta runs
 # ---------------------------------------------------------------------------
 
@@ -249,8 +270,24 @@ def test_empty_change_list_with_no_edited_lesson_examines_nothing(
 
 @pytest.mark.parametrize(
     'named',
-    ['src/app.py', './src/app.py', 'src/'],
-    ids=['exact-path', 'dot-slash-prefix', 'enclosing-directory'],
+    [
+        'src/app.py',
+        './src/app.py',
+        'src/',
+        'src/app.py:598',
+        'src/app.py:10-20',
+        'src/*.py',
+        'src/{name}.py',
+    ],
+    ids=[
+        'exact-path',
+        'dot-slash-prefix',
+        'enclosing-directory',
+        'line-suffix',
+        'line-range-suffix',
+        'glob',
+        'placeholder',
+    ],
 )
 def test_lesson_naming_a_changed_path_in_backticks_is_selected(
     named: str, git_repo: Path, lessons_dir: Path, monkeypatch: pytest.MonkeyPatch

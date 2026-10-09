@@ -368,10 +368,16 @@ def resolve_changed_paths(
 ) -> tuple[list[str], bool]:
     """Return the repo-relative tree difference between two commits.
 
-    Uses ``git diff --name-only {recorded} {live}`` — a two-tree comparison, not
-    a commit walk — so the answer is identical whether the SHAs are related by a
-    fast-forward, a rebase, or a force-push, and so a change plus its revert
-    cancels out instead of counting as a difference.
+    Uses ``git diff --name-only --no-renames {recorded} {live}`` — a two-tree
+    comparison, not a commit walk — so the answer is identical whether the SHAs
+    are related by a fast-forward, a rebase, or a force-push, and so a change
+    plus its revert cancels out instead of counting as a difference.
+
+    ``--no-renames`` is load-bearing: with rename detection on (git's default),
+    a renamed file is listed under its destination path only, so the path that
+    ceased to exist would be missing from a list every caller reads as "every
+    path that differs". Without detection a rename is reported as the deletion
+    of the old path plus the addition of the new one, and both are listed.
 
     Args:
         worktree_path: Directory to run git in (``git -C``).
@@ -391,6 +397,7 @@ def resolve_changed_paths(
                 worktree_path or '.',
                 'diff',
                 '--name-only',
+                '--no-renames',
                 recorded_head,
                 live_head,
             ],

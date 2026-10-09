@@ -125,6 +125,24 @@ def test_unmoved_head_is_computed_with_an_empty_list(git_repo: Path, monkeypatch
     assert payload['changed_paths'] == []
 
 
+def test_renamed_file_is_listed_under_both_its_old_and_its_new_path(git_repo: Path, monkeypatch):
+    """A rename removes one path and adds another, and BOTH differ.
+
+    With git's default rename detection the old path would be folded into the
+    new one and vanish from the list, so a reader keyed on the old path would
+    see no change to a file that no longer exists.
+    """
+    recorded = _commit(git_repo, {'src/old.py': 'x = 1\ny = 2\nz = 3\n'})
+    _git(git_repo, 'mv', 'src/old.py', 'src/new.py')
+    _git(git_repo, 'commit', '--quiet', '-m', 'rename')
+    _patch_status(monkeypatch, _status_with(_done_record(recorded)))
+
+    payload = _mod.changed_paths_for_step(_PLAN_ID, _STEP, str(git_repo))
+
+    assert payload['outcome'] == _mod.OUTCOME_COMPUTED
+    assert sorted(payload['changed_paths']) == ['src/new.py', 'src/old.py']
+
+
 def test_no_prior_firing_is_first_firing_without_a_changed_paths_key(git_repo: Path, monkeypatch):
     live = _commit(git_repo, {'src/app.py': 'x = 1\n'})
     _patch_status(monkeypatch, _status_with(None))

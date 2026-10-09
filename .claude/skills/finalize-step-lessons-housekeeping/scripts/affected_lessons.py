@@ -105,6 +105,14 @@ ERROR_STANDARDS_DIR_OUTSIDE_REPO = 'standards_dir_outside_repo'
 #: to name a path.
 _BACKTICK_SPAN = re.compile(r'`([^`\s]+)`')
 
+#: A trailing line reference on a cited path: ``path:598``, ``path:10-20``,
+#: ``path:10:4``.
+_LINE_SUFFIX = re.compile(r':\d+(?:[-:,]\d+)*$')
+
+#: Characters that make a path segment a pattern rather than a literal name — a
+#: glob (``*``, ``?``, ``[``) or a placeholder (``{id}``, ``<name>``).
+_PATTERN_CHARS = frozenset('*?[{<')
+
 
 # ---------------------------------------------------------------------------
 # Pure selection
@@ -134,15 +142,37 @@ def named_paths(body: str) -> list[str]:
     absolute path, a home-relative path or a command-line flag. A leading ``./``
     and a trailing ``/`` are dropped so the result compares against the paths
     ``git diff --name-only`` emits.
+
+    Two citation shapes are reduced to the literal path they stand for, because
+    kept verbatim they could never equal or prefix a path git reports and the
+    lesson would silently never be selected:
+
+    - a trailing line reference (``path:598``) is dropped;
+    - a glob or placeholder (``dir/*.md``, ``plans/{id}/x``) is cut back to the
+      literal directory in front of its first pattern segment, so a change
+      anywhere under that directory selects the lesson.
+
+    A span whose first segment is already a pattern names no literal path and
+    is skipped.
     """
     paths: list[str] = []
     for span in _BACKTICK_SPAN.findall(body):
         if '/' not in span or '://' in span or span.startswith(('/', '~', '-')):
             continue
-        normalised = span.removeprefix('./').rstrip('/')
+        normalised = _literal_path(span)
         if normalised and normalised not in paths:
             paths.append(normalised)
     return paths
+
+
+def _literal_path(span: str) -> str:
+    cited = _LINE_SUFFIX.sub('', span).removeprefix('./').rstrip('/')
+    literal: list[str] = []
+    for segment in cited.split('/'):
+        if _PATTERN_CHARS.intersection(segment):
+            break
+        literal.append(segment)
+    return '/'.join(literal)
 
 
 def _lies_at_or_under(changed_path: str, named_path: str) -> bool:

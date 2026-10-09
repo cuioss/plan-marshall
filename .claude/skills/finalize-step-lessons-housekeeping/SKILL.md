@@ -240,11 +240,11 @@ Read `status` first, then `mode`.
 |----------|--------------------------------|
 | `edited_since_last_firing` | its file was modified after the previous firing started — which also covers a lesson added since |
 | `standards_dir_changed` | a changed path lies under the standards directory of the lesson's component |
-| `named_path_changed` | a changed path equals, or lies under, a path the lesson body names in backticks |
+| `named_path_changed` | a changed path equals, or lies under, a path the lesson body names in backticks — a trailing line reference (`path:598`) is ignored, and a glob or placeholder is read as the literal directory in front of it |
 
 Run Steps 3 to 5 over the lessons in `affected` **only**. Every other lesson keeps the result of the previous firing: it is not re-read, not re-judged and not edited. Retain `carried_over` as `{X}` for the Step 7 outcome line.
 
-**The empty delta is an answer, not a gap.** When the commit touched only files that match no lesson and no lesson changed, `affected` is absent and `examined` is `0`. The answer is **none — carry the previous result**: skip Steps 3 to 5 entirely, write the Step 6 aggregate entry, and proceed to Step 7 with zero removed, promoted, adapted and retained and `{X}` equal to the corpus size.
+**The empty delta is an answer, not a gap.** When the commit touched only files that match no lesson and no lesson changed, `affected` is an empty list and `examined` is `0`. The answer is **none — carry the previous result**: skip Steps 3 to 5 entirely, write the Step 6 aggregate entry, and proceed to Step 7 with zero removed, promoted, adapted and retained and `{X}` equal to the corpus size.
 
 **`mode: full`** — judge the whole corpus as enumerated in Step 2, exactly as a first firing does; `{X}` is `0`. The payload names why in `reason`. There are exactly three full-run conditions:
 
