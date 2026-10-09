@@ -1,12 +1,16 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for finalize-step-plugin-doctor skill directory extraction logic.
 
-The finalize-step-plugin-doctor wrapper reads ``references.modified_files``,
-extracts skill directory paths, and passes them to ``plugin-doctor scan --paths``.
+The finalize-step-plugin-doctor wrapper derives its gate scope from two reads —
+the plan's realized footprint (``manage-references compute-footprint``) united
+with the declared ``affected_files`` list — extracts skill directory paths from
+that union, and passes them to ``plugin-doctor quality-gate --paths``.
 
 Since the wrapper is a SKILL.md (not a Python script), this module validates the
-documented regex extraction patterns as a pure Python function, ensuring the
-patterns correctly identify and deduplicate skill directories from file paths.
+documented derivation as pure Python functions: the regex extraction patterns
+identify and deduplicate skill directories from file paths, the union keeps a
+declared-but-untouched directory in scope, and the F1 whole-tree trigger is
+evaluated against the union rather than against either list alone.
 """
 
 from __future__ import annotations
@@ -84,6 +88,38 @@ def extract_skill_dirs(modified_files: list[str]) -> list[str]:
         if m:
             dirs.add(m.group(0))
     return sorted(dirs)
+
+
+# The F1 whole-tree trigger: a changed plugin-doctor / plan-doctor analyzer or
+# rule script re-classifies skills the diff never touched.
+_F1_TRIGGER_PREFIXES = (
+    'marketplace/bundles/pm-plugin-development/skills/plugin-doctor/',
+    'marketplace/bundles/plan-marshall/skills/plan-doctor/',
+)
+
+
+def gate_scope(realized_footprint: list[str], declared_files: list[str]) -> list[str]:
+    """Return the wrapper's gate scope: realized footprint ∪ declared files.
+
+    Mirrors Step 1 of the wrapper document. Both operands are required — the
+    documented indeterminate branch covers a failed read, which is not modelled
+    here because a missing operand yields no union at all.
+    """
+    return sorted(set(realized_footprint) | set(declared_files))
+
+
+def f1_trigger_fires(scope: list[str]) -> bool:
+    """Return whether the scope touches a plugin-doctor / plan-doctor rule script."""
+    return any(path.startswith(_F1_TRIGGER_PREFIXES) for path in scope)
+
+
+def _step1_scope_block(content: str) -> str:
+    """Return the Step 1 section of the wrapper SKILL.md, up to the Step 2 heading."""
+    start = content.find('### Step 1')
+    assert start != -1, 'Wrapper SKILL.md should declare a Step 1 scope section'
+    end = content.find('\n### Step 2', start)
+    assert end != -1, 'Wrapper SKILL.md should declare a Step 2 section after Step 1'
+    return content[start:end]
 
 
 # ---------------------------------------------------------------------------
@@ -174,6 +210,133 @@ class TestDeduplication:
         assert result == [
             '.claude/skills/my-skill',
         ]
+
+
+# ---------------------------------------------------------------------------
+# Gate scope: realized footprint united with the declared list
+# ---------------------------------------------------------------------------
+
+
+class TestGateScopeUnion:
+    """The gate covers what the plan changed AND what it declared."""
+
+    def test_union_gates_declared_and_realized_skill_dirs(self):
+        # Arrange
+        declared_files = [
+            'marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md',
+            'marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-finalize-step.md',
+        ]
+        realized_footprint = [
+            '.claude/skills/finalize-step-plugin-doctor/SKILL.md',
+        ]
+
+        # Act
+        result = extract_skill_dirs(gate_scope(realized_footprint, declared_files))
+
+        # Assert
+        assert result == [
+            '.claude/skills/finalize-step-plugin-doctor',
+            'marketplace/bundles/plan-marshall/skills/extension-api',
+            'marketplace/bundles/plan-marshall/skills/phase-6-finalize',
+        ]
+
+    def test_declared_list_alone_misses_the_realized_only_skill_dir(self):
+        """Negative control: the pre-union scope does not contain the third directory."""
+        # Arrange
+        declared_files = [
+            'marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md',
+            'marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-finalize-step.md',
+        ]
+
+        # Act
+        result = extract_skill_dirs(declared_files)
+
+        # Assert
+        assert '.claude/skills/finalize-step-plugin-doctor' not in result
+        assert len(result) == 2
+
+    def test_union_deduplicates_a_path_present_in_both_reads(self):
+        # Arrange
+        shared = 'marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md'
+
+        # Act
+        result = gate_scope([shared], [shared])
+
+        # Assert
+        assert result == [shared]
+
+
+class TestF1TriggerOverUnion:
+    """The F1 whole-tree trigger is evaluated against the union."""
+
+    def test_trigger_fires_when_rule_script_is_in_realized_set_only(self):
+        # Arrange
+        declared_files = ['marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md']
+        realized_footprint = [
+            'marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_shim_marker.py',
+        ]
+
+        # Act
+        fires_on_union = f1_trigger_fires(gate_scope(realized_footprint, declared_files))
+        fires_on_declared_alone = f1_trigger_fires(declared_files)
+
+        # Assert
+        assert fires_on_union
+        assert not fires_on_declared_alone
+
+    def test_trigger_fires_for_plan_doctor_path(self):
+        # Arrange
+        scope = gate_scope(['marketplace/bundles/plan-marshall/skills/plan-doctor/scripts/plan_doctor.py'], [])
+
+        # Act / Assert
+        assert f1_trigger_fires(scope)
+
+    def test_trigger_does_not_fire_without_a_rule_script(self):
+        # Arrange
+        scope = gate_scope(
+            ['.claude/skills/finalize-step-plugin-doctor/SKILL.md'],
+            ['marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md'],
+        )
+
+        # Act / Assert
+        assert not f1_trigger_fires(scope)
+
+
+class TestStep1NamesBothReads:
+    """Step 1 of the wrapper document names both reads and their union."""
+
+    def test_step1_names_compute_footprint_with_both_flags(self):
+        # Arrange
+        block = _step1_scope_block(_WRAPPER_SKILL_MD.read_text(encoding='utf-8'))
+
+        # Assert
+        assert 'manage-references compute-footprint' in block
+        assert '--plan-id {plan_id} --worktree-path {worktree_path}' in block
+
+    def test_step1_names_the_declared_affected_files_read(self):
+        # Arrange
+        block = _step1_scope_block(_WRAPPER_SKILL_MD.read_text(encoding='utf-8'))
+
+        # Assert
+        assert '--field affected_files' in block
+
+    def test_step1_states_the_scope_is_the_union(self):
+        # Arrange
+        block = _step1_scope_block(_WRAPPER_SKILL_MD.read_text(encoding='utf-8'))
+
+        # Assert
+        assert 'union' in block, 'Step 1 must state that the gate scope is the union of the two reads'
+
+    def test_f1_trigger_and_skip_clean_are_stated_against_the_union(self):
+        # Arrange
+        content = _WRAPPER_SKILL_MD.read_text(encoding='utf-8')
+        step_2_5 = content[content.find('### Step 2.5') : content.find('### Step 3')]
+        step_3 = content[content.find('### Step 3') : content.find('### Step 4')]
+
+        # Assert
+        assert step_2_5 and step_3, 'Steps 2.5 and 3 must both be locatable in the wrapper document'
+        assert 'Step 1 union' in step_2_5, 'the F1 trigger must be evaluated against the Step 1 union'
+        assert 'union' in step_3, 'the skip-clean exit must be stated against the union'
 
 
 # ---------------------------------------------------------------------------
