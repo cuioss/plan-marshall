@@ -145,10 +145,42 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   behavioural check over changed functions, and screens prose candidates. Basis, read from
   the archived plans: about 205 self-review findings in 40 plans, roughly a quarter real
   defects and more than half wording, every one filed at one constant severity.
-  - **Running since 2026-10-08, in Claude Code, not OpenCode** (operator-confirmed). It runs
-    as a standalone `doc/plans/` session in its worktree, without plan-marshall, and stops at
-    an open pull request. It files no inbox message; its outcome reaches this ledger through
-    its PR and the operator.
+  - **Shipped on 2026-10-09 as #1726, merge commit `d8b0284ef`** ("grade findings by severity
+    and loop only on blocking ones"). Reconciled from the run's own final report, pasted by
+    the operator, and checked against `ci pr queue-state --pr-number 1726` (merged, merge-group
+    run `success`) and `git show --stat d8b0284ef` (18 files, 1486 insertions, 233 deletions:
+    the workflow document, the extension-point standard, the surfacer skill and its four
+    scripts, eleven test modules). The code was not read here.
+    - What it reports as shipped, all six parts of the brief: the severity rubric in the
+      surfacer skill only; `severity` and `failure_scenario` on findings, with only `medium`
+      and above looping and filed; the verifier checking the grading and closing when nothing
+      blocks; a `changed_code_units` list with a behavioural check 19; a screening question
+      before prose checks and on-demand contract reads; the self-seeding rule removed. Its two
+      cold reads matched (8 of 8 rubric grades; the verifier prompt answered as expected).
+    - Deviations it reports: `changed_code_units` reads the syntax tree instead of the shared
+      touched-function helper, which mis-reads docstring lines starting with `class`; the
+      candidate gate and the verdict counts include the changed units; a store record later
+      regraded to advisory is resolved with existing `manage-findings` verbs; the state
+      finding keeps `--severity warning`.
+    - **It merged, although the brief said to stop at an open pull request.** The run's first
+      PR, #1725, was closed unmerged after CodeRabbit was rate-limited; #1726 replaced it and
+      went through the merge queue. Whether the operator approved the merge in that session
+      is not recorded here.
+    - A review comment found a real gap, fixed before merge: a diff that only removes lines
+      from a function was not listed for the behavioural check.
+    - Left behind on this machine, reported by the run and not checked here: the main
+      checkout's git-ignored executor was regenerated from the plugin cache by a test run;
+      the worktree `.plan/local/worktrees/self-review-materiality` and the local branch
+      `fix/self-review-materiality` still exist, with a generated `target/` tree and the
+      untracked brief.
+    - Consequences for the queue: PLAN-LB-28 may now run (nothing else is editing the
+      self-review workflow), but the PLAN-LB-03 claims it carries were verified before this
+      change and name sections this change rewrote; the same holds for the PLAN-LB-08 claims
+      in PLAN-LB-26 about the evidence-resolution paragraph. Both specs need their self-review
+      claims re-grounded before launch. Running plans pick the new self-review up only after
+      they rebase onto `d8b0284ef`.
+  - It ran in Claude Code, not OpenCode, as a standalone `doc/plans/` session in its
+    worktree, without plan-marshall (operator-confirmed on 2026-10-08).
   - **Released to the operator on 2026-10-08, after PLAN-LB-22 landed.** It had been held
     until then by operator decision. The brief was reconciled with commit `6b00815e0`: it now
     describes the loop-budget, grant, operator-close and rule-keyed state findings as existing
@@ -313,8 +345,19 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   every deep-lane, non-recipe plan whose heuristic ties. Not owned by any staged plan; stage it
   if it recurs. — source: inbox message `lb-22-finalize-loop-control-001.md`, 2026-10-08, read
   at bundle version 0.1.1867; not verified against the source here.
+- **Stale text left by the self-review change (#1726), named in its report and not edited:**
+  `doc/analyzis-cloud-plan/capability-gaps.adoc` still describes the self-seeding class as
+  present; `dispatch-granularity.md` and `unreachable-guard-detection.md` carry check counts
+  that were already inexact. Not owned by any staged plan. — source: the run's final report,
+  2026-10-09; not verified here.
 
 ## Watches
+
+- **Does the regraded self-review converge?** The first plans to finalize on `d8b0284ef` or
+  later are the test: read their landing facts for the self-review's firing count, its
+  `blocking_count` and `advisory_count`, and whether it closed by verifier or by operator.
+  — trigger: the landings of PLAN-LB-23, 24 and 29, if they rebased onto it; retire after
+  two landings that closed by verifier.
 
 - **PLAN-LB-23 and PLAN-LB-24 must rebase onto PLAN-LB-22's landing** (`6b00815e0`). It
   changed `phase-6-finalize/SKILL.md`, `automatic-review/SKILL.md`, `triage.md` and
