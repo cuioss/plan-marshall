@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 from _self_review_detectors import _detect_changed_code_units, _parsed_code_units
+from _self_review_diff import _iter_removed_line_anchors
 from _self_review_patterns import CANDIDATE_LISTS
 
 _LIST = 'changed_code_units'
@@ -158,6 +159,70 @@ class TestDetectChangedCodeUnits:
         assert units == [{'file': 'pkg/mod.py', 'line': 6, 'name': 'second', 'kind': 'function'}]
 
 
+class TestRemovedLines:
+    """A removal has no post-image line of its own, and must still name its function."""
+
+    _DIFF = (
+        'diff --git a/pkg/mod.py b/pkg/mod.py\n'
+        '--- a/pkg/mod.py\n'
+        '+++ b/pkg/mod.py\n'
+        '@@ -8,4 +8,3 @@ def untouched(path):\n'
+        ' def modified(path):\n'
+        '-    check_allowed(path)\n'
+        '     text = path.read_text()\n'
+        '     return json.loads(text)\n'
+    )
+
+    def test_a_removal_is_anchored_on_the_line_that_follows_it(self):
+        assert _iter_removed_line_anchors(self._DIFF) == [('pkg/mod.py', 9)]
+
+    def test_a_run_of_removed_lines_yields_one_anchor_and_added_lines_yield_none(self):
+        diff = '+++ b/pkg/mod.py\n@@ -1,4 +1,3 @@\n keep\n-gone one\n-gone two\n+added\n keep\n'
+
+        assert _iter_removed_line_anchors(diff) == [('pkg/mod.py', 2)]
+        assert _iter_removed_line_anchors('+++ b/pkg/mod.py\n@@ -1,1 +1,2 @@\n keep\n+added\n') == []
+
+    def test_a_deleted_file_yields_no_anchor(self):
+        diff = (
+            'diff --git a/pkg/kept.py b/pkg/kept.py\n'
+            '+++ b/pkg/kept.py\n'
+            '@@ -1,1 +1,1 @@\n'
+            ' keep\n'
+            'diff --git a/pkg/gone.py b/pkg/gone.py\n'
+            '--- a/pkg/gone.py\n'
+            '+++ /dev/null\n'
+            '@@ -1,2 +0,0 @@\n'
+            '-def f():\n'
+            '-    return 1\n'
+        )
+
+        assert _iter_removed_line_anchors(diff) == []
+
+    def test_a_deletion_only_change_names_the_function_it_was_made_in(self, tmp_path):
+        project_dir = _project(tmp_path)
+
+        # Matched control: with no removal anchor and no added line, nothing is listed.
+        assert _detect_changed_code_units([], project_dir, []) == []
+
+        units = _detect_changed_code_units([], project_dir, _iter_removed_line_anchors(self._DIFF))
+
+        assert units == [{'file': 'pkg/mod.py', 'line': 8, 'name': 'modified', 'kind': 'function'}]
+
+    def test_a_removal_between_two_functions_names_the_one_above_it(self, tmp_path):
+        project_dir = _project(tmp_path)
+
+        # The anchor is post-image line 6, so the removed text sat directly below
+        # line 5 — the last line of ``untouched``.
+        units = _detect_changed_code_units([], project_dir, [('pkg/mod.py', 6)])
+
+        assert [u['name'] for u in units] == ['untouched']
+
+    def test_a_removal_in_a_test_module_names_nothing(self, tmp_path):
+        project_dir = _project(tmp_path, rel='test/pkg/test_mod.py')
+
+        assert _detect_changed_code_units([], project_dir, [('test/pkg/test_mod.py', 10)]) == []
+
+
 class TestParsedCodeUnitKind:
     def test_kind_follows_the_nearest_enclosing_function_or_class(self):
         units = _parsed_code_units(_MODULE.splitlines())
@@ -250,6 +315,21 @@ class TestUnreadableReadAsEmptyIsSurfaced:
         assert ('gate.py', 'read_declared_paths', 'function') in units
         assert ('gate.py', 'plans_comparable', 'function') in units
         assert int(data['counts'][_LIST]) == len(data[_LIST])
+
+    def test_a_committed_guard_removal_is_surfaced_end_to_end(self, repo):
+        _git(repo, 'commit', '-q', '-m', 'add gate')
+        guarded = _UNREADABLE_AS_EMPTY.replace('    return not (', '    assert left != right\n    return not (')
+        assert guarded != _UNREADABLE_AS_EMPTY
+        (repo / 'gate.py').write_text(guarded)
+        _git(repo, 'commit', '-q', '-am', 'add guard')
+        _git(repo, 'branch', '-f', 'main', 'HEAD')
+        # The branch under review differs from its base by one removed line only.
+        (repo / 'gate.py').write_text(_UNREADABLE_AS_EMPTY)
+        _git(repo, 'commit', '-q', '-am', 'remove guard')
+
+        data = _surface(repo)
+
+        assert [(e['name'], e['kind']) for e in data[_LIST]] == [('plans_comparable', 'function')]
 
     def test_the_list_does_not_raise_the_total(self, repo):
         counts = _surface(repo)['counts']

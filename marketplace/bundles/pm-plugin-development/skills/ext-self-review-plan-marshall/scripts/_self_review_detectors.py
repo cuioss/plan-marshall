@@ -2353,22 +2353,33 @@ def _parsed_code_units(post_image: list[str]) -> list[dict[str, Any]] | None:
 
 
 def _detect_changed_code_units(
-    added: list[tuple[str, int, str]], project_dir: Path | None = None
+    added: list[tuple[str, int, str]],
+    project_dir: Path | None = None,
+    removed: list[tuple[str, int]] | None = None,
 ) -> list[dict[str, Any]]:
     """List every function or method the diff touched in a non-test ``.py`` file.
 
     The review anchor for the behavioural check: one entry per function the diff
-    adds a line to, so the cognitive pass reads each changed function whole
-    instead of meeting it only through whichever line-level heuristic happened
-    to fire on it.
+    changes, so the cognitive pass reads each changed function whole instead of
+    meeting it only through whichever line-level heuristic happened to fire on
+    it.
 
-    When the file's post-image parses, units come from its syntax tree: an added
-    line is attributed to the INNERMOST function whose span (decorators through
-    last body line) contains it, and a line outside every function names no
-    unit. When there is no post-image, or it does not parse, the shared
-    line-based split (``_scan_py_function_blocks`` / ``_block_is_diff_touched``)
-    is used instead and every unit is reported as ``function``, since that split
-    does not track classes.
+    A function is touched by an ADDED line inside it and by a REMOVAL inside it.
+    ``removed`` carries ``(path, post_image_line)`` anchors, each naming the
+    post-image line that follows a run of removed lines; the removal is
+    attributed through the line BEFORE that anchor, which is the last surviving
+    line above the removed text. A diff that only deletes a guard therefore
+    still names the function it was deleted from. A removal at the very end of a
+    function and one immediately after it share that preceding line, so both
+    name the function.
+
+    When the file's post-image parses, units come from its syntax tree: a line
+    is attributed to the INNERMOST function whose span (decorators through last
+    body line) contains it, and a line outside every function names no unit.
+    When the post-image does not parse, or there is none, the shared line-based
+    split (``_function_blocks`` / ``_block_is_diff_touched``) is used instead and
+    every unit is reported as ``function``, since that split does not track
+    classes.
 
     Test modules are excluded: a test is evidence the behavioural check reads,
     not a unit it grades.
@@ -2377,17 +2388,31 @@ def _detect_changed_code_units(
     ``name``, and ``kind`` (``function`` / ``method``). The list is
     surfacing-only — it names what changed and adjudicates nothing.
     """
+    added_by_file: dict[str, dict[int, str]] = {}
+    touched_by_file: dict[str, set[int]] = {}
+    for path, lineno, content in added:
+        if path.endswith('.py') and not _is_test_path(path):
+            added_by_file.setdefault(path, {})[lineno] = content
+            touched_by_file.setdefault(path, set()).add(lineno)
+    for path, anchor in removed or []:
+        if path.endswith('.py') and not _is_test_path(path):
+            touched_by_file.setdefault(path, set()).add(max(anchor - 1, 1))
+
     out: list[dict[str, Any]] = []
-    for path, (touched, blocks) in _scan_py_function_blocks(added, project_dir).items():
-        if _is_test_path(path):
-            continue
+    for path in sorted(touched_by_file):
+        touched = touched_by_file[path]
         post_image = _read_post_image(project_dir, path) if project_dir is not None else []
         units = _parsed_code_units(post_image) if post_image else None
         if units is None:
+            if post_image:
+                scan_lines = list(enumerate(post_image, start=1))
+            else:
+                scan_lines = sorted(added_by_file.get(path, {}).items())
+            touched_map = dict.fromkeys(touched, '')
             out.extend(
                 {'file': path, 'line': block['line'], 'name': block['name'], 'kind': 'function'}
-                for block in blocks
-                if _block_is_diff_touched(block, touched)
+                for block in _function_blocks(scan_lines)
+                if _block_is_diff_touched(block, touched_map)
             )
             continue
         hit: dict[int, dict[str, Any]] = {}

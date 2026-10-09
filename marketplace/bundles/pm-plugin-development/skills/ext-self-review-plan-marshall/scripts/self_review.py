@@ -76,6 +76,7 @@ from _self_review_diff import (
     _diff_hunks,
     _iter_added_lines,
     _iter_changed_line_pairs,
+    _iter_removed_line_anchors,
     _resolve_footprint,
     _run_git,
     _truncate,  # noqa: F401 - re-exported for stable import surface
@@ -375,12 +376,15 @@ def _cmd_surface(args: argparse.Namespace) -> int:
     duplicate_claimable_keys = _detect_duplicate_claimable_keys(added, project_dir)
     discard_without_report = _detect_discard_without_report(added, project_dir)
     hoisted_binding_shadows = _detect_hoisted_binding_shadows(added, project_dir)
-    changed_code_units = _detect_changed_code_units(added, project_dir)
+    removed_anchors = _iter_removed_line_anchors(diff_text)
+    if allow_set is not None:
+        removed_anchors = [anchor for anchor in removed_anchors if anchor[0] in allow_set]
+    changed_code_units = _detect_changed_code_units(added, project_dir, removed_anchors)
 
-    # Detector bindings keyed by registry key. ``detected`` below is built by
-    # iterating ``CANDIDATE_LISTS``, so a registry entry without a binding
-    # raises ``KeyError`` here instead of drifting silently into the
-    # ``_compose_candidate_output`` registry-drift error.
+    # Detector bindings keyed by registry key. ``detected`` below carries EVERY
+    # binding, so ``_compose_candidate_output`` compares the full binding set
+    # against the registry and raises on drift in either direction: a registry
+    # entry with no binding, and a binding with no registry entry.
     bindings: dict[str, Callable[[], list]] = {
         'regexes': lambda: regexes,
         'user_facing_strings': lambda: user_facing,
@@ -408,7 +412,7 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         'changed_code_units': lambda: changed_code_units,
     }
 
-    detected: dict[str, list] = {spec.key: bindings[spec.key]() for spec in CANDIDATE_LISTS}
+    detected: dict[str, list] = {key: binding() for key, binding in bindings.items()}
 
     surface_scope = 'delta' if since_ref is not None else 'full'
     files_in_scope = len(modified_files)
