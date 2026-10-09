@@ -3,9 +3,11 @@
 
 ``cmd_pr_wait_for_comments`` (in ``_github_pr.py``, dispatched via ``github_ops``)
 surfaces a ``rate_limited_bots[]`` field: after the poll settles it inspects EVERY
-REGISTERED bot's newest comment for a rate-limit status notice and returns one
-``{bot_kind, rate_limit_class, eta, eta_seconds, eta_extracted, cause, cap, layer,
-body}`` record per detected bot. A boolean cannot carry that answer: it collapses a three-bot pipeline into one
+REGISTERED bot's newest comment for a refusal notice and returns one
+``{bot_kind, rate_limit_class, condition, eta, eta_seconds, eta_extracted, cause, cap,
+layer, body}`` record per detected bot. ``condition`` says what the notice reports:
+``rate_limited`` for a limit, ``no_unreviewed_commit`` for a reply saying nothing new
+is left to review. A boolean cannot carry that answer: it collapses a three-bot pipeline into one
 CodeRabbit-shaped verdict, leaving a rate-limited Sourcery or PR-Agent invisible.
 
 The generalization is registry-driven end to end and carries NO bot-name literal
@@ -173,6 +175,9 @@ def test_bot_without_declared_class_fails_closed_to_unknown(monkeypatch):
         {
             'bot_kind': 'cuioss-review-bot',
             'rate_limit_class': 'unknown',
+            # A limit notice. PR-Agent declares no no-unreviewed-commit wording, so
+            # nothing it posts can carry the other condition.
+            'condition': _github_pr.REFUSAL_CONDITION_RATE_LIMITED,
             'eta': '',
             # PR-Agent declares no reset-time patterns, so none can be read.
             'eta_seconds': None,
@@ -199,6 +204,7 @@ def test_coderabbit_notice_yields_registry_extracted_eta(monkeypatch):
         {
             'bot_kind': 'coderabbit',
             'rate_limit_class': 'awaitable_window',
+            'condition': _github_pr.REFUSAL_CONDITION_RATE_LIMITED,
             'eta': '12 minutes and 30 seconds',
             # The stated duration converted to seconds: 12 * 60 + 30.
             'eta_seconds': 750,

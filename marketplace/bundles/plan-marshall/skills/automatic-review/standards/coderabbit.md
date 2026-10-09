@@ -14,9 +14,9 @@ bot appears in neither list, with a warning recorded. See
 
 The fenced-YAML block below is the machine-readable per-bot record. It is data, not frontmatter —
 a fenced code block that plugin-doctor treats as an example, not an executable directive. Consumers
-read `bot_kind`, `author_login`, `trigger_comment`, `completion_check_name`, `honors_skip_label`,
+read `bot_kind`, `author_login`, `trigger_comment`, `escalated_trigger_comment`, `completion_check_name`, `honors_skip_label`,
 `participation_evidence`, `participation_evidence_markers`, `participation_requires_update`, `ignore_patterns`,
-`acknowledgment_patterns`, `review_body_summary_patterns`, `refusal_patterns`, `contentless_review_markers`,
+`acknowledgment_patterns`, `review_body_summary_patterns`, `refusal_patterns`, `no_unreviewed_commit_patterns`, `contentless_review_markers`,
 `actionable_content_markers`, `rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map` from
 it; the prose sections that follow carry the rationale. CodeRabbit declares neither
 `contentless_review_markers` nor `actionable_content_markers`, so the producer's content-aware layer
@@ -35,6 +35,7 @@ source of truth for a fact this block already owns.
 bot_kind: coderabbit
 author_login: coderabbitai
 trigger_comment: "@coderabbitai review"
+escalated_trigger_comment: "@coderabbitai full review"   # re-reviews the WHOLE changeset; posted only after a "nothing new to review" reply, and it uses one review from the allowance
 trigger_semantics: requires_explicit_trigger   # the trigger comment above must be posted
 completion_check_name: "CodeRabbit"   # in-progress check-run polled to completion by the wait step
 honors_skip_label: true          # central cuioss/coderabbit config skips PRs labelled skip-bot-review
@@ -72,6 +73,11 @@ refusal_patterns:
   - "Review limit reached"                                                    # review-summary notice — posted in place of an automatic review
   - "Review rate limited"                                                     # command-invocation reply — posted in place of a commanded review
   - "Too many files!"                                                         # #1407 skip notice — the per-PR FILE-COUNT ceiling, posted in place of a review under a "Review skipped" heading. Detected on the cause line rather than on "Review skipped", which heads several unrelated skips (draft PRs, ignored paths, skip labels) and would over-match
+  - "Already reviewed the last commit"                                        # command-invocation reply to `@coderabbitai review` when no commit is unreviewed — posted in place of a review, so it is detected here; its CONDITION is declared below
+  - "No new commits to review"                                                # the skip notice for the same situation, detected on the cause line for the reason "Too many files!" is
+no_unreviewed_commit_patterns:                                                # the CONDITION overlay: which refusal above says nothing NEW is left to review. Not a limit — no window is open and it is never waited for
+  - "Already reviewed the last commit"
+  - "No new commits to review"
 refusal_size_patterns:                                                        # the CAUSE overlay: which refusal above is diff-SIZE (needs a smaller diff), not a rate-limit window (needs backoff)
   - "Too many files!"                                                         # cause=size, resolving refused_structural — the two rate-limit notices above are NOT here, so both keep cause=quota and the awaitable_window awaitability below. A file count does not fall on its own, so offering a wait for it would be an option guaranteed not to work
 refusal_size_cap_patterns:                                                    # extraction regexes reading the CAP the skip notice itself states
@@ -171,6 +177,48 @@ a *successful* review (`## Walkthrough`, `✏️ Learnings added`), so reusing i
 would classify CodeRabbit's ordinary successful reviews as refusals, and unioning the two collapses
 the distinction. See [`bot-participation-contract.md`](bot-participation-contract.md) §
 "A refusal is never noise — it is a branch".
+
+## "Nothing new to review" replies — a refusal that is not a limit
+
+CodeRabbit reviews incrementally: it does not review a commit a second time. When
+`@coderabbitai review` is posted and no commit is unreviewed, it answers with a command reply
+instead of a review. The reply arrives in the same `<details>` disclosure as `Review rate limited`,
+under the same `⚠️ Action not completed` summary, and reads:
+
+> Already reviewed the last commit. Use @coderabbitai full review to rerun a review of the entire
+> changeset.
+
+It is posted in place of a review, so it is detected like every other refusal — its wording is in
+`refusal_patterns`, it files no finding, and on its own it credits no participation. It can make an
+existing review count: when CodeRabbit's review on record is stale and this reply is newer than the
+merge-candidate commit, the review is counted — see
+[`bot-participation-contract.md`](bot-participation-contract.md) § "The reply-covered credit". What
+sets the reply apart is its **condition**. The same two literals are declared in `no_unreviewed_commit_patterns`, and a refusal
+matching one carries `condition: no_unreviewed_commit` on its record; every other refusal carries
+`rate_limited`. A consumer reads the condition before `cause` and before `rate_limit_class`:
+
+- **It is never waited for.** No window is open. `rate_limit_class: awaitable_window` is declared for
+  this bot and rides every record, but it describes the rate-limit notices; this reply reopens
+  nothing, and the recovery claims no window for it.
+- **Repeating `@coderabbitai review` cannot help.** The reply is the answer to that command, and the
+  next one gets the same answer.
+- **The remedy is `escalated_trigger_comment`, or nothing.** `@coderabbitai full review` makes
+  CodeRabbit review the whole changeset again. CodeRabbit's command reference states that it uses one
+  review from the allowance when it runs, exactly as `@coderabbitai review` does, so it is posted only
+  when no CodeRabbit review is on record at all, and at most once per reply. Which of the two applies is decided by the recovery
+  selector — see `../SKILL.md` § "Rate-limit refusal recovery (opt-in)" Branch 6, which owns the rule
+  and the observations it reads; it is not restated here.
+
+`No new commits to review` is the skip notice for the same situation. It is matched on that line
+rather than on the `Review skipped` heading it appears under, which heads several unrelated skips —
+the reasoning the `Too many files!` literal already follows.
+
+Provenance of the two literals: `Already reviewed the last commit` was read verbatim off a CodeRabbit
+command reply on `cuioss/plan-marshall#1654`. `No new commits to review` is declared from the reported
+wording of the skip notice and has not been read off a live comment.
+
+The condition itself is cross-bot vocabulary — see
+[`bot-participation-contract.md`](bot-participation-contract.md) § "The refusal condition".
 
 ## Acknowledgment replies — `Review triggered`, `Review finished`
 
@@ -369,4 +417,6 @@ overlays:
 ## Re-review
 
 Handled by the registry — `github_re_review re-review --bot-kind coderabbit` posts
-`@coderabbitai review` and awaits a fresh review.
+`@coderabbitai review` and awaits a fresh review. With `--escalated` the same verb posts
+`@coderabbitai full review` instead, which is reached only from the "nothing new to review" recovery
+above.

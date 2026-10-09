@@ -4,7 +4,7 @@
 
 ``automatic-review/SKILL.md`` consumes ``github_re_review recovery-action``'s
 ``action`` and routes on it through a table of its own. That table cannot live in
-the selector: the branches it names — ``Branch 0`` … ``Branch 5`` — are anchors
+the selector: the branches it names — ``Branch 0`` … ``Branch 6`` — are anchors
 this DOCUMENT owns, and a selector that published them would be declaring the
 structure of a workflow it knows nothing about. Route metadata therefore stays with
 the router.
@@ -37,6 +37,10 @@ not a layout: the step never waits for a rate window itself. The route for an op
 window hands the wait back to the main context, and the two routes that deliver a
 recovery event are reached only from the re-entry consult that follows that wait.
 Those assertions read the wording of the target cells, never a branch number.
+
+A second such contract covers the routes for a ``no_unreviewed_commit`` reply: of
+the four actions the selector resolves for it, exactly one posts a command, and
+every one of them is reached only after the pass's FIND.
 """
 
 from __future__ import annotations
@@ -209,6 +213,66 @@ class TestTheRoutesHandTheWaitBack:
 
         assert len(targets) == 1, f'expected one structural route, found {len(targets)}'
         assert 're-entry consult' not in targets[0], targets[0]
+
+
+#: The actions the selector resolves for a ``no_unreviewed_commit`` reply, split by
+#: whether the route posts anything. Named through the selector's own constants, so a
+#: renamed action fails at import rather than leaving a stale string here.
+_NON_POSTING_NO_UNREVIEWED_ACTIONS = (
+    github_re_review.RECOVERY_ACTION_ACCEPT_REVIEW_ON_RECORD,
+    github_re_review.RECOVERY_ACTION_AWAIT_TRIAGE,
+    github_re_review.RECOVERY_ACTION_LEAVE_TO_STALE_REVIEW,
+)
+_POSTING_NO_UNREVIEWED_ACTION = github_re_review.RECOVERY_ACTION_POST_ESCALATED_COMMAND
+
+
+class TestTheNoUnreviewedCommitRoutes:
+    """A "nothing new to review" reply is routed to four outcomes, and one of them posts.
+
+    The escalated command uses a review from the bot's allowance, so which routes
+    post is a contract, not a layout.
+    """
+
+    def test_each_action_has_exactly_one_route(self):
+        for action in (*_NON_POSTING_NO_UNREVIEWED_ACTIONS, _POSTING_NO_UNREVIEWED_ACTION):
+            targets = _targets_routing(action)
+
+            assert len(targets) == 1, f'expected one route for {action}, found {len(targets)}'
+
+    def test_the_three_routes_with_a_review_on_record_post_nothing(self):
+        for action in _NON_POSTING_NO_UNREVIEWED_ACTIONS:
+            [target] = _targets_routing(action)
+
+            assert 'post nothing' in target, (action, target)
+            assert 'escalated command' not in target, (action, target)
+
+    def test_only_the_route_with_no_review_on_record_posts_the_escalated_command(self):
+        """MATCHED CONTROL — the posting wording is present on the one route that posts."""
+        [target] = _targets_routing(_POSTING_NO_UNREVIEWED_ACTION)
+
+        assert 'post nothing' not in target, target
+        assert 'escalated command' in target, target
+        assert 'once' in target, target
+
+    def test_every_route_is_reached_after_find(self):
+        """Both observations exist only after FIND, so no route is entered before it."""
+        for action in (*_NON_POSTING_NO_UNREVIEWED_ACTIONS, _POSTING_NO_UNREVIEWED_ACTION):
+            [target] = _targets_routing(action)
+
+            assert 'after FIND' in target, (action, target)
+
+    def test_the_pending_findings_route_names_the_triage(self):
+        """The pending-findings case is its own route, and it leaves the findings to triage."""
+        [target] = _targets_routing(github_re_review.RECOVERY_ACTION_AWAIT_TRIAGE)
+
+        assert 'triage' in target, target
+
+    def test_none_of_the_routes_claims_or_waits_for_a_window(self):
+        """The reply is not a limit, so no route hands a wait back."""
+        for action in (*_NON_POSTING_NO_UNREVIEWED_ACTIONS, _POSTING_NO_UNREVIEWED_ACTION):
+            [target] = _targets_routing(action)
+
+            assert 'hand the wait back' not in target, (action, target)
 
 
 class TestEveryCitedBranchExists:

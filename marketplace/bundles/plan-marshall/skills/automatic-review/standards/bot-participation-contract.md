@@ -808,6 +808,79 @@ had. The notice's own figure is first-party evidence captured at the moment of r
 makes a recorded gap auditable rather than asserted — so the disclosure stays honestly narrower rather
 than confidently wrong.
 
+### The refusal condition — `rate_limited` or `no_unreviewed_commit`
+
+A refusal notice reports one of two **conditions**, and the condition is read before the cause and
+before the awaitability class, because one of its values says the notice is not a limit at all.
+
+| Condition | The bot's reply says | Is anything waited for? |
+|-----------|----------------------|-------------------------|
+| `rate_limited` | A limit was hit — a rate window, a quota, a diff-size ceiling. Which one, and whether waiting moves it, is what the cause and `rate_limit_class` answer. | Decided by those two axes, as the sections above state. |
+| `no_unreviewed_commit` | Every commit on the PR is already reviewed, so there is nothing new to review. | **Never.** No window is open, so no window is claimed and no wait is armed. |
+
+`rate_limited` is the default: it is the condition of every refusal that is not positively recognised
+as the other one, a size refusal included — its `cause` still says `size`. `no_unreviewed_commit` is
+asserted only on a literal the refusing bot's own record declares.
+
+The condition is wired as a per-refusal overlay, the same way the cause is:
+
+- **Registry:** each bot may declare `no_unreviewed_commit_patterns` — the subset of its
+  `refusal_patterns` that says nothing new is left to review. Detection stays `refusal_patterns`' job,
+  which is what keeps such a reply from being filed as a finding or credited as participation; the
+  overlay only names its condition. An entry declared outside `refusal_patterns` is dropped by the
+  accessor. A bot that declares none never carries `no_unreviewed_commit`.
+- **Derivation:** `_github_pr.refusal_condition(body, bot_kind)` returns `no_unreviewed_commit` iff a
+  `no_unreviewed_commit_patterns` entry matches, else `rate_limited`. The two values are published as
+  `_github_pr.REFUSAL_CONDITIONS`.
+- **Records:** both refusal producers carry it — `condition` on every `rate_limited_bots[]` record of
+  `pr wait-for-comments`, and on every `refusals[]` record of the re-review await.
+- **Remedy:** a bot that answered its trigger with `no_unreviewed_commit` answers the same trigger the
+  same way again, so the ordinary trigger is not repeated. The remedy is the bot's registry
+  `escalated_trigger_comment` — the command that reviews the whole changeset again — and it is posted
+  only when no review by that bot is on record at all. When a review is on record, nothing is posted.
+  `github_re_review recovery-action --condition` makes that selection; the step's handling is
+  [`../SKILL.md`](../SKILL.md) § "Rate-limit refusal recovery (opt-in)" Branch 6, which owns the rule
+  and is not restated here.
+
+**The condition does not select a taxonomy member.** `review_completeness` receives no condition, so a
+bot whose only observation is a `no_unreviewed_commit` reply resolves by its `rate_limit_class` like
+any other refusal, and a bot that is also a proven participant resolves `participated` or
+`participated_but_empty`, because proven participation is evaluated before the refusal branch. The
+classifier is unchanged. What the condition can change is one of its inputs: the producer reads it
+when it decides whether a stale review is covered, as the next section states.
+
+### The reply-covered credit — a stale review the bot itself says is current
+
+The currency rule places a review at the commit it was last credited against. After a new commit that
+review is stale, and the remedy is to trigger the bot again. A bot that reviews incrementally may
+answer that trigger with a `no_unreviewed_commit` reply: it has nothing left to review. The currency
+test cannot see that, so the bot would stay stale with no remedy that works — its ordinary trigger
+gets the same reply again.
+
+The producer therefore counts such a review when the bot's own reply covers the merge candidate:
+
+- **Who:** a bot the currency test left in the stale set on this fetch. A bot with no admissible
+  review is never reached — the reply cannot stand in for a review that does not exist.
+- **What covers it:** a comment of that bot which the recognition stack reads as a refusal and whose
+  condition is `no_unreviewed_commit`. A comment that merely names another commit is not such a reply.
+- **The ordering:** the reply's latest timestamp is strictly later than the merge-candidate commit's.
+  The reply says every commit is reviewed, and it can only speak for commits that existed when it was
+  written.
+- **Fail closed:** a timestamp that cannot be read on either side, an equal one, or an unreadable
+  merge candidate leaves the bot stale.
+
+A bot counted this way moves from `stale_participation_bots[]` into `participated_bots[]`, so every
+consumer of the participation return — the participation guard and the pre-merge barrier among them —
+sees it through the list it already reads. It is also named in `reply_covered_participation_bots[]`
+with the id of the reply, so the credit states what it rests on. No currency-ledger row is written:
+the credit is derived from the reply on each fetch, and a later commit returns the bot to stale by the
+same comparison.
+
+⚠ **The commit's timestamp is when the commit was made, not when it reached the PR.** A commit made
+before the reply and pushed after it passes the comparison although the bot never saw it. The pipeline
+reads no push time, so this credit does not close that case. It is the one known way this arm can
+count a review for a commit the bot did not review.
+
 ### A refusal is never noise — it is a branch
 
 Recognising a refusal and then **discarding** it is the same failure as not recognising it. A refusal
@@ -835,7 +908,9 @@ by the same producer, but each drives a different outcome and none is a superset
 `refusal_size_patterns` overlay from § "Two axes" is deliberately NOT one of these three: it drives no
 comment-level outcome — it labels a refusal's CAUSE, which selects the `refused_structural`
 member rather than dropping or keeping a comment — and it is by design a subset of
-`refusal_patterns`, so the no-superset property here is scoped to these three comment-level surfaces.)
+`refusal_patterns`, so the no-superset property here is scoped to these three comment-level surfaces.
+The `no_unreviewed_commit_patterns` overlay from § "The refusal condition" is outside the three for
+the same reason: it labels a refusal's CONDITION and is likewise a subset of `refusal_patterns`.)
 
 | Marker surface | Match semantics | Outcome |
 |----------------|-----------------|---------|

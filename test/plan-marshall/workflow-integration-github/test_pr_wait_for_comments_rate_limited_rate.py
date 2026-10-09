@@ -3,9 +3,11 @@
 
 ``cmd_pr_wait_for_comments`` (in ``_github_pr.py``, dispatched via ``github_ops``)
 surfaces a ``rate_limited_bots[]`` field: after the poll settles it inspects EVERY
-REGISTERED bot's newest comment for a rate-limit status notice and returns one
-``{bot_kind, rate_limit_class, eta, eta_seconds, eta_extracted, cause, cap, layer,
-body}`` record per detected bot. A boolean cannot carry that answer: it collapses a three-bot pipeline into one
+REGISTERED bot's newest comment for a refusal notice and returns one
+``{bot_kind, rate_limit_class, condition, eta, eta_seconds, eta_extracted, cause, cap,
+layer, body}`` record per detected bot. ``condition`` says what the notice reports:
+``rate_limited`` for a limit, ``no_unreviewed_commit`` for a reply saying nothing new
+is left to review. A boolean cannot carry that answer: it collapses a three-bot pipeline into one
 CodeRabbit-shaped verdict, leaving a rate-limited Sourcery or PR-Agent invisible.
 
 The generalization is registry-driven end to end and carries NO bot-name literal
@@ -187,6 +189,8 @@ def test_non_coderabbit_bot_rate_limit_is_detected(monkeypatch):
         {
             'bot_kind': 'sourcery',
             'rate_limit_class': 'hard_quota',
+            # A limit notice: the default condition, carried on every record.
+            'condition': _github_pr.REFUSAL_CONDITION_RATE_LIMITED,
             'eta': '',
             # No reset time was stated: the seconds are absent and the record says so.
             'eta_seconds': None,
@@ -224,6 +228,7 @@ def test_notice_stating_no_eta_yields_empty_eta(monkeypatch):
         {
             'bot_kind': 'coderabbit',
             'rate_limit_class': 'awaitable_window',
+            'condition': _github_pr.REFUSAL_CONDITION_RATE_LIMITED,
             'eta': '',
             # The explicit statement that this recognised refusal yielded no reset
             # time — a field of its own, not something read off the empty ``eta``.
@@ -233,6 +238,38 @@ def test_notice_stating_no_eta_yields_empty_eta(monkeypatch):
             'cap': '',
             'layer': _github_pr.REFUSAL_LAYER_REGISTRY,
             'body': _CODERABBIT_REVIEW_LIMIT_REACHED['body'],
+        }
+    ]
+
+
+def test_a_no_new_commit_reply_yields_a_record_with_its_own_condition(monkeypatch):
+    # CodeRabbit's "Already reviewed the last commit" reply is posted in place of a
+    # review, so it is a record in this list — and its condition says it is not a
+    # limit. The class still rides the record, because it is declared per bot and the
+    # shape does not vary by condition; the notice states no reset time and no cap.
+    reply = {
+        'author': 'coderabbitai[bot]',
+        'body': '<details> Already reviewed the last commit. Use @coderabbitai full review to rerun it. </details>',
+        'created_at': '2026-01-02T00:00:00Z',
+    }
+    # Fixture control: short enough to be carried whole, like the limit notices above.
+    assert len(reply['body']) < len(_CODERABBIT_REVIEW_LIMIT_REACHED['body'])
+    _wire(monkeypatch, post_comments=[_HUMAN_COMMENT, reply])
+
+    result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
+
+    assert result['rate_limited_bots'] == [
+        {
+            'bot_kind': 'coderabbit',
+            'rate_limit_class': 'awaitable_window',
+            'condition': _github_pr.REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT,
+            'eta': '',
+            'eta_seconds': None,
+            'eta_extracted': False,
+            'cause': 'quota',
+            'cap': '',
+            'layer': _github_pr.REFUSAL_LAYER_REGISTRY,
+            'body': reply['body'],
         }
     ]
 

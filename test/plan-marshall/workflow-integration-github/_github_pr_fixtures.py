@@ -39,6 +39,11 @@ confirm ``@coderabbitai review`` was received (:data:`CODERABBIT_ACKNOWLEDGMENTS
 each carrying the PROVENANCE of its wording, beside the matched bodies that are not
 acknowledgments: a genuine short review comment from the same bot, and a human
 comment that quotes an acknowledgment.
+
+And of the **CodeRabbit "nothing new to review" replies**
+(:data:`CODERABBIT_NO_UNREVIEWED_COMMIT_REPLIES`) — the refusals whose condition is
+``no_unreviewed_commit`` — each carrying the provenance of its wording, beside the
+matched command reply that is a rate limit (:data:`CODERABBIT_RATE_LIMITED_COMMAND_REPLY`).
 """
 
 from __future__ import annotations
@@ -243,3 +248,56 @@ HUMAN_COMMENT_QUOTING_AN_ACKNOWLEDGMENT = (
     'CodeRabbit replied "Review finished." but the retry loop at `src/idx.py:12` '
     'still spins forever when the backoff cap is zero.'
 )
+
+#: The bot the "nothing new to review" bodies below belong to, and its login.
+NO_UNREVIEWED_COMMIT_BOT_KIND = 'coderabbit'
+NO_UNREVIEWED_COMMIT_BOT_LOGIN = 'coderabbitai'
+
+
+def _declined_command_reply(statement: str) -> str:
+    """Wrap ``statement`` in the disclosure CodeRabbit's DECLINED command replies arrive in.
+
+    The same disclosure as :func:`_command_reply`, under the ``Action not completed``
+    summary, followed by the note CodeRabbit appends to every such reply.
+    """
+    return (
+        '<details>\n<summary>⚠️ Action not completed</summary>\n\n'
+        f'{statement}\n\n'
+        '> Note: CodeRabbit is an incremental review system and does not re-review already '
+        'reviewed commits. This command is applicable only when automatic reviews are paused.\n\n'
+        '</details>'
+    )
+
+
+#: ``(case id, body, provenance)`` for each CodeRabbit reply saying nothing new is left
+#: to review. Provenance uses the acknowledgment vocabulary above.
+#:
+#: ``Already reviewed the last commit`` is OBSERVED: it was read off a command reply on
+#: ``cuioss/plan-marshall#1654``. ``No new commits to review`` is CONSTRUCTED: it is the
+#: reported wording of the skip notice and has not been read off a live comment.
+CODERABBIT_NO_UNREVIEWED_COMMIT_REPLIES: tuple[tuple[str, str, str], ...] = guard_non_empty(
+    (
+        (
+            'already-reviewed',
+            _declined_command_reply(
+                'Already reviewed the last commit. '
+                'Use @coderabbitai full review to rerun a review of the entire changeset.'
+            ),
+            ACKNOWLEDGMENT_OBSERVED,
+        ),
+        (
+            'no-new-commits',
+            '> [!IMPORTANT]\n> ## Review skipped\n>\n> No new commits to review.',
+            ACKNOWLEDGMENT_CONSTRUCTED,
+        ),
+    ),
+    'CODERABBIT_NO_UNREVIEWED_COMMIT_REPLIES',
+    'the literal no-new-commit bodies declared in _github_pr_fixtures',
+)
+
+#: The published size of the no-new-commit reply population.
+CODERABBIT_NO_UNREVIEWED_COMMIT_REPLY_COUNT: int = len(CODERABBIT_NO_UNREVIEWED_COMMIT_REPLIES)
+
+#: The matched body: a declined command reply from the same bot, in the same disclosure,
+#: that IS a limit. Its condition is ``rate_limited``.
+CODERABBIT_RATE_LIMITED_COMMAND_REPLY = _declined_command_reply('Review rate limited.')

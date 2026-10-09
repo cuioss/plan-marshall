@@ -88,6 +88,20 @@ def _verdict(
     )
 
 
+def _no_unreviewed_verdict(bot_kind: str, review_on_record: str = '', pending_findings: int | None = None) -> dict:
+    """The SHIPPED selector's verdict for a ``no_unreviewed_commit`` reply from ``bot_kind``.
+
+    The two observations default to "not supplied", so a call site names exactly
+    the ones the case is about.
+    """
+    return github_re_review.resolve_recovery_action(
+        bot_kind,
+        condition=_github_pr.REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT,
+        review_on_record=review_on_record,
+        pending_findings=pending_findings,
+    )
+
+
 def _action(bot_kind: str, cause: str = _github_pr.REFUSAL_CAUSE_QUOTA, **kwargs) -> str:
     """The recovery ACTION the shipped selector derives for ``bot_kind``."""
     return str(_verdict(bot_kind, cause, **kwargs)['action'])
@@ -155,7 +169,7 @@ _DECLARED_WORDING_PAIRS: list[tuple[str, str]] = [
     (bot_kind, pattern) for bot_kind in bot_registry.bot_kinds() for pattern in bot_registry.refusal_patterns(bot_kind)
 ]
 _DECLARED_WORDING_POPULATION_SIZE = len(_DECLARED_WORDING_PAIRS)
-_DECLARED_WORDING_POPULATION_BASELINE = 7
+_DECLARED_WORDING_POPULATION_BASELINE = 9
 
 
 def _login(bot_kind: str) -> str:
@@ -524,10 +538,49 @@ class TestTheRecoveryActionSelectorDerivesItsVerdict:
                 github_re_review.RECOVERY_ACTION_CLOSE_AND_REOPEN,
                 'claim_window_elapsed',
             ),
+            # The no_unreviewed_commit arms: one per review-on-record state, the
+            # credited state split on whether a finding is pending, and one
+            # unmeasured arm per missing observation.
+            (
+                _no_unreviewed_verdict(awaitable, github_re_review.REVIEW_ON_RECORD_CREDITED, 0),
+                github_re_review.RECOVERY_ACTION_ACCEPT_REVIEW_ON_RECORD,
+                'review_on_record_findings_handled',
+            ),
+            (
+                _no_unreviewed_verdict(awaitable, github_re_review.REVIEW_ON_RECORD_CREDITED, 2),
+                github_re_review.RECOVERY_ACTION_AWAIT_TRIAGE,
+                'findings_pending',
+            ),
+            (
+                _no_unreviewed_verdict(awaitable, github_re_review.REVIEW_ON_RECORD_STALE, 0),
+                github_re_review.RECOVERY_ACTION_LEAVE_TO_STALE_REVIEW,
+                'merge_candidate_newer_than_reply',
+            ),
+            (
+                _no_unreviewed_verdict(awaitable, github_re_review.REVIEW_ON_RECORD_ABSENT, 0),
+                github_re_review.RECOVERY_ACTION_POST_ESCALATED_COMMAND,
+                'no_review_on_record',
+            ),
+            (
+                _no_unreviewed_verdict(awaitable, pending_findings=0),
+                github_re_review.RECOVERY_ACTION_UNMEASURED,
+                'no_review_observation',
+            ),
+            (
+                _no_unreviewed_verdict(awaitable, github_re_review.REVIEW_ON_RECORD_CREDITED),
+                github_re_review.RECOVERY_ACTION_UNMEASURED,
+                'no_findings_observation',
+            ),
         ]
         derived_inputs = (
             'bot_kind',
             'cause',
+            'condition',
+            'review_on_record',
+            'pending_findings',
+            'refusal_conditions',
+            'review_on_record_states',
+            'escalated_trigger_comment',
             'rate_limit_class',
             'trigger_semantics',
             'known_bot_kinds',

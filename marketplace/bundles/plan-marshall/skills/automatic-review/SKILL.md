@@ -128,19 +128,21 @@ copy here that a future taxonomy change would leave stale.
 Each entry in either list maps one-to-one to a machine-readable registry doc at
 `standards/{bot_kind}.md` under this skill's `standards/` directory — there is no hard-coded bot
 list in the pipeline. Each registry doc carries a fenced-YAML data block (`bot_kind`,
-`author_login`, `trigger_comment`, `completion_check_name`, `honors_skip_label`, `ignore_patterns[]`,
-`acknowledgment_patterns[]`, `review_body_summary_patterns[]`, `refusal_patterns[]`,
+`author_login`, `trigger_comment`, `escalated_trigger_comment`, `completion_check_name`, `honors_skip_label`, `ignore_patterns[]`,
+`acknowledgment_patterns[]`, `review_body_summary_patterns[]`, `refusal_patterns[]`, `no_unreviewed_commit_patterns[]`,
 `contentless_review_markers[]`, `actionable_content_markers[]`, `rate_limit_class`,
 `rate_limit_eta_patterns[]`, `severity_map`) plus the
 producer / consumer / trust boundary / disposition rationale for that bot, and links to the org
 signal/noise source-of-truth rather than duplicating it. `acknowledgment_patterns[]` lists the replies
 with which a bot only confirms that a command was received; a bot that posts none leaves the field
-out, and it reads as empty.
+out, and it reads as empty. `escalated_trigger_comment` is the command that makes a bot review the
+whole changeset again, and `no_unreviewed_commit_patterns[]` lists the replies with which it says
+nothing new is left to review; both read as empty for a bot that declares neither.
 
 The single generic loader `scripts/bot_registry.py` parses every `standards/{bot_kind}.md` data
 block at runtime and exposes the derived registry (`bot_kinds()`, the login→bot_kind map, each
-bot's `trigger_comment`, `completion_check_name`, `honors_skip_label`, `ignore_patterns`,
-`acknowledgment_patterns`, `review_body_summary_patterns`, `contentless_review_markers`, `actionable_content_markers`,
+bot's `trigger_comment`, `escalated_trigger_comment`, `completion_check_name`, `honors_skip_label`, `ignore_patterns`,
+`acknowledgment_patterns`, `review_body_summary_patterns`, `no_unreviewed_commit_patterns`, `contentless_review_markers`, `actionable_content_markers`,
 `rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map`). The producer
 (`github_pr.py` noise pre-filter), the finding store (`_findings_core.BOT_KINDS`), the re-review
 strategy registry (`github_re_review.py` — both its trigger comments and the `refusal_class` /
@@ -269,6 +271,8 @@ Read `re_review_on_loopback` off the returned `params` object (default: `false`)
 
    - **When `timed_out: true` (and `matched: false`)**, the await budget expired with no fresh bot review for the new HEAD — proceed to "On re-review timeout (trigger B)" below instead of falling through silently.
 
+     **One exception — the bot answered that nothing is unreviewed.** When the return also carries `refusal_detected: true` with a `refusals[]` record whose `condition` is `no_unreviewed_commit`, AND `review_rate_window_await` is `true`, do NOT enter the timeout sub-block. The bot did not stay silent: it said every commit is already reviewed, and asking the operator whether to wait longer for a review it has just declined to repeat asks the wrong question. Fall through to "Wait for review-bot comments" and carry that record into "Rate-limit refusal recovery (opt-in)", which routes it to Branch 6. With `review_rate_window_await` `false` the recovery section is skipped, so the timeout sub-block applies as on any other timeout.
+
    **An acknowledgment is not an answer.** A bot may reply to the trigger with a comment that only confirms the command was received — CodeRabbit's "Review triggered", which it edits to "Review finished". The registry never returns such a comment as the match: it classifies it `acknowledged`, keeps polling, and reports `acknowledged: true` on the returned TOON. So `acknowledged` selects none of the three arms above and is never added to `{declined_bots}` — the arm is still chosen by `matched`, `head_sha_verified` and `timed_out` alone. The same holds for `answer_withheld_in_progress: true`: the bot's comment did not reference `{head_sha}` while its review was still running, so the registry withheld it instead of reporting a decline. Both fields say why a `timed_out: true` return is not a bot that stayed silent; neither changes which arm is taken. Which bodies are acknowledgments is each bot's registry `acknowledgment_patterns` — see [`standards/bot-participation-contract.md`](standards/bot-participation-contract.md) § "An acknowledgment is not an answer".
 
 ### On re-review timeout (trigger B)
@@ -375,10 +379,11 @@ Once every participating bot is completed, markerless (buffer-settled), or recor
 > **GitLab provider asymmetry:** `bot_completion` is a GitHub-only read verb — the GitLab provider (`gitlab_pr`) has no completion-check-run equivalent (the same asymmetry the FIND stage's `--required-bots` / `--optional-bots` note documents). On a GitLab host, skip the completion-aware poll entirely; every bot relies on the `review_bot_buffer_seconds` settle.
 
 The `pr wait-for-comments` return carries a **`rate_limited_bots[]`** discriminator — one
-`{bot_kind, rate_limit_class, eta, eta_seconds, eta_extracted, cause, cap, layer, body}` record per REGISTERED bot whose newest
-comment is a rate-limit status notice posted in place of a review. A non-empty list signals that those specific bots did not
-review because their limit was hit, rather than that a genuine review landed or the buffer timed out
-cleanly. An empty list means no registered bot is rate-limited. See
+`{bot_kind, rate_limit_class, condition, eta, eta_seconds, eta_extracted, cause, cap, layer, body}` record per REGISTERED bot whose newest
+comment is a refusal notice posted in place of a review. A non-empty list signals that those specific bots did not
+review — because their limit was hit (`condition: rate_limited`), or because they report nothing new
+to review (`condition: no_unreviewed_commit`) — rather than that a genuine review landed or the buffer timed out
+cleanly. An empty list means no registered bot posted such a notice. See
 [`../workflow-integration-github/SKILL.md`](../workflow-integration-github/SKILL.md) § Canonical
 invocations → `github_ops pr wait-for-comments` for the authoritative field contract.
 
@@ -388,7 +393,8 @@ reopen on a useful timescale so awaiting it only burns budget, and `unknown` is 
 for a bot whose refusal shape has never been observed. ⛔ Each record ALSO carries the refusal's
 `cause` and the `cap` its notice stated, and the cause is read FIRST: a `size` cause makes waiting a
 non-option whatever the class declares, so a consumer that routes on `rate_limit_class` alone offers a
-wait for a ceiling waiting does not move. The "Rate-limit refusal recovery" subsection
+wait for a ceiling waiting does not move. ⛔ Before either of those comes the record's `condition`: a
+`no_unreviewed_commit` record is not a limit at all and is never waited for. The "Rate-limit refusal recovery" subsection
 below acts on this discriminator when the opt-in is enabled; when the opt-in is off, a non-empty
 `rate_limited_bots[]` is treated as an ordinary settle by the table above.
 
@@ -397,8 +403,8 @@ below acts on this discriminator when the opt-in is enabled; when the opt-in is 
 A detected refusal is a **branchable signal, never a silent drop**. Two producers surface one:
 
 - **`rate_limited_bots[]`** on the "Wait for review-bot comments" return — one
-  `{bot_kind, rate_limit_class, eta, eta_seconds, eta_extracted, cause, cap, layer, body}` record per
-  registered bot whose newest comment is a rate-limit notice.
+  `{bot_kind, rate_limit_class, condition, eta, eta_seconds, eta_extracted, cause, cap, layer, body}` record per
+  registered bot whose newest comment is a refusal notice.
 - **`refusal_detected` / `refusal_class` / `refusal_eta` / `refusal_eta_seconds` /
   `refusal_eta_extracted` / `refusals[]`** on the `github_re_review re-review` return — the re-review
   await recorded a refusal instead of collapsing it into a bare `matched: false` / `timed_out: true`.
@@ -414,27 +420,40 @@ Both records also carry the OBSERVATION behind the refusal: `layer`, the recogni
 notice, and `body`, the notice itself as a whitespace-collapsed, truncated excerpt. Branch 2 discloses
 those two fields when it arms a wait — see § "The arming disclosure" below.
 
+Both records carry the refusal's `condition` too: `rate_limited` when a limit was hit, and
+`no_unreviewed_commit` when the bot replied that every commit is already reviewed. The second is not a
+limit — see [`standards/bot-participation-contract.md`](standards/bot-participation-contract.md)
+§ "The refusal condition" — and Branch 6 below is where it is handled. On the `re-review` producer the
+condition is read off the same `refusals[]` record § "The arming disclosure" selects.
+
 Read `review_rate_window_await` and `review_rate_window_timeout_seconds` off the same `params` object returned by the one-stop `manage-execution-manifest step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review` call used for `review_bot_buffer_seconds` (defaults: `false` and `3600`). **When `review_rate_window_await == false`**, skip this entire subsection and proceed directly to "Producer: FIND" below — a detected refusal is treated as an ordinary settle.
 
 **When `review_rate_window_await == true` AND a refusal was detected on a bot in `required_bots`**, CONSULT the recovery selector BEFORE claiming or awaiting anything, and route on the `action` it returns. Recovery is only productive for a limit that actually moves, and which limit this is comes from the bot registry rather than from a judgement made here:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review recovery-action \
-  --bot-kind {bot_kind} [--cause {cause}] --plan-id {plan_id}
+  --bot-kind {bot_kind} [--cause {cause}] [--condition {condition}] --plan-id {plan_id}
 ```
 
 ⛔ **Pass `--cause` only when a cause was actually OBSERVED, and omit the flag entirely when it was not.** `--cause` declares `choices=('size','quota')` and is not `required`, so an unobserved cause has no token to interpolate: substituting an empty or non-choice value is an argparse rejection (exit 2), which this document's exit-code convention turns into a hard STOP — killing the recovery for exactly the refusal this sequence exists to arm. An unobserved cause is a modelled state, not a hypothetical: `bot-participation-contract.md` documents "a refusal NO arm of the recognition stack could READ", and the selector defaults `cause` to the empty string precisely so the omission resolves rather than rejects.
 
-Pass `--window-expired` and `--attempts-remaining` only once a claim exists to report them (the Branch 3 re-entry read observes both); omit them here, where no window has been read yet. Read `action` from the returned TOON and enter the branch it names:
+**`--condition` follows the same observed-only rule.** Forward the refusal record's `condition` when the record carries one, and omit the flag entirely when it does not. It declares `choices=('rate_limited','no_unreviewed_commit')` and is not `required`, so an empty or non-choice value is the same argparse rejection; an omitted condition reads as empty and takes the rate-limit derivation.
+
+Pass `--window-expired` and `--attempts-remaining` only once a claim exists to report them (the Branch 3 re-entry read observes both); omit them here, where no window has been read yet. Read `action` and `reason` from the returned TOON and enter the branch the table names:
 
 | `action` | Branch |
 |----------|--------|
 | `escalate_structural` | **Branch 0** — escalate, do not await, do not generate |
 | `escalate_not_awaitable` | **Branch 1** — escalate, do not await, do not generate |
-| `await_window` (and the `unmeasured` no-observation reasons, which are what an unclaimed window reads as here) | **Branch 2** — read this plan's own claim first; claim the window and hand the wait back to the main context, or enter Branch 3 when the claim is already this plan's and has elapsed |
+| `await_window` (and `unmeasured` with `reason: no_window_observation` or `reason: no_attempt_budget_observation`, which are what an unclaimed window reads as here) | **Branch 2** — read this plan's own claim first; claim the window and hand the wait back to the main context, or enter Branch 3 when the claim is already this plan's and has elapsed |
 | `escalate_exhausted` | Branch 2's `recovery_cap_exhausted` arm — `escalate_ask{reason: rate_window_exhausted}` |
 | `close_and_reopen` | **Branch 5** — re-deliver the dropped request (reached from the Branch 3 re-entry consult, after the window elapsed) |
 | `generate_trigger` | **Branch 4** — generate the event (reached from the Branch 3 re-entry consult, after the window elapsed) |
+| `unmeasured` with `reason: no_review_observation` or `reason: no_findings_observation` | **Branch 6** — the condition is `no_unreviewed_commit` and its two observations are not gathered yet; claim nothing, wait for nothing, and consult again after "Producer: FIND" |
+| `accept_review_on_record` | **Branch 6**, case (a) — post nothing; the review on record stands (reached from the Branch 6 consult, after FIND) |
+| `await_triage` | **Branch 6**, case (b) — post nothing; the review is on record and its pending findings go to the triage that follows (reached from the Branch 6 consult, after FIND) |
+| `leave_to_stale_review` | **Branch 6**, case (c) — post nothing; the merge candidate is newer than the bot's reply, so the stale review is re-triggered by the participation guard (reached from the Branch 6 consult, after FIND) |
+| `post_escalated_command` | **Branch 6**, case (d) — no review by the bot is on record; post its escalated command, once (reached from the Branch 6 consult, after FIND) |
 | `unmeasured` with `reason: registry_empty` | Escalate as Branch 1 does. No verdict was computed, so nothing here authorizes a recovery. |
 
 See [`../workflow-integration-github/SKILL.md`](../workflow-integration-github/SKILL.md) § Canonical invocations → `github_re_review recovery-action` for the full action vocabulary and the fields each return publishes.
@@ -632,7 +651,8 @@ disclosure is emitted on a successful claim, and the envelope row is repeated on
 return, whose wait is still armed by the same refusal — that pass claims nothing, so it writes no ARMED
 log line, and its row is read off the refusal record that selected the recovery on that pass. Branch 0
 and Branch 1 escalate without claiming, Branch 2's `recovery_cap_exhausted` and
-`window_held_by_other_plan` arms claim nothing, and a run with `review_rate_window_await: false` never
+`window_held_by_other_plan` arms claim nothing, Branch 6 handles a reply that is not a limit and claims
+nothing, and a run with `review_rate_window_await: false` never
 enters this section — none of them armed a wait, so none of them discloses an arming record, neither on
 the log nor on the envelope.
 
@@ -796,6 +816,139 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-windo
 
 Then proceed to "Producer: FIND" below, against the re-bound `{pr_number}`.
 
+#### Branch 6 — `no_unreviewed_commit`: accept the review on record, or post the escalated command once
+
+Entered when the refusal record's `condition` is `no_unreviewed_commit`: the bot answered that every
+commit on the PR is already reviewed. This is not a limit. Do NOT claim a window and do NOT hand a
+wait back — no `rate_window_await` return and no `rate_window_arming[]` row come out of this branch.
+Repeating the bot's ordinary trigger is no remedy either: the reply is the answer to that trigger.
+
+The branch decides between four outcomes, and only one of them posts anything:
+
+| The bot's review for the merge candidate | Its findings | Outcome |
+|------------------------------------------|--------------|---------|
+| on record | all handled | (a) accept — post nothing |
+| on record | some pending | (b) post nothing — the triage that follows handles them |
+| stale — the merge candidate is newer than the bot's reply | — | (c) post nothing — the participation guard re-triggers the stale review |
+| none on record | — | (d) post the bot's escalated command, once |
+
+It needs two observations that exist only after this pass's FIND. So it runs in two parts.
+
+**Part 1 — before FIND.** Release any claim this plan still holds for the bot, exactly as a pass with
+no refusal does (the release is a benign no-op when nothing is held), decision-log the entry, and
+continue to "Producer: FIND" and "Consumer count" without posting anything:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-window release \
+  --plan-id {plan_id} --bot-kind {bot_kind}
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:automatic-review) refusal recovery NOT A LIMIT — bot {bot_kind} reports no unreviewed commit (condition=no_unreviewed_commit, producer={producer}); no window claimed, deciding after FIND"
+```
+
+**Part 2 — after "Consumer count".** Gather the two observations from data this pass already holds:
+
+- `{review_on_record}` — where `{bot_kind}`'s review stands on this pass's
+  `github_pr fetch_findings` return:
+  - `credited` when the bot is named in `participated_bots[]`. That list is the bot's review counted
+    for the merge candidate. It includes a review the commit check placed at an earlier commit when
+    the bot's own `no_unreviewed_commit` reply is newer than the merge-candidate commit — the producer
+    makes that decision and names such a bot in `reply_covered_participation_bots[]` as well; this
+    step does not repeat the comparison.
+  - `stale` when the bot is named only in `stale_participation_bots[]`: it has a review, and its reply
+    does not cover the merge candidate.
+  - `absent` when the bot is in neither list.
+- `{pending_findings}` — the number of entries in the "Consumer count" list whose `bot_kind` is
+  `{bot_kind}`. Findings this pass has just filed count: they are not handled yet.
+
+Then consult the selector with both:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review recovery-action \
+  --bot-kind {bot_kind} --condition no_unreviewed_commit \
+  --review-on-record {review_on_record} --pending-findings {pending_findings} --plan-id {plan_id}
+```
+
+Both flags are supplied because both were observed; omitting either returns `action: unmeasured`,
+which authorizes nothing. Route on the returned `action`:
+
+- **`action: accept_review_on_record`** (case a) — a review by this bot is counted for the merge
+  candidate and none of its findings is pending. Post nothing. Decision-log, then continue to "Mark
+  Step Complete":
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO \
+    --message "(plan-marshall:automatic-review) refusal recovery ACCEPTED — bot {bot_kind} reports no unreviewed commit, its review is on record for the merge candidate and pending_findings=0; nothing posted"
+  ```
+
+  Nothing is forced here. The participation guard runs as on any pass, and it counts the bot because
+  `participated_bots[]` names it — proven participation is evaluated before the refusal the reply
+  also registers in `refused_bots[]`.
+
+- **`action: await_triage`** (case b) — a review by this bot is counted for the merge candidate and
+  `{pending_findings}` of its findings are still pending. Post nothing: the review exists, so asking
+  for another one is not what the open findings need. Decision-log, then continue to "Mark Step
+  Complete"; the unified triage that follows this step handles the findings.
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO \
+    --message "(plan-marshall:automatic-review) refusal recovery AWAIT TRIAGE — bot {bot_kind} reports no unreviewed commit, its review is on record for the merge candidate and pending_findings={pending_findings}; nothing posted"
+  ```
+
+- **`action: leave_to_stale_review`** (case c) — the bot has a review, but the merge candidate is
+  newer than its reply, so the reply says nothing about the current commit. Post nothing — neither
+  the escalated command nor anything else from this branch. Decision-log, then continue to "Mark Step
+  Complete". The participation guard classifies the bot `participated_stale` and its loop-back
+  re-triggers the review with the bot's ordinary trigger, which now has a commit to review.
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO \
+    --message "(plan-marshall:automatic-review) refusal recovery LEFT TO STALE REVIEW — bot {bot_kind} reports no unreviewed commit, but the merge candidate is newer than that reply; nothing posted"
+  ```
+
+- **`action: post_escalated_command`** (case d) — no review by this bot is on record at all. Post
+  the bot's registry `escalated_trigger_comment`
+  through the re-review registry, which owns the string and the await. Resolve `{head_sha}` and
+  `{push_time}` as "Re-review after a loop-back fix commit (trigger B)" step 2 and step 3 do, and read
+  `re_review_await_timeout_seconds` off the same `params` object (default: 600):
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review \
+    --pr-number {pr_number} --bot-kind {bot_kind} --head-sha {head_sha} --push-time {push_time} \
+    --timeout {re_review_await_timeout_seconds} --escalated --plan-id {plan_id}
+  ```
+
+  The verb posts the command at most once per reply and never into an open rate window; both rules are
+  enforced inside it, not here. Read `status` first:
+
+  | Return | Action |
+  |--------|--------|
+  | `status: refused`, `reason: window_open` | The bot's rate window is claimed and running. Nothing was posted. Decision-log the reason and continue to "Mark Step Complete" |
+  | `status: refused`, `reason: escalated_command_already_posted` | The command is already on the PR and the bot has not commented since. Nothing was posted. Decision-log the reason and continue to "Mark Step Complete" |
+  | `status: refused`, `reason: no_escalated_command` or `reason: escalated_history_unreadable` | The bot declares no escalated command, or the PR's comments could not be read. Nothing was posted. Decision-log the reason at WARNING and continue to "Mark Step Complete" |
+  | `status: success`, `matched: true`, `head_sha_verified: true` | The whole-changeset review landed for this HEAD. Issue the "Producer: FIND" call and the "Consumer count" read once more so its comments are filed, then continue to "Mark Step Complete" |
+  | `status: success`, `matched: true`, `head_sha_verified: false` | The bot answered without referencing this HEAD. Add `{bot_kind}` to `{declined_bots}` exactly as trigger B does, and continue to "Mark Step Complete" |
+  | `status: success`, `timed_out: true` | The command was posted and no review landed inside the budget. Continue to "Mark Step Complete"; a later pass files the review when it arrives |
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO \
+    --message "(plan-marshall:automatic-review) refusal recovery ESCALATED COMMAND — bot {bot_kind} reports no unreviewed commit (review_on_record={review_on_record}, pending_findings={pending_findings}); re-review --escalated returned status={status} reason={reason} matched={matched} head_sha_verified={head_sha_verified}"
+  ```
+
+  Substitute `-` for a field the return does not carry. On every row the participation guard decides
+  the step: a bot whose review has not landed yet is still unproven there, and the guard's loop-back
+  brings the step round again.
+
+- **`action: unmeasured`** — an observation was not supplied. Post nothing, log the returned `reason`
+  at WARNING, and continue to "Mark Step Complete".
+
 ### Producer: FIND — file PR comments to the ledger (entry-point)
 
 Call the producer-side `fetch_findings` verb once. It fetches PR review comments, applies pre-filters (already-resolved threads, obvious text noise, and cross-iteration duplicate comments), and files one `pr-comment` finding per surviving comment into the per-plan findings store with the untrusted comment body quarantined under `raw_input.{body}` — the trusted structured metadata (`thread_id`, `comment_id`, `kind`, `author`, `path`, `line`) goes in the finding's `detail`.
@@ -834,6 +987,8 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings li
 ```
 
 Read the `findings` count as `{N}` for the `mark-step-done` display detail. This FIND-only step does NOT triage the findings — they remain `pending` in the store for the dispatcher-owned unified wait-region triage (`producer=finalize-feedback`), which consumes the union of pending `pr-comment` ∪ `sonar-issue` findings once both wait-region producers have filed (see [`../phase-6-finalize/SKILL.md`](../phase-6-finalize/SKILL.md) Step 3 item 7c). An empty `findings` list simply means no review comments surfaced — proceed to "Mark Step Complete" Branch A with `{N}` = 0.
+
+When this pass entered "Rate-limit refusal recovery" Branch 6 for a bot, run that branch's Part 2 now, before "Mark Step Complete": the list just read is one of the two observations it consults on.
 
 ### Findings await the unified triage (no inline triage, no loop-back, no RESPOND here)
 

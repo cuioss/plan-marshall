@@ -79,6 +79,12 @@ import bot_registry
 import ci_base
 import github_re_review
 import pytest
+from _github_pr_fixtures import (
+    CODERABBIT_NO_UNREVIEWED_COMMIT_REPLIES,
+    CODERABBIT_NO_UNREVIEWED_COMMIT_REPLY_COUNT,
+    CODERABBIT_RATE_LIMITED_COMMAND_REPLY,
+    NO_UNREVIEWED_COMMIT_BOT_KIND,
+)
 
 _NO_RECORD_WINDOW = {'status': 'free', 'expired': True, 'holder': '', 'seconds_remaining': 0.0}
 _OPEN_WINDOW = {
@@ -690,3 +696,190 @@ def test_main_timeout_defaults_when_flag_omitted(monkeypatch):
 
     assert rc == 0
     assert captured['timeout'] == ci_base.DEFAULT_CI_TIMEOUT
+
+
+def test_the_no_new_commit_reply_population_is_published():
+    """The parametrized condition cases below run over a stated, non-empty population."""
+    assert CODERABBIT_NO_UNREVIEWED_COMMIT_REPLY_COUNT == len(CODERABBIT_NO_UNREVIEWED_COMMIT_REPLIES)
+    assert CODERABBIT_NO_UNREVIEWED_COMMIT_REPLY_COUNT == len(
+        bot_registry.no_unreviewed_commit_patterns(NO_UNREVIEWED_COMMIT_BOT_KIND)
+    )
+
+
+@pytest.mark.parametrize(
+    'body',
+    [body for _case, body, _provenance in CODERABBIT_NO_UNREVIEWED_COMMIT_REPLIES],
+    ids=[case for case, _body, _provenance in CODERABBIT_NO_UNREVIEWED_COMMIT_REPLIES],
+)
+def test_a_no_new_commit_reply_and_a_rate_limit_reply_carry_two_conditions(body):
+    """Both replies are refusals, and their records name different conditions.
+
+    The rate-limit reply is the matched control: it arrives in the same disclosure
+    from the same bot, so a record that labelled every declined command reply
+    ``no_unreviewed_commit`` would fail here.
+    """
+    nothing_new = github_re_review._ReReviewStrategy._refusal_record(
+        body, NO_UNREVIEWED_COMMIT_BOT_KIND, 'issue_comment'
+    )
+    limited = github_re_review._ReReviewStrategy._refusal_record(
+        CODERABBIT_RATE_LIMITED_COMMAND_REPLY, NO_UNREVIEWED_COMMIT_BOT_KIND, 'issue_comment'
+    )
+
+    assert nothing_new is not None
+    assert limited is not None
+    assert nothing_new['condition'] == _github_pr.REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT
+    assert limited['condition'] == _github_pr.REFUSAL_CONDITION_RATE_LIMITED
+    assert nothing_new['condition'] != limited['condition']
+    assert {nothing_new['condition'], limited['condition']} == set(_github_pr.REFUSAL_CONDITIONS)
+
+
+def test_a_bot_declaring_no_such_pattern_never_carries_the_no_unreviewed_condition():
+    """The condition is asserted only on a literal the refusing bot itself declares."""
+    body = CODERABBIT_NO_UNREVIEWED_COMMIT_REPLIES[0][1]
+    undeclared = [bot for bot in bot_registry.bot_kinds() if not bot_registry.no_unreviewed_commit_patterns(bot)]
+    assert undeclared, 'every registered bot declares the overlay — this control has no subject'
+
+    for bot in undeclared:
+        assert _github_pr.refusal_condition(body, bot) == _github_pr.REFUSAL_CONDITION_RATE_LIMITED
+
+
+@pytest.mark.parametrize(
+    ('review_on_record', 'pending_findings', 'action', 'reason'),
+    [
+        pytest.param('credited', 0, 'accept_review_on_record', 'review_on_record_findings_handled', id='accept'),
+        pytest.param('credited', 3, 'await_triage', 'findings_pending', id='pending-findings'),
+        pytest.param('stale', 0, 'leave_to_stale_review', 'merge_candidate_newer_than_reply', id='stale'),
+        pytest.param('stale', 3, 'leave_to_stale_review', 'merge_candidate_newer_than_reply', id='stale-pending'),
+        pytest.param('absent', 0, 'post_escalated_command', 'no_review_on_record', id='no-review'),
+    ],
+)
+def test_recovery_action_resolves_no_unreviewed_commit_from_its_two_observations(
+    review_on_record, pending_findings, action, reason, monkeypatch, capsys
+):
+    """Through the CLI: each review state resolves its own action, and one of them posts."""
+    verdict = _run_recovery_action(
+        monkeypatch,
+        capsys,
+        '--bot-kind',
+        NO_UNREVIEWED_COMMIT_BOT_KIND,
+        '--condition',
+        'no_unreviewed_commit',
+        '--review-on-record',
+        review_on_record,
+        '--pending-findings',
+        str(pending_findings),
+    )
+
+    assert verdict['action'] == action
+    assert verdict['reason'] == reason
+    assert verdict['condition'] == 'no_unreviewed_commit'
+    assert verdict['escalated_trigger_comment'] == bot_registry.escalated_trigger_comment(NO_UNREVIEWED_COMMIT_BOT_KIND)
+
+
+def test_only_an_absent_review_resolves_the_posting_action():
+    """Swept over the whole review-on-record vocabulary and both finding states.
+
+    ``post_escalated_command`` spends a review from the bot's allowance, so it must be
+    reachable from exactly one state. A state added to the vocabulary later is swept
+    here without an edit.
+    """
+    posting = set()
+    for state in github_re_review.REVIEW_ON_RECORD_STATES:
+        for pending in (0, 1):
+            verdict = github_re_review.resolve_recovery_action(
+                NO_UNREVIEWED_COMMIT_BOT_KIND,
+                condition=_github_pr.REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT,
+                review_on_record=state,
+                pending_findings=pending,
+            )
+            if verdict['action'] == github_re_review.RECOVERY_ACTION_POST_ESCALATED_COMMAND:
+                posting.add(state)
+
+    assert posting == {github_re_review.REVIEW_ON_RECORD_ABSENT}
+
+
+@pytest.mark.parametrize(
+    ('extra', 'reason'),
+    [
+        pytest.param(('--pending-findings', '0'), 'no_review_observation', id='no-review-observation'),
+        pytest.param(('--review-on-record', 'credited'), 'no_findings_observation', id='no-findings-observation'),
+        pytest.param((), 'no_review_observation', id='neither'),
+    ],
+)
+def test_recovery_action_is_unmeasured_when_an_observation_is_missing(extra, reason, monkeypatch, capsys):
+    """A missing observation authorizes nothing — in particular not the posting arm."""
+    verdict = _run_recovery_action(
+        monkeypatch,
+        capsys,
+        '--bot-kind',
+        NO_UNREVIEWED_COMMIT_BOT_KIND,
+        '--condition',
+        'no_unreviewed_commit',
+        *extra,
+    )
+
+    assert verdict['action'] == github_re_review.RECOVERY_ACTION_UNMEASURED
+    assert verdict['reason'] == reason
+
+
+def test_a_review_state_outside_the_vocabulary_is_unmeasured_not_the_posting_arm():
+    """A direct caller passing an unknown state gets no verdict, never a spent review."""
+    verdict = github_re_review.resolve_recovery_action(
+        NO_UNREVIEWED_COMMIT_BOT_KIND,
+        condition=_github_pr.REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT,
+        review_on_record='true',
+        pending_findings=0,
+    )
+
+    assert verdict['action'] == github_re_review.RECOVERY_ACTION_UNMEASURED
+    assert verdict['reason'] == 'no_review_observation'
+
+
+def test_recovery_action_still_resolves_await_window_for_rate_limited(monkeypatch, capsys):
+    """MATCHED CONTROL — the other condition takes the window derivation unchanged.
+
+    The same bot, with the two no-unreviewed-commit observations supplied as well:
+    they are read only for that condition, so they must not move this verdict.
+    """
+    verdict = _run_recovery_action(
+        monkeypatch,
+        capsys,
+        '--bot-kind',
+        NO_UNREVIEWED_COMMIT_BOT_KIND,
+        '--condition',
+        'rate_limited',
+        '--cause',
+        'quota',
+        '--review-on-record',
+        'absent',
+        '--pending-findings',
+        '0',
+        '--window-expired',
+        'false',
+        '--attempts-remaining',
+        '2',
+    )
+
+    assert verdict['action'] == github_re_review.RECOVERY_ACTION_AWAIT_WINDOW
+    assert verdict['reason'] == 'claim_window_open'
+
+
+def test_recovery_action_rejects_a_review_state_outside_the_vocabulary_at_the_parser(monkeypatch):
+    """The CLI accepts exactly the selector's own vocabulary."""
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'github_re_review.py',
+            'recovery-action',
+            '--bot-kind',
+            NO_UNREVIEWED_COMMIT_BOT_KIND,
+            '--review-on-record',
+            'true',
+        ],
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        github_re_review.main()
+
+    assert excinfo.value.code == 2

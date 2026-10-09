@@ -499,6 +499,46 @@ def refusal_cause(body: str, bot_kind: str | None = None) -> str:
     return REFUSAL_CAUSE_QUOTA
 
 
+# The refusal CONDITION — what state of the world the bot's reply reports. It is read
+# BEFORE the cause and the awaitability class, because one of its values says the reply
+# is not a limit at all.
+#
+# ``rate_limited`` is the default: the bot could not review because a limit was hit, and
+# the cause and class axes say which limit and whether waiting moves it.
+# ``no_unreviewed_commit`` says the bot has already reviewed every commit on the PR, so
+# there is nothing new for it to review. No window is open and nothing reopens by
+# waiting; a caller that waits on such a record waits for nothing.
+REFUSAL_CONDITION_RATE_LIMITED = 'rate_limited'
+REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT = 'no_unreviewed_commit'
+
+#: The declared condition vocabulary. Consumers that validate or iterate a condition
+#: value derive their population from this tuple rather than restating the members.
+REFUSAL_CONDITIONS = (
+    REFUSAL_CONDITION_RATE_LIMITED,
+    REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT,
+)
+
+
+def refusal_condition(body: str, bot_kind: str | None = None) -> str:
+    """Classify a detected refusal's CONDITION — ``rate_limited`` or ``no_unreviewed_commit``.
+
+    ``no_unreviewed_commit`` iff ``body`` matches one of the bot's declared
+    ``no_unreviewed_commit_patterns``; every other refusal is ``rate_limited``. Like
+    :func:`refusal_cause`, this assumes ``body`` is ALREADY a refusal — the caller
+    gates on the recognition stack — so it names the condition rather than
+    re-detecting anything. The patterns are a subset of the bot's
+    ``refusal_patterns`` (enforced by the registry accessor), so a body can carry the
+    ``no_unreviewed_commit`` condition only when the registry arm recognised it.
+
+    An unregistered bot, and a bot declaring no such pattern, yield ``rate_limited``:
+    the condition that says nothing new is left to review is asserted only on a
+    literal the bot's own record declares.
+    """
+    if bot_kind and any(marker in body for marker in bot_registry.no_unreviewed_commit_patterns(bot_kind)):
+        return REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT
+    return REFUSAL_CONDITION_RATE_LIMITED
+
+
 def refusal_size_cap(body: str, bot_kind: str | None = None) -> str:
     """Return the diff-size CAP ``body`` states, or ``''`` when it states none.
 
@@ -679,7 +719,11 @@ def rate_limit_eta_seconds(eta: str) -> int | None:
 
 
 def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
-    """Return one record per registered bot whose newest comment is a rate-limit notice.
+    """Return one record per registered bot whose newest comment is a refusal notice.
+
+    A record is usually a rate-limit notice, and may instead be a reply saying
+    nothing new is left to review; the record's ``condition`` field tells the two
+    apart and is read before every other field.
 
     Generalizes the former single-bot discriminator to every registered
     ``bot_kind``: for each bot in the registry, select the comments that bot
@@ -700,9 +744,15 @@ def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
     currently defines — including the enumerative arm, which sits after the noise
     filter and so is deliberately outside this seam.
 
-    Each detected bot yields ``{bot_kind, rate_limit_class, eta, eta_seconds,
-    eta_extracted, cause, cap, layer, body}``:
+    Each detected bot yields ``{bot_kind, rate_limit_class, condition, eta,
+    eta_seconds, eta_extracted, cause, cap, layer, body}``:
 
+    - ``condition`` is what the reply reports (:func:`refusal_condition`):
+      ``rate_limited`` for a limit that was hit, ``no_unreviewed_commit`` for a
+      reply saying every commit is already reviewed. It is read FIRST. A
+      ``no_unreviewed_commit`` record is not a limit and is never waited for,
+      whatever ``rate_limit_class`` says — that field is declared per bot and is
+      emitted on every record so the shape does not vary by condition.
     - ``rate_limit_class`` distinguishes a window the caller can usefully await
       from a quota it cannot; it is registry data and fails closed to ``unknown``
       for a bot that declares none.
@@ -776,6 +826,7 @@ def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
             {
                 'bot_kind': bot_kind,
                 'rate_limit_class': bot_registry.rate_limit_class(bot_kind),
+                'condition': refusal_condition(body, bot_kind),
                 'eta': eta,
                 'eta_seconds': eta_seconds,
                 'eta_extracted': eta_seconds is not None,

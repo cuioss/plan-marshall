@@ -128,7 +128,7 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
    ```bash
    python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr fetch_findings --pr-number {pr} --plan-id {plan_id}
    ```
-   Output reports `fetch_complete`, `capped_connections[]`, `count_fetched`, `count_skipped_noise`, `count_skipped_duplicate`, `count_skipped_refusal`, `count_skipped_self_response`, `count_skipped_emitter_bypass`, `emitter_bypass_hash_id`, `count_skipped_own_trigger`, `own_trigger_exclusions[]`, `workflow_identity`, `count_self_response_current_cycle`, `self_response_loop_detected`, `self_response_loop_hash_id`, `count_stored`, `stored_zero_state`, `stored_zero_state_source`, `participated_bots[]`, `stale_participation_bots[]`, `merge_candidate_sha_resolved`, `undecidable_participation_bots[]`, `refused_bots[]`, `unrecognised_refusal[]`, `refusal_pattern_drift[]`, `refused_causes[]`, `refused_size_caps[]`, `measured_diff_size`, `unclassified_bots[]`, and `producer_mismatch_hash_id` (set when count_stored ≠ count_fetched − count_skipped_noise − count_skipped_duplicate − count_skipped_refusal − count_skipped_self_response − count_skipped_emitter_bypass − count_skipped_own_trigger; the mismatch is also persisted as a Q-Gate finding under phase `5-execute` with title prefix `(producer-mismatch)`). An unclassified bot's comments are stored like any other, so they are NOT subtracted from the expected count. When that mismatch finding's own persist is REJECTED, `producer_mismatch_hash_id` stays `null` and the output carries `qgate_persist_failed: true` plus `qgate_persist_failure{title, detail, message}` — the mismatch content that never reached the store, with the primitive's rejection message. Both fields are absent when the mismatch finding landed (or when there was no mismatch). Read `qgate_persist_failed`, not a `null` hash id, to tell a lost mismatch finding from no mismatch at all; `status` stays `success` because the fetch itself succeeded. A `status: unconfigured` return means GitHub is not authenticated — never a silent zero-findings success.
+   Output reports `fetch_complete`, `capped_connections[]`, `count_fetched`, `count_skipped_noise`, `count_skipped_duplicate`, `count_skipped_refusal`, `count_skipped_self_response`, `count_skipped_emitter_bypass`, `emitter_bypass_hash_id`, `count_skipped_own_trigger`, `own_trigger_exclusions[]`, `workflow_identity`, `count_self_response_current_cycle`, `self_response_loop_detected`, `self_response_loop_hash_id`, `count_stored`, `stored_zero_state`, `stored_zero_state_source`, `participated_bots[]`, `stale_participation_bots[]`, `reply_covered_participation_bots[]`, `merge_candidate_sha_resolved`, `undecidable_participation_bots[]`, `refused_bots[]`, `unrecognised_refusal[]`, `refusal_pattern_drift[]`, `refused_causes[]`, `refused_size_caps[]`, `measured_diff_size`, `unclassified_bots[]`, and `producer_mismatch_hash_id` (set when count_stored ≠ count_fetched − count_skipped_noise − count_skipped_duplicate − count_skipped_refusal − count_skipped_self_response − count_skipped_emitter_bypass − count_skipped_own_trigger; the mismatch is also persisted as a Q-Gate finding under phase `5-execute` with title prefix `(producer-mismatch)`). An unclassified bot's comments are stored like any other, so they are NOT subtracted from the expected count. When that mismatch finding's own persist is REJECTED, `producer_mismatch_hash_id` stays `null` and the output carries `qgate_persist_failed: true` plus `qgate_persist_failure{title, detail, message}` — the mismatch content that never reached the store, with the primitive's rejection message. Both fields are absent when the mismatch finding landed (or when there was no mismatch). Read `qgate_persist_failed`, not a `null` hash id, to tell a lost mismatch finding from no mismatch at all; `status` stays `success` because the fetch itself succeeded. A `status: unconfigured` return means GitHub is not authenticated — never a silent zero-findings success.
 
    **A clipped fetch is reported, never published as the PR's whole comment set.** Every count above is computed over the comments the provider fetch returned, so the fetch's own coverage travels with them. `fetch_complete` is `true` only when the provider proved every connection read to its end — the underlying `pr comments` read paginates each connection by cursor (see Canonical invocations → `github_ops pr comments`), so a page size is never a silent ceiling — and a provider result carrying no completeness claim reads as `false`. `capped_connections[]` carries the provider's coverage record for each connection that was NOT proven whole, so the result names what was observed against what cap:
 
@@ -164,6 +164,14 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
    ```
 
    Same record shape as `participated_bots[]`, and the proven set is **subtracted before emitting** — a bot with one stale comment and one fresh one appears only in `participated_bots[]`, never in both. Forward the list to `review_completeness check --stale-participation-bots` so the quorum layer classifies the bot `participated_stale` instead of `absent`. The two are not interchangeable and their remedies are opposite: a stale publish is **re-triggered** (the review exists, it merely predates this HEAD), while a true absence is **escalated** (there is no review to refresh). Discarding the failed currency test is what collapsed the two.
+
+   **One reply lifts a bot out of the stale set: its own statement that nothing is unreviewed.** A bot the currency test left stale is counted after all — moved into `participated_bots[]` and out of `stale_participation_bots[]` — when a reply of its with `condition: no_unreviewed_commit` was written AFTER the merge-candidate commit. The bot said every commit is already reviewed, and that commit existed when it said so, so its review on record covers it. Each bot counted this way is also named in:
+
+   ```toon
+   reply_covered_participation_bots[N]{bot_kind,evidence_kind,reply_comment_id}:
+   ```
+
+   The list adds the reason and the reply the credit rests on; it is not a fourth participation set. The comparison fails closed: the reply's latest timestamp must be strictly later than the commit's, and a timestamp that cannot be read on either side, an equal one, or an unreadable merge candidate leaves the bot stale. A commit pushed after the reply is therefore never covered by it. ⚠ The commit's timestamp is the time it was made, not the time it reached the PR — a commit made before the reply and pushed after it passes the comparison, and no push time is read that could tell the two apart. No currency-ledger row is written for this credit, so it is derived again from the reply on every fetch. See [`automatic-review/standards/bot-participation-contract.md`](../automatic-review/standards/bot-participation-contract.md) § "The reply-covered credit".
 
    **A refusal is a branch, never a noise drop.** A comment recognized as a bot DECLINING to review — by any arm of the refusal-recognition stack, which `_github_pr.REFUSAL_LAYERS` names in one place — files no `pr-comment` finding — it is a signal *about* the review, not feedback about the code, so the operator is never asked to triage it — but it is counted in `count_skipped_refusal` and its bot is named in `refused_bots[]`, and it is excluded from `participated_bots[]`. Forward `refused_bots[]` to `review_completeness check --refused-bots` so the quorum layer classifies the bot into a refusal member. Alongside it the producer emits **`refused_causes[]`** — one `{bot_kind, cause}` per refusing bot, `cause` in `size` / `quota` — the CAUSE axis; forward it to `review_completeness check --refused-causes`. ⛔ **A `size` cause is STATE-DETERMINING, not advisory**: it resolves the bot to `refused_structural` (remedies: split / accept / disable-for-this-PR — never wait) whatever its `rate_limit_class` declares, because that field is per-BOT while a cause is per-REFUSAL and one bot can refuse for both at one class. Every OTHER refusal takes the DEFAULT member from the bot's three-valued `rate_limit_class` — `refused_awaitable` / `refused_hard` / `refused_unknown` — and every other cause is advisory: reported as the remedy (`quota` → backoff) in `refusal_causes[]`, gating nothing and moving no member. ⛔ **The class mapping is a default, not a bijection: TWO per-refusal observations displace it.** The `size` cause above is one; the second is a refusal NO arm of the stack could READ, emitted in **`unrecognised_refusal[]`** and forwarded to `review_completeness check --unrecognised-refusal-bots`, which resolves the bot to `refused_unknown` whatever its declared class says — because an unparsed notice supports no claim about its own awaitability, least of all that a window will reopen. Each `unrecognised_refusal[]` record carries `{bot_kind, layer, excerpt}` plus the mechanism that closes the gap — `registry_file`, `registry_field`, `remedy` — so the phrasing to file and the file to file it in travel with the finding rather than being described elsewhere. Such a comment is counted in `count_skipped_refusal` (keeping `expected_stored` balanced) and its bot is denied participation credit when EVERY one of its publish-shape comments was unrecognised; a bot with any genuine review keeps its credit and the record stays a diagnostic. The producer also emits **`refused_size_caps[]`** (one `{bot_kind, cap}` per bot whose size notice stated its ceiling) and the scalar **`measured_diff_size`** (how big the refused diff was, measured only when a size refusal occurred); forward them to `--refusal-size-caps` and `--measured-diff-size` so an accepted coverage gap is quantified rather than asserted. Folding a refusal into `count_skipped_noise` instead is what let a PR whose every required reviewer refused report a clean, complete review; `count_skipped_noise` and `count_skipped_refusal` are deliberately separate counters for that reason.
 
@@ -266,6 +274,20 @@ The refusal is a **returned envelope, never an exception** — a caller branches
 
 ⛔ **A re-trigger inside an open window RESETS it rather than shortening it** (an advertised wait was observed going from 50 to 59 minutes) and spends quota doing so. That is why the guard refuses rather than merely warning, and why the recovery selector below never reaches a trigger arm while a claim is still running.
 
+#### The escalated command
+
+A bot may declare a second command in its registry record, `escalated_trigger_comment` — the one that makes it review the whole changeset again rather than only what it has not reviewed yet. `re-review --escalated` posts that command in place of the ordinary trigger. It leaves through the same single `_github.post_pr_comment` call, so the rate-window guard above applies to it unchanged: into a claimed, unexpired window nothing is posted and the return is `status: refused` / `reason: window_open`.
+
+The escalated command uses one review from the bot's allowance each time it runs, so one further guard applies to it alone, and it is likewise enforced in code. The command is posted **at most once per reply**: when a comment whose body is the command already sits on the PR after the bot's newest comment, the bot has not answered it yet, and it is not posted again. Three refusals come back as returned envelopes, each carrying `escalated: true`:
+
+| `reason` | Meaning |
+|----------|---------|
+| `no_escalated_command` | The bot's registry record declares no `escalated_trigger_comment`. |
+| `escalated_command_already_posted` | The command is on the PR, newer than every comment of this bot. |
+| `escalated_history_unreadable` | The PR's comments could not be read. Unlike the rate-window read, an unreadable read refuses here: posting blind risks a second spent review, while not posting leaves a state the next pass reads again. |
+
+On a successful post the await is the ordinary one, and the returned envelope carries `escalated: true`. A posted escalated command is also a registered trigger for the producer: `is_registered_trigger_comment` recognises it, so `fetch_findings` never files it as reviewer feedback.
+
 #### Completion signals (`await_fresh_review`)
 
 `await_fresh_review` is **identical** for every bot and is satisfied by **either** of two completion signals, checked in order of evidential strength:
@@ -301,9 +323,11 @@ acknowledgments[N]{source,bot_kind,body}:
 Every rejected refusal is **RECORDED, never a silent skip**. The envelope carries `refusal_detected`, `refusal_class`, `refusal_eta` (the reset time the notice itself stated, or `""`), `refusal_eta_seconds` (that reset time as whole seconds, or `null`), `refusal_eta_extracted` (`false` when no reset time could be read), a `refusals[]` record per detected refusal, and **`refusal_layers[]`** — the declared `layer` vocabulary the producer emits, published so a consumer validates a value against the producer's own population rather than a hand-copied list:
 
 ```toon
-refusals[N]{source,bot_kind,layer,eta,eta_seconds,eta_extracted,cause,cap,body}:
+refusals[N]{source,bot_kind,layer,eta,eta_seconds,eta_extracted,cause,cap,condition,body}:
 refusal_layers[N]: [the declared layer vocabulary]
 ```
+
+`condition` is on every refusal record and is read FIRST. It names what the reply reports, from the vocabulary `_github_pr.REFUSAL_CONDITIONS` publishes: `rate_limited` when a limit was hit, and `no_unreviewed_commit` when the bot replied that every commit on the PR is already reviewed. The second is recognised from the bot's registry `no_unreviewed_commit_patterns` — a subset of its `refusal_patterns` — and is not a limit: no window is open, so a consumer never waits for it, whatever `refusal_class` reports for the bot. The `pr wait-for-comments` `rate_limited_bots[]` record carries the same field. See [`automatic-review/standards/bot-participation-contract.md`](../automatic-review/standards/bot-participation-contract.md) § "The refusal condition".
 
 `eta`, `eta_seconds` and `eta_extracted` state one reset time three ways, on every refusal record. `eta` is the text the notice stated (`"38 minutes"`), or `""`. `eta_seconds` is that time as whole seconds (`2280`), or `null` when none could be read — never `0`, which is a real duration. `eta_extracted` is `true` exactly when `eta_seconds` is a number; its `false` is the explicit statement that a recognised refusal yielded no reset time, so a consumer reads the field rather than inferring it from an empty `eta`. The three envelope fields describe one record — the first reporting `eta_extracted: true`, else the first carrying a non-empty `eta` — and share the vocabulary the `pr wait-for-comments` `rate_limited_bots[]` record carries.
 
@@ -320,8 +344,10 @@ A comment that does NOT reference the awaited HEAD still reports `false`, and th
 1. **Invoke the registry** for the new HEAD:
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review --pr-number {pr} --bot-kind {coderabbit|sourcery|cuioss-review-bot} --head-sha {new HEAD} --push-time {ISO8601 push time} [--timeout {seconds}] --plan-id {plan_id}
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review --pr-number {pr} --bot-kind {coderabbit|sourcery|cuioss-review-bot} --head-sha {new HEAD} --push-time {ISO8601 push time} [--timeout {seconds}] [--escalated] --plan-id {plan_id}
    ```
+
+   `--escalated` posts the bot's registry `escalated_trigger_comment` — for CodeRabbit `@coderabbitai full review`, the command that reviews the whole changeset again — instead of its `trigger_comment`. It is the remedy for a `no_unreviewed_commit` refusal and is reached only from the recovery selector's `post_escalated_command` action. See § "The escalated command" below.
 
    The subcommand resolves the strategy by `bot_kind`, runs `request_fresh_review` (which first consults the bot's rate window and returns `status: refused` / `reason: window_open` **without posting** when a claim is unexpired; otherwise posts that bot's registry `trigger_comment` — `@coderabbitai review`, `@sourcery-ai review`, `/review` — using the comment-post time as the trigger time), then awaits either completion signal. **A `refused` return short-circuits the whole subcommand**: it is returned verbatim, no comment was published and no await ran, so the caller reads `holder` and `seconds_remaining` and does not re-issue the call while the claim is running. The await budget is configurable via `--timeout` (default `DEFAULT_CI_TIMEOUT`); the phase-6-finalize trigger sites pass their `re_review_await_timeout_seconds` step-param value. It emits a TOON envelope with `matched: true|false`, `timed_out: true|false`, `matched_signal` (`review` | `issue_comment`, empty when unmatched), the matched `matched_review` / `matched_comment` record, `head_sha_verified`, `acknowledged: true|false` with its `acknowledgments[]` records, and `answer_withheld_in_progress: true|false`.
 
@@ -655,14 +681,19 @@ starts with zero comments, or whose bots stay silent, is `detector_answerable: t
 timeout, NOT an unanswerable one.
 
 **`rate_limited_bots[]`** names one record per REGISTERED bot whose newest
-comment on the PR is a rate-limit / service notice posted in place of a review:
+comment on the PR is a refusal notice posted in place of a review — a rate-limit / service notice, or
+a reply saying nothing new is left to review. The record's `condition` tells the two apart:
 
 ```toon
-rate_limited_bots[N]{bot_kind,rate_limit_class,eta,eta_seconds,eta_extracted,cause,cap,layer,body}:
+rate_limited_bots[N]{bot_kind,rate_limit_class,condition,eta,eta_seconds,eta_extracted,cause,cap,layer,body}:
 ```
 
 - `bot_kind` — the registry key of the refusing bot. The bot set, and each bot's login, are derived
   from `automatic-review/standards/{bot_kind}.md`; no bot is named in the detection path.
+- `condition` — what the reply reports: `rate_limited` (a limit was hit) or `no_unreviewed_commit`
+  (the bot replied that every commit on the PR is already reviewed). Derived from the bot's registry
+  `no_unreviewed_commit_patterns`, a subset overlay on `refusal_patterns`; a refusal matching no
+  declared marker is `rate_limited`, the default. Read it before every other field.
 - `rate_limit_class` — that bot's registry `rate_limit_class`: `awaitable_window` (a rolling window
   that reopens, so awaiting the reset is productive), `hard_quota` (a budget that does not reopen on
   a useful timescale, so awaiting it only burns budget), or `unknown` (no refusal observed for this
@@ -695,6 +726,12 @@ consumer that arms a wait on either producer's refusal can state which arm read 
 notice said, rather than re-deriving it after the fact. `body` is untrusted bot text; a consumer that
 interpolates it into a shell argument owns its quoting.
 
+⛔ **Read `condition` FIRST.** A `no_unreviewed_commit` record is not a limit: no window is open, so
+it is never waited for, and `rate_limit_class`, `eta` and `cause` say nothing about it — they are
+emitted so every record has one shape. Its remedy is the bot's registry `escalated_trigger_comment`,
+or nothing; `github_re_review recovery-action --condition` makes that selection. Everything below
+applies to a `rate_limited` record.
+
 ⛔ **Read `cause` BEFORE `rate_limit_class` when choosing a remedy.** The two are INDEPENDENT axes,
 not one axis restated: `cause` is observed per REFUSAL while `rate_limit_class` is declared per BOT,
 and one bot can refuse for both causes at one class. A `size` refusal never succeeds while the diff
@@ -702,7 +739,7 @@ is this size, so waiting is a NON-OPTION for it whatever its class says — the 
 the diff, accepting the gap, or disabling that reviewer for this PR. Only a `quota` cause makes the
 class the deciding field. Both keys are present on EVERY record, so a consumer reads one shape.
 
-An **empty list means no registered bot is rate-limited**. The list is per-bot by design: a single
+An **empty list means no registered bot's newest comment is a refusal notice**. The list is per-bot by design: a single
 boolean cannot say WHICH bot refused, and — because the causes and classes differ per bot — cannot
 say whether awaiting is worth anything. Detection is best-effort and never alters poll behaviour: a
 failed post-poll fetch leaves the list empty.
@@ -1098,19 +1135,23 @@ invocations → `ci checks pull-request-runs` for the abstraction-layer entry po
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review \
   --pr-number N --bot-kind {coderabbit|sourcery|cuioss-review-bot} --head-sha SHA --push-time ISO8601 \
-  [--timeout SECONDS] [--plan-id PLAN_ID]
+  [--timeout SECONDS] [--escalated] [--plan-id PLAN_ID]
 ```
 
 `--timeout SECONDS` bounds the `await_fresh_review` poll (default `DEFAULT_CI_TIMEOUT`); consumers (the trigger-A / trigger-B re-review sites in phase-6-finalize) supply their `re_review_await_timeout_seconds` step-param value here.
 
-The verb has three terminal shapes, not two: `status: success` (the trigger was posted and the await ran to a verdict), `status: error`, and `status: refused` with `reason: window_open` — the refusal re-trigger guard declining to post into an unexpired rate window. See § "The refusal re-trigger guard" for the envelope's field set.
+`--escalated` posts the bot's registry `escalated_trigger_comment` instead of its `trigger_comment`. It takes no value. See § "The escalated command" for when it is used and the guard that applies to it alone.
+
+The verb has three terminal shapes, not two: `status: success` (the trigger was posted and the await ran to a verdict), `status: error`, and `status: refused`. A refusal names its `reason`: `window_open` — the refusal re-trigger guard declining to post into an unexpired rate window, for either command (see § "The refusal re-trigger guard" for the envelope's field set) — or, under `--escalated` only, `no_escalated_command`, `escalated_command_already_posted` or `escalated_history_unreadable` (§ "The escalated command"). A `status: success` return carries `escalated: true|false`, naming which command was sent.
 
 ### github_re_review recovery-action
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review recovery-action \
   --bot-kind BOT_KIND \
-  [--cause {size|quota}] [--window-expired {true|false}] [--attempts-remaining N] \
+  [--cause {size|quota}] [--condition {rate_limited|no_unreviewed_commit}] \
+  [--review-on-record {credited|stale|absent}] [--pending-findings N] \
+  [--window-expired {true|false}] [--attempts-remaining N] \
   [--attempt-held {true|false}] [--plan-id PLAN_ID]
 ```
 
@@ -1124,21 +1165,32 @@ DERIVES which recovery a detected refusal arms, from the bot registry plus the c
 
 ⛔ **`--attempt-held true` is what tells the derivation WHICH question the budget was read for.** `attempts_remaining` answers *may a FURTHER claim be made?*, never *may the event this claim already bought be delivered?* — and the arithmetic cannot recover which is being asked, because a successful `rate-window claim` increments the ledger before it returns. The cap-final claim, the one the primitive deliberately admitted, therefore reports `attempts_remaining: 0` the moment it is granted; a post-claim re-consult that omits this flag reads that zero as *budget spent*, escalates, and delivers no event at all — so a cap of 1 yields zero recovery events and the default cap of 6 yields five. Pass it whenever a claim for this recovery already succeeded. Omit it for a pre-claim budget read, where a zero genuinely means no further claim is allowed. The cap itself is enforced by `rate-window claim`'s own `recovery_cap_exhausted` refusal, not by this verb.
 
+`--condition` is the refusal record's `condition`. **Omit it when the record carries none** — an omitted condition reads as empty and takes the rate-limit derivation below. `no_unreviewed_commit` is resolved before the cause and the class: the bot said every commit is already reviewed, so there is no limit to classify and no window to claim. It resolves from two observations, each of which reads as `unmeasured` when omitted:
+
+- `--review-on-record` — where this bot's review stands for the merge candidate, read off the consuming step's `fetch_findings` return: `credited` (named in `participated_bots[]`), `stale` (named only in `stale_participation_bots[]`) or `absent` (in neither).
+- `--pending-findings` — how many of this bot's `pr-comment` findings are still pending.
+
+Only an `absent` review resolves `post_escalated_command`. A `credited` review resolves `accept_review_on_record` when no finding is pending and `await_triage` when one is; a `stale` review resolves `leave_to_stale_review`. None of those three posts anything. Both flags are ignored for any other condition. See [`../automatic-review/SKILL.md`](../automatic-review/SKILL.md) § "Rate-limit refusal recovery (opt-in)" Branch 6 for the step that gathers the two observations and acts on the result.
+
 The returned `action` is one of:
 
 | `action` | `reason` | Meaning |
 |----------|----------|---------|
+| `accept_review_on_record` | `review_on_record_findings_handled` | The condition is `no_unreviewed_commit`, a review by the bot is credited for the merge candidate, and none of its findings is pending. Post nothing. |
+| `await_triage` | `findings_pending` | The condition is `no_unreviewed_commit`, a review by the bot is credited for the merge candidate, and findings of it are still pending. Post nothing; the triage that follows handles them. |
+| `leave_to_stale_review` | `merge_candidate_newer_than_reply` | The condition is `no_unreviewed_commit`, but the bot's review is stale: the merge candidate is newer than the reply. Post nothing; the stale review is re-triggered with the bot's ordinary trigger. |
+| `post_escalated_command` | `no_review_on_record` | The condition is `no_unreviewed_commit` and no review by the bot is on record at all. Post the bot's `escalated_trigger_comment` through `re-review --escalated`, which sends it at most once per reply and never into an open rate window. |
 | `escalate_structural` | `size_ceiling` | The cause is a diff-size ceiling. It DOMINATES the class — a class is declared per BOT while a cause is observed per REFUSAL — and waiting cannot move it. |
 | `escalate_not_awaitable` | `class_not_awaitable` | `hard_quota` or `unknown`. Fail-closed per ADR-009; an unregistered `bot_kind` lands here by derivation, not by a special case. |
 | `escalate_exhausted` | `attempt_cap_exhausted` | The per-(bot, PR) recovery budget is spent and no attempt is held. Checked before both trigger arms, since each would spend one — but skipped under `--attempt-held true`, where the attempt is already paid for. |
 | `await_window` | `claim_window_open` | The claim clock is still running. The consuming step does not wait it out itself: it claims the window (or finds its own claim still open) and hands the wait to the main context. |
 | `close_and_reopen` | `claim_window_elapsed` | The claim elapsed and the bot declares `requires_explicit_trigger` — re-DELIVER the dropped request (see [`../tools-integration-ci/standards/pr-review-operations.md`](../tools-integration-ci/standards/pr-review-operations.md) § "Workflow: Close and Re-open a PR to Re-deliver a Review Request"). |
 | `generate_trigger` | `claim_window_elapsed` | The claim elapsed and the bot re-reviews on push — produce new commits. |
-| `unmeasured` | `registry_empty` / `no_window_observation` / `no_attempt_budget_observation` | An input the derivation needs was absent, so no verdict was computed. Authorizes nothing. |
+| `unmeasured` | `registry_empty` / `no_window_observation` / `no_attempt_budget_observation` / `no_review_observation` / `no_findings_observation` | An input the derivation needs was absent, so no verdict was computed. Authorizes nothing. |
 
 ⛔ **The elapsed arm is named `claim_window_elapsed`, never `bot_window_reopened`.** What elapsed is the CLAIM clock this pipeline set, not the bot's real window: a stated ETA is an estimate (observed wrong by roughly 2.4x, then roughly 15x) and the real window slides. The arm lifts the refusal without asserting the bot is ready.
 
-Every return publishes `rate_limit_class`, `trigger_semantics`, `known_bot_kinds`, `known_bot_kind_count`, `bot_kind_registered`, `attempt_held`, and the declared `recovery_actions` vocabulary — so the verdict names the registry facts and the population it was computed from (ADR-019) rather than only its conclusion.
+Every return publishes `rate_limit_class`, `trigger_semantics`, `escalated_trigger_comment`, `known_bot_kinds`, `known_bot_kind_count`, `bot_kind_registered`, `attempt_held`, the `condition`, `review_on_record` and `pending_findings` it received, and the declared `recovery_actions`, `refusal_conditions` and `review_on_record_states` vocabularies — so the verdict names the registry facts and the population it was computed from (ADR-019) rather than only its conclusion.
 
 ## Error Handling
 

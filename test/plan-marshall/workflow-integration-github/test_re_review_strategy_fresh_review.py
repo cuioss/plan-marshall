@@ -630,3 +630,189 @@ def test_main_recovery_action_still_rejects_an_omitted_bot_kind(monkeypatch):
         github_re_review.main()
 
     assert excinfo.value.code == 2
+
+
+_ESCALATING_BOTS = [bot for bot in _GUARD_SWEEP_POPULATION if bot_registry.escalated_trigger_comment(bot).strip()]
+_NON_ESCALATING_BOTS = [bot for bot in _GUARD_SWEEP_POPULATION if bot not in _ESCALATING_BOTS]
+assert _ESCALATING_BOTS, 'no registered bot declares an escalated_trigger_comment — the cases below would be vacuous'
+_BOT_REPLY_AT = '2026-01-01T00:10:00Z'
+_BEFORE_BOT_REPLY = '2026-01-01T00:05:00Z'
+_AFTER_BOT_REPLY = '2026-01-01T00:15:00Z'
+
+
+def _login_of(bot_kind: str) -> str:
+    """The author login that resolves back to ``bot_kind``, from the registry map."""
+    for login, kind in bot_registry.login_to_bot_kind().items():
+        if kind == bot_kind:
+            return login
+    raise AssertionError(f'{bot_kind} declares no author_login')
+
+
+def _history(monkeypatch, comments, *, status='success'):
+    """Serve ``comments`` as the PR's comment history the escalated guard reads."""
+    monkeypatch.setattr(
+        github_re_review._github,
+        'fetch_pr_comments_data',
+        lambda pr_number, unresolved_only=False: {'status': status, 'comments': list(comments)},
+    )
+
+
+def _history_comment(author: str, body: str, created_at: str) -> dict:
+    return {
+        'kind': 'issue_comment',
+        'id': f'IC_{author}_{created_at}',
+        'author': author,
+        'body': body,
+        'created_at': created_at,
+    }
+
+
+@pytest.mark.parametrize('bot_kind', _ESCALATING_BOTS)
+def test_the_escalated_command_is_not_posted_into_an_open_window(bot_kind, monkeypatch):
+    """⛔ The rate-window guard applies to the escalated command unchanged.
+
+    Paired with the permitting case below over the same recorder: an empty post
+    list alone would also describe a verb that never posts the command at all.
+    """
+    posted = _record_posts(monkeypatch)
+    strategy = github_re_review.resolve_strategy(bot_kind)
+
+    result = strategy.request_fresh_review(
+        _GUARD_PR_NUMBER, _GUARD_PUSH_TIME, window_reader=_window_reader(_OPEN_WINDOW), escalated=True
+    )
+
+    assert posted == []
+    assert result['status'] == 'refused'
+    assert result['reason'] == 'window_open'
+
+
+@pytest.mark.parametrize('bot_kind', _ESCALATING_BOTS)
+def test_the_escalated_command_is_posted_when_no_window_is_open(bot_kind, monkeypatch):
+    """MATCHED CONTROL — with no claim running, the escalated command is what is posted."""
+    posted = _record_posts(monkeypatch)
+    strategy = github_re_review.resolve_strategy(bot_kind)
+
+    result = strategy.request_fresh_review(
+        _GUARD_PR_NUMBER, _GUARD_PUSH_TIME, window_reader=_window_reader(_NO_RECORD_WINDOW), escalated=True
+    )
+
+    assert result['status'] == 'success'
+    assert posted == [(_GUARD_PR_NUMBER, bot_registry.escalated_trigger_comment(bot_kind).strip())]
+
+
+@pytest.mark.parametrize('bot_kind', _ESCALATING_BOTS)
+def test_an_unanswered_escalated_command_is_not_posted_a_second_time(bot_kind, monkeypatch):
+    """At most once per reply: the command is on the PR and the bot has not commented since."""
+    posted = _record_posts(monkeypatch)
+    command = bot_registry.escalated_trigger_comment(bot_kind)
+    _history(
+        monkeypatch,
+        [
+            _history_comment(_login_of(bot_kind), 'Already reviewed the last commit.', _BOT_REPLY_AT),
+            _history_comment('the-workflow-account', command, _AFTER_BOT_REPLY),
+        ],
+    )
+    strategy = github_re_review.resolve_strategy(bot_kind)
+
+    result = strategy.request_fresh_review(_GUARD_PR_NUMBER, _GUARD_PUSH_TIME, escalated=True)
+
+    assert posted == []
+    assert result['status'] == 'refused'
+    assert result['reason'] == 'escalated_command_already_posted'
+    assert result['escalated'] is True
+
+
+@pytest.mark.parametrize('bot_kind', _ESCALATING_BOTS)
+def test_an_answered_escalated_command_may_be_posted_for_a_later_reply(bot_kind, monkeypatch):
+    """MATCHED CONTROL — the bot commented after the earlier command, so a new reply is new.
+
+    The same two comments as the refusing case with their order in time swapped;
+    only the ordering differs, which is what attributes the refusal to it.
+    """
+    posted = _record_posts(monkeypatch)
+    command = bot_registry.escalated_trigger_comment(bot_kind)
+    _history(
+        monkeypatch,
+        [
+            _history_comment('the-workflow-account', command, _BEFORE_BOT_REPLY),
+            _history_comment(_login_of(bot_kind), 'Already reviewed the last commit.', _BOT_REPLY_AT),
+        ],
+    )
+    strategy = github_re_review.resolve_strategy(bot_kind)
+
+    result = strategy.request_fresh_review(_GUARD_PR_NUMBER, _GUARD_PUSH_TIME, escalated=True)
+
+    assert result['status'] == 'success'
+    assert posted == [(_GUARD_PR_NUMBER, command.strip())]
+
+
+@pytest.mark.parametrize('bot_kind', _ESCALATING_BOTS)
+def test_an_escalated_command_with_an_unreadable_time_counts_as_unanswered(bot_kind, monkeypatch):
+    """A command whose post time cannot be read is not posted again."""
+    posted = _record_posts(monkeypatch)
+    command = bot_registry.escalated_trigger_comment(bot_kind)
+    _history(
+        monkeypatch,
+        [
+            _history_comment(_login_of(bot_kind), 'Already reviewed the last commit.', _BOT_REPLY_AT),
+            _history_comment('the-workflow-account', command, 'not-a-timestamp'),
+        ],
+    )
+    strategy = github_re_review.resolve_strategy(bot_kind)
+
+    result = strategy.request_fresh_review(_GUARD_PR_NUMBER, _GUARD_PUSH_TIME, escalated=True)
+
+    assert posted == []
+    assert result['reason'] == 'escalated_command_already_posted'
+
+
+@pytest.mark.parametrize('bot_kind', _ESCALATING_BOTS)
+def test_an_unreadable_comment_history_refuses_the_escalated_command(bot_kind, monkeypatch):
+    """Posting blind risks a second spent review, so an unreadable history refuses."""
+    posted = _record_posts(monkeypatch)
+    _history(monkeypatch, [], status='error')
+    strategy = github_re_review.resolve_strategy(bot_kind)
+
+    result = strategy.request_fresh_review(_GUARD_PR_NUMBER, _GUARD_PUSH_TIME, escalated=True)
+
+    assert posted == []
+    assert result['status'] == 'refused'
+    assert result['reason'] == 'escalated_history_unreadable'
+
+
+@pytest.mark.parametrize('bot_kind', _ESCALATING_BOTS)
+def test_the_ordinary_trigger_ignores_the_escalated_history_guard(bot_kind, monkeypatch):
+    """The once-per-reply guard belongs to the escalated command alone.
+
+    Same unreadable history as the case above; without ``escalated`` the ordinary
+    trigger is posted and the history is never consulted.
+    """
+    posted = _record_posts(monkeypatch)
+    _history(monkeypatch, [], status='error')
+    strategy = github_re_review.resolve_strategy(bot_kind)
+
+    result = strategy.request_fresh_review(_GUARD_PR_NUMBER, _GUARD_PUSH_TIME)
+
+    assert result['status'] == 'success'
+    assert posted == [(_GUARD_PR_NUMBER, strategy.trigger_comment)]
+
+
+def test_a_bot_declaring_no_escalated_command_posts_nothing_in_its_name(monkeypatch):
+    """Nothing is posted for a bot whose registry record declares no such command.
+
+    The population is published: when every registered bot declares one, this case
+    has no subject and says so rather than passing over an empty loop.
+    """
+    if not _NON_ESCALATING_BOTS:
+        pytest.skip('every registered bot declares an escalated_trigger_comment')
+    posted = _record_posts(monkeypatch)
+
+    for bot_kind in _NON_ESCALATING_BOTS:
+        result = github_re_review.resolve_strategy(bot_kind).request_fresh_review(
+            _GUARD_PR_NUMBER, _GUARD_PUSH_TIME, escalated=True
+        )
+
+        assert result['status'] == 'refused', bot_kind
+        assert result['reason'] == 'no_escalated_command', bot_kind
+
+    assert posted == []

@@ -105,6 +105,7 @@ import bot_registry
 import github_ops as _github
 from _github_pr import (
     REFUSAL_CAUSE_SIZE,
+    REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT,
     REFUSAL_LAYER_ENUMERATIVE,
     REFUSAL_LAYER_REGISTRY,
     REFUSAL_LAYER_STRUCTURAL,
@@ -115,6 +116,7 @@ from _github_pr import (
     get_viewer_login,
     measure_diff_size,
     refusal_cause,
+    refusal_condition,
     refusal_layers,
     refusal_size_cap,
 )
@@ -1246,6 +1248,59 @@ def _reviewed_at_merge_candidate(
     return bool(updated_at) and updated_at != recorded_updated_at
 
 
+def _stale_review_covered_by_reply(comments: list[dict], bot_kind: str, merge_candidate_committed_at: str) -> str:
+    """Return the id of ``bot_kind``'s reply that covers the merge candidate, or ``''``.
+
+    The one arm that credits a review the currency test placed at an EARLIER commit.
+    It rests on the bot's own statement: a reply whose condition is
+    ``no_unreviewed_commit`` says every commit on the PR is already reviewed. When
+    that reply was written AFTER the merge-candidate commit existed, the statement
+    includes that commit, so the review on record covers it.
+
+    The ordering is the whole safety condition. A commit made after the reply is one
+    the bot said nothing about, so the reply must be strictly NEWER than the commit:
+
+    - the reply's instant is the later of its ``updated_at`` / ``created_at`` — the
+      moment it last said what it now says;
+    - the commit's instant is ``merge_candidate_committed_at``;
+    - every timestamp that reaches the comparison must match
+      :data:`_ISO_UTC_TIMESTAMP`. An unreadable instant on either side yields no
+      credit, and so does an equal one.
+
+    ⚠ ``merge_candidate_committed_at`` is the time the commit was MADE, not the time
+    it reached the PR. A commit made before the reply and pushed after it passes this
+    comparison although the bot never saw it. The pipeline reads no push time, so
+    this arm cannot close that gap; it is stated here rather than left implicit.
+
+    Only a reply the recognition stack reads as a refusal AND whose condition is
+    ``no_unreviewed_commit`` counts. A comment that merely names another commit is
+    not such a reply and never reaches this arm.
+
+    The newest covering reply is returned, so the disclosed id is deterministic.
+    """
+    commit_at = str(merge_candidate_committed_at or '')
+    if not _ISO_UTC_TIMESTAMP.match(commit_at):
+        return ''
+    covering: list[tuple[str, str]] = []
+    for comment in comments:
+        if bot_kind_for_author(comment.get('author') or 'unknown') != bot_kind:
+            continue
+        body = str(comment.get('body') or '')
+        if not _is_refusal_notice(body, bot_kind):
+            continue
+        if refusal_condition(body, bot_kind) != REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT:
+            continue
+        stamps = [
+            stamp for stamp in (str(comment.get('updated_at') or ''), str(comment.get('created_at') or '')) if stamp
+        ]
+        if not stamps or not all(_ISO_UTC_TIMESTAMP.match(stamp) for stamp in stamps):
+            continue
+        reply_at = max(stamps)
+        if reply_at > commit_at:
+            covering.append((reply_at, str(comment.get('id') or 'unknown')))
+    return max(covering)[1] if covering else ''
+
+
 #: ``stored_zero_state`` values in the fetch result. A pass in which no comment
 #: survived the filters stored nothing, and ``count_stored: 0`` alone cannot say
 #: which of three different situations produced that zero. Exactly one of the three
@@ -1469,6 +1524,16 @@ def cmd_fetch_findings(args):
     ``--stale-participation-bots`` and classifies the bot ``participated_stale``
     rather than ``absent`` — two states whose remedies are opposite, since a stale
     publish is re-triggered while a true absence is escalated.
+
+    ``reply_covered_participation_bots``: the one way out of the stale set that is
+    not a fresh review. A bot the currency test left stale is credited — moved into
+    ``participated_bots`` — when its own ``no_unreviewed_commit`` reply (it said every
+    commit is already reviewed) is strictly newer than the merge-candidate commit
+    (``_stale_review_covered_by_reply``). Each such bot is listed here as
+    ``{bot_kind, evidence_kind, reply_comment_id}``, so the credit names the reply it
+    rests on. A reply older than the commit, an unreadable instant on either side, and
+    an unreadable merge candidate all leave the bot stale. No currency-ledger row is
+    staged for this credit, so it is re-derived from the reply on every fetch.
 
     ``merge_candidate_sha_resolved`` / ``undecidable_participation_bots``: the THIRD
     outcome, for when the merge candidate itself could not be read.
@@ -1798,6 +1863,32 @@ def cmd_fetch_findings(args):
         # is never overwritten by a later pass, so the emitted record stays deterministic
         # however many of the bot's comments pass.
         participated.setdefault(_bot_kind, _kind)
+
+    # REPLY-COVERED CREDIT — the one arm that credits a review the currency test placed
+    # at an earlier commit. A bot that is stale after the loop, and whose own
+    # ``no_unreviewed_commit`` reply is strictly newer than the merge-candidate commit,
+    # has said that commit is reviewed; its review on record then counts. See
+    # ``_stale_review_covered_by_reply`` for the ordering rule and its fail-closed
+    # arms. A bot the reply does not cover stays in ``stale_participation``.
+    #
+    # It runs AFTER the loop and reads only ``stale_participation``, so it can lift a
+    # bot out of that set and can never credit one the loop did not already find
+    # admissible evidence for. It stages NO currency-ledger row: the credit is derived
+    # from the reply on every fetch, so a HEAD that advances past the reply returns the
+    # bot to stale by the same comparison, with no ledger state to unwind.
+    #
+    # The pass lifts a FAILED CURRENCY TEST and nothing else, which holds because that
+    # is the only way a bot enters ``stale_participation`` above. A bot placed there on
+    # any other ground must not be lifted by a reply.
+    reply_covered_participation: dict[str, str] = {}
+    if reviewed_commit_sha:
+        for _stale_bot, _stale_kind in stale_participation.items():
+            if _stale_bot in participated:
+                continue
+            _reply_id = _stale_review_covered_by_reply(raw_comments, _stale_bot, merge_candidate_committed_at)
+            if _reply_id:
+                participated[_stale_bot] = _stale_kind
+                reply_covered_participation[_stale_bot] = _reply_id
 
     # Persist the currency ledger for the NEXT fetch: for each
     # ``participation_requires_update`` comment credited above, record (merge-candidate
@@ -2362,6 +2453,21 @@ def cmd_fetch_findings(args):
             {'bot_kind': bot, 'evidence_kind': stale_participation[bot]}
             for bot in sorted(stale_participation)
             if bot not in participated
+        ],
+        # Which credited bots owe their credit to the REPLY-COVERED arm rather than to
+        # the currency test: a review placed at an earlier commit, counted because the
+        # bot's own no-unreviewed-commit reply is newer than the merge-candidate commit.
+        # Each is ALSO in ``participated_bots`` — this list adds the reason and the
+        # reply it rests on, it is not a fourth participation set. A bot subtracted
+        # from the credited set is subtracted here too.
+        'reply_covered_participation_bots': [
+            {
+                'bot_kind': bot,
+                'evidence_kind': participated[bot],
+                'reply_comment_id': reply_covered_participation[bot],
+            }
+            for bot in sorted(reply_covered_participation)
+            if bot in credited_bots
         ],
         # Whether the merge candidate could be READ at all. It reports the read, and
         # nothing else: ``fetch_pr_head_sha`` returns '' on every failure path, so a

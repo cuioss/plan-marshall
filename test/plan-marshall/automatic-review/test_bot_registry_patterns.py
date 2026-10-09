@@ -253,6 +253,102 @@ def test_an_acknowledgment_literal_is_neither_a_refusal_nor_an_ignore_marker():
     assert total > 0, 'no shipped bot declares an acknowledgment literal — the sweep above is vacuous'
 
 
+def test_escalated_trigger_comment_per_bot():
+    """Only CodeRabbit declares a command that re-reviews the whole changeset.
+
+    The inline comment on the declaring line is stripped by the reader, so the value
+    is the command alone — it is posted verbatim.
+    """
+    assert bot_registry.escalated_trigger_comment('coderabbit') == '@coderabbitai full review'
+    assert bot_registry.escalated_trigger_comment('cuioss-review-bot') == ''
+    assert bot_registry.escalated_trigger_comment('sourcery') == ''
+
+
+def test_the_escalated_command_differs_from_the_ordinary_trigger_for_every_declarer():
+    """An escalated command equal to the ordinary trigger would repeat the refused request."""
+    declarers = [kind for kind in bot_registry.bot_kinds() if bot_registry.escalated_trigger_comment(kind)]
+    assert declarers, 'no shipped bot declares an escalated command — the sweep below is vacuous'
+
+    for kind in declarers:
+        assert bot_registry.escalated_trigger_comment(kind).strip() != bot_registry.trigger_comment(kind).strip()
+
+
+def test_no_unreviewed_commit_patterns_per_bot():
+    """CodeRabbit's two "nothing new to review" literals parse; the other two read empty."""
+    assert bot_registry.no_unreviewed_commit_patterns('coderabbit') == [
+        'Already reviewed the last commit',
+        'No new commits to review',
+    ]
+    assert bot_registry.no_unreviewed_commit_patterns('cuioss-review-bot') == []
+    assert bot_registry.no_unreviewed_commit_patterns('sourcery') == []
+
+
+def test_no_unreviewed_commit_patterns_is_a_subset_of_refusal_patterns_for_every_bot():
+    """The condition overlay never names a literal the detection list does not carry.
+
+    Swept over the whole live population; the non-vacuity check keeps the subset
+    assertion from passing over zero literals.
+    """
+    kinds = bot_registry.bot_kinds()
+    assert sorted(kinds) == sorted(_SHIPPED_BOTS)
+
+    total = 0
+    for kind in kinds:
+        overlay = bot_registry.no_unreviewed_commit_patterns(kind)
+        total += len(overlay)
+        assert set(overlay) <= set(bot_registry.refusal_patterns(kind)), kind
+        # A reply cannot be both a diff-size refusal and a "nothing new" reply.
+        assert not set(overlay) & set(bot_registry.refusal_size_patterns(kind)), kind
+
+    assert total > 0, 'no shipped bot declares a no-unreviewed-commit literal — the sweep above is vacuous'
+
+
+def test_the_new_fields_absent_read_as_empty(tmp_path):
+    """A record declaring neither field, and an unknown bot, read ``''`` and ``[]``."""
+    (tmp_path / 'demo.md').write_text('```yaml\nbot_kind: demo\nauthor_login: demo-bot\n```\n', encoding='utf-8')
+    reg = bot_registry.BotRegistry(standards_dir=tmp_path)
+
+    assert reg.escalated_trigger_comment('demo') == ''
+    assert reg.no_unreviewed_commit_patterns('demo') == []
+    assert bot_registry.escalated_trigger_comment('nonexistent-bot') == ''
+    assert bot_registry.no_unreviewed_commit_patterns('nonexistent-bot') == []
+
+
+def test_the_new_fields_parse_from_a_declared_block(tmp_path):
+    """MATCHED CONTROL for the case above: the same reader returns the declared values."""
+    (tmp_path / 'demo.md').write_text(
+        '```yaml\nbot_kind: demo\nauthor_login: demo-bot\n'
+        'trigger_comment: "@demo review"\n'
+        'escalated_trigger_comment: "@demo full review"   # the whole changeset\n'
+        'refusal_patterns:\n'
+        '  - "Quota used up"\n'
+        '  - "Nothing left to look at"\n'
+        'no_unreviewed_commit_patterns:\n'
+        '  - "Nothing left to look at"\n```\n',
+        encoding='utf-8',
+    )
+    reg = bot_registry.BotRegistry(standards_dir=tmp_path)
+
+    assert reg.escalated_trigger_comment('demo') == '@demo full review'
+    assert reg.no_unreviewed_commit_patterns('demo') == ['Nothing left to look at']
+
+
+def test_a_no_unreviewed_commit_literal_outside_refusal_patterns_is_dropped(tmp_path):
+    """The overlay cannot assert its condition on a reply detection never recognises."""
+    (tmp_path / 'demo.md').write_text(
+        '```yaml\nbot_kind: demo\nauthor_login: demo-bot\n'
+        'refusal_patterns:\n'
+        '  - "Nothing left to look at"\n'
+        'no_unreviewed_commit_patterns:\n'
+        '  - "Nothing left to look at"\n'
+        '  - "Declared here and nowhere else"\n```\n',
+        encoding='utf-8',
+    )
+    reg = bot_registry.BotRegistry(standards_dir=tmp_path)
+
+    assert reg.no_unreviewed_commit_patterns('demo') == ['Nothing left to look at']
+
+
 def test_rate_limit_eta_patterns_per_bot():
     """Only a bot whose notice states a reset time declares extraction patterns.
 
@@ -343,6 +439,12 @@ def test_module_functions_match_registry_singleton():
     assert bot_registry.login_to_bot_kind() == bot_registry.REGISTRY.login_to_bot_kind()
     for bot_kind in bot_registry.bot_kinds():
         assert bot_registry.trigger_comment(bot_kind) == bot_registry.REGISTRY.trigger_comment(bot_kind)
+        assert bot_registry.escalated_trigger_comment(bot_kind) == (
+            bot_registry.REGISTRY.escalated_trigger_comment(bot_kind)
+        )
+        assert bot_registry.no_unreviewed_commit_patterns(bot_kind) == (
+            bot_registry.REGISTRY.no_unreviewed_commit_patterns(bot_kind)
+        )
         assert bot_registry.completion_check_name(bot_kind) == bot_registry.REGISTRY.completion_check_name(bot_kind)
         assert bot_registry.ignore_patterns(bot_kind) == bot_registry.REGISTRY.ignore_patterns(bot_kind)
         assert bot_registry.acknowledgment_patterns(bot_kind) == (

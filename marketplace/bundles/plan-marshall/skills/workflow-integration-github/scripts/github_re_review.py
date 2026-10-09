@@ -103,8 +103,8 @@ through the bot's registry ``rate_limit_eta_patterns``), ``refusal_eta_seconds``
 reset time as whole seconds) with ``refusal_eta_extracted`` (``false`` when no reset
 time could be read), and ``refusals`` (one
 record per detected refusal carrying its source, detecting layer, awaited
-``bot_kind``, ETA with its seconds and extracted fields, the refusal ``cause``, the stated size ``cap``, and a
-truncated body excerpt — see :meth:`_ReReviewStrategy._refusal_record` for the
+``bot_kind``, ETA with its seconds and extracted fields, the refusal ``cause``, the stated size ``cap``, the
+``condition`` the reply reports, and a truncated body excerpt — see :meth:`_ReReviewStrategy._refusal_record` for the
 authoritative per-member contract). The refusal still does NOT
 count as a completed review — ``matched`` is unaffected — but the caller can now
 distinguish "the bot refused, and here is the recovery this arms" from "the bot
@@ -186,10 +186,34 @@ Nothing is enforced by calling it and nothing is bypassed by skipping it — the
 unbypassable posture is the ``request_fresh_review`` guard above, and this verb
 only answers *which* recovery is worth attempting once a refusal has been seen.
 
+**A refusal carries a CONDITION, and one condition is not a limit.** Every refusal
+record names what the bot's reply reports (``_github_pr.refusal_condition``):
+``rate_limited`` for a limit that was hit, ``no_unreviewed_commit`` for a reply
+saying every commit on the PR is already reviewed. The second is recognised from
+the bot's registry ``no_unreviewed_commit_patterns`` and is never waited for —
+no window is open, so no window is claimed. :func:`resolve_recovery_action` reads
+the condition first and resolves it from two observations the caller supplies:
+where that bot's review stands for the merge candidate (``credited``, ``stale`` or
+``absent``), and how many of its findings are still pending. A credited review
+resolves ``accept_review_on_record`` when nothing is pending and ``await_triage``
+when something is; a stale one resolves ``leave_to_stale_review``. None of the
+three posts anything. Only an absent review resolves ``post_escalated_command``,
+and ``re-review --escalated`` then posts the bot's registry
+``escalated_trigger_comment`` instead of its ordinary trigger.
+
+The escalated command passes through the same chokepoint as the ordinary one, so
+the rate-window guard above applies to it unchanged. One further guard applies to
+it alone (:meth:`_ReReviewStrategy._escalated_post_refusal`): it is posted at most
+once per reply. When the same command already sits on the PR after the bot's
+newest comment, the bot has not answered it yet and it is not posted again.
+
 Usage:
     github_re_review.py re-review --pr-number N --bot-kind coderabbit \
-        --head-sha SHA --push-time ISO8601 [--timeout SECONDS] --plan-id PLAN_ID
+        --head-sha SHA --push-time ISO8601 [--timeout SECONDS] [--escalated] \
+        --plan-id PLAN_ID
     github_re_review.py recovery-action --bot-kind coderabbit [--cause size|quota] \
+        [--condition rate_limited|no_unreviewed_commit] \
+        [--review-on-record credited|stale|absent] [--pending-findings N] \
         [--window-expired true|false] [--attempts-remaining N] \
         [--attempt-held true|false] [--plan-id PLAN_ID]
 
@@ -208,6 +232,8 @@ from _findings_core import BOT_KINDS
 from _github_pr import (
     REFUSAL_CAUSE_QUOTA,
     REFUSAL_CAUSE_SIZE,
+    REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT,
+    REFUSAL_CONDITIONS,
     REFUSAL_LAYER_ENUMERATIVE,
     REFUSAL_LAYER_REGISTRY,
     REFUSAL_LAYER_STRUCTURAL,
@@ -217,6 +243,7 @@ from _github_pr import (
     _is_unrecognised_refusal,
     rate_limit_eta_seconds,
     refusal_cause,
+    refusal_condition,
     refusal_size_cap,
 )
 from ci_base import (
@@ -587,6 +614,20 @@ RECOVERY_ACTION_AWAIT_WINDOW = 'await_window'
 RECOVERY_ACTION_CLOSE_AND_REOPEN = 'close_and_reopen'
 #: Produce the event the bot re-reviews on by itself (new commits on the branch).
 RECOVERY_ACTION_GENERATE_TRIGGER = 'generate_trigger'
+#: The bot said no commit is unreviewed, a review by it is credited for the merge
+#: candidate, and none of its findings is pending. Nothing is posted.
+RECOVERY_ACTION_ACCEPT_REVIEW_ON_RECORD = 'accept_review_on_record'
+#: The bot said no commit is unreviewed and a review by it is credited for the merge
+#: candidate, but findings of it are still pending. Nothing is posted; the triage that
+#: follows handles them.
+RECOVERY_ACTION_AWAIT_TRIAGE = 'await_triage'
+#: The bot said no commit is unreviewed, but its review on record is stale: the merge
+#: candidate is newer than that reply. Nothing is posted; the reply does not speak for
+#: the current commit, and the stale-review path re-triggers the bot.
+RECOVERY_ACTION_LEAVE_TO_STALE_REVIEW = 'leave_to_stale_review'
+#: The bot said no commit is unreviewed and no review by it is on record at all. Post
+#: its escalated command.
+RECOVERY_ACTION_POST_ESCALATED_COMMAND = 'post_escalated_command'
 #: No verdict was computed, because an input the derivation needs was absent.
 #: Distinct from every arm above: it authorizes nothing.
 RECOVERY_ACTION_UNMEASURED = 'unmeasured'
@@ -601,7 +642,27 @@ RECOVERY_ACTIONS = (
     RECOVERY_ACTION_AWAIT_WINDOW,
     RECOVERY_ACTION_CLOSE_AND_REOPEN,
     RECOVERY_ACTION_GENERATE_TRIGGER,
+    RECOVERY_ACTION_ACCEPT_REVIEW_ON_RECORD,
+    RECOVERY_ACTION_AWAIT_TRIAGE,
+    RECOVERY_ACTION_LEAVE_TO_STALE_REVIEW,
+    RECOVERY_ACTION_POST_ESCALATED_COMMAND,
     RECOVERY_ACTION_UNMEASURED,
+)
+
+#: Where a bot's review stands for the merge candidate — the first observation the
+#: ``no_unreviewed_commit`` arms resolve from. Read off the producer's participation
+#: return: ``credited`` when the bot is named in ``participated_bots[]``, ``stale`` when
+#: it is named only in ``stale_participation_bots[]``, ``absent`` when it is in neither.
+REVIEW_ON_RECORD_CREDITED = 'credited'
+REVIEW_ON_RECORD_STALE = 'stale'
+REVIEW_ON_RECORD_ABSENT = 'absent'
+
+#: The declared review-on-record vocabulary. The CLI derives its accepted set from
+#: this tuple rather than restating the members.
+REVIEW_ON_RECORD_STATES = (
+    REVIEW_ON_RECORD_CREDITED,
+    REVIEW_ON_RECORD_STALE,
+    REVIEW_ON_RECORD_ABSENT,
 )
 
 
@@ -609,6 +670,9 @@ def resolve_recovery_action(
     bot_kind: str,
     *,
     cause: str = '',
+    condition: str = '',
+    review_on_record: str = '',
+    pending_findings: int | None = None,
     window_expired: bool | None = None,
     attempts_remaining: int | None = None,
     attempt_held: bool = False,
@@ -629,6 +693,32 @@ def resolve_recovery_action(
        having been computed over an empty population. Publishing the population
        (ADR-019) and refusing to name a verdict over an empty one is the honest
        answer.
+
+       **``condition: no_unreviewed_commit`` is resolved next, before the cause and
+       the class, and it never reaches the window arms.** The bot said every commit
+       is already reviewed, so there is no limit to classify and no window to
+       claim. It resolves from two observations, and a missing one is
+       ``unmeasured`` rather than a verdict: ``review_on_record`` (where the bot's
+       review stands for the merge candidate — a :data:`REVIEW_ON_RECORD_STATES`
+       member) and ``pending_findings`` (how many of its findings are still
+       unresolved?). Four verdicts follow, and only one of them posts anything:
+
+       - ``credited`` with zero pending findings resolves
+         ``accept_review_on_record`` — the review the pipeline was asking for
+         exists and is fully handled.
+       - ``credited`` with pending findings resolves ``await_triage`` — the review
+         exists, and its open findings are the triage's to handle, not a reason to
+         ask for another review.
+       - ``stale`` resolves ``leave_to_stale_review`` — the bot has a review, but
+         the merge candidate is newer than this reply, so the reply says nothing
+         about the current commit. The stale-review path re-triggers the bot with
+         its ordinary trigger, which now has a commit to review.
+       - ``absent`` resolves ``post_escalated_command`` — there is no review at
+         all, and the ordinary trigger has just been answered with "nothing new",
+         so only the bot's ``escalated_trigger_comment`` produces one.
+
+       ``rate_limited`` and an empty condition take none of this and fall through
+       to step 2 unchanged.
     2. **``cause: size`` resolves ``escalate_structural`` and DOMINATES the
        class.** A class is declared per BOT while a cause is observed per
        REFUSAL, and one bot can refuse for both at one class — so reading the
@@ -684,10 +774,22 @@ def resolve_recovery_action(
     verdict: dict[str, Any] = {
         'bot_kind': bot_kind,
         'cause': cause,
-        # The two registry facts the derivation read, published so the verdict
+        # What the bot's reply reported, and the two observations the
+        # no-unreviewed-commit arms resolve from — published as received, so a
+        # reader sees which of them was absent when the verdict is `unmeasured`.
+        'condition': condition,
+        'review_on_record': review_on_record,
+        'pending_findings': pending_findings,
+        'refusal_conditions': list(REFUSAL_CONDITIONS),
+        'review_on_record_states': list(REVIEW_ON_RECORD_STATES),
+        # The registry facts the derivation read, published so the verdict
         # names what it was computed FROM rather than only what it concluded.
         'rate_limit_class': rate_class,
         'trigger_semantics': semantics,
+        # The command `post_escalated_command` would send. Empty when the bot
+        # declares none — the `re-review --escalated` call then posts nothing and
+        # says so.
+        'escalated_trigger_comment': bot_registry.escalated_trigger_comment(bot_kind),
         # The population the membership test above ran against (ADR-019), and the
         # remedy an unregistered token is unreadable without.
         'known_bot_kinds': list(known),
@@ -704,6 +806,28 @@ def resolve_recovery_action(
 
     if not known:
         return {**verdict, 'action': RECOVERY_ACTION_UNMEASURED, 'reason': 'registry_empty'}
+    if condition == REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT:
+        # A value outside the vocabulary is an observation nobody made, exactly as
+        # an omitted one is: it resolves `unmeasured`, never the posting arm.
+        if review_on_record not in REVIEW_ON_RECORD_STATES:
+            return {**verdict, 'action': RECOVERY_ACTION_UNMEASURED, 'reason': 'no_review_observation'}
+        if pending_findings is None:
+            return {**verdict, 'action': RECOVERY_ACTION_UNMEASURED, 'reason': 'no_findings_observation'}
+        if review_on_record == REVIEW_ON_RECORD_STALE:
+            return {
+                **verdict,
+                'action': RECOVERY_ACTION_LEAVE_TO_STALE_REVIEW,
+                'reason': 'merge_candidate_newer_than_reply',
+            }
+        if review_on_record == REVIEW_ON_RECORD_ABSENT:
+            return {**verdict, 'action': RECOVERY_ACTION_POST_ESCALATED_COMMAND, 'reason': 'no_review_on_record'}
+        if pending_findings > 0:
+            return {**verdict, 'action': RECOVERY_ACTION_AWAIT_TRIAGE, 'reason': 'findings_pending'}
+        return {
+            **verdict,
+            'action': RECOVERY_ACTION_ACCEPT_REVIEW_ON_RECORD,
+            'reason': 'review_on_record_findings_handled',
+        }
     if cause == REFUSAL_CAUSE_SIZE:
         return {**verdict, 'action': RECOVERY_ACTION_ESCALATE_STRUCTURAL, 'reason': 'size_ceiling'}
     if rate_class != 'awaitable_window':
@@ -739,11 +863,72 @@ class _ReReviewStrategy:
     rate window to consult before posting. The ``_STRATEGIES`` comprehension that
     builds these instances already has the key in hand, so it is threaded in
     there rather than re-derived from the trigger string.
+
+    ``escalated_trigger_comment`` is the bot's second registry command — the one
+    that re-reviews the whole changeset. It is data exactly as ``trigger_comment``
+    is, and empty for a bot that declares none.
     """
 
-    def __init__(self, trigger_comment: str, bot_kind: str) -> None:
+    def __init__(self, trigger_comment: str, bot_kind: str, escalated_trigger_comment: str = '') -> None:
         self.trigger_comment = trigger_comment
         self.bot_kind = bot_kind
+        self.escalated_trigger_comment = escalated_trigger_comment
+
+    def _escalated_post_refusal(self, pr_number: int | str) -> dict | None:
+        """Return a refusal envelope when the escalated command must NOT be posted, else ``None``.
+
+        The escalated command spends one review from the bot's allowance each time
+        it runs, so it is posted at most once per reply. The record of an earlier
+        post is the PR itself: when a comment whose body IS the escalated command
+        was posted after this bot's newest comment, the bot has not answered that
+        command yet, and posting it again would spend a second review on the same
+        request. Once the bot comments again, a later reply is a new one and the
+        command may be posted for it.
+
+        Three refusals, each a returned envelope the caller branches on:
+
+        - ``no_escalated_command`` — the bot's registry record declares none, so
+          there is nothing to post in its name.
+        - ``escalated_history_unreadable`` — the PR's comments could not be read.
+          Unlike the rate-window read, an unreadable read REFUSES here: posting
+          blind risks a second spent review, while not posting leaves a state the
+          next pass re-reads.
+        - ``escalated_command_already_posted`` — the command is on the PR, newer
+          than every comment of this bot.
+        """
+        base = {
+            'status': 'refused',
+            'operation': 'request_fresh_review',
+            'bot_kind': self.bot_kind,
+            'pr_number': pr_number,
+            'escalated': True,
+        }
+        command = self.escalated_trigger_comment.strip()
+        if not command:
+            return {**base, 'reason': 'no_escalated_command'}
+        envelope = _github.fetch_pr_comments_data(int(pr_number))
+        if envelope.get('status') != 'success':
+            return {**base, 'reason': 'escalated_history_unreadable'}
+        comments = [c for c in (envelope.get('comments') or []) if isinstance(c, dict)]
+        bot_stamps = [
+            stamp
+            for stamp in (
+                _parse_iso(str(c.get('created_at') or ''))
+                for c in comments
+                if bot_kind_for_author(c.get('author')) == self.bot_kind
+            )
+            if stamp is not None
+        ]
+        newest_bot_comment = max(bot_stamps) if bot_stamps else None
+        for comment in comments:
+            if str(comment.get('body') or '').strip() != command:
+                continue
+            posted = _parse_iso(str(comment.get('created_at') or ''))
+            # A command whose time cannot be read counts as unanswered: the
+            # direction that posts nothing.
+            if posted is None or newest_bot_comment is None or posted > newest_bot_comment:
+                return {**base, 'reason': 'escalated_command_already_posted'}
+        return None
 
     def request_fresh_review(
         self,
@@ -752,6 +937,7 @@ class _ReReviewStrategy:
         *,
         plan_id: str | None = None,
         window_reader: Any = None,
+        escalated: bool = False,
     ) -> dict:
         """Post this bot's explicit trigger comment; return ``{status, trigger_time}``.
 
@@ -781,6 +967,13 @@ class _ReReviewStrategy:
         :func:`read_rate_window`. It exists so a test can drive both sides of the
         predicate without a real lock store; it is deliberately not a CLI flag,
         because an operator has no reason to substitute the read.
+
+        ``escalated=True`` posts the bot's ``escalated_trigger_comment`` instead of
+        its ordinary trigger. The rate-window guard runs first and unchanged, so
+        the escalated command is never posted into an open window either; only
+        then is :meth:`_escalated_post_refusal` consulted, which refuses a second
+        post of a command the bot has not answered yet. Both commands leave
+        through the one ``post_pr_comment`` call below.
         """
         reader = read_rate_window if window_reader is None else window_reader
         observation = reader(plan_id or _GUARD_PLAN_SENTINEL, self.bot_kind, pr_number)
@@ -795,7 +988,14 @@ class _ReReviewStrategy:
                 'seconds_remaining': observation.get('seconds_remaining', 0.0),
             }
 
-        post_result = _github.post_pr_comment(pr_number, self.trigger_comment)
+        comment = self.trigger_comment
+        if escalated:
+            refusal = self._escalated_post_refusal(pr_number)
+            if refusal is not None:
+                return refusal
+            comment = self.escalated_trigger_comment.strip()
+
+        post_result = _github.post_pr_comment(pr_number, comment)
         if post_result.get('status') != 'success':
             return make_error('request_fresh_review', post_result.get('error', 'failed to post trigger comment'))
         return {'status': 'success', 'trigger_time': _now_iso()}
@@ -1080,12 +1280,18 @@ class _ReReviewStrategy:
           (:func:`refusal_size_cap`), or ``''`` when it stated none. Empty reports
           as UNKNOWN and is never defaulted: a figure nobody observed would make
           the recorded gap look audited when it was not;
+        - ``condition`` — what the reply reports (:func:`refusal_condition`), from
+          the same vocabulary the producer's ``rate_limited_bots`` record carries:
+          ``rate_limited`` for a limit that was hit, ``no_unreviewed_commit`` for a
+          reply saying every commit is already reviewed. A consumer reads it
+          BEFORE ``cause`` and before the envelope's ``refusal_class``: a
+          ``no_unreviewed_commit`` record is not a limit and is never waited for;
         - ``body`` — a whitespace-collapsed, truncated excerpt (see
           :func:`_body_excerpt`).
 
-        ``cause`` and ``cap`` are emitted on EVERY refusal record, not only a size
-        one, so the shape does not vary by cause; on a quota refusal ``cause`` is
-        ``quota`` and ``cap`` is ``''``. Both are computed from the body even when
+        ``cause``, ``cap`` and ``condition`` are emitted on EVERY refusal record, so
+        the shape does not vary by cause or by condition; on a quota refusal
+        ``cause`` is ``quota`` and ``cap`` is ``''``. Both are computed from the body even when
         ``bot_kind`` is ``None`` — the accessors are registry-keyed, so an
         unregistered bot yields the ``quota`` default and an empty cap rather than
         an absent key.
@@ -1118,6 +1324,7 @@ class _ReReviewStrategy:
             'eta_extracted': eta_seconds is not None,
             'cause': refusal_cause(body, bot_kind),
             'cap': refusal_size_cap(body, bot_kind),
+            'condition': refusal_condition(body, bot_kind),
             'body': _body_excerpt(body),
         }
 
@@ -1282,7 +1489,11 @@ class _ReReviewStrategy:
 # that bot's trigger comment loaded from the registry. Built from data — there is
 # no per-bot class and no hard-coded bot list.
 _STRATEGIES: dict[str, _ReReviewStrategy] = {
-    bot_kind: _ReReviewStrategy(bot_registry.trigger_comment(bot_kind), bot_kind)
+    bot_kind: _ReReviewStrategy(
+        bot_registry.trigger_comment(bot_kind),
+        bot_kind,
+        bot_registry.escalated_trigger_comment(bot_kind),
+    )
     for bot_kind in bot_registry.bot_kinds()
 }
 
@@ -1332,9 +1543,14 @@ def bot_kind_for_author(author_login: str | None) -> str | None:
 # registry source — a trigger string added to a ``standards/{bot_kind}.md`` doc
 # is both posted and recognised with no second code edit. Empty triggers (a bot
 # that declares none) are excluded so a whitespace-only body never matches.
+#
+# A bot's ``escalated_trigger_comment`` is a registered trigger too: this workflow
+# posts it through the same call, so it is recognised here for the same reason and
+# is never filed as reviewer feedback.
 _REGISTERED_TRIGGER_COMMENTS: frozenset[str] = frozenset(
     trigger.strip()
-    for trigger in (bot_registry.trigger_comment(bot_kind) for bot_kind in bot_registry.bot_kinds())
+    for bot_kind in bot_registry.bot_kinds()
+    for trigger in (bot_registry.trigger_comment(bot_kind), bot_registry.escalated_trigger_comment(bot_kind))
     if trigger.strip()
 )
 
@@ -1439,9 +1655,15 @@ def cmd_recovery_action(args: argparse.Namespace) -> dict:
     chokepoint, and skipping this verb bypasses nothing.
     """
     window_expired = None if args.window_expired is None else args.window_expired == 'true'
+    # The three no-unreviewed-commit inputs are read defensively, so a
+    # direct-Namespace caller that predates them resolves exactly as an omitted
+    # flag does: an empty condition, and two unobserved inputs.
     verdict = resolve_recovery_action(
         args.bot_kind,
         cause=args.cause or '',
+        condition=getattr(args, 'condition', None) or '',
+        review_on_record=getattr(args, 'review_on_record', None) or '',
+        pending_findings=getattr(args, 'pending_findings', None),
         window_expired=window_expired,
         attempts_remaining=args.attempts_remaining,
         # Absent reads as NOT held, which keeps the exhausted arm active — the
@@ -1452,14 +1674,26 @@ def cmd_recovery_action(args: argparse.Namespace) -> dict:
 
 
 def cmd_re_review(args: argparse.Namespace) -> dict:
-    """Resolve the strategy, request a fresh review, then await it for HEAD."""
+    """Resolve the strategy, request a fresh review, then await it for HEAD.
+
+    With ``--escalated`` the request posts the bot's registry
+    ``escalated_trigger_comment`` instead of its ordinary trigger; the await that
+    follows is the same one, since a whole-changeset review of the current HEAD is
+    matched exactly as an incremental one is. The return carries ``escalated`` so a
+    reader of the envelope can tell which command was sent.
+    """
     strategy = resolve_strategy(args.bot_kind)
     if strategy is None:
         return make_error('re_review', f'Unknown bot_kind: {args.bot_kind}. Must be one of {BOT_KINDS}')
 
     # A `refused` return from the trigger guard propagates verbatim: the caller
     # branches on `status` / `reason`, and nothing was posted or awaited.
-    request_result = strategy.request_fresh_review(args.pr_number, args.push_time, plan_id=args.plan_id)
+    # Read defensively: a direct-Namespace caller that predates the flag posts the
+    # ordinary trigger, exactly as omitting `--escalated` does.
+    escalated = bool(getattr(args, 'escalated', False))
+    request_result = strategy.request_fresh_review(
+        args.pr_number, args.push_time, plan_id=args.plan_id, escalated=escalated
+    )
     if request_result.get('status') != 'success':
         return request_result
 
@@ -1475,6 +1709,7 @@ def cmd_re_review(args: argparse.Namespace) -> dict:
         return await_result
 
     await_result['bot_kind'] = args.bot_kind
+    await_result['escalated'] = escalated
     return await_result
 
 
@@ -1506,6 +1741,16 @@ def main() -> int:
         default=DEFAULT_CI_TIMEOUT,
         help=f'Seconds to await the fresh review before timing out (default: {DEFAULT_CI_TIMEOUT})',
     )
+    re_review.add_argument(
+        '--escalated',
+        action='store_true',
+        help=(
+            "Post the bot's registry escalated_trigger_comment (the whole-changeset review "
+            'command) instead of its ordinary trigger. Refused, with nothing posted, into an '
+            'open rate window, when the bot declares no such command, and when the command '
+            "is already on the PR after the bot's newest comment"
+        ),
+    )
     re_review.add_argument('--plan-id', help='Plan identifier (accepted for routing uniformity)')
 
     recovery = subparsers.add_parser(
@@ -1528,6 +1773,36 @@ def main() -> int:
             "The refusal's observed cause; 'size' resolves escalate_structural and dominates "
             'the class. OMIT it when unobserved (reads as an empty cause) — a refusal no arm '
             'of the recognition stack could read is a modelled state, not a hypothetical'
+        ),
+    )
+    recovery.add_argument(
+        '--condition',
+        # The accepted set IS `refusal_condition()`'s codomain, read from the
+        # shared vocabulary rather than re-literalled here.
+        choices=REFUSAL_CONDITIONS,
+        help=(
+            "The refusal record's `condition`; 'no_unreviewed_commit' is resolved before the "
+            'cause and the class and never claims a window. OMIT it when unobserved (reads as '
+            'an empty condition, which takes the rate-limit derivation)'
+        ),
+    )
+    recovery.add_argument(
+        '--review-on-record',
+        # The accepted set IS the selector's own vocabulary, not a second copy of it.
+        choices=REVIEW_ON_RECORD_STATES,
+        help=(
+            "Where this bot's review stands for the merge candidate: 'credited' (named in "
+            "participated_bots), 'stale' (named only in stale_participation_bots) or 'absent' "
+            "(in neither). Read only for condition 'no_unreviewed_commit'; OMIT it when "
+            'unobserved (reads as unmeasured)'
+        ),
+    )
+    recovery.add_argument(
+        '--pending-findings',
+        type=int,
+        help=(
+            "How many of this bot's findings are still pending. Read only for condition "
+            "'no_unreviewed_commit'; OMIT it when unobserved (reads as unmeasured)"
         ),
     )
     recovery.add_argument(

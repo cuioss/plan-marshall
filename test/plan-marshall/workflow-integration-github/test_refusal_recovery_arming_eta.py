@@ -58,7 +58,7 @@ _DECLARED_WORDING_PAIRS: list[tuple[str, str]] = [
     (bot_kind, pattern) for bot_kind in bot_registry.bot_kinds() for pattern in bot_registry.refusal_patterns(bot_kind)
 ]
 _DECLARED_WORDING_POPULATION_SIZE = len(_DECLARED_WORDING_PAIRS)
-_DECLARED_WORDING_POPULATION_BASELINE = 7
+_DECLARED_WORDING_POPULATION_BASELINE = 9
 
 
 def _registered_bots() -> list[str]:
