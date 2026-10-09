@@ -433,8 +433,7 @@ def timeout_result(
 def killed_result(exit_code: int, duration_seconds: int, log_file: str, command: str, **extra) -> dict:
     """Build an externally-killed result dict.
 
-    A ``killed`` result records that the build was stopped by a signal that
-    neither this stack's outer timeout nor the build itself produced. It is a
+    A ``killed`` result records that the build was stopped by a signal. It is a
     NON-FINISH, and it is deliberately its own status rather than an ``error``
     or a ``timeout``:
 

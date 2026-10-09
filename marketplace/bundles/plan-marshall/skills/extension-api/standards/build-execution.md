@@ -636,7 +636,7 @@ Timeout case carrying the test evidence the run produced before the kill:
 | -1 | `indeterminate` | The outcome could not be established at all |
 | `-N` | `killed` | Build stopped by POSIX signal N |
 
-**Note**: A negative exit code indicates the build system never ran or was interrupted, so the code alone cannot say which. **Read `status`, never the exit code**, to separate execution failure from timeout from indeterminate from kill — `-1` is shared by three of them, and only `status` carries the distinction.
+**Note**: A negative exit code indicates the build system never ran or was interrupted, so the code alone cannot say which. **Read `status`, never the exit code**, to separate execution failure from timeout from indeterminate from kill.
 
 ## Caller Interpretation
 

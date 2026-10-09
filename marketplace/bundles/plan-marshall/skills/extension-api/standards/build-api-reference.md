@@ -67,7 +67,7 @@ python3 .plan/execute-script.py {notation} run \
   - Gradle: `":module:build"` or `"build"`
   - npm: `"run test"` or `"run test --workspace=pkg"`
   - Python: `"verify"` or `"module-tests core"`
-- `--timeout` — Timeout in seconds for this run, overriding the adaptive value (when omitted: adaptive via run-config, default 300; min floor: 60s)
+- `--timeout` — Timeout in seconds for this run, overriding the adaptive value (when omitted: adaptive via run-config, default 300)
 - `--mode` — Output mode: `actionable` (default), `structured`, `errors`
 - `--format` — Output format: `toon` (default), `json`
 - `--plan-id` — Plan identifier. **Always resolved, never null**: when supplied it auto-resolves the worktree path via `manage-status get-worktree-path`; when omitted it resolves to the `NO_PLAN` sentinel, NOT to "no plan". Omitting the flag is therefore an attribution decision, not an absence — the build's log lands under the sentinel's build-results tree and its `kind=build` ledger row is stamped `NO_PLAN`. Pass the real plan id whenever the build belongs to one. Mutually exclusive with `--project-dir`.
@@ -411,7 +411,6 @@ All build skills integrate with adaptive timeout learning via `run-config`. The 
 - With `--timeout`: that value, for that run
 - Without it: the learned duration × 1.25 (25% safety margin), or the default (300s) when nothing is learned
 - On timeout failure: timeout is doubled for the next run (capped at 1800s)
-- Minimum floor: 60 seconds (never below this regardless of learned value)
 - Maximum cap: 1800 seconds (prevents exponential growth from successive timeouts)
 - Storage: `.plan/run-configuration.json` with command keys like `maven:verify`, `gradle:build`
 
