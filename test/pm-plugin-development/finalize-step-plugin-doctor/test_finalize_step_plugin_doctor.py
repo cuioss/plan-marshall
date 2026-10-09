@@ -9,14 +9,19 @@ that union, and passes them to ``plugin-doctor quality-gate --paths``.
 Since the wrapper is a SKILL.md (not a Python script), this module validates the
 documented derivation as pure Python functions: the regex extraction patterns
 identify and deduplicate skill directories from file paths, the union keeps a
-declared-but-untouched directory in scope, and the F1 whole-tree trigger is
-evaluated against the union rather than against either list alone.
+declared-but-untouched directory in scope, and the whole-tree triggers are
+evaluated against the union rather than against either list alone — ahead of
+both the skip-clean exit and scoped mode. The trigger set itself is parsed out
+of the wrapper document and compared with the test-side definition, so the two
+cannot drift apart silently.
 """
 
 from __future__ import annotations
 
 import re
 from pathlib import Path
+
+import pytest
 
 from conftest import PROJECT_ROOT, get_skill_dir
 
@@ -90,12 +95,45 @@ def extract_skill_dirs(modified_files: list[str]) -> list[str]:
     return sorted(dirs)
 
 
-# The F1 whole-tree trigger: a changed plugin-doctor / plan-doctor analyzer or
-# rule script re-classifies skills the diff never touched.
-_F1_TRIGGER_PREFIXES = (
-    'marketplace/bundles/pm-plugin-development/skills/plugin-doctor/',
-    'marketplace/bundles/plan-marshall/skills/plan-doctor/',
+# The whole-tree trigger patterns the mode-selection predicate below matches
+# against. Two families: F1 (a changed plugin-doctor / plan-doctor analyzer or
+# rule script re-classifies skills the diff never touched) and verdict-input (a
+# file outside every skill directory whose content the gate's verdict reads).
+#
+# This tuple is the test-side definition. TestTriggerSetMatchesWrapperDocument
+# pins it to the trigger table in Step 2.5 of the wrapper document in both
+# directions, so a pattern added to either side alone turns that test red.
+_WHOLE_TREE_TRIGGER_PATTERNS = (
+    'marketplace/bundles/pm-plugin-development/skills/plugin-doctor/**',
+    'marketplace/bundles/plan-marshall/skills/plan-doctor/**',
+    'marketplace/targets/*/__init__.py',
+    'marketplace/bundles/*/.claude-plugin/plugin.json',
+    '**/CLAUDE.md',
+    '**/AGENTS.md',
 )
+
+_GATE_MODE_WHOLE_TREE = 'whole-tree'
+_GATE_MODE_SCOPED = 'scoped'
+_GATE_MODE_SKIP_CLEAN = 'skip-clean'
+
+
+def _trigger_pattern_regex(pattern: str) -> re.Pattern[str]:
+    """Compile a trigger pattern under the matching rule Step 2.5 states.
+
+    ``*`` matches within one path segment; ``**`` matches any run of segments,
+    including none.
+    """
+    segments = pattern.split('/')
+    parts: list[str] = []
+    for index, segment in enumerate(segments):
+        is_last = index == len(segments) - 1
+        if segment == '**':
+            parts.append('.*' if is_last else '(?:[^/]+/)*')
+            continue
+        parts.append(re.escape(segment).replace(r'\*', '[^/]*'))
+        if not is_last:
+            parts.append('/')
+    return re.compile(''.join(parts))
 
 
 def gate_scope(realized_footprint: list[str], declared_files: list[str]) -> list[str]:
@@ -108,9 +146,58 @@ def gate_scope(realized_footprint: list[str], declared_files: list[str]) -> list
     return sorted(set(realized_footprint) | set(declared_files))
 
 
-def f1_trigger_fires(scope: list[str]) -> bool:
-    """Return whether the scope touches a plugin-doctor / plan-doctor rule script."""
-    return any(path.startswith(_F1_TRIGGER_PREFIXES) for path in scope)
+def whole_tree_trigger_fires(scope: list[str], patterns: tuple[str, ...] = _WHOLE_TREE_TRIGGER_PATTERNS) -> bool:
+    """Return whether any scope entry matches a whole-tree trigger pattern."""
+    compiled = [_trigger_pattern_regex(pattern) for pattern in patterns]
+    return any(regex.fullmatch(path) for path in scope for regex in compiled)
+
+
+def select_gate_mode(scope: list[str]) -> str:
+    """Return the mode Step 2.5 selects for a scope formed from two successful reads.
+
+    The trigger is evaluated first, ahead of both the skip-clean exit and scoped
+    mode. The indeterminate-read mode is not modelled: it needs a failed read,
+    and a failed read yields no scope to pass in.
+    """
+    if whole_tree_trigger_fires(scope):
+        return _GATE_MODE_WHOLE_TREE
+    if extract_skill_dirs(scope):
+        return _GATE_MODE_SCOPED
+    return _GATE_MODE_SKIP_CLEAN
+
+
+def _step2_5_block(content: str) -> str:
+    """Return the Step 2.5 section of the wrapper SKILL.md, up to the Step 3 heading."""
+    start = content.find('### Step 2.5')
+    assert start != -1, 'Wrapper SKILL.md should declare a Step 2.5 mode-selection section'
+    end = content.find('\n### Step 3', start)
+    assert end != -1, 'Wrapper SKILL.md should declare a Step 3 section after Step 2.5'
+    return content[start:end]
+
+
+def documented_trigger_patterns(content: str) -> list[str]:
+    """Parse the whole-tree trigger patterns out of the Step 2.5 trigger table.
+
+    The table is located by its ``| Trigger pattern |`` header row; every body
+    row contributes the backticked pattern in its first cell. A body row whose
+    first cell is not exactly one backticked span fails the parse rather than
+    being skipped, so a malformed row cannot silently shrink the parsed set.
+    """
+    lines = _step2_5_block(content).splitlines()
+    header_indexes = [index for index, line in enumerate(lines) if line.startswith('| Trigger pattern |')]
+    assert len(header_indexes) == 1, (
+        f'Step 2.5 must hold exactly one `| Trigger pattern |` table, found {len(header_indexes)}'
+    )
+    patterns: list[str] = []
+    # +2 skips the header row and the `|---|` separator row beneath it.
+    for line in lines[header_indexes[0] + 2 :]:
+        if not line.startswith('|'):
+            break
+        first_cell = line.split('|')[1].strip()
+        cell_match = re.fullmatch(r'`([^`]+)`', first_cell)
+        assert cell_match, f'Trigger table row has no single backticked pattern in its first cell: {line!r}'
+        patterns.append(cell_match.group(1))
+    return patterns
 
 
 def _step1_scope_block(content: str) -> str:
@@ -277,8 +364,8 @@ class TestF1TriggerOverUnion:
         ]
 
         # Act
-        fires_on_union = f1_trigger_fires(gate_scope(realized_footprint, declared_files))
-        fires_on_declared_alone = f1_trigger_fires(declared_files)
+        fires_on_union = whole_tree_trigger_fires(gate_scope(realized_footprint, declared_files))
+        fires_on_declared_alone = whole_tree_trigger_fires(declared_files)
 
         # Assert
         assert fires_on_union
@@ -289,7 +376,7 @@ class TestF1TriggerOverUnion:
         scope = gate_scope(['marketplace/bundles/plan-marshall/skills/plan-doctor/scripts/plan_doctor.py'], [])
 
         # Act / Assert
-        assert f1_trigger_fires(scope)
+        assert whole_tree_trigger_fires(scope)
 
     def test_trigger_does_not_fire_without_a_rule_script(self):
         # Arrange
@@ -299,7 +386,140 @@ class TestF1TriggerOverUnion:
         )
 
         # Act / Assert
-        assert not f1_trigger_fires(scope)
+        assert not whole_tree_trigger_fires(scope)
+
+
+_VERDICT_INPUT_ONLY_UNIONS = (
+    pytest.param(['marketplace/targets/claude/__init__.py'], id='targets-init-only'),
+    pytest.param(['marketplace/bundles/plan-marshall/.claude-plugin/plugin.json'], id='bundle-plugin-json-only'),
+    pytest.param(['CLAUDE.md'], id='root-claude-md-only'),
+    pytest.param(['AGENTS.md'], id='root-agents-md-only'),
+    pytest.param(['doc/developer/CLAUDE.md'], id='nested-claude-md-only'),
+)
+
+_UNRELATED_NON_SKILL_UNIONS = (
+    pytest.param(['README.md', 'doc/developer/build.adoc', 'test/conftest.py'], id='docs-and-tests'),
+    pytest.param(['marketplace/targets/sync.py'], id='targets-root-module'),
+    pytest.param(['marketplace/targets/claude/adapter.py'], id='target-package-non-init'),
+    pytest.param(['marketplace/targets/claude/sub/__init__.py'], id='nested-init-below-a-target-package'),
+    pytest.param(['marketplace/bundles/plan-marshall/README.md'], id='bundle-readme'),
+    pytest.param(['marketplace/bundles/plan-marshall/.claude-plugin/other.json'], id='other-manifest-dir-file'),
+    pytest.param(['marketplace/bundles/plan-marshall/agents/plugin.json'], id='plugin-json-outside-manifest-dir'),
+    pytest.param(['doc/NOT-CLAUDE.md', 'doc/CLAUDE.md.bak'], id='agent-file-near-miss-names'),
+)
+
+
+class TestVerdictInputTriggerOverUnion:
+    """A non-skill file the gate's verdict reads selects whole-tree, never a skip."""
+
+    @pytest.mark.parametrize('realized_footprint', _VERDICT_INPUT_ONLY_UNIONS)
+    def test_verdict_input_alone_selects_whole_tree_and_not_skip_clean(self, realized_footprint):
+        # Arrange
+        scope = gate_scope(realized_footprint, [])
+
+        # Act
+        mode = select_gate_mode(scope)
+
+        # Assert
+        assert extract_skill_dirs(scope) == [], 'the union must name no skill, or the case proves nothing'
+        assert mode == _GATE_MODE_WHOLE_TREE
+        assert mode != _GATE_MODE_SKIP_CLEAN
+
+    @pytest.mark.parametrize('realized_footprint', _VERDICT_INPUT_ONLY_UNIONS)
+    def test_verdict_input_beside_an_unrelated_skill_preempts_scoped_mode(self, realized_footprint):
+        # Arrange
+        declared_files = ['marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md']
+
+        # Act
+        with_trigger = select_gate_mode(gate_scope(realized_footprint, declared_files))
+        without_trigger = select_gate_mode(gate_scope([], declared_files))
+
+        # Assert
+        assert with_trigger == _GATE_MODE_WHOLE_TREE
+        assert without_trigger == _GATE_MODE_SCOPED
+
+    @pytest.mark.parametrize('realized_footprint', _UNRELATED_NON_SKILL_UNIONS)
+    def test_unrelated_non_skill_files_still_take_skip_clean(self, realized_footprint):
+        # Arrange
+        scope = gate_scope(realized_footprint, [])
+
+        # Act
+        mode = select_gate_mode(scope)
+
+        # Assert
+        assert not whole_tree_trigger_fires(scope)
+        assert mode == _GATE_MODE_SKIP_CLEAN
+
+    def test_trigger_fires_when_verdict_input_is_in_declared_list_only(self):
+        # Arrange
+        realized_footprint = ['README.md']
+        declared_files = ['marketplace/bundles/pm-dev-java/.claude-plugin/plugin.json']
+
+        # Act
+        fires_on_union = whole_tree_trigger_fires(gate_scope(realized_footprint, declared_files))
+        fires_on_realized_alone = whole_tree_trigger_fires(realized_footprint)
+
+        # Assert
+        assert fires_on_union
+        assert not fires_on_realized_alone
+
+
+class TestTriggerSetMatchesWrapperDocument:
+    """The test-side trigger set and the Step 2.5 trigger table are the same set."""
+
+    def test_documented_and_test_side_trigger_sets_are_equal_in_both_directions(self):
+        # Arrange
+        documented = documented_trigger_patterns(_WRAPPER_SKILL_MD.read_text(encoding='utf-8'))
+
+        # Act
+        documented_only = sorted(set(documented) - set(_WHOLE_TREE_TRIGGER_PATTERNS))
+        test_side_only = sorted(set(_WHOLE_TREE_TRIGGER_PATTERNS) - set(documented))
+
+        # Assert
+        assert documented, 'Step 2.5 must name at least one whole-tree trigger pattern'
+        assert documented_only == [], (
+            f'Step 2.5 names trigger pattern(s) the test-side definition lacks: {documented_only}'
+        )
+        assert test_side_only == [], (
+            f'the test-side definition holds pattern(s) Step 2.5 does not name: {test_side_only}'
+        )
+
+    def test_neither_side_repeats_a_pattern(self):
+        # Arrange
+        documented = documented_trigger_patterns(_WRAPPER_SKILL_MD.read_text(encoding='utf-8'))
+
+        # Assert
+        assert len(documented) == len(set(documented)), 'the Step 2.5 trigger table repeats a pattern'
+        assert len(_WHOLE_TREE_TRIGGER_PATTERNS) == len(set(_WHOLE_TREE_TRIGGER_PATTERNS))
+
+    def test_parser_reports_a_pattern_added_to_the_document_only(self):
+        """Control: the comparison is not vacuous — a document-only row is seen."""
+        # Arrange
+        content = _WRAPPER_SKILL_MD.read_text(encoding='utf-8')
+        existing_row = '| `**/AGENTS.md` |'
+        assert content.count(existing_row) == 1, 'the control needs exactly one anchor row to extend'
+        extended = content.replace(existing_row, '| `doc/**/extra.md` | verdict-input | control |\n' + existing_row)
+
+        # Act
+        documented = documented_trigger_patterns(extended)
+
+        # Assert
+        assert set(documented) - set(_WHOLE_TREE_TRIGGER_PATTERNS) == {'doc/**/extra.md'}
+
+    def test_every_documented_pattern_selects_whole_tree_for_a_matching_path(self):
+        """Each parsed pattern, compiled under the documented rule, matches a concrete path."""
+        # Arrange
+        documented = documented_trigger_patterns(_WRAPPER_SKILL_MD.read_text(encoding='utf-8'))
+
+        # Act
+        unmatched = [
+            pattern
+            for pattern in documented
+            if not whole_tree_trigger_fires([pattern.replace('**', 'a/b').replace('*', 'x')], (pattern,))
+        ]
+
+        # Assert
+        assert unmatched == []
 
 
 class TestStep1NamesBothReads:
