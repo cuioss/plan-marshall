@@ -470,7 +470,9 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings re
 ```
 
 `--task-number` names the fix task that owns the fix and is accepted with
-`--resolution fixed` only. A `fixed` finding resolved without it is an inline fix.
+`--resolution fixed` only. A finding that becomes `fixed` in a call without it is an
+inline fix. A finding that is already `fixed` and is resolved `fixed` again without it
+keeps the task number and the commit it carries — see § "The fix stamp".
 
 ### stamp-fix-commit
 

@@ -109,9 +109,8 @@ co-tenants the same store, and the storeless ``poll-delay`` computation:
     same read, returning once the window plus a caller-supplied grace period has
     elapsed or its per-call bound lapses; ``release`` drops the holder while
     RETAINING the attempt counter so the cap survives the release between attempts.
-  * ``poll-delay`` — a bounded jittered delay, in seconds, for a caller about to
-    wake from an elapsed rate window. It COMPUTES and RETURNS the number; it never
-    sleeps. See "No mutating verb sleeps" below.
+  * ``poll-delay`` — a bounded random delay, in seconds. It COMPUTES and RETURNS
+    the number; it never sleeps. See "No mutating verb sleeps" below.
 
 **No mutating verb sleeps — ``rate-window wait`` is the one verb that waits.** No
 verb that writes the store sleeps, and nothing in this module sleeps while holding
@@ -126,9 +125,9 @@ signal and decides nothing: whoever acts on an elapsed window re-reads the claim
 and goes through the guarded read-modify-write core, so the decision is made on a
 fresh read under the guard, never on this verb's answer (the check-then-act menu
 is ``ref-code-quality/standards/code-organization.md#toctou--check-then-act-hazards``).
-``check`` and ``poll-delay`` stay single reads that return at once. ``poll-delay``
-is the jitter COMPUTATION; its number is waited by ``rate-window wait``, which
-receives it as ``--grace-seconds``. ``poll-delay`` also touches NO state — no
+``check`` and ``poll-delay`` stay single calls that return at once. ``poll-delay``
+is a COMPUTATION only; ``--grace-seconds`` of ``rate-window wait`` is where a
+caller would pass its number. ``poll-delay`` also touches NO state — no
 ``--plan-id``, no store read, and no write to ``merge.lock``, ``merge-queue.json``,
 or the ``rate_windows`` key — so it is a pure function behind a CLI, safe to call
 from anywhere without contending for anything.
@@ -348,15 +347,7 @@ _DEFAULT_WINDOW_SECONDS = 3600.0
 # The range is CORROBORATED, not invented: `.claude/skills/cloud-plan-lane/SKILL.md`
 # § "A `Reopens? yes` refusal is RETRIED, not recorded" instructs a cloud-lane run to
 # "wait the window the notice states, then add jitter — a random 5-20 minutes on top".
-# Matching it keeps one jitter magnitude across both lanes, which is what makes the
-# two decorrelate against EACH OTHER rather than merely each against itself.
-#
-# ⛔ The RANGE transfers; the cloud lane's RATIONALE does not. That lane argues from a
-# shared per-developer allowance several parallel plans draw on, which makes its jitter
-# a thundering-herd remedy. In THIS lane the rate-window claim already serialises every
-# in-repo claimant by construction, so no in-repo herd exists to break up. What survives
-# is stated at the call site — see `automatic-review/standards/coderabbit.md`
-# § "Rate-limit class".
+# Matching it keeps one jitter magnitude across both lanes.
 _DEFAULT_POLL_DELAY_MIN_SECONDS = 300.0
 _DEFAULT_POLL_DELAY_MAX_SECONDS = 1200.0
 
@@ -2320,18 +2311,16 @@ def run_poll_delay(args: Namespace) -> dict[str, Any]:
     """``poll-delay`` — compute a bounded jittered delay; NEVER sleep it.
 
     A pure computation behind a CLI: it reads no store, holds no lock, takes no
-    ``--plan-id``, and writes nothing. The returned ``delay_seconds`` is drawn once
-    per rate-window wait by the main-context caller (``phase-6-finalize`` item 7a)
-    and handed to ``rate-window wait`` as ``--grace-seconds``, which waits it on top
-    of the window. Keeping the draw a pure computation is the point; see the module
-    docstring's "No mutating verb sleeps".
+    ``--plan-id``, and writes nothing. A caller waits the returned
+    ``delay_seconds`` by passing it to ``rate-window wait`` as ``--grace-seconds``.
+    Keeping the draw a pure computation is the point; see the module docstring's
+    "No mutating verb sleeps".
 
     Negative bounds are REFUSED. Both bounds arrive from a CLI flag a human types,
-    and the returned ``delay_seconds`` is interpolated straight into the caller's
-    ``--grace-seconds`` argument — so a negative bound does not stay inside this
-    function as a merely-odd number. It leaves as a refused call at the one site
-    that consumes it. This is the same already-guarded validation path the inversion
-    check below occupies, one comparison wider.
+    and the returned ``delay_seconds`` is a duration a caller passes on — so a
+    negative bound does not stay inside this function as a merely-odd number. It
+    leaves as a refused call. This is the same already-guarded validation path the
+    inversion check below occupies, one comparison wider.
 
     Inverted bounds are REFUSED rather than silently swapped. A swap would make
     ``--min-seconds 1200 --max-seconds 300`` return a plausible delay drawn from a
@@ -2342,9 +2331,8 @@ def run_poll_delay(args: Namespace) -> dict[str, Any]:
     of them can see one. ``float('nan')`` compares False against every bound — so it
     is neither negative nor inverted — and ``float('inf')`` as the ceiling is a
     well-ordered pair. Both reach :func:`random.uniform`, which returns a non-finite
-    draw, and that draw is interpolated straight into the caller's
-    ``--grace-seconds``: a ``nan`` grace at the one site that consumes this verb. The
-    ordering also decides
+    draw, and a caller passing that draw on hands a ``nan`` duration to whatever
+    waits it. The ordering also decides
     which refusal ``-inf`` gets — the accurate "not finite" one rather than the
     narrower "negative" one it would collect from the check below.
     """

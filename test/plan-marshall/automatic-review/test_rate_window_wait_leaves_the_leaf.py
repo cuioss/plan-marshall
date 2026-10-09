@@ -2,14 +2,12 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """The rate-window wait is held by the main context, never by the dispatched step.
 
-A review bot's rate window runs to an hour. The ``automatic-review`` step used to
-wait it out itself: one ``rate-window check`` read, then a standalone ``sleep``
-call, repeated until the window elapsed, and a second ``sleep`` for the jittered
-wake delay. A dispatched step cannot hold such a pause, so the instruction was one
-the step could not carry out.
+A review bot's rate window runs to an hour, and a dispatched step cannot hold a
+pause of that length: a ``sleep`` it is told to issue is an instruction it cannot
+carry out.
 
-The wait now belongs to the main context. After claiming the window the step
-returns ``escalate_ask`` with the reason ``rate_window_await`` and stops;
+The wait belongs to the main context. After claiming the window the step returns
+``escalate_ask`` with the reason ``rate_window_await`` and stops;
 ``phase-6-finalize`` item 7a answers that reason by re-issuing the bounded
 ``merge_lock rate-window wait`` call and then dispatching the step again. It asks
 the operator nothing.
@@ -47,7 +45,7 @@ _AWAIT_BRANCH_END = 'For `reason: re_review_timeout`, read the timeout policy'
 _HEADING = re.compile(r'^(#{1,6})\s+(.*)$')
 
 #: A ``sleep`` written as a command: inside inline code (`` `sleep 60` ``,
-#: `` `sleep {delay_seconds}` ``). A fenced command line is found by
+#: `` `sleep {interval}` ``). A fenced command line is found by
 #: :func:`_standalone_sleeps` instead, which knows which lines are fenced.
 _INLINE_SLEEP_COMMAND = re.compile(r'`sleep(\s+[^`]*)?`')
 _FENCED_SLEEP_COMMAND = re.compile(r'^\s*sleep(\s+\S.*)?$')
@@ -336,9 +334,7 @@ def test_the_await_branch_routes_to_a_bounded_wait_and_a_re_dispatch():
         line for line in branch.splitlines() if 'execute-script.py' in line or line.strip().startswith('--')
     )
 
-    assert 'merge_lock poll-delay' in commands
     assert 'merge_lock rate-window wait' in commands
-    assert '--grace-seconds {delay_seconds}' in commands
     assert '--wait-seconds {remaining_budget}' in commands
     assert 'Leave the step record ABSENT' in branch
     assert 'plan-marshall:automatic-review' in branch

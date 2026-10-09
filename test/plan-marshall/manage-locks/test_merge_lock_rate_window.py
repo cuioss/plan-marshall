@@ -4,8 +4,7 @@
 """Tests for the ``merge_lock.py`` ``rate-window`` verbs — the cross-plan claim on
 ONE review bot's rate window, co-tenanting the merge-lock store — for the
 ``rate-window wait`` verb, the bounded read-only wait on that claim's expiry, and
-for the ``poll-delay`` verb, the storeless jitter computation whose number that
-wait receives as its grace period.
+for the ``poll-delay`` verb, the storeless bounded-delay computation.
 """
 
 from __future__ import annotations
