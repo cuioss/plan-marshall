@@ -44,6 +44,10 @@ The two slash commands `/finalize-step-deploy-target` and `/sync-harnesses` are 
 | `/sync-harnesses --target claude`
 | The cache mirror is the actual load path. `target/claude/` being current is necessary but not sufficient.
 
+| Skill text is older than the scripts it calls.
+| `python3 marketplace/targets/claude/registry_pin.py --apply`, then a full restart of the session
+| The registry still names the previous version. The sync moved the plugin cache forward, so scripts resolved through the regenerated executor are current, while a session loads skill bodies from the version the registry is pinned at. A second sync mirrors the same cache again and leaves the same pin, and `/reload-plugins` does not re-read it.
+
 | The sync reports `guard_outcome: stale` for the Claude target.
 | `/finalize-step-deploy-target`, then re-run the sync
 | The staleness guard in `cache_sync.py` saw a `target/claude/` that is missing, incomplete, or behind `marketplace/bundles/`. Regenerating the tree is the remedy.
@@ -51,6 +55,10 @@ The two slash commands `/finalize-step-deploy-target` and `/sync-harnesses` are 
 | The sync reports `guard_outcome: probe_failed` for the Claude target.
 | Repair the probe the `summary_message` names
 | A guard check could not run, so the tree's freshness is unknown. Regenerating is not the fix.
+
+| The sync reports `status: error` for a harness with a `summary_message` or `failed` row saying a symbolic link in the install location was refused.
+| Remove or relocate the named link, then re-run the sync for that harness
+| The sync never follows or replaces a link at a path it would write or mirror into. The refused harness synced nothing and its previous install is untouched, so a re-run alone reports the same refusal.
 |===
 
 == What each command does
@@ -59,7 +67,10 @@ The two slash commands `/finalize-step-deploy-target` and `/sync-harnesses` are 
 Runs `./pw generate-claude`, `./pw generate-opencode` and `./pw generate-antigravity` to regenerate the build targets from `marketplace/bundles/` — always through the `./pw` wrapper, because `uv` lives in the project-local `.pyprojectx/` tree and is not on `PATH`. For the Claude target it generates per-level agent variants (`{name}-level-1.md` through `{name}-level-7.md`), expands the variant-aware `plugin.json` per bundle, and emits the top-level `target/claude/.claude-plugin/marketplace.json`. Reads source, writes `target/`. Does NOT touch `~/.claude/plugins/cache/` or any other harness install.
 
 `/sync-harnesses`::
-Regenerates the selected target trees and then runs the single sync engine, `marketplace/targets/sync.py`. With no arguments it syncs the Claude, OpenCode and Antigravity installs; `--target claude` restricts the run to the plugin cache. The Claude leg, `marketplace/targets/claude/cache_sync.py`, runs `rsync --delete` from `target/claude/` into `~/.claude/plugins/cache/plan-marshall/`. It refuses when `target/claude/` is missing or stale relative to `marketplace/bundles/`. That staleness guard is what protects a direct engine run, `python3 marketplace/targets/sync.py --target claude`, which does not regenerate from source. After a successful Claude sync the command runs `marketplace/targets/claude/reconcile_daemon.py`, which reconciles a running build daemon with the new cache version.
+Regenerates the selected target trees and then runs the single sync engine, `marketplace/targets/sync.py`. With no arguments it syncs the Claude, OpenCode and Antigravity installs; `--target claude` restricts the run to the plugin cache. The Claude leg, `marketplace/targets/claude/cache_sync.py`, runs `rsync --delete` from `target/claude/` into `~/.claude/plugins/cache/plan-marshall/`. It refuses when `target/claude/` is missing or stale relative to `marketplace/bundles/`. That staleness guard is what protects a direct engine run, `python3 marketplace/targets/sync.py --target claude`, which does not regenerate from source. When the Claude result reports `cache_status: success` the command runs `marketplace/targets/claude/reconcile_daemon.py`, which reconciles a running build daemon with the new cache version, and then the repin script in its report form. The gate is `cache_status`, not the Claude `status`: a `status: partial` caused only by a registry that is `behind` leaves the cache complete, so both still run.
+
+`python3 marketplace/targets/claude/registry_pin.py`::
+The repin step. It compares every plan-marshall entry of the plugin registry (`~/.claude/plugins/installed_plugins.json`) with the version in the plugin cache and prints one row per entry — its version before and after, and the action taken — followed by the `registry_parity` verdict: `in_parity`, `behind`, `ahead` or `unreadable`. Without a flag it is a dry run that writes nothing; `/sync-harnesses` runs it in that form after a Claude cache sync. With `--apply` it rewrites an entry that is `behind` to the synced version. It never moves a pin backwards, so an `ahead` entry is reported and left alone. When the registry path is a symbolic link and an entry needs a rewrite, `--apply` refuses with `status: error` and writes nothing — it neither writes through the link nor replaces it — while the dry run still reads through the link and prints its report. A session reads the registry once, at start, so an applied repin takes effect only after a full restart. xref:marketplace-build.adoc#after-a-claude-sync[Marketplace Build → After a Claude sync] states the whole sequence and the machine-local setting that lets the finalize step apply the repin itself.
 
 == Authoritative path vs manual recovery
 

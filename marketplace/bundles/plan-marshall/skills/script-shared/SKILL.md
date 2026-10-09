@@ -18,6 +18,7 @@ scripts/
   marketplace_paths.py    # Path/root resolution constants and helpers; defines NO_PLAN_SENTINEL
   resolve_project_dir.py  # The --plan-id / --project-dir argv routing layer
   epic_spec_parser.py     # The marketplace's SINGLE reader of a plan spec's `## Expected Surface`
+  plugin_registry.py      # Shared reader of the plugin registry, the executor version and the cache versions
   build/        # Build system utilities (_build_*.py, _coverage_parse.py)
   extension/    # Extension framework (extension_base.py, extension_discovery.py, ...)
   workflow/     # Workflow helpers (triage_helpers.py)
@@ -35,6 +36,36 @@ Alongside the spec's class, the reader resolves each entry's own **shape** — w
 ⛔ The shape is an **added field, not a re-partition**. An entry keeps its membership of `claimed` and of `excluded` whatever its shape, and the spec's class is unaffected, so a consumer that ignores the shape reads exactly the surface it read before the field existed. Demoting a lead-shaped entry to a non-owning verdict is a consumer's PROJECTION and is performed by the partition, never here: moving a lead out of `claimed` in the reader would shrink the orchestrator's disjointness input and make a colliding plan read as disjoint.
 
 Do NOT add a second parser of that section in either consumer. It also defines `PLAN_ID_SEGMENT`, the plan-id grammar used to group specs by plan, which `plan-orchestrator`'s inbox seam imports from here rather than restating.
+
+## `plugin_registry` — shared reader for the registry pin
+
+`plugin_registry.py` answers "is the plugin registry pinned at the version it should be?". It reads three stores and writes none:
+
+- **The registry** (`installed_plugins.json`) in the shape the plugin manager writes — `"plugins": {"{bundle}@plan-marshall": [scope entry, ...]}`. `read_registry` returns one row per scope entry (`bundle`, `scope`, `install_path_version`, `version`) plus a read state. Scope entries are never collapsed: a user-scope and a project-scope entry that disagree are two rows. Keys of any other marketplace are ignored. Which entries of a parsed registry document belong to the marketplace is decided by one walk, `iter_marketplace_entries(document, marketplace=MARKETPLACE_NAME)`: `read_registry` builds its rows from it, and a caller that rewrites entries walks it too, so its `(bundle, entry)` pairs line up with the rows index for index.
+- **The executor**, for the value of its `MARSHALL_VERSION` assignment (`read_executor_version`).
+- **The cache**, for the newest version directory of a bundle (`newest_cache_version`) and whether a version directory carries the `.orphaned_at` marker (`is_orphan_marked`). The marker is reported, never used for selection.
+
+Every read function takes the path it reads. For a caller that has no path of its own, `default_registry_path`, `default_cache_root` and `default_executor_path` state where the three stores are: the registry and the cache root under the user's home directory, resolved on each call, and the executor under the checkout root the caller passes.
+
+`classify_parity` takes the registry rows and one reference version and returns exactly one verdict. The verdict set is closed and declared once, as the `PARITY_*` constants and the `PARITY_VERDICTS` tuple in this module; a consumer imports those names rather than restating the strings. The read states are likewise the module's `REGISTRY_*` and `EXECUTOR_VERSION_*` constants. `version_key` orders versions by digit runs, with the same semantics as `marketplace_bundles._version_sort_key`.
+
+### Consumers
+
+| Consumer | How it loads the module | Reference version it passes |
+|----------|-------------------------|-----------------------------|
+| The harness sync's Claude leg (`marketplace/targets/sync.py`) | By file location | The version the sync wrote in this invocation |
+| The repin step (`marketplace/targets/claude/registry_pin.py`) | By file location | The `--target-version` it is given, else the newest cache version directory of each bundle |
+| The pin-trap detector (`pm-plugin-development:plugin-doctor`) | By name, on the executor's PYTHONPATH | None — it reads the registry and executor values and compares them itself |
+| The restart check (`plan-marshall:plan-orchestrator`) | By name, on the executor's PYTHONPATH | The executor's `MARSHALL_VERSION` |
+
+The cache-root `dist-manifest.json` is never a reference version: it describes what was built, not what is pinned or loaded.
+
+### Load-by-file-location constraint
+
+`marketplace/targets/` runs outside the executor, so the `script-shared` directory is not on its `sys.path` and the module is loaded from its file path. Two rules follow, and both bind every future edit:
+
+- ⛔ **No import of a sibling module** — only the standard library. A sibling import resolves on the executor's PYTHONPATH and fails when the module is loaded by file location.
+- ⛔ **No `@dataclass`.** A module loaded by file location is not registered in `sys.modules`, where the dataclass machinery looks its defining module up. Rows are plain dicts and read results are plain tuples.
 
 ## Import Resolution
 

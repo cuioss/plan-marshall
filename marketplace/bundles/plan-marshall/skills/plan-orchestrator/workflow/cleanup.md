@@ -205,7 +205,7 @@ python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator cle
   --slug {slug}
 ```
 
-Each returned signal carries its own verdict, its own evidence, and the population it was derived from; the overall verdict is the floor over the participating signals. Carry that overall verdict into the report's `restart_verdict` field verbatim — an unobservable signal resolves to `indeterminate` and is never re-read as `not_ready`.
+Each returned signal carries its own verdict, its own evidence, and the population it was derived from; the overall verdict is the floor over the signals. Carry that overall verdict into the report's `restart_verdict` field verbatim — an unobservable signal resolves to `indeterminate` and is never re-read as `not_ready`.
 
 ### Step 11: Log and set the resume anchor
 

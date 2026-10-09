@@ -183,9 +183,55 @@ This regenerates the three target trees and syncs each one into its harness's in
 | `~/.gemini/config/plugins/plan-marshall/`
 |===
 
-An all-harness run attempts each harness even when an earlier one failed and reports one aggregate result. `--target claude`, `--target opencode` or `--target antigravity` narrows the run to one harness. After a successful Claude sync the command reconciles a running build daemon with `marketplace/targets/claude/reconcile_daemon.py`.
+An all-harness run attempts each harness even when an earlier one failed and reports one aggregate result. `--target claude`, `--target opencode` or `--target antigravity` narrows the run to one harness.
 
 The command exists once per harness: `.claude/skills/sync-harnesses/SKILL.md`, `.opencode/commands/sync-harnesses.md` and `.agents/skills/sync-harnesses/SKILL.md`. All three run the same steps and the same engine invocation. The command and its finalize-step counterpart are project-local — consumer projects do not get this surface, only the meta-project.
+
+[#after-a-claude-sync]
+=== After a Claude sync: sync, repin, full restart
+
+A Claude sync writes a new versioned directory into the plugin *cache*. It does not move the plugin *registry* (`~/.claude/plugins/installed_plugins.json`), which still names the version it was pinned at, and a session loads what the registry names. A synced cache therefore takes effect through one sequence, in this order:
+
+. **Sync** — `/sync-harnesses` moves the cache forward.
+. **Repin** — point the registry at the synced version, as its own explicit step: `python3 marketplace/targets/claude/registry_pin.py --apply`. Without `--apply` the script prints the same report and writes nothing.
+. **Fully restart the session** — a session reads the registry once, when it starts, so only a new session loads the repinned version.
+
+`/reload-plugins` is not a substitute for any of the three. It can make newly emitted agents visible to a running session, but skill bodies are still loaded from the version the registry named when that session started. A restart without the repin changes nothing either: the new session reads the same pin.
+
+The Claude result of a sync separates the two things the sequence is about:
+
+`cache_status`::
+`success`, `partial` or `error` — the outcome of the cache sync alone. It is always present in the Claude result. The daemon reconcile (`marketplace/targets/claude/reconcile_daemon.py`) and the registry report both run when it reads `success`, not when the Claude `status` does.
+
+`registry_parity`::
+The last block of the Claude result: one row per plan-marshall registry entry, ending with a `verdict` that is exactly one of four values.
+
+[cols="1,3,3", options="header"]
+|===
+| `verdict` | Meaning | Effect
+
+| `in_parity`
+| Every judged registry entry is pinned at the synced version.
+| None.
+
+| `behind`
+| An entry is pinned older than the synced version.
+| The Claude `status` is lowered to `partial`. The remedy is the repin, not a second sync.
+
+| `ahead`
+| An entry is pinned newer than the synced version.
+| None — reported, not a failure. A repin never moves a pin backwards, so it does not close this verdict.
+
+| `unreadable`
+| Parity could not be established; the block's `reason` says why.
+| None — reported, not a failure.
+|===
+
+Writing the registry is opt-in on both paths. On the command it is the operator passing `--apply` to the repin script (or `--repin` to the engine). In the `project:finalize-step-sync-plugin-cache` finalize step it is a machine-local setting, read and written with `run_config registry-repin get` and `run_config registry-repin set`; it reads `disabled` until the operator enables it on that machine. With the setting disabled the step runs the repin script in its report form, and a final verdict of `behind` fails the step. The setting lives in the git-ignored run configuration because the registry it gates is machine-local; link:../../marketplace/bundles/plan-marshall/skills/manage-run-config/SKILL.md[`manage-run-config` SKILL.md] § "registry-repin get / set" is its reference, and xref:../adr/025-The_harness_sync_repins_the_plugin_registry_only_on_operator_opt-in.adoc[ADR-025] records why the write is opt-in.
+
+A registry path that is a symbolic link is never written: when an entry needs a rewrite, `registry_pin.py --apply` refuses with `status: error` and writes nothing, neither through the link nor in place of it. The report form still reads through the link.
+
+link:../../marketplace/targets/README.md[`marketplace/targets/README.md`] § Registry parity documents the block's row shape, the `--registry-path` and `--repin` flags and the exit codes.
 
 === Derived-state finalize steps run under every execution profile
 
@@ -306,7 +352,7 @@ python3 marketplace/targets/sync.py --target opencode
 
 The engine is stdlib-only and runs on the host interpreter, so it needs no `./pw` alias.
 
-The Claude leg is implemented under `marketplace/targets/claude/`: `cache_sync.py` mirrors each bundle into the versioned plugin cache behind a staleness guard, and `reconcile_daemon.py` reconciles a running build daemon after the cache version moved. The OpenCode and Antigravity legs are declarative `TargetSyncConfig` deploys, described next.
+The Claude leg is implemented under `marketplace/targets/claude/`: `cache_sync.py` mirrors each bundle into the versioned plugin cache behind a staleness guard, `reconcile_daemon.py` reconciles a running build daemon after the cache version moved, and `registry_pin.py` reports or repins the plugin registry (see xref:#after-a-claude-sync[After a Claude sync]). The OpenCode and Antigravity legs are declarative `TargetSyncConfig` deploys, described next.
 
 === Declarative Configuration Contract (`TargetSyncConfig`)
 
@@ -352,6 +398,7 @@ Target directories often co-locate user-defined extensions, third-party skills, 
 * **Unmanaged Asset Protection**: Destination skills and commands that do not match the namespace of synced bundles are never pruned or altered.
 * **Agent Preservation**: Subagents in `agents/` are deployed, but stale agent pruning is deliberately omitted to prevent deleting local or runtime-discovered agents.
 * **Bundle-Scoped Isolation**: Passing `--bundles <bundle>` confines deployment and pruning exclusively to the named bundle, preserving all other managed bundles in the destination directory.
+* **Destination Symlinks**: A symbolic link at a path the sync would write, chmod, descend into or mirror into is neither followed nor replaced. That harness reports `status: error` naming the link and its previous install is left untouched; a stale link is removed as a link, and a symlinked destination root is accepted. link:../../marketplace/targets/README.md[`marketplace/targets/README.md`] § Destination Symlinks lists the covered paths.
 * **Dry-Run Preview**: Passing `--dry-run` performs source enumeration and destination pruning analysis without mutating the filesystem.
 
 === Structured TOON Output
@@ -382,7 +429,7 @@ removed[1]{kind,name}:
   skills,plan-marshall-stale-skill
 ----
 
-An all-harness run emits one aggregate document: an overall `status` (`success` when every harness synced, `partial` when some did, `error` when none did), a `targets` table with one row per harness, and each harness's own result block. The Claude block reports `synced` and `failed` bundle tables, and carries `guard_outcome` (`stale` or `probe_failed`) when the staleness guard refused. link:../../marketplace/targets/README.md[`marketplace/targets/README.md`] § Target Synchronization Engine documents every shape and the exit codes.
+An all-harness run emits one aggregate document: an overall `status` (`success` when every harness synced, `partial` when some did, `error` when none did), a `targets` table with one row per harness, and each harness's own result block. The Claude block reports `synced` and `failed` bundle tables, `cache_status`, and the `registry_parity` block as its last member; it carries `guard_outcome` (`stale` or `probe_failed`) and no `registry_parity` block when the staleness guard refused. link:../../marketplace/targets/README.md[`marketplace/targets/README.md`] § Target Synchronization Engine documents every shape and the exit codes.
 
 == Registered marketplace path
 
@@ -393,8 +440,10 @@ One-time migration on a developer machine:
 1. Ensure `target/claude/` is current: `./pw generate-claude`.
 2. Re-point the marketplace: edit `~/.claude/plugins/known_marketplaces.json` so the `plan-marshall` entry's `source.path` and `installLocation` point at `/path/to/plan-marshall/target/claude` (NOT `.../marketplace`). Alternatively, in-app: `/plugin marketplace remove plan-marshall` then `/plugin marketplace add /path/to/plan-marshall/target/claude`.
 3. Reinstall the plugins so install metadata picks up the variant-aware `plugin.json`: `claude plugin uninstall plan-marshall@plan-marshall && claude plugin install plan-marshall@plan-marshall` (repeat per bundle as needed).
-4. Restart Claude Code or run `/reload-plugins`.
+4. Fully restart Claude Code. `/reload-plugins` can surface newly registered agents in a running session, but it does not make that session load skill bodies from a different plugin version.
 5. Verify the variants are registered: ask a fresh session to list `plan-marshall:` entries from its available-agents header. Expect canonical + seven level variants.
+
+The registration is a one-time step; keeping an install current afterwards is the three-step sequence in xref:#after-a-claude-sync[After a Claude sync] — sync, repin, full restart. The registered path decides where the loader finds a plugin at install time, while the registry pin decides which cached version a starting session loads, so a correct registration with a pin that is `behind` still loads the previous version.
 
 == Related
 

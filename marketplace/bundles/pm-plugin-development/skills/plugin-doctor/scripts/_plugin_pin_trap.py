@@ -58,15 +58,17 @@ retention sweep runs — is a POLICY question about what counts as a finding, no
 a defect. It is recorded as a proposal for an operator rather than decided here.
 
 The live filesystem adapters (``observe_*``, ``read_*``, ``compare_pin_content``)
-read the three stores into these structures. The live plugin cache is not present
-in a fresh clone, so the module is exercised against FIXTURE trees; the adapters
-are written to be driven by ``tmp_path`` fixtures rather than the operator's
-machine.
+read the three stores into these structures. The registry and the executor are
+read through ``plan-marshall:script-shared``'s ``plugin_registry`` module,
+shared with the harness sync and the orchestrator's restart check, so this
+detector carries no parser of either store of its own. The live plugin cache is
+not present in a fresh clone, so the module is exercised against FIXTURE trees;
+the adapters are written to be driven by ``tmp_path`` fixtures rather than the
+operator's machine.
 """
 
 from __future__ import annotations
 
-import json
 import re
 import time
 from collections.abc import Callable
@@ -74,22 +76,23 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# Version-key — MIRRORS marketplace_bundles._version_sort_key semantics.
-# The executor's embedded resolver and the shared selector both order version
-# dirs by digit-run tuples ('0.1.1069' -> (0, 1, 1069)); the loader-selection
-# model below (D4) must order identically, so it re-derives the same key here.
-# ---------------------------------------------------------------------------
-_DIGITS_RE = re.compile(r'\d+')
+from plugin_registry import (
+    EXECUTOR_VERSION_FOUND,
+    EXECUTOR_VERSION_UNREADABLE,
+    MARKETPLACE_NAME,
+    ORPHAN_MARKER_NAME,
+    REGISTRY_NO_PLAN_MARSHALL_ENTRY,
+    REGISTRY_OK,
+    read_executor_version,
+    read_registry,
+)
+from plugin_registry import version_key as _version_key
+
+# A version-shaped path segment, used ONLY to pick the version dir out of a
+# loader-announced base directory (see ``_version_from_announced_path``). Version
+# ORDERING is ``plugin_registry.version_key`` — the loader-selection model below
+# (D4) orders exactly as the shared reader does, by importing its key.
 _VERSION_DIR_RE = re.compile(r'^\d+\.\d+')
-
-# The marker file whose EXISTENCE (never content) flags a version dir orphaned.
-ORPHAN_MARKER_NAME = '.orphaned_at'
-
-
-def _version_key(name: str) -> tuple[int, ...]:
-    """Digit-run tuple for ``name`` (matches ``marketplace_bundles._version_sort_key``)."""
-    return tuple(int(part) for part in _DIGITS_RE.findall(name))
 
 
 # ---------------------------------------------------------------------------
@@ -138,6 +141,16 @@ EXECUTOR_UNREADABLE = 'unreadable'
 EXECUTOR_NO_ANCHOR = 'no_anchor'
 EXECUTOR_SPLIT = 'split'
 
+# Registry-entry statuses, kept distinct for the same reason. A plugin installed
+# in several scopes has one registry entry PER SCOPE; when those entries name
+# different versions the registry was read successfully and disagrees with
+# itself across scopes — a demonstrated divergence the oracle must FAIL on, never
+# a could-not-look, and never silently the first entry's answer.
+REGISTRY_ENTRY_AGREED = 'agreed'
+REGISTRY_ENTRY_SCOPES_DISAGREE = 'scopes_disagree'
+REGISTRY_ENTRY_UNREADABLE = 'unreadable'
+REGISTRY_ENTRY_ABSENT = 'no_entry'
+
 _UNMARKED_DERIVED_NOTE = (
     'The unmarked set is REGISTRY-DERIVED, not an independent witness: the FOREIGN '
     'garbage collector deletes the marker from the registry installPath directory '
@@ -166,29 +179,27 @@ _AXES_NOTE = (
 
 # ---------------------------------------------------------------------------
 # Operator remedy text (D3) — stated, never implied. The detector reports what
-# to run; a session restart does NOT fix it; the in-run remedy is to read the
-# pinned skill file directly.
+# to run: ONE sequence — sync, repin, full restart. A restart on its own repairs
+# nothing; the in-run remedy is to read the pinned skill file directly.
 # ---------------------------------------------------------------------------
 # Every step names a command the operator can type AS GIVEN. That is stricter
-# than naming a surface: the retention sweep is a read-only DRY RUN unless
-# `--apply` is passed, so a remedy naming the bare verb would describe a prune
-# that does not happen — an operator following it literally sees a clean report,
-# no error, and moves on believing the cache was pruned.
+# than naming a surface: the repin is a read-only DRY RUN unless `--apply` is
+# passed, so a remedy naming the bare script would describe a repin that does not
+# happen — an operator following it literally sees a clean report, no error, and
+# moves on believing the registry was repinned.
 REMEDY_OPERATOR = (
-    'Repair is operator-only — this detector writes nothing. To repair the cache and '
-    'executor: (1) re-run the harness sync (`/sync-harnesses`) to move the cache '
-    'forward; (2) prune the superseded version dirs with the marshall-steward '
-    'cache-retention sweep — `python3 .plan/execute-script.py '
-    'plan-marshall:marshall-steward:cache_retention sweep --apply` (WITHOUT `--apply` '
-    'the sweep is a read-only dry run and removes nothing); '
-    '(3) regenerate the executor by re-running the steward wizard (`/marshall-steward`), '
-    'which rewrites `.plan/execute-script.py` against the refreshed cache. '
-    'Do NOT write the plugin registry — it is the plugin '
-    "manager's file, and a second writer is a defect in its own right."
+    'Repair is operator-only — this detector writes nothing. One sequence repairs '
+    'the pin, in this order: (1) re-run the harness sync (`/sync-harnesses`) to move '
+    'the cache forward; (2) repin the plugin registry to the synced version as its '
+    'own explicit step — `python3 marketplace/targets/claude/registry_pin.py --apply` '
+    '(WITHOUT `--apply` the repin is a read-only dry run and writes nothing); '
+    '(3) fully restart the session, so it loads from the repinned registry.'
 )
 REMEDY_NO_RESTART = (
-    'A session restart does NOT fix this: the loaded registry keeps serving the stale '
-    'body when asked, hours later, regardless of a restart.'
+    'A session restart WITHOUT a repin does not fix this: the restarted session '
+    're-reads the same stale registry and is seated on the same stale body. A full '
+    'restart AFTER the repin (`python3 marketplace/targets/claude/registry_pin.py '
+    '--apply`) loads the new version.'
 )
 REMEDY_IN_RUN_TEMPLATE = (
     'In-run remedy: read the pinned skill file DIRECTLY from the registry installPath '
@@ -311,17 +322,55 @@ class ContentComparison:
 
 @dataclass(frozen=True)
 class ExecutorAnchor:
-    """What the executor's embedded paths say about the version they anchor at.
+    """What the executor says about the version it is anchored at.
 
     ``status`` is one of the four ``EXECUTOR_*`` constants. ``version`` is set
     only for :data:`EXECUTOR_ANCHORED`; ``versions`` carries every distinct
-    version segment found, which is what makes a :data:`EXECUTOR_SPLIT` result
+    version found, which is what makes a :data:`EXECUTOR_SPLIT` result
     reportable by name rather than as a bare "could not read".
     """
 
     status: str
     version: str | None = None
     versions: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class RegistryScopeEntry:
+    """One scope entry of a plugin's registry key, as the shared reader returned it."""
+
+    scope: str | None
+    install_path_version: str | None
+    version: str | None
+
+    def render(self) -> str:
+        return f'{self.scope or "<no scope>"}({GATE_FIELD}={self.install_path_version}, version={self.version})'
+
+
+@dataclass(frozen=True)
+class RegistryEntry:
+    """What the registry says about one plugin, across ALL of its scope entries.
+
+    ``status`` is one of the four ``REGISTRY_ENTRY_*`` constants.
+    ``install_path_version`` and ``version`` are set only for
+    :data:`REGISTRY_ENTRY_AGREED` — every scope entry named the same pair, so the
+    pair is the registry's answer. (The two fields of that pair may still differ
+    from EACH OTHER, or be ``None``; that is the oracle's shape 5 and
+    unreadable-field handling, not this status.)
+
+    On :data:`REGISTRY_ENTRY_SCOPES_DISAGREE` both stay ``None`` — there is no
+    single answer to report, and picking one scope's would be the collapse this
+    type exists to prevent. ``scopes`` carries every entry on every status that
+    read any, so the disagreement is reportable by name. ``read_state`` is the
+    shared reader's own ``REGISTRY_*`` state, which keeps an absent registry, a
+    corrupt one and one with no entry of this marketplace apart.
+    """
+
+    status: str
+    install_path_version: str | None = None
+    version: str | None = None
+    scopes: tuple[RegistryScopeEntry, ...] = ()
+    read_state: str = REGISTRY_OK
 
 
 @dataclass(frozen=True)
@@ -333,7 +382,9 @@ class StoreObservation:
     ``content`` is the installPath dir compared against source (``None`` when not
     compared). ``executor_anchor`` carries WHY ``executor_version`` is ``None``
     when it is, so a version-SPLIT executor is reported as the disagreement it is
-    rather than as an unreadable store. ``eligible_versions`` is the set of dirs
+    rather than as an unreadable store. ``registry_entry`` does the same for the
+    two registry fields: scope entries that DISAGREE leave both at ``None`` and
+    are reported as the disagreement they are. ``eligible_versions`` is the set of dirs
     satisfying the loader's eligibility predicate for the subpath under test
     (``None`` when every dir is eligible), which is what lets the loader model
     reproduce a BACKWARD resolution rather than always resolving forward.
@@ -350,6 +401,7 @@ class StoreObservation:
     newest_marker_age_seconds: float | None = None
     executor_anchor: ExecutorAnchor | None = None
     eligible_versions: frozenset[str] | None = None
+    registry_entry: RegistryEntry | None = None
 
 
 @dataclass(frozen=True)
@@ -480,10 +532,14 @@ def _volatile_signature(obs: StoreObservation) -> tuple:
     subpath EXISTS under each version dir, so a subpath materialising inside a
     non-pin dir between the two reads flips the selected loader while every
     other axis compares equal. The docstring claimed every axis was covered
-    while this one had no mechanism behind the claim.
+    while this one had no mechanism behind the claim. The registry entry's
+    status and scope entries are included because two differently-disagreeing
+    registry reads both leave the two registry fields at ``None``.
     """
     anchor = obs.executor_anchor
+    registry_entry = obs.registry_entry
     return (
+        None if registry_entry is None else (registry_entry.status, registry_entry.scopes),
         tuple(sorted((d.name, d.marked) for d in obs.version_dirs)),
         obs.install_path_version,
         obs.registry_version,
@@ -544,6 +600,8 @@ def _evaluate_single(obs: StoreObservation, sampling_instant: str) -> Verdict:
     ev = obs.executor_version
     content = obs.content
     executor_anchor = obs.executor_anchor
+    registry_entry = obs.registry_entry
+    scopes_disagree = registry_entry is not None and registry_entry.status == REGISTRY_ENTRY_SCOPES_DISAGREE
     loader = loader_selected_version(dirs, obs.eligible_versions)
 
     shapes: list[str] = []
@@ -567,13 +625,20 @@ def _evaluate_single(obs: StoreObservation, sampling_instant: str) -> Verdict:
     # would issue a verdict over an axis nothing looked at.
     if content is not None and content.usable and content.diverged > 0:
         divergences.append(f'pin content diverges from source: {content.render()}')
-    # Conjunct 5 — the executor read succeeded and its embedded paths disagree
-    # with EACH OTHER. Distinct from an unreadable executor: this is a
-    # demonstrated disagreement, so it belongs on the divergence axis rather than
-    # on the could-not-look list.
+    # Conjunct 5 — the executor anchor is SPLIT. Distinct from an unreadable
+    # executor: this is a demonstrated disagreement, so it belongs on the
+    # divergence axis rather than on the could-not-look list.
     if executor_anchor is not None and executor_anchor.status == EXECUTOR_SPLIT:
         divergences.append(
             'executor is version-SPLIT across its embedded paths: ' + ', '.join(executor_anchor.versions)
+        )
+    # Conjunct 6 — the registry read succeeded and its SCOPE ENTRIES disagree
+    # with each other. The same reasoning as conjunct 5: a demonstrated
+    # disagreement, named scope by scope, never a could-not-look.
+    if registry_entry is not None and scopes_disagree:
+        divergences.append(
+            'registry scope entries disagree with each other: '
+            + ', '.join(scope.render() for scope in registry_entry.scopes)
         )
 
     # --- GC-exposure axis (a load-bearing dir is orphan-marked, or saturation) ---
@@ -624,9 +689,10 @@ def _evaluate_single(obs: StoreObservation, sampling_instant: str) -> Verdict:
     # with itself. It is reported on the divergence axis above.
     if ev is None and not (executor_anchor is not None and executor_anchor.status == EXECUTOR_SPLIT):
         unreadable.append('executor')
-    if ipv is None:
+    # Disagreeing scope entries are NOT unreadable either, for the same reason.
+    if ipv is None and not scopes_disagree:
         unreadable.append(f'registry.{GATE_FIELD}')
-    if rv is None:
+    if rv is None and not scopes_disagree:
         unreadable.append('registry.version')
     if not dirs:
         unreadable.append('cache (no version dirs)')
@@ -797,85 +863,104 @@ def observe_cache_version_dirs(
     return tuple(dirs), age
 
 
-def read_registry_entry(registry_path: Path, plugin_name: str) -> tuple[str | None, str | None]:
-    """Read ``(installPath_version, version)`` for ``plugin_name`` from the registry.
+def read_registry_entry(registry_path: Path, plugin_name: str) -> RegistryEntry:
+    """Read what the registry pins ``plugin_name`` at, across all of its scope entries.
 
-    The registry is the plugin manager's JSON file, whose entries carry an
-    ``installPath`` (a path ending in the version dir) and a ``version`` string.
-    The exact nesting is the manager's to define and cannot be verified from a
-    fresh clone, so this reader is deliberately liberal: it accepts the entries as
-    a top-level object keyed by plugin name, or under a ``plugins`` key, or as a
-    list of objects each carrying a ``name``. ``installPath_version`` is the
-    basename of ``installPath``. Either field is ``None`` when absent or
-    unreadable — the oracle then reports the registry as unreadable rather than
-    inventing agreement.
+    The registry is the plugin manager's JSON file. Its live shape —
+    ``{"plugins": {"{bundle}@{marketplace}": [scope entry, ...]}}`` — is parsed
+    by ``plugin_registry.read_registry``; this adapter only
+    selects the rows of one plugin and decides whether they agree.
+
+    ``plugin_name`` is the bundle name (``plan-marshall``), read under the shared
+    reader's own marketplace, or the full registry key
+    (``plan-marshall@plan-marshall``) to name the marketplace explicitly.
+
+    The result is one of four states, kept distinct because they are not the
+    same fact about the registry:
+
+    * :data:`REGISTRY_ENTRY_AGREED` — every scope entry names the same
+      ``(installPath version, version)`` pair, carried in the result's two
+      fields. ``installPath version`` is the basename of ``installPath``;
+    * :data:`REGISTRY_ENTRY_SCOPES_DISAGREE` — the scope entries name DIFFERENT
+      pairs. Both fields stay ``None`` and ``scopes`` carries every entry: the
+      first entry's answer is never reported as the registry's;
+    * :data:`REGISTRY_ENTRY_ABSENT` — the registry was read and holds no entry
+      for this plugin;
+    * :data:`REGISTRY_ENTRY_UNREADABLE` — the registry is absent, unreadable or
+      not JSON. ``read_state`` says which.
+
+    Every state but the first leaves both fields at ``None``, so the oracle never
+    invents agreement.
     """
-    try:
-        data = json.loads(registry_path.read_text(encoding='utf-8'))
-    except (OSError, json.JSONDecodeError):
-        return None, None
-    entry = _find_registry_entry(data, plugin_name)
-    if not isinstance(entry, dict):
-        return None, None
-    install_path = entry.get('installPath')
-    version = entry.get('version')
-    install_version = Path(install_path).name if isinstance(install_path, str) and install_path else None
-    version = version if isinstance(version, str) and version else None
-    return install_version, version
+    bundle, separator, marketplace = plugin_name.rpartition('@')
+    if not separator:
+        bundle, marketplace = plugin_name, MARKETPLACE_NAME
+    read_state, rows = read_registry(registry_path, marketplace)
+    scopes = _find_registry_entry(rows, bundle)
+    if not scopes:
+        # The shared reader returns rows only on REGISTRY_OK, and reports a file
+        # it parsed but found no entry of this marketplace in as its own state.
+        # Both of those are "read, and nothing there"; everything else is a
+        # registry that could not be read.
+        parsed = read_state in (REGISTRY_OK, REGISTRY_NO_PLAN_MARSHALL_ENTRY)
+        status = REGISTRY_ENTRY_ABSENT if parsed else REGISTRY_ENTRY_UNREADABLE
+        return RegistryEntry(status=status, read_state=read_state)
+    pairs = {(scope.install_path_version, scope.version) for scope in scopes}
+    if len(pairs) > 1:
+        return RegistryEntry(status=REGISTRY_ENTRY_SCOPES_DISAGREE, scopes=scopes, read_state=read_state)
+    install_path_version, version = next(iter(pairs))
+    return RegistryEntry(
+        status=REGISTRY_ENTRY_AGREED,
+        install_path_version=install_path_version,
+        version=version,
+        scopes=scopes,
+        read_state=read_state,
+    )
 
 
-def _find_registry_entry(data: object, plugin_name: str) -> object:
-    if isinstance(data, dict):
-        if plugin_name in data:
-            return data[plugin_name]
-        plugins = data.get('plugins')
-        if isinstance(plugins, dict) and plugin_name in plugins:
-            return plugins[plugin_name]
-        if isinstance(plugins, list):
-            return _find_in_list(plugins, plugin_name)
-    if isinstance(data, list):
-        return _find_in_list(data, plugin_name)
-    return None
-
-
-def _find_in_list(items: list, plugin_name: str) -> object:
-    for item in items:
-        if isinstance(item, dict) and item.get('name') == plugin_name:
-            return item
-    return None
+def _find_registry_entry(rows: list[dict[str, str | None]], bundle: str) -> tuple[RegistryScopeEntry, ...]:
+    """Every scope entry of ``bundle`` among the shared reader's rows, in file order."""
+    return tuple(
+        RegistryScopeEntry(
+            scope=row.get('scope'),
+            install_path_version=row.get('install_path_version'),
+            version=row.get('version'),
+        )
+        for row in rows
+        if row.get('bundle') == bundle
+    )
 
 
 def read_executor_anchored_version(executor_path: Path) -> ExecutorAnchor:
-    """Read which plugin-cache version dir the executor's embedded paths anchor at.
+    """Read which version the executor is anchored at — its ``MARSHALL_VERSION``.
 
-    The generated executor embeds absolute script paths under
-    ``.../cache/{plugin}/{version}/skills/...``. This scans the executor text for
-    those version segments and reports one of four states, kept distinct because
-    they are not the same fact about the executor:
+    The generated executor states the version it was generated at in one
+    module-level ``MARSHALL_VERSION`` assignment, read here through
+    ``plugin_registry.read_executor_version``.
 
-    * :data:`EXECUTOR_ANCHORED` — the embedded paths agree on one version, which
-      is carried in ``version``;
+    The adapter reports one of three states:
+
+    * :data:`EXECUTOR_ANCHORED` — the assignment names a version, carried in
+      ``version``;
     * :data:`EXECUTOR_UNREADABLE` — the file could not be read at all;
-    * :data:`EXECUTOR_NO_ANCHOR` — it was read and carries no such segment (the
-      marketplace-layout executor, or a corrupt one);
-    * :data:`EXECUTOR_SPLIT` — it was read and its embedded paths name MORE THAN
-      ONE version. ``versions`` carries them all, so the oracle can name the
-      conflict instead of filing a demonstrated disagreement as an unread store.
+    * :data:`EXECUTOR_NO_ANCHOR` — it was read and names no version: the
+      assignment is missing, or is the empty fresh-install sentinel.
+
+    :data:`EXECUTOR_SPLIT` stays in the status vocabulary and the oracle still
+    fails on it, but **this adapter no longer produces it**: one assignment
+    cannot disagree with itself. The state is reachable only from a constructed
+    :class:`ExecutorAnchor`.
 
     Every non-anchored state leaves ``version`` at ``None``, so the load-safety
     gate stays fail-closed: an executor whose version is not established never
     satisfies ``executor == installPath``.
     """
-    try:
-        text = executor_path.read_text(encoding='utf-8')
-    except OSError:
+    state, version = read_executor_version(executor_path)
+    if state == EXECUTOR_VERSION_FOUND and version is not None:
+        return ExecutorAnchor(status=EXECUTOR_ANCHORED, version=version, versions=(version,))
+    if state == EXECUTOR_VERSION_UNREADABLE:
         return ExecutorAnchor(status=EXECUTOR_UNREADABLE)
-    versions = tuple(sorted(set(re.findall(r'/cache/[^/]+/(\d+\.\d+[^/\'"]*)/skills/', text))))
-    if len(versions) == 1:
-        return ExecutorAnchor(status=EXECUTOR_ANCHORED, version=versions[0], versions=versions)
-    if not versions:
-        return ExecutorAnchor(status=EXECUTOR_NO_ANCHOR)
-    return ExecutorAnchor(status=EXECUTOR_SPLIT, versions=versions)
+    return ExecutorAnchor(status=EXECUTOR_NO_ANCHOR)
 
 
 def _relative_file_set(base: Path) -> set[Path] | None:
@@ -1027,7 +1112,9 @@ def observe(
     eligible: frozenset[str] | None = None
     if subpath is not None:
         eligible = frozenset(d.name for d in version_dirs if (cache_bundle_dir / d.name / subpath).exists())
-    install_version, registry_version = read_registry_entry(registry_path, plugin_name)
+    registry_entry = read_registry_entry(registry_path, plugin_name)
+    install_version = registry_entry.install_path_version
+    registry_version = registry_entry.version
     executor_anchor = read_executor_anchored_version(executor_path)
     executor_version = executor_anchor.version
     content: ContentComparison | None = None
@@ -1044,6 +1131,7 @@ def observe(
         newest_marker_age_seconds=marker_age,
         executor_anchor=executor_anchor,
         eligible_versions=eligible,
+        registry_entry=registry_entry,
     )
 
 
@@ -1085,6 +1173,14 @@ __all__ = [
     'OUTCOME_FAIL',
     'OUTCOME_INDETERMINATE',
     'OUTCOME_PASS',
+    'REGISTRY_ENTRY_ABSENT',
+    'REGISTRY_ENTRY_AGREED',
+    'REGISTRY_ENTRY_SCOPES_DISAGREE',
+    'REGISTRY_ENTRY_UNREADABLE',
+    'REMEDY_NO_RESTART',
+    'REMEDY_OPERATOR',
+    'RegistryEntry',
+    'RegistryScopeEntry',
     'SHAPE_1_SATURATION',
     'SHAPE_2_PIN_MARKED_NEWER_UNMARKED',
     'SHAPE_3_LOADER_FOLLOWS_NON_PIN_DIR',

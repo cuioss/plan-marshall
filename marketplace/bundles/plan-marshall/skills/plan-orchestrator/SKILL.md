@@ -383,7 +383,19 @@ python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator cle
   --slug SLUG
 ```
 
-Reports whether the session is safe to restart, read-only. Returns one `signals[]` row per observed signal — the epic `phase`, the `running` plan set, the corpus reconciliation figures, the derived inbox state, the repository HEAD plus worktree cleanliness, and `registry_parity` — each carrying its own three-valued verdict, its own evidence, and the population it was derived from, plus `sampled_at` beside the overall `verdict`. **An unreadable or unobservable signal resolves to `indeterminate` and never to `not_ready`**: an unobservable signal is not a failing one. The `running` arm reads the queue rows through the ledger layout module, so a monolithic-layout ledger — or a queue with an unread row file and no readable running row — is `indeterminate`, never `ready`. The overall verdict is the floor over the PARTICIPATING rows (`signals_scored` of `signals_total`); the `registry_parity` row reports `not_available`, names `PLAN-TRUTH-059` as the spec that owns that surface, and is excluded from the floor, so an unowned surface cannot veto a verdict this component can reach. Refuses an unsafe slug (`invalid_slug`) and an epic with no store tree (`not_found`).
+Reports whether the session is safe to restart, read-only. Returns one `signals[]` row per observed signal — the epic `phase`, the `running` plan set, the corpus reconciliation figures, the derived inbox state, the repository HEAD plus worktree cleanliness, and `registry_parity` — each carrying its own three-valued verdict, its own evidence, and the population it was derived from, plus `sampled_at` beside the overall `verdict`. **An unreadable or unobservable signal resolves to `indeterminate` and never to `not_ready`**: an unobservable signal is not a failing one. The `running` arm reads the queue rows through the ledger layout module, so a monolithic-layout ledger — or a queue with an unread row file and no readable running row — is `indeterminate`, never `ready`. The overall verdict is the floor over every row, so `signals_scored` equals `signals_total`.
+
+The `registry_parity` row is scored like the others and takes part in the floor. It reads the plugin registry, the executor's `MARSHALL_VERSION` and the newest cache version directory through the shared reader (`plan-marshall:script-shared`'s `plugin_registry`) and compares the registry pin against the executor version:
+
+| Verdict | When | Evidence names |
+|---------|------|----------------|
+| `ready` | The registry pin, the executor version and the newest cache version directory all name one version | That version |
+| `not_ready` | The registry is pinned behind the executor | Both versions and the repin command, `python3 marketplace/targets/claude/registry_pin.py --apply` — a script that exists in the plan-marshall meta-repository only (ADR-020) |
+| `indeterminate` | A store cannot be read, the registry holds no plan-marshall entry, the pin cannot be ordered against the executor version, the cache disagrees with a pin and an executor that agree, or the registry is pinned ahead of the executor | What could not be read or compared; for a registry ahead of the executor, both versions and executor regeneration as the remedy |
+
+A checkout that does not install plan-marshall through the plugin registry therefore reads `indeterminate` on this row, never `not_ready`.
+
+The verb refuses an unsafe slug (`invalid_slug`) and an epic with no store tree (`not_found`).
 
 ### land status
 

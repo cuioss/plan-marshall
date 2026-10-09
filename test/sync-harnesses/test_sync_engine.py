@@ -5,9 +5,13 @@
 
 Covers parallel rsync, TOON return shape, --from-worktree redirection,
 --bundles scoping, --dry-run, and the rsync-failure error path. The
-staleness guard gets its own dedicated suite
-(``test_staleness_guard.py``); these tests bypass it via
+``registry_parity`` block gets its own dedicated suite
+(``test_sync_engine_registry_parity.py``), as does the staleness guard
+(``test_staleness_guard.py``); these tests bypass the guard via
 ``--skip-staleness-guard`` so they can focus on the engine itself.
+
+Every run passes ``--cache-root`` and none passes ``--registry-path``, so
+no test reads or writes the machine's own plugin cache or plugin registry.
 
 The script under test is ``marketplace/targets/sync.py`` run with
 ``--target claude``, which drives
@@ -68,6 +72,7 @@ def test_sync_engine_emits_canonical_toon(tmp_path: Path):
 
     data = parse_toon(result.stdout)
     assert data['status'] == 'success'
+    assert data['cache_status'] == 'success'
     assert int(data['synced_count']) == 2
     assert int(data['failed_count']) == 0
 
@@ -243,10 +248,29 @@ def test_sync_engine_failure_path_when_rsync_missing(tmp_path: Path, monkeypatch
     assert result.returncode == 1
     data = parse_toon(result.stdout)
     assert data['status'] == 'error'
+    assert data['cache_status'] == 'error'
     assert int(data['failed_count']) == 1
     # The failed table is captured; one row per failure
     assert 'failed[1]{bundle,error}:' in result.stdout
     assert 'rsync not found on PATH' in result.stdout
+
+
+def test_sync_engine_unwritable_cache_root_is_an_error_result(tmp_path: Path):
+    """A filesystem fault raised by the cache sync is reported as an error document."""
+    target = tmp_path / 'target' / 'claude'
+    cache = tmp_path / 'cache'
+    _make_target(target, {'demo': '0.1.0'})
+    _write(cache, 'a regular file where the cache root directory belongs\n')
+
+    result = _run('--source', str(target), '--cache-root', str(cache), '--skip-staleness-guard')
+
+    assert result.returncode == 1
+    assert 'Traceback' not in result.stderr
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'error'
+    assert data['cache_status'] == 'error'
+    assert (int(data['synced_count']), int(data['failed_count']), data['synced']) == (0, 0, [])
+    assert 'claude sync failed' in data['summary_message']
 
 
 # ---------------------------------------------------------------------------

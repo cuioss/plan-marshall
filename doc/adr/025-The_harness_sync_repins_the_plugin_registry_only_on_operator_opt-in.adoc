@@ -1,0 +1,265 @@
+= ADR-025: The harness sync repins the plugin registry only on operator opt-in
+:toc: left
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
+
+// adr-metadata
+// Progressive-disclosure metadata block (see manage-adr SKILL.md → "ADR Template
+// Structure"). Read by `manage-adr.py scan` so a caller can assess an ADR's
+// relevance without reading the full file. List fields are comma-separated.
+// summary: The harness sync reports whether the plugin registry follows the cache version it just synced, as one of four verdicts (in_parity, behind, ahead, unreadable), but writes the registry only on explicit operator opt-in — a flag on the command, a machine-local setting for the finalize step, disabled by default — and that write is a separate step that is never part of the cache sync and never moves a pin backwards.
+// tags: harness-sync, plugin-registry, plugin-cache, opt-in, machine-local, dry-run, fail-closed, third-state, verdict
+// affects: plan-marshall, sync-harnesses, finalize-step-sync-plugin-cache, script-shared, manage-run-config, plugin-doctor, plan-orchestrator, marketplace/targets
+// supersedes:
+// end-adr-metadata
+
+// Authoring discipline (see manage-adr SKILL.md → "Authoring Discipline"):
+// ADRs are durable architectural statements, not incident write-ups. No PR numbers,
+// commit SHAs, dates, or lesson IDs anywhere in the body. CLAUDE.md's "current state
+// only" rule applies — describe the architecture, not the chronology.
+
+== Status
+
+Proposed
+
+== Context
+
+A Claude Code plugin install is two pieces of state that move independently. The
+plugin *cache* holds one directory per bundle and version. The plugin *registry*
+names, for every installed plugin and scope, which of those directories a session
+loads. A session reads the registry once, when it starts.
+
+The harness sync owns the first piece. It mirrors the generated tree into a new
+versioned cache directory, behind the staleness guard ADR-006 places at that
+consume boundary. Nothing in that operation touches the second piece, so after
+every sync that produced a new version the registry names the version before it.
+The cache is current and the install is not: a restarted session loads the
+previous skill bodies, while everything resolved against the cache directly —
+the regenerated script executor above all — is already at the new version. The
+two halves of one release run side by side, and the visible symptom is skill
+text that describes scripts differently from how those scripts now behave.
+
+Three properties of the registry shape the choice of who closes that gap.
+
+* **It is not this project's file.** The registry belongs to the plugin manager
+  of the host application. It carries the entries of every marketplace the
+  operator has installed, it is rewritten by the host on its own schedule, and
+  its format is the host's to change.
+* **It is machine-local.** No repository tracks it. A decision about writing it
+  is a decision about one machine, taken by whoever operates that machine.
+* **A write to it is not self-evidently wanted.** An operator may hold a pin on
+  purpose — to keep working against a known version while a newer one is being
+  generated, or because a later version was installed by another route. A
+  registry pinned *newer* than what was just synced is a legitimate state, not a
+  defect.
+
+The sync therefore faces a choice that recurs wherever a tool finishes its own
+work one step short of the effect the operator wanted, and the remaining step is
+a write to state the tool does not own: stay silent, report, or write. Staying
+silent is how the gap went unnoticed. The open question is which of the other
+two is the default, and what the report has to say for the answer to be usable.
+
+== Decision
+
+**The sync reports the registry's relation to the version it synced, and
+writes the registry only when the operator has opted in.** The write is a
+separate, explicitly requested step.
+
+=== (a) The report is a four-value verdict, computed after the cache sync
+
+After the cache sync returns, the Claude leg of the engine reads the registry and
+appends a `registry_parity` block to its result: one row per plan-marshall entry
+of every scope, and one `verdict`. The reference each entry is judged against is
+the version *this invocation synced* — not a manifest, and not the highest
+version present in the cache.
+
+[cols="1,3,2", options="header"]
+|===
+| Verdict | Meaning | Effect on the result
+
+| `in_parity`
+| Every judged entry is pinned at the synced version.
+| None.
+
+| `behind`
+| An entry is pinned older than the synced version.
+| A failure of the install as a whole: the Claude status is lowered and the run exits non-zero.
+
+| `ahead`
+| An entry is pinned newer than the synced version.
+| None. Reported, not a failure.
+
+| `unreadable`
+| Parity could not be established; a reason is stated.
+| None. Reported, not a failure, and never rendered as `in_parity`.
+|===
+
+The four values are the constants of one shared reader, the `plugin_registry`
+module of `plan-marshall:script-shared`. Every consumer that asks the parity
+question — the sync engine, the repin script, the orchestrator's restart check
+— classifies through it, so the verdict set has one definition.
+
+The cache outcome and the registry outcome are reported as separate facts. The
+Claude result always carries `cache_status`, the outcome of the cache sync alone;
+its `status` differs from it only when a `behind` registry lowered a `success`.
+Every follow-up that depends on the cache being complete — executor regeneration,
+daemon reconcile, the registry report itself — gates on `cache_status`, so a
+stale pin never suppresses work the completed cache makes correct.
+
+=== (b) The write is never part of the cache sync
+
+`sync_cache` reads no registry and writes none. The registry write lives in its
+own script, `marketplace/targets/claude/registry_pin.py`, which is a dry run
+unless told otherwise: without a flag it prints, per entry, the version before
+and the version an apply would leave, then the verdict, and writes nothing. The
+command runs the dry-run report after a Claude cache
+sync whether or not a write is wanted — so an operator sees what a repin would
+do before deciding to run one.
+
+When the write is requested it is bounded. It rewrites only plan-marshall
+entries, carries every other marketplace's entries through unchanged, backs the
+file up once, replaces it atomically after confirming its bytes did not change
+since they were read, and re-reads the result to confirm the pin it reports. It
+does not run under a dry-run sync.
+
+=== (c) `ahead` is reported and never closed
+
+The repin never moves a pin backwards. An entry already newer than the target is
+left alone. This makes `ahead`
+a verdict no step of the sequence resolves, by design: it is the state in
+which the registry knows something the sync does not, and overwriting it would
+replace the operator's later choice with the tool's earlier output.
+
+=== (d) Opt-in has one form per entry point, and both are local to the machine
+
+On the command, opt-in is the operator's own invocation: `--apply` on the repin
+script, or `--repin` on the engine call. In the finalize step, where no operator
+is typing a command, opt-in is a setting, `registry-repin`, read and written
+through `plan-marshall:manage-run-config`. It reads `disabled` unless enabled.
+
+The setting lives in the machine-local run configuration, not in the tracked
+project configuration. The registry it gates exists once per machine, so consent
+to write it cannot be granted by a file every clone shares; a tracked setting
+would let one contributor's preference authorise writes on every other
+contributor's machine. A setting that cannot be read is treated as `disabled` —
+an unreadable setting is never consent.
+
+With the setting disabled the finalize step still runs the report, and a final
+verdict of `behind` fails the step. The default is therefore loud rather than
+permissive: the gap is closed either by the tool with consent or by the operator
+by hand, and is not left open quietly.
+
+=== (e) The effect requires a restart, and the sequence is stated once
+
+Because a session reads the registry only at start, the full sequence is sync,
+repin, full restart. An in-session plugin reload is not a substitute: it does not
+re-read the pin. The sequence is stated in the command files and the developer
+documentation as one ordered procedure rather than as three independent hints.
+
+== Consequences
+
+=== Positive
+
+* The gap between cache and registry is visible. A Claude sync ends
+  with a verdict, so a stale pin is a reported state with a named remedy rather
+  than a symptom to be diagnosed from mismatched skill text.
+* The tool writes host-owned state only with consent, and the consent is scoped
+  to the machine the state lives on.
+* A deliberate pin survives. An operator holding a newer or a specific version
+  is not overridden by a routine sync, and is told so by the `ahead` verdict.
+* The verdict has one definition.
+* Cache-dependent follow-ups are decoupled from the pin. A machine that never
+  opts in still gets a regenerated executor and a reconciled daemon after every
+  successful cache sync.
+
+=== Negative
+
+* On a default-configured machine the finalize step fails when a sync
+  leaves the registry behind, until the operator repins or enables the setting. This
+  is the intended cost of a loud default.
+* The install is a three-step procedure where a single command would be simpler
+  to explain. The sequence must be learned, and two of its steps are outside the
+  sync.
+* The opt-in is per machine, so it is configured again on every machine and is
+  absent from a fresh clone.
+
+=== Risks
+
+* **The registry format is the host's.** The reader and the repin are written
+  against the shape the plugin manager uses. A change to that shape surfaces as
+  `unreadable` on the read path, which is the safe direction, but an apply
+  against a shape it only partly understands is the residual hazard. The
+  post-write re-read bounds it: a repin that cannot observe its own result fails
+  rather than reporting success.
+* **A concurrent host write.** The repin is a read-modify-write of a file the
+  host also writes. The byte-comparison before the atomic replace narrows the
+  window; it does not close it.
+* **`ahead` can hide a stale cache.** A registry pinned newer than the synced
+  version is reported and not failed. When the newer pin names a version the
+  cache no longer holds, that is a broken install the parity verdict does not
+  flag: parity compares versions and does not establish that the pinned
+  directory exists.
+* **`unreadable` is not a failure.** A machine on which parity can never be
+  established reports that fact on every sync and proceeds. The report
+  distinguishes it from `in_parity`, but nothing escalates a verdict that stays
+  `unreadable`.
+
+== Alternatives Considered
+
+**Report only.** The sync computes and prints the verdict and offers no write at
+all; the operator edits the registry or reinstalls through the host's own
+commands. This keeps the tool entirely out of host-owned state, which is its
+merit. Rejected because it makes the reported problem unactionable inside the
+project: the remedy would be a hand edit of a JSON file whose invariants — the
+orphan marker on the target directory, the commit field, the per-scope entries —
+are exactly what a careful script gets right and a hand edit gets wrong. A
+report that names a failure and leaves the fix to improvisation moves the defect
+from "unnoticed" to "noticed and fixed badly".
+
+**Always apply.** The sync repins the registry whenever it produced a new cache
+version, as part of the sync. This gives the single-command install and removes
+the failing default. Rejected on three grounds. It writes a file the project
+does not own, on every machine, without the operator having asked. It removes
+the ability to hold a pin, since every sync would move it. And it couples the
+cache sync's success to a second, riskier write: a registry the repin cannot
+safely rewrite would turn a complete cache sync into a failed one, or worse, the
+sync would have to decide which of its two writes defines success.
+
+**Opt-in through tracked project configuration.** Keep the write opt-in, but
+store the consent beside the rest of the project's settings. Rejected because
+the scope of the consent would not match the scope of the state: the setting
+would be shared by every clone while the file it authorises writing exists
+separately on each machine.
+
+The two rejected extremes fail in the same way from opposite sides. Each
+collapses two questions — *is the install current?* and *may the tool change
+it?* — into one. Report-only answers the first and refuses the second for
+everyone; always-apply answers the second for everyone in order to make the
+first disappear. Keeping the write consensual is what keeps them separate.
+
+== Generalisation
+
+When a tool completes its own work one step short of the outcome the operator
+wants, and the remaining step is a write to state the tool does not own, the
+observation and the write are separate capabilities with separate defaults. The
+observation is unconditional: the tool always says whether the outcome was
+reached, and distinguishes "not reached" from "could not tell". The write is
+consensual, and the consent is recorded at the same scope as the state it
+covers. The diagnostic question is *who owns the state the last step writes?* If
+the tool does, the step belongs in the tool's own operation. If something else
+does, the tool reports, offers, and waits.
+
+== References
+
+* xref:006-Generated-tree_drift_is_gated_at_the_consume_boundary_not_in_CI.adoc[ADR-006: Generated-tree drift is gated at the consume boundary not in CI] — the boundary this record extends. ADR-006 gates what may enter the cache; this record reports whether what entered it is what a session will load.
+* xref:009-Status_reporting_fails_closed_with_an_explicit_unknown_state.adoc[ADR-009: Status reporting fails closed with an explicit unknown state] — the rule behind `unreadable`: a parity check that cannot read the registry reports that it could not, never a vacuous `in_parity`.
+* xref:019-An_audit_separates_what_it_could_not_evaluate_from_what_it_evaluated_and_found_wanting.adoc[ADR-019: An audit separates what it could not evaluate from what it evaluated and found wanting] — the separation between `unreadable` and `behind`, and between `cache_status` and the lowered `status`.
+* xref:020-Repository_scope_is_distinct_from_target_scope_and_a_shipped_reference_into_the_meta-repos_project-local_tree_declares_itself_at_the_reference_site.adoc[ADR-020: Repository scope is distinct from target scope] — the repin script and the command files belong to the meta-repository's unshipped tree, while the shared reader, which only classifies, ships in a bundle; a shipped component that names the repin command follows that record's reference-site rule.
+* `marketplace/targets/claude/registry_pin.py` — the repin script: dry run by default, the bounded apply, the never-backwards rule.
+* `marketplace/targets/claude/cache_sync.py` — the cache sync, which reads and writes no registry.
+* `marketplace/targets/sync.py` and `marketplace/targets/README.md` § Registry parity — where the block is computed and its shape documented.
+* `marketplace/bundles/plan-marshall/skills/script-shared/scripts/plugin_registry.py` — the shared reader and the four verdict constants.
+* `marketplace/bundles/plan-marshall/skills/manage-run-config/SKILL.md` § "registry-repin get / set" — the machine-local opt-in setting.
+* xref:../developer/marketplace-build.adoc#after-a-claude-sync[Marketplace Build → After a Claude sync] — the sync, repin, restart sequence as the operator follows it.

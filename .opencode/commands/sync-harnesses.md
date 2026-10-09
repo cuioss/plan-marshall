@@ -41,25 +41,74 @@ Run every command with the `bash` tool, one command per call.
    `status` (`success` | `partial` | `error`), a
    `targets[3]{target,status,summary_message}` table, then one result block per
    harness. A single-target run prints that harness's own document. Report the
-   aggregate `status` and every `summary_message`; for a row whose `status` is
-   not `success`, re-run that harness alone with `--target X`.
+   aggregate `status` and every `summary_message`.
 
-4. When the Claude target reports `status: success`, reconcile the build
-   daemon:
+   The Claude result carries two members that separate the cache sync from the
+   registry pin. `cache_status` (`success` | `partial` | `error`) is the
+   outcome of the cache sync alone. `registry_parity`, when present, is the last block of the
+   result and ends with a `verdict`, exactly one of `in_parity`, `behind`,
+   `ahead` or `unreadable`. `behind` means a registry entry is pinned older
+   than the synced version: the Claude `status` is then `partial` and a
+   `--target claude` run exits `3`. `ahead` and `unreadable` are reported and
+   are not an error; a repin never moves a pin backwards.
+
+   Re-run with `--target X` each harness whose own install did not sync: for
+   OpenCode and Antigravity a `status` other than `success`, for Claude a
+   `cache_status` other than `success`. A Claude row that is `partial` with
+   `cache_status: success` has a complete cache install and only a stale
+   registry pin, so its remedy is the repin, not a `--target claude` re-run.
+   The repin is the operator's explicit `registry_pin.py --apply` named in the
+   block at the end of this file; step 5 only reports the pin.
+
+   When a `summary_message` or a `failed` row says the sync was refused because
+   of a symbolic link in the install location, re-running does not help: that
+   harness synced nothing. Remove or relocate the named link, then re-run.
+
+4. When the Claude result reports `cache_status: success`, reconcile the build
+   daemon. Read the field from the `claude:` result block on an all-targets
+   run, or from the document on a `--target claude` run — the `targets[]` row
+   carries no `cache_status`:
 
    ```bash
    python3 marketplace/targets/claude/reconcile_daemon.py
    ```
 
-   Skip this step when the Claude target was not selected, did not report
-   `success`, or the run was a `--dry-run`. Report the TOON `action` and
-   `display_detail`.
+   Skip this step when the Claude target was not selected, its `cache_status`
+   is not `success`, or the run was a `--dry-run`. A Claude `status: partial`
+   caused only by a `behind` registry does not skip it. Report the TOON
+   `action` and `display_detail`.
+
+5. Under the same `cache_status: success` gate and the same skip conditions —
+   a `partial` caused only by a `behind` registry does not skip it — report the
+   registry pin:
+
+   ```bash
+   python3 marketplace/targets/claude/registry_pin.py
+   ```
+
+   Without a flag the script is a dry run that is always printed and writes
+   nothing; its last line is the `registry_parity` verdict (`in_parity`,
+   `behind`, `ahead` or `unreadable`). Report it. Writing the registry is
+   opt-in: `--apply` on this script, or `--repin` on the engine call of step 2.
 
 Useful flags (pass via $ARGUMENTS): `--target NAME` to sync one harness,
 `--bundles NAME` to scope to one bundle, `--dry-run` to print actions without
 touching the filesystem, `--target-dir PATH` for a staging destination
-(requires `--target opencode` or `--target antigravity`).
+(requires `--target opencode` or `--target antigravity`), `--repin` to repin
+the Claude plugin registry to the synced version after the cache sync.
 `python3 marketplace/targets/sync.py --help` prints the authoritative flag set.
 
-A running Claude Code session sees agents a Claude sync newly emitted only
-after `/reload-plugins`.
+> **After a Claude sync — one sequence, in this order.**
+>
+> 1. **Sync** — the engine call. For Claude it writes a plugin-cache version
+>    directory.
+> 2. **Repin** — as its own explicit step, point the plugin registry at the
+>    synced version with `python3 marketplace/targets/claude/registry_pin.py --apply`.
+>    Without `--apply` the script only reports and writes nothing.
+> 3. **Fully restart the session** — a session reads the registry once, when it
+>    starts, so only a new session loads the repinned version.
+>
+> `/reload-plugins` alone is not sufficient. It can make newly emitted agents
+> visible to a running session, but skill bodies are still loaded from the
+> version the registry named when that session started. A restart without the
+> repin changes nothing either: the new session reads the same pin.

@@ -474,7 +474,11 @@ Verify that every `module_testing` profile task's declared test file lives in th
    python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture which-module --path {test_file}
    python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture which-module --path {impl_file}
    ```
-4. Compare the returned `module` values. If they differ, check whether both paths appear on the documented test→impl mapping list (project-local convention; absent means strict module match required). Emit a finding when modules differ AND no mapping entry covers the pair.
+4. Compare the returned `module` values. If they differ, consult the project's test→impl mapping list: the git-tracked project file `doc/developer/test-impl-mapping.adoc`, read with the `Read` tool relative to the WORKTREE root. A missing file means the list has no entries, so a strict module match is required. Emit a finding when modules differ AND no row of the list covers the pair.
+
+   **Row shape**: each row of the list's table carries three cells — a test path or directory, an implementation path or directory, and the reason the pairing is intentional. A path cell may list more than one path; each listed path is matched on its own.
+
+   **Covering rule**: a pair `(test_file, impl_file)` is covered when `test_file` equals or lies under a path of a row's test cell AND `impl_file` equals or lies under a path of the SAME row's implementation cell. Both halves must be satisfied by one row; a test matched by one row and an implementation matched by another is not covered. The rule is purely path-based, so it holds also when `which-module` resolves no module for either path — an unresolved module never covers a pair by itself, and never prevents a row from covering it.
 
 **Finding emission template**:
 
@@ -483,13 +487,15 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   qgate add --plan-id {plan_id} --phase 4-plan \
   --source qgate --type triage \
   --title "Q-Gate: module_mapping_validator — test/impl module mismatch for deliverable {N}" \
-  --detail "module_testing task declares {test_file} (module: {test_module}) but sibling implementation task declares {impl_file} (module: {impl_module}). Test will pass without exercising the changed code path. Either re-target the test to the correct module's test directory, or document the mapping if the cross-module routing is intentional." \
+  --detail "module_testing task declares {test_file} (module: {test_module}) but sibling implementation task declares {impl_file} (module: {impl_module}). Test will pass without exercising the changed code path. Either re-target the test to the correct module's test directory, or, if the cross-module routing is intentional, document the mapping as a row in doc/developer/test-impl-mapping.adoc." \
   --audit-plan-id {plan_id}
 ```
 
 **Positive example**: Deliverable D3's implementation task targets `marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md` (module `plan-marshall`). Its module_testing sibling targets `test/pm-plugin-development/plugin-doctor/test_extension.py` (module `pm-plugin-development`). Validator emits finding — modules differ, no mapping entry.
 
 **Negative example**: Deliverable D1's implementation targets `.../scripts/manage-tasks.py` (module `plan-marshall`). Its module_testing sibling targets `test/plan-marshall/manage-tasks/test_manage_tasks.py` (module `plan-marshall`). Silent pass — modules match.
+
+**Negative example (covered by a mapping row)**: Deliverable D5's implementation targets `{impl_dir}/SKILL.md`, a file whose module has no test tree of its own. Its module_testing sibling targets `test/{name}/test_{name}_contract.py`, which resolves to a different module. The mapping list carries a row whose test cell is `test/{name}/` and whose implementation cell is `{impl_dir}/`: the test file lies under the first, the implementation file under the second, and both in the same row. Silent pass — the modules differ, and a row covers the pair. The pairings themselves are project data: see `doc/developer/test-impl-mapping.adoc`.
 
 **Rationale**: Pairing a module_testing task with a test file from a different architecture module means the test executes without exercising the changed production code path — a coverage gap that surfaces only as a missed regression, not a test failure.
 

@@ -41,6 +41,77 @@ Flags:
     --cache-root PATH      Claude path: override the cache destination root.
     --skip-staleness-guard Claude path: bypass the staleness check
                            (reserved for tests and recovery flows).
+    --registry-path PATH   Claude path: the plugin registry file the
+                           registry_parity block reads (default:
+                           ~/.claude/plugins/installed_plugins.json).
+    --repin                Claude path: after the cache sync, repin the
+                           plugin registry to the synced version (runs
+                           marketplace/targets/claude/registry_pin.py in
+                           its apply mode). Without it the registry is
+                           only read.
+
+Registry parity (Claude path):
+    The cache sync moves the plugin CACHE forward; the plugin REGISTRY
+    still names the version it was pinned at, and a restarted session
+    loads what the registry names. After the cache sync the Claude leg
+    therefore reads the registry and reports, as the LAST block of its
+    result, whether the pin follows the version this invocation synced:
+
+        registry_parity:
+          registry_path: "<path>"          # absent when no registry was read
+          registry_state: ok | absent | io_error | not_json |
+                          no_plan_marshall_entry | not_read
+          reason: "<why>"                  # only on an unreadable verdict
+          repin: applied | failed | skipped_dry_run | skipped_registry_not_read |
+                 skipped_nothing_synced    # only when --repin was given
+          repin_message: "<error>"         # only when repin is failed
+          entries[K]{bundle,scope,install_path_version,version,synced_version,orphan_marked}:
+            plan-marshall,user,0.1.100,0.1.100,0.1.200,false
+          verdict: in_parity | behind | ahead | unreadable
+
+    One ``entries`` row per plan-marshall entry of every scope.
+    ``synced_version`` is the version this invocation synced for the row's
+    bundle — the reference the row is judged against, never
+    ``dist-manifest.json`` — or ``not_synced`` when the bundle was not part
+    of this run; such a row is shown and takes no part in the verdict.
+    ``orphan_marked`` states whether the synced directory carries
+    ``.orphaned_at``. The verdict is exactly one of the four values of the
+    shared reader (``script-shared``'s ``plugin_registry``):
+
+    * ``in_parity`` — every judged entry is pinned at the synced version.
+    * ``behind`` — an entry is pinned older than the synced version and no
+      same-invocation repin closed the gap. The Claude ``status`` becomes
+      ``partial`` while ``cache_status`` stays the cache-sync outcome, the
+      ``summary_message`` names the pinned version and the synced version.
+    * ``ahead`` — an entry is pinned newer than the synced version.
+      Reported, not red: neither ``status`` nor the exit code changes.
+    * ``unreadable`` — parity could not be established (no registry, no
+      entry of a synced bundle, an unknown pinned field); ``reason`` says
+      why. Neither ``status`` nor the exit code changes.
+
+    When ``--cache-root`` is overridden and ``--registry-path`` is not, no
+    registry is read and the verdict is ``unreadable``: a fixture cache
+    root is never judged against the machine's live registry. ``--dry-run``
+    reports the verdict against the versions it would sync and writes
+    nothing — no registry write happens under ``--dry-run --repin`` either.
+    A staleness-guard refusal synced nothing and carries no
+    ``registry_parity`` block; neither does a leg that could not start.
+
+Destination symlinks:
+    The sync never acts through a symbolic link it finds in an install
+    location. A link at any path it would write, chmod, descend into or
+    mirror into — a root asset such as ``opencode.json``, an agent or
+    command file, ``skills/``, ``agents/``, ``commands/``, a skill
+    directory or an entry inside one, ``{cache_root}/{bundle}`` or
+    ``{cache_root}/{bundle}/{version}`` — is REFUSED: that harness reports
+    ``status: error`` with a ``summary_message`` naming the link, and its
+    install is left as it was, because every such path is checked before
+    the first one is changed. A link is never replaced by a real file — an
+    operator may have linked it into a dotfiles repository on purpose. The
+    destination root itself may be a link; it is resolved once. A STALE
+    link — an entry the generated tree no longer holds — is removed as the
+    link it is, and its target is not touched. ``--dry-run`` reports the
+    same refusal.
 
 Single-target output — ``--target opencode`` / ``--target antigravity``:
     status: success | error
@@ -60,6 +131,7 @@ Single-target output — ``--target opencode`` / ``--target antigravity``:
 
 Single-target output — ``--target claude`` (see ``cache_sync.py``):
     status: success | partial | error
+    cache_status: success | partial | error
     synced_count: N
     failed_count: M
     summary_message: "<summary>"
@@ -67,6 +139,12 @@ Single-target output — ``--target claude`` (see ``cache_sync.py``):
     dry_run: true                        # only when --dry-run
     synced[N]{bundle,version,status}:
     failed[M]{bundle,error}:             # only when failed_count > 0
+    registry_parity:                     # only when attached
+      <see "Registry parity" above>
+
+``cache_status`` is always present and carries the outcome of the cache
+sync alone; ``status`` differs from it only when a ``behind`` registry
+lowered a ``success`` to ``partial``.
 
 All-targets output (no ``--target``) — one aggregate document:
     status: success | partial | error
@@ -82,7 +160,11 @@ All-targets output (no ``--target``) — one aggregate document:
       <the antigravity result block>
 
 The aggregate ``status`` is ``success`` only when every target reported
-``success``, ``partial`` when some did, and ``error`` when none did.
+``success``, ``partial`` when some did, and ``error`` when none did. The
+``targets`` table keeps exactly its three columns; ``cache_status`` and
+the ``registry_parity`` block live in the ``claude`` block only. A Claude
+leg whose registry is ``behind`` reports ``partial``, so the aggregate is
+not ``success`` and the run exits 1.
 
 Exit codes:
     All targets:
@@ -90,18 +172,24 @@ Exit codes:
         1 on aggregate ``status: partial`` or ``status: error``
     ``--target opencode`` / ``--target antigravity``:
         0 on ``status: success``
-        1 on ``status: error`` (source missing, empty source, etc.)
+        1 on ``status: error`` (source missing, empty source, a refused
+          destination symlink, etc.)
     ``--target claude``:
-        0 on ``status: success`` or ``status: partial``
+        0 on ``status: success`` or ``status: partial`` with the registry
+          not ``behind``
         1 on ``status: error`` (nothing synced)
         2 on a staleness-guard refusal
+        3 when the cache sync itself exited 0 and the ``registry_parity``
+          verdict is ``behind``
     2 on rejected arguments (argparse).
 """
 
 from __future__ import annotations
 
 import argparse
+import functools
 import importlib.util
+import os
 import shutil
 import sys
 from dataclasses import dataclass
@@ -115,8 +203,6 @@ if _TOON_DIR.is_dir() and str(_TOON_DIR) not in sys.path:
     sys.path.insert(0, str(_TOON_DIR))
 
 from toon_parser import serialize_toon  # noqa: E402
-
-VERBATIM_SKILL_SUBDIRS: tuple[str, ...] = ('standards', 'references', 'templates', 'scripts')
 
 #: The Claude target's name. Its sync path is the plugin-cache mirror in
 #: ``cache_sync.py`` rather than a :class:`TargetSyncConfig` deploy.
@@ -133,6 +219,45 @@ CACHE_SYNC_RELPATH = Path('marketplace') / 'targets' / 'claude' / 'cache_sync.py
 #: NOT ``marketplace.targets.claude.cache_sync`` — see
 #: :func:`_load_cache_sync_module` for why the package path is avoided.
 CACHE_SYNC_MODULE_NAME = '_sync_harnesses_claude_cache_sync'
+
+#: Repo-relative location of the opt-in registry repin module.
+REGISTRY_PIN_RELPATH = Path('marketplace') / 'targets' / 'claude' / 'registry_pin.py'
+REGISTRY_PIN_MODULE_NAME = '_sync_harnesses_claude_registry_pin'
+
+#: Repo-relative location of the shared plugin-registry reader.
+PLUGIN_REGISTRY_RELPATH = (
+    Path('marketplace') / 'bundles' / 'plan-marshall' / 'skills' / 'script-shared' / 'scripts' / 'plugin_registry.py'
+)
+PLUGIN_REGISTRY_MODULE_NAME = '_sync_harnesses_plugin_registry'
+
+#: Repo-relative location of the shared filesystem-safety checks. Stdlib-only
+#: and loaded by file location, like every other sibling this engine reaches.
+FS_SAFETY_RELPATH = Path('marketplace') / 'targets' / 'fs_safety.py'
+FS_SAFETY_MODULE_NAME = '_sync_harnesses_fs_safety'
+
+#: Exit code of a Claude sync whose cache sync succeeded while the plugin
+#: registry is pinned behind the synced version.
+EXIT_REGISTRY_BEHIND = 3
+
+#: ``registry_state`` of a ``registry_parity`` block for which no registry
+#: file was read at all. The other states are the shared reader's own.
+REGISTRY_STATE_NOT_READ = 'not_read'
+
+#: ``synced_version`` of a registry entry whose bundle this run did not sync.
+NOT_SYNCED = 'not_synced'
+
+#: How a registry field the reader reports as unknown is rendered in a row.
+UNKNOWN = 'unknown'
+
+#: The command that closes a ``behind`` verdict, named in the summary message.
+REPIN_COMMAND = f'python3 {REGISTRY_PIN_RELPATH.as_posix()} --apply'
+
+# ``repin`` outcomes of a ``registry_parity`` block (present only under --repin).
+REPIN_APPLIED = 'applied'
+REPIN_FAILED = 'failed'
+REPIN_SKIPPED_DRY_RUN = 'skipped_dry_run'
+REPIN_SKIPPED_REGISTRY_NOT_READ = 'skipped_registry_not_read'
+REPIN_SKIPPED_NOTHING_SYNCED = 'skipped_nothing_synced'
 
 
 @dataclass(frozen=True)
@@ -271,6 +396,103 @@ def _is_managed_command(file_name: str, synced_bundles: set[str]) -> bool:
     return any(stem == b or stem.startswith(f'{b}-') for b in synced_bundles)
 
 
+class DestinationLinkRefused(Exception):
+    """A path the sync would act on is, or lies behind, a symbolic link in the destination.
+
+    The shared checks in ``fs_safety`` raise ``ValueError``; the engine's fault
+    handlers catch ``OSError``. A refusal is carried under this dedicated type
+    so it is rendered as the target's ``error`` result without widening either.
+    """
+
+
+@functools.cache
+def _fs_safety() -> ModuleType:
+    """The shared filesystem-safety checks, loaded by file location once per process.
+
+    Raises:
+        ImportError: the module could not be loaded.
+    """
+    return _load_module_by_location(FS_SAFETY_MODULE_NAME, FS_SAFETY_RELPATH, 'filesystem-safety module')
+
+
+def _refuse_linked_dir(path: Path, dest: Path) -> None:
+    """Refuse a destination directory that is a link or resolves outside ``dest``.
+
+    Raises:
+        DestinationLinkRefused: naming ``path``.
+    """
+    check = _fs_safety().refuse_escaping_output_dir
+    try:
+        check(path, dest)
+    except ValueError as exc:
+        raise DestinationLinkRefused(str(exc)) from exc
+
+
+def _refuse_linked_entry(path: Path) -> None:
+    """Refuse a destination entry that is itself a link; its ancestors are the caller's.
+
+    Raises:
+        DestinationLinkRefused: naming ``path``.
+    """
+    check = _fs_safety().refuse_symlink
+    try:
+        check(path)
+    except ValueError as exc:
+        raise DestinationLinkRefused(str(exc)) from exc
+
+
+def _refuse_file_link(target: Path, dest: Path) -> None:
+    """Refuse a link at the file ``target`` or at the directory that holds it.
+
+    The destination root is exempt as a holder: it is resolved once by
+    :func:`_resolve_dest` and may itself be a link.
+    """
+    if target.parent != dest:
+        _refuse_linked_dir(target.parent, dest)
+    _refuse_linked_entry(target)
+
+
+def _refuse_skill_links(skill_dir: Path, dest: Path) -> None:
+    """Refuse a link at the skill's install directory or at any path the skill is written to.
+
+    The generated skill is walked top-down, so the first link met on the way
+    to an entry is the one named. A link at a path the generated skill does
+    NOT hold is not refused here: it is stale, and
+    :func:`_remove_absent_from_source` removes it as a link.
+    """
+    target = dest / 'skills' / skill_dir.name
+    _refuse_linked_dir(target.parent, dest)
+    _refuse_linked_dir(target, dest)
+    for root, dirnames, filenames in os.walk(skill_dir):
+        installed = target / Path(root).relative_to(skill_dir)
+        for name in sorted(dirnames + filenames):
+            _refuse_linked_entry(installed / name)
+
+
+def _refuse_destination_links(
+    dest: Path, skills: list[Path], agents: list[Path], commands: list[Path], assets: list[str]
+) -> None:
+    """Refuse every destination link the deploy would act through, before anything changes.
+
+    Covers each path the deploy writes, chmods, creates or descends into, and
+    the two directories the prune lists whether or not anything is deployed
+    into them. It only reads, so a refused deploy leaves the install as it was.
+
+    Raises:
+        DestinationLinkRefused: naming the first link found.
+    """
+    for pruned in ('skills', 'commands'):
+        _refuse_linked_dir(dest / pruned, dest)
+    for skill_dir in skills:
+        _refuse_skill_links(skill_dir, dest)
+    for agent_file in agents:
+        _refuse_file_link(dest / 'agents' / agent_file.name, dest)
+    for command_file in commands:
+        _refuse_file_link(dest / 'commands' / command_file.name, dest)
+    for asset_file in assets:
+        _refuse_file_link(dest / asset_file, dest)
+
+
 def _prune_managed(
     dest: Path,
     source_skills: set[str],
@@ -279,9 +501,16 @@ def _prune_managed(
     *,
     dry_run: bool,
 ) -> list[dict[str, str]]:
+    """Remove the managed skills and commands the source no longer holds.
+
+    A stale entry that is a link is removed as the link it is: its target is
+    never walked or deleted. The two listed directories are refused when they
+    are links themselves, since listing one would prune the link's target.
+    """
     removed: list[dict[str, str]] = []
 
     skills_dest = dest / 'skills'
+    _refuse_linked_dir(skills_dest, dest)
     if skills_dest.is_dir():
         for entry in sorted(skills_dest.iterdir()):
             if not entry.is_dir():
@@ -291,10 +520,15 @@ def _prune_managed(
             if entry.name in source_skills:
                 continue
             removed.append({'kind': 'skills', 'name': entry.name})
-            if not dry_run:
+            if dry_run:
+                continue
+            if entry.is_symlink():
+                entry.unlink()
+            else:
                 shutil.rmtree(entry)
 
     commands_dest = dest / 'commands'
+    _refuse_linked_dir(commands_dest, dest)
     if commands_dest.is_dir():
         for entry in sorted(commands_dest.iterdir()):
             if not entry.is_file():
@@ -310,25 +544,65 @@ def _prune_managed(
     return removed
 
 
-def _deploy_skill(skill_dir: Path, dest: Path, *, dry_run: bool) -> None:
-    target = dest / 'skills' / skill_dir.name
-    if not dry_run:
-        target.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(skill_dir / 'SKILL.md', target / 'SKILL.md')
+def _remove_absent_from_source(skill_dir: Path, target: Path) -> None:
+    """Remove every entry of ``target`` that ``skill_dir`` does not hold as the same kind.
 
-    for subdir_name in VERBATIM_SKILL_SUBDIRS:
-        src_sub = skill_dir / subdir_name
-        if src_sub.exists() and src_sub.is_dir():
-            dst_sub = target / subdir_name
-            if not dry_run:
-                if dst_sub.exists():
-                    shutil.rmtree(dst_sub)
-                shutil.copytree(src_sub, dst_sub)
+    A destination file survives only where the source has a file at the same
+    relative path, and a destination directory only where the source has a
+    directory there. A removed directory is not descended into, and a link is
+    removed as the link it is.
+
+    ``target`` must be a real directory: ``os.walk`` lists the target of a
+    symlinked root, so the caller refuses a linked ``target`` first.
+    """
+    for root, dirnames, filenames in os.walk(target):
+        installed = Path(root)
+        generated = skill_dir / installed.relative_to(target)
+        for name in filenames:
+            if not (generated / name).is_file():
+                (installed / name).unlink()
+        for name in list(dirnames):
+            if (generated / name).is_dir() and not (installed / name).is_symlink():
+                continue
+            dirnames.remove(name)
+            if (installed / name).is_symlink():
+                (installed / name).unlink()
+            else:
+                shutil.rmtree(installed / name)
+
+
+def _deploy_skill(skill_dir: Path, dest: Path, *, dry_run: bool) -> None:
+    """Mirror the generated skill directory into ``{dest}/skills/{name}/``.
+
+    Every file and directory of the generated skill is installed at the same
+    relative path, whatever it is called, and every destination file and
+    directory the generated skill no longer holds is removed. ``dry_run``
+    writes nothing.
+
+    Raises:
+        DestinationLinkRefused: a path the skill is written to is a link.
+    """
+    if dry_run:
+        return
+
+    _refuse_skill_links(skill_dir, dest)
+    target = dest / 'skills' / skill_dir.name
+    target.mkdir(parents=True, exist_ok=True)
+    _remove_absent_from_source(skill_dir, target)
+
+    for root, dirnames, filenames in os.walk(skill_dir):
+        generated = Path(root)
+        installed = target / generated.relative_to(skill_dir)
+        for name in dirnames:
+            (installed / name).mkdir(exist_ok=True)
+        for name in filenames:
+            shutil.copy2(generated / name, installed / name)
 
 
 def _deploy_agent(agent_file: Path, dest: Path, *, dry_run: bool) -> None:
     target = dest / 'agents' / agent_file.name
     if not dry_run:
+        _refuse_file_link(target, dest)
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(agent_file, target)
 
@@ -336,6 +610,7 @@ def _deploy_agent(agent_file: Path, dest: Path, *, dry_run: bool) -> None:
 def _deploy_command(command_file: Path, dest: Path, *, dry_run: bool) -> None:
     target = dest / 'commands' / command_file.name
     if not dry_run:
+        _refuse_file_link(target, dest)
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(command_file, target)
 
@@ -347,6 +622,7 @@ def _deploy_root_assets(source: Path, dest: Path, config: TargetSyncConfig, *, d
         if asset_src.is_file():
             target = dest / asset_file
             if not dry_run:
+                _refuse_file_link(target, dest)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(asset_src, target)
                 if is_executable:
@@ -411,24 +687,40 @@ def _deploy_target(
 
     synced_bundles = _derive_synced_bundles(skills, commands, only_bundle)
 
-    removed = _prune_managed(
-        dst,
-        {s.name for s in skills},
-        {c.name for c in commands},
-        synced_bundles,
-        dry_run=dry_run,
-    )
+    try:
+        _fs_safety()
+    except ImportError as exc:
+        msg = f'{target_name} sync could not start: {exc}'
+        return 1, _deploy_error(target=target_name, summary_message=msg, source=src, dest=dst, dry_run=dry_run)
 
-    for skill_dir in skills:
-        _deploy_skill(skill_dir, dst, dry_run=dry_run)
+    try:
+        # Every destination path is cleared of links before the first one is
+        # changed, so a refused deploy leaves the previous install untouched.
+        # Each step below repeats its own check: none acts on a path unchecked.
+        assets = [asset_file for asset_file, _kind, _exec in config.root_assets if (src / asset_file).is_file()]
+        _refuse_destination_links(dst, skills, agents, commands, assets)
 
-    for agent_file in agents:
-        _deploy_agent(agent_file, dst, dry_run=dry_run)
+        removed = _prune_managed(
+            dst,
+            {s.name for s in skills},
+            {c.name for c in commands},
+            synced_bundles,
+            dry_run=dry_run,
+        )
 
-    for command_file in commands:
-        _deploy_command(command_file, dst, dry_run=dry_run)
+        for skill_dir in skills:
+            _deploy_skill(skill_dir, dst, dry_run=dry_run)
 
-    extra_count = _deploy_root_assets(src, dst, config, dry_run=dry_run)
+        for agent_file in agents:
+            _deploy_agent(agent_file, dst, dry_run=dry_run)
+
+        for command_file in commands:
+            _deploy_command(command_file, dst, dry_run=dry_run)
+
+        extra_count = _deploy_root_assets(src, dst, config, dry_run=dry_run)
+    except DestinationLinkRefused as exc:
+        msg = f'{target_name} sync refused: {exc}'
+        return 1, _deploy_error(target=target_name, summary_message=msg, source=src, dest=dst, dry_run=dry_run)
 
     deployed_count = len(skills) + len(agents) + len(commands) + extra_count
 
@@ -483,44 +775,244 @@ def _load_cache_sync_module() -> ModuleType:
         ImportError: the module file is absent, has no loadable spec, or
             fails while executing.
     """
-    module_path = _PROJECT_ROOT / CACHE_SYNC_RELPATH
-    spec = importlib.util.spec_from_file_location(CACHE_SYNC_MODULE_NAME, module_path)
+    return _load_module_by_location(CACHE_SYNC_MODULE_NAME, CACHE_SYNC_RELPATH, 'claude cache-sync module')
+
+
+def _load_module_by_location(module_name: str, relpath: Path, label: str) -> ModuleType:
+    """Execute the single file at ``relpath`` (repo-relative) as ``module_name``.
+
+    The module is executed afresh on every call and is not registered in
+    ``sys.modules``, so a value it derives at import time (a default path
+    under the home directory) reflects the environment of this call.
+
+    Raises:
+        ImportError: the file is absent, has no loadable spec, or fails
+            while executing. Every failure is normalised to ``ImportError``.
+    """
+    module_path = _PROJECT_ROOT / relpath
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
     if spec is None or spec.loader is None:
-        raise ImportError(f'no loadable module spec for claude cache-sync module at {module_path}')
+        raise ImportError(f'no loadable module spec for {label} at {module_path}')
 
     module = importlib.util.module_from_spec(spec)
     try:
         spec.loader.exec_module(module)
     except Exception as exc:  # normalised to ImportError below
-        raise ImportError(f'claude cache-sync module at {module_path} failed to import: {exc}') from exc
+        raise ImportError(f'{label} at {module_path} failed to import: {exc}') from exc
     return module
 
 
-def _sync_claude(args: argparse.Namespace) -> tuple[int, dict[str, Any], str]:
-    """Run the Claude cache sync. Returns ``(exit_code, result, rendered)``.
+def _synced_versions(cache_sync: ModuleType, synced_rows: list[dict[str, str]]) -> dict[str, str]:
+    """The version this invocation synced, per bundle — the parity reference.
 
-    ``rendered`` is the single-target document; ``result`` carries the
-    same fields as data for the aggregate document.
+    A bundle whose sync failed has no synced version and is left out. Under
+    ``--dry-run`` the version a bundle WOULD be synced at stands in, so the
+    dry run reports the verdict the real run would start from.
+    """
+    counted = ('success', cache_sync.DRY_RUN_ROW_STATUS)
+    return {row['bundle']: row['version'] for row in synced_rows if row['status'] in counted}
+
+
+def _resolve_registry_path(args: argparse.Namespace, registry_pin: ModuleType) -> tuple[Path | None, str | None]:
+    """Return ``(registry_path, reason)``; exactly one of the two is ``None``.
+
+    An overridden ``--cache-root`` without ``--registry-path`` yields no
+    path: a fixture cache root must never be judged against, or repinned
+    into, the machine's live registry.
+    """
+    if args.registry_path is not None:
+        return args.registry_path, None
+    if args.cache_root is not None:
+        return None, '--cache-root is overridden and --registry-path is not given, so no plugin registry was read'
+    return registry_pin.DEFAULT_REGISTRY_PATH, None
+
+
+def _apply_repin(
+    args: argparse.Namespace,
+    registry_pin: ModuleType,
+    registry_path: Path | None,
+    cache_root: Path,
+    synced_versions: dict[str, str],
+) -> dict[str, str]:
+    """Carry out ``--repin`` and return the ``repin`` members of the parity block.
+
+    Returns an empty mapping when ``--repin`` was not given. The registry is
+    written only by ``registry_pin.repin`` in its apply mode, and never under
+    ``--dry-run``, without a registry path, or when nothing was synced.
+    """
+    if not args.repin:
+        return {}
+    if args.dry_run:
+        return {'repin': REPIN_SKIPPED_DRY_RUN}
+    if registry_path is None:
+        return {'repin': REPIN_SKIPPED_REGISTRY_NOT_READ}
+    if not synced_versions:
+        return {'repin': REPIN_SKIPPED_NOTHING_SYNCED}
+
+    # One synced version is the normal case and is named as the target, so the
+    # pin lands on what this run wrote. Bundles synced at differing versions
+    # have no single target; each is then pinned to its newest cache directory.
+    versions = set(synced_versions.values())
+    outcome = registry_pin.repin(
+        registry_path=registry_path,
+        cache_root=cache_root,
+        target_version=versions.pop() if len(versions) == 1 else None,
+        apply=True,
+    )
+    if outcome['status'] == 'success':
+        return {'repin': REPIN_APPLIED}
+    return {'repin': REPIN_FAILED, 'repin_message': str(outcome.get('message', 'the repin reported an error'))}
+
+
+def _registry_parity(
+    reader: ModuleType,
+    registry_pin: ModuleType,
+    *,
+    registry_path: Path | None,
+    reason: str | None,
+    cache_root: Path,
+    synced_versions: dict[str, str],
+    repin: dict[str, str],
+) -> tuple[dict[str, Any], tuple[str, str] | None]:
+    """Build the ``registry_parity`` block from the registry as it now reads.
+
+    Returns ``(block, behind_pin)``. ``behind_pin`` is the first
+    ``(pinned version, synced version)`` pair that is behind, and is set
+    exactly when the verdict is ``behind``.
+
+    Only the entries of a bundle this invocation synced are judged, each
+    against that bundle's synced version; the verdicts are combined by the
+    repin module's own precedence. An entry of any other bundle is listed
+    with ``synced_version: not_synced`` and judged against nothing.
+    """
+    block: dict[str, Any] = {}
+    rows: list[dict[str, str | None]] = []
+    if registry_path is None:
+        state = REGISTRY_STATE_NOT_READ
+    else:
+        block['registry_path'] = str(registry_path)
+        state, rows = reader.read_registry(registry_path)
+    block['registry_state'] = state
+
+    references = {
+        str(row['bundle']): synced_versions[str(row['bundle'])] for row in rows if row['bundle'] in synced_versions
+    }
+    behind_pin: tuple[str, str] | None = None
+    if registry_path is None:
+        verdict = reader.PARITY_UNREADABLE
+    elif not rows:
+        verdict = reader.PARITY_UNREADABLE
+        reason = f'the plugin registry holds no readable plan-marshall entry (registry_state: {state})'
+    elif not references:
+        verdict = reader.PARITY_UNREADABLE
+        reason = 'no plugin registry entry belongs to a bundle synced in this invocation'
+    else:
+        verdict = registry_pin.overall_parity(rows, references)
+        if verdict == reader.PARITY_BEHIND:
+            behind_pin = _first_behind_pin(reader, rows, references)
+        elif verdict == reader.PARITY_UNREADABLE:
+            reason = 'a pinned field of a judged entry is unknown or cannot be ordered against the synced version'
+
+    if reason is not None:
+        block['reason'] = reason
+    block.update(repin)
+    block['entries'] = [
+        {
+            'bundle': str(row['bundle']),
+            'scope': row['scope'] or UNKNOWN,
+            'install_path_version': row['install_path_version'] or UNKNOWN,
+            'version': row['version'] or UNKNOWN,
+            'synced_version': references.get(str(row['bundle']), NOT_SYNCED),
+            'orphan_marked': str(row['bundle']) in references
+            and reader.is_orphan_marked(cache_root / str(row['bundle']), references[str(row['bundle'])]),
+        }
+        for row in rows
+    ]
+    block['verdict'] = verdict
+    return block, behind_pin
+
+
+def _first_behind_pin(
+    reader: ModuleType, rows: list[dict[str, str | None]], references: dict[str, str]
+) -> tuple[str, str] | None:
+    """The first ``(pinned, synced)`` pair in which the pin is older than the sync."""
+    for row in rows:
+        reference = references.get(str(row['bundle']))
+        if reference is None:
+            continue
+        for pinned in (row['install_path_version'], row['version']):
+            if pinned is not None and () < reader.version_key(pinned) < reader.version_key(reference):
+                return pinned, reference
+    return None
+
+
+def _behind_summary(summary: str, behind_pin: tuple[str, str] | None, repin: dict[str, str]) -> str:
+    """Extend ``summary`` with the versions of a ``behind`` registry."""
+    versions = f'pinned {behind_pin[0]}, synced {behind_pin[1]}' if behind_pin is not None else 'pinned version older'
+    behind = f'{summary}; the plugin registry is behind the synced version ({versions})'
+    outcome = repin.get('repin')
+    if outcome == REPIN_SKIPPED_DRY_RUN:
+        return behind
+    remedy = f'{behind}, so a restarted session still loads the pinned version — run {REPIN_COMMAND}'
+    return remedy if outcome is not None else f'{remedy}, or re-run the sync with --repin'
+
+
+def _sync_claude(args: argparse.Namespace) -> tuple[int, dict[str, Any], str]:
+    """Run the Claude cache sync, then report registry parity.
+
+    Returns ``(exit_code, result, rendered)``. ``rendered`` is the
+    single-target document; ``result`` carries the same fields as data for
+    the aggregate document.
+
+    The cache sync runs first and is not influenced by the registry. The
+    registry is then repinned when ``--repin`` asks for it, and read LAST,
+    so the ``registry_parity`` block states the registry as the run leaves
+    it. A staleness-guard refusal synced nothing and carries no block;
+    neither does a leg whose modules could not be loaded.
     """
     try:
         cache_sync = _load_cache_sync_module()
+        reader = _load_module_by_location(
+            PLUGIN_REGISTRY_MODULE_NAME, PLUGIN_REGISTRY_RELPATH, 'shared plugin-registry reader'
+        )
+        registry_pin = _load_module_by_location(
+            REGISTRY_PIN_MODULE_NAME, REGISTRY_PIN_RELPATH, 'claude registry repin module'
+        )
     except ImportError as exc:
-        data: dict[str, Any] = {
-            'status': 'error',
-            'synced_count': 0,
-            'failed_count': 0,
-            'summary_message': f'claude sync could not start: {exc}',
-        }
+        data = _claude_error_block(f'claude sync could not start: {exc}')
         return 1, data, serialize_toon(data) + '\n'
 
+    cache_root = args.cache_root if args.cache_root is not None else cache_sync.DEFAULT_CACHE_ROOT
     result = cache_sync.sync_cache(
         source_root=cache_sync.resolve_source_root(args.source, args.from_worktree),
         marketplace_root=cache_sync.resolve_marketplace_root(args.from_worktree),
-        cache_root=args.cache_root if args.cache_root is not None else cache_sync.DEFAULT_CACHE_ROOT,
+        cache_root=cache_root,
         only_bundle=args.bundles,
         skip_staleness_guard=args.skip_staleness_guard,
         dry_run=args.dry_run,
     )
+
+    if result.guard_outcome is None:
+        registry_path, reason = _resolve_registry_path(args, registry_pin)
+        synced_versions = _synced_versions(cache_sync, result.synced)
+        repin = _apply_repin(args, registry_pin, registry_path, cache_root, synced_versions)
+        block, behind_pin = _registry_parity(
+            reader,
+            registry_pin,
+            registry_path=registry_path,
+            reason=reason,
+            cache_root=cache_root,
+            synced_versions=synced_versions,
+            repin=repin,
+        )
+        result = result._replace(cache_status=result.status, registry_parity=block)
+        if block['verdict'] == reader.PARITY_BEHIND:
+            result = result._replace(
+                status='partial' if result.status == 'success' else result.status,
+                exit_code=EXIT_REGISTRY_BEHIND if result.exit_code == 0 else result.exit_code,
+                summary_message=_behind_summary(result.summary_message, behind_pin, repin),
+            )
+
     return result.exit_code, cache_sync.as_dict(result), cache_sync.render(result)
 
 
@@ -540,10 +1032,26 @@ def _sync_one_for_aggregate(target_name: str, args: argparse.Namespace) -> dict[
         )
         return data
     except OSError as exc:
-        return {
-            'status': 'error',
-            'summary_message': f'{target_name} sync failed: {type(exc).__name__}: {exc}',
-        }
+        return _sync_failure_block(target_name, exc)
+
+
+def _sync_failure_block(target_name: str, exc: OSError) -> dict[str, Any]:
+    """The ``error`` result of a target whose sync raised a filesystem fault."""
+    summary_message = f'{target_name} sync failed: {type(exc).__name__}: {exc}'
+    if target_name == CLAUDE_TARGET:
+        return _claude_error_block(summary_message)
+    return {'status': 'error', 'summary_message': summary_message}
+
+
+def _claude_error_block(summary_message: str) -> dict[str, Any]:
+    return {
+        'status': 'error',
+        'cache_status': 'error',
+        'synced_count': 0,
+        'failed_count': 0,
+        'summary_message': summary_message,
+        'synced': [],
+    }
 
 
 def sync_all(args: argparse.Namespace) -> int:
@@ -577,6 +1085,8 @@ _CLAUDE_ONLY_FLAGS: dict[str, str] = {
     'from_worktree': '--from-worktree',
     'cache_root': '--cache-root',
     'skip_staleness_guard': '--skip-staleness-guard',
+    'registry_path': '--registry-path',
+    'repin': '--repin',
 }
 
 
@@ -642,6 +1152,25 @@ def _build_parser() -> argparse.ArgumentParser:
         action='store_true',
         help='Claude path: bypass the staleness check (reserved for tests and recovery flows).',
     )
+    parser.add_argument(
+        '--registry-path',
+        type=Path,
+        default=None,
+        metavar='PATH',
+        help=(
+            'Claude path: the plugin registry file the registry_parity block reads '
+            '(default: ~/.claude/plugins/installed_plugins.json). With --cache-root overridden '
+            'and this flag absent, no registry is read and the verdict is unreadable.'
+        ),
+    )
+    parser.add_argument(
+        '--repin',
+        action='store_true',
+        help=(
+            'Claude path: after the cache sync, repin the plugin registry to the synced version. '
+            'Writes nothing under --dry-run.'
+        ),
+    )
     return parser
 
 
@@ -672,17 +1201,24 @@ def main(argv: list[str] | None = None) -> int:
         return sync_all(args)
 
     if args.target == CLAUDE_TARGET:
-        exit_code, _data, rendered = _sync_claude(args)
+        try:
+            exit_code, _data, rendered = _sync_claude(args)
+        except OSError as exc:
+            exit_code, rendered = 1, serialize_toon(_sync_failure_block(CLAUDE_TARGET, exc)) + '\n'
         sys.stdout.write(rendered)
         return exit_code
 
-    return sync_target(
-        args.target,
-        source=args.source,
-        dest=args.target_dir,
-        only_bundle=args.bundles,
-        dry_run=args.dry_run,
-    )
+    try:
+        return sync_target(
+            args.target,
+            source=args.source,
+            dest=args.target_dir,
+            only_bundle=args.bundles,
+            dry_run=args.dry_run,
+        )
+    except OSError as exc:
+        sys.stdout.write(serialize_toon(_sync_failure_block(args.target, exc)))
+        return 1
 
 
 if __name__ == '__main__':

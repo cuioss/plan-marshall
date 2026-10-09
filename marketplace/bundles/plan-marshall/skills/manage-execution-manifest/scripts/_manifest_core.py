@@ -21,7 +21,8 @@ infrastructure config by family (:data:`_INFRA_CONFIG_BASENAME_GLOBS` /
 
 The infrastructure-config table names an owner-less **family**, not a suffix.
 Membership is deliberately NOT "any ``.yml``": it is anchored either on a
-location (a CI/automation definition tree, a container service-config tree),
+location (a CI/automation definition tree, a container service-config tree, the
+planning system's tracked architecture-data tree ``.plan/project-architecture/``),
 on a basename (a descriptor an external tool resolves by a fixed, tool-defined
 name, spanning tool groups that include CI definitions, container orchestration
 and build context, container lint/scan, and review bots), or on a root-level
@@ -151,14 +152,24 @@ def _is_documentation_path(path: str) -> bool:
 # ``*.yml`` rule would sweep in build-owned resources, so the family is anchored
 # on location or on basename.
 #
-# Directory trees whose contents are CI/automation definitions or container
-# service config. Matched as a consecutive run of path segments anywhere in the
-# path's directory part, so both a repo-root ``docker/`` tree and a nested
+# Directory trees whose contents are CI/automation definitions, container
+# service config, or — a third kind — the planning system's tracked architecture
+# data. Matched as a consecutive run of path segments anywhere in the path's
+# directory part, so both a repo-root ``docker/`` tree and a nested
 # ``src/main/docker/`` tree are members.
+#
+# ``('.plan', 'project-architecture')`` is the architecture-data entry. It is a
+# TWO-segment run on purpose: every file under that tree is a member at any
+# depth — the ``_project.json`` index and each ``{module}/enriched.json`` alike —
+# and the suffix is not tested, exactly as for the other tree entries. Both
+# segments must appear consecutively, so a ``project-architecture/`` directory
+# without the ``.plan`` parent is not a member, and neither is any other file
+# under ``.plan/``.
 _INFRA_CONFIG_DIR_TREES: tuple[tuple[str, ...], ...] = (
     ('.github', 'workflows'),
     ('.circleci',),
     ('docker',),
+    ('.plan', 'project-architecture'),
 )
 
 # Directory trees that hold automation descriptors alongside non-infra content:
@@ -184,10 +195,14 @@ _INFRA_CONFIG_PARENT_DIR_SUFFIXES: tuple[str, ...] = ('.yml', '.yaml')
 # anywhere else.
 #
 # ``marshal.json`` is the entry that opens the planning-system group, and it is
-# basename-anchored deliberately rather than by location. A ``('.plan',)`` entry
-# in :data:`_INFRA_CONFIG_DIR_TREES` would additionally reclassify every
-# git-tracked ``.plan/project-architecture/**/*.json`` file — content nobody
-# asked about — and a ``.plan`` entry in :data:`_INFRA_CONFIG_PARENT_DIRS` would
+# basename-anchored deliberately rather than by location. The planning system's
+# tracked architecture data is recognised separately, by its own narrower tree
+# entry ``('.plan', 'project-architecture')`` in :data:`_INFRA_CONFIG_DIR_TREES`,
+# so the planning system is recognised twice, by two different anchors. A
+# ``('.plan',)`` entry there stays rejected: it would reach every OTHER file
+# under ``.plan/`` as well, none of which is configuration by virtue of sitting
+# there. A ``.plan`` entry in :data:`_INFRA_CONFIG_PARENT_DIRS` is rejected too,
+# because it would
 # require widening the SHARED :data:`_INFRA_CONFIG_PARENT_DIR_SUFFIXES` tuple to
 # ``.json``, whose reach extends to ``.github/*.json`` as well. The basename
 # entry reaches exactly the intended path: an ``architecture find

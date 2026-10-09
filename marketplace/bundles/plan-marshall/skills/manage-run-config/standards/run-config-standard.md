@@ -55,7 +55,12 @@ The run configuration file stores:
   "derivation_resolvers": {
     "lsp": {"enabled": false}
   },
-  "display_timezone": "UTC"
+  "display_timezone": "UTC",
+  "commit_trailer": {
+    "name": "plan-marshall",
+    "email": "noreply@cuioss.de"
+  },
+  "registry_repin": "disabled"
 }
 ```
 
@@ -76,6 +81,8 @@ The run configuration file stores:
 | language_servers | Machine-local binding of a language to its locally-installed language server, read by the `lsp-client` skill |
 | derivation_resolvers | Machine-local binding deciding which discovered derivation resolvers run in this checkout; an unconfigured resolver is **active** |
 | display_timezone | Display-only IANA zone name (default `UTC`) consumed at rendering surfaces to convert stored UTC timestamps for human reading; never consulted on a write or compare path |
+| commit_trailer | Co-author identity (`name`, `email`) every assistant-authored commit ends with; each half falls back to its default independently |
+| registry_repin | Machine-local opt-in (`enabled` / `disabled`, default `disabled`) letting the project-local finalize sync step apply the plugin-registry repin instead of only reporting the pin's state |
 
 ---
 
@@ -399,6 +406,21 @@ The default `UTC` makes the unset behaviour byte-identical to the pre-knob rende
 
 A `--value` that is not a loadable IANA zone produces the standard `invalid_value` error response and persists nothing.
 
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config display-timezone get
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config display-timezone set \
+  --value America/New_York
+```
+
+### Boundary — display versus storage
+
+The knob reaches rendering surfaces exclusively. The write and compare paths (record `created`/`removed_at`/`set_at` fields, lesson identifier prefixes, retention and quiet-window cutoffs, CI/build durations, staleness checks, and ordering keys) stay UTC unconditionally. This boundary is enforced by a guard test that scans the bundles and fails if any store/compare site consults `display_timezone`.
+
+---
+
 ## Commit-Trailer Section
 
 The `commit_trailer` object holds the co-author identity every assistant-authored commit ends with. The identity names the **system** that produced the commit — never the assistant or the vendor behind it — and it does not vary by target, so one project commits under one name regardless of which assistant ran the work.
@@ -433,18 +455,43 @@ Co-Authored-By: {name} <{email}>
 
 `compose_commit_trailer` is the single place that form is assembled, so the getter, the setter's echo, and every operator-facing confirmation render one identity in exactly one way.
 
+---
+
+## Registry-Repin Section
+
+The `registry_repin` field is a single top-level enum value (default `disabled`). It is the opt-in that lets the project-local finalize sync step **write** the plugin registry — run the repin with `--apply` — instead of only reporting the pin's state.
+
+The field is **machine-local because the registry it gates is machine-local**. The pin lives in the plugin manager's own file under the operator's home directory, outside every checkout, so consent to rewrite it is a decision about one machine and cannot be made for another by a version-controlled file. It therefore lives in the git-ignored, main-anchored `run-configuration.json`, beside `commit_trailer`: a fresh clone and every cloud session resolve to `disabled`.
+
+### Schema
+
+| Field | Type | Allowed Values | Default | Description |
+|-------|------|----------------|---------|-------------|
+| `registry_repin` | string (enum) | `enabled`, `disabled` | `disabled` | Whether the finalize sync step may apply the repin. An absent field, a non-string value, and a string outside the enum all resolve to `disabled`. |
+
+The read fails **closed**: only a stored value that is exactly `enabled` grants the write. A malformed store is reported as `source: default`, never as consent.
+
+### Operations
+
+| Subcommand | Purpose |
+|------------|---------|
+| `registry-repin get` | Read `value` (`enabled` or `disabled`) and `source` (`configured` or `default`) |
+| `registry-repin set --value VALUE` | Persist `registry_repin` after enum validation |
+
+A `--value` outside the enum produces the standard `invalid_value` error response with an `allowed: [...]` list and persists nothing.
+
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config display-timezone get
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config registry-repin get
 ```
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config display-timezone set \
-  --value America/New_York
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config registry-repin set \
+  --value enabled
 ```
 
-### Boundary — display versus storage
+### Boundary — what the setting does not gate
 
-The knob reaches rendering surfaces exclusively. The write and compare paths (record `created`/`removed_at`/`set_at` fields, lesson identifier prefixes, retention and quiet-window cutoffs, CI/build durations, staleness checks, and ordering keys) stay UTC unconditionally. This boundary is enforced by a guard test that scans the bundles and fails if any store/compare site consults `display_timezone`.
+The setting gates the finalize step's write and nothing else. The repin script's report-only run is unaffected by it, so the pin's state is reported under either value; and an operator running the repin script with `--apply` by hand is acting on their own explicit instruction, which this setting neither permits nor forbids.
 
 ---
 

@@ -80,6 +80,7 @@ current is a misreport, not a fix. Both kinds refuse (exit 2), and
 Result document (rendered by :func:`render`):
 
     status: success | partial | error
+    cache_status: success | partial | error
     synced_count: N
     failed_count: M
     summary_message: "<human-readable summary>"
@@ -89,12 +90,44 @@ Result document (rendered by :func:`render`):
       bundle1,0.1.0,success
     failed[M]{bundle,error}:
       bundle3,"rsync exited 23"
+    registry_parity:                      # only when the engine attached one
+      ...
+      entries[K]{bundle,scope,install_path_version,version,synced_version,orphan_marked}:
+        bundle1,user,0.1.0,0.1.0,0.1.0,false
+      verdict: in_parity | behind | ahead | unreadable
 
 ``guard_outcome`` is present only when the staleness guard refused; its
 absence on every other path means no guard verdict was reached. Under
 ``--dry-run`` the guard and the bundle selection still run, nothing is
 written, and every selected bundle's row carries the status ``dry_run``
 (so ``synced_count`` stays 0 — nothing was synced).
+
+Destination symlinks
+--------------------
+
+The sync never mirrors through a symbolic link it finds in the cache. A
+``{cache_root}/{bundle}`` or ``{cache_root}/{bundle}/{version}`` that is a
+link, a link inside a version directory at a path the bundle holds as a
+real file or directory, and a linked ``{cache_root}/dist-manifest.json``
+are all REFUSED — never followed, never replaced by a real entry. Every
+selected bundle is checked before the first one is mirrored, so one
+refusal fails the whole run with ``status: error`` (exit 1), ``synced``
+empty, one ``failed`` row per refused path and a ``summary_message``
+naming the first; the cache is left exactly as it was. ``--dry-run``
+reports the same refusal. ``cache_root`` itself may be a link. The checks
+are the shared ones in ``marketplace/targets/fs_safety.py``.
+
+``cache_status`` is always present and is the outcome of the cache sync
+alone. ``status`` equals it unless the engine lowered ``status`` for a
+reason that is not a cache-sync failure — a plugin registry pinned behind
+the synced version. The ``registry_parity`` block is always the LAST member
+of the document and its ``verdict`` the last line of the block.
+
+This module reads no plugin registry and writes none: :func:`sync_cache`
+mirrors the cache and nothing else. The ``registry_parity`` block is
+computed by the engine (``marketplace/targets/sync.py``) after
+:func:`sync_cache` returns and attached to the result; :func:`render` and
+:func:`as_dict` only carry it.
 
 Exit codes (carried on :class:`CacheSyncResult`):
 
@@ -103,12 +136,16 @@ Exit codes (carried on :class:`CacheSyncResult`):
       as a hard failure based on the failure table).
     1 on ``status: error`` (nothing synced, hard failure).
     2 on a staleness-guard refusal.
+
+:func:`sync_cache` returns only these three. The engine replaces a ``0``
+with ``3`` when the attached ``registry_parity`` verdict is ``behind``.
 """
 
 from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -150,6 +187,14 @@ class CacheSyncResult(NamedTuple):
     ``guard_outcome`` is set only on a staleness-guard refusal and
     carries the refusal KIND (``stale`` / ``probe_failed``); ``None`` on
     every other path means no guard verdict was reached.
+
+    ``cache_status`` and ``registry_parity`` are never set by
+    :func:`sync_cache`; the engine attaches them afterwards. A ``None``
+    ``cache_status`` means ``status`` IS the cache-sync outcome, which is
+    how :func:`render` and :func:`as_dict` report it. ``registry_parity``
+    is a mapping whose ``entries`` member is a list of rows carrying the
+    :data:`REGISTRY_PARITY_ENTRY_FIELDS` keys; ``None`` means the engine
+    attached no block.
     """
 
     exit_code: int
@@ -159,6 +204,8 @@ class CacheSyncResult(NamedTuple):
     failed: list[dict[str, str]]
     guard_outcome: str | None = None
     dry_run: bool = False
+    cache_status: str | None = None
+    registry_parity: dict[str, Any] | None = None
 
 
 def _stale(message: str) -> GuardRefusal:
@@ -212,6 +259,11 @@ SOURCE_FINGERPRINT_RELPATH = Path('marketplace') / 'targets' / 'claude' / 'sourc
 #: avoided entirely.
 HELPER_MODULE_NAME = '_sync_harnesses_source_fingerprint'
 
+#: Repo-relative location of the shared filesystem-safety checks, and the
+#: module name they are loaded under — by file location, like the helper above.
+FS_SAFETY_RELPATH = Path('marketplace') / 'targets' / 'fs_safety.py'
+FS_SAFETY_MODULE_NAME = '_sync_harnesses_cache_fs_safety'
+
 
 def _repo_root_from_script() -> Path:
     """Resolve the project root from this module's own location.
@@ -254,25 +306,53 @@ def _load_source_fingerprint_module() -> ModuleType:
             fails while executing. Every failure is normalised to
             ``ImportError`` so callers have one exception type to handle.
     """
-    cached = sys.modules.get(HELPER_MODULE_NAME)
+    return _load_sibling_module(HELPER_MODULE_NAME, SOURCE_FINGERPRINT_RELPATH, 'fingerprint helper')
+
+
+def _load_fs_safety_module() -> ModuleType:
+    """Load the shared filesystem-safety checks BY FILE LOCATION.
+
+    ``marketplace/targets/fs_safety.py`` is stdlib-only and imports nothing
+    from the package, so it is reachable the same way as the fingerprint
+    helper and for the same reason — see
+    :func:`_load_source_fingerprint_module`.
+
+    Raises:
+        ImportError: the module file is absent, has no loadable spec, or
+            fails while executing.
+    """
+    return _load_sibling_module(FS_SAFETY_MODULE_NAME, FS_SAFETY_RELPATH, 'filesystem-safety module')
+
+
+def _load_sibling_module(module_name: str, relpath: Path, label: str) -> ModuleType:
+    """Execute the file at repo-relative ``relpath`` as ``module_name``, once per process.
+
+    The module is cached in ``sys.modules`` under ``module_name``; a module
+    that fails while executing is not left there.
+
+    Raises:
+        ImportError: the file is absent, has no loadable spec, or fails
+            while executing. ``label`` names the module in the message.
+    """
+    cached = sys.modules.get(module_name)
     if cached is not None:
         return cached
 
-    helper_path = _repo_root_from_script() / SOURCE_FINGERPRINT_RELPATH
-    if not helper_path.is_file():
-        raise ImportError(f'fingerprint helper not found at {helper_path}')
+    module_path = _repo_root_from_script() / relpath
+    if not module_path.is_file():
+        raise ImportError(f'{label} not found at {module_path}')
 
-    spec = importlib.util.spec_from_file_location(HELPER_MODULE_NAME, helper_path)
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
     if spec is None or spec.loader is None:
-        raise ImportError(f'no loadable module spec for fingerprint helper at {helper_path}')
+        raise ImportError(f'no loadable module spec for {label} at {module_path}')
 
     module = importlib.util.module_from_spec(spec)
-    sys.modules[HELPER_MODULE_NAME] = module
+    sys.modules[module_name] = module
     try:
         spec.loader.exec_module(module)
     except Exception as exc:  # normalised to ImportError below
-        sys.modules.pop(HELPER_MODULE_NAME, None)
-        raise ImportError(f'fingerprint helper at {helper_path} failed to import: {exc}') from exc
+        sys.modules.pop(module_name, None)
+        raise ImportError(f'{label} at {module_path} failed to import: {exc}') from exc
     return module
 
 
@@ -329,6 +409,19 @@ TARGET_SCOPE_FIELD = 'targets'
 #: Status a bundle row carries under ``--dry-run``: selected, not synced.
 DRY_RUN_ROW_STATUS = 'dry_run'
 
+#: Columns of the ``registry_parity`` block's ``entries`` table, in order.
+REGISTRY_PARITY_ENTRY_FIELDS: tuple[str, ...] = (
+    'bundle',
+    'scope',
+    'install_path_version',
+    'version',
+    'synced_version',
+    'orphan_marked',
+)
+
+#: Members of the ``registry_parity`` block that hold free text and are quoted.
+REGISTRY_PARITY_TEXT_FIELDS: frozenset[str] = frozenset({'registry_path', 'reason', 'repin_message'})
+
 
 def _read_version(plugin_json: Path) -> str:
     try:
@@ -350,11 +443,15 @@ def render(result: CacheSyncResult) -> str:
     without parsing prose. It is absent on every non-guard path, because
     no guard verdict was reached there — an absent field is honest about
     that, where a default value would not be.
+
+    ``cache_status`` is always emitted. The ``registry_parity`` block,
+    when the engine attached one, is emitted last.
     """
     synced_count = sum(1 for row in result.synced if row['status'] == 'success')
     summary = result.summary_message.replace('"', '\\"')
     lines = [
         f'status: {result.status}',
+        f'cache_status: {_cache_status(result)}',
         f'synced_count: {synced_count}',
         f'failed_count: {len(result.failed)}',
         f'summary_message: "{summary}"',
@@ -371,7 +468,42 @@ def render(result: CacheSyncResult) -> str:
         for row in result.failed:
             err = row['error'].replace('"', '\\"')
             lines.append(f'  {row["bundle"]},"{err}"')
+    if result.registry_parity is not None:
+        lines.extend(_render_registry_parity(result.registry_parity))
     return '\n'.join(lines) + '\n'
+
+
+def _cache_status(result: CacheSyncResult) -> str:
+    """The cache-sync outcome: the attached value, else ``status`` itself."""
+    return result.cache_status if result.cache_status is not None else result.status
+
+
+def _render_registry_parity(block: dict[str, Any]) -> list[str]:
+    """Render the ``registry_parity`` block in the mapping's own key order.
+
+    The engine builds the mapping with ``entries`` and ``verdict`` as its last
+    two members, so the verdict is the last line of the document. ``entries``
+    is rendered as a table; a free-text member is quoted; every other member
+    is a bare token.
+    """
+    lines = ['registry_parity:']
+    for key, value in block.items():
+        if key == 'entries':
+            lines.append(f'  entries[{len(value)}]{{{",".join(REGISTRY_PARITY_ENTRY_FIELDS)}}}:')
+            for entry in value:
+                lines.append('    ' + ','.join(_table_cell(entry[field]) for field in REGISTRY_PARITY_ENTRY_FIELDS))
+        elif key in REGISTRY_PARITY_TEXT_FIELDS:
+            text = str(value).replace('"', '\\"')
+            lines.append(f'  {key}: "{text}"')
+        else:
+            lines.append(f'  {key}: {value}')
+    return lines
+
+
+def _table_cell(value: object) -> str:
+    if isinstance(value, bool):
+        return 'true' if value else 'false'
+    return str(value)
 
 
 def as_dict(result: CacheSyncResult) -> dict[str, Any]:
@@ -380,10 +512,12 @@ def as_dict(result: CacheSyncResult) -> dict[str, Any]:
     The all-targets run of the sync engine nests each target's result in
     one aggregate document, which needs the fields as data rather than
     as rendered text. The field set and its conditional members
-    (``guard_outcome``, ``dry_run``, ``failed``) match :func:`render`.
+    (``guard_outcome``, ``dry_run``, ``failed``, ``registry_parity``)
+    match :func:`render`.
     """
     data: dict[str, Any] = {
         'status': result.status,
+        'cache_status': _cache_status(result),
         'synced_count': sum(1 for row in result.synced if row['status'] == 'success'),
         'failed_count': len(result.failed),
         'summary_message': result.summary_message,
@@ -395,6 +529,8 @@ def as_dict(result: CacheSyncResult) -> dict[str, Any]:
     data['synced'] = result.synced
     if result.failed:
         data['failed'] = result.failed
+    if result.registry_parity is not None:
+        data['registry_parity'] = result.registry_parity
     return data
 
 
@@ -685,9 +821,14 @@ def _staleness_guard(source_root: Path, marketplace_root: Path) -> GuardRefusal 
         )
     try:
         sentinel = json.loads(sentinel_path.read_text(encoding='utf-8'))
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         return _stale(
             f'staleness_guard: sentinel missing or unreadable at {sentinel_path} ({exc}). {_regenerate_hint()}'
+        )
+    if not isinstance(sentinel, dict):
+        return _stale(
+            f'staleness_guard: sentinel missing or unreadable at {sentinel_path} '
+            f'(the sentinel is not a JSON object). {_regenerate_hint()}'
         )
     stored_fingerprint = sentinel.get('source_tree_fingerprint')
     if not isinstance(stored_fingerprint, str) or not stored_fingerprint:
@@ -739,8 +880,80 @@ def _staleness_guard(source_root: Path, marketplace_root: Path) -> GuardRefusal 
     return None
 
 
+def _destination_refusal(fs_safety: ModuleType, *, source_dir: Path, dest_dir: Path, cache_root: Path) -> str | None:
+    """Return why ``dest_dir`` must not be mirrored into, or ``None`` when it may be.
+
+    ``mkdir(exist_ok=True)`` accepts an existing link to a directory, and
+    ``rsync --delete`` with a trailing slash then mirrors into the link's
+    target, deleting what the bundle does not hold. Refused, each naming the
+    offending path:
+
+    * ``{cache_root}/{bundle}`` or ``{cache_root}/{bundle}/{version}`` that
+      is a link, or resolves outside the resolved ``cache_root``; and
+    * a link inside the version directory at a path the bundle holds as a
+      real file or directory. ``rsync`` would replace such a link rather
+      than write through it, and a link is not replaced either. A link the
+      bundle itself ships as a link is left to ``rsync``, and so is a link
+      the bundle no longer holds: ``--delete`` removes it as a link.
+
+    The check only reads, and the bundle is walked top-down so the first link
+    on the way to an entry is the one named.
+    """
+    try:
+        fs_safety.refuse_escaping_output_dir(dest_dir.parent, cache_root)
+        fs_safety.refuse_escaping_output_dir(dest_dir, cache_root)
+        for root, dirnames, filenames in os.walk(source_dir):
+            generated = Path(root)
+            installed = dest_dir / generated.relative_to(source_dir)
+            for name in sorted(dirnames + filenames):
+                if not (generated / name).is_symlink():
+                    fs_safety.refuse_symlink(installed / name)
+    except ValueError as exc:
+        return str(exc)
+    return None
+
+
+def _destination_refusals(source_root: Path, cache_root: Path, bundles: list[Path]) -> list[dict[str, str]] | str:
+    """Return one ``{bundle, error}`` row per bundle whose destination is refused.
+
+    A refused ``dist-manifest.json`` at the cache root is reported under
+    :data:`DIST_MANIFEST_FILENAME` in place of a bundle name. A string is
+    returned instead when the checks themselves could not be loaded — nothing
+    was checked then, which is never reported as an empty list.
+    """
+    try:
+        fs_safety = _load_fs_safety_module()
+    except ImportError as exc:
+        return str(exc)
+
+    refusals: list[dict[str, str]] = []
+    for bundle_dir in bundles:
+        version = _read_version(bundle_dir / '.claude-plugin' / 'plugin.json')
+        error = _destination_refusal(
+            fs_safety, source_dir=bundle_dir, dest_dir=cache_root / bundle_dir.name / version, cache_root=cache_root
+        )
+        if error is not None:
+            refusals.append({'bundle': bundle_dir.name, 'error': error})
+
+    if (source_root / DIST_MANIFEST_FILENAME).is_file():
+        try:
+            fs_safety.refuse_symlink(cache_root / DIST_MANIFEST_FILENAME)
+        except ValueError as exc:
+            refusals.append({'bundle': DIST_MANIFEST_FILENAME, 'error': str(exc)})
+    return refusals
+
+
 def _rsync_bundle(*, source_dir: Path, dest_dir: Path) -> tuple[str, str]:
-    """rsync one bundle. Returns (status, error_message)."""
+    """rsync one bundle. Returns (status, error_message).
+
+    A ``dest_dir`` that is a link, or sits directly behind one, is failed
+    without being created or mirrored into. :func:`sync_cache` refuses such a
+    destination for the whole run before any bundle is mirrored; this repeats
+    the check at the point of the write.
+    """
+    for candidate in (dest_dir.parent, dest_dir):
+        if candidate.is_symlink():
+            return 'failed', f'refusing to mirror into {dest_dir}: {candidate} is a symbolic link'
     if not shutil.which('rsync'):
         return 'failed', 'rsync not found on PATH'
     dest_dir.mkdir(parents=True, exist_ok=True)
@@ -782,13 +995,20 @@ def _copy_dist_manifest(source_root: Path, cache_root: Path) -> bool:
     swallowed, so a missing or unwritable manifest never converts a
     successful sync into a failure. Returns ``True`` only when the manifest
     was copied, ``False`` otherwise.
+
+    A destination manifest that is a symbolic link is left exactly as it is —
+    neither followed nor replaced. :func:`sync_cache` refuses the run before
+    this point when it finds one; this repeats the check at the point of the
+    write.
     """
     source_manifest = source_root / DIST_MANIFEST_FILENAME
     if not source_manifest.is_file():
         return False
+    dest_manifest = cache_root / DIST_MANIFEST_FILENAME
+    if dest_manifest.is_symlink():
+        return False
     try:
         cache_root.mkdir(parents=True, exist_ok=True)
-        dest_manifest = cache_root / DIST_MANIFEST_FILENAME
         dest_manifest.unlink(missing_ok=True)
         shutil.copyfile(source_manifest, dest_manifest)
     except OSError:
@@ -845,6 +1065,19 @@ def sync_cache(
     if not bundles:
         msg = f'no matching bundles in {source_root}' + (f' (filter: --bundles {only_bundle})' if only_bundle else '')
         return CacheSyncResult(exit_code=1, status='error', summary_message=msg, synced=[], failed=[], dry_run=dry_run)
+
+    # Every destination is cleared of links before the first bundle is
+    # mirrored, so a refused sync leaves the cache exactly as it was.
+    refusals = _destination_refusals(source_root, cache_root, bundles)
+    if isinstance(refusals, str):
+        msg = f'claude cache sync could not start — the destination checks failed to load: {refusals}'
+        return CacheSyncResult(exit_code=1, status='error', summary_message=msg, synced=[], failed=[], dry_run=dry_run)
+    if refusals:
+        more = f' (and {len(refusals) - 1} more refused, see failed)' if len(refusals) > 1 else ''
+        msg = f'claude cache sync refused, nothing was synced: {refusals[0]["error"]}{more}'
+        return CacheSyncResult(
+            exit_code=1, status='error', summary_message=msg, synced=[], failed=refusals, dry_run=dry_run
+        )
 
     if dry_run:
         planned = [

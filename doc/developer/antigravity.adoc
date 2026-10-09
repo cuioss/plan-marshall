@@ -50,6 +50,14 @@ target/antigravity/
 └── dist-manifest.json
 ----
 
+The sub-directories under a skill in the tree above are examples, not a fixed set. The emitter writes the transformed `SKILL.md` and copies the rest of the source skill directory byte-identical, whatever its sub-directories are named, so a new one ships the moment it exists. A file is left out only when it is one of three things:
+
+* under a directory named in `EXCLUDED_DIR_NAMES` — the bytecode and tool-cache directories;
+* a dot-file, or under a dot-directory;
+* scoped away from the `antigravity` target by a `targets:` declaration, on the skill or on the file itself.
+
+The rule has one statement, `iter_emitted_skill_files` in `marketplace/targets/component_targets.py`, which the OpenCode emitter shares. The dot-file exclusion belongs to these two emitters: the Claude emitter mirrors a bundle wholesale and still ships dot-files.
+
 === Filesystem Safety
 
 The emitter strictly enforces containment invariants via `marketplace/targets/fs_safety.py`:
@@ -346,7 +354,7 @@ The test suite provides complete coverage across:
   ** `test_config_files.py`: JSON schema validation for `mapping.json` and `frontmatter-rules.json`.
   ** `test_frontmatter.py`: Tool transformation, model resolution, and fail-closed error handling (`UnmappedToolError`, `UnmappedFrontmatterError`).
   ** `test_body_transforms.py`: Directive rewriting and slash command expansion.
-  ** `test_emitter.py`: Bundle traversal, verbatim directory copying (`standards/`, `references/`, `templates/`, `scripts/`), stale artifact pruning, target-scoped bundle emission, `bundle-components.json` attribution emission, and installer lifecycle validation (selective bundle flags, aliases, dependency closure, manifest persistence, `plugin.json` tailoring, atomic update backup/rollback, workspace rule emission, and selective uninstallation).
+  ** `test_emitter.py`: Bundle traversal, verbatim copying of the whole skill directory under the emission rule (see _Output Layout_), stale artifact pruning, target-scoped bundle emission, `bundle-components.json` attribution emission, and installer lifecycle validation (selective bundle flags, aliases, dependency closure, manifest persistence, `plugin.json` tailoring, atomic update backup/rollback, workspace rule emission, and selective uninstallation).
   ** `test_variant_emitter.py`: Role-eligible subagent variant generation and ADR-021 model pin application.
   ** `test_level_table_lockstep.py`: Table object identity assertion against Claude target and model alias validity.
 * `test/sync-harnesses/`:

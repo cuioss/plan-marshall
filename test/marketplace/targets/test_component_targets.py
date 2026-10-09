@@ -10,6 +10,7 @@ import pytest
 from marketplace.targets import TARGET_REGISTRY
 from marketplace.targets.base import TargetBase
 from marketplace.targets.component_targets import (
+    SourceSymlinkError,
     TargetScopeError,
     bundle_emits_to,
     component_tree_target_names,
@@ -17,7 +18,9 @@ from marketplace.targets.component_targets import (
     excluded_emission_roots,
     is_under_any,
     iter_component_manifests,
+    iter_emitted_skill_files,
     iter_skill_internal_files,
+    iter_source_files,
     read_bundle_target_scope,
     read_target_scope,
     registered_target_names,
@@ -979,3 +982,151 @@ def test_excluded_emission_roots_rejects_file_widening_bundle_scope_via_unscoped
     ref_file.write_text('---\nname: r\ntargets: [claude]\n---\n# Ref\n', encoding='utf-8')
     with pytest.raises(TargetScopeError, match='scopes away'):
         excluded_emission_roots(bundle, 'antigravity')
+
+
+# ---------------------------------------------------------------------------
+# Source symlinks — an emit copies by content, so a link is refused
+# ---------------------------------------------------------------------------
+
+#: Content of the file standing outside the bundle. No emitted tree may ever
+#: contain it; a refusal is what keeps it out.
+_OUTSIDE_CONTENT = 'not part of any bundle\n'
+
+#: The skill directory, relative to ``tmp_path``, that ``linkable_skill`` builds.
+_SKILL_REL = 'demo/skills/demo'
+
+
+@pytest.fixture()
+def linkable_skill(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """A one-skill bundle beside a directory that is not part of it.
+
+    Returns ``(bundle_dir, skill_dir, outside_dir)``. ``outside_dir`` holds
+    ``secret.txt`` — the readable file a link could be aimed at.
+    """
+    bundle = tmp_path / 'demo'
+    skill_dir = tmp_path / _SKILL_REL
+    for rel, text in (
+        ('SKILL.md', '---\nname: demo\ndescription: d\n---\n\n# Body\n'),
+        ('standards/rule.md', '# rule\n'),
+        ('scripts/run.py', 'print(1)\n'),
+        ('scripts/__pycache__/run.pyc', 'cache\n'),
+        ('.hidden/note.md', '# hidden\n'),
+    ):
+        path = skill_dir / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding='utf-8')
+    outside = tmp_path / 'outside'
+    outside.mkdir()
+    (outside / 'secret.txt').write_text(_OUTSIDE_CONTENT, encoding='utf-8')
+    return bundle, skill_dir, outside
+
+
+def test_a_skill_directory_without_links_yields_its_emitted_files_in_sorted_order(linkable_skill):
+    """The refusal changes nothing for a tree that holds no link.
+
+    The manifest, the cache directory and the dot-directory stay out, and what
+    remains comes back in path order.
+    """
+    bundle, skill_dir, _outside = linkable_skill
+
+    emitted = list(iter_emitted_skill_files(skill_dir, bundle, frozenset()))
+
+    assert emitted == [skill_dir / 'scripts' / 'run.py', skill_dir / 'standards' / 'rule.md']
+
+
+def test_a_scoped_away_file_is_still_withheld_from_the_emitted_files(linkable_skill):
+    """The ``excluded`` roots keep their meaning beside the link refusal."""
+    bundle, skill_dir, _outside = linkable_skill
+    excluded = frozenset({Path('skills/demo/standards')})
+
+    emitted = list(iter_emitted_skill_files(skill_dir, bundle, excluded))
+
+    assert emitted == [skill_dir / 'scripts' / 'run.py']
+
+
+@pytest.mark.parametrize(
+    ('link_rel', 'target_rel', 'is_directory'),
+    [
+        pytest.param('standards/leak.md', 'outside/secret.txt', False, id='file-link-leaving-the-bundle'),
+        pytest.param('standards/alias.md', f'{_SKILL_REL}/standards/rule.md', False, id='file-link-inside-the-skill'),
+        pytest.param('linked', 'outside', True, id='directory-link-leaving-the-bundle'),
+        pytest.param('linked', f'{_SKILL_REL}/standards', True, id='directory-link-inside-the-skill'),
+        pytest.param('.hidden/leak.md', 'outside/secret.txt', False, id='link-under-a-dot-directory'),
+        pytest.param('scripts/__pycache__/leak.pyc', 'outside/secret.txt', False, id='link-under-a-cache-dir'),
+        pytest.param('standards/dangling.md', 'outside/absent.txt', False, id='dangling-link'),
+    ],
+)
+def test_a_symlink_inside_a_skill_directory_is_refused_naming_the_link(
+    tmp_path, linkable_skill, link_rel, target_rel, is_directory
+):
+    """Any link fails the emit, wherever it sits and wherever it points.
+
+    The refusal is not narrowed to links that leave the bundle or to paths a
+    target would emit: "this tree holds no link" is the rule an author can
+    check. The message names the link, which is the entry to remove.
+    """
+    bundle, skill_dir, _outside = linkable_skill
+    link = skill_dir / link_rel
+    link.symlink_to(tmp_path / target_rel, target_is_directory=is_directory)
+
+    with pytest.raises(SourceSymlinkError) as excinfo:
+        list(iter_emitted_skill_files(skill_dir, bundle, frozenset()))
+
+    assert str(link) in str(excinfo.value)
+
+
+def test_a_symlinked_directory_is_refused_before_anything_is_yielded(linkable_skill):
+    """The link is refused as an entry — never entered, and nothing precedes it.
+
+    ``Path.rglob`` descends into a symlinked directory before Python 3.13, so
+    a check applied to its results would already have walked the link's
+    target. The first ``next`` raising, with the message naming the link
+    rather than a file beneath it, is what a traversal could not produce.
+    """
+    bundle, skill_dir, outside = linkable_skill
+    link = skill_dir / 'zz-linked'
+    link.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(SourceSymlinkError) as excinfo:
+        next(iter_emitted_skill_files(skill_dir, bundle, frozenset()))
+
+    message = str(excinfo.value)
+    assert str(link) in message
+    assert 'secret.txt' not in message
+
+
+def test_a_skill_directory_that_is_itself_a_symlink_is_refused(tmp_path, linkable_skill):
+    """The walk root is not exempt from the rule it applies beneath itself."""
+    bundle, skill_dir, _outside = linkable_skill
+    relocated = tmp_path / 'relocated'
+    skill_dir.rename(relocated)
+    skill_dir.symlink_to(relocated, target_is_directory=True)
+
+    with pytest.raises(SourceSymlinkError) as excinfo:
+        list(iter_emitted_skill_files(skill_dir, bundle, frozenset()))
+
+    assert str(skill_dir) in str(excinfo.value)
+
+
+def test_an_entry_resolving_outside_the_tree_is_refused_without_being_a_symlink(linkable_skill, monkeypatch):
+    """Containment is its own check, not a restatement of the link check.
+
+    A Windows directory junction is not a symbolic link to ``is_symlink`` and
+    still resolves elsewhere. Blinding ``is_symlink`` stands in for one: the
+    entry passes the link test and only the resolved-path test is left to
+    refuse it.
+    """
+    _bundle, skill_dir, outside = linkable_skill
+    link = skill_dir / 'standards' / 'leak.md'
+    link.symlink_to(outside / 'secret.txt')
+    monkeypatch.setattr(Path, 'is_symlink', lambda self: False)
+
+    with pytest.raises(SourceSymlinkError, match='outside the source tree') as excinfo:
+        list(iter_source_files(skill_dir))
+
+    assert str(link) in str(excinfo.value)
+
+
+def test_a_source_root_that_is_not_a_directory_yields_nothing(tmp_path):
+    """An absent tree is an empty one, as it was for the walk this replaces."""
+    assert list(iter_source_files(tmp_path / 'absent')) == []

@@ -22,6 +22,8 @@ Tests use https://docs.pytest.org/[pytest] via the Pyprojectx wrapper. The full 
 
 For workflow-resolved invocations, see xref:build.adoc[Build] — never hard-code `./pw` in workflow code.
 
+A test normally lives in the same architecture module as the code it covers; the intentional exceptions are listed in xref:test-impl-mapping.adoc[Test-to-Implementation Mapping].
+
 == Test infrastructure
 
 [cols="1,3", options="header"]

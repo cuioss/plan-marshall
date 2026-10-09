@@ -40,6 +40,8 @@ plan-marshall has no generated tree to sync and does not get this command.
 | `--bundles NAME` | every selected target | Restrict the sync to a single bundle. |
 | `--dry-run` | every selected target | Report what would be synced; write nothing. |
 | `--from-worktree PATH` | `claude` | Read `{PATH}/target/claude/` and compare it against `{PATH}/marketplace/bundles/`, instead of the current checkout. |
+| `--repin` | `claude` | After the cache sync, repin the plugin registry to the synced version. Without it the registry is only read. Writes nothing under `--dry-run`. |
+| `--registry-path PATH` | `claude` | The plugin registry file the `registry_parity` block reads, instead of the plugin manager's own file. |
 | `--source PATH` | single target | Override the source root. Requires `--target`. |
 | `--target-dir PATH` | `opencode`, `antigravity` | Override the destination directory. Requires `--target`. |
 
@@ -112,14 +114,22 @@ No arguments means all three harnesses; `--target X` means one.
 
 **All-targets run** — the engine prints one aggregate document:
 
-- `status` — `success` when every harness synced, `partial` when some did,
-  `error` when none did.
+- `status` — `success` only when every harness reported `success`, `partial`
+  when some did, `error` when none did.
 - `targets[3]{target,status,summary_message}` — one row per harness.
 - One result block per harness (`claude:`, `opencode:`, `antigravity:`) carrying
   that harness's own fields.
 
 On `partial` or `error`, read the `summary_message` of every row whose `status`
-is not `success`, then re-run that harness alone with `--target X`.
+is not `success`, then re-run with `--target X` each harness whose **own
+install did not sync**: for OpenCode and Antigravity a `status` other than
+`success`, for Claude a `cache_status` other than `success` (read from the
+`claude:` result block). A Claude row that is `partial` only because its
+registry is behind is not such a row — see the Claude result below.
+
+When a `summary_message` or a `failed` row says the sync was refused because of
+a symbolic link in the install location, re-running does not help: that harness
+synced nothing. Remove or relocate the named link, then re-run.
 
 **Single-target run** — the engine prints that harness's own document.
 
@@ -132,18 +142,50 @@ to regenerate. Otherwise inspect `synced[N]{bundle,version,status}` and the
 optional `failed[M]{bundle,error}` table, and retry a failed bundle with
 `--target claude --bundles NAME`.
 
-### Step 4: Reconcile the build daemon when the Claude target synced
+The Claude result separates the cache sync from the registry pin with two
+further members:
 
-Run the reconcile only when the Claude target reports `status: success` — the
-`claude` row of `targets[]` on an all-targets run, or the document `status` on
-a `--target claude` run:
+- `cache_status` — `success`, `partial` or `error`: the outcome of the cache
+  sync alone. `status` differs from it only when a registry that is behind
+  lowered a `success` to `partial`.
+- `registry_parity` — the last block of the result when present. It lists one
+  `entries` row per plan-marshall registry entry and ends with a `verdict`,
+  which is exactly one of:
+
+| `verdict` | Meaning | What to do |
+|-----------|---------|------------|
+| `in_parity` | Every judged registry entry is pinned at the synced version. | Nothing. |
+| `behind` | An entry is pinned older than the synced version. The Claude `status` is `partial`, and a `--target claude` run exits `3`. | Repin with `registry_pin.py --apply` — see [After the sync](#after-the-sync). Step 5 only reports the pin. |
+| `ahead` | An entry is pinned newer than the synced version. | Nothing — reported, not an error. A repin never moves a pin backwards. |
+| `unreadable` | Parity could not be established; the block's `reason` says why. | Nothing — reported, not an error. |
+
+Read a Claude row that is `partial` through its `cache_status`. With
+`cache_status: success` the cache install is complete and only the registry pin
+is stale, so the remedy is the repin, **not** a `--target claude` re-run —
+re-running the sync would mirror the same cache again and leave the same pin.
+The repin is a write the operator asks for: `registry_pin.py --apply`, as
+[After the sync](#after-the-sync) describes, or the opt-in of the
+`project:finalize-step-sync-plugin-cache` step at finalize. Step 5 runs the
+same script without `--apply`, which reports the pin and writes nothing.
+An all-targets run reports that case and exits `1`; exit
+code `3` is the `--target claude` form of the same finding.
+
+### Step 4: Reconcile the build daemon when the Claude cache synced
+
+Run the reconcile only when the Claude result reports `cache_status: success` —
+read from the `claude:` result block on an all-targets run, or from the
+document on a `--target claude` run. The `targets[]` row carries no
+`cache_status`, so the row is not where this gate is read:
 
 ```bash
 python3 marketplace/targets/claude/reconcile_daemon.py
 ```
 
-Skip it when the Claude target was not selected, when its status is `partial` or
-`error` (the install is incomplete), and on a `--dry-run` (nothing was written).
+Skip it when the Claude target was not selected, when `cache_status` is
+`partial` or `error` (the install is incomplete), and on a `--dry-run` (nothing
+was written). A Claude `status: partial` caused only by a `behind` registry
+does **not** skip the reconcile: the cache is complete, and the cache is what
+the daemon is reconciled against.
 
 A successful Claude sync is what makes a running `marshalld` stale: the daemon
 is pinned to the previous bundle copy. The reconcile upgrades an **idle** stale
@@ -152,22 +194,41 @@ recorded in a `reconcile-owed` marker. An absent or disabled build server is a
 silent no-op. Read the TOON `action` / `display_detail` and surface it; a
 `defer` is reported, never swallowed.
 
-## Session reload before the next dispatch
+### Step 5: Report the registry pin when the Claude cache synced
 
-> **Reload the session's plugin set after a Claude sync.** Claude Code's agent
-> registry is **session-pinned at session start**: it scans the installed
-> plugins once when the session boots and never re-scans mid-session. A sync
-> that adds agent files — for example newly emitted
-> `execution-context-{level}` variants — produces files the already-running
-> session **cannot see**. Dispatching against a freshly emitted agent from the
-> same session fails with
-> `Agent type 'plan-marshall:execution-context-{level}' not found` even though
-> the file exists on disk.
+Under the same `cache_status: success` gate as Step 4 — and with the same skip
+conditions, including that a `partial` caused only by a `behind` registry does
+**not** skip it — run the repin script in its report form:
+
+```bash
+python3 marketplace/targets/claude/registry_pin.py
+```
+
+Without a flag the script is a dry run that is always printed and writes
+nothing: one `entries` row per plan-marshall registry entry with its version
+before and after, then the `registry_parity` verdict (`in_parity`, `behind`,
+`ahead` or `unreadable`) as the last line. Surface the verdict.
+
+Writing the registry is opt-in. Passing `--apply` to the same script is the
+write; so is `--repin` on the engine call of Step 2. Neither is run unless the
+operator asks for it.
+
+## After the sync
+
+> **After a Claude sync — one sequence, in this order.**
 >
-> **Operational guardrail:** after every `/sync-harnesses` run that synced the
-> Claude target and may have altered the agent set, run `/reload-plugins` before
-> issuing a dispatch against a newly emitted agent. A full session restart is
-> the fallback.
+> 1. **Sync** — the engine call. For Claude it writes a plugin-cache version
+>    directory.
+> 2. **Repin** — as its own explicit step, point the plugin registry at the
+>    synced version with `python3 marketplace/targets/claude/registry_pin.py --apply`.
+>    Without `--apply` the script only reports and writes nothing.
+> 3. **Fully restart the session** — a session reads the registry once, when it
+>    starts, so only a new session loads the repinned version.
+>
+> `/reload-plugins` alone is not sufficient. It can make newly emitted agents
+> visible to a running session, but skill bodies are still loaded from the
+> version the registry named when that session started. A restart without the
+> repin changes nothing either: the new session reads the same pin.
 
 ## Critical Rules
 
@@ -175,6 +236,8 @@ silent no-op. Read the TOON `action` / `display_detail` and surface it; a
   install locations.
 - The Claude staleness guard is non-negotiable: when `target/claude/` is missing
   or stale, regenerate it (Step 1) rather than bypassing the guard.
+- The sync never follows or replaces a symbolic link in an install location; a
+  refusal is resolved by removing or relocating the link, never by a re-run.
 
 ## Related
 

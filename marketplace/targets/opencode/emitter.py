@@ -4,7 +4,7 @@
 Layout written under ``output_dir``::
 
     output_dir/
-    ├── skill/{bundle}-{skill}/SKILL.md  (+ standards/ references/ templates/ scripts/ verbatim)
+    ├── skill/{bundle}-{skill}/SKILL.md  (+ every other file of the skill directory, verbatim)
     ├── agent/{agent}.md
     ├── command/{command}.md
     └── opencode.json
@@ -13,6 +13,12 @@ Body text is emitted verbatim — body-text rewrites are owned by the
 target-shared ``body_transform_engine`` (data-driven from
 ``mapping.json``). The emitter wires through any caller-supplied
 ``body_transformer`` so the engine plugs in without editing this module.
+
+Beside the transformed ``SKILL.md`` a skill ships its whole directory: every
+file ``component_targets.iter_emitted_skill_files`` yields is copied
+byte-identical. That function holds the one statement of what is left out
+(cache directories, dot-files, ``targets:``-scoped files); there is no
+allow-list of sub-directory names here.
 
 A component declaring a ``targets:`` frontmatter scope that omits this
 target is not emitted at all — see ``component_targets.py``. A skill's
@@ -45,10 +51,15 @@ from marketplace.targets.component_targets import (
     bundle_emits_to,
     emits_to,
     excluded_emission_roots,
-    is_under_any,
+    iter_emitted_skill_files,
     validate_component_scopes,
 )
-from marketplace.targets.fs_safety import refuse_tree_overlap, safe_rmtree
+from marketplace.targets.fs_safety import (
+    iter_tree_without_following_links,
+    refuse_escaping_output_dir,
+    refuse_tree_overlap,
+    unlink_if_symlink,
+)
 from marketplace.targets.opencode.frontmatter import (
     OPENCODE_MODEL_PREFIX,
     UnmappedFrontmatterError,
@@ -60,7 +71,11 @@ from marketplace.targets.opencode.frontmatter import (
     transform_command_frontmatter,
     transform_skill_frontmatter,
 )
-from marketplace.targets.opencode.variant_emitter import emit_agent_variants
+from marketplace.targets.opencode.variant_emitter import (
+    emit_agent_variants,
+    is_role_eligible,
+    selected_levels,
+)
 
 # Path to templates used by emitter.
 _TEMPLATES_DIR = Path(__file__).resolve().parent / 'templates'
@@ -74,10 +89,6 @@ _INSTALL_SCRIPT_TEMPLATE = _TEMPLATES_DIR / 'install.sh'
 #: imports this module) would close a cycle.
 OPENCODE_TARGET_NAME = 'opencode'
 BUNDLE_COMPONENTS_FILENAME = 'bundle-components.json'
-
-# Sub-directories that are copied verbatim alongside SKILL.md so the
-# generated skill remains self-contained at runtime.
-VERBATIM_SKILL_SUBDIRS = ('standards', 'references', 'templates', 'scripts')
 
 BodyTransformer = Callable[[str, str, str], str]
 """Signature: (body, bundle, kind) -> rewritten body. ``kind`` is one of
@@ -150,55 +161,58 @@ def _read_plugin_json(bundle_dir: Path) -> dict:
     return parsed
 
 
-def _copy_verbatim(
-    src: Path,
-    dst: Path,
-    *,
-    output_dir: Path,
-    bundle_dir: Path,
-    excluded: frozenset[Path],
-    written: list[Path],
-) -> None:
-    """Copy ``src`` (a skill sub-directory) into ``dst``, file by file.
+def _remove_empty_dirs(root: Path) -> None:
+    """Remove every directory under ``root`` left empty, deepest first.
 
-    Per-file rather than ``copytree`` because the file-level scope mechanism
-    can exclude a single ``*.md`` inside the sub-directory; a directory-level
-    exclusion of the whole sub-directory already falls out of the same
-    ``is_under_any`` predicate, so no separate subtree check is needed.
-    Cache and bytecode directories are skipped the way ``copytree``'s
-    ignore-pattern did.
+    Deepest first so a parent is considered only after its emptied children
+    are gone. ``root`` itself is kept. A symlinked directory is neither walked
+    nor removed here — it is not a directory this emitter made.
     """
-    if dst.exists():
-        safe_rmtree(dst, output_dir)
-    dst.mkdir(parents=True, exist_ok=False)
-    for source in src.rglob('*'):
-        if not source.is_file():
-            continue
-        rel = source.relative_to(src)
-        if any(part in EXCLUDED_DIR_NAMES for part in rel.parts):
-            continue
-        if is_under_any(source.relative_to(bundle_dir), excluded):
-            continue
-        target = dst / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, target)
-        written.append(target)
+    for directory in sorted(
+        (p for p in iter_tree_without_following_links(root) if p.is_dir() and not p.is_symlink()),
+        key=lambda p: len(p.parts),
+        reverse=True,
+    ):
+        if not any(directory.iterdir()):
+            directory.rmdir()
+
+
+def _prune_skill_dir(target_skill_dir: Path, expected: set[Path]) -> None:
+    """Unlink every file under ``target_skill_dir`` this emit will not write.
+
+    An emitted skill directory belongs to one source skill — its name
+    is ``{bundle}-{skill}`` — so a leftover in it is a file that
+    skill's source no longer has, or no longer ships to this target. That
+    makes the sweep safe on a scoped emit too, unlike
+    :func:`_prune_stale_outputs`, whose flat ``agent/`` and ``command/``
+    namespaces are shared across bundles.
+
+    It runs BEFORE the copy, so a path that changed kind in source (a file
+    where a directory now is, or the reverse) is cleared rather than colliding
+    with the write.
+
+    A symlink is unlinked as the link it is — never traversed, and never kept
+    even at an expected path, since the write would then go through it.
+    """
+    for path in iter_tree_without_following_links(target_skill_dir):
+        if path.is_symlink() or (path.is_file() and path not in expected):
+            path.unlink()
+    _remove_empty_dirs(target_skill_dir)
 
 
 def _prune_stale_outputs(output_dir: Path, written: list[Path]) -> None:
     """Remove ``skill/``, ``agent/``, ``command/`` outputs left over from a prior emit.
 
-    The per-component emit only creates directories and overwrites files in
-    place, so anything *removed from source* — a whole skill, a single agent or
-    command, or one verbatim sub-directory (``standards/``, ``references/``, …)
-    of a surviving skill — leaves its previously-emitted output behind and the
-    tree drifts past source. This tracks every path written this run and prunes
-    the leftovers at **file** granularity: any emitted file under the three
-    output subtrees that was not (re)written this run is unlinked, then the
-    directories left empty are removed (deepest first). File-granularity is
-    what closes the surviving-skill sub-directory case that a whole-``skill``-dir
-    sweep would miss. No broad ``rmtree`` is used, so this never re-introduces
-    the sibling emitter's containment hazard.
+    A whole skill, or a single agent or command, *removed from source*
+    leaves its previously-emitted output behind and the tree drifts past
+    source. This tracks every path written this run and prunes the
+    leftovers at **file** granularity: any emitted file under the three output
+    subtrees that was not (re)written this run is unlinked, then the
+    directories left empty are removed (deepest first). No broad ``rmtree`` is
+    used, so this never re-introduces the sibling emitter's containment hazard.
+
+    A file removed from a SURVIVING skill is not this function's job:
+    :func:`_prune_skill_dir` clears it.
 
     Called only on a **full** regeneration (all bundles). A scoped emit
     (``--bundles`` subset) shares the flat ``agent/`` and ``command/``
@@ -206,26 +220,26 @@ def _prune_stale_outputs(output_dir: Path, written: list[Path]) -> None:
     specific bundle from its name alone, so pruning a subset would risk
     deleting a non-emitted bundle's output; the normal build and the
     drift checks both run full regenerations.
+
+    A stale symlink is unlinked as the link it is and never traversed, so the
+    sweep cannot reach a file outside ``output_dir`` through one.
     """
+    written_paths = set(written)
     written_set = {p.resolve() for p in written}
 
     for subdir in ('skill', 'agent', 'command'):
         root = output_dir / subdir
         if not root.is_dir():
             continue
+        refuse_escaping_output_dir(root, output_dir)
         # Unlink every emitted file not (re)written this run.
-        for path in sorted(root.rglob('*')):
-            if path.is_file() and path.resolve() not in written_set:
+        for path in iter_tree_without_following_links(root):
+            if path.is_symlink():
+                if path not in written_paths:
+                    path.unlink()
+            elif path.is_file() and path.resolve() not in written_set:
                 path.unlink()
-        # Remove directories left empty by the unlinks, deepest first so a
-        # parent is considered only after its emptied children are gone.
-        for directory in sorted(
-            (p for p in root.rglob('*') if p.is_dir()),
-            key=lambda p: len(p.parts),
-            reverse=True,
-        ):
-            if not any(directory.iterdir()):
-                directory.rmdir()
+        _remove_empty_dirs(root)
 
 
 def _emit_skill(
@@ -251,27 +265,24 @@ def _emit_skill(
     new_body = body_transformer(body, bundle_name, 'skill')
 
     target_skill_dir = output_dir / 'skill' / f'{bundle_name}-{skill_name}'
+    refuse_escaping_output_dir(target_skill_dir, output_dir)
+    # Materialized before the first mkdir, prune or write: the walk refuses a
+    # source symlink by raising, and that must leave the previous output as it was.
+    copies = [
+        (source, target_skill_dir / source.relative_to(skill_dir))
+        for source in iter_emitted_skill_files(skill_dir, bundle_dir, excluded)
+    ]
     target_skill_dir.mkdir(parents=True, exist_ok=True)
     target_skill_md = target_skill_dir / 'SKILL.md'
+    _prune_skill_dir(target_skill_dir, {target_skill_md, *(target for _, target in copies)})
+
     target_skill_md.write_text(new_fm + '\n\n' + new_body, encoding='utf-8')
     written.append(target_skill_md)
 
-    # Reference the unused mapping so static checkers don't flag it; the
-    # full mapping is consumed by agent transforms below.
-    _ = mapping
-
-    for subdir_name in VERBATIM_SKILL_SUBDIRS:
-        src_subdir = skill_dir / subdir_name
-        if src_subdir.exists() and src_subdir.is_dir():
-            dst_subdir = target_skill_dir / subdir_name
-            _copy_verbatim(
-                src_subdir,
-                dst_subdir,
-                output_dir=output_dir,
-                bundle_dir=bundle_dir,
-                excluded=excluded,
-                written=written,
-            )
+    for source, target in copies:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+        written.append(target)
 
     skill_rel = f'skill/{bundle_name}-{skill_name}'
     wrapper_rel: str | None = None
@@ -347,8 +358,10 @@ def _emit_user_invocable_wrapper(
     rendered = _render_user_invocable_template(description, model, skill_id)
 
     command_dir = output_dir / 'command'
+    refuse_escaping_output_dir(command_dir, output_dir)
     command_dir.mkdir(parents=True, exist_ok=True)
     target = command_dir / f'{skill_id}.md'
+    unlink_if_symlink(target)
     target.write_text(rendered, encoding='utf-8')
     written.append(target)
 
@@ -374,8 +387,10 @@ def _emit_agent(
     new_body = body_transformer(body, bundle_name, 'agent')
 
     agent_dir = output_dir / 'agent'
+    refuse_escaping_output_dir(agent_dir, output_dir)
     agent_dir.mkdir(parents=True, exist_ok=True)
     target_agent = agent_dir / agent_md.name
+    unlink_if_symlink(target_agent)
     target_agent.write_text(new_fm + '\n\n' + new_body, encoding='utf-8')
     written.append(target_agent)
 
@@ -392,6 +407,12 @@ def _emit_agent(
     # (no model/effort pin); with a materialized pin map a pinned level carries
     # its configured ``model:`` — see variant_emitter's "Per-level model pins".
     # Non-eligible agents leave this a no-op (None).
+    #
+    # The variant emitter writes its files itself, so a link at any path it is
+    # about to write is cleared here, before it runs.
+    if is_role_eligible(fm):
+        for level in selected_levels(fm):
+            unlink_if_symlink(agent_dir / f'{agent_id}-{level}.md')
     result = emit_agent_variants(
         fm,
         new_body,
@@ -433,8 +454,10 @@ def _emit_command(
     new_body = body_transformer(body, bundle_name, 'command')
 
     command_dir = output_dir / 'command'
+    refuse_escaping_output_dir(command_dir, output_dir)
     command_dir.mkdir(parents=True, exist_ok=True)
     target_command = command_dir / command_md.name
+    unlink_if_symlink(target_command)
     target_command.write_text(new_fm + '\n\n' + new_body, encoding='utf-8')
     written.append(target_command)
     return f'command/{command_md.name}'
@@ -504,6 +527,7 @@ def _generate_opencode_json(
         config['agent'] = {agent_id: {} for agent_id in sorted(agent_index)}
     config_path = output_dir / 'opencode.json'
     config_path.parent.mkdir(parents=True, exist_ok=True)
+    unlink_if_symlink(config_path)
     config_path.write_text(json.dumps(config, indent=2) + '\n', encoding='utf-8')
     return config_path
 
@@ -521,6 +545,7 @@ def _generate_bundle_components_json(
     }
     config_path = output_dir / BUNDLE_COMPONENTS_FILENAME
     config_path.parent.mkdir(parents=True, exist_ok=True)
+    unlink_if_symlink(config_path)
     config_path.write_text(json.dumps(config, indent=2) + '\n', encoding='utf-8')
     return config_path
 
@@ -569,14 +594,13 @@ def emit_bundles(
             resolves inside the other.
     """
     # Refuse a destination that overlaps the source tree BEFORE anything is
-    # written, unlinked or wiped. This emitter is destructive in two places —
-    # ``_copy_verbatim``'s safe_rmtree and ``_prune_stale_outputs``'s unlink
-    # sweep — and neither can tell an emitted artifact from real source once the
-    # two trees overlap. safe_rmtree's containment check does not cover this: a
-    # path inside the source tree is still inside output_dir when the source
-    # tree lies inside output_dir, so the guard passes and the delete proceeds —
-    # which is why the refusal here is SYMMETRIC rather than keyed on one
-    # direction. The sibling Claude emitter refuses the same overlap for the
+    # written or unlinked. This emitter is destructive in two places — the
+    # unlink sweeps of ``_prune_skill_dir`` and ``_prune_stale_outputs`` — and
+    # neither can tell an emitted artifact from real source once the two trees
+    # overlap: a path inside the source tree is still inside output_dir when
+    # the source tree lies inside output_dir. That is why the refusal here is
+    # SYMMETRIC rather than keyed on one direction. The sibling Claude emitter
+    # refuses the same overlap for the
     # same reason, through this same shared helper: the two carried identical
     # private copies of the one-direction test and so drifted together instead
     # of apart, which is what putting the check in fs_safety was supposed to
@@ -604,8 +628,8 @@ def emit_bundles(
 
         # Computed once per bundle: the directory-level exclusions plus every
         # file-level exclusion a skill-internal declaration contributes, all
-        # validated. The verbatim copy below skips either shape through the
-        # same predicate.
+        # validated. The skill-directory copy skips either shape, through
+        # ``iter_emitted_skill_files``.
         excluded = excluded_emission_roots(bundle_dir, target_name)
 
         skills: list[str] = []
@@ -614,8 +638,8 @@ def emit_bundles(
 
         for skill_dir in _resolve_skill_dirs(bundle_dir, plugin_config):
             # A skill's scope is declared on its manifest and governs the whole
-            # directory — the verbatim sub-directories and the user-invocable
-            # command wrapper included, since both are emitted from inside
+            # directory — every copied file and the user-invocable command
+            # wrapper included, since both are emitted from inside
             # ``_emit_skill``.
             if not emits_to(skill_dir / 'SKILL.md', target_name):
                 continue
@@ -669,6 +693,7 @@ def emit_bundles(
     if not _INSTALL_SCRIPT_TEMPLATE.is_file():
         raise FileNotFoundError(f'Required install.sh template not found: {_INSTALL_SCRIPT_TEMPLATE}')
     install_target = output_dir / 'install.sh'
+    unlink_if_symlink(install_target)
     shutil.copyfile(_INSTALL_SCRIPT_TEMPLATE, install_target)
     install_target.chmod(0o755)
     written.append(install_target)
@@ -684,6 +709,7 @@ def emit_bundles(
     if not doc_src.is_file():
         raise FileNotFoundError(f'Required README source not found: {doc_src}')
     readme_target = output_dir / 'README.adoc'
+    unlink_if_symlink(readme_target)
     shutil.copyfile(doc_src, readme_target)
     written.append(readme_target)
 
@@ -703,7 +729,6 @@ __all__ = [
     'BodyTransformer',
     'EXCLUDED_DIR_NAMES',
     'OPENCODE_TARGET_NAME',
-    'VERBATIM_SKILL_SUBDIRS',
     'UnmappedFrontmatterError',
     'UnmappedToolError',
     'emit_bundles',

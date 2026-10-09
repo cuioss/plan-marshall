@@ -23,6 +23,7 @@ call sites hold no copy to drift.
 from __future__ import annotations
 
 import shutil
+from collections.abc import Iterator
 from pathlib import Path
 
 
@@ -96,4 +97,89 @@ def safe_rmtree(path: Path, output_dir: Path) -> None:
     shutil.rmtree(path)
 
 
-__all__ = ['is_within', 'refuse_tree_overlap', 'safe_rmtree', 'trees_overlap']
+def refuse_escaping_output_dir(path: Path, output_dir: Path) -> None:
+    """Raise ``ValueError`` unless ``path`` is a real location inside ``output_dir``.
+
+    The single check both target emitters call on a per-component output
+    directory BEFORE they create it, sweep it, or write into it.
+    :func:`refuse_tree_overlap` inspects only the two roots, so it says
+    nothing about a nested path such as ``output_dir/skills/{bundle}-{skill}``
+    — and ``mkdir(exist_ok=True)`` accepts an existing symlink to a directory
+    without complaint. Two shapes are refused:
+
+    * ``path`` is itself a symbolic link, wherever it points — an emitted
+      directory is one the emitter created, never a link; and
+    * ``path`` resolves outside the resolved ``output_dir`` — a symlinked
+      ANCESTOR (``output_dir/skills`` linked elsewhere) carries the sweep and
+      the writes out of the tree just as well as a symlinked leaf.
+
+    ``path`` need not exist yet: resolution is non-strict, so the check runs
+    ahead of the ``mkdir`` that would otherwise create a directory through a
+    symlinked ancestor.
+    """
+    if path.is_symlink():
+        raise ValueError(
+            f'Refusing to emit into {path}: it is a symbolic link — an output directory must be a real directory'
+        )
+    if not is_within(path, output_dir):
+        raise ValueError(
+            f'Refusing to emit into {path}: it resolves to {path.resolve()}, '
+            f'outside output directory {output_dir.resolve()}'
+        )
+
+
+def refuse_symlink(path: Path) -> None:
+    """Raise ``ValueError`` when ``path`` is itself a symbolic link, wherever it points.
+
+    The check for a destination the caller must neither follow nor replace —
+    a file an operator may have linked elsewhere on purpose. It inspects the
+    one path only and says nothing about its ancestors: a caller that walks a
+    tree top-down and has already cleared every ancestor needs no more, and
+    one that has not uses :func:`refuse_escaping_output_dir` for them. A real
+    entry, or a missing one, passes.
+    """
+    if path.is_symlink():
+        raise ValueError(
+            f'Refusing to write {path}: it is a symbolic link — a link found at a destination '
+            'path is neither followed nor replaced'
+        )
+
+
+def unlink_if_symlink(path: Path) -> None:
+    """Remove ``path`` when it is a symbolic link, so a following write creates a real file.
+
+    ``write_text`` and ``shutil.copyfile`` both follow a symlink at the
+    destination and rewrite its target. An emitted file is one the emitter
+    created, never a link, so a link found at an output path is cleared first;
+    its target is left untouched. A real file, or a missing one, is left as is.
+    """
+    if path.is_symlink():
+        path.unlink()
+
+
+def iter_tree_without_following_links(root: Path) -> Iterator[Path]:
+    """Yield every entry under ``root``, never descending into a symlinked directory.
+
+    A symlinked directory is yielded as the link it is and its target is not
+    walked. ``Path.rglob`` cannot be used for a destructive sweep: before
+    Python 3.13 it follows directory symlinks, so the entries it yields may
+    live outside ``root``. Each directory is listed in full before its
+    entries are yielded, so a caller may unlink an entry as it receives it.
+    """
+    for entry in sorted(root.iterdir()):
+        descend = entry.is_dir() and not entry.is_symlink()
+        yield entry
+        if descend:
+            yield from iter_tree_without_following_links(entry)
+
+
+__all__ = [
+    'is_within',
+    'iter_tree_without_following_links',
+    'refuse_escaping_output_dir',
+    'refuse_symlink',
+    'refuse_tree_overlap',
+    'safe_rmtree',
+    'trees_overlap',
+    'unlink_if_symlink',
+]

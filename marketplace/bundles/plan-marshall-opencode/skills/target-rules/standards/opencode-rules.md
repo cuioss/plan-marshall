@@ -31,7 +31,7 @@ OpenCode deploys skills in a flat directory namespace to support single-level lo
     bundle: plan-marshall-opencode
     skill: target-rules
   ```
-- **Internal references**: Subdirectories (`standards/`, `references/`, `templates/`, `scripts/`) sit directly under `{bundle}-{skill}/`. All intra-skill references resolve relative to this directory.
+- **Internal references**: The subdirectories and loose files of the source skill sit directly under `{bundle}-{skill}/` — `workflow/` as much as `standards/`, `references/`, `templates/` or `scripts/`, which are examples and not the complete set. All intra-skill references resolve relative to this directory.
 
 ## 3. Command & `.plan/` Discipline
 

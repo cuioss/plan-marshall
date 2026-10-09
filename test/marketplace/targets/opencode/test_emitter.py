@@ -14,7 +14,6 @@ import pytest
 from conftest import PROJECT_ROOT
 from marketplace.targets.opencode.emitter import (
     EXCLUDED_DIR_NAMES,
-    VERBATIM_SKILL_SUBDIRS,
     _resolve_md_components,
     _resolve_skill_dirs,
     emit_bundles,
@@ -166,11 +165,6 @@ def test_unknown_agent_tool_raises_unmapped_tool(tmp_path: Path, opencode_config
         emit_bundles(marketplace, out, opencode_config_dir)
 
 
-def test_verbatim_skill_subdirs_constant_exposed():
-    """The constant must enumerate the four canonical skill subdirs."""
-    assert set(VERBATIM_SKILL_SUBDIRS) == {'standards', 'references', 'templates', 'scripts'}
-
-
 # =============================================================================
 # Stale-output pruning (D2)
 # =============================================================================
@@ -308,11 +302,11 @@ def test_resolvers_preserve_a_leading_dot_directory_reference(tmp_path: Path):
 # Source-tree refusal, matched control (G3)
 # =============================================================================
 #
-# This emitter is destructive in two places — ``_copy_verbatim``'s safe_rmtree
-# and ``_prune_stale_outputs``'s unlink sweep — and ``safe_rmtree``'s
-# containment check does NOT cover an output_dir that IS the source tree: every
-# path inside the source is then inside output_dir, so the guard passes and the
-# delete proceeds. The sibling Claude emitter has refused this overlap all
+# This emitter is destructive in two places — the unlink sweeps of
+# ``_prune_skill_dir`` and ``_prune_stale_outputs`` — and neither can tell an
+# emitted artifact from real source when output_dir IS the source tree: every
+# path inside the source is then inside output_dir, so the delete would
+# proceed. The sibling Claude emitter has refused this overlap all
 # along; that this one did not was an asymmetry. Both halves are pinned, because
 # a refusal that also refused legitimate emits would be worse than the gap.
 

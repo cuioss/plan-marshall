@@ -740,9 +740,134 @@ def is_under_any(rel: Path, roots: frozenset[Path]) -> bool:
     return rel in roots or any(parent in roots for parent in rel.parents)
 
 
+class SourceSymlinkError(RuntimeError):
+    """Raised when a source tree holds an entry the emit refuses to follow.
+
+    Carries the offending path, so the build failure names the entry an
+    author has to remove.
+    """
+
+
+def iter_source_files(root: Path) -> Iterator[Path]:
+    """Yield every regular file beneath ``root``, refusing anything linked.
+
+    This is the one statement of the source-symlink rule, shared by every
+    emitter that copies source by content. A symbolic link committed inside a
+    bundle would otherwise be read THROUGH: ``Path.is_file`` and
+    ``shutil.copyfile`` both follow links, so a link aimed at a readable file
+    outside the bundle ships that file's content in the generated tree and,
+    from there, in the published distribution.
+
+    The refusal covers the whole of ``root`` — including the cache and dot
+    directories no target emits — because "this tree holds no link" is a rule
+    an author can check, where "no link in a path that happens to be emitted"
+    is not. It fails the emit rather than skipping the entry, matching the
+    fail-closed stance this module takes for an invalid declaration.
+
+    The walk is this function's own rather than ``Path.rglob``: ``rglob``
+    descends into a symlinked directory before Python 3.13, so a check applied
+    to its results would already have traversed the link. Here a directory is
+    entered only after it has been cleared.
+
+    The containment test is separate from the link test and is not redundant
+    with it: a Windows directory junction is not a symbolic link to
+    ``Path.is_symlink`` and still resolves elsewhere.
+
+    Args:
+        root: The source directory to walk. A ``root`` that is not a directory
+            yields nothing.
+
+    Yields:
+        The files beneath ``root``, as paths under ``root`` (not resolved), in
+        sorted order. Entries that are neither a directory nor a regular file
+        are not yielded.
+
+    Raises:
+        SourceSymlinkError: An entry beneath ``root`` is a symbolic link, or
+            resolves outside the resolved ``root``. Raised before the first
+            file is yielded, so a caller that copies as it iterates has copied
+            nothing.
+    """
+    if not root.is_dir():
+        return
+    resolved_root = root.resolve()
+    files: list[Path] = []
+    pending = [root]
+    while pending:
+        for entry in sorted(pending.pop().iterdir()):
+            if entry.is_symlink():
+                raise SourceSymlinkError(
+                    f'{entry}: the source tree holds a symbolic link. An emit copies source by '
+                    f'content and would follow it, shipping whatever it points at. Replace the '
+                    f'link with the file or directory it stands for.'
+                )
+            if not entry.resolve().is_relative_to(resolved_root):
+                raise SourceSymlinkError(
+                    f'{entry}: the entry resolves to {entry.resolve()}, outside the source tree '
+                    f'{resolved_root}. An emit copies source by content and would ship it.'
+                )
+            if entry.is_dir():
+                pending.append(entry)
+            elif entry.is_file():
+                files.append(entry)
+    yield from sorted(files)
+
+
+def iter_emitted_skill_files(skill_dir: Path, bundle_dir: Path, excluded: frozenset[Path]) -> Iterator[Path]:
+    """Yield the files of ``skill_dir`` a component-tree target emits beside ``SKILL.md``.
+
+    This is the one statement of the skill-directory emission rule. A target
+    that re-shapes a skill (rather than mirroring the bundle wholesale) writes
+    the transformed ``SKILL.md`` itself and copies every file this yields
+    byte-identical, so a skill's sub-directories need no allow-list: a new
+    one ships the moment it exists. A file is yielded unless it is:
+
+    * the skill's own ``SKILL.md`` — the manifest the target transforms;
+    * under a directory named in :data:`EXCLUDED_DIR_NAMES`;
+    * a dot-file, or under a dot-directory;
+    * scoped away from the emitting target by a ``targets:`` declaration,
+      i.e. it equals or lies beneath an entry of ``excluded``.
+
+    Args:
+        skill_dir: The source skill directory.
+        bundle_dir: The bundle root ``skill_dir`` lives in; ``excluded`` is
+            relative to it.
+        excluded: The emitting target's :func:`excluded_emission_roots` for
+            ``bundle_dir``.
+
+    Yields:
+        Absolute source paths, in sorted order.
+
+    Raises:
+        SourceSymlinkError: ``skill_dir`` is itself a symbolic link, or holds
+            an entry :func:`iter_source_files` refuses. The refusal is not
+            narrowed by the rules above: a link under a dot-directory or a
+            scoped-away file fails the emit like any other.
+    """
+    if skill_dir.is_symlink():
+        raise SourceSymlinkError(
+            f'{skill_dir}: the skill directory is a symbolic link. An emit copies source by '
+            f'content and would follow it, shipping whatever it points at. Replace the link '
+            f'with the directory it stands for.'
+        )
+    manifest = skill_dir / _SKILL_MANIFEST
+    for source in iter_source_files(skill_dir):
+        if source == manifest:
+            continue
+        rel = source.relative_to(skill_dir)
+        if any(part in EXCLUDED_DIR_NAMES or part.startswith('.') for part in rel.parts):
+            continue
+        if is_under_any(source.relative_to(bundle_dir), excluded):
+            continue
+        yield source
+
+
 __all__ = [
     'EXCLUDED_DIR_NAMES',
+    'iter_emitted_skill_files',
+    'iter_source_files',
     'validate_component_scopes',
+    'SourceSymlinkError',
     'TargetScopeError',
     'bundle_emits_to',
     'component_tree_target_names',

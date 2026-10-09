@@ -2,7 +2,7 @@
   "best_practices": [],
   "generation": {
     "by": "architecture",
-    "tree_sha": "6eb2980f1b48801797a81d803529ebfde578627f5c0a752f111ff2fc9580a224"
+    "tree_sha": "9d6bb10895be37a5608c9a8148d801a40daf68a35c3828c93ecfaa9db93fd6b3"
   },
   "insights": [],
   "internal_dependencies": [],
@@ -13,8 +13,57 @@
   "purpose_reasoning": "",
   "responsibility": "",
   "responsibility_reasoning": "",
-  "skills_by_profile": {},
-  "skills_by_profile_reasoning": "",
+  "skills_by_profile": {
+    "implementation": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        },
+        {
+          "description": "Script development standards covering implementation patterns, testing, and output contracts",
+          "skill": "pm-plugin-development:plugin-script-architecture"
+        },
+        {
+          "description": "TOON format knowledge for output specifications - use when migrating to/from TOON",
+          "skill": "plan-marshall:ref-toon-format"
+        }
+      ]
+    },
+    "module_testing": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        },
+        {
+          "description": "Script development standards covering implementation patterns, testing, and output contracts",
+          "skill": "pm-plugin-development:plugin-script-architecture"
+        },
+        {
+          "description": "TOON format knowledge for output specifications - use when migrating to/from TOON",
+          "skill": "plan-marshall:ref-toon-format"
+        }
+      ]
+    },
+    "quality": {
+      "defaults": [
+        {
+          "description": "Architecture principles, skill patterns, and design guidance for building marketplace components",
+          "skill": "pm-plugin-development:plugin-architecture"
+        },
+        {
+          "description": "Script development standards covering implementation patterns, testing, and output contracts",
+          "skill": "pm-plugin-development:plugin-script-architecture"
+        },
+        {
+          "description": "TOON format knowledge for output specifications - use when migrating to/from TOON",
+          "skill": "plan-marshall:ref-toon-format"
+        }
+      ]
+    }
+  },
+  "skills_by_profile_reasoning": "Marketplace bundle holding one skill and one standards document; resolves the plugin-development skill set like its sibling bundles.",
   "tips": [],
   "type": "module"
 }
