@@ -10,7 +10,7 @@ mode: workflow
 GitHub provider for the findings-pipeline `pr-comment` producer. The provider surface is exactly FOUR pure, zero-LLM verbs — no triage judgment lives here:
 
 - **`fetch_findings`** — fetch PR review comments, apply the pre-filter (`comment-patterns.json`), exclude the batched response body `post_responses` itself posted, and file one `pr-comment` finding per surviving comment via `manage-findings add`. The untrusted comment body is quarantined under `raw_input.{body}` (never embedded raw in the top-level `detail`); the batched `manage-findings ingest` pass promotes it to top-level only after `validate_struct`. A bounded guard reports a non-converging respond → re-fetch cycle as a `(self-response-loop)` Q-Gate finding.
-- **`post_responses`** — apply already-decided triage dispositions back to the PR, keyed by each finding's own `hash_id`, via a three-way transmit keyed on the finding's `kind`: thread-reply-then-resolve for a thread-bearing finding (untransmitted, never batched, when its thread is missing), ONE batched PR-level comment for the genuinely threadless kinds, and `skipped` only when there is genuinely nothing to say. A `fixed` disposition is held, and listed in `deferred_until_commit[]`, until its fix commit is stamped on the finding and is on the pull request head.
+- **`post_responses`** — apply already-decided triage dispositions back to the PR, keyed by each finding's own `hash_id`, via a three-way transmit keyed on the finding's `kind`: thread-reply-then-resolve for a thread-bearing finding (untransmitted, never batched, when its thread is missing), ONE batched PR-level comment for the genuinely threadless kinds, and `skipped` only when there is genuinely nothing to say. A `fixed` disposition is held, and listed in `deferred_until_commit[]`, until its fix commit is stamped on the finding and is on the pull request head; with `--send-unstamped-fixed` a `fixed` finding that carries no stamp is transmitted in the same pass instead.
 - **`bot_completion`** — report a review bot's registry `completion_check_name` check-run state (`{status, in_progress, completed}`) for the PR HEAD, so the `automatic-review` completion-aware poll can wait for a slow bot to finish before fetching — with `--wait-seconds`, in one bounded call that also returns `timed_out` and `waited_seconds`; a bot with no completion check-run reports `no_check_name` and the caller falls back to the `review_bot_buffer_seconds` wait.
 - **`pull_request_runs`** — report whether ANY `pull_request`-event workflow run exists for the requested PR. The head branch is how the runs are FETCHED, not what the answer is scoped to: a run is excluded only when its `pull_requests` association reliably names a DIFFERENT PR. This is the PR-WIDE observable behind the `not_triggered` participation state: when no such run exists, nothing ever ran on account of the PR, so no bot could have published and a required bot's silence says nothing about that bot. A run that EXISTS and concluded `skipped` keeps the observable false — the workflow *was* triggered. Never reads `mergeable_state`.
 
@@ -233,7 +233,7 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
    | `pr_number` absent from `detail` | nothing — the row cannot be shown to belong here (fail closed) | `skipped[]`, reason `pr_number_unrecorded` |
    | already transmitted on a prior pass (carries the `responded` marker), disposition unchanged | nothing — the reply was already sent | `skipped[]`, reason `already responded` |
    | no `resolution_detail` | nothing — there is genuinely nothing to say | `skipped[]`, reason `no_resolution_detail` |
-   | `fixed`, and its fix commit is not stamped or not on the pull request head | nothing — no reply, no resolve-thread, no `responded` marker | `deferred_until_commit[]`, with the reason |
+   | `fixed`, and its fix commit is not stamped or not on the pull request head (with `--send-unstamped-fixed`: stamped and not on the pull request head only) | nothing — no reply, no resolve-thread, no `responded` marker | `deferred_until_commit[]`, with the reason |
    | genuinely threadless `kind` (`review_body`, `issue_comment`) | ONE batched PR-level comment for ALL such findings in the run, each section anchored on its source `comment_id` | `responded[]`, `transmit_mode: batched_issue_comment`, `resolved_on_provider: false` |
    | thread-bearing `kind` (`inline`, and any unrecognised kind) | thread-reply carrying the `resolution_detail`, then resolve-thread | `responded[]`, `transmit_mode: thread_reply`, `resolved_on_provider: true` |
 
@@ -247,7 +247,7 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
 
    Any disposition that had something to say but could not be delivered — a missing thread on a thread-bearing finding, a failed thread-reply, a failed resolve-thread, or a failed batched post (which untransmits the WHOLE batch) — lands in `untransmitted[]` with a reason, drives `count_untransmitted`, and sets the envelope `status` to `partial`. The envelope reports `success` only when `count_untransmitted` is 0; it is never unconditionally `success`.
 
-   **The `fixed` reply is held until the fix commit is on the pull request.** Triage records `fixed` when it decides the fix, which is before the fix is a commit. A reply sent then tells the reviewer the code is fixed and resolves the thread while the pull request still shows the old code. `post_responses` therefore transmits a `fixed` finding only when both of these hold:
+   **The `fixed` reply is held until the fix commit is on the pull request.** Triage records `fixed` when it decides the fix, which is before the fix is a commit. A reply sent then tells the reviewer the code is fixed and resolves the thread while the pull request still shows the old code. Called without `--send-unstamped-fixed` — the default — `post_responses` therefore transmits a `fixed` finding only when both of these hold:
 
    - the finding carries a `fix_commit_sha` stamp (written by `manage-findings stamp-fix-commit` — see [`manage-findings` SKILL.md](../manage-findings/SKILL.md) § "The fix stamp");
    - the provider reports that commit as an ancestor of the pull request head, or as the head itself. This is one `compare` read per distinct fix commit, asked of GitHub and not of the local clone, so a commit that was never pushed does not pass.
@@ -271,9 +271,18 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
 
    **The commit named in that line is the one the caller stamped, and this verb does not check that it made the fix.** The phase-6-finalize hook that stamps in a plan run ([`phase-6-finalize/SKILL.md`](../phase-6-finalize/SKILL.md) Step 3 item 7c) stamps the commit that holds the edit for an inline fix, and the pushed head of the branch for a task fix. A pushed head contains the fix and may be later than the commit that made it, so `Fix commit:` names a commit as of which the fix is on the pull request. Such a stamp satisfies the second condition above when it is written — the stamped commit is the head — and keeps satisfying it while further commits are pushed on top, because it stays an ancestor of the head.
 
-   ⚠ **A `fixed` finding whose fix never reaches a commit is never answered.** It stays in `deferred_until_commit[]` on every pass until it is re-resolved to another disposition, which clears the stamp and makes it transmittable under that disposition. What the reviewer sees on each such path is stated in [`plan-marshall/workflow/verification-feedback.md`](../plan-marshall/workflow/verification-feedback.md) Step 8.
+   ⚠ **A held `fixed` finding whose fix never reaches a commit is never answered.** It stays in `deferred_until_commit[]` on every pass until it is re-resolved to another disposition, which clears the stamp and makes it transmittable under that disposition. What the reviewer sees on each such path is stated in [`plan-marshall/workflow/verification-feedback.md`](../plan-marshall/workflow/verification-feedback.md) Step 8.
 
-   The hold-back is this verb's alone. The GitLab `post_responses` verb transmits `fixed` at once.
+   **`--send-unstamped-fixed` lifts the hold for a finding with no stamp.** The hold releases a reply only after a caller has stamped the fix commit and run a further respond pass. The phase-6-finalize hook does both, and calls this verb without the flag. A caller that runs no later pass — `verification-feedback.md` Step 8 under every producer except `finalize-feedback`, which includes the `/workflow-pr-doctor` run (`producer=pr-state`) — passes the flag, because a reply held there would never be sent. With the flag:
+
+   | `fixed` finding | Outcome |
+   |-----------------|---------|
+   | carries no `fix_commit_sha` | Transmitted in this pass down the ordinary kind routing, like the other four dispositions. The reply is the stored `resolution_detail` unchanged, with no `Fix commit:` line. It is not listed in `deferred_until_commit[]`, so the reason `no_fix_commit` is not reported. |
+   | carries a `fix_commit_sha` | Unaffected by the flag. Both conditions above still apply: it is held with `pr_head_unreadable`, `fix_commit_not_on_pr_head` or `fix_commit_ancestry_unreadable` until the commit is on the pull request head, and the released reply carries the `Fix commit:` line. |
+
+   A reply sent under the flag tells the reviewer "fixed" and resolves the thread when the fix is decided, which may be before any commit carries it. Which producer passes the flag, and what the reviewer then sees, is stated in [`plan-marshall/workflow/verification-feedback.md`](../plan-marshall/workflow/verification-feedback.md) Step 8.
+
+   The hold-back is this verb's alone. The GitLab `post_responses` verb transmits `fixed` at once and declares no such flag.
 
 ### Workflow 3: Re-Review After a HEAD-Advancing Branch Operation
 
@@ -1095,8 +1104,15 @@ backstop, not a licence to leave the interpolation unquoted.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr post_responses \
-  --pr-number N --plan-id PLAN_ID
+  --pr-number N --plan-id PLAN_ID [--send-unstamped-fixed]
 ```
+
+`--send-unstamped-fixed` transmits a `fixed` finding that carries no stamped fix commit in this pass,
+with its stored reply unchanged, instead of holding it in `deferred_until_commit[]` with
+`no_fix_commit`. It is off by default. A caller that runs no later respond pass passes it — every
+`verification-feedback` producer except `finalize-feedback`. A finding that carries a stamp is
+unaffected by it. See Workflow 2 step 4 → "`--send-unstamped-fixed` lifts the hold for a finding with
+no stamp".
 
 ### github_pr bot_completion
 

@@ -87,7 +87,7 @@ ONE RESPOND    post_responses(triaged) → provider (thread-reply / resolve-thre
                loop runs AFTER triage decides dispositions.
 ```
 
-**One disposition waits for a second respond pass.** On GitHub the respond pass that follows triage does not transmit a `fixed` disposition: the reply is held until the fix commit is stamped on the finding and is on the pull request head, and a second respond pass transmits it after the push. Every other disposition goes out in the first pass. GitLab transmits all of them in the first pass, `fixed` included. See [`verification-feedback.md`](../../plan-marshall/workflow/verification-feedback.md) § "Step 8: Respond loop".
+**In finalize, one disposition waits for a second respond pass.** On GitHub the respond pass that follows the finalize triage does not transmit a `fixed` disposition: the reply is held until the fix commit is stamped on the finding and is on the pull request head, and a second respond pass, run by the phase-6-finalize hook, transmits it after the push. Every other disposition goes out in the first pass. A respond pass outside finalize — the `/workflow-pr-doctor` run — has no second pass behind it, calls the GitHub verb with `--send-unstamped-fixed`, and transmits `fixed` in the first pass too. GitLab transmits all of them in the first pass, `fixed` included. See [`verification-feedback.md`](../../plan-marshall/workflow/verification-feedback.md) § "Step 8: Respond loop".
 
 Triage is removed from the provider surface: the provider verbs are the two pure zero-LLM `fetch_findings` (FIND) and `post_responses` (RESPOND); the LLM judgment lives only in the single consolidated TRIAGE pass.
 
@@ -180,7 +180,7 @@ The verify stage is inserted by the orchestrator's [`verification-feedback.md`](
 
 ## Consumer Dispatch
 
-Under the consolidated flow, triage runs as ONE domain-grouped pass over the whole ingested ledger (not per-producer), reading the clean **top-level** fields only — never `raw_input.*`. The decided dispositions are then transmitted back in ONE `post_responses` RESPOND loop, rather than the provider-side acknowledgment being interleaved into the per-finding triage loop; on GitHub a `fixed` reply is the exception and goes out in a second pass (see the note under the consolidated flow in § Overview). The per-finding decision mechanics below are unchanged; only where they run (one consolidated pass) and where the provider acknowledgment happens (one respond loop, after triage) changed.
+Under the consolidated flow, triage runs as ONE domain-grouped pass over the whole ingested ledger (not per-producer), reading the clean **top-level** fields only — never `raw_input.*`. The decided dispositions are then transmitted back in ONE `post_responses` RESPOND loop, rather than the provider-side acknowledgment being interleaved into the per-finding triage loop; in a finalize run on GitHub a `fixed` reply is the exception and goes out in a second pass (see the note under the consolidated flow in § Overview). The per-finding decision mechanics below are unchanged; only where they run (one consolidated pass) and where the provider acknowledgment happens (one respond loop, after triage) changed.
 
 Wherever a triage decision needs to be made, the consumer:
 

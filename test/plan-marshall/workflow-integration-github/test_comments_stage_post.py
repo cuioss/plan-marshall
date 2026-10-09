@@ -864,6 +864,189 @@ class TestFixedReplyHeldUntilCommit:
         assert calls[0][1]['body'] == 'The stored rationale.'
 
 
+def _send_unstamped_args(pr_number: int, plan_id: str):
+    """The namespace a caller passing ``--send-unstamped-fixed`` hands the verb."""
+    args = _stage_make_args(pr_number, plan_id)
+    args.send_unstamped_fixed = True
+    return args
+
+
+class TestSendUnstampedFixed:
+    """``--send-unstamped-fixed`` lifts the hold for a ``fixed`` finding with no stamp.
+
+    A caller with no later respond pass sets the flag, since nothing would release a
+    held reply there. The flag reaches the unstamped finding only: one that carries a
+    stamp is still held or released by its commit. The flag-absent side of the first
+    case is ``TestFixedReplyHeldUntilCommit``'s unstamped test, on the same finding.
+    """
+
+    def _post(self, plan_id, *, compare='ahead'):
+        """Run one respond pass with the flag set; return ``(result, graphql_calls, compare_mock)``."""
+        calls = []
+
+        def _fake_graphql(mutation, variables):
+            calls.append((mutation, variables))
+            return 0, {}, ''
+
+        with (
+            patch('github_pr._github.run_graphql', side_effect=_fake_graphql),
+            _compare_reports(compare) as compare_mock,
+        ):
+            result = cmd_post_responses(_send_unstamped_args(300, plan_id))
+        return result, calls, compare_mock
+
+    def test_an_unstamped_fixed_finding_is_transmitted_with_its_stored_reply(self, plan_context):
+        """Reply, resolve and marker in this pass; no commit line, no deferred row."""
+        from _findings_core import query_findings, resolve_finding
+
+        plan_id = 'gh-unstamped-sent'
+        plan_context.plan_dir_for(plan_id)
+        (hash_id,) = _stage_comments(plan_id, [_inline_comment('C1', 'PRRT_now', 'Guard the null case.')])
+        resolve_finding(plan_id, hash_id, 'fixed', detail='Will be addressed by TASK-7.', fix_task_number=7)
+
+        result, calls, compare_mock = self._post(plan_id)
+
+        # No commit is stamped, so the provider is asked nothing about one.
+        compare_mock.assert_not_called()
+        assert result['status'] == 'success'
+        assert result['count_untransmitted'] == 0
+        assert result['count_deferred_until_commit'] == 0
+        assert result['deferred_until_commit'] == []
+        assert result['responded'] == [
+            {'hash_id': hash_id, 'thread_id': 'PRRT_now', 'transmit_mode': 'thread_reply', 'resolved_on_provider': True}
+        ]
+        assert len(calls) == 2
+        assert calls[0][1] == {'threadId': 'PRRT_now', 'body': 'Will be addressed by TASK-7.'}
+        assert 'Fix commit:' not in calls[0][1]['body']
+        assert calls[1][1] == {'threadId': 'PRRT_now'}
+        stored = query_findings(plan_id, finding_type='pr-comment')['findings'][0]
+        assert stored.get('responded')
+
+    def test_the_same_finding_is_held_when_the_flag_is_declared_and_off(self, plan_context):
+        """⛔ MATCHED CONTROL: same finding, the attribute present and false."""
+        from _findings_core import resolve_finding
+
+        plan_id = 'gh-unstamped-flag-off'
+        plan_context.plan_dir_for(plan_id)
+        (hash_id,) = _stage_comments(plan_id, [_inline_comment('C1', 'PRRT_now', 'Guard the null case.')])
+        resolve_finding(plan_id, hash_id, 'fixed', detail='Will be addressed by TASK-7.', fix_task_number=7)
+        args = _stage_make_args(300, plan_id)
+        args.send_unstamped_fixed = False
+
+        with patch('github_pr._github.run_graphql', return_value=(0, {}, '')) as mock_graphql:
+            result = cmd_post_responses(args)
+
+        mock_graphql.assert_not_called()
+        assert result['responded'] == []
+        assert result['deferred_until_commit'] == [
+            {'hash_id': hash_id, 'reason': 'no_fix_commit', 'fix_commit_sha': '', 'fix_task_number': '7'}
+        ]
+
+    def test_a_second_pass_does_not_send_the_unstamped_reply_again(self, plan_context):
+        """The marker set by the first pass makes the second one skip the finding."""
+        from _findings_core import resolve_finding
+
+        plan_id = 'gh-unstamped-sent-once'
+        plan_context.plan_dir_for(plan_id)
+        (hash_id,) = _stage_comments(plan_id, [_inline_comment('C1', 'PRRT_now', 'Guard the null case.')])
+        resolve_finding(plan_id, hash_id, 'fixed', detail='Addressed by an edit to src/Main.java.')
+
+        first, first_calls, _ = self._post(plan_id)
+        second, second_calls, _ = self._post(plan_id)
+
+        assert [row['hash_id'] for row in first['responded']] == [hash_id]
+        assert len(first_calls) == 2
+        assert second_calls == []
+        assert second['responded'] == []
+        assert second['skipped'] == [{'hash_id': hash_id, 'reason': 'already responded'}]
+
+    def test_a_stamped_finding_whose_commit_is_not_on_the_head_is_still_held(self, plan_context):
+        """The flag does not reach a finding that carries a stamp."""
+        from _findings_core import query_findings, resolve_finding
+
+        plan_id = 'gh-unstamped-flag-stamped-diverged'
+        plan_context.plan_dir_for(plan_id)
+        (hash_id,) = _stage_comments(plan_id, [_inline_comment('C1', 'PRRT_wait', 'Guard the null case.')])
+        resolve_finding(plan_id, hash_id, 'fixed', detail='Fixed the guard.')
+        _stamp_fix_commit(plan_id, hash_id)
+
+        result, calls, compare_mock = self._post(plan_id, compare='diverged')
+
+        assert calls == []
+        assert compare_mock.call_count == 1
+        assert result['status'] == 'success'
+        assert result['responded'] == []
+        assert result['deferred_until_commit'] == [
+            {
+                'hash_id': hash_id,
+                'reason': 'fix_commit_not_on_pr_head',
+                'fix_commit_sha': _FIX_COMMIT,
+                'fix_task_number': '',
+            }
+        ]
+        stored = query_findings(plan_id, finding_type='pr-comment')['findings'][0]
+        assert not stored.get('responded')
+
+    def test_a_stamped_finding_whose_commit_reaches_the_head_carries_the_commit_line(self, plan_context):
+        """⛔ MATCHED CONTROL for the case above — same finding, the other compare answer."""
+        from _findings_core import resolve_finding
+
+        plan_id = 'gh-unstamped-flag-stamped-ahead'
+        plan_context.plan_dir_for(plan_id)
+        (hash_id,) = _stage_comments(plan_id, [_inline_comment('C1', 'PRRT_wait', 'Guard the null case.')])
+        resolve_finding(plan_id, hash_id, 'fixed', detail='Fixed the guard.')
+        _stamp_fix_commit(plan_id, hash_id)
+
+        result, calls, compare_mock = self._post(plan_id, compare='ahead')
+
+        assert compare_mock.call_count == 1
+        assert result['deferred_until_commit'] == []
+        assert [row['hash_id'] for row in result['responded']] == [hash_id]
+        assert len(calls) == 2
+        assert calls[0][1]['body'] == f'Fixed the guard.\n\nFix commit: {_FIX_COMMIT_SHORT}'
+
+    def test_an_unstamped_threadless_fixed_finding_joins_the_batch_in_the_same_pass(self, plan_context):
+        """The flag is applied before the kind routing, so it covers the batched path too."""
+        from _findings_core import resolve_finding
+
+        plan_id = 'gh-unstamped-threadless'
+        plan_context.plan_dir_for(plan_id)
+        review_body = {
+            'id': 'RB1',
+            'kind': 'review_body',
+            'author': 'reviewer',
+            'body': 'The summary raises a missing guard.',
+            'path': '',
+            'line': 0,
+            'thread_id': '',
+        }
+        (hash_id,) = _stage_comments(plan_id, [review_body])
+        resolve_finding(plan_id, hash_id, 'fixed', detail='Fixed the guard.')
+
+        posted = []
+
+        def _fake_post(pr_number, body):
+            posted.append(body)
+            return {'status': 'success', 'operation': 'post_pr_comment', 'pr_number': pr_number}
+
+        with patch('github_pr._github.post_pr_comment', side_effect=_fake_post):
+            result, calls, _ = self._post(plan_id)
+
+        assert calls == []
+        assert result['deferred_until_commit'] == []
+        assert result['responded'] == [
+            {
+                'hash_id': hash_id,
+                'comment_id': 'RB1',
+                'transmit_mode': 'batched_issue_comment',
+                'resolved_on_provider': False,
+            }
+        ]
+        assert len(posted) == 1
+        assert 'Fixed the guard.' in posted[0]
+        assert 'Fix commit:' not in posted[0]
+
+
 def test_post_responses_against_a_resolved_empty_store_is_a_genuine_success(plan_context):
     """Matched negative control: a resolved store with nothing to send still succeeds."""
     plan_id = 'gh-store-empty-respond'

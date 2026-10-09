@@ -40,7 +40,10 @@ lives here:
   could not be delivered lands in ``untransmitted`` and drives ``status:
   partial``. It reads only findings the triage pass already resolved. A ``fixed``
   disposition is held, and listed in ``deferred_until_commit``, until the finding
-  carries a fix commit that the provider reports on the pull request head.
+  carries a fix commit that the provider reports on the pull request head. With
+  ``--send-unstamped-fixed`` a ``fixed`` finding that carries no fix commit is
+  transmitted in the same pass instead; one that carries a fix commit is held or
+  released by that commit either way.
 
 Beside the findings contract sits one auxiliary provider read:
 
@@ -65,7 +68,7 @@ status, never a silent ``done`` no-op. LLM consumers query the ledger via
 Usage:
     github_pr.py fetch-comments [--pr <number>] [--unresolved-only]
     github_pr.py fetch_findings --pr-number <N> --plan-id <P> [--required-bots [<csv>]] [--optional-bots [<csv>]]
-    github_pr.py post_responses --pr-number <N> --plan-id <P>
+    github_pr.py post_responses --pr-number <N> --plan-id <P> [--send-unstamped-fixed]
     github_pr.py bot_completion --pr-number <N> --bot-kind <kind> [--wait-seconds <S> [--interval-seconds <S>]]
     github_pr.py pull_request_runs --pr-number <N>
     github_pr.py --help
@@ -3074,7 +3077,17 @@ def cmd_post_responses(args):
     ``resolution_detail`` with the short commit id added, and a thread-bearing
     finding's thread is resolved in the same call. The predicate reads the stamp
     alone, so a fix a task produced and an inline fix are held and released the same
-    way. The other four dispositions are transmitted at once, as before.
+    way. The other four dispositions are transmitted at once.
+
+    **``--send-unstamped-fixed`` lifts the hold for a finding with no stamp.** The
+    hold is the default. A caller that runs no later respond pass passes the flag
+    (``args.send_unstamped_fixed``); a ``fixed`` finding that carries no
+    ``fix_commit_sha`` is then transmitted in this pass like the other four
+    dispositions, with the stored ``resolution_detail`` unchanged and no
+    ``Fix commit:`` line, instead of being listed with ``no_fix_commit``. The flag
+    changes nothing for a finding that does carry a stamp: its commit is still
+    checked against the pull request head, it is still held on the other three
+    reasons, and its reply still carries the commit id when it is released.
 
     **Idempotent across rounds, keyed on (finding, disposition).** The findings
     store is plan-scoped and persists between passes, and terminality
@@ -3106,6 +3119,9 @@ def cmd_post_responses(args):
 
     pr_number: int = args.pr_number
     plan_id: str = args.plan_id
+    # Read defensively: in-process callers hand this handler a namespace that
+    # carries only the two required attributes.
+    send_unstamped_fixed: bool = bool(getattr(args, 'send_unstamped_fixed', False))
 
     is_auth, auth_err = _github.check_auth()
     if not is_auth:
@@ -3189,23 +3205,31 @@ def cmd_post_responses(args):
         # stamp only, so a fix a task produced and a fix applied inline are held
         # alike. A held finding gets no reply and no resolve call, carries no
         # ``responded`` marker, and is therefore looked at again on every pass.
+        #
+        # ``--send-unstamped-fixed`` lifts the hold for one state only: a ``fixed``
+        # finding that carries NO stamp. A caller with no later respond pass sets it,
+        # because nothing would ever release that reply. Such a finding skips this
+        # block and is routed below with its stored reply unchanged — there is no
+        # commit to name. A finding that DOES carry a stamp takes the block whatever
+        # the flag says: its commit is still checked against the pull request head.
         if finding.get('resolution') == FIXED_RESOLUTION:
             fix_commit_sha = str(finding.get(FIX_COMMIT_FIELD) or '').strip().lower()
-            if fix_commit_sha and pr_head_sha is None:
-                pr_head_sha = str(_github.fetch_pr_head_sha(pr_number) or '').strip().lower()
-            hold_reason = _fix_commit_hold_reason(fix_commit_sha, pr_head_sha or '', reachable)
-            if hold_reason:
-                fix_task_number = finding.get(FIX_TASK_FIELD)
-                deferred.append(
-                    {
-                        'hash_id': hash_id,
-                        'reason': hold_reason,
-                        'fix_commit_sha': fix_commit_sha,
-                        'fix_task_number': '' if fix_task_number is None else str(fix_task_number),
-                    }
-                )
-                continue
-            reply_body = _reply_with_fix_commit(reply_body, fix_commit_sha)
+            if fix_commit_sha or not send_unstamped_fixed:
+                if fix_commit_sha and pr_head_sha is None:
+                    pr_head_sha = str(_github.fetch_pr_head_sha(pr_number) or '').strip().lower()
+                hold_reason = _fix_commit_hold_reason(fix_commit_sha, pr_head_sha or '', reachable)
+                if hold_reason:
+                    fix_task_number = finding.get(FIX_TASK_FIELD)
+                    deferred.append(
+                        {
+                            'hash_id': hash_id,
+                            'reason': hold_reason,
+                            'fix_commit_sha': fix_commit_sha,
+                            'fix_task_number': '' if fix_task_number is None else str(fix_task_number),
+                        }
+                    )
+                    continue
+                reply_body = _reply_with_fix_commit(reply_body, fix_commit_sha)
 
         detail = finding.get('detail')
         kind = _detail_field(detail, _KIND_DETAIL)
@@ -3429,6 +3453,21 @@ Examples:
                 'args': [
                     {'flags': ['--pr-number'], 'dest': 'pr_number', 'type': int, 'required': True, 'help': 'PR number'},
                     {'flags': ['--plan-id'], 'dest': 'plan_id', 'required': True, 'help': 'Plan ID for finding store'},
+                    {
+                        'flags': ['--send-unstamped-fixed'],
+                        'dest': 'send_unstamped_fixed',
+                        'action': 'store_true',
+                        'default': False,
+                        'help': (
+                            'Transmit a fixed finding that carries no stamped fix commit in this pass, with '
+                            'its stored reply unchanged, instead of holding it as deferred_until_commit '
+                            '(no_fix_commit). Passed by a caller that runs no later respond pass: every '
+                            'verification-feedback producer except finalize-feedback, whose held replies '
+                            'the phase-6-finalize hook transmits after it stamps the fix commit. A finding '
+                            'that does carry a stamp is unaffected: its commit is still checked against '
+                            'the pull request head.'
+                        ),
+                    },
                 ],
             },
             {

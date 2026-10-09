@@ -346,6 +346,93 @@ def test_the_respond_step_names_the_stamp_source_and_its_consequence():
     assert _ledger_lookups(step_8) == []
 
 
+# ---------------------------------------------------------------------------
+# Which respond call carries ``--send-unstamped-fixed``
+# ---------------------------------------------------------------------------
+
+#: The flag that sends a ``fixed`` reply with no stamped commit in the same pass.
+_SEND_UNSTAMPED_FLAG = '--send-unstamped-fixed'
+
+_GITHUB_RESPOND_CALL = 'workflow-integration-github:github_pr post_responses'
+
+_GITHUB_SCRIPT = get_skill_dir('plan-marshall', 'workflow-integration-github') / 'scripts' / 'github_pr.py'
+
+#: Two respond calls, one per form.
+_SYNTHETIC_RESPOND_CALLS = """\
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr \\
+  post_responses --pr-number {pr_number} --plan-id {plan_id}
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr \\
+  post_responses --pr-number {pr_number} --plan-id {plan_id} --send-unstamped-fixed
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar \\
+  post_responses --plan-id {plan_id} --project {project_key}
+```
+"""
+
+
+def _github_respond_calls(text: str) -> list[str]:
+    """The GitHub ``post_responses`` calls in ``text``."""
+    return [command for command in _commands(text) if _GITHUB_RESPOND_CALL in command]
+
+
+def test_respond_call_reader_tells_the_two_forms_apart():
+    """Both controls: the reader finds each GitHub form and leaves the Sonar call out."""
+    calls = _github_respond_calls(_SYNTHETIC_RESPOND_CALLS)
+
+    assert len(calls) == 2, calls
+    assert _SEND_UNSTAMPED_FLAG not in calls[0]
+    assert calls[1].endswith(_SEND_UNSTAMPED_FLAG)
+
+
+def test_the_respond_step_issues_the_flag_for_every_producer_but_finalize_feedback():
+    """Step 8 shows both forms and says which producer issues which."""
+    step_8 = _step_8()
+    calls = _github_respond_calls(step_8)
+
+    assert len(calls) == 2, calls
+    assert [_SEND_UNSTAMPED_FLAG in call for call in calls] == [False, True]
+    assert '| `finalize-feedback` | WITHOUT `--send-unstamped-fixed` |' in step_8
+    assert '`pr-state`, and the standalone `pr-comment` mode | WITH `--send-unstamped-fixed` |' in step_8
+    assert 'No later respond pass exists for these producers' in step_8
+    assert '`--send-unstamped-fixed` is a flag of the GitHub verb only' in step_8
+
+
+def test_the_respond_step_says_what_the_flag_costs_the_reviewer():
+    step_8 = _step_8()
+
+    assert '**What the flag costs the reviewer.**' in step_8
+    assert 'the reviewer is told "fixed"' in step_8
+    assert 'the edit is in the worktree and may not be committed yet' in step_8
+    assert 'names no commit' in step_8
+
+
+def test_the_finalize_hook_never_passes_the_flag():
+    """Item 7c runs the second respond pass itself, so its calls keep the hold."""
+    item_7c = _item_7c()
+    calls = _github_respond_calls(item_7c)
+
+    assert len(calls) == 1, calls
+    assert _SEND_UNSTAMPED_FLAG not in calls[0]
+    # (4a) names its respond pass by reference to that one call, and adds no flag.
+    assert 'with the same `github_pr post_responses` call as (0)' in item_7c
+    assert _SEND_UNSTAMPED_FLAG not in item_7c
+
+
+def test_the_github_verb_declares_the_flag_its_handler_reads():
+    """The declared flag and the attribute the handler reads are the same name."""
+    source = _GITHUB_SCRIPT.read_text(encoding='utf-8')
+
+    assert f"'flags': ['{_SEND_UNSTAMPED_FLAG}']" in source
+    assert "'dest': 'send_unstamped_fixed'" in source
+    assert "getattr(args, 'send_unstamped_fixed', False)" in source
+
+
 def test_the_github_verb_document_names_the_stamp_source_and_its_consequence():
     text = _GITHUB_SKILL.read_text(encoding='utf-8')
 
