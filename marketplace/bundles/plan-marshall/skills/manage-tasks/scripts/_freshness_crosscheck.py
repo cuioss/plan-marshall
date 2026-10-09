@@ -44,8 +44,7 @@ PREDICATE, not in the data.
 
 The two dimensions answer different questions and can disagree in both
 directions: an unattributable row may name a whole-tree ``verify``, and a
-perfectly attributable row may be a single-directory test run. A row may be cited
-as the gate's evidence only when it satisfies BOTH, which is why
+perfectly attributable row may be a single-directory test run. That is why
 :func:`cross_check_candidates` selects across them jointly rather than letting
 either pick a row the other would refuse.
 
@@ -288,13 +287,11 @@ REASON_VOCABULARY_UNIMPORTABLE = 'analysis_vocabulary_unimportable'
 #: vocabulary. The rows were read and said nothing usable — distinct from a row
 #: that said something and was refuted.
 REASON_SCOPE_UNREADABLE = 'build_scope_unreadable'
-#: ``stale`` reason (and ``scope_cross_check_reason``) when every readable row
-#: records a build narrower than the change. THE refusal this dimension exists to
-#: make.
+#: ``stale`` reason (and ``scope_cross_check_reason``). THE refusal this
+#: dimension exists to make.
 REASON_SCOPE_NARROW = 'build_scope_narrow'
-#: ``stale`` reason for the DISJOINT case: neither dimension refused, yet no
-#: single row satisfies both — every attributable row was narrow and every
-#: covering row was unattributable. Named apart from both dimensions' own reasons
+#: ``stale`` reason for the DISJOINT case, in which neither dimension refused.
+#: Named apart from both dimensions' own reasons
 #: because it is a property of the candidate list rather than a verdict either
 #: dimension reached, and a reader told ``build_scope_narrow`` here would go
 #: looking for a refusal the coverage check never made.
@@ -346,8 +343,7 @@ class RequiredCoverage:
     """What a build must have done to be evidence for THIS change.
 
     Attributes:
-        analyses: The analysis kinds the change can break, so a citable row's
-            canonical must perform at least these.
+        analyses: The analysis kinds the change can break.
         whole_tree: True when only a whole-tree run covers the change — the
             footprint spans several modules, touches cross-module infrastructure,
             or contains a path no registered module owns.
@@ -546,9 +542,8 @@ def _row_refusal(
     """Return why ``entry`` does not cover ``required``, or ``None`` when it does.
 
     Evaluated in order of how much the row said: a row nobody could parse, then a
-    canonical outside the vocabulary, then the two substantive refusals. The first
-    two are inabilities and the caller reports them as :data:`UNDETERMINED`; the
-    rest are positive refutations and fail the gate closed.
+    canonical outside the vocabulary, then the substantive refusals. The first
+    two are inabilities.
 
     Args:
         entry: A ``kind=build`` ledger row.
@@ -577,8 +572,7 @@ def _row_refusal(
 
 
 #: The per-row refusals that are INABILITIES rather than refutations. A candidate
-#: list in which every row took one of these routes is :data:`UNDETERMINED`; one
-#: in which any row took a different route is :data:`NARROW`.
+#: list in which every row took one of these routes is :data:`UNDETERMINED`.
 _INABILITY_REFUSALS = frozenset({ROW_ARGS_UNREADABLE, ROW_CANONICAL_UNKNOWN})
 
 
@@ -945,12 +939,9 @@ def cross_check_candidates(
     that is load-bearing for precision in the passing direction: a project that
     legitimately builds with several notations can have an unrelated row sitting
     ahead of a related one in file order, and returning on the first match would
-    refuse a plan whose real evidence is two lines further down. One row that
-    satisfies both dimensions is enough; only a list in which NONE does is a
-    refusal.
+    refuse a plan whose real evidence is two lines further down.
 
-    ⛔ **Selection is JOINT, not per-dimension.** A row is citable only when it is
-    admissible on attribution AND on coverage, so the two dimensions cannot each
+    ⛔ **Selection is JOINT, not per-dimension.** The two dimensions cannot each
     pick a row the other would refuse — which is exactly how a 573-test
     directory run came to be cited as ``corroborated`` for a whole-tree change.
     An admissible row is one its dimension either endorsed or could not judge;

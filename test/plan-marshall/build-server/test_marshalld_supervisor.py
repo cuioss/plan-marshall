@@ -360,6 +360,23 @@ def test_timeout_lets_the_wrapper_stop_a_build_that_ignores_sigterm(build_pid_af
     assert gone, f'build {build_pid_after_timeout} outlived the supervisor timeout'
 
 
+@pytest.mark.skipif(os.name == 'nt', reason='process groups and os.killpg are POSIX-only')
+def test_timeout_with_an_unsignallable_group_is_still_classified_as_timeout(tmp_path, monkeypatch):
+    """A group this process may not probe or kill leaves the job a timeout."""
+    real_killpg = os.killpg
+
+    def _killpg(pgid: int, signum: int) -> None:
+        if signum in (0, signal.SIGKILL):
+            raise PermissionError
+        real_killpg(pgid, signum)
+
+    monkeypatch.setattr(os, 'killpg', _killpg)
+
+    payload = _run('import signal; signal.pause()', tmp_path, timeout=1)
+
+    assert payload['status'] == 'timeout'
+
+
 def test_run_job_clean_env_excludes_secret(tmp_path):
     log_file = str(tmp_path / 'env.log')
     # SECRET_TOKEN is NOT in the whitelist, so build_baseline_env drops it: the

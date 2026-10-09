@@ -53,8 +53,7 @@ whole-tree runs against the same sha had timed out and failed. Every row that
 clears the primary predicate is therefore cross-checked on both dimensions:
 against the build notations the project's architecture resolves to, and against
 the canonical + scope the row itself records. See :mod:`_freshness_crosscheck`
-for the two three-valued verdicts, the joint selection that makes a row citable
-only when it satisfies both, the union rule that credits several rows at one
+for the two three-valued verdicts, the joint selection, the union rule that credits several rows at one
 sha, the split fail-direction, and the recorded refusal of a doc-only carve-out. Both checks remain build-TOOL-agnostic: a
 Maven/Gradle/npm build satisfies the gate whenever the architecture resolves that
 notation and its recorded canonical and scope cover the change.
@@ -112,9 +111,8 @@ Outcomes:
 - ``stale``        — the ledger has entries but none is citable: either none is a
                      successful build against the current working-tree sha, or
                      every such build names a notation this project's
-                     architecture does not resolve, or every such build is
-                     narrower than the change, or the attributable rows and the
-                     covering rows are disjoint. The gate MUST fail closed. The
+                     architecture does not resolve, or the attributable rows and
+                     the covering rows are disjoint. The gate MUST fail closed. The
                      verdict carries a ``reason`` naming WHY, because the routes
                      need different remedies and this gate must not assert a
                      cause it did not establish: ``worktree_mutated`` /

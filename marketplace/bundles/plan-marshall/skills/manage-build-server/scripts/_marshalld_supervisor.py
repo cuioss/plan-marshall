@@ -333,12 +333,13 @@ def _signal_job_group(pgid: int, signum: int) -> None:
         signum: The signal to deliver to every member of the group.
     """
     # ProcessLookupError: every member already exited, so nothing is left to stop.
-    with contextlib.suppress(ProcessLookupError):
+    # PermissionError: the remaining members are ones this process may not signal.
+    with contextlib.suppress(ProcessLookupError, PermissionError):
         os.killpg(pgid, signum)
 
 
 def _job_group_is_empty(pgid: int) -> bool:
-    """Report whether the job's process group has no member left to stop.
+    """Report whether the job's process group has no member this process can signal.
 
     Args:
         pgid: The process-group id — the child's pid.
@@ -346,7 +347,6 @@ def _job_group_is_empty(pgid: int) -> bool:
     try:
         os.killpg(pgid, 0)
     except (ProcessLookupError, PermissionError):
-        # PermissionError: no member is left that this process may signal.
         return True
     return False
 

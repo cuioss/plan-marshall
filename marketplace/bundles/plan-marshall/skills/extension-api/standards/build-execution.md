@@ -62,7 +62,7 @@ All build command invocations must return these fields.
 
 - `success` - Command completed with exit code 0
 - `error` - Command **ran to completion and failed** (non-zero exit code), or execution failed
-- `timeout` - Command exceeded **its own outer budget**, so this stack sent the kill and the elapsed equals the bound
+- `timeout` - Command exceeded **its own outer budget**, so this stack sent the kill
 - `killed` - Command was stopped by a signal, **not by its own outer budget**
 - `indeterminate` - The outcome **could not be established at all**
 
@@ -150,7 +150,7 @@ Build systems may include additional context for diagnostics.
 | `timeout_used_seconds` | int | All | The bound that was **applied** to the run — never the elapsed time. Omitted when the producer does not know the bound |
 | `timeout_source` | string | `timeout`, `killed` | Which path produced `timeout_used_seconds` (see below). Omitted together with the bound |
 | `command_key` | string | `timeout`, `killed` | The key a learned bound is stored under in `run-configuration.json` (see [R3](#r3-timeout-learning)) |
-| `tool_duration_seconds` | float | Tools reporting a run duration | Test tool's own reported run duration, mirroring `tests.duration_seconds`. Distinct from the top-level `duration_seconds` (wall clock): on a timeout the wall clock equals the timeout while this shows how long the suite itself took. |
+| `tool_duration_seconds` | float | Tools reporting a run duration | Test tool's own reported run duration, mirroring `tests.duration_seconds`. Distinct from the top-level `duration_seconds` (wall clock): this shows how long the suite itself took. |
 | `wrapper` | string | Maven, Python | Wrapper path used (e.g., `./mvnw`, `./pw`) |
 | `command_type` | string | npm | Execution type: `npm` or `npx` |
 

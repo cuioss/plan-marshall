@@ -184,9 +184,9 @@ class UnitTestSummary:
             reported it (e.g. pytest's `in 12.34s`), or None when the tool's
             output carries no duration. This is NOT wall-clock time for the
             build process — the two diverge precisely in the case that matters:
-            a run killed by the outer timeout has a wall clock equal to the
-            timeout while the tool's own duration shows how long the suite
-            actually took before whatever hung afterwards.
+            for a run killed by the outer timeout, the tool's own duration
+            shows how long the suite actually took before whatever hung
+            afterwards.
     """
 
     passed: int

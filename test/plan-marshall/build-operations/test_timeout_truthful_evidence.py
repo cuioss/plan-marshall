@@ -271,8 +271,7 @@ def test_in_process_timeout_attaches_green_evidence(capsys, tmp_path):
     scalars = _toon_scalars(emitted)
     assert scalars['status'] == 'timeout'
     assert scalars['tool_duration_seconds'] == str(_TOOL_DURATION)
-    # Wall clock and tool duration are DISTINCT: the wall clock is the timeout
-    # the run was killed at, the tool duration is how long the suite took.
+    # Wall clock and tool duration are DISTINCT.
     assert scalars['duration_seconds'] == str(_WALL_CLOCK_SECONDS)
     assert scalars['duration_seconds'] != scalars['tool_duration_seconds']
 

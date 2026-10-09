@@ -329,7 +329,7 @@ def execute_direct_base(
 
     * ``error`` — the build ran to completion and reported a failure.
     * ``timeout`` — the build exceeded the bound resolved above, so the kill
-      signal was OURS and the elapsed equals the bound.
+      signal was OURS.
     * ``killed`` — the run was stopped by a signal this stack did not decide
       on: the child died by one, or the wrapper forwarded one it received
       (``_run_bounded`` returned a negative value). The build reported nothing, so this is neither a
