@@ -2597,11 +2597,16 @@ def cmd_fetch_findings(args):
         # read is per-FETCH, so a fetch either resolved the merge candidate (nothing can
         # be undecidable) or did not (nothing can be stale).
         #
-        # ⚠ PRODUCER-SIDE DISCLOSURE ONLY: ``review_completeness``'s taxonomy has no
-        # member for this state yet, so no consumer routes on it. Widening the
-        # classifier is a plan of its own; this field is the prerequisite it needs, and
-        # the gap is REPORTED here rather than left to be discovered as an unreachable
-        # branch.
+        # ⚠ ``review_completeness``'s taxonomy has no member for this state, so the
+        # classifier does not route on it. Widening the classifier is a plan of its
+        # own; this field is the prerequisite it needs, and the gap is REPORTED here
+        # rather than left to be discovered as an unreachable branch.
+        #
+        # ONE consumer does read it: the ``no_unreviewed_commit`` recovery in
+        # ``automatic-review`` maps a bot named here to the review-on-record state
+        # ``undecidable`` (``github_re_review.REVIEW_ON_RECORD_UNDECIDABLE``), which
+        # resolves ``unmeasured``. Without that read the bot is in neither of the two
+        # lists above and would be taken for one with no review on record at all.
         'undecidable_participation_bots': [
             {'bot_kind': bot, 'evidence_kind': undecidable_participation[bot]}
             for bot in sorted(undecidable_participation)

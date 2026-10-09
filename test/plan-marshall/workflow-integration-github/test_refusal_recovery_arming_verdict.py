@@ -553,8 +553,14 @@ class TestTheRecoveryActionSelectorDerivesItsVerdict:
                 'claim_window_elapsed',
             ),
             # The no_unreviewed_commit arms: one per review-on-record state, the
-            # credited state split on whether a finding is pending, and one
-            # unmeasured arm per missing observation.
+            # credited state split on whether a finding is pending, one unmeasured
+            # arm per missing observation, and one for a review state the producer
+            # could not decide.
+            (
+                _no_unreviewed_verdict(awaitable, github_re_review.REVIEW_ON_RECORD_UNDECIDABLE, 0),
+                github_re_review.RECOVERY_ACTION_UNMEASURED,
+                'review_state_undecidable',
+            ),
             (
                 _no_unreviewed_verdict(awaitable, github_re_review.REVIEW_ON_RECORD_CREDITED, 0),
                 github_re_review.RECOVERY_ACTION_ACCEPT_REVIEW_ON_RECORD,

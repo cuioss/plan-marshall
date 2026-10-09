@@ -666,10 +666,18 @@ RECOVERY_ACTIONS = (
 
 #: Where a bot's review stands for the merge candidate — the first observation the
 #: ``no_unreviewed_commit`` arms resolve from. Read off the producer's participation
-#: return: ``credited`` when the bot is named in ``participated_bots[]``, ``stale`` when
-#: it is named only in ``stale_participation_bots[]``, ``absent`` when it is in neither.
+#: return, which has THREE disjoint per-bot outcomes plus the case of none:
+#: ``credited`` when the bot is named in ``participated_bots[]``; ``stale`` when it is
+#: named only in ``stale_participation_bots[]``; ``undecidable`` when the producer
+#: could not decide it — the bot is named in ``undecidable_participation_bots[]``
+#: (its comment was admissible evidence on a fetch whose merge candidate could not be
+#: read), or it is named in none of the three lists on a fetch the producer reports
+#: as incomplete (``fetch_complete: false``), where a review may sit in the part that
+#: was not read; ``absent`` only when it is in none of the three lists on a complete
+#: fetch.
 REVIEW_ON_RECORD_CREDITED = 'credited'
 REVIEW_ON_RECORD_STALE = 'stale'
+REVIEW_ON_RECORD_UNDECIDABLE = 'undecidable'
 REVIEW_ON_RECORD_ABSENT = 'absent'
 
 #: The declared review-on-record vocabulary. The CLI derives its accepted set from
@@ -677,6 +685,7 @@ REVIEW_ON_RECORD_ABSENT = 'absent'
 REVIEW_ON_RECORD_STATES = (
     REVIEW_ON_RECORD_CREDITED,
     REVIEW_ON_RECORD_STALE,
+    REVIEW_ON_RECORD_UNDECIDABLE,
     REVIEW_ON_RECORD_ABSENT,
 )
 
@@ -717,8 +726,17 @@ def resolve_recovery_action(
        ``unmeasured`` rather than a verdict: ``review_on_record`` (where the bot's
        review stands for the merge candidate — a :data:`REVIEW_ON_RECORD_STATES`
        member) and ``pending_findings`` (how many of its findings are still
-       unresolved?). Four verdicts follow, and only one of them posts anything:
+       unresolved?). Four verdicts follow, and only one of them posts anything;
+       a fifth review state is not a verdict at all:
 
+       - ``undecidable`` resolves ``unmeasured`` with reason
+         ``review_state_undecidable``, whatever ``pending_findings`` carries. The
+         producer could not say where the review stands — the merge candidate was
+         unreadable, or the fetch was incomplete — so the state is an observation
+         nobody made, exactly as an omitted one is. It is a member of the
+         vocabulary so that a caller holding that producer outcome has a value to
+         pass that is NOT ``absent``: mapping an unread review onto ``absent``
+         would select the one arm that posts.
        - ``credited`` with zero pending findings resolves
          ``accept_review_on_record`` — the review the pipeline was asking for
          exists and is fully handled.
@@ -858,6 +876,11 @@ def resolve_recovery_action(
         # an omitted one is: it resolves `unmeasured`, never the posting arm.
         if review_on_record not in REVIEW_ON_RECORD_STATES:
             return {**verdict, 'action': RECOVERY_ACTION_UNMEASURED, 'reason': 'no_review_observation'}
+        # The producer could not decide where the review stands. That is an
+        # unobserved review state under its own name, and it is checked before the
+        # findings observation so no value of that one can move it off `unmeasured`.
+        if review_on_record == REVIEW_ON_RECORD_UNDECIDABLE:
+            return {**verdict, 'action': RECOVERY_ACTION_UNMEASURED, 'reason': 'review_state_undecidable'}
         if pending_findings is None:
             return {**verdict, 'action': RECOVERY_ACTION_UNMEASURED, 'reason': 'no_findings_observation'}
         if review_on_record == REVIEW_ON_RECORD_STALE:
@@ -1857,9 +1880,11 @@ def main() -> int:
         choices=REVIEW_ON_RECORD_STATES,
         help=(
             "Where this bot's review stands for the merge candidate: 'credited' (named in "
-            "participated_bots), 'stale' (named only in stale_participation_bots) or 'absent' "
-            "(in neither). Read only for condition 'no_unreviewed_commit'; OMIT it when "
-            'unobserved (reads as unmeasured)'
+            "participated_bots), 'stale' (named only in stale_participation_bots), 'undecidable' "
+            '(named in undecidable_participation_bots, or in none of the three lists while '
+            "fetch_complete is false) or 'absent' (in none of the three lists on a complete "
+            "fetch). 'undecidable' resolves unmeasured and never the posting arm. Read only for "
+            "condition 'no_unreviewed_commit'; OMIT it when unobserved (reads as unmeasured)"
         ),
     )
     recovery.add_argument(

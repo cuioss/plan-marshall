@@ -800,6 +800,42 @@ def test_only_an_absent_review_resolves_the_posting_action():
 
 
 @pytest.mark.parametrize(
+    'pending_args',
+    [
+        pytest.param(('--pending-findings', '0'), id='no-pending-findings'),
+        pytest.param(('--pending-findings', '3'), id='pending-findings'),
+        pytest.param((), id='findings-unobserved'),
+    ],
+)
+def test_recovery_action_is_unmeasured_for_a_review_state_the_producer_could_not_decide(
+    pending_args, monkeypatch, capsys
+):
+    """Through the CLI: an undecidable review resolves no verdict, whatever the findings say.
+
+    The producer names a bot ``undecidable`` when it could not read the merge
+    candidate, so the review may exist. The posting arm is reserved for a review that
+    was observed to be absent; the matched control is the ``no-review`` case above.
+    """
+    verdict = _run_recovery_action(
+        monkeypatch,
+        capsys,
+        '--bot-kind',
+        NO_UNREVIEWED_COMMIT_BOT_KIND,
+        '--condition',
+        'no_unreviewed_commit',
+        '--review-on-record',
+        'undecidable',
+        *pending_args,
+    )
+
+    assert verdict['action'] == github_re_review.RECOVERY_ACTION_UNMEASURED
+    assert verdict['action'] != github_re_review.RECOVERY_ACTION_POST_ESCALATED_COMMAND
+    assert verdict['reason'] == 'review_state_undecidable'
+    assert verdict['review_on_record'] == github_re_review.REVIEW_ON_RECORD_UNDECIDABLE
+    assert github_re_review.REVIEW_ON_RECORD_UNDECIDABLE in verdict['review_on_record_states']
+
+
+@pytest.mark.parametrize(
     ('extra', 'reason'),
     [
         pytest.param(('--pending-findings', '0'), 'no_review_observation', id='no-review-observation'),

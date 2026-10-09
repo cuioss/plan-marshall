@@ -56,6 +56,8 @@ from pathlib import Path
 # arrangement of plain imports can express the ordering.
 importlib.import_module('github_ops')
 
+import _github_pr  # noqa: E402
+import bot_registry  # noqa: E402
 import github_re_review  # noqa: E402
 
 from conftest import get_skill_dir  # noqa: E402
@@ -266,6 +268,35 @@ class TestTheNoUnreviewedCommitRoutes:
         [target] = _targets_routing(github_re_review.RECOVERY_ACTION_AWAIT_TRIAGE)
 
         assert 'triage' in target, target
+
+    def test_the_undecidable_review_state_is_routed_and_posts_nothing(self):
+        """A review the producer could not place is routed apart from one observed absent.
+
+        The row is located by the ``reason`` the selector publishes for that state,
+        so the two must agree. It carries the non-posting wording of the routes with
+        a review on record; the posting route is the matched control above.
+        """
+        bots = bot_registry.bot_kinds()
+        assert bots, 'the registry declares no bot — the selector would answer registry_empty'
+        undecidable = github_re_review.resolve_recovery_action(
+            bots[0],
+            condition=_github_pr.REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT,
+            review_on_record=github_re_review.REVIEW_ON_RECORD_UNDECIDABLE,
+            pending_findings=0,
+        )
+        assert undecidable['action'] == github_re_review.RECOVERY_ACTION_UNMEASURED
+
+        targets = [
+            target
+            for action_cell, target in _ROUTE_ROWS
+            if f'`{undecidable["action"]}`' in action_cell and f'reason: {undecidable["reason"]}' in action_cell
+        ]
+
+        assert len(targets) == 1, f'expected one route for {undecidable["reason"]}, found {len(targets)}'
+        assert 'post nothing' in targets[0], targets[0]
+        assert 'escalated command' not in targets[0], targets[0]
+        assert 'after FIND' in targets[0], targets[0]
+        assert 'hand the wait back' not in targets[0], targets[0]
 
     def test_none_of_the_routes_claims_or_waits_for_a_window(self):
         """The reply is not a limit, so no route hands a wait back."""
