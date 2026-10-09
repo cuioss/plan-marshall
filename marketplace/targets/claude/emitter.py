@@ -37,6 +37,7 @@ from marketplace.targets.component_targets import (
     EXCLUDED_DIR_NAMES,
     excluded_emission_roots,
     is_under_any,
+    iter_source_files,
 )
 from marketplace.targets.fs_safety import is_within, safe_rmtree
 
@@ -108,6 +109,9 @@ def emit_bundle_verbatim(
     Raises:
         TargetScopeError: Some component in the bundle declares an
             invalid ``targets:`` scope.
+        SourceSymlinkError: The bundle holds a symbolic link, or an entry
+            resolving outside it — see ``iter_source_files``. Excluded and
+            scoped-out paths are not exempt.
 
     The destination bundle directory is wiped before writing so stale
     artifacts from prior emits (e.g. variant files for source canonicals
@@ -141,15 +145,17 @@ def emit_bundle_verbatim(
     # destination for an authoring typo. The tree is regenerable and the
     # failure is loud, so this is ordering hygiene rather than data loss.
     scoped_out = excluded_emission_roots(bundle_dir, target_name)
+    # Walked before the wipe for the same reason: a symbolic link anywhere in
+    # the bundle refuses the emit, and the refusal must not cost the previous
+    # output. The mirror copies by content, so a link would be followed.
+    sources = list(iter_source_files(bundle_dir))
 
     if dest_root.exists():
         safe_rmtree(dest_root, output_dir)
     dest_root.mkdir(parents=True, exist_ok=True)
 
     written: list[Path] = []
-    for source in sorted(bundle_dir.rglob('*')):
-        if not source.is_file():
-            continue
+    for source in sources:
         rel = source.relative_to(bundle_dir)
         if _is_excluded(rel) or is_under_any(rel, scoped_out):
             continue
