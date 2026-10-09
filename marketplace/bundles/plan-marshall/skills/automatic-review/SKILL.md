@@ -934,8 +934,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 - `{review_on_record}` — where `{bot_kind}`'s review stands on this pass's
   `github_pr fetch_findings` return:
   - `credited` when the bot is named in `participated_bots[]`. That list is the bot's review counted
-    for the merge candidate. It includes a review the commit check placed at an earlier commit when
-    the bot's own `no_unreviewed_commit` reply is newer than the merge-candidate commit — the producer
+    for the merge candidate. It includes a review the commit check placed at a commit before the merge
+    candidate when the bot's own `no_unreviewed_commit` reply is newer than the merge-candidate commit — the producer
     makes that decision and names such a bot in `reply_covered_participation_bots[]` as well; this
     step does not repeat the comparison.
   - `stale` when the bot is named only in `stale_participation_bots[]`: it has a review, and its reply
