@@ -408,8 +408,6 @@ Wrapper resolution is performed once in the shared factory's `_resolve_wrapper` 
 ## Timeout Learning
 
 All build skills integrate with adaptive timeout learning via `run-config`. The timeout for a command is adjusted based on historical execution times:
-- With `--timeout`: that value, for that run
-- Without it: the learned duration × 1.25 (25% safety margin), or the default (300s) when nothing is learned
 - On timeout failure: timeout is doubled for the next run (capped at 1800s)
 - Maximum cap: 1800 seconds (prevents exponential growth from successive timeouts)
 - Storage: `.plan/run-configuration.json` with command keys like `maven:verify`, `gradle:build`

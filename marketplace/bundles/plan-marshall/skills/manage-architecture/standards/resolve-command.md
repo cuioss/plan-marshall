@@ -163,7 +163,6 @@ The rest of the string is exactly what the architecture resolves. Running it rec
 | `--plan-id {plan_id}` (a real plan) | Carries `--plan-id {plan_id}` after `run` |
 | `--plan-id {plan_id}`, non-build `executable` | As resolved — only build notations are attributed |
 | `--plan-id {plan_id}`, `executable` already carrying `--plan-id` or `--project-dir` | As resolved — an existing routing flag is never doubled or overridden |
-| `--plan-id` violating the plan-id grammar | `status: error`, `error: invalid_plan_id` — the value never enters a command string |
 
 **`--audit-plan-id` alone never attributes the build.** It is consumed by the executor to scope the *resolve call's own* script-execution log entry and is stripped before `architecture` parses its arguments, so the handler never sees it. A resolve call carrying only `--audit-plan-id` returns an unattributed `executable`.
 

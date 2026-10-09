@@ -294,6 +294,72 @@ class TestRunJobTimeoutStopsTheWholeProcessTree:
         assert payload['status'] == 'timeout'
 
 
+# The job leader keeps the default SIGTERM disposition, so it exits at once. It
+# starts the wrapper in the same process group, with output detached from the
+# job's pipes.
+_LEADER_THEN_WRAPPER = (
+    'import signal, subprocess, sys\n'
+    'subprocess.Popen(\n'
+    '    [sys.executable, "-c", sys.argv[1], sys.argv[2], sys.argv[3]],\n'
+    '    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,\n'
+    ')\n'
+    'signal.pause()\n'
+)
+
+# The wrapper runs the build through the shipped ``_run_bounded``.
+_WRAPPER_RUNS_BUILD = (
+    'import subprocess, sys\n'
+    'from _build_execute import _run_bounded\n'
+    '_run_bounded(\n'
+    '    [sys.executable, "-c", sys.argv[2], sys.argv[1]],\n'
+    '    timeout_seconds=60, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,\n'
+    '    cwd=".", env=None, log_prefix="test", command_str="build",\n'
+    ')\n'
+)
+
+# The build ignores SIGTERM and publishes its own pid once the handler is set.
+_BUILD_IGNORES_SIGTERM = (
+    'import os, signal, sys\n'
+    'signal.signal(signal.SIGTERM, signal.SIG_IGN)\n'
+    "with open(sys.argv[1] + '.tmp', 'w') as handle:\n"
+    '    handle.write(str(os.getpid()))\n'
+    "os.replace(sys.argv[1] + '.tmp', sys.argv[1])\n"
+    'while True:\n'
+    '    signal.pause()\n'
+)
+
+
+@pytest.fixture
+def build_pid_after_timeout(tmp_path):
+    """Run the leader/wrapper/build chain to the supervisor timeout; yield the build's pid."""
+    pid_file = tmp_path / 'build.pid'
+    asyncio.run(
+        supervisor.run_job(
+            [sys.executable, '-c', _LEADER_THEN_WRAPPER, _WRAPPER_RUNS_BUILD, str(pid_file), _BUILD_IGNORES_SIGTERM],
+            str(tmp_path),
+            timeout=3,
+            log_file=str(tmp_path / 'job.log'),
+            env={
+                **supervisor.build_baseline_env(),
+                'PYTHONPATH': os.pathsep.join(sys.path),
+                'PLAN_BASE_DIR': str(tmp_path / 'plan'),
+            },
+        )
+    )
+    assert pid_file.exists(), 'the build never published its pid before the timeout'
+    build_pid = int(pid_file.read_text())
+    yield build_pid
+    with contextlib.suppress(ProcessLookupError):
+        os.kill(build_pid, signal.SIGKILL)
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='process groups and os.killpg are POSIX-only')
+def test_timeout_lets_the_wrapper_stop_a_build_that_ignores_sigterm(build_pid_after_timeout):
+    gone = _pid_is_gone(build_pid_after_timeout, deadline_seconds=_GRANDCHILD_EXIT_DEADLINE_SECONDS)
+
+    assert gone, f'build {build_pid_after_timeout} outlived the supervisor timeout'
+
+
 def test_run_job_clean_env_excludes_secret(tmp_path):
     log_file = str(tmp_path / 'env.log')
     # SECRET_TOKEN is NOT in the whitelist, so build_baseline_env drops it: the

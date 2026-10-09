@@ -846,7 +846,7 @@ class TestProjectDirPropagation:
     """Tests verifying --project-dir propagates to subprocess cwd.
 
     These regression-proof the worktree handling: when a plan runs in an
-    isolated worktree, callers pass --project-dir so subprocess.run uses the
+    isolated worktree, callers pass --project-dir so _run_bounded uses the
     correct cwd instead of inheriting the agent's working directory.
     """
 
@@ -855,7 +855,7 @@ class TestProjectDirPropagation:
     @patch('_build_execute.timeout_resolve', return_value=(300, 'learned'))
     @patch('_build_execute.create_log_file')
     def test_project_dir_propagates_to_subprocess_cwd(self, mock_log_file, mock_tget, mock_run, mock_tset):
-        """The explicit project_dir must become subprocess.run's cwd."""
+        """The explicit project_dir must become _run_bounded's cwd."""
         mock_log_file.return_value = '/tmp/test.log'
         mock_run.return_value = 0
 

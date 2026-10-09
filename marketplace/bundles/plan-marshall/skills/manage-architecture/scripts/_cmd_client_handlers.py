@@ -403,9 +403,8 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
     section for the full contract.
 
     When the top-level ``--plan-id`` names a real plan, a build ``executable``
-    is returned carrying that plan id (see :func:`_attribute_build_executable`);
-    a plan id that violates the plan-id grammar yields ``status: error`` with
-    ``error: invalid_plan_id``. Without a plan id, or with the ``NO_PLAN``
+    is returned carrying that plan id (see :func:`_attribute_build_executable`).
+    Without a plan id, or with the ``NO_PLAN``
     sentinel, the executable is exactly what the architecture resolves.
     """
     try:

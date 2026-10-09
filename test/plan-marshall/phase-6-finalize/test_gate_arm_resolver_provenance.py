@@ -50,7 +50,8 @@ _GATE_DOC = (
 #: and ``--project-dir``, each as ``--flag value`` or ``--flag=value``, may sit
 #: between the two.
 _RESOLVE_CALL = re.compile(
-    r'architecture[ \t]+(?:--(?:plan-id|project-dir)(?:=\S+|[ \t]+(?!--)\S+)[ \t]+)*resolve(?=\s|$)'
+    r'manage-architecture:architecture[ \t]+'
+    r'(?:--(?:plan-id|project-dir)(?:=\S+|[ \t]+(?!--)\S+)[ \t]+)*resolve(?=\s|$)'
 )
 
 #: The instruction that ties the arm's invocation to the resolve RETURN. An arm

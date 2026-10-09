@@ -143,6 +143,9 @@ _IS_WINDOWS = os.name == 'nt'
 # before its forwarded stop completed, leaving the build group running.
 _JOB_KILL_GRACE_SECONDS = 10
 
+# Seconds between two checks of whether the signalled job group is empty.
+_GROUP_POLL_SECONDS = 0.05
+
 
 def build_baseline_env(source: dict[str, str] | None = None) -> dict[str, str]:
     """Build a clean build-child environment from the server-side whitelist.
@@ -334,15 +337,28 @@ def _signal_job_group(pgid: int, signum: int) -> None:
         os.killpg(pgid, signum)
 
 
+def _job_group_is_empty(pgid: int) -> bool:
+    """Report whether the job's process group has no member left to stop.
+
+    Args:
+        pgid: The process-group id — the child's pid.
+    """
+    try:
+        os.killpg(pgid, 0)
+    except (ProcessLookupError, PermissionError):
+        # PermissionError: no member is left that this process may signal.
+        return True
+    return False
+
+
 async def _stop_job_tree(proc: asyncio.subprocess.Process) -> None:
     """Stop a timed-out job's process group and reap the child.
 
     On POSIX the child leads its own session, so its pid is the id of a process
     group holding every descendant that did not move itself elsewhere. The group
-    receives ``SIGTERM``, then — once the child has exited or
+    receives ``SIGTERM``, then — once the group is empty or
     :data:`_JOB_KILL_GRACE_SECONDS` has passed, whichever comes first —
-    ``SIGKILL``, which also ends any member that outlived the child. On Windows
-    only the child itself is killed.
+    ``SIGKILL``. On Windows only the child itself is killed.
 
     Args:
         proc: The timed-out build child.
@@ -352,11 +368,13 @@ async def _stop_job_tree(proc: asyncio.subprocess.Process) -> None:
         await proc.wait()
         return
     _signal_job_group(proc.pid, signal.SIGTERM)
-    # TimeoutError: the child ignored the SIGTERM for the whole grace period.
-    with contextlib.suppress(TimeoutError):
-        await asyncio.wait_for(proc.wait(), timeout=_JOB_KILL_GRACE_SECONDS)
+    # Reaped concurrently: an exited but unreaped child keeps the group non-empty.
+    reaped = asyncio.ensure_future(proc.wait())
+    deadline = time.monotonic() + _JOB_KILL_GRACE_SECONDS
+    while time.monotonic() < deadline and not _job_group_is_empty(proc.pid):
+        await asyncio.sleep(_GROUP_POLL_SECONDS)
     _signal_job_group(proc.pid, signal.SIGKILL)
-    await proc.wait()
+    await reaped
 
 
 async def run_job(

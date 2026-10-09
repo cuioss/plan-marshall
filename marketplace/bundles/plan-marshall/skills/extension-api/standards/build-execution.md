@@ -698,9 +698,9 @@ if result['status'] == 'error':
 │                              ▼                                               │
 │  2. EXECUTION (execute_direct)                                               │
 │     a. create_log_file(build_system, scope, plan_id=plan_id)                │
-│     b. timeout_get(command_key, default, project_dir)                       │
+│     b. timeout_resolve(command_key, default, project_dir)                   │
 │     c. detect_wrapper(project_dir)                                          │
-│     d. subprocess.run(cmd, timeout=timeout, cwd=project_dir)               │
+│     d. _run_bounded(cmd, timeout_seconds=timeout, cwd=project_dir)         │
 │     e. timeout_set(command_key, actual_duration, project_dir)               │
 │                              │                                               │
 │              ┌───────────────┼───────────────┐                               │
