@@ -31,6 +31,14 @@ REQUIRED_EXTRA_BUILDABLE_PATHS = frozenset(
     }
 )
 
+#: Required markdown test paths that must be passed for doc-test safety.
+REQUIRED_MARKDOWN_BUILDABLE_PATHS = frozenset(
+    {
+        'marketplace/**/*.md',
+        'test/**/*.md',
+    }
+)
+
 
 def _parse_verify_with_section(workflow_text: str | None = None) -> dict[str, Any]:
     """Extract the ``with:`` section of the ``verify:`` job from workflow text."""
@@ -114,6 +122,13 @@ def validate_extra_buildable_config(with_section: dict[str, Any]) -> tuple[bool,
             f'extra-buildable is missing required test-input paths: {sorted(missing)} (found: {sorted(paths)})',
         )
 
+    missing_markdown = REQUIRED_MARKDOWN_BUILDABLE_PATHS - paths
+    if missing_markdown:
+        return (
+            False,
+            f'extra-buildable is missing required markdown paths: {sorted(missing_markdown)} (found: {sorted(paths)})',
+        )
+
     return True, ''
 
 
@@ -129,8 +144,11 @@ def test_python_verify_workflow_pins_extra_buildable_paths():
 
     # Also assert that marketplace and test markdown paths are declared for test safety
     raw_extra = str(with_section.get('extra-buildable', ''))
-    assert 'marketplace/**/*.md' in raw_extra, 'extra-buildable should include marketplace/**/*.md'
-    assert 'test/**/*.md' in raw_extra, 'extra-buildable should include test/**/*.md'
+    paths = set(raw_extra.split())
+    missing_markdown = REQUIRED_MARKDOWN_BUILDABLE_PATHS - paths
+    assert not missing_markdown, (
+        f'extra-buildable missing required markdown paths: {sorted(missing_markdown)} (found: {sorted(paths)})'
+    )
 
 
 def test_validate_extra_buildable_passes_when_skip_on_docs_only_false():
@@ -174,3 +192,14 @@ def test_validate_extra_buildable_fails_when_required_path_missing():
     valid_2, reason_2 = validate_extra_buildable_config(with_section_2)
     assert not valid_2, 'Expected failure when .plan/marshal.json is missing'
     assert '.plan/marshal.json' in reason_2
+
+
+def test_validate_extra_buildable_fails_when_markdown_path_has_wrong_extension():
+    """Negative control: extra-buildable carrying .mdx globs instead of .md must fail."""
+    with_section = {
+        'skip-on-docs-only': True,
+        'extra-buildable': '.plan/marshal.json .claude/** marketplace/**/*.mdx test/**/*.mdx',
+    }
+    valid, reason = validate_extra_buildable_config(with_section)
+    assert not valid, 'Expected failure when markdown paths have .mdx extension'
+    assert 'marketplace/**/*.md' in reason or 'test/**/*.md' in reason
