@@ -1347,6 +1347,9 @@ _REPLY_COVERABLE_BOTS: tuple[str, ...] = guard_non_empty(
     '_REPLY_COVERABLE_BOTS',
     'CURRENCY_SUBJECT_BOTS filtered by bot_registry.no_unreviewed_commit_patterns',
 )
+# The non-vacuity claim stated at the binding site, where a reader of the cases below
+# looks for it. ``guard_non_empty`` raises first and names the derivation.
+assert _REPLY_COVERABLE_BOTS, 'no currency-tested bot declares a "nothing new to review" reply'
 _REVIEW_AT = _at(1)
 _COMMIT_B_AT = _at(10)
 _REPLY_BEFORE_COMMIT_B = _at(5)
@@ -1829,6 +1832,9 @@ _DISCLOSABLE_BOTS: tuple[str, ...] = guard_non_empty(
     '_DISCLOSABLE_BOTS',
     'CURRENCY_BLIND_BOTS filtered by review_body in bot_registry.participation_evidence',
 )
+# The non-vacuity claim stated at the binding site, where a reader of the cases below
+# looks for it. ``guard_non_empty`` raises first and names the derivation.
+assert _DISCLOSABLE_BOTS, 'no append-per-review bot publishes a review_body'
 
 #: The fields a verdict is read from. The disclosure must leave every one of them as it
 #: was, so each case compares them against the matched fetch that discloses nothing.
