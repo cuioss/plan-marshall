@@ -62,7 +62,7 @@ from _pyproject_cmd_discover import discover_python_modules
 from _pyproject_cmd_parse import parse_log, slice_failure_details
 from _pyproject_execute import _CONFIG, cmd_run
 from _test_scope_divergence import resolve_test_scope
-from _test_scope_targets import resolve_registered_targets
+from _test_scope_targets import resolve_registered_targets, resolve_test_directories
 from marketplace_paths import names_real_plan
 from toon_parser import serialize_toon
 
@@ -167,6 +167,20 @@ def _resolve_registered_modules(project_dir: str | None) -> frozenset[str]:
     return resolve_registered_targets(project_dir)
 
 
+def _resolve_test_directories(project_dir: str | None) -> frozenset[str]:
+    """Enumerate the existing second-level test directories for ``project_dir``.
+
+    The set the pure ``resolve_test_scope`` helper needs to return a narrow unit
+    only for a skill that has a test directory. Like
+    :func:`_resolve_registered_modules` it only delegates - to
+    ``_test_scope_targets.resolve_test_directories`` - so the I/O is requested
+    here and the pure module stays free of it. An empty return names no
+    directory, which the helper reports path by path in
+    ``narrow_units_unresolved``.
+    """
+    return resolve_test_directories(project_dir)
+
+
 def cmd_resolve_test_scope(args) -> int:
     """Resolve the scoped module set and scoped-vs-whole-tree divergence risk.
 
@@ -181,7 +195,15 @@ def cmd_resolve_test_scope(args) -> int:
     whole-tree pytest run is structurally possible (a discoverable Python module
     set exists). Prints the resolution as TOON: ``scoped_modules[]``,
     ``divergence_possible``, ``recommended_target``, ``unresolved_paths[]``,
-    ``whole_tree_available``, ``footprint_resolvable``, ``modules_resolvable``.
+    ``narrow_units[]``, ``narrow_units_unresolved[]``, ``whole_tree_available``,
+    ``footprint_resolvable``, ``modules_resolvable``.
+
+    ``narrow_units`` names the ``module-tests`` targets narrower than the module
+    that a single-module footprint points at (a skill's test directory, a changed
+    test file); ``narrow_units_unresolved`` names every changed path that
+    contributed none. Both are advisory for a step that wants a faster first
+    signal, both are empty for a footprint that does not resolve to exactly one
+    module, and both are emptied on the fail-toward-whole-tree branch below.
 
     Footprint source: ``--changed-paths`` (task-scoped) supersedes the whole-plan
     footprint; when it is absent a REAL ``--plan-id`` is required to resolve the
@@ -258,9 +280,22 @@ def cmd_resolve_test_scope(args) -> int:
     registered_modules = _resolve_registered_modules(project_dir)
     modules_resolvable = bool(registered_modules)
 
-    resolution = resolve_test_scope(footprint, globs, registered_modules)
+    resolution = resolve_test_scope(
+        footprint,
+        globs,
+        registered_modules,
+        test_directories=_resolve_test_directories(project_dir),
+    )
     if not footprint_resolvable or not modules_resolvable:
-        resolution = replace(resolution, divergence_possible=True, recommended_target=None)
+        # The narrow lists are emptied with the target they sit beside: a
+        # resolution that could not be substantiated offers no narrow unit either.
+        resolution = replace(
+            resolution,
+            divergence_possible=True,
+            recommended_target=None,
+            narrow_units=(),
+            narrow_units_unresolved=(),
+        )
     # discover_python_modules requires a concrete project root; when project_dir
     # is absent (args constructed dynamically or a test env lacking the
     # attribute) a whole-tree run is not structurally possible.
@@ -274,6 +309,8 @@ def cmd_resolve_test_scope(args) -> int:
                 'divergence_possible': resolution.divergence_possible,
                 'recommended_target': resolution.recommended_target,
                 'unresolved_paths': list(resolution.unresolved_paths),
+                'narrow_units': list(resolution.narrow_units),
+                'narrow_units_unresolved': list(resolution.narrow_units_unresolved),
                 'whole_tree_available': whole_tree_available,
                 'footprint_resolvable': footprint_resolvable,
                 'modules_resolvable': modules_resolvable,

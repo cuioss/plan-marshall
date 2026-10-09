@@ -26,6 +26,11 @@ width is deliberate: a name the pure half can derive must be checkable here.
 A target registered from a root ``build.py`` does not run is refused by
 ``require_test_path`` with a named error, never run against the wrong tree.
 
+Beside the registered targets this module enumerates the second-level test
+directories (:func:`resolve_test_directories`): the existing ``{tree}/{directory}``
+names the pure half needs in order to return a narrow unit only for a skill that
+actually has a test directory.
+
 This module performs I/O (a directory walk) on purpose. It is the I/O half of
 the pair whose pure half is ``_test_scope_divergence``: that module receives the
 set computed here as an argument and never reads the filesystem itself.
@@ -111,5 +116,56 @@ def resolve_registered_targets(project_dir: str | None) -> frozenset[str]:
         # ``bundles_root`` is ``{checkout}/marketplace/bundles``; the test roots
         # live at the checkout root, two levels up.
         return frozenset(bundle_names | _test_tree_names(bundles_root.parent.parent))
+    except OSError:
+        return frozenset()
+
+
+def _test_directory_names(project_root: Path) -> set[str]:
+    """Return the second-level test directories that hold tests, as ``{tree}/{directory}``.
+
+    One level below :func:`_test_tree_names`: for every top-level tree under a
+    test root, each child directory that holds at least one ``test_*.py`` at any
+    depth. The same underscore exclusion applies at both levels, so neither a
+    helper home nor a ``__pycache__`` is ever a unit.
+    """
+    names: set[str] = set()
+    for root in _TEST_ROOTS:
+        root_dir = project_root / root
+        if not root_dir.is_dir():
+            continue
+        for tree in root_dir.iterdir():
+            if tree.name.startswith(_EXCLUDED_NAME_PREFIX) or not tree.is_dir():
+                continue
+            for child in tree.iterdir():
+                if child.name.startswith(_EXCLUDED_NAME_PREFIX) or not child.is_dir():
+                    continue
+                if _holds_tests(child):
+                    names.add(f'{tree.name}/{child.name}')
+    return names
+
+
+def resolve_test_directories(project_dir: str | None) -> frozenset[str]:
+    """Enumerate the existing second-level test directories for ``project_dir``.
+
+    Each name is relative to its test root - ``{tree}/{directory}``, the form a
+    ``module-tests`` run accepts as a narrow target. This is the set the pure
+    resolver needs to tell a skill that HAS a test directory from one that does
+    not, without reading the filesystem itself.
+
+    Returns an EMPTY frozenset in the same two cases as
+    :func:`resolve_registered_targets`, for the same reason and under the same
+    deliberately narrow ``OSError`` guard. The pure resolver reads an empty set
+    as "no directory exists", so every skill path it is asked about is named in
+    ``narrow_units_unresolved`` rather than turned into a unit nothing backs.
+
+    Args:
+        project_dir: The checkout to enumerate, or ``None`` to resolve the
+            marketplace by ``find_marketplace_path``'s own fallback order.
+    """
+    try:
+        bundles_root = find_marketplace_path(Path(project_dir) if project_dir else None)
+        if bundles_root is None:
+            return frozenset()
+        return frozenset(_test_directory_names(bundles_root.parent.parent))
     except OSError:
         return frozenset()

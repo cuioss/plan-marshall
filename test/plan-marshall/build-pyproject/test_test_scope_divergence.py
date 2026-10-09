@@ -699,6 +699,228 @@ def test_a_declared_prefix_matches_a_directory_not_a_name_prefix():
 
 
 # =============================================================================
+# Narrow units: module-tests targets narrower than the module
+# =============================================================================
+
+
+class NarrowUnitCase(NamedTuple):
+    """One narrow-unit footprint with the two lists it must read.
+
+    Shared, by import, with the ``resolve-test-scope`` handler cases in
+    ``test_pyproject_build.py``.
+
+    Attributes:
+        footprint: The changed paths.
+        narrow_units: The expected ``narrow_units``, in sorted order.
+        narrow_units_unresolved: The expected ``narrow_units_unresolved``, in
+            footprint order.
+    """
+
+    footprint: tuple[str, ...]
+    narrow_units: tuple[str, ...]
+    narrow_units_unresolved: tuple[str, ...]
+
+
+#: The existing test directories the narrow-unit cases are resolved against.
+#: ``no-test-dir`` is deliberately absent: it is the skill with no test directory.
+NARROW_UNIT_TEST_DIRECTORIES = frozenset(
+    {
+        'plan-marshall/build-server',
+        'plan-marshall/manage-tasks',
+        'plan-marshall/manage-status',
+    }
+)
+
+_SKILL_BUILD_SERVER = 'marketplace/bundles/plan-marshall/skills/build-server/scripts/server.py'
+_SKILL_BUILD_SERVER_DOC = 'marketplace/bundles/plan-marshall/skills/build-server/SKILL.md'
+_SKILL_MANAGE_TASKS = 'marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/manage-tasks.py'
+_SKILL_MANAGE_STATUS = 'marketplace/bundles/plan-marshall/skills/manage-status/scripts/manage_status.py'
+_SKILL_WITHOUT_TEST_DIR = 'marketplace/bundles/plan-marshall/skills/no-test-dir/scripts/x.py'
+_CHANGED_TEST_FILE = 'test/plan-marshall/build-server/test_server.py'
+
+#: The footprints the deliverable names, keyed by case id.
+NARROW_UNIT_CASES: dict[str, NarrowUnitCase] = {
+    'one_skill': NarrowUnitCase(
+        footprint=(_SKILL_BUILD_SERVER, _SKILL_BUILD_SERVER_DOC),
+        narrow_units=('plan-marshall/build-server',),
+        narrow_units_unresolved=(),
+    ),
+    'three_skills': NarrowUnitCase(
+        footprint=(_SKILL_MANAGE_TASKS, _SKILL_BUILD_SERVER, _SKILL_MANAGE_STATUS),
+        narrow_units=(
+            'plan-marshall/build-server',
+            'plan-marshall/manage-status',
+            'plan-marshall/manage-tasks',
+        ),
+        narrow_units_unresolved=(),
+    ),
+    'skill_without_test_directory': NarrowUnitCase(
+        footprint=(_SKILL_WITHOUT_TEST_DIR, _SKILL_BUILD_SERVER),
+        narrow_units=('plan-marshall/build-server',),
+        narrow_units_unresolved=(_SKILL_WITHOUT_TEST_DIR,),
+    ),
+    'changed_test_file': NarrowUnitCase(
+        footprint=(_CHANGED_TEST_FILE,),
+        narrow_units=('plan-marshall/build-server/test_server.py',),
+        narrow_units_unresolved=(),
+    ),
+}
+
+_NARROW_UNIT_PARAMS = [pytest.param(case, id=case_id) for case_id, case in NARROW_UNIT_CASES.items()]
+
+
+@pytest.mark.parametrize('case', _NARROW_UNIT_PARAMS)
+def test_narrow_units_for_a_single_module_footprint(case):
+    """Each named footprint reads its narrow units and names what contributed none."""
+    resolution = resolve_test_scope(
+        list(case.footprint),
+        _GLOBS,
+        _REGISTERED_MODULES,
+        test_directories=NARROW_UNIT_TEST_DIRECTORIES,
+    )
+
+    assert resolution.narrow_units == case.narrow_units
+    assert resolution.narrow_units_unresolved == case.narrow_units_unresolved
+
+
+@pytest.mark.parametrize('case', _NARROW_UNIT_PARAMS)
+def test_supplying_the_directory_set_changes_no_other_field(case):
+    """The module-level answer is identical with and without the directory set.
+
+    The call WITHOUT the parameter is the pre-change call, so comparing the two
+    pins "identical before and after" directly instead of against a copied
+    expectation. The matched control is the case above: the same supplied set
+    does produce narrow units, so equality here is not two no-op calls agreeing.
+    """
+    without = resolve_test_scope(list(case.footprint), _GLOBS, _REGISTERED_MODULES)
+    supplied = resolve_test_scope(
+        list(case.footprint),
+        _GLOBS,
+        _REGISTERED_MODULES,
+        test_directories=NARROW_UNIT_TEST_DIRECTORIES,
+    )
+
+    assert supplied.recommended_target == without.recommended_target == 'plan-marshall'
+    assert supplied.scoped_modules == without.scoped_modules
+    assert supplied.divergence_possible is without.divergence_possible
+    assert supplied.unresolved_paths == without.unresolved_paths
+
+
+def test_a_call_without_the_directory_set_reads_both_narrow_lists_empty():
+    """The default means "no set supplied": no narrow list, every other field as before.
+
+    The expected values are the ones the same call returned before the two
+    fields existed (see ``test_single_module_footprint_is_the_positive_control``,
+    which asserts them on this footprint and was not edited).
+    """
+    resolution = resolve_test_scope([_PROD_PLAN_MARSHALL, _DOC], _GLOBS, _REGISTERED_MODULES)
+
+    assert resolution.narrow_units == ()
+    assert resolution.narrow_units_unresolved == ()
+    assert resolution.scoped_modules == ('plan-marshall',)
+    assert resolution.divergence_possible is False
+    assert resolution.recommended_target == 'plan-marshall'
+    assert resolution.unresolved_paths == ()
+
+
+def test_an_empty_directory_set_is_not_the_same_as_none():
+    """A supplied-but-empty set names every skill path instead of staying silent.
+
+    ``None`` says nobody looked; an empty set says somebody looked and no test
+    directory exists. Collapsing the two would report an unenumerable tree as
+    "nothing to narrow" with no path named.
+    """
+    resolution = resolve_test_scope([_SKILL_BUILD_SERVER], _GLOBS, _REGISTERED_MODULES, test_directories=frozenset())
+
+    assert resolution.narrow_units == ()
+    assert resolution.narrow_units_unresolved == (_SKILL_BUILD_SERVER,)
+
+
+@pytest.mark.parametrize(
+    'footprint',
+    [
+        pytest.param([_PROD_PLAN_MARSHALL, _PROD_PM_PYTHON], id='two_modules'),
+        pytest.param([_UNMAPPED_DOC], id='no_module'),
+        pytest.param([], id='empty_footprint'),
+    ],
+)
+def test_a_footprint_that_is_not_single_module_reads_no_narrow_list(footprint):
+    """Both lists are empty unless the footprint resolves to exactly one module."""
+    directories = NARROW_UNIT_TEST_DIRECTORIES | {'plan-marshall/foo', 'pm-dev-python/baz'}
+
+    resolution = resolve_test_scope(footprint, _GLOBS, _REGISTERED_MODULES, test_directories=directories)
+
+    assert resolution.narrow_units == ()
+    assert resolution.narrow_units_unresolved == ()
+
+
+def test_narrow_units_survive_a_whole_tree_verdict_for_one_module():
+    """One module plus a path owning none: whole tree warranted, narrow unit still named.
+
+    The narrow unit is a faster first signal, not a verdict. The whole-tree
+    answer is unchanged, and the path that owns no module is named in BOTH
+    disclosure lists - it is covered by neither a scoped nor a narrow run.
+    """
+    footprint = [_SKILL_BUILD_SERVER, _UNMAPPED_DOC]
+
+    resolution = resolve_test_scope(
+        footprint, _GLOBS, _REGISTERED_MODULES, test_directories=NARROW_UNIT_TEST_DIRECTORIES
+    )
+
+    assert resolution.divergence_possible is True
+    assert resolution.recommended_target is None
+    assert resolution.unresolved_paths == (_UNMAPPED_DOC,)
+    assert resolution.narrow_units == ('plan-marshall/build-server',)
+    assert resolution.narrow_units_unresolved == (_UNMAPPED_DOC,)
+
+
+@pytest.mark.parametrize(
+    ('path', 'reason'),
+    [
+        pytest.param(
+            'marketplace/bundles/plan-marshall/.claude-plugin/plugin.json',
+            'the path is not inside a skill',
+            id='bundle_file_outside_skills',
+        ),
+        pytest.param(
+            'test/plan-marshall/build-server/conftest.py',
+            'a conftest is not a test file',
+            id='conftest',
+        ),
+        pytest.param(
+            'test/plan-marshall/build-server/_fixtures.py',
+            'a helper is not a test file',
+            id='test_helper',
+        ),
+    ],
+)
+def test_paths_that_contribute_no_narrow_unit_are_named(path, reason):
+    """NEGATIVE CONTROLS: a path of no narrow shape is named, never dropped."""
+    resolution = resolve_test_scope(
+        [path, _SKILL_BUILD_SERVER], _GLOBS, _REGISTERED_MODULES, test_directories=NARROW_UNIT_TEST_DIRECTORIES
+    )
+
+    assert resolution.narrow_units == ('plan-marshall/build-server',)
+    assert resolution.narrow_units_unresolved == (path,), f'{path!r} was not named although {reason}'
+
+
+def test_a_test_file_outside_the_resolved_module_is_not_a_narrow_unit():
+    """A changed test file under an unregistered tree is no unit of another module."""
+    foreign_test = 'test/not-a-real-bundle/test_y.py'
+
+    resolution = resolve_test_scope(
+        [_SKILL_BUILD_SERVER, foreign_test],
+        _GLOBS,
+        _REGISTERED_MODULES,
+        test_directories=NARROW_UNIT_TEST_DIRECTORIES,
+    )
+
+    assert resolution.scoped_modules == ('plan-marshall',)
+    assert resolution.narrow_units == ('plan-marshall/build-server',)
+    assert resolution.narrow_units_unresolved == (foreign_test,)
+
+
+# =============================================================================
 # Cross-check: the two independently-declared root sets must agree
 # =============================================================================
 

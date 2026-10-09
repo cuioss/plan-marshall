@@ -530,7 +530,11 @@ import pytest  # noqa: E402
 
 # The declared-mapping fixture is defined once, beside the pure-function cases,
 # and imported here so the handler cases assert on the same inputs.
-from test_test_scope_divergence import DECLARED_MAPPING_FIXTURE  # noqa: E402
+from test_test_scope_divergence import (  # noqa: E402
+    DECLARED_MAPPING_FIXTURE,
+    NARROW_UNIT_CASES,
+    NARROW_UNIT_TEST_DIRECTORIES,
+)
 from toon_parser import parse_toon  # noqa: E402
 
 # Controlled build.map globs mirroring the real repo behaviour: everything
@@ -840,6 +844,87 @@ def test_resolve_test_scope_declared_mapping_target_is_a_real_registered_target(
     modules = pyproject_build._resolve_registered_modules(str(PROJECT_ROOT))
 
     assert DECLARED_MAPPING_FIXTURE.mapped_target in modules
+
+
+# Narrow units: the handler supplies the existing test directories and prints
+# the two narrow lists beside the module-level answer.
+
+
+def _run_resolve_scope_with_directories(capsys, *, changed_paths, directories):
+    """Invoke the handler with the test-directory enumeration pinned to ``directories``.
+
+    The registered-target enumeration runs for real, so ``plan-marshall`` is a
+    registered target because this repository carries the bundle.
+    """
+    args = _resolve_scope_args(changed_paths=changed_paths)
+    with (
+        patch('extension_base._read_build_map_globs', return_value=_SCOPE_BUILD_MAP_GLOBS),
+        patch.object(pyproject_build, '_resolve_test_directories', return_value=directories),
+    ):
+        rc = pyproject_build.cmd_resolve_test_scope(args)
+    assert rc == 0
+    return parse_toon(capsys.readouterr().out)
+
+
+@pytest.mark.parametrize('case', [pytest.param(case, id=case_id) for case_id, case in NARROW_UNIT_CASES.items()])
+def test_resolve_test_scope_prints_the_narrow_units(capsys, case):
+    """Each named footprint prints its narrow units and names what contributed none.
+
+    ``recommended_target`` is asserted too: the module-level answer the handler
+    printed before the narrow lists existed is unchanged in every case.
+    """
+    out = _run_resolve_scope_with_directories(
+        capsys,
+        changed_paths=','.join(case.footprint),
+        directories=NARROW_UNIT_TEST_DIRECTORIES,
+    )
+
+    assert out['status'] == 'success'
+    assert out['narrow_units'] == list(case.narrow_units)
+    assert out['narrow_units_unresolved'] == list(case.narrow_units_unresolved)
+    assert out['scoped_modules'] == ['plan-marshall']
+    assert out['recommended_target'] == 'plan-marshall'
+    assert out['divergence_possible'] is False
+    assert out['unresolved_paths'] == []
+
+
+def test_resolve_test_scope_enumerates_this_repositorys_test_directories(capsys):
+    """With nothing pinned, a real skill path reads its real test directory.
+
+    The pinned cases above cannot tell a handler that passes the enumerated set
+    from one that passes nothing; this one runs the enumeration for real.
+    """
+    out = _run_resolve_scope(capsys, changed_paths=_SINGLE_MODULE_PATH)
+
+    assert out['narrow_units'] == ['plan-marshall/build-pyproject']
+    assert out['narrow_units_unresolved'] == []
+    assert out['recommended_target'] == 'plan-marshall'
+
+
+def test_resolve_test_scope_empties_the_narrow_lists_when_it_fails_toward_the_whole_tree(capsys):
+    """An unenumerable target set prints no narrow unit beside its null target.
+
+    Matched control: the same footprint with the same directory set prints a
+    narrow unit when the registered targets do enumerate (the parametrized case
+    above), so the empty lists here follow from the targets alone. This pins the
+    printed outcome; it does not isolate the handler's own reset, because a
+    footprint that resolves no module already reads both lists empty.
+    """
+    case = NARROW_UNIT_CASES['skill_without_test_directory']
+    args = _resolve_scope_args(changed_paths=','.join(case.footprint))
+    with (
+        patch('extension_base._read_build_map_globs', return_value=_SCOPE_BUILD_MAP_GLOBS),
+        patch.object(pyproject_build, '_resolve_registered_modules', return_value=frozenset()),
+        patch.object(pyproject_build, '_resolve_test_directories', return_value=NARROW_UNIT_TEST_DIRECTORIES),
+    ):
+        rc = pyproject_build.cmd_resolve_test_scope(args)
+
+    assert rc == 0
+    out = parse_toon(capsys.readouterr().out)
+    assert out['modules_resolvable'] is False
+    assert out['recommended_target'] is None
+    assert out['narrow_units'] == []
+    assert out['narrow_units_unresolved'] == []
 
 
 def test_resolve_test_scope_threads_the_caller_enumerated_module_set(capsys):

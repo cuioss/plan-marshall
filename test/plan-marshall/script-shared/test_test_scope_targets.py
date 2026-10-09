@@ -163,8 +163,96 @@ def test_an_unforeseen_error_is_not_relabelled_as_an_empty_set(checkout, monkeyp
 
 
 # ---------------------------------------------------------------------------
+# Second-level test directories
+# ---------------------------------------------------------------------------
+
+
+def test_second_level_directories_holding_tests_are_enumerated(checkout):
+    """Each ``{tree}/{directory}`` holding a test is named, relative to its root."""
+    _add_file(checkout, 'test/alpha/some-skill/test_alpha.py')
+    # The only test file sits below the second level.
+    _add_file(checkout, 'test/alpha/deep-skill/nested/test_deep.py')
+    _add_file(checkout, 'test/standalone/unit/test_standalone.py')
+    _add_file(checkout, 'tests/sibling/unit/test_sibling.py')
+
+    directories = targets.resolve_test_directories(str(checkout))
+
+    assert directories == frozenset(
+        {
+            'alpha/some-skill',
+            'alpha/deep-skill',
+            'standalone/unit',
+            'sibling/unit',
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    ('relative', 'reason'),
+    [
+        pytest.param('test/alpha/fixtures/data.json', 'the directory holds no test file', id='no_tests'),
+        pytest.param('test/alpha/_helpers/test_x.py', 'the directory starts with an underscore', id='helper_directory'),
+        pytest.param('test/alpha/__pycache__/test_x.py', 'a cache directory starts with an underscore', id='pycache'),
+        pytest.param('test/_shared/unit/test_x.py', 'the tree itself starts with an underscore', id='shared_tree'),
+        pytest.param('test/alpha/test_top.py', 'a file directly in the tree is not a directory', id='file_in_tree'),
+    ],
+)
+def test_second_level_names_that_are_not_enumerated(checkout, relative, reason):
+    """NEGATIVE CONTROLS: each of these contributes no directory.
+
+    Matched against ``alpha/some-skill``, which the same walk does enumerate.
+    """
+    _add_file(checkout, relative)
+    _add_file(checkout, 'test/alpha/some-skill/test_alpha.py')
+
+    directories = targets.resolve_test_directories(str(checkout))
+
+    assert directories == frozenset({'alpha/some-skill'}), f'{relative!r} was enumerated although {reason}'
+
+
+def test_unresolvable_marketplace_root_enumerates_no_directory(tmp_path, monkeypatch):
+    """No marketplace root means no checkout to walk - the set is empty."""
+    _add_file(tmp_path, 'test/alpha/some-skill/test_alpha.py')
+    monkeypatch.setattr(targets, 'find_marketplace_path', lambda _project_dir: None)
+
+    assert targets.resolve_test_directories(str(tmp_path)) == frozenset()
+
+
+def test_a_directory_walk_that_raises_oserror_enumerates_nothing(checkout, monkeypatch):
+    """An unreadable directory empties the set instead of escaping as a crash."""
+
+    def _unreadable(_project_root):
+        raise OSError('permission denied')
+
+    monkeypatch.setattr(targets, '_test_directory_names', _unreadable)
+
+    assert targets.resolve_test_directories(str(checkout)) == frozenset()
+
+
+def test_an_unforeseen_directory_walk_error_stays_loud(checkout, monkeypatch):
+    """Only ``OSError`` is absorbed; anything else stays loud."""
+
+    def _broken(_project_root):
+        raise ValueError('a bug, not an unreadable directory')
+
+    monkeypatch.setattr(targets, '_test_directory_names', _broken)
+
+    with pytest.raises(ValueError, match='a bug'):
+        targets.resolve_test_directories(str(checkout))
+
+
+# ---------------------------------------------------------------------------
 # The real resolver, against this repository
 # ---------------------------------------------------------------------------
+
+
+def test_this_repository_enumerates_its_second_level_test_directories():
+    """End to end, with nothing patched: this very directory is enumerated."""
+    directories = targets.resolve_test_directories(str(PROJECT_ROOT))
+
+    assert 'plan-marshall/script-shared' in directories
+    assert 'plan-marshall/build-pyproject' in directories
+    assert not any(name.split('/')[0].startswith('_') for name in directories)
 
 
 def test_this_repository_registers_its_bundles_and_its_non_bundle_test_trees():
