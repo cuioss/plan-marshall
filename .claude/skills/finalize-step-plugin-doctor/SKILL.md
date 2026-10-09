@@ -139,10 +139,12 @@ The gate runs in exactly one of three modes. Evaluate them in this fixed precede
 
 | Trigger pattern | Family | Why a union entry matching it forces whole-tree |
 |-----------------|--------|--------------------------------------------------|
-| `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/**` | F1 | A plugin-doctor analyzer or rule script changed; a rule change re-classifies skills the diff never touched |
-| `marketplace/bundles/plan-marshall/skills/plan-doctor/**` | F1 | A plan-doctor analyzer or rule script changed; same re-classification |
+| `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/**` | F1 | Any file of the plugin-doctor skill changed — matched as a whole because its analyzers and rule scripts are not separable from the rest by path; a rule change re-classifies skills the diff never touched |
+| `marketplace/bundles/plan-marshall/skills/plan-doctor/**` | F1 | Any file of the plan-doctor skill changed; same re-classification |
 | `marketplace/targets/*/__init__.py` | verdict-input | `targets-scope-invalid` reads the registered target names from it; renaming one invalidates a `targets:` declaration in a skill the diff never touched |
 | `marketplace/bundles/*/.claude-plugin/plugin.json` | verdict-input | `targets-scope-invalid` reads the bundle's `targets` scope from it and anchors findings at the manifest itself and at any component of the bundle that widens the scope |
+| `marketplace/bundles/*/agents/*.md` | verdict-input | `targets-scope-invalid` reads the `targets:` frontmatter of every bundle agent and anchors the finding at the agent file, outside every skill directory |
+| `marketplace/bundles/*/commands/*.md` | verdict-input | Same as a bundle agent, for a bundle command |
 | `**/CLAUDE.md` | verdict-input | The two agentfile analyzers lint it and anchor the finding at the agent file, outside every skill directory |
 | `**/AGENTS.md` | verdict-input | Same as `CLAUDE.md` |
 

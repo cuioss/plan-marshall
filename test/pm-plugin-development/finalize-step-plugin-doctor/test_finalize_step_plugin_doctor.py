@@ -96,8 +96,8 @@ def extract_skill_dirs(modified_files: list[str]) -> list[str]:
 
 
 # The whole-tree trigger patterns the mode-selection predicate below matches
-# against. Two families: F1 (a changed plugin-doctor / plan-doctor analyzer or
-# rule script re-classifies skills the diff never touched) and verdict-input (a
+# against. Two families: F1 (any changed file of the plugin-doctor / plan-doctor
+# skills, whose rules re-classify skills the diff never touched) and verdict-input (a
 # file outside every skill directory whose content the gate's verdict reads).
 #
 # This tuple is the test-side definition. TestTriggerSetMatchesWrapperDocument
@@ -108,6 +108,8 @@ _WHOLE_TREE_TRIGGER_PATTERNS = (
     'marketplace/bundles/plan-marshall/skills/plan-doctor/**',
     'marketplace/targets/*/__init__.py',
     'marketplace/bundles/*/.claude-plugin/plugin.json',
+    'marketplace/bundles/*/agents/*.md',
+    'marketplace/bundles/*/commands/*.md',
     '**/CLAUDE.md',
     '**/AGENTS.md',
 )
@@ -407,6 +409,22 @@ _UNRELATED_NON_SKILL_UNIONS = (
     pytest.param(['marketplace/bundles/plan-marshall/agents/plugin.json'], id='plugin-json-outside-manifest-dir'),
     pytest.param(['doc/NOT-CLAUDE.md', 'doc/CLAUDE.md.bak'], id='agent-file-near-miss-names'),
 )
+
+
+@pytest.mark.parametrize(
+    ('path', 'expected'),
+    [
+        ('marketplace/bundles/plan-marshall/agents/execution-context.md', _GATE_MODE_WHOLE_TREE),
+        ('marketplace/bundles/pm-dev-java/commands/java-create.md', _GATE_MODE_WHOLE_TREE),
+        ('marketplace/bundles/plan-marshall/agents/nested/deeper.md', _GATE_MODE_SKIP_CLEAN),
+        ('marketplace/bundles/plan-marshall/agents/notes.txt', _GATE_MODE_SKIP_CLEAN),
+        ('doc/agents/overview.md', _GATE_MODE_SKIP_CLEAN),
+    ],
+    ids=['bundle-agent', 'bundle-command', 'nested-below-agents', 'non-markdown', 'agents-dir-outside-bundles'],
+)
+def test_bundle_component_file_alone_in_the_union_selects_its_mode(path: str, expected: str) -> None:
+    """A bundle agent or command is a verdict input; a look-alike path is not."""
+    assert select_gate_mode([path]) == expected
 
 
 class TestVerdictInputTriggerOverUnion:
