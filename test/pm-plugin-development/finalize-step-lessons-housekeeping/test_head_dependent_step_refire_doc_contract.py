@@ -11,6 +11,12 @@ Two independent assertions guard that, because neither sees what the other does:
   which catches an instruction to read the retired field wherever it appears;
 * a **name-keyed** check over the three passages that describe the housekeeping
   step in prose, which catches a statement the call-shape sweep cannot see.
+
+A third group pins the step's decision-log contract (Step 6): one entry per
+lesson the firing changed — removed, promoted, adapted — and exactly one
+aggregate entry per firing that counts the lessons examined, carried over and
+retained, naming the recorded HEAD on a delta firing. A retained lesson gets no
+entry of its own.
 """
 
 from __future__ import annotations
@@ -173,3 +179,190 @@ def test_passage_describing_the_step_does_not_name_the_retired_field(
     assert passages, f'no passage naming {_STEP_ID} was located in {doc.name}'
     offending = [passage for passage in passages if _RETIRED_FIELD in passage]
     assert not offending, f'{doc.name} still describes {_STEP_ID} in terms of `{_RETIRED_FIELD}`: {offending}'
+
+
+# ---------------------------------------------------------------------------
+# Step 6 — the decision-log contract
+# ---------------------------------------------------------------------------
+
+_MUTATING_OUTCOMES = ('removed', 'promoted', 'adapted')
+_AGGREGATE_COUNTS = ('examined', 'carried_over', 'retained')
+_AGGREGATE_MARKER = 'firing summary:'
+
+# A per-lesson entry as the step writes it: an outcome alternation in braces,
+# followed by the lesson id placeholder.
+_PER_LESSON_ENTRY = re.compile(r'\{([a-z|]+)\}\s+\{id\}')
+
+# An instruction to give a retained lesson an entry of its own, in either of
+# the two shapes it can take: `retained` offered as a per-lesson outcome, or
+# prose telling the reader to log the decision not to act.
+_PER_LESSON_RETAIN = re.compile(
+    r'\{[a-z|]*\bretained\b[a-z|]*\}\s+\{id\}|no-action decision|every\*{0,2} deliberate retain'
+)
+
+
+def _section(content: str, heading: str) -> str:
+    """Return the body of the section opened by ``heading``, up to the next peer heading."""
+    level = heading.split(' ', 1)[0]
+    start = content.find(f'\n{heading}')
+    assert start != -1, f'{_STEP_DOC.name} carries no `{heading}` heading'
+    body_start = content.index('\n', start + 1)
+    peers = [match.start() for match in re.finditer(rf'\n#{{1,{len(level)}}} ', content[body_start:])]
+    end = body_start + peers[0] if peers else len(content)
+    return content[body_start:end]
+
+
+def _step6(content: str) -> str:
+    return _section(content, '### Step 6')
+
+
+def _decision_calls(section: str) -> list[str]:
+    """Return every fenced ``manage-logging decision`` call in ``section``."""
+    blocks: list[str] = re.findall(r'```bash\n(.*?)```', section, re.DOTALL)
+    return [block for block in blocks if 'manage-logging' in block and 'decision' in block.split()]
+
+
+def _aggregate_calls(section: str) -> list[str]:
+    return [call for call in _decision_calls(section) if _AGGREGATE_MARKER in call]
+
+
+def test_step6_carries_decision_log_calls() -> None:
+    """Non-vacuity guard: every Step 6 assertion below ranges over these calls."""
+    # Arrange
+    content = _STEP_DOC.read_text(encoding='utf-8')
+
+    # Act
+    calls = _decision_calls(_step6(content))
+
+    # Assert
+    assert len(calls) == 3, (
+        f'Step 6 of {_STEP_DOC.name} should carry one per-lesson call and two aggregate calls '
+        f'(full run, delta firing); found {len(calls)}'
+    )
+
+
+def test_step6_per_lesson_entry_covers_exactly_the_three_mutating_outcomes() -> None:
+    # Arrange
+    content = _STEP_DOC.read_text(encoding='utf-8')
+    per_lesson = [call for call in _decision_calls(_step6(content)) if _AGGREGATE_MARKER not in call]
+    assert len(per_lesson) == 1, f'expected exactly one per-lesson decision call in Step 6, found {len(per_lesson)}'
+
+    # Act
+    alternations = _PER_LESSON_ENTRY.findall(per_lesson[0])
+
+    # Assert
+    assert len(alternations) == 1, f'the per-lesson call must name its outcome once, found {alternations}'
+    assert set(alternations[0].split('|')) == set(_MUTATING_OUTCOMES)
+
+
+@pytest.mark.parametrize('outcome', ['removal', 'promote-then-retire', 'adaptation'])
+def test_step6_requires_one_entry_for_each_mutating_outcome(outcome: str) -> None:
+    # Arrange
+    content = _STEP_DOC.read_text(encoding='utf-8')
+
+    # Act
+    section = _step6(content)
+
+    # Assert
+    assert f'**every** {outcome}' in section, f'Step 6 no longer requires an entry for every {outcome}'
+
+
+def test_document_does_not_require_a_per_lesson_entry_for_a_retain() -> None:
+    # Arrange
+    content = _STEP_DOC.read_text(encoding='utf-8')
+
+    # Act
+    hits = [
+        f'{number}: {line.strip()}'
+        for number, line in enumerate(content.splitlines(), start=1)
+        if _PER_LESSON_RETAIN.search(line)
+    ]
+
+    # Assert
+    assert not hits, f'{_STEP_DOC.name} still instructs a per-lesson entry for a retained lesson: {hits}'
+
+
+def test_per_lesson_retain_pattern_matches_the_shapes_it_forbids() -> None:
+    """Positive control: the pattern must match the retired instructions and nothing current."""
+    # Arrange
+    retired_call = '--message "(step) {removed|promoted|adapted|retained} {id}: {reason}"'
+    retired_prose = 'Leave untouched (bias to retain) and log the no-action decision.'
+    retired_step = '**every** adaptation, **and every** deliberate retain.'
+    current_call = '--message "(step) {removed|promoted|adapted} {id}: {reason}"'
+    current_aggregate = '--message "(step) firing summary: examined={E} carried_over={X} retained={K} mode=delta"'
+
+    # Act / Assert
+    assert _PER_LESSON_RETAIN.search(retired_call)
+    assert _PER_LESSON_RETAIN.search(retired_prose)
+    assert _PER_LESSON_RETAIN.search(retired_step)
+    assert not _PER_LESSON_RETAIN.search(current_call)
+    assert not _PER_LESSON_RETAIN.search(current_aggregate)
+
+
+@pytest.mark.parametrize('count', _AGGREGATE_COUNTS)
+def test_step6_aggregate_entry_names_each_count_on_every_route(count: str) -> None:
+    # Arrange
+    content = _STEP_DOC.read_text(encoding='utf-8')
+
+    # Act
+    aggregates = _aggregate_calls(_step6(content))
+
+    # Assert
+    assert len(aggregates) == 2, f'expected a full-run and a delta aggregate call, found {len(aggregates)}'
+    for call in aggregates:
+        assert f'{count}=' in call, f'an aggregate entry in Step 6 does not name `{count}`: {call.strip()}'
+
+
+def test_step6_aggregate_entry_names_the_recorded_head_on_a_delta_firing_only() -> None:
+    # Arrange
+    content = _STEP_DOC.read_text(encoding='utf-8')
+    aggregates = _aggregate_calls(_step6(content))
+
+    # Act
+    delta = [call for call in aggregates if 'mode=delta' in call]
+    full = [call for call in aggregates if 'mode=full' in call]
+
+    # Assert
+    assert len(delta) == 1 and len(full) == 1, 'Step 6 must carry one delta and one full-run aggregate call'
+    assert 'recorded_head={recorded_head}' in delta[0]
+    assert 'recorded_head' not in full[0], 'a full run has no recorded HEAD to start from'
+    assert 'carried_over=0' in full[0], 'a full run carries nothing over'
+
+
+def test_step6_states_the_aggregate_entry_is_written_exactly_once_per_firing() -> None:
+    # Arrange
+    content = _STEP_DOC.read_text(encoding='utf-8')
+
+    # Act
+    section = _step6(content)
+
+    # Assert
+    assert 'Exactly one aggregate entry per firing' in section
+
+
+def test_purpose_does_not_promise_a_per_retain_record() -> None:
+    # Arrange
+    content = _STEP_DOC.read_text(encoding='utf-8')
+
+    # Act
+    purpose = _section(content, '## Purpose')
+
+    # Assert
+    assert 'or deliberate retain — is recorded' not in purpose
+    assert 'not logged per lesson' in purpose
+    assert 'aggregate entry' in purpose
+
+
+def test_coverage_ambiguous_row_writes_no_entry_of_its_own() -> None:
+    # Arrange
+    content = _STEP_DOC.read_text(encoding='utf-8')
+
+    # Act
+    rows = [line for line in content.splitlines() if line.startswith('| Coverage ambiguous')]
+
+    # Assert
+    assert len(rows) == 1, f'expected exactly one `Coverage ambiguous` row, found {len(rows)}'
+    action = rows[0].rstrip('|').split('|')[-1]
+    assert 'manage-logging decision' not in action
+    assert 'aggregate' in action
+    assert 'retained' in action

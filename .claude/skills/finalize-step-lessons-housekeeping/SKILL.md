@@ -33,7 +33,7 @@ Perform lessons-learned housekeeping after a plan finishes. Reason from the just
 
 Both removal dispositions run behind a **two-key retirement path**: Step 3's Evidence bar produces a verdict that names the covering clause and the concrete input its worked example resolves, and Steps 4.1 / 4b.2 turn the second key by independently re-reading that example before any `remove` call fires. A verdict that cannot be evidenced caps at *Partially covered* and is trimmed instead of deleted.
 
-Every change — removal, promotion-then-retire, adaptation, or deliberate retain — is recorded to the decision log so the housekeeping is fully auditable.
+Every change to the corpus — removal, promotion-then-retire, or adaptation — is recorded to the decision log with one entry each, so every changed lesson stays individually traceable. Deliberate retains change nothing and are not logged per lesson: each firing writes one aggregate entry that counts them, alongside how many lessons it examined and how many it carried over (Step 6).
 
 The step is re-fired whenever HEAD advances. A re-fire does not judge the whole corpus again: the **delta rule** (Step 2b) names the lessons the advance could affect, the step judges those, and every other lesson keeps the result of the previous firing. When there is no trustworthy previous firing to carry results over from, the rule falls back to judging the whole corpus.
 
@@ -242,7 +242,7 @@ Read `status` first, then `mode`.
 
 Run Steps 3 to 5 over the lessons in `affected` **only**. Every other lesson keeps the result of the previous firing: it is not re-read, not re-judged and not edited. Retain `carried_over` as `{X}` for the Step 7 outcome line.
 
-**The empty delta is an answer, not a gap.** When the commit touched only files that match no lesson and no lesson changed, `affected` is absent and `examined` is `0`. The answer is **none — carry the previous result**: skip Steps 3 to 5 entirely, and proceed to Step 7 with zero removed, promoted, adapted and retained and `{X}` equal to the corpus size.
+**The empty delta is an answer, not a gap.** When the commit touched only files that match no lesson and no lesson changed, `affected` is absent and `examined` is `0`. The answer is **none — carry the previous result**: skip Steps 3 to 5 entirely, write the Step 6 aggregate entry, and proceed to Step 7 with zero removed, promoted, adapted and retained and `{X}` equal to the corpus size.
 
 **`mode: full`** — judge the whole corpus as enumerated in Step 2, exactly as a first firing does; `{X}` is `0`. The payload names why in `reason`. There are exactly three full-run conditions:
 
@@ -274,7 +274,7 @@ For each lesson Step 2b selected — the `affected` lessons on `mode: delta`, th
 - **Completely covered** — requires that the lesson's guarded failure mode can no longer occur, **OR** its recommended practice is now codified/enforced by this plan. Nothing weaker qualifies, and the **Evidence bar** below must additionally be met. The residue is already codified elsewhere, so the lesson is removed outright (Step 4).
 - **Completely covered, residue is a reusable rule** — the lesson's guarded failure mode can no longer occur (so it qualifies as completely covered, **Evidence bar** included) **AND** the lesson body still carries a durable reusable rule — an operating rule, a convention, an anti-pattern, or a contract-guard — whose correct home is the governing skill's `standards/`/`references/` (or `CLAUDE.md` for repo-wide rules) rather than the lessons queue. Distinguish it from plain "Completely covered" (residue already codified elsewhere → remove outright) using the **Placement test** below. This classification routes to the promote-then-retire disposition (Step 4b).
 - **Partially covered** — the plan eliminated or codified *part* of what the lesson guards, but a residual concern remains.
-- **Ambiguous / none** — anything that does not clearly meet the bar above. **Leave untouched (bias to retain)** and log the no-action decision.
+- **Ambiguous / none** — anything that does not clearly meet the bar above. **Leave untouched (bias to retain)** and count it as retained for the Step 6 aggregate entry.
 
 When in doubt, retain. The cost of keeping a stale lesson is far lower than the cost of deleting a still-load-bearing one. Promote-then-retire fires only when the residue clearly maps to a load-bearing home; an ambiguous residue retains.
 
@@ -375,15 +375,45 @@ Edit: .plan/local/lessons-learned/{id}.md
 
 Trim **only** the now-covered portion. Preserve the `key=value` header block at the top of the file verbatim, and preserve every still-relevant section of the body.
 
-### Step 6: Log every change
+### Step 6: Log every change, and one aggregate entry for the firing
 
-Record a decision-log entry for **every** removal, **every** promote-then-retire, **every** adaptation, **and every** deliberate retain. For a promotion, name the target doc the residue was promoted into:
+The decision log carries two kinds of entry, and they answer different questions.
+
+**One entry per changed lesson.** Record a decision-log entry for **every** removal, **every** promote-then-retire, and **every** adaptation. Each of these changes the corpus, so each stays individually traceable. For a promotion, name the target doc the residue was promoted into:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO \
-  --message "(project:finalize-step-lessons-housekeeping) {removed|promoted|adapted|retained} {id}: {reason}"
+  --message "(project:finalize-step-lessons-housekeeping) {removed|promoted|adapted} {id}: {reason}"
 ```
+
+**Exactly one aggregate entry per firing.** A deliberate retain changes nothing, so it gets no entry of its own. Instead, every firing that reached Step 2b writes one entry naming three counts:
+
+- `examined` — the lessons this firing judged: the Step 2b `examined` count on a delta firing, the corpus size on a full run.
+- `carried_over` — the lessons that kept the previous firing's result without being judged: the Step 2b `carried_over` count on a delta firing, `0` on a full run.
+- `retained` — the examined lessons this firing left in place unchanged. A lesson kept after a failed reconfirmation gate (Step 4b.2) counts here.
+
+On a **full run**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(project:finalize-step-lessons-housekeeping) firing summary: examined={E} carried_over=0 retained={K} mode=full"
+```
+
+On a **delta firing**, the entry also names the recorded HEAD the delta started from — the `recorded_head` Step 2b returned — so the entry says which commit the carried-over results date from:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(project:finalize-step-lessons-housekeeping) firing summary: examined={E} carried_over={X} retained={K} mode=delta recorded_head={recorded_head}"
+```
+
+The aggregate entry is written once, after Steps 3 to 5 have finished for every selected lesson. The empty delta writes it too, with `examined=0` and `retained=0`. The two Step 2 exits (unresolved store, empty corpus) judged no corpus and return before this step, so they write none; their own work-log line is their record.
+
+A failure is not a deliberate retain. The entries Steps 4.1 and 4b.2 write when a reconfirmation gate fails, and the failure entries the Error Handling table names, are written where they occur and are unaffected by this step.
+
+Which lessons were retained is not lost by counting them: a retained lesson is, by definition, one still in the corpus with no per-lesson entry from this firing.
 
 ### Step 7: Record the step outcome
 
@@ -424,7 +454,7 @@ Omit `--fact classified_at=…` only when Step 2b returned no payload at all and
 |----------|--------|
 | Unresolvable required store (`store_resolution: unresolved` from the Step 2 substrate probe; `unresolved_store` names whether the `plans` root or the `lessons` corpus failed) | Non-fatal, but **never reported as clean** — no corpus was scanned, so nothing was classified. Record `mark-step-done --outcome done --display-detail "{unresolved_store} store unresolved — nothing read" --head-at-completion {sha} --fact work_performed=false` and emit the WARNING work-log line naming the store that failed. Distinguishing this from an empty corpus is the whole point: the two produce identical counts and demand opposite responses. |
 | Empty lessons corpus (store resolved, zero lessons in it) | Skip-clean exit — record `mark-step-done --outcome done --display-detail "0 lessons in {store_resolution} corpus — nothing to reconcile" --head-at-completion {sha} --fact work_performed=false` so the `phase_steps_complete` handshake counts the step as done and a later HEAD advance re-fires it. The `display_detail` names the substrate so the zero is not substrate-blind. |
-| Coverage ambiguous (including ambiguous residue home) | Retain the lesson untouched (bias to retain) and log the no-action decision via `manage-logging decision` |
+| Coverage ambiguous (including ambiguous residue home) | Retain the lesson untouched (bias to retain). Write no entry for it: it is counted in `retained` on the firing's one aggregate decision-log entry (Step 6) |
 | `manage-lessons remove` failure on one lesson | Non-fatal — log the failure, leave that lesson in place, and continue with the remaining lessons. Housekeeping must never block finalize. |
 | `manage-lessons remove` **evidence rejection** on one lesson (`--coverage-verdict completely_covered` without both evidence flags — argparse exit 2, or `error: missing_coverage_evidence` on the handler path) | Non-fatal per-lesson — the lesson is left in place by construction (the rejection precedes any unlink). Treat it as a **classification defect, not a call-shape defect**: the verdict claimed coverage the Step 3 Evidence bar could not evidence, so downgrade the lesson to Partially covered and route it to the Step 5 trim. Never re-issue the call with invented or placeholder evidence values to get past the rejection. Log the downgrade and continue with the remaining lessons. |
 | Independent-reconfirmation gate failure (Step 4.1 or Step 4b.2) on one lesson | Non-fatal — the named clause is missing, its worked example resolves a different input, or its example contradicts its own clause. Do NOT call `remove`. On the Step 4 path, downgrade the lesson to Partially covered and route it to the Step 5 trim; on the Step 4b path, keep the promotion and retain the lesson. Log which of the three failures fired via `manage-logging decision` and continue with the remaining lessons. |
@@ -435,7 +465,7 @@ Omit `--fact classified_at=…` only when Step 2b returned no payload at all and
 | `compute-footprint` error in Step 1 (`worktree_not_found`, `references_not_found`, `not_a_git_worktree`, `git_error`, `files_out_refused`, `files_out_unwritable`) | Non-fatal — log the named error and continue on the request document alone. Never treat the missing footprint as an empty one: the Step 1 table states the action per error |
 | `affected_lessons resolve` returns `status: error` in Step 2b (the change list, the lessons store, a lesson file, or the component-to-directory mapping could not be looked at) | Non-fatal — fall back to a full run: judge the whole corpus, log the named `error`, and record Step 7 with the returned `{firing_started_at}`. An error is never read as an empty delta. |
 | `affected_lessons resolve` returns `mode: full` in Step 2b | Not an error — one of the three full-run conditions holds (see Step 2b). Judge the whole corpus. `classified_at_absent` after a source-editing firing is the expected consequence of the dispatcher's commit re-stamp. |
-| `affected_lessons resolve` returns `mode: delta` with no `affected` lessons | The empty delta: none — carry the previous result. Skip Steps 3 to 5 and record Step 7 with every count but `{X}` at zero. |
+| `affected_lessons resolve` returns `mode: delta` with no `affected` lessons | The empty delta: none — carry the previous result. Skip Steps 3 to 5, write the Step 6 aggregate entry with `examined=0`, and record Step 7 with every count but `{X}` at zero. |
 | Step completes | Record `mark-step-done --outcome done --display-detail "{N} rm, {P} promo, {M} adapt, {K} keep, {X} carried ({store_resolution} corpus)" --head-at-completion {sha} --fact classified_at={firing_started_at} --fact work_performed=true`, plus the Step 7 work-log line naming `{corpus_path}`. Every count this step reports rides with the substrate it was computed from. |
 
 The step's posture is **non-fatal throughout**: finalize must never abort because lessons housekeeping hit a snag on an individual lesson.
