@@ -2,9 +2,9 @@
   "id": "PLAN-LB-23",
   "slug": "verify-builds",
   "workstream": "WS-02",
-  "status": "running",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "plan_marshall_plan_id": "lb-23-verify-builds",
+  "pr": "1729",
+  "landing": "landings/PLAN-LB-23.md",
   "seq": 23
 }
