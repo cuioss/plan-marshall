@@ -25,6 +25,9 @@ Gates and steps in the plan lifecycle that block a correct run, report a false r
 | PLAN-LB-26-execute-loop-triage | staged | Fix tasks get scheduled; triage survives a re-check; one wait rule for long builds |
 | PLAN-LB-27-plan-footprint | staged | Staging allowlist; scope-creep guard measures the plan's own changes |
 | PLAN-LB-32-head-dependent-step-refire | staged | High priority. A re-fired project step re-examines only what the fix commit could have changed |
+| PLAN-LB-34-self-review-surfacing-foundation-and-java | staged | Top priority. Several self-review surfacers coexist and are merged; uncovered files are reported as not covered; first second surfacer, for Java. Takes PLAN-LB-03's deliverables from PLAN-LB-28 |
+| PLAN-LB-35-self-review-javascript-and-python | staged | Surfacers for JavaScript/TypeScript and consumer Python. Waits for PLAN-LB-34 |
+| PLAN-LB-36-self-review-documents-containers-requirements | staged | Surfacers for documents, containers and requirements; the outcome for files no domain claims. Waits for PLAN-LB-34 |
 | PLAN-LB-02-self-review-convergence | superseded | PLAN-LB-22 (all deliverables) |
 | PLAN-LB-04-light-lane-refine-boundary | superseded | PLAN-LB-25 (all deliverables) |
 | PLAN-LB-05-unrunnable-waits | superseded | D1 and D2 to PLAN-LB-25; D3 to PLAN-LB-24; D4 to PLAN-LB-26; D5 to PLAN-LB-22 |
@@ -43,4 +46,5 @@ Gates and steps in the plan lifecycle that block a correct run, report a false r
 - PLAN-LB-25 and PLAN-LB-26 share no file and may run together.
 - PLAN-LB-27 shares `phase-5-execute/SKILL.md` and `execution.md` with PLAN-LB-26 and `phase-6-finalize/SKILL.md` with PLAN-LB-25; run it after both, beside PLAN-LB-28.
 - PLAN-LB-32 runs ahead of PLAN-LB-25 to PLAN-LB-27. It shares only `phase-6-finalize/SKILL.md` with PLAN-LB-24, PLAN-LB-25 and PLAN-LB-27, and `ext-point-finalize-step.md` with PLAN-LB-27.
+- PLAN-LB-34 heads a chain: PLAN-LB-35 and PLAN-LB-36 start only after it has landed, and may then run together. PLAN-LB-34 shares `pre-submission-self-review.md` with PLAN-LB-26; sequence those two.
 - PLAN-LB-01 and PLAN-LB-03 left this workstream at the regrouping: they were absorbed by PLAN-LB-23 and PLAN-LB-28 in WS-02.

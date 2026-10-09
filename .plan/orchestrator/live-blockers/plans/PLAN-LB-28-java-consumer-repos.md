@@ -1,4 +1,4 @@
-# PLAN-LB-28: Java consumer repositories: Maven build results are right, and self-review ends once on a diff no surfacer covers
+# PLAN-LB-28: Java consumer repositories: Maven build results are right
 
 epic: live-blockers
 workstream: WS-02
@@ -17,11 +17,11 @@ workstream: WS-02
 > text, "deliverable 2" or "D2" means that number of the SAME source spec, and a plan id below
 > PLAN-LB-22 resolves through the id map at the end of § Dependencies and Sequencing.
 
-> WEAK MERGE. The two halves share a subject (what stops a plan in a Java consumer repository) and no file. They are bundled to give the plan a useful size, and the outline is licensed to split them back into two plans along the source boundary.
+> SPLIT on 2026-10-09 by operator instruction. This spec was a weak merge of two halves, licensed to split. Its self-review half — deliverables 5 to 8, carried from PLAN-LB-03 — MOVED to PLAN-LB-34, which builds the full surfacing foundation those four deliverables were the first third of. **This plan is deliverables 1 to 4 only: the Maven build path.** The moved deliverables, their claim labels and the carried PLAN-LB-03 notes stay below as the record and are not part of this plan; their surface entries were removed from § Expected Surface and are declared by PLAN-LB-34.
 
 ## Objective
 
-Two defects stop plans in the Java consumer repositories and neither is visible in this one. The Maven build path generates a test command that cannot resolve a sibling test-jar, reports one summary block out of several as the test count, and files Maven's failure advice as blocking findings. And the pre-submission self-review, which ships default-on, selects a surfacer that covers no Java file, so the verifier refuses a "clean" verdict round after round until the loop-back ceiling stops the push. This plan corrects the Maven command, count and classification, and makes surfacer selection follow declared content classes with a terminal "not covered" outcome.
+(Since the split of 2026-10-09 this plan carries the Maven sentences of this objective only; the self-review sentences describe what moved to PLAN-LB-34.) Two defects stop plans in the Java consumer repositories and neither is visible in this one. The Maven build path generates a test command that cannot resolve a sibling test-jar, reports one summary block out of several as the test count, and files Maven's failure advice as blocking findings. And the pre-submission self-review, which ships default-on, selects a surfacer that covers no Java file, so the verifier refuses a "clean" verdict round after round until the loop-back ceiling stops the push. This plan corrects the Maven command, count and classification, and makes surfacer selection follow declared content classes with a terminal "not covered" outcome.
 
 ### Carried from PLAN-LB-13: Maven build results are wrong in consumer repos
 
@@ -106,6 +106,8 @@ Carries forward truthful-signals PLAN-TRUTH-181 deliverables D1–D3.
    real compiler error asserts that exactly the real diagnostics are returned and none of the advice
    lines is, and a test over a `[WARNING] Tests run: 27, Failures: 0, Errors: 0, Skipped: 1` line
    asserts no `test_failure` issue. Both fail at HEAD.
+
+> ⛔ Deliverables 5 to 8 below MOVED to PLAN-LB-34 on 2026-10-09. They are kept as the record and are NOT part of this plan.
 
 5. **[PLAN-LB-03 D1]** **Implementors declare the content classes they cover, and selection uses the declaration.** A
    surfacing implementor states the content classes its detectors cover in a machine-readable declaration
@@ -248,22 +250,13 @@ Carried in source order: bullets 1 to 22 from PLAN-LB-13; bullets 23 to 39 from 
 - OBSERVED: `test/plan-marshall/build-maven/fixtures/` — new log fixtures and a multi-module project fixture with a sibling test-jar
 - OBSERVED: `test/plan-marshall/manage-architecture/test_derive_verification.py` — the downstream assertion that the corrected executables are what `derive-verification` returns
 - HYPOTHESIS: `test/plan-marshall/script-shared/test_build_parse.py` — touched only if `_build_parse.py` changes (verify-at-outline)
-- OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md` — § "Domain-Aware Candidate Surfacing", § "Step 1" selection, § "Dispatched-envelope output" verdict vocabulary, Step 3b verifier-prompt boundary lines, new not-covered branch in § "Step 4"
-- OBSERVED: `marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md` — declared coverage, applicability, the not-covered outcome beside the not-run fallback
-- OBSERVED: `marketplace/bundles/plan-marshall/skills/extension-api/scripts/extension_discovery.py` — parse and return the coverage declaration; duplicate-class registration error
-- OBSERVED: `marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/SKILL.md` — the coverage declaration
-- OBSERVED: `marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/scripts/self_review.py` — applicability / `not_covered` reporting
-- OBSERVED: `marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/scripts/_self_review_detectors.py` — `CONTENT_CLASSES` as the source of the declaration (read; edited only if the declaration is derived from it in code)
-- OBSERVED: `test/plan-marshall/phase-6-finalize/test_self_review_unclassified_surface.py` — rewritten route contract (D4d)
-- OBSERVED: `test/plan-marshall/phase-6-finalize/test_pre_submission_self_review_verdict_verdict.py` — verdict-vocabulary disjointness with the new verdict
-- OBSERVED: `test/plan-marshall/extension-api/test_extension_discovery.py` — coverage declaration and duplicate-class error
-- OBSERVED: `test/pm-plugin-development/ext-self-review-plan-marshall/test_self_review_delta_coverage.py` — unchanged-envelope control and `not_covered` count
 
 ## Dependencies and Sequencing
 
 - Depends on: none.
-- Overlaps with: PLAN-LB-22 and PLAN-LB-26 on `phase-6-finalize/workflow/pre-submission-self-review.md` (section ownership is in the carried notes below); PLAN-LB-23 on `script-shared/scripts/build/_build_shared.py`, only if this plan adds test-count result keys. Sequence against those three.
-- May run together with: PLAN-LB-24, PLAN-LB-25 and PLAN-LB-27, and with PLAN-LB-14, PLAN-LB-29, PLAN-LB-30 and PLAN-LB-31.
+- Since the split of 2026-10-09 this plan declares Maven build files only. Ten surface entries for the self-review workflow, the extension point, discovery and the plan-marshall surfacer moved to PLAN-LB-34 with deliverables 5 to 8.
+- Overlaps with: PLAN-LB-23 (shipped) on `script-shared/scripts/build/_build_shared.py`, only if this plan adds test-count result keys. No overlap with a live plan remains.
+- May run together with: every other live plan of the epic.
 
 ### Carried sequencing notes
 

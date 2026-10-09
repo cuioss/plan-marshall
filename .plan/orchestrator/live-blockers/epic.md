@@ -249,6 +249,22 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   - `lessons-routing-001` — two of its four items shipped with #1726 (the verifier is
     dispatched by the dispatcher; a class sweep exists, limited to the surfaced
     candidates), one went to PLAN-LB-32, one is open (see Open Defects).
+- **PLAN-LB-34, 35 and 36, staged on 2026-10-09: self-review surfacers for every domain.**
+  PLAN-LB-34 is the operator's top priority. Measured with `corpus cross-check`: it shares
+  no declared file with PLAN-LB-24 or PLAN-LB-32 (both running), and one with PLAN-LB-26
+  (`pre-submission-self-review.md`) — sequence those two. PLAN-LB-35 and PLAN-LB-36 each
+  share three entries with PLAN-LB-34 (the extension-point standard, the shared module, the
+  plan-marshall surfacer's detector module), which is the dependency: neither starts before
+  PLAN-LB-34 has landed. PLAN-LB-28 lost its self-review half to PLAN-LB-34 and overlaps no
+  live plan.
+- **PLAN-LB-33 leaf-test-scope-and-executor, staged on 2026-10-09 at high priority.** It
+  owns two former Open Defects (per-task test scope; the main executor pointing into a
+  removed worktree) and the executor half of a third (empty-string arguments dropped).
+  Measured with `corpus cross-check`: it shares one conditional entry with PLAN-LB-32
+  (running) — the plugin-doctor step document, touched only by its last deliverable, which
+  waits for that landing — and nothing with PLAN-LB-24 (running), 25, 28 or 31. With
+  PLAN-LB-26 it shares `phase-5-execute/SKILL.md` and `canonical_verify.md`, with
+  PLAN-LB-27 `phase-5-execute/SKILL.md`. It is to be launched ahead of PLAN-LB-25 to 28.
 - **Inbox drain of 2026-10-09 (third), six findings from the `lessons-routing` epic.** Its
   second ingest retired thirteen more lessons from the corpus, among them lessons this
   ledger cites by id (`2026-10-08-21-003`, `2026-10-09-13-001`, `-13-004`, `-15-001`,
@@ -519,6 +535,65 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   - Deviation, recorded, as on 2026-10-08: the six verification agents each wrote one
     result file under `.plan/temp/`, and the verdicts were stamped from those files by a
     driver that calls `corpus set-verdict` once per claim. No agent wrote to the ledger.
+- 2026-10-09 — **PLAN-LB-33 staged at high priority by operator instruction** ("stage both.
+  consider into which plan"): the two Open Defects on per-task test scope and on the main
+  executor, as one plan of ten deliverables in WS-02, labelled a weak merge and licensed to
+  split at outline between deliverables 6 and 7.
+  - Folding into an existing plan was considered for each half and not chosen. The test
+    scope is closest to PLAN-LB-26, which works on the same execute loop, but that plan
+    holds eleven deliverables and five more would pass the authorized twelve. PLAN-LB-28
+    was the other candidate; it is already a weak merge of two subjects and shares no file
+    with the resolver. The executor half belongs with the plugin-doctor step document, which
+    PLAN-LB-32 is rewriting and which is running, so nothing can be folded into it; no
+    staged plan declares the executor generator or its template.
+  - The two halves are one plan and not two because of the fixed cost of a landing in this
+    epic: 13 to 17 million tokens each, more than half in finalize.
+  - Read at `fcd54e6ef` before drafting. The resolver's registered targets are bundle
+    names only, while the build wrapper accepts any directory under `test/`; a narrow
+    target has its own duration key, starts unmeasured and is classed orchestrator-tier on
+    first use. For the executor: the generator writes wherever the working directory
+    resolves, two callers pin it and the plugin-doctor step does not; the bootstrap's cache
+    recovery walks one directory level short of the installed layout; and the executor
+    drops empty-string arguments, which is the executor half of the domain-narrowing defect.
+  - Scope-bloat guard: ten deliverables, above six, proceeding unsplit on the operator's
+    authorization of up to twelve.
+- 2026-10-09 — **Self-review surfacers for every domain staged as three plans, by operator
+  instruction** ("I meant the self-review surfacer. This is the most important one. For all
+  domains"). PLAN-LB-34 builds the foundation and the Java surfacer; PLAN-LB-35 adds
+  JavaScript and Python; PLAN-LB-36 adds documents, containers and requirements, settles
+  what happens to a file no domain claims, and ends with a table accounting for every
+  domain key. PLAN-LB-34 is the top priority of the epic; 35 and 36 wait for it and may then
+  run together.
+  - This revives work the retired `truthful-signals` epic had specified and never ran:
+    PLAN-TRUTH-181 (foundation) and PLAN-TRUTH-182 to -185 (Java, Python, JavaScript,
+    documents), requested by the operator on 2026-09-26 and dropped at this epic's cut on
+    2026-10-07, when PLAN-LB-03 kept only the first third of the foundation as a stopgap.
+    The five specs were read from git history at `1e556f15d^`; their designs are carried,
+    re-read against `fcd54e6ef`. Containers and requirements had no earlier spec.
+  - **PLAN-LB-28 was split.** It was a weak merge licensed to split; its self-review half
+    (deliverables 5 to 8, from PLAN-LB-03) moved to PLAN-LB-34 with its ten surface entries.
+    PLAN-LB-28 is the Maven plan only and now shares no file with any live plan.
+  - Why three plans and not one per domain or one for all: six surfacers plus the
+    foundation is far above twelve deliverables; one plan per domain would pay the fixed cost
+    of a landing seven times. The foundation carries Java because Java is where the gap was
+    reported and a real second surfacer is the test that the foundation works. The other
+    five split by kind — programming languages, and document-like domains — and sit in
+    separate bundles, so the two later plans share only the class table of the standard.
+  - What changed since the earlier specs, read at `fcd54e6ef`: since #1726 a round over a
+    diff the one surfacer classes entirely as `other` closes as clean instead of looping, so
+    an unreviewed Java change now passes quietly — read from the verifier rule, not observed
+    on a consumer run. The workflow is wired to the one surfacer by name in five places, and
+    several of its checks are worded for Python. The behavioural check over changed code
+    that #1726 added exists for Python only.
+  - **Three design decisions, taken by the operator on 2026-10-09** and written into the
+    specs: (1) surfacers are routed per domain, through the resolver triage uses, so a
+    repository runs only the surfacers of the domains it enabled; (2) the `-cui` bundles
+    contribute no detectors and are covered by their base domain's surfacer; (3) no
+    last-resort surfacer for files no domain claims — "not for now, we start with the
+    others" — so such files stay reported as not covered, PLAN-LB-36 lists the deliberately
+    uncovered types and counts them, and the last-resort surfacer is deferred, not rejected.
+  - Scope-bloat guard: 11, 8 and 9 deliverables, each above six, proceeding unsplit on the
+    operator's authorization of up to twelve.
 
 ## Open Defects
 
@@ -642,6 +717,8 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   edits the same workflow and is the place to fold it if it recurs after #1726. — source:
   inbox message `lessons-routing-001.md` (the PLAN-09 row), 2026-10-09; the absence was read
   in `pre-submission-self-review.md` at `4ed67e228`.
+- **Staged as PLAN-LB-33 on 2026-10-09; remove the next entry and the executor entry below
+  when that plan lands.**
 - **Per-task tests have no runnable scope on two landings in a row.** `resolve-test-scope`
   maps only paths under `marketplace/bundles/` and test directories named after a bundle;
   everything else returns no target and falls back to a whole-tree run that is too long for
