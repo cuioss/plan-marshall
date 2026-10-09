@@ -221,6 +221,34 @@ its grade was used wherever it lists the subject. Every high lesson turned out t
 for a residual rather than to open new work. Only the filed and stale lessons were checked against code
 or ledger at this run; the medium and low grades rest on the lesson text and the backlog.
 
+### 2026-10-09 — second `ingest` run
+
+Corpus at start: 76 active lessons, none of them seen by the first run. 74 are about the
+`plan-marshall` bundle or this repository's tooling; two are about a domain bundle
+(`pm-plugin-development`) and both describe a defect already fixed. Per-lesson dispositions, clusters
+and reasons: `lessons-archive/INDEX.md`.
+
+| Disposition | Lessons | Where |
+|---|---|---|
+| high, filed to `live-blockers` | 12 (in 6 messages, `lessons-routing-005`..`-010`) | `live-blockers/inbox/`; bodies in `lessons-archive/filed-live-blockers/` |
+| medium, archived | 29 | `lessons-archive/medium/` |
+| low, archived | 27 | `lessons-archive/low/` |
+| stale, archived | 8 | `lessons-archive/stale/` |
+
+All 76 were removed through `manage-lessons remove` after their copy existed (verdict `superseded` for
+the filed ones, `obsolete` for the rest; `2026-09-24-05-001` and `2026-09-24-10-001` needed
+`--allow-unreadable`). Corpus after the run: 0 active.
+
+Grading basis: the `live-blockers` `backlog.md` grade where it lists the subject, and that epic's
+Open Defects for the two unowned ones. Two lessons were put to the operator as borderline
+medium/high: `2026-10-05-17-002` was graded high and filed; `2026-10-09-13-003` stayed medium. 20 of
+the 76 had been promoted to the corpus by `live-blockers` itself as "no owning plan here"; five of
+those are filed back as high because their subject is a staged plan or an Open Defect there. Checked
+against `main` at this run: the eight stale lessons' fixing PRs, and three "still live" notes in the
+index. Nothing else was re-checked in code.
+
+The `live-blockers` inbox now holds six undrained messages from this epic. Not landed by this run.
+
 ## START HERE
 
 ### Annotations
