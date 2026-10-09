@@ -700,6 +700,7 @@ def test_main_timeout_defaults_when_flag_omitted(monkeypatch):
 
 def test_the_no_new_commit_reply_population_is_published():
     """The parametrized condition cases below run over a stated, non-empty population."""
+    assert len(CODERABBIT_NO_UNREVIEWED_COMMIT_REPLIES) > 0, 'no "nothing new to review" reply is declared'
     assert CODERABBIT_NO_UNREVIEWED_COMMIT_REPLY_COUNT == len(CODERABBIT_NO_UNREVIEWED_COMMIT_REPLIES)
     assert CODERABBIT_NO_UNREVIEWED_COMMIT_REPLY_COUNT == len(
         bot_registry.no_unreviewed_commit_patterns(NO_UNREVIEWED_COMMIT_BOT_KIND)
