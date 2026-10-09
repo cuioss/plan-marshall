@@ -592,14 +592,14 @@ For each step in task's `steps[]` array:
 
 ### Step 6.5: Scope-Creep Guard (per-task)
 
-After Step 6 completes its file-system changes but BEFORE running task verification (Step 7's `finalize-step` records "done" only after this guard clears), invoke the deterministic scope-creep helper. The helper computes the residual file-set drift — files modified since the plan was created that are NOT declared in the union of all deliverables' `affected_files` — and files a `triage` Q-Gate finding carrying the rule key `scope_creep_warning` when the residual cardinality exceeds the configured threshold.
+After Step 6 completes its file-system changes but BEFORE running task verification (Step 7's `finalize-step` records "done" only after this guard clears), invoke the deterministic scope-creep helper. The helper computes the residual file-set drift — files among the plan's own changes since the branch diverged from its base that are NOT declared in the union of all deliverables' `affected_files` — and files a `triage` Q-Gate finding carrying the rule key `scope_creep_warning` when the residual cardinality exceeds the configured threshold.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:phase-5-execute:scope_creep_check \
   check --plan-id {plan_id}
 ```
 
-The helper reads `plan_creation_sha` from `references.json`, computes `git diff --name-only {plan_creation_sha}..HEAD` against the worktree, subtracts the union of `affected_files` from every deliverable, and returns ONE of three shapes.
+The helper reads `base_branch` from `references.json` (absent or blank reads as `main`), resolves the merge-base of `HEAD` and `origin/{base_branch}` in the worktree, computes `git diff --name-only {merge_base}..HEAD` from it, subtracts the union of `affected_files` from every deliverable, and returns ONE of three shapes. The guard does not fetch: it reads `origin/{base_branch}` as the local repository already has it.
 
 **Measured** — the comparison ran:
 
@@ -620,7 +620,7 @@ A residual set already resolved as `accepted` or `suppressed` is not filed again
 
 ```toon
 status: could_not_look
-reason: no_baseline_sha | guard_disabled
+reason: merge_base_unresolved | guard_disabled
 detail: "<why nothing was measured>"
 threshold: T
 finding_emitted: false

@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Pre-task scope-creep guard for phase-5-execute.
 
-Computes the residual file-set drift since plan creation - files modified that
-are NOT declared in the union of all deliverables' affected_files - and files a
+Computes the residual file-set drift of the plan's own changes since the branch
+diverged from its base - files modified that are NOT declared in the union of
+all deliverables' affected_files - and files a
 ``triage`` Q-Gate finding carrying the rule key ``scope_creep_warning`` when the
 residual cardinality exceeds the configured threshold.
 
@@ -14,8 +15,9 @@ Usage:
 Subcommands:
     check  Compute residual and emit finding when residual_count > threshold
 
-The script reads `plan_creation_sha` from references.json, computes the file
-diff between that sha and the current worktree HEAD, subtracts the union of
+The script reads `base_branch` from references.json (absent or blank reads as
+`main`), resolves the merge-base of the worktree HEAD and `origin/{base_branch}`,
+computes the file diff from that merge-base to HEAD, subtracts the union of
 each deliverable's `affected_files`, and persists the warning through the
 in-process `add_qgate_finding` primitive when the residual exceeds threshold.
 The record is filed as type `triage` — the type the peer guards use for their
@@ -39,16 +41,30 @@ no such record, a record resolved any other way, or a store read that did not
 succeed — goes to the primitive exactly as before: a pending record is
 deduplicated and a record resolved any other way is reopened.
 
+The baseline is the merge-base, recomputed on every run
+-------------------------------------------------------
+The range `{merge-base}..HEAD` is exactly the branch's own commits. It is the
+same anchor and the same range `baseline-reconcile` uses for the files a plan
+has in flight. A commit recorded when the plan was created cannot stand in for
+it: when the worktree is branched from a newer commit of the base branch, or the
+base is merged into the branch, a range starting at that older commit also
+covers base commits the branch merely contains, and their files count as
+residual although the plan never touched them.
+
+The guard does not fetch. It compares against `origin/{base_branch}` as the
+local repository already has it, so a run never changes any ref.
+
 An UNMEASURED run cannot render as a measured clean one
 -------------------------------------------------------
-Two paths perform no comparison at all: a plan with no `plan_creation_sha` (no
-baseline to diff against) and an explicitly disabled guard (`--threshold 0`).
-Both used to print `status: success` with `residual_count: 0`, and the count is
-the field consumers gate on — the `reason` that disambiguated it was advisory and
-trivially dropped, so "never measured" was indistinguishable from "measured, none
-found".
+Two paths perform no comparison at all: an unresolved merge-base (`origin/
+{base_branch}` does not resolve, or the two histories share no commit, so there
+is no baseline to diff against) and an explicitly disabled guard
+(`--threshold 0`). The count is the field consumers gate on, so a
+`residual_count: 0` printed on either path would make "never measured"
+indistinguishable from "measured, none found" — a `reason` beside it is advisory
+and trivially dropped.
 
-Those paths now return `status: could_not_look` and OMIT `residual_count`
+Those paths return `status: could_not_look` and OMIT `residual_count`
 entirely. The absence is the point: a caller branching on `residual_count == 0`
 finds no key rather than a zero it would read as a clean result, so the
 unmeasured state is structurally unable to render as a measured one. The measured
@@ -77,6 +93,7 @@ from file_ops import WorktreeResolutionError, get_plan_dir, resolve_plan_context
 from toon_parser import serialize_toon
 
 DEFAULT_THRESHOLD = 5
+DEFAULT_BASE_BRANCH = 'main'
 
 _PHASE = '5-execute'
 _FINDING_TYPE = 'triage'
@@ -104,6 +121,10 @@ measured and found nothing.
 
 def _emit_could_not_look(reason: str, detail: str, threshold: int) -> int:
     """Report that no comparison was performed, WITHOUT a residual count.
+
+    Two paths reach this shape: the unresolved merge-base
+    (``reason: merge_base_unresolved``) and the disabled guard
+    (``reason: guard_disabled``).
 
     The omission is load-bearing and is the whole remedy: ``residual_count`` is
     the field consumers gate on, so publishing a ``0`` here would render an
@@ -134,6 +155,30 @@ def _emit_could_not_look(reason: str, detail: str, threshold: int) -> int:
         )
     )
     return 0
+
+
+def _resolve_merge_base(worktree: Path, base_branch: str) -> str | None:
+    """Return ``merge-base(HEAD, origin/{base_branch})``, or ``None`` when unresolved.
+
+    Recomputed from the local refs on every call and never fetched, so the guard
+    changes no ref. ``None`` covers a non-zero exit (the remote-tracking ref does
+    not resolve, or the two histories share no commit), empty output, and a git
+    that could not be run at all — in each case there is no baseline to diff
+    against.
+    """
+    try:
+        result = subprocess.run(
+            ['git', '-C', str(worktree), 'merge-base', 'HEAD', f'origin/{base_branch}'],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+    merge_base = result.stdout.strip()
+    if result.returncode != 0 or not merge_base:
+        return None
+    return merge_base
 
 
 def _git_diff_files(worktree: Path, base_sha: str) -> list[str]:
@@ -300,19 +345,20 @@ def cmd_check(args: argparse.Namespace) -> int:
     plan_dir = get_plan_dir(plan_id)
     worktree = _resolve_worktree(plan_id)
     refs = _read_references(plan_dir)
-    base_sha = (refs.get('plan_creation_sha') or '').strip()
-    if not base_sha:
-        # No baseline sha means there was nothing to diff against — the guard
-        # could not look. Reporting a zero here is the defect this branch fixes.
+    base_branch = str(refs.get('base_branch') or '').strip() or DEFAULT_BASE_BRANCH
+    merge_base = _resolve_merge_base(worktree, base_branch)
+    if merge_base is None:
+        # No merge-base means there was nothing to diff against — the guard
+        # could not look. A zero here would read as a measured clean result.
         return _emit_could_not_look(
-            'no_baseline_sha',
-            'references.json carries no plan_creation_sha, so no diff was computed; '
-            'residual_count is omitted because nothing was measured',
+            'merge_base_unresolved',
+            f'the merge-base of HEAD and origin/{base_branch} could not be resolved, '
+            'so no diff was computed; residual_count is omitted because nothing was measured',
             threshold,
         )
 
     try:
-        changed = _git_diff_files(worktree, base_sha)
+        changed = _git_diff_files(worktree, merge_base)
     except subprocess.CalledProcessError as exc:
         print(serialize_toon({'status': 'error', 'error': f'git_diff_failed: {exc}'}))
         return 1

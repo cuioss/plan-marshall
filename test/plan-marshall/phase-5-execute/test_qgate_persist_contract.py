@@ -21,7 +21,7 @@ Four contracts:
   (a) A persist the REAL primitive rejects produces the loud behaviour — non-zero
       rc, ``error: finding_persist_failed``, the rejected finding's content
       present — and never ``status: success``, never a content-free referral.
-      ``cmd_check`` reads its baseline from the plan directory before it
+      ``cmd_check`` reads the base branch from the plan directory before it
       persists, so the case removes the plan directory between the two, inside
       the already-patched diff read.
   (b) The seam that carried the defect — the emitter's RETURN CONTRACT — is
@@ -85,7 +85,7 @@ def _seed_plan(plan_context, plan_id: str) -> Path:
     """Seed a plan that declares one file, so every other changed file is residual."""
     plan_dir: Path = plan_context.plan_dir_for(plan_id)
     (plan_dir / 'references.json').write_text(
-        json.dumps({'plan_creation_sha': 'deadbeef', 'affected_files': [_DECLARED_FILE]}),
+        json.dumps({'base_branch': 'main', 'affected_files': [_DECLARED_FILE]}),
         encoding='utf-8',
     )
     return plan_dir
@@ -94,8 +94,18 @@ def _seed_plan(plan_context, plan_id: str) -> Path:
 def _patch_worktree_reads(monkeypatch, residual: list[str] | None = None) -> None:
     """Patch ONLY the git/worktree reads — the store read and the persist stay real."""
     changed = [_DECLARED_FILE, *(_EXCESS_FILES if residual is None else residual)]
+    _patch_merge_base(monkeypatch)
     monkeypatch.setattr(scc, '_git_diff_files', lambda worktree, sha: list(changed))
     monkeypatch.setattr(scc, '_resolve_worktree', lambda plan_id: Path.cwd())
+
+
+def _patch_merge_base(monkeypatch) -> None:
+    """Hold the merge-base resolution at a fixed value.
+
+    A git read like the diff: without it the guard would ask the checkout the
+    suite happens to run in for its merge-base with ``origin/main``.
+    """
+    monkeypatch.setattr(scc, '_resolve_merge_base', lambda worktree, base_branch: 'mergebase123')
 
 
 def _run_check(plan_id: str) -> int:
@@ -143,9 +153,9 @@ def test_real_rejection_is_loud_and_carries_finding_content(plan_context, monkey
     """The real primitive rejects the finding — the command must fail loud.
 
     The rejection is the unreached store. ``cmd_check`` has already read the
-    baseline SHA when it asks for the diff, so removing the plan directory from
-    inside the patched diff read leaves the guard measuring a residual it then
-    cannot persist.
+    base branch and resolved its baseline when it asks for the diff, so removing
+    the plan directory from inside the patched diff read leaves the guard
+    measuring a residual it then cannot persist.
     """
     plan_id = 'qgate-contract-real-rejection'
     plan_dir = _seed_plan(plan_context, plan_id)
@@ -155,6 +165,7 @@ def test_real_rejection_is_loud_and_carries_finding_content(plan_context, monkey
         shutil.rmtree(plan_dir)
         return list(changed)
 
+    _patch_merge_base(monkeypatch)
     monkeypatch.setattr(scc, '_git_diff_files', _diff_then_lose_the_plan_dir)
     monkeypatch.setattr(scc, '_resolve_worktree', lambda plan_id: Path.cwd())
 

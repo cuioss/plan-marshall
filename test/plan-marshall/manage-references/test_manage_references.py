@@ -89,6 +89,23 @@ def test_create_with_issue_url(plan_context):
     assert 'issue_url' in result['fields']
 
 
+def test_create_writes_branch_and_base_branch_only(plan_context):
+    """With no optional argument, create persists branch and base_branch — nothing else.
+
+    In particular it records no commit as a plan-creation baseline: the
+    scope-creep guard reads its baseline from the merge-base with the base
+    branch on every run, so a SHA stored here would have no reader.
+    """
+    result = cmd_create(_create_ns())
+
+    assert result['status'] == 'success'
+    assert result['fields'] == ['branch', 'base_branch']
+
+    refs = require_references('test-plan')
+    assert 'plan_creation_sha' not in refs
+    assert refs == {'branch': 'feature/test', 'base_branch': 'main'}
+
+
 # =============================================================================
 # Test: Read Command
 # =============================================================================
