@@ -115,6 +115,7 @@ from _github_pr import (
     _is_unrecognised_refusal,
     get_viewer_login,
     measure_diff_size,
+    named_commit_currency,
     refusal_cause,
     refusal_condition,
     refusal_layers,
@@ -1513,6 +1514,13 @@ def cmd_fetch_findings(args):
     against ``created_at``, an edit at one commit credits that commit only, not every
     later HEAD.
 
+    One arm outranks the ledger: a comment of such a bot that NAMES a commit — a full
+    commit id, bare or inside a permalink (``_github_pr.named_commit_currency``) — is
+    current only when that commit is the merge candidate, and stale when it names
+    another, whatever its timestamps or edit history say. A comment naming no commit,
+    and every comment on a fetch whose merge candidate could not be read, is decided
+    by the ledger exactly as described above.
+
     ``stale_participation_bots``: where that currency-test failure now GOES, instead
     of being discarded. Same ``{bot_kind, evidence_kind}`` record shape as
     ``participated_bots``, carrying one entry per bot whose observed comment was
@@ -1532,7 +1540,9 @@ def cmd_fetch_findings(args):
     (``_stale_review_covered_by_reply``). Each such bot is listed here as
     ``{bot_kind, evidence_kind, reply_comment_id}``, so the credit names the reply it
     rests on. A reply older than the commit, an unreadable instant on either side, and
-    an unreadable merge candidate all leave the bot stale. No currency-ledger row is
+    an unreadable merge candidate all leave the bot stale. So does a comment of the bot
+    that names another commit: the reply lifts a failed ledger test only, and does not
+    change which commit that comment is about. No currency-ledger row is
     staged for this credit, so it is re-derived from the reply on every fetch.
 
     ``merge_candidate_sha_resolved`` / ``undecidable_participation_bots``: the THIRD
@@ -1782,6 +1792,9 @@ def cmd_fetch_findings(args):
     # this fetch — written to the ledger after the loop so the NEXT fetch measures a fresh
     # edit against THIS credit rather than against ``created_at``.
     currency_updates: dict[tuple[str, str], tuple[str, str]] = {}
+    # The bots with a comment that is stale because it NAMES another commit, as
+    # distinct from one that failed the ledger test. Read by the reply-covered pass.
+    stale_by_named_commit: set[str] = set()
     for _comment in raw_comments:
         _bot_kind = bot_kind_for_author(_comment.get('author') or 'unknown')
         if not _bot_kind:
@@ -1812,13 +1825,33 @@ def cmd_fetch_findings(args):
         if not _is_participation_evidence(_comment, _bot_kind):
             continue
         _kind = _comment.get('kind') or 'inline'
-        if _requires_update and not _reviewed_at_merge_candidate(
-            _comment,
-            currency_records,
-            _bot_kind,
-            reviewed_commit_sha,
-            merge_candidate_committed_at,
-        ):
+        # The NAMED-COMMIT arm, read before the ledger arms and outranking them. A
+        # comment that names a commit is about THAT commit: current when it is the
+        # merge candidate, stale when it is another, whatever the comment's timestamps
+        # or edit history say. Without it a fresh edit credited a comment whose own
+        # text names the previous HEAD. ``None`` is no verdict — the comment names no
+        # commit, or the merge candidate could not be read — and the ledger arms then
+        # decide exactly as before, including their fail-closed read of an unreadable
+        # head.
+        _named_verdict = (
+            named_commit_currency(str(_comment.get('body') or ''), reviewed_commit_sha) if _requires_update else None
+        )
+        if _named_verdict is None:
+            _current = not _requires_update or _reviewed_at_merge_candidate(
+                _comment,
+                currency_records,
+                _bot_kind,
+                reviewed_commit_sha,
+                merge_candidate_committed_at,
+            )
+        else:
+            _current = _named_verdict
+        if _named_verdict is False:
+            # Stale on the comment's own statement, not on a failed ledger test. The
+            # reply-covered pass below lifts a failed ledger test only, so the ground
+            # is recorded here for it to read.
+            stale_by_named_commit.add(_bot_kind)
+        if not _current:
             # The comment was ALREADY admissible evidence — only the currency test
             # failed. Discarding it here is what collapsed a stale
             # review into ``absent``, and the two have OPPOSITE remedies: ``absent``
@@ -1877,13 +1910,15 @@ def cmd_fetch_findings(args):
     # from the reply on every fetch, so a HEAD that advances past the reply returns the
     # bot to stale by the same comparison, with no ledger state to unwind.
     #
-    # The pass lifts a FAILED CURRENCY TEST and nothing else, which holds because that
-    # is the only way a bot enters ``stale_participation`` above. A bot placed there on
-    # any other ground must not be lifted by a reply.
+    # The pass lifts a FAILED LEDGER TEST and nothing else. A bot enters
+    # ``stale_participation`` above on one of two grounds, and only that one is
+    # liftable: a bot in ``stale_by_named_commit`` has a comment whose own text names
+    # another commit, and a reply saying nothing is unreviewed does not change which
+    # commit that comment is about. Such a bot stays stale and is re-triggered.
     reply_covered_participation: dict[str, str] = {}
     if reviewed_commit_sha:
         for _stale_bot, _stale_kind in stale_participation.items():
-            if _stale_bot in participated:
+            if _stale_bot in participated or _stale_bot in stale_by_named_commit:
                 continue
             _reply_id = _stale_review_covered_by_reply(raw_comments, _stale_bot, merge_candidate_committed_at)
             if _reply_id:

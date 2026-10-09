@@ -77,18 +77,15 @@ def issue_comment_verifies_head(comment_body: str, head_sha: str) -> bool:
     the review path uses over the comment body, so a bot that reviewed the merge
     HEAD reads as approving. A current review never advises weakening the gate;
     only a body that names no commit reads as declined.
-    """
-    import re
 
-    if not comment_body or not head_sha:
-        return False
-    candidate = head_sha.strip().lower()
-    if not candidate:
-        return False
-    for token in re.findall(r'\b[0-9a-f]{40}\b', comment_body, re.IGNORECASE):
-        if token.lower() == candidate:
-            return True
-    return False
+    The commit reference is read through ``_github_pr.bot_claimed_sha_matches_head``
+    — the shared commit recogniser — so this path and the participation currency
+    test cannot disagree about where a commit id may sit. The import is deferred to
+    call time because ``_github_pr`` imports the entry module at load.
+    """
+    from _github_pr import bot_claimed_sha_matches_head
+
+    return bot_claimed_sha_matches_head(comment_body, head_sha)
 
 
 def fetch_pr_head_committed_at(pr_number: int | str) -> str:

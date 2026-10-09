@@ -312,29 +312,97 @@ def refusal_layers(body: str, bot_kind: str | None = None) -> list[str]:
     return layers
 
 
-_SHA_TOKEN = re.compile(r'\b[0-9a-f]{40}\b', re.IGNORECASE)
+# ---------------------------------------------------------------------------
+# The commit recogniser — ONE definition, read by every consumer that looks for a
+# commit reference in bot-written text
+# ---------------------------------------------------------------------------
+#
+# A commit reference is recognised WHEREVER the text carries it: as a bare token, or
+# sitting inside a ``…/commit/{sha}`` permalink. Both name the same commit.
+#
+# The surrounding-character guards keep the extraction from reading a SLICE of a
+# longer alphanumeric run as a commit id, so a 64-hex digest yields no spurious
+# 40-character prefix.
+#
+# The recogniser admits abbreviated runs (7 to 40 characters) because its EQUALITY
+# consumers compare each token against a caller-supplied id of whatever length the
+# provider handed over. A consumer that asks "does this text name a commit AT ALL?"
+# must not read an abbreviated run that way — see :func:`named_commits`.
+_COMMIT_TOKEN = re.compile(r'(?<![0-9A-Za-z])[0-9a-fA-F]{7,40}(?![0-9A-Za-z])')
+
+#: Length of a full commit id. Only a token of this length NAMES a commit on its own.
+_FULL_COMMIT_ID_LENGTH = 40
+
+
+def commit_tokens(text: str) -> list[str]:
+    """Return every commit-shaped token in ``text``, lower-cased, in order of appearance.
+
+    The single commit recogniser. ``github_re_review._references_head_sha`` and
+    :func:`bot_claimed_sha_matches_head` both read through it, so the two cannot
+    disagree about where a commit id may sit.
+
+    A token here is commit-SHAPED, nothing more: a seven-digit number is hex-shaped
+    too. Every consumer therefore compares the tokens for EQUALITY against a commit it
+    already holds, or narrows them with :func:`named_commits`.
+    """
+    return [token.lower() for token in _COMMIT_TOKEN.findall(text or '')]
+
+
+def named_commits(text: str) -> list[str]:
+    """Return the FULL commit ids ``text`` names, lower-cased, in order of appearance.
+
+    The narrowing of :func:`commit_tokens` for the one question equality cannot
+    answer: does this text name a commit at all? Only a full-length id counts. An
+    abbreviated run is not evidence of a commit reference — a run id, a line count or
+    a byte size of seven or more digits is hex-shaped — and reading one as a named
+    commit would report a review stale on the strength of a number.
+    """
+    return [token for token in commit_tokens(text) if len(token) == _FULL_COMMIT_ID_LENGTH]
 
 
 def bot_claimed_sha_matches_head(body: str, head_sha: str) -> bool:
-    """Return True when the bot-claimed reviewed SHA equals the merge HEAD.
+    """Return True when a commit ``body`` names equals the merge HEAD.
 
-    SHA-comparison currency guard (PLAN-03): the guard compares the SHA the bot
-    says it reviewed — a bare 40-hex token or a ``.../commit/{sha}`` permalink
-    embedded in the comment body — against the merge HEAD instead of
-    ordering comment timestamps. A force-push after a bot review therefore no
-    longer credits the stale review as current, while the current-review path
-    keeps crediting when the SHAs match. No SHA token means no claim, never a
-    match.
+    The comparison is against the commit the bot says it reviewed — a bare id or a
+    ``.../commit/{sha}`` permalink in the comment body — never against comment
+    timestamps. A force-push after a bot review therefore does not credit the older
+    review as current, while a review naming the current HEAD keeps its credit. Text
+    carrying no commit token makes no claim, and no claim is never a match.
+
+    Equality, never prefix: a token that merely shares a leading run with
+    ``head_sha`` does not match.
     """
     if not body or not head_sha:
         return False
     candidate = head_sha.strip().lower()
     if not candidate:
         return False
-    for token in _SHA_TOKEN.findall(body):
-        if token.lower() == candidate:
-            return True
-    return False
+    return candidate in commit_tokens(body)
+
+
+def named_commit_currency(body: str, head_sha: str) -> bool | None:
+    """Return what the commits ``body`` names say about a review of ``head_sha``.
+
+    Three answers, because the question has three outcomes:
+
+    - ``True`` — ``body`` names ``head_sha``. The comment is about the merge
+      candidate.
+    - ``False`` — ``body`` names at least one commit and none of them is
+      ``head_sha``. The comment is about another commit, whatever its timestamps or
+      edit history say.
+    - ``None`` — no verdict. ``body`` names no commit, or ``head_sha`` could not be
+      read. The caller falls back to whatever rule it applied before this one
+      existed; ``None`` is never a claim that the review is current.
+
+    A body naming several commits is current when ANY of them is ``head_sha``: a
+    review that lists a base and a head, or quotes another commit beside the one it
+    reviewed, is still a review of the merge candidate.
+    """
+    if not (head_sha or '').strip():
+        return None
+    if not named_commits(body):
+        return None
+    return bot_claimed_sha_matches_head(body, head_sha)
 
 
 # ---------------------------------------------------------------------------

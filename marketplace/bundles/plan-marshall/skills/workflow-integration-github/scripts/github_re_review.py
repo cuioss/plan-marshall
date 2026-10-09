@@ -230,7 +230,6 @@ Output: TOON format
 """
 
 import argparse
-import re
 import sys
 from datetime import UTC, datetime
 from typing import Any
@@ -250,6 +249,7 @@ from _github_pr import (
     _extract_rate_limit_eta,
     _is_rate_limit_notice,
     _is_unrecognised_refusal,
+    commit_tokens,
     rate_limit_eta_seconds,
     refusal_cause,
     refusal_condition,
@@ -325,10 +325,10 @@ def _parse_iso(value: str) -> datetime | None:
 # may appear, and it would leave the negative control unable to tell "found the
 # awaited commit" from "matched something SHA-shaped".
 #
-# The surrounding-character guards are what keep the extraction from reading a SLICE
-# of a longer alphanumeric run as a SHA, so a 64-hex digest yields no spurious
-# 40-character prefix match.
-_COMMIT_SHA_TOKEN_RE = re.compile(r'(?<![0-9A-Za-z])[0-9a-fA-F]{7,40}(?![0-9A-Za-z])')
+# The extraction itself is ``_github_pr.commit_tokens`` — the one commit recogniser,
+# shared with the participation currency test — so this predicate and that test read
+# a commit reference from the same places. Its surrounding-character guards are what
+# keep a SLICE of a longer alphanumeric run from being read as a SHA.
 
 
 def _references_head_sha(evidence: str, head_sha: str) -> bool:
@@ -365,7 +365,7 @@ def _references_head_sha(evidence: str, head_sha: str) -> bool:
     target = head_sha.strip().lower()
     if evidence.strip().lower() == target:
         return True
-    return any(token.lower() == target for token in _COMMIT_SHA_TOKEN_RE.findall(evidence))
+    return target in commit_tokens(evidence)
 
 
 def _verifies_head_sha(matched_signal: str, record: dict | None, head_sha: str) -> bool:

@@ -70,7 +70,7 @@ restates it.
 | `refused_unknown` | The bot posted a refusal about whose awaitability nothing is known. Reached two ways: the registry declares its class `unknown` (its refusal shape has never been observed), or **no arm of the recognition stack could read the notice at all** — which resolves here whatever class the bot declares. | A declared *we-do-not-know*, NEVER a positive hard quota. Rendering it as `refused_hard` steers an operator toward "waiting is futile, force it" for a refusal that might have been awaitable. Its own member so the ignorance reaches the reader as ignorance. |
 | `refused_structural` | The bot posted a refusal whose **cause is a ceiling on the diff itself** — the PR is over a per-PR size budget (an observed `cause: size`). Decided by the cause axis, whatever the bot's `rate_limit_class` declares. | **The only member whose refusal is not temporal.** The other three say *not now*; this one says *not this diff*, and the same request never succeeds while the diff is this size. Remedies: **split**, **accept the gap**, or **disable this reviewer for this PR** — ⛔ **never await.** The finding carries the **cap** the notice stated, so the gap is auditable against the measured diff size. |
 | `participated_but_empty` | The bot posted at least one comment, but every comment was filtered out (noise) so it stored zero findings. | **Accounted-for, not a failure.** The bot did its pass and had nothing actionable to say. |
-| `participated_stale` | The bot's comment was already admissible evidence — it matched a declared `participation_evidence` publish shape AND carried that shape's declared content marker where one is declared — but failed the `participation_requires_update` currency test — the currency ledger anchors the comment to a commit that is **not** the merge candidate, and its `updated_at` is unchanged from the value recorded at that credit. | The bot reviewed an **earlier** commit, so nothing has reviewed the current diff. Blocking, but the remedy is a re-review trigger. |
+| `participated_stale` | The bot's comment was already admissible evidence — it matched a declared `participation_evidence` publish shape AND carried that shape's declared content marker where one is declared — but failed the `participation_requires_update` currency test — the currency ledger anchors the comment to a commit that is **not** the merge candidate, and its `updated_at` is unchanged from the value recorded at that credit — or the comment itself names a commit that is not the merge candidate. | The bot reviewed an **earlier** commit, so nothing has reviewed the current diff. Blocking, but the remedy is a re-review trigger. |
 | `declined` | The bot was asked to review the merge candidate (a re-review was triggered) and answered without producing a review of it — an **incremental-review decline**: it responded with a comment that does not REFERENCE the merge candidate (`head_sha_verified: false`) rather than a review of this HEAD. `false` covers BOTH shapes — a comment naming no reviewed commit at all, and one naming a DIFFERENT commit — so neither may be described as the whole of it. | The bot engaged but **declined** to review this commit. Blocking, but re-triggering is futile — the productive action is to accept the decline (move the bot to `optional`, or record a merge-authorization), not to trigger again. |
 
 `participated_but_empty` is the member most often misread. A bot that reviewed and found nothing is a
@@ -365,6 +365,52 @@ observation closes a second defect, the **observer effect** — a credit derived
 its answer on the second look, so the same unedited comment at the same HEAD flipped from
 `participated` to `participated_stale` between one fetch and the next.
 
+#### The named-commit arm — a comment that names a commit is decided by that commit
+
+A currency-tested comment can state which commit it reviewed: the in-house reviewer writes it into its
+persistent comment as a `…/commit/{sha}` permalink carrying the full commit id. Where a comment does
+that, its own statement decides the credit, **ahead of every ledger arm**:
+
+| The comment | Verdict |
+|-------------|---------|
+| names the merge candidate | **current** — credited, on first sight as on any later fetch |
+| names at least one commit, none of them the merge candidate | **stale** — reported in `stale_participation_bots[]`, whatever its timestamps or edit history say |
+| names no commit | no verdict from this arm — the ledger arms in § "Evidence for a bot that edits one comment in place" decide, unchanged |
+
+**Why it outranks the ledger.** The ledger arms infer the reviewed commit from when the plan saw the
+comment and whether it moved. A fresh edit is their strongest signal, and it is still an inference: a
+bot that edits its comment without re-reviewing — or re-reviews an older commit — moves `updated_at`
+exactly as a review of the merge candidate does. A comment that names the previous HEAD after such an
+edit says in its own text that the merge candidate is unreviewed, and an inference must not overrule
+the statement it is an inference about.
+
+**What counts as naming a commit.** Only a FULL commit id, bare or inside a permalink, read through
+the one commit recogniser (`_github_pr.commit_tokens`, narrowed by `_github_pr.named_commits`). An
+abbreviated run does not count: a run id or a byte size of seven or more digits is hex-shaped, and
+reading one as a named commit would report a review stale on the strength of a number. A comment that
+names several commits is current when any of them is the merge candidate.
+
+**Three bounds.**
+
+- The arm's reach is the currency rule's reach — bots declaring `participation_requires_update: true`.
+  It tests no append-per-review bot; see § "The currency-blind path for append-per-review bots".
+- An unreadable merge candidate gives the arm nothing to compare against, so it returns no verdict and
+  the ledger arms fail closed as they always have: the bot is reported undecidable, never stale.
+- A bot that is stale on this ground is **not** lifted by its own `no_unreviewed_commit` reply. That
+  reply lifts a failed ledger test only; it does not change which commit the comment names.
+
+#### The checks surface carries no currency verdict
+
+Review currency is decided in ONE place: the participation gate, from the producer's
+`stale_participation_bots[]`. The CI status surface — `ci status`, `ci wait`, and the overall status
+they derive from the check rows — reads the check rows and nothing else. A stale review does not turn
+it red, and a green CI status says nothing about whether any review covers the merge candidate.
+
+The CI check runs before the review step, and the review step is the only path that re-triggers the
+in-house reviewer. A stale review reported as a CI failure would therefore turn the CI check red after
+every fix commit with no failing check to fix. A reader that needs to know whether a review is current
+reads the participation state; it never infers it from the checks.
+
 #### A wait's completion arm is timestamp-anchored, and that is correct
 
 `github_ops pr wait-for-comments` ends its poll on a movement arm that fires when a bot declaring
@@ -426,7 +472,9 @@ A bot that re-reviews by **editing its single persistent comment** rather than p
 declares `participation_requires_update: true`. For such a bot the comment's continued existence
 proves only that it reviewed **once, at some commit** — after a loop-back or force-push the unchanged
 comment would silently credit it with reviewing code it never saw. Applying the currency rule, its
-evidence requires the comment to prove a review of the **merge candidate**:
+evidence requires the comment to prove a review of the **merge candidate**. A comment that names a
+commit is decided by that commit before any arm below is read — see § "The named-commit arm" above.
+For a comment that names none:
 
 - the **currency ledger** — the SOLE source this test reads — anchors the comment to the
   merge-candidate SHA. That ledger records, per `(bot_kind, comment_id)`, the merge-candidate SHA and
@@ -506,7 +554,8 @@ republishes its summary in place states the commit it reviewed there (CodeRabbit
 until commit …`). The same reviewed-commit value arrives in more than one
 shape: a bare hex token, the SHA carried inside a `…/commit/{sha}` permalink, or either of those
 inside prose. Each names the same commit, so each MUST verify — and both arms read it through the
-one recogniser, `github_re_review._references_head_sha`.
+one predicate, `github_re_review._references_head_sha`, whose extraction is the one commit recogniser
+(`_github_pr.commit_tokens`) the participation currency test also reads.
 
 ⛔ **This predicate fails toward BLOCKING, which is the opposite direction from the rest of this
 contract's refusal handling, and is why the recognition must be wide.** A reference the matcher does

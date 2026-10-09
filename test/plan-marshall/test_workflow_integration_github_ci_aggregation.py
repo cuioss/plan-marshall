@@ -24,6 +24,7 @@ Tests use the conftest run_gh / poll_until monkeypatch seam — no live
 """
 
 import argparse
+import inspect
 
 import github_ops
 from _ci_wait_contract import _ci_wait_args, _noop_sleep, _ok_auth
@@ -288,6 +289,37 @@ def test_derive_failure_plus_in_progress_returns_pending():
     assert status == 'pending'
     assert failing == []
     assert [c.get('name') for c in wait] == ['build']
+
+
+def test_derive_takes_the_check_rows_as_its_only_input():
+    """The overall status is a function of the check rows and nothing else.
+
+    Whether a review bot's review still covers the merge candidate is decided at the
+    participation gate, not here. A second input on this derivation is how a stale
+    review would turn a green CI status red with no failing check to fix, so the
+    signature itself is pinned: the three call sites (``cmd_ci_status``,
+    ``cmd_ci_wait``, ``_fetch_pr_overall_ci_status``) can pass it nothing but checks.
+    """
+    parameters = inspect.signature(github_ops._derive_overall_status).parameters
+
+    assert list(parameters) == ['checks']
+
+
+def test_derive_reports_green_checks_as_success_whatever_a_review_bot_check_says():
+    """A review bot's own check row is read as a check row, by its conclusion alone.
+
+    The matched pair for the signature case above, on behaviour: an all-green row set
+    is ``success``, and it turns ``failure`` only when a ROW concludes failing.
+    """
+    green = [_check('SUCCESS', name='build'), _check('SUCCESS', name='review-bot')]
+    red = [_check('SUCCESS', name='build'), _check('STALE', name='review-bot')]
+
+    green_status, green_failing, _ = github_ops._derive_overall_status(green)
+    red_status, red_failing, _ = github_ops._derive_overall_status(red)
+
+    assert green_status == 'success' and green_failing == []
+    assert red_status == 'failure'
+    assert [c.get('name') for c in red_failing] == ['review-bot']
 
 
 # =============================================================================
