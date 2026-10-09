@@ -189,7 +189,7 @@ A `fixed` finding carries two optional fields that describe its fix:
 
 The stamp records which commit the caller says carries the fix. It does not check that the commit is on the pull request; the reader checks that when it reads (see [`workflow-integration-github` SKILL.md](../workflow-integration-github/SKILL.md) § "The `fixed` reply is held until the fix commit is on the pull request"). Stamping again replaces the value, which is the remedy after a rebase has rewritten the commit.
 
-**Changing a finding's resolution clears both fields**, in `resolve` and in the typed bulk resolve alike, on the same terms as the `responded` marker: the stamp belongs to one `fixed` disposition and does not survive another. Re-resolving a finding `fixed` under a different fix task clears the commit and stores the new task number.
+**Changing a finding's resolution clears both fields**, in `resolve` and in the typed bulk resolve alike, on the same terms as the `responded` marker: the stamp belongs to one `fixed` disposition and does not survive another. Re-resolving a finding `fixed` under a different fix task clears the commit and stores the new task number. Re-resolving a `fixed` finding `fixed` with no `--task-number` changes neither field: it is an unchanged disposition, such as a reworded reply, so a task-owned fix keeps its task number and its commit. The absent flag makes a finding an inline fix only when the finding becomes `fixed` in that call.
 
 Both fields are provider-neutral. The GitHub `post_responses` verb reads `fix_commit_sha`; the GitLab verb does not read either field.
 

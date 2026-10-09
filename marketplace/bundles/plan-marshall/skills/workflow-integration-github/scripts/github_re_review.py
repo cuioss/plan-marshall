@@ -193,13 +193,14 @@ saying every commit on the PR is already reviewed. The second is recognised from
 the bot's registry ``no_unreviewed_commit_patterns`` and is never waited for —
 no window is open, so no window is claimed. :func:`resolve_recovery_action` reads
 the condition first and resolves it from two observations the caller supplies:
-where that bot's review stands for the merge candidate (``credited``, ``stale`` or
-``absent``), and how many of its findings are still pending. A credited review
-resolves ``accept_review_on_record`` when nothing is pending and ``await_triage``
-when something is; a stale one resolves ``leave_to_stale_review``. None of the
-three posts anything. Only an absent review resolves ``post_escalated_command``,
-and ``re-review --escalated`` then posts the bot's registry
-``escalated_trigger_comment`` instead of its ordinary trigger.
+where that bot's review stands for the merge candidate (``credited``, ``stale``,
+``undecidable`` or ``absent``), and how many of its findings are still pending. A
+credited review resolves ``accept_review_on_record`` when nothing is pending and
+``await_triage`` when something is; a stale one resolves ``leave_to_stale_review``;
+an undecidable one — the producer could not say where the review stands —
+resolves ``unmeasured``. None of the four posts anything. Only an absent review
+resolves ``post_escalated_command``, and ``re-review --escalated`` then posts the
+bot's registry ``escalated_trigger_comment`` instead of its ordinary trigger.
 
 **A notice whose window is already over arms no wait.** The comment detector marks
 a ``rate_limited_bots[]`` record ``stale`` when the window its notice stated had
@@ -222,7 +223,7 @@ Usage:
         --plan-id PLAN_ID
     github_re_review.py recovery-action --bot-kind coderabbit [--cause size|quota] \
         [--condition rate_limited|no_unreviewed_commit] \
-        [--review-on-record credited|stale|absent] [--pending-findings N] \
+        [--review-on-record credited|stale|undecidable|absent] [--pending-findings N] \
         [--window-expired true|false] [--attempts-remaining N] \
         [--attempt-held true|false] [--notice-stale true|false] [--plan-id PLAN_ID]
 
@@ -955,7 +956,9 @@ class _ReReviewStrategy:
         was posted after this bot's newest comment, the bot has not answered that
         command yet, and posting it again would spend a second review on the same
         request. Once the bot comments again, a later reply is a new one and the
-        command may be posted for it.
+        command may be posted for it. A bot comment's instant is the later of its
+        ``updated_at`` and ``created_at``, so a comment the bot rewrote counts from
+        its rewrite.
 
         Three refusals, each a returned envelope the caller branches on:
 
@@ -982,12 +985,18 @@ class _ReReviewStrategy:
         if envelope.get('status') != 'success':
             return {**base, 'reason': 'escalated_history_unreadable'}
         comments = [c for c in (envelope.get('comments') or []) if isinstance(c, dict)]
+        # A bot comment is placed at the LATER of its `updated_at` and `created_at`,
+        # as `_match_bot_comment` places it: a bot that answers by rewriting one
+        # persistent comment never advances `created_at`, so ranking on that field
+        # alone reads its answer as written before the command and refuses every
+        # later post.
         bot_stamps = [
             stamp
+            for c in comments
+            if bot_kind_for_author(c.get('author')) == self.bot_kind
             for stamp in (
-                _parse_iso(str(c.get('created_at') or ''))
-                for c in comments
-                if bot_kind_for_author(c.get('author')) == self.bot_kind
+                _parse_iso(str(c.get('updated_at') or '')),
+                _parse_iso(str(c.get('created_at') or '')),
             )
             if stamp is not None
         ]

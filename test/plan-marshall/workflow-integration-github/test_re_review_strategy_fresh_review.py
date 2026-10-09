@@ -657,14 +657,17 @@ def _history(monkeypatch, comments, *, status='success'):
     )
 
 
-def _history_comment(author: str, body: str, created_at: str) -> dict:
-    return {
+def _history_comment(author: str, body: str, created_at: str, *, updated_at: str | None = None) -> dict:
+    comment = {
         'kind': 'issue_comment',
         'id': f'IC_{author}_{created_at}',
         'author': author,
         'body': body,
         'created_at': created_at,
     }
+    if updated_at is not None:
+        comment['updated_at'] = updated_at
+    return comment
 
 
 @pytest.mark.parametrize('bot_kind', _ESCALATING_BOTS)
@@ -744,6 +747,54 @@ def test_an_answered_escalated_command_may_be_posted_for_a_later_reply(bot_kind,
 
     assert result['status'] == 'success'
     assert posted == [(_GUARD_PR_NUMBER, command.strip())]
+
+
+@pytest.mark.parametrize('bot_kind', _ESCALATING_BOTS)
+def test_a_bot_comment_rewritten_after_the_command_counts_as_its_answer(bot_kind, monkeypatch):
+    """A bot comment is placed at the later of ``updated_at`` and ``created_at``.
+
+    The bot's one comment was created before the command and rewritten after it,
+    so the command is answered and may be posted for a later reply.
+    """
+    posted = _record_posts(monkeypatch)
+    command = bot_registry.escalated_trigger_comment(bot_kind)
+    _history(
+        monkeypatch,
+        [
+            _history_comment(
+                _login_of(bot_kind), 'Already reviewed the last commit.', _BEFORE_BOT_REPLY, updated_at=_AFTER_BOT_REPLY
+            ),
+            _history_comment('the-workflow-account', command, _BOT_REPLY_AT),
+        ],
+    )
+    strategy = github_re_review.resolve_strategy(bot_kind)
+
+    result = strategy.request_fresh_review(_GUARD_PR_NUMBER, _GUARD_PUSH_TIME, escalated=True)
+
+    assert result['status'] == 'success'
+    assert posted == [(_GUARD_PR_NUMBER, command.strip())]
+
+
+@pytest.mark.parametrize('bot_kind', _ESCALATING_BOTS)
+def test_a_bot_comment_never_rewritten_after_the_command_leaves_it_unanswered(bot_kind, monkeypatch):
+    """MATCHED CONTROL — the same two comments, with the rewrite before the command."""
+    posted = _record_posts(monkeypatch)
+    command = bot_registry.escalated_trigger_comment(bot_kind)
+    _history(
+        monkeypatch,
+        [
+            _history_comment(
+                _login_of(bot_kind), 'Already reviewed the last commit.', _BEFORE_BOT_REPLY, updated_at=_BOT_REPLY_AT
+            ),
+            _history_comment('the-workflow-account', command, _AFTER_BOT_REPLY),
+        ],
+    )
+    strategy = github_re_review.resolve_strategy(bot_kind)
+
+    result = strategy.request_fresh_review(_GUARD_PR_NUMBER, _GUARD_PUSH_TIME, escalated=True)
+
+    assert posted == []
+    assert result['reason'] == 'escalated_command_already_posted'
 
 
 @pytest.mark.parametrize('bot_kind', _ESCALATING_BOTS)

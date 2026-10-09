@@ -162,6 +162,7 @@ A `fixed` resolution is recorded when the fix is decided, which is before the fi
 - `fix_task_number` is set by `resolve` when the fix is a task. A `fixed` finding without it is an inline fix.
 - `fix_commit_sha` is set by `stamp-fix-commit`, by fix task or by finding. The store does not check that the commit is on the pull request; the reader does.
 - A changed resolution clears both fields. So does a re-resolve to `fixed` under a different fix task, which also stores the new task number.
+- A re-resolve of a `fixed` finding to `fixed` that names no task changes neither field: a task-owned fix keeps its `fix_task_number` and its `fix_commit_sha`.
 - Stamping again replaces `fix_commit_sha`.
 
 The `resolution_detail` of a `fixed` finding is written before the commit exists, so it must be a statement that is true at that time. A reader that transmits the reply adds the commit id itself.

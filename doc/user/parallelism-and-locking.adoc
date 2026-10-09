@@ -188,20 +188,20 @@ The two provider paths are verified differently:
 [#rate-window-await]
 == Review-bot rate window
 
-A rate-limited review bot can answer a review request with a *refusal* instead of a review — CodeRabbit accepts roughly one review per hour, and its window then resets. When the refusing bot is a required one, finalize has no review verdict to proceed on, and the window it is waiting for is a shared resource: the claim co-tenants the merge-mutex store, so concurrent plans queue for the same window instead of each spending it. Whether finalize waits at all is governed by two step-owned params of `plan-marshall:automatic-review` — `review_rate_window_await`, which is off by default, and `review_rate_window_timeout_seconds`, which caps the wait at 3600 s.
+A rate-limited review bot can answer a review request with a *refusal* instead of a review — CodeRabbit accepts roughly one review per hour, and its window then resets. When the refusing bot is a required one, finalize has no review verdict to proceed on, and the window it is waiting for is a shared resource: the claim co-tenants the merge-mutex store, so concurrent plans queue for the same window instead of each spending it. Whether finalize waits at all is governed by two step-owned params of `plan-marshall:automatic-review` — `review_rate_window_await`, which is off by default, and `review_rate_window_timeout_seconds`, which caps the wait for the window at 3600 s.
 
 *This repository arms the await.* `review_rate_window_await` is `true` here. On a required bot's *awaitable* refusal the review step claims the window and hands the wait back; it does not wait itself. The main session carries out the wait:
 
 * the work log names the bot and the time its window reopens;
 * the terminal title shows a waiting state for as long as the wait lasts;
-* when the window has reopened, the review step is run again and requests the review.
+* when the window has reopened, the session waits a further random 5 to 20 minutes, and then the review step is run again and requests the review.
 
-`review_rate_window_timeout_seconds` — 3600 s — bounds that wait. No question is put to you while it runs. When the budget is spent before the window reopens, the decision comes to you.
+`review_rate_window_timeout_seconds` — 3600 s — bounds the wait for the window to reopen. The delay that follows is not counted against it, so the whole wait lasts at most that budget plus 20 minutes, and a window that reopens within the budget is always followed by the review request. No question is put to you while the wait runs. When the budget is spent and the window is still closed, the decision comes to you.
 
 Three cases never wait, whatever the setting:
 
 * A *structural* refusal. The diff exceeds a ceiling the reviewer itself declares, so no reopening window would admit it, and the step escalates immediately.
-* A *"nothing new to review"* reply. The bot is not refusing for quota, so there is no window to wait for; the step sends one request for a full review instead.
+* A *"nothing new to review"* reply. The bot is not refusing for quota, so there is no window to wait for. The step sends one request for a full review only when no review by the bot is on record at all. It sends nothing when a review is on record, whether or not findings of it are still open — open findings go to triage. It sends nothing when where the bot's review stands could not be determined, and the step stays open until it can be. And it sends nothing whenever the await is left off.
 * A notice whose *stated window had already elapsed* when it was read. The window is open, so the step requests the review at once.
 
 With the await left off, a detected refusal settles as ordinary and the step proceeds without waiting at all.

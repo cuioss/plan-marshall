@@ -670,9 +670,15 @@ A non-finite or negative `--grace-seconds` / `--wait-seconds`, or a non-finite o
 non-positive `--interval-seconds`, is refused (`status: error`,
 `error_code: INVALID_INPUT`) before the store is read.
 
-The consumer is `phase-6-finalize` item 7a, in the main context: it draws the jitter
-once from `poll-delay`, passes it as `--grace-seconds`, and re-issues this call until
-the wake is reached. No dispatched step calls this verb.
+The consumer is `phase-6-finalize` item 7a, in the main context. It draws the jitter
+once from `poll-delay` and issues this call in two sequences. The first passes
+`--grace-seconds 0` and is re-issued, under the consumer's total window budget, until
+the window has expired. The second passes the drawn jitter as `--grace-seconds` and is
+re-issued, under a bound equal to that jitter, until the wake is reached. The jitter is
+waited after the window has expired and is not charged to the window budget: a call
+that carried both the jitter and the budget as its bound would spend a budget as long
+as the window before a wake instant that lies the jitter later. No dispatched step
+calls this verb.
 
 ### merge_lock — rate-window release
 
@@ -719,7 +725,8 @@ Returns ONE uniformly-drawn delay in seconds, bounded by `--min-seconds` (defaul
 **It computes; it does not wait.** The verb returns the number and exits. The number
 is waited by `rate-window wait`, which receives it as `--grace-seconds`: the consumer
 — `phase-6-finalize` item 7a, in the main context — draws it once per rate-window
-wait and adds it on top of the window. The split is deliberate: no verb that writes
+wait and waits it after the window has expired, outside the budget that bounds the
+wait for the window. The split is deliberate: no verb that writes
 the store sleeps, and none sleeps while holding the guard, because a wait embedded in
 a claim or a release would hold a process open inside a critical section every
 concurrently-finalizing plan contends on. `rate-window wait` is the one verb that
@@ -798,7 +805,7 @@ script.
 | build wrappers (`_build_execute_factory`, `_pyproject_execute`) | consume | `build_queue acquire`/`release` around `execute_direct` — the in-process fallback path (unregistered / daemon-down) |
 | `manage-build-server:_marshalld_scheduler` (via the D5 routing seam) | consumes | the same machine-global `build-queue.json` — the registered path (daemon-served builds) |
 | `automatic-review/SKILL.md` rate-limit recovery sequence | consumes | `merge_lock rate-window claim`/`check`/`release` |
-| `phase-6-finalize/SKILL.md` item 7a (`rate_window_await` branch, main context) | consumes | `merge_lock poll-delay` — drawn once per wait — then `merge_lock rate-window wait --grace-seconds {delay_seconds}`, re-issued one bounded call at a time until the wake is reached; `merge_lock rate-window release` when the total wait budget is exhausted |
+| `phase-6-finalize/SKILL.md` item 7a (`rate_window_await` branch, main context) | consumes | `merge_lock poll-delay` — drawn once per wait — then `merge_lock rate-window wait --grace-seconds 0`, re-issued one bounded call at a time under the window budget until the window has expired, then `merge_lock rate-window wait --grace-seconds {delay_seconds}`, re-issued under a bound of `{delay_seconds}` until the wake is reached; `merge_lock rate-window release` when the window budget is exhausted with the window still open |
 | machine-global `machine-config.json` | produces | the machine-global `max_slots` that `build_queue acquire`/`release` resolve and report the source of; this skill only READS it |
 | `_locks_core.rmw_json` | consumed by | both `build_queue` (`build-queue.json`) and `merge_lock` (`merge-queue.json` FIFO layer AND `rate_windows` claims) |
 

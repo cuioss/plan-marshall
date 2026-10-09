@@ -43,7 +43,7 @@ _TASK_FIX_START = '- **A finding with a `fix_task_number`** (a task fix).'
 _TASK_FIX_END = '- **A finding with no `fix_task_number`** (an inline fix).'
 
 #: The block of item 7c that commits and stamps the triage's inline edits.
-_INLINE_BLOCK_START = '**Before re-entering on a `loop_back` return'
+_INLINE_BLOCK_START = '**(4a) On every return, before anything is routed'
 _INLINE_BLOCK_END = 'This hook is dispatcher-owned and produces NO'
 
 #: Item 5f, which reads the change ledger for a different purpose.

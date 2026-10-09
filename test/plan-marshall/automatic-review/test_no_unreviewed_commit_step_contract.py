@@ -30,6 +30,7 @@ import re
 importlib.import_module('github_ops')
 
 import github_re_review  # noqa: E402
+import pytest  # noqa: E402
 
 from conftest import get_skill_dir  # noqa: E402
 
@@ -124,6 +125,11 @@ def _state_bullets(part: str) -> dict[str, str]:
 
     A bullet's text runs to the next state bullet, so its continuation lines and its
     nested bullets belong to it.
+
+    Raises:
+        AssertionError: when a state has two bullets. Keeping the later one would
+            let a second, contradicting derivation of a state replace the first
+            without any assertion on the mapping seeing it.
     """
     bullets: dict[str, list[str]] = {}
     current: str | None = None
@@ -131,6 +137,7 @@ def _state_bullets(part: str) -> dict[str, str]:
         match = _STATE_BULLET.match(line)
         if match:
             current = match.group(1)
+            assert current not in bullets, f'state `{current}` is derived by more than one bullet'
             bullets[current] = [line]
         elif current is not None:
             bullets[current].append(line)
@@ -245,6 +252,8 @@ def test_trigger_b_exception_is_not_conditioned_on_the_recovery_opt_in():
 def test_trigger_b_exception_never_counts_the_replying_bot_as_timed_out():
     block = _exception(_AR_SKILL.read_text(encoding='utf-8'))
 
+    assert block, f'the trigger-B exception was not found in {_AR_SKILL}'
+    assert _EXEMPTION_VERB in block, 'the exception does not state the exemption'
     assert 'counts as timed out' not in block
 
 
@@ -288,6 +297,18 @@ def test_state_reader_reports_a_part_that_reads_all_three_lists():
     assert _lists_read(part) == set(_PARTICIPATION_LISTS)
     assert 'undecidable_participation_bots[]' in bullets['undecidable']
     assert 'undecidable_participation_bots[]' not in bullets['absent']
+
+
+def test_state_reader_refuses_a_state_derived_by_two_bullets():
+    """Detector self-test: a duplicated state bullet fails instead of the later one winning."""
+    duplicated = _SYNTHETIC_THREE_LIST_PART.replace(
+        '  - `absent` when the bot is named in none of the three lists.',
+        '  - `absent` when the bot is named in none of the three lists.\n  - `absent` when the bot is in neither list.',
+    )
+    assert duplicated != _SYNTHETIC_THREE_LIST_PART, 'the synthetic part carries no absent bullet to duplicate'
+
+    with pytest.raises(AssertionError, match='`absent` is derived by more than one bullet'):
+        _state_bullets(_part_2(duplicated))
 
 
 def test_branch_6_derives_the_review_state_from_all_three_participation_lists():

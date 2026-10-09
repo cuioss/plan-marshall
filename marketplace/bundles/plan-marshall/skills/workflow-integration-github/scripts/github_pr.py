@@ -1637,11 +1637,15 @@ def cmd_fetch_findings(args):
     ``stale_participation_bots`` is structural — the head read is per-fetch, so a fetch
     either resolved the candidate or did not.
 
-    ⚠ ``undecidable_participation_bots`` is PRODUCER-SIDE DISCLOSURE with no consumer
-    yet: ``review_completeness``'s taxonomy has no member for this state, so nothing
-    routes on it today. Widening the classifier is a separate plan, for which this field
-    is the prerequisite. The gap is stated rather than left to surface as an unreachable
-    branch.
+    ⚠ ``undecidable_participation_bots`` has ONE consumer: the ``no_unreviewed_commit``
+    recovery of the ``automatic-review`` step (its "Rate-limit refusal recovery"
+    Branch 6), which reads a bot named here as ``--review-on-record undecidable`` so
+    that ``github_re_review recovery-action`` resolves ``unmeasured`` and nothing is
+    posted on a review state nobody could read. ``review_completeness``'s taxonomy has
+    no member for this state, so the participation classifier does not route on it: a
+    bot named here is in neither set that classifier counts and is held as unproven.
+    Widening the classifier is a separate plan, for which this field is the
+    prerequisite.
 
     A bot declaring no evidence shape resolves FAIL-CLOSED — it can never be proven
     a participant. This proves PARTICIPATION only, never review QUALITY: the

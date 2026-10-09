@@ -249,7 +249,7 @@ This envelope is a leaf — it cannot sub-dispatch. When the per-finding iterati
 
 ## Step 7: Loop-back signalling
 
-`loop_back_needed: true` when any decision in any group resolved to FIX, as a task fix or as an inline fix. The calling manifest step (or slash command body) handles the actual re-fire — this workflow does NOT call `manage-status set-phase` directly.
+`loop_back_needed: true` when any decision in any group resolved to FIX, as a task fix or as an inline fix, when any group deferred via overflow, or when any decision resolved to another inline-fixable disposition that needs the calling step replayed — SUPPRESS, or a narrow-rationale ACCEPT. A SUPPRESS annotation edits a file in the worktree, so a run whose only dispositions are SUPPRESS returns `status: loop_back` too. The rule and its granularity tiers are stated once in [`triage.md`](triage.md) § Step 7. The calling manifest step (or slash command body) handles the actual re-fire — this workflow does NOT call `manage-status set-phase` directly.
 
 ## Step 8: Respond loop — transmit dispositions to the provider (RESPOND)
 

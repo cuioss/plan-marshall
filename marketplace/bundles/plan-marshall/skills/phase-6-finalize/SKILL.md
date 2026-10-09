@@ -1396,7 +1396,7 @@ FOR each step_id in manifest.phase_6.steps:
 
       - **`reason: re_review_timeout`** — the "On re-review timeout (trigger B)" sub-block fired at trigger B (see `../automatic-review/SKILL.md` § "On re-review timeout (trigger B)"). ⛔ **This reason covers TWO distinct entry paths, and the envelope's `outcome` field — never `reason` — is what says which one fired.** `outcome: timed_out` is a genuine budget expiry: `timeout_seconds` elapsed with no fresh bot review. It does NOT say that nothing declined: trigger B asks every listed bot before it escalates, so a pass on which one bot timed out and another declined reports `outcome: timed_out` with a non-empty `declined_bots` — read that field on this path too. `outcome: declined` is an incremental-review DECLINE: the bot answered the trigger with a comment that does not reference the awaited HEAD — naming no reviewed commit at all, or naming a different one (`matched: true` / `head_sha_verified: false`) — so no budget expired and `declined_bots` names the bot(s) that declined. The envelope's `timed_out` field states the observed fact rather than a constant, so it is `false` on the decline path. **Read `outcome` on every branch below and render a decline AS a decline** — reporting one as a timeout asserts a budget expiry that never happened, which is the false signal this discriminator exists to prevent. The `re_review_on_timeout` policy knob selects `action: defer` vs `action: ask` (or `proceed`, which never returns `escalate_ask`) identically on both paths, so the discrimination is about what is REPORTED, not about which branch runs.
       - **`reason: rate_window_await`** — ⛔ **the one NON-ASKING reason: no `AskUserQuestion` fires for it.** The step claimed a review bot's rate window and returned instead of waiting for it, because a dispatched step cannot hold a wait that runs to an hour. The envelope carries `bot_kind`, `pr_number`, the claim's `expires_at`, `seconds_remaining`, `timeout_seconds` and the `rate_window_arming[]` row, and no `action` and no `prompt_options[]`. This hook holds the wait and then dispatches the step again — see the `rate_window_await` branch below.
-      - **`reason: rate_window_timeout`** — the rate-window wait exhausted `review_rate_window_timeout_seconds` while the claimed window was still open. This reason is not returned by the step: it arises HERE, when the `rate_window_await` branch below spends its whole budget, and is then handled exactly as the other temporal reasons are.
+      - **`reason: rate_window_timeout`** — the rate-window wait exhausted `review_rate_window_timeout_seconds` while the claimed window was still open. This reason is not returned by the step: it arises HERE, when the `rate_window_await` branch below spends its whole budget waiting for the window to expire, and is then handled exactly as the other temporal reasons are. The wake delay that branch waits after an expired window is not charged to the budget, so it never produces this reason.
       - **`reason: rate_window_not_awaitable`** — the refusing bot's `rate_limit_class` is `hard_quota` or `unknown`, so neither awaiting nor generating an event is productive; the leaf escalated without claiming a window.
       - **`reason: rate_window_exhausted`** — the recovery recursion cap for that bot on that PR is spent; the leaf escalated rather than re-triggering a bot it has already re-triggered `attempt_cap` times.
       - **`reason: refusal_structural`** — ⛔ **the one asking reason whose option set is DISJOINT from that of the four temporal ones.** The refusing bot's refusal cause is a diff-SIZE ceiling, so it classified `refused_structural` and the limit is on the diff rather than on a window. Its `prompt_options[]` are *split / accept / disable-for-this-PR*, it carries `cap` and `measured_diff_size` instead of `timeout_seconds`, and **it must NEVER be offered a wait** — waiting is an action the operator can take that is guaranteed not to work, because the diff is the same size an hour later. See `../automatic-review/SKILL.md` § "Rate-limit refusal recovery (opt-in)" Branch 0.
@@ -1409,7 +1409,16 @@ FOR each step_id in manifest.phase_6.steps:
 
       *Termination cause.* Item 5c stamps this return **`blocked_session_restart`** — the existing cause for a dispatch that ended before its step settled and that a fresh dispatch recovers. It is NOT `blocked_user_review`: no review gate is raised and nobody is asked, and stamping that cause would report an operator prompt that never happened. It is not `step_complete` or `returned_with_findings` either, because the step recorded no outcome at all, and it is not `error`, because nothing failed.
 
-      *The wait.* The claim's own expiry is the observable; the stated ETA is not waited out blind. The loop below is driven across tool calls — there is no shell loop and no pause of its own anywhere in it, because `merge_lock rate-window wait` holds each bounded wait itself:
+      *The wait.* The claim's own expiry is the observable; the stated ETA is not waited out blind. The wait has two parts, in this order, and they are bounded separately:
+
+      | Part | Runs until | Bounded by | Charged to `review_rate_window_timeout_seconds` |
+      |------|-----------|------------|--------------------------------------------------|
+      | The window wait (item 3) | the claim's `expires_at` has passed | the envelope's `timeout_seconds` | yes |
+      | The wake-delay wait (item 4) | `expires_at` plus the drawn delay has passed | the drawn `{delay_seconds}` | no |
+
+      The budget bounds the wait for the WINDOW and nothing else: the wake delay is waited after the window has expired and is not charged to `review_rate_window_timeout_seconds`. Three things follow, and each holds with default settings. A window that expires within the budget always reaches the re-dispatch in item 5, whatever delay was drawn — including a claim made on the default window, whose length equals the default budget and whose expiry precedes the end of a budget that only starts counting here. `rate_window_timeout` (item 6) arises only when the window itself is still open when the budget is spent, which takes a stated window longer than the budget. And the waiting is bounded in total by `timeout_seconds` plus the delay, so by `timeout_seconds` plus the `poll-delay` maximum (the `max_seconds` its return echoes) at most.
+
+      Both parts are driven across tool calls — there is no shell loop and no pause of its own anywhere in them, because `merge_lock rate-window wait` holds each bounded wait itself. The verb clamps every call below the host's per-call ceiling whatever `--wait-seconds` asks for, so each part is spent one bounded call at a time:
 
       1. Draw the jittered wake delay ONCE for this wait (see `manage-locks` Canonical invocations → `merge_lock — poll-delay`) and read `delay_seconds`:
 
@@ -1419,7 +1428,7 @@ FOR each step_id in manifest.phase_6.steps:
 
             python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
               work --plan-id {plan_id} --level INFO \
-              --message "[STATUS] (plan-marshall:phase-6-finalize) Waiting for the {bot_kind} review rate window on pr {pr_number} — window expires at {expires_at} ({seconds_remaining}s from the claim), plus a {delay_seconds}s wake delay; total wait budget {timeout_seconds}s. No operator action is needed; plan-marshall:automatic-review is dispatched again when the window has elapsed"
+              --message "[STATUS] (plan-marshall:phase-6-finalize) Waiting for the {bot_kind} review rate window on pr {pr_number} — window expires at {expires_at} ({seconds_remaining}s from the claim); the wait for the window is bounded by {timeout_seconds}s, and a {delay_seconds}s wake delay follows the expiry outside that bound. No operator action is needed; plan-marshall:automatic-review is dispatched again when the window has elapsed"
 
             python3 .plan/execute-script.py plan-marshall:manage-status:manage-status title-token set \
               --plan-id {plan_id} --state lock-waiting --owner cli
@@ -1427,24 +1436,43 @@ FOR each step_id in manifest.phase_6.steps:
             python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime session push-title-token \
               --plan-id {plan_id}
 
-      3. Start with `{remaining_budget}` = the envelope's `timeout_seconds` and issue ONE bounded wait (see `manage-locks` Canonical invocations → `merge_lock — rate-window wait`). Issue the Bash call with the host's maximum per-call timeout, so the script's own clamped bound is always the one that ends it:
+      3. **Wait for the window.** Start with `{remaining_budget}` = the envelope's `timeout_seconds` and issue ONE bounded wait with no grace period, so the instant the call waits for is the claim's `expires_at` itself (see `manage-locks` Canonical invocations → `merge_lock — rate-window wait`). Issue the Bash call with the host's maximum per-call timeout, so the script's own clamped bound is always the one that ends it:
 
             python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-window wait \
               --plan-id {plan_id} --bot-kind {bot_kind} --pr-number {pr_number} \
-              --grace-seconds {delay_seconds} --wait-seconds {remaining_budget}
+              --grace-seconds 0 --wait-seconds {remaining_budget}
 
          Branch on the return:
 
          | `rate-window wait` return | Action |
          |---------------------------|--------|
-         | `timed_out: false` | The wake is reached — the window and the wake delay have both passed. Go to item 4. |
-         | `timed_out: true`, `{remaining_budget}` still positive after subtracting `waited_seconds` | The call's own per-call bound lapsed first. Re-issue the SAME call with the reduced `{remaining_budget}` and the SAME `{delay_seconds}` — never a fresh draw, which would move the wake instant on every call. |
-         | `timed_out: true`, `{remaining_budget}` spent | `review_rate_window_timeout_seconds` is exhausted with the window still open. Go to item 5. |
-         | `status: error` | The wait could not run. Log the returned message at ERROR, clear the title state as item 4 does, and go to item 5 — a wait that cannot be held is not a wake. |
+         | `timed_out: false` | The window has expired — or no window is recorded any more (`wake_at` is null: the claim was released). Go to item 4. |
+         | `timed_out: true`, `{remaining_budget}` still positive after subtracting `waited_seconds` | The call's own per-call bound lapsed first. Re-issue the SAME call with the reduced `{remaining_budget}`. |
+         | `timed_out: true`, `{remaining_budget}` spent | `review_rate_window_timeout_seconds` is exhausted with the window still open — the return's `expired` is `false`. Go to item 6 with `{wait_outcome}` = `review_rate_window_timeout_seconds={timeout_seconds} exhausted with the window still open`. |
+         | `status: error` | The wait could not run. Log the returned message at ERROR and go to item 6 with `{wait_outcome}` = `the window wait could not be held` — a wait that cannot be held is not a wake. |
 
-         The wait's answer is a wake signal and nothing more: it writes nothing and decides nothing. The re-dispatched step re-reads the claim itself and acts on that read, so a claim another plan makes in between is seen there.
+         A call whose bound and whose window lapse together reports `timed_out: false`: the verb reads the expiry before it reads its own bound, so an expired window is never reported as a spent budget.
 
-      4. **Wake reached.** Clear the waiting state, log, and dispatch `plan-marshall:automatic-review` again from scratch — re-enter the Step 3 dispatch with the SAME role/level resolution, exactly as the "wait again" branch below does. Leave the step record ABSENT across the re-dispatch: the leaf recorded nothing, this branch records nothing, and the terminal record is written by the pass that settles. Do NOT release the claim — the re-dispatched step recognises its own elapsed claim by reading it, and releases it itself once the review request is re-delivered:
+      4. **Wait the wake delay.** The window has expired, so nothing from here on is charged to `{remaining_budget}`, and no return of this item leads to item 6. Start with `{remaining_delay}` = `{delay_seconds}` and issue ONE bounded wait whose wake instant is the claim's `expires_at` plus the delay:
+
+            python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-window wait \
+              --plan-id {plan_id} --bot-kind {bot_kind} --pr-number {pr_number} \
+              --grace-seconds {delay_seconds} --wait-seconds {remaining_delay}
+
+         Branch on the return:
+
+         | `rate-window wait` return | Action |
+         |---------------------------|--------|
+         | `timed_out: false` | The wake is reached — the window and the wake delay have both passed, or no window is recorded and there is no instant to delay from. Go to item 5. |
+         | `timed_out: true`, `{remaining_delay}` still positive after subtracting `waited_seconds` | The call's own per-call bound lapsed first. Re-issue the SAME call with the reduced `{remaining_delay}` and the SAME `{delay_seconds}` — never a fresh draw, which would move the wake instant on every call. |
+         | `timed_out: true`, `{remaining_delay}` spent | The delay has been waited in full and the wake instant is still ahead, so the claim's expiry moved while this item waited — another plan claimed the window. Go to item 5 all the same: the delay is a bounded pause, not a condition, and the re-dispatched step reads the claim itself. |
+         | `status: error` | The delay could not be held. Log the returned message at WARNING and go to item 5: item 3 already observed the window expired, and the re-dispatched step triggers nothing without its own read of the claim. |
+
+         The delay starts at or after `expires_at`, so waiting `{delay_seconds}` in full always reaches the wake instant of an expiry that did not move; that is what bounds this item by the drawn delay.
+
+         The answer of either wait is a wake signal and nothing more: it writes nothing and decides nothing. The re-dispatched step re-reads the claim itself and acts on that read, so a claim another plan makes in between is seen there.
+
+      5. **Wake reached.** Clear the waiting state, log, and dispatch `plan-marshall:automatic-review` again from scratch — re-enter the Step 3 dispatch with the SAME role/level resolution, exactly as the "wait again" branch below does. Leave the step record ABSENT across the re-dispatch: the leaf recorded nothing, this branch records nothing, and the terminal record is written by the pass that settles. Do NOT release the claim — the re-dispatched step recognises its own elapsed claim by reading it, and releases it itself once the review request is re-delivered:
 
             python3 .plan/execute-script.py plan-marshall:manage-status:manage-status title-token clear \
               --plan-id {plan_id} --owner cli
@@ -1456,14 +1484,14 @@ FOR each step_id in manifest.phase_6.steps:
               work --plan-id {plan_id} --level INFO \
               --message "[STATUS] (plan-marshall:phase-6-finalize) {bot_kind} review rate window on pr {pr_number} has elapsed after {total_waited_seconds}s — dispatching plan-marshall:automatic-review again"
 
-      5. **Budget exhausted.** Clear the waiting state as item 4 does, release the claim, decision-log, and then proceed exactly as the existing `rate_window_timeout` reason does — the temporal `ask` branch below, with its three options. The envelope that branch consumes is the `rate_window_await` envelope this hook was waiting on, re-labelled: `reason: rate_window_timeout`, `action: ask`, `timed_out: true`, the same `bot_kind` / `refusal_class` / `pr_number` / `timeout_seconds` / `rate_window_arming[]`, and the rate-window `prompt_options[]` defined in [`../automatic-review/SKILL.md`](../automatic-review/SKILL.md) § "`escalate_ask` return (timeout escalations)":
+      6. **Budget exhausted.** Reached from item 3 only — the window wait spent its budget, or could not be held. Clear the waiting state as item 5 does, release the claim, decision-log, and then proceed exactly as the existing `rate_window_timeout` reason does — the temporal `ask` branch below, with its three options. The envelope that branch consumes is the `rate_window_await` envelope this hook was waiting on, re-labelled: `reason: rate_window_timeout`, `action: ask`, `timed_out: true` when the budget was spent (`false` when the window wait could not be held — no budget elapsed then, and `{wait_outcome}` says so), the same `bot_kind` / `refusal_class` / `pr_number` / `timeout_seconds` / `rate_window_arming[]`, and the rate-window `prompt_options[]` defined in [`../automatic-review/SKILL.md`](../automatic-review/SKILL.md) § "`escalate_ask` return (timeout escalations)":
 
             python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-window release \
               --plan-id {plan_id} --bot-kind {bot_kind}
 
             python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
               decision --plan-id {plan_id} --level INFO \
-              --message "(plan-marshall:phase-6-finalize) rate-window wait: review_rate_window_timeout_seconds={timeout_seconds} exhausted with the {bot_kind} window still open on pr {pr_number} — released the claim; handling as rate_window_timeout"
+              --message "(plan-marshall:phase-6-finalize) rate-window wait for {bot_kind} on pr {pr_number}: {wait_outcome} — released the claim; handling as rate_window_timeout"
 
          The release matters for the operator's "Wait another" choice: the fresh dispatch finds no claim of its own, claims again — spending one recovery attempt — and returns a new `rate_window_await`.
 
@@ -1730,7 +1758,7 @@ FOR each step_id in manifest.phase_6.steps:
             A pushed head passes the respond pass's check by construction: `post_responses` releases a `fixed` finding when GitHub reports the stamped commit as the pull request head or as an ancestor of it, and at stamping time it is the head. When the head moves again before a respond pass reads the stamp — further commits pushed on top — the stamped commit is an ancestor of the new head and still passes. Only a rewritten branch fails the check: after a rebase or a force-push that replaces the stamped commit the finding is held with `fix_commit_not_on_pr_head` until it is stamped again.
 
             A task that is not `done` is not stamped, and no task is stamped while the branch is not `synced`. Their findings stay held, and the respond pass below reports them as `deferred_until_commit`; the next firing reads the task and the push parity again.
-          - **A finding with no `fix_task_number`** (an inline fix). It is stamped at (4) below, in the firing that commits its edit, and nowhere else: only that firing knows which commit holds the edit. One still unstamped here belongs to a firing that did not commit its edit. Do not stamp it. Log it at WARNING, naming the `hash_id`, so the held reply is visible.
+          - **A finding with no `fix_task_number`** (an inline fix). It is stamped at (4a) below, in the firing that commits its edit, and nowhere else: only that firing knows which commit holds the edit. Every firing runs (4a) on every return of the triage, before it evaluates any gate, so a halt at item 7b leaves no inline fix behind. One still unstamped here therefore belongs to a firing that ended before (4a) wrote its stamp — the commit or the push failed, or the session ended in between. This firing cannot tell which commit holds that edit. Do not stamp it. Log it at WARNING, naming the `hash_id`, so the held reply is visible.
 
           Then run the respond pass once, whether or not anything was stamped in this firing — a finding that already carries a stamp may still be waiting for its commit to reach the pull request:
 
@@ -1771,13 +1799,13 @@ FOR each step_id in manifest.phase_6.steps:
 
               WORKTREE: {worktree_path}
           ```
-      (4) Consume the return. The unified triage owns the RESPOND loop (both `github_pr post_responses` for `pr-comment` thread-replies AND `sonar post_responses` for `sonar-issue` server-side dismissals, each keyed by `hash_id`); its pass transmits every disposition except a `fixed` one whose fix commit is not yet stamped, which this hook transmits at (0) or in the block below. On `status: loop_back` (FIX dispositions created fix tasks OR overflow deferred), route it through the SAME continuation machinery as item 7b: read `loop_back_target` from the return, run the item-7b admission gate, then apply the symmetric `loop_back_without_asking` knob. The unified triage is dispatcher-owned and is not a manifest step, so it has no `step_ref` to spend from — the admission call passes the fixed source name `wait-region-unified-triage` (`loop-back admit --source wait-region-unified-triage --ceiling {max_iterations}`), which gives the triage a budget of its own, separate from every step's. That name stands wherever item 7b names `{step_ref}`, so a refused triage round is granted to `wait-region-unified-triage` and to no step. Omit the refusal Display's `loop-back close` remedy for the triage: `close` takes a manifest step, and the triage is not one. Re-enter per the granularity branch (`5-execute` full-phase rollback / `6-finalize` inline replay). A `6-finalize` re-entry re-fires the wait-region producers (they are HEAD-dependent — a fix commit advanced HEAD), which re-FIND against the new tree, and this hook runs the unified triage again. On `status: success`, every pending finding resolved with no loop-back — continue the FOR loop.
+      (4) Consume the return, in two parts and in this order: (4a) commit the triage's own edits, push, stamp and respond; (4b) route the return. ⛔ **(4a) runs on EVERY return of the unified triage — `status: loop_back` and `status: success` alike — and it runs to completion BEFORE (4b) evaluates anything.** Item 7b has two paths that STOP: the ceiling refusal at its (i), and the `loop_back_without_asking: false` halt at its (ii). Both are reached from (4b), so both halt with the triage's edits already committed and pushed. No return of the triage and no path through (4b) leaves an inline edit uncommitted in the worktree.
 
-          **Before re-entering on a `loop_back` return — commit the triage's own edits, push, stamp the inline fixes, respond again.** The triage applies its inline edits (a SUPPRESS annotation, or the one edit of an inline fix) in the worktree and commits nothing. The triage is not a manifest step, so item 5f never sees those edits; this hook commits them, on either `loop_back_target`:
+          **(4a) On every return, before anything is routed — commit the triage's own edits, push, stamp the inline fixes, respond again.** The triage applies its inline edits (a SUPPRESS annotation, or the one edit of an inline fix) in the worktree and commits nothing. The triage is not a manifest step, so item 5f never sees those edits; this hook commits them, whatever `status` the triage returned and on either `loop_back_target`:
 
-          - Check the worktree and, when it is dirty, commit exactly as item 5f (a)-(b) does for a mutating step — `git -C {worktree_path} status --porcelain`, then `Skill: plan-marshall:workflow-integration-git` with `push: false` and the message `fix(review): apply inline review dispositions` — and resolve the new HEAD as `{inline_commit_sha}` with `git -C {worktree_path} rev-parse HEAD`. Emit the item 5f (d) freshness reconciliation record for it. A clean worktree means the triage edited nothing: skip the rest of this block.
+          - Check the worktree and, when it is dirty, commit exactly as item 5f (a)-(b) does for a mutating step — `git -C {worktree_path} status --porcelain`, then `Skill: plan-marshall:workflow-integration-git` with `push: false` and the message `fix(review): apply inline review dispositions` — and resolve the new HEAD as `{inline_commit_sha}` with `git -C {worktree_path} rev-parse HEAD`. Emit the item 5f (d) freshness reconciliation record for it. A clean worktree means the triage edited nothing: skip the rest of (4a) and go to (4b).
           - Re-invoke the `push` step, as item 5f § "Post-PR re-push" does, so the commit is on the pull request.
-          - Stamp each inline fix this firing resolved: every `fixed` `pr-comment` finding with no `fix_task_number` and no `fix_commit_sha`, except the ones (0) logged in this same firing as unstamped — their edit is not in this commit:
+          - Stamp each inline fix this firing resolved: every `fixed` `pr-comment` finding with no `fix_task_number` and no `fix_commit_sha`, except the ones (0) logged in this same firing as unstamped — which commit holds their edit is not known to this firing:
 
             ```bash
             python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings stamp-fix-commit \
@@ -1787,6 +1815,12 @@ FOR each step_id in manifest.phase_6.steps:
           - Run the respond pass again, with the same `github_pr post_responses` call as (0). It transmits the inline fixes just stamped; a task fix resolved in this firing has no commit yet and stays `deferred_until_commit` until (0) of a later firing stamps it.
 
           On a GitLab project the commit and the push still happen; the stamp and the second respond pass are skipped, as in (0).
+
+          When the commit or the push fails, log the failure at ERROR and STOP here, before the stamp and before (4b): nothing is stamped with a commit that is not on the pull request, and nothing is routed past an edit that is not committed. A failed commit leaves the edit in the worktree, where (4a) of the next firing commits it.
+
+          **(4b) Route the return — only after (4a) has finished.** The unified triage owns the RESPOND loop (both `github_pr post_responses` for `pr-comment` thread-replies AND `sonar post_responses` for `sonar-issue` server-side dismissals, each keyed by `hash_id`); its pass transmits every disposition except a `fixed` one whose fix commit is not yet stamped, which this hook transmits at (0) or at (4a). On `status: loop_back` (a FIX disposition in either shape, an overflow deferral, or an inline-fixable disposition such as a SUPPRESS annotation — see [`../plan-marshall/workflow/triage.md`](../plan-marshall/workflow/triage.md) § Step 7), route it through the SAME continuation machinery as item 7b: read `loop_back_target` from the return, run the item-7b admission gate, then apply the symmetric `loop_back_without_asking` knob. The unified triage is dispatcher-owned and is not a manifest step, so it has no `step_ref` to spend from — the admission call passes the fixed source name `wait-region-unified-triage` (`loop-back admit --source wait-region-unified-triage --ceiling {max_iterations}`), which gives the triage a budget of its own, separate from every step's. That name stands wherever item 7b names `{step_ref}`, so a refused triage round is granted to `wait-region-unified-triage` and to no step. Omit the refusal Display's `loop-back close` remedy for the triage: `close` takes a manifest step, and the triage is not one. Re-enter per the granularity branch (`5-execute` full-phase rollback / `6-finalize` inline replay). A `6-finalize` re-entry re-fires the wait-region producers (they are HEAD-dependent — a fix commit advanced HEAD), which re-FIND against the new tree, and this hook runs the unified triage again. On `status: success` with a worktree (4a) found clean, every pending finding resolved with no loop-back — continue the FOR loop.
+
+          A `status: success` return on which (4a) committed an edit is NOT continued past. The commit advanced HEAD beyond the tree the wait-region producers read, and a return that edited a file owed a `loop_back` (`triage.md` § Step 7). Log it at WARNING, naming `{inline_commit_sha}`, and route it exactly as a `status: loop_back` return with `loop_back_target: 6-finalize` — through the same admission gate and knob, under the same `wait-region-unified-triage` source.
 
       This hook is dispatcher-owned and produces NO `phase_steps["6-finalize"]` record of its own (it is not a manifest step); the wait-region producer steps carry the `done` records. The single unified pass is the ONLY place `pr-comment` and `sonar-issue` findings are triaged in finalize — the retired per-producer `producer=pr-comment` and `producer=sonar` dispatches no longer run.
 END FOR

@@ -853,13 +853,19 @@ def resolve_finding(
     ``fix_task_number`` names the fix task that owns the fix of a ``fixed``
     finding; it is stored as ``fix_task_number`` and is what
     :func:`stamp_fix_commit` selects on. It is refused on every other resolution.
-    A ``fixed`` finding resolved without it is an inline fix: it has no task.
+    A finding that becomes ``fixed`` without it is an inline fix: it has no task.
 
     Changing a finding's resolution clears its fix-commit stamp and its fix-task
     number, on the same terms as the ``responded`` marker below: the stamp says
     which commit carries THIS disposition's fix, so it does not survive a
     different disposition. A re-resolve to ``fixed`` under a different fix task
     clears the commit too, because the stamped commit belonged to the other task.
+
+    A re-resolve of a ``fixed`` finding to ``fixed`` that names NO task is an
+    unchanged disposition — a reworded reply — and changes neither field: a
+    task-owned fix stays owned by its task and keeps its commit stamp. The absent
+    argument is read as "no task named", never as "make this an inline fix". A
+    task fix becomes an inline one only through a resolution change in between.
 
     Relational integrity backstop: a ``resolution_detail``
     is only ever written keyed to a ``hash_id`` that resolves to an existing parent
