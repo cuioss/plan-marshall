@@ -14,8 +14,8 @@ This test asserts that:
    (e.g., build_server, machine_config, run_config).
 2. No machine-specific path strings (/Users/, /home/, /tmp/, C:/, *.sock, *.pid)
    appear anywhere in the configuration.
-3. No secret credential values (token, password, secret, api_key) appear in any
-   credentials block.
+3. No secret credential keys (auth_token, access_token, bearer_token, password, secret, api_key)
+   appear anywhere in the configuration.
 4. Effort declarations use only abstract ordinal levels (level-1..level-7, inherit),
    never machine-local model pins.
 5. Negative controls assert that violations are correctly flagged.
@@ -53,7 +53,7 @@ SECRET_KEY_PATTERNS = re.compile(
 
 #: Regex matching machine-local filesystem paths.
 MACHINE_LOCAL_PATH_RE = re.compile(
-    r'(?:^|[/\\])(?:home|Users)[/\\][a-zA-Z0-9_\-]+|\/tmp\/|\.sock$|\.pid$',
+    r'^[a-zA-Z]:[/\\]|(?:^|[/\\])(?:home|Users)[/\\][a-zA-Z0-9_\-]+|\/tmp\/|\.sock$|\.pid$',
 )
 
 #: Abstract effort levels allowed in project-shared config.
@@ -164,8 +164,9 @@ def test_negative_control_flags_prohibited_keys() -> None:
         ({'run_config': {'trailer': 'test'}}, 'Prohibited top-level'),
         ({'credentials_config': {'api': {'auth_token': 'secret123'}}}, 'Secret key'),
         ({'credentials_config': {'service': {'password': 'pass'}}}, 'Secret key'),
-        ({'project': {'local_path': '/Users/alice/git'}}, 'Machine-local path'),
         ({'orchestrator': {'effort': {'default': 'claude-3-5-sonnet'}}}, 'Invalid effort level'),
+        ({'project': {'windows_slash': 'C:/build/agent'}}, 'Machine-local path'),
+        ({'project': {'windows_backslash': 'C:\\build\\agent'}}, 'Machine-local path'),
     ]
 
     for bad_config, expected_substr in test_cases:
