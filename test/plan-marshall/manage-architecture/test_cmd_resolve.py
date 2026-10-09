@@ -612,6 +612,37 @@ def test_top_level_plan_id_makes_a_build_executable_carry_it(isolated_run_config
     assert result['bash_timeout_seconds'] == 360
 
 
+_EXECUTOR = 'python3 .plan/execute-script.py'
+_NOTATION = 'plan-marshall:build-pyproject:pyproject_build'
+
+#: ``(resolved executable, the same string with the flag after the parsed run token)``.
+_ATTRIBUTION_SHAPES = [
+    (
+        f'{_EXECUTOR} "{_NOTATION}" run --command-args "{_NOTATION} run verify"',
+        f'{_EXECUTOR} "{_NOTATION}" run --plan-id {_PLAN} --command-args "{_NOTATION} run verify"',
+    ),
+    (
+        f'{_EXECUTOR} {_NOTATION} "run" --command-args "verify plan-marshall"',
+        f'{_EXECUTOR} {_NOTATION} "run" --plan-id {_PLAN} --command-args "verify plan-marshall"',
+    ),
+    (
+        f'{_PYPROJECT_VERIFY_EXECUTABLE} && other',
+        f'{_PYPROJECT_VERIFY_ATTRIBUTED} && other',
+    ),
+]
+
+_ATTRIBUTION_SHAPE_IDS = ['quoted-notation-repeated-in-command-args', 'quoted-run', 'trailing-shell-operator']
+
+
+@pytest.mark.parametrize('executable,expected', _ATTRIBUTION_SHAPES, ids=_ATTRIBUTION_SHAPE_IDS)
+def test_plan_id_lands_after_the_parsed_run_token_and_no_other_character_moves(
+    isolated_run_config, executable, expected
+):
+    result = _resolve_seeded(executable, plan_id=_PLAN)
+
+    assert result['executable'] == expected
+
+
 @pytest.mark.parametrize('plan_id', [None, NO_PLAN_SENTINEL], ids=['no-plan-id', 'no-plan-sentinel'])
 def test_executable_is_unchanged_without_a_real_plan_id(isolated_run_config, plan_id):
     result = _resolve_seeded(_PYPROJECT_VERIFY_EXECUTABLE, plan_id=plan_id)

@@ -484,24 +484,30 @@ def _attribute_build_executable(executable: str, plan_id: str | None) -> str:
         return executable
     assert plan_id is not None  # for mypy
     validate_plan_id(plan_id)
-    notation = parsed[0]
-    # _parse_build_executable already proved the string tokenises.
+    # _parse_build_executable already proved the string tokenises, and that the
+    # executor script path is followed by the notation and then ``run``.
     tokens = shlex.split(executable)
     if any(token == flag or token.startswith(f'{flag}=') for token in tokens for flag in _ROUTING_FLAGS):
         return executable
-    attributed, replaced = re.subn(
-        rf'({re.escape(notation)}\s+run)(?=\s)',
-        lambda match: f'{match.group(1)} --plan-id {plan_id}',
-        executable,
-        count=1,
-    )
-    if replaced:
-        return attributed
-    # The notation or ``run`` is quoted in the source string, so the textual
-    # anchor missed. Rebuild from tokens; the parse guarantees ``run`` follows
-    # the notation.
-    run_index = tokens.index(notation) + 1
-    return shlex.join([*tokens[: run_index + 1], '--plan-id', plan_id, *tokens[run_index + 1 :]])
+    run_index = next(i for i, token in enumerate(tokens) if token.endswith('execute-script.py')) + 2
+    run_end = _token_end_offset(executable, run_index)
+    return f'{executable[:run_end]} --plan-id {plan_id}{executable[run_end:]}'
+
+
+def _token_end_offset(command: str, index: int) -> int:
+    """Return the offset just past token ``index`` of ``command``.
+
+    Tokenises exactly as ``shlex.split`` does. The token must be followed by
+    whitespace: the lexer reads one character at a time and has consumed that
+    one terminating character when it hands the token back.
+    """
+    stream = io.StringIO(command)
+    lexer = shlex.shlex(stream, posix=True)
+    lexer.whitespace_split = True
+    lexer.commenters = ''
+    for _ in range(index + 1):
+        lexer.get_token()
+    return stream.tell() - 1
 
 
 def _augment_resolved(executable_result: dict[str, Any], project_dir: str) -> dict[str, Any]:
