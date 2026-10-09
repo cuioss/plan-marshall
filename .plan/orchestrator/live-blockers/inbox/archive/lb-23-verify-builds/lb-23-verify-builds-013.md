@@ -1,0 +1,36 @@
+envelope_version=1
+sender_type=plan
+sender_id=lb-23-verify-builds
+epic=live-blockers
+kind=candidate-lesson
+created=2026-10-09T10:02:03Z
+
+component=plan-marshall:manage-metrics
+category=improvement
+created=2026-10-09
+bundle=plan-marshall
+source_plan=lb-23-verify-builds
+confidence=high
+
+# Forward step_id and context-load tokens on every record-dispatch-boundary
+
+## Context
+
+The retrospective for plan lb-23-verify-builds could not attribute finalize spend to steps from the ledgers. 30 of 34 dispatch-boundary rows carry no `step_id` (22 of 26 finalize rows, all 7 execute rows, the 1 plan row), so only 4 firings could be joined to their execution-log rows; per-step cost had to be inferred from tool-use counts. All 34 rows record the four context-load columns as `unmeasured`, so the context-position cost block has zero measured rows. Finalize boundary rows total 5,758,263 tokens against 7,235,372 in the finalize accumulator, leaving 1,477,109 dispatched tokens with no boundary row. Separately, the change ledger held no build row for the plan (1272 rows scanned, 0 matched) while the script log records 148 build calls, so build time is unavailable.
+
+## Root cause
+
+The orchestrator calls `record-dispatch-boundary` without `--step-id` and without the four token flags on most dispatches, and does not call it at all for some dispatch classes (the self-review fix and verifier dispatches are the likely gap; not established). The manage-metrics contract already says to forward the step key on every call. The missing build rows repeat the lb-14 zero-row observation this plan filed to the inbox during execute: the ledger is per working tree (`.plan/local/worktrees/lb-23-verify-builds/.plan/work/change-ledger.jsonl` per the work log), and that tree is removed before the retrospective runs.
+
+## Proposed action
+
+- Make the dispatch seam pass `--step-id` and the four context-load flags from the dispatch it just resolved, so the caller cannot omit them.
+- Record a boundary row for every dispatch class that spends tokens in finalize, or declare the excluded classes the way the phase-2/3 classes are declared.
+- Fold the worktree's change ledger into the plan directory at integrate-into-main (as the global logs are folded), so the retrospective's build-time oracle can read it.
+
+## Evidence
+
+- aspect: execution_context_dispatch_audit - firing_comparison: 6-finalize `keyless_boundary_rows: 22`, `paired_firings: 4`; 5-execute `keyless_boundary_rows: 7`; channel `confidence: low` (9 distinct dispatch lines, 43 completions); shape check `corroboration: uncorroborated` (55 of 55 dispatch lines are foreign-caller lines).
+- aspect: log_analysis - `context_position_cost: total_rows 34, measured_rows 0`; `build_time: ledger_rows_scanned 1272, summed_rows 0, total_build_seconds unavailable`; `log_build_calls: 148`.
+- metrics: 6-finalize `total_tokens: 7235372`, `dispatch_boundary_total: 5758263`.
+- work log 2026-10-09T07:39:24Z: `ledger_path=.../worktrees/lb-23-verify-builds/.plan/work/change-ledger.jsonl`.

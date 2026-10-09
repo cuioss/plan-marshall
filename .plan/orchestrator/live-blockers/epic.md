@@ -144,6 +144,42 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
     comment needs a `rejected` disposition), `-013` as `-21-005` (six `manage-status`
     documentation and behaviour gaps left by PLAN-LB-22), `-015` as `-21-006` (the PR Intent
     section drops the non-goals when over budget).
+- **PLAN-LB-23 shipped on 2026-10-09 (#1729, `c9738952a`)** — record at `landings/PLAN-LB-23.md`.
+  A timed-out build now stops its whole process tree on both the daemon and the direct
+  path, a timeout names the bound applied and its source, and the push freshness gate
+  credits a set of narrower green builds when every required analysis has one row at an
+  adequate scope. Scope is not pooled across rows: several bundle verifies still do not
+  cover a whole-tree change, so a fix commit touching more than one module still owes a
+  whole-tree `verify`. Seven of nine deliverables landed as specified or with a small
+  deviation; the plan-attribution deliverable landed in part (see Open Defects). It cost
+  13.1 million tokens and about 14 hours, 58 percent of the tokens in finalize.
+  - The commit touched 31 files its spec did not declare, among them `execution.md`,
+    `phase-5-execute/SKILL.md`, `canonical_verify.md` and `build-server-client/SKILL.md`,
+    which PLAN-LB-26 cites by line, and it changed `_build_execute_factory.py` and
+    `_build_shared.py`. PLAN-LB-26 and PLAN-LB-28 need their claims re-grounded against it
+    before launch, in addition to the self-review claims named below.
+- **Inbox drain of 2026-10-09, thirteen messages from PLAN-LB-23:**
+  - `-014` (landing) — reconciled; complete.
+  - `-005` (scope-creep guard: six failed calls, 76 to 108 residual files of upstream
+    history) and `-011` (`affected_files` held 46 entries against 56 touched files; the
+    scoped plugin-doctor gate read it and left four skill directories ungated) — folded into
+    PLAN-LB-27 as second recurrences. No surface added.
+  - `-006` (triage `deliverable: 0` rejected in four dispatches; fix tasks created without
+    an envelope were handed out after queued plan tasks three times) — folded into
+    PLAN-LB-26 as a second recurrence. No surface added.
+  - Promoted to the lessons corpus, none with an owning plan here: `-004` as
+    `2026-10-09-13-001` (run per-task tests at directory scope when the module-wide run is
+    too long for a leaf), `-007` as `-13-002` (`WORKTREE` arrives absolute, or as a flag
+    fragment after the merge), `-008` as `-13-003` (the orchestrator followed a stale cached
+    workflow document and told the operator the wrong loop limit), `-009` as `-13-004` (the
+    main executor pointing into a removed worktree; also an Open Defect), `-013` as
+    `-13-005` (30 of 34 dispatch-boundary rows carry no step id, so finalize cost cannot be
+    attributed to steps).
+  - Discarded as duplicates of lessons already in the corpus, each a second sighting:
+    `-003` (`2026-10-08-21-003`; its cost figures are on the Watch), `-010`
+    (`2026-10-08-21-006`), `-012` (`2026-10-08-21-004`).
+  - `-002` (the self-review never converged) — not lifted: the run used the self-review
+    from before #1726. Kept as the baseline of the Watch on the regraded review.
 - **Standalone plan outside the queue, commissioned by the operator on 2026-10-08:** "the
   pre-submission self-review blocks on real defects, not on wording". It has no queue row and
   is not run through plan-marshall; the operator hands it to OpenCode. Brief:
@@ -177,11 +213,13 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
       is not recorded here.
     - A review comment found a real gap, fixed before merge: a diff that only removes lines
       from a function was not listed for the behavioural check.
-    - Left behind on this machine, reported by the run and not checked here: the main
-      checkout's git-ignored executor was regenerated from the plugin cache by a test run;
-      the worktree `.plan/local/worktrees/self-review-materiality` and the local branch
-      `fix/self-review-materiality` still exist, with a generated `target/` tree and the
-      untracked brief.
+    - The run's worktree `.plan/local/worktrees/self-review-materiality` is gone
+      (`git worktree list` on 2026-10-09 shows no entry for it), and the untracked brief
+      went with it. Its removal left the main checkout's executor pointing into it; see
+      Open Defects.
+    - The three stale texts its report named were corrected by the same session as #1727
+      (`2d9fc981f`, merged through the queue): `capability-gaps.adoc`,
+      `dispatch-granularity.md` and `unreachable-guard-detection.md`.
     - Consequences for the queue: PLAN-LB-28 may now run (nothing else is editing the
       self-review workflow), but the PLAN-LB-03 claims it carries were verified before this
       change and name sections this change rewrote; the same holds for the PLAN-LB-08 claims
@@ -377,28 +415,77 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   `pre-commit-verify-freshness` opens. — source: inbox message `lb-23-verify-builds-001.md`,
   2026-10-08; pointers `_build_execute_factory._append_gate_build_row`,
   `_ledger_core.resolve_ledger_path`; not verified here.
+  - **Read in the code on 2026-10-09 at `c9738952a`; the cause holds and PLAN-LB-23 left
+    it open.** `resolve_ledger_path` resolves from the working directory, up to the nearest
+    ancestor holding `.plan/local`; each plan worktree has its own
+    `.plan/work/change-ledger.jsonl`. The freshness check takes the SHA from the plan's
+    worktree but the ledger from its own working directory. `_append_gate_build_row` writes
+    its row without a worktree SHA, so that row can never satisfy the freshness check. What
+    PLAN-LB-23 changed is the other half: resolved build commands now carry `--plan-id`.
+    Its routed-build test replaces the ledger path with a temp file and cannot see the
+    split. Seen again on PLAN-LB-23 itself: its retrospective scanned 1272 ledger rows and
+    matched none against 148 logged build calls, because the worktree holding the ledger
+    had been removed. Still not reproduced by a run. — source: read-only review of
+    `c9738952a`; inbox message `lb-23-verify-builds-013.md`.
+- **The direct build path's signal handling has three gaps**, all in
+  `script-shared/scripts/build/_build_execute.py` as shipped by PLAN-LB-23.
+  `_signal_build_group` suppresses `ProcessLookupError` only, so a permission error from
+  the group kill surfaces as `error`, a red build, where the daemon path reports `timeout`.
+  The grace period waits on the group leader alone, so when the leader exits promptly the
+  rest of the group is killed without grace. The signal handlers are installed a few
+  statements after the child starts; a signal in that window kills the wrapper and leaves
+  the build running with no bound. Each is narrow; none gives a wrong green. Not owned by
+  any staged plan. — source: read-only review of `c9738952a`, 2026-10-09, by line; the
+  third is also named in the plan's landing message.
+- **The main checkout's executor can be left pointing into a worktree that no longer
+  exists.** After PLAN-LB-23 moved back to the main checkout, `.plan/execute-script.py`
+  failed with `ModuleNotFoundError: plan_logging`: its bootstrap paths pointed into the
+  removed worktree of the standalone self-review run, and the plugin-cache self-heal did not
+  recover it. The plan's orchestrator regenerated it from its own worktree's executor. What
+  wrote the main copy from another worktree is not established; the self-review run had
+  reported that a test run regenerated it. Until fixed, removing any worktree can break the
+  main checkout's executor, and the recovery is a regeneration. Adjacent to PLAN-LB-29
+  (running), which reads the executor version but does not own this. Lesson
+  `2026-10-09-13-004` carries the proposal. — source: inbox messages
+  `lb-23-verify-builds-009.md` and `-014.md`, 2026-10-09; reported by the plan's
+  orchestrator, not reproduced here.
 
 ## Watches
 
 - **Does the regraded self-review converge?** The first plans to finalize on `d8b0284ef` or
   later are the test: read their landing facts for the self-review's firing count, its
   `blocking_count` and `advisory_count`, and whether it closed by verifier or by operator.
-  — trigger: the landings of PLAN-LB-23, 24 and 29, if they rebased onto it; retire after
+  — trigger: the landings of PLAN-LB-24 and 29, if they rebased onto it; retire after
   two landings that closed by verifier.
+  - Baseline, from PLAN-LB-23, which ran the self-review from before that change: five
+    rounds returning 6, 7, 4, 5 and 10 findings (32, all fixed), 25 of them doc-claim
+    findings, no clean round, closed by operator decision and not re-run on the two later
+    review-fix commits. The five reviewer dispatches cost 2,159,266 tokens. Two of the 32
+    were shipped-code defects, found in rounds 4 and 5 (the supervisor waited on the job
+    leader and left a build that ignores SIGTERM alive; a `PermissionError` recorded a
+    timed-out job as `failure`). A regraded review that stops earlier must still reach
+    defects of that kind. — source: inbox message `lb-23-verify-builds-002.md`.
 
 - **A landing from the Antigravity harness reported `total_tokens=0`** (PLAN-LB-30) and still
   passed the completeness check, which accepts any value that is not `n/a` or `unknown`.
   — trigger: stage it if a second landing from that harness reports zero.
-- **PLAN-LB-23 and PLAN-LB-24 must rebase onto PLAN-LB-22's landing** (`6b00815e0`). It
-  changed `phase-6-finalize/SKILL.md`, `automatic-review/SKILL.md`, `triage.md` and
-  `verification-feedback.md`, which PLAN-LB-24 declares, and standards under
-  `phase-6-finalize/` beside PLAN-LB-23's. — trigger: each plan's pre-merge rebase; retire
-  when both have landed.
+- **PLAN-LB-24 must rebase onto PLAN-LB-22's landing** (`6b00815e0`). It changed
+  `phase-6-finalize/SKILL.md`, `automatic-review/SKILL.md`, `triage.md` and
+  `verification-feedback.md`, which PLAN-LB-24 declares. PLAN-LB-23 has landed. — trigger:
+  PLAN-LB-24's pre-merge rebase; retire when it has landed.
 - **Head-dependent finalize steps re-fire in full on every fix commit.** PLAN-LB-22 recorded
   a refusal to declare `verdict_inputs` for the two steps it examined; lessons-housekeeping
   and plugin-doctor fired seven times each with identical results. Lesson
   `2026-10-08-21-003` carries the proposal. — trigger: stage it as a plan if the next two
   landings report the same cost.
+  - **Trigger met on 2026-10-09; staging is the operator's call.** Of the two landings
+    since, PLAN-LB-30 had no fix commit and so no re-fire; PLAN-LB-23 had both steps fire
+    eight times with identical verdicts ("0 rm, 0 promo, 0 adapt, 64 keep"; plugin-doctor
+    clean), at a floor of 1,680,033 tokens, and its decision log reached 710 entries
+    because each firing logs one line per retained lesson. That is three landings with the
+    cost (PLAN-LB-14 five firings, PLAN-LB-22 seven, PLAN-LB-23 eight). The message adds
+    two proposals to the lesson's: a delta prefilter for housekeeping, and one aggregate
+    log line per firing. — source: inbox message `lb-23-verify-builds-003.md`.
 - **PLAN-LB-29 must rebase onto PLAN-LB-14's landing** in `orchestrator.py` and
   `plan-orchestrator/SKILL.md`. — trigger: when PLAN-LB-29 reaches its pre-merge rebase or
   reports a conflict; retire when it lands.

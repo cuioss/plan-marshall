@@ -1,0 +1,37 @@
+envelope_version=1
+sender_type=plan
+sender_id=lb-23-verify-builds
+epic=live-blockers
+kind=candidate-lesson
+created=2026-10-09T10:01:57Z
+
+component=plan-marshall:tools-script-executor
+category=bug
+created=2026-10-09
+bundle=plan-marshall
+source_plan=lb-23-verify-builds
+confidence=medium
+provenance=orchestrator-reported, not re-verified by the retrospective
+
+# Regenerate the main executor with main paths after integrate_into_main
+
+## Context
+
+Reported by the orchestrator of plan lb-23-verify-builds, first-hand, and not re-verified by this retrospective: after `integrate_into_main` the main checkout's `.plan/execute-script.py` failed with `ModuleNotFoundError: plan_logging`. It had been generated with bootstrap paths pointing into another plan's worktree (`.plan/local/worktrees/self-review-materiality/...`) that no longer exists, and the cache self-heal did not recover it. The orchestrator recovered by invoking the still-present lb-23 worktree executor's `generate_executor generate` from the main checkout. The defect is outside this plan's change.
+
+## Root cause
+
+As reported: the generated main executor embeds absolute bootstrap paths of whichever checkout last generated it. When that checkout is a plan worktree and the worktree is later removed, the main executor is left pointing at nothing. During this plan each plugin-doctor firing regenerated the worktree-bound executor ("it is now a generated file ... instead of a symlink to the main checkout's executor"), which shows per-worktree generation is routine; what generated the main copy from the other plan's worktree was not established.
+
+## Proposed action
+
+- Never write the main checkout's executor from a worktree-rooted generation; bind the generated bootstrap paths to the checkout the file is written into.
+- Make the self-heal handle a bootstrap path that does not exist (regenerate from the checkout's own bundle sources) instead of failing at import.
+- Add a test: generate from a worktree, remove the worktree, run the main executor.
+
+## Evidence
+
+- Orchestrator account for this run (observation 7 of its hand-off to this step).
+- aspect: chat_history_analysis - plugin-doctor hand-backs: "the worktree-bound executor was regenerated successfully before the gate (164 scripts registered)".
+- status record: `project:finalize-step-sync-plugin-cache` done, "claude 10, opencode 189, antigravity 191 synced; regen ok" - the regeneration that step reports succeeded.
+- Not verified here: the traceback, the embedded paths, and the failed self-heal. The executor was working for every call this retrospective made.
