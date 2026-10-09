@@ -1606,9 +1606,10 @@ def cmd_fetch_findings(args):
     (``_stale_review_covered_by_reply``). Each such bot is listed here as
     ``{bot_kind, evidence_kind, reply_comment_id}``, so the credit names the reply it
     rests on. A reply older than the commit, an unreadable instant on either side, and
-    an unreadable merge candidate all leave the bot stale. So does a comment of the bot
-    that names another commit: the reply lifts a failed ledger test only, and does not
-    change which commit that comment is about. No currency-ledger row is
+    an unreadable merge candidate all leave the bot stale. The credit applies on either
+    ground the bot went stale on — a failed ledger test, or a comment that names
+    another commit: the named-commit arm marks that comment stale, and the bot's own
+    newer reply then credits the bot. No currency-ledger row is
     staged for this credit, so it is re-derived from the reply on every fetch.
 
     ``reviewed_other_commit_bots``: DISCLOSURE ONLY, for the bots the currency test
@@ -1870,9 +1871,6 @@ def cmd_fetch_findings(args):
     # this fetch — written to the ledger after the loop so the NEXT fetch measures a fresh
     # edit against THIS credit rather than against ``created_at``.
     currency_updates: dict[tuple[str, str], tuple[str, str]] = {}
-    # The bots with a comment that is stale because it NAMES another commit, as
-    # distinct from one that failed the ledger test. Read by the reply-covered pass.
-    stale_by_named_commit: set[str] = set()
     for _comment in raw_comments:
         _bot_kind = bot_kind_for_author(_comment.get('author') or 'unknown')
         if not _bot_kind:
@@ -1924,11 +1922,6 @@ def cmd_fetch_findings(args):
             )
         else:
             _current = _named_verdict
-        if _named_verdict is False:
-            # Stale on the comment's own statement, not on a failed ledger test. The
-            # reply-covered pass below lifts a failed ledger test only, so the ground
-            # is recorded here for it to read.
-            stale_by_named_commit.add(_bot_kind)
         if not _current:
             # The comment was ALREADY admissible evidence — only the currency test
             # failed. Discarding it here is what collapsed a stale
@@ -1988,15 +1981,19 @@ def cmd_fetch_findings(args):
     # from the reply on every fetch, so a HEAD that advances past the reply returns the
     # bot to stale by the same comparison, with no ledger state to unwind.
     #
-    # The pass lifts a FAILED LEDGER TEST and nothing else. A bot enters
-    # ``stale_participation`` above on one of two grounds, and only that one is
-    # liftable: a bot in ``stale_by_named_commit`` has a comment whose own text names
-    # another commit, and a reply saying nothing is unreviewed does not change which
-    # commit that comment is about. Such a bot stays stale and is re-triggered.
+    # The pass lifts a stale bot on EITHER ground it entered ``stale_participation``
+    # on — a failed ledger test, or a comment whose own text names another commit.
+    # The precedence is: the named-commit arm marks the COMMENT stale, and the bot's
+    # own newer reply then credits the BOT. The comment still names the commit it
+    # names; the reply is a later statement by the same bot that every commit on the
+    # PR, the merge candidate included, is reviewed. Withholding the credit there
+    # would leave the bot stale beside a reply that covers the head — the one stale
+    # state a re-trigger cannot move, because the bot answers it with that same reply.
+    # A stale bot with no covering reply stays stale and is re-triggered.
     reply_covered_participation: dict[str, str] = {}
     if reviewed_commit_sha:
         for _stale_bot, _stale_kind in stale_participation.items():
-            if _stale_bot in participated or _stale_bot in stale_by_named_commit:
+            if _stale_bot in participated:
                 continue
             _reply_id = _stale_review_covered_by_reply(raw_comments, _stale_bot, merge_candidate_committed_at)
             if _reply_id:
@@ -2715,8 +2712,9 @@ def cmd_bot_completion(args, *, sleep=time.sleep, clock=time.monotonic):
     the host ceiling it is issued through; a caller with a longer budget re-issues
     the call. Three results end the wait at once, because waiting cannot change
     them: ``no_check_name`` (there is no check to observe), ``unconfigured``, and a
-    read whose output could not be parsed. ``not_found`` does NOT end it — the check
-    may simply not be posted yet.
+    read that failed or whose output could not be parsed (``status: error``, with
+    both flags absent — an unreadable check is never reported as completed).
+    ``not_found`` does NOT end it — the check may simply not be posted yet.
 
     ``timed_out: true`` says only that the bound lapsed before the check concluded.
     It is a bound, not a verdict: the accompanying ``in_progress`` / ``completed``
@@ -2776,8 +2774,8 @@ def cmd_bot_completion(args, *, sleep=time.sleep, clock=time.monotonic):
     while True:
         result = _read_bot_completion(pr_number, bot_kind, check_name)
         waited = clock() - started
-        # A completed check is the awaited terminal state; an unparseable read is
-        # one that further reads cannot be expected to improve.
+        # A completed check is the awaited terminal state; a failed or unparseable
+        # read is one that further reads cannot be expected to improve.
         if result.get('completed') or result.get('status') == 'error':
             return _with_wait_fields(result, timed_out=False, waited=waited)
         remaining = bound - waited
@@ -2786,14 +2784,24 @@ def cmd_bot_completion(args, *, sleep=time.sleep, clock=time.monotonic):
         sleep(min(interval, remaining))
 
 
+#: What ``gh pr checks`` writes to stderr, beside a non-zero exit and empty stdout,
+#: for a PR that has no checks at all. Compared lower-cased.
+_GH_NO_CHECKS_REPORTED = 'no checks reported'
+
+
 def _read_bot_completion(pr_number: int, bot_kind: str, check_name: str) -> dict[str, Any]:
     """Read ``check_name``'s state on the PR ONCE and report it.
 
     The single provider read behind :func:`cmd_bot_completion`, which calls it once
     for a plain read and repeatedly under ``--wait-seconds``. ``check_name`` is
     non-empty: the markerless-bot case is settled by the caller before any read.
+
+    A read that could not be made — a non-zero exit with no output that is not gh's
+    own "no checks reported" answer — and output that could not be parsed both
+    return ``status: error``, never ``not_found``: ``not_found`` is reserved for a
+    read that succeeded and did not list the check.
     """
-    _rc, stdout, _stderr = _github.run_gh(['pr', 'checks', str(pr_number), '--json', 'name,state,bucket'])
+    rc, stdout, stderr = _github.run_gh(['pr', 'checks', str(pr_number), '--json', 'name,state,bucket'])
 
     # gh emits the JSON array whenever checks exist (regardless of the rollup
     # exit code it also sets for pending/failing checks), and empty output when
@@ -2801,6 +2809,16 @@ def _read_bot_completion(pr_number: int, bot_kind: str, check_name: str) -> dict
     # leaves the check list empty, so the named check resolves to ``not_found``.
     checks: list = []
     stdout_stripped = stdout.strip()
+    # Empty output has two causes that must not share a status. A PR with no checks
+    # exits non-zero and SAYS so; any other non-zero exit with nothing on stdout is
+    # a read that failed. Reporting that one as ``not_found`` would read "the check
+    # is not posted yet" out of a read that observed nothing, and a bounded wait
+    # would then run out on it.
+    if not stdout_stripped and rc != 0 and _GH_NO_CHECKS_REPORTED not in stderr.lower():
+        return make_error(
+            f'could not read gh pr checks (exit {rc}): {stderr.strip()[:100]}',
+            code=ErrorCode.FETCH_FAILURE,
+        )
     if stdout_stripped:
         try:
             parsed = json.loads(stdout_stripped)

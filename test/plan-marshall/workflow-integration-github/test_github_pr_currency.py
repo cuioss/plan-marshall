@@ -1785,36 +1785,88 @@ def test_the_named_commit_arm_does_not_reach_an_append_per_review_bot(bot_kind, 
     assert result['stale_participation_bots'] == []
 
 
-@pytest.mark.parametrize('bot_kind', _REPLY_COVERABLE_BOTS)
-def test_a_reply_does_not_lift_a_bot_whose_comment_names_another_commit(bot_kind, plan_context, monkeypatch):
-    """The reply covers a failed ledger test only — not a comment that names another commit.
+def _fetch_a_review_naming_the_previous_head(
+    monkeypatch, plan_id, bot_kind, extra_comments, *, committed_at=_COMMIT_B_AT
+):
+    """Credit a review naming HEAD_A at HEAD_A, then fetch it at HEAD_B with ``extra_comments``.
 
-    Both halves run on one fixture: the same review comment, the same two heads, the
-    same reply written after the merge candidate was committed. A review naming no
-    commit is stale by the ledger and the reply lifts it; a review naming HEAD_A is
-    stale by its own statement and the reply leaves it there, because the reply does
-    not change which commit that comment is about.
+    Returns the SECOND fetch's result and the review. The review does not move between
+    the two fetches and its own text names HEAD_A, so at HEAD_B the named-commit arm
+    reads it stale — every case below starts from that state and varies only the reply.
     """
+    review = _publish_comment(bot_kind, 'review-1', created_at=_REVIEW_AT, body=_review_naming(_HEAD_A))
+    _patch_provider(monkeypatch, [review], head_sha=_HEAD_A)
+    credited = _run_fetch(234, plan_id)
+    assert credited['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': review['kind']}]
+
+    _patch_provider(monkeypatch, [review, *extra_comments], head_sha=_HEAD_B, head_committed_at=committed_at)
+    return _run_fetch(234, plan_id), review
+
+
+@pytest.mark.parametrize('bot_kind', _REPLY_COVERABLE_BOTS)
+def test_a_reply_newer_than_the_head_commit_credits_a_bot_whose_comment_names_another_commit(
+    bot_kind, plan_context, monkeypatch
+):
+    """POSITIVE — the named-commit arm marks the comment stale; the bot's newer reply credits the bot.
+
+    The review names HEAD_A and the merge candidate is HEAD_B. The bot's own
+    "nothing new to review" reply was written after HEAD_B was committed, so the
+    bot is credited, the credit names that reply, and no ledger row is staged for it.
+    """
+    plan_id = f'gh-pr-named-reply-covered-{bot_kind}'
     reply = _nothing_new_reply(bot_kind, created_at=_REPLY_AFTER_COMMIT_B)
-    outcomes = {}
-    for label, body in (('names-none', None), ('names-previous-head', _review_naming(_HEAD_A))):
-        plan_id = f'gh-pr-named-reply-{label}-{bot_kind}'
-        review = _publish_comment(bot_kind, 'review-1', created_at=_REVIEW_AT, body=body)
-        _patch_provider(monkeypatch, [review], head_sha=_HEAD_A)
-        credited = _run_fetch(234, plan_id)
-        assert credited['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': review['kind']}]
 
-        _patch_provider(monkeypatch, [review, reply], head_sha=_HEAD_B, head_committed_at=_COMMIT_B_AT)
-        outcomes[label] = _run_fetch(234, plan_id)
-    expected = {'bot_kind': bot_kind, 'evidence_kind': bot_registry.participation_evidence(bot_kind)[0]}
+    result, review = _fetch_a_review_naming_the_previous_head(monkeypatch, plan_id, bot_kind, [reply])
 
-    # The control: without a named commit the reply lifts the bot, as it always has.
-    assert outcomes['names-none']['participated_bots'] == [expected]
-    assert [row['bot_kind'] for row in outcomes['names-none']['reply_covered_participation_bots']] == [bot_kind]
-    # The case: the comment names the previous head, so the reply lifts nothing.
-    assert outcomes['names-previous-head']['participated_bots'] == []
-    assert outcomes['names-previous-head']['stale_participation_bots'] == [expected]
-    assert outcomes['names-previous-head']['reply_covered_participation_bots'] == []
+    assert result['status'] == 'success'
+    assert result['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': review['kind']}]
+    assert result['stale_participation_bots'] == []
+    assert result['reply_covered_participation_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': review['kind'], 'reply_comment_id': 'reply-1'}
+    ]
+    # The ledger still anchors the review at HEAD_A: the credit is derived from the reply.
+    assert github_pr._recorded_currency_records(plan_id) == {(bot_kind, 'review-1'): (_HEAD_A, review['updated_at'])}
+
+
+@pytest.mark.parametrize('bot_kind', _REPLY_COVERABLE_BOTS)
+@pytest.mark.parametrize(
+    ('case', 'reply_stamps', 'committed_at'),
+    [
+        pytest.param('no-reply', None, _COMMIT_B_AT, id='no-reply'),
+        pytest.param('older', (_REPLY_BEFORE_COMMIT_B, None), _COMMIT_B_AT, id='reply-older-than-the-head-commit'),
+        pytest.param('equal', (_COMMIT_B_AT, None), _COMMIT_B_AT, id='reply-at-the-head-commit-instant'),
+        pytest.param('unstamped', ('', ''), _COMMIT_B_AT, id='reply-without-a-timestamp'),
+        pytest.param('offset', ('2026-07-29T12:20:00+02:00', ''), _COMMIT_B_AT, id='reply-offset-stamped'),
+        pytest.param('half', (_REPLY_AFTER_COMMIT_B, 'yesterday'), _COMMIT_B_AT, id='reply-one-of-two-unreadable'),
+        pytest.param('head-empty', (_REPLY_AFTER_COMMIT_B, None), '', id='head-commit-instant-empty'),
+        pytest.param(
+            'head-offset', (_REPLY_AFTER_COMMIT_B, None), '2026-07-29T12:10:00+02:00', id='head-commit-instant-offset'
+        ),
+    ],
+)
+def test_a_bot_whose_comment_names_another_commit_stays_stale_without_a_covering_reply(
+    bot_kind, case, reply_stamps, committed_at, plan_context, monkeypatch
+):
+    """⛔ NEGATIVE — same review, same heads as the crediting case; only the reply's cover differs.
+
+    ``no-reply`` is the named-commit arm alone. Every other row adds a reply that
+    does not cover the merge candidate: not strictly newer than its commit, or with
+    an instant on either side that cannot be read. Each leaves the bot stale.
+    """
+    plan_id = f'gh-pr-named-reply-uncovered-{case}-{bot_kind}'
+    replies = (
+        []
+        if reply_stamps is None
+        else [_nothing_new_reply(bot_kind, created_at=reply_stamps[0], updated_at=reply_stamps[1])]
+    )
+
+    result, review = _fetch_a_review_naming_the_previous_head(
+        monkeypatch, plan_id, bot_kind, replies, committed_at=committed_at
+    )
+
+    assert result['participated_bots'] == []
+    assert result['stale_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': review['kind']}]
+    assert result['reply_covered_participation_bots'] == []
 
 
 # ---------------------------------------------------------------------------

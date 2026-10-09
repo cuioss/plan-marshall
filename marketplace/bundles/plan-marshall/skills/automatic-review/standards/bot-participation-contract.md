@@ -397,8 +397,12 @@ names several commits is current when any of them is the merge candidate.
   It tests no append-per-review bot; see § "The currency-blind path for append-per-review bots".
 - An unreadable merge candidate gives the arm nothing to compare against, so it returns no verdict and
   the ledger arms fail closed as they always have: the bot is reported undecidable, never stale.
-- A bot that is stale on this ground is **not** lifted by its own `no_unreviewed_commit` reply. That
-  reply lifts a failed ledger test only; it does not change which commit the comment names.
+- The arm decides the **comment**, and one later statement by the same bot outranks it for the
+  **bot**: its own `no_unreviewed_commit` reply, strictly newer than the merge-candidate commit,
+  credits a bot that is stale on this ground exactly as it credits one that failed a ledger test. The
+  comment still names the commit it names; the reply says every commit on the PR is reviewed, the
+  merge candidate included. Without such a reply the bot stays stale and is re-triggered. See § "The
+  reply-covered credit".
 
 #### The checks surface carries no currency verdict
 
@@ -923,7 +927,10 @@ The condition is wired as a per-refusal overlay, the same way the cause is:
 - **Remedy:** a bot that answered its trigger with `no_unreviewed_commit` answers the same trigger the
   same way again, so the ordinary trigger is not repeated. The remedy is the bot's registry
   `escalated_trigger_comment` — the command that reviews the whole changeset again — and it is posted
-  only when no review by that bot is on record at all. When a review is on record, nothing is posted.
+  only when no review by that bot is on record at all. When a review is on record, nothing is posted:
+  a stale review the reply covers is credited (§ "The reply-covered credit"), and one it does not
+  cover — the merge candidate is newer than the reply — is left to the stale-review path, whose
+  ordinary trigger then has a commit to review.
   `github_re_review recovery-action --condition` makes that selection; the step's handling is
   [`../SKILL.md`](../SKILL.md) § "Rate-limit refusal recovery (opt-in)" Branch 6, which owns the rule
   and is not restated here.
@@ -945,8 +952,14 @@ gets the same reply again.
 
 The producer therefore counts such a review when the bot's own reply covers the merge candidate:
 
-- **Who:** a bot the currency test left in the stale set on this fetch. A bot with no admissible
-  review is never reached — the reply cannot stand in for a review that does not exist.
+- **Who:** a bot the currency test left in the stale set on this fetch, on either ground — a failed
+  ledger test, or a comment that names a commit other than the merge candidate (§ "The named-commit
+  arm"). A bot with no admissible review is never reached — the reply cannot stand in for a review
+  that does not exist.
+- **The precedence:** the named-commit arm marks the comment stale; the bot's own newer
+  `no_unreviewed_commit` reply then credits the bot. The two do not contradict each other: the comment
+  states which commit it was written about, and the reply is the bot's later statement about every
+  commit on the PR.
 - **What covers it:** a comment of that bot which the recognition stack reads as a refusal and whose
   condition is `no_unreviewed_commit`. A comment that merely names another commit is not such a reply.
 - **The ordering:** the reply's latest timestamp is strictly later than the merge-candidate commit's.

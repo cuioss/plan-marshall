@@ -1099,6 +1099,64 @@ def test_a_readable_refusal_outranks_an_acknowledgment_literal(monkeypatch):
     assert result['acknowledged'] is False
 
 
+@pytest.mark.parametrize(
+    ('created_at', 'updated_at', 'recorded'),
+    [
+        pytest.param('2026-01-01T00:05:00Z', '', True, id='written-after-the-trigger'),
+        pytest.param('2026-01-01T00:00:00Z', '2026-01-01T00:05:00Z', True, id='edited-after-the-trigger'),
+        pytest.param('2026-01-01T00:00:00Z', '', False, id='written-before-the-trigger'),
+        pytest.param(_TRIGGER, '', False, id='written-at-the-trigger-instant'),
+        pytest.param('2026-01-01T00:00:00Z', '2026-01-01T00:01:00Z', False, id='edited-before-the-trigger'),
+        pytest.param('not-a-timestamp', '', False, id='no-readable-timestamp'),
+    ],
+)
+def test_a_refusal_is_this_awaits_refusal_only_when_written_after_the_trigger(
+    monkeypatch, created_at, updated_at, recorded
+):
+    """A refusal that answered some other request is not reported as this await's refusal.
+
+    One body, one bot, one trigger — only the instant the comment was written
+    differs, so the recorded and unrecorded rows are each other's control. An
+    unrecorded refusal leaves a bare timeout: the bot said nothing to THIS trigger.
+    """
+    refusal = _comment(
+        _CODERABBIT_LOGIN, created_at=created_at, updated_at=updated_at, body=_CODERABBIT_COMMAND_REPLY_REFUSAL
+    )
+
+    result = _await_with_comments(monkeypatch, [refusal], bot_kind='coderabbit')
+
+    assert result['matched'] is False
+    assert result['timed_out'] is True
+    assert result['refusal_detected'] is recorded
+    assert len(result['refusals']) == (1 if recorded else 0)
+    assert result['refusal_class'] == (bot_registry.rate_limit_class('coderabbit') if recorded else '')
+
+
+def test_an_unreadable_refusal_predating_the_trigger_is_skipped_without_a_record(monkeypatch):
+    """The enumerative arm is gated on the same instant as the arms that read the body."""
+    _arm_enumerative(monkeypatch)
+    stale = _comment(_SOURCERY_LOGIN, created_at='2026-01-01T00:00:00Z', body=_UNRECOGNISED_REFUSAL)
+
+    result = _await_with_comments(monkeypatch, [stale], bot_kind='sourcery')
+
+    assert result['matched'] is False
+    assert result['refusal_detected'] is False
+    assert result['refusals'] == []
+
+
+def test_an_older_refusal_does_not_hide_the_answer_written_after_the_trigger(monkeypatch):
+    """The older refusal is skipped, not the poll: the later answer is the match."""
+    stale = _comment(_CODERABBIT_LOGIN, created_at='2026-01-01T00:00:00Z', body=_CODERABBIT_COMMAND_REPLY_REFUSAL)
+    answer = _comment(_CODERABBIT_LOGIN, created_at='2026-01-01T00:05:00Z', body=_CODERABBIT_GENUINE_COMMENT)
+
+    result = _await_with_comments(monkeypatch, [stale, answer], bot_kind='coderabbit')
+
+    assert result['matched'] is True
+    assert result['matched_comment']['body'] == _CODERABBIT_GENUINE_COMMENT
+    assert result['refusal_detected'] is False
+    assert result['refusals'] == []
+
+
 @pytest.mark.parametrize('body', _ACKNOWLEDGMENT_PARAMS)
 def test_match_bot_comment_skips_an_acknowledgment_without_an_accumulator(body):
     """A caller passing no ``acknowledgments`` list still never receives the reply as the match."""

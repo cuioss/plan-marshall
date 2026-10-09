@@ -541,6 +541,67 @@ def test_bot_completion_no_checks_at_all_yields_not_found(monkeypatch):
     assert result['completed'] is False
 
 
+_FAILED_READ = (1, '', 'HTTP 502: Bad Gateway (https://api.github.com/graphql)')
+
+
+def test_bot_completion_failed_read_is_an_error_not_a_missing_check(monkeypatch):
+    """A read that failed with no output is ``error`` — it observed nothing about the check.
+
+    Same exit code and same empty output as the no-checks case above; only what gh
+    said on stderr differs. Neither flag claims a state nobody read.
+    """
+    monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+    monkeypatch.setattr(github_pr._github, 'run_gh', _run_gh_returning(*_FAILED_READ))
+
+    result = _run_bot_completion(200, 'coderabbit')
+
+    assert result['status'] == 'error'
+    assert not result.get('completed')
+    assert not result.get('in_progress')
+
+
+def test_bot_completion_wait_returns_at_once_when_the_read_fails(monkeypatch):
+    """An unreadable check-run ends the bounded wait on the first read, not at the bound.
+
+    The matched control is
+    ``test_bot_completion_wait_keeps_waiting_while_check_is_not_posted``: a read that
+    succeeds and does not list the check keeps waiting.
+    """
+    monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+    reads: list[tuple] = []
+
+    def failing_read(args, capture_json=False, timeout=60):
+        reads.append(tuple(args))
+        return _FAILED_READ
+
+    monkeypatch.setattr(github_pr._github, 'run_gh', failing_read)
+    fake_time = _FakeTime()
+
+    result = _run_bot_completion_waiting(200, 'coderabbit', fake_time, wait_seconds=120)
+
+    assert len(reads) == 1
+    assert result['status'] == 'error'
+    assert not result.get('completed')
+    assert result['timed_out'] is False
+    assert result['waited_seconds'] == 0
+    assert fake_time.sleeps == []
+
+
+def test_bot_completion_wait_keeps_waiting_on_a_pr_with_no_checks_yet(monkeypatch):
+    """gh's own "no checks reported" answer is a successful read: the check may still be posted."""
+    monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+    monkeypatch.setattr(
+        github_pr._github, 'run_gh', _run_gh_returning(1, '', "no checks reported on the 'feature/x' branch")
+    )
+    fake_time = _FakeTime()
+
+    result = _run_bot_completion_waiting(200, 'coderabbit', fake_time, wait_seconds=30)
+
+    assert result['status'] == 'not_found'
+    assert result['timed_out'] is True
+    assert fake_time.sleeps == [15, 15]
+
+
 def test_bot_completion_unconfigured_fails_loud(monkeypatch):
     """When GitHub is not authenticated, ``bot_completion`` fails loud (never a silent no-op)."""
     monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (False, 'Not authenticated'))

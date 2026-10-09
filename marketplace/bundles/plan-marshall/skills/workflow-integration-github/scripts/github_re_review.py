@@ -630,9 +630,11 @@ RECOVERY_ACTION_ACCEPT_REVIEW_ON_RECORD = 'accept_review_on_record'
 #: candidate, but findings of it are still pending. Nothing is posted; the triage that
 #: follows handles them.
 RECOVERY_ACTION_AWAIT_TRIAGE = 'await_triage'
-#: The bot said no commit is unreviewed, but its review on record is stale: the merge
-#: candidate is newer than that reply. Nothing is posted; the reply does not speak for
-#: the current commit, and the stale-review path re-triggers the bot.
+#: The bot said no commit is unreviewed, but its review on record is stale: the reply
+#: is not strictly newer than the merge-candidate commit, so it does not speak for
+#: that commit. Nothing is posted, and the stale-review path re-triggers the bot. A
+#: reply that IS strictly newer credits the bot at the producer — whichever ground
+#: its comment went stale on — so such a bot arrives here as ``credited``.
 RECOVERY_ACTION_LEAVE_TO_STALE_REVIEW = 'leave_to_stale_review'
 #: The bot said no commit is unreviewed and no review by it is on record at all. Post
 #: its escalated command.
@@ -726,7 +728,15 @@ def resolve_recovery_action(
        - ``stale`` resolves ``leave_to_stale_review`` — the bot has a review, but
          the merge candidate is newer than this reply, so the reply says nothing
          about the current commit. The stale-review path re-triggers the bot with
-         its ordinary trigger, which now has a commit to review.
+         its ordinary trigger, which now has a commit to review. ``stale`` carries
+         that meaning because the producer credits a stale bot whose own
+         ``no_unreviewed_commit`` reply is strictly newer than the merge-candidate
+         commit (``github_pr._stale_review_covered_by_reply``), on either ground
+         the bot went stale on — a failed ledger test or a comment naming another
+         commit. The one remainder is a reply whose order against the commit could
+         not be read (an unreadable or equal instant on either side): the producer
+         fails closed and leaves the bot stale, and this arm is returned for it
+         too.
        - ``absent`` resolves ``post_escalated_command`` — there is no review at
          all, and the ordinary trigger has just been answered with "nothing new",
          so only the bot's ``escalated_trigger_comment`` produces one.
@@ -1464,11 +1474,18 @@ class _ReReviewStrategy:
         on it), so the preference simply never fires and the first eligible
         comment is returned.
 
-        Every refusal this path skips is APPENDED to ``refusals`` for the caller
-        to surface, exactly as :meth:`_match_review` does. Because the preference
-        has to see every eligible comment, the scan no longer stops at the first
-        one — so a refusal sitting AFTER the selected comment is now recorded too,
-        which is strictly more of what ``refusals`` already carried.
+        A refusal this path skips is APPENDED to ``refusals`` for the caller to
+        surface when it was WRITTEN AFTER ``trigger_dt`` — the later of its
+        ``updated_at`` and ``created_at``, the same instant and the same strict
+        comparison that gate an acknowledgment and an eligible answer, and the
+        same rule :meth:`_match_review` applies through ``submitted_at``. A refusal
+        written at or before the trigger answered some other request: it is
+        skipped without a record, so ``refusals`` names only what the bot said to
+        THIS trigger and a bot that stays silent after it reads as a timeout, not
+        as a refusal. A refusal with no readable timestamp is skipped the same way
+        (fail-closed). The scan visits every comment, because the preference has
+        to see every eligible one, so a refusal sitting after the selected comment
+        is recorded too.
 
         **This matcher decides WHETHER the bot answered; it does not decide whether
         the answer verified the HEAD.** Unlike :meth:`_match_review` — where the SHA
@@ -1489,32 +1506,38 @@ class _ReReviewStrategy:
                 continue
             body = comment.get('body') or ''
             refusal = _ReReviewStrategy._refusal_record(body, bot_kind, 'issue_comment')
-            # A refusal the stack could READ outranks an acknowledgment: it is
-            # positive evidence the bot declined and is never dropped. The
-            # enumerative arm is the exception — it reads a short anchor-less body
-            # as a refusal nobody could read, which is exactly what an
-            # acknowledgment looks like — so the acknowledgment test runs ahead of
-            # that one arm. This is the same order the filing pre-filter applies.
-            if refusal is not None and refusal['layer'] != REFUSAL_LAYER_ENUMERATIVE:
-                refusals.append(refusal)
-                continue
             stamps = [
                 dt
                 for dt in (_parse_iso(comment.get('updated_at') or ''), _parse_iso(comment.get('created_at') or ''))
                 if dt is not None
             ]
+            # ONE instant gates all three records this loop can produce — a refusal,
+            # an acknowledgment, an eligible answer. A comment written at or before
+            # the trigger answered something else, and one with no readable
+            # timestamp cannot be placed after it.
+            written_after_trigger = bool(stamps) and max(stamps) > trigger_dt
+            # A refusal the stack could READ outranks an acknowledgment: it is
+            # positive evidence the bot declined, so it is classified first and is
+            # never an eligible answer. The enumerative arm is the exception — it
+            # reads a short anchor-less body as a refusal nobody could read, which is
+            # exactly what an acknowledgment looks like — so the acknowledgment test
+            # runs ahead of that one arm. This is the same order the filing
+            # pre-filter applies.
+            if refusal is not None and refusal['layer'] != REFUSAL_LAYER_ENUMERATIVE:
+                if written_after_trigger:
+                    refusals.append(refusal)
+                continue
             if is_acknowledgment_comment(body, bot_kind):
-                if acknowledgments is not None and stamps and max(stamps) > trigger_dt:
+                if acknowledgments is not None and written_after_trigger:
                     acknowledgments.append(
                         {'source': 'issue_comment', 'bot_kind': bot_kind, 'body': _body_excerpt(body)}
                     )
                 continue
             if refusal is not None:
-                refusals.append(refusal)
+                if written_after_trigger:
+                    refusals.append(refusal)
                 continue
-            if not stamps:
-                continue
-            if max(stamps) > trigger_dt:
+            if written_after_trigger:
                 eligible.append(comment)
         if not eligible:
             return None
