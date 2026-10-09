@@ -479,9 +479,10 @@ class CandidateList(NamedTuple):
 #: the help prose that enumerates it. Adding a list here is what makes it appear
 #: in all three, so an emitter addition cannot drift from the derived count.
 #:
-#: ``in_total`` is False for the four review-anchor lists (``contract_sources``,
-#: ``schema_bearing_files``, ``count_prose``, ``advertised_form_help_strings``)
-#: and for ``protected_identifiers``, a derived index over ``keep_markers``.
+#: ``in_total`` is False for the review-anchor lists (``contract_sources``,
+#: ``schema_bearing_files``, ``count_prose``, ``advertised_form_help_strings``,
+#: ``changed_code_units``) and for ``protected_identifiers``, a derived index
+#: over ``keep_markers``.
 #: The prose rationale is owned by
 #: ``plan-marshall:extension-api/standards/ext-point-self-review-surfacing.md``
 #: § Output Schema and is NOT restated here.
@@ -544,6 +545,7 @@ CANDIDATE_LISTS: tuple[CandidateList, ...] = (
         True,
         'structural',
     ),
+    CandidateList('changed_code_units', 'changed code units', False, 'structural'),
 )
 
 

@@ -5,8 +5,8 @@
 
 ``pre-submission-self-review.md`` used to report a single undifferentiated
 clean verdict — ``"self-review clean: {N} candidates examined"`` — across
-structurally different outcomes. The document now declares one labelled verdict
-per no-finding outcome:
+structurally different outcomes. The document declares one labelled verdict
+per outcome that carries no blocking finding:
 
 * **not-run.** No domain surfacer resolved in the executor (the zero-generator
   fallback in Step 1). Nothing ran: no file was searched, no candidate was
@@ -15,17 +15,20 @@ per no-finding outcome:
 * **nothing-to-check.** A surfacer RAN and produced no candidate, so no check
   had anything to run against. A statement about what the surfacer did; how
   strong a statement about the diff depends on the scope it echoes.
-* **no-check-matched.** Candidates WERE surfaced, every check was applied to
-  them, and none fired.
+* **no-check-matched.** Candidates WERE surfaced, the operative ones were
+  examined, and no check fired.
 * **zero-observation.** A full-surface round returned no findings while its
   ``delta_coverage.files_with_candidates`` was 0 over a non-zero
   ``files_in_scope`` — it drew no observation of its own from the files it
   searched.
+* **advisory-only.** No blocking finding remained after the verifier's
+  regrading, and at least one advisory finding was returned. The round closes;
+  the verdict says what it closed over.
 
-**These four are the NON-FINDING verdicts, not the clean ones.** Only three of
-them are ``clean:`` verdicts. ``ext-point-self-review-surfacing.md`` owns that
+**These are the NON-FINDING verdicts, not the clean ones.** The not-run member
+is not a ``clean:`` verdict. ``ext-point-self-review-surfacing.md`` owns that
 boundary and states it outright — the fallback's outcome is ``done``; its
-verdict is not "clean" — so a population that called all four "clean" would put
+verdict is not "clean" — so a population that called every member "clean" would put
 an un-run analysis inside the clean set, reintroducing at the level of the
 VOCABULARY exactly the collapse the literal split exists to prevent. The
 population below is therefore named for what it actually filters: every verdict
@@ -87,8 +90,8 @@ _VERDICT_LITERAL = re.compile(r'`"(self-review[^"]*)"`')
 #: The labelled non-finding verdicts the doc must carry, mapped to the marker
 #: phrase that identifies which literal belongs to which label.
 #:
-#: The name is load-bearing. These are the verdicts a round with an empty
-#: ``findings`` list may report — NOT a set of "clean" ones. The not-run member
+#: The name is load-bearing. These are the verdicts a round with no blocking
+#: finding may report — NOT a set of "clean" ones. The not-run member
 #: is explicitly not clean (see the module docstring and assertion (g)), so
 #: calling the population clean would restate the un-run-versus-un-observed
 #: collapse as a naming convention.
@@ -105,11 +108,12 @@ _NON_FINDING_VERDICT_MARKERS = {
     'nothing-to-check': 'zero candidates surfaced',
     'no-check-matched': '{N} candidates examined',
     'zero-observation': 'no observation',
+    'advisory-only': 'no blocking finding',
 }
 
 #: The label whose verdict the zero-generator fallback path reports. Resolved
 #: by LABEL rather than by a ``len(...) == 1`` filter over some incidental
-#: property: three of the four non-finding verdicts carry no ``{N}``, so the old
+#: property: most of the non-finding verdicts carry no ``{N}``, so the old
 #: "the one without a count" filter no longer identifies anything.
 _ZERO_GENERATOR_LABEL = 'not-run'
 
@@ -138,10 +142,11 @@ _DISPLAY_DETAIL_MAX = 80
 #: is the vacuity this module exists to prevent elsewhere. Any new placeholder
 #: introduced into a verdict literal MUST be added here in the SAME change.
 #:
-#: ``{N}`` — surfaced candidate count (no-check-matched verdict).
-#: ``{K}`` — finding count (findings verdict).
-#: ``{C}`` — distinct defect_class count across those findings (findings verdict).
-_COUNT_PLACEHOLDERS = ('{N}', '{K}', '{C}')
+#: ``{N}`` — examined candidate count (no-check-matched verdict).
+#: ``{B}`` — blocking finding count (blocking verdict).
+#: ``{C}`` — distinct defect_class count across those findings (blocking verdict).
+#: ``{A}`` — advisory finding count (blocking and advisory-only verdicts).
+_COUNT_PLACEHOLDERS = ('{N}', '{B}', '{C}', '{A}')
 
 
 def _render(literal: str) -> str:

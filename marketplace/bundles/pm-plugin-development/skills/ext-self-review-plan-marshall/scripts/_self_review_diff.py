@@ -207,6 +207,42 @@ def _iter_added_lines(diff_text: str) -> list[tuple[str, int, str]]:
     return out
 
 
+def _iter_removed_line_anchors(diff_text: str) -> list[tuple[str, int]]:
+    """Yield ``(file_path, post_image_line_no)`` once per place the diff removes lines.
+
+    A removed line has no line number in the post-image, so each run of removed
+    lines is anchored on the post-image line that FOLLOWS it — the removed text
+    sat between that line and the one before it. A file the diff deletes outright
+    has no post-image and yields nothing.
+    """
+    out: list[tuple[str, int]] = []
+    seen: set[tuple[str, int]] = set()
+    current_file: str | None = None
+    post_line = 0
+    for raw in diff_text.splitlines():
+        if raw.startswith('diff --git '):
+            current_file = None
+            continue
+        m_file = _FILE_HEADER.match(raw)
+        if m_file is not None:
+            current_file = m_file.group(1)
+            post_line = 0
+            continue
+        m_hunk = _HUNK_HEADER.match(raw)
+        if m_hunk is not None:
+            post_line = int(m_hunk.group(1))
+            continue
+        if current_file is None or raw.startswith('+++') or raw.startswith('---'):
+            continue
+        if raw.startswith('+') or raw.startswith(' '):
+            post_line += 1
+            continue
+        if raw.startswith('-') and (current_file, post_line) not in seen:
+            seen.add((current_file, post_line))
+            out.append((current_file, post_line))
+    return out
+
+
 def _iter_changed_line_pairs(diff_text: str) -> list[tuple[str, int, str, str]]:
     """Yield ``(file_path, post_image_line_no, removed, added)`` for adjacent
     ``-``/``+`` pairs within a hunk.

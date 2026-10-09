@@ -374,7 +374,7 @@ def test_a_verifier_declined_round_persists_as_an_inline_fixable_loop_back(plan_
             '6-finalize',
             'pre-submission-self-review',
             'loop_back',
-            display_detail='self-review found 1 issues in 1 classes',
+            display_detail='self-review found 1 blocking in 1 classes, 0 advisory',
             loop_back_target='6-finalize',
         )
     )

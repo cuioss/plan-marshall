@@ -51,7 +51,7 @@ _loop_back = load_script_module('plan-marshall', 'manage-status', '_cmd_loop_bac
 
 _STEP_4_HEADING = '### Step 4: Mark Step Complete (inline)'
 _VERIFIER_STEP_HEADING = '### Step 3b: Independent verification (dispatch)'
-_TERMINATION_HEADING = '## Round-loop termination: converged, self-seeding, and out of budget'
+_TERMINATION_HEADING = '## Round-loop termination: converged, not run, and out of budget'
 
 _SUBSECTION_STOPS = ('### ', '## ', '# ')
 _SECTION_STOPS = ('## ', '# ')

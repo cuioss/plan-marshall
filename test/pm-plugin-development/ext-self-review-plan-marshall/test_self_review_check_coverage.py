@@ -481,7 +481,9 @@ _SURFACING_DOC = (
 _SURFACING_COUNTS_START = 'counts:'
 _SURFACING_COUNTS_END = 'total: the sum'
 _SURFACING_SCHEMA_START = 'regexes[N1]'
-_SURFACING_SCHEMA_END = 'hoisted_binding_shadows[N23]'
+#: The last schema entry, derived from the registry's last key so a list appended
+#: to the registry moves the span's end with it instead of falling outside it.
+_SURFACING_SCHEMA_END = f'{CANDIDATE_LISTS[-1].key}[N'
 _SURFACING_TABLE_START = '### Required Candidate Sub-Lists'
 _SURFACING_TABLE_END = '**Closed coverage gap'
 
