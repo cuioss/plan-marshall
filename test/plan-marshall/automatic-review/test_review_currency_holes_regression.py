@@ -240,7 +240,7 @@ class TestTheOneCommitRecogniser:
         """
         assert gpr.named_commit_currency(body, head) is expected
 
-    @pytest.mark.parametrize('body', [*_BODIES_NAMING_THE_HEAD, *_BODIES_NOT_NAMING_THE_HEAD])
+    @pytest.mark.parametrize('body', _BODIES_NAMING_THE_HEAD + _BODIES_NOT_NAMING_THE_HEAD)
     def test_the_issue_comment_head_read_agrees_with_the_shared_recogniser(self, body):
         """The issue-comment path reads a commit reference exactly where the helper does."""
         assert gci.issue_comment_verifies_head(body, _NEW_HEAD) is gpr.bot_claimed_sha_matches_head(body, _NEW_HEAD)
