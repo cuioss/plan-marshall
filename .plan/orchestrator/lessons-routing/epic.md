@@ -152,6 +152,37 @@ and the short-lived `lessons-handling-26-09-22-01` (opened and closed the same d
 its full record is inlined at `## Lesson Sweeps § 2026-09-22` below and its tree was removed, per the
 operator, once inlined).
 
+⛔⛔ **RULING 2026-10-09 (operator) — the `ingest` command. SUPERSEDES the outward routing of the
+2026-09-22 ruling above and the "new lessons go to the PM-MCP carry-over" rule of 2026-09-26.** Context,
+operator's words: *"We start creating a new version of plan-marshall, so we only fix either high or
+critical issue (plan-marshall module itself) or content issues (domain-bundles)."* What is unchanged:
+this epic is still the one orchestrator a lessons sweep runs as, and it still stages no content-derived
+plan of its own.
+
+`ingest` is an epic-local command of this epic (`/plan-orchestrator epic=lessons-routing ingest`). It is
+defined HERE, not in the `plan-orchestrator` skill source — a new skill verb is itself neither a
+high/critical fix nor domain-bundle content. It runs three steps, in order:
+
+1. **Scan and consolidate.** Enumerate the whole corpus through `manage-lessons`, check each lesson
+   against ground truth, and cluster duplicates and near-duplicates into ONE consolidated item per
+   cluster. Every lesson gets a per-lesson disposition in the sweep record.
+2. **File what is applicable into `live-blockers`.** A consolidated item is applicable when it is
+   either (a) a defect in the `plan-marshall` bundle itself graded **high** or **critical**, or (b) a
+   **content** issue in a domain bundle (every bundle under `marketplace/bundles/` other than
+   `plan-marshall`), at any severity. Each applicable item is filed as ONE message:
+   `orchestrator inbox write --slug live-blockers --sender-type orchestrator --sender-id lessons-routing
+   --kind finding`, the body naming its severity, its bundle, and every source lesson id.
+3. **Archive everything else here.** Every other item is written to
+   `{epic_dir}/lessons-archive/{level}/{lesson-id}.md`, where `{level}` is the graded severity —
+   `medium`, `low` — or `stale` for a lesson ground truth refutes. A consolidated cluster is archived
+   as one file under its primary lesson id, listing the ids it absorbed.
+
+A lesson is removed from the corpus only AFTER its inbox message or its archive file exists, and only
+through `manage-lessons remove` (never a raw `rm`). Severity is the orchestrator's graded judgement,
+recorded with a one-line reason per item; a lesson whose grade is genuinely borderline between `medium`
+and `high` is put to the operator rather than guessed. Nothing is routed to any other sibling epic, and
+nothing is added to the PM-MCP carry-over by this command.
+
 ## Lesson Sweeps
 
 One dated subsection per sweep, append-only, newest last. This is where a sweep's disposition record
@@ -278,6 +309,20 @@ own PLAN-LR-NN queue.
   (b) the legacy-blocking defects fixed in #1636 (`075ffbb68`), `2026-09-23-23-001` re-verified stale;
   (d) epic stays OPEN — the `lessons` verb resolves to this fixed slug for future sweeps. Cleanup relocated
   the 2026-09-26 sweep record, Open Defects and Watches to `settled.md` (operator-confirmed).
+- 2026-10-09 — **Operator ruling: the `ingest` command replaces outward sweep routing.** With a new
+  plan-marshall version under way, only high/critical defects in the `plan-marshall` bundle and content
+  issues in the domain bundles are still worth fixing; those go to the `live-blockers` inbox, and every
+  other lesson is archived in this epic under `lessons-archive/{level}/`. Full rule: § Standing Rule,
+  RULING 2026-10-09. Alternative considered: a real `ingest` verb in the `plan-orchestrator` skill —
+  not taken, because it would be a feature change to a bundle now limited to high/critical fixes.
+- 2026-10-09 — **Inbox drained (2 messages), queue re-parked.** `process-compliance-001` (observed):
+  its claim that #1641 (`945e59287`) reverted this epic's PM-MCP-supersession state was verified against
+  `88fcfc9ef` — the five `PLAN-LR-01..05` rows read `staged`, the five spec banners were stripped, and
+  `inbox/archive/review-apparatus/review-apparatus-001.md` was deleted. Restored: rows transitioned back
+  to `parked` (operator-confirmed), the five specs and the archived message checked out from `88fcfc9ef`
+  (the only difference was the banner). `orchestrator-refactor-001` (observed): item 1, lesson
+  `2026-09-27-07-001`, verified fixed by #1685 (`8aa33cfe1`, on `origin/main`) and retired with a
+  tombstone; item 2, six PLAN-09 carry-over rows, held as a Watch below for the next `ingest`.
 
 ## Open Defects
 
@@ -286,3 +331,13 @@ own PLAN-LR-NN queue.
 ## Watches
 
 > ↪ Relocated to `settled.md` § "Watches — superseded by PM-MCP" — every watch re-checked on a now-parked plan; carried to PM-MCP.
+
+- **Six PLAN-09 (#1652) lesson carry-over rows await `ingest` grading** (from `orchestrator-refactor-001`,
+  2026-10-09). They are not in the lessons corpus, so the next `ingest` run grades them alongside it
+  under RULING 2026-10-09: truncated-payload budget gate; keyless dispatch-boundary records; coverage-gap
+  verdict instead of a spent loop-back; outline excluded-vs-declared path reconciliation; merge-commit
+  fact from the PR merge record; dedicated refusal for a reserved never-removed resource. Full rows and
+  fixtures: `inbox/archive/orchestrator-refactor/orchestrator-refactor-001.md`; source file at the
+  archived `orchestrator-refactor` epic, `findings/2026-09-28-plan-09-lesson-carry-over.md`. The sender
+  flags possible overlap with lessons `2026-09-23-05-001`/`-002`/`-007` — dedupe at ingest. Retire this
+  watch once all six are filed to `live-blockers` or archived.
