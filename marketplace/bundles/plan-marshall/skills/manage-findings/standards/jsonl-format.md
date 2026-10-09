@@ -93,6 +93,9 @@ Each line in a `findings/{type}.jsonl` file is a JSON object:
 | `reviewed_commit_sha` | string | PR HEAD SHA at the time the comment was ingested — the commit the reviewer bot saw; indexed/queryable, used to detect when HEAD has advanced past the last reviewed commit and a re-review is owed |
 | `bot_kind` | string | Reviewer-bot identity derived from `author`, checked at write time against the registry-derived `BOT_KINDS` set (one entry per `automatic-review/standards/{bot_kind}.md`) — indexed/queryable; distinct from `kind` (which describes comment structure), this identifies WHICH bot reviewed and keys the re-review strategy registry. See **The write-time `bot_kind` guard** below for what that check rejects and what it admits |
 
+| `fix_task_number` | int | Number of the fix task that owns the fix of a `fixed` finding. Written by `resolve --resolution fixed --task-number N`. Absent (or `null`) on a `fixed` finding whose fix was applied inline, and on every finding that is not `fixed` |
+| `fix_commit_sha` | string | The commit the fix of a `fixed` finding landed in, lower-cased, 7 to 40 hexadecimal characters. Written by `stamp-fix-commit`. Absent (or `null`) until it is stamped. See **The fix stamp** below |
+
 For `pr-comment` findings, the queryable `author`, `kind`, `reviewed_commit_sha`, and `bot_kind` fields are the source of truth for reviewer identity, comment structure, and re-review matching; the author/kind lines written into the `detail` blob are retained for human readability only. `bot_kind` (the reviewer's identity) is distinct from `kind` (the comment's structure), and `reviewed_commit_sha` together with `bot_kind` are indexed/queryable so the re-review mechanism can match a reviewer to the commit it last saw.
 
 #### The write-time `bot_kind` guard
@@ -133,13 +136,35 @@ The `resolution` field carries six values. `pending` is the initial state; the o
 | Resolution | Meaning | Effect on source tree | Recorded detail |
 |------------|---------|------------------------|------------------|
 | `pending` | The finding has been added but not yet triaged. Blocks the next guarded phase boundary. | None | Auto-populated on `add`. |
-| `fixed` | A fix-task was created (or the change was applied inline) and the next verification cycle will re-evaluate the finding. The underlying problem is being removed. | Source change (in this run or a follow-up) | `resolution_detail` names the fix-task id or the inline change. |
+| `fixed` | A fix-task was created (or the change was applied inline) and the next verification cycle will re-evaluate the finding. The underlying problem is being removed. | Source change (in this run or a follow-up) | `resolution_detail` names the fix-task id or the inline change. `fix_task_number` and `fix_commit_sha` record the owning task and the commit — see **The fix stamp** below. |
 | `suppressed` | An inline annotation has been added at the finding's location with a documented rationale. The underlying behaviour stays; the linter/Sonar/reviewer is told to stop flagging it for the stated reason. | Inline annotation (`// NOSONAR …`, `# noqa: …`, language-specific) plus rationale comment | `resolution_detail` carries the rationale text. |
 | `accepted` | The finding is acknowledged and the disposition is to leave the code as-is. No annotation; no source change. The rationale lives only in the finding record. | None | `resolution_detail` carries the rationale text. |
 | `taken_into_account` | The finding informed a higher-order change rather than producing a direct fix or suppression — typically a Q-Gate finding that drove an outline restructure, a phasing-rationale block, or a scope adjustment. Closest in spirit to "noted and absorbed." | Indirect — the higher-order change is the response | `resolution_detail` names the higher-order change (e.g. the section added to `solution_outline.md`). |
 | `rejected` | The validity-verification ([ext-point-verify](../../extension-api/standards/ext-point-verify.md)) stage refuted the finding as invalid / a false positive. No source change; the finding is terminal and non-blocking (does not contribute to `pending_findings_blocking_count`) and never reaches triage. | None | `resolution_detail` carries the refutation rationale. |
 
 The five addressed values are not interchangeable. `fixed` removes the problem; `suppressed` and `accepted` document a decision to keep it; `taken_into_account` records that the feedback shaped something other than a direct fix; `rejected` records that the finding was never a real defect (set by the verify stage, distinct from `accepted`, which keeps a real finding as-is). The triage workflow ([`plan-marshall/workflow/triage.md`](../../plan-marshall/workflow/triage.md)) and the per-domain `ext-triage-{domain}` standards (under each domain bundle) decide which value applies in each case; `rejected` is set earlier, by the verify pre-stage, before triage runs.
+
+### The fix stamp
+
+A `fixed` resolution is recorded when the fix is decided, which is before the fix exists as a commit. Two optional fields say how far the fix has come:
+
+```json
+{
+  "hash_id": "a3f2c1",
+  "type": "pr-comment",
+  "resolution": "fixed",
+  "resolution_detail": "Tracked by fix task TASK-7.",
+  "fix_task_number": 7,
+  "fix_commit_sha": "4d6738e2d96150706cda6b682109336c5c0c383b"
+}
+```
+
+- `fix_task_number` is set by `resolve` when the fix is a task. A `fixed` finding without it is an inline fix.
+- `fix_commit_sha` is set by `stamp-fix-commit`, by fix task or by finding. The store does not check that the commit is on the pull request; the reader does.
+- A changed resolution clears both fields. So does a re-resolve to `fixed` under a different fix task, which also stores the new task number.
+- Stamping again replaces `fix_commit_sha`.
+
+The `resolution_detail` of a `fixed` finding is written before the commit exists, so it must be a statement that is true at that time. A reader that transmits the reply adds the commit id itself.
 
 ### Promotion Fields
 

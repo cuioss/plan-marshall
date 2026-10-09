@@ -100,7 +100,7 @@ For each finding in the group:
 
 3. **On contradiction → decline the suggestion (do NOT FIX).** Do not allocate a fix task and do not apply the suggestion. Instead:
 
-   - Record the reconciliation rationale as the finding's `resolution_detail` (via the `manage-findings resolve` call below). The reviewer-facing transmission of that rationale — the PR thread reply for `pr-comment`, the Sonar dismissal for `sonar-issue` — is performed later by the single RESPOND loop (`verification-feedback.md` § Step 8), keyed by `hash_id`, NOT inline here. The decline is a `taken_into_account` disposition, so the RESPOND loop posts the stored rationale exactly as it does for any other terminal disposition.
+   - Record the reconciliation rationale as the finding's `resolution_detail` (via the `manage-findings resolve` call below). The reviewer-facing transmission of that rationale — the PR thread reply for `pr-comment`, the Sonar dismissal for `sonar-issue` — is performed later by the single RESPOND loop (`verification-feedback.md` § Step 8), keyed by `hash_id`, NOT inline here. The decline is a `taken_into_account` disposition, so the RESPOND loop posts the stored rationale in the pass that follows triage; only a `fixed` disposition is held for a commit.
    - Record the decline in `decision.log`:
 
      ```bash
@@ -163,15 +163,17 @@ The gate is purely a guard against *auto-applying* a contradictory edit — it n
 
 Cross-group feedback (TASK-N references) requires sequential action between groups, but actions within a group can run in document order.
 
-> **Triage RECORDS dispositions; the RESPOND loop TRANSMITS them.** Step 3c does the two things that are triage's own concern — apply the source-tree change (fix-task allocation for FIX, in-code annotation for SUPPRESS) and record the disposition + `resolution_detail` via `manage-findings resolve`. It does **not** talk to the provider: the reviewer-facing actions (PR thread-reply, resolve-thread, Sonar server-side dismissal) are transmitted **once, after all triage has settled**, by the single RESPOND loop — `post_responses` for PR providers, `sonar_rest transition` for Sonar — keyed by each finding's own `hash_id`. See [`verification-feedback.md`](verification-feedback.md) § "Step 8: Respond loop". This is the D4 separation: triage decides, the respond loop transmits. The `resolution_detail` each `resolve` call records below is exactly the text the respond loop posts back to the provider, so the rationale MUST be reviewer-ready.
+> **Triage RECORDS dispositions; the RESPOND loop TRANSMITS them.** Step 3c does the two things that are triage's own concern — apply the source-tree change (a fix task or one inline edit for FIX, an in-code annotation for SUPPRESS) and record the disposition + `resolution_detail` via `manage-findings resolve`. It does **not** talk to the provider: the reviewer-facing actions (PR thread-reply, resolve-thread, Sonar server-side dismissal) are transmitted by the RESPOND loop — `post_responses` for PR providers, `sonar_rest transition` for Sonar — keyed by each finding's own `hash_id`, after all triage has settled. See [`verification-feedback.md`](verification-feedback.md) § "Step 8: Respond loop". This is the D4 separation: triage decides, the respond loop transmits. The `resolution_detail` each `resolve` call records below is exactly the text the respond loop posts back to the provider, so the rationale MUST be reviewer-ready. One disposition is not transmitted in the pass that follows triage: a `fixed` finding's reply is held until its fix commit exists — see the reply rule in the FIX body below.
 
 The action body:
 
-- **FIX** — allocate the fix task, then resolve the finding as `fixed` with a reviewer-ready `resolution_detail`. The thread reply that tells the reviewer "addressed by TASK-{N}" is transmitted later by the RESPOND loop (`post_responses`), not here.
+- **FIX** — record the finding `fixed`, in one of two shapes: a **task fix**, which allocates a fix task, or an **inline fix**, which applies one edit and allocates none. Triage talks to no provider in either shape.
 
-  > **Not-done / STOP contract — FIX allocates a task and STOPS; it never executes the fix inline.** The FIX action MUST do exactly three things and then stop: (a) allocate the fix task in a **not-done** state via the `prepare-add` → `commit-add` flow below; (b) resolve the finding `fixed` with the reviewer-ready `resolution_detail`; and (c) then **STOP**. It MUST NOT implement, test, or mark the fix task done inline, and it MUST NOT leave uncommitted fix edits in the worktree — phase-5-execute, re-entered by the `loop_back` this FIX raises, owns execution and commit. A created not-done task and a completed-but-uncommitted working-tree change are **mutually-exclusive returns**: triage returns the not-done task, and the re-entered execute phase produces the committed change. Implementing the fix and marking its task done inline strands the change behind a done task and makes the `loop_back` a no-op — the re-entered execute phase finds nothing pending to drive, so the fix never reaches a commit on the branch.
+  > **One reply rule for both shapes — the reviewer is told "fixed" only after the fix commit is stamped on the finding.** Triage resolves the finding `fixed` before any commit carries the fix, and it never stamps a commit itself. The stamp (`manage-findings stamp-fix-commit`) is written after the fix commit is pushed, by the phase-6-finalize hook (see [`phase-6-finalize/SKILL.md`](../../phase-6-finalize/SKILL.md) Step 3 item 7c). On GitHub the RESPOND loop holds a `fixed` finding back until that stamp is there and the commit is on the pull request head; it lists the finding as `deferred_until_commit` and sends nothing for it. A task fix and an inline fix are held alike, because the hold reads the stamp and nothing else. The stored `resolution_detail` is written now, so it MUST be a statement that is true before the commit exists; the GitHub transmit adds the commit id. See [`verification-feedback.md`](verification-feedback.md) § "Step 8: Respond loop" for the ordering and for what the GitLab verb does instead.
 
-  **Ground-truth precondition (runs BEFORE `prepare-add`).** When the FIX would remove or rewrite a passage the finding cites — a `review_body` / comment finding quoting specific source text — first confirm that the cited passage still exists in the current worktree. Read `{finding.file_path}` (or `Grep` for the cited text within it) and check whether the quoted passage is still present. If the passage is ABSENT (already removed by a prior triage iteration or by a HEAD advance), do NOT allocate a fix task — a no-op fix task for a passage that is no longer present cannot make progress and re-loops finalize. Instead, resolve the finding as `taken_into_account` and skip the rest of this FIX body:
+  **Which shape.** A task fix is the default. An inline fix is the single-annotation FIX: use it only when the whole fix is one edit at the finding's own location in `{finding.file_path}`. A fix that needs a second edit, a second file or a test change is a task fix.
+
+  **Ground-truth precondition (runs BEFORE either shape).** When the FIX would remove or rewrite a passage the finding cites — a `review_body` / comment finding quoting specific source text — first confirm that the cited passage still exists in the current worktree. Read `{finding.file_path}` (or `Grep` for the cited text within it) and check whether the quoted passage is still present. If the passage is ABSENT (already removed by a prior triage iteration or by a HEAD advance), do NOT allocate a fix task and do NOT edit — a fix for a passage that is no longer present cannot make progress and re-loops finalize. Instead, resolve the finding as `taken_into_account` and skip the rest of this FIX body:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
@@ -179,7 +181,11 @@ The action body:
     --detail "Cited passage no longer present in worktree — resolved without fix task to avoid a no-op finalize loop"
   ```
 
-  When the cited passage IS still present (or the finding cites no specific passage), proceed with the standard FIX flow below unchanged.
+  When the cited passage IS still present (or the finding cites no specific passage), proceed with the shape that applies.
+
+  **Shape 1 — task fix.**
+
+  > **Not-done / STOP contract — a task fix allocates a task and STOPS; it never executes that task's fix.** The task fix MUST do exactly three things and then stop: (a) allocate the fix task in a **not-done** state via the `prepare-add` → `commit-add` flow below; (b) resolve the finding `fixed` with the reviewer-ready `resolution_detail`, passing the fix-task number; and (c) then **STOP**. It MUST NOT implement, test, or mark the fix task done inline, and it MUST NOT leave uncommitted edits for that task in the worktree — phase-5-execute, re-entered by the `loop_back` this FIX raises, owns execution and commit. Per finding the return is **either** a not-done task **or** an inline edit without a task (Shape 2) — never a done task with an uncommitted change. Implementing the fix and marking its task done inline strands the change behind a done task and makes the `loop_back` a no-op — the re-entered execute phase finds nothing pending to drive, so the fix never reaches a commit on the branch.
 
   Allocate via the two-step prepare-add → commit-add flow:
 
@@ -195,13 +201,25 @@ The action body:
     --plan-id {plan_id}
   ```
 
-  Capture the returned task number as `{N}`, then resolve the finding. The `resolution_detail` is the reviewer-ready text the RESPOND loop posts to the finding's PR thread — it MUST name the fix task:
+  Capture the returned task number as `{N}`, then resolve the finding, passing `{N}` as `--task-number` so the fix commit can later be stamped on every finding this task owns. The `resolution_detail` is the reviewer-ready text the RESPOND loop posts to the finding's PR thread once the fix commit is stamped — it MUST name the fix task:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
+    --plan-id {plan_id} --hash-id {finding.hash_id} --resolution fixed --task-number {N} \
+    --detail "Will be addressed by TASK-{N}; see follow-up commit on this branch"
+  ```
+
+  Then STOP for this finding. The reply waits for the stamped commit.
+
+  **Shape 2 — inline fix (the single-annotation FIX).** Apply the one edit to `{finding.file_path}` in `{WORKTREE}` with the Edit tool. Allocate no task. Then resolve the finding `fixed` with no `--task-number` — its absence is what records the fix as inline:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
     --plan-id {plan_id} --hash-id {finding.hash_id} --resolution fixed \
-    --detail "Will be addressed by TASK-{N}; see follow-up commit on this branch"
+    --detail "Addressed by an edit to {finding.file_path}; see follow-up commit on this branch"
   ```
+
+  Triage does not commit the edit. In finalize it is committed, pushed and stamped by the hook that dispatched this triage, after this workflow returns `loop_back` (see [`phase-6-finalize/SKILL.md`](../../phase-6-finalize/SKILL.md) Step 3 item 7c). The reply waits for that stamp, exactly as in Shape 1.
 
 - **SUPPRESS** — apply the domain-specific annotation to `{finding.file_path}:{finding.line}` using the syntax from the loaded `suppression.md` (NOSONAR, `@SuppressWarnings("java:S{rule}")`, `# noqa: {rule}`, `// eslint-disable-line {rule}`, etc.), then record the disposition. The reviewer-facing thread acknowledgement is transmitted later by the RESPOND loop, not here:
 
@@ -260,7 +278,7 @@ After all groups have completed their batched decisions and their non-AskUserQue
 | **Accept with rationale** | The finding is recorded as a known, accepted gap, with your reason. Nothing in the code changes, and nothing re-raises it later in this plan. Resolved `accepted`. |
 | **Split into a fix task** | A task to make this change is added to the plan, and the plan re-enters execute to carry it out. The change ships with the rest of the work rather than being deferred. Resolved `fixed`. |
 
-**There is deliberately no "fix it here" option.** Step 3c defines exactly one body that produces a fix — FIX — and its STOP contract forbids executing that fix inline or leaving uncommitted fix edits in the worktree. An inline-edit disposition would therefore have no action body to be acted on with, and it would produce a source change that the Output contract cannot report (`fix_tasks_created` / `overflow_deferred` are the only work counters, and Step 7 keys `loop_back_target` on exactly those two). Every change this prompt can authorise ships through a fix task.
+**The prompt offers a fix task, and no fourth option.** Step 3c's FIX body has two shapes, and this prompt uses the task shape: "Split into a fix task" is acted on with Shape 1, passing the fix-task number to the resolve call. The inline shape is triage's own choice for a fix it could settle alone — one edit at the finding's location — and a finding that reached this prompt is one triage could not settle alone, so its change is made visible as a task and reported through `fix_tasks_created`. The reply rule is the same either way: the reviewer hears "fixed" only after the fix commit is stamped on the finding.
 
 **Mark the recommended option and order it first** — obligation 3 of the same document. The recommendation is the one the finding's own `rationale` points to; when the rationale names none, mark **Hold**, because it is the only one of the three that changes nothing and can be revisited at no cost. A prompt raised because triage could not decide MUST NOT present three unmarked options and hand the whole judgement back — triage got far enough to have a leaning, and withholding it makes the reader re-derive work already done.
 
@@ -271,6 +289,8 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings re
   --plan-id {plan_id} --hash-id {finding.hash_id} --resolution {fixed|suppressed|accepted|taken_into_account} \
   --detail "{user's stated rationale}"
 ```
+
+For **Split into a fix task** the resolve call is the Shape 1 call from Step 3c, which also passes `--task-number {N}`.
 
 ## Step 5: Overflow / timeout handling
 
@@ -320,9 +340,9 @@ When the batched decision for a group would imply a fix outside the **plan's sco
 
 1. **Hold (recommended)** — the finding is written down for a later plan and this plan's boundary is left exactly where it was. Nothing in the code changes and nothing ships differently. Record `taken_into_account` with the deferral rationale.
 2. **Accept with rationale** — the finding is recorded as a known, accepted gap and will not be re-raised in this plan. Nothing in the code changes; unlike Hold, nothing is carried forward either. Record it as an `accepted` finding, log a `(scope-deviation:accept)` decision via `manage-logging decision`, and do NOT create a fix task.
-3. **Split into a fix task** — a task to make this change is added to this plan, and the plan re-enters execute to carry it out. This plan grows to cover the finding and ships the change with the rest of its work; the operator has accepted the scope deviation explicitly. Allocate it via the standard FIX action body in Step 3c and record the finding `fixed`.
+3. **Split into a fix task** — a task to make this change is added to this plan, and the plan re-enters execute to carry it out. This plan grows to cover the finding and ships the change with the rest of its work; the operator has accepted the scope deviation explicitly. Allocate it via the task shape (Shape 1) of the FIX action body in Step 3c and record the finding `fixed`.
 
-The choice this prompt offers is therefore between **growing the plan now** (option 3 — the only option that reaches a code change, and it reaches it by allocating a fix task) and **leaving the code untouched** (options 1 and 2, which differ only in whether the finding is carried forward to a later plan or closed here). There is no "fix it here" alternative to option 3: Step 3c defines no action body that executes a fix inline, and the FIX body's STOP contract forbids one, so a fix task is the only route from an authorised scope deviation to a landed change.
+The choice this prompt offers is therefore between **growing the plan now** (option 3 — the only option that reaches a code change, and it reaches it by allocating a fix task) and **leaving the code untouched** (options 1 and 2, which differ only in whether the finding is carried forward to a later plan or closed here). Option 3 always uses the task shape: a scope deviation is work the plan did not contain, so it enters the plan as a task that is counted in `fix_tasks_created` and carried out by the re-entered execute phase. As with every fix, the reviewer hears "fixed" only after the fix commit is stamped on the finding.
 
 Scope-deviation detection signals (the LLM checks these against the loaded plan context):
 - The finding's `file_path` is not under any `modules[]` entry that this plan's deliverables claim.
@@ -333,7 +353,7 @@ This *plan-scope* deviation guard is distinct from the *PR-touched-file* in-scop
 
 ## Step 7: Loop-back signalling and granularity classification
 
-`loop_back_needed: true` when any decision in any group resolved to FIX OR when any group deferred via overflow. The orchestrator handles the actual re-fire (the manifest dispatcher in phase-5-execute / phase-6-finalize re-enters the calling step on next phase entry; HEAD-dependent steps in phase-6-finalize already track this via `--head-at-completion`). This workflow does NOT call `manage-status set-phase` directly — that is the calling manifest step's responsibility.
+`loop_back_needed: true` when any decision in any group resolved to FIX — in either shape — OR when any group deferred via overflow. The orchestrator handles the actual re-fire (the manifest dispatcher in phase-5-execute / phase-6-finalize re-enters the calling step on next phase entry; HEAD-dependent steps in phase-6-finalize already track this via `--head-at-completion`). This workflow does NOT call `manage-status set-phase` directly — that is the calling manifest step's responsibility.
 
 **Granularity classification (`loop_back_target`)** — when `loop_back_needed: true`, classify the loop-back into one of two granularity tiers per the phase-6-finalize "Loop-back Target Contract":
 

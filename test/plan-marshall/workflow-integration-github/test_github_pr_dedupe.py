@@ -381,12 +381,33 @@ def _resolved_pr_comment_finding(hash_id, pr_number, *, thread_id='', comment_id
             f'comment_id: {comment_id}',
         ]
     )
-    return {
-        'hash_id': hash_id,
-        'detail': '\n'.join(detail_lines),
-        'resolution': 'fixed',
-        'resolution_detail': f'disposition body for {hash_id}',
-    }
+    return _with_fix_commit_stamp(
+        {
+            'hash_id': hash_id,
+            'detail': '\n'.join(detail_lines),
+            'resolution': 'fixed',
+            'resolution_detail': f'disposition body for {hash_id}',
+        }
+    )
+
+
+#: The commit a hand-built ``fixed`` row is stamped with, so it is released by the
+#: hold-back and reaches the routing the scoping tests are about.
+_RESPOND_FIX_COMMIT = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
+
+
+def _with_fix_commit_stamp(finding):
+    """Return ``finding`` carrying the fix-commit stamp a released ``fixed`` row has.
+
+    ``post_responses`` holds a ``fixed`` row until it carries a fix commit that the
+    provider reports on the pull request head. These rows are hand-built and handed
+    to the verb through a patched ``query_findings``; they are in no store, so the
+    store's ``stamp_fix_commit`` writer has nothing to write to. The stamp is set
+    here under the writer's own field name (``FIX_COMMIT_FIELD``), which is the one
+    thing the verb reads. The other half of the release — the provider's answer —
+    is supplied by ``_patch_respond_surface``.
+    """
+    return {**finding, _live_findings_core().FIX_COMMIT_FIELD: _RESPOND_FIX_COMMIT}
 
 
 def _patch_respond_surface(monkeypatch, findings, posted, replied):
@@ -396,8 +417,14 @@ def _patch_respond_surface(monkeypatch, findings, posted, replied):
     INSIDE the function body, so the attribute is resolved from the live
     ``sys.modules`` entry at call time — the same reason ``_live_findings_core``
     exists above. Patching that attribute is what the SUT actually reads.
+
+    The provider's compare read answers ``ahead`` and the head read answers a fixed
+    SHA, so a stamped ``fixed`` row is released. This is the same seam
+    ``test_comments_stage_post.py`` drives.
     """
     monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+    monkeypatch.setattr(github_pr._github, 'fetch_pr_head_sha', lambda pr_number: _HEAD_B)
+    monkeypatch.setattr(github_pr._github, 'run_gh', lambda *_a, **_k: (0, 'ahead\n', ''))
     monkeypatch.setattr(
         _live_findings_core(),
         'query_findings',
@@ -423,12 +450,14 @@ def _pr_comment_finding_with_detail(hash_id, detail):
     cannot express a detail block that DEVIATES from it. These deviation cases are
     exactly what the ``pr_number`` extraction must reject, so they are built here.
     """
-    return {
-        'hash_id': hash_id,
-        'detail': detail,
-        'resolution': 'fixed',
-        'resolution_detail': f'disposition body for {hash_id}',
-    }
+    return _with_fix_commit_stamp(
+        {
+            'hash_id': hash_id,
+            'detail': detail,
+            'resolution': 'fixed',
+            'resolution_detail': f'disposition body for {hash_id}',
+        }
+    )
 
 
 _BAD_KIND_COMMENT = {
@@ -804,6 +833,41 @@ def test_post_responses_skips_a_row_whose_pr_number_marker_is_not_numeric(monkey
     assert result['skipped'] == [{'hash_id': 'non-numeric', 'reason': 'pr_number_unrecorded'}]
     assert result['status'] == 'success'
     assert 'comment_id: `N`' not in posted[0][1]
+
+
+def test_post_responses_holds_an_unstamped_fixed_row_after_the_pr_gate(monkeypatch):
+    """⛔ MATCHED CONTROL for the stamped helpers above.
+
+    The same hand-built rows without the fix-commit stamp. The row owned by the
+    target PR is held, not transmitted. The foreign row is still reported by the
+    ``pr_number`` gate, which runs first: a row that is not this PR's is never
+    listed as waiting for this PR's commit.
+    """
+    # Arrange
+    stamp_field = _live_findings_core().FIX_COMMIT_FIELD
+    findings = [
+        {
+            key: value
+            for key, value in _resolved_pr_comment_finding(hash_id, pr_number, comment_id=comment_id).items()
+            if key != stamp_field
+        }
+        for hash_id, pr_number, comment_id in (('own', 1036, 'a'), ('foreign', 1013, 'f'))
+    ]
+    posted, replied = [], []
+    _patch_respond_surface(monkeypatch, findings, posted, replied)
+
+    # Act
+    result = _run_post_responses(1036, 'gh-pr-scoping-unstamped')
+
+    # Assert
+    assert result['status'] == 'success'
+    assert result['responded'] == []
+    assert posted == []
+    assert replied == []
+    assert result['deferred_until_commit'] == [
+        {'hash_id': 'own', 'reason': 'no_fix_commit', 'fix_commit_sha': '', 'fix_task_number': ''}
+    ]
+    assert result['skipped'] == [{'hash_id': 'foreign', 'reason': 'belongs_to_pr_1013'}]
 
 
 def test_post_responses_batches_thread_less_dispositions_into_one_comment(plan_context, monkeypatch):

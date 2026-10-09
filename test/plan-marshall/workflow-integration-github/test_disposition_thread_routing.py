@@ -54,12 +54,24 @@ class _Args:
         self.pr_number = pr_number
 
 
+#: The commit every staged ``fixed`` finding is stamped with. A ``fixed`` reply is
+#: held until its fix commit is stamped and reaches the pull request head, and this
+#: suite is about where a transmitted reply GOES, so every finding is released.
+_FIX_COMMIT = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
+
+
 @pytest.fixture(autouse=True)
 def _stub_provider():
-    """Keep the producer off the network; tests re-patch inside their own blocks."""
+    """Keep the producer off the network; tests re-patch inside their own blocks.
+
+    ``run_gh`` answers the provider's compare read with ``ahead``: the stamped fix
+    commit reaches the pull request head, so the hold-back releases every reply.
+    It is the same seam ``test_comments_stage_post.py`` drives.
+    """
     with (
         patch('github_pr._github.check_auth', return_value=(True, '')),
         patch('github_pr._github.fetch_pr_head_sha', return_value='stub-head-sha'),
+        patch('github_pr._github.run_gh', return_value=(0, 'ahead\n', '')),
     ):
         yield
 
@@ -105,12 +117,20 @@ def _comment(comment_id: str, kind: str, thread_id: str) -> dict:
 
 
 def _resolve_all(plan_id: str, mapping: dict[str, str]) -> None:
-    """Give every staged finding a terminal disposition with something to say."""
-    from _findings_core import resolve_finding
+    """Give every staged finding a ``fixed`` disposition whose reply is released.
+
+    Each finding is resolved ``fixed`` and then stamped with its fix commit through
+    the store's own writer, so it reaches the transmit path the routing assertions
+    are about. Without the stamp ``post_responses`` would hold every one of them and
+    no test below would observe any routing at all.
+    """
+    from _findings_core import resolve_finding, stamp_fix_commit
 
     for comment_id, hash_id in mapping.items():
         outcome = resolve_finding(plan_id, hash_id, 'fixed', detail=f'Addressed {comment_id}.')
         assert outcome['status'] == 'success', outcome
+        stamped = stamp_fix_commit(plan_id, _FIX_COMMIT, hash_id=hash_id)
+        assert stamped['hash_ids'] == [hash_id], stamped
 
 
 class TestMixedFindingSetRouting:
@@ -218,9 +238,53 @@ class TestMixedFindingSetRouting:
             [r['hash_id'] for r in result['responded']]
             + [r['hash_id'] for r in result['skipped']]
             + [r['hash_id'] for r in result['untransmitted']]
+            + [r['hash_id'] for r in result['deferred_until_commit']]
         )
         assert sorted(accounted) == sorted(mapping.values())
         assert len(accounted) == len(set(accounted)), 'no disposition is reported twice'
+        # Every finding here is stamped, so none is held: the whole set is transmitted.
+        assert result['deferred_until_commit'] == []
+        assert len(result['responded']) == len(mapping)
+
+
+class TestHeldFindingsTakeNoRoute:
+    """⛔ MATCHED CONTROL for the suite's stamped helper.
+
+    The same mixed set, resolved ``fixed`` and NOT stamped, is routed nowhere: no
+    thread mutation, no batched comment, and every finding on the deferred list. This
+    is what shows the routing assertions above depend on the stamp and are not
+    passing over findings the hold would have stopped.
+    """
+
+    def test_an_unstamped_mixed_set_is_held_whole(self, plan_context):
+        from _findings_core import resolve_finding
+
+        plan_id = 'dtr-mixed-unstamped'
+        plan_context.plan_dir_for(plan_id)
+        mapping = _stage(
+            plan_id,
+            [
+                _comment('I1', 'inline', 'PRRT_i1'),
+                _comment('RB', 'review_body', ''),
+                _comment('IC', 'issue_comment', ''),
+            ],
+        )
+        for comment_id, hash_id in mapping.items():
+            resolve_finding(plan_id, hash_id, 'fixed', detail=f'Addressed {comment_id}.')
+
+        with (
+            patch('github_pr._github.run_graphql', return_value=(0, {}, '')) as mock_graphql,
+            patch('github_pr._github.post_pr_comment') as mock_post,
+        ):
+            result = cmd_post_responses(_Args(plan_id))
+
+        mock_graphql.assert_not_called()
+        mock_post.assert_not_called()
+        assert result['status'] == 'success'
+        assert result['responded'] == []
+        assert result['untransmitted'] == []
+        assert sorted(r['hash_id'] for r in result['deferred_until_commit']) == sorted(mapping.values())
+        assert {r['reason'] for r in result['deferred_until_commit']} == {'no_fix_commit'}
 
 
 class TestUndeliverableInThreadReplyIsNeverBatched:

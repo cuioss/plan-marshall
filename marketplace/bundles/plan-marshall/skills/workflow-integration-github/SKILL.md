@@ -10,7 +10,7 @@ mode: workflow
 GitHub provider for the findings-pipeline `pr-comment` producer. The provider surface is exactly FOUR pure, zero-LLM verbs — no triage judgment lives here:
 
 - **`fetch_findings`** — fetch PR review comments, apply the pre-filter (`comment-patterns.json`), exclude the batched response body `post_responses` itself posted, and file one `pr-comment` finding per surviving comment via `manage-findings add`. The untrusted comment body is quarantined under `raw_input.{body}` (never embedded raw in the top-level `detail`); the batched `manage-findings ingest` pass promotes it to top-level only after `validate_struct`. A bounded guard reports a non-converging respond → re-fetch cycle as a `(self-response-loop)` Q-Gate finding.
-- **`post_responses`** — apply already-decided triage dispositions back to the PR, keyed by each finding's own `hash_id`, via a three-way transmit keyed on the finding's `kind`: thread-reply-then-resolve for a thread-bearing finding (untransmitted, never batched, when its thread is missing), ONE batched PR-level comment for the genuinely threadless kinds, and `skipped` only when there is genuinely nothing to say.
+- **`post_responses`** — apply already-decided triage dispositions back to the PR, keyed by each finding's own `hash_id`, via a three-way transmit keyed on the finding's `kind`: thread-reply-then-resolve for a thread-bearing finding (untransmitted, never batched, when its thread is missing), ONE batched PR-level comment for the genuinely threadless kinds, and `skipped` only when there is genuinely nothing to say. A `fixed` disposition is held, and listed in `deferred_until_commit[]`, until its fix commit is stamped on the finding and is on the pull request head.
 - **`bot_completion`** — report a review bot's registry `completion_check_name` check-run state (`{status, in_progress, completed}`) for the PR HEAD, so the `automatic-review` completion-aware poll can wait for a slow bot to finish before fetching — with `--wait-seconds`, in one bounded call that also returns `timed_out` and `waited_seconds`; a bot with no completion check-run reports `no_check_name` and the caller falls back to the `review_bot_buffer_seconds` wait.
 - **`pull_request_runs`** — report whether ANY `pull_request`-event workflow run exists for the requested PR. The head branch is how the runs are FETCHED, not what the answer is scoped to: a run is excluded only when its `pull_requests` association reliably names a DIFFERENT PR. This is the PR-WIDE observable behind the `not_triggered` participation state: when no such run exists, nothing ever ran on account of the PR, so no bot could have published and a required bot's silence says nothing about that bot. A run that EXISTS and concluded `skipped` keeps the observable false — the workflow *was* triggered. Never reads `mergeable_state`.
 
@@ -225,7 +225,7 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
    ```
    Every thread-less disposition batch is transmitted through this call — an agent never composes the batched PR comment itself (a hand-composed batch is reported as an `(emitter-bypass)`, see step 1).
 
-   `post_responses` transmits every terminal-disposition finding through a three-way branch — no decision is lost and none is guessed at. **The routing predicate is the finding's `kind` — its thread-BEARING-ness — never the presence of an extractable `thread_id`:**
+   `post_responses` routes every terminal-disposition finding through a three-way branch — no decision is lost and none is guessed at. One disposition is held before it reaches that branch: a `fixed` finding whose fix commit is not yet on the pull request (see "The `fixed` reply is held until the fix commit is on the pull request" below). **The routing predicate is the finding's `kind` — its thread-BEARING-ness — never the presence of an extractable `thread_id`:**
 
    | Finding shape | Transmit | Recorded as |
    |---------------|----------|-------------|
@@ -233,6 +233,7 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
    | `pr_number` absent from `detail` | nothing — the row cannot be shown to belong here (fail closed) | `skipped[]`, reason `pr_number_unrecorded` |
    | already transmitted on a prior pass (carries the `responded` marker), disposition unchanged | nothing — the reply was already sent | `skipped[]`, reason `already responded` |
    | no `resolution_detail` | nothing — there is genuinely nothing to say | `skipped[]`, reason `no_resolution_detail` |
+   | `fixed`, and its fix commit is not stamped or not on the pull request head | nothing — no reply, no resolve-thread, no `responded` marker | `deferred_until_commit[]`, with the reason |
    | genuinely threadless `kind` (`review_body`, `issue_comment`) | ONE batched PR-level comment for ALL such findings in the run, each section anchored on its source `comment_id` | `responded[]`, `transmit_mode: batched_issue_comment`, `resolved_on_provider: false` |
    | thread-bearing `kind` (`inline`, and any unrecognised kind) | thread-reply carrying the `resolution_detail`, then resolve-thread | `responded[]`, `transmit_mode: thread_reply`, `resolved_on_provider: true` |
 
@@ -245,6 +246,32 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
    **An undeliverable in-thread reply is untransmitted, never silently batched.** A thread-bearing finding whose `thread_id` is empty or unextractable is *undeliverable*, not threadless: it lands in `untransmitted[]` with a reason naming the missing thread and the run reports `status: partial`. It is NEVER re-routed into the batch — a silent downgrade would report the disposition as delivered while the reviewer's own thread stays unanswered and unresolved. Only genuinely threadless kinds enter the batch, so the batch membership is decided by the kind alone and cannot be reached by losing a `thread_id`.
 
    Any disposition that had something to say but could not be delivered — a missing thread on a thread-bearing finding, a failed thread-reply, a failed resolve-thread, or a failed batched post (which untransmits the WHOLE batch) — lands in `untransmitted[]` with a reason, drives `count_untransmitted`, and sets the envelope `status` to `partial`. The envelope reports `success` only when `count_untransmitted` is 0; it is never unconditionally `success`.
+
+   **The `fixed` reply is held until the fix commit is on the pull request.** Triage records `fixed` when it decides the fix, which is before the fix is a commit. A reply sent then tells the reviewer the code is fixed and resolves the thread while the pull request still shows the old code. `post_responses` therefore transmits a `fixed` finding only when both of these hold:
+
+   - the finding carries a `fix_commit_sha` stamp (written by `manage-findings stamp-fix-commit` — see [`manage-findings` SKILL.md](../manage-findings/SKILL.md) § "The fix stamp");
+   - the provider reports that commit as an ancestor of the pull request head, or as the head itself. This is one `compare` read per distinct fix commit, asked of GitHub and not of the local clone, so a commit that was never pushed does not pass.
+
+   Until then the finding is listed in `deferred_until_commit[]` and nothing is sent for it:
+
+   ```toon
+   deferred_until_commit[N]{hash_id,reason,fix_commit_sha,fix_task_number}:
+   ```
+
+   | `reason` | What is missing |
+   |----------|-----------------|
+   | `no_fix_commit` | The finding carries no stamp. |
+   | `pr_head_unreadable` | The stamp is there, but the pull request head could not be read. |
+   | `fix_commit_not_on_pr_head` | The provider reports the stamped commit as behind the head or diverged from it — for example after a rebase rewrote it. Stamp the new commit. |
+   | `fix_commit_ancestry_unreadable` | The `compare` read failed or returned a state it does not define. A commit GitHub does not know fails this read too, so it also covers a stamp for a commit that was not pushed. |
+
+   `fix_commit_sha` and `fix_task_number` are empty strings where the finding carries none; an empty `fix_task_number` beside a `fixed` finding is an inline fix. The predicate reads the stamp alone, so a fix a task produced and an inline fix are held and released the same way.
+
+   A held finding gets no thread reply, no resolve-thread call and no `responded` marker, so every later pass looks at it again. It is not a failure: it is counted in `count_deferred_until_commit`, not in `count_untransmitted`, and it does not make the run `partial`. Once the two conditions hold, the transmitted reply is the stored `resolution_detail` followed by a line `Fix commit: <first seven characters>`, the finding goes down the ordinary kind routing above, and a thread-bearing finding's thread is resolved in that same call. `rejected`, `suppressed`, `accepted` and `taken_into_account` are never held.
+
+   ⚠ **A `fixed` finding whose fix never reaches a commit is never answered.** It stays in `deferred_until_commit[]` on every pass until it is re-resolved to another disposition, which clears the stamp and makes it transmittable under that disposition. What the reviewer sees on each such path is stated in [`plan-marshall/workflow/verification-feedback.md`](../plan-marshall/workflow/verification-feedback.md) Step 8.
+
+   The hold-back is this verb's alone. The GitLab `post_responses` verb transmits `fixed` at once.
 
 ### Workflow 3: Re-Review After a HEAD-Advancing Branch Operation
 

@@ -1691,6 +1691,50 @@ FOR each step_id in manifest.phase_6.steps:
 
       Fire this hook when the just-completed step is the LATER of the two producers present in `manifest.phase_6.steps` (canonically `default:sonar-roundtrip`, which the manifest orders after `plan-marshall:automatic-review`) AND every wait-region producer that IS in the manifest has recorded a terminal `done` outcome on `status.metadata.phase_steps["6-finalize"]`. When only one of the two producers is in the manifest, that one is the "later" producer and the union query naturally covers only its finding-type.
 
+      (0) **Stamp the pushed fix commits, then run the respond pass again.** A `fixed` finding's reply is held until its fix commit is stamped on the finding and is on the pull request head (see [`../plan-marshall/workflow/verification-feedback.md`](../plan-marshall/workflow/verification-feedback.md) § "Step 8", "Ordering"). The triage that resolved the finding could not stamp it — no commit carried the fix then. This hook stamps it once that commit is pushed, and it does so FIRST on every firing: by the time the later producer has completed again, the `push` step has re-fired and every fix commit made in between is on the remote.
+
+          List the `fixed` `pr-comment` findings and keep those that carry no `fix_commit_sha`:
+
+          ```bash
+          python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list \
+            --plan-id {plan_id} --type pr-comment --resolution fixed
+          ```
+
+          When none is left, skip the rest of (0). Otherwise handle the two shapes:
+
+          - **A finding with a `fix_task_number`** (a task fix). Read the task; stamp only when its `status` is `done`:
+
+            ```bash
+            python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read \
+              --plan-id {plan_id} --task-number {fix_task_number}
+            ```
+
+            The commit is the one phase-5-execute recorded for that task at its Step 10a commit — the `kind=change` ledger entry whose `task_id` is `TASK-{fix_task_number}`; take its `commit_sha`, and the most recent entry when the task has more than one:
+
+            ```bash
+            python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger query \
+              --kind change
+            ```
+
+            One call stamps every finding that task owns:
+
+            ```bash
+            python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings stamp-fix-commit \
+              --plan-id {plan_id} --commit-sha {commit_sha} --task-number {fix_task_number}
+            ```
+
+            A task that is not `done`, or a `done` task with no ledger entry, is not stamped. Its findings stay held, and the respond pass below reports them as `deferred_until_commit`.
+          - **A finding with no `fix_task_number`** (an inline fix). It is stamped at (4) below, in the firing that commits its edit, and nowhere else: only that firing knows which commit holds the edit. One still unstamped here belongs to a firing that did not commit its edit. Do not stamp it. Log it at WARNING, naming the `hash_id`, so the held reply is visible.
+
+          Then run the respond pass once, whether or not anything was stamped in this firing — a finding that already carries a stamp may still be waiting for its commit to reach the pull request:
+
+          ```bash
+          python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr \
+            post_responses --pr-number {pr_number} --plan-id {plan_id}
+          ```
+
+          Read `status`, `count_untransmitted` and `count_deferred_until_commit` from the return and log them. A non-zero `count_deferred_until_commit` is not a failure of this hook; it names fixes that are still on their way, or that never arrived. On a GitLab project skip (0) entirely: the GitLab verb reads no stamp and has already transmitted every `fixed` reply.
+
       (1) Resolve the level-bound target under the `verification-feedback` role, passing the dispatch context so the **resolve seam** emits the standardized `[DISPATCH]` work-log line and its paired decision-log resolution record itself — see [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract. Do NOT hand-write a separate `[DISPATCH]` line; each re-fire of this hook re-runs the resolve, so the record is re-emitted per firing:
           ```bash
           python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -1721,7 +1765,22 @@ FOR each step_id in manifest.phase_6.steps:
 
               WORKTREE: {worktree_path}
           ```
-      (4) Consume the return. The unified triage owns the RESPOND loop (both `github_pr post_responses` for `pr-comment` thread-replies AND `sonar post_responses` for `sonar-issue` server-side dismissals, each keyed by `hash_id`). On `status: loop_back` (FIX dispositions created fix tasks OR overflow deferred), route it through the SAME continuation machinery as item 7b: read `loop_back_target` from the return, run the item-7b admission gate, then apply the symmetric `loop_back_without_asking` knob. The unified triage is dispatcher-owned and is not a manifest step, so it has no `step_ref` to spend from — the admission call passes the fixed source name `wait-region-unified-triage` (`loop-back admit --source wait-region-unified-triage --ceiling {max_iterations}`), which gives the triage a budget of its own, separate from every step's. That name stands wherever item 7b names `{step_ref}`, so a refused triage round is granted to `wait-region-unified-triage` and to no step. Omit the refusal Display's `loop-back close` remedy for the triage: `close` takes a manifest step, and the triage is not one. Re-enter per the granularity branch (`5-execute` full-phase rollback / `6-finalize` inline replay). A `6-finalize` re-entry re-fires the wait-region producers (they are HEAD-dependent — a fix commit advanced HEAD), which re-FIND against the new tree, and this hook runs the unified triage again. On `status: success`, every pending finding resolved with no loop-back — continue the FOR loop.
+      (4) Consume the return. The unified triage owns the RESPOND loop (both `github_pr post_responses` for `pr-comment` thread-replies AND `sonar post_responses` for `sonar-issue` server-side dismissals, each keyed by `hash_id`); its pass transmits every disposition except a `fixed` one whose fix commit is not yet stamped, which this hook transmits at (0) or in the block below. On `status: loop_back` (FIX dispositions created fix tasks OR overflow deferred), route it through the SAME continuation machinery as item 7b: read `loop_back_target` from the return, run the item-7b admission gate, then apply the symmetric `loop_back_without_asking` knob. The unified triage is dispatcher-owned and is not a manifest step, so it has no `step_ref` to spend from — the admission call passes the fixed source name `wait-region-unified-triage` (`loop-back admit --source wait-region-unified-triage --ceiling {max_iterations}`), which gives the triage a budget of its own, separate from every step's. That name stands wherever item 7b names `{step_ref}`, so a refused triage round is granted to `wait-region-unified-triage` and to no step. Omit the refusal Display's `loop-back close` remedy for the triage: `close` takes a manifest step, and the triage is not one. Re-enter per the granularity branch (`5-execute` full-phase rollback / `6-finalize` inline replay). A `6-finalize` re-entry re-fires the wait-region producers (they are HEAD-dependent — a fix commit advanced HEAD), which re-FIND against the new tree, and this hook runs the unified triage again. On `status: success`, every pending finding resolved with no loop-back — continue the FOR loop.
+
+          **Before re-entering on a `loop_back` return — commit the triage's own edits, push, stamp the inline fixes, respond again.** The triage applies its inline edits (a SUPPRESS annotation, or the one edit of an inline fix) in the worktree and commits nothing. The triage is not a manifest step, so item 5f never sees those edits; this hook commits them, on either `loop_back_target`:
+
+          - Check the worktree and, when it is dirty, commit exactly as item 5f (a)-(b) does for a mutating step — `git -C {worktree_path} status --porcelain`, then `Skill: plan-marshall:workflow-integration-git` with `push: false` and the message `fix(review): apply inline review dispositions` — and resolve the new HEAD as `{inline_commit_sha}` with `git -C {worktree_path} rev-parse HEAD`. Emit the item 5f (d) freshness reconciliation record for it. A clean worktree means the triage edited nothing: skip the rest of this block.
+          - Re-invoke the `push` step, as item 5f § "Post-PR re-push" does, so the commit is on the pull request.
+          - Stamp each inline fix this firing resolved: every `fixed` `pr-comment` finding with no `fix_task_number` and no `fix_commit_sha`, except the ones (0) logged in this same firing as unstamped — their edit is not in this commit:
+
+            ```bash
+            python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings stamp-fix-commit \
+              --plan-id {plan_id} --commit-sha {inline_commit_sha} --hash-id {hash_id}
+            ```
+
+          - Run the respond pass again, with the same `github_pr post_responses` call as (0). It transmits the inline fixes just stamped; a task fix resolved in this firing has no commit yet and stays `deferred_until_commit` until (0) of a later firing stamps it.
+
+          On a GitLab project the commit and the push still happen; the stamp and the second respond pass are skipped, as in (0).
 
       This hook is dispatcher-owned and produces NO `phase_steps["6-finalize"]` record of its own (it is not a manifest step); the wait-region producer steps carry the `done` records. The single unified pass is the ONLY place `pr-comment` and `sonar-issue` findings are triaged in finalize — the retired per-producer `producer=pr-comment` and `producer=sonar` dispatches no longer run.
 END FOR

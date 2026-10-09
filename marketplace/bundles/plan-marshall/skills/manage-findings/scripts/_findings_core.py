@@ -29,6 +29,7 @@ Stdlib-only - no external dependencies (except shared modules via PYTHONPATH).
 
 import hashlib
 import json
+import re
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -92,6 +93,17 @@ QGATE_PERSIST_OK = frozenset({'success', 'deduplicated', 'reopened'})
 
 # Valid kind discriminator values for pr-comment findings.
 PR_COMMENT_KINDS = ['inline', 'review_body', 'issue_comment']
+
+# The resolution a fix is recorded under, and the two optional record fields that
+# describe that fix. ``fix_commit_sha`` is the commit the fix landed in, written by
+# ``stamp_fix_commit``. ``fix_task_number`` is the fix task that owns the fix,
+# written by ``resolve_finding``; a fixed finding without it is an inline fix. Both
+# are absent (or ``None``) on every finding that is not ``fixed``.
+FIXED_RESOLUTION = 'fixed'
+FIX_COMMIT_FIELD = 'fix_commit_sha'
+FIX_TASK_FIELD = 'fix_task_number'
+
+_COMMIT_SHA_RE = re.compile(r'^[0-9a-f]{7,40}$')
 
 # Valid reviewer-bot identity values for pr-comment findings (derived from author).
 #
@@ -801,13 +813,53 @@ def get_finding(plan_id: str, hash_id: str, any_checkout: bool = False) -> dict[
     return _not_found(plan_id, store, hash_id, 'Finding')
 
 
+def _normalize_commit_sha(commit_sha: str | None) -> str | None:
+    """Return ``commit_sha`` lower-cased, or ``None`` when it is not a commit id.
+
+    A commit id here is 7 to 40 hexadecimal characters: the short form git prints
+    by default up to the full SHA-1. Anything else — empty, a ref name, a
+    leading ``-`` — is not stored.
+    """
+    candidate = (commit_sha or '').strip().lower()
+    return candidate if _COMMIT_SHA_RE.match(candidate) else None
+
+
+def _fix_stamp_reset(parent: dict[str, Any], fix_task_number: int | None) -> dict[str, Any]:
+    """Return the fix-stamp fields a resolution CHANGE writes onto ``parent``.
+
+    The fix commit and the owning fix task describe ONE ``fixed`` disposition. A
+    changed resolution ends that disposition, so both are reset: the commit to
+    ``None`` and the task to the caller's ``fix_task_number`` (``None`` for an
+    inline fix, and for every resolution other than ``fixed``). A record that
+    carries neither field and gets no task number is left without them.
+    """
+    reset: dict[str, Any] = {}
+    if parent.get(FIX_COMMIT_FIELD) is not None:
+        reset[FIX_COMMIT_FIELD] = None
+    if fix_task_number is not None or parent.get(FIX_TASK_FIELD) is not None:
+        reset[FIX_TASK_FIELD] = fix_task_number
+    return reset
+
+
 def resolve_finding(
     plan_id: str,
     hash_id: str,
     resolution: str,
     detail: str | None = None,
+    fix_task_number: int | None = None,
 ) -> dict[str, Any]:
     """Resolve a finding (locates the per-type file by hash_id).
+
+    ``fix_task_number`` names the fix task that owns the fix of a ``fixed``
+    finding; it is stored as ``fix_task_number`` and is what
+    :func:`stamp_fix_commit` selects on. It is refused on every other resolution.
+    A ``fixed`` finding resolved without it is an inline fix: it has no task.
+
+    Changing a finding's resolution clears its fix-commit stamp and its fix-task
+    number, on the same terms as the ``responded`` marker below: the stamp says
+    which commit carries THIS disposition's fix, so it does not survive a
+    different disposition. A re-resolve to ``fixed`` under a different fix task
+    clears the commit too, because the stamped commit belonged to the other task.
 
     Relational integrity backstop: a ``resolution_detail``
     is only ever written keyed to a ``hash_id`` that resolves to an existing parent
@@ -826,6 +878,16 @@ def resolve_finding(
     if resolution not in RESOLUTIONS:
         return {'status': 'error', 'message': f'Invalid resolution: {resolution}. Must be one of {RESOLUTIONS}'}
 
+    if fix_task_number is not None and resolution != FIXED_RESOLUTION:
+        return {
+            'status': 'error',
+            'error': 'fix_task_number_requires_fixed',
+            'message': (
+                f'A fix-task number is accepted only with resolution {FIXED_RESOLUTION}; '
+                f'got resolution {resolution} with fix task {fix_task_number}'
+            ),
+        }
+
     store = resolve_findings_store(plan_id)
     if store_unreached(store):
         return unresolved_store_error(plan_id, store)
@@ -837,6 +899,10 @@ def resolve_finding(
     updates: dict[str, Any] = {'resolution': resolution}
     if detail:
         updates['resolution_detail'] = detail
+
+    fix_task_changed = fix_task_number is not None and parent.get(FIX_TASK_FIELD) != fix_task_number
+    if parent.get('resolution') != resolution or fix_task_changed:
+        updates.update(_fix_stamp_reset(parent, fix_task_number))
 
     # Invalidate a stale provider-transmission marker. A finding that was already
     # transmitted to its provider carries ``responded`` (see
@@ -856,13 +922,92 @@ def resolve_finding(
             updates['responded_at'] = None
 
     if _update_in_finding_files(store, hash_id, updates):
-        return {
-            'status': 'success',
-            'hash_id': hash_id,
-            'resolution': resolution,
-            **store_state_fields(store),
-        }
+        result: dict[str, Any] = {'status': 'success', 'hash_id': hash_id, 'resolution': resolution}
+        if fix_task_number is not None:
+            result[FIX_TASK_FIELD] = fix_task_number
+        return {**result, **store_state_fields(store)}
     return _not_found(plan_id, store, hash_id, 'Finding')
+
+
+def stamp_fix_commit(
+    plan_id: str,
+    commit_sha: str,
+    fix_task_number: int | None = None,
+    hash_id: str | None = None,
+) -> dict[str, Any]:
+    """Stamp the commit that carries the fix onto ``fixed`` findings.
+
+    Exactly one selector is given:
+
+    - ``fix_task_number`` — every ``fixed`` finding whose ``fix_task_number`` is
+      that task. This is the form for a fix a task produced.
+    - ``hash_id`` — that one finding, which must be ``fixed``. This is the form
+      for an inline fix, which has no task to select on.
+
+    The stamp is the finding's ``fix_commit_sha``. It records which commit the
+    caller says carries the fix and nothing more: whether that commit is on the
+    pull request is decided by the reader, at the time it reads. Stamping again
+    replaces the value, which is what a rewritten history needs — after a rebase
+    the earlier commit id names nothing on the branch.
+
+    A selector that matches no ``fixed`` finding is reported, not hidden: the
+    by-task form returns ``stamped_count: 0`` over a store that was read, and the
+    by-finding form returns ``error: finding_not_fixed`` for a finding whose
+    resolution is something else.
+    """
+    normalized = _normalize_commit_sha(commit_sha)
+    if normalized is None:
+        return {
+            'status': 'error',
+            'error': 'invalid_commit_sha',
+            'message': f'Invalid commit id: {commit_sha!r}. Must be 7 to 40 hexadecimal characters',
+        }
+
+    if (fix_task_number is None) == (hash_id is None):
+        return {
+            'status': 'error',
+            'error': 'fix_stamp_selector_required',
+            'message': 'Give exactly one selector: the fix-task number, or the finding hash id',
+        }
+
+    store = resolve_findings_store(plan_id)
+    if store_unreached(store):
+        return unresolved_store_error(plan_id, store)
+
+    if hash_id is not None:
+        parent = get_finding(plan_id, hash_id)
+        if not parent or parent.get('status') != 'success':
+            return _not_found(plan_id, store, hash_id, 'Finding')
+        if parent.get('resolution') != FIXED_RESOLUTION:
+            return {
+                'status': 'error',
+                'error': 'finding_not_fixed',
+                'hash_id': hash_id,
+                'resolution': parent.get('resolution'),
+                'message': (
+                    f'Finding {hash_id} has resolution {parent.get("resolution")}, not '
+                    f'{FIXED_RESOLUTION}; a fix commit is stamped only on a fixed finding'
+                ),
+                **store_state_fields(store),
+            }
+        targets = [hash_id]
+    else:
+        targets = [
+            str(record['hash_id'])
+            for record in query_findings(plan_id)['findings']
+            if record.get('resolution') == FIXED_RESOLUTION and record.get(FIX_TASK_FIELD) == fix_task_number
+        ]
+
+    stamped = [target for target in targets if _update_in_finding_files(store, target, {FIX_COMMIT_FIELD: normalized})]
+
+    return {
+        'status': 'success',
+        'commit_sha': normalized,
+        'selector': 'hash_id' if hash_id is not None else FIX_TASK_FIELD,
+        'stamped_count': len(stamped),
+        'hash_ids': stamped,
+        **store_state_fields(store),
+    }
 
 
 def resolve_findings_by_type(
@@ -907,6 +1052,10 @@ def resolve_findings_by_type(
     for record in matched:
         hash_id = record['hash_id']
         updates = dict(base_updates)
+        # The fix stamp is cleared on the same terms as in ``resolve_finding``. A
+        # bulk resolve names no fix task, so a changed resolution leaves none.
+        if resolution_changed:
+            updates.update(_fix_stamp_reset(record, None))
         if record.get('responded'):
             detail_changed = bool(detail) and record.get('resolution_detail') != detail
             if resolution_changed or detail_changed:

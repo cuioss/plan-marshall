@@ -38,7 +38,9 @@ lives here:
   whose disposition has a body is transmitted in ONE batched PR-level comment
   anchored on each source ``comment_id``. Anything that had something to say but
   could not be delivered lands in ``untransmitted`` and drives ``status:
-  partial``. It reads only findings the triage pass already resolved.
+  partial``. It reads only findings the triage pass already resolved. A ``fixed``
+  disposition is held, and listed in ``deferred_until_commit``, until the finding
+  carries a fix commit that the provider reports on the pull request head.
 
 Beside the findings contract sits one auxiliary provider read:
 
@@ -2911,6 +2913,76 @@ def _build_batched_response_body(entries: list[tuple[str, str]]) -> str:
     return '\n'.join(parts).rstrip() + '\n'
 
 
+# Why a ``fixed`` disposition is held back, one value per row of
+# ``deferred_until_commit``. Every value is a reason the reply is NOT sent yet; none
+# is a failure of the run, so none of them moves ``status`` to ``partial``.
+DEFERRED_NO_FIX_COMMIT = 'no_fix_commit'
+DEFERRED_PR_HEAD_UNREADABLE = 'pr_head_unreadable'
+DEFERRED_NOT_ON_PR_HEAD = 'fix_commit_not_on_pr_head'
+DEFERRED_ANCESTRY_UNREADABLE = 'fix_commit_ancestry_unreadable'
+
+# The compare states that say the first commit is reachable from the second: the
+# second is ahead of it, or the two are the same commit.
+_COMPARE_STATES_REACHABLE = frozenset({'ahead', 'identical'})
+# The compare states that say it is not.
+_COMPARE_STATES_UNREACHABLE = frozenset({'behind', 'diverged'})
+
+# How many characters of the fix commit the transmitted reply carries.
+_SHORT_COMMIT_LENGTH = 7
+
+
+def _fix_commit_reaches_pr_head(commit_sha: str, pr_head_sha: str) -> bool | None:
+    """Whether ``commit_sha`` is an ancestor of (or is) the pull request head.
+
+    Asked of the provider, not of the local clone: the question is whether the fix
+    is on the pull request the reviewer sees, and a commit that exists only locally
+    is not. One ``compare`` read, ``commit_sha`` as the base and ``pr_head_sha`` as
+    the head.
+
+    Returns ``True`` when the head is ahead of the commit or identical to it,
+    ``False`` when it is behind or the two have diverged, and ``None`` when the
+    read failed or reported a state outside those four. ``None`` is not a verdict:
+    a commit the provider does not know (not pushed, or rewritten away) fails the
+    read, and so does an outage, and the two cannot be told apart from here.
+    """
+    rc, stdout, _stderr = _github.run_gh(
+        ['api', f'repos/{{owner}}/{{repo}}/compare/{commit_sha}...{pr_head_sha}', '--jq', '.status']
+    )
+    if rc != 0:
+        return None
+    state = stdout.strip().strip('"').lower()
+    if state in _COMPARE_STATES_REACHABLE:
+        return True
+    if state in _COMPARE_STATES_UNREACHABLE:
+        return False
+    return None
+
+
+def _fix_commit_hold_reason(fix_commit_sha: str, pr_head_sha: str, reachable: dict[str, bool | None]) -> str:
+    """Return why a ``fixed`` reply is held, or ``''`` when it may be sent.
+
+    The reply may be sent only when the finding carries a fix commit AND that commit
+    reaches the pull request head. Every other state holds it, and each has its own
+    reason so the row says which fact is missing. ``reachable`` caches the provider
+    read per commit for the duration of one call.
+    """
+    if not fix_commit_sha:
+        return DEFERRED_NO_FIX_COMMIT
+    if not pr_head_sha:
+        return DEFERRED_PR_HEAD_UNREADABLE
+    if fix_commit_sha not in reachable:
+        reachable[fix_commit_sha] = _fix_commit_reaches_pr_head(fix_commit_sha, pr_head_sha)
+    verdict = reachable[fix_commit_sha]
+    if verdict is None:
+        return DEFERRED_ANCESTRY_UNREADABLE
+    return '' if verdict else DEFERRED_NOT_ON_PR_HEAD
+
+
+def _reply_with_fix_commit(reply_body: str, fix_commit_sha: str) -> str:
+    """Return the stored reply with the short fix commit id added on its own line."""
+    return f'{reply_body.rstrip()}\n\nFix commit: {fix_commit_sha[:_SHORT_COMMIT_LENGTH]}'
+
+
 def cmd_post_responses(args):
     """RESPOND verb: apply already-decided triage dispositions back to the PR.
 
@@ -2961,6 +3033,22 @@ def cmd_post_responses(args):
     Nothing is folded into a generic skip and nothing is masked by an
     unconditional ``success``.
 
+    **A ``fixed`` disposition is held until its fix commit is on the pull
+    request.** Triage records ``fixed`` when the fix is decided, before it is a
+    commit. Such a finding is transmitted only when it carries a ``fix_commit_sha``
+    stamp (``manage-findings stamp-fix-commit``) AND the provider reports that
+    commit as an ancestor of, or identical to, the pull request head. Until then it
+    is listed in ``deferred_until_commit`` with the reason — ``no_fix_commit``,
+    ``pr_head_unreadable``, ``fix_commit_not_on_pr_head`` or
+    ``fix_commit_ancestry_unreadable`` — and gets no reply, no resolve call and no
+    ``responded`` marker, so every later pass looks at it again. A held finding is
+    not a failure: it does not count as untransmitted and does not make the run
+    ``partial``. Once released, the transmitted reply is the stored
+    ``resolution_detail`` with the short commit id added, and a thread-bearing
+    finding's thread is resolved in the same call. The predicate reads the stamp
+    alone, so a fix a task produced and an inline fix are held and released the same
+    way. The other four dispositions are transmitted at once, as before.
+
     **Idempotent across rounds, keyed on (finding, disposition).** The findings
     store is plan-scoped and persists between passes, and terminality
     (``_RESPONDABLE_RESOLUTIONS``) is the SELECTION criterion — a terminal finding
@@ -2981,7 +3069,13 @@ def cmd_post_responses(args):
     never opened. A resolved store holding no ``pr-comment`` finding still returns
     the ordinary success with zero counts.
     """
-    from _findings_core import mark_finding_responded, query_findings
+    from _findings_core import (
+        FIX_COMMIT_FIELD,
+        FIX_TASK_FIELD,
+        FIXED_RESOLUTION,
+        mark_finding_responded,
+        query_findings,
+    )
 
     pr_number: int = args.pr_number
     plan_id: str = args.plan_id
@@ -3005,6 +3099,13 @@ def cmd_post_responses(args):
     # Thread-less dispositions accumulate here and go out in ONE batched comment
     # after the loop: (hash_id, comment_id, reply_body).
     batch: list[tuple[str, str, str]] = []
+    # ``fixed`` dispositions held back until their fix commit is on the pull request.
+    deferred: list[dict[str, str]] = []
+    # The pull request head, read at most once and only when a stamped ``fixed``
+    # finding needs it; ``None`` means not read yet, ``''`` means the read failed.
+    pr_head_sha: str | None = None
+    # One provider read per distinct fix commit.
+    reachable: dict[str, bool | None] = {}
 
     for finding in findings:
         hash_id = finding.get('hash_id', '')
@@ -3053,6 +3154,31 @@ def cmd_post_responses(args):
         if not reply_body:
             skipped.append({'hash_id': hash_id, 'reason': 'no_resolution_detail'})
             continue
+
+        # Hold a ``fixed`` reply until the fix is on the pull request. Triage
+        # records ``fixed`` when it decides the fix, which is before the fix is a
+        # commit; telling the reviewer "fixed" and resolving the thread at that
+        # point points them at code that is not there. The predicate reads the
+        # stamp only, so a fix a task produced and a fix applied inline are held
+        # alike. A held finding gets no reply and no resolve call, carries no
+        # ``responded`` marker, and is therefore looked at again on every pass.
+        if finding.get('resolution') == FIXED_RESOLUTION:
+            fix_commit_sha = str(finding.get(FIX_COMMIT_FIELD) or '').strip().lower()
+            if fix_commit_sha and pr_head_sha is None:
+                pr_head_sha = str(_github.fetch_pr_head_sha(pr_number) or '').strip().lower()
+            hold_reason = _fix_commit_hold_reason(fix_commit_sha, pr_head_sha or '', reachable)
+            if hold_reason:
+                fix_task_number = finding.get(FIX_TASK_FIELD)
+                deferred.append(
+                    {
+                        'hash_id': hash_id,
+                        'reason': hold_reason,
+                        'fix_commit_sha': fix_commit_sha,
+                        'fix_task_number': '' if fix_task_number is None else str(fix_task_number),
+                    }
+                )
+                continue
+            reply_body = _reply_with_fix_commit(reply_body, fix_commit_sha)
 
         detail = finding.get('detail')
         kind = _detail_field(detail, _KIND_DETAIL)
@@ -3135,9 +3261,11 @@ def cmd_post_responses(args):
         'count_responded': len(responded),
         'count_skipped': len(skipped),
         'count_untransmitted': len(untransmitted),
+        'count_deferred_until_commit': len(deferred),
         'responded': responded,
         'skipped': skipped,
         'untransmitted': untransmitted,
+        'deferred_until_commit': deferred,
     }
 
 
