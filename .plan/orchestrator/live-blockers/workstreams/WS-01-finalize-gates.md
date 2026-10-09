@@ -24,6 +24,7 @@ Gates and steps in the plan lifecycle that block a correct run, report a false r
 | PLAN-LB-25-phase-and-merge-gates | staged | Findings gate holds at archive and merge; merge waits without sleep; light-lane refine boundary |
 | PLAN-LB-26-execute-loop-triage | staged | Fix tasks get scheduled; triage survives a re-check; one wait rule for long builds |
 | PLAN-LB-27-plan-footprint | staged | Staging allowlist; scope-creep guard measures the plan's own changes |
+| PLAN-LB-32-head-dependent-step-refire | staged | High priority. A re-fired project step re-examines only what the fix commit could have changed |
 | PLAN-LB-02-self-review-convergence | superseded | PLAN-LB-22 (all deliverables) |
 | PLAN-LB-04-light-lane-refine-boundary | superseded | PLAN-LB-25 (all deliverables) |
 | PLAN-LB-05-unrunnable-waits | superseded | D1 and D2 to PLAN-LB-25; D3 to PLAN-LB-24; D4 to PLAN-LB-26; D5 to PLAN-LB-22 |
@@ -41,4 +42,5 @@ Gates and steps in the plan lifecycle that block a correct run, report a false r
 - PLAN-LB-22 is the hub: it shares `phase-6-finalize/SKILL.md`, `manage-status` or `execution.md` with every other plan of this workstream. Run it first, beside a plan of another workstream.
 - PLAN-LB-25 and PLAN-LB-26 share no file and may run together.
 - PLAN-LB-27 shares `phase-5-execute/SKILL.md` and `execution.md` with PLAN-LB-26 and `phase-6-finalize/SKILL.md` with PLAN-LB-25; run it after both, beside PLAN-LB-28.
+- PLAN-LB-32 runs ahead of PLAN-LB-25 to PLAN-LB-27. It shares only `phase-6-finalize/SKILL.md` with PLAN-LB-24, PLAN-LB-25 and PLAN-LB-27, and `ext-point-finalize-step.md` with PLAN-LB-27.
 - PLAN-LB-01 and PLAN-LB-03 left this workstream at the regrouping: they were absorbed by PLAN-LB-23 and PLAN-LB-28 in WS-02.
