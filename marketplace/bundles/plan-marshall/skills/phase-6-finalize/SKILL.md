@@ -1713,7 +1713,7 @@ FOR each step_id in manifest.phase_6.steps:
             --plan-id {plan_id} --type pr-comment --resolution fixed
           ```
 
-          When none is left, skip the rest of (0). Otherwise handle the two shapes:
+          When none is left there is nothing to stamp: skip the two shapes below and continue with the respond pass at the end of (0). Otherwise handle the two shapes:
 
           - **A finding with a `fix_task_number`** (a task fix). Read the task; keep it only when its `status` is `done`:
 
