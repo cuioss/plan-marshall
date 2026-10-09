@@ -1344,7 +1344,7 @@ FOR each step_id in manifest.phase_6.steps:
 
           The `push` step's freshness precondition reads this record — matching `commit_sha` against the live HEAD — to distinguish the known-safe finalize-internal re-stale from genuine un-built source drift, which stays fail-closed. Genuine drift never produces this record (no finalize-internal commit authored it), so the fail-closed path is preserved.
 
-      **Post-PR re-push**: when a `mutates_source: true` step that runs AFTER `push` and BEFORE the merge gate (e.g. `plan-marshall:automatic-review` or `sonar-roundtrip` committing a loop-back fix) commits via this instrumentation, the dispatcher re-invokes the `push` step so the PR HEAD advances (and, for review-bearing steps, re-review fires) inside the normal settle band instead of at the merge gate. A step ordered between `push` and `create-pr` is covered the same way: its re-push lands before the PR exists, and `create-pr` opens the PR on the advanced HEAD. The `push` step is a pure barrier (it carries no commit logic and is not head-dependent); the dispatcher re-invokes it explicitly here rather than relying on a HEAD-comparison re-fire. This explicit re-invocation is the **fast path**; the item-1 `branch-sync-state` parity check is the **structural backstop** — even if this re-invocation is missed (crash, session loss), the next re-entry observes `state: ahead` and re-fires the push rather than trusting the stale `done` record. Read-only (`mutates_source: false`) steps never reach item 5f's instrumentation and never trigger a re-push.
+      **Post-PR re-push**: when a `mutates_source: true` step that runs AFTER `push` and BEFORE the merge gate commits via this instrumentation, the dispatcher re-invokes the `push` step so the PR HEAD advances (and, for review-bearing steps, re-review fires) inside the normal settle band instead of at the merge gate. The two wait-region producers (`plan-marshall:automatic-review`, `sonar-roundtrip`) are FIND-only and leave no edit for this instrumentation to commit: a fix the unified triage decides is committed by phase-5-execute when it is a fix task, and by the item 7c hook when it is an inline edit, and that hook re-invokes `push` the same way. A step ordered between `push` and `create-pr` is covered the same way: its re-push lands before the PR exists, and `create-pr` opens the PR on the advanced HEAD. The `push` step is a pure barrier (it carries no commit logic and is not head-dependent); the dispatcher re-invokes it explicitly here rather than relying on a HEAD-comparison re-fire. This explicit re-invocation is the **fast path**; the item-1 `branch-sync-state` parity check is the **structural backstop** — even if this re-invocation is missed (crash, session loss), the next re-entry observes `state: ahead` and re-fires the push rather than trusting the stale `done` record. Read-only (`mutates_source: false`) steps never reach item 5f's instrumentation and never trigger a re-push.
 
   6. Capture archive result (only when step_id == "archive-plan"):
      Record the returned `archive_path` into model context alongside the pre-archive snapshot — it is consumed by Step 4 (Render Final Output Template).
@@ -1691,7 +1691,7 @@ FOR each step_id in manifest.phase_6.steps:
 
       Fire this hook when the just-completed step is the LATER of the two producers present in `manifest.phase_6.steps` (canonically `default:sonar-roundtrip`, which the manifest orders after `plan-marshall:automatic-review`) AND every wait-region producer that IS in the manifest has recorded a terminal `done` outcome on `status.metadata.phase_steps["6-finalize"]`. When only one of the two producers is in the manifest, that one is the "later" producer and the union query naturally covers only its finding-type.
 
-      (0) **Stamp the pushed fix commits, then run the respond pass again.** A `fixed` finding's reply is held until its fix commit is stamped on the finding and is on the pull request head (see [`../plan-marshall/workflow/verification-feedback.md`](../plan-marshall/workflow/verification-feedback.md) § "Step 8", "Ordering"). The triage that resolved the finding could not stamp it — no commit carried the fix then. This hook stamps it once that commit is pushed, and it does so FIRST on every firing: by the time the later producer has completed again, the `push` step has re-fired and every fix commit made in between is on the remote.
+      (0) **Stamp the pushed fix commits, then run the respond pass again.** A `fixed` finding's reply is held until a commit that contains its fix is stamped on the finding and is on the pull request head (see [`../plan-marshall/workflow/verification-feedback.md`](../plan-marshall/workflow/verification-feedback.md) § "Step 8", "Ordering"). The triage that resolved the finding could not stamp it — no commit carried the fix then. This hook stamps it once the fix is pushed, and it does so FIRST on every firing: by the time the later producer has completed again, the `push` step has re-fired and every fix commit made in between is on the remote.
 
           List the `fixed` `pr-comment` findings and keep those that carry no `fix_commit_sha`:
 
@@ -1702,28 +1702,34 @@ FOR each step_id in manifest.phase_6.steps:
 
           When none is left, skip the rest of (0). Otherwise handle the two shapes:
 
-          - **A finding with a `fix_task_number`** (a task fix). Read the task; stamp only when its `status` is `done`:
+          - **A finding with a `fix_task_number`** (a task fix). Read the task; keep it only when its `status` is `done`:
 
             ```bash
             python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read \
               --plan-id {plan_id} --task-number {fix_task_number}
             ```
 
-            The commit is the one phase-5-execute recorded for that task at its Step 10a commit — the `kind=change` ledger entry whose `task_id` is `TASK-{fix_task_number}`; take its `commit_sha`, and the most recent entry when the task has more than one:
+            A `done` fix task has its fix in a commit: phase-5-execute commits a deliverable's changes at its Step 10a and hands back to finalize on a clean worktree. What is still open is whether that commit is on the remote. When at least one fix task is `done`, read the push parity of the branch once in this firing (see `workflow-integration-git` Canonical invocations → `branch-sync-state`):
 
             ```bash
-            python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger query \
-              --kind change
+            python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow branch-sync-state \
+              --plan-id {plan_id}
             ```
 
-            One call stamps every finding that task owns:
+            Stamp only on `state: synced`. The local head and the remote head are the same commit on that state, and the payload's `head_sha` is that commit — the pushed head, `{pushed_head_sha}`. Branch on the member itself: every other state (`ahead`, `remote_absent_landed`, `remote_absent_unverified`) and a `status: error` return stamp nothing, because the fix is not known to be on the remote.
+
+            One call per `done` fix task stamps every finding that task owns:
 
             ```bash
             python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings stamp-fix-commit \
-              --plan-id {plan_id} --commit-sha {commit_sha} --task-number {fix_task_number}
+              --plan-id {plan_id} --commit-sha {pushed_head_sha} --task-number {fix_task_number}
             ```
 
-            A task that is not `done`, or a `done` task with no ledger entry, is not stamped. Its findings stay held, and the respond pass below reports them as `deferred_until_commit`.
+            ⚠ **The stamped commit is the pushed head at the time of stamping, which may be later than the commit that made the fix.** It contains the fix. It is a different commit from the one that changed the lines whenever anything was committed on top of that one before this firing — another fix task's commit, or a finalize step's. The `Fix commit:` line of the reply therefore names a commit as of which the fix is on the pull request, and a reviewer who opens it may see a change that is not the fix.
+
+            A pushed head passes the respond pass's check by construction: `post_responses` releases a `fixed` finding when GitHub reports the stamped commit as the pull request head or as an ancestor of it, and at stamping time it is the head. When the head moves again before a respond pass reads the stamp — further commits pushed on top — the stamped commit is an ancestor of the new head and still passes. Only a rewritten branch fails the check: after a rebase or a force-push that replaces the stamped commit the finding is held with `fix_commit_not_on_pr_head` until it is stamped again.
+
+            A task that is not `done` is not stamped, and no task is stamped while the branch is not `synced`. Their findings stay held, and the respond pass below reports them as `deferred_until_commit`; the next firing reads the task and the push parity again.
           - **A finding with no `fix_task_number`** (an inline fix). It is stamped at (4) below, in the firing that commits its edit, and nowhere else: only that firing knows which commit holds the edit. One still unstamped here belongs to a firing that did not commit its edit. Do not stamp it. Log it at WARNING, naming the `hash_id`, so the held reply is visible.
 
           Then run the respond pass once, whether or not anything was stamped in this firing — a finding that already carries a stamp may still be waiting for its commit to reach the pull request:
