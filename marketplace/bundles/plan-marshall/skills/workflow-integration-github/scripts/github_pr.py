@@ -1357,6 +1357,70 @@ def _stored_zero_state(
     return ZERO_STATE_NO_COVERAGE
 
 
+def _reviews_at_another_commit(
+    raw_comments: list[dict], credited_bots: list[str], merge_candidate_sha: str
+) -> list[dict[str, str]]:
+    """Name each credited append-per-review bot none of whose reviews covers the merge candidate.
+
+    DISCLOSURE ONLY. The result changes no participation set and no verdict: every
+    bot it names stays in ``participated_bots`` exactly as it was credited.
+
+    A bot is named when all of these hold:
+
+    - it is credited, and its registry record declares
+      ``participation_requires_update: false`` — it posts a new review per pass, so
+      the commit a review was submitted against is the commit that review covered.
+      An in-place re-reviewer is left out on an ASSUMPTION, not an observation:
+      that its review keeps the commit it was first submitted against however often
+      it is edited. No edited review was read from the provider to confirm it. Its
+      currency is already decided by the currency test, so no verdict rests on this;
+    - at least one of its admissible ``review_body`` comments carries a review commit
+      (``commit_id``, as the provider reported it);
+    - none of those commits is the merge candidate.
+
+    Each record is ``{bot_kind, review_id, review_commit_sha}`` and names the bot's
+    most recently written such review.
+
+    Nothing is named when ``merge_candidate_sha`` is empty: with no merge candidate
+    to compare against, no review can be placed at another commit. A review whose
+    commit the provider did not report is not evidence either way and is skipped.
+    An empty result is therefore not a statement that every credited review covers
+    the merge candidate.
+    """
+    candidate = (merge_candidate_sha or '').strip().lower()
+    if not candidate:
+        return []
+    disclosed: list[dict[str, str]] = []
+    for bot in credited_bots:
+        if bot_registry.participation_requires_update(bot):
+            continue
+        reviews = [
+            comment
+            for comment in raw_comments
+            if comment.get('kind') == 'review_body'
+            and str(comment.get('commit_id') or '').strip()
+            and bot_kind_for_author(comment.get('author') or 'unknown') == bot
+            and not _is_refusal_notice(str(comment.get('body') or ''), bot)
+            and _is_participation_evidence(comment, bot)
+        ]
+        if not reviews:
+            continue
+        if any(str(review['commit_id']).strip().lower() == candidate for review in reviews):
+            continue
+        newest = max(
+            reviews,
+            key=lambda review: max(str(review.get('updated_at') or ''), str(review.get('created_at') or '')),
+        )
+        disclosed.append(
+            {
+                'bot_kind': bot,
+                'review_id': str(newest.get('id') or 'unknown'),
+                'review_commit_sha': str(newest['commit_id']).strip().lower(),
+            }
+        )
+    return disclosed
+
+
 def cmd_fetch_findings(args):
     """Producer-side FIND verb: fetch + pre-filter + file one finding per surviving comment.
 
@@ -1544,6 +1608,18 @@ def cmd_fetch_findings(args):
     that names another commit: the reply lifts a failed ledger test only, and does not
     change which commit that comment is about. No currency-ledger row is
     staged for this credit, so it is re-derived from the reply on every fetch.
+
+    ``reviewed_other_commit_bots``: DISCLOSURE ONLY, for the bots the currency test
+    does not reach. One ``{bot_kind, review_id, review_commit_sha}`` record per
+    credited bot that posts a new review per pass
+    (``participation_requires_update: false``) and none of whose admissible
+    ``review_body`` comments was submitted against the merge candidate
+    (``_reviews_at_another_commit``). Every bot named here is ALSO in
+    ``participated_bots``: the field moves no bot between sets and changes no verdict,
+    so a required bot named here still satisfies the quorum. It is empty when the
+    merge candidate could not be read and skips a review whose commit the provider
+    did not report, so an empty list is not a claim that every credited review
+    covers the merge candidate.
 
     ``merge_candidate_sha_resolved`` / ``undecidable_participation_bots``: the THIRD
     outcome, for when the merge candidate itself could not be read.
@@ -2504,6 +2580,11 @@ def cmd_fetch_findings(args):
             for bot in sorted(reply_covered_participation)
             if bot in credited_bots
         ],
+        # DISCLOSURE ONLY: the credited append-per-review bots none of whose reviews
+        # was submitted against the merge candidate. Each is ALSO in
+        # ``participated_bots`` and stays there — no set and no verdict reads this
+        # list. Empty on an unreadable merge candidate, so empty is not "all current".
+        'reviewed_other_commit_bots': _reviews_at_another_commit(raw_comments, credited_bots, reviewed_commit_sha),
         # Whether the merge candidate could be READ at all. It reports the read, and
         # nothing else: ``fetch_pr_head_sha`` returns '' on every failure path, so a
         # false here is "the head is unresolvable", never a verdict about any bot that

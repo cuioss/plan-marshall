@@ -155,6 +155,14 @@ reviewed this diff. Each review appends a new comment rather than editing one in
 *participated*, never that its review was good — see
 [`bot-participation-contract.md`](bot-participation-contract.md) § "Evidence taxonomy".
 
+No commit is compared for this credit, so a Sourcery review of an earlier commit still credits it
+after HEAD advances. That case is disclosed: each `review_body` record carries the commit the review
+was submitted against, and `fetch_findings` names Sourcery in `reviewed_other_commit_bots[]` when
+none of its reviews was submitted against the merge candidate. The disclosure changes no verdict —
+Sourcery stays in `participated_bots[]` and a required Sourcery still satisfies the quorum. See
+[`bot-participation-contract.md`](bot-participation-contract.md) § "The currency-blind path for
+append-per-review bots".
+
 ## Rate-limit class — `hard_quota`, and why the size ceiling no longer depends on it
 
 `rate_limit_class` is `hard_quota`: no observed Sourcery refusal reopens on a useful timescale — the

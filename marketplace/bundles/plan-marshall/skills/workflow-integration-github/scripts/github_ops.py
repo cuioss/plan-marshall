@@ -448,6 +448,7 @@ _REVIEW_NODE_FIELDS = """
           state
           body
           author { login }
+          commit { oid }
           submittedAt
           updatedAt"""
 
@@ -646,6 +647,20 @@ def flatten_comment_bodies(result: dict) -> dict:
     return flattened
 
 
+def _review_commit_id(review: dict) -> str:
+    """Return the commit a review node was submitted against, lower-cased, or ``''``.
+
+    The provider reports it as ``{'commit': {'oid': '<sha>'}}``; the field is
+    nullable. Every shape that is not a non-empty ``oid`` string yields the empty
+    string: the provider reported no review commit.
+    """
+    commit = review.get('commit')
+    if not isinstance(commit, dict):
+        return ''
+    oid = commit.get('oid')
+    return oid.strip().lower() if isinstance(oid, str) else ''
+
+
 def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dict:
     """Fetch PR review comments, returning structured dict.
 
@@ -664,6 +679,13 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
     reposted — visible as fresh activity to a consumer comparing against a
     trigger time; a ``created_at``-only comparison would silently report no new
     activity from the second edit onward.
+
+    Every record also carries ``commit_id``. On a ``review_body`` record it is the
+    commit the provider says the review was submitted against
+    (``PullRequestReview.commit``), lower-cased. It is an empty string on the other
+    two kinds, which have no review commit of their own here, and on a review whose
+    commit the provider did not report (the field is nullable). The fetch reports
+    the value and decides nothing from it.
 
     **Coverage.** Every connection — ``reviewThreads``, each thread's ``comments``,
     ``reviews`` and the issue-level ``comments`` — is paginated by cursor to
@@ -766,6 +788,7 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
                         'created_at': comment.get('createdAt') or '',
                         'updated_at': comment.get('updatedAt') or '',
                         'thread_id': thread_id,
+                        'commit_id': '',
                     }
                 )
 
@@ -788,6 +811,7 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
                     'created_at': review.get('submittedAt') or '',
                     'updated_at': review.get('updatedAt') or '',
                     'thread_id': '',
+                    'commit_id': _review_commit_id(review),
                 }
             )
 
@@ -810,6 +834,7 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
                     'created_at': issue_comment.get('createdAt') or '',
                     'updated_at': issue_comment.get('updatedAt') or '',
                     'thread_id': '',
+                    'commit_id': '',
                 }
             )
 
@@ -849,6 +874,7 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
             'resolved': c['resolved'],
             'created_at': c['created_at'],
             'updated_at': c['updated_at'],
+            'commit_id': c['commit_id'],
         }
         for c in comments
     ]

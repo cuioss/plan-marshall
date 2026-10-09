@@ -352,7 +352,8 @@ declaring `participation_requires_update: false` is credited on the presence of 
 its declared `participation_evidence` publish shapes — carrying that shape's declared content marker
 where one is declared, since the marker gate precedes the currency branch for every bot — and **no commit is compared** — see § "The
 currency-blind path for append-per-review bots" below, which records that reach difference as an
-accepted, bounded gap rather than leaving it to be inferred from the rule's silence. The reach is a
+accepted, bounded gap rather than leaving it to be inferred from the rule's silence, and says what the
+producer discloses about it. The reach is a
 registry-derived property, never a fixed list of bot names: a bot that newly declares
 `participation_requires_update: true` is currency-tested from that declaration onward, with no change
 here.
@@ -442,15 +443,50 @@ rule closes for in-place re-reviewers, still open on this path. Two states are u
 bot in consequence: it never resolves `participated_stale`, and it never appears in
 `undecidable_participation_bots[]`.
 
-**Why the gap is accepted rather than closed here.** Closing it means anchoring every bot's credit,
-which is a different mechanism from the one the currency test implements: the ledger records
-`(reviewed_commit_sha, updated_at)` per credited comment precisely because an in-place re-reviewer's
-comment identity does not change between reviews, and the ledger is what supplies the missing "which
-commit did this one comment read?". An append-per-review bot's comments do not need that ledger to be
-told apart — but neither do they carry a reviewed SHA, so anchoring them requires deciding what a new
-comment's presence proves about the commit it was posted against, which is a **new** contract
-question rather than a wider application of this one. Widening the reach without settling it would
-replace an over-credit with an equally unfounded verdict in the other direction.
+**What is disclosed.** The over-credit is reported for the one publish shape that carries a commit. A
+`review_body` record carries `commit_id`, the commit the provider says the review was submitted
+against. A credited append-per-review bot is named in the producer's `reviewed_other_commit_bots[]`
+when at least one of its admissible `review_body` comments carries a commit and none of them is the
+merge candidate. Each record is `{bot_kind, review_id, review_commit_sha}` and names the bot's most
+recently written such review. A bot with one review at an earlier commit and a later one at the merge
+candidate is not named.
+
+**Who the disclosure leaves out, and the assumption that rests on.** A bot declaring
+`participation_requires_update: true` is never named, whatever commit its review carries. The reason
+is an **assumption, not an observed fact**: that a review edited in place keeps the commit it was
+first submitted against, so its `commit_id` would report the first review and not the latest one, and
+naming the bot would misreport a re-review as a review of an old commit. No edited review was read
+from the provider to confirm this. If the assumption is wrong and an edit does move the commit, the
+only cost is a disclosure that could have been made and is not; no verdict depends on it, because the
+currency test already decides these bots.
+
+**The disclosure is not enforced.** A bot named in `reviewed_other_commit_bots[]` is still in
+`participated_bots[]`. It is not moved to `stale_participation_bots[]`, it does not resolve
+`participated_stale`, no `review_completeness` flag receives the list, and the pre-merge barrier does
+not block on it. A required bot named there satisfies the quorum exactly as it did before the field
+existed. The field tells the operator that the credit rests on a review of another commit; it does
+not act on that.
+
+**What is still not tested.** The disclosure is narrower than the gap:
+
+- A bot whose crediting evidence is an `inline` or `issue_comment` comment carries no review commit
+  on that record, so it is never named, whatever commit it reviewed.
+- A review whose commit the provider did not report is skipped. It is not evidence either way.
+- With an unreadable merge candidate nothing is named, because there is nothing to compare against.
+
+An empty `reviewed_other_commit_bots[]` therefore does **not** say that every credited review covers
+the merge candidate.
+
+**Why the gap is accepted rather than closed here.** Enforcing the disclosure means changing a
+verdict: a required append-per-review bot whose newest review was submitted against an earlier commit
+would stop satisfying the quorum and resolve `participated_stale`. The currency ledger is not the
+missing piece — it exists because an in-place re-reviewer's comment identity does not change between
+reviews, and an append-per-review bot's reviews are already distinct records. The missing piece is the
+decision itself, and it is not uniform across this population: only `review_body` evidence carries a
+commit, so enforcement would test some append-per-review bots and leave the rest credited on presence
+alone. That is a **new** contract question rather than a wider application of this rule, and widening
+the reach without settling it would replace an over-credit with a verdict that holds for one publish
+shape and not for the others.
 
 **What bounds it.** The gap is bounded to bots declaring `participation_requires_update: false`, and
 this contract's other gates are unaffected by it: the `not_triggered` PR-wide observable, the refusal
@@ -459,12 +495,13 @@ apply to such a bot. It is also self-limiting in the common case — an append-p
 re-triggered on the advanced HEAD posts a NEW comment, so the next fetch credits it on evidence that
 does post-date the merge candidate.
 
-**When it is revisited.** Either of two observations reopens it: a required bot declaring
-`participation_requires_update: false` observed satisfying the quorum on a merge candidate it
-demonstrably did not review, or a decision to anchor every bot declaring `participation_evidence` —
-which is the alternative disposition, deliberately **not** taken here. That alternative changes the
-barrier verdict for every consumer project whose `required_bots` includes an append-per-review bot, so
-it is a contract change with its own blast radius, not an implementation detail of this rule.
+**When it is revisited.** Either of two observations reopens enforcement: a required bot named in
+`reviewed_other_commit_bots[]` observed satisfying the quorum on a merge candidate it demonstrably did
+not review, or a decision to anchor every bot declaring `participation_evidence` — which is the
+alternative disposition, deliberately **not** taken here. That alternative changes the barrier verdict
+for every consumer project whose `required_bots` includes an append-per-review bot, so it is a
+contract change with its own blast radius, not an implementation detail of this rule. The disclosure
+is what makes the first observation possible without reading the PR by hand.
 
 ### Evidence for a bot that edits one comment in place
 

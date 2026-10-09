@@ -20,6 +20,10 @@ surface (``check_auth``, ``fetch_pr_comments_data``, ``fetch_pr_head_sha``):
       a required bot whose review is at an earlier commit, and whose own
       "nothing new to review" reply is newer than the merge candidate, no longer
       blocks; the same scenario with the reply older than the commit still does.
+    - the other-commit disclosure does not reach the barrier: a required
+      append-per-review bot named in ``reviewed_other_commit_bots`` is still a
+      proven participant and the merge is allowed, exactly as in the same scenario
+      with its review submitted against the merge candidate.
 
 The provider response is built from a real fixture shape (mirroring
 ``test_github_pr.py``), so a green fixture cannot diverge from production
@@ -38,6 +42,8 @@ PLAN_IDS: tuple[str, ...] = (
     'barrier-cross-kind',
     'barrier-late-comment',
     'barrier-optional-silence',
+    'barrier-other-commit-control',
+    'barrier-other-commit-disclosed',
     'barrier-reply-covered',
     'barrier-reply-not-covered',
     'barrier-self-response-bound',
@@ -494,3 +500,80 @@ def test_a_reply_older_than_the_merge_candidate_still_blocks_at_the_barrier(plan
     assert pending == []
     assert _state_of(verdict, 'coderabbit') in review_completeness._UNPROVEN_STATES
     assert _barrier_projection(verdict, pending)['merge_allowed'] is False
+
+
+_registry = review_completeness.bot_registry
+#: The append-per-review bots that publish a ``review_body`` — the bots the
+#: other-commit disclosure can name. Read from the registry, never listed here.
+_PER_REVIEW_BOTS: tuple[str, ...] = tuple(
+    bot
+    for bot in _registry.bot_kinds()
+    if not _registry.participation_requires_update(bot) and 'review_body' in _registry.participation_evidence(bot)
+)
+assert _PER_REVIEW_BOTS, 'the registry declares no append-per-review bot publishing a review_body'
+_PER_REVIEW_BOT = _PER_REVIEW_BOTS[0]
+_PER_REVIEW_BOT_LOGIN = {kind: login for login, kind in _registry.login_to_bot_kind().items()}[_PER_REVIEW_BOT]
+
+
+def _barrier_verdict_for_a_review_submitted_against(monkeypatch, plan_id, review_commit):
+    """A required per-review bot's one review, fetched at the merge candidate and triaged.
+
+    Returns ``(fetch result, completeness verdict, pending findings)``. Every
+    participation list the barrier forwards is forwarded as the producer emitted it;
+    ``reviewed_other_commit_bots`` is not among them, because no predicate takes it.
+    """
+    marker = _registry.participation_evidence_marker(_PER_REVIEW_BOT, 'review_body')
+    review = {
+        'id': 'per-review-1',
+        'author': _PER_REVIEW_BOT_LOGIN,
+        'thread_id': '',
+        'kind': 'review_body',
+        'body': f'{marker}\nOverall the change reads well but this helper should be extracted.'.strip(),
+        'resolved': False,
+        'created_at': _REVIEWED_AT,
+        'updated_at': _REVIEWED_AT,
+        'commit_id': review_commit,
+    }
+    result = _fetch_at(monkeypatch, plan_id, [review], _MERGE_CANDIDATE, _MERGE_CANDIDATE_COMMITTED_AT)
+    _resolve_all_pending(plan_id)
+    verdict = _completeness(
+        plan_id,
+        _participation_csv(result),
+        required=[_PER_REVIEW_BOT],
+        optional=[bot for bot in _registry.bot_kinds() if bot != _PER_REVIEW_BOT],
+        stale_participation_bots=[row['bot_kind'] for row in result['stale_participation_bots']],
+        refused_bots=result['refused_bots'],
+    )
+    return result, verdict, _pending(plan_id)
+
+
+def test_a_per_review_bot_named_in_the_disclosure_does_not_block_at_the_barrier(plan_context, monkeypatch):
+    """The disclosure names the bot and the barrier's verdict is the one it had without it.
+
+    The required bot's only review was submitted against an earlier head. It is named
+    in ``reviewed_other_commit_bots`` and it is still a proven participant: nothing is
+    pending and the merge is allowed. The projection equals the one from the same
+    scenario with the review submitted against the merge candidate, where nothing is
+    disclosed — so the disclosure is the only thing that differs between the two.
+    """
+    print(f'bots the disclosure can name ({len(_PER_REVIEW_BOTS)}): {", ".join(_PER_REVIEW_BOTS)}')
+
+    result, verdict, pending = _barrier_verdict_for_a_review_submitted_against(
+        monkeypatch, 'barrier-other-commit-disclosed', _EARLIER_HEAD
+    )
+
+    assert result['reviewed_other_commit_bots'] == [
+        {'bot_kind': _PER_REVIEW_BOT, 'review_id': 'per-review-1', 'review_commit_sha': _EARLIER_HEAD}
+    ]
+    assert result['stale_participation_bots'] == []
+    assert pending == []
+    assert _state_of(verdict, _PER_REVIEW_BOT) not in review_completeness._UNPROVEN_STATES
+    assert _barrier_projection(verdict, pending)['merge_allowed'] is True
+
+    control, control_verdict, control_pending = _barrier_verdict_for_a_review_submitted_against(
+        monkeypatch, 'barrier-other-commit-control', _MERGE_CANDIDATE
+    )
+
+    assert control['reviewed_other_commit_bots'] == []
+    assert _state_of(control_verdict, _PER_REVIEW_BOT) == _state_of(verdict, _PER_REVIEW_BOT)
+    assert _barrier_projection(control_verdict, control_pending) == _barrier_projection(verdict, pending)

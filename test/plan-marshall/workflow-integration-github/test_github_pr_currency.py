@@ -1812,3 +1812,265 @@ def test_a_reply_does_not_lift_a_bot_whose_comment_names_another_commit(bot_kind
     assert outcomes['names-previous-head']['participated_bots'] == []
     assert outcomes['names-previous-head']['stale_participation_bots'] == [expected]
     assert outcomes['names-previous-head']['reply_covered_participation_bots'] == []
+
+
+# ---------------------------------------------------------------------------
+# The disclosure for append-per-review bots: a credited review of another commit.
+# ---------------------------------------------------------------------------
+
+_REVIEW_BODY = 'review_body'
+
+#: The bots the disclosure can name: append-per-review bots (not currency-tested) that
+#: publish a ``review_body``, the one shape whose record carries a review commit.
+#: Derived from the registry and guarded non-empty, so a bot that newly declares that
+#: shape inherits every case below.
+_DISCLOSABLE_BOTS: tuple[str, ...] = guard_non_empty(
+    tuple(bot for bot in CURRENCY_BLIND_BOTS if _REVIEW_BODY in bot_registry.participation_evidence(bot)),
+    '_DISCLOSABLE_BOTS',
+    'CURRENCY_BLIND_BOTS filtered by review_body in bot_registry.participation_evidence',
+)
+
+#: The fields a verdict is read from. The disclosure must leave every one of them as it
+#: was, so each case compares them against the matched fetch that discloses nothing.
+_VERDICT_FIELDS: tuple[str, ...] = (
+    'participated_bots',
+    'stale_participation_bots',
+    'undecidable_participation_bots',
+    'reply_covered_participation_bots',
+    'refused_bots',
+    'count_stored',
+    'stored_zero_state',
+)
+
+
+def _review_at(bot_kind, review_id, commit_id, *, created_at):
+    """A ``review_body`` of ``bot_kind`` submitted against ``commit_id``.
+
+    The body carries the bot's declared content marker for the shape where it
+    declares one, so the comment is admissible evidence for every bot in the
+    population. ``commit_id=None`` builds the record without the key at all.
+    """
+    marker = bot_registry.participation_evidence_marker(bot_kind, _REVIEW_BODY)
+    body = f'{marker}\n{_GUIDE_FINDING_BODY}' if marker else _GUIDE_FINDING_BODY
+    extra = {'created_at': created_at, 'updated_at': created_at}
+    if commit_id is not None:
+        extra['commit_id'] = commit_id
+    return _evidence_comment(bot_kind, _REVIEW_BODY, review_id, body, **extra)
+
+
+def _fetch_reviews(monkeypatch, plan_id, reviews, *, head_sha=_HEAD_B):
+    """One fetch of ``reviews`` at ``head_sha``."""
+    _patch_provider(monkeypatch, reviews, head_sha=head_sha)
+    return _run_fetch(240, plan_id)
+
+
+def test_the_bots_the_disclosure_can_name_are_derived_from_the_registry():
+    """The affected set is read from the registry and printed, never listed here.
+
+    Every member is an append-per-review bot that publishes a ``review_body``; every
+    other registered bot is outside the set for one of those two reasons. The named
+    case this deliverable was written for is a member of the derived set.
+    """
+    print(f'bots the disclosure can name ({len(_DISCLOSABLE_BOTS)}): {", ".join(_DISCLOSABLE_BOTS)}')
+
+    for bot in bot_registry.bot_kinds():
+        per_review = not bot_registry.participation_requires_update(bot)
+        publishes_review_body = _REVIEW_BODY in bot_registry.participation_evidence(bot)
+        assert (bot in _DISCLOSABLE_BOTS) == (per_review and publishes_review_body)
+    assert 'sourcery' in _DISCLOSABLE_BOTS
+
+
+def test_the_contract_says_what_is_disclosed_and_what_is_still_not_tested():
+    """The rewritten section states the disclosure, that it is not enforced, and its limits."""
+    assert '**What is disclosed.**' in _CONTRACT_TEXT
+    assert '**The disclosure is not enforced.**' in _CONTRACT_TEXT
+    assert '**What is still not tested.**' in _CONTRACT_TEXT
+    assert '`reviewed_other_commit_bots[]`' in _CONTRACT_TEXT
+
+
+def test_a_review_body_record_carries_the_commit_the_review_was_submitted_against(monkeypatch):
+    """The provider fetch asks for the review commit and puts it on the record.
+
+    The query text is asserted because a stubbed transport returns the field whatever
+    the query selected. The record half covers the three shapes: a reported commit
+    (lower-cased), a review whose commit the provider reports as null, and a comment
+    kind that has no review commit.
+    """
+    github_ops = github_pr._github
+    for query in (github_ops.REVIEW_THREADS_QUERY, github_ops.REVIEWS_PAGE_QUERY):
+        assert 'commit { oid }' in query
+
+    login = _LOGIN_FOR_KIND[_DISCLOSABLE_BOTS[0]]
+    payload = {
+        'repository': {
+            'pullRequest': {
+                'reviewThreads': {'nodes': []},
+                'reviews': {
+                    'nodes': [
+                        {
+                            'id': 'PRR_at_commit',
+                            'body': 'a review',
+                            'author': {'login': login},
+                            'submittedAt': _at(1),
+                            'commit': {'oid': _HEAD_A.upper()},
+                        },
+                        {
+                            'id': 'PRR_no_commit',
+                            'body': 'another review',
+                            'author': {'login': login},
+                            'submittedAt': _at(2),
+                            'commit': None,
+                        },
+                    ]
+                },
+                'comments': {
+                    'nodes': [{'id': 'IC_note', 'body': 'a note', 'author': {'login': 'alice'}, 'createdAt': _at(3)}]
+                },
+            }
+        }
+    }
+    monkeypatch.setattr(github_ops, 'check_auth', lambda: (True, ''))
+    monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('o', 'r'))
+    monkeypatch.setattr(github_ops, 'run_graphql', lambda query, variables: (0, payload, ''))
+
+    result = github_ops.fetch_pr_comments_data(1)
+
+    assert result['status'] == 'success'
+    assert {comment['id']: comment['commit_id'] for comment in result['comments']} == {
+        'PRR_at_commit': _HEAD_A,
+        'PRR_no_commit': '',
+        'IC_note': '',
+    }
+
+
+@pytest.mark.parametrize('bot_kind', _DISCLOSABLE_BOTS)
+def test_a_review_of_the_previous_head_is_disclosed_and_the_verdict_is_unchanged(bot_kind, plan_context, monkeypatch):
+    """The bot is named, and it is still credited exactly as it was.
+
+    The review was submitted against HEAD_A and the merge candidate is HEAD_B. The
+    bot is named with that review and that commit. Every verdict field equals the
+    one from the matched fetch whose review was submitted against HEAD_B, so the
+    disclosure moved no bot and changed no verdict.
+    """
+    result = _fetch_reviews(
+        monkeypatch,
+        f'gh-pr-other-commit-{bot_kind}',
+        [_review_at(bot_kind, 'review-1', _HEAD_A, created_at=_at(1))],
+    )
+
+    assert result['status'] == 'success'
+    assert result['reviewed_other_commit_bots'] == [
+        {'bot_kind': bot_kind, 'review_id': 'review-1', 'review_commit_sha': _HEAD_A}
+    ]
+    assert result['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': _REVIEW_BODY}]
+    assert result['stale_participation_bots'] == []
+
+    current = _fetch_reviews(
+        monkeypatch,
+        f'gh-pr-other-commit-verdict-{bot_kind}',
+        [_review_at(bot_kind, 'review-1', _HEAD_B, created_at=_at(1))],
+    )
+    for field in _VERDICT_FIELDS:
+        assert result[field] == current[field], field
+
+
+@pytest.mark.parametrize('bot_kind', _DISCLOSABLE_BOTS)
+def test_a_review_of_the_merge_candidate_is_not_disclosed(bot_kind, plan_context, monkeypatch):
+    """⛔ MATCHED CONTROL — same review, same head; only the commit it was submitted against differs."""
+    result = _fetch_reviews(
+        monkeypatch,
+        f'gh-pr-other-commit-control-{bot_kind}',
+        [_review_at(bot_kind, 'review-1', _HEAD_B, created_at=_at(1))],
+    )
+
+    assert result['reviewed_other_commit_bots'] == []
+    assert result['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': _REVIEW_BODY}]
+
+
+@pytest.mark.parametrize('bot_kind', _DISCLOSABLE_BOTS)
+def test_an_older_review_beside_one_of_the_merge_candidate_is_not_disclosed(bot_kind, plan_context, monkeypatch):
+    """A bot is named only when NONE of its reviews covers the merge candidate.
+
+    The older review is listed first, which is the one the bot is credited on. A
+    disclosure keyed on the crediting comment alone would name the bot here.
+    """
+    result = _fetch_reviews(
+        monkeypatch,
+        f'gh-pr-other-commit-both-{bot_kind}',
+        [
+            _review_at(bot_kind, 'review-old', _HEAD_A, created_at=_at(1)),
+            _review_at(bot_kind, 'review-new', _HEAD_B, created_at=_at(9)),
+        ],
+    )
+
+    assert result['reviewed_other_commit_bots'] == []
+
+
+@pytest.mark.parametrize('bot_kind', _DISCLOSABLE_BOTS)
+def test_the_most_recently_written_review_is_the_one_disclosed(bot_kind, plan_context, monkeypatch):
+    """With several reviews of other commits the named one does not depend on list order."""
+    result = _fetch_reviews(
+        monkeypatch,
+        f'gh-pr-other-commit-newest-{bot_kind}',
+        [
+            _review_at(bot_kind, 'review-newer', _HEAD_B, created_at=_at(9)),
+            _review_at(bot_kind, 'review-older', _HEAD_A, created_at=_at(1)),
+        ],
+        head_sha=_HEAD_C,
+    )
+
+    assert result['reviewed_other_commit_bots'] == [
+        {'bot_kind': bot_kind, 'review_id': 'review-newer', 'review_commit_sha': _HEAD_B}
+    ]
+
+
+@pytest.mark.parametrize('bot_kind', _DISCLOSABLE_BOTS)
+@pytest.mark.parametrize('commit_id', [None, ''], ids=['key-absent', 'empty'])
+def test_a_review_whose_commit_was_not_reported_is_not_disclosed(bot_kind, commit_id, plan_context, monkeypatch):
+    """No reported commit is not evidence of another commit. The bot stays credited."""
+    plan_id = f'gh-pr-other-commit-unreported-{bot_kind}-{"absent" if commit_id is None else "empty"}'
+
+    result = _fetch_reviews(monkeypatch, plan_id, [_review_at(bot_kind, 'review-1', commit_id, created_at=_at(1))])
+
+    assert result['reviewed_other_commit_bots'] == []
+    assert result['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': _REVIEW_BODY}]
+
+
+@pytest.mark.parametrize('bot_kind', _DISCLOSABLE_BOTS)
+def test_nothing_is_disclosed_when_the_merge_candidate_cannot_be_read(bot_kind, plan_context, monkeypatch):
+    """With no merge candidate there is nothing to place the review against.
+
+    The empty list here is not a statement that the review is current, which is why
+    the result also says the head was not read.
+    """
+    result = _fetch_reviews(
+        monkeypatch,
+        f'gh-pr-other-commit-head-unread-{bot_kind}',
+        [_review_at(bot_kind, 'review-1', _HEAD_A, created_at=_at(1))],
+        head_sha='',
+    )
+
+    assert result['merge_candidate_sha_resolved'] is False
+    assert result['reviewed_other_commit_bots'] == []
+
+
+@pytest.mark.parametrize('bot_kind', _DISCLOSABLE_BOTS)
+def test_the_disclosure_leaves_out_a_bot_that_edits_one_review_in_place(bot_kind, monkeypatch):
+    """Same review, same credited bot; only the registry flag differs.
+
+    The exclusion rests on an assumption that was not observed: that an in-place
+    re-reviewer's review keeps the commit it was first submitted against however
+    often it is edited, so naming it would misreport a re-review. Its currency is
+    decided by the currency test instead. This case pins the exclusion, not the
+    assumption behind it.
+    """
+    review = _review_at(bot_kind, 'review-1', _HEAD_A, created_at=_at(1))
+    named = [{'bot_kind': bot_kind, 'review_id': 'review-1', 'review_commit_sha': _HEAD_A}]
+
+    assert github_pr._reviews_at_another_commit([review], [bot_kind], _HEAD_B) == named
+    # A bot that is not credited is never named, whatever its reviews say.
+    assert github_pr._reviews_at_another_commit([review], [], _HEAD_B) == []
+
+    monkeypatch.setattr(github_pr.bot_registry, 'participation_requires_update', lambda _bot: True)
+
+    assert github_pr._reviews_at_another_commit([review], [bot_kind], _HEAD_B) == []
