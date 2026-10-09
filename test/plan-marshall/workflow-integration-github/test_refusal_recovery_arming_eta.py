@@ -212,7 +212,7 @@ class TestTheResetTimeCodeRabbitStatesIsRead:
     def test_the_notice_population_is_published(self):
         """The parametrized cases below run over a stated, non-empty population."""
         assert CODERABBIT_NEXT_REVIEW_NOTICE_COUNT == len(CODERABBIT_NEXT_REVIEW_NOTICES)
-        assert CODERABBIT_NEXT_REVIEW_NOTICE_COUNT >= 3, 'the minute, hour and compound forms must all be present'
+        assert len(CODERABBIT_NEXT_REVIEW_NOTICES) >= 3, 'the minute, hour and compound forms must all be present'
 
     @pytest.mark.parametrize(
         ('body', 'stated', 'seconds'),
