@@ -653,7 +653,7 @@ def changed_paths_for_step(plan_id: str, step: str, worktree_path: str) -> dict[
     if record is None:
         payload['outcome'] = OUTCOME_FIRST_FIRING
         return payload
-    # A legacy bare-string record is a record with no anchor, so it lands here too.
+    # A record that is not a mapping carries no anchor, so it lands here too.
     if not isinstance(record, dict) or record.get('outcome') != 'done' or not recorded_head:
         payload['outcome'] = OUTCOME_LAST_FIRING_NOT_DONE
         return payload
