@@ -240,7 +240,7 @@ Read `status` first, then `mode`.
 |----------|--------------------------------|
 | `edited_since_last_firing` | its file was modified after the previous firing started — which also covers a lesson added since |
 | `standards_dir_changed` | a changed path lies under the standards directory of the lesson's component |
-| `named_path_changed` | a changed path equals, or lies under, a path the lesson body names in backticks — a trailing line reference (`path:598`) is ignored, and a glob or placeholder is read as the literal directory in front of it |
+| `named_path_changed` | a changed path contains, as a run of whole path segments, a path the lesson body names in backticks. The citation is first reduced to its literal path: a line, symbol, test-id or anchor reference behind it and a notation prefix in front of it are ignored, and a glob or placeholder ends it — the directory in front of the pattern is kept, or the tail behind it when nothing literal precedes it. The match is not anchored at the repository root, so a path cited relative to its skill still selects the lesson |
 
 Run Steps 3 to 5 over the lessons in `affected` **only**. Every other lesson keeps the result of the previous firing: it is not re-read, not re-judged and not edited. Retain `carried_over` as `{X}` for the Step 7 outcome line.
 

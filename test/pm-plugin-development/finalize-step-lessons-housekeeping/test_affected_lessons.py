@@ -201,15 +201,60 @@ def _assert_full(payload: dict[str, Any], reason: str) -> None:
     [
         ('src/app.py:598', ['src/app.py']),
         ('src/app.py:10:4', ['src/app.py']),
+        ('scripts/foo.py:main', ['scripts/foo.py']),
+        ('src/app.py::test_x', ['src/app.py']),
+        ('doc/guide.md#section', ['doc/guide.md']),
+        ('plan-marshall:phase-6-finalize/standards/x.md', ['phase-6-finalize/standards/x.md']),
+        ('plan-marshall:phase-6-finalize/standards/x.md:12', ['phase-6-finalize/standards/x.md']),
         ('doc/guide/*.md', ['doc/guide']),
         ('plans/{plan_id}/request.md', ['plans']),
-        ('*/standards/rule.md', []),
+        ('*/standards/rule.md', ['standards/rule.md']),
+        ('../SKILL.md', ['SKILL.md']),
+        ('*/*', []),
     ],
-    ids=['line-suffix', 'line-and-column-suffix', 'glob', 'placeholder', 'pattern-first-segment'],
+    ids=[
+        'line-suffix',
+        'line-and-column-suffix',
+        'symbol-suffix',
+        'test-id-suffix',
+        'anchor-suffix',
+        'notation-prefix',
+        'notation-prefix-and-line-suffix',
+        'glob',
+        'placeholder',
+        'pattern-first-segment',
+        'relative-segment',
+        'no-literal-segment',
+    ],
 )
 def test_cited_span_is_reduced_to_the_literal_path_it_stands_for(span: str, expected: list[str]) -> None:
     """A citation git could never report verbatim still names a literal path."""
     assert _mod.named_paths(f'See `{span}` for the rule.') == expected
+
+
+@pytest.mark.parametrize(
+    ('changed', 'fragment', 'expected'),
+    [
+        ('src/app.py', 'src/app.py', True),
+        ('src/pkg/app.py', 'src', True),
+        ('marketplace/bundles/alpha/skills/one/standards/rule.md', 'standards/rule.md', True),
+        ('marketplace/bundles/alpha/skills/one/standards/rule.md', 'one/standards', True),
+        ('src/application.py', 'src/app.py', False),
+        ('mysrc/app.py', 'src/app.py', False),
+        ('src/app.py', 'src/app.py/extra', False),
+    ],
+    ids=[
+        'exact',
+        'enclosing-directory',
+        'unanchored-tail',
+        'unanchored-middle',
+        'partial-file-name',
+        'partial-directory-name',
+        'fragment-longer-than-path',
+    ],
+)
+def test_fragment_matches_only_as_a_run_of_whole_segments(changed: str, fragment: str, expected: bool) -> None:
+    assert _mod._names(changed, fragment) is expected
 
 
 # ---------------------------------------------------------------------------
@@ -278,6 +323,9 @@ def test_empty_change_list_with_no_edited_lesson_examines_nothing(
         'src/app.py:10-20',
         'src/*.py',
         'src/{name}.py',
+        'src/app.py::test_x',
+        'pkg:src/app.py',
+        '*/app.py/',
     ],
     ids=[
         'exact-path',
@@ -287,6 +335,9 @@ def test_empty_change_list_with_no_edited_lesson_examines_nothing(
         'line-range-suffix',
         'glob',
         'placeholder',
+        'test-id-suffix',
+        'notation-prefix',
+        'pattern-first-segment',
     ],
 )
 def test_lesson_naming_a_changed_path_in_backticks_is_selected(

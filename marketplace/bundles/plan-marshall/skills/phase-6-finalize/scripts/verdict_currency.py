@@ -38,7 +38,8 @@ content that did not change, so a re-run would re-compute the same answer by
 construction. That advance is ``preserved``. Any other outcome is
 ``invalidated``.
 
-The comparison is a **tree diff** (``git diff --name-only {recorded} {live}``),
+The comparison is a **tree diff**
+(``git diff --name-only --no-renames -z {recorded} {live}``),
 not a walk of the commits in between, which makes it correct under all three
 supersession mechanisms the dispatcher must handle — a loop-back commit, a
 force-push, and a rebase — because none of them changes what the two trees
@@ -368,10 +369,15 @@ def resolve_changed_paths(
 ) -> tuple[list[str], bool]:
     """Return the repo-relative tree difference between two commits.
 
-    Uses ``git diff --name-only --no-renames {recorded} {live}`` — a two-tree
+    Uses ``git diff --name-only --no-renames -z {recorded} {live}`` — a two-tree
     comparison, not a commit walk — so the answer is identical whether the SHAs
     are related by a fast-forward, a rebase, or a force-push, and so a change
     plus its revert cancels out instead of counting as a difference.
+
+    ``-z`` is load-bearing too: without it git C-quotes any path holding a
+    non-ASCII byte, a double quote, a backslash or a control character, and
+    the quoted string — surrounding quotes included — is not the path. NUL
+    separation returns every path verbatim.
 
     ``--no-renames`` is load-bearing: with rename detection on (git's default),
     a renamed file is listed under its destination path only, so the path that
@@ -398,11 +404,15 @@ def resolve_changed_paths(
                 'diff',
                 '--name-only',
                 '--no-renames',
+                '-z',
                 recorded_head,
                 live_head,
             ],
             capture_output=True,
-            text=True,
+            # Paths are bytes to git. Decoding them as UTF-8 regardless of the
+            # ambient locale keeps a non-ASCII name from raising under ``C``.
+            encoding='utf-8',
+            errors='surrogateescape',
             timeout=60,
             check=False,
         )
@@ -412,7 +422,7 @@ def resolve_changed_paths(
     if completed.returncode != 0:
         return [], False
 
-    paths = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+    paths = [path for path in completed.stdout.split('\0') if path]
     return paths, True
 
 

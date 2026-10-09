@@ -159,8 +159,10 @@ being predicted or estimated — the skip is licensed by the declaration itself,
 why the declaration must be substantiated arm-by-arm from the step's own doc rather
 than guessed.
 
-**Why a tree diff rather than a commit walk.** `git diff --name-only {recorded} {live}`
-compares two trees. That is correct under all three supersession mechanisms the
+**Why a tree diff rather than a commit walk.**
+`git diff --name-only --no-renames -z {recorded} {live}` compares two trees. `--no-renames`
+lists a renamed file under both its old and its new path, and `-z` returns every path
+verbatim instead of quoted, so the result is every path that differs, as git names it. That is correct under all three supersession mechanisms the
 dispatcher must handle — a loop-back commit, a force-push, and a rebase — because none
 of them changes what the two trees contain, and it needs no separate detector per
 mechanism. It is also strictly narrower than a commit walk: a change and its revert

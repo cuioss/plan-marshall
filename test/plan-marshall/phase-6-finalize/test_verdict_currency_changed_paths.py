@@ -143,6 +143,18 @@ def test_renamed_file_is_listed_under_both_its_old_and_its_new_path(git_repo: Pa
     assert sorted(payload['changed_paths']) == ['src/new.py', 'src/old.py']
 
 
+def test_path_git_would_quote_is_listed_verbatim(git_repo: Path, monkeypatch):
+    """A non-ASCII or space-bearing name comes back as the path, not a quoted form of it."""
+    recorded = _commit(git_repo, {'src/app.py': 'x = 1\n'})
+    _commit(git_repo, {'doc/überblick.md': 'notes\n', 'doc/release notes.md': 'notes\n'})
+    _patch_status(monkeypatch, _status_with(_done_record(recorded)))
+
+    payload = _mod.changed_paths_for_step(_PLAN_ID, _STEP, str(git_repo))
+
+    assert payload['outcome'] == _mod.OUTCOME_COMPUTED
+    assert sorted(payload['changed_paths']) == ['doc/release notes.md', 'doc/überblick.md']
+
+
 def test_no_prior_firing_is_first_firing_without_a_changed_paths_key(git_repo: Path, monkeypatch):
     live = _commit(git_repo, {'src/app.py': 'x = 1\n'})
     _patch_status(monkeypatch, _status_with(None))

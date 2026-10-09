@@ -21,8 +21,8 @@ first that holds is the reported ``reason``):
   firing started, which also covers a lesson added since.
 * ``standards_dir_changed`` — a changed path lies under the standards directory
   of the lesson's component.
-* ``named_path_changed`` — a changed path equals, or lies under, a path the
-  lesson body names in backticks.
+* ``named_path_changed`` — a changed path contains, as a run of whole path
+  segments, a path the lesson body names in backticks.
 
 Full-run conditions — exactly three, each with its own ``reason``:
 
@@ -105,13 +105,12 @@ ERROR_STANDARDS_DIR_OUTSIDE_REPO = 'standards_dir_outside_repo'
 #: to name a path.
 _BACKTICK_SPAN = re.compile(r'`([^`\s]+)`')
 
-#: A trailing line reference on a cited path: ``path:598``, ``path:10-20``,
-#: ``path:10:4``.
-_LINE_SUFFIX = re.compile(r':\d+(?:[-:,]\d+)*$')
-
 #: Characters that make a path segment a pattern rather than a literal name — a
 #: glob (``*``, ``?``, ``[``) or a placeholder (``{id}``, ``<name>``).
 _PATTERN_CHARS = frozenset('*?[{<')
+
+#: Segments that carry no name of their own.
+_RELATIVE_SEGMENTS = frozenset({'', '.', '..'})
 
 
 # ---------------------------------------------------------------------------
@@ -136,47 +135,69 @@ class AffectedLesson(NamedTuple):
 
 
 def named_paths(body: str) -> list[str]:
-    """Return the repo-relative paths a lesson body names in backticks.
+    """Return the path fragments a lesson body names in backticks.
 
-    A span counts as a path when it contains a ``/`` and is not a URL, an
-    absolute path, a home-relative path or a command-line flag. A leading ``./``
-    and a trailing ``/`` are dropped so the result compares against the paths
-    ``git diff --name-only`` emits.
+    A span counts as a citation when it contains a ``/`` and is not a URL, an
+    absolute path, a home-relative path or a command-line flag. Each citation is
+    reduced to the run of literal path segments it carries, because a citation
+    kept verbatim in any of the shapes below could never match a path git
+    reports and the lesson would silently never be selected:
 
-    Two citation shapes are reduced to the literal path they stand for, because
-    kept verbatim they could never equal or prefix a path git reports and the
-    lesson would silently never be selected:
+    - a reference past the path — a line (``path:598``), a symbol
+      (``path:main``), a test id (``path::test_x``) or an anchor
+      (``path#section``) — is dropped;
+    - a notation prefix in front of the path (``bundle:skill/standards/x.md``)
+      is dropped;
+    - a glob, a placeholder or a relative segment (``dir/*.md``,
+      ``plans/{id}/x``, ``../SKILL.md``) ends the run, and the first literal
+      run is kept — the directory in front of the pattern, or the tail behind
+      it when nothing literal precedes it (``*/standards/rule.md``).
 
-    - a trailing line reference (``path:598``) is dropped;
-    - a glob or placeholder (``dir/*.md``, ``plans/{id}/x``) is cut back to the
-      literal directory in front of its first pattern segment, so a change
-      anywhere under that directory selects the lesson.
-
-    A span whose first segment is already a pattern names no literal path and
-    is skipped.
+    A span with no literal segment at all names nothing and is skipped.
     """
     paths: list[str] = []
     for span in _BACKTICK_SPAN.findall(body):
         if '/' not in span or '://' in span or span.startswith(('/', '~', '-')):
             continue
-        normalised = _literal_path(span)
-        if normalised and normalised not in paths:
-            paths.append(normalised)
+        fragment = _literal_run(span)
+        if fragment and fragment not in paths:
+            paths.append(fragment)
     return paths
 
 
-def _literal_path(span: str) -> str:
-    cited = _LINE_SUFFIX.sub('', span).removeprefix('./').rstrip('/')
-    literal: list[str] = []
-    for segment in cited.split('/'):
-        if _PATTERN_CHARS.intersection(segment):
-            break
-        literal.append(segment)
-    return '/'.join(literal)
+def _cited_path(span: str) -> str:
+    """Strip what a citation carries around its path."""
+    cited = span.split('#', 1)[0].split('::', 1)[0]
+    while ':' in cited:
+        head, _, tail = cited.partition(':')
+        # A colon behind the path introduces a reference into it; a colon in
+        # front of the path ends a notation prefix.
+        cited = head if '/' in head else tail
+    return cited
 
 
-def _lies_at_or_under(changed_path: str, named_path: str) -> bool:
-    return changed_path == named_path or changed_path.startswith(f'{named_path}/')
+def _literal_run(span: str) -> str:
+    run: list[str] = []
+    for segment in _cited_path(span).split('/'):
+        if segment in _RELATIVE_SEGMENTS or _PATTERN_CHARS.intersection(segment):
+            if run:
+                break
+            continue
+        run.append(segment)
+    return '/'.join(run)
+
+
+def _names(changed_path: str, fragment: str) -> bool:
+    """Whether ``fragment`` occurs in ``changed_path`` as a run of whole segments.
+
+    A fragment is not anchored at the repository root: a lesson may cite a file
+    relative to its skill, or through a notation whose prefix was dropped. The
+    match therefore selects more lessons than an anchored one would, which is
+    the direction a rule deciding what may be carried over unjudged must err in.
+    """
+    changed = changed_path.split('/')
+    wanted = fragment.split('/')
+    return any(changed[start : start + len(wanted)] == wanted for start in range(len(changed) - len(wanted) + 1))
 
 
 def select_affected(
@@ -221,7 +242,7 @@ def _first_matching_rule(
     if standards_dir and any(path.startswith(standards_dir) for path in changed_paths):
         return REASON_STANDARDS_DIR
     names = named_paths(lesson.body)
-    if any(_lies_at_or_under(path, name) for path in changed_paths for name in names):
+    if any(_names(path, name) for path in changed_paths for name in names):
         return REASON_NAMED_PATH
     return None
 
