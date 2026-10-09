@@ -21,6 +21,7 @@ import _build_server_registry as registry
 import _ledger_core as ledger_core
 import plan_logging
 import pytest
+from _build_server_protocol import APPLIED_BOUND_WIRE_FIELDS
 from _resolve_project_dir_fixtures import NO_PLAN_SENTINEL
 
 from conftest import load_script_module, parse_ns
@@ -155,8 +156,8 @@ def test_render_job_status_renders_no_bound_the_daemon_did_not_send():
 
 def test_the_applied_bound_fields_are_named_passthrough_fields():
     """The passthrough list is a whitelist: an unlisted field is dropped silently."""
-    assert 'timeout_used_seconds' in client._PASSTHROUGH_STATUS_FIELDS
-    assert 'timeout_source' in client._PASSTHROUGH_STATUS_FIELDS
+    assert APPLIED_BOUND_WIRE_FIELDS, 'the wire contract must name at least one applied-bound field'
+    assert set(APPLIED_BOUND_WIRE_FIELDS) <= set(client._PASSTHROUGH_STATUS_FIELDS)
 
 
 # =============================================================================
