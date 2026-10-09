@@ -594,6 +594,11 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
     uncovered types and counts them, and the last-resort surfacer is deferred, not rejected.
   - Scope-bloat guard: 11, 8 and 9 deliverables, each above six, proceeding unsplit on the
     operator's authorization of up to twelve.
+- 2026-10-09 — **parallelization_scope raised from 2 to 4 by operator instruction** ("set
+  the parallelism to 4"). Four plans were already running on per-launch overrides
+  (PLAN-LB-24, 32, 33 and 34); the knob now matches what the operator runs. The limit on
+  real parallelism is unchanged: plans that share `phase-6-finalize/SKILL.md`,
+  `execution.md` or the self-review workflow still run in sequence.
 
 ## Open Defects
 
