@@ -77,6 +77,20 @@ properties are load-bearing:
 Terminal statuses are `success` / `failure` / `timeout` / `killed`; `running` and
 `queued` are non-terminal.
 
+A `timeout` or `killed` result additionally names the bound the job was measured
+against, when the daemon knows it:
+
+| Field | Meaning |
+|-------|---------|
+| `timeout_used_seconds` | The bound that was **applied** — never the elapsed time, which is `duration_seconds`. |
+| `timeout_source` | Where that bound came from: `daemon_default` (the daemon's own default) or `explicit` (a submit's `--timeout` raised it) for the daemon's own bound; the inner build wrapper's own source (`explicit` / `learned` / `default` / `floor`) when that wrapper reported the non-finish itself. |
+
+Both fields are **absent** when the daemon does not state a bound — a daemon that
+predates them, or a job log that carried none. A caller must read an absent bound
+as unknown and never substitute `duration_seconds` for it. The vocabulary is
+defined once in [`extension-api/standards/build-execution.md`](../extension-api/standards/build-execution.md)
+§ "Execution Metadata".
+
 ## Fallback semantics
 
 `submit` is fail-soft. Every reason that prevents reaching a trusted daemon is a
@@ -169,7 +183,9 @@ directory.
 
 `--timeout` is a wall-clock bound in seconds that can only **raise** the daemon's
 supervisory bound — it never lowers it. `marshalld._resolve_job_timeout` resolves
-`max(requested + margin, daemon_default)`. That is deliberate, not a defect — the inner
+`max(requested + margin, daemon_default)` and reports which of the two produced the
+bound (`explicit` only when the request actually raised it, `daemon_default`
+otherwise). That is deliberate, not a defect — the inner
 child reports a diagnosable timeout instead of losing a race to an opaque outer kill.
 When `--timeout` is omitted the job spec carries no bound at all and the daemon applies
 its own default.

@@ -560,7 +560,53 @@ def _routed_errors_extra(verdict: Any) -> dict[str, Any]:
     return {'routed_errors': [dict(row) for row in verdict.errors]}
 
 
-def _daemon_result_to_direct(waited: dict[str, Any], command_str: str) -> DirectCommandResult:
+def _wire_applied_bound(waited: dict[str, Any]) -> tuple[int | None, str | None]:
+    """Read the applied bound and its source off a client ``wait`` payload.
+
+    The bound is what the daemon says the job was measured against; a daemon
+    that predates the field sends none. Anything that is not a positive integer
+    reads as "no bound stated", and a source is returned only beside a bound —
+    a source with no number names nothing.
+
+    Args:
+        waited: The client ``wait`` status-TOON.
+
+    Returns:
+        ``(bound_seconds, source)``, each ``None`` when the payload does not
+        state it.
+    """
+    bound = waited.get('timeout_used_seconds')
+    # bool is an int subclass — `True` would otherwise read as a 1-second bound.
+    if isinstance(bound, bool) or not isinstance(bound, int) or bound <= 0:
+        return None, None
+    source = waited.get('timeout_source')
+    return bound, str(source) if source else None
+
+
+def _applied_bound_extra(source: str | None, command_key: str | None) -> dict[str, Any]:
+    """Build the ``timeout_source`` / ``command_key`` extras for a non-finish result.
+
+    Each key is attached only when its value is known, so an unknown origin stays
+    absent from the result rather than being rendered as a value.
+
+    Args:
+        source: Where the applied bound came from, or ``None``.
+        command_key: The run-configuration key of the build, or ``None``.
+
+    Returns:
+        The extras dict (possibly empty).
+    """
+    extra: dict[str, Any] = {}
+    if source:
+        extra['timeout_source'] = source
+    if command_key:
+        extra['command_key'] = command_key
+    return extra
+
+
+def _daemon_result_to_direct(
+    waited: dict[str, Any], command_str: str, command_key: str | None = None
+) -> DirectCommandResult:
     """Map a client ``wait`` status-TOON to a ``DirectCommandResult``.
 
     The daemon's terminal job statuses (``success|failure|timeout|killed``) are
@@ -601,6 +647,21 @@ def _daemon_result_to_direct(waited: dict[str, Any], command_str: str) -> Direct
     ``binary_diverges``) is ``indeterminate``, NOT ``error``. Claiming a build
     failure because the two sides disagree about vocabulary would assert a
     verdict nobody produced.
+
+    **The bound on a ``timeout`` or ``killed`` result is the daemon's, never the
+    elapsed time.** ``timeout_used_seconds`` and ``timeout_source`` are taken
+    from the wait payload as the daemon stated them. A daemon that states no
+    bound (a version-skewed one) yields a result carrying NEITHER field — the
+    job's ``duration_seconds`` is a different measurement and is never
+    substituted, because a job that ran 300 s under an 1800 s bound would then
+    report a 300 s bound that never existed. ``command_key`` is the routing
+    client's own, since the daemon has no notion of it.
+
+    Args:
+        waited: The client ``wait`` status-TOON.
+        command_str: The command the daemon ran.
+        command_key: The run-configuration key of the build, attached to a
+            ``timeout`` or ``killed`` result when supplied.
     """
     job_status = str(waited.get('job_status', ''))
     log_file = str(waited.get('log_file', '') or '')
@@ -610,7 +671,9 @@ def _daemon_result_to_direct(waited: dict[str, Any], command_str: str) -> Direct
     if job_status == 'success':
         verdict = read_log_verdict(log_file)
         if verdict is not None and verdict.status != STATUS_SUCCESS:
-            return _result_for_log_verdict(verdict, duration=duration, log_file=log_file, command_str=command_str)
+            return _result_for_log_verdict(
+                verdict, duration=duration, log_file=log_file, command_str=command_str, command_key=command_key
+            )
         # CARRY the inner wrapper's own executed-test count. The renderer would
         # otherwise re-parse THIS log — which holds the wrapper's emitted TOON,
         # not the raw test-runner output — find no summary, and publish a zero
@@ -629,13 +692,21 @@ def _daemon_result_to_direct(waited: dict[str, Any], command_str: str) -> Direct
             routed_extra['routed_tests_run'] = verdict.tests_run
         return success_result(duration, log_file, command_str, **routed_extra)  # type: ignore[return-value]
     if job_status == WIRE_STATUS_TIMEOUT:
-        return timeout_result(duration, duration, log_file, command_str)  # type: ignore[return-value]
+        bound, source = _wire_applied_bound(waited)
+        return timeout_result(  # type: ignore[return-value]
+            bound, duration, log_file, command_str, **_applied_bound_extra(source, command_key)
+        )
     if job_status == WIRE_STATUS_KILLED:
+        bound, source = _wire_applied_bound(waited)
+        killed_extra = _applied_bound_extra(source, command_key)
+        if bound is not None:
+            killed_extra['timeout_used_seconds'] = bound
         result = killed_result(
             exit_code=exit_code or -1,
             duration_seconds=duration,
             log_file=log_file,
             command=command_str,
+            **killed_extra,
         )
         # The daemon's own wording wins when it supplied one; killed_result's
         # KILLED_MESSAGE is the fallback, so the two legs never diverge.
@@ -669,7 +740,9 @@ def _daemon_result_to_direct(waited: dict[str, Any], command_str: str) -> Direct
     )
 
 
-def _result_for_log_verdict(verdict: Any, *, duration: int, log_file: str, command_str: str) -> DirectCommandResult:
+def _result_for_log_verdict(
+    verdict: Any, *, duration: int, log_file: str, command_str: str, command_key: str | None = None
+) -> DirectCommandResult:
     """Render a disagreeing job-log verdict into its OWN result shape.
 
     The cross-check in :func:`_daemon_result_to_direct` fires when the daemon
@@ -682,25 +755,40 @@ def _result_for_log_verdict(verdict: Any, *, duration: int, log_file: str, comma
     A status outside the wrapper's vocabulary is ``indeterminate``: the log said
     something this client cannot interpret, which supports no verdict at all.
 
+    The bound on a ``timeout`` or ``killed`` result is the INNER wrapper's own —
+    the one the log states — with its source and command key. A log that states
+    no bound yields a result carrying neither ``timeout_used_seconds`` nor
+    ``timeout_source``; ``duration`` is never substituted for the bound.
+
     Args:
         verdict: The :class:`LogVerdict` read back from the job log.
         duration: Wall-clock duration reported by the daemon.
         log_file: The job log path.
         command_str: The command that was executed.
+        command_key: The routing client's run-configuration key, used when the
+            log states none of its own.
 
     Returns:
         The matching ``DirectCommandResult``.
     """
     status = str(verdict.status)
     exit_code = verdict.exit_code
+    bound = verdict.timeout_used_seconds
+    bound_extra = _applied_bound_extra(
+        verdict.timeout_source if bound is not None else None,
+        verdict.command_key or command_key,
+    )
     if status == 'timeout':
-        return timeout_result(duration, duration, log_file, command_str)  # type: ignore[return-value]
+        return timeout_result(bound, duration, log_file, command_str, **bound_extra)  # type: ignore[return-value]
     if status == RESULT_STATUS_KILLED:
+        if bound is not None:
+            bound_extra['timeout_used_seconds'] = bound
         return killed_result(  # type: ignore[return-value]
             exit_code=exit_code if exit_code is not None else -1,
             duration_seconds=duration,
             log_file=log_file,
             command=command_str,
+            **bound_extra,
         )
     if status == 'error':
         return error_result(  # type: ignore[return-value]
@@ -726,6 +814,8 @@ def _route_to_daemon(
     project_dir: str,
     plan_id: str | None,
     explicit_timeout: int | None = None,
+    *,
+    command_key: str | None = None,
 ) -> tuple[DirectCommandResult | None, str]:
     """Route a build to marshalld when registered AND ready; else signal fallback.
 
@@ -744,6 +834,11 @@ def _route_to_daemon(
     supervisory bound so that outer bound cannot fire before the child's. Not
     forwarding it is what made ``--timeout`` a no-op on this leg while the
     in-process leg honoured it.
+
+    ``command_key`` is the routing client's own run-configuration key for this
+    build. The daemon has no notion of it, so it is threaded here and attached to
+    a ``timeout`` or ``killed`` result on the way back, where it names the entry
+    a learned bound is stored under.
     """
     # Re-entrancy guard: a build already running INSIDE a marshalld job child
     # never routes back to the daemon (that would recurse without bound).
@@ -793,7 +888,7 @@ def _route_to_daemon(
             return None, str(waited.get('reason') or 'wait_degraded')
         if str(waited.get('job_status', '')) == 'running':
             continue
-        return _daemon_result_to_direct(waited, command_str), ''
+        return _daemon_result_to_direct(waited, command_str, command_key), ''
 
 
 def _emit_error_envelope(output_format: str, output: dict) -> int:
@@ -1158,7 +1253,7 @@ def create_execute_handlers(
             # in-process one below. Omitting it here left the daemon bounding
             # every routed build by its own default, so an explicit --timeout
             # was silently discarded whenever the daemon happened to be up.
-            routed, reason = _route_to_daemon(config, project_dir, plan_id, explicit_timeout)
+            routed, reason = _route_to_daemon(config, project_dir, plan_id, explicit_timeout, command_key=command_key)
             if routed is not None:
                 _record_resolution(execution_mode, 'routed', None, notation, plan_id)
                 _append_gate_build_row(

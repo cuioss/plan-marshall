@@ -7,6 +7,7 @@ import json
 import _build_format as _build_format_mod
 import _build_parse as _build_parse_mod
 import pytest
+from toon_parser import parse_toon
 
 CORE_FIELDS = _build_format_mod.CORE_FIELDS
 EXTRA_FIELDS = _build_format_mod.EXTRA_FIELDS
@@ -63,6 +64,51 @@ def test_structured_fields():
     assert 'errors' in STRUCTURED_FIELDS
     assert 'warnings' in STRUCTURED_FIELDS
     assert 'tests' in STRUCTURED_FIELDS
+
+
+#: The applied-bound triple a ``timeout`` or ``killed`` result carries: the bound
+#: the run was measured against, where that bound came from, and the key a
+#: learned bound is stored under. The key holds a colon on purpose — it is the
+#: shape every real command key has, and the one a naive serializer mangles.
+_APPLIED_BOUND_FIELDS = {
+    'timeout_used_seconds': 1800,
+    'timeout_source': 'daemon_default',
+    'command_key': 'python:module_tests',
+}
+
+_NON_FINISH_STATUSES = ['timeout', 'killed']
+
+
+def test_applied_bound_fields_are_whitelisted_for_toon():
+    """``EXTRA_FIELDS`` is a whitelist and omission is silent, so each is pinned."""
+    for field in _APPLIED_BOUND_FIELDS:
+        assert field in EXTRA_FIELDS, f'{field} is dropped from TOON output unless it is whitelisted'
+
+
+@pytest.mark.parametrize('status', _NON_FINISH_STATUSES)
+def test_applied_bound_fields_survive_toon_and_agree_with_json(status):
+    """The triple reaches a TOON consumer with the values the JSON path carries."""
+    result = _result(status=status, exit_code=-1, error=status, **_APPLIED_BOUND_FIELDS)
+
+    from_toon = parse_toon(format_toon(result))
+    from_json = json.loads(format_json(result))
+
+    for field, expected in _APPLIED_BOUND_FIELDS.items():
+        assert from_toon[field] == expected
+        assert from_json[field] == expected
+
+
+@pytest.mark.parametrize('status', _NON_FINISH_STATUSES)
+def test_absent_applied_bound_fields_are_rendered_by_neither_format(status):
+    """CONTROL: an unknown bound stays absent rather than rendering as a value."""
+    result = _result(status=status, exit_code=-1, error=status)
+
+    from_toon = parse_toon(format_toon(result))
+    from_json = json.loads(format_json(result))
+
+    for field in _APPLIED_BOUND_FIELDS:
+        assert field not in from_toon
+        assert field not in from_json
 
 
 #: ``(result, the fragments the rendering must contain)``. The Issue / summary

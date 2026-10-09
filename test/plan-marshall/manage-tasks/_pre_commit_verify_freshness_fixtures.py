@@ -50,6 +50,7 @@ ledger, and the live project footprint.
 from __future__ import annotations
 
 import json
+from argparse import Namespace
 from pathlib import Path
 
 import _freshness_crosscheck as _crosscheck_mod
@@ -226,6 +227,67 @@ def _stub_expected_notations(monkeypatch, notations: frozenset[str]) -> None:
     corroborate/refute comparison still executes against a pinned expectation.
     """
     monkeypatch.setattr(_crosscheck_mod, 'resolve_expected_notations', lambda _project_dir: (notations, None))
+
+
+# A source-bearing footprint: it requires the compile, lint and test analyses.
+_PY_FOOTPRINT = ['marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/example.py']
+
+
+_PY_FOOTPRINT_MODULE = 'plan-marshall'
+
+
+def _py_footprint_requirement(*, whole_tree: bool = True) -> _crosscheck_mod.RequiredCoverage:
+    """Derive what a ``.py`` footprint requires, through the real derivation.
+
+    ``whole_tree`` stands in for ``resolve_test_scope``'s divergence verdict:
+    True means only a whole-tree row is adequate, False means a row scoped to
+    :data:`_PY_FOOTPRINT_MODULE` is.
+    """
+    vocabulary, reason = _crosscheck_mod.load_analysis_vocabulary()
+    assert vocabulary is not None, reason
+    return _crosscheck_mod.required_coverage(_PY_FOOTPRINT, (_PY_FOOTPRINT_MODULE,), whole_tree, vocabulary)
+
+
+def _same_sha_row(
+    command_args: str,
+    *,
+    tests_run: int | None = None,
+    notation: str = 'plan-marshall:build-pyproject:pyproject_build',
+) -> dict:
+    """Construct a successful ``kind=build`` row at the current sha for ``command_args``.
+
+    Unlike :func:`_build_entry`, the row carries the executor argv the dispatch
+    boundary stamps, so the scope cross-check can read its canonical and scope.
+    ``tests_run`` adds the wrapper's measured test count; ``None`` leaves the
+    count unstated, which is not a measured zero.
+    """
+    entry = _build_entry(notation=notation)
+    entry['args'] = f'run --plan-id freshness-test --command-args {command_args}'
+    if tests_run is not None:
+        entry['outcome'] = {'status': 'success', 'tests_population': 'measured', 'tests_run': tests_run}
+    return entry
+
+
+def _run_gate_over_rows(
+    plan_context,
+    monkeypatch,
+    tmp_path: Path,
+    rows: list[dict],
+    *,
+    required: _crosscheck_mod.RequiredCoverage,
+    plan_id: str,
+) -> dict:
+    """Drive the gate over a multi-row ledger whose rows share the current sha.
+
+    Pins the sha, the ledger and what the change requires, so the verdict depends
+    only on ``rows`` and ``required``.
+    """
+    _write_status(plan_context.plan_dir_for(plan_id))
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    _stub_ledger_path(monkeypatch, _write_ledger(tmp_path, rows))
+    monkeypatch.setattr(_freshness_mod, '_resolve_required_coverage', lambda _plan_id: (required, None))
+    result: dict = cmd_pre_commit_verify_freshness(Namespace(plan_id=plan_id))
+    return result
 
 
 def _stub_verdict(monkeypatch, verdict: dict) -> None:

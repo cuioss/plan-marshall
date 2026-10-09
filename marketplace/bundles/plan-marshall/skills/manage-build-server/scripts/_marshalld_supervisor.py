@@ -60,6 +60,23 @@ outrank log content — and a job log carrying no parseable TOON status keeps
 today's exit-code verdict, so a non-wrapper command run through the daemon is
 unaffected.
 
+**A supervisor timeout stops the child's process group, not only the child.** The
+build child is the first link of a chain (executor, build wrapper, ``./pw``,
+``uv``, pytest, xdist workers), so signalling only that pid leaves the rest
+running and a re-run stacks a second suite on the first. On POSIX the child is
+therefore launched as the leader of its own session, and on expiry the supervisor
+signals the child's process GROUP: ``SIGTERM``, a grace period of
+:data:`_JOB_KILL_GRACE_SECONDS`, then ``SIGKILL``. The build wrapper runs its own
+build in a separate process group and forwards ``SIGTERM`` to it, so the grace
+period is what lets that forwarded stop complete before the group ``SIGKILL``
+lands; it must stay strictly greater than the wrapper's own forward grace.
+``timed_out`` remains the classification input, so a signal exit the supervisor
+caused is ``timeout``, never ``killed``.
+
+**Windows keeps the single-process kill.** Process groups and ``os.killpg`` are
+POSIX-only, so on Windows the child is launched without a session argument and a
+timeout calls ``proc.kill()`` on the child alone, exactly as before.
+
 The classification and env helpers are pure and unit-testable without spawning a
 process; :func:`run_job` drives a real ``asyncio`` subprocess and is exercised
 against trivial commands.
@@ -74,7 +91,9 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
+import signal
 import time
 from dataclasses import dataclass, field
 from typing import IO, Any
@@ -113,6 +132,19 @@ BASELINE_ENV_KEYS = (
 )
 
 _READ_CHUNK = 4096
+
+_IS_WINDOWS = os.name == 'nt'
+
+# Seconds between the group SIGTERM and the group SIGKILL on a supervisor
+# timeout. The build wrapper forwards SIGTERM to its own build group and then
+# waits its own forward grace before escalating, so this value MUST stay strictly
+# greater than that wrapper grace (``_build_execute._GROUP_KILL_GRACE_SECONDS``):
+# with an equal or smaller value the group SIGKILL here would end the wrapper
+# before its forwarded stop completed, leaving the build group running.
+_JOB_KILL_GRACE_SECONDS = 10
+
+# Seconds between two checks of whether the signalled job group is empty.
+_GROUP_POLL_SECONDS = 0.05
 
 
 def build_baseline_env(source: dict[str, str] | None = None) -> dict[str, str]:
@@ -197,7 +229,8 @@ def _terminal_payload(
     duration: int,
     log_file: str,
     command_str: str,
-    timeout_seconds: int,
+    applied_bound: int | None,
+    bound_source: str | None,
 ) -> dict[str, Any]:
     """Render a terminal status payload reusing the _build_result shape.
 
@@ -208,15 +241,30 @@ def _terminal_payload(
     a status this function does not recognise must not be rendered as a build
     that ran and failed, which is the fold-into-a-neighbour the whole
     non-finish separation exists to prevent.
+
+    ``applied_bound`` / ``bound_source`` name the bound the two NON-FINISH arms
+    report as ``timeout_used_seconds`` / ``timeout_source``. The caller decides
+    whose bound that is — the supervisor's own for its own timeout or kill, the
+    INNER wrapper's for a payload narrowed from the job log — and passes ``None``
+    when it does not know one. An unknown bound emits neither field; the elapsed
+    ``duration`` is never substituted for it. A source is emitted only beside a
+    bound, because a source with no number names nothing.
     """
+    bound: dict[str, Any] = {}
+    if applied_bound is not None:
+        bound['timeout_used_seconds'] = applied_bound
+        if bound_source:
+            bound['timeout_source'] = bound_source
     if status == 'timeout':
-        return status_from_result(timeout_result(timeout_seconds, duration, log_file, command_str))
+        source = {name: value for name, value in bound.items() if name == 'timeout_source'}
+        return status_from_result(timeout_result(applied_bound, duration, log_file, command_str, **source))
     if status == STATUS_KILLED:
         return status_payload(
             STATUS_KILLED,
             duration_seconds=duration,
             log_file=log_file,
             exit_code=returncode if returncode is not None else -1,
+            **bound,
         )
     if status == 'success':
         return status_from_result(success_result(duration, log_file, command_str))
@@ -276,23 +324,89 @@ def _wire_status_from_log_verdict(verdict_status: str) -> str:
         return wire_status_from_result(RESULT_STATUS_INDETERMINATE)
 
 
+def _signal_job_group(pgid: int, signum: int) -> None:
+    """Send ``signum`` to the job's process group; a vanished group is not an error.
+
+    Args:
+        pgid: The process-group id — the child's pid, because the child is
+            launched as the leader of its own session.
+        signum: The signal to deliver to every member of the group.
+    """
+    # ProcessLookupError: every member already exited, so nothing is left to stop.
+    # PermissionError: the remaining members are ones this process may not signal.
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.killpg(pgid, signum)
+
+
+def _job_group_is_empty(pgid: int) -> bool:
+    """Report whether the job's process group has no member this process can signal.
+
+    Args:
+        pgid: The process-group id — the child's pid.
+    """
+    try:
+        os.killpg(pgid, 0)
+    except (ProcessLookupError, PermissionError):
+        return True
+    return False
+
+
+async def _stop_job_tree(proc: asyncio.subprocess.Process) -> None:
+    """Stop a timed-out job's process group and reap the child.
+
+    On POSIX the child leads its own session, so its pid is the id of a process
+    group holding every descendant that did not move itself elsewhere. The group
+    receives ``SIGTERM``, then — once the group is empty or
+    :data:`_JOB_KILL_GRACE_SECONDS` has passed, whichever comes first —
+    ``SIGKILL``. On Windows only the child itself is killed.
+
+    Args:
+        proc: The timed-out build child.
+    """
+    if _IS_WINDOWS:
+        proc.kill()
+        await proc.wait()
+        return
+    _signal_job_group(proc.pid, signal.SIGTERM)
+    # Reaped concurrently: an exited but unreaped child keeps the group non-empty.
+    reaped = asyncio.ensure_future(proc.wait())
+    deadline = time.monotonic() + _JOB_KILL_GRACE_SECONDS
+    while time.monotonic() < deadline and not _job_group_is_empty(proc.pid):
+        await asyncio.sleep(_GROUP_POLL_SECONDS)
+    _signal_job_group(proc.pid, signal.SIGKILL)
+    await reaped
+
+
 async def run_job(
     command: list[str],
     cwd: str,
     *,
     timeout: int,
     log_file: str,
+    timeout_source: str | None = None,
     env: dict[str, str] | None = None,
     progress: JobProgress | None = None,
 ) -> dict[str, Any]:
     """Run one build child and return its terminal status payload.
 
+    A ``timeout`` or ``killed`` payload names the bound the job was measured
+    against as ``timeout_used_seconds`` / ``timeout_source``. For the
+    supervisor's OWN timeout or kill that is ``timeout`` with ``timeout_source``;
+    for a payload narrowed from the job log it is the INNER wrapper's own bound
+    and source as the log stated them, and neither field when the log stated no
+    bound.
+
     Args:
         command: The executor-form argv to run (already verified).
         cwd: The working directory (the submitted tree).
-        timeout: Wall-clock timeout in seconds; on expiry the child is killed
-            and the status is ``timeout``.
+        timeout: Wall-clock timeout in seconds; on expiry the child's whole
+            process group is stopped (the child alone on Windows) and the
+            status is ``timeout``.
         log_file: Path to stream combined stdout/stderr into.
+        timeout_source: Where ``timeout`` came from (``daemon_default`` or
+            ``explicit``, see ``marshalld.Daemon._resolve_job_timeout``).
+            ``None`` means the caller did not say, and the supervisor's own
+            non-finish payloads then carry the bound without a source.
         env: The child environment; defaults to :func:`build_baseline_env`.
         progress: Optional liveness tracker updated on each output chunk.
 
@@ -310,12 +424,15 @@ async def run_job(
     if progress is None:
         progress = JobProgress()
 
+    # On POSIX the child leads its own session, so a timeout can stop the
+    # child's process group (see _stop_job_tree).
     proc = await asyncio.create_subprocess_exec(
         *command,
         cwd=cwd,
         env=child_env,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        start_new_session=not _IS_WINDOWS,
     )
 
     timed_out = False
@@ -328,8 +445,7 @@ async def run_job(
             await asyncio.wait_for(proc.wait(), timeout=timeout)
         except TimeoutError:
             timed_out = True
-            proc.kill()
-            await proc.wait()
+            await _stop_job_tree(proc)
         finally:
             await asyncio.gather(*pumps, return_exceptions=True)
 
@@ -350,16 +466,27 @@ async def run_job(
     # those to `failure` here would re-collapse, at the daemon, exactly what the
     # wrapper just took care to distinguish: a routed timeout and a routed kill
     # would both reach every downstream gate as a red build.
+    #
+    # The bound travels with the verdict it belongs to. The supervisor's own
+    # timeout or kill was measured against the supervisor's bound; a narrowed
+    # non-finish was measured against the INNER wrapper's, which is the smaller
+    # one and the one that fired, so reporting the daemon's bound there would
+    # name a number that never applied.
+    applied_bound: int | None = timeout
+    bound_source = timeout_source
     if status == 'success':
         verdict = read_log_verdict(log_file)
         if verdict is not None and verdict.status != RESULT_STATUS_SUCCESS:
             status = _wire_status_from_log_verdict(verdict.status)
             returncode = verdict.exit_code
+            applied_bound = verdict.timeout_used_seconds
+            bound_source = verdict.timeout_source
     return _terminal_payload(
         status,
         returncode=returncode,
         duration=duration,
         log_file=log_file,
         command_str=command_str,
-        timeout_seconds=timeout,
+        applied_bound=applied_bound,
+        bound_source=bound_source,
     )

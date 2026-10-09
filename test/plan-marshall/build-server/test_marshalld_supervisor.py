@@ -13,10 +13,15 @@ log content.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import os
+import signal
 import sys
+import time
 from pathlib import Path
 
 import _build_server_protocol as protocol
+import pytest
 
 from conftest import load_script_module
 
@@ -41,9 +46,20 @@ _EMIT_SUCCESS_THEN_HANG = "print('status: success', flush=True); import time; ti
 _EMIT_SUCCESS_THEN_SUICIDE = (
     "import os, signal; print('status: success', flush=True); os.kill(os.getpid(), signal.SIGKILL)"
 )
+# The two NON-FINISHES again, this time as a wrapper that also states the bound
+# it applied and where that bound came from. 330 / learned are deliberately
+# unlike any bound the supervisor is handed in these tests, so a payload that
+# reported the supervisor's own bound instead is unmistakable.
+_INNER_BOUND_SECONDS = 330
+_INNER_BOUND_SOURCE = 'learned'
+_INNER_BOUND_LINES = (
+    f"print('timeout_used_seconds: {_INNER_BOUND_SECONDS}'); print('timeout_source: {_INNER_BOUND_SOURCE}')"
+)
+_EMIT_TIMEOUT_TOON_WITH_BOUND = f'{_EMIT_TIMEOUT_TOON}; {_INNER_BOUND_LINES}'
+_EMIT_KILLED_TOON_WITH_BOUND = f'{_EMIT_KILLED_TOON}; {_INNER_BOUND_LINES}'
 
 
-def _run(code: str, tmp_path: Path, *, timeout: int = 30) -> dict:
+def _run(code: str, tmp_path: Path, *, timeout: int = 30, timeout_source: str | None = None) -> dict:
     """Run one trivial child through run_job and return its terminal payload."""
     log_file = tmp_path / 'job.log'
     return asyncio.run(
@@ -51,6 +67,7 @@ def _run(code: str, tmp_path: Path, *, timeout: int = 30) -> dict:
             [sys.executable, '-c', code],
             str(tmp_path),
             timeout=timeout,
+            timeout_source=timeout_source,
             log_file=str(log_file),
         )
     )
@@ -171,6 +188,191 @@ def test_run_job_timeout(tmp_path):
             log_file=log_file,
         )
     )
+
+    assert payload['status'] == 'timeout'
+
+
+# The grandchild ignores SIGTERM, announces that the handler is installed, and
+# blocks. Its output is detached from the job's pipes so a survivor cannot hold
+# the supervisor's log pumps open — the assertion is about the PROCESS, and a
+# hang would hide it.
+_GRANDCHILD_CODE = (
+    'import signal, sys\n'
+    'signal.signal(signal.SIGTERM, signal.SIG_IGN)\n'
+    "open(sys.argv[1], 'w').close()\n"
+    'while True:\n'
+    '    signal.pause()\n'
+)
+
+# The job child spawns that grandchild, publishes its pid once the grandchild is
+# ready, and blocks until the supervisor's timeout stops it.
+_SPAWN_GRANDCHILD_THEN_BLOCK = (
+    'import os, signal, subprocess, sys, time\n'
+    'ready, pid_file = sys.argv[1], sys.argv[2]\n'
+    'grandchild = subprocess.Popen(\n'
+    '    [sys.executable, "-c", sys.argv[3], ready],\n'
+    '    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,\n'
+    ')\n'
+    'while not os.path.exists(ready):\n'
+    '    time.sleep(0.01)\n'
+    "with open(pid_file + '.tmp', 'w') as handle:\n"
+    '    handle.write(str(grandchild.pid))\n'
+    "os.replace(pid_file + '.tmp', pid_file)\n"
+    'signal.pause()\n'
+)
+
+_GRANDCHILD_EXIT_DEADLINE_SECONDS = 10
+
+
+def _pid_is_gone(pid: int, *, deadline_seconds: float) -> bool:
+    """Report whether ``pid`` stops existing before the deadline passes."""
+    deadline = time.monotonic() + deadline_seconds
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        # A zombie still answers signal 0: it has exited and only awaits reaping.
+        # Without procfs (macOS) the signal probe above is the whole check.
+        with contextlib.suppress(OSError), open(f'/proc/{pid}/stat') as handle:
+            if handle.read().rpartition(')')[2].split()[0] == 'Z':
+                return True
+        time.sleep(0.05)
+    return False
+
+
+# Module-level on purpose: pytest rejects a class-scoped fixture declared as an
+# instance method. The class scope still shares one run between both tests of
+# the class that requests it.
+@pytest.fixture(scope='class')
+def timed_out_run(tmp_path_factory):
+    """Run the grandchild-spawning job to its timeout once for the requesting class."""
+    tmp_path = tmp_path_factory.mktemp('tree-kill')
+    pid_file = tmp_path / 'grandchild.pid'
+    payload = asyncio.run(
+        supervisor.run_job(
+            [
+                sys.executable,
+                '-c',
+                _SPAWN_GRANDCHILD_THEN_BLOCK,
+                str(tmp_path / 'grandchild.ready'),
+                str(pid_file),
+                _GRANDCHILD_CODE,
+            ],
+            str(tmp_path),
+            timeout=3,
+            log_file=str(tmp_path / 'job.log'),
+        )
+    )
+    assert pid_file.exists(), 'the job child never published its grandchild pid before the timeout'
+    grandchild_pid = int(pid_file.read_text())
+    yield payload, grandchild_pid
+    # A grandchild that survived (the defect) must not outlive the test run.
+    with contextlib.suppress(ProcessLookupError):
+        os.kill(grandchild_pid, signal.SIGKILL)
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='process groups and os.killpg are POSIX-only')
+class TestRunJobTimeoutStopsTheWholeProcessTree:
+    """A supervisor timeout stops the job's process group, not only the job child.
+
+    The job child is the first link of a chain, so stopping its pid alone leaves
+    the rest of the build running. The grandchild here ignores SIGTERM, so it
+    also proves the group SIGKILL follows the group SIGTERM.
+    """
+
+    def test_grandchild_is_gone_after_the_timeout(self, timed_out_run):
+        _payload, grandchild_pid = timed_out_run
+
+        gone = _pid_is_gone(grandchild_pid, deadline_seconds=_GRANDCHILD_EXIT_DEADLINE_SECONDS)
+
+        assert gone, f'grandchild {grandchild_pid} outlived the supervisor timeout'
+
+    def test_group_kill_is_still_classified_as_timeout(self, timed_out_run):
+        payload, _grandchild_pid = timed_out_run
+
+        assert payload['status'] == 'timeout'
+
+
+# The job leader keeps the default SIGTERM disposition, so it exits at once. It
+# starts the wrapper in the same process group, with output detached from the
+# job's pipes.
+_LEADER_THEN_WRAPPER = (
+    'import signal, subprocess, sys\n'
+    'subprocess.Popen(\n'
+    '    [sys.executable, "-c", sys.argv[1], sys.argv[2], sys.argv[3]],\n'
+    '    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,\n'
+    ')\n'
+    'signal.pause()\n'
+)
+
+# The wrapper runs the build through the shipped ``_run_bounded``.
+_WRAPPER_RUNS_BUILD = (
+    'import subprocess, sys\n'
+    'from _build_execute import _run_bounded\n'
+    '_run_bounded(\n'
+    '    [sys.executable, "-c", sys.argv[2], sys.argv[1]],\n'
+    '    timeout_seconds=60, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,\n'
+    '    cwd=".", env=None, log_prefix="test", command_str="build",\n'
+    ')\n'
+)
+
+# The build ignores SIGTERM and publishes its own pid once the handler is set.
+_BUILD_IGNORES_SIGTERM = (
+    'import os, signal, sys\n'
+    'signal.signal(signal.SIGTERM, signal.SIG_IGN)\n'
+    "with open(sys.argv[1] + '.tmp', 'w') as handle:\n"
+    '    handle.write(str(os.getpid()))\n'
+    "os.replace(sys.argv[1] + '.tmp', sys.argv[1])\n"
+    'while True:\n'
+    '    signal.pause()\n'
+)
+
+
+@pytest.fixture
+def build_pid_after_timeout(tmp_path):
+    """Run the leader/wrapper/build chain to the supervisor timeout; yield the build's pid."""
+    pid_file = tmp_path / 'build.pid'
+    asyncio.run(
+        supervisor.run_job(
+            [sys.executable, '-c', _LEADER_THEN_WRAPPER, _WRAPPER_RUNS_BUILD, str(pid_file), _BUILD_IGNORES_SIGTERM],
+            str(tmp_path),
+            timeout=3,
+            log_file=str(tmp_path / 'job.log'),
+            env={
+                **supervisor.build_baseline_env(),
+                'PYTHONPATH': os.pathsep.join(sys.path),
+                'PLAN_BASE_DIR': str(tmp_path / 'plan'),
+            },
+        )
+    )
+    assert pid_file.exists(), 'the build never published its pid before the timeout'
+    build_pid = int(pid_file.read_text())
+    yield build_pid
+    with contextlib.suppress(ProcessLookupError):
+        os.kill(build_pid, signal.SIGKILL)
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='process groups and os.killpg are POSIX-only')
+def test_timeout_lets_the_wrapper_stop_a_build_that_ignores_sigterm(build_pid_after_timeout):
+    gone = _pid_is_gone(build_pid_after_timeout, deadline_seconds=_GRANDCHILD_EXIT_DEADLINE_SECONDS)
+
+    assert gone, f'build {build_pid_after_timeout} outlived the supervisor timeout'
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='process groups and os.killpg are POSIX-only')
+def test_timeout_with_an_unsignallable_group_is_still_classified_as_timeout(tmp_path, monkeypatch):
+    """A group this process may not probe or kill leaves the job a timeout."""
+    real_killpg = os.killpg
+
+    def _killpg(pgid: int, signum: int) -> None:
+        if signum in (0, signal.SIGKILL):
+            raise PermissionError
+        real_killpg(pgid, signum)
+
+    monkeypatch.setattr(os, 'killpg', _killpg)
+
+    payload = _run('import signal; signal.pause()', tmp_path, timeout=1)
 
     assert payload['status'] == 'timeout'
 
@@ -353,3 +555,88 @@ class TestRunJobNarrowingPreservesTheNonFinish:
 
         assert payload['status'] == 'failure'
         assert payload['exit_code'] == 3
+
+
+#: The supervisory bound and origin the daemon hands ``run_job`` in the cases
+#: below. Neither coincides with the inner wrapper's 330 / ``learned``.
+_DAEMON_BOUND_SOURCE = 'daemon_default'
+
+
+class TestRunJobNamesTheBoundItMeasuredAgainst:
+    """A ``timeout`` or ``killed`` payload names the bound that actually applied.
+
+    Two bounds exist on a routed build — the supervisor's own and the inner
+    wrapper's — and a non-finish was measured against exactly one of them. The
+    supervisor's own timeout and an external kill of the child ran under the
+    supervisor's bound; a non-finish narrowed from the job log ran under the
+    inner wrapper's, which is the smaller one and the one that fired. Every case
+    drives the REAL :func:`run_job` against a real child process.
+    """
+
+    def test_own_timeout_carries_the_supervisors_bound_and_its_source(self, tmp_path):
+        payload = _run(_EMIT_SUCCESS_THEN_HANG, tmp_path, timeout=1, timeout_source=_DAEMON_BOUND_SOURCE)
+
+        assert payload['status'] == 'timeout'
+        assert payload['timeout_used_seconds'] == 1
+        assert payload['timeout_source'] == _DAEMON_BOUND_SOURCE
+
+    def test_own_timeout_without_a_stated_source_carries_the_bound_alone(self, tmp_path):
+        """A caller that names no origin gets none invented for it."""
+        payload = _run(_EMIT_SUCCESS_THEN_HANG, tmp_path, timeout=1)
+
+        assert payload['status'] == 'timeout'
+        assert payload['timeout_used_seconds'] == 1
+        assert 'timeout_source' not in payload
+
+    def test_external_kill_carries_the_bound_that_did_not_fire(self, tmp_path):
+        """The kill was not the bound firing, but the bound is still what applied."""
+        payload = _run(_EMIT_SUCCESS_THEN_SUICIDE, tmp_path, timeout=30, timeout_source=_DAEMON_BOUND_SOURCE)
+
+        assert payload['status'] == 'killed'
+        assert payload['timeout_used_seconds'] == 30
+        assert payload['timeout_source'] == _DAEMON_BOUND_SOURCE
+
+    @pytest.mark.parametrize(
+        ('code', 'expected_status'),
+        [(_EMIT_TIMEOUT_TOON_WITH_BOUND, 'timeout'), (_EMIT_KILLED_TOON_WITH_BOUND, 'killed')],
+        ids=['narrowed-timeout', 'narrowed-kill'],
+    )
+    def test_narrowed_non_finish_carries_the_inner_wrappers_bound(self, tmp_path, code, expected_status):
+        """A payload narrowed from the job log reports the INNER bound and source.
+
+        The supervisor was handed 30 s / ``daemon_default``; the wrapper it ran
+        reported a non-finish under 330 s / ``learned``. The payload names the
+        wrapper's pair, because the supervisor's bound never came into it.
+        """
+        payload = _run(code, tmp_path, timeout=30, timeout_source=_DAEMON_BOUND_SOURCE)
+
+        assert payload['status'] == expected_status
+        assert payload['timeout_used_seconds'] == _INNER_BOUND_SECONDS
+        assert payload['timeout_source'] == _INNER_BOUND_SOURCE
+
+    @pytest.mark.parametrize(
+        ('code', 'expected_status'),
+        [(_EMIT_TIMEOUT_TOON, 'timeout'), (_EMIT_KILLED_TOON, 'killed')],
+        ids=['narrowed-timeout', 'narrowed-kill'],
+    )
+    def test_narrowed_non_finish_without_a_logged_bound_carries_none(self, tmp_path, code, expected_status):
+        """A log that states no bound yields none — not the supervisor's own.
+
+        Reporting the supervisor's 30 s here would name a bound that did not
+        apply to the run the wrapper described.
+        """
+        payload = _run(code, tmp_path, timeout=30, timeout_source=_DAEMON_BOUND_SOURCE)
+
+        assert payload['status'] == expected_status
+        assert 'timeout_used_seconds' not in payload
+        assert 'timeout_source' not in payload
+
+    # --- matched control ---------------------------------------------------
+
+    @pytest.mark.parametrize('code', [_EMIT_SUCCESS_TOON, _EMIT_ERROR_TOON], ids=['success', 'failure'])
+    def test_control_a_finished_job_carries_no_bound(self, tmp_path, code):
+        """CONTROL: the bound is a non-finish field, not stamped on every payload."""
+        payload = _run(code, tmp_path, timeout=30, timeout_source=_DAEMON_BOUND_SOURCE)
+
+        assert 'timeout_used_seconds' not in payload
+        assert 'timeout_source' not in payload

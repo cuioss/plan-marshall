@@ -187,23 +187,103 @@ def _count_entries_within(root: Path, headroom: int) -> int | None:
     return entries
 
 
+def _windows_owner_has_exited(pid: int) -> bool:
+    """Report whether Windows positively says process ``pid`` is gone.
+
+    Reads the process status through a query-only handle and sends nothing to
+    the process. ``True`` only when no process has that pid or its exit code is
+    recorded; access denied, any other failure and a non-Windows host answer
+    ``False``.
+    """
+    if sys.platform != 'win32':
+        return False
+    import ctypes
+    from ctypes import wintypes
+
+    if pid > 0xFFFFFFFF:
+        return False
+    process_query_limited_information = 0x1000
+    error_invalid_parameter = 87
+    still_active = 259
+    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, wintypes.LPDWORD]
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    handle = kernel32.OpenProcess(process_query_limited_information, False, pid)
+    if not handle:
+        return ctypes.get_last_error() == error_invalid_parameter
+    try:
+        exit_code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+            return False
+        return exit_code.value != still_active
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def _session_owner_is_alive(session: Path) -> bool:
+    """Report whether the build process that owns ``session`` may still be running.
+
+    A per-session dir is named ``{pid}-{uuid4hex}`` after the ``build.py``
+    process that created it (see :func:`_prepare_session_basetemp`), so the
+    owner is probed with signal 0, or on Windows with
+    :func:`_windows_owner_has_exited`. Only a positive "no such process" answers
+    ``False``. Everything else answers ``True``: a name that does not parse, a
+    probe that raises any other error (``PermissionError`` means a process with
+    that pid exists under another user), and a pid that was reused by an
+    unrelated process. A wrong ``True`` costs one extra retained directory; a
+    wrong ``False`` would delete a running suite's scratch.
+
+    Args:
+        session: A per-session directory under ``PYTEST_BASETEMP_ROOT``.
+
+    Returns:
+        ``False`` only when the owning process is positively gone.
+    """
+    pid_text, separator, _ = session.name.partition('-')
+    if not separator or not (pid_text.isascii() and pid_text.isdigit()):
+        return True
+    pid = int(pid_text)
+    # pid 0 addresses the caller's own process group, not a single owner.
+    if pid <= 0:
+        return True
+    try:
+        # On Windows os.kill terminates the target, so it is never called there.
+        if os.name == 'nt':
+            return not _windows_owner_has_exited(pid)
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except (OSError, OverflowError):
+        return True
+    return True
+
+
 def _prune_basetemp_roots(
     keep: int = PYTEST_BASETEMP_KEEP,
     max_entries: int = PYTEST_BASETEMP_MAX_ENTRIES,
 ) -> None:
-    """Retire per-session basetemp dirs until the root satisfies BOTH bounds.
+    """Retire dead-owner per-session basetemp dirs until they satisfy BOTH bounds.
 
-    On return the root holds at most ``keep`` per-session dirs AND at most
-    ``max_entries`` filesystem entries across them — with ONE deliberate
-    exception: the newest dir is never removed even when it cannot be measured,
-    so a root whose newest session alone exceeds ``max_entries`` is returned
-    over budget rather than emptied. Retention walks newest-first and stops at
-    the first dir that would breach either bound, so removal is oldest-first and
-    the newest session's scratch is the last thing given up. A dir whose size
-    could not be established exactly is retired rather than retained — admitting
-    an unmeasured dir as free is how a count-only bound came to permit a 1.0 GB
-    root in the first place. The newest dir is the single exception, and only
-    when it is the unmeasurable one.
+    **A dir whose owning process is alive is never removed**, whatever its age,
+    its size or its position in the keep-count, and it does not count against
+    either bound (see :func:`_session_owner_is_alive`; anything short of a
+    positive "no such process" resolves to keep). Only the dirs of positively
+    dead owners are counted and are candidates for removal.
+
+    On return the root holds at most ``keep`` dead-owner per-session dirs AND at
+    most ``max_entries`` filesystem entries across them — with ONE deliberate
+    exception: the newest of them is never removed even when it cannot be
+    measured, so a root whose newest dead-owner session alone exceeds
+    ``max_entries`` is returned over budget rather than emptied. Retention walks
+    newest-first and stops at the first dir that would breach either bound, so
+    removal is oldest-first and the newest session's scratch is the last thing
+    given up. A dir whose size could not be established exactly is retired
+    rather than retained — admitting an unmeasured dir as free is how a
+    count-only bound came to permit a 1.0 GB root in the first place. The newest
+    dead-owner dir is the single exception, and only when it is the unmeasurable
+    one.
 
     Best-effort: a prune failure (a dir vanishing mid-scan, a permission error,
     an unreadable subtree) never aborts the build — retention is a housekeeping
@@ -228,20 +308,24 @@ def _prune_basetemp_roots(
     except OSError:
         return
 
+    # A live owner's dir is out of the prune entirely: it is neither counted
+    # against a bound nor ever handed to the removal loop below.
+    removable = [session for session in session_dirs if not _session_owner_is_alive(session)]
+
     retained = 0
     retained_entries = 0
-    for index, session in enumerate(session_dirs[:keep]):
+    for index, session in enumerate(removable[:keep]):
         counted = _count_entries_within(session, max_entries - retained_entries)
         if counted is None:
             if index == 0:
-                # The NEWEST dir is never a removal candidate. It is either the
-                # session running right now — a concurrent worktree, or the outer
-                # suite whose own workers are writing into it — or the one this
-                # call is about to supersede. A live session that outgrew the
-                # budget is exactly the case that measures as None, and breaking
-                # here with retained=0 hands the WHOLE list to the removal loop
-                # and rmtree's the live root out from under the run using it. The
-                # observed symptom is a whole-suite FileNotFoundError cascade on
+                # The NEWEST dead-owner dir is never a removal candidate either.
+                # The liveness probe above protects a running session it can
+                # see; this exemption is the older, position-based backstop for
+                # one it cannot. A session that outgrew the budget is exactly
+                # the case that measures as None, and breaking here with
+                # retained=0 hands the WHOLE list to the removal loop. The
+                # observed symptom of removing a live root is a whole-suite
+                # FileNotFoundError cascade on
                 # .plan/temp/pytest-basetemp/<session>/popen-gwN, attributed to
                 # whichever tests happened to run next. Bounding the newest dir is
                 # the dimension that caused the outage, so it is given up instead
@@ -251,7 +335,7 @@ def _prune_basetemp_roots(
         retained_entries += counted
         retained += 1
 
-    for stale in session_dirs[retained:]:
+    for stale in removable[retained:]:
         try:
             shutil.rmtree(stale, ignore_errors=True)
         except OSError:
@@ -272,10 +356,13 @@ def _prepare_session_basetemp() -> Path:
     ``OSError`` into a session-killing exception on an otherwise-green suite.
 
     The root is created if missing and pruned before the new path is returned,
-    so the RETAINED history is bounded on both dimensions
+    so the RETAINED history of finished sessions is bounded on both dimensions
     :func:`_prune_basetemp_roots` enforces: at most ``PYTEST_BASETEMP_KEEP``
-    per-session dirs, holding at most ``PYTEST_BASETEMP_MAX_ENTRIES`` entries
-    between them. The session about to run is NOT bounded by this function — it
+    dead-owner per-session dirs, holding at most ``PYTEST_BASETEMP_MAX_ENTRIES``
+    entries between them. The pid half of the session key is what that prune
+    reads to tell a finished session from a running one: a dir whose owning
+    process is still alive is never removed and counts against neither bound.
+    The session about to run is NOT bounded by this function — it
     is created after the prune and grows as the suite writes to it. Bringing it
     back inside the budget is the next invocation's prune. Only the pytest-owned
     root is touched; the ``SCRATCH_ROOT`` subtree is never listed or pruned.

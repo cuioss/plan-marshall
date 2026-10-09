@@ -44,10 +44,45 @@ PREDICATE, not in the data.
 
 The two dimensions answer different questions and can disagree in both
 directions: an unattributable row may name a whole-tree ``verify``, and a
-perfectly attributable row may be a single-directory test run. A row may be cited
-as the gate's evidence only when it satisfies BOTH, which is why
+perfectly attributable row may be a single-directory test run. That is why
 :func:`cross_check_candidates` selects across them jointly rather than letting
 either pick a row the other would refuse.
+
+Joint selection — one row, or a union of rows at the same sha
+=============================================================
+
+The evidence a ``fresh`` verdict rests on is the ``contributing`` list: the
+positions of the rows that together cover the change. It is built in two steps.
+
+1. **One row.** When a single row is admissible on attribution AND covers the
+   change alone, that row is the whole evidence — the first such row in ledger
+   file order, a one-element list.
+2. **A union.** When no single row does, the admissible rows are combined. The
+   change is covered when, for EVERY required analysis, at least one admissible
+   row performs that analysis at a scope adequate for the change: whole-tree
+   when the change's blast radius is whole-tree, otherwise a scope containing
+   the change's module set. A gate that runs ``quality-gate`` and
+   ``module-tests`` as separate whole-tree builds covers a ``.py`` footprint
+   exactly as one ``verify`` does, and refusing it would demand a redundant
+   build that examines nothing new.
+
+⛔ **Scope is judged per analysis and never pooled.** A module-scoped lint run
+and a whole-tree test run do not add up to whole-tree lint: each analysis needs
+its OWN row at an adequate scope, and two narrow rows never combine into a wide
+one. The rules that keep a row from contributing what it did not do are the same
+ones that refuse it alone — a row that measured zero tests contributes no test
+coverage, and a row whose ``args`` cannot be read or whose canonical is outside
+the vocabulary contributes nothing at all.
+
+The contributing set is deterministic: per required analysis, the first adequate
+admissible row in ledger file order. Only rows the attribution dimension admits
+may contribute; where attribution could not judge, every row stays admissible.
+
+When the rows still fall short, the refusal names WHICH required analyses no
+admissible row performed at an adequate scope (``missing_analyses``). The
+per-row tokens alone do not say that once several rows each cover part of the
+change, and it is the fact that names the remedy: run the missing analysis,
+rather than repeat one already covered.
 
 Three-valued verdict, never collapsed
 =====================================
@@ -225,12 +260,13 @@ REASON_NOTATION_UNRELATED = 'notation_unrelated'
 # Dimension 2 — coverage (blast radius)
 # ---------------------------------------------------------------------------
 
-#: At least one candidate row records a build whose canonical and scope cover the
-#: change's blast radius. The gate may cite that row.
+#: The candidate rows cover the change's blast radius — one row alone, or several
+#: rows that between them perform every required analysis at an adequate scope.
+#: The gate may cite the rows the verdict rests on.
 COVERED = 'covered'
-#: Every candidate row that could be read records a build PROVABLY narrower than
-#: the change — a weaker canonical, a narrower scope, or a measured zero tests.
-#: This is positive knowledge, so it fails closed.
+#: The readable candidate rows PROVABLY fall short of the change, alone and
+#: combined — at least one required analysis was performed by no row at an
+#: adequate scope. This is positive knowledge, so it fails closed.
 NARROW = 'narrow'
 #: The coverage comparison could not be performed on either side. Nothing is
 #: known, so — like :data:`UNVERIFIED` on the attribution dimension — it passes
@@ -251,13 +287,11 @@ REASON_VOCABULARY_UNIMPORTABLE = 'analysis_vocabulary_unimportable'
 #: vocabulary. The rows were read and said nothing usable — distinct from a row
 #: that said something and was refuted.
 REASON_SCOPE_UNREADABLE = 'build_scope_unreadable'
-#: ``stale`` reason (and ``scope_cross_check_reason``) when every readable row
-#: records a build narrower than the change. THE refusal this dimension exists to
-#: make.
+#: ``stale`` reason (and ``scope_cross_check_reason``). THE refusal this
+#: dimension exists to make.
 REASON_SCOPE_NARROW = 'build_scope_narrow'
-#: ``stale`` reason for the DISJOINT case: neither dimension refused, yet no
-#: single row satisfies both — every attributable row was narrow and every
-#: covering row was unattributable. Named apart from both dimensions' own reasons
+#: ``stale`` reason for the DISJOINT case, in which neither dimension refused.
+#: Named apart from both dimensions' own reasons
 #: because it is a property of the candidate list rather than a verdict either
 #: dimension reached, and a reader told ``build_scope_narrow`` here would go
 #: looking for a refusal the coverage check never made.
@@ -309,8 +343,7 @@ class RequiredCoverage:
     """What a build must have done to be evidence for THIS change.
 
     Attributes:
-        analyses: The analysis kinds the change can break, so a citable row's
-            canonical must perform at least these.
+        analyses: The analysis kinds the change can break.
         whole_tree: True when only a whole-tree run covers the change — the
             footprint spans several modules, touches cross-module infrastructure,
             or contains a path no registered module owns.
@@ -509,9 +542,8 @@ def _row_refusal(
     """Return why ``entry`` does not cover ``required``, or ``None`` when it does.
 
     Evaluated in order of how much the row said: a row nobody could parse, then a
-    canonical outside the vocabulary, then the two substantive refusals. The first
-    two are inabilities and the caller reports them as :data:`UNDETERMINED`; the
-    rest are positive refutations and fail the gate closed.
+    canonical outside the vocabulary, then the substantive refusals. The first
+    two are inabilities.
 
     Args:
         entry: A ``kind=build`` ledger row.
@@ -540,9 +572,121 @@ def _row_refusal(
 
 
 #: The per-row refusals that are INABILITIES rather than refutations. A candidate
-#: list in which every row took one of these routes is :data:`UNDETERMINED`; one
-#: in which any row took a different route is :data:`NARROW`.
+#: list in which every row took one of these routes is :data:`UNDETERMINED`.
 _INABILITY_REFUSALS = frozenset({ROW_ARGS_UNREADABLE, ROW_CANONICAL_UNKNOWN})
+
+
+def _scope_adequate(scope: RowScope, required: RequiredCoverage) -> bool:
+    """Return True when ``scope`` is wide enough for the change.
+
+    A row with no scope tokens ran whole-tree and is adequate for any change. A
+    scoped row is adequate only for a change that is not whole-tree and whose
+    module set it contains.
+    """
+    if not scope.scope_tokens:
+        return True
+    if required.whole_tree:
+        return False
+    return required.modules <= set(scope.scope_tokens)
+
+
+def row_contribution(
+    entry: dict[str, Any],
+    required: RequiredCoverage,
+    vocabulary: AnalysisVocabulary,
+) -> frozenset[str]:
+    """Return the required analyses ``entry`` performed at an adequate scope.
+
+    This is what a row may lend to a union of rows. Scope is judged for the row
+    as a whole, so a row too narrow for the change contributes nothing — it never
+    lends its analyses to a wider row, and never borrows a wider row's scope.
+
+    A row that measured zero tests contributes no test coverage, though it still
+    contributes whatever else it performed. A row whose ``args`` cannot be read,
+    or whose canonical is outside the vocabulary, contributes nothing.
+
+    Args:
+        entry: A ``kind=build`` ledger row.
+        required: What the change needs covered.
+        vocabulary: The canonical→analyses map.
+
+    Returns:
+        The subset of ``required.analyses`` this row covers, possibly empty.
+    """
+    scope = parse_row_scope(entry)
+    if scope is None:
+        return frozenset()
+    performed = vocabulary.by_canonical.get(scope.canonical)
+    if performed is None or not _scope_adequate(scope, required):
+        return frozenset()
+    contributed = required.analyses & performed
+    if _measured_zero_tests(entry):
+        contributed -= {vocabulary.test}
+    return contributed
+
+
+def union_contributors(
+    candidates: list[dict[str, Any]],
+    required: RequiredCoverage,
+    vocabulary: AnalysisVocabulary,
+    admissible: list[int],
+) -> dict[int, list[str]] | None:
+    """Combine the admissible rows into one covering set, or return ``None``.
+
+    For each required analysis the FIRST admissible row, in the order
+    ``admissible`` lists them, that performs it at an adequate scope is credited
+    with it. The change is covered only when every required analysis found such a
+    row.
+
+    Args:
+        candidates: Matching ``kind=build`` rows in ledger file order.
+        required: What the change needs covered.
+        vocabulary: The canonical→analyses map.
+        admissible: The positions in ``candidates`` that may contribute, in
+            ledger file order.
+
+    Returns:
+        Position → the sorted analyses that row is credited with, ordered by
+        position, or ``None`` when some required analysis has no adequate row. An
+        empty requirement yields an empty mapping.
+    """
+    contributions = {position: row_contribution(candidates[position], required, vocabulary) for position in admissible}
+    credited: dict[int, list[str]] = {}
+    for analysis in sorted(required.analyses):
+        owner = next((position for position in admissible if analysis in contributions[position]), None)
+        if owner is None:
+            return None
+        credited.setdefault(owner, []).append(analysis)
+    return {position: credited[position] for position in sorted(credited)}
+
+
+def uncovered_analyses(
+    candidates: list[dict[str, Any]],
+    required: RequiredCoverage,
+    vocabulary: AnalysisVocabulary,
+    admissible: list[int],
+) -> list[str]:
+    """Name the required analyses no admissible row performed at an adequate scope.
+
+    This is what a refusal owes its reader. Per-row tokens say why each row falls
+    short alone; with rows that each perform part of what the change requires,
+    they do not say which analysis is still missing — and that is the one fact
+    that names the remedy.
+
+    Args:
+        candidates: Matching ``kind=build`` rows in ledger file order.
+        required: What the change needs covered.
+        vocabulary: The canonical→analyses map.
+        admissible: The positions in ``candidates`` that may contribute.
+
+    Returns:
+        The sorted uncovered analyses. Empty when the admissible rows cover the
+        change between them.
+    """
+    covered: set[str] = set()
+    for position in admissible:
+        covered |= row_contribution(candidates[position], required, vocabulary)
+    return sorted(required.analyses - covered)
 
 
 def scope_check_candidates(
@@ -568,16 +712,27 @@ def scope_check_candidates(
     Returns:
         A dict carrying ``verdict`` (:data:`COVERED` / :data:`NARROW` /
         :data:`UNDETERMINED`), ``covered_positions`` (the positions in
-        ``candidates`` of every covering row, in file order), ``reason``
-        (``None`` on :data:`COVERED`, otherwise the naming constant) and
-        ``row_scopes`` — one ``'{canonical} {scope}: {verdict}'`` line per
-        candidate, so the decision record shows WHAT each row recorded and why it
-        was or was not citable rather than only the aggregate.
+        ``candidates`` of every row that covers the change ALONE, in file
+        order), ``union_positions`` (the positions the verdict rests on when no
+        single row covers but the rows combined do — empty otherwise),
+        ``reason`` (``None`` on :data:`COVERED`, otherwise the naming constant)
+        and ``row_scopes`` — one ``'{canonical} {scope}: {verdict}'`` line per
+        candidate, so the decision record shows WHAT each row recorded and
+        whether it covers the change alone rather than only the aggregate. A row
+        that contributes to a union still carries its own per-row refusal token
+        there: the token says the row does not cover the change by itself, which
+        stays true. ``missing_analyses`` is the sorted list of required analyses
+        no row performed at an adequate scope. It is populated only on
+        :data:`NARROW`: it is empty on :data:`COVERED`, and empty on
+        :data:`UNDETERMINED`, where nothing could be judged and so nothing is
+        known to be missing.
     """
     if vocabulary is None:
         return {
             'verdict': UNDETERMINED,
             'covered_positions': [],
+            'union_positions': [],
+            'missing_analyses': [],
             'reason': REASON_VOCABULARY_UNIMPORTABLE,
             'row_scopes': [],
         }
@@ -585,6 +740,8 @@ def scope_check_candidates(
         return {
             'verdict': UNDETERMINED,
             'covered_positions': [],
+            'union_positions': [],
+            'missing_analyses': [],
             'reason': unavailable_reason or REASON_REQUIRED_COVERAGE_UNKNOWN,
             'row_scopes': [],
         }
@@ -606,24 +763,48 @@ def scope_check_candidates(
         return {
             'verdict': COVERED,
             'covered_positions': covered,
+            'union_positions': [],
+            'missing_analyses': [],
             'reason': None,
             'row_scopes': row_scopes,
         }
-    # Every row refused. The verdict turns on WHICH refusals occurred: a list in
-    # which nothing could be read is an absence of knowledge, while a single
-    # substantive refutation means the ledger positively shows a build narrower
-    # than the change — and one such row is enough to fail closed, exactly as one
-    # corroborating row is enough to pass on the attribution dimension.
+    # No row covers the change alone. Several rows at the same sha may still
+    # cover it between them, each analysis judged at its own row's scope.
+    # An empty mapping is an empty requirement no row could be read for — nothing
+    # was established, so it falls through to the refusal classification below.
+    every_row = list(range(len(candidates)))
+    union = union_contributors(candidates, required, vocabulary, every_row)
+    if union:
+        return {
+            'verdict': COVERED,
+            'covered_positions': [],
+            'union_positions': list(union),
+            'missing_analyses': [],
+            'reason': None,
+            'row_scopes': row_scopes,
+        }
+    # The rows fall short alone and combined. The verdict turns on WHICH refusals
+    # occurred: a list in which nothing could be read is an absence of knowledge,
+    # while a single substantive refutation means the ledger positively shows a
+    # build narrower than the change — and one such row is enough to fail closed,
+    # exactly as one corroborating row is enough to pass on the attribution
+    # dimension.
     if not refusals or all(refusal in _INABILITY_REFUSALS for refusal in refusals):
+        # Nothing could be read, so nothing is known to be missing either: naming
+        # an analysis here would assert a gap no row was shown to have.
         return {
             'verdict': UNDETERMINED,
             'covered_positions': [],
+            'union_positions': [],
+            'missing_analyses': [],
             'reason': REASON_SCOPE_UNREADABLE,
             'row_scopes': row_scopes,
         }
     return {
         'verdict': NARROW,
         'covered_positions': [],
+        'union_positions': [],
+        'missing_analyses': uncovered_analyses(candidates, required, vocabulary, every_row),
         'reason': REASON_SCOPE_NARROW,
         'row_scopes': row_scopes,
     }
@@ -697,6 +878,48 @@ def _candidate_notation(entry: dict[str, Any]) -> str:
     return notation if isinstance(notation, str) else ''
 
 
+def _joint_contributors(
+    candidates: list[dict[str, Any]],
+    attributable: list[int],
+    scope: dict[str, Any],
+    required: RequiredCoverage | None,
+    vocabulary: AnalysisVocabulary | None,
+) -> dict[int, list[str]]:
+    """Return the rows the evidence rests on, each with its credited analyses.
+
+    Called only when neither dimension refused. Three routes, in order:
+
+    * The coverage dimension could not judge. It has shown nothing about any
+      row, and treating "could not judge" as "judged unfit" would fail closed on
+      the absence of evidence, so the first attributable row is cited with no
+      analysis credited to it.
+    * An attributable row covers the change alone. The first such row in file
+      order is the whole evidence.
+    * Otherwise the attributable rows are combined — see
+      :func:`union_contributors`.
+
+    Args:
+        candidates: Matching ``kind=build`` rows in ledger file order.
+        attributable: The positions attribution admits, in file order.
+        scope: The coverage dimension's own verdict dict.
+        required: What the change needs covered, or ``None``.
+        vocabulary: The canonical→analyses map, or ``None``.
+
+    Returns:
+        Position → sorted credited analyses, ordered by position. Empty when no
+        attributable rows cover the change.
+    """
+    if not attributable:
+        return {}
+    if scope['verdict'] == UNDETERMINED or required is None or vocabulary is None:
+        return {attributable[0]: []}
+    covering_alone = set(scope['covered_positions'])
+    alone = next((position for position in attributable if position in covering_alone), None)
+    if alone is not None:
+        return {alone: sorted(required.analyses)}
+    return union_contributors(candidates, required, vocabulary, attributable) or {}
+
+
 def cross_check_candidates(
     candidates: list[dict[str, Any]],
     project_dir: str,
@@ -716,19 +939,22 @@ def cross_check_candidates(
     that is load-bearing for precision in the passing direction: a project that
     legitimately builds with several notations can have an unrelated row sitting
     ahead of a related one in file order, and returning on the first match would
-    refuse a plan whose real evidence is two lines further down. One row that
-    satisfies both dimensions is enough; only a list in which NONE does is a
-    refusal.
+    refuse a plan whose real evidence is two lines further down.
 
-    ⛔ **Selection is JOINT, not per-dimension.** A row is citable only when it is
-    admissible on attribution AND on coverage, so the two dimensions cannot each
+    ⛔ **Selection is JOINT, not per-dimension.** The two dimensions cannot each
     pick a row the other would refuse — which is exactly how a 573-test
     directory run came to be cited as ``corroborated`` for a whole-tree change.
     An admissible row is one its dimension either endorsed or could not judge;
     where a dimension returned its refusal verdict (:data:`REFUTED` /
-    :data:`NARROW`) no row is citable at all. Among the jointly-admissible rows
-    the first in file order is chosen, matching the pre-cross-check behaviour of
-    the gate's scan. The ledger is pure-append, so file order is write order.
+    :data:`NARROW`) no row is citable at all. The ledger is pure-append, so file
+    order is write order.
+
+    The evidence is the ``contributing`` list. A jointly-admissible row that
+    covers the change alone is the whole evidence — the first such row in file
+    order. When there is none, the attributable rows are combined: the change is
+    covered when every required analysis is performed by at least one of them at
+    an adequate scope, and the list names the first adequate row per analysis.
+    A row attribution refused never contributes, however wide it ran.
 
     Args:
         candidates: Matching ``kind=build`` rows in ledger file order. MUST be
@@ -736,7 +962,7 @@ def cross_check_candidates(
             before reaching here, and this function has no honest verdict for an
             empty list: ``refuted`` would assert "no row carries a notation"
             about zero rows, and ``unverified`` would hand the caller a
-            ``chosen`` index addressing nothing.
+            ``contributing`` list addressing nothing.
         project_dir: Project root the architecture is resolved against.
         required: What the change needs covered, or ``None`` when the caller
             could not derive it (the coverage dimension then reports
@@ -753,15 +979,24 @@ def cross_check_candidates(
         :data:`CORROBORATED`); for the coverage dimension, ``scope_verdict``
         (:data:`COVERED` / :data:`NARROW` / :data:`UNDETERMINED`),
         ``scope_reason`` (``None`` on :data:`COVERED`) and ``row_scopes`` (the
-        per-row rendering); and jointly ``chosen`` — the POSITION in
-        ``candidates`` of the cited row, or ``None`` when either dimension
-        refused or the two admissible sets are disjoint.
+        per-row rendering); and jointly ``contributing`` — the ordered POSITIONS
+        in ``candidates`` of the rows the evidence rests on, empty when either
+        dimension refused or no admissible rows cover the change — and
+        ``contributing_analyses``, a list parallel to ``contributing`` naming the
+        sorted required analyses each of those rows is credited with (an empty
+        list for a row cited while the coverage dimension could not judge) — and
+        ``missing_analyses``, the sorted required analyses that no row
+        attribution admits performed at an adequate scope. That list is empty
+        whenever ``contributing`` is not, and empty where the requirement or the
+        vocabulary was unavailable, since nothing can then be named. On an
+        attribution refusal no row is admissible, so it names every required
+        analysis.
 
-        ``chosen`` is a position rather than the row object so the caller can map
-        it back to its own addressing (a ledger index) without either side
-        depending on object identity. Handing back the dict instead would force
-        the caller to recover the position by ``id()`` — sound only while this
-        function returns one of the very objects it was passed, which is not a
+        ``contributing`` holds positions rather than row objects so the caller
+        can map each back to its own addressing (a ledger index) without either
+        side depending on object identity. Handing back the dicts instead would
+        force the caller to recover the positions by ``id()`` — sound only while
+        this function returns the very objects it was passed, which is not a
         property its signature promises.
 
     Raises:
@@ -805,21 +1040,19 @@ def cross_check_candidates(
         unavailable_reason=coverage_unavailable_reason or vocabulary_reason,
     )
 
-    # An UNDETERMINED dimension admits every row: it has shown nothing about any
-    # of them, and treating "could not judge" as "judged unfit" would fail closed
-    # on the absence of evidence — the direction this module refuses on both
-    # dimensions for the same reason.
-    coverable = set(range(len(candidates))) if scope['verdict'] == UNDETERMINED else set(scope['covered_positions'])
-    admissible = [position for position in attributable if position in coverable]
     refused = notation_verdict == REFUTED or scope['verdict'] == NARROW
-    chosen = admissible[0] if (not refused and admissible) else None
+    credited: dict[int, list[str]] = (
+        {} if refused else _joint_contributors(candidates, attributable, scope, required, vocabulary)
+    )
+    contributing = list(credited)
 
     # ``joint_reason`` is the ONE token the caller renders when nothing is
     # citable, and the disjoint case needs its own: both dimensions can decline to
-    # refuse while still sharing no row — every attributable row was narrow AND
-    # every covering row was unattributable — and reporting that as either
-    # dimension's reason would name a refusal neither of them made.
-    if chosen is not None:
+    # refuse while still sharing no rows — the attributable rows fall short of the
+    # change AND every row that would close the gap was unattributable — and
+    # reporting that as either dimension's reason would name a refusal neither of
+    # them made.
+    if contributing:
         joint_reason: str | None = None
     elif notation_verdict == REFUTED:
         joint_reason = notation_reason
@@ -828,9 +1061,19 @@ def cross_check_candidates(
     else:
         joint_reason = REASON_NO_ADMISSIBLE_ROW
 
+    # What a refusal still lacks is judged over the rows that MAY be cited: an
+    # analysis only an unattributable row performed is still missing. Where the
+    # requirement or the vocabulary is unavailable nothing can be named.
+    if contributing or required is None or vocabulary is None:
+        missing_analyses: list[str] = []
+    else:
+        missing_analyses = uncovered_analyses(candidates, required, vocabulary, attributable)
+
     return {
         'verdict': notation_verdict,
-        'chosen': chosen,
+        'contributing': contributing,
+        'contributing_analyses': [credited[position] for position in contributing],
+        'missing_analyses': missing_analyses,
         'expected_notations': expected_notations,
         'candidate_notations': candidate_notations,
         'reason': notation_reason,

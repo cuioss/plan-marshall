@@ -11,7 +11,7 @@ nothing.
 
 **The arm population is DERIVED from the document**, not listed here: an arm is
 a ``### `` section under the gate's Execution flow whose fenced code blocks
-carry an ``architecture resolve --command`` call. Deriving it is what makes the
+carry an ``architecture resolve`` call. Deriving it is what makes the
 sweep survive an arm being added or renamed — a hand-written roster would keep
 passing over the arms it still names while a new one shipped unchecked. The
 derived size is published in every failure message and in the session report
@@ -46,9 +46,13 @@ _GATE_DOC = (
 )
 
 #: An ``architecture resolve`` call — the marker that makes a section an ARM.
-#: Matched on the verb plus its ``--command`` flag rather than on the notation
-#: alone, so a prose mention of the script name does not promote a section.
-_RESOLVE_CALL = re.compile(r'architecture\s+resolve\s+--command\s+[a-z-]+')
+#: Matched on the notation followed by the ``resolve`` VERB. Only ``--plan-id``
+#: and ``--project-dir``, each as ``--flag value`` or ``--flag=value``, may sit
+#: between the two.
+_RESOLVE_CALL = re.compile(
+    r'manage-architecture:architecture[ \t]+'
+    r'(?:--(?:plan-id|project-dir)(?:=\S+|[ \t]+(?!--)\S+)[ \t]+)*resolve(?=\s|$)'
+)
 
 #: The instruction that ties the arm's invocation to the resolve RETURN. An arm
 #: that resolves and then runs something else would satisfy ``_RESOLVE_CALL``
@@ -176,7 +180,7 @@ def test_arm_detector_fires_on_a_resolver_backed_section_and_not_on_a_prose_one(
         '\n'
         '```bash\n'
         'python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \\\n'
-        '  resolve --command quality-gate --module {bundle} --audit-plan-id {plan_id}\n'
+        '  --plan-id {plan_id} resolve --command quality-gate --module {bundle} --audit-plan-id {plan_id}\n'
         '```\n'
     )
     prose_only = (
@@ -192,6 +196,50 @@ def test_arm_detector_fires_on_a_resolver_backed_section_and_not_on_a_prose_one(
     assert not _is_arm(prose_only), (
         'The arm detector fires on a PROSE mention of resolution, so sections that run no build would be swept as arms'
     )
+
+
+_FENCED_RESOLVE_TEMPLATE = (
+    '```bash\n'
+    'python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \\\n'
+    '  {top_level}resolve {leaf_flags} --audit-plan-id {{plan_id}}\n'
+    '```\n'
+)
+
+_COMMAND_FIRST = '--command quality-gate'
+
+_TOP_LEVEL_SPELLINGS = ['--plan-id {plan_id} ', '--plan-id={plan_id} ', '']
+
+_TOP_LEVEL_SPELLING_IDS = ['top-level-plan-id-space-form', 'top-level-plan-id-equals-form', 'no-top-level-flag']
+
+
+@pytest.mark.parametrize('top_level', _TOP_LEVEL_SPELLINGS, ids=_TOP_LEVEL_SPELLING_IDS)
+def test_arm_detector_fires_with_and_without_the_top_level_plan_id(top_level):
+    """The top-level ``--plan-id`` is optional to the arm detector, in either spelling."""
+    section = _FENCED_RESOLVE_TEMPLATE.format(top_level=top_level, leaf_flags=_COMMAND_FIRST)
+
+    assert _is_arm(section)
+
+
+@pytest.mark.parametrize('top_level', _TOP_LEVEL_SPELLINGS, ids=_TOP_LEVEL_SPELLING_IDS)
+def test_arm_detector_fires_when_command_is_not_the_first_leaf_flag(top_level):
+    section = _FENCED_RESOLVE_TEMPLATE.format(
+        top_level=top_level, leaf_flags='--module {bundle} --command quality-gate'
+    )
+
+    assert _is_arm(section)
+
+
+@pytest.mark.parametrize('top_level', _TOP_LEVEL_SPELLINGS, ids=_TOP_LEVEL_SPELLING_IDS)
+def test_control_resolve_as_another_verbs_argument_is_not_an_arm(top_level):
+    """CONTROL: the detector keys on the verb, not on the word appearing in a fenced call."""
+    section = (
+        '```bash\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \\\n'
+        f'  {top_level}commands --module resolve\n'
+        '```\n'
+    )
+
+    assert not _is_arm(section)
 
 
 # ---------------------------------------------------------------------------
@@ -249,7 +297,7 @@ def test_pinned_token_detector_fires_on_a_synthetic_pre_fix_arm():
         '\n'
         '```bash\n'
         'python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \\\n'
-        '  resolve --command quality-gate --module {bundle} --audit-plan-id {plan_id}\n'
+        '  --plan-id {plan_id} resolve --command quality-gate --module {bundle} --audit-plan-id {plan_id}\n'
         '```\n'
     )
 

@@ -204,9 +204,9 @@ Each verify step declares an `order: <int>` value in its authoritative source �
 
 | Step Name | Action | Description |
 |-----------|--------|-------------|
-| `default:verify:{canonical}` | Resolve the trailing `{canonical}` via `architecture resolve --command {canonical}` and run the resolved executable | Single parameterized verify step backing every canonical (`quality-gate`, `module-tests`/`verify`, `coverage`, `integration-tests`, `e2e`, …); the canonical is a parameter, not a hardcoded branch — see `standards/canonical_verify.md` |
+| `default:verify:{canonical}` | Resolve the trailing `{canonical}` via `architecture --plan-id {plan_id} resolve --command {canonical}` and run the resolved executable | Single parameterized verify step backing every canonical (`quality-gate`, `module-tests`/`verify`, `coverage`, `integration-tests`, `e2e`, …); the canonical is a parameter, not a hardcoded branch — see `standards/canonical_verify.md` |
 
-**Dispatch detection**: a step ID starting with the `default:verify:` prefix routes to the single parameterized canonical-verify step. The SKILL strips the `default:` prefix and feeds the trailing `{canonical}` segment to `architecture resolve --command {canonical}`. The full step body — canonical resolution, `execution_tier`/`bash_timeout_seconds` handling, the unresolved-canonical skip, and the module-scoped vs whole-tree invocation contract — lives in `standards/canonical_verify.md`; do NOT restate it here. Threshold enforcement for `coverage` is native to the resolved build command (pytest `--cov-fail-under`, JaCoCo build-tool config) — no secondary parse-and-check call is required.
+**Dispatch detection**: a step ID starting with the `default:verify:` prefix routes to the single parameterized canonical-verify step. The SKILL strips the `default:` prefix and feeds the trailing `{canonical}` segment to `architecture --plan-id {plan_id} resolve --command {canonical}`. The full step body — canonical resolution, `execution_tier`/`bash_timeout_seconds` handling, the unresolved-canonical skip, and the module-scoped vs whole-tree invocation contract — lives in `standards/canonical_verify.md`; do NOT restate it here. Threshold enforcement for `coverage` is native to the resolved build command (pytest `--cov-fail-under`, JaCoCo build-tool config) — no secondary parse-and-check call is required.
 
 ### Footprint gating (build-decision consult) for the end-of-phase `default:verify:{canonical}` loop
 
@@ -820,7 +820,7 @@ The mid-execute per-deliverable build is **focused** by design: it runs the `per
      --message "(plan-marshall:phase-5-execute) per_deliverable_build=[] — skipping focused build for deliverable {deliverable}; end-of-phase sweep is the only build"
    ```
 
-3. **For each `default:verify:{canonical}` entry in the list**, invoke the **canonical-verify step module-scoped** over the changed module(s): resolve `architecture resolve --command {canonical} --module {changed_module}` and run the resolved executable, honouring the returned `execution_tier` / `bash_timeout_seconds`. Do NOT restate the resolution/execution-tier logic here — see [`standards/canonical_verify.md`](standards/canonical_verify.md) § "Module-scoped vs whole-tree invocation" and § "Workflow" for the authoritative step body (module-scoped invocation supplies `--module {changed_module}`; the unresolved-canonical skip and the tier hand-off apply identically). After each build call, inspect the result TOON — read `status` and the `errors[]` rows, not the harness exit code (the build wrapper exits 0 even on failure).
+3. **For each `default:verify:{canonical}` entry in the list**, invoke the **canonical-verify step module-scoped** over the changed module(s): resolve `architecture --plan-id {plan_id} resolve --command {canonical} --module {changed_module}` and run the resolved executable, honouring the returned `execution_tier` / `bash_timeout_seconds`. Do NOT restate the resolution/execution-tier logic here — see [`standards/canonical_verify.md`](standards/canonical_verify.md) § "Module-scoped vs whole-tree invocation" and § "Workflow" for the authoritative step body (module-scoped invocation supplies `--module {changed_module}`; the unresolved-canonical skip and the tier hand-off apply identically). After each build call, inspect the result TOON — read `status` and the `errors[]` rows, not the harness exit code (the build wrapper exits 0 even on failure).
 
    **Documentation-only short-circuit**: a changed-path set with no buildable module yields no module-scoped run (the canonical does not resolve / there is no changed module). Log:
 
@@ -1116,8 +1116,10 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-     resolve --command quality-gate --audit-plan-id {plan_id}
+     --plan-id {plan_id} resolve --command quality-gate --audit-plan-id {plan_id}
    ```
+
+   The top-level `--plan-id`, written before the verb, makes the returned `executable` carry the plan id, so the sweep is recorded under this plan — see [`standards/canonical_verify.md`](standards/canonical_verify.md) § Workflow step 1.
 
 2. **Branch on the tier the resolve in step 1 just returned.** That live `execution_tier` is the routing authority (see **Per-step `execution_tier`** above); the manifest's `verify:quality-gate` stamp is the advisory expectation, not the decision. When the live `tier == orchestrator`, the sweep is NOT in the leaf's runnable slice — do NOT run it; return the orchestrator-tier yield signal (`status: blocked`, `voluntary_checkpoint`) naming the sweep so the orchestrator runs it via `await-long-running`. Only when the live `tier == per_task` does the leaf execute the returned `executable` inline. On non-zero exit, persist the failures to the Q-Gate findings store (`manage-findings qgate add --type lint-issue …`) and **return the `triage_required` signal to the orchestrator** with `producer=build-runner` and `finding_type=lint-issue` — same leaf-returns-signal shape as Step 11d above, only the finding type changes. The leaf does NOT dispatch `verification-feedback` itself; the orchestrator owns the dispatch (see [`../plan-marshall/workflow/execution.md`](../plan-marshall/workflow/execution.md) § "Verification-feedback triage (leaf returned triage_required)") and drives the same fix-task / suppress / accept branch (Step 11e). After the orchestrator's triage resolves, the sweep is NOT re-run — Step 11b runs at most once per phase entry.
 
@@ -1161,7 +1163,7 @@ This gate runs after Step 11b's quality sweep and before Step 12.
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-     resolve --command verify --module {bundle} --audit-plan-id {plan_id}
+     --plan-id {plan_id} resolve --command verify --module {bundle} --audit-plan-id {plan_id}
    ```
 
    Branch on the `execution_tier` this resolve just returned — the live tier is the routing authority (the manifest's `verify:module-tests` stamp, which backs the `verify` canonical, is the advisory expectation only). For `tier=per_task` run the build inline with `timeout: bash_timeout_seconds * 1000`; for `tier=orchestrator` the step is NOT in the leaf's runnable slice — return control to the orchestrator to run the long build via `await-long-running` (do NOT run it inline, do NOT background it). After each build call the leaf runs, inspect the result TOON — read `status` and the `errors[]` rows, not the harness exit code.
@@ -1192,7 +1194,7 @@ Before invoking `manage-status transition --completed 5-execute` (see **Phase Tr
 **Worktree-state freshness enforcement**: the authoritative freshness check is `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks pre-commit-verify-freshness --plan-id {plan_id}` — see `manage-tasks/SKILL.md` § "Pre-Commit Verify Freshness". The script reaches its verdict by one of **two disjoint routes**, and the status member it returns names which one ran:
 
 - **The exemption route.** The script first consults the single build/no-build authority. On a `not_necessary` verdict no `kind=build` entry could legally exist for this footprint, so it returns `exempt` carrying the authority's own `reason` **before any ledger row is read**. Nothing about the working tree was examined.
-- **The ledger-scanned route.** Otherwise it recomputes the current working-tree currency hash (`worktree_sha`) and scans the unified change-ledger for a `kind=build` entry with `status == success` whose `worktree_sha` matches — `status`, not `exit_code`, because the build wrapper exits 0 on timeout. The primary predicate is tier-agnostic: it filters on `kind`, `status`, and `worktree_sha` only, never `plan_id`, so an orchestrator-driven global-tier build satisfies the gate exactly as a plan-scoped build does. Each matching row's `notation` is then cross-checked against the build notations this project's architecture resolves, so a row naming a build this project never runs cannot prove freshness; the check stays build-tool-agnostic, since a Maven/Gradle/npm build passes whenever the architecture resolves that notation here. A citable row yields `fresh`, naming the row it matched. See `marketplace/bundles/plan-marshall/skills/manage-change-ledger/SKILL.md` for the ledger and `worktree_sha` primitive.
+- **The ledger-scanned route.** Otherwise it recomputes the current working-tree currency hash (`worktree_sha`) and scans the unified change-ledger for a `kind=build` entry with `status == success` whose `worktree_sha` matches — `status`, not `exit_code`, because the build wrapper exits 0 on timeout. The primary predicate is tier-agnostic: it filters on `kind`, `status`, and `worktree_sha` only, never `plan_id`, so an orchestrator-driven global-tier build satisfies the gate exactly as a plan-scoped build does. Each matching row's `notation` is then cross-checked against the build notations this project's architecture resolves, so a row naming a build this project never runs cannot prove freshness; the check stays build-tool-agnostic, since a Maven/Gradle/npm build passes whenever the architecture resolves that notation here. Citable rows that cover the change — one alone, or several between them — yield `fresh`, naming the rows the verdict rests on. See `marketplace/bundles/plan-marshall/skills/manage-change-ledger/SKILL.md` for the ledger and `worktree_sha` primitive.
 
 The script returns one of **four** statuses. Exactly two of them permit the transition, and they permit **on different bases**: `fresh` (a build was observed against this exact tree) and `exempt` (no build was owed, so nothing was examined). `stale` and `undecidable` block the transition with the same `[BLOCKED]` log line shape used for the pending-tasks branch. ⛔ Read the member — a predicate of the shape "not `stale` and not `undecidable`" admits any future member the script gains, which is the fail-open ADR-009 forbids. The gate fails closed by design — there is no LLM judgement and no "probably fine" fallback. Pending-queue emptiness and worktree freshness are **co-equal** gates: both MUST succeed before the phase may transition.
 
@@ -1205,7 +1207,7 @@ Both gates are **evaluated before either is acted on**. Evaluation order is fixe
      pre-commit-verify-freshness --plan-id {plan_id}
    ```
 
-   Parse `status` from the returned TOON, along with whichever of `reason`, `worktree_sha`, `ledger_path`, `matched_notation`, and `observed_status` the returned payload carries. Hold the verdict; do not act on it yet.
+   Parse `status` from the returned TOON, along with whichever of `reason`, `worktree_sha`, `ledger_path`, `matched_notation`, and `observed_status` the returned payload carries. A `fresh` payload also carries `contributing_rows` (every row the verdict rests on), and a cross-check `stale` payload carries `missing_analyses` (what to run); both are defined in `manage-tasks/SKILL.md` § "Pre-Commit Verify Freshness" and are not restated here. Hold the verdict; do not act on it yet.
 
 2. Query the pending-task list:
 
@@ -1225,6 +1227,8 @@ Both gates are **evaluated before either is acted on**. Evaluation order is fixe
      work --plan-id {plan_id} --level INFO \
      --message "[STATUS] (plan-marshall:phase-5-execute) Worktree freshness: basis=ledger-verified (worktree_sha={worktree_sha}, matched_notation={matched_notation}) — transitioning 5-execute -> 6-finalize."
    ```
+
+   That is the single-row form. When `contributing_rows` holds two or more rows, append the `rows={N}` term directly after the basis value — the multi-row term owned by `phase-6-finalize/standards/push.md` § "Mark Step Complete", where `{N}` is the length of `contributing_rows`.
 
    **On `status: exempt`**, no build was owed for this footprint, so **nothing was examined** — the freshness gate PERMITS on the exemption, not on evidence. It is authorised, and the record must say so, because a transition record identical to the `fresh` one would leave no reader able to tell an observed tree from an unexamined one. The basis line carries the gate's own `reason` and is emitted at step 5:
 

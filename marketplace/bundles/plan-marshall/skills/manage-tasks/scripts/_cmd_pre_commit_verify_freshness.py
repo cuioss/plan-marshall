@@ -53,9 +53,8 @@ whole-tree runs against the same sha had timed out and failed. Every row that
 clears the primary predicate is therefore cross-checked on both dimensions:
 against the build notations the project's architecture resolves to, and against
 the canonical + scope the row itself records. See :mod:`_freshness_crosscheck`
-for the two three-valued verdicts, the joint selection that makes a row citable
-only when it satisfies both, the split fail-direction, and the recorded refusal
-of a doc-only carve-out. Both checks remain build-TOOL-agnostic: a
+for the two three-valued verdicts, the joint selection, the union rule that credits several rows at one
+sha, the split fail-direction, and the recorded refusal of a doc-only carve-out. Both checks remain build-TOOL-agnostic: a
 Maven/Gradle/npm build satisfies the gate whenever the architecture resolves that
 notation and its recorded canonical and scope cover the change.
 
@@ -93,11 +92,16 @@ Outcomes:
                      alternative of keeping the shared token and reporting the
                      basis only as a side field, because the machine-readable
                      verdict every consumer branches on would be unchanged.
-- ``fresh``        — a ``kind=build`` entry with ``status == 'success'`` and a
-                     matching ``worktree_sha`` exists AND one such entry is
-                     citable on BOTH cross-check dimensions; a successful build
-                     that covers this change has been observed against the
+- ``fresh``        — one or more ``kind=build`` entries with ``status ==
+                     'success'`` and a matching ``worktree_sha`` exist AND are
+                     citable on BOTH cross-check dimensions: either one entry
+                     covers this change alone, or several entries at the same
+                     sha between them perform every analysis the change
+                     requires, each at an adequate scope. Successful builds
+                     covering this change have been observed against the
                      current on-disk state, so the gate is permitted to pass.
+                     ``contributing_rows`` names every entry the verdict rests
+                     on, and the scalar evidence fields name the first of them.
                      ``notation_cross_check`` records whether the evidence was
                      ``corroborated`` or merely ``unverified`` and
                      ``scope_cross_check`` whether it was ``covered`` or merely
@@ -107,9 +111,8 @@ Outcomes:
 - ``stale``        — the ledger has entries but none is citable: either none is a
                      successful build against the current working-tree sha, or
                      every such build names a notation this project's
-                     architecture does not resolve, or every such build is
-                     narrower than the change, or the attributable rows and the
-                     covering rows are disjoint. The gate MUST fail closed. The
+                     architecture does not resolve, or the attributable rows and
+                     the covering rows are disjoint. The gate MUST fail closed. The
                      verdict carries a ``reason`` naming WHY, because the routes
                      need different remedies and this gate must not assert a
                      cause it did not establish: ``worktree_mutated`` /
@@ -118,7 +121,9 @@ Outcomes:
                      ``notation_unrelated`` / ``notation_absent`` /
                      ``build_scope_narrow`` /
                      ``no_row_both_attributable_and_adequate`` from the
-                     cross-check.
+                     cross-check. A cross-check refusal also carries
+                     ``missing_analyses``: the required analyses no citable row
+                     performed at an adequate scope, which is what to run.
 - ``undecidable``  — no positive freshness proof can be established. Two
                      sub-reasons: ``no_registry`` (the ledger file is absent or
                      empty) and ``head_unresolvable`` (the working-tree sha
@@ -141,6 +146,7 @@ from _freshness_crosscheck import (
     RequiredCoverage,
     cross_check_candidates,
     load_analysis_vocabulary,
+    parse_row_scope,
     required_coverage,
 )
 from _ledger_core import (
@@ -286,6 +292,41 @@ def _evidence_fields(index: int, entry: dict) -> dict:
     }
 
 
+#: Rendered in a ``contributing_rows`` entry for a value the row does not state.
+#: A word rather than an empty cell, so an unread scope is never mistaken for a
+#: whole-tree one and an uncredited row is never mistaken for one credited with
+#: nothing.
+_ROW_UNREADABLE = 'unreadable'
+_ANALYSES_UNDETERMINED = 'undetermined'
+_SCOPE_WHOLE_TREE = 'whole-tree'
+
+
+def _contributing_row(index: int, entry: dict, analyses: list[str]) -> dict:
+    """Render one row a ``fresh`` verdict rests on.
+
+    Args:
+        index: The row's index among the parsed ledger entries.
+        entry: The ledger row itself.
+        analyses: The required analyses the cross-check credited this row with.
+            Empty when the coverage dimension could not judge.
+
+    Returns:
+        The row's identity (``ledger_index``, ``notation``, ``plan_id``,
+        ``timestamp_iso``) and what it recorded (``canonical``, ``scope``,
+        ``analyses``).
+    """
+    scope = parse_row_scope(entry)
+    return {
+        'ledger_index': index,
+        'notation': entry.get('notation', ''),
+        'plan_id': entry.get('plan_id', ''),
+        'canonical': _ROW_UNREADABLE if scope is None else scope.canonical,
+        'scope': (_ROW_UNREADABLE if scope is None else ' '.join(scope.scope_tokens) or _SCOPE_WHOLE_TREE),
+        'analyses': ', '.join(analyses) or _ANALYSES_UNDETERMINED,
+        'timestamp_iso': entry.get('timestamp_iso', ''),
+    }
+
+
 def _resolve_required_coverage(plan_id: str) -> tuple[RequiredCoverage | None, str | None]:
     """Derive what a build must have covered to be evidence for THIS change.
 
@@ -386,19 +427,24 @@ def _verdict_for_candidates(
     (coverage). Both verdicts come from :mod:`_freshness_crosscheck` and neither
     is collapsed into the other.
 
-    The gate passes only on a row that is citable on BOTH — the cross-check's
-    ``chosen`` position, which is ``None`` whenever either dimension refused or
-    the two admissible sets are disjoint. That joint condition is the fix for the
-    observed false-green: a single-directory 573-test row is perfectly
+    The gate passes only on rows that are citable on BOTH — the cross-check's
+    ``contributing`` positions, which are empty whenever either dimension refused
+    or no admissible rows cover the change. That joint condition is the fix for
+    the observed false-green: a single-directory 573-test row is perfectly
     attributable, so an attribution-only selection cited it as ``corroborated``
     evidence for a whole-tree change.
 
-    * ``chosen`` is not ``None`` → ``fresh``, citing that row and publishing both
-      dimensions' verdicts. A dimension that could not judge is recorded as such
+    * ``contributing`` is non-empty → ``fresh``, citing those rows and publishing
+      both dimensions' verdicts. ``contributing_rows`` names every row the
+      verdict rests on; the scalar evidence fields name the first of them. A
+      dimension that could not judge is recorded as such
       (``notation_cross_check: unverified`` / ``scope_cross_check: undetermined``
       plus its reason), so a pass on unaudited evidence stays legible as one.
-    * ``chosen`` is ``None`` → ``stale``, carrying the cross-check's
-      ``joint_reason`` as the gate's own ``reason``.
+    * ``contributing`` is empty → ``stale``, carrying the cross-check's
+      ``joint_reason`` as the gate's own ``reason`` and, beside ``row_scopes``,
+      ``missing_analyses`` — the required analyses no citable row performed at an
+      adequate scope. The message names them, because running the missing
+      analysis is the remedy and the per-row tokens do not say which one it is.
 
     Args:
         candidates: ``(parsed_index, entry)`` pairs in ledger file order.
@@ -420,13 +466,24 @@ def _verdict_for_candidates(
     )
     verdict = outcome['verdict']
     scope_verdict = outcome['scope_verdict']
-    # ``chosen`` is a POSITION in the list handed to the cross-check, and that
-    # list was built from ``candidates`` in order — so the same position indexes
-    # both, and the row's ledger index is recovered without either side relying
-    # on the identity of the dict that travelled across the boundary.
-    chosen = outcome['chosen']
+    # ``contributing`` holds POSITIONS in the list handed to the cross-check, and
+    # that list was built from ``candidates`` in order — so the same positions
+    # index both, and each row's ledger index is recovered without either side
+    # relying on the identity of the dicts that travelled across the boundary.
+    contributing: list[int] = outcome['contributing']
 
-    if chosen is None:
+    if not contributing:
+        missing: list[str] = outcome['missing_analyses']
+        named = ', '.join(missing)
+        if missing:
+            uncovered = f'No row that may be cited performed {named} at a scope adequate for this change. '
+            remedy = (
+                f'Run the missing analysis ({named}) at that scope against this tree; '
+                f'repeating an analysis a row already covers adds nothing. '
+            )
+        else:
+            uncovered = ''
+            remedy = 'Re-run a build whose canonical and scope cover this change. '
         return {
             'status': 'stale',
             'plan_id': plan_id,
@@ -437,6 +494,7 @@ def _verdict_for_candidates(
             'expected_notations': outcome['expected_notations'],
             'candidate_notations': outcome['candidate_notations'],
             'row_scopes': outcome['row_scopes'],
+            'missing_analyses': missing,
             'worktree_root': str(worktree_root),
             'ledger_path': str(ledger_path),
             'message': (
@@ -448,18 +506,24 @@ def _verdict_for_candidates(
                 f'matching rows carry '
                 f'{", ".join(outcome["candidate_notations"]) or "no notation at all"}. '
                 f'Coverage: the matching rows recorded '
-                f'{"; ".join(outcome["row_scopes"]) or "no readable build scope"}. The gate '
-                f'MUST fail closed. Re-run a build whose canonical and scope cover this '
-                f'change; if the refusal is an attribution one, establish where the '
-                f'unattributable row came from before trusting the ledger again.'
+                f'{"; ".join(outcome["row_scopes"]) or "no readable build scope"}. '
+                f'{uncovered}The gate MUST fail closed. {remedy}If the refusal is an '
+                f'attribution one, establish where the unattributable row came from '
+                f'before trusting the ledger again.'
             ),
         }
 
+    first = contributing[0]
+    contributing_rows = [
+        _contributing_row(ledger_indices[position], candidates[position][1], analyses)
+        for position, analyses in zip(contributing, outcome['contributing_analyses'], strict=True)
+    ]
     result = {
         'status': 'fresh',
         'plan_id': plan_id,
         'worktree_sha': current_sha,
-        **_evidence_fields(ledger_indices[chosen], candidates[chosen][1]),
+        **_evidence_fields(ledger_indices[first], candidates[first][1]),
+        'contributing_rows': contributing_rows,
         'notation_cross_check': verdict,
         'scope_cross_check': scope_verdict,
         'expected_notations': outcome['expected_notations'],
@@ -473,7 +537,16 @@ def _verdict_for_candidates(
         result['scope_cross_check_reason'] = outcome['scope_reason']
 
     audited = verdict == CORROBORATED and scope_verdict == COVERED
-    if audited:
+    if audited and len(contributing_rows) > 1:
+        cited = '; '.join(f'{row["canonical"]} {row["scope"]} ({row["analyses"]})' for row in contributing_rows)
+        result['message'] = (
+            f'{len(contributing_rows)} successful kind=build entries match the current '
+            f"working-tree sha ({current_sha}); each notation is one this project's "
+            f'architecture resolves, and between them they performed every analysis this '
+            f'change requires, each at an adequate scope: {cited}. Gate permitted on '
+            f'corroborated, coverage-adequate evidence.'
+        )
+    elif audited:
         result['message'] = (
             f'A successful kind=build entry matches the current working-tree sha '
             f"({current_sha}); its notation is one this project's architecture resolves, "

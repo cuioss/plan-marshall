@@ -644,6 +644,27 @@ def _non_finish_evidence(
     return extra
 
 
+#: The fields that name the bound a non-finish was measured against: the applied
+#: bound, the path that produced it, and the key a learned bound is stored under.
+_APPLIED_BOUND_FIELDS = ('timeout_used_seconds', 'timeout_source', 'command_key')
+
+
+def _applied_bound_fields(result: DirectCommandResult) -> dict:
+    """Return the applied-bound fields ``result`` actually carries.
+
+    Shared by the ``timeout`` and ``killed`` branches of :func:`cmd_run_common`.
+    Each field is copied only when the producer supplied it, so an unknown bound
+    stays absent on the emitted payload instead of being rendered as a value.
+
+    Args:
+        result: The execution result being rendered.
+
+    Returns:
+        The subset of :data:`_APPLIED_BOUND_FIELDS` present and non-``None``.
+    """
+    return {field: result[field] for field in _APPLIED_BOUND_FIELDS if result.get(field) is not None}  # type: ignore[literal-required]
+
+
 def cmd_run_common(
     result: DirectCommandResult,
     parser_fn: ParserFn,
@@ -721,11 +742,11 @@ def cmd_run_common(
         print(formatter(err_output))
         return 1
 
-    # Handle an EXTERNAL KILL — a signal this stack did not send.
+    # Handle a KILL — a stop our own bound did not cause.
     #
     # This branch precedes the timeout branch deliberately: a kill and a timeout
-    # are the two non-finishes, and the one thing that separates them is WHO
-    # sent the signal. The timeout branch may only claim a run our own bound
+    # are the two non-finishes, and the one thing that separates them is whether
+    # our own bound fired. The timeout branch may only claim a run our own bound
     # terminated, so a kill must be routed out before it can be read as one.
     # The result carries the kill's own diagnostic fields (`error: killed` and
     # the shared no-blind-retry `message`), and BOTH are propagated onto the
@@ -738,8 +759,7 @@ def cmd_run_common(
         # headroom the run had left when the kill arrived, which is what
         # separates "killed near its limit" from "killed early". The timeout
         # branch preserves it, so this one does too.
-        if result.get('timeout_used_seconds') is not None:
-            killed_extra['timeout_used_seconds'] = result['timeout_used_seconds']
+        killed_extra.update(_applied_bound_fields(result))
         killed_output = killed_result(
             exit_code=result['exit_code'],
             duration_seconds=result['duration_seconds'],
@@ -775,11 +795,16 @@ def cmd_run_common(
 
     # Handle timeout
     if result['status'] == 'timeout':
+        # The bound travels as the producer reported it. A result that carries
+        # none (a version-skewed daemon) emits no `timeout_used_seconds` at all
+        # rather than a number this layer would have to invent.
+        timeout_bound = _applied_bound_fields(result)
         timeout_output = timeout_result(
-            timeout_used_seconds=result['timeout_used_seconds'],
+            timeout_used_seconds=timeout_bound.pop('timeout_used_seconds', None),
             duration_seconds=result['duration_seconds'],
             log_file=log_file,
             command=command_str,
+            **timeout_bound,
             **_non_finish_evidence(log_file, command_str, parser_fn, parser_needs_command, 'Timeout'),
         )
         print(formatter(timeout_output))

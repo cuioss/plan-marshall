@@ -137,6 +137,37 @@ LLMs that read this TOON MUST follow the rule documented in `persona-plan-marsha
 
 The `hint` field is a recognition token, not optional prose — its presence in the TOON is the structural signal that the contract applies.
 
+## Plan attribution of the resolved build
+
+A caller that resolves a build and then runs the returned `executable` verbatim attributes that build to its plan by passing the notation's top-level `--plan-id`, written **before** the verb:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+  --plan-id {plan_id} resolve --command {canonical} [--module {module}] --audit-plan-id {plan_id}
+```
+
+When the plan id names a real plan and the resolved `executable` is a Bucket B build notation (see [Detection Rules](#detection-rules)), the returned `executable` carries `--plan-id {plan_id}` immediately after `run`:
+
+```toon
+executable: python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --plan-id my-plan --command-args "quality-gate plan-marshall"
+```
+
+The rest of the string is exactly what the architecture resolves. Running it records the build — its log file and its change-ledger row — under that plan instead of under the `NO_PLAN` sentinel.
+
+**One flag, one meaning.** `resolve` declares no attribution flag of its own; its leaf flags are `--command` and `--module` only. The top-level `--plan-id` is the single flag: it selects the working tree the architecture is read from, and it is the plan a resolved build is attributed to. The two cannot name different plans, because there is one value.
+
+| Call shape | Returned build `executable` |
+|------------|-----------------------------|
+| No `--plan-id` | As resolved — carries no `--plan-id`; the build records `NO_PLAN` |
+| `--plan-id NO_PLAN` | As resolved — the sentinel is not a plan, so nothing is inserted |
+| `--plan-id {plan_id}` (a real plan) | Carries `--plan-id {plan_id}` after `run` |
+| `--plan-id {plan_id}`, non-build `executable` | As resolved — only build notations are attributed |
+| `--plan-id {plan_id}`, `executable` already carrying `--plan-id` or `--project-dir` | As resolved — an existing routing flag is never doubled or overridden |
+
+**`--audit-plan-id` alone never attributes the build.** It is consumed by the executor to scope the *resolve call's own* script-execution log entry and is stripped before `architecture` parses its arguments, so the handler never sees it. A resolve call carrying only `--audit-plan-id` returns an unattributed `executable`.
+
+**Interaction with `--project-dir` is unchanged.** The top-level `--plan-id` and `--project-dir` stay mutually exclusive, with the `NO_PLAN` sentinel exempt from that check, exactly as [`resolve_project_dir`](../../script-shared/scripts/resolve_project_dir.py) defines for every Bucket B script. A caller that routes by `--project-dir` gets an unattributed `executable`.
+
 ## Authored `mutating` signal
 
 A resolved command MAY carry an optional `mutating: true` field. The field is **authored, never inferred**: the operator lists source-mutating profile ids in the `build.maven.profiles.mutating` ext-defaults key (CSV, symmetric with `build.maven.profiles.skip` / `build.maven.profiles.map.canonical`), build-maven's command-map builder stamps `mutating: true` onto every command-map entry derived from a listed profile, and `resolve` surfaces the field additively from the resolved entry. Absence of the field means "not authored as mutating" — unknown, not safe; there is no inferred `mutating: false`.

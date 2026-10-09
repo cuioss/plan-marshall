@@ -23,6 +23,8 @@ by bare name.
 """
 
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import build
@@ -246,7 +248,17 @@ def test_count_entries_within_separates_an_empty_tree_from_an_unwalkable_one(tmp
     assert build._count_entries_within(tmp_path / 'absent', headroom=10) is None
 
 
-def test_prune_retires_sessions_that_breach_the_entry_budget(tmp_path, monkeypatch):
+@pytest.fixture
+def dead_owners(monkeypatch):
+    """Make every session dir read as owned by a finished process.
+
+    The retention bounds apply to dead-owner dirs only, so the bound tests state
+    that precondition here instead of encoding a pid in every directory name.
+    """
+    monkeypatch.setattr(build, '_session_owner_is_alive', lambda _session: False)
+
+
+def test_prune_retires_sessions_that_breach_the_entry_budget(tmp_path, monkeypatch, dead_owners):
     """Three sessions inside ``keep=3`` are still pruned once their entries exceed the budget."""
     root = tmp_path / 'pytest-basetemp'
     root.mkdir()
@@ -261,7 +273,7 @@ def test_prune_retires_sessions_that_breach_the_entry_budget(tmp_path, monkeypat
     )
 
 
-def test_prune_never_retires_an_unmeasurable_newest_session(tmp_path, monkeypatch):
+def test_prune_never_retires_an_unmeasurable_newest_session(tmp_path, monkeypatch, dead_owners):
     """The newest session survives even when it alone breaches the entry budget.
 
     A live session is the newest dir in the root, and a session whose scratch has
@@ -289,7 +301,7 @@ def test_prune_never_retires_an_unmeasurable_newest_session(tmp_path, monkeypatc
     )
 
 
-def test_prune_leaves_a_root_within_both_bounds_untouched(tmp_path, monkeypatch):
+def test_prune_leaves_a_root_within_both_bounds_untouched(tmp_path, monkeypatch, dead_owners):
     """Matched negative control: nothing is removed when both bounds already hold.
 
     Load-bearing — without it the budget test above is satisfied just as well by a
@@ -307,6 +319,176 @@ def test_prune_leaves_a_root_within_both_bounds_untouched(tmp_path, monkeypatch)
     assert all(len(list((root / name).iterdir())) == 4 for name in _child_dirs(root)), (
         'a retained session must keep its contents, not merely its directory'
     )
+
+
+# ---------------------------------------------------------------------------
+# Basetemp retention: a live owner's session is never pruned.
+#
+# A session dir is named ``{pid}-{uuid4hex}`` after the build process that
+# created it. These tests drive the real liveness probe: the live owner is this
+# pytest process, and the dead owner is a child that has already been reaped.
+# ---------------------------------------------------------------------------
+
+
+def _dead_pid() -> int:
+    """Return the pid of a process that has exited and been reaped."""
+    finished = subprocess.Popen([sys.executable, '-c', 'pass'])
+    finished.wait()
+    return finished.pid
+
+
+def test_prune_keeps_a_live_owners_session_and_retires_a_dead_one_of_the_same_age(tmp_path, monkeypatch):
+    """The oldest session survives because its owner is alive; its dead-owner twin does not.
+
+    The two newer sessions exhaust the entry budget, so every older dir is past
+    both bounds. Age and size being equal, the owner's liveness is the only thing
+    that separates the survivor from the removed dir.
+    """
+    root = tmp_path / 'pytest-basetemp'
+    root.mkdir()
+    dead = _dead_pid()
+    live_name = f'{os.getpid()}-live'
+    _seed_session(root, live_name, files=4, mtime=1)
+    _seed_session(root, f'{dead}-sameage', files=4, mtime=1)
+    _seed_session(root, f'{dead}-newer', files=6, mtime=2)
+    _seed_session(root, f'{dead}-newest', files=6, mtime=3)
+    monkeypatch.setattr(build, 'PYTEST_BASETEMP_ROOT', root)
+
+    build._prune_basetemp_roots(keep=3, max_entries=9)
+
+    assert _child_dirs(root) == sorted([live_name, f'{dead}-newest'])
+    assert len(list((root / live_name).iterdir())) == 4, (
+        'the live session must keep its contents, not merely its directory'
+    )
+
+
+def test_prune_does_not_count_a_live_owners_session_against_the_keep_bound(tmp_path, monkeypatch):
+    """With ``keep=1`` a live session and one dead-owner session both survive."""
+    root = tmp_path / 'pytest-basetemp'
+    root.mkdir()
+    dead = _dead_pid()
+    live_name = f'{os.getpid()}-live'
+    _seed_session(root, f'{dead}-older', files=1, mtime=1)
+    _seed_session(root, f'{dead}-newer', files=1, mtime=2)
+    _seed_session(root, live_name, files=1, mtime=3)
+    monkeypatch.setattr(build, 'PYTEST_BASETEMP_ROOT', root)
+
+    build._prune_basetemp_roots(keep=1, max_entries=100)
+
+    assert _child_dirs(root) == sorted([live_name, f'{dead}-newer'])
+
+
+#: Directory names that carry no usable owner pid. ``0`` parses as a number but
+#: addresses a process group rather than an owner, so it is unusable too.
+_UNPARSABLE_SESSION_NAMES = ['nodash', 'not-a-session', '-leading-dash', '0-zero', '12x-suffix']
+
+
+@pytest.mark.parametrize('name', _UNPARSABLE_SESSION_NAMES)
+def test_prune_keeps_a_session_whose_name_carries_no_owner_pid(tmp_path, monkeypatch, name):
+    """A name the owner cannot be read from resolves to keep, even past the keep bound."""
+    root = tmp_path / 'pytest-basetemp'
+    root.mkdir()
+    dead = _dead_pid()
+    _seed_session(root, name, files=1, mtime=1)
+    _seed_session(root, f'{dead}-older', files=1, mtime=2)
+    _seed_session(root, f'{dead}-newer', files=1, mtime=3)
+    monkeypatch.setattr(build, 'PYTEST_BASETEMP_ROOT', root)
+
+    build._prune_basetemp_roots(keep=1, max_entries=100)
+
+    assert _child_dirs(root) == sorted([name, f'{dead}-newer'])
+
+
+#: ``(what the probe raises, sessions left after a keep=1 prune)``. Only a
+#: positive "no such process" lets the older session go.
+_PROBE_OUTCOMES = [
+    (PermissionError('not ours'), ['4242-older', '4243-newer']),
+    (OSError('probe failed'), ['4242-older', '4243-newer']),
+    (ProcessLookupError('gone'), ['4243-newer']),
+]
+
+_PROBE_OUTCOME_IDS = ['permission-error-keeps', 'other-os-error-keeps', 'control-no-such-process-retires']
+
+
+@pytest.mark.parametrize('raised,expected', _PROBE_OUTCOMES, ids=_PROBE_OUTCOME_IDS)
+def test_prune_keeps_a_session_unless_the_probe_says_no_such_process(tmp_path, monkeypatch, raised, expected):
+    """A probe that fails any other way than "no such process" resolves to keep."""
+    root = tmp_path / 'pytest-basetemp'
+    root.mkdir()
+    _seed_session(root, '4242-older', files=1, mtime=1)
+    _seed_session(root, '4243-newer', files=1, mtime=2)
+    monkeypatch.setattr(build, 'PYTEST_BASETEMP_ROOT', root)
+
+    def _probe(_pid, _signal):
+        raise raised
+
+    monkeypatch.setattr(build.os, 'kill', _probe)
+
+    build._prune_basetemp_roots(keep=1, max_entries=100)
+
+    assert _child_dirs(root) == expected
+
+
+def test_prune_keeps_a_session_whose_pid_prefix_exceeds_the_platform_pid_type(tmp_path, monkeypatch):
+    """A numeric prefix the real probe cannot represent resolves to keep, and the prune completes."""
+    root = tmp_path / 'pytest-basetemp'
+    root.mkdir()
+    dead = _dead_pid()
+    oversized = f'{10**30}-oversized'
+    _seed_session(root, oversized, files=1, mtime=1)
+    _seed_session(root, f'{dead}-older', files=1, mtime=2)
+    _seed_session(root, f'{dead}-newer', files=1, mtime=3)
+    monkeypatch.setattr(build, 'PYTEST_BASETEMP_ROOT', root)
+
+    build._prune_basetemp_roots(keep=1, max_entries=100)
+
+    assert _child_dirs(root) == sorted([oversized, f'{dead}-newer'])
+
+
+def _windows_probe_raising(error: Exception):
+    """Return a Windows owner-probe stub that raises ``error``."""
+
+    def _probe(_pid: int) -> bool:
+        raise error
+
+    return _probe
+
+
+#: ``(Windows owner-probe stub, whether the owner then reads as alive)``.
+_WINDOWS_PROBE_OUTCOMES = [
+    (lambda _pid: False, True),
+    (_windows_probe_raising(OSError('probe failed')), True),
+    (lambda _pid: True, False),
+]
+
+_WINDOWS_PROBE_OUTCOME_IDS = ['not-exited-is-alive', 'probe-error-is-alive', 'control-exited-is-dead']
+
+
+@pytest.mark.parametrize('probe,expected', _WINDOWS_PROBE_OUTCOMES, ids=_WINDOWS_PROBE_OUTCOME_IDS)
+def test_owner_probe_on_windows_reports_dead_only_for_a_positively_exited_owner(monkeypatch, probe, expected):
+    """On Windows the owner is read through the status probe and ``os.kill`` is never called.
+
+    SIMULATED: ``os.name`` and ``build._windows_owner_has_exited`` are both
+    monkeypatched. No Windows process API runs on this host, so the probe's own
+    ``OpenProcess`` / ``GetExitCodeProcess`` reading is not exercised here.
+    """
+    session = Path('4242-session')
+    killed: list[int] = []
+    monkeypatch.setattr(build.os, 'kill', lambda pid, _signal: killed.append(pid))
+    monkeypatch.setattr(build, '_windows_owner_has_exited', probe)
+
+    with monkeypatch.context() as windows:
+        windows.setattr(build.os, 'name', 'nt')
+        alive = build._session_owner_is_alive(session)
+
+    assert alive is expected
+    assert killed == [], f'os.kill terminates its target on Windows and must not be called; got {killed!r}'
+
+
+def test_windows_owner_probe_declines_on_a_non_windows_host():
+    """Off Windows the status probe reports nothing as exited, so no session is retired on its word."""
+    assert build._windows_owner_has_exited(os.getpid()) is False
+    assert build._windows_owner_has_exited(_dead_pid()) is False
 
 
 # ---------------------------------------------------------------------------

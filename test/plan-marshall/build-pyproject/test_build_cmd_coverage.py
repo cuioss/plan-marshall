@@ -170,7 +170,11 @@ def test_prune_basetemp_roots_bounds_retained_dir_count(tmp_path) -> None:
         # Stagger mtimes so newest-first ordering is deterministic.
         os.utime(session_dir, (i, i))
 
-    with patch.object(build_module, 'PYTEST_BASETEMP_ROOT', root):
+    # The keep bound applies to sessions whose owning process has finished.
+    with (
+        patch.object(build_module, 'PYTEST_BASETEMP_ROOT', root),
+        patch.object(build_module, '_session_owner_is_alive', return_value=False),
+    ):
         build_module._prune_basetemp_roots(keep=3)
 
     remaining = sorted(p.name for p in root.iterdir() if p.is_dir())

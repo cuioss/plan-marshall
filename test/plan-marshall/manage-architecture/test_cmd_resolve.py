@@ -73,6 +73,8 @@ from typing import Any
 
 import pytest
 from _arch_fixtures import seed_project as _seed_project
+from marketplace_paths import NO_PLAN_SENTINEL
+from toon_parser import parse_toon
 
 from conftest import get_scripts_dir, load_script_module, parse_ns
 
@@ -566,6 +568,168 @@ def test_cmd_resolve_cache_tree_layout_emits_augmentation(isolated_run_config, m
     assert result['exceeds_bash_ceiling'] is True
     assert result['execution_tier'] == 'orchestrator'
     assert result['hint'] == _HINT_ORCHESTRATOR
+
+
+# =============================================================================
+# Case (i): the top-level --plan-id attributes a resolved build executable
+# =============================================================================
+
+_PLAN = 'attributed-plan'
+
+#: ``_PYPROJECT_VERIFY_EXECUTABLE`` with the plan id inserted directly after
+#: ``run``; every other character, the double quotes included, is unchanged.
+_PYPROJECT_VERIFY_ATTRIBUTED = (
+    'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build '
+    f'run --plan-id {_PLAN} --command-args "verify plan-marshall"'
+)
+
+#: Build executables that already route themselves; attribution must not touch them.
+_ALREADY_ROUTED_EXECUTABLES = [
+    'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build '
+    'run --plan-id other-plan --command-args "verify plan-marshall"',
+    'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build '
+    'run --project-dir /elsewhere --command-args "verify plan-marshall"',
+]
+
+
+def _resolve_seeded(executable: str, command: str = 'verify', **overrides: Any) -> dict[str, Any]:
+    """Resolve ``command`` against a single module exposing ``executable``."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_single_module(tmpdir, command, executable)
+        args = _variant(_RESOLVE_ARGS, project_dir=tmpdir, resolve_command=command, **overrides)
+        result: dict[str, Any] = cmd_resolve(args)
+    return result
+
+
+def test_top_level_plan_id_makes_a_build_executable_carry_it(isolated_run_config):
+    """A real plan id is inserted as ``run --plan-id {plan}`` and nothing else moves."""
+    result = _resolve_seeded(_PYPROJECT_VERIFY_EXECUTABLE, plan_id=_PLAN)
+
+    assert result['status'] == 'success'
+    assert f'run --plan-id {_PLAN} ' in result['executable']
+    assert result['executable'] == _PYPROJECT_VERIFY_ATTRIBUTED
+    # The tier augmentation still keys on the unattributed command args.
+    assert result['bash_timeout_seconds'] == 360
+
+
+_EXECUTOR = 'python3 .plan/execute-script.py'
+_NOTATION = 'plan-marshall:build-pyproject:pyproject_build'
+
+#: ``(resolved executable, the same string with the flag after the parsed run token)``.
+_ATTRIBUTION_SHAPES = [
+    (
+        f'{_EXECUTOR} "{_NOTATION}" run --command-args "{_NOTATION} run verify"',
+        f'{_EXECUTOR} "{_NOTATION}" run --plan-id {_PLAN} --command-args "{_NOTATION} run verify"',
+    ),
+    (
+        f'{_EXECUTOR} {_NOTATION} "run" --command-args "verify plan-marshall"',
+        f'{_EXECUTOR} {_NOTATION} "run" --plan-id {_PLAN} --command-args "verify plan-marshall"',
+    ),
+    (
+        f'{_PYPROJECT_VERIFY_EXECUTABLE} && other',
+        f'{_PYPROJECT_VERIFY_ATTRIBUTED} && other',
+    ),
+]
+
+_ATTRIBUTION_SHAPE_IDS = ['quoted-notation-repeated-in-command-args', 'quoted-run', 'trailing-shell-operator']
+
+
+@pytest.mark.parametrize('executable,expected', _ATTRIBUTION_SHAPES, ids=_ATTRIBUTION_SHAPE_IDS)
+def test_plan_id_lands_after_the_parsed_run_token_and_no_other_character_moves(
+    isolated_run_config, executable, expected
+):
+    result = _resolve_seeded(executable, plan_id=_PLAN)
+
+    assert result['executable'] == expected
+
+
+@pytest.mark.parametrize('plan_id', [None, NO_PLAN_SENTINEL], ids=['no-plan-id', 'no-plan-sentinel'])
+def test_executable_is_unchanged_without_a_real_plan_id(isolated_run_config, plan_id):
+    result = _resolve_seeded(_PYPROJECT_VERIFY_EXECUTABLE, plan_id=plan_id)
+
+    assert result['executable'] == _PYPROJECT_VERIFY_EXECUTABLE
+
+
+def test_namespace_without_a_plan_id_attribute_leaves_the_executable_unchanged(isolated_run_config):
+    """A caller that hands ``cmd_resolve`` a namespace with no ``plan_id`` gets no attribution."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_single_module(tmpdir, 'verify', _PYPROJECT_VERIFY_EXECUTABLE)
+        args = _variant(_RESOLVE_ARGS, project_dir=tmpdir)
+        del args.plan_id
+
+        result = cmd_resolve(args)
+
+    assert result['executable'] == _PYPROJECT_VERIFY_EXECUTABLE
+
+
+def test_plan_id_does_not_attribute_a_non_build_executable(isolated_run_config):
+    result = _resolve_seeded(_BUCKET_A_MANAGE_EXECUTABLE, command='status', plan_id=_PLAN)
+
+    assert result['executable'] == _BUCKET_A_MANAGE_EXECUTABLE
+
+
+@pytest.mark.parametrize(
+    'executable', _ALREADY_ROUTED_EXECUTABLES, ids=['already-carries-plan-id', 'already-carries-project-dir']
+)
+def test_plan_id_does_not_override_an_existing_routing_flag(isolated_run_config, executable):
+    result = _resolve_seeded(executable, plan_id=_PLAN)
+
+    assert result['executable'] == executable
+
+
+def test_plan_id_outside_the_plan_id_grammar_is_refused(isolated_run_config):
+    """A malformed id never enters a command string: the result is an error, with no executable."""
+    malformed = 'not a plan; rm -rf'
+
+    result = _resolve_seeded(_PYPROJECT_VERIFY_EXECUTABLE, plan_id=malformed)
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_plan_id'
+    assert result['plan_id'] == malformed
+    assert 'executable' not in result
+
+
+def test_real_parser_delivers_the_top_level_plan_id_to_cmd_resolve(isolated_run_config):
+    """``architecture --plan-id {plan} resolve ...`` reaches the handler with the id."""
+    parsed = parse_ns(
+        _ARCH_BUNDLE,
+        _ARCH_SKILL,
+        _ARCH_SCRIPT,
+        '--plan-id',
+        _PLAN,
+        'resolve',
+        '--command',
+        'verify',
+        register=False,
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_single_module(tmpdir, 'verify', _PYPROJECT_VERIFY_EXECUTABLE)
+        result = cmd_resolve(_variant(parsed, project_dir=tmpdir))
+
+    assert parsed.plan_id == _PLAN
+    assert result['executable'] == _PYPROJECT_VERIFY_ATTRIBUTED
+
+
+def test_plan_id_after_the_resolve_verb_is_rejected_as_a_misplaced_router_flag(capsys):
+    """``resolve`` declares no ``--plan-id`` of its own, so the after-verb form stays an error."""
+    with pytest.raises(SystemExit) as excinfo:
+        parse_ns(
+            _ARCH_BUNDLE,
+            _ARCH_SKILL,
+            _ARCH_SCRIPT,
+            'resolve',
+            '--command',
+            'verify',
+            '--plan-id',
+            _PLAN,
+            register=False,
+        )
+
+    payload = parse_toon(capsys.readouterr().out)
+    assert excinfo.value.code == 2
+    assert payload['error'] == 'misplaced_router_flag'
+    assert payload['flags'] == ['--plan-id']
 
 
 # =============================================================================

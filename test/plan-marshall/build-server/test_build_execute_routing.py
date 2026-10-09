@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import importlib
 import json
 import sys
 from contextlib import contextmanager
@@ -548,6 +549,35 @@ def test_cmd_run_falls_back_under_a_slot_when_not_routed(monkeypatch):
     assert rc == 0
     assert entered['slot'] is True  # not routed ⇒ in-process under a fallback slot
     assert entered['plan_id'] == 'plan-x'
+
+
+def test_routed_build_for_a_plan_submits_and_records_that_plan(use_fake_client, monkeypatch, tmp_path):
+    """A build routed for a plan names that plan to the daemon and in its ``kind=build`` row.
+
+    The ledger module is taken from ``sys.modules`` at run time because the
+    routing seam imports it lazily, by name, at the moment it appends.
+    """
+    ledger = importlib.import_module('_ledger_core')
+    ledger_path = tmp_path / 'change-ledger.jsonl'
+    monkeypatch.setattr(ledger, 'resolve_ledger_path', lambda: ledger_path)
+    monkeypatch.setattr(
+        sys, 'argv', ['pyproject_build.py', 'run', '--plan-id', 'plan-x', '--command-args', 'verify core']
+    )
+    monkeypatch.setattr(factory, 'cmd_run_common', lambda **kw: 0)
+    client = use_fake_client(
+        preflight={'status': 'success', 'preflight': 'ready'},
+        submit={'status': 'success', 'job_id': 'JOB-5'},
+        waits=[{'status': 'success', 'job_status': 'success', 'duration_seconds': 3, 'log_file': 'x.log'}],
+    )
+    _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
+
+    rc = cmd_run(_run_args(project_dir=str(tmp_path)))
+
+    build_rows = [row for row in ledger.read_entries(ledger_path) if row['kind'] == 'build']
+    assert rc == 0
+    assert client.submit_calls[0].plan_id == 'plan-x'
+    assert [row['plan_id'] for row in build_rows] == ['plan-x']
+    assert build_rows[0]['outcome']['route'] == 'routed'
 
 
 # =============================================================================

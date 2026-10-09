@@ -404,7 +404,8 @@ Each row ILLUSTRATES the contract its own step doc declares; that doc, not this 
 
 | Step | Outcome scenario | display_detail |
 |------|------------------|----------------|
-| `push` | Branch pushed, freshness `fresh` | `pushed feature/jwt-auth basis=ledger-verified` |
+| `push` | Branch pushed, freshness `fresh` on a single-row basis | `pushed feature/jwt-auth basis=ledger-verified` |
+| `push` | Branch pushed, freshness `fresh` on a multi-row basis | `pushed feature/jwt-auth basis=ledger-verified rows=3` |
 | `push` | Branch pushed, freshness `exempt` | `pushed feature/jwt-auth basis=exempt-unscanned reason={reason}` |
 | `finalize-step-simplify` | Edits applied | `Simplify: 2 edits, 0 findings` |
 | `create-pr` | New PR created | `#212` |

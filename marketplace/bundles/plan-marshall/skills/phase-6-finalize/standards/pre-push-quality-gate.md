@@ -51,7 +51,7 @@ The module-tests gate consults the callable scope-resolution seam — the `resol
 
 ## Settle-band position — the single-pass anchor
 
-This gate sorts LAST in the settle band (`order: 10`, immediately before `default:push` at `order: 11`), after every code-mutating settle step (`finalize-step-simplify`, `finalize-step-security-audit`) and after the derived-state refresh (`architecture-refresh`). That position IS the single-pass HEAD anchor: the `head_at_completion` this step persists on its Branch A `mark-step-done` call names the exact tree the push barrier ships, because no settle step ordered after it can advance HEAD again. Every `mutates_source: true` step ordered below it commits before the ledger row its own build calls write, so those commits are covered by this run and produce no re-stale — the intra-pass re-arm loop (an early gate certifying one SHA while a later simplify advanced HEAD past it) is structurally impossible rather than merely unlikely. The `default:push` freshness precondition (`pre-commit-verify-freshness`) verifies the anchor before shipping: it permits on a `kind=build` ledger entry carrying the current worktree SHA, which only this gate's just-completed builds can have written for the settled tree.
+This gate sorts LAST in the settle band (`order: 10`, immediately before `default:push` at `order: 11`), after every code-mutating settle step (`finalize-step-simplify`, `finalize-step-security-audit`) and after the derived-state refresh (`architecture-refresh`). That position IS the single-pass HEAD anchor: the `head_at_completion` this step persists on its Branch A `mark-step-done` call names the exact tree the push barrier ships, because no settle step ordered after it can advance HEAD again. Every `mutates_source: true` step ordered below it commits before the ledger row its own build calls write, so those commits are covered by this run and produce no re-stale — the intra-pass re-arm loop (an early gate certifying one SHA while a later simplify advanced HEAD past it) is structurally impossible rather than merely unlikely. The `default:push` freshness precondition (`pre-commit-verify-freshness`) verifies the anchor before shipping: it permits on `kind=build` ledger rows carrying the current worktree SHA, and for the settled tree those are the rows this gate's own just-completed builds wrote — one row per build call, credited together as a union rather than requiring any single row to cover the change. The rule that decides when several rows cover a change is owned by `marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md` § "Pre-Commit Verify Freshness"; it is not restated here.
 
 ## Coverage parity with CI, freshness, and honest coverage
 
@@ -239,7 +239,7 @@ For each `bundle` in `bundles` (in sorted order), resolve the canonical **module
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  resolve --command quality-gate --module {bundle} --audit-plan-id {plan_id}
+  --plan-id {plan_id} resolve --command quality-gate --module {bundle} --audit-plan-id {plan_id}
 ```
 
 Capture `executable`, `execution_tier` and `bash_timeout_seconds` from the returned TOON, then run the captured `executable` with the Bash timeout set to `bash_timeout_seconds * 1000` milliseconds. When `execution_tier` is `orchestrator` the invocation exceeds the Bash ceiling and MUST NOT be run here — hand it to the orchestrator's `await-long-running` seam and resume this loop on its result. A `status: error` from the resolve is handled exactly as the whole-tree arm's availability probe below prescribes: only the exact `error: architecture_error` + `message: Command not found` + `available[]`-omits-`quality-gate` shape proves the bundle exposes no `quality-gate` target (skip that bundle and record it in the same `[WARNING]` idiom § "Derive unique bundle set" uses — that `[WARNING]` carries no length ceiling and is therefore the COMPLETE record of every skipped bundle. A skipped bundle was NOT gated, so it does not count toward the gated total in Branch A's detail; report the outcome with the **bundles skipped** detail variant under § "Mark Step Complete", which states the gated and skipped counts and names at most one bundle plus an overflow count. Do NOT enumerate the skipped set inside the `display_detail`: both the number of skipped bundles and each bundle name are unbounded, so an enumeration there cannot be sized against the length ceiling at all); every other error shape did not answer, so STOP the step per § "Exit-code convention for every script call".
@@ -256,10 +256,10 @@ The per-bundle loop above cannot reach the whole-tree-only dimensions named in t
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  resolve --command quality-gate --audit-plan-id {plan_id}
+  --plan-id {plan_id} resolve --command quality-gate --audit-plan-id {plan_id}
 ```
 
-Branch on the **probe's** TOON, not on the build wrapper's — and on the probe's **exact shape**, not on a bare `status: error`. The resolver (`manage-architecture`'s `cmd_resolve`) returns `status: error` from four distinct paths, and only one of them says anything about whether the target exists: a missing project architecture (nothing was ever discovered), a module that does not exist, the command not being registered at the resolved module, and a catch-all for any other resolver failure. Only the third is proof of unavailability. Branching on the bare status would let an un-crawled project, a resolver IO error, or a malformed command entry downgrade a merge-gating check to a WARNING on evidence that proves nothing about availability — an unknown collapsing into a positive answer, which is the fail-open class ADR-009 forbids:
+Branch on the **probe's** TOON, not on the build wrapper's — and on the probe's **exact shape**, not on a bare `status: error`. The resolver (`manage-architecture`'s `cmd_resolve`) returns `status: error` from several distinct paths, and only one of them says anything about whether the target exists: the command not being registered at the resolved module. Branching on the bare status would let an un-crawled project, a resolver IO error, or a malformed command entry downgrade a merge-gating check to a WARNING on evidence that proves nothing about availability — an unknown collapsing into a positive answer, which is the fail-open class ADR-009 forbids:
 
 - **`status: success`** → the whole-tree target exists, and the return carries the invocation itself. Capture `executable`, `execution_tier` and `bash_timeout_seconds`, then run the captured `executable` and read its result as a gate verdict. The probe is not merely a yes/no oracle whose answer is then discarded for a pinned wrapper — the executable it returned IS the arm's invocation.
 - **`status: error` carrying ALL THREE of `error: architecture_error`, `message: Command not found`, and an `available[]` list that omits `quality-gate`** → this exact shape, and only this shape, proves the whole-tree `quality-gate` cannot run at all in this project; `available[]` names the commands the `default` module *does* expose. Take the **honest-degradation branch** below and do NOT run the invocation. The third conjunct is **"`available[]` omits `quality-gate`"**, deliberately NOT "`available[]` is non-empty": the resolver's own inner fallback on this path yields an EMPTY list when the module's derived command set cannot be read, so an empty `available[]` is a legitimate instance of the shape rather than a reason to reject it.
@@ -306,7 +306,7 @@ Run it **whole-tree, not per-bundle**. The gap being closed is specifically a wh
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  resolve --command test-compile --audit-plan-id {plan_id}
+  --plan-id {plan_id} resolve --command test-compile --audit-plan-id {plan_id}
 ```
 
 Branch on the probe with the same exact-shape discipline the whole-tree `quality-gate` availability probe uses:
@@ -319,7 +319,7 @@ Branch on the probe with the same exact-shape discipline the whole-tree `quality
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  resolve --command test-compile --module {module} --audit-plan-id {plan_id}
+  --plan-id {plan_id} resolve --command test-compile --module {module} --audit-plan-id {plan_id}
 ```
 
 Branch on this resolve with the same exact-shape discipline:
@@ -353,7 +353,7 @@ The guards above run mypy + ruff over production sources and mypy over `test/` �
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-     resolve --command module-tests --audit-plan-id {plan_id}
+     --plan-id {plan_id} resolve --command module-tests --audit-plan-id {plan_id}
    ```
 
    Capture `executable`, `execution_tier` and `bash_timeout_seconds`. The captured `executable` IS branch 4's whole-tree invocation, used verbatim. It is NOT the source of branch 6's scoped invocation — branch 6 re-resolves module-scoped, for the reason stated there. What this resolve additionally yields is the **build-skill notation** (the `{bundle}:{skill}:{script}` prefix of the executable), which is the notation branch 1 calls `resolve-test-scope` on. A project whose build skill exposes no `resolve-test-scope` verb cannot answer the divergence question at all — branch 1 defines the exact response shape that proves this, and it is the only shape that reaches the WARNING below. That case does NOT route to branch 3: branch 3's mandatory WARNING interpolates `{scoped_modules}`, which only branch 1's seam call produces and this path never makes, so borrowing it would prescribe an instruction the path structurally cannot satisfy. Emit its own WARNING instead — naming the un-gated dimension without a footprint it cannot know — and proceed to **Mark Step Complete (Success)** using the **module-tests DEGRADED** detail variant under § "Mark Step Complete", which names this arm as degraded in the recorded verdict rather than leaving it to a work-log warning no consumer of the step record reads:
@@ -431,7 +431,7 @@ The guards above run mypy + ruff over production sources and mypy over `test/` �
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-     resolve --command module-tests --module {recommended_target} --audit-plan-id {plan_id}
+     --plan-id {plan_id} resolve --command module-tests --module {recommended_target} --audit-plan-id {plan_id}
    ```
 
    Capture `executable`, `execution_tier` and `bash_timeout_seconds`, run the captured `executable` verbatim, and apply the same `orchestrator`-tier hand-off. Branch on this resolve's error shapes exactly as branch 0 prescribes.

@@ -8,7 +8,7 @@ Standards shared across all build systems (Maven, Gradle, npm, Python). Tool-spe
 
 See [build-execution.md](build-execution.md) § R3 for the complete timeout learning algorithm and Python API.
 
-**Quick reference**: Default 300s, minimum 60s (the tool-agnostic default floor — overridable per tool), maximum 1800s, discovery 120s. All timeouts in seconds. Adaptive learning uses `last_duration × 1.25` with weighted averaging.
+**Quick reference**: Default 300s, maximum 1800s, discovery 120s. All timeouts in seconds. Adaptive learning uses `last_duration × 1.25` with weighted averaging.
 
 A tool that runs its own inner timeout backstop overrides the default floor via `ExecuteConfig.min_timeout` (threaded into `execute_direct_base`), and MUST set it strictly greater than that inner backstop — otherwise the outer timeout can fire first and reduce a diagnosable inner timeout report to an opaque outer kill.
 
@@ -132,7 +132,7 @@ in a different direction, so none may be presented as another:
 |---|---|---|
 | `error` | The build **ran to completion** and reported a failure. | Not a non-finish — a verdict exists. |
 | `timeout` | The build exceeded a bound **this stack set**, so this stack sent the kill. | Not a failure; no verdict was reported. |
-| `killed` | The build's child died by a signal **nobody in this stack sent**. | Not a failure, and **not a timeout** — no bound fired. |
+| `killed` | The build was stopped by a **signal**. | Not a failure, and **not a timeout** — no bound fired. |
 
 An outcome that cannot be resolved to one of those is `unknown`, and `unknown` is folded into
 **neither neighbour**: it records that the boundary could not read a verdict, which supports no

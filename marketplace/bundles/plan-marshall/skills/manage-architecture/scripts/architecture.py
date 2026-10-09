@@ -228,7 +228,16 @@ def main() -> int:
     add_module_arg(commands_parser, required=False)
 
     # resolve - Resolve command to executable
-    resolve_parser = subparsers.add_parser('resolve', help='Resolve command to executable form', allow_abbrev=False)
+    resolve_parser = subparsers.add_parser(
+        'resolve',
+        help='Resolve command to executable form',
+        description=(
+            'Resolve a command to its executable form. The top-level --plan-id, written BEFORE the '
+            'verb (architecture --plan-id PLAN_ID resolve --command ...), makes a resolved build '
+            'executable carry that plan id, so the build it runs is attributed to the plan.'
+        ),
+        allow_abbrev=False,
+    )
     resolve_parser.add_argument('--command', required=True, dest='resolve_command', help='Command name to resolve')
     add_module_arg(resolve_parser, required=False)
 

@@ -55,6 +55,7 @@ from pathlib import Path
 from typing import Any
 
 from _build_server_protocol import (
+    APPLIED_BOUND_WIRE_FIELDS,
     PROTOCOL_VERSION,
     STATUS_KILLED,
     STATUS_QUEUED,
@@ -111,6 +112,13 @@ _PASSTHROUGH_STATUS_FIELDS = (
     'exit_code',
     'duration_seconds',
     'log_file',
+    # The bound a `timeout` / `killed` job was measured against and where it came
+    # from. Without them the client-facing TOON names a non-finish while
+    # withholding which bound applied, and a consumer falls back to reading
+    # `duration_seconds` as if it were the bound. A daemon that predates the
+    # fields sends neither, and neither is rendered. Spliced from the wire
+    # contract's own tuple, so a field added there is passed through here.
+    *APPLIED_BOUND_WIRE_FIELDS,
     # A daemon status_payload(STATUS_REFUSED, reason=...) carries its refusal
     # detail in `reason`; without it here the wait path silently drops the only
     # field saying WHY the job was refused.

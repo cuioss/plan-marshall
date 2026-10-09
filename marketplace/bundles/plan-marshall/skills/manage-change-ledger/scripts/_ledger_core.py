@@ -51,10 +51,8 @@ KIND_JOB = 'job'
 # and no wider one, so a wrapper can never mint a derived-only verdict below.
 #
 # `killed` is claimable for the same reason `timeout` is: both are FIRST-HAND
-# observations by the process that reaped the child. The wrapper's own
-# `subprocess.run` returns the negative `-N` returncode of a signalled child, and
-# the wrapper knows it did not send that signal (its own outer bound raises
-# TimeoutExpired instead). Excluding it forced every inner kill — a build child
+# observations by the process that reaped the child. Excluding it forced every
+# inner kill — a build child
 # killed while the wrapper survived — to be emitted as `error`, i.e. as a red
 # build, which is the collapse the truthful-signals work removes. Admitting it
 # opens no fail-open hole: `killed` fails every gate `error` fails, so the change

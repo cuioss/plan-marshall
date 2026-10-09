@@ -24,7 +24,7 @@ Build commands return structured results that callers interpret uniformly. This 
 | `--command-args` | string | Yes | Complete build arguments with all routing embedded |
 | `--format` | string | No | Output format: `toon` (default) or `json` |
 | `--mode` | string | No | Content mode: `actionable` (default), `structured`, or `errors` |
-| `--timeout` | int | No | Timeout in seconds (default: 300) |
+| `--timeout` | int | No | Explicit bound in seconds. Overrides the learned value for this run; when omitted the bound is the learned value, or the tool default when nothing is learned (R3) |
 
 **Key principle**: The `--command-args` string is **complete and self-contained**. All build-specific options (modules, profiles, workspaces) are embedded in this string. No external composition needed at execution time.
 
@@ -53,7 +53,7 @@ All build command invocations must return these fields.
 | Field | Type | Description |
 |-------|------|-------------|
 | `status` | string | Execution outcome: `success`, `error`, `timeout`, `killed`, or `indeterminate` |
-| `exit_code` | int | Process exit code (0=success, positive=error, -1=timeout/execution failure/indeterminate, negative `-N`=killed by signal N) |
+| `exit_code` | int | Process exit code (0=success, positive=error, -1=timeout/execution failure/indeterminate, negative `-N`=`killed`, signal N) |
 | `duration_seconds` | int | Actual execution time in seconds |
 | `log_file` | string | Path to captured output file |
 | `command` | string | Full command that was executed |
@@ -62,8 +62,8 @@ All build command invocations must return these fields.
 
 - `success` - Command completed with exit code 0
 - `error` - Command **ran to completion and failed** (non-zero exit code), or execution failed
-- `timeout` - Command exceeded **its own outer budget**, so this stack sent the kill and the elapsed equals the bound
-- `killed` - Command's child died by a signal **this stack did not send**
+- `timeout` - Command exceeded **its own outer budget**, so this stack sent the kill
+- `killed` - Command was stopped by a signal, **not by its own outer budget**
 - `indeterminate` - The outcome **could not be established at all**
 
 **Only `error` means the build failed.** The other three non-green values are
@@ -147,10 +147,30 @@ Build systems may include additional context for diagnostics.
 
 | Field | Type | Scope | Description |
 |-------|------|-------|-------------|
-| `timeout_used_seconds` | int | All | Timeout that was applied |
-| `tool_duration_seconds` | float | Tools reporting a run duration | Test tool's own reported run duration, mirroring `tests.duration_seconds`. Distinct from the top-level `duration_seconds` (wall clock): on a timeout the wall clock equals the timeout while this shows how long the suite itself took. |
+| `timeout_used_seconds` | int | All | The bound that was **applied** to the run — never the elapsed time. Omitted when the producer does not know the bound |
+| `timeout_source` | string | `timeout`, `killed` | Which path produced `timeout_used_seconds` (see below). Omitted together with the bound |
+| `command_key` | string | `timeout`, `killed` | The key a learned bound is stored under in `run-configuration.json` (see [R3](#r3-timeout-learning)) |
+| `tool_duration_seconds` | float | Tools reporting a run duration | Test tool's own reported run duration, mirroring `tests.duration_seconds`. Distinct from the top-level `duration_seconds` (wall clock): this shows how long the suite itself took. |
 | `wrapper` | string | Maven, Python | Wrapper path used (e.g., `./mvnw`, `./pw`) |
 | `command_type` | string | npm | Execution type: `npm` or `npx` |
+
+**`timeout_used_seconds` is the applied bound, not the elapsed time.** The two are different measurements: a job that ran 300 s under an 1800 s bound was measured against 1800. `duration_seconds` carries the elapsed time; a producer that does not know the bound omits `timeout_used_seconds` and `timeout_source` rather than substituting the duration.
+
+**`timeout_source` values** — the origin of the bound a `timeout` or `killed` result was measured against:
+
+| Value | The bound is |
+|-------|--------------|
+| `explicit` | A caller-supplied `--timeout`. On a daemon-routed build: the daemon's supervisory bound, raised by that request |
+| `learned` | The persisted duration for `command_key`, scaled by the safety margin (R3) |
+| `default` | The build tool's default, because nothing is persisted for `command_key` |
+| `floor` | A minimum that raised the value one of the three paths above produced — the run-config minimum or the tool's own floor |
+| `daemon_default` | The build daemon's own default supervisory bound; the submit stated none, or one too small to raise it |
+
+The source tells the reader what would change the bound: one more measured run corrects a `learned` value, an explicit `--timeout` replaces a `default` or a `daemon_default`, and a `floor` moves with neither.
+
+On a daemon-routed build the result names the bound that actually applied. When the daemon's own bound fired, that is the daemon's bound with `explicit` or `daemon_default`. When the build wrapper running inside the daemon job reported the non-finish itself, it is that inner wrapper's bound and source, read back from the job log. A daemon that predates these fields supplies no bound, and the result then carries neither `timeout_used_seconds` nor `timeout_source`.
+
+**Not the `await_until` field of the same name.** The polling utility in [`tools-script-executor/standards/wait-pattern.md`](../../tools-script-executor/standards/wait-pattern.md) also emits a `timeout_source`, on a different surface and with a different vocabulary (`explicit` / `adaptive` / `default`, beside `timeout_used_sec`). That field describes a poll loop's budget; this one describes a build's bound. The two share a name only, and a consumer must not read one vocabulary into the other.
 
 #### Dynamic Result Fields (Implementation Detail)
 
@@ -261,7 +281,19 @@ This matters for **flag-parameterised commands**. When a caller introduces a new
 
 * Treat each distinct `--command-args` string as its own learning curve — adding a flag does **not** carry over the unflagged variant's learned duration.
 * When introducing a new flag combination for a command known to run long, pass an explicit generous `--timeout` sized for the cold/un-learned case so the first run does not time out before any history exists.
-* Remember that `--timeout` is a **fallback used only when no learned value exists for the key**; it does not override an established learned value, and it does not help once the new key has accumulated its own history.
+* An explicit `--timeout` **overrides** the learned value for that run (`timeout_source: explicit`); only the minimum still binds it (`timeout_source: floor` when it raised the value).
+
+### Timeout Enforcement and Signals
+
+How a bound is enforced depends on the platform, and the difference decides what is left running afterwards.
+
+**POSIX.** The build wrapper starts the build as the leader of its **own process group**. When the bound expires the wrapper sends `SIGTERM` to that group, waits a short grace period, then sends `SIGKILL` to the group and reaps the build. While the build runs, a `SIGTERM`, `SIGINT` or `SIGHUP` delivered to the wrapper is **forwarded** to the build group, which is then stopped the same way. A `SIGKILL` addressed to the wrapper's pid or to the wrapper's process group **does not reach the build group**: it cannot be caught and so cannot be forwarded, and the build runs in a different group. A caller that must stop a build therefore sends the wrapper a forwardable signal, never `SIGKILL`.
+
+The build daemon applies the same rule one level out: it starts each job as the leader of its own session and, on its own timeout, signals the job's process group — `SIGTERM`, a grace period longer than the wrapper's, then `SIGKILL`.
+
+**Windows.** There are no process groups to signal. The wrapper runs the build as a plain child and an expired bound kills **that one process**; the daemon likewise kills only the job's own child. Processes the build started are not stopped by the timeout.
+
+On every platform the result of an expired bound is `status: timeout`.
 
 ## CLI Interface
 
@@ -436,7 +468,9 @@ All `execute_direct()` implementations return `DirectCommandResult` (TypedDict f
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `timeout_used_seconds` | int | Timeout that was applied |
+| `timeout_used_seconds` | int | The bound that was applied — never the elapsed time; omitted when unknown |
+| `timeout_source` | string | Origin of that bound (on timeout/killed): `explicit`, `learned`, `default`, `floor` or `daemon_default` — see [Execution Metadata](#execution-metadata-optional) |
+| `command_key` | string | Key the learned bound is stored under (on timeout/killed) |
 | `error` | string | Error type identifier (on error/timeout/killed/indeterminate only) |
 | `message` | string | Operator-facing detail (on `killed`: the no-blind-retry sentence; on `indeterminate`: why nothing could be concluded) |
 
@@ -509,6 +543,8 @@ log_file	.plan/local/plans/my-feature-plan/build-results/default/python-2026-01-
 command	./pw module-tests
 error	timeout
 timeout_used_seconds	600
+timeout_source	learned
+command_key	python:module_tests
 tool_duration_seconds	412.87
 
 tests:
@@ -576,6 +612,8 @@ Timeout case carrying the test evidence the run produced before the kill:
   "command": "./pw module-tests",
   "error": "timeout",
   "timeout_used_seconds": 600,
+  "timeout_source": "learned",
+  "command_key": "python:module_tests",
   "tool_duration_seconds": 412.87,
   "tests": {
     "passed": 10308,
@@ -596,9 +634,9 @@ Timeout case carrying the test evidence the run produced before the kill:
 | -1 | `error` | Execution failed (wrapper not found, log creation failed) |
 | -1 | `timeout` | Build exceeded timeout |
 | -1 | `indeterminate` | The outcome could not be established at all |
-| `-N` | `killed` | Build child terminated by POSIX signal N, which this stack did not send |
+| `-N` | `killed` | Build stopped by POSIX signal N |
 
-**Note**: A negative exit code indicates the build system never ran or was interrupted, so the code alone cannot say which. **Read `status`, never the exit code**, to separate execution failure from timeout from indeterminate from external kill — `-1` is shared by three of them, and only `status` carries the distinction.
+**Note**: A negative exit code indicates the build system never ran or was interrupted, so the code alone cannot say which. **Read `status`, never the exit code**, to separate execution failure from timeout from indeterminate from kill.
 
 ## Caller Interpretation
 
@@ -614,7 +652,7 @@ elif result['status'] == 'timeout':
     # NON-FINISH: our own bound fired. Not a failing build — no verdict exists.
     print(f'Timed out after {result.get("timeout_used_seconds", "unknown")}s')
 elif result['status'] == 'killed':
-    # NON-FINISH: a signal we did not send. Not a failing build, not a timeout.
+    # NON-FINISH: stopped by a signal. Not a failing build, not a timeout.
     # Do NOT blind-retry — establish why it was killed first.
     print(result.get('message', 'externally killed'))
 elif result['status'] == 'indeterminate':
@@ -660,9 +698,9 @@ if result['status'] == 'error':
 │                              ▼                                               │
 │  2. EXECUTION (execute_direct)                                               │
 │     a. create_log_file(build_system, scope, plan_id=plan_id)                │
-│     b. timeout_get(command_key, default, project_dir)                       │
+│     b. timeout_resolve(command_key, default, project_dir)                   │
 │     c. detect_wrapper(project_dir)                                          │
-│     d. subprocess.run(cmd, timeout=timeout, cwd=project_dir)               │
+│     d. _run_bounded(cmd, timeout_seconds=timeout, cwd=project_dir)         │
 │     e. timeout_set(command_key, actual_duration, project_dir)               │
 │                              │                                               │
 │              ┌───────────────┼───────────────┐                               │

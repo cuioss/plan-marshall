@@ -564,6 +564,58 @@ def test_status_from_result_killed_overrides_status():
     assert payload['status'] == proto.STATUS_KILLED
 
 
+def _timed_out_result(**fields) -> dict:
+    """A ``timeout`` result in the shared shape, plus whichever bound fields are given."""
+    return {
+        'status': 'timeout',
+        'exit_code': -1,
+        'duration_seconds': 300,
+        'log_file': '/tmp/x.log',
+        **fields,
+    }
+
+
+def test_status_from_result_carries_the_applied_bound_and_its_source():
+    """The bound and its origin cross onto the wire beside the status.
+
+    Without them the wire payload said a job timed out and nothing about the
+    bound it timed out against, so a client could only fall back to the elapsed
+    time — a different measurement.
+    """
+    payload = proto.status_from_result(_timed_out_result(timeout_used_seconds=1800, timeout_source='daemon_default'))
+
+    assert payload['status'] == proto.STATUS_TIMEOUT
+    assert payload['timeout_used_seconds'] == 1800
+    assert payload['timeout_source'] == 'daemon_default'
+    assert payload['duration_seconds'] == 300
+
+
+def test_status_from_result_omits_a_bound_the_result_does_not_state():
+    """CONTROL: an unknown bound is absent from the wire, never a substituted value."""
+    payload = proto.status_from_result(_timed_out_result())
+
+    assert payload['status'] == proto.STATUS_TIMEOUT
+    assert 'timeout_used_seconds' not in payload
+    assert 'timeout_source' not in payload
+
+
+def test_status_from_result_leaves_the_command_key_off_the_wire():
+    """``command_key`` is the routing client's own and is not a wire field."""
+    payload = proto.status_from_result(
+        _timed_out_result(timeout_used_seconds=1800, timeout_source='daemon_default', command_key='python:verify')
+    )
+
+    assert 'command_key' not in payload
+    assert set(proto.APPLIED_BOUND_WIRE_FIELDS) == {'timeout_used_seconds', 'timeout_source'}
+
+
+def test_status_from_result_lets_an_explicit_extra_win_over_the_results_bound():
+    """A caller-supplied extra is the more specific statement and takes precedence."""
+    payload = proto.status_from_result(_timed_out_result(timeout_used_seconds=1800), timeout_used_seconds=330)
+
+    assert payload['timeout_used_seconds'] == 330
+
+
 def test_terminal_statuses_membership():
     assert proto.STATUS_KILLED in proto.TERMINAL_STATUSES
     assert proto.STATUS_SUCCESS in proto.TERMINAL_STATUSES
@@ -771,3 +823,105 @@ class TestReadLogVerdict:
 
         assert verdict is not None
         assert verdict.tests_run is None
+
+    # -- applied bound ------------------------------------------------------
+    # The reader carries the INNER wrapper's bound, its source and its command
+    # key for the same reason it carries the test count: the routed client and
+    # the daemon both learn what the inner wrapper measured against only from
+    # this log. Each field is matched by its absent / unusable twin, so "absent
+    # reads as unknown" cannot pass because the field is never read.
+
+    def test_carries_the_inner_wrappers_applied_bound_triple(self, tmp_path):
+        log = tmp_path / 'job.log'
+        log.write_text(
+            'status: timeout\n'
+            'exit_code: -1\n'
+            'timeout_used_seconds: 330\n'
+            'timeout_source: learned\n'
+            'command_key: "python:module_tests"\n'
+        )
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.timeout_used_seconds == 330
+        assert verdict.timeout_source == 'learned'
+        assert verdict.command_key == 'python:module_tests'
+
+    def test_an_unquoted_command_key_keeps_its_colon(self, tmp_path):
+        # Only the FIRST colon separates key from value, so a command key —
+        # which always holds one — survives whether or not the writer quoted it.
+        log = tmp_path / 'job.log'
+        log.write_text('status: timeout\nexit_code: -1\ncommand_key: python:module_tests\n')
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.command_key == 'python:module_tests'
+
+    def test_absent_bound_triple_reads_as_none(self, tmp_path):
+        # The matched negative: the SAME timeout verdict with no bound lines.
+        log = tmp_path / 'job.log'
+        log.write_text('status: timeout\nexit_code: -1\n')
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.timeout_used_seconds is None
+        assert verdict.timeout_source is None
+        assert verdict.command_key is None
+
+    @pytest.mark.parametrize('raw', ['-', 'soon', '0', '-5', '12.5'], ids=['dash', 'word', 'zero', 'negative', 'float'])
+    def test_an_unusable_bound_degrades_to_none(self, tmp_path, raw):
+        """A bound is a positive whole number of seconds; anything else is unknown.
+
+        ``int`` accepts ``0`` and ``-5`` happily, so the ValueError guard alone
+        would publish them as bounds. Neither can be one, and reporting either
+        would hand the consumer a number to render where none exists.
+        """
+        log = tmp_path / 'job.log'
+        log.write_text(f'status: timeout\nexit_code: -1\ntimeout_used_seconds: {raw}\n')
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.timeout_used_seconds is None
+
+    def test_an_empty_source_and_key_read_as_none(self, tmp_path):
+        log = tmp_path / 'job.log'
+        log.write_text('status: timeout\nexit_code: -1\ntimeout_source:\ncommand_key:\n')
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.timeout_source is None
+        assert verdict.command_key is None
+
+    def test_indented_bound_rows_are_ignored(self, tmp_path):
+        # Only the top-level keys count, matching the status:/exit_code: rule.
+        log = tmp_path / 'job.log'
+        log.write_text(
+            'status: timeout\nexit_code: -1\nnested[1]{a}:\n  timeout_used_seconds: 99\n  timeout_source: learned\n'
+        )
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.timeout_used_seconds is None
+        assert verdict.timeout_source is None
+
+    def test_the_last_bound_wins_over_progress_output(self, tmp_path):
+        # Same last-occurrence rule as status: the final result TOON is emitted
+        # after any progress output written to the same log.
+        log = tmp_path / 'job.log'
+        log.write_text(
+            'timeout_used_seconds: 60\ntimeout_source: default\n'
+            '... build chatter ...\n'
+            'status: timeout\nexit_code: -1\ntimeout_used_seconds: 330\ntimeout_source: learned\n'
+        )
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.timeout_used_seconds == 330
+        assert verdict.timeout_source == 'learned'

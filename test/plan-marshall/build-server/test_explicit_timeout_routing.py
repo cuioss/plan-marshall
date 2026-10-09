@@ -17,7 +17,7 @@ for every test outside this directory, and the truthfulness suite pins
 ``test/plan-marshall/build-server/``, which that fixture carves out BY LOCATION,
 so the real routing seam runs here.
 
-Three layers, ending in one chain:
+Four layers, the first three ending in one chain:
 
 1. ``cmd_run`` forwards the bound into ``_route_to_daemon`` and on into the
    client's ``submit`` call — with the matched negative that an unsupplied flag
@@ -27,6 +27,10 @@ Three layers, ending in one chain:
 3. ``Daemon._execute`` raises its supervisory bound to the job's, falls back to
    its own default when the job states none, and treats that default as a FLOOR
    a smaller request cannot undercut.
+
+4. On the way BACK, a routed ``timeout`` names the bound that applied and where
+   it came from (``daemon_default`` or ``explicit``) — never the job's elapsed
+   time — and names neither when the daemon stated no bound.
 
 ``JobSpec``'s own codec contract for the field lives with the rest of the codec,
 in ``test_build_server_protocol.py``.
@@ -63,9 +67,16 @@ import _build_execute_factory as factory
 import build_server as bsclient
 import marshalld
 from _build_execute import CaptureStrategy
-from _build_server_protocol import MARSHALLD_JOB_ENV, JobSpec, make_job_spec
+from _build_server_protocol import (
+    MARSHALLD_JOB_ENV,
+    TIMEOUT_SOURCE_DAEMON_DEFAULT,
+    TIMEOUT_SOURCE_EXPLICIT,
+    JobSpec,
+    make_job_spec,
+)
 from _marshalld_journal import Journal
 from _marshalld_scheduler import Scheduler
+from toon_parser import parse_toon
 
 #: The bound every layer below carries. Deliberately ABOVE the daemon default, so
 #: a dropped forward is unmistakable: with the value discarded the supervisor
@@ -74,6 +85,11 @@ REQUESTED_TIMEOUT = 3000
 
 #: A request BELOW the daemon default, for the floor assertion.
 BELOW_DEFAULT_TIMEOUT = 120
+
+#: How long the routed job in the bound-naming cases ran before it timed out.
+#: Deliberately far below the daemon default, so a result that reports the
+#: elapsed time as the bound is unmistakable: it renders 300 where 1800 applied.
+JOB_ELAPSED_SECONDS = 300
 
 
 # =============================================================================
@@ -192,8 +208,8 @@ def _spec(project_root: Path, timeout: int | None) -> JobSpec:
     )
 
 
-def _bound_run_job_received(tmp_path, spec: JobSpec, monkeypatch) -> int:
-    """Drive the REAL ``_execute`` seam and return the bound ``run_job`` was given.
+def _run_job_kwargs(tmp_path, spec: JobSpec, monkeypatch) -> dict:
+    """Drive the REAL ``_execute`` seam and return the keywords ``run_job`` was given.
 
     The job is submitted and admitted first, exactly as ``_admit_ready`` does in
     production — ``_execute``'s scheduler tail is a no-op on a job that was never
@@ -204,10 +220,10 @@ def _bound_run_job_received(tmp_path, spec: JobSpec, monkeypatch) -> int:
         journal=Journal(),
         log_dir=tmp_path / 'job-logs',
     )
-    seen: dict[str, int] = {}
+    seen: dict = {}
 
     async def _fake_run_job(*_args, **kwargs):
-        seen['timeout'] = kwargs['timeout']
+        seen.update(kwargs)
         return {'status': 'success', 'duration_seconds': 1, 'log_file': 'x'}
 
     monkeypatch.setattr(marshalld, 'run_job', _fake_run_job)
@@ -220,7 +236,59 @@ def _bound_run_job_received(tmp_path, spec: JobSpec, monkeypatch) -> int:
     asyncio.run(daemon._execute(result.job_id, spec.to_dict()))
 
     assert 'timeout' in seen, 'run_job was never reached'
-    return seen['timeout']
+    return seen
+
+
+def _bound_run_job_received(tmp_path, spec: JobSpec, monkeypatch) -> int:
+    """Return the bound the REAL ``_execute`` seam handed to ``run_job``."""
+    return int(_run_job_kwargs(tmp_path, spec, monkeypatch)['timeout'])
+
+
+class _NonFinishClient(_RecordingClient):
+    """A build_server stand-in whose job ends in a scripted non-finish ``wait``."""
+
+    def __init__(self, waited: dict) -> None:
+        super().__init__()
+        self._waited = waited
+
+    def run_wait(self, _args) -> dict:
+        return dict(self._waited)
+
+
+def _rendering_cmd_run(monkeypatch, client):
+    """Return ``(cmd_run, config)`` whose routed leg reaches ``client`` and RENDERS.
+
+    Unlike :func:`_routing_cmd_run`, the shared ``cmd_run_common`` is left real,
+    so what the caller reads off stdout is the TOON production would have
+    emitted for the routed result.
+    """
+    monkeypatch.setattr(sys, 'argv', ['pyproject_build.py', 'run', '--command-args', 'verify'])
+    monkeypatch.setattr(factory, '_load_build_server', lambda: client)
+    config = execute_config(factory, CaptureStrategy.STDOUT_REDIRECT, tool_name='python')
+    _, cmd_run = factory.create_execute_handlers(config, parse_log_fn=lambda *_a: None)
+    return cmd_run, config
+
+
+def _rendered_routed_non_finish(monkeypatch, capsys, home: Path, **wait_fields) -> tuple[dict, str]:
+    """Render a routed ``timeout`` through the real ``cmd_run``; return ``(toon, command_key)``.
+
+    The job log path names a file that does not exist: a supervisor timeout
+    kills the inner wrapper before it can emit a result TOON, so there is no
+    log verdict to read.
+    """
+    waited = {
+        'status': 'success',
+        'job_status': 'timeout',
+        'duration_seconds': JOB_ELAPSED_SECONDS,
+        'log_file': str(home / 'job-logs' / 'absent.log'),
+        **wait_fields,
+    }
+    cmd_run, config = _rendering_cmd_run(monkeypatch, _NonFinishClient(waited))
+    capsys.readouterr()
+
+    assert cmd_run(_run_args(project_dir=str(home))) == 0
+
+    return parse_toon(capsys.readouterr().out), factory.compute_command_key(config, 'verify')
 
 
 # =============================================================================
@@ -381,6 +449,93 @@ def test_a_request_inside_the_margin_window_still_raises_the_bound(home, tmp_pat
     assert inside_window < marshalld._DEFAULT_JOB_TIMEOUT, 'precondition: the request is below the default'
     assert received == inside_window + marshalld._JOB_TIMEOUT_MARGIN_SECONDS
     assert received > marshalld._DEFAULT_JOB_TIMEOUT
+
+
+# =============================================================================
+# 4. A routed timeout names the bound that applied, not how long the job ran
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    ('requested', 'expected_bound', 'expected_source'),
+    [
+        (None, marshalld._DEFAULT_JOB_TIMEOUT, TIMEOUT_SOURCE_DAEMON_DEFAULT),
+        (
+            REQUESTED_TIMEOUT,
+            REQUESTED_TIMEOUT + marshalld._JOB_TIMEOUT_MARGIN_SECONDS,
+            TIMEOUT_SOURCE_EXPLICIT,
+        ),
+        # Too small to raise the default: the daemon's own bound is what applies,
+        # so the source is the daemon's, not the request's.
+        (BELOW_DEFAULT_TIMEOUT, marshalld._DEFAULT_JOB_TIMEOUT, TIMEOUT_SOURCE_DAEMON_DEFAULT),
+    ],
+    ids=['no_request', 'request_raises_the_bound', 'request_too_small_to_raise_it'],
+)
+def test_daemon_hands_the_supervisor_the_bound_with_its_origin(
+    requested, expected_bound, expected_source, home, tmp_path, monkeypatch
+):
+    """``_execute`` gives ``run_job`` the bound AND which path produced it."""
+    kwargs = _run_job_kwargs(tmp_path, _spec(home, requested), monkeypatch)
+
+    assert kwargs['timeout'] == expected_bound
+    assert kwargs['timeout_source'] == expected_source
+
+
+def test_routed_timeout_renders_the_daemon_bound_not_the_elapsed_time(home, monkeypatch, capsys):
+    """A job that ran 300 s under an 1800 s daemon bound reports 1800.
+
+    The regression anchor. Before the bound travelled on the wire the routed leg
+    passed the job's elapsed time as the bound, so this result rendered
+    ``timeout_used_seconds: 300`` — a number that was never a bound — and nothing
+    said whose number had fired.
+    """
+    rendered, command_key = _rendered_routed_non_finish(
+        monkeypatch,
+        capsys,
+        home,
+        timeout_used_seconds=marshalld._DEFAULT_JOB_TIMEOUT,
+        timeout_source=TIMEOUT_SOURCE_DAEMON_DEFAULT,
+    )
+
+    assert rendered['status'] == 'timeout'
+    assert rendered['duration_seconds'] == JOB_ELAPSED_SECONDS
+    assert rendered['timeout_used_seconds'] == marshalld._DEFAULT_JOB_TIMEOUT == 1800
+    assert rendered['timeout_used_seconds'] != JOB_ELAPSED_SECONDS
+    assert rendered['timeout_source'] == 'daemon_default'
+    assert rendered['command_key'] == command_key
+
+
+def test_routed_timeout_under_an_explicit_request_renders_explicit(home, monkeypatch, capsys):
+    """The source follows the bound: a request that raised it is named as such."""
+    explicit_bound = REQUESTED_TIMEOUT + marshalld._JOB_TIMEOUT_MARGIN_SECONDS
+
+    rendered, _command_key = _rendered_routed_non_finish(
+        monkeypatch,
+        capsys,
+        home,
+        timeout_used_seconds=explicit_bound,
+        timeout_source=TIMEOUT_SOURCE_EXPLICIT,
+    )
+
+    assert rendered['timeout_used_seconds'] == explicit_bound
+    assert rendered['timeout_source'] == 'explicit'
+
+
+def test_routed_timeout_without_a_bound_renders_neither_field(home, monkeypatch, capsys):
+    """A daemon that states no bound yields none — the elapsed is not substituted.
+
+    The version-skew case: a daemon predating the field sends only the duration.
+    Rendering that duration as ``timeout_used_seconds`` would re-create the
+    defect for exactly the daemons that have not been upgraded.
+    """
+    rendered, command_key = _rendered_routed_non_finish(monkeypatch, capsys, home)
+
+    assert rendered['status'] == 'timeout'
+    assert rendered['duration_seconds'] == JOB_ELAPSED_SECONDS
+    assert 'timeout_used_seconds' not in rendered
+    assert 'timeout_source' not in rendered
+    # The key is the routing client's own, so it survives an unknown bound.
+    assert rendered['command_key'] == command_key
 
 
 # =============================================================================

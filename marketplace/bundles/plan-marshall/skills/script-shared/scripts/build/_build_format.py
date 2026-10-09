@@ -42,6 +42,8 @@ EXTRA_FIELDS = [
     'error',
     'message',
     'timeout_used_seconds',
+    'timeout_source',
+    'command_key',
     'tool_duration_seconds',
     'wrapper',
     'command_type',
@@ -62,6 +64,15 @@ does not say what to do â€” above all a ``killed`` build's "externally killed â€
 flaky, do not blind-retry". Dropping it would leave the emitted TOON saying a
 build was killed while withholding the one instruction that changes the reader's
 next action.
+
+``timeout_source`` names which path produced ``timeout_used_seconds``
+(``explicit`` / ``learned`` / ``default`` / ``floor`` / ``daemon_default``) and
+``command_key`` names the run-configuration entry a learned bound is stored
+under. A ``timeout`` or ``killed`` result is only actionable when the reader can
+tell whose number fired: a learned bound is corrected by one more measured run, a
+daemon default by an explicit ``--timeout``, and a floor by neither. Dropping
+either field would leave the TOON naming a bound and withholding where it came
+from, while the JSON path still said.
 
 ``truncated`` is the count reconciling the capped/deduped ``errors`` array against
 the true total (see ``_build_shared._cap_errors_with_truncation``); it must be in
