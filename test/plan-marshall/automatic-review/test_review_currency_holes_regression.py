@@ -91,7 +91,11 @@ class TestReviewCurrencyHolesRegression:
         assert (states[0] == rc.STATE_REFUSED_AWAITABLE) == rgd.should_await_refusal(rate_class)
 
     def test_trigger_reaches_stale_bot(self, plan_context):
-        """Trigger-B resolves the actually-stale bot through the production trigger entry point."""
+        """Trigger-B lists the stale bot through the production trigger entry point.
+
+        The bot has no stored finding in this plan: it is listed on the strength of
+        its participation state alone, forwarded in the producer's pair form.
+        """
         plan_id = 'regression-trigger-stale-bot'
         plan_context.plan_dir_for(plan_id)
 
@@ -100,12 +104,14 @@ class TestReviewCurrencyHolesRegression:
             'trigger-bot',
             '--plan-id',
             plan_id,
-            '--stale-bots',
+            '--required-bots',
             'sourcery',
-            '--newest-kind',
-            'coderabbit',
+            '--stale-participation-bots',
+            'sourcery:review_body',
         )
         assert trigger.success, trigger.stderr
+        assert 'trigger_bots[1]' in trigger.stdout
+        assert 'required_stale_bots[1]' in trigger.stdout
         assert 'sourcery' in trigger.stdout
 
         result = rc.check_completeness(plan_id, ['sourcery'], stale_participation_bots=['sourcery'])
