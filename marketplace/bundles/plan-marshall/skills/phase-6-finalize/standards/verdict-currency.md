@@ -184,7 +184,7 @@ that no tree difference can see at all:
 | `default:pre-push-quality-gate` | 1 (its module-tests arm runs the pytest suite), and 2 + 3 inherited (its whole-tree arm invokes the marketplace-wide doctor pass, so it takes on that pass's own disqualifiers) | [`pre-push-quality-gate.md`](pre-push-quality-gate.md) § "Verdict-input surface — deliberately undeclared" |
 | `project:finalize-step-plugin-doctor` | 2 (`broken-relative-link`) and 3 (the agentfile analyzers) | that step's own § "Verdict-input surface — deliberately undeclared" |
 | `default:finalize-step-simplify` | 2 (the reviewed file set is the plan's own footprint, derived at run time and narrowed by no file-type filter) | [`finalize-step-simplify.md`](finalize-step-simplify.md) § "Verdict-input surface — deliberately undeclared" |
-| `project:finalize-step-lessons-housekeeping` | 2 (the Evidence bar re-reads whichever standards clause a lesson names), plus inputs outside every tree: the plan's `modified_files` and request document, and the git-ignored lessons corpus | that step's own § "Verdict-input surface — deliberately undeclared" |
+| `project:finalize-step-lessons-housekeeping` | 2 (the Evidence bar re-reads whichever standards clause a lesson names), plus inputs outside every tree: the plan's realized footprint and request document, and the git-ignored lessons corpus | that step's own § "Verdict-input surface — deliberately undeclared" |
 
 The vocabulary is deliberately static globs; admitting a *derived* surface — a command whose
 output is the path set — would make shape 2 declarable, and is not attempted here.

@@ -52,7 +52,7 @@ This settle-band constraint **supersedes** the former requirement to run after `
 
 This step declares `head_dependent: true` in its frontmatter — that fact IS the membership declaration the dispatcher's re-entry check reads (see [ext-point-finalize-step.md](../../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter"; the governing discriminator lives there and is deliberately not restated here).
 
-It matches on the settle-stage shape: this is a pre-merge settle-band step whose edits land directly in the worktree (`mutates_source: true` — the Step 4b promotions write governing-skill docs). Those edits were computed against the HEAD this step read, so a HEAD advance supersedes them. Concretely, the classification in Step 3 reasons about *what the plan changed* from `modified_files` and the plan outcome; a loop-back commit landing after this step recorded `done` changes that input, so a lesson that was correctly retained against the old HEAD may be completely covered against the new one — and the standing `done` record would let the corpus ship unreconciled. The empty-corpus skip-clean exit (Step 2) is the sharpest case, because it records `done` while having changed nothing.
+It matches on the settle-stage shape: this is a pre-merge settle-band step whose edits land directly in the worktree (`mutates_source: true` — the Step 4b promotions write governing-skill docs). Those edits were computed against the HEAD this step read, so a HEAD advance supersedes them. Concretely, the classification in Step 3 reasons about *what the plan changed* from the plan's realized footprint and the plan outcome; a loop-back commit landing after this step recorded `done` changes that input, so a lesson that was correctly retained against the old HEAD may be completely covered against the new one — and the standing `done` record would let the corpus ship unreconciled. The empty-corpus skip-clean exit (Step 2) is the sharpest case, because it records `done` while having changed nothing.
 
 Both `--outcome done` records therefore capture the worktree HEAD immediately before their `mark-step-done` call and forward it via `--head-at-completion {sha}`: the Step 7 completion record and the Step 2 empty-corpus skip-clean record. Re-firing is safe: the classification is a fresh read each time, and the pass is non-fatal throughout.
 
@@ -62,7 +62,7 @@ This step declares **no** `verdict_inputs`, so the dispatcher's verdict-currency
 
 A `verdict_inputs` declaration is a set of globs over **tracked** paths, and the classifier decides currency from the tree difference between two commits (see [verdict-currency.md](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/verdict-currency.md) § "The classification"). Most of what this step's verdict reads is not in any tree:
 
-- **The plan's own records.** Step 1 reads `modified_files` from `references.json` and the request document. Both live in the plan directory under the git-ignored `.plan/local/`, so no commit carries them and no tree difference reports a change to them.
+- **The plan's own records.** Step 1 derives the plan's realized footprint and reads the request document. The request document lives in the plan directory under the git-ignored `.plan/local/`, so no commit carries it and no tree difference reports a change to it. The realized footprint is derived at run time from the worktree — the diff against a base ref that moves without any commit on this branch, plus the uncommitted working-tree state — so it is a discovered set rather than a fixed list of tracked paths.
 - **The lessons corpus.** Step 2 enumerates the main-anchored corpus under `.plan/local/lessons-learned/`, and Step 3 classifies every lesson in it. The corpus is git-ignored too: a lesson added, trimmed or removed between two firings changes this step's verdict while the two trees compare equal.
 - **Whichever standards clause a lesson names.** The Evidence bar re-reads the clause a completely-covered verdict cites and that clause's own worked example. Those files are tracked, but which ones are read is decided by the lessons in the corpus at run time, so the set cannot be written down ahead of the run.
 
@@ -97,9 +97,35 @@ The step runs inside the pre-merge settle band, so its promotion edits are linte
 
 ### Step 1: Read the just-finished plan's outcome
 
+Resolve the worktree path first — the footprint below is derived from that tree, and Steps 2 and 7 read HEAD from it:
+
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-references:manage-references get \
-  --plan-id {plan_id} --field modified_files
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-worktree-path \
+  --plan-id {plan_id}
+```
+
+Capture `worktree_path` as `{worktree_path}` (substitute `.` on the main-checkout flow, where the returned path is empty). Then derive the plan's **realized footprint** — the files the plan actually changed, computed live from the worktree's git state rather than read from a stored list:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references compute-footprint \
+  --plan-id {plan_id} --worktree-path {worktree_path}
+```
+
+On `status: success`, `files` is the realized footprint and `live_count` its size. **Branch on `status` before reading `files`**: an error payload carries no `files` key, and an absent footprint is never an empty one — "the plan changed nothing" and "the footprint could not be derived" demand different classifications in Step 3. Every error outcome is **non-fatal**: log the named error and continue on the request document alone, classifying under the bias-to-retain posture because what the plan changed is unknown.
+
+| `error` | What it means | Action |
+|---------|---------------|--------|
+| `worktree_not_found` | `{worktree_path}` does not exist or is not a directory | Log the named error; continue on the request document alone |
+| `references_not_found` | the plan has no `references.json`, so the diff base cannot be resolved | Log the named error; continue on the request document alone |
+| `not_a_git_worktree` | `{worktree_path}` exists but is not inside a git worktree | Log the named error; continue on the request document alone |
+| `git_error` | the base ref does not resolve in the worktree, or the diff itself failed — the payload's `message` says which | Log the named error with its `message`; continue on the request document alone |
+| `files_out_refused` | a `--files-out` destination the verb declines to write | Log the named error; continue on the request document alone. This step passes no `--files-out`, so reaching it means the call was altered — do not retry with a different destination |
+| `files_out_unwritable` | a `--files-out` destination that could not be written | Log the named error; continue on the request document alone. Same note as `files_out_refused` |
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level WARNING \
+  --message "[STATUS] (project:finalize-step-lessons-housekeeping) Realized footprint UNAVAILABLE: {error} — classifying on the request document alone, this is NOT an empty footprint"
 ```
 
 ```bash
@@ -107,14 +133,14 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
   --plan-id {plan_id}
 ```
 
-Read the retrospective's quality-verification report (written by `plan-marshall:plan-retrospective`, order 995). At this step's settle-band order the retrospective has not yet run, so this read is **best-effort**: the report is normally absent, and its absence is already non-fatal — see the "Missing `quality-verification-report.md`" row in Error Handling, which proceeds on `request.md` + `modified_files` alone.
+Read the retrospective's quality-verification report (written by `plan-marshall:plan-retrospective`, order 995). At this step's settle-band order the retrospective has not yet run, so this read is **best-effort**: the report is normally absent, and its absence is already non-fatal — see the "Missing `quality-verification-report.md`" row in Error Handling, which proceeds on the request document and the realized footprint alone.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-files:manage-files read \
   --plan-id {plan_id} --file quality-verification-report.md
 ```
 
-Together these establish what the plan changed (modified files), why (the request), and the verified outcome — the basis for coverage classification.
+Together these establish what the plan changed (the realized footprint), why (the request), and the verified outcome — the basis for coverage classification.
 
 ### Step 2: Resolve the corpus substrate, then enumerate it
 
@@ -327,7 +353,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 | Promotion `Edit` failure (Step 4b.1) on one lesson | Non-fatal — log the failure, leave the lesson in place, and **do NOT** proceed to the Step 4b.2 gate or the Step 4b.3 retirement for that lesson. A retirement without a successful promotion would lose the rule, so they stay atomic-by-convention: no promotion, no retire. Continue with the remaining lessons. |
 | Promote-then-retire disposition — commit carriage | The step issues no tree-mutating git call (its only git calls are the read-only `rev-parse HEAD` in Steps 2 and 7). Its promotion edits are committed onto the feature branch by the dispatcher's commit instrumentation (phase-6-finalize Step 3 item 5f); because the step runs in the settle band it never writes source after the push barrier, every promotion edit it makes is still ahead of that commit and is therefore carried onto the branch — no promotion can be stranded as an uncommitted edit. |
 | Adaptation `Edit` failure on one lesson | Non-fatal — log the failure, leave that lesson untouched, and continue. |
-| Missing `quality-verification-report.md` | Non-fatal — proceed using `request.md` + `modified_files` alone; log that the retrospective report was unavailable |
+| Missing `quality-verification-report.md` | Non-fatal — proceed using the request document and the realized footprint alone; log that the retrospective report was unavailable |
+| `compute-footprint` error in Step 1 (`worktree_not_found`, `references_not_found`, `not_a_git_worktree`, `git_error`, `files_out_refused`, `files_out_unwritable`) | Non-fatal — log the named error and continue on the request document alone. Never treat the missing footprint as an empty one: the Step 1 table states the action per error |
 | Step completes | Record `mark-step-done --outcome done --display-detail "{N} rm, {P} promo, {M} adapt, {K} keep ({store_resolution} corpus)" --head-at-completion {sha}`, plus the Step 7 work-log line naming `{corpus_path}`. Every count this step reports rides with the substrate it was computed from. |
 
 The step's posture is **non-fatal throughout**: finalize must never abort because lessons housekeeping hit a snag on an individual lesson.
