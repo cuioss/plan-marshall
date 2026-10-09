@@ -423,10 +423,10 @@ properties of one**:
 | **Present and named**, at § "Round-loop termination": *"These are two DIFFERENT closes and a later
   reader MUST NOT collapse them."* The original claim here was simply wrong.
 
-| The self-seeding class
-| **Present, and absent from the lane.** plan-marshall names why the doc-claim half does not converge
-  under correction — *"correction breeds the next instance of the class; only DELETION converges"* — and
-  requires resolution by deletion.
+| Prose that cannot seed a round
+| **Present, and absent from the lane.** plan-marshall grades every finding by one severity rubric and
+  loops only on a blocking one — *"Among findings, only a blocking one keeps the loop alive."* A wording
+  finding is advisory, so prose rewritten in answer to it cannot cause the next round.
 
 | The n−1-of-n remedy
 | **Present, and the lane only diagnoses it.** The lane observes that *"a fix applied at n−1 of n sites
@@ -461,9 +461,9 @@ reports that found it did so against plan-marshall, not against the lane.
   the verify at the right moment. **The documents are honest about this**; a comparison that quotes the
   capability without the caveat would not be.
 * **The self-review loop is essentially undocumented at concept level, and that produced a false
-  finding in this very document.** `pre-submission-self-review.md` is 432 lines carrying the bounded
-  round loop, the delta anchor, the converged-vs-out-of-budget termination criterion, the self-seeding
-  class and the cohort sweep. In `doc/concepts/` — the entry point a reader or an agent starts from —
+  finding in this very document.** `pre-submission-self-review.md` carries the bounded
+  round loop, the delta anchor, the converged-vs-out-of-budget termination criterion, the severity
+  grading and the cohort sweep. In `doc/concepts/` — the entry point a reader or an agent starts from —
   it survives as **one clause** in `automatic-reviews.adoc`, **one table cell** in
   `planning-workflow.adoc`, and nothing in `verification.adoc`, the page whose title promises it.
   ⇒ An analysis scoped to `doc/concepts/` cannot see the mechanism, and this document's first draft

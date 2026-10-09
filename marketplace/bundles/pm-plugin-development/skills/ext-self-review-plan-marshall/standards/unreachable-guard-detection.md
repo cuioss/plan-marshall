@@ -42,7 +42,7 @@ the criterion that separates the line-level heuristics from the review-anchor/in
 Framings (a) and (c) are rejected. Their rejection is not a ranking preference; each fails a specific,
 stated bar, recorded in § 2.
 
-The list is **surfacing-only**, exactly like the eighteen sibling candidate lists: it records
+The list is **surfacing-only**, exactly like its sibling candidate lists: it records
 candidates and never blocks, never self-adjudicates, and never asserts cleanliness on its own. The
 adjudication is the consumer's cognitive check.
 
@@ -104,7 +104,7 @@ the sequence to be a *decomposition of a single value* and the result to be cons
 excludes the ordinary search-a-list uses, which neither decompose nor key on the result. Residual
 false positives remain — a scan over a decomposition can be correct when the domain genuinely admits
 only one matching segment — and they are accepted for two reasons. First, the list is surfacing-only,
-so a residual candidate costs one LLM adjudication, never a blocked build; the entire eighteen-list
+so a residual candidate costs one LLM adjudication, never a blocked build; the entire candidate-list
 surface is calibrated to that cost. Second, and more importantly, **a scan over a decomposition that
 is correct today is correct only for as long as the domain admits exactly one match** — which is
 precisely the assumption whose silent violation produced this defect. Surfacing it for adjudication is
