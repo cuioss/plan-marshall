@@ -20,7 +20,7 @@ marketplace/targets/
 ├── sync.py                       # Single sync engine (claude/opencode/antigravity)
 ├── body_transform_engine.py      # Target-shared data-driven body rewrites
 ├── component_targets.py          # `targets:` frontmatter scope filter
-├── fs_safety.py                  # Containment primitives for destructive emits
+├── fs_safety.py                  # Containment + symlink checks for emits and the install sync
 ├── skill_identity.py             # Flat-target SKILL.md bundle/skill identity metadata
 ├── cuioss_review_bot/            # Reviewer per-domain instruction packs
 │   ├── __init__.py               # Registers CuiossReviewBotTarget
@@ -230,13 +230,13 @@ The generator hop is `./pw generate-claude`, `./pw generate-opencode` or `./pw g
 | `opencode` | `target/opencode/` (singular layout) | `~/.config/opencode/` (plural layout) | `TargetSyncConfig` deploy |
 | `antigravity` | `target/antigravity/` | `~/.gemini/config/plugins/plan-marshall/` | `TargetSyncConfig` deploy |
 
-The engine is stdlib-only and runs under a bare `python3`. It loads `claude/cache_sync.py`, `claude/registry_pin.py` and the shared registry reader by file location, never through the `marketplace.targets` package, whose `__init__` modules import third-party dependencies.
+The engine is stdlib-only and runs under a bare `python3`. It loads `claude/cache_sync.py`, `claude/registry_pin.py`, `fs_safety.py` and the shared registry reader by file location, never through the `marketplace.targets` package, whose `__init__` modules import third-party dependencies. `claude/cache_sync.py` loads `fs_safety.py` the same way.
 
 ### The Claude path (`claude/`)
 
 The Claude leg lives under `marketplace/targets/claude/`:
 
-* `cache_sync.py` — mirrors each bundle of `target/claude/` into the versioned plugin cache. A staleness guard refuses a tree that is missing, empty, or behind `marketplace/bundles/`. The guard expects exactly the bundles whose `plugin.json` admits `claude` through its `targets` declaration, and it reports `guard_outcome: stale` (regenerate the tree) separately from `guard_outcome: probe_failed` (a probe could not run, so freshness is unknown).
+* `cache_sync.py` — mirrors each bundle of `target/claude/` into the versioned plugin cache. A staleness guard refuses a tree that is missing, empty, or behind `marketplace/bundles/`. The guard expects exactly the bundles whose `plugin.json` admits `claude` through its `targets` declaration, and it reports `guard_outcome: stale` (regenerate the tree) separately from `guard_outcome: probe_failed` (a probe could not run, so freshness is unknown). A symbolic link at a cache destination is refused for the whole run — `status: error`, exit `1`, nothing synced, one `failed` row per refused path — as [Destination Symlinks](#destination-symlinks) describes.
 * `reconcile_daemon.py` — reconciles a running `marshalld` after a Claude sync moved the cache version. It is run once the Claude block reports `cache_status: success` — the gate is the cache sync alone, so a `status: partial` caused only by a `behind` registry does not skip it.
 * `registry_pin.py` — repins the plugin registry to the synced cache version. It is a dry run unless `--apply` is passed; the engine runs its apply mode only under `--repin`.
 * `list_bundles_and_versions.py` — prints the bundle/version table of `target/claude/`.
@@ -281,7 +281,7 @@ Each component-tree target (`opencode`, `antigravity`) is registered in `TARGET_
 * `name`: The target key passed via `--target` (e.g., `'antigravity'`, `'opencode'`).
 * `default_dest`: The target platform's default user/global installation path (e.g., `~/.gemini/config/plugins/plan-marshall` or `~/.config/opencode`). Can be overridden at runtime via `--target-dir`.
 * `source_skills_dir`, `source_agents_dir`, `source_commands_dir`: Source directory names under `target/{name}/`. The engine normalizes both singular layouts (`skill/`, `agent/`, `command/`) and plural layouts (`skills/`, `agents/`, `commands/`) into the standard plural structure expected by target runtimes at destination.
-* `root_assets`: A tuple of `(filename, kind, is_executable)` records for files copied directly to the destination root (e.g., descriptors like `plugin.json` or `opencode.json`, installers like `install.sh`, and documentation like `README.adoc`). Executable assets automatically preserve `0o755` permissions.
+* `root_assets`: A tuple of `(filename, kind, is_executable)` records for files copied directly to the destination root (e.g., descriptors like `plugin.json` or `opencode.json`, installers like `install.sh`, and documentation like `README.adoc`). Executable assets automatically preserve `0o755` permissions. A root asset whose destination is a symbolic link is refused, not copied or chmodded — see [Destination Symlinks](#destination-symlinks).
 * `extra_count_key`: Output metric key for root assets in the TOON report (e.g., `assets_count` or `config_count`).
 
 ### Pruning Safety & Managed Boundaries
@@ -291,6 +291,16 @@ The sync engine enforces strict safety boundaries when pruning stale files:
 * **Preservation of Unmanaged Assets**: User-created skills, third-party skills, and custom commands outside the synced bundles' prefixes are never touched or pruned.
 * **Agent Preservation**: Subagent definition files (`agents/*.md`) are deployed into destination, but stale agent pruning is omitted to prevent deleting user-defined or runtime-discovered subagents.
 * **Bundle Scoping (`--bundles`)**: When deployment is scoped to specific bundles (e.g., `--bundles pm-dev-java`), only components belonging to those bundles are pruned or updated. Components belonging to other managed bundles already present in destination remain completely untouched.
+* **Stale links are removed as links**: A stale entry that is a symbolic link — a leftover managed skill entry, or a link inside a real skill directory at a path the generated skill does not hold — is unlinked. Its target is never walked or deleted.
+
+### Destination Symlinks
+
+The engine never follows and never replaces a symbolic link it finds in an install location. The rule covers all three harnesses and uses the shared checks in `fs_safety.py`.
+
+* **Refused**: a link at any path the sync would write, chmod, descend into or mirror into. For `opencode` and `antigravity` that is the `skills/`, `agents/` or `commands/` directory, a skill directory or an entry inside it, an agent or command file, and a root asset such as `opencode.json` or `install.sh`. For `claude` it is `{cache_root}/{bundle}`, `{cache_root}/{bundle}/{version}`, a link inside a version directory at a path the bundle holds as a real file or directory, and `{cache_root}/dist-manifest.json`.
+* **Outcome of a refusal**: that harness reports `status: error` and exits `1`, with a `summary_message` naming the link; the Claude result also carries one `failed` row per refused path. Every such path is checked before the first prune or write, so the previous install is left untouched. Re-running does not change the outcome — the operator removes or relocates the named link first.
+* **Removed, not refused**: a stale link the prune would remove, as stated under [Pruning Safety & Managed Boundaries](#pruning-safety--managed-boundaries).
+* **Accepted**: a symlinked destination root — the install directory itself, or the Claude cache root. It is resolved once.
 
 ### Output Contract (TOON)
 
@@ -339,6 +349,8 @@ registry_parity:                      # only when attached
   verdict: in_parity | behind | ahead | unreadable
 ```
 
+On a destination-symlink refusal (see [Destination Symlinks](#destination-symlinks)) `synced` is empty and the `failed` rows are the refused destinations rather than failed mirrors: the `bundle` column names the bundle whose cache directory was refused, or `dist-manifest.json` for a refused manifest at the cache root, and `error` names the link.
+
 An all-targets run (no `--target`) emits one aggregate document: a `targets` table with one row per harness, followed by each harness's own result block. The `targets` table keeps exactly the columns `target`, `status` and `summary_message`; `cache_status` and `registry_parity` appear in the `claude` block only.
 ```text
 status: success | partial | error
@@ -356,7 +368,7 @@ antigravity:
 
 The aggregate `status` is `success` only when every harness reported `success`, `partial` when some did, and `error` when none did.
 
-Under `--dry-run` nothing is written, and each result block produced by a harness's own sync code additionally carries `dry_run: true`. The engine-level fallback block for a harness that could not start carries no `dry_run` field.
+Under `--dry-run` nothing is written, and each result block produced by a harness's own sync code additionally carries `dry_run: true`. The engine-level fallback block for a harness that could not start carries no `dry_run` field. A dry run performs the destination-symlink checks too, so it reports a refusal as `status: error` exactly as the writing run would.
 
 ### CLI Interface
 
@@ -387,7 +399,7 @@ python3 marketplace/targets/sync.py --target claude --repin
 
 `--source` and `--target-dir` are single-target overrides and require `--target`. `--from-worktree`, `--cache-root`, `--skip-staleness-guard`, `--registry-path` and `--repin` configure the Claude path only. `python3 marketplace/targets/sync.py --help` prints the authoritative flag set.
 
-Exit codes: an all-targets run exits `0` on aggregate `success` and `1` on `partial` or `error` — a Claude leg whose registry is `behind` reports `partial`, so such a run exits `1`. `--target opencode` and `--target antigravity` exit `0` on `success` and `1` on `error`. `--target claude` exits `0` on `success` or `partial` with the registry not `behind`, `1` on `error`, `2` on a staleness-guard refusal, and `3` when the cache sync itself exited `0` and the `registry_parity` verdict is `behind`. Rejected arguments exit `2`.
+Exit codes: an all-targets run exits `0` on aggregate `success` and `1` on `partial` or `error` — a Claude leg whose registry is `behind` reports `partial`, so such a run exits `1`. `--target opencode` and `--target antigravity` exit `0` on `success` and `1` on `error`. `--target claude` exits `0` on `success` or `partial` with the registry not `behind`, `1` on `error`, `2` on a staleness-guard refusal, and `3` when the cache sync itself exited `0` and the `registry_parity` verdict is `behind`. A refused destination symlink is an `error` for its harness, so it exits `1` on every single-target run. Rejected arguments exit `2`.
 
 ## Output directories
 

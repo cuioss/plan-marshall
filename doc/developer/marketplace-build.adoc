@@ -229,6 +229,8 @@ The last block of the Claude result: one row per plan-marshall registry entry, e
 
 Writing the registry is opt-in on both paths. On the command it is the operator passing `--apply` to the repin script (or `--repin` to the engine). In the `project:finalize-step-sync-plugin-cache` finalize step it is a machine-local setting, read and written with `run_config registry-repin get` and `run_config registry-repin set`; it reads `disabled` until the operator enables it on that machine. With the setting disabled the step runs the repin script in its report form, and a final verdict of `behind` fails the step. The setting lives in the git-ignored run configuration because the registry it gates is machine-local; link:../../marketplace/bundles/plan-marshall/skills/manage-run-config/SKILL.md[`manage-run-config` SKILL.md] § "registry-repin get / set" is its reference, and xref:../adr/025-The_harness_sync_repins_the_plugin_registry_only_on_operator_opt-in.adoc[ADR-025] records why the write is opt-in.
 
+A registry path that is a symbolic link is never written: when an entry needs a rewrite, `registry_pin.py --apply` refuses with `status: error` and writes nothing, neither through the link nor in place of it. The report form still reads through the link.
+
 link:../../marketplace/targets/README.md[`marketplace/targets/README.md`] § Registry parity documents the block's row shape, the `--registry-path` and `--repin` flags and the exit codes.
 
 === Derived-state finalize steps run under every execution profile
@@ -396,6 +398,7 @@ Target directories often co-locate user-defined extensions, third-party skills, 
 * **Unmanaged Asset Protection**: Destination skills and commands that do not match the namespace of synced bundles are never pruned or altered.
 * **Agent Preservation**: Subagents in `agents/` are deployed, but stale agent pruning is deliberately omitted to prevent deleting local or runtime-discovered agents.
 * **Bundle-Scoped Isolation**: Passing `--bundles <bundle>` confines deployment and pruning exclusively to the named bundle, preserving all other managed bundles in the destination directory.
+* **Destination Symlinks**: A symbolic link at a path the sync would write, chmod, descend into or mirror into is neither followed nor replaced. That harness reports `status: error` naming the link and its previous install is left untouched; a stale link is removed as a link, and a symlinked destination root is accepted. link:../../marketplace/targets/README.md[`marketplace/targets/README.md`] § Destination Symlinks lists the covered paths.
 * **Dry-Run Preview**: Passing `--dry-run` performs source enumeration and destination pruning analysis without mutating the filesystem.
 
 === Structured TOON Output

@@ -41,7 +41,7 @@ Do NOT add a second parser of that section in either consumer. It also defines `
 
 `plugin_registry.py` answers "is the plugin registry pinned at the version it should be?". It reads three stores and writes none:
 
-- **The registry** (`installed_plugins.json`) in the shape the plugin manager writes — `"plugins": {"{bundle}@plan-marshall": [scope entry, ...]}`. `read_registry` returns one row per scope entry (`bundle`, `scope`, `install_path_version`, `version`) plus a read state. Scope entries are never collapsed: a user-scope and a project-scope entry that disagree are two rows. Keys of any other marketplace are ignored.
+- **The registry** (`installed_plugins.json`) in the shape the plugin manager writes — `"plugins": {"{bundle}@plan-marshall": [scope entry, ...]}`. `read_registry` returns one row per scope entry (`bundle`, `scope`, `install_path_version`, `version`) plus a read state. Scope entries are never collapsed: a user-scope and a project-scope entry that disagree are two rows. Keys of any other marketplace are ignored. Which entries of a parsed registry document belong to the marketplace is decided by one walk, `iter_marketplace_entries(document, marketplace=MARKETPLACE_NAME)`: `read_registry` builds its rows from it, and a caller that rewrites entries walks it too, so its `(bundle, entry)` pairs line up with the rows index for index.
 - **The executor**, for the value of its `MARSHALL_VERSION` assignment (`read_executor_version`).
 - **The cache**, for the newest version directory of a bundle (`newest_cache_version`) and whether a version directory carries the `.orphaned_at` marker (`is_orphan_marked`). The marker is reported, never used for selection.
 
@@ -54,6 +54,7 @@ Every read function takes the path it reads. For a caller that has no path of it
 | Consumer | How it loads the module | Reference version it passes |
 |----------|-------------------------|-----------------------------|
 | The harness sync's Claude leg (`marketplace/targets/sync.py`) | By file location | The version the sync wrote in this invocation |
+| The repin step (`marketplace/targets/claude/registry_pin.py`) | By file location | The `--target-version` it is given, else the newest cache version directory of each bundle |
 | The pin-trap detector (`pm-plugin-development:plugin-doctor`) | By name, on the executor's PYTHONPATH | None — it reads the registry and executor values and compares them itself |
 | The restart check (`plan-marshall:plan-orchestrator`) | By name, on the executor's PYTHONPATH | The executor's `MARSHALL_VERSION` |
 

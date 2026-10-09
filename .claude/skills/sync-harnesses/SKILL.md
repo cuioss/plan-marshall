@@ -127,6 +127,10 @@ install did not sync**: for OpenCode and Antigravity a `status` other than
 `claude:` result block). A Claude row that is `partial` only because its
 registry is behind is not such a row — see the Claude result below.
 
+When a `summary_message` or a `failed` row says the sync was refused because of
+a symbolic link in the install location, re-running does not help: that harness
+synced nothing. Remove or relocate the named link, then re-run.
+
 **Single-target run** — the engine prints that harness's own document.
 
 **The Claude result** carries `guard_outcome` only when the staleness guard
@@ -232,6 +236,8 @@ operator asks for it.
   install locations.
 - The Claude staleness guard is non-negotiable: when `target/claude/` is missing
   or stale, regenerate it (Step 1) rather than bypassing the guard.
+- The sync never follows or replaces a symbolic link in an install location; a
+  refusal is resolved by removing or relocating the link, never by a re-run.
 
 ## Related
 

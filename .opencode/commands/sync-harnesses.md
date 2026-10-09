@@ -60,6 +60,10 @@ Run every command with the `bash` tool, one command per call.
    The repin is the operator's explicit `registry_pin.py --apply` named in the
    block at the end of this file; step 5 only reports the pin.
 
+   When a `summary_message` or a `failed` row says the sync was refused because
+   of a symbolic link in the install location, re-running does not help: that
+   harness synced nothing. Remove or relocate the named link, then re-run.
+
 4. When the Claude result reports `cache_status: success`, reconcile the build
    daemon. Read the field from the `claude:` result block on an all-targets
    run, or from the document on a `--target claude` run — the `targets[]` row
