@@ -17,10 +17,17 @@ seam (NOT over ``_emit_finding`` wholesale), so every test exercises the real
 values — ``success``, ``deduplicated``, ``reopened`` and ``error``. Stubbing
 ``_emit_finding`` itself is what hid the original defect: the function and its
 argv were never executed by any test.
+
+The guard's read of the phase-5 Q-Gate store is NOT stubbed. The fixture creates
+a real plan directory whose phase-5 store is empty, so the read finds no settled
+record and every stubbed-persist case reaches the persist seam. The cases that
+need a record in the store live in ``test_qgate_persist_contract.py``, which
+drives the real primitive.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 from argparse import Namespace
 from pathlib import Path
@@ -182,14 +189,20 @@ def test_residual_over_threshold_emits_finding(plan_with_refs, monkeypatch, caps
     assert 'finding_emitted: true' in out
     assert len(stub.calls) == 1
     call = stub.calls[0]
-    # The real _emit_finding body ran: named arguments, no argv, and the
-    # finding type is still the (deliberately un-taxonomised) scope_creep_warning.
+    # The real _emit_finding body ran: named arguments, no argv. The warning is
+    # filed under the type the store accepts, and the rule key is what names
+    # this guard.
     assert call['plan_id'] == 'scope-creep-test'
     assert call['phase'] == '5-execute'
     assert call['source'] == 'qgate'
-    assert call['finding_type'] == 'scope_creep_warning'
+    assert call['finding_type'] == 'triage'
+    assert call['rule'] == 'scope_creep_warning'
     assert call['severity'] == 'warning'
     assert 'threshold=5' in call['detail']
+    # The digest covers the COMPLETE sorted residual list, computed here
+    # independently of the guard so the assertion cannot agree by construction.
+    expected_digest = hashlib.sha256('\n'.join(sorted(extras)).encode('utf-8')).hexdigest()[:12]
+    assert f'residual_set={expected_digest}' in call['detail']
     for extra in extras:
         assert extra in call['title']
 
@@ -286,7 +299,7 @@ def test_rejected_persist_fails_loud(plan_with_refs, monkeypatch, capsys):
     extras = _over_threshold(monkeypatch, plan_with_refs)
     stub = _PersistStub(
         status='error',
-        message='Invalid finding type: scope_creep_warning. Must be one of (...)',
+        message='findings store unresolved: no plan directory under the resolved root',
     )
     _patch_persist(monkeypatch, stub)
 
@@ -301,7 +314,7 @@ def test_rejected_persist_fails_loud(plan_with_refs, monkeypatch, capsys):
     assert rc == 1
     assert payload['status'] == 'error'
     assert payload['error'] == 'finding_persist_failed'
-    assert 'Invalid finding type: scope_creep_warning' in payload['message']
+    assert 'findings store unresolved' in payload['message']
     # The rejected finding's own content travels inline.
     assert payload['finding_title'].startswith('Scope creep detected')
     assert 'threshold=5' in payload['finding_detail']

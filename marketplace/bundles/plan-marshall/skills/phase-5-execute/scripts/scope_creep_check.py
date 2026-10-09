@@ -3,9 +3,9 @@
 """Pre-task scope-creep guard for phase-5-execute.
 
 Computes the residual file-set drift since plan creation - files modified that
-are NOT declared in the union of all deliverables' affected_files - and emits a
-scope_creep_warning finding when the residual cardinality exceeds the
-configured threshold.
+are NOT declared in the union of all deliverables' affected_files - and files a
+``triage`` Q-Gate finding carrying the rule key ``scope_creep_warning`` when the
+residual cardinality exceeds the configured threshold.
 
 Usage:
     scope_creep_check.py check --plan-id <id> [--threshold <int>]
@@ -16,11 +16,28 @@ Subcommands:
 
 The script reads `plan_creation_sha` from references.json, computes the file
 diff between that sha and the current worktree HEAD, subtracts the union of
-each deliverable's `affected_files`, and persists a scope_creep_warning finding
-through the in-process `add_qgate_finding` primitive when the residual exceeds
-threshold. A persist the primitive REJECTS is reported as `status: error` with
+each deliverable's `affected_files`, and persists the warning through the
+in-process `add_qgate_finding` primitive when the residual exceeds threshold.
+The record is filed as type `triage` — the type the peer guards use for their
+own Q-Gate findings — with `rule: scope_creep_warning` as the key that names
+this guard. A persist the primitive REJECTS is reported as `status: error` with
 `error: finding_persist_failed` and a non-zero return code — never as a success
 carrying `finding_emitted: false`, which is indistinguishable from "no creep".
+
+A residual set already settled is not filed again
+-------------------------------------------------
+The detail carries a digest of the COMPLETE sorted residual list
+(`residual_set=` plus twelve hex characters), because the title names ten paths
+at most and two different sets must not read as the same one. Before persisting,
+the guard reads the phase-5 Q-Gate store: when a record with this rule, this
+title and this detail is already resolved as `accepted` or `suppressed`, the
+same residual set has been decided and nothing is filed. That one case reports
+the measured shape with `finding_emitted: false` plus `finding_resolved_as` and
+`finding_hash_id`, the two fields that appear in no other case. A changed set
+has a different digest, so it is filed as a new finding. Every other outcome —
+no such record, a record resolved any other way, or a store read that did not
+succeed — goes to the primitive exactly as before: a pending record is
+deduplicated and a record resolved any other way is reopened.
 
 An UNMEASURED run cannot render as a measured clean one
 -------------------------------------------------------
@@ -47,16 +64,33 @@ Threshold sources (precedence):
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
-from _findings_core import QGATE_PERSIST_OK, add_qgate_finding
+from _findings_core import QGATE_PERSIST_OK, add_qgate_finding, query_qgate_findings
+from constants import RESOLUTION_ACCEPTED, RESOLUTION_SUPPRESSED
 from file_ops import WorktreeResolutionError, get_plan_dir, resolve_plan_context
 from toon_parser import serialize_toon
 
 DEFAULT_THRESHOLD = 5
+
+_PHASE = '5-execute'
+_FINDING_TYPE = 'triage'
+_RULE = 'scope_creep_warning'
+_RESIDUAL_DIGEST_LENGTH = 12
+
+_SETTLED_RESOLUTIONS = frozenset({RESOLUTION_ACCEPTED, RESOLUTION_SUPPRESSED})
+"""Resolutions that mean an operator has decided this exact residual set.
+
+Only these two stop a re-file. A record resolved any other way (``fixed``,
+``taken_into_account``, ``rejected``) claims the residual is gone or was never
+real, so measuring the same set again is a genuine re-detection and the persist
+primitive reopens it.
+"""
 
 STATUS_COULD_NOT_LOOK = 'could_not_look'
 """Status for a run that performed no comparison at all.
@@ -160,28 +194,85 @@ def _resolve_worktree(plan_id: str) -> Path:
         return Path.cwd()
 
 
-def _emit_finding(plan_id: str, residual: list[str], threshold: int) -> dict[str, str] | None:
-    """Persist a scope_creep_warning finding via the in-process Q-Gate primitive.
+def _residual_digest(residual: list[str]) -> str:
+    """Return a short digest of the COMPLETE sorted residual list.
 
-    Calls ``add_qgate_finding`` directly — the same primitive nine peer callers
-    use — so there is no argv to construct and no return code to misread. The
-    outcome is tested against the published ``QGATE_PERSIST_OK`` partition.
+    The title names ten paths at most, so two residual sets that share their
+    first ten sorted paths would otherwise produce the same title and the same
+    count-and-threshold detail. The digest covers every path, which is what lets
+    the detail tell one set from another.
+    """
+    joined = '\n'.join(sorted(residual))
+    return hashlib.sha256(joined.encode('utf-8')).hexdigest()[:_RESIDUAL_DIGEST_LENGTH]
+
+
+def _finding_content(residual: list[str], threshold: int) -> tuple[str, str]:
+    """Return the ``(title, detail)`` the warning is filed under.
+
+    Built in one place because the settled-record lookup and the persist call
+    must compare and write the SAME two strings.
+    """
+    title = f'Scope creep detected: {", ".join(sorted(residual)[:10])}'
+    detail = (
+        f'{len(residual)} file(s) outside declared scope (threshold={threshold}); '
+        f'residual_set={_residual_digest(residual)}'
+    )
+    return title, detail
+
+
+def _find_settled_finding(plan_id: str, title: str, detail: str) -> dict[str, Any] | None:
+    """Return the record that already settled this exact residual set, if any.
+
+    A match carries this guard's rule, the title and detail about to be filed,
+    and a resolution of ``accepted`` or ``suppressed``.
+
+    Returns ``None`` when the store read does not return ``success``. An
+    unreadable store is no evidence that the set was settled, so the caller
+    files the finding as before and the persist primitive reports the store's
+    own failure.
+    """
+    result = query_qgate_findings(plan_id, _PHASE)
+    if result.get('status') != 'success':
+        return None
+    for record in result.get('findings') or []:
+        if (
+            record.get('rule') == _RULE
+            and record.get('title') == title
+            and record.get('detail') == detail
+            and record.get('resolution') in _SETTLED_RESOLUTIONS
+        ):
+            settled: dict[str, Any] = record
+            return settled
+    return None
+
+
+def _emit_finding(plan_id: str, residual: list[str], threshold: int) -> dict[str, str] | None:
+    """File the scope-creep warning as a ``triage`` Q-Gate finding.
+
+    The record carries ``rule: scope_creep_warning``; the type is ``triage``,
+    the one the peer guards file their Q-Gate findings under. Calls
+    ``add_qgate_finding`` directly — the same primitive the peer callers use —
+    so there is no argv to construct and no return code to misread. The outcome
+    is tested against the published ``QGATE_PERSIST_OK`` partition.
+
+    The caller skips this function when the same residual set is already
+    resolved as ``accepted`` or ``suppressed`` (see :func:`_find_settled_finding`).
 
     Returns ``None`` when the finding reached the store, and a failure descriptor
     — ``{'title', 'detail', 'message'}`` — when the primitive REJECTED it, so
     ``cmd_check`` can fail loud with the rejected content inline.
     """
-    title = f'Scope creep detected: {", ".join(sorted(residual)[:10])}'
-    detail = f'{len(residual)} file(s) outside declared scope (threshold={threshold})'
+    title, detail = _finding_content(residual, threshold)
     result = add_qgate_finding(
         plan_id=plan_id,
-        phase='5-execute',
+        phase=_PHASE,
         source='qgate',
-        finding_type='scope_creep_warning',
+        finding_type=_FINDING_TYPE,
         title=title,
         detail=detail,
         component='plan-marshall:phase-5-execute:scope_creep_check',
         severity='warning',
+        rule=_RULE,
     )
     if result.get('status') not in QGATE_PERSIST_OK:
         return {
@@ -229,7 +320,10 @@ def cmd_check(args: argparse.Namespace) -> int:
     declared = _collect_declared_files(plan_dir)
     residual = sorted(set(changed) - declared)
     emitted = False
+    settled: dict[str, Any] | None = None
     if len(residual) > threshold:
+        settled = _find_settled_finding(plan_id, *_finding_content(residual, threshold))
+    if len(residual) > threshold and settled is None:
         failure = _emit_finding(plan_id, residual, threshold)
         if failure is not None:
             # A lost finding is never absorbed: reporting `status: success` with
@@ -258,6 +352,11 @@ def cmd_check(args: argparse.Namespace) -> int:
         'threshold': threshold,
         'finding_emitted': emitted,
     }
+    if settled is not None:
+        # The one case in which these two fields appear: this exact residual set
+        # was already decided, so nothing was filed.
+        emitted_payload['finding_resolved_as'] = settled.get('resolution')
+        emitted_payload['finding_hash_id'] = settled.get('hash_id')
     if residual:
         emitted_payload['residual_files'] = residual
     print(serialize_toon(emitted_payload))

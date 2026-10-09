@@ -592,7 +592,7 @@ For each step in task's `steps[]` array:
 
 ### Step 6.5: Scope-Creep Guard (per-task)
 
-After Step 6 completes its file-system changes but BEFORE running task verification (Step 7's `finalize-step` records "done" only after this guard clears), invoke the deterministic scope-creep helper. The helper computes the residual file-set drift — files modified since the plan was created that are NOT declared in the union of all deliverables' `affected_files` — and emits a `scope_creep_warning` finding when the residual cardinality exceeds the configured threshold.
+After Step 6 completes its file-system changes but BEFORE running task verification (Step 7's `finalize-step` records "done" only after this guard clears), invoke the deterministic scope-creep helper. The helper computes the residual file-set drift — files modified since the plan was created that are NOT declared in the union of all deliverables' `affected_files` — and files a `triage` Q-Gate finding carrying the rule key `scope_creep_warning` when the residual cardinality exceeds the configured threshold.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:phase-5-execute:scope_creep_check \
@@ -608,9 +608,13 @@ status: success
 residual_count: N
 threshold: T
 finding_emitted: true|false
+finding_resolved_as: accepted|suppressed   # only when this residual set was already resolved that way
+finding_hash_id: {hash_id}                 # only together with finding_resolved_as
 residual_files[N]:                 # omitted entirely when the residual is empty
   - {path}
 ```
+
+A residual set already resolved as `accepted` or `suppressed` is not filed again — the run reports `finding_emitted: false` with those two fields naming the record that settled it — while a changed residual set is filed as a new finding.
 
 **Could not look** — the guard performed no comparison at all:
 
@@ -634,7 +638,7 @@ Two causes reach this shape. `git_diff_failed` means the diff itself could not b
 
 Both `could_not_look` reasons return exit code `0` — an unmeasurable guard is not a failure of the run it guards.
 
-When `finding_emitted: true`, the helper has already persisted a `scope_creep_warning` finding to the Q-Gate findings store via `manage-findings qgate add --type scope_creep_warning`. The finding flows into the Step 11 triage loop alongside other verify findings (same resolution path: FIX / SUPPRESS / ACCEPT). No additional surface action required here — the standard triage loop handles it.
+When `finding_emitted: true`, the helper has already persisted the warning to the Q-Gate findings store as `manage-findings qgate add --type triage --rule scope_creep_warning` would — type `triage`, rule key `scope_creep_warning`. The finding flows into the Step 11 triage loop alongside other verify findings (same resolution path: FIX / SUPPRESS / ACCEPT). No additional surface action required here — the standard triage loop handles it.
 
 **Threshold configuration**: default is `5`; override via `phase_5.scope_creep_threshold` in `marshal.json`'s plan-scoped config. Set to `0` to disable the guard entirely — which yields the `could_not_look` shape with `reason: guard_disabled`, never a clean zero.
 
