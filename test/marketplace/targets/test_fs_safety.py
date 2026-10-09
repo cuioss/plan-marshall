@@ -14,6 +14,7 @@ from marketplace.targets.fs_safety import (
     is_within,
     iter_tree_without_following_links,
     refuse_escaping_output_dir,
+    refuse_symlink,
     refuse_tree_overlap,
     safe_rmtree,
     trees_overlap,
@@ -226,6 +227,42 @@ def test_refuse_escaping_output_dir_permits_a_symlinked_output_root(tmp_path: Pa
     root.symlink_to(real_root, target_is_directory=True)
 
     refuse_escaping_output_dir(root / 'skills' / 'skill-dir', root)  # must not raise
+
+
+# =============================================================================
+# refuse_symlink — a destination that is neither followed nor replaced
+# =============================================================================
+
+
+@pytest.mark.parametrize('kind', ['file', 'directory', 'dangling'])
+def test_refuse_symlink_raises_for_a_link_and_leaves_it_in_place(kind: str, tmp_path: Path):
+    """A link is refused wherever it points, named in the message, and not removed."""
+    target = tmp_path / 'target'
+    if kind == 'file':
+        target.write_text('important', encoding='utf-8')
+    elif kind == 'directory':
+        target.mkdir()
+    link = tmp_path / 'link'
+    link.symlink_to(target, target_is_directory=kind == 'directory')
+
+    with pytest.raises(ValueError, match='symbolic link') as excinfo:
+        refuse_symlink(link)
+
+    assert str(link) in str(excinfo.value)
+    assert link.is_symlink()
+    assert target.exists() is (kind != 'dangling')
+
+
+@pytest.mark.parametrize('create', [True, False], ids=['real-file', 'missing'])
+def test_refuse_symlink_permits_a_non_link(create: bool, tmp_path: Path):
+    """Control: a real file passes and so does a path that does not exist yet."""
+    path = tmp_path / 'file.txt'
+    if create:
+        path.write_text('kept', encoding='utf-8')
+
+    refuse_symlink(path)  # must not raise
+
+    assert path.exists() is create
 
 
 # =============================================================================

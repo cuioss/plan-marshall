@@ -128,6 +128,23 @@ def refuse_escaping_output_dir(path: Path, output_dir: Path) -> None:
         )
 
 
+def refuse_symlink(path: Path) -> None:
+    """Raise ``ValueError`` when ``path`` is itself a symbolic link, wherever it points.
+
+    The check for a destination the caller must neither follow nor replace —
+    a file an operator may have linked elsewhere on purpose. It inspects the
+    one path only and says nothing about its ancestors: a caller that walks a
+    tree top-down and has already cleared every ancestor needs no more, and
+    one that has not uses :func:`refuse_escaping_output_dir` for them. A real
+    entry, or a missing one, passes.
+    """
+    if path.is_symlink():
+        raise ValueError(
+            f'Refusing to write {path}: it is a symbolic link — a link found at a destination '
+            'path is neither followed nor replaced'
+        )
+
+
 def unlink_if_symlink(path: Path) -> None:
     """Remove ``path`` when it is a symbolic link, so a following write creates a real file.
 
@@ -160,6 +177,7 @@ __all__ = [
     'is_within',
     'iter_tree_without_following_links',
     'refuse_escaping_output_dir',
+    'refuse_symlink',
     'refuse_tree_overlap',
     'safe_rmtree',
     'trees_overlap',

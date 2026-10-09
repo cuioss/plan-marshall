@@ -97,6 +97,22 @@ Registry parity (Claude path):
     A staleness-guard refusal synced nothing and carries no
     ``registry_parity`` block; neither does a leg that could not start.
 
+Destination symlinks:
+    The sync never acts through a symbolic link it finds in an install
+    location. A link at any path it would write, chmod, descend into or
+    mirror into — a root asset such as ``opencode.json``, an agent or
+    command file, ``skills/``, ``agents/``, ``commands/``, a skill
+    directory or an entry inside one, ``{cache_root}/{bundle}`` or
+    ``{cache_root}/{bundle}/{version}`` — is REFUSED: that harness reports
+    ``status: error`` with a ``summary_message`` naming the link, and its
+    install is left as it was, because every such path is checked before
+    the first one is changed. A link is never replaced by a real file — an
+    operator may have linked it into a dotfiles repository on purpose. The
+    destination root itself may be a link; it is resolved once. A STALE
+    link — an entry the generated tree no longer holds — is removed as the
+    link it is, and its target is not touched. ``--dry-run`` reports the
+    same refusal.
+
 Single-target output — ``--target opencode`` / ``--target antigravity``:
     status: success | error
     target: antigravity | opencode
@@ -156,7 +172,8 @@ Exit codes:
         1 on aggregate ``status: partial`` or ``status: error``
     ``--target opencode`` / ``--target antigravity``:
         0 on ``status: success``
-        1 on ``status: error`` (source missing, empty source, etc.)
+        1 on ``status: error`` (source missing, empty source, a refused
+          destination symlink, etc.)
     ``--target claude``:
         0 on ``status: success`` or ``status: partial`` with the registry
           not ``behind``
@@ -170,6 +187,7 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import functools
 import importlib.util
 import os
 import shutil
@@ -211,6 +229,11 @@ PLUGIN_REGISTRY_RELPATH = (
     Path('marketplace') / 'bundles' / 'plan-marshall' / 'skills' / 'script-shared' / 'scripts' / 'plugin_registry.py'
 )
 PLUGIN_REGISTRY_MODULE_NAME = '_sync_harnesses_plugin_registry'
+
+#: Repo-relative location of the shared filesystem-safety checks. Stdlib-only
+#: and loaded by file location, like every other sibling this engine reaches.
+FS_SAFETY_RELPATH = Path('marketplace') / 'targets' / 'fs_safety.py'
+FS_SAFETY_MODULE_NAME = '_sync_harnesses_fs_safety'
 
 #: Exit code of a Claude sync whose cache sync succeeded while the plugin
 #: registry is pinned behind the synced version.
@@ -373,6 +396,103 @@ def _is_managed_command(file_name: str, synced_bundles: set[str]) -> bool:
     return any(stem == b or stem.startswith(f'{b}-') for b in synced_bundles)
 
 
+class DestinationLinkRefused(Exception):
+    """A path the sync would act on is, or lies behind, a symbolic link in the destination.
+
+    The shared checks in ``fs_safety`` raise ``ValueError``; the engine's fault
+    handlers catch ``OSError``. A refusal is carried under this dedicated type
+    so it is rendered as the target's ``error`` result without widening either.
+    """
+
+
+@functools.cache
+def _fs_safety() -> ModuleType:
+    """The shared filesystem-safety checks, loaded by file location once per process.
+
+    Raises:
+        ImportError: the module could not be loaded.
+    """
+    return _load_module_by_location(FS_SAFETY_MODULE_NAME, FS_SAFETY_RELPATH, 'filesystem-safety module')
+
+
+def _refuse_linked_dir(path: Path, dest: Path) -> None:
+    """Refuse a destination directory that is a link or resolves outside ``dest``.
+
+    Raises:
+        DestinationLinkRefused: naming ``path``.
+    """
+    check = _fs_safety().refuse_escaping_output_dir
+    try:
+        check(path, dest)
+    except ValueError as exc:
+        raise DestinationLinkRefused(str(exc)) from exc
+
+
+def _refuse_linked_entry(path: Path) -> None:
+    """Refuse a destination entry that is itself a link; its ancestors are the caller's.
+
+    Raises:
+        DestinationLinkRefused: naming ``path``.
+    """
+    check = _fs_safety().refuse_symlink
+    try:
+        check(path)
+    except ValueError as exc:
+        raise DestinationLinkRefused(str(exc)) from exc
+
+
+def _refuse_file_link(target: Path, dest: Path) -> None:
+    """Refuse a link at the file ``target`` or at the directory that holds it.
+
+    The destination root is exempt as a holder: it is resolved once by
+    :func:`_resolve_dest` and may itself be a link.
+    """
+    if target.parent != dest:
+        _refuse_linked_dir(target.parent, dest)
+    _refuse_linked_entry(target)
+
+
+def _refuse_skill_links(skill_dir: Path, dest: Path) -> None:
+    """Refuse a link at the skill's install directory or at any path the skill is written to.
+
+    The generated skill is walked top-down, so the first link met on the way
+    to an entry is the one named. A link at a path the generated skill does
+    NOT hold is not refused here: it is stale, and
+    :func:`_remove_absent_from_source` removes it as a link.
+    """
+    target = dest / 'skills' / skill_dir.name
+    _refuse_linked_dir(target.parent, dest)
+    _refuse_linked_dir(target, dest)
+    for root, dirnames, filenames in os.walk(skill_dir):
+        installed = target / Path(root).relative_to(skill_dir)
+        for name in sorted(dirnames + filenames):
+            _refuse_linked_entry(installed / name)
+
+
+def _refuse_destination_links(
+    dest: Path, skills: list[Path], agents: list[Path], commands: list[Path], assets: list[str]
+) -> None:
+    """Refuse every destination link the deploy would act through, before anything changes.
+
+    Covers each path the deploy writes, chmods, creates or descends into, and
+    the two directories the prune lists whether or not anything is deployed
+    into them. It only reads, so a refused deploy leaves the install as it was.
+
+    Raises:
+        DestinationLinkRefused: naming the first link found.
+    """
+    for pruned in ('skills', 'commands'):
+        _refuse_linked_dir(dest / pruned, dest)
+    for skill_dir in skills:
+        _refuse_skill_links(skill_dir, dest)
+    for agent_file in agents:
+        _refuse_file_link(dest / 'agents' / agent_file.name, dest)
+    for command_file in commands:
+        _refuse_file_link(dest / 'commands' / command_file.name, dest)
+    for asset_file in assets:
+        _refuse_file_link(dest / asset_file, dest)
+
+
 def _prune_managed(
     dest: Path,
     source_skills: set[str],
@@ -381,9 +501,16 @@ def _prune_managed(
     *,
     dry_run: bool,
 ) -> list[dict[str, str]]:
+    """Remove the managed skills and commands the source no longer holds.
+
+    A stale entry that is a link is removed as the link it is: its target is
+    never walked or deleted. The two listed directories are refused when they
+    are links themselves, since listing one would prune the link's target.
+    """
     removed: list[dict[str, str]] = []
 
     skills_dest = dest / 'skills'
+    _refuse_linked_dir(skills_dest, dest)
     if skills_dest.is_dir():
         for entry in sorted(skills_dest.iterdir()):
             if not entry.is_dir():
@@ -393,10 +520,15 @@ def _prune_managed(
             if entry.name in source_skills:
                 continue
             removed.append({'kind': 'skills', 'name': entry.name})
-            if not dry_run:
+            if dry_run:
+                continue
+            if entry.is_symlink():
+                entry.unlink()
+            else:
                 shutil.rmtree(entry)
 
     commands_dest = dest / 'commands'
+    _refuse_linked_dir(commands_dest, dest)
     if commands_dest.is_dir():
         for entry in sorted(commands_dest.iterdir()):
             if not entry.is_file():
@@ -417,7 +549,11 @@ def _remove_absent_from_source(skill_dir: Path, target: Path) -> None:
 
     A destination file survives only where the source has a file at the same
     relative path, and a destination directory only where the source has a
-    directory there. A removed directory is not descended into.
+    directory there. A removed directory is not descended into, and a link is
+    removed as the link it is.
+
+    ``target`` must be a real directory: ``os.walk`` lists the target of a
+    symlinked root, so the caller refuses a linked ``target`` first.
     """
     for root, dirnames, filenames in os.walk(target):
         installed = Path(root)
@@ -442,10 +578,14 @@ def _deploy_skill(skill_dir: Path, dest: Path, *, dry_run: bool) -> None:
     relative path, whatever it is called, and every destination file and
     directory the generated skill no longer holds is removed. ``dry_run``
     writes nothing.
+
+    Raises:
+        DestinationLinkRefused: a path the skill is written to is a link.
     """
     if dry_run:
         return
 
+    _refuse_skill_links(skill_dir, dest)
     target = dest / 'skills' / skill_dir.name
     target.mkdir(parents=True, exist_ok=True)
     _remove_absent_from_source(skill_dir, target)
@@ -462,6 +602,7 @@ def _deploy_skill(skill_dir: Path, dest: Path, *, dry_run: bool) -> None:
 def _deploy_agent(agent_file: Path, dest: Path, *, dry_run: bool) -> None:
     target = dest / 'agents' / agent_file.name
     if not dry_run:
+        _refuse_file_link(target, dest)
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(agent_file, target)
 
@@ -469,6 +610,7 @@ def _deploy_agent(agent_file: Path, dest: Path, *, dry_run: bool) -> None:
 def _deploy_command(command_file: Path, dest: Path, *, dry_run: bool) -> None:
     target = dest / 'commands' / command_file.name
     if not dry_run:
+        _refuse_file_link(target, dest)
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(command_file, target)
 
@@ -480,6 +622,7 @@ def _deploy_root_assets(source: Path, dest: Path, config: TargetSyncConfig, *, d
         if asset_src.is_file():
             target = dest / asset_file
             if not dry_run:
+                _refuse_file_link(target, dest)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(asset_src, target)
                 if is_executable:
@@ -544,24 +687,40 @@ def _deploy_target(
 
     synced_bundles = _derive_synced_bundles(skills, commands, only_bundle)
 
-    removed = _prune_managed(
-        dst,
-        {s.name for s in skills},
-        {c.name for c in commands},
-        synced_bundles,
-        dry_run=dry_run,
-    )
+    try:
+        _fs_safety()
+    except ImportError as exc:
+        msg = f'{target_name} sync could not start: {exc}'
+        return 1, _deploy_error(target=target_name, summary_message=msg, source=src, dest=dst, dry_run=dry_run)
 
-    for skill_dir in skills:
-        _deploy_skill(skill_dir, dst, dry_run=dry_run)
+    try:
+        # Every destination path is cleared of links before the first one is
+        # changed, so a refused deploy leaves the previous install untouched.
+        # Each step below repeats its own check: none acts on a path unchecked.
+        assets = [asset_file for asset_file, _kind, _exec in config.root_assets if (src / asset_file).is_file()]
+        _refuse_destination_links(dst, skills, agents, commands, assets)
 
-    for agent_file in agents:
-        _deploy_agent(agent_file, dst, dry_run=dry_run)
+        removed = _prune_managed(
+            dst,
+            {s.name for s in skills},
+            {c.name for c in commands},
+            synced_bundles,
+            dry_run=dry_run,
+        )
 
-    for command_file in commands:
-        _deploy_command(command_file, dst, dry_run=dry_run)
+        for skill_dir in skills:
+            _deploy_skill(skill_dir, dst, dry_run=dry_run)
 
-    extra_count = _deploy_root_assets(src, dst, config, dry_run=dry_run)
+        for agent_file in agents:
+            _deploy_agent(agent_file, dst, dry_run=dry_run)
+
+        for command_file in commands:
+            _deploy_command(command_file, dst, dry_run=dry_run)
+
+        extra_count = _deploy_root_assets(src, dst, config, dry_run=dry_run)
+    except DestinationLinkRefused as exc:
+        msg = f'{target_name} sync refused: {exc}'
+        return 1, _deploy_error(target=target_name, summary_message=msg, source=src, dest=dst, dry_run=dry_run)
 
     deployed_count = len(skills) + len(agents) + len(commands) + extra_count
 
