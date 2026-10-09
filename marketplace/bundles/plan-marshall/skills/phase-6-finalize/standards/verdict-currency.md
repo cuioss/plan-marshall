@@ -20,20 +20,66 @@ The exit-code contract for every `python3 .plan/execute-script.py` call in this 
 
 **This document's own application of it**, which the shared statement does not carry: an absent classification is an **unread** one, never a "not invalidating" verdict — an unread classifier re-fires the gate rather than silently retiring it.
 
-## Two levers, and only one of them was ever pulled
+## Three levers, two columns
 
-Bounding this cost has exactly two levers, and they are independent:
+Bounding this cost has three levers:
 
 | Lever | Bounds | Owner |
 |---|---|---|
 | **Delta-scoping** — a re-run examines only what changed since its own last record | the cost of EACH re-run | the individual gate (e.g. `pre-submission-self-review`'s `--since-ref` anchor) |
 | **Re-stale classification** — an advance that cannot change a verdict does not re-run the gate | the NUMBER of re-runs | this document |
+| **Change-list narrowing** — a step that cannot declare a static surface narrows its own re-fire from the change list since its last `done` record | the cost of EACH re-run | the individual step |
 
-Delta-scoping does not reduce the number of re-runs, and pulling it harder never
-will. A gate that re-fires seven times with a perfectly-scoped delta still pays
-seven envelopes, seven skill loads, and — where the gate carries an unconditional
-whole-tree arm — seven whole-tree sweeps. **Read a landed delta-scoping improvement
-as bounding the first column only.**
+**There are two columns, not three.** The first and third levers both bound the cost
+of each re-run, and neither reduces the number of re-runs. Only re-stale
+classification bounds the number. The three are therefore not three independent
+levers: the first and third pull on the same column, and what separates them is how
+they reach it.
+
+Two properties separate change-list narrowing from delta-scoping:
+
+- **The anchor.** Delta-scoping reads an anchor the gate keeps for itself — the
+  `--since-ref` example above. Change-list narrowing reads the step record the
+  dispatcher writes (`head_at_completion`), through the `changed-paths` verb below.
+  That SHA alone says which tree the record was computed against, not what the step
+  had examined by then. So the step also needs a fact on the same record
+  (`classified_at`) to know the anchor is one it may carry results over from.
+- **What is narrowed.** Delta-scoping narrows the changed tracked files a gate
+  examines. Change-list narrowing uses the changed tracked paths to *select among
+  inputs that are not in the tree difference at all* — the lessons in the git-ignored
+  corpus — and carries the previous result over for every input it does not select.
+
+The change list is read with:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:verdict_currency changed-paths \
+  --plan-id {plan_id} --step {step_id} --worktree-path {worktree_path}
+```
+
+It reports an `outcome` of `computed`, `first_firing`, `last_firing_not_done` or
+`diff_unavailable`. `changed_paths` is present on `computed` alone; what a step must
+do on the other three is stated in
+[`../../extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md)
+§ "Reading the change list since the last `done` firing".
+
+Which step uses the third lever, and which was examined for it and refused:
+
+| Change-list narrowing | Step | What that means | Recorded at |
+|---|---|---|---|
+| **Used** | `project:finalize-step-lessons-housekeeping` | A re-fire judges only the lessons the change list could affect and carries every other lesson's previous result over | that step's own § "Step 2b: Select what this firing judges (the delta rule)" |
+| **Examined and refused** | `project:finalize-step-plugin-doctor` | A rule that reads the content of files outside every listed path refutes the narrower skip | that step's own § "The narrower rule that was examined, and why it is refused" |
+
+This table is not the refusal table further down. That one records which steps declare
+no `verdict_inputs`, and both steps above appear in it: using the third lever is not a
+`verdict_inputs` declaration.
+
+Neither delta-scoping nor change-list narrowing reduces the number of re-runs, and
+pulling either harder never will. A gate that re-fires seven times with a
+perfectly-scoped delta still pays seven envelopes, seven skill loads, and — where the
+gate carries an unconditional whole-tree arm — seven whole-tree sweeps. A step that
+narrows from the change list is still dispatched on every HEAD advance. **Read a
+landed delta-scoping improvement, and a landed change-list narrowing, as bounding the
+first column only.**
 
 ## The trigger set — what advances HEAD inside finalize
 

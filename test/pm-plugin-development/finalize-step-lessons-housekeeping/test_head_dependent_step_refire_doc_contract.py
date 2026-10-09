@@ -17,6 +17,13 @@ lesson the firing changed — removed, promoted, adapted — and exactly one
 aggregate entry per firing that counts the lessons examined, carried over and
 retained, naming the recorded HEAD on a delta firing. A retained lesson gets no
 entry of its own.
+
+A fourth group pins that the currency standard, the extension-point contract
+and the two step documents tell one story: the standard names the third lever,
+what separates it from delta-scoping and which step uses or refused it; the
+extension point makes every no-change-list outcome a full run; and each step's
+refusal section still declares no surface while the housekeeping delta rule
+claims no dispatcher skip.
 """
 
 from __future__ import annotations
@@ -205,7 +212,7 @@ def _section(content: str, heading: str) -> str:
     """Return the body of the section opened by ``heading``, up to the next peer heading."""
     level = heading.split(' ', 1)[0]
     start = content.find(f'\n{heading}')
-    assert start != -1, f'{_STEP_DOC.name} carries no `{heading}` heading'
+    assert start != -1, f'the document carries no `{heading}` heading'
     body_start = content.index('\n', start + 1)
     peers = [match.start() for match in re.finditer(rf'\n#{{1,{len(level)}}} ', content[body_start:])]
     end = body_start + peers[0] if peers else len(content)
@@ -366,3 +373,269 @@ def test_coverage_ambiguous_row_writes_no_entry_of_its_own() -> None:
     assert 'manage-logging decision' not in action
     assert 'aggregate' in action
     assert 'retained' in action
+
+
+# ---------------------------------------------------------------------------
+# The currency standard, the extension-point contract and the two step documents
+# ---------------------------------------------------------------------------
+
+_PLUGIN_DOCTOR_STEP_ID = 'project:finalize-step-plugin-doctor'
+_PLUGIN_DOCTOR_DOC = _PROJECT_SKILLS_ROOT / 'finalize-step-plugin-doctor' / 'SKILL.md'
+_EXT_POINT_DOC = _BUNDLE_SKILLS_ROOT / 'extension-api' / 'standards' / 'ext-point-finalize-step.md'
+
+_LEVERS_HEADING = '## Three levers, two columns'
+_REFUSAL_HEADING = '### Verdict-input surface — deliberately undeclared'
+_DELTA_RULE_HEADING = '### Step 2b'
+_CHANGE_LIST_HEADING = '#### Reading the change list since the last `done` firing'
+
+_THIRD_LEVER = 'Change-list narrowing'
+_COST_COLUMN = 'the cost of EACH re-run'
+_NO_CHANGE_LIST_OUTCOMES = ('first_firing', 'last_firing_not_done', 'diff_unavailable')
+_STEP_DOCS = {_STEP_ID: _STEP_DOC, _PLUGIN_DOCTOR_STEP_ID: _PLUGIN_DOCTOR_DOC}
+
+# A claim that the dispatcher skips the step. `skip Steps 3 to 5` — the step
+# skipping part of its own body — is deliberately not matched.
+_DISPATCHER_SKIP_CLAIM = re.compile(r'dispatcher(?:-side)?\s+(?:may\s+|can\s+|will\s+)?skips?\b', re.IGNORECASE)
+
+
+def _levers_section() -> str:
+    return _section(_VERDICT_CURRENCY_DOC.read_text(encoding='utf-8'), _LEVERS_HEADING)
+
+
+def _unwrapped(text: str) -> str:
+    """Collapse whitespace so a phrase is found wherever the prose happens to wrap."""
+    return ' '.join(text.split())
+
+
+def _lever_rows(section: str) -> dict[str, list[str]]:
+    """Map each lever named in the levers table to the cells of its row."""
+    rows: dict[str, list[str]] = {}
+    for line in section.splitlines():
+        match = re.match(r'\|\s*\*\*([^*]+)\*\*\s+—', line)
+        if match:
+            rows[match.group(1)] = [cell.strip() for cell in line.strip().strip('|').split('|')]
+    return rows
+
+
+def _frontmatter(doc: Path) -> str:
+    match = re.match(r'^---\s*\n(.*?)\n---', doc.read_text(encoding='utf-8'), re.DOTALL)
+    assert match, f'no YAML frontmatter found in {doc}'
+    return match.group(1)
+
+
+def test_levers_table_names_three_levers() -> None:
+    # Act
+    rows = _lever_rows(_levers_section())
+
+    # Assert
+    assert set(rows) == {'Delta-scoping', 'Re-stale classification', _THIRD_LEVER}
+
+
+def test_third_lever_bounds_the_cost_of_each_rerun_not_their_number() -> None:
+    # Arrange
+    section = _levers_section()
+
+    # Act
+    rows = _lever_rows(section)
+
+    # Assert
+    assert rows[_THIRD_LEVER][1] == _COST_COLUMN
+    assert rows['Delta-scoping'][1] == _COST_COLUMN
+    assert rows['Re-stale classification'][1] == 'the NUMBER of re-runs'
+    prose = _unwrapped(section)
+    assert 'neither reduces the number of re-runs' in prose
+    assert 'Only re-stale classification bounds the number' in prose
+
+
+def test_levers_section_does_not_present_three_independent_levers() -> None:
+    # Act
+    section = _unwrapped(_levers_section())
+
+    # Assert
+    assert 'two columns, not three' in section
+    assert 'they are independent' not in section
+    assert 'not three independent' in section
+
+
+@pytest.mark.parametrize(
+    'phrase',
+    ['`head_at_completion`', '`changed-paths`', '`classified_at`', 'not in the tree difference at all'],
+    ids=['step-record-anchor', 'read-through-changed-paths', 'carry-over-fact', 'selection-outside-the-diff'],
+)
+def test_levers_section_names_what_separates_the_third_lever_from_delta_scoping(phrase: str) -> None:
+    # Act
+    section = _unwrapped(_levers_section())
+
+    # Assert
+    assert phrase in section, f'the levers section no longer states `{phrase}`'
+
+
+@pytest.mark.parametrize(
+    ('step', 'disposition'),
+    [(_STEP_ID, 'Used'), (_PLUGIN_DOCTOR_STEP_ID, 'Examined and refused')],
+    ids=['housekeeping-uses-it', 'plugin-doctor-refused-it'],
+)
+def test_levers_section_names_each_step_with_its_disposition(step: str, disposition: str) -> None:
+    # Arrange
+    section = _levers_section()
+
+    # Act
+    rows = [line for line in section.splitlines() if line.startswith('|') and f'`{step}`' in line]
+
+    # Assert
+    assert len(rows) == 1, f'the levers section must name {step} in exactly one row, found {len(rows)}'
+    assert rows[0].startswith(f'| **{disposition}** |')
+
+
+@pytest.mark.parametrize(
+    ('step', 'cited'),
+    [
+        (_STEP_ID, '### Step 2b: Select what this firing judges (the delta rule)'),
+        (_PLUGIN_DOCTOR_STEP_ID, '#### The narrower rule that was examined, and why it is refused'),
+    ],
+    ids=['housekeeping', 'plugin-doctor'],
+)
+def test_section_the_levers_table_cites_exists_in_the_step_document(step: str, cited: str) -> None:
+    # Arrange
+    title = cited.split(' ', 1)[1]
+    assert f'§ "{title}"' in _levers_section(), f'the levers section no longer cites § "{title}"'
+
+    # Act
+    headings = _STEP_DOCS[step].read_text(encoding='utf-8').splitlines()
+
+    # Assert
+    assert cited in headings, f'{_STEP_DOCS[step].name} carries no `{cited}` heading'
+
+
+def test_standard_documents_the_changed_paths_verb_beside_classify() -> None:
+    # Arrange
+    content = _VERDICT_CURRENCY_DOC.read_text(encoding='utf-8')
+
+    # Act
+    blocks: list[str] = re.findall(r'```bash\n(.*?)```', content, re.DOTALL)
+    calls = {block.split('verdict_currency', 1)[1].split()[0]: block for block in blocks if 'verdict_currency' in block}
+
+    # Assert
+    assert set(calls) == {'classify', 'changed-paths'}
+    for flag in ('--plan-id', '--step', '--worktree-path'):
+        assert flag in calls['changed-paths'], f'the documented changed-paths call omits {flag}'
+
+
+def test_standard_still_states_that_no_step_declares_a_surface() -> None:
+    # Act
+    content = _VERDICT_CURRENCY_DOC.read_text(encoding='utf-8')
+
+    # Assert
+    assert 'No finalize step currently declares `verdict_inputs`' in content
+    assert 'admitting a *derived* surface' in content
+
+
+@pytest.mark.parametrize('outcome', _NO_CHANGE_LIST_OUTCOMES)
+def test_extension_point_makes_each_no_change_list_outcome_a_full_run(outcome: str) -> None:
+    # Arrange
+    section = _section(_EXT_POINT_DOC.read_text(encoding='utf-8'), _CHANGE_LIST_HEADING)
+
+    # Act
+    rows = [line for line in section.splitlines() if line.startswith(f'| `{outcome}` |')]
+
+    # Assert
+    assert len(rows) == 1, f'expected exactly one `{outcome}` row in the change-list section, found {len(rows)}'
+    assert rows[0].rstrip('|').split('|')[-1].strip() == 'Run in full'
+
+
+def test_extension_point_forbids_reading_a_missing_change_list_as_no_change() -> None:
+    # Act
+    section = _section(_EXT_POINT_DOC.read_text(encoding='utf-8'), _CHANGE_LIST_HEADING)
+
+    # Assert
+    assert 'MAY read which tracked paths changed' in section
+    assert 'MUST NOT read a missing `changed_paths` as "nothing changed"' in section
+    assert 'not a `verdict_inputs` declaration' in section
+    assert 'buys no dispatcher-side skip' in section
+
+
+def test_housekeeping_names_the_commit_restamp_as_a_route_into_its_third_full_run_condition() -> None:
+    # Arrange
+    content = _STEP_DOC.read_text(encoding='utf-8')
+
+    # Act
+    delta_rule = _section(content, _DELTA_RULE_HEADING)
+
+    # Assert
+    assert 'There are exactly three full-run conditions' in delta_rule
+    assert 'The commit re-stamp is a known, accepted route into the third condition' in delta_rule
+    assert '`classified_at_absent`' in delta_rule
+
+
+@pytest.mark.parametrize('step', sorted(_STEP_DOCS), ids=lambda step: step.split(':', 1)[1])
+def test_refusal_section_still_says_no_surface_is_declared(step: str) -> None:
+    # Arrange
+    content = _STEP_DOCS[step].read_text(encoding='utf-8')
+
+    # Act
+    refusal = _section(content, _REFUSAL_HEADING)
+
+    # Assert
+    assert 'declares **no** `verdict_inputs`' in refusal
+    assert 'every HEAD advance' in refusal
+
+
+@pytest.mark.parametrize('step', sorted(_STEP_DOCS), ids=lambda step: step.split(':', 1)[1])
+def test_step_document_declares_no_verdict_inputs_in_its_frontmatter(step: str) -> None:
+    # Act
+    keys = [line.split(':', 1)[0] for line in _frontmatter(_STEP_DOCS[step]).splitlines() if re.match(r'^\w', line)]
+
+    # Assert
+    assert 'head_dependent' in keys, f'{step} frontmatter was not read: {keys}'
+    assert 'verdict_inputs' not in keys
+
+
+def test_housekeeping_delta_rule_never_claims_a_dispatcher_skip() -> None:
+    # Arrange
+    content = _STEP_DOC.read_text(encoding='utf-8')
+
+    # Act
+    delta_rule = _section(content, _DELTA_RULE_HEADING)
+    refusal = _section(content, _REFUSAL_HEADING)
+
+    # Assert
+    assert not _DISPATCHER_SKIP_CLAIM.search(delta_rule), 'Step 2b claims the dispatcher skips the step'
+    assert 'buys no dispatcher-side skip' in refusal
+    assert 'delta rule (Step 2b)' in refusal
+
+
+def test_dispatcher_skip_pattern_matches_a_claim_and_not_the_steps_own_skip() -> None:
+    """Positive control for the pattern the delta-rule assertion relies on."""
+    # Act / Assert
+    assert _DISPATCHER_SKIP_CLAIM.search('so the dispatcher skips the step on a clean delta')
+    assert _DISPATCHER_SKIP_CLAIM.search('this buys a dispatcher-side skip')
+    assert not _DISPATCHER_SKIP_CLAIM.search('skip Steps 3 to 5 entirely')
+    assert not _DISPATCHER_SKIP_CLAIM.search('the dispatcher commits the edit and re-stamps the step record')
+
+
+@pytest.mark.parametrize(
+    'named',
+    ['`targets-scope-invalid`', '`marketplace/targets/*/__init__.py`', '`.claude-plugin/plugin.json`'],
+    ids=['rule', 'target-registrations', 'bundle-manifest'],
+)
+def test_plugin_doctor_refusal_names_its_counter_example(named: str) -> None:
+    # Arrange
+    content = _PLUGIN_DOCTOR_DOC.read_text(encoding='utf-8')
+
+    # Act
+    refusal = _section(content, _REFUSAL_HEADING)
+
+    # Assert
+    assert named in refusal, f'the plugin-doctor refusal section no longer names {named}'
+
+
+def test_plugin_doctor_refusal_admits_no_skip_predicate() -> None:
+    # Arrange
+    content = _PLUGIN_DOCTOR_DOC.read_text(encoding='utf-8')
+
+    # Act
+    refusal = _section(content, _REFUSAL_HEADING)
+
+    # Assert
+    assert 'No skip predicate is admitted' in refusal
+    assert 'every HEAD advance re-runs the gate' in refusal

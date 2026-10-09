@@ -65,7 +65,9 @@ Re-firing is safe, and bounded by the delta rule (Step 2b) rather than by re-rea
 
 ### Verdict-input surface — deliberately undeclared
 
-This step declares **no** `verdict_inputs`, so the dispatcher's verdict-currency classifier never narrows its re-fire: every HEAD advance re-runs it. The absence is a recorded refusal on evidence, not a declaration left unwritten.
+This step declares **no** `verdict_inputs`, so the dispatcher's verdict-currency classifier never narrows its re-fire: the dispatcher re-fires it on every HEAD advance. The absence is a recorded refusal on evidence, not a declaration left unwritten.
+
+**What is refused is a static glob declaration, and only that.** The refusal is about whether the dispatcher may *skip* this step, and the answer is no. It says nothing about how much the step does once it runs: that is bounded by the delta rule (Step 2b), which reads the change list since the previous firing and judges only the lessons it could affect. The delta rule is not a `verdict_inputs` declaration and buys no dispatcher-side skip — every HEAD advance still dispatches the step, and the step narrows its own work from inside. See [verdict-currency.md](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/verdict-currency.md) § "Three levers, two columns" for why the two bound different things.
 
 A `verdict_inputs` declaration is a set of globs over **tracked** paths, and the classifier decides currency from the tree difference between two commits (see [verdict-currency.md](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/verdict-currency.md) § "The classification"). Most of what this step's verdict reads is not in any tree:
 

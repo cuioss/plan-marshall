@@ -100,6 +100,32 @@ Implementors that record a **non-`done`** outcome MAY also forward the anchor ev
 
 **`post_run_review` is consumed at the same two granularities**, under the table above rather than a second contract of its own. The dispatcher's effort-role resolution reads the ONE step it is about to dispatch to decide whether that step resolves under the `post-run-review` sub-key — a per-step membership test, never a whole-set materialisation. The derivation guard materialises the full `post_run_review` set through `find_implementors()` and asserts the ordering and mutual-exclusion invariants over it. Deriving the role key from the declared fact is what keeps the ordering obligation and the dispatch sub-key on one source instead of two hand-maintained step lists.
 
+#### Reading the change list since the last `done` firing
+
+A `head_dependent: true` step MAY read which tracked paths changed between the commit its last `done` record is anchored to and the live HEAD, and use that list to narrow what a re-fire examines:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:verdict_currency changed-paths \
+  --plan-id {plan_id} --step {step_id} --worktree-path {worktree_path}
+```
+
+The verb reads the anchor from the step's own record — the `head_at_completion` the obligation above makes every `done` record carry — so the step supplies no SHA of its own.
+
+**Read `outcome` before `changed_paths`.** The payload carries `changed_paths` on `outcome: computed` alone. On the three other outcomes nothing was compared and the key is absent:
+
+| `outcome` | What it means | What the step MUST do |
+|-----------|---------------|-----------------------|
+| `computed` | The two trees were compared; `changed_paths` lists every path that differs, and an empty list means none does | It MAY narrow its work to what the list could affect |
+| `first_firing` | The plan holds no record for the step | Run in full |
+| `last_firing_not_done` | A record exists but is not a completed one, or carries no commit | Run in full |
+| `diff_unavailable` | The difference could not be computed — the live HEAD or the recorded commit did not resolve, or git failed | Run in full |
+
+**A step MUST NOT read a missing `changed_paths` as "nothing changed".** An absent key says no comparison was made; only an empty list on `computed` says the trees are equal. A `status: error` payload carries no `outcome` at all and is likewise a full run.
+
+A step whose narrowing carries results over from the previous firing needs more than the anchor. `head_at_completion` says which tree the record was computed against, not what the step had examined by then, and the dispatcher re-stamps it with no fact arguments after committing a mutating step's edits. Such a step records a fact of its own (see [Structured step facts](#structured-step-facts-records_facts)) and runs in full when that fact is absent — `project:finalize-step-lessons-housekeeping` records `classified_at` for this purpose.
+
+**Reading the change list is not a `verdict_inputs` declaration, and it buys no dispatcher-side skip.** The dispatcher's re-entry check consults `verdict_inputs` alone. A step that reads the change list still declares no surface, is still re-fired on every HEAD advance, and narrows only what its own body does once it runs. The two bound different things — see [phase-6-finalize/standards/verdict-currency.md](../../phase-6-finalize/standards/verdict-currency.md) § "Three levers, two columns".
+
 ### Structured step facts (`records_facts`)
 
 A step record persists its outcome as `outcome` plus a free-text `display_detail`. Prose is not queryable: a retrospective cannot ask "did this rebase replay anything?" of a sentence. `records_facts` names the structured keys a step persists through `mark-step-done --fact KEY=VALUE` so `display_detail` becomes a **rendering** of recorded facts rather than their sole record.
