@@ -16,8 +16,8 @@ import pytest
 
 import marketplace.targets.antigravity.emitter as ag_emitter
 from conftest import PROJECT_ROOT
-from marketplace.targets.component_targets import SourceSymlinkError
 from marketplace.targets.antigravity.emitter import emit_bundles
+from marketplace.targets.component_targets import SourceSymlinkError
 
 #: Skill-relative files the target must emit byte-identical. None of the
 #: sub-directories is one a name-based allow-list would have known.
