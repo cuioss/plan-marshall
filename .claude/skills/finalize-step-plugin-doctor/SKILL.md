@@ -56,6 +56,30 @@ The admissibility bar is that the globs be a **superset** of everything the gate
 
 So no proper subset of the tree is sound here, and a whole-tree declaration would be an inert lever wearing the shape of a real one. Declaring nothing keeps the fail-closed default and says so. `default:pre-push-quality-gate` refuses for a parallel reason — see its own [§ "Verdict-input surface — deliberately undeclared"](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/pre-push-quality-gate.md) — and the two together are why the mechanism's admissibility bar is stated as a superset obligation rather than a naming exercise. See [verdict-currency.md](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/verdict-currency.md).
 
+#### The narrower rule that was examined, and why it is refused
+
+Both rules above fail on a path that *appears or disappears*: a link target renamed or deleted, an agent file added. That suggests a narrower rule, built on the kind of change rather than on a glob. It was examined and is refused.
+
+**The rule examined.** Skip a re-fire when the HEAD advance:
+
+- adds, deletes and renames no tracked path, and
+- modifies no path inside a gated skill directory, and
+- modifies no agent file the two whole-repository analyzers read, and
+- modifies no file of the plugin-doctor or plan-doctor skills.
+
+The reasoning behind it: a modify-only commit cannot break a link target's existence, and the three exclusions cover the content the gate reads — the gated skills themselves, the agent files, and the rules.
+
+**The counter-example.** The exclusions do not cover the content the gate reads. The `targets-scope-invalid` rule (`analyze_target_scope`, in the `quality-gate` roster) reads the **content** of two kinds of file:
+
+- `marketplace/targets/*/__init__.py` — the registered target names, and
+- each bundle's `.claude-plugin/plugin.json` — the bundle's `targets` scope.
+
+Both lie outside every skill directory. Neither is an agent file, and neither belongs to the plugin-doctor or plan-doctor skills. Yet the rule anchors its findings at a `SKILL.md` or a skill-internal document **inside** a gated skill directory, so a scoped gate reports them. A commit that only modifies one of these files — a target renamed in a target package's `__init__.py`, a `targets` entry edited in a `plugin.json` — adds, deletes and renames nothing and touches no listed path. The examined rule would skip the re-fire, and the gate that was skipped would have turned red.
+
+**The consequence.** No skip predicate is admitted. The step keeps the unconditional re-fire: every HEAD advance re-runs the gate. A rule of this shape is only as sound as its list of exclusions is complete, and the roster is open — each rule added to `cmd_quality_gate` may read content from somewhere new, and nothing would force the list to follow. What bounds the cost of a re-fire is the gate's scope (Step 1's union of realized footprint and declared files), not a skip.
+
+This recorded reason is the whole of the refusal. The step ships no script and no skip test, and its workflow, its script calls and its re-fire behaviour are exactly as the sections below state.
+
 ## Workflow
 
 ### Step 1: Read the gate scope — realized footprint ∪ declared files
