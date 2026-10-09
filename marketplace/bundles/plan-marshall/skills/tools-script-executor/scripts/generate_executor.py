@@ -411,6 +411,13 @@ SHARED_MODULE_SKILLS: tuple[str, ...] = (
 )
 
 
+#: The bundle the logging skill and every entry of :data:`SHARED_MODULE_SKILLS`
+#: belong to. Emitted into the executor so its bootstrap can map a skill name
+#: back to a directory when a pinned path is gone: the plugin cache and the
+#: marketplace tree both file a skill under its bundle.
+BOOTSTRAP_BUNDLE = 'plan-marshall'
+
+
 def shared_module_skill_label(scripts_dir: Path) -> str:
     """Return the skill name a resolved shared-module ``scripts/`` dir belongs to.
 
@@ -1251,7 +1258,10 @@ def generate_mappings_code(mappings: dict[str, str]) -> str:
 #     walk needs to tell a flag's VALUE from the next verb.
 # v4: adds the CACHE_RECOVERY_ROOTS placeholder (runtime-resolved bundle cache
 #     roots injected per target for the bootstrap's pruned-version self-heal).
-_SUPPORTED_TEMPLATE_FORMAT_VERSION = 4
+# v5: adds the BOOTSTRAP_BUNDLE placeholder (the bundle the bootstrap skills
+#     belong to, which the bootstrap needs to find a skill's scripts dir in the
+#     plugin cache and in the checkout's own sources).
+_SUPPORTED_TEMPLATE_FORMAT_VERSION = 5
 
 # Matches the template's ``# TEMPLATE_FORMAT_VERSION: N`` marker comment.
 _TEMPLATE_FORMAT_VERSION_RE = re.compile(r'^#\s*TEMPLATE_FORMAT_VERSION:\s*(\d+)\s*$', re.MULTILINE)
@@ -2119,6 +2129,7 @@ def generate_executor(
         content = content.replace('{{SCRIPT_SURFACES}}', surfaces_code)
         content = content.replace('{{LOGGING_DIR}}', logging_dir)
         content = content.replace('{{SHARED_MODULE_DIRS}}', shared_module_lines)
+        content = content.replace('{{BOOTSTRAP_BUNDLE}}', BOOTSTRAP_BUNDLE)
         content = content.replace('{{CACHE_RECOVERY_ROOTS}}', cache_recovery_lines)
         content = content.replace('{{EXTRA_SCRIPT_DIRS}}', extra_dirs_code)
         content = content.replace('{{PLAN_DIR_NAME}}', PLAN_DIR_NAME)

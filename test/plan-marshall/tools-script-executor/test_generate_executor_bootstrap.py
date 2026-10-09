@@ -13,7 +13,10 @@ subprocess that pre-seeds ``sys.path`` and then imports the real generator by
 file path — asserting on the resulting ``sys.path`` ordering.
 """
 
+import os
+import shutil
 import subprocess
+import sys
 import textwrap
 from pathlib import Path
 
@@ -39,6 +42,8 @@ _BOOTSTRAP_SHARED_SKILLS = (
     'manage-change-ledger',
 )
 _BOOTSTRAP_LOGGING_SKILL = 'manage-logging'
+# The bundle every one of those skills belongs to.
+_BOOTSTRAP_BUNDLE = 'plan-marshall'
 
 
 def _run_bootstrap_probe(seed_lines: str) -> tuple[int, int, int, str]:
@@ -290,6 +295,7 @@ def _render_executor(pruned_base: Path, home: Path) -> str:
     content = content.replace('{{SCRIPT_SURFACES}}', '')
     content = content.replace('{{LOGGING_DIR}}', pinned(_BOOTSTRAP_LOGGING_SKILL))
     content = content.replace('{{SHARED_MODULE_DIRS}}', shared_pairs)
+    content = content.replace('{{BOOTSTRAP_BUNDLE}}', _BOOTSTRAP_BUNDLE)
     recovery_root = home / '.claude' / 'plugins' / 'cache' / 'plan-marshall'
     content = content.replace('{{CACHE_RECOVERY_ROOTS}}', f"    '{recovery_root}',")
     content = content.replace('{{EXTRA_SCRIPT_DIRS}}', '')
@@ -304,20 +310,40 @@ def _render_executor(pruned_base: Path, home: Path) -> str:
     return content
 
 
-def _stand_up_fake_cache(home: Path, skills: tuple[str, ...]) -> None:
-    """Create a plugin cache under ``home`` whose ONLY (newer) version dir carries the skills.
+def _cache_version_skills_dir(home: Path, version: str) -> Path:
+    """The ``skills`` directory of one cached version, in the installed layout.
 
-    Lays out ``{home}/.claude/plugins/cache/plan-marshall/9.9.9999/skills/{skill}/scripts``
-    as a symlink to each real marketplace skill's ``scripts`` dir, so the template's
-    ``_newest_cache_scripts_dir`` self-heal resolves the real modules. No older/pinned
-    version dir is created — that is the GC-pruned shape.
+    The installed plugin cache files a skill under its bundle and then its version:
+    ``{cache_root}/{bundle}/{version}/skills/{skill}/scripts``, where the cache root
+    is ``{home}/.claude/plugins/cache/plan-marshall``.
+    """
+    return home / '.claude' / 'plugins' / 'cache' / 'plan-marshall' / _BOOTSTRAP_BUNDLE / version / 'skills'
+
+
+def _stand_up_fake_cache(home: Path, skills: tuple[str, ...], version: str = '9.9.9999') -> None:
+    """Create one cached version under ``home`` that carries the real skills.
+
+    Each ``{skill}/scripts`` is a symlink to the real marketplace skill's ``scripts``
+    dir, so the template's ``_newest_cache_scripts_dir`` self-heal resolves the real
+    modules. No pinned version dir is created — that is the GC-pruned shape.
     """
     skills_dir = _skills_dir()
-    cache_ver = home / '.claude' / 'plugins' / 'cache' / 'plan-marshall' / '9.9.9999' / 'skills'
+    cache_ver = _cache_version_skills_dir(home, version)
     for skill in skills:
         skill_dir = cache_ver / skill
         skill_dir.mkdir(parents=True, exist_ok=True)
         (skill_dir / 'scripts').symlink_to(skills_dir / skill / 'scripts', target_is_directory=True)
+
+
+def _stand_up_empty_cache_version(home: Path, skills: tuple[str, ...], version: str) -> None:
+    """Create one cached version whose ``scripts`` dirs exist and hold no module.
+
+    A bootstrap that selects this version puts empty directories on ``sys.path``, so
+    the imports that follow fail: selecting it is observable.
+    """
+    cache_ver = _cache_version_skills_dir(home, version)
+    for skill in skills:
+        (cache_ver / skill / 'scripts').mkdir(parents=True, exist_ok=True)
 
 
 def _run_executor(executor: Path, home: Path) -> subprocess.CompletedProcess:
@@ -378,3 +404,151 @@ class TestTemplateBootstrapSelfHeal:
         # import of plan_logging fails loudly.
         assert result.returncode != 0
         assert 'plan_logging' in result.stderr
+
+    def test_the_newer_of_two_cached_versions_is_selected(self, tmp_path):
+        """Two versions in the installed layout: the numerically newer one supplies the modules.
+
+        ``0.1.9`` holds empty ``scripts`` dirs and ``0.1.10`` the real ones, so the
+        imports succeed only when ``0.1.10`` is selected. A selection by name order
+        would take ``0.1.9``.
+        """
+        executor = tmp_path / 'execute-script.py'
+        home = tmp_path / 'fakehome'
+        executor.write_text(_render_executor(tmp_path / 'pruned-cache', home), encoding='utf-8')
+        _stand_up_empty_cache_version(home, self._ALL_BOOTSTRAP_SKILLS, '0.1.9')
+        _stand_up_fake_cache(home, self._ALL_BOOTSTRAP_SKILLS, '0.1.10')
+
+        result = _run_executor(executor, home)
+
+        assert result.returncode == 0, result.stderr
+
+    def test_the_older_version_alone_does_not_supply_the_modules(self, tmp_path):
+        """Matched control: the empty version on its own leaves the imports failing.
+
+        Without it the case above would pass on a bootstrap that ignored the cache
+        and found the modules some other way.
+        """
+        executor = tmp_path / 'execute-script.py'
+        home = tmp_path / 'fakehome'
+        executor.write_text(_render_executor(tmp_path / 'pruned-cache', home), encoding='utf-8')
+        _stand_up_empty_cache_version(home, self._ALL_BOOTSTRAP_SKILLS, '0.1.9')
+
+        result = _run_executor(executor, home)
+
+        assert result.returncode != 0
+        assert 'plan_logging' in result.stderr
+
+
+# =============================================================================
+# Bootstrap recovery from the checkout's own sources
+# =============================================================================
+#
+# An executor generated in a worktree pins that worktree's script directories.
+# Once the worktree is removed, an executor still carrying those pins finds
+# nothing at them and nothing in the plugin cache. It then looks in the
+# marketplace tree of the checkout it sits in, and when that holds no sources
+# either it says which directory is missing and how to regenerate.
+
+#: Environment that would move the generator's output path or discovery root.
+_LOCATION_ENV = ('PLAN_BASE_DIR', 'PLAN_DIR_NAME', 'PM_MARKETPLACE_ROOT', 'PM_DIST_MANIFEST', 'PYTHONPATH')
+
+_STUB_SCRIPT = (
+    'import argparse\n\n'
+    "parser = argparse.ArgumentParser(description='stand-in script', allow_abbrev=False)\n"
+    'parser.parse_args()\n'
+)
+
+_ALL_BOOTSTRAP_SKILLS = (*_BOOTSTRAP_SHARED_SKILLS, _BOOTSTRAP_LOGGING_SKILL)
+
+
+def _bundle_skills_dir(checkout: Path) -> Path:
+    return checkout / 'marketplace' / 'bundles' / _BOOTSTRAP_BUNDLE / 'skills'
+
+
+def _make_stub_worktree(root: Path) -> Path:
+    """A checkout whose bootstrap skill directories exist and hold stand-in content.
+
+    Enough for a generation to pin them; nothing an executor could import from.
+    """
+    for skill in _ALL_BOOTSTRAP_SKILLS:
+        (_bundle_skills_dir(root) / skill / 'scripts').mkdir(parents=True)
+    (_bundle_skills_dir(root) / _BOOTSTRAP_LOGGING_SKILL / 'scripts' / 'plan_logging.py').write_text(
+        _STUB_SCRIPT, encoding='utf-8'
+    )
+    (root / '.plan' / 'local').mkdir(parents=True)
+    return root
+
+
+def _make_checkout_with_sources(root: Path) -> Path:
+    """A checkout whose bootstrap skill directories are the real ones."""
+    for skill in _ALL_BOOTSTRAP_SKILLS:
+        skill_dir = _bundle_skills_dir(root) / skill
+        skill_dir.mkdir(parents=True)
+        (skill_dir / 'scripts').symlink_to(_skills_dir() / skill / 'scripts', target_is_directory=True)
+    (root / '.plan').mkdir()
+    return root
+
+
+def _generate_in(worktree: Path, home: Path) -> str:
+    """Run the real generator inside ``worktree`` and return the executor it wrote."""
+    generator = get_scripts_dir('plan-marshall', 'tools-script-executor') / 'generate_executor.py'
+    env = {key: value for key, value in os.environ.items() if key not in _LOCATION_ENV}
+    env['HOME'] = str(home)
+    result = subprocess.run(
+        [sys.executable, str(generator), 'generate', '--marketplace', '--marketplace-root', str(worktree)],
+        cwd=str(worktree),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=300,
+        check=False,
+    )
+    executor = worktree / '.plan' / 'execute-script.py'
+    assert executor.is_file(), f'generation wrote no executor:\n{result.stdout}\n{result.stderr}'
+    return executor.read_text(encoding='utf-8')
+
+
+@pytest.fixture
+def orphaned_executor(tmp_path: Path) -> tuple[str, Path, Path]:
+    """An executor generated in a worktree that has since been removed.
+
+    Returns the executor text, the removed worktree's path and an empty home, so
+    no plugin cache can supply a directory.
+    """
+    home = tmp_path / 'emptyhome'
+    home.mkdir()
+    worktree = _make_stub_worktree((tmp_path / 'worktree').resolve())
+    content = _generate_in(worktree, home)
+    shutil.rmtree(worktree)
+    return content, worktree, home
+
+
+def test_an_orphaned_executor_runs_from_a_checkout_that_has_the_sources(orphaned_executor, tmp_path: Path) -> None:
+    """The pinned directories are gone; the checkout the executor sits in supplies them."""
+    content, _worktree, home = orphaned_executor
+    checkout = _make_checkout_with_sources(tmp_path / 'main')
+    executor = checkout / '.plan' / 'execute-script.py'
+    executor.write_text(content, encoding='utf-8')
+
+    result = _run_executor(executor, home)
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_an_orphaned_executor_with_no_sources_names_the_directory_and_the_command(
+    orphaned_executor, tmp_path: Path
+) -> None:
+    """Matched control: the same executor in a checkout without sources stops with one message."""
+    content, worktree, home = orphaned_executor
+    checkout = tmp_path / 'bare'
+    (checkout / '.plan').mkdir(parents=True)
+    executor = checkout / '.plan' / 'execute-script.py'
+    executor.write_text(content, encoding='utf-8')
+
+    result = _run_executor(executor, home)
+
+    missing = _bundle_skills_dir(worktree) / _BOOTSTRAP_LOGGING_SKILL / 'scripts'
+    assert result.returncode != 0
+    assert str(missing) in result.stderr
+    assert 'generate_executor.py bootstrap --marketplace --marketplace-root .' in result.stderr
+    assert 'Traceback' not in result.stderr
