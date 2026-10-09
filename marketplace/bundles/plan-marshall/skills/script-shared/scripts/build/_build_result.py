@@ -10,7 +10,7 @@ build that RAN and reported a failure. The other three non-green values are not
 that, and are not each other:
 
 * ``timeout`` — a NON-FINISH: the build exceeded a bound this stack set.
-* ``killed`` — a NON-FINISH: the build child died by a signal nobody here sent.
+* ``killed`` — a NON-FINISH: the build was stopped by a signal, not by that bound.
 * ``indeterminate`` — the outcome could not be established at all.
 
 Each has its own constructor here, and none is ever folded into ``error``. An
@@ -178,7 +178,7 @@ STATUS_TIMEOUT = 'timeout'
 """Build exceeded timeout limit."""
 
 STATUS_KILLED = 'killed'
-"""Build child was terminated by a signal nobody in this stack sent.
+"""Build was stopped by a signal, not by its own outer budget.
 
 Distinct from :data:`STATUS_ERROR` (the build ran to completion and reported a
 failure) and from :data:`STATUS_TIMEOUT` (the build exceeded the outer budget
@@ -214,7 +214,7 @@ ERROR_TIMEOUT = 'timeout'
 """Build exceeded timeout limit."""
 
 ERROR_KILLED = 'killed'
-"""Build child died by a signal this stack did not send."""
+"""Build was stopped by a signal, not by its own outer budget."""
 
 ERROR_INDETERMINATE = 'indeterminate'
 """The outcome could not be determined at all — see :data:`STATUS_INDETERMINATE`."""
@@ -433,7 +433,7 @@ def timeout_result(
 def killed_result(exit_code: int, duration_seconds: int, log_file: str, command: str, **extra) -> dict:
     """Build an externally-killed result dict.
 
-    A ``killed`` result records that the build child died by a signal that
+    A ``killed`` result records that the build was stopped by a signal that
     neither this stack's outer timeout nor the build itself produced. It is a
     NON-FINISH, and it is deliberately its own status rather than an ``error``
     or a ``timeout``:

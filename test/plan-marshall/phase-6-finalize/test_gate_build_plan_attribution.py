@@ -151,12 +151,11 @@ def test_routing_seam_submits_the_resolved_build_for_the_plan(resolved_for_plan,
 
 #: A resolve call on one folded line. ``top`` is everything between the notation
 #: and the ``resolve`` verb — the only place the top-level flag is accepted. It
-#: admits only flags, each with at most one value, so ``resolve`` is matched as
-#: the VERB and never as another verb's argument. Nothing after the verb is
-#: constrained: where ``--command`` sits among the leaf flags does not decide
-#: whether a call is in the population.
+#: admits only ``--plan-id`` and ``--project-dir``, each as ``--flag value`` or
+#: ``--flag=value``.
 _RESOLVE_CALL = re.compile(
-    r'manage-architecture:architecture[ \t]+(?P<top>(?:--\S+[ \t]+(?:(?!--)\S+[ \t]+)?)*?)resolve(?=\s|$)'
+    r'manage-architecture:architecture[ \t]+'
+    r'(?P<top>(?:--(?:plan-id|project-dir)(?:=\S+|[ \t]+(?!--)\S+)[ \t]+)*)resolve(?=\s|$)'
 )
 
 _TOP_LEVEL_PLAN_ID = re.compile(r'(?:^|\s)--plan-id(?:\s+|=)\S+')
@@ -266,8 +265,13 @@ def test_detector_accepts_only_a_plan_id_written_before_the_verb(tail, accepted)
     assert [attributed for _call, attributed in calls] == [accepted]
 
 
-def test_control_resolve_as_another_verbs_argument_is_not_in_the_population():
+@pytest.mark.parametrize(
+    'top_level',
+    ['--plan-id {plan_id} ', '--plan-id={plan_id} ', ''],
+    ids=['top-level-plan-id-space-form', 'top-level-plan-id-equals-form', 'no-top-level-flag'],
+)
+def test_control_resolve_as_another_verbs_argument_is_not_in_the_population(top_level):
     """CONTROL: the population is keyed on the verb, not on the word appearing in the call."""
-    document = f'```bash\n{_NOTATION_PREFIX} \\\n  commands --module resolve\n```\n'
+    document = f'```bash\n{_NOTATION_PREFIX} \\\n  {top_level}commands --module resolve\n```\n'
 
     assert _resolve_calls(document) == []

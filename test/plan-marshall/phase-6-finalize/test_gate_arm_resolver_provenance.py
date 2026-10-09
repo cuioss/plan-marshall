@@ -46,12 +46,12 @@ _GATE_DOC = (
 )
 
 #: An ``architecture resolve`` call — the marker that makes a section an ARM.
-#: Matched on the notation followed by the ``resolve`` VERB. Only top-level
-#: flags, each with at most one value in either the space or the ``=`` spelling,
-#: may sit between the two, so ``resolve`` appearing as another verb's argument
-#: does not promote a section. Nothing after the verb is constrained: where
-#: ``--command`` sits among the leaf flags does not decide whether a call counts.
-_RESOLVE_CALL = re.compile(r'architecture[ \t]+(?:--\S+[ \t]+(?:(?!--)\S+[ \t]+)?)*?resolve(?=\s|$)')
+#: Matched on the notation followed by the ``resolve`` VERB. Only ``--plan-id``
+#: and ``--project-dir``, each as ``--flag value`` or ``--flag=value``, may sit
+#: between the two.
+_RESOLVE_CALL = re.compile(
+    r'architecture[ \t]+(?:--(?:plan-id|project-dir)(?:=\S+|[ \t]+(?!--)\S+)[ \t]+)*resolve(?=\s|$)'
+)
 
 #: The instruction that ties the arm's invocation to the resolve RETURN. An arm
 #: that resolves and then runs something else would satisfy ``_RESOLVE_CALL``
@@ -228,12 +228,13 @@ def test_arm_detector_fires_when_command_is_not_the_first_leaf_flag(top_level):
     assert _is_arm(section)
 
 
-def test_control_resolve_as_another_verbs_argument_is_not_an_arm():
+@pytest.mark.parametrize('top_level', _TOP_LEVEL_SPELLINGS, ids=_TOP_LEVEL_SPELLING_IDS)
+def test_control_resolve_as_another_verbs_argument_is_not_an_arm(top_level):
     """CONTROL: the detector keys on the verb, not on the word appearing in a fenced call."""
     section = (
         '```bash\n'
         'python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \\\n'
-        '  commands --module resolve\n'
+        f'  {top_level}commands --module resolve\n'
         '```\n'
     )
 

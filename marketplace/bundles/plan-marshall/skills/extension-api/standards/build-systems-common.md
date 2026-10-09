@@ -132,7 +132,7 @@ in a different direction, so none may be presented as another:
 |---|---|---|
 | `error` | The build **ran to completion** and reported a failure. | Not a non-finish — a verdict exists. |
 | `timeout` | The build exceeded a bound **this stack set**, so this stack sent the kill. | Not a failure; no verdict was reported. |
-| `killed` | The build's child died by a signal **nobody in this stack sent**. | Not a failure, and **not a timeout** — no bound fired. |
+| `killed` | The build was stopped by a **signal**. | Not a failure, and **not a timeout** — no bound fired. |
 
 An outcome that cannot be resolved to one of those is `unknown`, and `unknown` is folded into
 **neither neighbour**: it records that the boundary could not read a verdict, which supports no

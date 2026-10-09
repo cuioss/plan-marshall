@@ -742,11 +742,11 @@ def cmd_run_common(
         print(formatter(err_output))
         return 1
 
-    # Handle an EXTERNAL KILL — a signal this stack did not send.
+    # Handle a KILL — a stop our own bound did not cause.
     #
     # This branch precedes the timeout branch deliberately: a kill and a timeout
-    # are the two non-finishes, and the one thing that separates them is WHO
-    # sent the signal. The timeout branch may only claim a run our own bound
+    # are the two non-finishes, and the one thing that separates them is whether
+    # our own bound fired. The timeout branch may only claim a run our own bound
     # terminated, so a kill must be routed out before it can be read as one.
     # The result carries the kill's own diagnostic fields (`error: killed` and
     # the shared no-blind-retry `message`), and BOTH are propagated onto the

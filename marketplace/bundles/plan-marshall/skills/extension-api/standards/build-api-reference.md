@@ -19,7 +19,7 @@ For common standards (timeouts, log handling, acceptable warnings), see `build-s
 **Constraints:**
 - All commands use `python3 .plan/execute-script.py {bundle}:{skill}:{script} {subcommand} {args}`
 - Output format defaults to TOON; use `--format json` only when explicitly required (e.g., programmatic parsing by scripts, CI pipeline integration)
-- Always analyze the result TOON: read `status`, and review `errors` only on `error`. **`status` has five values and they are not interchangeable** — `success`, `error` (the build ran and failed), `timeout` (it exceeded its own bound), `killed` (a signal this stack did not send) and `indeterminate` (the outcome could not be read at all). The last three are **not** failing builds: they carry no `errors`, and treating them as red manufactures a failure the build never reported. On `killed`, the result's `message` says *externally killed — not flaky, do not blind-retry*; honour it rather than re-running the same command. See [`build-execution.md`](build-execution.md) § Status values.
+- Always analyze the result TOON: read `status`, and review `errors` only on `error`. **`status` has five values and they are not interchangeable** — `success`, `error` (the build ran and failed), `timeout` (it exceeded its own bound), `killed` (it was stopped by a signal) and `indeterminate` (the outcome could not be read at all). The last three are **not** failing builds: they carry no `errors`, and treating them as red manufactures a failure the build never reported. On `killed`, the result's `message` says *externally killed — not flaky, do not blind-retry*; honour it rather than re-running the same command. See [`build-execution.md`](build-execution.md) § Status values.
 
 ---
 
@@ -67,7 +67,7 @@ python3 .plan/execute-script.py {notation} run \
   - Gradle: `":module:build"` or `"build"`
   - npm: `"run test"` or `"run test --workspace=pkg"`
   - Python: `"verify"` or `"module-tests core"`
-- `--timeout` — Timeout in seconds (default: 300, adaptive via run-config, min floor: 60s)
+- `--timeout` — Timeout in seconds for this run, overriding the adaptive value (when omitted: adaptive via run-config, default 300; min floor: 60s)
 - `--mode` — Output mode: `actionable` (default), `structured`, `errors`
 - `--format` — Output format: `toon` (default), `json`
 - `--plan-id` — Plan identifier. **Always resolved, never null**: when supplied it auto-resolves the worktree path via `manage-status get-worktree-path`; when omitted it resolves to the `NO_PLAN` sentinel, NOT to "no plan". Omitting the flag is therefore an attribution decision, not an absence — the build's log lands under the sentinel's build-results tree and its `kind=build` ledger row is stamped `NO_PLAN`. Pass the real plan id whenever the build belongs to one. Mutually exclusive with `--project-dir`.
@@ -408,8 +408,8 @@ Wrapper resolution is performed once in the shared factory's `_resolve_wrapper` 
 ## Timeout Learning
 
 All build skills integrate with adaptive timeout learning via `run-config`. The timeout for a command is adjusted based on historical execution times:
-- First run: uses `--timeout` value or default (300s)
-- Subsequent runs: `last_duration × 1.25` (25% safety margin)
+- With `--timeout`: that value, for that run
+- Without it: the learned duration × 1.25 (25% safety margin), or the default (300s) when nothing is learned
 - On timeout failure: timeout is doubled for the next run (capped at 1800s)
 - Minimum floor: 60 seconds (never below this regardless of learned value)
 - Maximum cap: 1800 seconds (prevents exponential growth from successive timeouts)

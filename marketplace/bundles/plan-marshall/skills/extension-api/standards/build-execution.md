@@ -53,7 +53,7 @@ All build command invocations must return these fields.
 | Field | Type | Description |
 |-------|------|-------------|
 | `status` | string | Execution outcome: `success`, `error`, `timeout`, `killed`, or `indeterminate` |
-| `exit_code` | int | Process exit code (0=success, positive=error, -1=timeout/execution failure/indeterminate, negative `-N`=killed by signal N) |
+| `exit_code` | int | Process exit code (0=success, positive=error, -1=timeout/execution failure/indeterminate, negative `-N`=`killed`, signal N) |
 | `duration_seconds` | int | Actual execution time in seconds |
 | `log_file` | string | Path to captured output file |
 | `command` | string | Full command that was executed |
@@ -63,7 +63,7 @@ All build command invocations must return these fields.
 - `success` - Command completed with exit code 0
 - `error` - Command **ran to completion and failed** (non-zero exit code), or execution failed
 - `timeout` - Command exceeded **its own outer budget**, so this stack sent the kill and the elapsed equals the bound
-- `killed` - Command's child died by a signal **this stack did not send**
+- `killed` - Command was stopped by a signal, **not by its own outer budget**
 - `indeterminate` - The outcome **could not be established at all**
 
 **Only `error` means the build failed.** The other three non-green values are
@@ -293,7 +293,7 @@ The build daemon applies the same rule one level out: it starts each job as the 
 
 **Windows.** There are no process groups to signal. The wrapper runs the build as a plain child and an expired bound kills **that one process**; the daemon likewise kills only the job's own child. Processes the build started are not stopped by the timeout.
 
-On every platform the result of an expired bound is `status: timeout` carrying `timeout_used_seconds`, `timeout_source` and `command_key`.
+On every platform the result of an expired bound is `status: timeout`.
 
 ## CLI Interface
 
@@ -634,9 +634,9 @@ Timeout case carrying the test evidence the run produced before the kill:
 | -1 | `error` | Execution failed (wrapper not found, log creation failed) |
 | -1 | `timeout` | Build exceeded timeout |
 | -1 | `indeterminate` | The outcome could not be established at all |
-| `-N` | `killed` | Build child terminated by POSIX signal N, which this stack did not send |
+| `-N` | `killed` | Build stopped by POSIX signal N |
 
-**Note**: A negative exit code indicates the build system never ran or was interrupted, so the code alone cannot say which. **Read `status`, never the exit code**, to separate execution failure from timeout from indeterminate from external kill — `-1` is shared by three of them, and only `status` carries the distinction.
+**Note**: A negative exit code indicates the build system never ran or was interrupted, so the code alone cannot say which. **Read `status`, never the exit code**, to separate execution failure from timeout from indeterminate from kill — `-1` is shared by three of them, and only `status` carries the distinction.
 
 ## Caller Interpretation
 
@@ -652,7 +652,7 @@ elif result['status'] == 'timeout':
     # NON-FINISH: our own bound fired. Not a failing build — no verdict exists.
     print(f'Timed out after {result.get("timeout_used_seconds", "unknown")}s')
 elif result['status'] == 'killed':
-    # NON-FINISH: a signal we did not send. Not a failing build, not a timeout.
+    # NON-FINISH: stopped by a signal. Not a failing build, not a timeout.
     # Do NOT blind-retry — establish why it was killed first.
     print(result.get('message', 'externally killed'))
 elif result['status'] == 'indeterminate':
