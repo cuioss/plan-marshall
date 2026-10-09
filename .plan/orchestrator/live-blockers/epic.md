@@ -349,7 +349,22 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   `doc/analyzis-cloud-plan/capability-gaps.adoc` still describes the self-seeding class as
   present; `dispatch-granularity.md` and `unreachable-guard-detection.md` carry check counts
   that were already inexact. Not owned by any staged plan. — source: the run's final report,
-  2026-10-09; not verified here.
+  2026-10-09; not verified here. **Being fixed:** on 2026-10-09 the operator told that same
+  session to correct these texts as well. Close this entry when its pull request has merged;
+  no number is known here yet.
+- **A routed build leaves no change-ledger row for its plan, and it is not the missing plan
+  id.** PLAN-LB-23 examined the hypothesis folded into its spec on 2026-10-08 and reports it
+  as a separate defect it does not fix: the 84 routed builds of the PLAN-LB-14 run carried a
+  real plan id (the work-log line is only written when one is present), yet the ledger held no
+  `kind=build` row for the plan. Its candidate cause, reasoned from the code and not
+  reproduced: the ledger path is resolved per working tree, so a row appended by a build
+  running under the daemon may land in a different working tree's ledger than the one a
+  reader opens. If that is right it also bears on which ledger the freshness check reads.
+  Not owned by any staged plan. Next step it suggests: run one routed build for a plan in a
+  worktree, then compare the ledger file that received the row with the one
+  `pre-commit-verify-freshness` opens. — source: inbox message `lb-23-verify-builds-001.md`,
+  2026-10-08; pointers `_build_execute_factory._append_gate_build_row`,
+  `_ledger_core.resolve_ledger_path`; not verified here.
 
 ## Watches
 
