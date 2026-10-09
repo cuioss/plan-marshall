@@ -187,12 +187,48 @@ def _count_entries_within(root: Path, headroom: int) -> int | None:
     return entries
 
 
+def _windows_owner_has_exited(pid: int) -> bool:
+    """Report whether Windows positively says process ``pid`` is gone.
+
+    Reads the process status through a query-only handle and sends nothing to
+    the process. ``True`` only when no process has that pid or its exit code is
+    recorded; access denied, any other failure and a non-Windows host answer
+    ``False``.
+    """
+    if sys.platform != 'win32':
+        return False
+    import ctypes
+    from ctypes import wintypes
+
+    if pid > 0xFFFFFFFF:
+        return False
+    process_query_limited_information = 0x1000
+    error_invalid_parameter = 87
+    still_active = 259
+    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, wintypes.LPDWORD]
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    handle = kernel32.OpenProcess(process_query_limited_information, False, pid)
+    if not handle:
+        return ctypes.get_last_error() == error_invalid_parameter
+    try:
+        exit_code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+            return False
+        return exit_code.value != still_active
+    finally:
+        kernel32.CloseHandle(handle)
+
+
 def _session_owner_is_alive(session: Path) -> bool:
     """Report whether the build process that owns ``session`` may still be running.
 
     A per-session dir is named ``{pid}-{uuid4hex}`` after the ``build.py``
     process that created it (see :func:`_prepare_session_basetemp`), so the
-    owner is probed with signal 0. Only a positive "no such process" answers
+    owner is probed with signal 0, or on Windows with
+    :func:`_windows_owner_has_exited`. Only a positive "no such process" answers
     ``False``. Everything else answers ``True``: a name that does not parse, a
     probe that raises any other error (``PermissionError`` means a process with
     that pid exists under another user), and a pid that was reused by an
@@ -209,15 +245,17 @@ def _session_owner_is_alive(session: Path) -> bool:
     if not separator or not (pid_text.isascii() and pid_text.isdigit()):
         return True
     pid = int(pid_text)
-    # pid 0 addresses the caller's own process group, not a single owner. On
-    # Windows os.kill has no signal-0 probe — it terminates the target instead.
-    if pid <= 0 or os.name == 'nt':
+    # pid 0 addresses the caller's own process group, not a single owner.
+    if pid <= 0:
         return True
     try:
+        # On Windows os.kill terminates the target, so it is never called there.
+        if os.name == 'nt':
+            return not _windows_owner_has_exited(pid)
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
-    except OSError:
+    except (OSError, OverflowError):
         return True
     return True
 

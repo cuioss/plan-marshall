@@ -429,6 +429,68 @@ def test_prune_keeps_a_session_unless_the_probe_says_no_such_process(tmp_path, m
     assert _child_dirs(root) == expected
 
 
+def test_prune_keeps_a_session_whose_pid_prefix_exceeds_the_platform_pid_type(tmp_path, monkeypatch):
+    """A numeric prefix the real probe cannot represent resolves to keep, and the prune completes."""
+    root = tmp_path / 'pytest-basetemp'
+    root.mkdir()
+    dead = _dead_pid()
+    oversized = f'{10**30}-oversized'
+    _seed_session(root, oversized, files=1, mtime=1)
+    _seed_session(root, f'{dead}-older', files=1, mtime=2)
+    _seed_session(root, f'{dead}-newer', files=1, mtime=3)
+    monkeypatch.setattr(build, 'PYTEST_BASETEMP_ROOT', root)
+
+    build._prune_basetemp_roots(keep=1, max_entries=100)
+
+    assert _child_dirs(root) == sorted([oversized, f'{dead}-newer'])
+
+
+def _windows_probe_raising(error: Exception):
+    """Return a Windows owner-probe stub that raises ``error``."""
+
+    def _probe(_pid: int) -> bool:
+        raise error
+
+    return _probe
+
+
+#: ``(Windows owner-probe stub, whether the owner then reads as alive)``.
+_WINDOWS_PROBE_OUTCOMES = [
+    (lambda _pid: False, True),
+    (_windows_probe_raising(OSError('probe failed')), True),
+    (lambda _pid: True, False),
+]
+
+_WINDOWS_PROBE_OUTCOME_IDS = ['not-exited-is-alive', 'probe-error-is-alive', 'control-exited-is-dead']
+
+
+@pytest.mark.parametrize('probe,expected', _WINDOWS_PROBE_OUTCOMES, ids=_WINDOWS_PROBE_OUTCOME_IDS)
+def test_owner_probe_on_windows_reports_dead_only_for_a_positively_exited_owner(monkeypatch, probe, expected):
+    """On Windows the owner is read through the status probe and ``os.kill`` is never called.
+
+    SIMULATED: ``os.name`` and ``build._windows_owner_has_exited`` are both
+    monkeypatched. No Windows process API runs on this host, so the probe's own
+    ``OpenProcess`` / ``GetExitCodeProcess`` reading is not exercised here.
+    """
+    session = Path('4242-session')
+    killed: list[int] = []
+    monkeypatch.setattr(build.os, 'kill', lambda pid, _signal: killed.append(pid))
+    monkeypatch.setattr(build, '_windows_owner_has_exited', probe)
+
+    with monkeypatch.context() as windows:
+        windows.setattr(build.os, 'name', 'nt')
+        alive = build._session_owner_is_alive(session)
+
+    assert alive is expected
+    assert killed == [], f'os.kill terminates its target on Windows and must not be called; got {killed!r}'
+
+
+def test_windows_owner_probe_declines_on_a_non_windows_host():
+    """Off Windows the status probe reports nothing as exited, so no session is retired on its word."""
+    assert build._windows_owner_has_exited(os.getpid()) is False
+    assert build._windows_owner_has_exited(_dead_pid()) is False
+
+
 # ---------------------------------------------------------------------------
 # Exclude-aware emptiness guard (scoped compile / test-compile)
 #
