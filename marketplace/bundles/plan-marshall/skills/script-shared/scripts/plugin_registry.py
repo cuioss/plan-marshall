@@ -15,6 +15,8 @@ What it reads
 - **The registry** (``installed_plugins.json``), in the shape the plugin manager
   writes: ``{"plugins": {"{bundle}@{marketplace}": [scope entry, ...]}}``. Every
   scope entry of every key that belongs to this marketplace becomes one row.
+  Which entries those are is decided in one place,
+  :func:`iter_marketplace_entries`.
 - **The executor** (``.plan/execute-script.py``), for the value of its
   ``MARSHALL_VERSION`` assignment.
 - **The cache** (one bundle directory holding version directories), for the
@@ -56,6 +58,7 @@ Constraints on this module
 
 import json
 import re
+from collections.abc import Iterator
 from pathlib import Path
 
 # The marketplace whose registry keys ("{bundle}@plan-marshall") this reader owns.
@@ -166,19 +169,42 @@ def read_registry(registry_path: Path, marketplace: str = MARKETPLACE_NAME) -> t
     except json.JSONDecodeError:
         return REGISTRY_NOT_JSON, []
 
-    plugins = data.get('plugins') if isinstance(data, dict) else None
-    rows: list[dict[str, str | None]] = []
-    if isinstance(plugins, dict):
-        for key, entries in plugins.items():
-            bundle, separator, owner = key.rpartition('@')
-            if not separator or owner != marketplace or not isinstance(entries, list):
-                continue
-            for entry in entries:
-                if isinstance(entry, dict):
-                    rows.append(_row(bundle, entry))
+    rows = [_row(bundle, entry) for bundle, entry in iter_marketplace_entries(data, marketplace)]
     if not rows:
         return REGISTRY_NO_PLAN_MARSHALL_ENTRY, []
     return REGISTRY_OK, rows
+
+
+def iter_marketplace_entries(document: object, marketplace: str = MARKETPLACE_NAME) -> Iterator[tuple[str, dict]]:
+    """Yield one ``(bundle, entry)`` pair per scope entry of ``marketplace``.
+
+    ``document`` is a parsed registry — what ``json.loads`` returned for the
+    registry file. This is the ONE place that decides which parts of a registry
+    document belong to a marketplace; :func:`read_registry` builds its rows from
+    it, and a caller that has to MODIFY the registry walks it too, so the pairs
+    line up with the rows of the same document index for index.
+
+    - ``bundle`` is the registry key's part before its last ``@``.
+    - ``entry`` is the document's own dict, not a copy: mutating it mutates
+      ``document``.
+
+    The pairs come in document order — keys in their order, then each key's
+    entries in list order. Everything that is not such an entry is skipped
+    rather than reported: a document that is not an object, a ``plugins`` member
+    that is absent or not an object, a key without ``@`` or of another
+    marketplace, a key whose value is not a list, and a list item that is not an
+    object. A document holding none therefore yields nothing.
+    """
+    plugins = document.get('plugins') if isinstance(document, dict) else None
+    if not isinstance(plugins, dict):
+        return
+    for key, entries in plugins.items():
+        bundle, separator, owner = key.rpartition('@')
+        if not separator or owner != marketplace or not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if isinstance(entry, dict):
+                yield bundle, entry
 
 
 def _row(bundle: str, entry: dict) -> dict[str, str | None]:
@@ -319,6 +345,7 @@ __all__ = [
     'default_executor_path',
     'default_registry_path',
     'is_orphan_marked',
+    'iter_marketplace_entries',
     'newest_cache_version',
     'read_executor_version',
     'read_registry',

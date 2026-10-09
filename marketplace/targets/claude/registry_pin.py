@@ -37,6 +37,15 @@ What is never touched
 - Every ``.in_use`` file.
 - An entry already NEWER than the target version. The repin never moves a pin
   backwards.
+- A registry path that is a symbolic link. When an entry needs a rewrite the
+  run is refused before step 1: the repin neither writes through the link nor
+  replaces it. The dry run and a run with nothing to rewrite never write the
+  registry; they read it through the link.
+- Anything reached through a link inside the cache. When a ``{bundle}`` or
+  ``{bundle}/{version}`` directory the run would act in is a symbolic link or
+  resolves outside the resolved cache root, or its ``.orphaned_at`` marker is
+  itself a link, the run is refused before step 1. The cache root itself may
+  be a link.
 
 Concurrency
 -----------
@@ -220,28 +229,64 @@ def _read_source_sha(cache_root: Path) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-def _marketplace_entries(raw: Any) -> list[tuple[str, dict]]:
-    """The ``(bundle, entry)`` pairs of this marketplace in the raw document.
+def _refuse_symlinked_registry(registry_path: Path) -> None:
+    """Refuse to write a registry whose path is a symbolic link.
 
-    Walked in the shared reader's own order so the pairs line up with its rows
-    index for index. The entries are the document's own dicts: mutating one
-    mutates the document.
+    Writing through the link would change a file somewhere else, and the
+    atomic ``os.replace`` would not even do that: it replaces the link itself
+    with a regular file and leaves the link's target stale. Neither is what
+    whoever made the link asked for, so the repin stops instead.
+
+    Raises:
+        RepinError: ``registry_path`` is a symbolic link.
     """
-    plugins = raw.get('plugins') if isinstance(raw, dict) else None
-    pairs: list[tuple[str, dict]] = []
-    if isinstance(plugins, dict):
-        for key, entries in plugins.items():
-            bundle, separator, owner = key.rpartition('@')
-            if separator and owner == _registry.MARKETPLACE_NAME and isinstance(entries, list):
-                pairs.extend((bundle, entry) for entry in entries if isinstance(entry, dict))
-    return pairs
+    if registry_path.is_symlink():
+        raise RepinError(
+            f'the registry path {registry_path} is a symbolic link; '
+            'the repin neither writes through a link nor replaces one, so nothing was written'
+        )
+
+
+def _refuse_linked_cache_dirs(cache_root: Path, pinned_dirs: dict[str, str]) -> None:
+    """Refuse a ``{bundle}/{version}`` in ``pinned_dirs`` that is not a real directory of the cache.
+
+    The marker removal and the ``installPath`` the rewrite records both go
+    through ``{cache_root}/{bundle}/{version}``. A bundle or version directory
+    that is a symbolic link, or that resolves outside the resolved cache root,
+    would carry them out of the cache; a marker that is itself a link would be
+    removed as a link someone placed there. The cache ROOT may be a link: it is
+    the one location the caller named, and everything is judged relative to
+    where it resolves.
+
+    Raises:
+        RepinError: a bundle directory, a version directory or a marker is a
+            symbolic link, or a directory resolves outside the cache root.
+    """
+    resolved_root = cache_root.resolve()
+    for bundle, version in sorted(pinned_dirs.items()):
+        bundle_dir = cache_root / bundle
+        version_dir = bundle_dir / version
+        for path in (bundle_dir, version_dir, version_dir / _registry.ORPHAN_MARKER_NAME):
+            if path.is_symlink():
+                raise RepinError(
+                    f'the cache path {path} is a symbolic link; '
+                    'the repin does not act through a link, so nothing was written or removed'
+                )
+        for path in (bundle_dir, version_dir):
+            resolved = path.resolve()
+            if resolved == resolved_root or not resolved.is_relative_to(resolved_root):
+                raise RepinError(
+                    f'the cache path {path} resolves to {resolved}, outside the cache root {resolved_root}; '
+                    'nothing was written or removed'
+                )
 
 
 def _remove_orphan_markers(cache_root: Path, pinned_dirs: dict[str, str]) -> int:
     """Remove ``.orphaned_at`` from each ``{bundle}/{version}`` in ``pinned_dirs``.
 
     Returns how many markers were removed. Nothing else in the directory is
-    touched — in particular no ``.in_use`` file.
+    touched — in particular no ``.in_use`` file. The caller has already put
+    ``pinned_dirs`` through :func:`_refuse_linked_cache_dirs`.
     """
     removed = 0
     for bundle, version in sorted(pinned_dirs.items()):
@@ -277,10 +322,12 @@ def _replace_registry(registry_path: Path, original: bytes, document: Any) -> No
     The new document is written to a temp file in the registry's own directory
     and moved into place with ``os.replace``. Immediately before the replace
     the registry is re-read: when its bytes are no longer ``original`` another
-    writer got in between the read and now, and the replace is abandoned.
+    writer got in between the read and now, and the replace is abandoned. So is
+    a replace onto a path that has become a symbolic link in the meantime.
 
     Raises:
-        RepinError: the registry changed since it was read.
+        RepinError: the registry changed since it was read, or its path is a
+            symbolic link.
     """
     tmp = registry_path.with_name(f'.{registry_path.name}.{os.getpid()}.tmp')
     try:
@@ -288,6 +335,7 @@ def _replace_registry(registry_path: Path, original: bytes, document: Any) -> No
         shutil.copymode(registry_path, tmp)
         if registry_path.read_bytes() != original:
             raise RepinError('the registry changed while it was being repinned; nothing was replaced')
+        _refuse_symlinked_registry(registry_path)
         os.replace(tmp, registry_path)
     finally:
         tmp.unlink(missing_ok=True)
@@ -402,12 +450,25 @@ def _apply(
     plan: list[bool],
     moment: datetime,
 ) -> None:
-    """Run apply steps 1–3 in order, recording their side effects on ``result``."""
+    """Run apply steps 1–3 in order, recording their side effects on ``result``.
+
+    Raises:
+        RepinError: the registry changed while it was being read, an entry
+            needs a rewrite and the registry path is a symbolic link, or a
+            cache directory the run would act in is a link or lies outside
+            the cache root.
+    """
     original = registry_path.read_bytes()
     document = json.loads(original)
-    pairs = _marketplace_entries(document)
+    # The shared reader's own walk, over the document's own dicts: the pairs
+    # line up with ``rows`` index for index, and mutating an entry mutates
+    # ``document``.
+    pairs = list(_registry.iter_marketplace_entries(document))
     if [bundle for bundle, _ in pairs] != [row['bundle'] for row in rows]:
         raise RepinError('the registry changed while it was being read; nothing was written')
+    if any(plan):
+        # Refused before step 1, so a run that cannot write changes nothing at all.
+        _refuse_symlinked_registry(registry_path)
 
     # Step 1 — un-orphan every directory an entry is pinned to after this run:
     # the ones about to be repinned, and the ones already at their reference.
@@ -416,6 +477,9 @@ def _apply(
         reference = references[str(row['bundle'])]
         if reference is not None and (planned or (row['install_path_version'], row['version']) == (reference,) * 2):
             pinned_dirs[str(row['bundle'])] = reference
+    # Every directory this run would act in is judged before the first removal,
+    # so a refused run leaves the cache and the registry as they were.
+    _refuse_linked_cache_dirs(cache_root, pinned_dirs)
     result['markers_removed'] = _remove_orphan_markers(cache_root, pinned_dirs)
 
     if not any(plan):
