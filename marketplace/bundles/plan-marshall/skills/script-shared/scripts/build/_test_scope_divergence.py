@@ -26,7 +26,9 @@ bundle set": each footprint entry's owning module is taken from path segment 2
 for ``marketplace/bundles/{bundle}/...`` and segment 1 for ``{root}/{bundle}/...``
 under any test root (``test/`` or its ``tests/`` sibling — see
 :data:`_TEST_ROOTS`), and the derived name is kept only when it names a
-registered target. A path that yields no such name is *unresolved*: it is
+registered target. Source that lives outside both shapes is resolved through the
+declared source-to-test mapping :data:`SOURCE_TO_TEST_TARGET`, under the same
+registered-name guard. A path that yields no such name is *unresolved*: it is
 reported in ``unresolved_paths`` and it forces a whole-tree run.
 
 Fail-closed classification discipline
@@ -73,6 +75,20 @@ _TEST_ROOT_PREFIXES: tuple[str, ...] = tuple(f'{root}/' for root in _TEST_ROOTS)
 #: bare-imports from it), and its first path segment is not a module name, so
 #: such a path is BOTH shared infra and unresolved.
 _SHARED_TEST_INFRA_PREFIXES: tuple[str, ...] = tuple(f'{root}/_shared/' for root in _TEST_ROOTS)
+
+#: The declared source-to-test mapping: ``(source path prefix, test target)``
+#: pairs for source that lives OUTSIDE ``marketplace/bundles/`` and outside every
+#: test root, and whose tests therefore cannot be found by reading a path
+#: segment. This tuple is the ONE place the mapping is stated — documentation
+#: points here rather than restating an entry, so a second copy cannot drift.
+#:
+#: A prefix ends in ``/`` so it matches a directory, never a sibling whose name
+#: merely starts the same way. :func:`_module_for_path` picks the LONGEST
+#: matching prefix, so a more specific entry added later wins over a broader one
+#: regardless of declaration order. A mapped target is still subject to the
+#: registered-name guard: an entry naming a target nothing carries resolves to no
+#: module.
+SOURCE_TO_TEST_TARGET: tuple[tuple[str, str], ...] = (('marketplace/targets/', 'marketplace'),)
 
 
 @dataclass(frozen=True)
@@ -153,7 +169,9 @@ def _module_for_path(path: str, registered_modules: Collection[str]) -> str | No
 
     ``marketplace/bundles/{bundle}/...`` derives segment 2 (the ``{bundle}``
     token); ``{root}/{bundle}/...`` under ANY entry of :data:`_TEST_ROOTS`
-    derives segment 1. Any other shape derives nothing.
+    derives segment 1. A path of any other shape is looked up in the declared
+    source-to-test mapping :data:`SOURCE_TO_TEST_TARGET`; a path that mapping
+    does not cover derives nothing.
 
     The test-root check reads ``segments[0]`` against the root set rather than
     prefix-matching a single literal, so ``test/`` and ``tests/`` are recognised
@@ -180,17 +198,33 @@ def _module_for_path(path: str, registered_modules: Collection[str]) -> str | No
             here.
     """
     segments = path.split('/')
+    derived: str | None
     if path.startswith('marketplace/bundles/') and len(segments) > 3:
         derived = segments[2]
     elif segments[0] in _TEST_ROOTS and len(segments) > 2:
         derived = segments[1]
     else:
-        return None
+        derived = _mapped_target_for_path(path)
     # UNCHANGED fail-closed guard: widening WHICH roots yield a candidate name
     # must never widen WHICH names are accepted. A derived name that no
     # registered target carries is still rejected here, so the caller reports the
-    # path in ``unresolved_paths`` and falls back to the whole tree.
+    # path in ``unresolved_paths`` and falls back to the whole tree. The guard
+    # applies to a MAPPED name exactly as to a segment-derived one.
     return derived if derived in registered_modules else None
+
+
+def _mapped_target_for_path(path: str) -> str | None:
+    """Return the declared test target for a source ``path``, or None.
+
+    Consulted only for a path matching neither segment-derived shape. The
+    longest prefix in :data:`SOURCE_TO_TEST_TARGET` that ``path`` starts with
+    wins; a path no prefix covers has no declared mapping and yields None, which
+    the caller reports as unresolved.
+    """
+    matches = [(prefix, target) for prefix, target in SOURCE_TO_TEST_TARGET if path.startswith(prefix)]
+    if not matches:
+        return None
+    return max(matches, key=lambda entry: len(entry[0]))[1]
 
 
 def resolve_test_scope(

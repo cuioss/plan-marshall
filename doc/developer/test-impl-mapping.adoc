@@ -40,3 +40,4 @@ a|
 == Related
 
 * xref:testing.adoc[Testing] — how marketplace scripts are tested
+* link:../../marketplace/bundles/plan-marshall/skills/script-shared/scripts/build/_test_scope_divergence.py[`_test_scope_divergence.py`] — its `SOURCE_TO_TEST_TARGET` constant is the machine-readable source-to-test mapping the test-scope resolver reads; the table in this document serves the module-mapping check only.

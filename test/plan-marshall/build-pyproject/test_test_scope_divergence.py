@@ -31,7 +31,9 @@ resolves to no registered module.
 """
 
 import fnmatch
+from typing import NamedTuple
 
+import _test_scope_divergence
 import pytest
 
 # Cross-skill import - PYTHONPATH is configured by the root conftest.
@@ -69,8 +71,11 @@ _CROSS_BUNDLE_DOC = 'marketplace/bundles/pm-plugin-development/skills/plugin-doc
 #: silently discarded and reported as ``divergence_possible: false``.
 _UNMAPPED_DOC = 'doc/developer/build.adoc'
 _UNMAPPED_WORKFLOW = '.github/workflows/python-verify.yml'
-#: Under ``marketplace/bundles/`` but outside it in module terms: the multi-target
-#: generator belongs to the ``default`` module and owns no bundle.
+#: Beside ``marketplace/bundles/`` but outside it in module terms: the multi-target
+#: generator owns no bundle. The declared source-to-test mapping names a test
+#: target for it, but ``_REGISTERED_MODULES`` does not carry that target, so
+#: against THIS set the path stays unresolved — the registered-name guard applies
+#: to a mapped name exactly as to a segment-derived one.
 _UNMAPPED_TARGETS = 'marketplace/targets/generate.py'
 #: The bundle-neutral cross-bundle test-helper root. Its first path segment is
 #: ``_shared``, which is not a registered module - taking it verbatim invented a
@@ -356,9 +361,11 @@ def test_empty_registered_module_set_resolves_nothing():
         # A well-formed segment that names no registered module is rejected.
         pytest.param(_SHARED_TEST_HELPER, None, id='shared_test_helper_no_phantom_module'),
         pytest.param(_UNREGISTERED_BUNDLE, None, id='unregistered_bundle_token_rejected'),
-        # Paths outside both roots derive nothing at all.
+        # A path outside both roots that no declared mapping covers derives nothing.
         pytest.param(_UNMAPPED_DOC, None, id='doc_root_no_module'),
-        pytest.param(_UNMAPPED_TARGETS, None, id='marketplace_targets_no_module'),
+        # A mapped path whose target is not in the registered set is rejected by
+        # the same guard as an unregistered segment.
+        pytest.param(_UNMAPPED_TARGETS, None, id='marketplace_targets_target_not_registered'),
     ],
 )
 def test_module_for_path_only_resolves_registered_nested_paths(path, expected_module):
@@ -590,6 +597,105 @@ def test_a_non_bundle_test_tree_beside_a_bundle_spans_two_targets():
     assert resolution.scoped_modules == ('marketplace', 'plan-marshall')
     assert resolution.divergence_possible is True
     assert resolution.recommended_target is None
+
+
+# =============================================================================
+# The declared source-to-test mapping: source outside the bundles
+# =============================================================================
+
+
+class DeclaredMappingFixture(NamedTuple):
+    """One footprint-plus-registered-set fixture for the declared mapping.
+
+    Shared, by import, between the pure-function cases here and the
+    ``resolve-test-scope`` handler cases in ``test_pyproject_build.py``, so both
+    levels assert on the same inputs and cannot drift apart.
+
+    Attributes:
+        mapped_path: A source path the declared mapping covers.
+        mapped_target: The test target that path resolves to.
+        unmapped_path: A source path no declared mapping covers.
+        registered: The registered-target set both paths are resolved against.
+    """
+
+    mapped_path: str
+    mapped_target: str
+    unmapped_path: str
+    registered: frozenset[str]
+
+
+DECLARED_MAPPING_FIXTURE = DeclaredMappingFixture(
+    mapped_path='marketplace/targets/sync.py',
+    mapped_target='marketplace',
+    unmapped_path='tools/x.py',
+    registered=_REGISTERED_TARGETS,
+)
+
+
+def test_a_mapped_source_path_resolves_its_declared_test_target():
+    """A source path the declared mapping covers resolves confidently."""
+    fixture = DECLARED_MAPPING_FIXTURE
+
+    resolution = resolve_test_scope([fixture.mapped_path], _GLOBS, fixture.registered)
+
+    assert resolution.scoped_modules == (fixture.mapped_target,)
+    assert resolution.unresolved_paths == ()
+    assert resolution.divergence_possible is False
+    assert resolution.recommended_target == fixture.mapped_target
+
+
+def test_an_unmapped_source_path_stays_unresolved():
+    """NEGATIVE CONTROL: a source path with no declared mapping fails closed.
+
+    Proves the confident target above comes from the declared entry, not from
+    the fallback branch resolving every out-of-tree path to something.
+    """
+    fixture = DECLARED_MAPPING_FIXTURE
+
+    resolution = resolve_test_scope([fixture.unmapped_path], _GLOBS, fixture.registered)
+
+    assert resolution.scoped_modules == ()
+    assert resolution.unresolved_paths == (fixture.unmapped_path,)
+    assert resolution.divergence_possible is True
+    assert resolution.recommended_target is None
+
+
+def test_a_mapped_target_is_returned_only_when_it_is_registered():
+    """The registered-name guard applies to a mapped name too.
+
+    The same mapped path against a set that lacks its target resolves nothing,
+    so a mapping entry naming a target no tree carries cannot invent one.
+    """
+    fixture = DECLARED_MAPPING_FIXTURE
+    without_target = fixture.registered - {fixture.mapped_target}
+
+    resolution = resolve_test_scope([fixture.mapped_path], _GLOBS, without_target)
+
+    assert resolution.scoped_modules == ()
+    assert resolution.unresolved_paths == (fixture.mapped_path,)
+    assert resolution.divergence_possible is True
+    assert resolution.recommended_target is None
+
+
+def test_the_longest_declared_prefix_wins(monkeypatch):
+    """Two overlapping entries resolve by prefix length, not declaration order.
+
+    The broader entry is declared FIRST, so a first-match lookup would return
+    its target for the nested path.
+    """
+    monkeypatch.setattr(
+        _test_scope_divergence,
+        'SOURCE_TO_TEST_TARGET',
+        (('marketplace/targets/', 'marketplace'), ('marketplace/targets/nested/', 'default')),
+    )
+
+    assert _module_for_path('marketplace/targets/nested/x.py', _REGISTERED_TARGETS) == 'default'
+    assert _module_for_path('marketplace/targets/x.py', _REGISTERED_TARGETS) == 'marketplace'
+
+
+def test_a_declared_prefix_matches_a_directory_not_a_name_prefix():
+    """A sibling whose name merely starts like a mapped directory is not mapped."""
+    assert _module_for_path('marketplace/targets_other/x.py', _REGISTERED_TARGETS) is None
 
 
 # =============================================================================

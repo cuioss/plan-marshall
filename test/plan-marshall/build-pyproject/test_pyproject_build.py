@@ -527,6 +527,10 @@ import argparse  # noqa: E402
 import copy  # noqa: E402
 
 import pytest  # noqa: E402
+
+# The declared-mapping fixture is defined once, beside the pure-function cases,
+# and imported here so the handler cases assert on the same inputs.
+from test_test_scope_divergence import DECLARED_MAPPING_FIXTURE  # noqa: E402
 from toon_parser import parse_toon  # noqa: E402
 
 # Controlled build.map globs mirroring the real repo behaviour: everything
@@ -784,6 +788,58 @@ def test_resolve_test_scope_changed_path_in_the_shared_helper_home_fails_closed(
     assert out['unresolved_paths'] == [path]
     assert out['divergence_possible'] is True
     assert out['recommended_target'] is None
+
+
+def _run_resolve_scope_against(capsys, *, changed_paths, registered):
+    """Invoke the handler with the registered-target enumeration pinned to ``registered``."""
+    args = _resolve_scope_args(changed_paths=changed_paths)
+    with (
+        patch('extension_base._read_build_map_globs', return_value=_SCOPE_BUILD_MAP_GLOBS),
+        patch.object(pyproject_build, '_resolve_registered_modules', return_value=registered),
+    ):
+        rc = pyproject_build.cmd_resolve_test_scope(args)
+    assert rc == 0
+    return parse_toon(capsys.readouterr().out)
+
+
+def test_resolve_test_scope_mapped_source_path_resolves_its_declared_target(capsys):
+    """A source path outside the bundles resolves through the declared mapping."""
+    fixture = DECLARED_MAPPING_FIXTURE
+
+    out = _run_resolve_scope_against(capsys, changed_paths=fixture.mapped_path, registered=fixture.registered)
+
+    assert out['status'] == 'success'
+    assert out['modules_resolvable'] is True
+    assert out['scoped_modules'] == [fixture.mapped_target]
+    assert out['unresolved_paths'] == []
+    assert out['divergence_possible'] is False
+    assert out['recommended_target'] == fixture.mapped_target
+
+
+def test_resolve_test_scope_unmapped_source_path_fails_closed(capsys):
+    """A source path no declared mapping covers still routes to the whole tree."""
+    fixture = DECLARED_MAPPING_FIXTURE
+
+    out = _run_resolve_scope_against(capsys, changed_paths=fixture.unmapped_path, registered=fixture.registered)
+
+    assert out['status'] == 'success'
+    assert out['modules_resolvable'] is True
+    assert out['scoped_modules'] == []
+    assert out['unresolved_paths'] == [fixture.unmapped_path]
+    assert out['divergence_possible'] is True
+    assert out['recommended_target'] is None
+
+
+def test_resolve_test_scope_declared_mapping_target_is_a_real_registered_target():
+    """The fixture's mapped target is one this repository actually registers.
+
+    The two handler cases above pin the enumeration to the fixture's set; this
+    one ties that set back to the live tree, so the mapping cannot point at a
+    test target that no longer exists while the pinned cases stay green.
+    """
+    modules = pyproject_build._resolve_registered_modules(str(PROJECT_ROOT))
+
+    assert DECLARED_MAPPING_FIXTURE.mapped_target in modules
 
 
 def test_resolve_test_scope_threads_the_caller_enumerated_module_set(capsys):
