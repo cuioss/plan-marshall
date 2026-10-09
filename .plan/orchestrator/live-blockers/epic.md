@@ -94,7 +94,17 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   Nothing collided with PLAN-LB-23, 24 or 29. All seven deliverables were checked against
   the code on 2026-10-09: the released validator passes API-Sheriff, TokenSheriff and
   cui-http unchanged, and the gate was seen skipping a ledger-only PR (#1728) and building a
-  Markdown-only one (#1727). Three small gaps remain (see Open Defects).
+  Markdown-only one (#1727). Three small gaps in its tests were
+  closed by a follow-up outside the queue: #1733 (`baa7238fa`) adds a drive-letter path
+  pattern with two negative controls, corrects the docstring to the key forms the pattern
+  matches, and checks the two Markdown globs by exact token with an `.mdx` negative control;
+  `cuioss-organization` #320 (`e8d085e`) makes the cross-file test assert that the schema
+  marks the timeout key deprecated and that the three other files say so on the line naming
+  it, and adds the same kind of test for the two-part version decision. Both diffs were read
+  on 2026-10-09; the mutation runs the follow-up reports were not repeated here. One side
+  effect: #1733 removed the `/Users/alice/git` negative control, so no control now pins the
+  `home`/`Users`, `/tmp/`, `.sock` and `.pid` path alternatives on their own (the remaining
+  cases that carry such values assert the prohibited-key message instead).
 - **Inbox drain of 2026-10-08, six messages** (five from PLAN-LB-14, one from PLAN-LB-22):
   - `lb-14-launch-gate-scope-005.md` (landing) — reconciled; complete.
   - `lb-14-launch-gate-scope-001.md` — folded into PLAN-LB-22 as a recurrence, recorded here
@@ -421,16 +431,6 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   every deep-lane, non-recipe plan whose heuristic ties. Not owned by any staged plan; stage it
   if it recurs. — source: inbox message `lb-22-finalize-loop-control-001.md`, 2026-10-08, read
   at bundle version 0.1.1867; not verified against the source here.
-- **Two tests PLAN-LB-30 shipped check less than they say.**
-  `test_committed_marshal_machine_local_keys.py` states in its docstring that it catches
-  `C:/` paths and `token` keys; its path pattern has no drive-letter form and its key pattern
-  matches only compound names such as `auth_token`. `test_python_verify_buildable_paths.py`
-  checks the two Markdown globs by substring, so `marketplace/**/*.mdx` would pass. In
-  `cuioss-organization`, the test meant to keep four files in agreement on
-  `auto-merge-build-timeout` asserts only that each contains the string. The first two were
-  raised in review on #1722 and answered "accepted" without a change. Not owned by any staged
-  plan; small enough to fold into the next plan that touches those files. — source: the
-  files read at `2d9fc981f` and at `cuioss-organization` `v0.39.0`, 2026-10-09.
 - **A routed build leaves no change-ledger row for its plan, and it is not the missing plan
   id.** PLAN-LB-23 examined the hypothesis folded into its spec on 2026-10-08 and reports it
   as a separate defect it does not fix: the 84 routed builds of the PLAN-LB-14 run carried a
