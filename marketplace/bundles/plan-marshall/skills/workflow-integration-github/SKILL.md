@@ -680,12 +680,15 @@ fail-closed never-provable state). `unanswerable_reason` is `""` when answerable
 starts with zero comments, or whose bots stay silent, is `detector_answerable: true` — a genuine
 timeout, NOT an unanswerable one.
 
-**`rate_limited_bots[]`** names one record per REGISTERED bot whose newest
+**`rate_limited_bots[]`** names one record per REGISTERED bot whose most recently written
 comment on the PR is a refusal notice posted in place of a review — a rate-limit / service notice, or
-a reply saying nothing new is left to review. The record's `condition` tells the two apart:
+a reply saying nothing new is left to review. "Most recently written" is the later of the comment's
+`updated_at` and `created_at`: a bot that rewrites an older comment into a refusal leaves its
+`created_at` unchanged, so sampling by creation time would never read that refusal while a
+newer-created comment by the same bot exists. The record's `condition` tells the two kinds of record apart:
 
 ```toon
-rate_limited_bots[N]{bot_kind,rate_limit_class,condition,eta,eta_seconds,eta_extracted,cause,cap,layer,body}:
+rate_limited_bots[N]{bot_kind,rate_limit_class,condition,eta,eta_seconds,eta_extracted,written_at,stale,cause,cap,layer,body}:
 ```
 
 - `bot_kind` — the registry key of the refusing bot. The bot set, and each bot's login, are derived
@@ -708,6 +711,11 @@ rate_limited_bots[N]{bot_kind,rate_limit_class,condition,eta,eta_seconds,eta_ext
 - `eta_extracted` — `true` exactly when `eta_seconds` is a number. `false` is the explicit statement
   that a recognised refusal yielded no reset time; read this field rather than inferring it from an
   empty `eta`.
+- `written_at` — the instant the notice was last written, the later of the comment's `updated_at` and
+  `created_at`, as a UTC timestamp (`2026-01-01T12:00:00Z`), or `""` when neither could be read.
+- `stale` — `true` when the window the notice stated had already elapsed when the notice was read:
+  `written_at` plus `eta_seconds` is not later than the time of the read. `false` whenever either
+  figure is missing, so a notice that stated no reset time is never reported stale.
 - `cause` — WHY the bot declined: `size` (the diff is over a per-PR ceiling) or `quota` (a
   rate/budget limit). Derived from the bot's registry `refusal_size_patterns`, a subset overlay on
   `refusal_patterns`; a refusal matching no declared size marker is `quota`, the default.
@@ -724,7 +732,12 @@ rate_limited_bots[N]{bot_kind,rate_limit_class,condition,eta,eta_seconds,eta_ext
 `eta_seconds`, `eta_extracted`, `layer` and `body` give this record the same reset-time and observation fields as the `refusals[]` record, so a
 consumer that arms a wait on either producer's refusal can state which arm read the notice and what the
 notice said, rather than re-deriving it after the fact. `body` is untrusted bot text; a consumer that
-interpolates it into a shell argument owns its quoting.
+interpolates it into a shell argument owns its quoting. `written_at` and `stale` are on this record
+only; a `refusals[]` record does not carry them.
+
+**A record with `stale: true` is not waited for.** Its stated window was already over when it was read,
+so there is no open window to claim. `github_re_review recovery-action --notice-stale true` resolves
+`settle_stale_notice` for it instead of `await_window`.
 
 ⛔ **Read `condition` FIRST.** A `no_unreviewed_commit` record is not a limit: no window is open, so
 it is never waited for, and `rate_limit_class`, `eta` and `cause` say nothing about it — they are
@@ -739,7 +752,7 @@ is this size, so waiting is a NON-OPTION for it whatever its class says — the 
 the diff, accepting the gap, or disabling that reviewer for this PR. Only a `quota` cause makes the
 class the deciding field. Both keys are present on EVERY record, so a consumer reads one shape.
 
-An **empty list means no registered bot's newest comment is a refusal notice**. The list is per-bot by design: a single
+An **empty list means no registered bot's most recently written comment is a refusal notice**. The list is per-bot by design: a single
 boolean cannot say WHICH bot refused, and — because the causes and classes differ per bot — cannot
 say whether awaiting is worth anything. Detection is best-effort and never alters poll behaviour: a
 failed post-poll fetch leaves the list empty.
@@ -1152,7 +1165,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
   [--cause {size|quota}] [--condition {rate_limited|no_unreviewed_commit}] \
   [--review-on-record {credited|stale|absent}] [--pending-findings N] \
   [--window-expired {true|false}] [--attempts-remaining N] \
-  [--attempt-held {true|false}] [--plan-id PLAN_ID]
+  [--attempt-held {true|false}] [--notice-stale {true|false}] [--plan-id PLAN_ID]
 ```
 
 DERIVES which recovery a detected refusal arms, from the bot registry plus the caller's own observations. A pure read: it touches no PR, claims no window, and posts nothing.
@@ -1164,6 +1177,8 @@ DERIVES which recovery a detected refusal arms, from the bot registry plus the c
 `--window-expired` and `--attempts-remaining` are the `expired` and `attempts_remaining` fields of `merge_lock rate-window check`. The recovery reads them ONCE, on re-entry: the `automatic-review` step that claimed the window does not poll it — it returns the wait to the main context (`escalate_ask{reason: rate_window_await}`), `phase-6-finalize` item 7a holds the wait through `merge_lock rate-window wait` with the `merge_lock poll-delay` jitter as its grace period, and the step dispatched afterwards reads its own elapsed claim and consults this verb with both observations (see [`../automatic-review/SKILL.md`](../automatic-review/SKILL.md) § "Rate-limit refusal recovery (opt-in)" Branch 2 and Branch 3). **Omit either when it was not observed** — the derivation then returns the distinct `action: unmeasured` rather than an authorizing verdict, because acting on an unobserved window is the move that spent the bot's quota in the first place.
 
 ⛔ **`--attempt-held true` is what tells the derivation WHICH question the budget was read for.** `attempts_remaining` answers *may a FURTHER claim be made?*, never *may the event this claim already bought be delivered?* — and the arithmetic cannot recover which is being asked, because a successful `rate-window claim` increments the ledger before it returns. The cap-final claim, the one the primitive deliberately admitted, therefore reports `attempts_remaining: 0` the moment it is granted; a post-claim re-consult that omits this flag reads that zero as *budget spent*, escalates, and delivers no event at all — so a cap of 1 yields zero recovery events and the default cap of 6 yields five. Pass it whenever a claim for this recovery already succeeded. Omit it for a pre-claim budget read, where a zero genuinely means no further claim is allowed. The cap itself is enforced by `rate-window claim`'s own `recovery_cap_exhausted` refusal, not by this verb.
+
+`--notice-stale` is the `stale` field of a `pr wait-for-comments` `rate_limited_bots[]` record: `true` when the window the notice stated had already elapsed when the notice was read. **Omit it when the record carries no such field** — a `refusals[]` record does not — and it reads as not stale. A stale notice resolves `settle_stale_notice` in place of `await_window` and of `escalate_exhausted`: there is no open window to claim, so nothing is claimed, waited for or triggered on it. Two things bound that arm. It needs both window observations, like every window arm, so a consult carrying neither is still `unmeasured`. And `--attempt-held true` skips it: a caller that claimed a window on this notice and waited it out reads the same notice again afterwards, stale by then, and the event its claim bought is still owed through the elapsed arms.
 
 `--condition` is the refusal record's `condition`. **Omit it when the record carries none** — an omitted condition reads as empty and takes the rate-limit derivation below. `no_unreviewed_commit` is resolved before the cause and the class: the bot said every commit is already reviewed, so there is no limit to classify and no window to claim. It resolves from two observations, each of which reads as `unmeasured` when omitted:
 
@@ -1182,6 +1197,7 @@ The returned `action` is one of:
 | `post_escalated_command` | `no_review_on_record` | The condition is `no_unreviewed_commit` and no review by the bot is on record at all. Post the bot's `escalated_trigger_comment` through `re-review --escalated`, which sends it at most once per reply and never into an open rate window. |
 | `escalate_structural` | `size_ceiling` | The cause is a diff-size ceiling. It DOMINATES the class — a class is declared per BOT while a cause is observed per REFUSAL — and waiting cannot move it. |
 | `escalate_not_awaitable` | `class_not_awaitable` | `hard_quota` or `unknown`. Fail-closed per ADR-009; an unregistered `bot_kind` lands here by derivation, not by a special case. |
+| `settle_stale_notice` | `notice_window_elapsed` | The notice is stale and no attempt is held. Claim nothing, wait for nothing, trigger nothing; the consuming step proceeds to its FIND. Checked before the budget and window arms. |
 | `escalate_exhausted` | `attempt_cap_exhausted` | The per-(bot, PR) recovery budget is spent and no attempt is held. Checked before both trigger arms, since each would spend one — but skipped under `--attempt-held true`, where the attempt is already paid for. |
 | `await_window` | `claim_window_open` | The claim clock is still running. The consuming step does not wait it out itself: it claims the window (or finds its own claim still open) and hands the wait to the main context. |
 | `close_and_reopen` | `claim_window_elapsed` | The claim elapsed and the bot declares `requires_explicit_trigger` — re-DELIVER the dropped request (see [`../tools-integration-ci/standards/pr-review-operations.md`](../tools-integration-ci/standards/pr-review-operations.md) § "Workflow: Close and Re-open a PR to Re-deliver a Review Request"). |
@@ -1190,7 +1206,7 @@ The returned `action` is one of:
 
 ⛔ **The elapsed arm is named `claim_window_elapsed`, never `bot_window_reopened`.** What elapsed is the CLAIM clock this pipeline set, not the bot's real window: a stated ETA is an estimate (observed wrong by roughly 2.4x, then roughly 15x) and the real window slides. The arm lifts the refusal without asserting the bot is ready.
 
-Every return publishes `rate_limit_class`, `trigger_semantics`, `escalated_trigger_comment`, `known_bot_kinds`, `known_bot_kind_count`, `bot_kind_registered`, `attempt_held`, the `condition`, `review_on_record` and `pending_findings` it received, and the declared `recovery_actions`, `refusal_conditions` and `review_on_record_states` vocabularies — so the verdict names the registry facts and the population it was computed from (ADR-019) rather than only its conclusion.
+Every return publishes `rate_limit_class`, `trigger_semantics`, `escalated_trigger_comment`, `known_bot_kinds`, `known_bot_kind_count`, `bot_kind_registered`, `attempt_held`, `notice_stale`, the `condition`, `review_on_record` and `pending_findings` it received, and the declared `recovery_actions`, `refusal_conditions` and `review_on_record_states` vocabularies — so the verdict names the registry facts and the population it was computed from (ADR-019) rather than only its conclusion.
 
 ## Error Handling
 

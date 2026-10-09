@@ -718,8 +718,56 @@ def rate_limit_eta_seconds(eta: str) -> int | None:
     return sum(int(number) * _ETA_UNIT_SECONDS[unit[0].lower()] for number, unit in terms)
 
 
-def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
-    """Return one record per registered bot whose newest comment is a refusal notice.
+#: The timestamp format a record's ``written_at`` is published in — UTC, whole
+#: seconds, the same shape the provider's own comment timestamps carry.
+_WRITTEN_AT_FORMAT = '%Y-%m-%dT%H:%M:%SZ'
+
+
+def _last_written(comment: dict) -> datetime | None:
+    """Return the instant ``comment`` was last written, or ``None`` when unreadable.
+
+    The later of the comment's ``updated_at`` and ``created_at``. A bot that
+    rewrites a comment in place leaves ``created_at`` where it was, so only the
+    later of the two says when the text now on the PR was written.
+
+    ``None`` when neither stamp parses. The caller treats that as the oldest
+    possible instant when choosing among comments and as unknown when it reports
+    the instant, never as "written now".
+    """
+    # Deferred import, for the reason :func:`_detect_rate_limited_bots` states.
+    import github_re_review
+
+    stamps = [
+        dt
+        for dt in (
+            github_re_review._parse_iso(str(comment.get('updated_at') or '')),
+            github_re_review._parse_iso(str(comment.get('created_at') or '')),
+        )
+        if dt is not None
+    ]
+    return max(stamps) if stamps else None
+
+
+def notice_is_stale(written: datetime | None, eta_seconds: int | None, now: datetime) -> bool:
+    """Return True when a notice's stated window had already elapsed at ``now``.
+
+    A notice written at ``written`` and stating a reset time of ``eta_seconds``
+    says its window reopens at ``written + eta_seconds``. Once ``now`` has reached
+    that instant the notice no longer describes an open window, and a caller that
+    waited on it would wait out a time that is already over.
+
+    ``True`` needs both figures: an unreadable write instant or a notice that
+    stated no reset time yields ``False``. Nothing is called stale on the strength
+    of a figure nobody read, so such a record is handled exactly as it was before
+    this field existed.
+    """
+    if written is None or eta_seconds is None:
+        return False
+    return (now - written).total_seconds() >= eta_seconds
+
+
+def _detect_rate_limited_bots(comments: list[dict], now: datetime | None = None) -> list[dict]:
+    """Return one record per registered bot whose most recently written comment is a refusal notice.
 
     A record is usually a rate-limit notice, and may instead be a reply saying
     nothing new is left to review; the record's ``condition`` field tells the two
@@ -729,11 +777,23 @@ def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
     ``bot_kind``: for each bot in the registry, select the comments that bot
     authored (resolving each comment's author through
     :func:`github_re_review.bot_kind_for_author`, which owns the ``[bot]``-suffix
-    stripping and case-insensitive matching), pick that bot's newest comment by
-    ``created_at``, and classify its body through the refusal-recognition arms that
-    are answerable at this position. No bot-name literal appears in this path — the
-    bot set, each bot's login, its refusal markers, its rate-limit class, and its ETA
-    phrasings are all registry data.
+    stripping and case-insensitive matching), pick the comment that bot wrote most
+    recently — by the later of ``updated_at`` and ``created_at``
+    (:func:`_last_written`) — and classify its body through the refusal-recognition
+    arms that are answerable at this position. No bot-name literal appears in this
+    path — the bot set, each bot's login, its refusal markers, its rate-limit class,
+    and its ETA phrasings are all registry data.
+
+    Sampling by the last write rather than by ``created_at`` is what makes a
+    refusal written as an EDIT visible. A bot that rewrites its summary comment
+    into a refusal leaves that comment's ``created_at`` unchanged, so while a
+    newer-created comment by the same bot exists, sampling by creation time never
+    reads the refusal. The same later-of-the-two rule is the one
+    ``github_re_review._match_bot_comment`` and :func:`_detect_movement_bots` apply.
+
+    ``now`` is the instant the comments were read, against which a notice's stated
+    window is judged elapsed; it defaults to the current time and is a parameter so
+    a caller that fetched the comments earlier, and a test, can state it.
 
     Classification goes through the shared :func:`refusal_layers` seam — the one
     :func:`_is_refusal_notice` is derived from — so this detector and the
@@ -745,7 +805,7 @@ def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
     filter and so is deliberately outside this seam.
 
     Each detected bot yields ``{bot_kind, rate_limit_class, condition, eta,
-    eta_seconds, eta_extracted, cause, cap, layer, body}``:
+    eta_seconds, eta_extracted, written_at, stale, cause, cap, layer, body}``:
 
     - ``condition`` is what the reply reports (:func:`refusal_condition`):
       ``rate_limited`` for a limit that was hit, ``no_unreviewed_commit`` for a
@@ -765,6 +825,14 @@ def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
       ``False`` is the explicit statement that a recognised refusal yielded no
       reset time — a field of its own, so a consumer never has to infer that from
       an empty ``eta`` or an absent number.
+    - ``written_at`` is the instant the notice was last written — the later of the
+      comment's ``updated_at`` and ``created_at`` — as a UTC timestamp, or ``''``
+      when neither stamp could be read.
+    - ``stale`` is ``True`` when the window the notice stated had already elapsed
+      when it was read: ``written_at`` plus ``eta_seconds`` is not after ``now``
+      (:func:`notice_is_stale`). A stale record is not waited for and no window is
+      claimed on it. ``False`` whenever either figure is missing, so a notice that
+      stated no reset time is never called stale.
     - ``cause`` is the orthogonal SIZE-vs-QUOTA axis (:func:`refusal_cause`). A
       refusal caused by a per-PR diff ceiling is answered by a smaller diff, one
       caused by a rate/budget quota by backoff. The axes are INDEPENDENT — a size
@@ -783,10 +851,11 @@ def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
     - ``body`` is the notice itself as a whitespace-collapsed, truncated excerpt
       (``github_re_review._body_excerpt``), the same excerpt ``refusals[]`` carries.
 
-    ``layer`` and ``body`` are what make this record the SAME shape as
-    ``github_re_review``'s ``refusals[]`` record, so a consumer that arms a wait on
-    either producer's refusal can state which arm read the notice and what the
-    notice said, instead of re-deriving it after the fact.
+    ``layer`` and ``body`` are what this record shares with ``github_re_review``'s
+    ``refusals[]`` record, so a consumer that arms a wait on either producer's
+    refusal can state which arm read the notice and what the notice said, instead
+    of re-deriving it after the fact. ``written_at`` and ``stale`` are this
+    detector's alone; a ``refusals[]`` record does not carry them.
 
     ``cause`` and ``cap`` are emitted for EVERY detected refusal rather than only a
     size one, so every consumer reads ONE record shape whatever the cause; on a
@@ -806,6 +875,11 @@ def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
     # the refusal excerpt both producers carry.
     import github_re_review
 
+    read_at = now if now is not None else datetime.now(UTC)
+    # A comment with no readable stamp sorts as the oldest possible, so it is
+    # sampled only when the bot has no comment whose write instant could be read.
+    oldest = datetime.min.replace(tzinfo=UTC)
+
     detected: list[dict] = []
     for bot_kind in bot_registry.bot_kinds():
         bot_comments = [
@@ -815,13 +889,14 @@ def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
         ]
         if not bot_comments:
             continue
-        newest = max(bot_comments, key=lambda c: str(c.get('created_at') or ''))
+        newest = max(bot_comments, key=lambda c: _last_written(c) or oldest)
         body = str(newest.get('body') or '')
         layers = refusal_layers(body, bot_kind)
         if not layers:
             continue
         eta = _extract_rate_limit_eta(body, bot_kind)
         eta_seconds = rate_limit_eta_seconds(eta)
+        written = _last_written(newest)
         detected.append(
             {
                 'bot_kind': bot_kind,
@@ -830,6 +905,8 @@ def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
                 'eta': eta,
                 'eta_seconds': eta_seconds,
                 'eta_extracted': eta_seconds is not None,
+                'written_at': written.astimezone(UTC).strftime(_WRITTEN_AT_FORMAT) if written is not None else '',
+                'stale': notice_is_stale(written, eta_seconds, read_at),
                 'cause': refusal_cause(body, bot_kind),
                 'cap': refusal_size_cap(body, bot_kind),
                 'layer': layers[0],
@@ -1646,7 +1723,8 @@ def cmd_pr_wait_for_comments(args: argparse.Namespace) -> dict:
     detector_answerable, unanswerable_reason = _detector_answerability()
 
     # Per-bot rate-limit discriminator: after the poll settles, inspect each
-    # REGISTERED bot's newest comment for a rate-limit status notice. Best-effort
+    # REGISTERED bot's most recently written comment — the later of its
+    # ``updated_at`` and ``created_at`` — for a rate-limit status notice. Best-effort
     # — a failed fetch leaves the default empty list and never alters poll
     # behaviour. An empty list means no registered bot is rate-limited.
     rate_limited_bots: list[dict] = []

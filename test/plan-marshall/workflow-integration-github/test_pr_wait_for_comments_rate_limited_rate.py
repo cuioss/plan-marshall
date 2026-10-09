@@ -3,9 +3,9 @@
 
 ``cmd_pr_wait_for_comments`` (in ``_github_pr.py``, dispatched via ``github_ops``)
 surfaces a ``rate_limited_bots[]`` field: after the poll settles it inspects EVERY
-REGISTERED bot's newest comment for a refusal notice and returns one
-``{bot_kind, rate_limit_class, condition, eta, eta_seconds, eta_extracted, cause, cap,
-layer, body}`` record per detected bot. ``condition`` says what the notice reports:
+REGISTERED bot's most recently written comment for a refusal notice and returns one
+``{bot_kind, rate_limit_class, condition, eta, eta_seconds, eta_extracted, written_at,
+stale, cause, cap, layer, body}`` record per detected bot. ``condition`` says what the notice reports:
 ``rate_limited`` for a limit, ``no_unreviewed_commit`` for a reply saying nothing new
 is left to review. A boolean cannot carry that answer: it collapses a three-bot pipeline into one
 CodeRabbit-shaped verdict, leaving a rate-limited Sourcery or PR-Agent invisible.
@@ -21,6 +21,9 @@ in the detection path:
   ``''`` when the bot declares none or its notice states none; ``eta_seconds`` is
   that time as whole seconds (``None`` when none was read) and ``eta_extracted``
   states which of the two it is;
+- ``written_at`` is the instant the notice was last written — the later of the
+  comment's ``updated_at`` and ``created_at`` — and ``stale`` is ``True`` when the
+  window the notice stated had already elapsed when the notice was read;
 - ``cause`` / ``cap`` are the orthogonal SIZE-vs-QUOTA axis, derived from that bot's
   ``refusal_size_patterns`` / ``refusal_size_cap_patterns``. They are INDEPENDENT of
   ``rate_limit_class``: one bot can refuse for both causes at one class, so the
@@ -28,8 +31,8 @@ in the detection path:
   empty ``cap`` reads as UNKNOWN rather than as a figure;
 - ``layer`` / ``body`` are the OBSERVATION behind the refusal — the recognition arm
   that read the notice (the first of ``_github_pr.refusal_layers`` in consult
-  order) and the notice's truncated excerpt — carried so this record has the SAME
-  shape as ``github_re_review``'s ``refusals[]`` record;
+  order) and the notice's truncated excerpt — the observation fields this record
+  shares with ``github_re_review``'s ``refusals[]`` record;
 - body CLASSIFICATION stays the shared bot-agnostic ``_is_rate_limit_notice``,
   which requires BOTH a limit-exceeded statement AND a notice shape.
 
@@ -38,8 +41,8 @@ Scope (AAA against fixture comment payloads):
     - a bot whose registry record declares no class fails closed to ``unknown``
     - CodeRabbit's notice yields its registry-extracted ``eta``
     - several bots rate-limited at once each yield their own record
-    - per-bot newest-by-``created_at`` selection: a newer genuine review from the
-      SAME bot supersedes that bot's older notice, without hiding another bot
+    - per-bot selection of the comment written last: a newer genuine review from
+      the SAME bot supersedes that bot's older notice, without hiding another bot
     - a genuine review merely mentioning a rate limit in prose is NOT a notice
     - human comments never contribute a record
     - a registry-declared refusal reports the registry ``layer`` even when the
@@ -195,6 +198,10 @@ def test_non_coderabbit_bot_rate_limit_is_detected(monkeypatch):
             # No reset time was stated: the seconds are absent and the record says so.
             'eta_seconds': None,
             'eta_extracted': False,
+            # The fixture carries no ``updated_at``, so the last write is its creation.
+            'written_at': _SOURCERY_NOTICE['created_at'],
+            # With no reset time read, nothing says the window is over.
+            'stale': False,
             'cause': 'quota',
             'cap': '',
             'layer': _github_pr.REFUSAL_LAYER_STRUCTURAL,
@@ -234,6 +241,8 @@ def test_notice_stating_no_eta_yields_empty_eta(monkeypatch):
             # time — a field of its own, not something read off the empty ``eta``.
             'eta_seconds': None,
             'eta_extracted': False,
+            'written_at': _CODERABBIT_REVIEW_LIMIT_REACHED['created_at'],
+            'stale': False,
             'cause': 'quota',
             'cap': '',
             'layer': _github_pr.REFUSAL_LAYER_REGISTRY,
@@ -266,6 +275,9 @@ def test_a_no_new_commit_reply_yields_a_record_with_its_own_condition(monkeypatc
             'eta': '',
             'eta_seconds': None,
             'eta_extracted': False,
+            'written_at': reply['created_at'],
+            # The reply states no window, so there is none to have elapsed.
+            'stale': False,
             'cause': 'quota',
             'cap': '',
             'layer': _github_pr.REFUSAL_LAYER_REGISTRY,

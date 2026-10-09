@@ -66,6 +66,7 @@ def _verdict(
     *,
     window_expired: bool | None = False,
     attempts_remaining: int | None = _ATTEMPTS_REMAINING,
+    notice_stale: bool = False,
 ) -> dict:
     """The SHIPPED selector's verdict for a detected refusal from ``bot_kind``.
 
@@ -78,13 +79,15 @@ def _verdict(
     expresses the quota case. ``window_expired=False`` is the freshly-claimed
     clock, which is the observation under which the class axis is visible: it is
     the only one where an ``awaitable_window`` bot's answer differs from an
-    escalating one.
+    escalating one. ``notice_stale`` defaults to a fresh notice, which is what
+    every case not about staleness means.
     """
     return github_re_review.resolve_recovery_action(
         bot_kind,
         cause=cause,
         window_expired=window_expired,
         attempts_remaining=attempts_remaining,
+        notice_stale=notice_stale,
     )
 
 
@@ -209,7 +212,12 @@ def _set_trigger_semantics(monkeypatch, bot_kind: str, value: str) -> None:
     monkeypatch.setitem(bot_registry.REGISTRY._by_kind, bot_kind, record)
 
 
-_PRODUCER_ONLY_FIELDS = {'rate_limited_bots': {'rate_limit_class'}, 'refusals': {'source'}}
+# ``written_at`` and ``stale`` are the comment detector's alone: only it reports when
+# a notice was last written and whether its stated window had elapsed by the read.
+_PRODUCER_ONLY_FIELDS = {
+    'rate_limited_bots': {'rate_limit_class', 'written_at', 'stale'},
+    'refusals': {'source'},
+}
 _AR_SKILL = (
     get_script_path('plan-marshall', 'workflow-integration-github', '_github_pr.py').parents[4]
     / 'plan-marshall'
@@ -533,6 +541,12 @@ class TestTheRecoveryActionSelectorDerivesItsVerdict:
                 'attempt_cap_exhausted',
             ),
             (_verdict(awaitable), github_re_review.RECOVERY_ACTION_AWAIT_WINDOW, 'claim_window_open'),
+            # The same open window, read off a notice whose stated window is over.
+            (
+                _verdict(awaitable, notice_stale=True),
+                github_re_review.RECOVERY_ACTION_SETTLE_STALE_NOTICE,
+                'notice_window_elapsed',
+            ),
             (
                 _verdict(awaitable, window_expired=True),
                 github_re_review.RECOVERY_ACTION_CLOSE_AND_REOPEN,
@@ -589,6 +603,7 @@ class TestTheRecoveryActionSelectorDerivesItsVerdict:
             'window_expired',
             'attempts_remaining',
             'attempt_held',
+            'notice_stale',
             'recovery_actions',
         )
 

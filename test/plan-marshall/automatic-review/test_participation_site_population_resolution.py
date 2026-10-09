@@ -336,6 +336,13 @@ CANDIDATE_EXCLUSIONS: dict[str, str] = {
         'posted, and the producer’s reply-covered arm, whose crediting decision is the seed '
         '_stale_review_covered_by_reply. The quorum classifier receives no condition at all.'
     ),
+    'notice_is_stale': (
+        'A REFUSAL-NOTICE predicate, not a crediting decision: it says whether the window a '
+        'rate-limit notice stated had already elapsed when the notice was read. "Stale" here '
+        'describes a notice, never a review — it shares the word with stale_participation and '
+        'nothing else. It credits no bot and anchors on no commit; its one consumer is the '
+        'recovery selector, which uses it to decide that no rate window is claimed.'
+    ),
 }
 
 #: The two members whose classification is recorded rather than inferred.

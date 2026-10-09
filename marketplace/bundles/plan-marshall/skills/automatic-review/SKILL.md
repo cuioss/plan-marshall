@@ -379,8 +379,9 @@ Once every participating bot is completed, markerless (buffer-settled), or recor
 > **GitLab provider asymmetry:** `bot_completion` is a GitHub-only read verb — the GitLab provider (`gitlab_pr`) has no completion-check-run equivalent (the same asymmetry the FIND stage's `--required-bots` / `--optional-bots` note documents). On a GitLab host, skip the completion-aware poll entirely; every bot relies on the `review_bot_buffer_seconds` settle.
 
 The `pr wait-for-comments` return carries a **`rate_limited_bots[]`** discriminator — one
-`{bot_kind, rate_limit_class, condition, eta, eta_seconds, eta_extracted, cause, cap, layer, body}` record per REGISTERED bot whose newest
-comment is a refusal notice posted in place of a review. A non-empty list signals that those specific bots did not
+`{bot_kind, rate_limit_class, condition, eta, eta_seconds, eta_extracted, written_at, stale, cause, cap, layer, body}` record per REGISTERED bot whose most
+recently written comment — by the later of `updated_at` and `created_at`, so a comment the bot rewrote
+counts from its rewrite — is a refusal notice posted in place of a review. A non-empty list signals that those specific bots did not
 review — because their limit was hit (`condition: rate_limited`), or because they report nothing new
 to review (`condition: no_unreviewed_commit`) — rather than that a genuine review landed or the buffer timed out
 cleanly. An empty list means no registered bot posted such a notice. See
@@ -403,8 +404,8 @@ below acts on this discriminator when the opt-in is enabled; when the opt-in is 
 A detected refusal is a **branchable signal, never a silent drop**. Two producers surface one:
 
 - **`rate_limited_bots[]`** on the "Wait for review-bot comments" return — one
-  `{bot_kind, rate_limit_class, condition, eta, eta_seconds, eta_extracted, cause, cap, layer, body}` record per
-  registered bot whose newest comment is a refusal notice.
+  `{bot_kind, rate_limit_class, condition, eta, eta_seconds, eta_extracted, written_at, stale, cause, cap, layer, body}` record per
+  registered bot whose most recently written comment is a refusal notice.
 - **`refusal_detected` / `refusal_class` / `refusal_eta` / `refusal_eta_seconds` /
   `refusal_eta_extracted` / `refusals[]`** on the `github_re_review re-review` return — the re-review
   await recorded a refusal instead of collapsing it into a bare `matched: false` / `timed_out: true`.
@@ -419,6 +420,12 @@ be read — the explicit statement of that, so nothing has to be inferred from a
 Both records also carry the OBSERVATION behind the refusal: `layer`, the recognition arm that read the
 notice, and `body`, the notice itself as a whitespace-collapsed, truncated excerpt. Branch 2 discloses
 those two fields when it arms a wait — see § "The arming disclosure" below.
+
+A `rate_limited_bots[]` record carries two fields the `refusals[]` record does not: `written_at`, the
+instant the notice was last written, and `stale`, which is `true` when the window the notice stated had
+already elapsed when the notice was read. A stale notice describes no open window. Branch 2 forwards
+`stale` to the selector and claims nothing on such a record — see "A stale notice claims no window"
+there.
 
 Both records carry the refusal's `condition` too: `rate_limited` when a limit was hit, and
 `no_unreviewed_commit` when the bot replied that every commit is already reviewed. The second is not a
@@ -447,6 +454,7 @@ Pass `--window-expired` and `--attempts-remaining` only once a claim exists to r
 | `escalate_not_awaitable` | **Branch 1** — escalate, do not await, do not generate |
 | `await_window` (and `unmeasured` with `reason: no_window_observation` or `reason: no_attempt_budget_observation`, which are what an unclaimed window reads as here) | **Branch 2** — read this plan's own claim first; claim the window and hand the wait back to the main context, or enter Branch 3 when the claim is already this plan's and has elapsed |
 | `escalate_exhausted` | Branch 2's `recovery_cap_exhausted` arm — `escalate_ask{reason: rate_window_exhausted}` |
+| `settle_stale_notice` | Branch 2's "A stale notice claims no window" arm — claim nothing, wait for nothing, proceed to "Producer: FIND" (reached from the Branch 2 first-pass consult, which forwards the record's `stale`) |
 | `close_and_reopen` | **Branch 5** — re-deliver the dropped request (reached from the Branch 3 re-entry consult, after the window elapsed) |
 | `generate_trigger` | **Branch 4** — generate the event (reached from the Branch 3 re-entry consult, after the window elapsed) |
 | `unmeasured` with `reason: no_review_observation` or `reason: no_findings_observation` | **Branch 6** — the condition is `no_unreviewed_commit` and its two observations are not gathered yet; claim nothing, wait for nothing, and consult again after "Producer: FIND" |
@@ -546,11 +554,44 @@ Read `holder`, `pr_number`, `expired`, `expires_at`, `seconds_remaining` and `at
 |------------------|-----------|
 | `holder` is this plan AND `pr_number` is this PR AND `expired: true` | **Re-entry after the wait.** The claim is this plan's own, elapsed and unreleased. Skip the claim entirely and go to **Branch 3**. |
 | `holder` is this plan AND `pr_number` is this PR AND `expired: false` | **Re-entry before the wake.** The claim is still running. Issue no claim; decision-log, then return `escalate_ask{reason: rate_window_await}` again with the `expires_at` and `seconds_remaining` just read, exactly as the `status: success` arm below does. |
-| anything else — no holder, a holder that is another plan, or this plan's claim for a different PR | **First pass.** Claim the window as described below. A window another live plan holds is reported by the claim itself (`status: blocked`), so it needs no separate arm here. |
+| anything else — no holder, a holder that is another plan, or this plan's claim for a different PR | **First pass.** When the refusal record reports `stale: true`, take "A stale notice claims no window" below. Otherwise claim the window as described below. A window another live plan holds is reported by the claim itself (`status: blocked`), so it needs no separate arm here. |
 
 The read is a snapshot and decides nothing that mutates the store: every claim and release that follows
 still goes through the guarded read-modify-write core of `merge_lock`, so a claim another plan makes
 between this read and this pass's next call is arbitrated there, not here.
+
+**A stale notice claims no window.** A `rate_limited_bots[]` record with `stale: true` is a notice whose
+stated window had already elapsed when it was read — a notice stating "12 minutes" that was written two
+hours ago. Claiming on it would start a wait for a time that is already over. This is also the notice a
+later pass meets again after a recovery has run its course: the bot's old notice is still its most
+recently written comment, and without this arm that pass would claim and hand back a second wait for
+the window the first one already waited out. On a first pass over such a record, consult the selector
+with the observations the read above returned and the record's `stale`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review recovery-action \
+  --bot-kind {bot_kind} [--cause {cause}] --window-expired {expired} \
+  --attempts-remaining {attempts_remaining} --notice-stale true --plan-id {plan_id}
+```
+
+`{expired}` and `{attempts_remaining}` are the fields the `rate-window check` read returned. `--cause`
+keeps its observed-only rule. `--notice-stale` is forwarded only from a record that carries `stale`: a
+`refusals[]` record from the `re-review` producer has no such field, so nothing is forwarded for it and
+it is claimed as any other first pass is.
+
+The selector returns `action: settle_stale_notice`. Claim nothing, hand no wait back, and generate no
+event. Decision-log, then proceed to "Producer: FIND" — the notice is settled as a refusal is when the
+opt-in is off, and the step-done participation guard still sees that the bot did not review:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:automatic-review) refusal recovery NOT ARMED — bot {bot_kind} notice is stale (written_at={written_at}, eta_seconds={eta_seconds}): its stated window had already elapsed when it was read; no window claimed, proceeding to FIND"
+```
+
+The two re-entry rows above never reach this arm, and that is deliberate. A pass that finds this plan's
+own claim acts on the claim, whatever the notice now says: after the main-context wait the notice that
+armed it is stale by construction, and the event that claim bought is still owed (Branch 3).
 
 Pass the refusal record's `eta_seconds` as `--window-seconds` when the record reports
 `eta_extracted: true`. Omit the flag when it reports `eta_extracted: false`, so the claim falls back to
@@ -651,7 +692,7 @@ disclosure is emitted on a successful claim, and the envelope row is repeated on
 return, whose wait is still armed by the same refusal — that pass claims nothing, so it writes no ARMED
 log line, and its row is read off the refusal record that selected the recovery on that pass. Branch 0
 and Branch 1 escalate without claiming, Branch 2's `recovery_cap_exhausted` and
-`window_held_by_other_plan` arms claim nothing, Branch 6 handles a reply that is not a limit and claims
+`window_held_by_other_plan` arms claim nothing, its stale-notice arm claims nothing, Branch 6 handles a reply that is not a limit and claims
 nothing, and a run with `review_rate_window_await: false` never
 enters this section — none of them armed a wait, so none of them discloses an arming record, neither on
 the log nor on the envelope.
@@ -683,6 +724,8 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
 `{attempts_remaining}` is the field the Branch 2 `rate-window check` read returned. `--window-expired` and `--attempts-remaining` are supplied here **because both were observed** by that read — omitting either returns `action: unmeasured`, which authorizes nothing and would leave this branch with no route.
 
 ⛔ **`--attempt-held true` is REQUIRED at this consult, and omitting it silently loses the last recovery event.** Branch 2's claim, made on the pass that handed the wait back, already spent an attempt — a successful claim increments the ledger before it returns — so the cap-final claim reports `attempts_remaining: 0` from the instant it is granted, and the re-entry read reports the same zero. Feeding that post-claim zero to a selector that reads it as *no budget left* routes to `escalate_exhausted`, and this branch then releases the claim without ever generating the event the claim bought: a cap of 1 delivers zero events, and the default cap of 6 delivers five. The flag tells the selector the attempt is already HELD, so the budget is read as *may a FURTHER claim be made?* rather than as permission for this one. Exhaustion is still enforced — by `rate-window claim`'s own `recovery_cap_exhausted` refusal in Branch 2, which is the single place the cap is decided.
+
+`--notice-stale` is not forwarded at this consult. The notice that armed this claim is stale by now — its window is the one the main context just waited out — and `--attempt-held true` already tells the selector that the claim's event is owed, which is the arm that outranks a stale notice.
 
 ⛔ **`--cause` keeps the same conditional treatment it has at the first consult: pass it only when a cause was observed, and omit the flag entirely when it was not.** The rejection is worse here than there — this site fires *after* the window claim and the full main-context wait, so an argparse exit 2 discards a completed wait and a spent recovery attempt. Reaching this branch at all means `cause != size` (a size cause routes to Branch 0), so an absent cause is a live possibility on the path that reaches this line.
 

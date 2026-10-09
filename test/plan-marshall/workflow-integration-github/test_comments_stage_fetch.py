@@ -629,11 +629,11 @@ class TestRefusalNoticeProducerFilter:
         """The wait-return discriminator answers per REGISTERED bot, not per one bot.
 
         The retired discriminator selected CodeRabbit-authored comments only, so a
-        refusing Sourcery scored negative whenever CodeRabbit's own newest comment
-        was a genuine review — the two bots' states were collapsed into one answer.
-        The registry-driven detector reports each bot independently: CodeRabbit is
-        absent because its newest comment is real feedback, while Sourcery appears
-        with the class its own registry record declares.
+        refusing Sourcery scored negative whenever CodeRabbit's own last-written
+        comment was a genuine review — the two bots' states were collapsed into one
+        answer. The registry-driven detector reports each bot independently:
+        CodeRabbit is absent because the comment it wrote last is real feedback,
+        while Sourcery appears with the class its own registry record declares.
         """
         import github_re_review
         from _github_pr import (
@@ -672,6 +672,10 @@ class TestRefusalNoticeProducerFilter:
                 # This notice states no reset time: no seconds, and the record says so.
                 'eta_seconds': None,
                 'eta_extracted': False,
+                # The comment carries no ``updated_at``, so its last write is its
+                # creation; with no reset time read, nothing says its window is over.
+                'written_at': '2026-01-09T00:00:00Z',
+                'stale': False,
                 'cause': 'quota',
                 'cap': '',
                 'layer': REFUSAL_LAYER_STRUCTURAL,

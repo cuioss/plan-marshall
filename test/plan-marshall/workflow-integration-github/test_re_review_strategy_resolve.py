@@ -864,6 +864,151 @@ def test_recovery_action_still_resolves_await_window_for_rate_limited(monkeypatc
     assert verdict['reason'] == 'claim_window_open'
 
 
+def _awaitable_bot() -> str:
+    """A registered bot whose refusals reopen on their own — the only class with window arms."""
+    awaitable = [bot for bot in bot_registry.bot_kinds() if bot_registry.rate_limit_class(bot) == 'awaitable_window']
+    assert awaitable, 'the registry declares no awaitable_window bot — the stale-notice cases have no subject'
+    return awaitable[0]
+
+
+@pytest.mark.parametrize('window_expired', ['false', 'true'])
+def test_recovery_action_does_not_return_await_window_for_a_stale_notice(window_expired, monkeypatch, capsys):
+    """Through the CLI: a notice whose window is already over arms no wait.
+
+    Swept over both window states. With the window reported open the verdict would
+    otherwise be ``await_window``; with it reported elapsed it would otherwise be a
+    trigger arm, and a stale notice bought no event to deliver.
+    """
+    verdict = _run_recovery_action(
+        monkeypatch,
+        capsys,
+        '--bot-kind',
+        _awaitable_bot(),
+        '--cause',
+        'quota',
+        '--window-expired',
+        window_expired,
+        '--attempts-remaining',
+        '2',
+        '--notice-stale',
+        'true',
+    )
+
+    assert verdict['action'] == github_re_review.RECOVERY_ACTION_SETTLE_STALE_NOTICE
+    assert verdict['action'] != github_re_review.RECOVERY_ACTION_AWAIT_WINDOW
+    assert verdict['reason'] == 'notice_window_elapsed'
+    assert verdict['notice_stale'] is True
+
+
+@pytest.mark.parametrize(
+    'stale_args',
+    [
+        pytest.param(('--notice-stale', 'false'), id='not-stale'),
+        pytest.param((), id='flag-omitted'),
+    ],
+)
+def test_the_same_consult_without_a_stale_notice_still_returns_await_window(stale_args, monkeypatch, capsys):
+    """MATCHED CONTROL — the same bot and the same open window, with a fresh notice.
+
+    Without it the case above would pass on a selector that never returned
+    ``await_window`` at all. An omitted flag reads as not stale, so a caller that
+    forwards nothing keeps the derivation it had.
+    """
+    verdict = _run_recovery_action(
+        monkeypatch,
+        capsys,
+        '--bot-kind',
+        _awaitable_bot(),
+        '--cause',
+        'quota',
+        '--window-expired',
+        'false',
+        '--attempts-remaining',
+        '2',
+        *stale_args,
+    )
+
+    assert verdict['action'] == github_re_review.RECOVERY_ACTION_AWAIT_WINDOW
+    assert verdict['notice_stale'] is False
+
+
+def test_a_stale_notice_outranks_an_exhausted_budget():
+    """A stale notice claims nothing, so a spent budget is not what stops it."""
+    verdict = github_re_review.resolve_recovery_action(
+        _awaitable_bot(),
+        cause=_github_pr.REFUSAL_CAUSE_QUOTA,
+        window_expired=False,
+        attempts_remaining=0,
+        notice_stale=True,
+    )
+
+    assert verdict['action'] == github_re_review.RECOVERY_ACTION_SETTLE_STALE_NOTICE
+
+
+def test_a_held_attempt_is_still_delivered_when_its_notice_has_gone_stale():
+    """⛔ The re-entry after the wait reads the notice that armed it, and it is stale by then.
+
+    The caller claimed a window on this notice, waited it out, and consults again
+    holding that claim. Settling here would drop the event the claim bought, so the
+    held attempt takes the elapsed arms exactly as it does for a fresh notice.
+    """
+    bot = _awaitable_bot()
+    held = {
+        'cause': _github_pr.REFUSAL_CAUSE_QUOTA,
+        'window_expired': True,
+        'attempts_remaining': 0,
+        'attempt_held': True,
+    }
+
+    stale = github_re_review.resolve_recovery_action(bot, notice_stale=True, **held)
+    fresh = github_re_review.resolve_recovery_action(bot, notice_stale=False, **held)
+
+    assert stale['action'] in (
+        github_re_review.RECOVERY_ACTION_CLOSE_AND_REOPEN,
+        github_re_review.RECOVERY_ACTION_GENERATE_TRIGGER,
+    )
+    assert stale['action'] == fresh['action']
+    assert stale['reason'] == fresh['reason'] == 'claim_window_elapsed'
+
+
+def test_a_stale_notice_without_a_window_observation_is_unmeasured():
+    """Whether a claim is already held is known only once the window was read."""
+    verdict = github_re_review.resolve_recovery_action(
+        _awaitable_bot(),
+        cause=_github_pr.REFUSAL_CAUSE_QUOTA,
+        notice_stale=True,
+    )
+
+    assert verdict['action'] == github_re_review.RECOVERY_ACTION_UNMEASURED
+    assert verdict['reason'] == 'no_window_observation'
+
+
+def test_a_stale_notice_does_not_displace_the_cause_or_the_class():
+    """The arms ahead of the window arms answer as they did: stale changes neither."""
+    structural = github_re_review.resolve_recovery_action(
+        _awaitable_bot(),
+        cause=_github_pr.REFUSAL_CAUSE_SIZE,
+        window_expired=False,
+        attempts_remaining=2,
+        notice_stale=True,
+    )
+    not_awaitable = [
+        bot for bot in bot_registry.bot_kinds() if bot_registry.rate_limit_class(bot) != 'awaitable_window'
+    ]
+    assert not_awaitable, 'every registered bot is awaitable — the class control has no subject'
+
+    assert structural['action'] == github_re_review.RECOVERY_ACTION_ESCALATE_STRUCTURAL
+    for bot in not_awaitable:
+        verdict = github_re_review.resolve_recovery_action(
+            bot,
+            cause=_github_pr.REFUSAL_CAUSE_QUOTA,
+            window_expired=False,
+            attempts_remaining=2,
+            notice_stale=True,
+        )
+        assert verdict['action'] == github_re_review.RECOVERY_ACTION_ESCALATE_NOT_AWAITABLE, bot
+
+
 def test_recovery_action_rejects_a_review_state_outside_the_vocabulary_at_the_parser(monkeypatch):
     """The CLI accepts exactly the selector's own vocabulary."""
     monkeypatch.setattr(
