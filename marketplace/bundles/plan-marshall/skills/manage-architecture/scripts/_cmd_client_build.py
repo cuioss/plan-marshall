@@ -411,3 +411,121 @@ def _compute_execution_tier_fields(bash_timeout_seconds: int, measured: bool) ->
         'execution_tier': tier,
         'hint': hint,
     }
+
+
+# =============================================================================
+# Narrow-unit bound (resolve --narrow-unit)
+# =============================================================================
+#
+# A narrow unit is a ``module-tests`` target narrower than its module - one test
+# directory, or one test file. Its run-config key is its own, so a unit that has
+# never run is UNMEASURED, and the derivation above would fail it closed to the
+# orchestrator tier. That is the wrong answer for a narrow unit: it is a strict
+# subset of a module run, so its duration is bounded by what is already known
+# about the module, and where nothing is known it is bounded by the engine's own
+# floor - the very timeout the run executes under anyway.
+#
+# The narrow branch therefore applies ONLY to an unmeasured key, and names where
+# its bound came from in a fifth field, ``bound_source``:
+#
+# * ``measured`` - the narrow key itself has been measured. Today's derivation,
+#   unchanged; no measured bound is ever replaced.
+# * ``module_bound`` - the narrow key is unmeasured, the parent module command
+#   is measured and its stamp is within the ceiling. The unit takes the
+#   module's stamp: a subset cannot outlast the whole.
+# * ``narrow_default`` - the narrow key is unmeasured and the module's stamp is
+#   unusable (unmeasured, or beyond the ceiling). The unit takes the stated
+#   default: the tool's own outer floor (``config.min_timeout``) plus the outer
+#   buffer.
+#
+# This vocabulary is NOT the run's ``timeout_source`` vocabulary (``explicit`` /
+# ``learned`` / ``default`` / ``floor``); that one describes the timeout a build
+# actually executed under, this one describes how a stamp was bounded before it
+# ran.
+
+BOUND_SOURCE_MEASURED: str = 'measured'
+BOUND_SOURCE_MODULE: str = 'module_bound'
+BOUND_SOURCE_NARROW_DEFAULT: str = 'narrow_default'
+
+
+def _narrow_default_stamp(tool_name: str) -> int | None:
+    """Return the stated default stamp for an unmeasured narrow unit of ``tool_name``.
+
+    The engine's own outer floor, read from the tool's ``_CONFIG.min_timeout``,
+    passed through the same ``get_bash_timeout`` every other stamp goes through.
+    Nothing here names a number: the floor has one declaration, in the build
+    skill, and this reads it. ``None`` when the build skill or the shared build
+    helpers cannot be loaded.
+    """
+    config = _load_build_config(tool_name)
+    if config is None:
+        return None
+    try:
+        from _build_shared import get_bash_timeout
+    except ImportError:
+        return None
+    return get_bash_timeout(config.min_timeout)
+
+
+def _bounded_tier_fields(bash_timeout_seconds: int, bound_source: str) -> dict[str, Any]:
+    """Return the tier quartet for a stamp whose bound is known, plus its source.
+
+    A bounded stamp is routed exactly like a measured one - ``per_task`` when it
+    is within the harness ceiling - because the ceiling comparison is the only
+    question left once the bound itself is established. ``bound_source`` records
+    HOW it was established, so a bound taken from the module or from the default
+    never poses as a measurement of the unit.
+    """
+    return {**_compute_execution_tier_fields(bash_timeout_seconds, True), 'bound_source': bound_source}
+
+
+def _within_bash_ceiling(bash_timeout_seconds: int) -> bool:
+    """Whether a stamp is passable on a Bash call of the active target."""
+    return HARNESS_BASH_CEILING_SECONDS is None or bash_timeout_seconds <= HARNESS_BASH_CEILING_SECONDS
+
+
+def _compute_narrow_unit_tier_fields(
+    tool_name: str,
+    narrow_command_args: str,
+    parent_command_args: str,
+    project_dir: str,
+) -> dict[str, Any] | None:
+    """Return the five tier fields for a narrow-unit command, or ``None``.
+
+    See the section comment above for the three sources. The parent module
+    command is consulted only when the narrow key is unmeasured, so a measured
+    unit costs one lookup and is derived exactly as any other measured command.
+
+    Args:
+        tool_name: The build tool the executable dispatches.
+        narrow_command_args: The command args of the narrow run
+            (``module-tests {narrow unit}``).
+        parent_command_args: The command args of the module's own command, the
+            known parent whose measurement can bound the unit.
+        project_dir: The project the run-config keys are read from.
+
+    Returns:
+        The quartet plus ``bound_source``, or ``None`` when the lookup modules
+        are unavailable - the same "leave the result unaugmented" signal
+        ``_lookup_bash_timeout`` gives.
+    """
+    narrow_lookup = _lookup_bash_timeout(tool_name, narrow_command_args, project_dir)
+    if narrow_lookup is None:
+        return None
+    narrow_stamp, narrow_measured = narrow_lookup
+    if narrow_measured:
+        return {
+            **_compute_execution_tier_fields(narrow_stamp, True),
+            'bound_source': BOUND_SOURCE_MEASURED,
+        }
+
+    parent_lookup = _lookup_bash_timeout(tool_name, parent_command_args, project_dir)
+    if parent_lookup is not None:
+        parent_stamp, parent_measured = parent_lookup
+        if parent_measured and _within_bash_ceiling(parent_stamp):
+            return _bounded_tier_fields(parent_stamp, BOUND_SOURCE_MODULE)
+
+    default_stamp = _narrow_default_stamp(tool_name)
+    if default_stamp is None:
+        return None
+    return _bounded_tier_fields(default_stamp, BOUND_SOURCE_NARROW_DEFAULT)
