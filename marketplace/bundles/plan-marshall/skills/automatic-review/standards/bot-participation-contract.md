@@ -448,7 +448,7 @@ bot in consequence: it never resolves `participated_stale`, and it never appears
 against. A credited append-per-review bot is named in the producer's `reviewed_other_commit_bots[]`
 when at least one of its admissible `review_body` comments carries a commit and none of them is the
 merge candidate. Each record is `{bot_kind, review_id, review_commit_sha}` and names the bot's most
-recently written such review. A bot with one review at an earlier commit and a later one at the merge
+recently written such review. A bot with one review at another commit and a newer one at the merge
 candidate is not named.
 
 **Who the disclosure leaves out, and the assumption that rests on.** A bot declaring
@@ -478,7 +478,7 @@ An empty `reviewed_other_commit_bots[]` therefore does **not** say that every cr
 the merge candidate.
 
 **Why the gap is accepted rather than closed here.** Enforcing the disclosure means changing a
-verdict: a required append-per-review bot whose newest review was submitted against an earlier commit
+verdict: a required append-per-review bot whose newest review was submitted against another commit
 would stop satisfying the quorum and resolve `participated_stale`. The currency ledger is not the
 missing piece — it exists because an in-place re-reviewer's comment identity does not change between
 reviews, and an append-per-review bot's reviews are already distinct records. The missing piece is the

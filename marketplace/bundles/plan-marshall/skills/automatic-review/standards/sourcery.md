@@ -155,8 +155,8 @@ reviewed this diff. Each review appends a new comment rather than editing one in
 *participated*, never that its review was good — see
 [`bot-participation-contract.md`](bot-participation-contract.md) § "Evidence taxonomy".
 
-No commit is compared for this credit, so a Sourcery review of an earlier commit still credits it
-after HEAD advances. That case is disclosed: each `review_body` record carries the commit the review
+No commit is compared for this credit, so a Sourcery review of a commit that is no longer the merge
+candidate still credits it after HEAD advances. That case is disclosed: each `review_body` record carries the commit the review
 was submitted against, and `fetch_findings` names Sourcery in `reviewed_other_commit_bots[]` when
 none of its reviews was submitted against the merge candidate. The disclosure changes no verdict —
 Sourcery stays in `participated_bots[]` and a required Sourcery still satisfies the quorum. See
