@@ -9,10 +9,10 @@ recorded under the plan rather than under the ``NO_PLAN`` sentinel:
 * **The seam** — a resolve carrying the notation's top-level ``--plan-id``
   returns an ``executable`` whose own ``run`` parser reads that plan id, and the
   routing seam submits it to the build daemon.
-* **The documents** — every fenced resolve call in the gate documents carries
-  ``--plan-id`` between the notation and the ``resolve`` verb. A flag written
-  after the verb is rejected by the parser and attributes nothing, so it does
-  not satisfy the detector.
+* **The documents** — every resolve call in the gate documents, fenced or
+  written as an inline code span, carries ``--plan-id`` between the notation
+  and the ``resolve`` verb. A flag written after the verb is rejected by the
+  parser and attributes nothing, so it does not satisfy the detector.
 
 **The call population is DERIVED from the documents**, not listed here, and its
 size is published on every run, so a derivation that silently collapsed is
@@ -146,17 +146,25 @@ def test_routing_seam_submits_the_resolved_build_for_the_plan(resolved_for_plan,
 
 
 # ---------------------------------------------------------------------------
-# The documents — every fenced resolve call names the plan before the verb
+# The documents — every resolve call names the plan before the verb
 # ---------------------------------------------------------------------------
 
-#: A resolve call on one folded line. ``top`` is everything between the notation
-#: and the ``resolve`` verb — the only place the top-level flag is accepted. It
-#: admits only ``--plan-id`` and ``--project-dir``, each as ``--flag value`` or
-#: ``--flag=value``.
-_RESOLVE_CALL = re.compile(
-    r'manage-architecture:architecture[ \t]+'
-    r'(?P<top>(?:--(?:plan-id|project-dir)(?:=\S+|[ \t]+(?!--)\S+)[ \t]+)*)resolve(?=\s|$)'
-)
+#: ``top`` is everything between the notation and the ``resolve`` verb — the only
+#: place the top-level flag is accepted. It admits only ``--plan-id`` and
+#: ``--project-dir``, each as ``--flag value`` or ``--flag=value``.
+_TOP_THEN_VERB = r'(?P<top>(?:--(?:plan-id|project-dir)(?:=\S+|[ \t]+(?!--)\S+)[ \t]+)*)resolve(?=\s|$)'
+
+#: A fenced resolve call on one folded line.
+_RESOLVE_CALL = re.compile(r'manage-architecture:architecture[ \t]+' + _TOP_THEN_VERB)
+
+#: A resolve call inside an inline code span. The documents write it either with
+#: the full notation or starting at the script name ``architecture``.
+_INLINE_RESOLVE_CALL = re.compile(r'(?:^|manage-architecture:)architecture[ \t]+' + _TOP_THEN_VERB)
+
+_INLINE_SPAN = re.compile(r'`([^`\n]+)`')
+
+#: Text directly after a span that marks it as the record of a past run.
+_RECORDED_RESULT = re.compile(r'[ \t]+returned\b')
 
 _TOP_LEVEL_PLAN_ID = re.compile(r'(?:^|\s)--plan-id(?:\s+|=)\S+')
 
@@ -168,6 +176,7 @@ def _gate_documents() -> list[Path]:
         *sorted((_SKILLS / 'phase-6-finalize').rglob('*.md')),
         phase_5 / 'SKILL.md',
         phase_5 / 'standards' / 'canonical_verify.md',
+        _SKILLS / 'plan-marshall' / 'workflow' / 'execution.md',
     ]
 
 
@@ -188,14 +197,34 @@ def _fenced_lines(text: str) -> list[str]:
     return lines
 
 
+def _inline_calls(text: str) -> list[tuple[str, bool]]:
+    """Return ``(call, carries_top_level_plan_id)`` for every inline resolve call.
+
+    Two kinds of inline mention are not calls and are left out by rule:
+
+    * a span without ``--command`` names the verb — ``resolve`` requires
+      ``--command``, so there is nothing in it to run;
+    * a span directly followed by ``returned`` records what a past run answered.
+    """
+    calls: list[tuple[str, bool]] = []
+    for span in _INLINE_SPAN.finditer(text):
+        match = _INLINE_RESOLVE_CALL.search(span.group(1))
+        if not match or '--command' not in span.group(1)[match.end() :]:
+            continue
+        if _RECORDED_RESULT.match(text, span.end()):
+            continue
+        calls.append((span.group(1), bool(_TOP_LEVEL_PLAN_ID.search(match.group('top')))))
+    return calls
+
+
 def _resolve_calls(text: str) -> list[tuple[str, bool]]:
-    """Return ``(call, carries_top_level_plan_id)`` for every fenced resolve call."""
+    """Return ``(call, carries_top_level_plan_id)`` for every fenced or inline resolve call."""
     calls: list[tuple[str, bool]] = []
     for line in _fenced_lines(text):
         match = _RESOLVE_CALL.search(line)
         if match:
             calls.append((line.strip(), bool(_TOP_LEVEL_PLAN_ID.search(match.group('top')))))
-    return calls
+    return [*calls, *_inline_calls(text)]
 
 
 def _derive_population() -> list[tuple[str, str, bool]]:
@@ -212,24 +241,31 @@ _POPULATION = _derive_population()
 
 #: Published on every run — passing included — by the root conftest's
 #: ``pytest_report_header``, so a shrunken population is visible on a green run.
-GUARD_POPULATION_LABEL = 'fenced architecture resolve calls in the gate documents'
+GUARD_POPULATION_LABEL = 'fenced and inline architecture resolve calls in the gate documents'
 GUARD_POPULATION_SIZE = len(_POPULATION)
+
+_ORCHESTRATOR_TIER_DOCUMENT = 'marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/execution.md'
 
 
 def test_gate_documents_carry_resolve_calls_at_all():
     """An empty population would let the sweep below pass over nothing."""
     assert _POPULATION, (
-        f'No fenced `architecture ... resolve` call was derived from '
+        f'No fenced or inline `architecture ... resolve` call was derived from '
         f'{[path.relative_to(PROJECT_ROOT).as_posix() for path in _gate_documents()]}'
     )
 
 
-def test_every_fenced_resolve_call_names_the_plan_before_the_verb():
+def test_the_orchestrator_tier_gate_call_is_in_the_population():
+    """That document writes its gate call inline only, so its presence proves the inline sweep reads it."""
+    assert [call for document, call, _attributed in _POPULATION if document == _ORCHESTRATOR_TIER_DOCUMENT]
+
+
+def test_every_resolve_call_names_the_plan_before_the_verb():
     unattributed = [(document, call) for document, call, attributed in _POPULATION if not attributed]
 
     assert not unattributed, (
-        f'These fenced resolve calls carry no `--plan-id` between the notation and the '
-        f'`resolve` verb, so the build they return records NO_PLAN: {unattributed} '
+        f'These fenced or inline resolve calls carry no `--plan-id` between the notation and '
+        f'the `resolve` verb, so the build they return records NO_PLAN: {unattributed} '
         f'(population: {len(_POPULATION)} call(s))'
     )
 
@@ -275,3 +311,42 @@ def test_control_resolve_as_another_verbs_argument_is_not_in_the_population(top_
     document = f'```bash\n{_NOTATION_PREFIX} \\\n  {top_level}commands --module resolve\n```\n'
 
     assert _resolve_calls(document) == []
+
+
+#: The inline written forms: starting at the script name, and with the full notation.
+_INLINE_PREFIXES = ['architecture', _NOTATION_PREFIX]
+
+_INLINE_PREFIX_IDS = ['script-name-form', 'full-notation-form']
+
+
+@pytest.mark.parametrize('prefix', _INLINE_PREFIXES, ids=_INLINE_PREFIX_IDS)
+@pytest.mark.parametrize(('tail', 'accepted'), _SYNTHETIC_CALLS, ids=_SYNTHETIC_IDS)
+def test_inline_detector_accepts_only_a_plan_id_written_before_the_verb(prefix, tail, accepted):
+    document = f'Resolve the build via `{prefix} {tail}` and run it.\n'
+
+    calls = _resolve_calls(document)
+
+    assert calls == [(f'{prefix} {tail}', accepted)]
+
+
+#: Inline mentions the population leaves out, each built from a call it would otherwise hold.
+_INLINE_NON_CALLS = [
+    'The step feeds the canonical to `architecture resolve`.',
+    'The step feeds the canonical to `architecture --plan-id {plan_id} resolve`.',
+    '`architecture resolve --command quality-gate` returned `pyproject_build run`.',
+    'List them with `architecture --plan-id {plan_id} commands --command resolve`.',
+    'The contract is in `manage-architecture/standards/resolve-command.md --command`.',
+]
+
+_INLINE_NON_CALL_IDS = [
+    'names-the-verb',
+    'names-the-verb-with-the-flag',
+    'recorded-result-of-a-past-run',
+    'resolve-as-another-verbs-argument',
+    'path-containing-the-word',
+]
+
+
+@pytest.mark.parametrize('sentence', _INLINE_NON_CALLS, ids=_INLINE_NON_CALL_IDS)
+def test_control_inline_mention_that_is_not_a_call_is_not_in_the_population(sentence):
+    assert _resolve_calls(sentence + '\n') == []

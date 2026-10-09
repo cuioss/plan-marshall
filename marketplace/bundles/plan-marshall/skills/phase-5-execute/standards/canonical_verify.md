@@ -14,7 +14,7 @@ canonicals:
 
 # Canonical Verify
 
-Single **parameterized** built-in verification step that backs every canonical command. The step ID encodes the canonical as its trailing segment — `default:verify:{canonical}` — e.g. `default:verify:quality-gate`, `default:verify:module-tests`, `default:verify:coverage`. The step reads the canonical from the ID, resolves it via `architecture resolve --command {canonical}`, honours the returned `execution_tier` / `bash_timeout_seconds`, runs the resolved executable, and reports pass/fail.
+Single **parameterized** built-in verification step that backs every canonical command. The step ID encodes the canonical as its trailing segment — `default:verify:{canonical}` — e.g. `default:verify:quality-gate`, `default:verify:module-tests`, `default:verify:coverage`. The step reads the canonical from the ID, resolves it via `architecture --plan-id {plan_id} resolve --command {canonical}`, honours the returned `execution_tier` / `bash_timeout_seconds`, runs the resolved executable, and reports pass/fail.
 
 The `canonicals:` frontmatter (`quality-gate`, `module-tests`, `coverage`) is the machine-readable source for discovery-backed seeding — `find_implementors()` expands this list into the built-in `default:verify:{canonical}` step IDs that `verification_steps` seeds. The canonical is a **parameter**, never a hardcoded branch — there is no per-canonical doc and no per-canonical `role:` frontmatter file. The step has **no `role:` frontmatter line**: the matrix role is derived from the trailing canonical segment by the composer (`manage-execution-manifest._role_of` — see [`../../manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md)), keyed on this table:
 
@@ -40,8 +40,8 @@ The same step body serves **both** consuming contexts; the only difference is an
 
 | Scope | Supplied by | Resolution | Runs over |
 |-------|-------------|------------|-----------|
-| `module` | Per-deliverable chain-tail (phase-5-execute Step 10b), one entry per `per_deliverable_build` step ID | `architecture resolve --command {canonical} --module {changed_module}` | The changed module(s) only |
-| `whole-tree` | End-of-phase-5 sweep (phase-5-execute Step 11b/11c), one entry per `verification_steps` step ID | `architecture resolve --command {canonical}` (no `--module`) | The complete tree |
+| `module` | Per-deliverable chain-tail (phase-5-execute Step 10b), one entry per `per_deliverable_build` step ID | `architecture --plan-id {plan_id} resolve --command {canonical} --module {changed_module}` | The changed module(s) only |
+| `whole-tree` | End-of-phase-5 sweep (phase-5-execute Step 11b/11c), one entry per `verification_steps` step ID | `architecture --plan-id {plan_id} resolve --command {canonical}` (no `--module`) | The complete tree |
 
 Scope is the ONLY difference between the two consuming lists — the resolution + execution-tier + report logic is identical. The `per_deliverable_build` list feeds the changed module; the `verification_steps` list feeds whole-tree. Whole-tree gates (e.g. `integration-tests`, `e2e`) live only in `verification_steps`, never in `per_deliverable_build`.
 
