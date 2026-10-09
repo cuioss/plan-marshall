@@ -47,7 +47,6 @@ Subcommands:
 
 import json
 from dataclasses import replace
-from pathlib import Path
 
 from _build_check_warnings import create_check_warnings_handler
 from _build_cli import (
@@ -63,8 +62,8 @@ from _pyproject_cmd_discover import discover_python_modules
 from _pyproject_cmd_parse import parse_log, slice_failure_details
 from _pyproject_execute import _CONFIG, cmd_run
 from _test_scope_divergence import resolve_test_scope
-from marketplace_bundles import extract_bundle_name, find_bundles
-from marketplace_paths import find_marketplace_path, names_real_plan
+from _test_scope_targets import resolve_registered_targets
+from marketplace_paths import names_real_plan
 from toon_parser import serialize_toon
 
 # --- Tool-specific configuration inlined from former wrapper files ---
@@ -149,38 +148,23 @@ def _register_pyproject_parse(subparsers) -> None:
 
 
 def _resolve_registered_modules(project_dir: str | None) -> frozenset[str]:
-    """Enumerate the registered module names for ``project_dir``'s marketplace.
+    """Enumerate the registered targets for ``project_dir``'s marketplace.
 
-    The registered-module set the pure ``resolve_test_scope`` helper needs to
-    reject a derived name that no module actually carries. It is resolved HERE,
-    in the handler that already performs I/O, so the pure module stays free of
-    it. The enumeration reuses the existing tested
-    ``marketplace_bundles.find_bundles()`` + ``extract_bundle_name()`` seam
-    anchored on the marketplace root ``find_marketplace_path()`` resolves from the
-    already-available ``project_dir`` - no new inventory mechanism.
+    The set the pure ``resolve_test_scope`` helper needs to reject a derived
+    name that no target actually carries. A registered target is a bundle or a
+    test tree holding tests; the enumeration itself lives in
+    ``_test_scope_targets.resolve_registered_targets`` - the single derivation
+    of that set - and this function only delegates to it, so the handler that
+    already performs I/O stays the place the I/O is requested while the pure
+    module stays free of it.
 
-    Returns an EMPTY frozenset in exactly the two cases the body guards: the
-    marketplace root does not resolve (``find_marketplace_path`` returns
-    ``None``), or the walk raises ``OSError`` (an unreadable or vanished
-    directory). The caller reads emptiness as ``modules_resolvable: false`` and
-    fails toward the whole tree rather than silently disabling the check.
-
-    The guard is deliberately no wider than the claim above. ``find_bundles`` /
-    ``extract_bundle_name`` derive every name by ``re.match`` over a directory
-    name and touch the filesystem only through calls whose failure mode is
-    ``OSError``, so ``OSError`` is the walk's only expected failure. Anything
-    else escapes as a crash, which is loud rather than a false
-    ``modules_resolvable: true``; do NOT widen the ``except`` to a bare
-    ``Exception``, which would relabel an unforeseen bug as a routine-looking
-    ``modules_resolvable: false``.
+    Returns an EMPTY frozenset in exactly the two cases the helper guards: the
+    marketplace root does not resolve, or the walk raises ``OSError`` (an
+    unreadable or vanished directory). The caller reads emptiness as
+    ``modules_resolvable: false`` and fails toward the whole tree rather than
+    silently disabling the check.
     """
-    try:
-        bundles_root = find_marketplace_path(Path(project_dir) if project_dir else None)
-        if bundles_root is None:
-            return frozenset()
-        return frozenset(extract_bundle_name(bundle_dir) for bundle_dir in find_bundles(bundles_root))
-    except OSError:
-        return frozenset()
+    return resolve_registered_targets(project_dir)
 
 
 def cmd_resolve_test_scope(args) -> int:
@@ -215,15 +199,21 @@ def cmd_resolve_test_scope(args) -> int:
       whole-tree answer. Reporting it as a resolvable-but-empty footprint would
       instead claim ``divergence_possible: false`` ("a scoped run cannot miss a
       regression") on no evidence whatever.
-    * ``modules_resolvable`` is ``false`` when the registered-module enumeration
-      failed or came back empty. Without that set every derived module name is
-      unverifiable, so a confident scoped target would rest on nothing. Failing
-      closed here is what stops "the caller could not enumerate modules" from
-      silently disabling the registered-module check.
+    * ``modules_resolvable`` is ``false`` when the registered-target enumeration
+      (bundles united with the test trees holding tests) failed or came back
+      empty. Without that set every derived name is unverifiable, so a confident
+      scoped target would rest on nothing. Failing closed here is what stops
+      "the caller could not enumerate targets" from silently disabling the
+      registered-target check.
 
     ``unresolved_paths`` carries every footprint entry that mapped to no
-    registered module, so the suppression is disclosed to the consumer (ADR-014)
+    registered target, so the suppression is disclosed to the consumer (ADR-014)
     instead of dying inside the dataclass.
+
+    A ``recommended_target`` that names a non-bundle test tree is valid for
+    ``module-tests`` only: that command resolves its argument under the test
+    root, while ``compile`` / ``quality-gate`` / ``coverage`` / ``verify``
+    resolve it to a bundle directory that such a tree does not have.
     """
     # In-process form of the manage-references compute-footprint /
     # manage-config build-map read seams — same script-shared bundle, no

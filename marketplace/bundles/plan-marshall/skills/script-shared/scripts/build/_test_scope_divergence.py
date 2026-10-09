@@ -7,13 +7,18 @@ would cover and whether a whole-tree run is warranted, and they classify the
 scoped-vs-whole-tree outcome pair into a caught/not-caught verdict.
 
 Both functions are pure - no I/O, no subprocess, no git. The footprint, the
-build_map globs and the registered-module names are all supplied by the caller
+build_map globs and the registered-target names are all supplied by the caller
 (the ``resolve-test-scope`` build subcommand reads them from the live worktree;
 the tests inject them directly), so this module is deterministic and
-unit-testable in isolation. In particular the registered-module set arrives as
-an argument rather than being read from the architecture inventory here, which
-is what keeps the "no I/O" property intact while still letting the derivation
-reject a name that no module actually carries.
+unit-testable in isolation. In particular the registered-target set arrives as
+an argument rather than being read from the filesystem here, which is what
+keeps the "no I/O" property intact while still letting the derivation reject a
+name that no target actually carries.
+
+A *registered target* is a bundle or a test tree holding tests. The set is
+enumerated by the I/O sibling ``_test_scope_targets.resolve_registered_targets``
+- the single derivation of it - and handed in through the ``registered_modules``
+parameter, whose name predates the test-tree half of that definition.
 
 The scope-derivation rule mirrors, in code, the bundle-derivation prose in
 ``phase-6-finalize/standards/pre-push-quality-gate.md`` section "Derive unique
@@ -21,7 +26,7 @@ bundle set": each footprint entry's owning module is taken from path segment 2
 for ``marketplace/bundles/{bundle}/...`` and segment 1 for ``{root}/{bundle}/...``
 under any test root (``test/`` or its ``tests/`` sibling — see
 :data:`_TEST_ROOTS`), and the derived name is kept only when it names a
-registered module. A path that yields no such name is *unresolved*: it is
+registered target. A path that yields no such name is *unresolved*: it is
 reported in ``unresolved_paths`` and it forces a whole-tree run.
 
 Fail-closed classification discipline
@@ -80,14 +85,15 @@ class TestScopeResolution:
         divergence_possible: True when a scoped run could pass while a
             whole-tree run fails - the footprint spans more than one module, it
             touches shared / cross-module test infrastructure, or at least one
-            footprint entry could not be mapped to a registered module.
+            footprint entry could not be mapped to a registered target (a bundle
+            or a test tree holding tests).
         recommended_target: The single module a scoped run should target when
             divergence is impossible (scoped-equals-whole-tree by equivalence);
             None when a whole-tree run is warranted, and also None for the empty
             footprint (nothing to run). A consumer MUST check this value is
             non-null before interpolating it into a command.
         unresolved_paths: Every footprint entry that mapped to no registered
-            module, in footprint order. Non-empty means coverage for those paths
+            target, in footprint order. Non-empty means coverage for those paths
             could not be determined, which is reported rather than silently
             dropped (ADR-014) and forces the whole-tree verdict.
     """
@@ -159,17 +165,19 @@ def _module_for_path(path: str, registered_modules: Collection[str]) -> str | No
     such as ``marketplace/bundles/README.md`` or ``test/conftest.py`` therefore
     derives no name and returns None.
 
-    A derived name is returned only when it names a REGISTERED module. Returning
-    the path segment verbatim would invent modules that do not exist - the
-    ``test/_shared/...`` root derives the phantom name ``_shared``, and a scoped
-    run against it targets nothing at all. An unregistered name is therefore
-    reported as "no owning module" so the caller fails closed to the whole tree.
+    A derived name is returned only when it names a REGISTERED target - a bundle
+    or a test tree holding tests. Returning the path segment verbatim would
+    invent targets that do not exist - the ``test/_shared/...`` root derives the
+    phantom name ``_shared``, and a scoped run against it targets nothing at
+    all. An unregistered name is therefore reported as "no owning module" so the
+    caller fails closed to the whole tree.
 
     Args:
         path: A repo-relative footprint entry.
-        registered_modules: The caller-enumerated registered module names. The
-            purity contract of this module means the set is supplied, never read
-            from an inventory here.
+        registered_modules: The caller-enumerated registered target names
+            (bundles and test trees holding tests). The purity contract of this
+            module means the set is supplied, never read from the filesystem
+            here.
     """
     segments = path.split('/')
     if path.startswith('marketplace/bundles/') and len(segments) > 3:
@@ -180,7 +188,7 @@ def _module_for_path(path: str, registered_modules: Collection[str]) -> str | No
         return None
     # UNCHANGED fail-closed guard: widening WHICH roots yield a candidate name
     # must never widen WHICH names are accepted. A derived name that no
-    # registered module carries is still rejected here, so the caller reports the
+    # registered target carries is still rejected here, so the caller reports the
     # path in ``unresolved_paths`` and falls back to the whole tree.
     return derived if derived in registered_modules else None
 
@@ -194,7 +202,8 @@ def resolve_test_scope(
 
     Every footprint entry contributes its owning module (segment 2 for
     ``marketplace/bundles/...``, segment 1 for any test root in
-    :data:`_TEST_ROOTS`) whenever that derived name is registered. Module
+    :data:`_TEST_ROOTS`) whenever that derived name is a registered target (a
+    bundle or a test tree holding tests). Module
     ownership is derived independently of the
     ``build_map_globs`` filter: the globs answer "is this build-relevant", module
     ownership answers the different question "could a scoped run miss a
@@ -208,7 +217,7 @@ def resolve_test_scope(
     ``divergence_possible`` is True when ANY of three conditions holds: the
     resolved set spans more than one module; any footprint entry touches shared /
     cross-module test infrastructure; or ``unresolved_paths`` is non-empty (at
-    least one entry mapped to no registered module). The third condition is the
+    least one entry mapped to no registered target). The third condition is the
     fail-closed one: coverage for an unmapped path cannot be determined, so the
     run falls back to the whole tree rather than emitting a confident scoped
     target that does not cover it. A single-module footprint touching no shared
@@ -233,9 +242,10 @@ def resolve_test_scope(
             footprint entries are build-relevant. Part of the caller contract;
             see the paragraph above for why the span derivation does not consult
             them.
-        registered_modules: The caller-enumerated registered module names. A
-            derived name absent from this collection resolves to no module and
-            lands in ``unresolved_paths``.
+        registered_modules: The caller-enumerated registered target names
+            (bundles and test trees holding tests). A derived name absent from
+            this collection resolves to no module and lands in
+            ``unresolved_paths``.
 
     Returns:
         A frozen :class:`TestScopeResolution`.

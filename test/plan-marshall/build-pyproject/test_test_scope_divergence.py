@@ -518,6 +518,81 @@ def test_an_ordinary_tests_rooted_path_can_still_resolve_confidently():
 
 
 # =============================================================================
+# Non-bundle test trees: a registered target that no bundle carries
+# =============================================================================
+
+#: The test trees in this repository that hold tests and belong to no bundle.
+#: The pure function takes whatever set its caller enumerated; these are the
+#: names the I/O sibling ``_test_scope_targets`` registers beside the bundles.
+_NON_BUNDLE_TEST_TREES = (
+    'default',
+    'finalize-step-deploy-target',
+    'finalize-step-sync-plugin-cache',
+    'marketplace',
+    'sync-harnesses',
+)
+
+#: The registered set a caller hands in once test trees are registered too. The
+#: bundle cases above keep ``_REGISTERED_MODULES`` unchanged.
+_REGISTERED_TARGETS = _REGISTERED_MODULES | frozenset(_NON_BUNDLE_TEST_TREES)
+
+
+@pytest.mark.parametrize('tree', _NON_BUNDLE_TEST_TREES)
+def test_a_changed_path_in_a_non_bundle_test_tree_resolves_that_tree(tree):
+    """One changed path under a registered non-bundle tree targets that tree."""
+    path = f'test/{tree}/test_something.py'
+
+    resolution = resolve_test_scope([path], _GLOBS, _REGISTERED_TARGETS)
+
+    assert resolution.scoped_modules == (tree,)
+    assert resolution.unresolved_paths == ()
+    assert resolution.divergence_possible is False
+    assert resolution.recommended_target == tree
+
+
+@pytest.mark.parametrize('tree', _NON_BUNDLE_TEST_TREES)
+def test_a_non_bundle_test_tree_is_unresolved_until_it_is_registered(tree):
+    """NEGATIVE CONTROL: the same path resolves nothing against the bundle-only set.
+
+    Proves the confident target above comes from the tree being REGISTERED, not
+    from the derivation returning segment 1 of any ``test/`` path verbatim.
+    """
+    path = f'test/{tree}/test_something.py'
+
+    resolution = resolve_test_scope([path], _GLOBS, _REGISTERED_MODULES)
+
+    assert resolution.scoped_modules == ()
+    assert resolution.unresolved_paths == (path,)
+    assert resolution.divergence_possible is True
+    assert resolution.recommended_target is None
+
+
+def test_the_shared_helper_home_stays_unresolved_when_test_trees_are_registered():
+    """Registering test trees does not make ``test/_shared/`` a target.
+
+    ``_shared`` is not in the registered set, so the path is still unresolved,
+    still shared infrastructure, and still forces the whole tree.
+    """
+    resolution = resolve_test_scope([_SHARED_TEST_HELPER], _GLOBS, _REGISTERED_TARGETS)
+
+    assert resolution.scoped_modules == ()
+    assert resolution.unresolved_paths == (_SHARED_TEST_HELPER,)
+    assert resolution.divergence_possible is True
+    assert resolution.recommended_target is None
+
+
+def test_a_non_bundle_test_tree_beside_a_bundle_spans_two_targets():
+    """A footprint in a non-bundle tree and in a bundle is a two-target span."""
+    footprint = ['test/marketplace/test_something.py', _PROD_PLAN_MARSHALL]
+
+    resolution = resolve_test_scope(footprint, _GLOBS, _REGISTERED_TARGETS)
+
+    assert resolution.scoped_modules == ('marketplace', 'plan-marshall')
+    assert resolution.divergence_possible is True
+    assert resolution.recommended_target is None
+
+
+# =============================================================================
 # Cross-check: the two independently-declared root sets must agree
 # =============================================================================
 

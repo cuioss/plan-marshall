@@ -733,6 +733,59 @@ def test_resolve_registered_modules_returns_empty_without_a_marketplace_tree(tmp
     assert pyproject_build._resolve_registered_modules(str(tmp_path)) == frozenset()
 
 
+#: The test trees in this repository that hold tests and belong to no bundle.
+_NON_BUNDLE_TEST_TREES = (
+    'default',
+    'finalize-step-deploy-target',
+    'finalize-step-sync-plugin-cache',
+    'marketplace',
+    'sync-harnesses',
+)
+
+
+def test_resolve_registered_modules_enumerates_the_non_bundle_test_trees():
+    """The enumeration seam also returns the test trees that belong to no bundle."""
+    modules = pyproject_build._resolve_registered_modules(str(PROJECT_ROOT))
+
+    for tree in _NON_BUNDLE_TEST_TREES:
+        assert tree in modules, f'the non-bundle test tree {tree!r} is not a registered target'
+    # The helper home holds no suite a scoped run could target.
+    assert '_shared' not in modules
+
+
+@pytest.mark.parametrize('tree', _NON_BUNDLE_TEST_TREES)
+def test_resolve_test_scope_changed_path_in_a_non_bundle_test_tree_resolves_that_tree(capsys, tree):
+    """One changed path under a non-bundle test tree reads that tree as the target.
+
+    The registered-target enumeration runs for real against this repository, so
+    the case holds only while the tree exists and holds at least one test.
+    """
+    path = f'test/{tree}/test_something.py'
+
+    out = _run_resolve_scope(capsys, changed_paths=path)
+
+    assert out['status'] == 'success'
+    assert out['modules_resolvable'] is True
+    assert out['scoped_modules'] == [tree]
+    assert out['unresolved_paths'] == []
+    assert out['divergence_possible'] is False
+    assert out['recommended_target'] == tree
+
+
+def test_resolve_test_scope_changed_path_in_the_shared_helper_home_fails_closed(capsys):
+    """A changed path under ``test/_shared/`` still routes to the whole tree."""
+    path = 'test/_shared/_build_class_roster.py'
+
+    out = _run_resolve_scope(capsys, changed_paths=path)
+
+    assert out['status'] == 'success'
+    assert out['modules_resolvable'] is True
+    assert out['scoped_modules'] == []
+    assert out['unresolved_paths'] == [path]
+    assert out['divergence_possible'] is True
+    assert out['recommended_target'] is None
+
+
 def test_resolve_test_scope_threads_the_caller_enumerated_module_set(capsys):
     """The module set the CALLER enumerates is the one the derivation honours.
 
