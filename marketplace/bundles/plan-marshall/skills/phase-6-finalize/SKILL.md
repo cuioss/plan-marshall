@@ -1953,7 +1953,7 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 | `scripts/review_commitments.py` | `plan-marshall:phase-6-finalize:review_commitments` | Reconciles a simplify pass's deletions against the review commitments made earlier in the SAME finalize run — reports conflicts, gates nothing |
 | `scripts/pr_intent_section.py` | `plan-marshall:phase-6-finalize:pr_intent_section` | Renders the distilled `## Intent` section into the generated PR body — owns the character budget and its visible truncation, and omits the section entirely (heading included) when the plan has no outline intent |
 | `scripts/post_run_source_guard.py` | `plan-marshall:phase-6-finalize:post_run_source_guard` | Runtime tracked-source guard for the `post_run_review` band (item 5f sub-item 0) — reports dirty TRACKED paths (source, or a tracked `.plan/` config/descriptor) left by a step that declared `mutates_source: false`; the `.plan/` exemption is keyed on git trackedness, not the path prefix; publishes the examined population (`considered_paths` / `exempted_paths` / `offending_paths`); advisory and non-blocking (always exits 0) |
-| `scripts/verdict_currency.py` | `plan-marshall:phase-6-finalize:verdict_currency` | Classifies whether a HEAD advance invalidates a head-dependent step's recorded verdict, by diffing the recorded SHA's tree against the live HEAD over the step's declared `verdict_inputs` surface; fails closed to `invalidated` on every uncertainty |
+| `scripts/verdict_currency.py` | `plan-marshall:phase-6-finalize:verdict_currency` | Classifies whether a HEAD advance invalidates a head-dependent step's recorded verdict, by diffing the recorded SHA's tree against the live HEAD over the step's declared `verdict_inputs` surface; fails closed to `invalidated` on every uncertainty (`classify`). Its read-only `changed-paths` verb lists the paths that differ between a step's own recorded `head_at_completion` and the live HEAD, through the same tree-difference derivation |
 | `scripts/foreign_pr_gate.py` | `plan-marshall:phase-6-finalize:foreign_pr_gate` | Pre-archive foreign-PR landing gate — refuses to archive while any *foreign* deliverable's change is `pushed_no_pr` (committed and pushed to a branch no PR carries). Consumes deterministic signals, never artifact prose — its population and exclusion reporting are specified in [`standards/archive-plan.md`](standards/archive-plan.md) § "Pre-Archive Foreign-PR Landing Gate". Returns `clear` / `blocked` / `error`; fails CLOSED, so unreadable evidence stops the archive exactly as `blocked` does |
 
 ## Canonical invocations
@@ -1999,6 +1999,34 @@ The command always exits `0` — an `invalidated` verdict is a normal answer, no
 error — so the caller branches on the returned `verdict` field, never on the exit
 code. See [`standards/verdict-currency.md`](standards/verdict-currency.md) for the
 model this verb serves.
+
+### verdict_currency — changed-paths
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:verdict_currency changed-paths \
+  --plan-id PLAN_ID --step STEP [--worktree-path WORKTREE_PATH]
+```
+
+Read-only. Reads the step's `6-finalize` record from the plan's status and lists
+the paths that differ between its `head_at_completion` and the live HEAD — the
+same tree difference `classify` computes. `--worktree-path` defaults to `.`.
+
+Read `outcome` before anything else; `changed_paths` is present on `computed`
+ONLY, where an empty list means the two trees are equal on every path:
+
+| `outcome` | Meaning | `changed_paths` |
+|-----------|---------|-----------------|
+| `computed` | The difference was computed. | present (may be empty) |
+| `first_firing` | The status holds no record for the step; `recorded_head: none`. | absent |
+| `last_firing_not_done` | A record exists but its outcome is not `done`, or it carries no `head_at_completion`. | absent |
+| `diff_unavailable` | The live HEAD is unresolvable, the recorded commit is unreachable, or git failed. | absent |
+
+The three non-`computed` outcomes compared nothing, so an absent key is never
+read as an empty list. Every payload also carries `step`, `recorded_head` and
+`live_head`, plus `recorded_facts` — the record's `facts` map — when the record
+has one. An unreadable status or an unknown plan returns `status: error` with a
+named `error`. The command exits `0` on every outcome, so the caller branches on
+`status` and then `outcome`, never on the exit code.
 
 ### review_commitments — reconcile
 
