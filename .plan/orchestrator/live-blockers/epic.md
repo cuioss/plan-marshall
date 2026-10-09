@@ -158,6 +158,15 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
     which PLAN-LB-26 cites by line, and it changed `_build_execute_factory.py` and
     `_build_shared.py`. PLAN-LB-26 and PLAN-LB-28 need their claims re-grounded against it
     before launch, in addition to the self-review claims named below.
+- **PLAN-LB-32 head-dependent-step-refire, staged on 2026-10-09 at high priority.** It is to
+  be launched ahead of PLAN-LB-25 to PLAN-LB-28, as soon as a slot is free or the operator
+  exceeds the scope for it. Measured with `corpus cross-check`: it shares one declared entry
+  with PLAN-LB-24 (running) — `phase-6-finalize/SKILL.md`, which it edits only for a script
+  table row or if its change-list verb has to be handed over by the dispatcher — and none
+  with PLAN-LB-29 (running), 26, 28, 30 or 31. With PLAN-LB-25 it shares that same file, with
+  PLAN-LB-27 that file and `ext-point-finalize-step.md`. Its remaining overlap is with
+  PLAN-LB-22, which has shipped. It does not touch `manage-lessons.py`, which five staged
+  specs of the `lessons-routing` epic declare.
 - **Inbox drain of 2026-10-09, thirteen messages from PLAN-LB-23:**
   - `-014` (landing) — reconciled; complete.
   - `-005` (scope-creep guard: six failed calls, 76 to 108 residual files of upstream
@@ -371,6 +380,26 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   - Deviation, recorded: the eleven verification agents were each allowed to write one result
     file under `.plan/temp/`, and the verdicts were stamped from those files by a driver that
     calls `corpus set-verdict` once per claim. No agent wrote to the ledger.
+- 2026-10-09 — **PLAN-LB-32 staged as its own plan, at high priority, by operator
+  instruction** ("Stage it as a high prio plan. Consider adding it to another one as well if
+  sensible"). It makes a re-fire of the two project steps cheap: a re-fired step reads what
+  changed since its last firing, re-examines only that, carries the rest over and logs one
+  line. Seven deliverables.
+  - Not built as a `verdict_inputs` declaration, which is what the lesson and the Watch
+    proposed. Read at `97f341b6c`: the mechanism admits static path globs only, no step
+    declares one, and both steps carry a reasoned refusal — housekeeping reads a git-ignored
+    corpus and plan records, plugin-doctor's rules read link targets and agent files across
+    the repository. PLAN-LB-22 was asked for the declaration and shipped the refusal. A plan
+    asking for it a second time would end the same way.
+  - Adding it to an existing plan was considered and not chosen. PLAN-LB-25 and PLAN-LB-27,
+    the two plans on neighbouring ground, hold ten deliverables each, so seven more would
+    pass the authorized twelve; and both wait behind PLAN-LB-24 on shared files, which would
+    hold a high-priority fix back. The fold went the other way: two items PLAN-LB-27 named
+    as "not fixed here" — the plugin-doctor gate reading the declared footprint, and the
+    housekeeping step reading a retired field — are deliverables of PLAN-LB-32, because they
+    sit in the two documents it rewrites. PLAN-LB-27's spec says so.
+  - Scope-bloat guard: seven deliverables, above six, proceeding unsplit on the operator's
+    authorization of up to twelve.
 
 ## Open Defects
 
@@ -478,7 +507,10 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   and plugin-doctor fired seven times each with identical results. Lesson
   `2026-10-08-21-003` carries the proposal. — trigger: stage it as a plan if the next two
   landings report the same cost.
-  - **Trigger met on 2026-10-09; staging is the operator's call.** Of the two landings
+  - **Staged on 2026-10-09 as PLAN-LB-32, at high priority, by operator instruction.**
+    Retire this Watch when PLAN-LB-32 lands and one later landing reports the two steps'
+    re-fires as carried over or skipped.
+  - **Trigger met on 2026-10-09.** Of the two landings
     since, PLAN-LB-30 had no fix commit and so no re-fire; PLAN-LB-23 had both steps fire
     eight times with identical verdicts ("0 rm, 0 promo, 0 adapt, 64 keep"; plugin-doctor
     clean), at a floor of 1,680,033 tokens, and its decision log reached 710 entries
