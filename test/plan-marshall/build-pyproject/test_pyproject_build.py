@@ -866,7 +866,14 @@ def _run_resolve_scope_with_directories(capsys, *, changed_paths, directories):
     return parse_toon(capsys.readouterr().out)
 
 
-@pytest.mark.parametrize('case', [pytest.param(case, id=case_id) for case_id, case in NARROW_UNIT_CASES.items()])
+#: One parameter per named footprint. Bound at module level so the population
+#: is asserted where it is derived: an emptied case table fails collection
+#: instead of collecting no case and passing.
+_NARROW_UNIT_PARAMS = [pytest.param(case, id=case_id) for case_id, case in NARROW_UNIT_CASES.items()]
+assert _NARROW_UNIT_PARAMS, 'the narrow-unit case population is empty'
+
+
+@pytest.mark.parametrize('case', _NARROW_UNIT_PARAMS)
 def test_resolve_test_scope_prints_the_narrow_units(capsys, case):
     """Each named footprint prints its narrow units and names what contributed none.
 
