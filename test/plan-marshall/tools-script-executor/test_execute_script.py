@@ -60,6 +60,10 @@ TEMPLATE_PATH = TEMPLATE_DIR / 'execute-script.py.template'
 #: tests would run an executor no generator produces.
 _PLACEHOLDER_RE = re.compile(r'\{\{[A-Z][A-Z0-9_]*\}\}')
 
+#: The value ``generate_executor`` substitutes for ``{{BOOTSTRAP_BUNDLE}}``,
+#: read from the generator rather than restated.
+_BOOTSTRAP_BUNDLE: str = _gen.BOOTSTRAP_BUNDLE
+
 
 def _render_executor_template(script_mappings: str, script_surfaces: str = '') -> str:
     """Render the executor template with test values, as the generator would.
@@ -73,7 +77,7 @@ def _render_executor_template(script_mappings: str, script_surfaces: str = '') -
         script_surfaces: The body of the ``SCRIPT_SURFACES`` mapping; empty
             means no notation carries a surface.
     """
-    code = TEMPLATE_PATH.read_text(encoding='utf-8')
+    code: str = TEMPLATE_PATH.read_text(encoding='utf-8')
     code = code.replace('{{SCRIPT_MAPPINGS}}', script_mappings)
     code = code.replace('{{SCRIPT_SURFACES}}', script_surfaces)
     code = code.replace('{{SUBCOMMAND_MAPPINGS}}', '')
@@ -83,7 +87,7 @@ def _render_executor_template(script_mappings: str, script_surfaces: str = '') -
     code = code.replace('{{EXTRA_SCRIPT_DIRS}}', '')
     code = code.replace('{{PLAN_DIR_NAME}}', '.plan')
     code = code.replace('{{EXECUTOR_TARGET}}', 'claude')
-    code = code.replace('{{BOOTSTRAP_BUNDLE}}', _gen.BOOTSTRAP_BUNDLE)
+    code = code.replace('{{BOOTSTRAP_BUNDLE}}', _BOOTSTRAP_BUNDLE)
     code = code.replace('{{GENERATED_VERSION}}', '0.0.0-test')
     code = code.replace('{{MAPPINGS_FINGERPRINT}}', 'test-fingerprint')
     code = code.replace('{{TEMPLATE_SHA256}}', 'test-template-sha256')
@@ -100,7 +104,7 @@ def test_rendered_template_carries_the_generator_bootstrap_bundle():
     """The test render binds ``_BOOTSTRAP_BUNDLE`` to the generator's own value."""
     executor = load_executor_module()
 
-    assert executor._BOOTSTRAP_BUNDLE == _gen.BOOTSTRAP_BUNDLE
+    assert executor._BOOTSTRAP_BUNDLE == _BOOTSTRAP_BUNDLE
 
 
 def load_executor_module():
