@@ -3,6 +3,7 @@
 """Unit tests for execute-script.py executor (template)."""
 
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -11,7 +12,18 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from conftest import _MARKETPLACE_SCRIPT_DIRS, MARKETPLACE_ROOT, PROJECT_ROOT, PlanContext, get_scripts_dir
+from conftest import (
+    _MARKETPLACE_SCRIPT_DIRS,
+    MARKETPLACE_ROOT,
+    PROJECT_ROOT,
+    PlanContext,
+    get_scripts_dir,
+    load_script_module,
+)
+
+_gen = load_script_module(
+    'plan-marshall', 'tools-script-executor', 'generate_executor.py', 'gen_executor_execute_script'
+)
 
 
 def _subprocess_env() -> dict[str, str]:
@@ -41,22 +53,29 @@ for _stub in (_MAP_MANAGE_FILES, _MAP_MAVEN, _MAP_TEST_SKILL):
     _stub.write_text('# test stub\n')
 
 
-def load_executor_module():
-    """Load the execute-script module from template for testing."""
-    template_path = TEMPLATE_DIR / 'execute-script.py.template'
-    with open(template_path) as f:
-        code = f.read()
+TEMPLATE_PATH = TEMPLATE_DIR / 'execute-script.py.template'
 
-    # Replace the placeholders with test values
-    code = code.replace(
-        '{{SCRIPT_MAPPINGS}}',
-        f"""
-    "plan-marshall:manage-files": "{_MAP_MANAGE_FILES}",
-    "pm-dev-builder:builder-maven-rules": "{_MAP_MAVEN}",
-    "test:skill": "{_MAP_TEST_SKILL}",
-""",
-    )
-    code = code.replace('{{SCRIPT_SURFACES}}', '')
+#: The shape of a template placeholder token. One surviving the render means
+#: the template gained a placeholder these loaders do not substitute, and the
+#: tests would run an executor no generator produces.
+_PLACEHOLDER_RE = re.compile(r'\{\{[A-Z][A-Z0-9_]*\}\}')
+
+
+def _render_executor_template(script_mappings: str, script_surfaces: str = '') -> str:
+    """Render the executor template with test values, as the generator would.
+
+    Every placeholder is substituted; ``{{BOOTSTRAP_BUNDLE}}`` takes the value
+    ``generate_executor`` itself emits. A placeholder left unsubstituted fails
+    here rather than compiling as a literal string.
+
+    Args:
+        script_mappings: The body of the ``SCRIPTS`` mapping.
+        script_surfaces: The body of the ``SCRIPT_SURFACES`` mapping; empty
+            means no notation carries a surface.
+    """
+    code = TEMPLATE_PATH.read_text(encoding='utf-8')
+    code = code.replace('{{SCRIPT_MAPPINGS}}', script_mappings)
+    code = code.replace('{{SCRIPT_SURFACES}}', script_surfaces)
     code = code.replace('{{SUBCOMMAND_MAPPINGS}}', '')
     code = code.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
     code = code.replace('{{SHARED_MODULE_DIRS}}', '# (none in test)')
@@ -64,9 +83,34 @@ def load_executor_module():
     code = code.replace('{{EXTRA_SCRIPT_DIRS}}', '')
     code = code.replace('{{PLAN_DIR_NAME}}', '.plan')
     code = code.replace('{{EXECUTOR_TARGET}}', 'claude')
+    code = code.replace('{{BOOTSTRAP_BUNDLE}}', _gen.BOOTSTRAP_BUNDLE)
+    code = code.replace('{{GENERATED_VERSION}}', '0.0.0-test')
+    code = code.replace('{{MAPPINGS_FINGERPRINT}}', 'test-fingerprint')
+    code = code.replace('{{TEMPLATE_SHA256}}', 'test-template-sha256')
     code = code.replace(
         '{{TARGET_AWARE_RESOLVER}}',
         'def _resolve_notation_by_target(notation):\n    return None\n',
+    )
+    residue = sorted(set(_PLACEHOLDER_RE.findall(code)))
+    assert not residue, f'Executor template placeholders left unsubstituted by the test loader: {residue}'
+    return code
+
+
+def test_rendered_template_carries_the_generator_bootstrap_bundle():
+    """The test render binds ``_BOOTSTRAP_BUNDLE`` to the generator's own value."""
+    executor = load_executor_module()
+
+    assert executor._BOOTSTRAP_BUNDLE == _gen.BOOTSTRAP_BUNDLE
+
+
+def load_executor_module():
+    """Load the execute-script module from template for testing."""
+    code = _render_executor_template(
+        f"""
+    "plan-marshall:manage-files": "{_MAP_MANAGE_FILES}",
+    "pm-dev-builder:builder-maven-rules": "{_MAP_MAVEN}",
+    "test:skill": "{_MAP_TEST_SKILL}",
+""",
     )
 
     # ``plan_logging`` resolves for the exec'd template without a bootstrap: the
@@ -77,7 +121,7 @@ def load_executor_module():
     import types
 
     module = types.ModuleType('execute_script')
-    module.__dict__['__file__'] = str(template_path)
+    module.__dict__['__file__'] = str(TEMPLATE_PATH)
 
     exec(code, module.__dict__)
     return module
@@ -473,26 +517,7 @@ def _materialize_executor(target_path: Path, stub_notation: str, stub_script_pat
     ``plan_logging`` are additionally importable via the PYTHONPATH supplied to
     the subprocess (``_subprocess_env``).
     """
-    template_path = TEMPLATE_DIR / 'execute-script.py.template'
-    with open(template_path) as f:
-        code = f.read()
-
-    code = code.replace(
-        '{{SCRIPT_MAPPINGS}}',
-        f'    "{stub_notation}": "{stub_script_path}",\n',
-    )
-    code = code.replace('{{SCRIPT_SURFACES}}', '')
-    code = code.replace('{{SUBCOMMAND_MAPPINGS}}', '')
-    code = code.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
-    code = code.replace('{{SHARED_MODULE_DIRS}}', '# (none in test)')
-    code = code.replace('{{CACHE_RECOVERY_ROOTS}}', '# (none in test)')
-    code = code.replace('{{EXTRA_SCRIPT_DIRS}}', '')
-    code = code.replace('{{PLAN_DIR_NAME}}', '.plan')
-    code = code.replace('{{EXECUTOR_TARGET}}', 'claude')
-    code = code.replace(
-        '{{TARGET_AWARE_RESOLVER}}',
-        'def _resolve_notation_by_target(notation):\n    return None\n',
-    )
+    code = _render_executor_template(f'    "{stub_notation}": "{stub_script_path}",\n')
     target_path.write_text(code)
 
 
@@ -806,24 +831,8 @@ def _node(flags=(), required=(), arity=None, children=None, alias_of=None, confi
 
 def _render_validating_executor(target_path: Path, script_path: Path, surfaces: dict) -> None:
     """Render the template with a SCRIPTS mapping AND a SCRIPT_SURFACES map."""
-    template_path = TEMPLATE_DIR / 'execute-script.py.template'
-    code = template_path.read_text(encoding='utf-8')
-    code = code.replace('{{SCRIPT_MAPPINGS}}', f'    "{_SPAWN_NOTATION}": "{script_path}",\n')
     surfaces_code = '\n'.join(f'    "{notation}": {entry!r},' for notation, entry in sorted(surfaces.items()))
-    code = code.replace('{{SCRIPT_SURFACES}}', surfaces_code)
-    code = code.replace('{{SUBCOMMAND_MAPPINGS}}', '')
-    code = code.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
-    code = code.replace('{{SHARED_MODULE_DIRS}}', '# (none in test)')
-    code = code.replace('{{CACHE_RECOVERY_ROOTS}}', '# (none in test)')
-    code = code.replace('{{EXTRA_SCRIPT_DIRS}}', '')
-    code = code.replace('{{PLAN_DIR_NAME}}', '.plan')
-    code = code.replace('{{EXECUTOR_TARGET}}', 'claude')
-    code = code.replace('{{GENERATED_VERSION}}', '0.0.0-test')
-    code = code.replace('{{MAPPINGS_FINGERPRINT}}', 'test-fingerprint')
-    code = code.replace(
-        '{{TARGET_AWARE_RESOLVER}}',
-        'def _resolve_notation_by_target(notation):\n    return None\n',
-    )
+    code = _render_executor_template(f'    "{_SPAWN_NOTATION}": "{script_path}",\n', surfaces_code)
     target_path.write_text(code, encoding='utf-8')
 
 
