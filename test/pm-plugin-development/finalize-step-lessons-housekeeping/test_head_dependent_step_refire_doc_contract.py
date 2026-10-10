@@ -729,6 +729,48 @@ def test_step7_omit_sentence_names_the_failed_action_beside_the_missing_payload(
     for action in _FAILED_ACTIONS:
         assert action in sentences[0], f'the `Omit … only when` sentence does not name a failed {action}'
     assert 'no payload at all' in sentences[0]
+    assert 'the Step 1 footprint read returned an error' in sentences[0]
+
+
+def test_step7_withholds_classified_at_when_the_footprint_was_unknown() -> None:
+    # Arrange
+    content = _STEP_DOC.read_text(encoding='utf-8')
+
+    # Act
+    paragraphs = [
+        paragraph
+        for paragraph in re.split(r'\n\s*\n', _section(content, '### Step 7'))
+        if paragraph.startswith('**Withhold it too when the realized footprint was unknown.**')
+    ]
+
+    # Assert
+    assert len(paragraphs) == 1, f'expected exactly one unknown-footprint paragraph in Step 7, found {len(paragraphs)}'
+    assert '`compute-footprint` call returned an error' in paragraphs[0]
+    assert 'omit `--fact classified_at=…`' in paragraphs[0]
+
+
+def test_footprint_error_row_states_classified_at_is_withheld() -> None:
+    # Arrange
+    content = _STEP_DOC.read_text(encoding='utf-8')
+
+    # Act
+    action = _error_handling_row(content, '| `compute-footprint` error in Step 1 ')
+
+    # Assert
+    assert _WITHHOLD_CONSEQUENCE in action
+    assert 'the next firing judges the whole corpus' in action
+
+
+def test_delta_rule_names_the_unknown_footprint_route() -> None:
+    # Arrange
+    content = _STEP_DOC.read_text(encoding='utf-8')
+
+    # Act
+    delta_rule = _section(content, _DELTA_RULE_HEADING)
+
+    # Assert
+    assert 'An unknown footprint is a third route' in delta_rule
+    assert 'Step 7 therefore withholds the `classified_at` fact from such a firing' in delta_rule
 
 
 @pytest.mark.parametrize('opening', _FAILED_ACTION_ROWS, ids=['remove', 'promotion-edit', 'adaptation-edit'])
