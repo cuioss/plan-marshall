@@ -240,19 +240,31 @@ Extract `value` (`light` or `deep`). When the field is absent or unresolved, tre
      --message "(plan-marshall:planning) planning-lane=light — dispatching ONE collapsed light-lane envelope (refine+outline+derive), skipping the deep refine-loop and Complex-Track outline"
    ```
 
-2. **Close `2-refine` before the envelope is dispatched.** All three calls below are orchestrator-side and pre-dispatch, and they are deliberately kept on one side of the dispatch boundary. Two structural facts decide that placement:
+2. **Close `2-refine` before the envelope is dispatched.** The `pr_title` persist and all three calls below are orchestrator-side and pre-dispatch, and they are deliberately kept on one side of the dispatch boundary. Two structural facts decide that placement:
 
    - `manage-metrics enrich` attributes a dispatch's transcript to whichever phase window contains its **spawn timestamp**. Stamping the boundary only after the envelope returns leaves the collapsed envelope's entire spend inside an open `2-refine` window, so `2-refine` is billed for `3-outline`'s work. The boundary stamp must therefore precede the dispatch.
    - The light-lane envelope runs the phase-3-outline Phase Entry Protocol, which calls `phase_handshake verify --phase 2-refine`. That verify needs the captured `2-refine` row to already exist, so the capture must precede the dispatch as well — a capture placed inside the envelope would have the leaf capture the very row it then verifies. The transition stays on this same side because it must not be separated from its paired capture.
 
    The light lane never dispatches `phase-2-refine`, so the phase body that issues `manage-status transition --completed 2-refine` on the deep lane never runs. That transition has **no orchestrator-side deep-lane counterpart to mirror** — it lives inside `phase-2-refine`'s own body — so the call in (a) is written from the verb's own contract rather than copied from a deep-lane seam.
 
-   a. Transition `2-refine`:
+   **First, before (a) — author and persist the PR title.** The `2-refine` capture in (c) refuses with `pr_title_missing` when `status.metadata.pr_title` is absent, and on the deep lane the title is authored by phase-2-refine Step 13. The light lane runs no phase-2-refine, and the envelope that could otherwise author the title is dispatched only AFTER the capture, so the producer has to sit here, on the orchestrator side of the boundary. Author a commit-style PR title from the request under the same shape rules as phase-2-refine Step 13 — at most 72 characters, imperative mood, `type(scope): summary` — and persist it:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+     --plan-id {plan_id} --set --field pr_title --value "{authored_title}"
+   ```
+
+   `pr_title` is distinct from the plan's descriptive `title`: `title` is the human label authored at init, while `pr_title` is the commit-style title phase-6-finalize `create-pr` consumes as its `--title` source. The envelope MAY refine it after its bounded read (see `phase-3-outline/workflow/light-lane.md` Step 5); a title persisted here is what lets the capture in (c) succeed without `--override`.
+
+   a. Transition `2-refine`. The light lane produces neither of the artifacts the `2-refine` completion gate looks for — no `## Clarified Request` section in `request.md` and no `metadata.confidence` — because the collapsed envelope owns refine, so a plain transition refuses with `refine_bare_transition`. Record the sanctioned, logged exemption for an artifact-free phase instead:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \
-     --plan-id {plan_id} --completed 2-refine
+     --plan-id {plan_id} --completed 2-refine --allow-bare-transition \
+     --bare-reason "light lane: phase-2-refine does not run; the collapsed envelope owns refine"
    ```
+
+   The exemption is persisted to `status.metadata.phase_exemptions` and decision-logged by the verb, so the bare close stays auditable.
 
    **On any non-`success` result, STOP** per the [refused-transition halt rule](../../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule): `2-refine` did NOT close, so emit the `[ERROR]` work-log line carrying the refusal payload verbatim and surface it to the operator — do NOT run (b) or (c) below and do NOT dispatch the light-lane envelope.
 

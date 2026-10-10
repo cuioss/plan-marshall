@@ -41,6 +41,7 @@ from typing import Any
 # resolves; their marketplace ``scripts/`` directory is already on ``sys.path``
 # via the root conftest.
 import _handshake_commands as cmds
+import _handshake_store as store
 import _invariants as inv
 import pytest
 from toon_parser import parse_toon
@@ -64,6 +65,14 @@ SUMMARIZE_SCRIPT = (
 )
 
 STATUS_SCRIPT = get_script_path('plan-marshall', 'manage-status', 'manage-status.py')
+
+METRICS_SCRIPT = get_script_path('plan-marshall', 'manage-metrics', 'manage-metrics.py')
+
+# The light-lane values planning.md § "Light-lane branch" step 2 prescribes: a
+# commit-style PR title (at most 72 characters, imperative, type(scope):
+# summary) and the bare-transition reason for the artifact-free 2-refine close.
+LIGHT_LANE_PR_TITLE = 'fix(planning): persist the light-lane PR title before capture'
+LIGHT_LANE_BARE_REASON = 'light lane: phase-2-refine does not run; the collapsed envelope owns refine'
 
 # Phase order used for the lifecycle simulation.
 PHASES = ['1-init', '2-refine', '3-outline', '4-plan', '5-execute', '6-finalize']
@@ -263,6 +272,29 @@ def stub_load_status_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+@pytest.fixture
+def real_status_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Route ``cmds._load_status_metadata`` through a real ``manage-status read``.
+
+    Unlike ``stub_load_status_metadata``, which hands the capture a canned
+    ``pr_title``, this fixture lets the capture see exactly the metadata the
+    walk persisted — so whether ``pr_title`` is present depends on whether the
+    walk ran the producer step. Only the executor hop is bypassed (the real
+    helper resolves ``.plan/execute-script.py`` against the wrong base dir in
+    this sandbox); the ``read`` verb and the ``plan.metadata`` extraction are
+    the production ones.
+    """
+
+    def _load(plan_id: str) -> dict[str, Any]:
+        result = run_script(STATUS_SCRIPT, 'read', '--plan-id', plan_id)
+        assert result.success, f'manage-status read failed: {result.stderr}'
+        plan = result.toon().get('plan') or {}
+        metadata = plan.get('metadata') if isinstance(plan, dict) else {}
+        return metadata if isinstance(metadata, dict) else {}
+
+    monkeypatch.setattr(cmds, '_load_status_metadata', _load)
+
+
 # =============================================================================
 # Helpers
 # =============================================================================
@@ -295,6 +327,69 @@ def _transition(plan_id: str, completed_phase: str) -> dict:
     result = run_script(STATUS_SCRIPT, 'transition', '--plan-id', plan_id, '--completed', completed_phase)
     assert result.success, f'manage-status transition failed: {result.stderr}'
     return parse_toon(result.stdout)
+
+
+def _walk_light_lane_to_refine_capture(plan_id: str, plan_dir: Path, *, persist_pr_title: bool) -> dict:
+    """Drive planning.md § "Light-lane branch" step 2 and return the capture result.
+
+    The walk follows the documented orchestrator-side sequence: persist
+    ``pr_title`` (the producer step, skipped when ``persist_pr_title`` is
+    false), transition ``2-refine`` with the sanctioned bare-transition
+    exemption, stamp the ``2-refine -> 3-outline`` boundary without
+    ``<usage>`` flags, then capture ``2-refine`` — never with ``--override``.
+
+    ``request.md`` carries only the original input: the light lane runs no
+    phase-2-refine, so there is no ``## Clarified Request`` section and no
+    ``metadata.confidence``, which is exactly why the transition needs the
+    exemption.
+    """
+    _create_plan(plan_id)
+    (plan_dir / 'request.md').write_text('# Request\n\n## Original Input\n\norig\n', encoding='utf-8')
+    init_result = _transition(plan_id, '1-init')
+    assert init_result['status'] == 'success', init_result
+
+    if persist_pr_title:
+        persist = run_script(
+            STATUS_SCRIPT,
+            'metadata',
+            '--plan-id',
+            plan_id,
+            '--set',
+            '--field',
+            'pr_title',
+            '--value',
+            LIGHT_LANE_PR_TITLE,
+        )
+        assert persist.success, f'manage-status metadata --set pr_title failed: {persist.stderr}'
+
+    transition = run_script(
+        STATUS_SCRIPT,
+        'transition',
+        '--plan-id',
+        plan_id,
+        '--completed',
+        '2-refine',
+        '--allow-bare-transition',
+        '--bare-reason',
+        LIGHT_LANE_BARE_REASON,
+    )
+    assert transition.success, f'2-refine transition failed: {transition.stderr}'
+    transition_result = parse_toon(transition.stdout)
+    assert transition_result['status'] == 'success', transition_result
+
+    boundary = run_script(
+        METRICS_SCRIPT,
+        'phase-boundary',
+        '--plan-id',
+        plan_id,
+        '--prev-phase',
+        '2-refine',
+        '--next-phase',
+        '3-outline',
+    )
+    assert boundary.success, f'manage-metrics phase-boundary failed: {boundary.stderr}'
+
+    return cmds.cmd_capture(_capture_args(plan_id, '2-refine'))
 
 
 # =============================================================================
@@ -456,3 +551,41 @@ def test_regression_missing_handshakes_warns(plan_context) -> None:
 
     messages = [f.get('message', '') for f in data['findings']]
     assert 'No handshakes.toon found' in messages, f'expected canonical warning, got messages: {messages}'
+
+
+def test_light_lane_walk_captures_refine_without_override(
+    stub_handshake_run_script, real_status_metadata, stub_marshal_config, plan_context
+) -> None:
+    """The documented light-lane sequence reaches a successful 2-refine capture.
+
+    Persisting ``pr_title`` on the orchestrator side before the capture is what
+    lets the ``pr_title_present`` invariant pass on a lane that never runs
+    phase-2-refine Step 13 — no ``--override`` is needed or used.
+    """
+    plan_id = 'e2e-light-lane-producer'
+    plan_dir = plan_context.plan_dir_for(plan_id)
+
+    cap = _walk_light_lane_to_refine_capture(plan_id, plan_dir, persist_pr_title=True)
+
+    assert cap['status'] == 'success', cap
+    assert cap['override'] is False, cap
+    assert store.get_row(plan_id, '2-refine') is not None, '2-refine capture must persist its row'
+
+
+def test_light_lane_walk_without_producer_refuses_pr_title_missing(
+    stub_handshake_run_script, real_status_metadata, stub_marshal_config, plan_context
+) -> None:
+    """Negative control: the same walk with the producer step omitted refuses.
+
+    Proves the success above is owed to the ``pr_title`` persist and not to a
+    capture that never checks the title: without it the 2-refine capture
+    returns ``pr_title_missing`` and writes no row.
+    """
+    plan_id = 'e2e-light-lane-no-producer'
+    plan_dir = plan_context.plan_dir_for(plan_id)
+
+    cap = _walk_light_lane_to_refine_capture(plan_id, plan_dir, persist_pr_title=False)
+
+    assert cap['status'] == 'error', cap
+    assert cap['error'] == 'pr_title_missing', cap
+    assert store.get_row(plan_id, '2-refine') is None, 'a refused capture must not persist a row'
