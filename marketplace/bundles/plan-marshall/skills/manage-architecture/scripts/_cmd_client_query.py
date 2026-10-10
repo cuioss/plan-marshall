@@ -115,7 +115,10 @@ def _enrich_module_commands(module_name: str, derived: dict[str, Any], project_d
     Lazily enriches ``module_name`` (one Maven run, memoized) and rebuilds the
     profile-derived canonical commands (coverage / integration-tests / e2e /
     benchmark / profile-mapped quality-gate) from the Maven-resolved profiles,
-    merging them onto the cheap command map. Returns ``None`` when enrichment is
+    merging them onto the cheap command map. The rebuild receives the module's
+    persisted ``metadata.reactor_test_artifacts`` fact, so the overlay keeps the
+    ``package``-phase ``module-tests`` / ``test-compile`` of a module consuming a
+    reactor sibling's test artifact. Returns ``None`` when enrichment is
     unavailable (caller keeps the cheap map).
     """
     enriched = _enrich_maven_module_cached(module_name, derived, project_dir)
@@ -131,7 +134,8 @@ def _enrich_module_commands(module_name: str, derived: dict[str, Any], project_d
         return None
 
     relative_path = (derived.get('paths') or {}).get('module') or '.'
-    packaging = (derived.get('metadata') or {}).get('packaging') or 'jar'
+    metadata = derived.get('metadata') or {}
+    packaging = metadata.get('packaging') or 'jar'
     stats = derived.get('stats') or {}
     rebuilt = _build_commands(
         module_name=module_name,
@@ -140,6 +144,7 @@ def _enrich_module_commands(module_name: str, derived: dict[str, Any], project_d
         has_tests=bool(stats.get('test_files', 0)),
         profiles=profiles,
         relative_path=relative_path,
+        consumes_reactor_test_artifact=bool(metadata.get('reactor_test_artifacts')),
     )
     # Overlay profile-derived canonicals onto the cheap map; keep the cheap map's
     # entries for everything the rebuilt map does not carry.

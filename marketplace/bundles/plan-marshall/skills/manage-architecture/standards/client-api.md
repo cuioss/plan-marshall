@@ -581,6 +581,13 @@ command: module-tests
 executable: python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "test -pl oauth-sheriff-core -am"
 ```
 
+**Reactor test-artifact consumer example** — a Maven module whose own POM depends on a reactor sibling's `test-jar` or classified artifact resolves `module-tests` to the `package` phase (see build-maven [`maven-impl.md`](../../build-maven/standards/maven-impl.md) § "Test ladder for reactor test artifacts"):
+```toon
+module: token-sheriff-client
+command: module-tests
+executable: python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "package -pl token-sheriff-client -am"
+```
+
 **Optional field**:
 
 | Field | Type | Description |
