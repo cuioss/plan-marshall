@@ -16,7 +16,8 @@ completion boundary fails **OPEN** on an unevaluable query: both completion verb
 WARNING decision-log envelope as the only trace, on the stated rationale that a
 degenerate context with no reachable findings subsystem must not strand a
 legitimate completion, and that the fail-CLOSED handling belongs to the pre-merge
-``findings-check`` gate where the executor is guaranteed present.
+entry point ``pre_merge_gate merge`` (which runs the ``findings-check`` verdict and
+owns the merge dispatch), where the executor is guaranteed present.
 
 Whether fail-open is the right disposition for this boundary is an open operator
 question (recorded as a proposal, not settled here): the branch cannot distinguish
@@ -119,9 +120,10 @@ def test_transition_completing_finalize_proceeds_when_findings_unevaluable(
         f'one. Expected exactly 1, got {len(warnings)}: {_captured_log_entries!r}'
     )
     assert warnings[0][1] == plan_id
-    assert 'findings-check' in warnings[0][3], (
-        'The envelope must name the pre-merge findings-check gate as the owner of '
-        f'the fail-closed path. Got: {warnings[0][3]!r}'
+    assert 'pre_merge_gate' in warnings[0][3], (
+        'The envelope must name the enforcing pre-merge entry point pre_merge_gate '
+        'as the owner of the fail-closed path, not only the findings-check verdict '
+        f'it runs. Got: {warnings[0][3]!r}'
     )
 
 

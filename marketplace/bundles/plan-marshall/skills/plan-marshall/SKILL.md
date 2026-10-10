@@ -250,14 +250,14 @@ Phase transitions are guarded by a registry of **invariants** captured at every 
 | Row | Behavior at every boundary | Behavior at guarded boundaries |
 |-----|----------------------------|--------------------------------|
 | `pending_findings_by_type` | per-type breakdown of pending findings (passive — never raises) | identical (passive) |
-| `pending_findings_blocking_count` | sum of pending counts across the hardcoded ACTIONABLE finding-type set | raises `BlockingFindingsPresent` when the count is non-zero at a guarded boundary — the capture / findings-check refuses, gating the boundary |
+| `pending_findings_blocking_count` | sum of pending counts across the hardcoded ACTIONABLE finding-type set | raises `BlockingFindingsPresent` when the count is non-zero at a guarded boundary — the capture / findings-check refuses, gating the boundary; at the pre-merge site the refusal is enforced by `pre_merge_gate merge`, which dispatches no merge verb on it |
 
 The actionable-vs-knowledge classification is a **fixed, hardcoded** rule in `plan-marshall/scripts/_invariants.py` (`_ACTIONABLE_FINDING_TYPES`) — not per-phase configuration, no `marshal.json` key, no wizard seed. ACTIONABLE types block when pending at a guarded boundary; KNOWLEDGE types never block. The two sets are enumerated once, authoritatively, in [`references/phase-handshake.md`](references/phase-handshake.md) § `pending_findings_blocking_count` resolution — not restated here, so this doc cannot drift from `_invariants.py` when a type is added.
 
 **Guarded boundaries** (the points where the blocking-finding gate refuses to advance):
 
-- **finalize merge (pre-merge)** — `phase-6-finalize`'s `branch-cleanup` issues `phase_handshake findings-check --phase 6-finalize` before the merge and blocks on a pending actionable finding.
-- **finalize completion** — `manage-status transition --completed 6-finalize` / a normal-completion `manage-status archive` call `_invariants.assert_finalize_findings_clean`, a STATE assertion (armed by reaching the boundary) that refuses to mark the plan complete while an actionable finding is pending.
+- **finalize merge (pre-merge)** — `pre_merge_gate merge` (`plan-marshall:phase-6-finalize:pre_merge_gate`), the only merge-shaped dispatch `phase-6-finalize`'s `branch-cleanup` issues, runs the `findings-check` verdict for `6-finalize` and owns the merge dispatch: on a pending actionable finding it issues no merge verb. See `phase-6-finalize/standards/branch-cleanup.md` § "Pre-merge blocking-findings store gate".
+- **finalize completion** — `manage-status transition --completed 6-finalize` / a completion `manage-status archive` (no `--reason`, or a completion-asserting one) call `_invariants.assert_finalize_findings_clean`, a STATE assertion (armed by reaching the boundary) that refuses to mark the plan complete while an actionable finding is pending.
 
 The `5-execute → 6-finalize` transition is **not** a blocking-finding firing site: it inlines `phase_handshake verify --phase 5-execute --strict`, which detects drift on the captured `5-execute` row but does not raise `BlockingFindingsPresent` (that raise fires only at `phase == '6-finalize'`, and the self-review findings the gate catches are filed *during* finalize). Every other capture point captures the rows passively for retrospective analysis without blocking the transition.
 

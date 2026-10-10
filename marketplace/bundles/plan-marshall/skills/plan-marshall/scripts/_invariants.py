@@ -95,9 +95,11 @@ class BlockingFindingsPresent(Exception):
 
     Firing sites (where this exception surfaces):
 
-    - The finalize **merge boundary**, where ``branch-cleanup`` runs
-      ``phase_handshake findings-check --phase 6-finalize`` before the merge
-      (the exception fires on a pending actionable finding and blocks the merge).
+    - The finalize **merge boundary**, where ``pre_merge_gate merge`` — the only
+      merge-shaped dispatch ``branch-cleanup`` issues — runs the
+      ``phase_handshake findings-check`` handler for ``6-finalize`` and owns the
+      merge dispatch (the exception fires on a pending actionable finding and no
+      merge verb is issued).
     - The finalize **completion boundary**, where the lifecycle verbs
       (``manage-status transition --completed 6-finalize`` /
       ``manage-status archive``) call :func:`assert_finalize_findings_clean`
@@ -1536,8 +1538,9 @@ def assert_finalize_findings_clean(plan_id: str, metadata: dict[str, Any]) -> in
       unreachable / partial query failure), matching the capture's
       "not applicable" contract. The completion-boundary caller treats ``None`` as
       *unevaluable* (see ``_cmd_lifecycle``); the fail-closed handling of a genuine
-      partial query failure is owned by the pre-merge ``findings-check`` gate,
-      where the executor is guaranteed present.
+      partial query failure is owned by the pre-merge entry point
+      ``pre_merge_gate merge`` (which runs the ``findings-check`` verdict and owns
+      the merge dispatch), where the executor is guaranteed present.
 
     The predicate itself is UNCHANGED — the actionable-vs-knowledge partition and
     the pending-resolution aggregation are exactly what

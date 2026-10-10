@@ -605,7 +605,9 @@ def _finalize_findings_refusal(plan_id: str, status: dict[str, Any]) -> dict[str
       boundary fails OPEN on an unevaluable query so a degenerate context with no
       reachable findings subsystem cannot strand a legitimate completion; the
       fail-CLOSED handling of a genuine partial query failure is owned by the
-      pre-merge ``findings-check`` gate, where the executor is guaranteed present.
+      pre-merge entry point ``pre_merge_gate merge`` (which runs the
+      ``findings-check`` verdict and owns the merge dispatch), where the executor
+      is guaranteed present: it returns ``query_failed`` and merges nothing.
     """
     metadata = normalize_metadata(status)
     try:
@@ -636,7 +638,8 @@ def _finalize_findings_refusal(plan_id: str, status: dict[str, Any]) -> dict[str
             'WARNING',
             '(plan-marshall:manage-status) Finalize completion blocking-findings check '
             'was unevaluable (executor unreachable / partial query failure) — proceeding; '
-            'the pre-merge findings-check gate owns the fail-closed path',
+            'the pre-merge entry point pre_merge_gate (running the findings-check verdict) '
+            'owns the fail-closed path',
         )
     return None
 
