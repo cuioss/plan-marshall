@@ -85,7 +85,7 @@ A narrow unit's run-config key is its own, so a unit that has never run is unmea
 |---|---|---|---|
 | `measured` | The narrow unit's own key is measured | The unit's own stamp — the ordinary derivation, unchanged | `per_task` within the ceiling, `orchestrator` beyond it |
 | `module_bound` | The unit is unmeasured; the module's own `module-tests` command is measured and its stamp is within the ceiling | The module's stamp — a subset cannot outlast the whole | `per_task` |
-| `narrow_default` | The unit is unmeasured and the module's stamp is unusable (unmeasured, or beyond the ceiling) | The stated default: the engine's outer floor (`config.min_timeout`) plus `OUTER_TIMEOUT_BUFFER` — `330 + 30 = 360` for pyproject | `per_task` |
+| `narrow_default` | The unit is unmeasured and the module's stamp is unusable (unmeasured, or beyond the ceiling) | The stated default: the engine's outer floor (`config.min_timeout`) plus `OUTER_TIMEOUT_BUFFER` — `330 + 30 = 360` for pyproject | `per_task` within the ceiling, `orchestrator` beyond it |
 
 A measured bound is never replaced: the module and the default are consulted only when the unit itself has no measurement. `bound_source` is what keeps a borrowed bound from posing as a measurement of the unit, and its vocabulary is **not** the run result's `timeout_source` vocabulary (`explicit` / `learned` / `default` / `floor`) — that one describes the timeout a build executed under, this one how a stamp was bounded before the build ran. A narrow run that outlives its bound returns `status: timeout` and records a learned value for its key, so the next resolve of that unit reports `measured`.
 

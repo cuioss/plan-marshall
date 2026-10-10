@@ -271,8 +271,12 @@ Apply throughout all subsequent steps:
       ```
 
       Parse `scoped_modules[]`, `recommended_target`, `divergence_possible`, `narrow_units[]`, `narrow_unit_module`, and `narrow_units_unresolved[]` from the TOON.
-   3. **Docs-only short-circuit**: when `scoped_modules` is empty (`recommended_target: None`) the change resolves to no buildable module — run NO pytest for this task; the breakable-test gate is a no-op. Proceed to Step 6.
-   4. Otherwise the gate runs in a fixed three-part order — **resolve the scope, run the narrow units inline, then hand back only what is left**:
+   3. **Branch on the result in this order** — the order of branches 4, 5 and 6 of [`pre-push-quality-gate.md`](../phase-6-finalize/standards/pre-push-quality-gate.md) § "Whole-tree module-tests divergence gate":
+
+      - **`divergence_possible: true`** → the wider run is the whole tree, whatever `scoped_modules` holds. This branch is evaluated first because `scoped_modules` is also empty for a non-empty footprint that resolves to no module (a change to `pyproject.toml` or `build.py` alone, say): the resolver lists those paths in `unresolved_paths` and fails closed, so that case runs the whole tree, never no pytest. Continue with sub-step 4.
+      - **`divergence_possible: false` and `scoped_modules` is empty** → the footprint is empty and there is nothing to test — run NO pytest for this task; the breakable-test gate is a no-op. Proceed to Step 6.
+      - **`divergence_possible: false` and exactly one scoped module** → `recommended_target` names that module. Continue with sub-step 4.
+   4. On either continuing branch the gate runs in a fixed three-part order — **resolve the scope, run the narrow units inline, then hand back only what is left**:
 
       1. **Resolve the scope.** Sub-step 2 above did this: `narrow_units` names the test directories and test files the change points at inside its one module, `narrow_unit_module` names that module for the narrow units, and `recommended_target` names the module for the wider run when a module-wide run is enough.
       2. **Run every narrow unit that resolves `per_task`, inline.** Resolve each entry of `narrow_units` on its own, against `narrow_unit_module`:

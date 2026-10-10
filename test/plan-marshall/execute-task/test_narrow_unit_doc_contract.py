@@ -43,6 +43,12 @@ PASSAGES = (
 #: resolves to the orchestrator tier and the resolver lists one narrow unit.
 WORKED_CASE_ANSWER = 'run the narrow unit inline, then hand back the module-wide run'
 
+#: The branch Step 5 (b) decides first: the whole tree, whatever the scope holds.
+WHOLE_TREE_BRANCH = '**`divergence_possible: true`**'
+
+#: The only condition under which Step 5 (b) runs no pytest — both halves.
+NO_PYTEST_BRANCH = '**`divergence_possible: false` and `scoped_modules` is empty**'
+
 
 def _passage(document: Path, start: str, end: str) -> str:
     """Return the text of ``document`` from ``start`` up to the next ``end``."""
@@ -139,3 +145,25 @@ def test_step_5b_answers_the_worked_case_on_its_own() -> None:
     passage = _passage(document, start, end)
 
     assert WORKED_CASE_ANSWER in passage
+
+
+def test_step_5b_decides_the_whole_tree_before_it_skips_pytest_for_an_empty_scope() -> None:
+    """Step 5 (b) skips pytest only for an empty scope that cannot diverge, and decides the whole tree first."""
+    document, start, end = PASSAGES[0]
+    passage = _passage(document, start, end)
+
+    whole_tree = passage.find(WHOLE_TREE_BRANCH)
+    no_pytest = passage.find(NO_PYTEST_BRANCH)
+
+    assert -1 < whole_tree < no_pytest
+
+
+def test_an_empty_scope_alone_does_not_tell_nothing_to_run_from_the_whole_tree() -> None:
+    """A footprint no target owns and an empty footprint both resolve to no module; only the first can diverge."""
+    registered = frozenset({'plan-marshall'})
+
+    unowned = resolve_test_scope(['pyproject.toml'], [], registered, bundle_modules=registered)
+    empty = resolve_test_scope([], [], registered, bundle_modules=registered)
+
+    assert (unowned.scoped_modules, unowned.divergence_possible) == ((), True)
+    assert (empty.scoped_modules, empty.divergence_possible) == ((), False)

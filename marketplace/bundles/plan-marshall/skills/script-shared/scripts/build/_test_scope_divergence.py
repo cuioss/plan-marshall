@@ -433,9 +433,13 @@ def resolve_test_scope(
     the escalate-only-on-trigger discipline the gate exists to preserve. Because
     ``None`` therefore spans "whole-tree warranted" and "nothing to run", a
     consumer MUST check ``recommended_target`` is non-null before interpolating
-    it into a command, and MUST branch on an empty ``scoped_modules`` before
-    branching on ``divergence_possible`` (ADR-015: an absent identity is a stated
-    sentinel and every presence guard is a meaning guard).
+    it into a command, and MUST branch in this order: ``divergence_possible``
+    true is the whole tree, whatever ``scoped_modules`` holds; only then is an
+    empty ``scoped_modules`` (``divergence_possible`` false) nothing to run; what
+    remains is the one-module case, where ``recommended_target`` is set. An empty
+    ``scoped_modules`` alone does not mean nothing to run - the fail-closed
+    third condition above leaves it empty as well (ADR-015: an absent identity
+    is a stated sentinel and every presence guard is a meaning guard).
 
     Args:
         footprint: The live footprint - the paths a scoped run derives from.

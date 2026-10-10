@@ -241,7 +241,8 @@ def cmd_resolve_test_scope(args) -> int:
     reached through the declared source-to-test mapping. A footprint carrying
     one reports ``divergence_possible: true`` with ``recommended_target: null``
     - the whole tree is required - so no consumer is handed a name that
-    ``architecture resolve --module`` does not know.
+    ``architecture resolve --module`` does not reliably resolve to a run scoped
+    to that module.
 
     Footprint source: ``--changed-paths`` (task-scoped) supersedes the whole-plan
     footprint; when it is absent a REAL ``--plan-id`` is required to resolve the
