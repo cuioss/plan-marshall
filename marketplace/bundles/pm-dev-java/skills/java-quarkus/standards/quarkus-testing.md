@@ -28,7 +28,7 @@ Quarkus-specific testing patterns. For general JUnit 5 patterns, see `pm-dev-jav
 
 The `quarkus-jacoco` dependency handles JaCoCo agent attachment for Quarkus's classloading model. Set `quarkus.jacoco.reuse-data-file=true` in test `application.properties` to accumulate coverage across test runs.
 
-Accumulated data cannot show a loss: a line that a change stopped covering still reads as covered from the earlier run. Delete the data file, or run a clean build, before any before/after coverage comparison — see `pm-dev-java:junit-core` → `standards/coverage-analysis-pattern.md`.
+Accumulated data cannot show a loss: a line that a change stopped covering still reads as covered, from a run that preceded the change. Delete the data file, or run a clean build, before any before/after coverage comparison — see `pm-dev-java:junit-core` → `standards/coverage-analysis-pattern.md`.
 
 ### When the Report Comes From `jacoco-maven-plugin`
 
@@ -214,7 +214,7 @@ Registering checks that were missing changes what consumers observe: readiness c
 | Slow test suite | Too many distinct `@TestProfile` classes | Consolidate profiles; use plain JUnit for non-CDI tests |
 | Slow test suite, one application boot per class | `reuseForks=false` starts a JVM per `@QuarkusTest` class | Run the `@QuarkusTest` classes in one reused fork — see "One Boot Per Profile Needs One JVM" |
 | Each `@QuarkusTest` JVM takes about ten seconds to exit; `target/jacoco-report/error.txt` holds a timeout | The `quarkus-jacoco` report waits for a data file this build never writes | Set `quarkus.jacoco.report=false` — see "When the Report Comes From `jacoco-maven-plugin`" |
-| Coverage did not drop after a test was removed | Coverage data accumulated from an earlier run | Delete the data file before comparing |
+| Coverage did not drop after a test was removed | Coverage data accumulated across runs | Delete the data file before comparing |
 | `/q/health` reports `UP` with an empty `checks` list | An extension's health checks are not registered in the consuming application | Register them in the deployment processor — see "A Health Check Shipped by an Extension" |
 
 ## References

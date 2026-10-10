@@ -59,7 +59,7 @@ void loadUser_whenNotFound_throwsUserNotFoundException() {
 
 A claim that a change did not lower coverage needs a comparison that could have shown a loss. Two things make a comparison unable to:
 
-**Accumulated coverage data.** The coverage agent appends to its data file; it does not replace it. A build that reuses the file of an earlier build reports the union of both, so a line the change stopped covering still reads as covered. Delete the data file — or run a clean build — before each of the two runs being compared.
+**Accumulated coverage data.** The coverage agent appends to its data file; it does not replace it. A build that reuses the data file of another build reports the union of both, so a line the change stopped covering still reads as covered. Delete the data file — or run a clean build — before each of the two runs being compared.
 
 **Run-to-run variance.** Some branches are covered by chance: one that depends on the iteration order of an unordered collection, or on which of two threads arrives first. On an unchanged tree such a class shows different numbers on different runs, in both directions. Before attributing a difference to the change:
 

@@ -320,7 +320,7 @@ docker compose logs application > "${TARGET_DIR}/application.log" 2>&1 || true
 echo "Service logs saved to ${TARGET_DIR}"
 ```
 
-Dump every container a test reads from, not only the application under test. A container added for one test — a second instance of the application with a different configuration, a stub — is the one whose log is needed when that test fails, and it is the one a script written earlier does not know. Write each dump under a name the CI workflow's artifact upload already matches, and print nothing for a container that does not exist in the current profile.
+Dump every container a test reads from, not only the application under test. A container added for one test — a second instance of the application with a different configuration, a stub — is the one whose log is needed when that test fails, and it is the one a dump script that lists containers by name leaves out. Write each dump under a name the CI workflow's artifact upload already matches, and print nothing for a container that does not exist in the current profile.
 
 ### A New Integration Test Runs First in CI
 
