@@ -199,9 +199,14 @@ def format_toon(result: dict) -> str:
             ]
 
     # Tests section — normalize UnitTestSummary to dict.
-    # `duration_seconds` is projected only when the tool reported one, so the
-    # historical three-field block stays bit-for-bit identical for tools whose
-    # parsers do not populate it (Maven/Gradle/npm). `total` stays unprojected.
+    # `duration_seconds`, `by_runner` and `population` are each projected only
+    # when the summary carries them (UnitTestSummary.to_dict emits `by_runner`
+    # only when the parser attributed counts to runners and `population` only
+    # when it is `unmeasured`), so the historical three-field block stays
+    # bit-for-bit identical for every summary that sets none of them. An empty
+    # `by_runner` is skipped: serialize_toon renders an empty nested dict as a
+    # bare header over a blank line, and it attributes nothing anyway.
+    # `total` stays unprojected.
     if 'tests' in result and result['tests']:
         tests = _normalize_dict(result['tests'])
         tests_section: OrderedDict[str, Any] = OrderedDict(
@@ -213,6 +218,10 @@ def format_toon(result: dict) -> str:
         )
         if tests.get('duration_seconds') is not None:
             tests_section['duration_seconds'] = tests['duration_seconds']
+        if tests.get('by_runner'):
+            tests_section['by_runner'] = dict(tests['by_runner'])
+        if tests.get('population') is not None:
+            tests_section['population'] = tests['population']
         ordered['tests'] = tests_section
 
     return serialize_toon(dict(ordered))

@@ -11,6 +11,7 @@ from unittest.mock import patch
 import _build_parse as _build_parse_mod
 import _build_shared as _build_shared_mod
 import pytest
+from toon_parser import parse_toon
 
 Issue = _build_parse_mod.Issue
 POPULATION_UNMEASURED = _build_parse_mod.POPULATION_UNMEASURED
@@ -424,3 +425,21 @@ class TestCmdRunCommonUnmeasuredSummary:
         assert emitted['status'] == 'error'
         assert 'population' not in emitted['tests']
         assert result['measured_tests_run'] == _RED_MEASURED.executed
+
+    #: ``(summary, the population the default TOON tests block must carry —
+    #: ``None`` meaning the key must be absent)``. The measured row is the control:
+    #: the key follows the parser's declaration, not the failing path.
+    @pytest.mark.parametrize(
+        'summary,population',
+        [(_RED_UNMEASURED, POPULATION_UNMEASURED), (_RED_MEASURED, None)],
+        ids=['unmeasured-summary', 'control-measured-summary'],
+    )
+    def test_failing_run_default_toon_output_carries_the_declared_population(self, capsys, summary, population):
+        result = dict(_BUILD_FAILED_RESULT)
+
+        cmd_run_common(result, _summary_parser(summary), 'maven')
+
+        emitted = parse_toon(capsys.readouterr().out)
+        assert emitted['status'] == 'error'
+        assert emitted['tests']['failed'] == 1
+        assert emitted['tests'].get('population') == population

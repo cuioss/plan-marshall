@@ -127,7 +127,15 @@ When a build fails, implementations **should** parse the log file and include st
 {passed, failed, skipped, duration_seconds}  # tools that report one (e.g. pytest)
 ```
 
-`duration_seconds` inside `tests` is the **test tool's own** reported run duration, not wall clock — it is present only when the tool emits one.
+Beyond the three counts, every field is optional and appears in both formats only when its condition holds; a summary that meets none of them renders as the three-count form above:
+
+| Field | Type | Present when |
+|-------|------|--------------|
+| `duration_seconds` | float | The test tool reported its own run duration |
+| `by_runner` | object | The parser attributed executed counts (passed + failed) to individual test runners — a runner-name → count map |
+| `population` | string | The parser could not tell summary lines from other count lines; the value is then always `unmeasured` (a measured summary omits the field) |
+
+`duration_seconds` inside `tests` is the **test tool's own** reported run duration, not wall clock. `by_runner` and `population` are currently set only by the Maven parser; their derivation rules are specified in [`build-maven/standards/maven-impl.md` § Test summary parsing](../../build-maven/standards/maven-impl.md#test-summary-parsing).
 
 #### Output Modes
 
