@@ -29,6 +29,13 @@
                 <artifactId>maven-jar-plugin</artifactId>
                 <executions>
                     <execution>
+                        <id>tests-test-jar</id>
+                        <goals>
+                            <goal>test-jar</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>generators-test-jar</id>
                         <goals>
                             <goal>test-jar</goal>
                         </goals>
