@@ -95,6 +95,26 @@ Every other canonical of that module, and every module without such a dependency
 
 ---
 
+## Output Parsing
+
+### Test summary parsing
+
+A Maven log carries one Surefire / Failsafe summary block per module and per test plugin — a `verify` prints a Surefire block and then a Failsafe block, and a reactor prints one block per module — and the per-class lines use the same `Tests run: N, Failures: N, Errors: N, Skipped: N` shape. The parser therefore classifies every `Tests run:` line before counting:
+
+| Class | Rule | Counted |
+|-------|------|---------|
+| per-class | The line carries `Time elapsed` | No — it repeats counts a summary line already holds |
+| summary | No `Time elapsed`, and the line follows a `Results:` marker inside the current test-plugin execution (an execution ends at the next `--- plugin:version:goal (...) @ module ---` header) | Yes — summed across modules and plugins |
+| ambiguous | Any other `Tests run:` line | See below |
+
+**Per-runner breakdown.** Each summary line is attributed to the nearest preceding `surefire` / `failsafe` execution header; both the short header form (`--- surefire:…:test`) and the long form (`--- maven-surefire-plugin:…:test`) are accepted. The test summary carries `by_runner` — the executed count (passed + failed) per runner, e.g. `{surefire: 724, failsafe: 7}`; a runner absent from the log is absent from it. When the log carries the `MultiThreadedBuilder` banner of a parallel (`-T`) build, independent modules may interleave and the nearest header no longer reliably names a summary's runner: the summed total is kept and `by_runner` is omitted.
+
+**Unmeasured summary.** The parser declares its summary `population: unmeasured` when any ambiguous line exists (a quiet `-q` log suppresses the `[INFO] Results:` marker), or when no summary line was recognised while per-class lines were. The counts are then summed from the non-per-class lines (or from the per-class lines when nothing else exists) and `by_runner` is omitted. A log with no `Tests run:` line at all yields no summary.
+
+**Effect on the run result.** An `unmeasured` summary publishes `tests_population: unmeasured` and no `tests_run` on a green run, and hands no measured count back to the routing seam on either the green or the failing path. Its `failed` count still drives the truthful-status check, so a failing test over exit 0 is reported as an error even when the count population is unmeasured.
+
+---
+
 ## Quality Profiles
 
 ### Pre-Commit Profile

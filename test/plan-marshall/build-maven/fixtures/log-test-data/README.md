@@ -37,6 +37,11 @@ Test fixtures derived from real build executions and research for testing parser
 |------|------|--------------|
 | `maven-success-real.log` | Success | `BUILD SUCCESS`, `[INFO]`, `Tests run: X, Failures: 0` |
 | `maven-failure-real.log` | Compile + test | `[ERROR]`, `COMPILATION ERROR`, `BUILD FAILURE` |
+| `maven-verify-surefire-failsafe.log` | Single-module verify | `--- surefire:…:test`, `--- failsafe:…:integration-test`, two `Results:` summary blocks (large Surefire, small Failsafe), per-class `Time elapsed` lines |
+| `maven-reactor-three-modules.log` | Reactor, three modules | Maven 3.8 long-form `--- maven-surefire-plugin:…:test` headers, one summary block per module with different totals, `Reactor Summary` |
+| `maven-verify-failsafe-zero.log` | Verify, no integration tests | Surefire summary block, then a Failsafe block reporting `Tests run: 0` |
+| `maven-quiet-unmeasured.log` | Quiet (`-q`) test failure | `[ERROR] Tests run:` summary line with no `Results:` marker, `<<< FAILURE!`, failure epilogue |
+| `maven-parallel-verify.log` | Parallel (`-T`) reactor | `MultiThreadedBuilder` banner, interleaved module output, two summary blocks |
 
 ### npm/TypeScript/Node.js
 

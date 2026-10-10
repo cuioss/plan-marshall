@@ -1,0 +1,68 @@
+[INFO] Scanning for projects...
+[INFO]
+[INFO] ---------------------< de.cuioss.jwt:token-core >----------------------
+[INFO] Building Token Core 1.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- clean:3.4.0:clean (default-clean) @ token-core ---
+[INFO] Deleting /home/dev/git/token-core/target
+[INFO]
+[INFO] --- resources:3.3.1:resources (default-resources) @ token-core ---
+[INFO] Copying 2 resources from src/main/resources to target/classes
+[INFO]
+[INFO] --- compiler:3.14.0:compile (default-compile) @ token-core ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 84 source files with javac [debug release 21] to target/classes
+[INFO]
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ token-core ---
+[INFO] Copying 11 resources from src/test/resources to target/test-classes
+[INFO]
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ token-core ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 63 source files with javac [debug release 21] to target/test-classes
+[INFO]
+[INFO] --- surefire:3.5.2:test (default-test) @ token-core ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO]
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running de.cuioss.jwt.token.ClaimMapperTest
+[INFO] Tests run: 312, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.204 s -- in de.cuioss.jwt.token.ClaimMapperTest
+[INFO] Running de.cuioss.jwt.token.TokenValidatorTest
+[WARNING] Tests run: 289, Failures: 0, Errors: 0, Skipped: 2, Time elapsed: 2.871 s -- in de.cuioss.jwt.token.TokenValidatorTest
+[INFO] Running de.cuioss.jwt.token.jwks.JwksLoaderTest
+[WARNING] Tests run: 123, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.946 s -- in de.cuioss.jwt.token.jwks.JwksLoaderTest
+[INFO]
+[INFO] Results:
+[INFO]
+[WARNING] Tests run: 724, Failures: 0, Errors: 0, Skipped: 3
+[INFO]
+[INFO]
+[INFO] --- jar:3.4.2:jar (default-jar) @ token-core ---
+[INFO] Building jar: /home/dev/git/token-core/target/token-core-1.0-SNAPSHOT.jar
+[INFO]
+[INFO] --- failsafe:3.5.2:integration-test (default) @ token-core ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO]
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running de.cuioss.jwt.token.it.TokenFlowIT
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 6.512 s -- in de.cuioss.jwt.token.it.TokenFlowIT
+[INFO] Running de.cuioss.jwt.token.it.JwksEndpointIT
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.208 s -- in de.cuioss.jwt.token.it.JwksEndpointIT
+[INFO]
+[INFO] Results:
+[INFO]
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0
+[INFO]
+[INFO]
+[INFO] --- failsafe:3.5.2:verify (default) @ token-core ---
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  41.337 s
+[INFO] Finished at: 2025-11-04T10:21:44+01:00
+[INFO] ------------------------------------------------------------------------

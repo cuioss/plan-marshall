@@ -7,10 +7,19 @@ Public API tests should use maven.py CLI instead.
 """
 
 # Direct imports - conftest sets up PYTHONPATH (cross-skill)
+import re
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
-from _build_parse import SEVERITY_ERROR, SEVERITY_WARNING, Issue, UnitTestSummary
+from _build_parse import (
+    POPULATION_MEASURED,
+    POPULATION_UNMEASURED,
+    SEVERITY_ERROR,
+    SEVERITY_WARNING,
+    Issue,
+    UnitTestSummary,
+)
 
 from conftest import get_script_path, load_script_module, run_script
 
@@ -213,6 +222,227 @@ def test_parse_cli_testfailureignore_reports_error_status():
 
     data = result.toon()
     assert data.get('status') == 'error', f'BUILD SUCCESS with errored tests must report error, not success: {data}'
+
+
+# =============================================================================
+# Summing every Surefire / Failsafe summary block
+# =============================================================================
+#
+# A Maven log carries one summary block per module and per test plugin, so the
+# summary must be the SUM of every block, never the last one. The expected values
+# are derived from the blocks each fixture actually carries instead of being
+# pinned, and every summed case first proves its fixture holds more than one
+# block — a one-block fixture cannot tell "sum every block" from "keep the last".
+#
+# The fixture reader below is deliberately simpler than the parser: it treats a
+# count line without ``Time elapsed`` as a summary and names its runner from the
+# nearest preceding execution header. That holds for every sequential fixture
+# here; the parser's own ambiguity rules are exercised by the quiet and parallel
+# cases, which state their expectations directly.
+
+_COUNT_LINE = re.compile(r'Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+),\s*Skipped:\s*(\d+)')
+_EXECUTION_HEADER = re.compile(r'---\s+(\S+):\S+:\S+\s.*@.*---')
+
+
+class _CountLine(NamedTuple):
+    """One ``Tests run:`` line of a fixture, with the runner whose execution encloses it."""
+
+    runner: str | None
+    per_class: bool
+    total: int
+    failed: int
+    skipped: int
+
+
+def _count_lines(log_file: Path) -> list[_CountLine]:
+    """Every count line of the fixture, in log order."""
+    runner: str | None = None
+    rows: list[_CountLine] = []
+    for line in log_file.read_text(encoding='utf-8').splitlines():
+        header = _EXECUTION_HEADER.search(line)
+        if header:
+            plugin = header.group(1)
+            runner = 'surefire' if 'surefire' in plugin else 'failsafe' if 'failsafe' in plugin else None
+            continue
+        match = _COUNT_LINE.search(line)
+        if match:
+            total, failures, errors, skipped = (int(group) for group in match.groups())
+            rows.append(_CountLine(runner, 'Time elapsed' in line, total, failures + errors, skipped))
+    return rows
+
+
+def _summary_blocks(log_file: Path) -> list[_CountLine]:
+    """The fixture's summary lines — every count line that is not a per-class line."""
+    return [row for row in _count_lines(log_file) if not row.per_class]
+
+
+def _executed_by_runner(blocks: list[_CountLine]) -> dict[str, int]:
+    """Executed count (total minus skipped) per runner, summed over the blocks."""
+    executed: dict[str, int] = {}
+    for block in blocks:
+        assert block.runner is not None, 'a sequential fixture names the runner of every summary block'
+        executed[block.runner] = executed.get(block.runner, 0) + block.total - block.skipped
+    return executed
+
+
+#: ``(fixture, the runners its summary blocks belong to)``.
+_SUMMED_FIXTURE_CASES = [
+    ('maven-verify-surefire-failsafe.log', {'surefire', 'failsafe'}),
+    ('maven-reactor-three-modules.log', {'surefire'}),
+    ('maven-verify-failsafe-zero.log', {'surefire', 'failsafe'}),
+]
+
+_SUMMED_FIXTURE_IDS = [
+    'one-module-surefire-then-failsafe',
+    'three-module-reactor',
+    'surefire-then-failsafe-of-zero',
+]
+
+
+@pytest.mark.parametrize('fixture_name,runners', _SUMMED_FIXTURE_CASES, ids=_SUMMED_FIXTURE_IDS)
+def test_parse_log_sums_every_summary_block(fixture_name: str, runners: set[str]):
+    # Arrange
+    log_file = TEST_DATA_DIR / fixture_name
+    blocks = _summary_blocks(log_file)
+    assert len(blocks) > 1, f'{fixture_name} must carry more than one summary block'
+    assert {block.runner for block in blocks} == runners
+    expected_total = sum(block.total for block in blocks)
+    expected_failed = sum(block.failed for block in blocks)
+    expected_skipped = sum(block.skipped for block in blocks)
+    # Non-vacuity: keeping only the last block must give a different total, or
+    # this case could not catch a regression to last-match parsing.
+    assert blocks[-1].total != expected_total
+
+    # Act
+    _, summary, _ = parse_log(log_file)
+
+    # Assert
+    assert summary is not None
+    assert summary.population == POPULATION_MEASURED
+    assert summary.total == expected_total
+    assert summary.failed == expected_failed
+    assert summary.skipped == expected_skipped
+    assert summary.passed == expected_total - expected_failed - expected_skipped
+    assert summary.by_runner == _executed_by_runner(blocks)
+
+
+def test_parse_log_failsafe_block_of_zero_still_names_its_runner():
+    """A Failsafe execution that ran no test is reported as ``failsafe: 0``.
+
+    Absent and zero are different facts: an absent runner did not execute at all,
+    a zero runner executed and found nothing to run.
+    """
+    _, summary, _ = parse_log(TEST_DATA_DIR / 'maven-verify-failsafe-zero.log')
+
+    assert summary is not None
+    assert summary.by_runner is not None
+    assert summary.by_runner['failsafe'] == 0
+
+
+def test_parse_log_quiet_log_without_results_marker_is_unmeasured():
+    """A quiet (``-q``) log drops the ``[INFO] Results:`` marker, so its summary
+    line cannot be told from any other count line — the summary is unmeasured,
+    while the failure it carries stays visible to the truthful-status check."""
+    # Arrange
+    log_file = TEST_DATA_DIR / 'maven-quiet-unmeasured.log'
+    assert 'Results:' not in log_file.read_text(encoding='utf-8')
+    summary_shaped = [row for row in _count_lines(log_file) if not row.per_class]
+    assert summary_shaped, 'the quiet fixture must carry a summary-shaped count line'
+
+    # Act
+    _, summary, _ = parse_log(log_file)
+
+    # Assert
+    assert summary is not None
+    assert summary.population == POPULATION_UNMEASURED
+    assert summary.failed > 0
+    assert summary.failed == sum(row.failed for row in summary_shaped)
+    assert summary.total == sum(row.total for row in summary_shaped)
+    assert summary.by_runner is None
+
+
+_PARALLEL_LOG = TEST_DATA_DIR / 'maven-parallel-verify.log'
+_PARALLEL_BANNER = 'MultiThreadedBuilder'
+
+
+def test_parse_log_parallel_build_keeps_the_sum_and_omits_by_runner():
+    # Arrange
+    assert _PARALLEL_BANNER in _PARALLEL_LOG.read_text(encoding='utf-8')
+    blocks = _summary_blocks(_PARALLEL_LOG)
+    assert len(blocks) > 1, 'the parallel fixture must carry more than one summary block'
+
+    # Act
+    _, summary, _ = parse_log(_PARALLEL_LOG)
+
+    # Assert
+    assert summary is not None
+    assert summary.population == POPULATION_MEASURED
+    assert summary.total == sum(block.total for block in blocks)
+    assert summary.skipped == sum(block.skipped for block in blocks)
+    assert summary.by_runner is None
+
+
+def test_control_parallel_log_without_the_banner_reports_by_runner(tmp_path):
+    """CONTROL: the banner, not the log's shape, is what withholds ``by_runner``.
+
+    The same interleaved log with the banner removed is attributed by nearest
+    header — and the attribution under-counts, because an interleaved compiler
+    header sits between one module's Surefire header and its summary. That
+    under-count is exactly why a parallel build must not publish the breakdown.
+    """
+    # Arrange
+    sequential = [
+        line for line in _PARALLEL_LOG.read_text(encoding='utf-8').splitlines() if _PARALLEL_BANNER not in line
+    ]
+    log_file = tmp_path / 'parallel-without-banner.log'
+    log_file.write_text('\n'.join(sequential) + '\n', encoding='utf-8')
+
+    # Act
+    _, summary, _ = parse_log(log_file)
+
+    # Assert
+    assert summary is not None
+    assert summary.by_runner is not None
+    assert sum(summary.by_runner.values()) < summary.executed
+
+
+#: ``(plugin token in the execution header, goal, runner it attributes to)``.
+#: Maven 3.8 prints the long ``maven-*-plugin`` token, Maven 3.9 / 4 the short one.
+_HEADER_FORM_CASES = [
+    ('maven-surefire-plugin', 'test', 'surefire'),
+    ('surefire', 'test', 'surefire'),
+    ('maven-failsafe-plugin', 'integration-test', 'failsafe'),
+    ('failsafe', 'integration-test', 'failsafe'),
+]
+
+_HEADER_FORM_IDS = [
+    'maven-3.8-long-surefire',
+    'maven-3.9-and-4-short-surefire',
+    'maven-3.8-long-failsafe',
+    'maven-3.9-and-4-short-failsafe',
+]
+
+
+@pytest.mark.parametrize('plugin,goal,runner', _HEADER_FORM_CASES, ids=_HEADER_FORM_IDS)
+def test_parse_log_execution_header_forms_attribute_to_their_runner(tmp_path, plugin: str, goal: str, runner: str):
+    # Arrange
+    log_file = tmp_path / 'header-form.log'
+    log_file.write_text(
+        f'[INFO] --- {plugin}:3.5.2:{goal} (default-{goal}) @ core ---\n'
+        '[WARNING] Tests run: 5, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.042 s -- in probe.CoreTest\n'
+        '[INFO]\n'
+        '[INFO] Results:\n'
+        '[INFO]\n'
+        '[WARNING] Tests run: 5, Failures: 0, Errors: 0, Skipped: 1\n',
+        encoding='utf-8',
+    )
+
+    # Act
+    _, summary, _ = parse_log(log_file)
+
+    # Assert
+    assert summary is not None
+    assert summary.by_runner == {runner: 4}
 
 
 # =============================================================================
