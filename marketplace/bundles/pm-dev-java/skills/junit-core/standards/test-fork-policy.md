@@ -80,7 +80,7 @@ The inverse also holds: removing the leak at its source — a helper that hands 
 
 ## Guard the Partition With a Test
 
-The configuration is correct only while every class is in exactly one group, and nothing in the build checks that. A contract test does:
+The configuration is correct only while every class is in exactly one group, and nothing in the build checks that. A contract test, written in the project that declares the executions, does:
 
 * It reads the surefire executions from the module's POM and the tags from the test sources.
 * It fails when a tag is selected by no execution or by more than one.

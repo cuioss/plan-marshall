@@ -286,7 +286,7 @@ done
 
 **`curl` needs `-f` in a readiness wait.** Without it `curl` exits 0 for any HTTP answer, including the 503 a readiness endpoint gives while the service is not ready, so the loop reports "ready" on the first response instead of the first successful one. Keep the call as the condition of the `if`: under `set -e` a failing `curl` there does not end the script, and the loop goes on polling until its own limit.
 
-The wait for a dependent service has to cover that service's whole start. Where the stack is started in steps — dependencies first, the application once a setup step has finished — `docker compose up` no longer waits on the dependency's own health check, and the loop's limit is the only bound there is.
+The wait for a dependent service has to cover that service's whole start. `docker compose up` waits for a dependency's health check only where the dependent service declares it — a `depends_on` entry with `condition: service_healthy`. Where the stack is started in steps and that condition is absent, or the step is run with `--no-deps`, the loop's limit is the only bound there is.
 
 ### Stop Script Pattern
 
@@ -314,13 +314,14 @@ Dump service logs in `post-integration-test` **before** stopping containers — 
 # scripts/dump-service-logs.sh
 TARGET_DIR="${1:-.}"
 
-docker compose logs identity-provider > "${TARGET_DIR}/identity-provider.log" 2>&1 || true
-docker compose logs application > "${TARGET_DIR}/application.log" 2>&1 || true
+for service in $(docker compose ps --all --services); do
+    docker compose logs "${service}" > "${TARGET_DIR}/${service}.log" 2>&1 || true
+done
 
 echo "Service logs saved to ${TARGET_DIR}"
 ```
 
-Dump every container a test reads from, not only the application under test. A container added for one test — a second instance of the application with a different configuration, a stub — is the one whose log is needed when that test fails, and it is the one a dump script that lists containers by name leaves out. Write each dump under a name the CI workflow's artifact upload already matches, and print nothing for a container that does not exist in the current profile.
+Dump every container a test reads from, not only the application under test. A container added for one test — a second instance of the application with a different configuration, a stub — is the one whose log is needed when that test fails, and it is the one a dump script that lists containers by name leaves out. Taking the list from `docker compose ps --all --services` covers each container the current profile created, stopped ones included, and writes no file for a service that profile does not have. Keep the `*.log` names inside the pattern the CI workflow's artifact upload matches.
 
 ### A New Integration Test Runs First in CI
 

@@ -166,6 +166,7 @@ Failsafe treats "no test matched" as success. An `<include>` that is narrower th
 
 * Prefer the unqualified `**/*IT.java`; narrow by `<excludes>` or by tag, where a miss is visible as a test that ran when it should not have.
 * Treat the failsafe test count as part of the lane's result: a lane that is expected to run integration tests and reports zero has failed.
+* Let the build enforce that: `<failIfNoTests>true</failIfNoTests>` in the Failsafe configuration makes the `verify` goal fail when no integration test ran. Set it in the module that holds the integration tests, not in a parent POM, where it would fail every module that has none.
 
 ## Build Commands
 

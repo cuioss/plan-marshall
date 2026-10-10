@@ -120,7 +120,7 @@ Run the class many times in a row — twenty is a reasonable number — before c
 
 A test of the failure path — the endpoint is down, the lookup fails — runs the production retry policy unless told otherwise, and then spends its time in back-off delays that prove nothing about the failure handling.
 
-* **Pass a fast retry configuration into the unit under test.** Few attempts, millisecond delays. When the component offers no way to pass one on that path, that is a finding about the component: a path that ignores the configured policy and uses a built-in default does so in production too.
+* **Pass a fast retry configuration into the unit under test.** Few attempts, millisecond delays. When a path that retries offers no way to pass one, that is a finding about the component: a path that ignores the configured policy and uses a built-in default does so in production too. A path that does not retry has no back-off to shorten and needs nothing passed in.
 * **Use a closed local port, not an unresolvable host name.** A name that does not resolve costs a DNS lookup whose duration depends on the machine and the network. A connection to a loopback port nothing listens on is refused at once, on every machine.
 
 A test whose subject is the back-off itself keeps its real delays — see "When the Wait Is the Subject" above.
