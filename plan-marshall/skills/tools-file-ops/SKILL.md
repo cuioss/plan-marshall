@@ -1,0 +1,386 @@
+---
+name: tools-file-ops
+description: Base module providing reusable file operations patterns, parameterized store-root resolution (plans, orchestrator), and the single plan-context resolver that turns a plan_id (or the NO_PLAN sentinel) into a plan directory and working-tree root for workflow scripts
+user-invocable: false
+mode: knowledge
+---
+
+# File Operations Base Skill
+
+**Role**: Shared Python module providing atomic file operations, metadata parsing, TOON output helpers, and base directory configuration for workflow scripts.
+
+## Enforcement
+
+**Execution mode**: Library module; import functions as documented in usage examples.
+
+**Prohibited actions:**
+- Do not access `.plan/` files directly; use `base_path()` or the parameterized `get_store_dir(store, entry_id)` resolver for path construction, and `resolve_plan_context(plan_id)` whenever the input is a plan identifier
+- Do not invoke `manage-status get-worktree-path` from any other module; resolve the worktree face through `resolve_plan_context` (or `resolve_project_dir`, which delegates to it)
+- Do not bypass atomic write; always use `atomic_write_file()` for writes
+- Do not construct cross-domain paths manually; use ID-based access pattern
+
+**Constraints:**
+- All path construction goes through `base_path()`, `get_base_dir()`, or the sanctioned `get_store_dir(store, entry_id)` store-root resolver (`store='plans'` routes through `base_path`; `store='orchestrator'` composes onto `get_orchestrator_store_root()` — see [The orchestrator store root](#the-orchestrator-store-root)); plan-identifier inputs go through `resolve_plan_context(plan_id)`, which is layered on `get_store_dir`
+- File writes use atomic temp-file-plus-rename pattern
+- Cross-domain access uses IDs, not paths
+
+## What This Skill Provides
+
+- Workflow base directory configuration (`.plan/` by default)
+- Path construction helpers for workflow files
+- Plan-context resolution — the single `plan_id` → (plan directory, working-tree root) entry point, including the `NO_PLAN` plan-less sentinel
+- Atomic file write (temp file + rename pattern)
+- Directory creation (mkdir -p equivalent)
+- JSON success/error output helpers
+- Markdown key=value metadata parsing
+- Markdown metadata generation
+
+## When to Use
+
+Import `file_ops` module in Python scripts that write to `.plan/` directories:
+- Lessons learned scripts
+- Plan file scripts
+- Memory management scripts
+- Any script requiring atomic writes to workflow directories
+
+## Module: file_ops.py
+
+**Location**: `scripts/file_ops.py`
+
+### Functions
+
+**Base Directory Functions**
+
+**1. get_base_dir()**
+- **Purpose**: Get the base directory for workflow files
+- **Input**: None
+- **Output**: `Path` - base directory (default: `.plan`)
+
+**2. set_base_dir(path)**
+- **Purpose**: Override the base directory for workflow files
+- **Input**: `path` (str/Path) - new base directory
+- **Output**: None
+- **Note**: Primarily for testing; production uses `.plan` default
+
+**3. base_path(*parts)**
+- **Purpose**: Construct a path within the workflow base directory
+- **Input**: `*parts` - path components to join
+- **Output**: `Path` - full path including workflow base directory
+- **Example**: `base_path('plans', 'my-task', 'plan.md')` → `.plan/local/plans/my-task/plan.md`
+
+**4. get_store_dir(store, entry_id, allow_archived=False)**
+- **Purpose**: Resolve the root directory for an entry of a named runtime-state store — the ONE parameterized store-root mechanism
+- **Input**: `store` (str) - `'plans'` or `'orchestrator'`; `entry_id` (str) - plan id or epic id; `allow_archived` (bool, orchestrator only) - read-fallback to `archived-orchestrators/{entry_id}` when the active tree is absent and the archived one exists
+- **Output**: `Path` - store entry root. `'plans'` routes through `base_path('plans', entry_id)` (cwd-relative, ADR-002 unchanged); `'orchestrator'` composes `orchestrator/{entry_id}` onto `get_orchestrator_store_root()` (the knob-gated root — see [The orchestrator store root](#the-orchestrator-store-root))
+- **Raises**: `ValueError` on unknown store values and on an unsafe orchestrator `entry_id` (`..`, `/`, `\`, null byte, empty) — checked BEFORE the store root is resolved, so an unsafe id never reaches a git side effect; `OrchestratorStoreUnavailable` for `'orchestrator'` with the knob on when the shared ledger worktree cannot be provided (propagated uncaught)
+- **Note**: this is the underlying store-root mechanism `resolve_plan_context` builds on. Plan-id consumers do NOT call it directly — they resolve through `resolve_plan_context` (below), and `get_plan_dir(plan_id)` is itself a thin delegate to `resolve_plan_context(plan_id, ensure=False).plan_dir`
+
+**4a. get_archived_orchestrator_dir(slug)**
+- **Purpose**: The unconditional archived-home resolver for a closed epic — `{store-root}/archived-orchestrators/{slug}`, never existence-checked
+- **Output**: `Path` composed onto the SAME `get_orchestrator_store_root()` as the active store, so one epic's active and archived homes always share a tier
+- **Raises**: as `get_store_dir('orchestrator', …)` — `ValueError` for an unsafe slug (checked first), `OrchestratorStoreUnavailable` with the knob on
+
+**4b. get_orchestrator_store_root()**
+- **Purpose**: The single knob-gated branch of the orchestrator store seam — the `.plan` directory the orchestrator ledger store lives under
+- **Output**: `Path` — knob off: `get_tracked_config_dir()` (unchanged); knob on: `{shared-worktree}/.plan`, creating the shared ledger worktree on first use
+- **Raises**: `OrchestratorStoreUnavailable` with the knob on; never with it off
+- **Note**: `get_tracked_config_dir()` itself is NOT rerouted — it also resolves `marshal.json`, `project-architecture/` and `temp/`, which stay on the current checkout
+
+**4c. resolve_orchestrator_store_file(path)**
+- **Purpose**: Resolve a caller-supplied file path, rebasing a ledger-store pointer onto the seam
+- **Input**: `path` (str) — as the caller supplied it
+- **Output**: `Path` — with the knob on, a RELATIVE path whose leading components are `.plan/orchestrator` or `.plan/archived-orchestrators` (the logical pointer a plan records as its `source_id`) resolves under `get_orchestrator_store_root()`; every other path — absolute, outside the ledger store, or any path with the knob off — resolves exactly as `Path(path).expanduser().resolve()`
+- **Raises**: `OrchestratorStoreUnavailable` with the knob on when a ledger pointer must be rebased and the shared worktree cannot be provided
+- **Consumer**: `manage-plan-documents request create --body-file`, so a spec staged in the shared worktree and not yet landed is ingested from there, never from a stale `main` copy
+
+**File Operations**
+
+**5. atomic_write_file(path, content)**
+- **Purpose**: Write file atomically using temp file + rename
+- **Input**: `path` (str/Path), `content` (str)
+- **Output**: None (raises on error)
+- **Pattern**: Creates temp file, writes, renames to target
+
+**6. ensure_directory(path)**
+- **Purpose**: Create directory and parents if needed
+- **Input**: `path` (str/Path) - file or directory path
+- **Output**: None
+- **Note**: If path looks like file, creates parent directory
+
+**TOON Output Helpers**
+
+**7. output_success(operation, **kwargs)**
+- **Purpose**: Print TOON success output to stdout
+- **Input**: `operation` (str), additional kwargs
+- **Output**: Prints TOON to stdout
+
+**8. output_error(operation, error)**
+- **Purpose**: Print TOON error output to stderr
+- **Input**: `operation` (str), `error` (str)
+- **Output**: Prints TOON to stderr
+
+**Script Entry Point**
+
+**9. safe_main(main_fn)**
+- **Purpose**: Decorator for script entry points; catches unhandled exceptions and outputs TOON error
+- **Input**: `main_fn` - the main function (must return int or None)
+- **Output**: Wrapped function that calls `sys.exit()` internally
+- **Usage**: `safe_main(main)()` or `@safe_main` decorator
+- **Rendering**: a generic exception renders `status: error` / `error: internal_error` with exit 1 (a crash). `OrchestratorStoreUnavailable` is rendered first, by a dedicated clause, as `status: error` carrying its own `error` code and fields with exit 0 (an operation failure) — see [The orchestrator store root](#the-orchestrator-store-root)
+
+**Metadata Functions**
+
+**10. parse_markdown_metadata(content)**
+- **Purpose**: Parse key=value metadata from markdown
+- **Input**: `content` (str) - full file content
+- **Output**: `dict` - metadata key-value pairs
+- **Format**: Supports `key=value` and `key.subkey=value` (dot notation)
+
+**11. generate_markdown_metadata(data)**
+- **Purpose**: Generate key=value metadata block
+- **Input**: `data` (dict) - metadata to serialize
+- **Output**: `str` - formatted metadata block
+
+**12. update_markdown_metadata(content, updates)**
+- **Purpose**: Update specific metadata fields in markdown content
+- **Input**: `content` (str), `updates` (dict)
+- **Output**: `str` - updated content
+
+**13. get_metadata_content_split(content)**
+- **Purpose**: Split markdown content into metadata and body
+- **Input**: `content` (str)
+- **Output**: `tuple[str, str]` - (metadata_block, body_content)
+
+**Plan-Context Resolution**
+
+**14. resolve_plan_context(plan_id, \*, ensure=True)**
+- **Purpose**: THE entry point every plan-id consumer resolves against — the single place a `plan_id` becomes a plan directory and a working-tree root
+- **Input**: `plan_id` (str) — a plan identifier or the `NO_PLAN` sentinel; `ensure` (bool, keyword-only) — `True` (default) requires the plan to resolve, `False` makes the call a pure path computation with no existence check and no side effects
+- **Output**: `PlanContext`
+- **Raises**: `PlanNotFoundError` under `ensure=True` when `plan_id` is a real identifier that does not resolve. Its `.envelope` property carries the canonical `plan_not_found` TOON payload including the sentinel `hint` and its `hint_caveat`
+- **Note**: this function owns the ONLY `manage-status get-worktree-path` invocation in the codebase (reached lazily through `PlanContext`). Consumers that need a working tree from a `plan_id` — including `resolve_project_dir` — delegate here rather than shelling out themselves
+
+**15. PlanContext (dataclass)**
+- **Purpose**: The resolved plan context returned by `resolve_plan_context`
+- **Fields**: `plan_id` (str), `plan_dir` (`Path`, computed eagerly — a pure path join), `is_sentinel` (bool)
+- **Lazy properties**: `worktree_state` (str — the producer's published discriminator, one of `disabled` / `pending` / `materialized`; branch on this when the three states route differently), `worktree_path` (str — the working-tree root; the persisted path when `worktree_state` is `materialized`, else the main checkout, because that is the tree a `disabled` or not-yet-created `pending` worktree's plan actually works in), `has_worktree` (bool — whether a DEDICATED worktree is materialized RIGHT NOW; ask this, never infer "no worktree" from a path indistinguishable from a legitimate main-checkout binding), `worktree_branch` (str — the persisted feature branch, `''` when none is recorded)
+- **Note**: the worktree faces are resolved on FIRST ACCESS, not at construction. The laziness is load-bearing: `get_plan_dir` delegates to this struct at every call site, so an eager worktree face would put a subprocess behind every plan-path computation — including inside `manage-status`, the producer of that very command
+- **Raises**: `WorktreeResolutionError` when a worktree face cannot be resolved for a real plan id (the `get-worktree-path` payload was non-success, or the executor could not be located)
+
+**16. derive_worktree_state(metadata)**
+- **Purpose**: The SINGLE owner of the worktree contract's three-state machine. The producer (`manage-status get-worktree-path`) publishes its `worktree_state` from this function, and a consumer that reads `status.json` metadata directly rather than shelling out calls it instead of re-implementing the rule
+- **Input**: `metadata` (the plan's `status.metadata` mapping, or any non-mapping value — treated as absent metadata)
+- **Output**: `tuple[str, str]` — `(worktree_state, worktree_path)`, the state one of `disabled` / `pending` / `materialized` (`VALID_WORKTREE_STATES`). The path is `''` for every state but `materialized`
+- **Note**: re-deriving the state from the primitive `use_worktree` / `worktree_path` fields cannot tell a plan that will NEVER have a worktree from one whose worktree does not exist YET, and those route differently. Both ends of the pair are guarded — the flag through `is_truthy_metadata`, the path stripped before it is tested
+
+**17. is_truthy_metadata(value)**
+- **Purpose**: The single owner of boolean coercion for `status.json` metadata fields. Metadata reaches readers as a real `bool` from `json.load` and historically as a string through TOON, so a bare `bool()` reads the string `'false'` as True
+- **Input**: `value` (Any) — the raw metadata value
+- **Output**: `bool`
+- **Note**: `_handshake_commands._is_truthy_metadata` delegates here. Two readers of one metadata field disagreeing about what `'false'` means is the drift a single owner removes
+
+**18. cwd_checkout_root()**
+- **Purpose**: Return the checkout root as an absolute path string, resolved cwd-relatively per the uniform cwd rule (ADR-002) — the nearest ancestor of cwd containing `.plan/local`
+- **Input**: None
+- **Output**: `str` — falls back to cwd when the caller operates outside any resolvable plan root
+- **Note**: deliberately NOT named `main_checkout_root`. `marketplace_paths.main_checkout_root` uses a DIFFERENT rule (git `--git-common-dir`, which is always MAIN even from a linked worktree) and returns a `Path`; this one resolves to the WORKTREE during phase-5+. The names are kept distinct because the two modules are routinely imported together
+
+### The `NO_PLAN` sentinel
+
+`resolve_plan_context` accepts one non-plan value: the plan-less sentinel `NO_PLAN` (`NO_PLAN_SENTINEL`, defined in `script-shared`'s `marketplace_paths` and re-exported by `input_validation`). Its behaviour in this module:
+
+- It resolves to `{base_dir}/plans/NO_PLAN`.
+- Under `ensure=True` it is materialized on demand — the directory **and** a `status.json`. Both halves are required: `require_plan_exists` treats a directory without `status.json` as not-found, so a mkdir-only sentinel would leave every `prepare_body` caller failing with `plan_not_found`. The write is idempotent; an existing `status.json` is never overwritten.
+- Its worktree face is ALWAYS the main checkout — a plan-less caller has no worktree, so `worktree_path` yields `cwd_checkout_root()`, `has_worktree` is `False`, and `worktree_branch` is `''`.
+- Under `ensure=False` it is a pure path computation, exactly like a real plan id — nothing is created.
+
+`file_ops` imports the sentinel from `marketplace_paths`, NOT from `input_validation`: this module must import cleanly on the bootstrap path, where only `script-shared`, `ref-toon-format` and `tools-file-ops` are on `sys.path`. The identifier-grammar carve-out that makes the sentinel an acceptable `plan_id` at the CLI boundary belongs to `validate_plan_id` — see [`tools-input-validation/SKILL.md`](../tools-input-validation/SKILL.md) § "The `NO_PLAN` sentinel (plan_id carve-out)"; it is not restated here.
+
+### The orchestrator store root
+
+This section is the single home of the orchestrator store's location contract; other documents cross-reference it rather than restating it.
+
+The orchestrator ledger store — `.plan/orchestrator/**` (active epics) and `.plan/archived-orchestrators/**` (closed epics) — is reached through ONE seam: `get_store_dir('orchestrator', …)` and `get_archived_orchestrator_dir` both compose onto `get_orchestrator_store_root()`. Its answer is gated by the repository-wide `orchestrator.use_worktree` knob (see [`manage-config/standards/data-model.md`](../manage-config/standards/data-model.md) for the knob, its main-checkout-only write, and its cutover refusal):
+
+| Knob | Store root | Scope |
+|------|-----------|-------|
+| off (default) | `get_tracked_config_dir()` — `<checkout>/.plan` | The git-tracked, cwd-relative config tier: each checkout reads and writes its own copy, and a plan worktree's writes reach the orchestrator when the plan merges. |
+| on | `{shared-worktree}/.plan` | ONE shared tree for every checkout: the same path from the main checkout and from every plan worktree, so a plan's inbox message is visible to the orchestrator at write time. |
+
+The knob is read from the MAIN checkout's `marshal.json` (`orchestrator_worktree.orchestrator_use_worktree`), so every checkout agrees on it; only a literal JSON `true` turns it on.
+
+**The shared ledger worktree** (owned by `scripts/orchestrator_worktree.py`):
+
+- **Location**: `<main>/.plan/local/worktrees/_orchestrator` — main-anchored through `marketplace_paths.resolve_main_anchored_path`, under the same `worktrees/` container as the plan worktrees. The location is NAMED there; the tree does not join the bounded main-resident set.
+- **Key**: `_orchestrator` (`marketplace_paths.ORCHESTRATOR_WORKTREE_KEY`). The leading underscore guarantees no plan id can collide with it; every worktree-root enumeration skips it through `marketplace_paths.is_orchestrator_worktree_dir`, never through plan-id validation.
+- **Branch**: `chore/orchestrator-ledger` (`ORCHESTRATOR_WORKTREE_BRANCH`), a long-lived branch created off `origin/{base}` when no local branch of that name exists, reused when one does. `{base}` is `default_base_branch()` — `project.default_base_branch`, default `main` — the one base-branch read for the shared ledger worktree and its consumers.
+- **Lifecycle**: created lazily by the seam on first knob-on use; every later call reuses the existing tree exactly as found — no reset, no rebase, no pull — provided it is on the ledger branch. A registered tree on any other branch, or on a detached HEAD, is refused with `orchestrator_worktree_wrong_branch`, never switched. Nothing in the module removes it; landing its changes on the base branch is a separate concern. A concurrent first use is resolved by `git worktree add` being atomic: the losing session re-checks and returns the tree the winner created.
+- **First-use cutover check**: before creation, the main checkout's ledger paths are checked for uncommitted, untracked, or committed-but-unlanded state (`detect_ledger_drift` against `origin/{base}`).
+
+**`OrchestratorStoreUnavailable`** is the seam's one typed refusal. It carries a machine-readable `code` and structured `fields`:
+
+| `code` | Meaning | Fields |
+|--------|---------|--------|
+| `ledger_cutover_refused` | The main checkout holds uncommitted or unlanded ledger paths that would be stranded by moving into the shared worktree. | `dirty_paths`, `worktree_path`, `branch` |
+| `ledger_drift_unevaluable` | git could not answer the drift question; a check that could not run is never reported as clean. | `checkout`, `base_ref`, `stderr` |
+| `base_ref_unresolvable` | `origin/{base}` could not be fetched or resolved. | `base_ref`, `worktree_path`, `branch`, `stderr` |
+| `orchestrator_worktree_create_failed` | The main checkout could not be resolved, or `git worktree add` failed and no valid worktree exists afterwards. | `worktree_path`, `branch`, `stderr` (as available) |
+| `orchestrator_worktree_wrong_branch` | A worktree is registered at the shared location but is not on `chore/orchestrator-ledger`. The seam never switches the branch: the operator checks out `chore/orchestrator-ledger` in that tree by hand. | `worktree_path`, `branch` (the expected ledger branch), `found_branch` (the branch the tree is on, or `detached`) |
+
+Its base is `Exception` DIRECTLY — deliberately not `RuntimeError`, `ValueError` or `OSError`. The store consumers carry broad `except RuntimeError` / `except ValueError` / `except OSError` handlers that turn a failure into a different verdict (not-found, fail-open empty, silent drop); a subclass of any of those would be intercepted before the refusal reached the caller. A CLI-reachable handler that catches `Exception` on the seam path re-raises it (`except OrchestratorStoreUnavailable: raise` ahead of the broad clause); only the best-effort terminal-title readers in `platform-runtime` are exempt from that obligation. `safe_main` renders it as `status: error` with its own `error` code, `message` and fields, and exit 0 — an operation failure the caller can act on, not a crash.
+
+---
+
+## Usage Example
+
+```python
+#!/usr/bin/env python3
+from file_ops import atomic_write_file, base_path, output_success, output_error, generate_markdown_metadata
+
+
+def main():
+    try:
+        # Construct path within .plan directory
+        filepath = base_path('lessons-learned', '2025-11-28-001.md')
+
+        # Generate metadata
+        metadata = generate_markdown_metadata({'id': '2025-11-28-001', 'component.type': 'command', 'applied': 'false'})
+
+        # Write atomically (creates directories automatically)
+        content = f'{metadata}\n# Lesson Title\n\nContent here...'
+        atomic_write_file(filepath, content)
+
+        output_success('write-lesson', file=str(filepath))
+    except Exception as e:
+        output_error('write-lesson', str(e))
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()
+```
+
+---
+
+## Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `file_ops.py` | Core file operations module (importable) |
+| `orchestrator_worktree.py` | Shared orchestrator ledger worktree substrate: location, knob read, base-branch read (`default_base_branch`), ledger drift detector, idempotent first-use creation, `OrchestratorStoreUnavailable` (importable; stdlib + `marketplace_paths` only) |
+| `jsonl_store.py` | Shared JSONL storage for plan-scoped artifacts: append, read, merge-read, update, find, hash ids (importable) |
+| `constants.py` | Shared constants: status values, phase names, filenames, certainty values, directory names |
+
+---
+
+## Python Usage
+
+```python
+from file_ops import base_path, get_store_dir, atomic_write_file, output_success, output_error
+from constants import STATUS_SUCCESS, FILE_STATUS, PHASES, DIR_PLANS
+
+# Resolve store-entry root paths (the ONE parameterized store-root mechanism)
+plan_dir = get_store_dir('plans', plan_id)  # Returns Path to .plan/local/plans/{plan_id}
+epic_dir = get_store_dir('orchestrator', epic_id)  # {orchestrator-store-root}/orchestrator/{epic_id} (knob-gated)
+artifacts = base_path('plans', plan_id, 'artifacts')
+
+# Atomic file writes (temp file + rename for crash safety)
+atomic_write_file(plan_dir / 'status.json', json.dumps(data, indent=2))
+
+# Structured TOON output
+output_success({'plan_id': plan_id, 'action': 'created'})
+output_error('file_not_found', f'Plan {plan_id} not found')
+```
+
+## Integration
+
+The executor manages PYTHONPATH automatically, so scripts can import `file_ops` directly:
+
+```python
+from file_ops import atomic_write_file, base_path, output_success, output_error
+```
+
+## Directory Structure
+
+Files are stored in `.plan/` directory:
+
+```text
+.plan/                         # Workflow artifacts
+├── run-configuration.json     # Command execution tracking
+├── lessons-learned/           # Knowledge capture
+│   └── *.md
+├── memory/                    # Session state
+│   ├── context/*.json
+│   └── handoffs/*.json
+└── plans/                     # Task plans
+    └── {task-name}/
+        ├── plan.md
+        └── references.json
+```
+
+---
+
+## Cross-Domain Access Pattern
+
+When scripts in one domain (e.g., `plan-marshall:plan-files`) need to access resources in another domain (e.g., `plan-marshall:manage-lessons`), follow the **ID-based access pattern**.
+
+### Principle
+
+**Scripts take IDs, not paths, for cross-domain resources.** The script resolves the ID to a path internally using `base_path()`.
+
+### Why This Matters
+
+- **Encapsulation**: Each domain owns its file structure; other domains should not construct paths
+- **Maintainability**: Path format changes only require updating the owning domain's script
+- **Testability**: ID-based APIs are easier to mock and test
+- **Error clarity**: Scripts can provide domain-specific error messages for invalid IDs
+
+### Correct Pattern
+
+```python
+# Script in planning domain needs to access lesson from lessons-learned domain
+# CORRECT: Accept ID, resolve path internally
+
+
+def copy_lesson_to_plan(lesson_id: str, plan_dir: Path) -> dict:
+    # Resolve ID to path internally
+    lesson_file = base_path('lessons-learned', f'{lesson_id}.md')
+
+    if not lesson_file.exists():
+        return {'success': False, 'error': f'Lesson not found: {lesson_id}'}
+
+    # Proceed with copy...
+```
+
+### Incorrect Pattern (Anti-Pattern)
+
+```python
+# WRONG: Orchestrator constructs path and passes it to script
+
+# In orchestrator (phase-management SKILL.md):
+python3 {script} --lesson-file {lesson.file}  # BAD: orchestrator builds path
+
+# In script:
+def copy_lesson_to_plan(lesson_file: Path, plan_dir: Path):  # BAD: accepts path
+    pass
+```
+
+### When to Use ID-Based Access
+
+| Scenario | Use ID-Based | Reason |
+|----------|--------------|--------|
+| Cross-domain resource access | Yes | Scripts own their domain's paths |
+| Same-domain resource access | Optional | Same skill owns both paths |
+| User-specified file | No | User explicitly provides path |
+| Configuration files | No | Paths defined in config are explicit |
+
+### Implementation Rules
+
+When creating scripts that access cross-domain resources:
+
+1. [ ] Accept resource ID (e.g., `--lesson-id`) not path
+2. [ ] Import `base_path` from file_ops
+3. [ ] Resolve path internally: `base_path("domain-dir", f"{id}.md")`
+4. [ ] Return clear error if resource not found
+5. [ ] Document the expected ID format in help text
+
