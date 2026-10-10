@@ -1613,6 +1613,33 @@ def handle_invalid_notation(notation: str, remaining_args: list[str]) -> None:
     sys.exit(1)
 
 
+def _drop_stray_empty_args(args: list[str]) -> list[str]:
+    """Return ``args`` without the empty strings that are not an option's value.
+
+    One rule decides each empty string: it is KEPT when the argument directly
+    before it is an option token (starts with ``-``), and DROPPED in every other
+    position.
+
+    Kept: ``--values ""`` reaches the script as ``['--values', '']``. The empty
+    string is the value the caller wrote, and an option that requires a value is
+    rejected by argparse (exit 2) when it arrives without one.
+
+    Still dropped: an empty string that follows a positional or another value,
+    and an empty string in first position. This is the unset shell variable
+    passed as a bare positional (``verb "$UNSET"``), which a script would
+    otherwise read as a real, empty positional argument. Of two consecutive
+    empty strings after one option, the first is kept as the value and the
+    second is dropped.
+    """
+    kept: list[str] = []
+    previous = ''
+    for arg in args:
+        if arg or previous.startswith('-'):
+            kept.append(arg)
+        previous = arg
+    return kept
+
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: execute-script.py <notation> [subcommand] [args...]", file=sys.stderr)
@@ -1635,8 +1662,9 @@ def main():
     # Extract --audit-plan-id (audit logging only, stripped before passing to script)
     audit_plan_id, script_args = extract_audit_plan_id(remaining_args)
 
-    # Strip empty string args (defensive: agents may pass empty args from shell variable expansion)
-    script_args = [a for a in script_args if a]
+    # Drop an empty-string argument unless it is the value of the option before it
+    # (see _drop_stray_empty_args for the rule and what is still dropped).
+    script_args = _drop_stray_empty_args(script_args)
 
     # Subcommand is first arg after stripping audit-plan-id
     subcommand = script_args[0] if script_args else ''
