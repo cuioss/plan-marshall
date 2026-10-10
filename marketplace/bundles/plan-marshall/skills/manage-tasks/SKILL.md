@@ -300,10 +300,15 @@ compared on **blast radius**:
 |---|---|---|
 | The row | `args`, at `--command-args` | The canonical it ran and the scope tokens that followed — no tokens means whole-tree |
 | The row | `outcome.tests_run` + `outcome.tests_population` | Whether it MEASURED that it executed zero tests |
-| The change | the live plan footprint via `_test_scope_divergence.resolve_test_scope`, with the registered targets from the shared helper `_test_scope_targets.resolve_registered_targets` | The module set a scoped run must cover, and whether only a whole-tree run will do |
+| The change | the live plan footprint via `_test_scope_divergence.resolve_test_scope`, with the registered targets and the bundle modules from the shared helpers `_test_scope_targets.resolve_registered_targets` and `resolve_bundle_modules` | The module set a scoped run must cover, and whether only a whole-tree run will do |
 
 The registered targets have one derivation, the shared helper named above; the
-gate carries no enumeration of its own. **Narrow units are never an input to the
+gate carries no enumeration of its own. **Only a bundle module can be covered by
+a module-scoped row.** A footprint that names a test tree that is no bundle, or
+reaches a module through the declared source-to-test mapping
+(`SOURCE_TO_TEST_TARGET`), is reported by the resolver as whole-tree, so a row
+scoped to that tree is refused exactly as a narrower one is and only a
+whole-tree test row covers the change. **Narrow units are never an input to the
 coverage dimension.** The gate calls the resolver without its test-directory
 set and reads `scoped_modules` and `divergence_possible` only, never
 `narrow_units`. A row scoped to a narrow unit — one test directory or one test

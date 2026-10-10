@@ -355,7 +355,9 @@ class RequiredCoverage:
         analyses: The analysis kinds the change can break.
         whole_tree: True when only a whole-tree run covers the change — the
             footprint spans several modules, touches cross-module infrastructure,
-            or contains a path no registered module owns.
+            contains a path no registered module owns, or resolves to a module
+            that is named only (a test tree that is no bundle, or one reached
+            through the declared source-to-test mapping).
         modules: The module set a scoped run must cover when ``whole_tree`` is
             False. Empty only for an empty footprint, which requires nothing.
     """
@@ -439,7 +441,9 @@ def required_coverage(
     ``_test_scope_divergence.resolve_test_scope`` — the single existing authority
     on whether a scoped run could pass while a whole-tree run fails. When it is
     True only a whole-tree row covers the change; otherwise a row scoped to the
-    resolved module set does.
+    resolved module set does. A row scoped to a test tree that is no bundle is
+    never adequate: the resolver reports every footprint that names such a tree
+    as ``divergence_possible``.
 
     The empty footprint requires nothing at all (no analyses, no modules,
     ``whole_tree`` False), so every row covers it. That state is unreachable in

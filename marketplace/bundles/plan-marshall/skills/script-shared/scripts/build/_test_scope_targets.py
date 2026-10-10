@@ -26,10 +26,17 @@ width is deliberate: a name the pure half can derive must be checkable here.
 A target registered from a root ``build.py`` does not run is refused by
 ``require_test_path`` with a named error, never run against the wrong tree.
 
+Being a registered target makes a name one the pure half may MENTION. Only the
+bundle population is one a consumer can run as a module: the architecture
+resolves a build command for a bundle and for nothing else. The bundle subset is
+therefore enumerated on its own (:func:`resolve_bundle_modules`), and the pure
+half recommends a scoped target only from it.
+
 Beside the registered targets this module enumerates the second-level test
 directories (:func:`resolve_test_directories`): the existing ``{tree}/{directory}``
 names the pure half needs in order to return a narrow unit only for a skill that
-actually has a test directory.
+actually has a test directory. :func:`resolve_existing_paths` does the same for
+a changed test file, which is a unit only while the file exists.
 
 This module performs I/O (a directory walk) on purpose. It is the I/O half of
 the pair whose pure half is ``_test_scope_divergence``: that module receives the
@@ -38,6 +45,7 @@ set computed here as an argument and never reads the filesystem itself.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
 
 from _test_scope_divergence import _TEST_ROOTS
@@ -112,10 +120,77 @@ def resolve_registered_targets(project_dir: str | None) -> frozenset[str]:
         bundles_root = find_marketplace_path(Path(project_dir) if project_dir else None)
         if bundles_root is None:
             return frozenset()
-        bundle_names = {extract_bundle_name(bundle_dir) for bundle_dir in find_bundles(bundles_root)}
         # ``bundles_root`` is ``{checkout}/marketplace/bundles``; the test roots
         # live at the checkout root, two levels up.
-        return frozenset(bundle_names | _test_tree_names(bundles_root.parent.parent))
+        return frozenset(_bundle_names(bundles_root) | _test_tree_names(bundles_root.parent.parent))
+    except OSError:
+        return frozenset()
+
+
+def _bundle_names(bundles_root: Path) -> set[str]:
+    """Return the name of every bundle under ``bundles_root``."""
+    return {extract_bundle_name(bundle_dir) for bundle_dir in find_bundles(bundles_root)}
+
+
+def resolve_bundle_modules(project_dir: str | None) -> frozenset[str]:
+    """Enumerate the bundle modules for ``project_dir``'s marketplace.
+
+    The subset of :func:`resolve_registered_targets` that is a bundle - the only
+    registered targets the pure resolver may hand out as a
+    ``recommended_target`` or resolve a narrow unit against. A test tree that is
+    no bundle is a registered target and is absent here, which is how the pure
+    half tells a name it may merely mention from one a consumer can run.
+
+    Both functions read the bundle half through the same walk
+    (:func:`_bundle_names`), so this set cannot name a bundle the registered
+    targets lack.
+
+    Returns an EMPTY frozenset in the same two cases as
+    :func:`resolve_registered_targets`, under the same deliberately narrow
+    ``OSError`` guard. The pure resolver reads an empty set as "no name is a
+    bundle module", so no scoped target is recommended and the caller is routed
+    to the whole tree.
+
+    Args:
+        project_dir: The checkout to enumerate, or ``None`` to resolve the
+            marketplace by ``find_marketplace_path``'s own fallback order.
+    """
+    try:
+        bundles_root = find_marketplace_path(Path(project_dir) if project_dir else None)
+        if bundles_root is None:
+            return frozenset()
+        return frozenset(_bundle_names(bundles_root))
+    except OSError:
+        return frozenset()
+
+
+def resolve_existing_paths(project_dir: str | None, paths: Iterable[str]) -> frozenset[str]:
+    """Return the entries of ``paths`` that are existing files in ``project_dir``'s checkout.
+
+    The set the pure resolver needs to return a changed test file as a narrow
+    unit only when the file is there to run. A footprint lists a deleted file
+    exactly as it lists an edited one, and nothing in a path says which it is.
+
+    Each entry is read relative to the checkout that carries
+    ``marketplace/bundles``, the same root the two walks above use.
+
+    Returns an EMPTY frozenset in the same two cases as
+    :func:`resolve_registered_targets`, under the same narrow ``OSError`` guard.
+    The pure resolver reads an empty set as "no file exists", so every changed
+    test file is named in ``narrow_units_unresolved`` instead of becoming a unit
+    nothing backs.
+
+    Args:
+        project_dir: The checkout to look in, or ``None`` to resolve the
+            marketplace by ``find_marketplace_path``'s own fallback order.
+        paths: Repo-relative paths, typically a footprint.
+    """
+    try:
+        bundles_root = find_marketplace_path(Path(project_dir) if project_dir else None)
+        if bundles_root is None:
+            return frozenset()
+        checkout = bundles_root.parent.parent
+        return frozenset(path for path in paths if (checkout / path).is_file())
     except OSError:
         return frozenset()
 

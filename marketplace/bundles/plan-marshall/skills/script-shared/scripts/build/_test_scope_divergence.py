@@ -20,6 +20,26 @@ enumerated by the I/O sibling ``_test_scope_targets.resolve_registered_targets``
 - the single derivation of it - and handed in through the ``registered_modules``
 parameter, whose name predates the test-tree half of that definition.
 
+Named is not the same as authoritative
+--------------------------------------
+A registered target decides which names may appear in ``scoped_modules``. It does
+NOT decide which name a consumer may run as *the* module of a change. Only a
+**bundle module** is that: it is the one kind of name the architecture resolves a
+build command for, and the one kind whose tests are found by reading a path
+segment. Two shapes are therefore *named only* - they appear in
+``scoped_modules`` and in ``named_only_modules``, they force
+``divergence_possible``, and they never become ``recommended_target``:
+
+* a **test tree that is no bundle** - ``architecture resolve --module`` knows no
+  module of that name, so a consumer handed it could not run it; and
+* a module reached through :data:`SOURCE_TO_TEST_TARGET` - the mapping names
+  *a* tree holding tests for that source, not the only one, so a run scoped to it
+  is not equivalent to the whole tree.
+
+The bundle subset arrives through the ``bundle_modules`` parameter, enumerated by
+``_test_scope_targets.resolve_bundle_modules``. Not supplying it establishes no
+name as a bundle module, so nothing is authoritative - the fail-closed direction.
+
 The scope-derivation rule mirrors, in code, the bundle-derivation prose in
 ``phase-6-finalize/standards/pre-push-quality-gate.md`` section "Derive unique
 bundle set": each footprint entry's owning module is taken from path segment 2
@@ -88,6 +108,11 @@ _SHARED_TEST_INFRA_PREFIXES: tuple[str, ...] = tuple(f'{root}/_shared/' for root
 #: regardless of declaration order. A mapped target is still subject to the
 #: registered-name guard: an entry naming a target nothing carries resolves to no
 #: module.
+#:
+#: An entry NAMES a tree holding tests for the source; it does not claim that
+#: tree holds all of them. A module reached through this mapping is therefore
+#: named only (see the module docstring): it never becomes a
+#: ``recommended_target`` and it forces the whole-tree verdict.
 SOURCE_TO_TEST_TARGET: tuple[tuple[str, str], ...] = (('marketplace/targets/', 'marketplace'),)
 
 
@@ -100,31 +125,45 @@ class TestScopeResolution:
             would target, derived from the footprint.
         divergence_possible: True when a scoped run could pass while a
             whole-tree run fails - the footprint spans more than one module, it
-            touches shared / cross-module test infrastructure, or at least one
+            touches shared / cross-module test infrastructure, at least one
             footprint entry could not be mapped to a registered target (a bundle
-            or a test tree holding tests).
-        recommended_target: The single module a scoped run should target when
-            divergence is impossible (scoped-equals-whole-tree by equivalence);
-            None when a whole-tree run is warranted, and also None for the empty
-            footprint (nothing to run). A consumer MUST check this value is
-            non-null before interpolating it into a command.
+            or a test tree holding tests), or at least one scoped module is
+            named only (``named_only_modules`` is non-empty).
+        recommended_target: The single BUNDLE module a scoped run should target
+            when divergence is impossible (scoped-equals-whole-tree by
+            equivalence); None when a whole-tree run is warranted, and also None
+            for the empty footprint (nothing to run). Never a test tree that is
+            no bundle and never a module reached through the declared mapping.
+            A consumer MUST check this value is non-null before interpolating it
+            into a command.
         unresolved_paths: Every footprint entry that mapped to no registered
             target, in footprint order. Non-empty means coverage for those paths
             could not be determined, which is reported rather than silently
             dropped (ADR-014) and forces the whole-tree verdict.
         narrow_units: The sorted, de-duplicated ``module-tests`` targets
             narrower than the module itself that the footprint points at - a
-            skill's test directory, or a changed test file. Empty unless the
-            caller supplied the set of existing test directories AND the
-            footprint resolves to exactly one module. Advisory: a faster first
-            signal, never a replacement for ``recommended_target`` or for the
-            whole-tree verdict.
+            skill's test directory, or a changed test file that exists. Empty
+            unless the caller supplied the set of existing test directories AND
+            the footprint resolves to exactly one module AND that module is a
+            bundle module. Advisory: a faster first signal, never a replacement
+            for ``recommended_target`` or for the whole-tree verdict.
         narrow_units_unresolved: Every footprint entry that contributed no
             narrow unit, in footprint order. Reported for the same reason
             ``unresolved_paths`` is: a narrow run does not cover these paths, and
             saying so is what keeps a green narrow run from reading as coverage
             of the whole change. Empty under the same conditions as
             ``narrow_units``.
+        named_only_modules: The sorted entries of ``scoped_modules`` that are
+            named but not authoritative - a test tree that is no bundle, or a
+            module at least one footprint entry reached through
+            :data:`SOURCE_TO_TEST_TARGET`. Non-empty forces
+            ``divergence_possible`` and a null ``recommended_target``. A name
+            listed here MUST NOT be passed to ``architecture resolve --module``.
+        narrow_unit_module: The bundle module every entry of ``narrow_units``
+            belongs to - the module to resolve a narrow unit against. Non-null
+            exactly when ``narrow_units`` is non-empty, which is what
+            ``recommended_target`` is not: that one is null whenever a
+            whole-tree run is warranted, while narrow units are still offered.
     """
 
     scoped_modules: tuple[str, ...]
@@ -133,6 +172,8 @@ class TestScopeResolution:
     unresolved_paths: tuple[str, ...]
     narrow_units: tuple[str, ...] = ()
     narrow_units_unresolved: tuple[str, ...] = ()
+    named_only_modules: tuple[str, ...] = ()
+    narrow_unit_module: str | None = None
 
 
 @dataclass(frozen=True)
@@ -212,13 +253,8 @@ def _module_for_path(path: str, registered_modules: Collection[str]) -> str | No
             module means the set is supplied, never read from the filesystem
             here.
     """
-    segments = path.split('/')
-    derived: str | None
-    if path.startswith('marketplace/bundles/') and len(segments) > 3:
-        derived = segments[2]
-    elif segments[0] in _TEST_ROOTS and len(segments) > 2:
-        derived = segments[1]
-    else:
+    derived = _segment_derived_name(path)
+    if derived is None and not _has_segment_shape(path):
         derived = _mapped_target_for_path(path)
     # UNCHANGED fail-closed guard: widening WHICH roots yield a candidate name
     # must never widen WHICH names are accepted. A derived name that no
@@ -226,6 +262,42 @@ def _module_for_path(path: str, registered_modules: Collection[str]) -> str | No
     # path in ``unresolved_paths`` and falls back to the whole tree. The guard
     # applies to a MAPPED name exactly as to a segment-derived one.
     return derived if derived in registered_modules else None
+
+
+def _has_segment_shape(path: str) -> bool:
+    """Return True when ``path`` lies under the bundle root or a test root.
+
+    Such a path is never looked up in :data:`SOURCE_TO_TEST_TARGET`, whether or
+    not it is nested deeply enough to derive a name: the mapping is for source
+    OUTSIDE both shapes.
+    """
+    return path.startswith('marketplace/bundles/') or path.split('/')[0] in _TEST_ROOTS
+
+
+def _segment_derived_name(path: str) -> str | None:
+    """Return the name a path SEGMENT yields for ``path``, or None.
+
+    Segment 2 of ``marketplace/bundles/{bundle}/...`` and segment 1 of
+    ``{root}/{bundle}/...``, each only when the path is nested inside that
+    directory. The name is a candidate: the caller still checks it against the
+    registered targets.
+    """
+    segments = path.split('/')
+    if path.startswith('marketplace/bundles/'):
+        return segments[2] if len(segments) > 3 else None
+    if segments[0] in _TEST_ROOTS:
+        return segments[1] if len(segments) > 2 else None
+    return None
+
+
+def _reached_through_mapping(path: str) -> bool:
+    """Return True when ``path``'s module comes from :data:`SOURCE_TO_TEST_TARGET`.
+
+    The discriminator behind ``named_only_modules``: a module a path SEGMENT
+    names is the module that owns the path, while a mapped module is only a tree
+    known to hold tests for it.
+    """
+    return not _has_segment_shape(path) and _mapped_target_for_path(path) is not None
 
 
 def _mapped_target_for_path(path: str) -> str | None:
@@ -242,17 +314,26 @@ def _mapped_target_for_path(path: str) -> str | None:
     return max(matches, key=lambda entry: len(entry[0]))[1]
 
 
-def _narrow_unit_for_path(path: str, test_directories: Collection[str]) -> str | None:
+def _narrow_unit_for_path(
+    path: str,
+    test_directories: Collection[str],
+    existing_paths: Collection[str] | None,
+) -> str | None:
     """Return the narrow ``module-tests`` target ``path`` points at, or None.
 
-    Two shapes contribute a unit:
+    Two shapes contribute a unit, and each only when the caller's enumeration
+    establishes that the unit exists:
 
     * A path nested inside ``marketplace/bundles/{bundle}/skills/{skill}/``
       contributes ``{bundle}/{skill}`` - but only when that directory is in
       ``test_directories``. A skill with no test directory has no narrow unit; a
       name derived from the path alone would be a target that collects nothing.
     * A changed test file - a ``test_*.py`` nested inside a module directory
-      under a test root - contributes its own path relative to that root.
+      under a test root - contributes its own path relative to that root, but
+      only when the path is in ``existing_paths``. A footprint names a DELETED
+      file exactly as it names an edited one, and a deleted test file is a unit
+      no run can collect. ``None`` (no set supplied) establishes no file as
+      existing, so no test file is a unit.
 
     Any other path contributes nothing and the caller names it in
     ``narrow_units_unresolved``.
@@ -263,7 +344,8 @@ def _narrow_unit_for_path(path: str, test_directories: Collection[str]) -> str |
         return unit if unit in test_directories else None
     if segments[0] in _TEST_ROOTS and len(segments) > 2:
         filename = segments[-1]
-        if filename.startswith('test_') and filename.endswith('.py'):
+        is_test_file = filename.startswith('test_') and filename.endswith('.py')
+        if is_test_file and existing_paths is not None and path in existing_paths:
             return '/'.join(segments[1:])
     return None
 
@@ -271,17 +353,21 @@ def _narrow_unit_for_path(path: str, test_directories: Collection[str]) -> str |
 def _resolve_narrow_units(
     footprint: list[str],
     scoped_modules: tuple[str, ...],
+    bundle_modules: Collection[str],
     test_directories: Collection[str] | None,
+    existing_paths: Collection[str] | None,
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """Return ``(narrow_units, narrow_units_unresolved)`` for ``footprint``.
 
     Both are empty when no directory set was supplied (``None`` - which is not
     the same as an EMPTY set: an empty set was supplied and names no directory,
     so every skill path is unresolved) and when the footprint does not resolve to
-    exactly one module. A multi-module footprint has no single narrow scope, and
-    a footprint owning no module has nothing to narrow.
+    exactly one bundle module. A multi-module footprint has no single narrow
+    scope, a footprint owning no module has nothing to narrow, and a single
+    module that is no bundle is one the architecture resolves no command for -
+    a unit of it could be named but not run.
     """
-    if test_directories is None or len(scoped_modules) != 1:
+    if test_directories is None or len(scoped_modules) != 1 or scoped_modules[0] not in bundle_modules:
         return (), ()
     # A unit is kept only when it lies inside the one resolved module. A changed
     # test file under a tree that is NOT a registered target (it sits in
@@ -291,7 +377,7 @@ def _resolve_narrow_units(
     units: set[str] = set()
     unresolved: list[str] = []
     for path in footprint:
-        unit = _narrow_unit_for_path(path, test_directories)
+        unit = _narrow_unit_for_path(path, test_directories, existing_paths)
         if unit is None or not unit.startswith(module_prefix):
             unresolved.append(path)
         else:
@@ -305,6 +391,8 @@ def resolve_test_scope(
     registered_modules: Collection[str],
     *,
     test_directories: Collection[str] | None = None,
+    bundle_modules: Collection[str] | None = None,
+    existing_paths: Collection[str] | None = None,
 ) -> TestScopeResolution:
     """Resolve the scoped module set and whether a whole-tree run is warranted.
 
@@ -322,15 +410,20 @@ def resolve_test_scope(
     consulted for the span or for the empty-scope fallback, which is exactly the
     pre-filter whose removal this function's fail-closed behaviour depends on.
 
-    ``divergence_possible`` is True when ANY of three conditions holds: the
+    ``divergence_possible`` is True when ANY of four conditions holds: the
     resolved set spans more than one module; any footprint entry touches shared /
-    cross-module test infrastructure; or ``unresolved_paths`` is non-empty (at
-    least one entry mapped to no registered target). The third condition is the
-    fail-closed one: coverage for an unmapped path cannot be determined, so the
-    run falls back to the whole tree rather than emitting a confident scoped
-    target that does not cover it. A single-module footprint touching no shared
-    infra and leaving nothing unresolved yields ``divergence_possible = False``
-    with that module as the ``recommended_target`` (match by equivalence).
+    cross-module test infrastructure; ``unresolved_paths`` is non-empty (at
+    least one entry mapped to no registered target); or ``named_only_modules`` is
+    non-empty (a scoped module is a test tree that is no bundle, or was reached
+    through the declared mapping - see the module docstring). The third and
+    fourth are the fail-closed ones: coverage for an unmapped path cannot be
+    determined, and a named-only module is one a scoped run can neither be
+    resolved for nor shown equivalent to the whole tree, so the run falls back
+    to the whole tree rather than emitting a confident scoped target. A footprint
+    of exactly one bundle module, every path of it owned by a path segment,
+    touching no shared infra and leaving nothing unresolved yields
+    ``divergence_possible = False`` with that module as the
+    ``recommended_target`` (match by equivalence).
 
     ``recommended_target`` is non-null ONLY in that single-module case. The empty
     footprint is the one legitimate benign verdict: it genuinely has nothing to
@@ -364,23 +457,41 @@ def resolve_test_scope(
             ``unresolved_paths`` - the narrow units are derived beside them, not
             from them. Like ``registered_modules`` it is supplied, never read
             from the filesystem here.
+        bundle_modules: The caller-enumerated bundle module names - the subset
+            of ``registered_modules`` that may be handed out as
+            ``recommended_target`` and that a narrow unit may be resolved
+            against. Keyword-only. The default ``None`` means no set was
+            supplied, which establishes NO name as a bundle module: every scoped
+            module is then named only and a non-empty footprint yields the
+            whole-tree verdict. An empty set reads the same way.
+        existing_paths: The footprint entries the caller established as existing
+            files. Keyword-only, and consulted for one decision only: a changed
+            test file is a narrow unit only when it is in this set. The default
+            ``None`` establishes no file as existing, so no test file is a unit.
 
     Returns:
         A frozen :class:`TestScopeResolution`.
     """
+    bundles: Collection[str] = bundle_modules if bundle_modules is not None else ()
     modules: set[str] = set()
+    named_only: set[str] = set()
     unresolved: list[str] = []
     for path in footprint:
         module = _module_for_path(path, registered_modules)
         if module is None:
             unresolved.append(path)
-        else:
-            modules.add(module)
+            continue
+        modules.add(module)
+        if module not in bundles or _reached_through_mapping(path):
+            named_only.add(module)
 
     scoped_modules = tuple(sorted(modules))
     unresolved_paths = tuple(unresolved)
+    named_only_modules = tuple(sorted(named_only))
     shared_infra_touched = any(_touches_shared_infra(path) for path in footprint)
-    divergence_possible = len(scoped_modules) > 1 or shared_infra_touched or bool(unresolved_paths)
+    divergence_possible = (
+        len(scoped_modules) > 1 or shared_infra_touched or bool(unresolved_paths) or bool(named_only_modules)
+    )
 
     recommended_target: str | None
     if not divergence_possible and len(scoped_modules) == 1:
@@ -388,7 +499,9 @@ def resolve_test_scope(
     else:
         recommended_target = None
 
-    narrow_units, narrow_units_unresolved = _resolve_narrow_units(footprint, scoped_modules, test_directories)
+    narrow_units, narrow_units_unresolved = _resolve_narrow_units(
+        footprint, scoped_modules, bundles, test_directories, existing_paths
+    )
 
     return TestScopeResolution(
         scoped_modules=scoped_modules,
@@ -397,6 +510,8 @@ def resolve_test_scope(
         unresolved_paths=unresolved_paths,
         narrow_units=narrow_units,
         narrow_units_unresolved=narrow_units_unresolved,
+        named_only_modules=named_only_modules,
+        narrow_unit_module=scoped_modules[0] if narrow_units else None,
     )
 
 

@@ -393,7 +393,9 @@ def _module_tests_degradation_payloads() -> list[str]:
 def test_whole_tree_unavailable_routes_to_warn():
     """When no pytest module set is discoverable the gate degrades to a WARNING."""
     # Arrange: a divergent footprint, but whole-tree module-tests is unavailable.
-    resolution = resolve_test_scope(_DIVERGENT_FOOTPRINT, _GLOBS, _REGISTERED_MODULES)
+    resolution = resolve_test_scope(
+        _DIVERGENT_FOOTPRINT, _GLOBS, _REGISTERED_MODULES, bundle_modules=_REGISTERED_MODULES
+    )
 
     # Act
     route, target = _gate_route(resolution, whole_tree_available=False)

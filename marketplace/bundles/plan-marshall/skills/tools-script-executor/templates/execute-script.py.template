@@ -1624,6 +1624,12 @@ def _drop_stray_empty_args(args: list[str]) -> list[str]:
     string is the value the caller wrote, and an option that requires a value is
     rejected by argparse (exit 2) when it arrives without one.
 
+    Kept as well, and this is the filter's remaining limit: an empty string
+    after a flag that takes NO value (``verb --force ""``). The executor cannot
+    tell a value-taking option from a value-less flag, so the rule keys on the
+    token's shape alone and the script receives that empty string as a
+    positional.
+
     Still dropped: an empty string that follows a positional or another value,
     and an empty string in first position. This is the unset shell variable
     passed as a bare positional (``verb "$UNSET"``), which a script would

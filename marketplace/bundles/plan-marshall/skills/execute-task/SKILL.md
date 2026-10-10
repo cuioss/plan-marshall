@@ -270,21 +270,23 @@ Apply throughout all subsequent steps:
         --changed-paths "{changed_paths}" --plan-id "{plan_id}"
       ```
 
-      Parse `scoped_modules[]`, `recommended_target`, `divergence_possible`, `narrow_units[]`, and `narrow_units_unresolved[]` from the TOON.
+      Parse `scoped_modules[]`, `recommended_target`, `divergence_possible`, `narrow_units[]`, `narrow_unit_module`, and `narrow_units_unresolved[]` from the TOON.
    3. **Docs-only short-circuit**: when `scoped_modules` is empty (`recommended_target: None`) the change resolves to no buildable module — run NO pytest for this task; the breakable-test gate is a no-op. Proceed to Step 6.
    4. Otherwise the gate runs in a fixed three-part order — **resolve the scope, run the narrow units inline, then hand back only what is left**:
 
-      1. **Resolve the scope.** Sub-step 2 above did this: `narrow_units` names the test directories and test files the change points at inside its one module, and `recommended_target` names the module itself.
-      2. **Run every narrow unit that resolves `per_task`, inline.** Resolve each entry of `narrow_units` on its own:
+      1. **Resolve the scope.** Sub-step 2 above did this: `narrow_units` names the test directories and test files the change points at inside its one module, `narrow_unit_module` names that module for the narrow units, and `recommended_target` names the module for the wider run when a module-wide run is enough.
+      2. **Run every narrow unit that resolves `per_task`, inline.** Resolve each entry of `narrow_units` on its own, against `narrow_unit_module`:
 
          ```bash
          python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-           --plan-id {plan_id} resolve --command module-tests --module {recommended_target} \
+           --plan-id {plan_id} resolve --command module-tests --module {narrow_unit_module} \
            --narrow-unit {narrow_unit} --audit-plan-id {plan_id}
          ```
 
+         ⛔ The module here is `narrow_unit_module`, never `recommended_target`. The two are different fields with different null rules: `narrow_unit_module` is non-null exactly when `narrow_units` is non-empty, while `recommended_target` is null whenever the wider run is the whole tree (`divergence_possible: true`) — a case in which narrow units are still listed. Interpolating `recommended_target` there would resolve `--module None`.
+
          Read `execution_tier` from each result. Run every unit whose `execution_tier` is `per_task` inline (synchronously, `timeout: bash_timeout_seconds * 1000`) and read the result TOON `status` / `errors[]` — the wrapper exits 0 even on failure. A red narrow unit is a failure of this gate: fix it before going further. A unit whose `execution_tier` is `orchestrator`, or whose resolve returns `status: error`, is not run inline; it stays covered by the wider run below. An empty `narrow_units` list skips this part.
-      3. **Hand back only the wider run, and only when its tier is `orchestrator`.** The wider run is the module-wide `module-tests` of `recommended_target` when it is set, or the whole-tree `module-tests` when `divergence_possible: true` (a multi-module / shared-infra change whose scoped run could diverge from a whole-tree run). Resolve it through the architecture-resolved envelope and read its `execution_tier`: run a `per_task` build inline exactly as a narrow unit is run; hand an `orchestrator`-tier build back to the orchestrator's `await-long-running` seam (the same leaf-no-background-build invariant). The hand-back names the narrow units that already ran green, so the orchestrator knows which part of the wider run has been observed and which has not.
+      3. **Hand back only the wider run, and only when its tier is `orchestrator`.** The wider run is the module-wide `module-tests` of `recommended_target` when it is non-null, or the whole-tree `module-tests` when `divergence_possible: true` (a multi-module or shared-infra change, a change with a path no registered target owns, or a change in a test tree that is no bundle or in source reached through the declared source-to-test mapping — each a change whose scoped run could diverge from a whole-tree run). Never pass an entry of `scoped_modules` or `named_only_modules` as `--module` in place of a null `recommended_target`: a named-only module is not one the architecture resolves. Resolve it through the architecture-resolved envelope and read its `execution_tier`: run a `per_task` build inline exactly as a narrow unit is run; hand an `orchestrator`-tier build back to the orchestrator's `await-long-running` seam (the same leaf-no-background-build invariant). The hand-back names the narrow units that already ran green, so the orchestrator knows which part of the wider run has been observed and which has not.
 
       The narrow units never replace the wider run: a path listed in `narrow_units_unresolved` is covered by no narrow run, and a green narrow unit says nothing about the rest of its module.
 

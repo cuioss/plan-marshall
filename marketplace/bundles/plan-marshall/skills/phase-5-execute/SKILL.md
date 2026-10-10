@@ -221,7 +221,7 @@ Every entry of `phase_5.verification_steps` carries a stamped `execution_tier` i
 This dispatched phase-5 leaf branches on the **live-resolved** tier for every whole-tree verification step it would run (Step 11b Final Quality Sweep and Step 11c Execute-Exit Verify Gate) and for each `default:verify:{canonical}` end-of-phase step:
 
 - **`tier == per_task`** — the step is in the leaf's **runnable slice**. Run the resolved executable inline (synchronously) per `standards/canonical_verify.md`, honouring the resolved `bash_timeout_seconds`. Read the result TOON.
-- **`tier == orchestrator`** — the step is **NOT in the leaf's runnable slice**. The leaf MUST NOT run it (inline OR backgrounded). Return an orchestrator-tier yield signal (`status: blocked`, `voluntary_checkpoint`) naming the step so the main-context orchestrator runs it through the [`await-long-running`](../plan-marshall/workflow/await-long-running.md) detach-and-notify seam (the only component permitted to background a build). For a `module-tests` step the yield is the last part of a fixed three-part order — resolve the scope, run the narrow units inline, then hand back only what is left: before returning the yield, the leaf resolves the test scope (the `resolve-test-scope` verb of the build skill the `module-tests` canonical resolves to), resolves each entry of the returned `narrow_units` through `architecture resolve --narrow-unit`, and runs inline every one whose `execution_tier` is `per_task`. The yield then hands back only the wider run — the `recommended_target` module-wide run, or the whole-tree run — and names the narrow units that already ran green. The procedure is the `execute-task` implementation profile's Step 5 (b) — see [`../execute-task/SKILL.md`](../execute-task/SKILL.md).
+- **`tier == orchestrator`** — the step is **NOT in the leaf's runnable slice**. The leaf MUST NOT run it (inline OR backgrounded). Return an orchestrator-tier yield signal (`status: blocked`, `voluntary_checkpoint`) naming the step so the main-context orchestrator runs it through the [`await-long-running`](../plan-marshall/workflow/await-long-running.md) detach-and-notify seam (the only component permitted to background a build). For a `module-tests` step the yield is the last part of a fixed three-part order — resolve the scope, run the narrow units inline, then hand back only what is left: before returning the yield, the leaf resolves the test scope (the `resolve-test-scope` verb of the build skill the `module-tests` canonical resolves to), resolves each entry of the returned `narrow_units` against the returned `narrow_unit_module` through `architecture resolve --module {narrow_unit_module} --narrow-unit`, and runs inline every one whose `execution_tier` is `per_task`. The yield then hands back only the wider run — the `recommended_target` module-wide run when that field is non-null, or the whole-tree run — and names the narrow units that already ran green. The procedure is the `execute-task` implementation profile's Step 5 (b) — see [`../execute-task/SKILL.md`](../execute-task/SKILL.md).
 
 A step whose stamped tier is absent (a manifest composed before this field existed) reads as `per_task`. `per_task` is the **permissive default, not a safe floor** — it is the value that would put a long build inline, where the host platform auto-backgrounds it past the Bash ceiling and this leaf cannot reap it. That default is safe only because the leaf re-resolves live before running: the live resolve, not the stamp, is what keeps a long build off the leaf.
 
@@ -607,6 +607,8 @@ The helper reads `base_branch` from `references.json` (absent or blank reads as 
 status: success
 residual_count: N
 threshold: T
+threshold_source: flag|config|default
+threshold_config_error: "<why>"            # only when a marshal.json value was present but unusable
 finding_emitted: true|false
 finding_resolved_as: accepted|suppressed   # only when this residual set was already resolved that way
 finding_hash_id: {hash_id}                 # only together with finding_resolved_as
@@ -623,6 +625,8 @@ status: could_not_look
 reason: merge_base_unresolved | guard_disabled
 detail: "<why nothing was measured>"
 threshold: T
+threshold_source: flag|config|default
+threshold_config_error: "<why>"            # only when a marshal.json value was present but unusable
 finding_emitted: false
 ```
 
@@ -632,7 +636,7 @@ finding_emitted: false
 status: error
 ```
 
-Two causes reach this shape. `git_diff_failed` means the diff itself could not be computed — the `error` line carries the token followed by the underlying exception, not the token alone. `finding_persist_failed` means a residual set OVER the threshold was measured but its finding could not be written, so the run reports the rejected finding's content inline (`message`, `finding_title`, `finding_detail`, `residual_count`, `threshold`, and `residual_files` as a simple array) rather than absorbing the loss. Both return exit code `1` — unlike the `could_not_look` shape above, an error IS a failure of the guard.
+Two causes reach this shape. `git_diff_failed` means the diff itself could not be computed — the `error` line carries the token followed by the underlying exception, not the token alone. `finding_persist_failed` means a residual set OVER the threshold was measured but its finding could not be written, so the run reports the rejected finding's content inline (`message`, `finding_title`, `finding_detail`, `residual_count`, `threshold` with its `threshold_source`, and `residual_files` as a simple array) rather than absorbing the loss. Both return exit code `1` — unlike the `could_not_look` shape above, an error IS a failure of the guard.
 
 ⛔ **`residual_count` is ABSENT on the `could_not_look` shape, and that absence is the contract.** The count is the field consumers gate on, so a `0` published by a run that never compared anything is indistinguishable from "compared, and found no scope creep" — a `reason` field alone does not fix that, because it is advisory and trivially dropped. Read `status` FIRST: on `could_not_look` there is no measurement to act on, and a caller that branches on `residual_count` finds no key rather than a false zero. Never substitute `0` for the missing key.
 
@@ -640,7 +644,7 @@ Both `could_not_look` reasons return exit code `0` — an unmeasurable guard is 
 
 When `finding_emitted: true`, the helper has already persisted the warning to the Q-Gate findings store as `manage-findings qgate add --type triage --rule scope_creep_warning` would — type `triage`, rule key `scope_creep_warning`. The finding flows into the Step 11 triage loop alongside other verify findings (same resolution path: FIX / SUPPRESS / ACCEPT). No additional surface action required here — the standard triage loop handles it.
 
-**Threshold configuration**: default is `5`; override via `phase_5.scope_creep_threshold` in `marshal.json`'s plan-scoped config. Set to `0` to disable the guard entirely — which yields the `could_not_look` shape with `reason: guard_disabled`, never a clean zero.
+**Threshold configuration**: the threshold is resolved in a fixed order — the explicit `--threshold` flag, else `plan.phase-5-execute.scope_creep_threshold` in `marshal.json`, else the default `5` — and every output names which one applied in `threshold_source` (`flag` / `config` / `default`). The `marshal.json` key is a non-negative integer and is absent unless the project adds it to the tracked file; it carries no registered default, so the `manage-config` `plan phase-5-execute` `get` and `set` verbs answer `Unknown field` for it. A threshold of `0`, from either source, disables the guard entirely — which yields the `could_not_look` shape with `reason: guard_disabled`, never a clean zero. ⛔ A `marshal.json` value that is present but unusable — the file cannot be read or parsed, a section has the wrong shape, or the key holds anything but a non-negative integer — is never read as a value and never as `0`: the guard runs at the default and reports `threshold_source: default` together with `threshold_config_error` naming what was wrong.
 
 ### Step 7: Mark Step Complete
 

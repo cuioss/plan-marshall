@@ -62,7 +62,12 @@ from _pyproject_cmd_discover import discover_python_modules
 from _pyproject_cmd_parse import parse_log, slice_failure_details
 from _pyproject_execute import _CONFIG, cmd_run
 from _test_scope_divergence import resolve_test_scope
-from _test_scope_targets import resolve_registered_targets, resolve_test_directories
+from _test_scope_targets import (
+    resolve_bundle_modules,
+    resolve_existing_paths,
+    resolve_registered_targets,
+    resolve_test_directories,
+)
 from marketplace_paths import names_real_plan
 from toon_parser import serialize_toon
 
@@ -181,6 +186,28 @@ def _resolve_test_directories(project_dir: str | None) -> frozenset[str]:
     return resolve_test_directories(project_dir)
 
 
+def _resolve_bundle_modules(project_dir: str | None) -> frozenset[str]:
+    """Enumerate the bundle modules for ``project_dir``'s marketplace.
+
+    The subset of the registered targets the pure ``resolve_test_scope`` helper
+    may hand out as ``recommended_target`` and resolve a narrow unit against.
+    Delegates to ``_test_scope_targets.resolve_bundle_modules``. An empty return
+    names no bundle module, which the helper answers with the whole-tree
+    verdict.
+    """
+    return resolve_bundle_modules(project_dir)
+
+
+def _resolve_existing_paths(project_dir: str | None, footprint: list[str]) -> frozenset[str]:
+    """Return the footprint entries that are existing files in ``project_dir``'s checkout.
+
+    The set the pure ``resolve_test_scope`` helper needs to return a changed test
+    file as a narrow unit only while the file exists. Delegates to
+    ``_test_scope_targets.resolve_existing_paths``.
+    """
+    return resolve_existing_paths(project_dir, footprint)
+
+
 def cmd_resolve_test_scope(args) -> int:
     """Resolve the scoped module set and scoped-vs-whole-tree divergence risk.
 
@@ -195,15 +222,26 @@ def cmd_resolve_test_scope(args) -> int:
     whole-tree pytest run is structurally possible (a discoverable Python module
     set exists). Prints the resolution as TOON: ``scoped_modules[]``,
     ``divergence_possible``, ``recommended_target``, ``unresolved_paths[]``,
-    ``narrow_units[]``, ``narrow_units_unresolved[]``, ``whole_tree_available``,
-    ``footprint_resolvable``, ``modules_resolvable``.
+    ``narrow_units[]``, ``narrow_units_unresolved[]``, ``named_only_modules[]``,
+    ``narrow_unit_module``, ``whole_tree_available``, ``footprint_resolvable``,
+    ``modules_resolvable``.
 
     ``narrow_units`` names the ``module-tests`` targets narrower than the module
-    that a single-module footprint points at (a skill's test directory, a changed
-    test file); ``narrow_units_unresolved`` names every changed path that
-    contributed none. Both are advisory for a step that wants a faster first
-    signal, both are empty for a footprint that does not resolve to exactly one
-    module, and both are emptied on the fail-toward-whole-tree branch below.
+    that a single-bundle-module footprint points at (a skill's test directory, a
+    changed test file that exists); ``narrow_units_unresolved`` names every
+    changed path that contributed none - a deleted test file among them.
+    ``narrow_unit_module`` names the bundle module those units belong to and is
+    non-null exactly when ``narrow_units`` is non-empty. All three are advisory
+    for a step that wants a faster first signal, the two lists are empty for a
+    footprint that does not resolve to exactly one bundle module, and all three
+    are emptied on the fail-toward-whole-tree branch below.
+
+    ``named_only_modules`` names the entries of ``scoped_modules`` that are
+    named but not authoritative: a test tree that is no bundle, or a module
+    reached through the declared source-to-test mapping. A footprint carrying
+    one reports ``divergence_possible: true`` with ``recommended_target: null``
+    - the whole tree is required - so no consumer is handed a name that
+    ``architecture resolve --module`` does not know.
 
     Footprint source: ``--changed-paths`` (task-scoped) supersedes the whole-plan
     footprint; when it is absent a REAL ``--plan-id`` is required to resolve the
@@ -232,10 +270,9 @@ def cmd_resolve_test_scope(args) -> int:
     registered target, so the suppression is disclosed to the consumer (ADR-014)
     instead of dying inside the dataclass.
 
-    A ``recommended_target`` that names a non-bundle test tree is valid for
-    ``module-tests`` only: that command resolves its argument under the test
-    root, while ``compile`` / ``quality-gate`` / ``coverage`` / ``verify``
-    resolve it to a bundle directory that such a tree does not have.
+    A ``recommended_target`` is always a bundle module. A test tree that is no
+    bundle is named in ``scoped_modules`` and ``named_only_modules`` and never
+    recommended.
     """
     # In-process form of the manage-references compute-footprint /
     # manage-config build-map read seams — same script-shared bundle, no
@@ -285,6 +322,8 @@ def cmd_resolve_test_scope(args) -> int:
         globs,
         registered_modules,
         test_directories=_resolve_test_directories(project_dir),
+        bundle_modules=_resolve_bundle_modules(project_dir),
+        existing_paths=_resolve_existing_paths(project_dir, footprint),
     )
     if not footprint_resolvable or not modules_resolvable:
         # The narrow lists are emptied with the target they sit beside: a
@@ -295,6 +334,7 @@ def cmd_resolve_test_scope(args) -> int:
             recommended_target=None,
             narrow_units=(),
             narrow_units_unresolved=(),
+            narrow_unit_module=None,
         )
     # discover_python_modules requires a concrete project root; when project_dir
     # is absent (args constructed dynamically or a test env lacking the
@@ -311,6 +351,8 @@ def cmd_resolve_test_scope(args) -> int:
                 'unresolved_paths': list(resolution.unresolved_paths),
                 'narrow_units': list(resolution.narrow_units),
                 'narrow_units_unresolved': list(resolution.narrow_units_unresolved),
+                'named_only_modules': list(resolution.named_only_modules),
+                'narrow_unit_module': resolution.narrow_unit_module,
                 'whole_tree_available': whole_tree_available,
                 'footprint_resolvable': footprint_resolvable,
                 'modules_resolvable': modules_resolvable,

@@ -12,6 +12,7 @@ resolver fields and state the three parts in the same order.
 from pathlib import Path
 
 import pytest
+from _test_scope_divergence import resolve_test_scope
 
 from conftest import MARKETPLACE_ROOT
 
@@ -21,7 +22,15 @@ _SKILLS = MARKETPLACE_ROOT / 'plan-marshall' / 'skills'
 ORDER_MARKERS = ('resolve the scope', 'run the narrow units inline', 'hand back only')
 
 #: The resolver fields both documents name, as inline code.
-RESOLVER_FIELDS = ('narrow_units', 'recommended_target', 'execution_tier')
+RESOLVER_FIELDS = ('narrow_units', 'narrow_unit_module', 'recommended_target', 'execution_tier')
+
+#: The module placeholder a narrow-unit resolve carries in both documents. It is
+#: the field that is non-null whenever a narrow unit is listed.
+NARROW_UNIT_RESOLVE = '--module {narrow_unit_module}'
+
+#: The placeholder a narrow-unit resolve must never carry: that field is null
+#: whenever the wider run is the whole tree, while narrow units are still listed.
+NULLABLE_MODULE_RESOLVE = '--module {recommended_target}'
 
 #: ``(document, start, end)`` — the passage of each document that states the
 #: order runs from the first occurrence of ``start`` up to the next ``end``.
@@ -68,6 +77,38 @@ def test_document_states_the_order_and_names_the_resolver_fields(document: Path,
     gaps = contract_gaps(passage)
 
     assert gaps == [], f'{document.parent.name}/SKILL.md does not state: {gaps}'
+
+
+@pytest.mark.parametrize('document,start,end', PASSAGES, ids=[document.parent.name for document, _, _ in PASSAGES])
+def test_a_narrow_unit_is_resolved_against_the_field_that_is_never_null_beside_it(
+    document: Path, start: str, end: str
+) -> None:
+    """Each document resolves a narrow unit against ``narrow_unit_module``, never ``recommended_target``."""
+    passage = _passage(document, start, end)
+
+    assert NARROW_UNIT_RESOLVE in passage
+    assert NULLABLE_MODULE_RESOLVE not in passage
+
+
+def test_the_resolver_names_the_narrow_unit_module_when_the_recommended_target_is_null() -> None:
+    """The field the documents interpolate is set in the case the nullable one is not.
+
+    One bundle module plus a path no target owns: the whole tree is warranted,
+    so ``recommended_target`` is null, and a narrow unit is still listed.
+    """
+    skill_path = 'marketplace/bundles/plan-marshall/skills/execute-task/SKILL.md'
+
+    resolution = resolve_test_scope(
+        [skill_path, 'doc/developer/build.adoc'],
+        [],
+        frozenset({'plan-marshall'}),
+        test_directories=frozenset({'plan-marshall/execute-task'}),
+        bundle_modules=frozenset({'plan-marshall'}),
+    )
+
+    assert resolution.narrow_units == ('plan-marshall/execute-task',)
+    assert resolution.recommended_target is None
+    assert resolution.narrow_unit_module == 'plan-marshall'
 
 
 def test_a_passage_that_drops_one_part_reports_exactly_that_part() -> None:

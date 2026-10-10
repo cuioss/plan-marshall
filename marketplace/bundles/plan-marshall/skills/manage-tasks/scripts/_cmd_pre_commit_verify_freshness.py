@@ -337,7 +337,13 @@ def _resolve_required_coverage(plan_id: str) -> tuple[RequiredCoverage | None, s
     told to run against are computed from one derivation rather than two that can
     drift. The registered targets come from the shared helper
     ``_test_scope_targets.resolve_registered_targets``, the single derivation of
-    that set; this module enumerates nothing itself. Every import is deferred for
+    that set; this module enumerates nothing itself. The bundle subset comes from
+    its sibling ``resolve_bundle_modules``, and it decides which footprints a
+    module-scoped row can cover at all: a footprint naming a test tree that is no
+    bundle, or source reached through the declared source-to-test mapping, is
+    reported by the resolver as ``divergence_possible``, so only a whole-tree row
+    covers it. An unenumerable bundle subset reads as "no bundle module" and so
+    requires the whole tree as well. Every import is deferred for
     the reason the rest of this module defers its cross-skill imports: no hard
     top-level dependency on another skill's scripts dir.
 
@@ -367,7 +373,7 @@ def _resolve_required_coverage(plan_id: str) -> tuple[RequiredCoverage | None, s
         return None, vocabulary_reason
     try:
         from _test_scope_divergence import resolve_test_scope
-        from _test_scope_targets import resolve_registered_targets
+        from _test_scope_targets import resolve_bundle_modules, resolve_registered_targets
         from extension_base import _read_build_map_globs, _resolve_plan_footprint
     except Exception:  # an import can fail as more than ImportError
         return None, REASON_REQUIRED_COVERAGE_UNKNOWN
@@ -378,6 +384,10 @@ def _resolve_required_coverage(plan_id: str) -> tuple[RequiredCoverage | None, s
         # Empty when the targets cannot be enumerated; read below as an
         # inability, never as "no target exists".
         registered = resolve_registered_targets(None)
+        # Empty when no bundle can be enumerated. That needs no branch of its
+        # own: the resolver then recommends no scoped target, which requires the
+        # whole tree - the strict direction.
+        bundles = resolve_bundle_modules(None)
     except (OSError, RuntimeError):
         # RuntimeError is NOT a redundant widening of OSError: it is the
         # documented raise of ``file_ops.get_base_dir``, which
@@ -403,7 +413,7 @@ def _resolve_required_coverage(plan_id: str) -> tuple[RequiredCoverage | None, s
     if footprint is None or not registered:
         return None, REASON_REQUIRED_COVERAGE_UNKNOWN
 
-    resolution = resolve_test_scope(footprint, globs, registered)
+    resolution = resolve_test_scope(footprint, globs, registered, bundle_modules=bundles)
     return (
         required_coverage(
             footprint,

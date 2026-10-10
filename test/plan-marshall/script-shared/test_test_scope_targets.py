@@ -163,6 +163,72 @@ def test_an_unforeseen_error_is_not_relabelled_as_an_empty_set(checkout, monkeyp
 
 
 # ---------------------------------------------------------------------------
+# The bundle subset
+# ---------------------------------------------------------------------------
+
+
+def test_bundle_modules_are_the_bundles_and_never_a_test_tree(checkout):
+    """A test tree that is no bundle is a registered target and no bundle module."""
+    _add_bundle(checkout, 'alpha')
+    _add_file(checkout, 'test/alpha/some-skill/test_alpha.py')
+    _add_bundle(checkout, 'beta')
+    _add_file(checkout, 'test/standalone/test_standalone.py')
+
+    bundles = targets.resolve_bundle_modules(str(checkout))
+
+    assert bundles == frozenset({'alpha', 'beta'})
+    # Matched control: the tree the bundle subset omits IS a registered target.
+    assert targets.resolve_registered_targets(str(checkout)) - bundles == frozenset({'standalone'})
+
+
+def test_unresolvable_marketplace_root_has_no_bundle_module(tmp_path, monkeypatch):
+    """No marketplace root means no bundle to enumerate - the set is empty."""
+    monkeypatch.setattr(targets, 'find_marketplace_path', lambda _project_dir: None)
+
+    assert targets.resolve_bundle_modules(str(tmp_path)) == frozenset()
+
+
+def test_a_bundle_walk_that_raises_oserror_has_no_bundle_module(checkout, monkeypatch):
+    """An unreadable bundle directory empties the set instead of escaping as a crash."""
+    _add_bundle(checkout, 'alpha')
+
+    def _unreadable(_bundles_root):
+        raise OSError('permission denied')
+
+    monkeypatch.setattr(targets, '_bundle_names', _unreadable)
+
+    assert targets.resolve_bundle_modules(str(checkout)) == frozenset()
+
+
+# ---------------------------------------------------------------------------
+# Existing footprint files
+# ---------------------------------------------------------------------------
+
+
+def test_existing_paths_are_the_entries_that_are_files_in_the_checkout(checkout):
+    """A deleted file, a directory and a file outside the list are all left out."""
+    _add_file(checkout, 'test/alpha/some-skill/test_present.py')
+    _add_file(checkout, 'test/alpha/some-skill/test_not_asked_about.py')
+    asked = [
+        'test/alpha/some-skill/test_present.py',
+        'test/alpha/some-skill/test_deleted.py',
+        'test/alpha/some-skill',
+    ]
+
+    existing = targets.resolve_existing_paths(str(checkout), asked)
+
+    assert existing == frozenset({'test/alpha/some-skill/test_present.py'})
+
+
+def test_unresolvable_marketplace_root_establishes_no_existing_path(tmp_path, monkeypatch):
+    """No marketplace root means no checkout to look in - nothing is established."""
+    _add_file(tmp_path, 'test/alpha/test_present.py')
+    monkeypatch.setattr(targets, 'find_marketplace_path', lambda _project_dir: None)
+
+    assert targets.resolve_existing_paths(str(tmp_path), ['test/alpha/test_present.py']) == frozenset()
+
+
+# ---------------------------------------------------------------------------
 # Second-level test directories
 # ---------------------------------------------------------------------------
 
@@ -276,3 +342,7 @@ def test_this_repository_registers_its_bundles_and_its_non_bundle_test_trees():
         assert tree in registered, f'the non-bundle test tree {tree!r} is not a registered target'
     # The helper home is never a target.
     assert '_shared' not in registered
+    # The bundle subset holds the bundles and none of those trees.
+    bundles = targets.resolve_bundle_modules(str(PROJECT_ROOT))
+    assert {'plan-marshall', 'pm-dev-python'} <= bundles <= registered
+    assert bundles.isdisjoint({'default', 'marketplace', 'sync-harnesses'})

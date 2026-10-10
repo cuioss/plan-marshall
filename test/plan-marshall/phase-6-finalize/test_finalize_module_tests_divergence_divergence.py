@@ -405,7 +405,7 @@ def test_scoped_green_whole_tree_red_is_caught(footprint):
     # ``scoped_outcome`` literal below. (``recommended_target`` is ``None`` for a
     # divergent footprint, so keying it here would collide with the whole-tree
     # ``None`` key and mask the red outcome.)
-    resolution = resolve_test_scope(footprint, _GLOBS, _REGISTERED_MODULES)
+    resolution = resolve_test_scope(footprint, _GLOBS, _REGISTERED_MODULES, bundle_modules=_REGISTERED_MODULES)
     runner = _InjectedRunner({None: 'error'})
 
     # Act: the gate routes on divergence risk, then the seam classifies the pair.
@@ -434,7 +434,7 @@ def test_empty_footprint_skips_pytest_instead_of_interpolating_a_null_target():
     reads as a pass.
     """
     # Arrange
-    resolution = resolve_test_scope([], _GLOBS, _REGISTERED_MODULES)
+    resolution = resolve_test_scope([], _GLOBS, _REGISTERED_MODULES, bundle_modules=_REGISTERED_MODULES)
     runner = _InjectedRunner({})
 
     # Act

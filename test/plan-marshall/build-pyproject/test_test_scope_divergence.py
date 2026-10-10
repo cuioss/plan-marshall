@@ -18,7 +18,10 @@ subprocess.
 
 ``resolve_test_scope`` takes the registered-module names as a third argument
 (the purity contract: the set is supplied, never read from an inventory inside
-the pure module), so every call below passes ``_REGISTERED_MODULES``.
+the pure module), so every call below passes ``_REGISTERED_MODULES``. The bundle
+subset - the names that may be recommended - is supplied the same way, through
+``bundle_modules``; a dedicated section covers a registered name that is not in
+it, and a call that supplies no bundle subset at all.
 
 A dedicated section covers the ``tests/`` sibling root. Both root-sensitive
 seams -- ``_module_for_path`` and ``_touches_shared_infra`` -- must recognise
@@ -164,7 +167,7 @@ def _load_pyproject_extension():
 def test_resolve_test_scope_divergence_and_target(footprint, expected_divergence, expected_target):
     """resolve_test_scope classifies divergence and recommends the scoped target."""
     # Arrange / Act
-    resolution = resolve_test_scope(footprint, _GLOBS, _REGISTERED_MODULES)
+    resolution = resolve_test_scope(footprint, _GLOBS, _REGISTERED_MODULES, bundle_modules=_REGISTERED_MODULES)
 
     # Assert
     assert resolution.divergence_possible is expected_divergence
@@ -179,7 +182,9 @@ def test_single_module_footprint_is_the_positive_control():
     including that nothing landed in ``unresolved_paths``.
     """
     # Arrange / Act
-    resolution = resolve_test_scope([_PROD_PLAN_MARSHALL, _DOC], _GLOBS, _REGISTERED_MODULES)
+    resolution = resolve_test_scope(
+        [_PROD_PLAN_MARSHALL, _DOC], _GLOBS, _REGISTERED_MODULES, bundle_modules=_REGISTERED_MODULES
+    )
 
     # Assert
     assert resolution.scoped_modules == ('plan-marshall',)
@@ -216,7 +221,7 @@ def test_unmapped_only_footprint_fails_closed_without_a_build_relevance_prefilte
     )
 
     # And the live resolver must NOT agree with it.
-    resolution = resolve_test_scope(footprint, _GLOBS, _REGISTERED_MODULES)
+    resolution = resolve_test_scope(footprint, _GLOBS, _REGISTERED_MODULES, bundle_modules=_REGISTERED_MODULES)
     assert resolution.scoped_modules == ()
     assert resolution.divergence_possible is True
     assert resolution.recommended_target is None
@@ -234,7 +239,7 @@ def test_mixed_footprint_discloses_unresolved_paths_instead_of_a_confident_targe
     footprint = [_DOC, _UNMAPPED_DOC, _UNMAPPED_WORKFLOW]
 
     # Act
-    resolution = resolve_test_scope(footprint, _GLOBS, _REGISTERED_MODULES)
+    resolution = resolve_test_scope(footprint, _GLOBS, _REGISTERED_MODULES, bundle_modules=_REGISTERED_MODULES)
 
     # Assert - the bundle is still recognised, but no confident target is claimed.
     assert resolution.scoped_modules == ('plan-marshall',)
@@ -251,7 +256,9 @@ def test_shared_test_helper_yields_no_phantom_module_and_is_shared_infra():
     nothing), AND the path is recognised as cross-module test infrastructure.
     """
     # Arrange / Act
-    resolution = resolve_test_scope([_SHARED_TEST_HELPER], _GLOBS, _REGISTERED_MODULES)
+    resolution = resolve_test_scope(
+        [_SHARED_TEST_HELPER], _GLOBS, _REGISTERED_MODULES, bundle_modules=_REGISTERED_MODULES
+    )
 
     # Assert
     assert '_shared' not in resolution.scoped_modules
@@ -290,7 +297,7 @@ def test_module_span_is_independent_of_the_build_map_glob_filter():
     )
 
     # And the live resolver must NOT agree with it.
-    resolution = resolve_test_scope(footprint, _GLOBS, _REGISTERED_MODULES)
+    resolution = resolve_test_scope(footprint, _GLOBS, _REGISTERED_MODULES, bundle_modules=_REGISTERED_MODULES)
     assert resolution.scoped_modules == ('plan-marshall', 'pm-plugin-development')
     assert resolution.divergence_possible is True
 
@@ -305,7 +312,7 @@ def test_resolve_test_scope_dedupes_and_sorts_modules():
     ]
 
     # Act
-    resolution = resolve_test_scope(footprint, _GLOBS, _REGISTERED_MODULES)
+    resolution = resolve_test_scope(footprint, _GLOBS, _REGISTERED_MODULES, bundle_modules=_REGISTERED_MODULES)
 
     # Assert
     assert resolution.scoped_modules == ('plan-marshall', 'pm-dev-python')
@@ -322,7 +329,7 @@ def test_resolve_test_scope_empty_footprint():
     branch would force a whole-tree pytest run on every no-op footprint.
     """
     # Arrange / Act
-    resolution = resolve_test_scope([], _GLOBS, _REGISTERED_MODULES)
+    resolution = resolve_test_scope([], _GLOBS, _REGISTERED_MODULES, bundle_modules=_REGISTERED_MODULES)
 
     # Assert
     assert resolution.scoped_modules == ()
@@ -455,7 +462,7 @@ def test_unmappable_paths_under_either_root_still_fail_closed(path, case):
         f'{path!r} ({case}) resolved to a module; the registered-module guard was widened along with the root set.'
     )
 
-    resolution = resolve_test_scope([path], _GLOBS, _REGISTERED_MODULES)
+    resolution = resolve_test_scope([path], _GLOBS, _REGISTERED_MODULES, bundle_modules=_REGISTERED_MODULES)
 
     assert resolution.scoped_modules == ()
     assert resolution.unresolved_paths == (path,), (
@@ -498,7 +505,9 @@ def test_a_tests_rooted_conftest_still_forces_the_whole_tree():
     verdict comes from the shared-infra recognition, not from the path having
     failed to resolve at all.
     """
-    resolution = resolve_test_scope([_TESTS_NESTED_CONFTEST], _GLOBS, _REGISTERED_MODULES)
+    resolution = resolve_test_scope(
+        [_TESTS_NESTED_CONFTEST], _GLOBS, _REGISTERED_MODULES, bundle_modules=_REGISTERED_MODULES
+    )
 
     assert resolution.scoped_modules == ('plan-marshall',), (
         'the conftest no longer resolves to its module, so the whole-tree verdict below '
@@ -516,7 +525,9 @@ def test_an_ordinary_tests_rooted_path_can_still_resolve_confidently():
     nothing unresolved, still yields the confident scoped target -- which is the
     whole point of recognising the root.
     """
-    resolution = resolve_test_scope([_TESTS_ROOT_REGISTERED], _GLOBS, _REGISTERED_MODULES)
+    resolution = resolve_test_scope(
+        [_TESTS_ROOT_REGISTERED], _GLOBS, _REGISTERED_MODULES, bundle_modules=_REGISTERED_MODULES
+    )
 
     assert resolution.scoped_modules == ('plan-marshall',)
     assert resolution.unresolved_paths == ()
@@ -545,28 +556,101 @@ _REGISTERED_TARGETS = _REGISTERED_MODULES | frozenset(_NON_BUNDLE_TEST_TREES)
 
 
 @pytest.mark.parametrize('tree', _NON_BUNDLE_TEST_TREES)
-def test_a_changed_path_in_a_non_bundle_test_tree_resolves_that_tree(tree):
-    """One changed path under a registered non-bundle tree targets that tree."""
+def test_a_changed_path_in_a_non_bundle_test_tree_names_that_tree_and_requires_the_whole_tree(tree):
+    """A registered non-bundle tree is named, never recommended.
+
+    The tree appears in ``scoped_modules`` and in ``named_only_modules`` and the
+    path is not unresolved - it maps to something. The verdict is the whole tree
+    all the same: no build command resolves for a module of that name.
+    """
     path = f'test/{tree}/test_something.py'
 
-    resolution = resolve_test_scope([path], _GLOBS, _REGISTERED_TARGETS)
+    resolution = resolve_test_scope([path], _GLOBS, _REGISTERED_TARGETS, bundle_modules=_REGISTERED_MODULES)
 
     assert resolution.scoped_modules == (tree,)
+    assert resolution.named_only_modules == (tree,)
     assert resolution.unresolved_paths == ()
+    assert resolution.divergence_possible is True
+    assert resolution.recommended_target is None
+
+
+def test_a_bundle_module_registered_beside_the_test_trees_is_still_recommended():
+    """POSITIVE CONTROL: registering test trees takes nothing from a bundle footprint.
+
+    The same registered set and the same bundle subset as the case above, so the
+    whole-tree verdict there follows from the tree being no bundle - not from a
+    resolver that stopped recommending anything.
+    """
+    resolution = resolve_test_scope(
+        [_PROD_PLAN_MARSHALL], _GLOBS, _REGISTERED_TARGETS, bundle_modules=_REGISTERED_MODULES
+    )
+
+    assert resolution.scoped_modules == ('plan-marshall',)
+    assert resolution.named_only_modules == ()
     assert resolution.divergence_possible is False
-    assert resolution.recommended_target == tree
+    assert resolution.recommended_target == 'plan-marshall'
+
+
+@pytest.mark.parametrize(
+    'bundle_modules',
+    [pytest.param(None, id='not_supplied'), pytest.param(frozenset(), id='supplied_empty')],
+)
+def test_no_module_is_recommended_when_no_bundle_subset_is_established(bundle_modules):
+    """Without a bundle subset no registered name is authoritative.
+
+    The footprint is the one the positive control resolves confidently, so the
+    difference is the bundle subset alone. A caller that cannot enumerate the
+    bundles is routed to the whole tree instead of to a name nobody verified.
+    """
+    resolution = resolve_test_scope(
+        [_PROD_PLAN_MARSHALL],
+        _GLOBS,
+        _REGISTERED_MODULES,
+        test_directories=frozenset({'plan-marshall/foo'}),
+        bundle_modules=bundle_modules,
+    )
+
+    assert resolution.scoped_modules == ('plan-marshall',)
+    assert resolution.named_only_modules == ('plan-marshall',)
+    assert resolution.divergence_possible is True
+    assert resolution.recommended_target is None
+    assert resolution.narrow_units == ()
+    assert resolution.narrow_unit_module is None
+
+
+def test_a_non_bundle_test_tree_offers_no_narrow_unit():
+    """A changed test file in a non-bundle tree is not a unit of a resolvable module.
+
+    A narrow unit is resolved against its module, and no module of the tree's
+    name resolves. Matched control: ``changed_test_file`` in
+    ``NARROW_UNIT_CASES`` - the same shape under a bundle - is a unit.
+    """
+    path = 'test/sync-harnesses/test_something.py'
+
+    resolution = resolve_test_scope(
+        [path],
+        _GLOBS,
+        _REGISTERED_TARGETS,
+        test_directories=frozenset(),
+        bundle_modules=_REGISTERED_MODULES,
+        existing_paths=frozenset({path}),
+    )
+
+    assert resolution.scoped_modules == ('sync-harnesses',)
+    assert resolution.narrow_units == ()
+    assert resolution.narrow_unit_module is None
 
 
 @pytest.mark.parametrize('tree', _NON_BUNDLE_TEST_TREES)
 def test_a_non_bundle_test_tree_is_unresolved_until_it_is_registered(tree):
     """NEGATIVE CONTROL: the same path resolves nothing against the bundle-only set.
 
-    Proves the confident target above comes from the tree being REGISTERED, not
-    from the derivation returning segment 1 of any ``test/`` path verbatim.
+    Proves the tree named above comes from the tree being REGISTERED, not from
+    the derivation returning segment 1 of any ``test/`` path verbatim.
     """
     path = f'test/{tree}/test_something.py'
 
-    resolution = resolve_test_scope([path], _GLOBS, _REGISTERED_MODULES)
+    resolution = resolve_test_scope([path], _GLOBS, _REGISTERED_MODULES, bundle_modules=_REGISTERED_MODULES)
 
     assert resolution.scoped_modules == ()
     assert resolution.unresolved_paths == (path,)
@@ -580,7 +664,9 @@ def test_the_shared_helper_home_stays_unresolved_when_test_trees_are_registered(
     ``_shared`` is not in the registered set, so the path is still unresolved,
     still shared infrastructure, and still forces the whole tree.
     """
-    resolution = resolve_test_scope([_SHARED_TEST_HELPER], _GLOBS, _REGISTERED_TARGETS)
+    resolution = resolve_test_scope(
+        [_SHARED_TEST_HELPER], _GLOBS, _REGISTERED_TARGETS, bundle_modules=_REGISTERED_MODULES
+    )
 
     assert resolution.scoped_modules == ()
     assert resolution.unresolved_paths == (_SHARED_TEST_HELPER,)
@@ -592,9 +678,10 @@ def test_a_non_bundle_test_tree_beside_a_bundle_spans_two_targets():
     """A footprint in a non-bundle tree and in a bundle is a two-target span."""
     footprint = ['test/marketplace/test_something.py', _PROD_PLAN_MARSHALL]
 
-    resolution = resolve_test_scope(footprint, _GLOBS, _REGISTERED_TARGETS)
+    resolution = resolve_test_scope(footprint, _GLOBS, _REGISTERED_TARGETS, bundle_modules=_REGISTERED_MODULES)
 
     assert resolution.scoped_modules == ('marketplace', 'plan-marshall')
+    assert resolution.named_only_modules == ('marketplace',)
     assert resolution.divergence_possible is True
     assert resolution.recommended_target is None
 
@@ -616,12 +703,14 @@ class DeclaredMappingFixture(NamedTuple):
         mapped_target: The test target that path resolves to.
         unmapped_path: A source path no declared mapping covers.
         registered: The registered-target set both paths are resolved against.
+        bundles: The bundle subset of ``registered``.
     """
 
     mapped_path: str
     mapped_target: str
     unmapped_path: str
     registered: frozenset[str]
+    bundles: frozenset[str]
 
 
 DECLARED_MAPPING_FIXTURE = DeclaredMappingFixture(
@@ -629,30 +718,57 @@ DECLARED_MAPPING_FIXTURE = DeclaredMappingFixture(
     mapped_target='marketplace',
     unmapped_path='tools/x.py',
     registered=_REGISTERED_TARGETS,
+    bundles=_REGISTERED_MODULES,
 )
 
 
-def test_a_mapped_source_path_resolves_its_declared_test_target():
-    """A source path the declared mapping covers resolves confidently."""
+def test_a_mapped_source_path_names_its_declared_test_target_and_requires_the_whole_tree():
+    """A source path the declared mapping covers is named, never recommended.
+
+    The mapping names a tree holding tests for the source, not the only one, so
+    the path is resolved (not in ``unresolved_paths``) while the verdict stays
+    the whole tree.
+    """
     fixture = DECLARED_MAPPING_FIXTURE
 
-    resolution = resolve_test_scope([fixture.mapped_path], _GLOBS, fixture.registered)
+    resolution = resolve_test_scope([fixture.mapped_path], _GLOBS, fixture.registered, bundle_modules=fixture.bundles)
 
     assert resolution.scoped_modules == (fixture.mapped_target,)
+    assert resolution.named_only_modules == (fixture.mapped_target,)
     assert resolution.unresolved_paths == ()
-    assert resolution.divergence_possible is False
-    assert resolution.recommended_target == fixture.mapped_target
+    assert resolution.divergence_possible is True
+    assert resolution.recommended_target is None
+
+
+def test_a_module_reached_through_the_mapping_is_named_only_even_when_it_is_a_bundle(monkeypatch):
+    """The mapping route alone makes a module named only.
+
+    The mapped target here IS a bundle module, and a path inside that bundle
+    resolves it confidently - so the whole-tree verdict for the mapped path
+    follows from the route, not from the target being a non-bundle tree.
+    """
+    monkeypatch.setattr(_test_scope_divergence, 'SOURCE_TO_TEST_TARGET', (('tools/', 'plan-marshall'),))
+
+    mapped = resolve_test_scope(['tools/x.py'], _GLOBS, _REGISTERED_MODULES, bundle_modules=_REGISTERED_MODULES)
+    owned = resolve_test_scope([_PROD_PLAN_MARSHALL], _GLOBS, _REGISTERED_MODULES, bundle_modules=_REGISTERED_MODULES)
+
+    assert mapped.scoped_modules == owned.scoped_modules == ('plan-marshall',)
+    assert mapped.named_only_modules == ('plan-marshall',)
+    assert mapped.divergence_possible is True
+    assert mapped.recommended_target is None
+    assert owned.named_only_modules == ()
+    assert owned.recommended_target == 'plan-marshall'
 
 
 def test_an_unmapped_source_path_stays_unresolved():
     """NEGATIVE CONTROL: a source path with no declared mapping fails closed.
 
-    Proves the confident target above comes from the declared entry, not from
+    Proves the module named above comes from the declared entry, not from
     the fallback branch resolving every out-of-tree path to something.
     """
     fixture = DECLARED_MAPPING_FIXTURE
 
-    resolution = resolve_test_scope([fixture.unmapped_path], _GLOBS, fixture.registered)
+    resolution = resolve_test_scope([fixture.unmapped_path], _GLOBS, fixture.registered, bundle_modules=fixture.bundles)
 
     assert resolution.scoped_modules == ()
     assert resolution.unresolved_paths == (fixture.unmapped_path,)
@@ -669,7 +785,7 @@ def test_a_mapped_target_is_returned_only_when_it_is_registered():
     fixture = DECLARED_MAPPING_FIXTURE
     without_target = fixture.registered - {fixture.mapped_target}
 
-    resolution = resolve_test_scope([fixture.mapped_path], _GLOBS, without_target)
+    resolution = resolve_test_scope([fixture.mapped_path], _GLOBS, without_target, bundle_modules=fixture.bundles)
 
     assert resolution.scoped_modules == ()
     assert resolution.unresolved_paths == (fixture.mapped_path,)
@@ -768,37 +884,75 @@ NARROW_UNIT_CASES: dict[str, NarrowUnitCase] = {
 
 _NARROW_UNIT_PARAMS = [pytest.param(case, id=case_id) for case_id, case in NARROW_UNIT_CASES.items()]
 
+#: The footprint entries the narrow-unit cases treat as existing files. Shared,
+#: by import, with the handler cases. A changed test file is a unit only while
+#: it is in this set.
+NARROW_UNIT_EXISTING_PATHS = frozenset({_CHANGED_TEST_FILE})
+
+
+def _resolve_narrow(footprint, **overrides):
+    """Resolve ``footprint`` with every narrow-unit input supplied.
+
+    ``overrides`` replaces any of ``test_directories``, ``bundle_modules`` and
+    ``existing_paths``, so a case states only the input it varies.
+    """
+    inputs = {
+        'test_directories': NARROW_UNIT_TEST_DIRECTORIES,
+        'bundle_modules': _REGISTERED_MODULES,
+        'existing_paths': NARROW_UNIT_EXISTING_PATHS,
+        **overrides,
+    }
+    return resolve_test_scope(list(footprint), _GLOBS, _REGISTERED_MODULES, **inputs)
+
 
 @pytest.mark.parametrize('case', _NARROW_UNIT_PARAMS)
 def test_narrow_units_for_a_single_module_footprint(case):
     """Each named footprint reads its narrow units and names what contributed none."""
-    resolution = resolve_test_scope(
-        list(case.footprint),
-        _GLOBS,
-        _REGISTERED_MODULES,
-        test_directories=NARROW_UNIT_TEST_DIRECTORIES,
-    )
+    resolution = _resolve_narrow(case.footprint)
 
     assert resolution.narrow_units == case.narrow_units
     assert resolution.narrow_units_unresolved == case.narrow_units_unresolved
+    assert resolution.narrow_unit_module == 'plan-marshall'
+
+
+@pytest.mark.parametrize(
+    'existing_paths',
+    [pytest.param(frozenset(), id='file_does_not_exist'), pytest.param(None, id='existence_not_supplied')],
+)
+def test_a_changed_test_file_that_is_not_established_as_existing_is_no_narrow_unit(existing_paths):
+    """A deleted test file is named as unresolved instead of offered as a unit.
+
+    A footprint lists a deleted file exactly as it lists an edited one. Matched
+    control: the ``changed_test_file`` case above is this footprint with the
+    file in the existing set, and there it is a unit.
+    """
+    resolution = _resolve_narrow([_CHANGED_TEST_FILE], existing_paths=existing_paths)
+
+    assert resolution.narrow_units == ()
+    assert resolution.narrow_units_unresolved == (_CHANGED_TEST_FILE,)
+    assert resolution.narrow_unit_module is None
+
+
+def test_a_deleted_test_file_beside_a_skill_change_leaves_the_skill_unit():
+    """Only the unit that cannot run is dropped; the module stays named for the rest."""
+    resolution = _resolve_narrow([_SKILL_BUILD_SERVER, _CHANGED_TEST_FILE], existing_paths=frozenset())
+
+    assert resolution.narrow_units == ('plan-marshall/build-server',)
+    assert resolution.narrow_units_unresolved == (_CHANGED_TEST_FILE,)
+    assert resolution.narrow_unit_module == 'plan-marshall'
 
 
 @pytest.mark.parametrize('case', _NARROW_UNIT_PARAMS)
 def test_supplying_the_directory_set_changes_no_other_field(case):
     """The module-level answer is identical with and without the directory set.
 
-    The call WITHOUT the parameter is the pre-change call, so comparing the two
-    pins "identical before and after" directly instead of against a copied
-    expectation. The matched control is the case above: the same supplied set
-    does produce narrow units, so equality here is not two no-op calls agreeing.
+    Comparing the two calls pins "identical" directly instead of against a
+    copied expectation. The matched control is the case above: the same supplied
+    set does produce narrow units, so equality here is not two no-op calls
+    agreeing.
     """
-    without = resolve_test_scope(list(case.footprint), _GLOBS, _REGISTERED_MODULES)
-    supplied = resolve_test_scope(
-        list(case.footprint),
-        _GLOBS,
-        _REGISTERED_MODULES,
-        test_directories=NARROW_UNIT_TEST_DIRECTORIES,
-    )
+    without = resolve_test_scope(list(case.footprint), _GLOBS, _REGISTERED_MODULES, bundle_modules=_REGISTERED_MODULES)
+    supplied = _resolve_narrow(case.footprint)
 
     assert supplied.recommended_target == without.recommended_target == 'plan-marshall'
     assert supplied.scoped_modules == without.scoped_modules
@@ -809,14 +963,17 @@ def test_supplying_the_directory_set_changes_no_other_field(case):
 def test_a_call_without_the_directory_set_reads_both_narrow_lists_empty():
     """The default means "no set supplied": no narrow list, every other field as before.
 
-    The expected values are the ones the same call returned before the two
-    fields existed (see ``test_single_module_footprint_is_the_positive_control``,
-    which asserts them on this footprint and was not edited).
+    The expected module-level values are the ones
+    ``test_single_module_footprint_is_the_positive_control`` asserts on this
+    footprint.
     """
-    resolution = resolve_test_scope([_PROD_PLAN_MARSHALL, _DOC], _GLOBS, _REGISTERED_MODULES)
+    resolution = resolve_test_scope(
+        [_PROD_PLAN_MARSHALL, _DOC], _GLOBS, _REGISTERED_MODULES, bundle_modules=_REGISTERED_MODULES
+    )
 
     assert resolution.narrow_units == ()
     assert resolution.narrow_units_unresolved == ()
+    assert resolution.narrow_unit_module is None
     assert resolution.scoped_modules == ('plan-marshall',)
     assert resolution.divergence_possible is False
     assert resolution.recommended_target == 'plan-marshall'
@@ -830,7 +987,7 @@ def test_an_empty_directory_set_is_not_the_same_as_none():
     directory exists. Collapsing the two would report an unenumerable tree as
     "nothing to narrow" with no path named.
     """
-    resolution = resolve_test_scope([_SKILL_BUILD_SERVER], _GLOBS, _REGISTERED_MODULES, test_directories=frozenset())
+    resolution = _resolve_narrow([_SKILL_BUILD_SERVER], test_directories=frozenset())
 
     assert resolution.narrow_units == ()
     assert resolution.narrow_units_unresolved == (_SKILL_BUILD_SERVER,)
@@ -848,10 +1005,11 @@ def test_a_footprint_that_is_not_single_module_reads_no_narrow_list(footprint):
     """Both lists are empty unless the footprint resolves to exactly one module."""
     directories = NARROW_UNIT_TEST_DIRECTORIES | {'plan-marshall/foo', 'pm-dev-python/baz'}
 
-    resolution = resolve_test_scope(footprint, _GLOBS, _REGISTERED_MODULES, test_directories=directories)
+    resolution = _resolve_narrow(footprint, test_directories=directories)
 
     assert resolution.narrow_units == ()
     assert resolution.narrow_units_unresolved == ()
+    assert resolution.narrow_unit_module is None
 
 
 def test_narrow_units_survive_a_whole_tree_verdict_for_one_module():
@@ -860,18 +1018,20 @@ def test_narrow_units_survive_a_whole_tree_verdict_for_one_module():
     The narrow unit is a faster first signal, not a verdict. The whole-tree
     answer is unchanged, and the path that owns no module is named in BOTH
     disclosure lists - it is covered by neither a scoped nor a narrow run.
+
+    ``recommended_target`` is null here while a narrow unit is offered, which is
+    why the unit's module is carried by ``narrow_unit_module`` instead.
     """
     footprint = [_SKILL_BUILD_SERVER, _UNMAPPED_DOC]
 
-    resolution = resolve_test_scope(
-        footprint, _GLOBS, _REGISTERED_MODULES, test_directories=NARROW_UNIT_TEST_DIRECTORIES
-    )
+    resolution = _resolve_narrow(footprint)
 
     assert resolution.divergence_possible is True
     assert resolution.recommended_target is None
     assert resolution.unresolved_paths == (_UNMAPPED_DOC,)
     assert resolution.narrow_units == ('plan-marshall/build-server',)
     assert resolution.narrow_units_unresolved == (_UNMAPPED_DOC,)
+    assert resolution.narrow_unit_module == 'plan-marshall'
 
 
 @pytest.mark.parametrize(
@@ -896,9 +1056,7 @@ def test_narrow_units_survive_a_whole_tree_verdict_for_one_module():
 )
 def test_paths_that_contribute_no_narrow_unit_are_named(path, reason):
     """NEGATIVE CONTROLS: a path of no narrow shape is named, never dropped."""
-    resolution = resolve_test_scope(
-        [path, _SKILL_BUILD_SERVER], _GLOBS, _REGISTERED_MODULES, test_directories=NARROW_UNIT_TEST_DIRECTORIES
-    )
+    resolution = _resolve_narrow([path, _SKILL_BUILD_SERVER], existing_paths=frozenset({path}))
 
     assert resolution.narrow_units == ('plan-marshall/build-server',)
     assert resolution.narrow_units_unresolved == (path,), f'{path!r} was not named although {reason}'
@@ -908,12 +1066,7 @@ def test_a_test_file_outside_the_resolved_module_is_not_a_narrow_unit():
     """A changed test file under an unregistered tree is no unit of another module."""
     foreign_test = 'test/not-a-real-bundle/test_y.py'
 
-    resolution = resolve_test_scope(
-        [_SKILL_BUILD_SERVER, foreign_test],
-        _GLOBS,
-        _REGISTERED_MODULES,
-        test_directories=NARROW_UNIT_TEST_DIRECTORIES,
-    )
+    resolution = _resolve_narrow([_SKILL_BUILD_SERVER, foreign_test], existing_paths=frozenset({foreign_test}))
 
     assert resolution.scoped_modules == ('plan-marshall',)
     assert resolution.narrow_units == ('plan-marshall/build-server',)

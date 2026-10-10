@@ -58,8 +58,8 @@ An UNMEASURED run cannot render as a measured clean one
 -------------------------------------------------------
 Two paths perform no comparison at all: an unresolved merge-base (`origin/
 {base_branch}` does not resolve, or the two histories share no commit, so there
-is no baseline to diff against) and an explicitly disabled guard
-(`--threshold 0`). The count is the field consumers gate on, so a
+is no baseline to diff against) and an explicitly disabled guard (a resolved
+threshold of `0`, from `--threshold 0` or from marshal.json). The count is the field consumers gate on, so a
 `residual_count: 0` printed on either path would make "never measured"
 indistinguishable from "measured, none found" — a `reason` beside it is advisory
 and trivially dropped.
@@ -73,8 +73,22 @@ paths are unchanged — a genuine zero still reports `status: success` with
 
 Threshold sources (precedence):
     1. --threshold CLI flag
-    2. phase_5.scope_creep_threshold in marshal.json plan-scoped config
+    2. plan.phase-5-execute.scope_creep_threshold in marshal.json
     3. Default: 5
+
+Every output that carries ``threshold`` names which of the three it came from in
+``threshold_source`` (``flag`` / ``config`` / ``default``). The marshal.json key
+is absent unless a project adds it; an absent key, an absent ``plan`` or
+``phase-5-execute`` section and an absent marshal.json all mean "not
+configured" and select the default silently.
+
+A configuration that is PRESENT but unusable is a different state and is never
+read as a value: a marshal.json that cannot be read or parsed, a section of the
+wrong shape, or a key holding anything other than a non-negative integer. The
+guard then runs at the default and says so — ``threshold_source: default`` plus
+``threshold_config_error`` naming what was wrong. In particular an unusable
+configuration never becomes ``0``: that value switches the guard off, and a
+guard must not be switched off by a file nobody could read.
 """
 
 from __future__ import annotations
@@ -84,6 +98,7 @@ import hashlib
 import json
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -119,7 +134,108 @@ measured and found nothing.
 """
 
 
-def _emit_could_not_look(reason: str, detail: str, threshold: int) -> int:
+_CONFIG_PLAN_SECTION = 'plan'
+_CONFIG_PHASE_SECTION = 'phase-5-execute'
+_CONFIG_THRESHOLD_FIELD = 'scope_creep_threshold'
+_CONFIG_THRESHOLD_KEY = f'{_CONFIG_PLAN_SECTION}.{_CONFIG_PHASE_SECTION}.{_CONFIG_THRESHOLD_FIELD}'
+"""The marshal.json path of the threshold override, as documents name it."""
+
+THRESHOLD_SOURCE_FLAG = 'flag'
+THRESHOLD_SOURCE_CONFIG = 'config'
+THRESHOLD_SOURCE_DEFAULT = 'default'
+
+
+@dataclass(frozen=True)
+class _Threshold:
+    """The resolved threshold and where it came from.
+
+    Attributes:
+        value: The threshold the run uses. ``0`` switches the guard off.
+        source: ``flag``, ``config`` or ``default``.
+        config_error: Why a marshal.json value that is present could not be
+            used, or ``None``. Only ever set beside ``source: default``.
+    """
+
+    value: int
+    source: str
+    config_error: str | None = None
+
+    def fields(self) -> dict[str, Any]:
+        """Return the output fields that report this threshold."""
+        reported: dict[str, Any] = {'threshold': self.value, 'threshold_source': self.source}
+        if self.config_error is not None:
+            reported['threshold_config_error'] = self.config_error
+        return reported
+
+
+def _section(parent: dict[str, Any], key: str, path: str) -> tuple[dict[str, Any] | None, str | None]:
+    """Return ``(section, problem)`` for the object ``parent[key]``.
+
+    ``(None, None)`` when the key is absent, ``(None, problem)`` when it holds
+    anything but an object.
+    """
+    if key not in parent:
+        return None, None
+    section = parent[key]
+    if not isinstance(section, dict):
+        return None, f'{path} in marshal.json is not an object'
+    return section, None
+
+
+def _read_configured_threshold() -> tuple[int | None, str | None]:
+    """Read ``plan.phase-5-execute.scope_creep_threshold`` from marshal.json.
+
+    Goes through ``manage-config``'s own reader (``_config_core.load_config``),
+    the seam every other script reads marshal.json through, so this guard reads
+    the same file a ``manage-config`` call in the same working directory does.
+    The import is in-function: ``_config_core`` resolves its paths when it is
+    imported, and a guard run outside any plan root must still be able to start.
+
+    Returns:
+        ``(value, problem)``. ``(value, None)`` for a usable configured value.
+        ``(None, None)`` when nothing is configured - no marshal.json, or no such
+        key. ``(None, problem)`` when a configuration is present and unusable;
+        the caller falls back to the default and reports ``problem``. A boolean
+        is rejected although it is an ``int`` in Python: ``true`` is not a count.
+    """
+    try:
+        from _config_core import is_initialized, load_config
+    except Exception as exc:  # importing executes another skill's module body
+        return None, f'the marshal.json reader could not be loaded: {exc}'
+    try:
+        if not is_initialized():
+            return None, None
+        config = load_config()
+    except (OSError, ValueError) as exc:
+        return None, f'marshal.json could not be read: {exc}'
+
+    plan, problem = _section(config, _CONFIG_PLAN_SECTION, _CONFIG_PLAN_SECTION)
+    if plan is None:
+        return None, problem
+    phase, problem = _section(plan, _CONFIG_PHASE_SECTION, f'{_CONFIG_PLAN_SECTION}.{_CONFIG_PHASE_SECTION}')
+    if phase is None or _CONFIG_THRESHOLD_FIELD not in phase:
+        return None, problem
+    value = phase[_CONFIG_THRESHOLD_FIELD]
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None, f'{_CONFIG_THRESHOLD_KEY} must be a non-negative integer, got {value!r}'
+    return value, None
+
+
+def _resolve_threshold(flag_value: int | None) -> _Threshold:
+    """Resolve the threshold: the flag, else marshal.json, else the default.
+
+    An explicit flag wins outright and marshal.json is then not read at all, so
+    an unreadable configuration cannot disturb a run that states its threshold.
+    """
+    if flag_value is not None:
+        return _Threshold(flag_value, THRESHOLD_SOURCE_FLAG)
+    configured, problem = _read_configured_threshold()
+    if configured is not None:
+        return _Threshold(configured, THRESHOLD_SOURCE_CONFIG)
+    return _Threshold(DEFAULT_THRESHOLD, THRESHOLD_SOURCE_DEFAULT, problem)
+
+
+def _emit_could_not_look(reason: str, detail: str, threshold: _Threshold) -> int:
     """Report that no comparison was performed, WITHOUT a residual count.
 
     Two paths reach this shape: the unresolved merge-base
@@ -138,7 +254,8 @@ def _emit_could_not_look(reason: str, detail: str, threshold: int) -> int:
     Args:
         reason: Short token naming which half could not look.
         detail: One-line explanation of what was missing.
-        threshold: The resolved threshold, echoed for the caller's audit trail.
+        threshold: The resolved threshold and its source, echoed for the
+            caller's audit trail.
 
     Returns:
         ``0`` — an unmeasurable guard is not a failure of the run it guards.
@@ -149,7 +266,7 @@ def _emit_could_not_look(reason: str, detail: str, threshold: int) -> int:
                 'status': STATUS_COULD_NOT_LOOK,
                 'reason': reason,
                 'detail': detail,
-                'threshold': threshold,
+                **threshold.fields(),
                 'finding_emitted': False,
             }
         )
@@ -331,7 +448,8 @@ def _emit_finding(plan_id: str, residual: list[str], threshold: int) -> dict[str
 def cmd_check(args: argparse.Namespace) -> int:
     """Run the scope-creep check and emit a finding when residual exceeds threshold."""
     plan_id = args.plan_id
-    threshold = args.threshold if args.threshold is not None else DEFAULT_THRESHOLD
+    resolved = _resolve_threshold(args.threshold)
+    threshold = resolved.value
     if threshold == 0:
         # The guard is switched off, so it examined nothing. That is a
         # could-not-look, not a clean result.
@@ -339,7 +457,7 @@ def cmd_check(args: argparse.Namespace) -> int:
             'guard_disabled',
             'threshold=0 disables the guard, so no comparison was performed; '
             'residual_count is omitted because nothing was measured',
-            threshold,
+            resolved,
         )
 
     plan_dir = get_plan_dir(plan_id)
@@ -354,7 +472,7 @@ def cmd_check(args: argparse.Namespace) -> int:
             'merge_base_unresolved',
             f'the merge-base of HEAD and origin/{base_branch} could not be resolved, '
             'so no diff was computed; residual_count is omitted because nothing was measured',
-            threshold,
+            resolved,
         )
 
     try:
@@ -384,7 +502,7 @@ def cmd_check(args: argparse.Namespace) -> int:
                         'finding_title': failure['title'],
                         'finding_detail': failure['detail'],
                         'residual_count': len(residual),
-                        'threshold': threshold,
+                        **resolved.fields(),
                         'residual_files': residual,
                     }
                 )
@@ -395,7 +513,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     emitted_payload: dict[str, object] = {
         'status': 'success',
         'residual_count': len(residual),
-        'threshold': threshold,
+        **resolved.fields(),
         'finding_emitted': emitted,
     }
     if settled is not None:

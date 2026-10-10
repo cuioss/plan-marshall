@@ -291,7 +291,8 @@ def _run_gate_over_rows(
 
 
 # A source-bearing footprint outside the bundles. Its module is found through
-# the declared source-to-test mapping, and is a test tree rather than a bundle.
+# the declared source-to-test mapping, and is a test tree rather than a bundle,
+# so it is named only: the change requires the whole tree.
 _TARGETS_FOOTPRINT = ['marketplace/targets/sync.py']
 
 
@@ -310,14 +311,15 @@ def _run_gate_over_footprint(
     *,
     footprint: list[str],
     registered: frozenset[str],
+    bundles: frozenset[str],
     plan_id: str,
 ) -> dict:
     """Drive the gate over ``rows`` with what the change requires derived for real.
 
     Unlike :func:`_run_gate_over_rows`, the required coverage is not handed in:
-    the gate's own derivation runs, and only its three inputs are pinned at
-    their seams — the live footprint, the ``build.map`` globs and the registered
-    targets the shared helper returns.
+    the gate's own derivation runs, and only its four inputs are pinned at
+    their seams — the live footprint, the ``build.map`` globs, and the
+    registered targets and bundle modules the shared helper returns.
     """
     import _test_scope_targets
     import extension_base
@@ -328,6 +330,7 @@ def _run_gate_over_footprint(
     monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan_id: list(footprint))
     monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _project_dir: [])
     monkeypatch.setattr(_test_scope_targets, 'resolve_registered_targets', lambda _project_dir: registered)
+    monkeypatch.setattr(_test_scope_targets, 'resolve_bundle_modules', lambda _project_dir: bundles)
     result: dict = cmd_pre_commit_verify_freshness(Namespace(plan_id=plan_id))
     return result
 

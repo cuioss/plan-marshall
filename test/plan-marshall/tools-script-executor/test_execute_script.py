@@ -1708,6 +1708,7 @@ _REFERENCES_SCRIPT = get_scripts_dir('plan-marshall', 'manage-references') / 'ma
         ([''], []),
         (['verb', '--flag', 'value', ''], ['verb', '--flag', 'value']),
         (['verb', '--flag', '', ''], ['verb', '--flag', '']),
+        (['verb', '--force', '', 'positional'], ['verb', '--force', '', 'positional']),
         (['verb', '--flag', 'value'], ['verb', '--flag', 'value']),
     ],
     ids=[
@@ -1718,6 +1719,7 @@ _REFERENCES_SCRIPT = get_scripts_dir('plan-marshall', 'manage-references') / 'ma
         'empty-in-first-position-is-dropped',
         'empty-after-an-option-value-is-dropped',
         'second-of-two-empties-after-one-option-is-dropped',
+        'empty-after-a-valueless-flag-is-kept-as-a-positional',
         'argv-without-an-empty-string-is-unchanged',
     ],
 )
@@ -1727,8 +1729,11 @@ def test_drop_stray_empty_args(argv, expected):
     The rows cover both directions of the rule and its boundaries: the kept
     value after a long and a short option, the dropped empty after a positional,
     after another value and in first position, and the pair of empties of which
-    only the first is the option's value. The last row is the control that the
-    filter touches nothing else.
+    only the first is the option's value. One row pins the rule's remaining
+    limit: the filter cannot tell a flag that takes no value from an option that
+    takes one, so an empty string after such a flag is kept and reaches the
+    script as a positional. The last row is the control that the filter touches
+    nothing else.
     """
     executor = load_executor_module()
 
