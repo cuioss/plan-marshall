@@ -417,7 +417,7 @@ The argument is accepted for `--command module-tests` only, and a resolve it can
 | `error` | When |
 |---------|------|
 | `narrow_unit_unsupported_command` | The command is not `module-tests`, or the module has no test target of its own to check the unit against. |
-| `invalid_narrow_unit` | The unit is not a plain `/`-separated path below a test target — it carries whitespace or shell syntax, or a `..` segment. |
+| `invalid_narrow_unit` | The unit is not a plain `/`-separated path below a test target — it carries whitespace or shell syntax, or a segment that is exactly `.` or `..`. |
 | `narrow_unit_outside_module` | The unit does not start with the module's own test target; the payload names the expected `test_target`. |
 
 A narrow resolve returns the four tier fields plus a fifth, `bound_source`, naming where `bash_timeout_seconds` came from:

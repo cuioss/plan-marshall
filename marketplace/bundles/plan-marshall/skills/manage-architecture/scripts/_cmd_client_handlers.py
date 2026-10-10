@@ -480,6 +480,13 @@ _NARROW_UNIT_COMMAND = 'module-tests'
 #: test path.
 _NARROW_UNIT_RE = re.compile(r'[A-Za-z0-9_.\-]+(/[A-Za-z0-9_.\-]+)+')
 
+#: The path segments a narrow unit may not carry although ``_NARROW_UNIT_RE``
+#: admits them. ``..`` leaves the test target; ``.`` stays inside it but spells
+#: the same unit a second way, so one unit would be measured under two
+#: run-config keys. A segment that merely contains a dot (``test_x.py``,
+#: ``a.b``) is a real name and is accepted.
+_NARROW_UNIT_REJECTED_SEGMENTS = frozenset({'.', '..'})
+
 
 def _narrow_unit_error(error: str, narrow_unit: str, message: str, **context: Any) -> dict[str, Any]:
     """Build the structured refusal for a narrow unit ``resolve`` cannot honour."""
@@ -500,8 +507,8 @@ def _narrow_resolved(executable_result: dict[str, Any], narrow_unit: str, projec
       ``module-tests``, or its executable is not a build executable carrying a
       module test target the unit could be checked against.
     * ``invalid_narrow_unit`` - the unit is not a plain ``/``-separated path
-      below a test target (it carries whitespace or shell syntax, or a ``..``
-      segment).
+      below a test target (it carries whitespace or shell syntax, or a ``.``
+      or ``..`` segment).
     * ``narrow_unit_outside_module`` - the unit does not start with the module's
       own test target, so it is not a part of the module that was named.
 
@@ -528,7 +535,9 @@ def _narrow_resolved(executable_result: dict[str, Any], narrow_unit: str, projec
             command=command,
             module=module,
         )
-    if not _NARROW_UNIT_RE.fullmatch(narrow_unit) or '..' in narrow_unit.split('/'):
+    if not _NARROW_UNIT_RE.fullmatch(narrow_unit) or any(
+        segment in _NARROW_UNIT_REJECTED_SEGMENTS for segment in narrow_unit.split('/')
+    ):
         return _narrow_unit_error(
             'invalid_narrow_unit',
             narrow_unit,

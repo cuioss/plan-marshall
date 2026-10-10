@@ -289,6 +289,8 @@ def test_a_narrow_unit_outside_the_named_module_is_refused(isolated_run_config, 
     [
         pytest.param('plan-marshall', id='the_module_itself'),
         pytest.param('plan-marshall/../pm-dev-python', id='parent_segment'),
+        pytest.param('plan-marshall/./build-server', id='interior_current_segment'),
+        pytest.param('plan-marshall/build-server/.', id='trailing_current_segment'),
         pytest.param('plan-marshall/build server', id='whitespace'),
         pytest.param('plan-marshall/x;rm', id='shell_syntax'),
         pytest.param('plan-marshall/', id='trailing_separator'),
@@ -301,6 +303,27 @@ def test_a_malformed_narrow_unit_is_refused(isolated_run_config, narrow_unit):
     assert result['status'] == 'error'
     assert result['error'] == 'invalid_narrow_unit'
     assert 'executable' not in result
+
+
+@pytest.mark.parametrize(
+    'narrow_unit',
+    [
+        pytest.param('plan-marshall/a.b', id='directory_name_with_a_dot'),
+        pytest.param('plan-marshall/build-server/test_x.py', id='file_name_with_a_dot'),
+        pytest.param('plan-marshall/.hidden', id='segment_starting_with_a_dot'),
+    ],
+)
+def test_a_segment_that_only_contains_a_dot_is_accepted(isolated_run_config, narrow_unit):
+    """Only a segment that IS ``.`` or ``..`` is refused; a dotted name is a real name.
+
+    The matched control for the ``.``-segment refusals above: the same character
+    inside a longer segment still resolves, so the rejection is keyed on the
+    segment, not on the dot.
+    """
+    result = _resolve_narrow(narrow_unit)
+
+    assert result['status'] == 'success'
+    assert result['executable'] == f'{_EXECUTABLE_PREFIX}"module-tests {narrow_unit}"'
 
 
 def test_a_narrow_unit_is_refused_for_any_command_but_module_tests(isolated_run_config):
