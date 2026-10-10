@@ -93,52 +93,9 @@ When the executions are declared in a parent POM, every child module inherits th
 * An execution that selects a tag no class in the module carries runs zero tests and passes. That is correct, and it still starts a JVM.
 * One guard in one module can read the test sources of every module below the parent. It then runs only when that module is built; a build limited to a sibling does not run it. Say so where the guard is declared, so nobody takes a sibling-only build for a guarded one.
 
-## A `-Dtest` Selection Meets Two Executions
+## A `-Dtest` Selection Needs No Special Handling
 
-`-Dtest=SomeTest` is applied to every execution. The selected class belongs to one group, so the other execution matches nothing, and surefire fails a selection that matches nothing: `No tests matching pattern "SomeTest" were executed`. Every focused run then fails in the execution the class is not in.
-
-Do not answer that with `<failIfNoSpecifiedTests>false</failIfNoSpecifiedTests>` in the POM. It makes the focused run pass, and it makes a mistyped `-Dtest` pass as well — zero tests run, build green. A value set in the POM also outranks `-Dsurefire.failIfNoSpecifiedTests` on the command line, so the strict behaviour cannot be asked for per run.
-
-Collapse the split for a focused run instead. A profile activated by the `test` property removes the tag filter from the built-in execution and skips the others, so the selection runs in one execution with surefire's strict default:
-
-```xml
-<profile>
-    <id>focused-test-selection</id>
-    <activation>
-        <property>
-            <name>test</name>
-        </property>
-    </activation>
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>default-test</id>
-                        <configuration>
-                            <excludedGroups combine.self="override" />
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>isolated-fork-tests</id>
-                        <configuration>
-                            <skip>true</skip>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-        </plugins>
-    </build>
-</profile>
-```
-
-Declare the profile where the executions are declared — under `pluginManagement` when they live there.
-
-What this costs: a focused run puts the selected classes into one JVM, whatever their group. A class that needs isolation is not isolated in a focused run, and a selection that mixes groups shares a JVM. That affects hand-started runs only; a build without `-Dtest` keeps the split.
-
-Have the guard fail when the POM sets `failIfNoSpecifiedTests` again, so the lenient setting cannot come back unnoticed.
+`-Dtest=SomeTest` is applied to every execution. The execution whose tag filter excludes the selected class runs zero tests and passes; surefire fails only a selection that matches no class at all, so a mistyped name still fails the build. Each class keeps its own group in a focused run. No profile and no `failIfNoSpecifiedTests` setting is needed.
 
 ## Verify
 
@@ -146,4 +103,4 @@ Have the guard fail when the POM sets `failIfNoSpecifiedTests` again, so the len
 * Per-class coverage is unchanged — compared on clean coverage data, see `coverage-analysis-pattern.md`.
 * The suite is green on several consecutive runs.
 * A build wrapper's summary may report only the last execution's count; read the per-execution numbers from the build log.
-* Focused runs behave as intended: a build without `-Dtest` runs every execution; a class from each group passes when selected alone; a name that matches no class fails the build.
+* A class from each group passes when selected alone with `-Dtest`, and a name that matches no class fails the build.
