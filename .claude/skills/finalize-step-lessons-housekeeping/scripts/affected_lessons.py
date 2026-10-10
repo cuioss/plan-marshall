@@ -35,8 +35,8 @@ Full-run conditions — exactly three, each with its own ``reason``:
    ``classified_at`` fact — the shape the dispatcher's commit re-stamp leaves
    after a source-editing firing, and the shape the step itself records when
    the firing could not stand as an anchor: a per-lesson removal, promotion or
-   adaptation failed, the plan's footprint could not be read, or the firing
-   ended before this script returned a payload), or
+   adaptation failed, the plan's footprint could not be read, or this script
+   returned an error or no payload), or
    ``classified_at_unreadable`` (the fact is present but is not a timestamp).
 
 A carry-over anchor is never inferred from ``head_at_completion`` alone: without

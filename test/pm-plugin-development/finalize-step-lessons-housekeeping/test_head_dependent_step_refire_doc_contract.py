@@ -25,9 +25,10 @@ extension point makes every no-change-list outcome a full run; and each step's
 refusal section still declares no surface while the housekeeping delta rule
 claims no dispatcher skip.
 
-A fifth group pins what the housekeeping step records after a per-lesson
-action failed: Step 7 withholds the ``classified_at`` fact, each of the three
-failure rows states that consequence, and the two downgrade rows do not.
+A fifth group pins when the housekeeping step withholds the ``classified_at``
+fact: after a failed per-lesson action (Step 7, each of the three failure rows,
+and not the two downgrade rows), and after a firing that could not read the
+plan's footprint or whose delta-rule call returned an error.
 """
 
 from __future__ import annotations
@@ -747,6 +748,19 @@ def test_step7_withholds_classified_at_when_the_footprint_was_unknown() -> None:
     assert len(paragraphs) == 1, f'expected exactly one unknown-footprint paragraph in Step 7, found {len(paragraphs)}'
     assert '`compute-footprint` call returned an error' in paragraphs[0]
     assert 'omit `--fact classified_at=…`' in paragraphs[0]
+    assert 'when Step 2b returned `status: error`' in paragraphs[0]
+
+
+def test_delta_rule_error_row_states_classified_at_is_withheld() -> None:
+    # Arrange
+    content = _STEP_DOC.read_text(encoding='utf-8')
+
+    # Act
+    action = _error_handling_row(content, '| `affected_lessons resolve` returns `status: error` in Step 2b ')
+
+    # Assert
+    assert _WITHHOLD_CONSEQUENCE in action
+    assert 'the next firing judges the whole corpus' in action
 
 
 def test_footprint_error_row_states_classified_at_is_withheld() -> None:
@@ -770,7 +784,7 @@ def test_delta_rule_names_the_unknown_footprint_route() -> None:
 
     # Assert
     assert 'An unknown footprint is a third route' in delta_rule
-    assert 'Step 7 therefore withholds the `classified_at` fact from such a firing' in delta_rule
+    assert "Step 7 therefore withholds the `classified_at` fact from such a firing's record as well" in delta_rule
 
 
 @pytest.mark.parametrize('opening', _FAILED_ACTION_ROWS, ids=['remove', 'promotion-edit', 'adaptation-edit'])
@@ -823,5 +837,5 @@ def test_delta_rule_names_the_failed_action_route_beside_the_commit_restamp() ->
 
     # Assert
     assert 'A failed per-lesson action is a second route' in delta_rule
-    assert 'Step 7 therefore withholds the `classified_at` fact' in delta_rule
+    assert "Step 7 therefore withholds the `classified_at` fact from such a firing's record, the next firing" in delta_rule
     assert 'downgrades that end in a trim or a deliberate retain, not failed actions' in delta_rule
