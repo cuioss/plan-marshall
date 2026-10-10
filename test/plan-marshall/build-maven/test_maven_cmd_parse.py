@@ -19,6 +19,7 @@ from _build_parse import (
     SEVERITY_WARNING,
     Issue,
     UnitTestSummary,
+    categorize_issue,
 )
 
 from conftest import get_script_path, load_script_module, run_script
@@ -26,6 +27,7 @@ from conftest import get_script_path, load_script_module, run_script
 _maven_cmd_parse_mod = load_script_module('plan-marshall', 'build-maven', '_maven_cmd_parse.py', '_maven_cmd_parse')
 
 parse_log = _maven_cmd_parse_mod.parse_log
+MAVEN_PATTERNS = _maven_cmd_parse_mod.MAVEN_PATTERNS
 
 # CLI entry point for the parse subcommand (routes through cmd_parse_common,
 # where the seam-(b) truthful-status derivation lives).
@@ -138,15 +140,20 @@ def test_parse_log_failure_has_warnings():
 
 
 def test_parse_log_failure_warning_category():
-    """Warnings have correct category assigned."""
+    """Exactly the fixture's genuine javac deprecation lines are categorised as deprecation."""
+    # Arrange
     log_file = TEST_DATA_DIR / 'maven-failure-real.log'
+    genuine = [line for line in log_file.read_text(encoding='utf-8').splitlines() if '[deprecation]' in line]
+    assert len(genuine) == 1, 'the failure fixture carries exactly one genuine javac deprecation line'
+
+    # Act
     issues, test_summary, build_status = parse_log(log_file)
 
-    warnings = [i for i in issues if i.severity == SEVERITY_WARNING]
-
-    # Should have deprecation warning
-    deprecation = [w for w in warnings if 'deprecation' in w.category]
-    assert len(deprecation) >= 1
+    # Assert
+    deprecation = [i for i in issues if i.category == 'deprecation_warning']
+    assert len(deprecation) == len(genuine)
+    assert deprecation[0].severity == SEVERITY_WARNING
+    assert '[deprecation]' in deprecation[0].message
 
 
 def test_parse_log_failure_test_summary():
@@ -443,6 +450,73 @@ def test_parse_log_execution_header_forms_attribute_to_their_runner(tmp_path, pl
     # Assert
     assert summary is not None
     assert summary.by_runner == {runner: 4}
+
+
+# =============================================================================
+# Bracketed javac tags are matched as literal text
+# =============================================================================
+#
+# `categorize_issue` treats any pattern carrying a regex metacharacter as a regex,
+# so an unescaped `[deprecation]` is a character class matching any one of its
+# letters — and nearly every Maven line contains one of them.
+
+#: ``(message, category it must receive under MAVEN_PATTERNS)``.
+_JAVAC_TAG_CASES = [
+    ('[deprecation] foo() in Bar has been deprecated', 'deprecation_warning'),
+    ('Bar.java:[12,5] [deprecation] foo() in Bar', 'deprecation_warning'),
+    ('[unchecked] unchecked call to add(E) as a member of the raw type List', 'unchecked_warning'),
+]
+
+_JAVAC_TAG_IDS = [
+    'deprecation-tag-with-deprecated-phrase',
+    'deprecation-tag-alone',
+    'unchecked-tag',
+]
+
+
+def test_surefire_goal_failure_is_not_a_deprecation_warning():
+    """The goal-failure line carries no javac tag, so it is not a deprecation warning."""
+    category = categorize_issue('Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin', MAVEN_PATTERNS)
+
+    assert category != 'deprecation_warning'
+
+
+@pytest.mark.parametrize('message,expected', _JAVAC_TAG_CASES, ids=_JAVAC_TAG_IDS)
+def test_genuine_javac_tag_lines_keep_their_category(message: str, expected: str):
+    assert categorize_issue(message, MAVEN_PATTERNS) == expected
+
+
+def _unescaped_brackets(pattern: str) -> list[str]:
+    """Every ``[`` / ``]`` in the pattern that is not preceded by an escaping backslash."""
+    found: list[str] = []
+    escaped = False
+    for char in pattern:
+        if escaped:
+            escaped = False
+        elif char == '\\':
+            escaped = True
+        elif char in '[]':
+            found.append(char)
+    return found
+
+
+def test_control_unescaped_bracket_detector_flags_a_bare_tag():
+    """CONTROL: the detector flags the bare tag and passes the escaped one, so the
+    population test below cannot pass by never seeing a bracket."""
+    assert _unescaped_brackets('[deprecation]') == ['[', ']']
+    assert _unescaped_brackets(r'\[deprecation\]') == []
+
+
+def test_no_maven_pattern_carries_an_unescaped_bracket():
+    # Arrange
+    patterns = [pattern for category_patterns in MAVEN_PATTERNS.values() for pattern in category_patterns]
+    assert any('[' in pattern for pattern in patterns), 'MAVEN_PATTERNS must carry a bracketed tag for this to bite'
+
+    # Act
+    offenders = [pattern for pattern in patterns if _unescaped_brackets(pattern)]
+
+    # Assert
+    assert offenders == []
 
 
 # =============================================================================
