@@ -74,7 +74,7 @@ paths are unchanged — a genuine zero still reports `status: success` with
 `residual_count: 0`.
 
 Threshold sources (precedence):
-    1. --threshold CLI flag
+    1. --threshold CLI flag (a non-negative integer; the parser rejects anything else)
     2. plan.phase-5-execute.scope_creep_threshold in marshal.json
     3. Default: 5
 
@@ -222,6 +222,23 @@ def _read_configured_threshold() -> tuple[int | None, str | None]:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         return None, f'{_CONFIG_THRESHOLD_KEY} must be a non-negative integer, got {value!r}'
     return value, None
+
+
+def _non_negative_threshold(raw: str) -> int:
+    """Parse the ``--threshold`` flag value as a non-negative integer.
+
+    The flag obeys the rule the marshal.json value obeys: ``0`` switches the
+    guard off, and a negative count is meaningless - every measured residual,
+    the empty one included, would exceed it and file a finding.
+    """
+    problem = f'--threshold must be a non-negative integer, got {raw!r}'
+    try:
+        value = int(raw)
+    except ValueError:
+        raise argparse.ArgumentTypeError(problem) from None
+    if value < 0:
+        raise argparse.ArgumentTypeError(problem)
+    return value
 
 
 def _resolve_threshold(flag_value: int | None) -> _Threshold:
@@ -560,7 +577,7 @@ def main(argv: list[str] | None = None) -> int:
 
     check_parser = subparsers.add_parser('check', help='Run scope-creep check', allow_abbrev=False)
     check_parser.add_argument('--plan-id', required=True)
-    check_parser.add_argument('--threshold', type=int, default=None)
+    check_parser.add_argument('--threshold', type=_non_negative_threshold, default=None)
     check_parser.set_defaults(func=cmd_check)
 
     args = parser.parse_args(argv)

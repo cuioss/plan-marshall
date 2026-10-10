@@ -153,6 +153,49 @@ def test_the_explicit_flag_never_reads_an_unreadable_configuration(persisted, ma
 
 
 # ---------------------------------------------------------------------------
+# The flag obeys the same non-negative rule as marshal.json
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    'value',
+    [
+        pytest.param('-1', id='negative'),
+        pytest.param('ten', id='not_an_integer'),
+    ],
+)
+def test_the_flag_rejects_a_value_that_is_not_a_non_negative_integer(persisted, capsys, value):
+    """The parser refuses the value with a usage error that names the flag; nothing is measured.
+
+    A negative threshold would make every measured run file a finding, the
+    empty residual included, so the flag refuses it exactly as the marshal.json
+    reader does.
+    """
+    with pytest.raises(SystemExit) as excinfo:
+        scc.main(['check', '--plan-id', _PLAN_ID, '--threshold', value])
+
+    assert excinfo.value.code == 2
+    captured = capsys.readouterr()
+    assert '--threshold' in captured.err
+    assert repr(value) in captured.err
+    assert captured.out == ''
+    assert persisted == []
+
+
+def test_a_flag_zero_still_disables_the_guard(persisted, capsys):
+    """CONTROL: ``--threshold 0`` passes the parser and reaches the guard-disabled could-not-look."""
+    assert scc.main(['check', '--plan-id', _PLAN_ID, '--threshold', '0']) == 0
+    out = parse_toon(capsys.readouterr().out)
+
+    assert out['status'] == 'could_not_look'
+    assert out['reason'] == 'guard_disabled'
+    assert out['threshold'] == 0
+    assert out['threshold_source'] == 'flag'
+    assert 'residual_count' not in out
+    assert persisted == []
+
+
+# ---------------------------------------------------------------------------
 # Present but unusable: the default, said out loud
 # ---------------------------------------------------------------------------
 
