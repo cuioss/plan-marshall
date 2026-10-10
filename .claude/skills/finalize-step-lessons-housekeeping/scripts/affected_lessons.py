@@ -33,8 +33,9 @@ Full-run conditions — exactly three, each with its own ``reason``:
    ``last_firing_not_done`` (the record is not a completed one),
    ``classified_at_absent`` (the record is complete but carries no
    ``classified_at`` fact — the shape the dispatcher's commit re-stamp leaves
-   after a source-editing firing), or ``classified_at_unreadable`` (the fact is
-   present but is not a timestamp).
+   after a source-editing firing, and the shape the step itself records when a
+   per-lesson removal, promotion or adaptation failed in the firing), or
+   ``classified_at_unreadable`` (the fact is present but is not a timestamp).
 
 A carry-over anchor is never inferred from ``head_at_completion`` alone: without
 a readable ``classified_at`` the rule cannot tell which lessons were edited since
@@ -139,46 +140,49 @@ def named_paths(body: str) -> list[str]:
 
     A span counts as a citation when it contains a ``/`` and is not a URL, an
     absolute path, a home-relative path or a command-line flag. Each citation is
-    reduced to the run of literal path segments it carries, because a citation
+    reduced to the runs of literal path segments it carries, because a citation
     kept verbatim in any of the shapes below could never match a path git
     reports and the lesson would silently never be selected:
 
-    - a reference past the path — a line (``path:598``), a symbol
-      (``path:main``), a test id (``path::test_x``) or an anchor
-      (``path#section``) — is dropped;
-    - a notation prefix in front of the path (``bundle:skill/standards/x.md``)
-      is dropped;
+    - a test id (``path::test_x``) or an anchor (``path#section``) behind the
+      path is dropped;
+    - a single colon does not decide what the citation means, because the same
+      character introduces a line (``path:598``) or a symbol (``path:main``),
+      ends a notation prefix (``bundle:skill/standards/x.md``), separates a
+      revision from its path (``origin/main:src/app.py``) and may be part of a
+      file name (``src/a:b.py``). The citation therefore yields every reading
+      that names a path: the span with its colons kept, and each
+      colon-delimited piece that contains a ``/``. A piece without a ``/`` — a
+      line number, a symbol, a bundle or skill token — names no path and yields
+      nothing;
     - a glob, a placeholder or a relative segment (``dir/*.md``,
-      ``plans/{id}/x``, ``../SKILL.md``) ends the run, and the first literal
+      ``plans/{id}/x``, ``../SKILL.md``) ends a run, and the first literal
       run is kept — the directory in front of the pattern, or the tail behind
       it when nothing literal precedes it (``*/standards/rule.md``).
 
-    A span with no literal segment at all names nothing and is skipped.
+    A span with no literal segment at all names nothing and is skipped. For a
+    span that carries no colon the readings coincide and one fragment results.
     """
     paths: list[str] = []
     for span in _BACKTICK_SPAN.findall(body):
         if '/' not in span or '://' in span or span.startswith(('/', '~', '-')):
             continue
-        fragment = _literal_run(span)
-        if fragment and fragment not in paths:
-            paths.append(fragment)
+        for candidate in _cited_paths(span):
+            fragment = _literal_run(candidate)
+            if fragment and fragment not in paths:
+                paths.append(fragment)
     return paths
 
 
-def _cited_path(span: str) -> str:
-    """Strip what a citation carries around its path."""
+def _cited_paths(span: str) -> list[str]:
+    """Return every reading of a citation that names a path, colons kept first."""
     cited = span.split('#', 1)[0].split('::', 1)[0]
-    while ':' in cited:
-        head, _, tail = cited.partition(':')
-        # A colon behind the path introduces a reference into it; a colon in
-        # front of the path ends a notation prefix.
-        cited = head if '/' in head else tail
-    return cited
+    return [cited, *(piece for piece in cited.split(':') if '/' in piece)]
 
 
-def _literal_run(span: str) -> str:
+def _literal_run(cited: str) -> str:
     run: list[str] = []
-    for segment in _cited_path(span).split('/'):
+    for segment in cited.split('/'):
         if segment in _RELATIVE_SEGMENTS or _PATTERN_CHARS.intersection(segment):
             if run:
                 break
@@ -191,7 +195,7 @@ def _names(changed_path: str, fragment: str) -> bool:
     """Whether ``fragment`` occurs in ``changed_path`` as a run of whole segments.
 
     A fragment is not anchored at the repository root: a lesson may cite a file
-    relative to its skill, or through a notation whose prefix was dropped. The
+    relative to its skill, or behind a notation prefix or a revision. The
     match therefore selects more lessons than an anchored one would, which is
     the direction a rule deciding what may be carried over unjudged must err in.
     """

@@ -24,6 +24,10 @@ what separates it from delta-scoping and which step uses or refused it; the
 extension point makes every no-change-list outcome a full run; and each step's
 refusal section still declares no surface while the housekeeping delta rule
 claims no dispatcher skip.
+
+A fifth group pins what the housekeeping step records after a per-lesson
+action failed: Step 7 withholds the ``classified_at`` fact, each of the three
+failure rows states that consequence, and the two downgrade rows do not.
 """
 
 from __future__ import annotations
@@ -639,3 +643,143 @@ def test_plugin_doctor_refusal_admits_no_skip_predicate() -> None:
     # Assert
     assert 'No skip predicate is admitted' in refusal
     assert 'every HEAD advance re-runs the gate' in refusal
+
+
+# ---------------------------------------------------------------------------
+# Step 7 — the carry-over anchor after a failed per-lesson action
+# ---------------------------------------------------------------------------
+
+_WITHHOLD_MARKER = 'Withhold `classified_at` after a failed per-lesson action'
+_WITHHOLD_CONSEQUENCE = 'Step 7 withholds `classified_at`'
+_FAILED_ACTIONS = ('removal', 'promotion', 'adaptation')
+
+_FAILED_ACTION_ROWS = (
+    '| `manage-lessons remove` failure on one lesson |',
+    '| Promotion `Edit` failure (Step 4b.1) on one lesson |',
+    '| Adaptation `Edit` failure on one lesson |',
+)
+_DOWNGRADE_ROWS = (
+    '| `manage-lessons remove` **evidence rejection** on one lesson',
+    '| Independent-reconfirmation gate failure (Step 4.1 or Step 4b.2) on one lesson |',
+)
+
+
+def _error_handling_row(content: str, opening: str) -> str:
+    """Return the action cell of the one Error Handling row that opens with ``opening``."""
+    table = _section(content, '## Error Handling')
+    rows = [line for line in table.splitlines() if line.startswith(opening)]
+    assert len(rows) == 1, f'expected exactly one Error Handling row opening `{opening}`, found {len(rows)}'
+    return rows[0].rstrip('|').split('|')[-1]
+
+
+def _withhold_paragraph(content: str) -> str:
+    """Return the Step 7 paragraph that states when ``classified_at`` is withheld."""
+    paragraphs = [
+        paragraph
+        for paragraph in re.split(r'\n\s*\n', _section(content, '### Step 7'))
+        if _WITHHOLD_MARKER in paragraph
+    ]
+    assert len(paragraphs) == 1, (
+        f'Step 7 of {_STEP_DOC.name} must state once that classified_at is withheld after a failed '
+        f'per-lesson action, found {len(paragraphs)} such paragraph(s)'
+    )
+    return paragraphs[0]
+
+
+@pytest.mark.parametrize('action', _FAILED_ACTIONS)
+def test_step7_withholds_classified_at_after_each_failed_per_lesson_action(action: str) -> None:
+    # Arrange
+    content = _STEP_DOC.read_text(encoding='utf-8')
+
+    # Act
+    paragraph = _withhold_paragraph(content)
+
+    # Assert
+    assert action in paragraph, f'Step 7 no longer withholds classified_at after a failed {action}'
+    assert 'omit `--fact classified_at=…`' in paragraph
+    assert '`classified_at_absent`' in paragraph
+
+
+def test_step7_keeps_the_rest_of_the_record_when_it_withholds_classified_at() -> None:
+    # Arrange
+    content = _STEP_DOC.read_text(encoding='utf-8')
+
+    # Act
+    paragraph = _withhold_paragraph(content)
+
+    # Assert
+    assert '`--outcome done`' in paragraph
+    assert '`--fact work_performed=true`' in paragraph
+    assert 'downgrades, not failed actions' in paragraph
+
+
+def test_step7_omit_sentence_names_the_failed_action_beside_the_missing_payload() -> None:
+    # Arrange
+    content = _STEP_DOC.read_text(encoding='utf-8')
+
+    # Act
+    sentences = [
+        paragraph
+        for paragraph in re.split(r'\n\s*\n', _section(content, '### Step 7'))
+        if paragraph.startswith('Omit `--fact classified_at=…` only when')
+    ]
+
+    # Assert
+    assert len(sentences) == 1, f'expected exactly one `Omit … only when` sentence in Step 7, found {len(sentences)}'
+    for action in _FAILED_ACTIONS:
+        assert action in sentences[0], f'the `Omit … only when` sentence does not name a failed {action}'
+    assert 'no payload at all' in sentences[0]
+
+
+@pytest.mark.parametrize('opening', _FAILED_ACTION_ROWS, ids=['remove', 'promotion-edit', 'adaptation-edit'])
+def test_failed_per_lesson_action_row_states_classified_at_is_withheld(opening: str) -> None:
+    # Arrange
+    content = _STEP_DOC.read_text(encoding='utf-8')
+
+    # Act
+    action = _error_handling_row(content, opening)
+
+    # Assert
+    assert _WITHHOLD_CONSEQUENCE in action, f'the row opening `{opening}` does not say classified_at is withheld'
+    assert 'the next firing judges the whole corpus' in action
+
+
+@pytest.mark.parametrize('opening', _DOWNGRADE_ROWS, ids=['evidence-rejection', 'reconfirmation-gate'])
+def test_downgrade_row_does_not_withhold_classified_at(opening: str) -> None:
+    """Negative control: a downgrade ends in a trim or a retain, so it is no failed action."""
+    # Arrange
+    content = _STEP_DOC.read_text(encoding='utf-8')
+
+    # Act
+    action = _error_handling_row(content, opening)
+
+    # Assert
+    assert _WITHHOLD_CONSEQUENCE not in action
+    assert 'A downgrade is not a failed action' in action
+
+
+def test_step_completes_row_shows_classified_at_as_conditional() -> None:
+    # Arrange
+    content = _STEP_DOC.read_text(encoding='utf-8')
+
+    # Act
+    action = _error_handling_row(content, '| Step completes |')
+
+    # Assert
+    assert '--fact work_performed=true`' in action
+    assert 'Add `--fact classified_at={firing_started_at}` only when' in action
+    for failed in _FAILED_ACTIONS:
+        assert failed in action, f'the `Step completes` row does not name a failed {failed}'
+
+
+def test_delta_rule_names_the_failed_action_route_beside_the_commit_restamp() -> None:
+    # Arrange
+    content = _STEP_DOC.read_text(encoding='utf-8')
+
+    # Act
+    delta_rule = _section(content, _DELTA_RULE_HEADING)
+
+    # Assert
+    assert 'A failed per-lesson action is the other route' in delta_rule
+    assert 'Step 7 therefore withholds the `classified_at` fact' in delta_rule
+    assert 'downgrades that end in a trim or a deliberate retain, not failed actions' in delta_rule

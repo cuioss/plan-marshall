@@ -199,13 +199,21 @@ def _assert_full(payload: dict[str, Any], reason: str) -> None:
 @pytest.mark.parametrize(
     ('span', 'expected'),
     [
-        ('src/app.py:598', ['src/app.py']),
-        ('src/app.py:10:4', ['src/app.py']),
-        ('scripts/foo.py:main', ['scripts/foo.py']),
+        ('src/app.py:598', ['src/app.py:598', 'src/app.py']),
+        ('src/app.py:10:4', ['src/app.py:10:4', 'src/app.py']),
+        ('scripts/foo.py:main', ['scripts/foo.py:main', 'scripts/foo.py']),
         ('src/app.py::test_x', ['src/app.py']),
         ('doc/guide.md#section', ['doc/guide.md']),
-        ('plan-marshall:phase-6-finalize/standards/x.md', ['phase-6-finalize/standards/x.md']),
-        ('plan-marshall:phase-6-finalize/standards/x.md:12', ['phase-6-finalize/standards/x.md']),
+        (
+            'plan-marshall:phase-6-finalize/standards/x.md',
+            ['plan-marshall:phase-6-finalize/standards/x.md', 'phase-6-finalize/standards/x.md'],
+        ),
+        (
+            'plan-marshall:phase-6-finalize/standards/x.md:12',
+            ['plan-marshall:phase-6-finalize/standards/x.md:12', 'phase-6-finalize/standards/x.md'],
+        ),
+        ('origin/main:src/app.py', ['origin/main:src/app.py', 'origin/main', 'src/app.py']),
+        ('src/a:b.py', ['src/a:b.py', 'src/a']),
         ('doc/guide/*.md', ['doc/guide']),
         ('plans/{plan_id}/request.md', ['plans']),
         ('*/standards/rule.md', ['standards/rule.md']),
@@ -220,6 +228,8 @@ def _assert_full(payload: dict[str, Any], reason: str) -> None:
         'anchor-suffix',
         'notation-prefix',
         'notation-prefix-and-line-suffix',
+        'rev-with-slash-prefix',
+        'colon-in-file-name',
         'glob',
         'placeholder',
         'pattern-first-segment',
@@ -228,7 +238,11 @@ def _assert_full(payload: dict[str, Any], reason: str) -> None:
     ],
 )
 def test_cited_span_is_reduced_to_the_literal_path_it_stands_for(span: str, expected: list[str]) -> None:
-    """A citation git could never report verbatim still names a literal path."""
+    """A citation git could never report verbatim still names a literal path.
+
+    A colon yields every reading that names a path — the span with its colons
+    kept, then each colon-delimited piece that contains a ``/``.
+    """
     assert _mod.named_paths(f'See `{span}` for the rule.') == expected
 
 
@@ -325,6 +339,7 @@ def test_empty_change_list_with_no_edited_lesson_examines_nothing(
         'src/{name}.py',
         'src/app.py::test_x',
         'pkg:src/app.py',
+        'origin/main:src/app.py',
         '*/app.py/',
     ],
     ids=[
@@ -337,6 +352,7 @@ def test_empty_change_list_with_no_edited_lesson_examines_nothing(
         'placeholder',
         'test-id-suffix',
         'notation-prefix',
+        'rev-with-slash-prefix',
         'pattern-first-segment',
     ],
 )
@@ -614,6 +630,37 @@ def test_sibling_path_sharing_a_name_prefix_is_not_under_the_named_path() -> Non
 
     # Act
     affected = _mod.select_affected(['src/app_helpers.py'], 100.0, [lesson], lambda _component: '')
+
+    # Assert
+    assert affected == []
+
+
+def test_path_whose_file_name_carries_a_colon_selects_the_lesson_citing_it() -> None:
+    # Arrange
+    lesson = _mod.LessonRecord('L1', 'project-local', 'See `src/a:b.py`.', modified_at=0.0)
+
+    # Act
+    affected = _mod.select_affected(['src/a:b.py'], 100.0, [lesson], lambda _component: '')
+
+    # Assert
+    assert affected == [_mod.AffectedLesson('L1', _mod.REASON_NAMED_PATH)]
+
+
+@pytest.mark.parametrize(
+    ('cited', 'changed'),
+    [
+        ('src/app.py:598', 'src/other.py'),
+        ('origin/main:src/app.py', 'main/other.py'),
+    ],
+    ids=['line-number-piece', 'revision-piece'],
+)
+def test_colon_delimited_piece_that_names_no_changed_path_selects_nothing(cited: str, changed: str) -> None:
+    """Negative control: reading a colon every way adds no match on a non-path piece."""
+    # Arrange
+    lesson = _mod.LessonRecord('L1', 'project-local', f'See `{cited}`.', modified_at=0.0)
+
+    # Act
+    affected = _mod.select_affected([changed], 100.0, [lesson], lambda _component: '')
 
     # Assert
     assert affected == []
