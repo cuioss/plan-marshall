@@ -95,8 +95,10 @@ TEMPLATE_SHA256 = '{{TEMPLATE_SHA256}}'
 # — a GC-pruned plugin-cache version, or a checkout that has since been removed —
 # the bootstrap recovers in two steps, in this order:
 #
-#   1. the NEWEST surviving version of the skill's scripts dir in the plugin cache
-#      (the same numeric-version-tuple max() the target-aware resolver uses);
+#   1. the skill's scripts dir under the injected deployed-bundle cache roots: the
+#      NEWEST surviving version in a nested, versioned plugin cache (the same
+#      numeric-version-tuple max() the target-aware resolver uses), else the
+#      flat, unversioned ``{bundle}-{skill}`` copy in a flat target's skill root;
 #   2. the skill's scripts dir in the marketplace/bundles tree of the checkout this
 #      executor file sits in.
 #
@@ -119,9 +121,11 @@ _BOOTSTRAP_BUNDLE = '{{BOOTSTRAP_BUNDLE}}'
 # injected per target: the executor cannot import the shared resolver before
 # its own bootstrap has placed the shared modules on sys.path, so the recovery
 # roots travel with the generated file instead of being re-resolved at import.
-# A target without a versioned plugin cache (OpenCode) contributes no plumbable
-# root — the tuple is empty and the recovery finds nothing, which is the
-# honest shape for a target whose deployed skills are resolved directly.
+# Every target contributes its root here, and the roots do not share one layout:
+# Claude contributes its versioned plugin cache (the NESTED layout), while the
+# flat targets (OpenCode, Antigravity) contribute their user-global skill root
+# (the FLAT layout, unversioned). _newest_cache_scripts_dir probes both. The
+# tuple is empty only when the target resolves no root at all.
 _CACHE_RECOVERY_ROOTS = (
 {{CACHE_RECOVERY_ROOTS}}
 )
@@ -131,15 +135,24 @@ _BOOTSTRAP_LOGGING_DIR = ('manage-logging', '{{LOGGING_DIR}}')
 
 
 def _newest_cache_scripts_dir(skill: str) -> str | None:
-    """Re-resolve ``{skill}/scripts`` against the newest surviving plugin-cache version dir.
+    """Re-resolve ``{skill}/scripts`` against the injected deployed-bundle cache roots.
 
-    Fires only when a baked-in bootstrap dir is absent. Walks the installed cache
-    layout, ``{cache_root}/{bundle}/{version}/skills/{skill}/scripts``: under each
-    injected cache root, the bootstrap bundle's directory, then every version dir
-    inside it. Roots are tried in order and the first one that carries the skill wins;
-    within it the NEWEST version by numeric version-tuple is returned, the same
-    newest-only selection the target-aware resolver uses. Pure stdlib and defensive:
-    any failure (including a missing HOME) returns ``None`` rather than raising.
+    Fires only when a baked-in bootstrap dir is absent. Two deployed layouts are
+    probed, and the nested one is tried across EVERY root before the flat one:
+
+    1. **Nested, versioned** — the Claude plugin cache,
+       ``{cache_root}/{bundle}/{version}/skills/{skill}/scripts``. Under each root,
+       the bootstrap bundle's directory, then every version dir inside it. Roots are
+       tried in order and the first one that carries the skill wins; within it the
+       NEWEST version by numeric version-tuple is returned, the same newest-only
+       selection the target-aware resolver uses.
+    2. **Flat, unversioned** — the OpenCode and Antigravity skill roots,
+       ``{skill_root}/{bundle}-{skill}/scripts``. A root may BE the skill root, or
+       CONTAIN it as ``skills/`` or ``skill/``; the three forms are probed in that
+       order, root by root, and the first existing directory wins.
+
+    Pure stdlib and defensive: any failure (including a missing HOME) returns
+    ``None`` rather than raising.
     """
     import re as _re
 
@@ -161,6 +174,19 @@ def _newest_cache_scripts_dir(skill: str) -> str | None:
             if candidates:
                 _name, newest = max(candidates, key=lambda pair: _vkey(pair[0]))
                 return str(newest.resolve())
+        # The flat probe mirrors script-shared's deployed_layout: the
+        # ``{bundle}-{skill}`` join (flat_skill_dir_name, FLAT_DIR_SEPARATOR) and the
+        # skill-root names in SKILL_ROOT_NAMES order, plural ``skills`` before
+        # singular ``skill`` (skill_roots). It is spelled inline because this
+        # bootstrap runs before script-shared is on sys.path, so deployed_layout
+        # cannot be imported here.
+        flat_skill_dir = f'{_BOOTSTRAP_BUNDLE}-{skill}'
+        for root in _CACHE_RECOVERY_ROOTS:
+            base = Path(root).expanduser()
+            for skill_root in (base, base / 'skills', base / 'skill'):
+                scripts_dir = skill_root / flat_skill_dir / 'scripts'
+                if scripts_dir.is_dir():
+                    return str(scripts_dir.resolve())
     except (OSError, ValueError, RuntimeError):
         pass
     return None

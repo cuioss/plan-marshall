@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import sys
 import textwrap
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -270,7 +271,7 @@ def _template_path() -> Path:
     return tse_scripts.parent / 'templates' / 'execute-script.py.template'
 
 
-def _render_executor(pruned_base: Path, home: Path) -> str:
+def _render_executor(pruned_base: Path, home: Path, recovery_roots: tuple[Path, ...] | None = None) -> str:
     """Render the executor template with every bootstrap dir PINNED at a pruned path.
 
     The shared-module and logging bootstrap dirs are pointed at
@@ -278,11 +279,12 @@ def _render_executor(pruned_base: Path, home: Path) -> str:
     mirroring a GC-pruned embedded MARSHALL_VERSION cache path. The cache-recovery
     roots are injected at the fake home's plugin-cache root — the same
     generation-time injection the real generator performs, with the same
-    ``HOME`` the executor is invoked under. Every other substitution token is
-    filled with a minimal valid value so the rendered file is importable and its
-    module-level shared imports (``plan_logging``, ``toon_parser``,
-    ``_ledger_core``, ``worktree_sha``) must resolve exclusively through the
-    template's newest-cache self-heal.
+    ``HOME`` the executor is invoked under — unless ``recovery_roots`` names them
+    explicitly, in order (a flat target's skill root, or several roots at once).
+    Every other substitution token is filled with a minimal valid value so the
+    rendered file is importable and its module-level shared imports
+    (``plan_logging``, ``toon_parser``, ``_ledger_core``, ``worktree_sha``) must
+    resolve exclusively through the template's cache-root self-heal.
     """
     template = _template_path().read_text(encoding='utf-8')
 
@@ -296,8 +298,9 @@ def _render_executor(pruned_base: Path, home: Path) -> str:
     content = content.replace('{{LOGGING_DIR}}', pinned(_BOOTSTRAP_LOGGING_SKILL))
     content = content.replace('{{SHARED_MODULE_DIRS}}', shared_pairs)
     content = content.replace('{{BOOTSTRAP_BUNDLE}}', _BOOTSTRAP_BUNDLE)
-    recovery_root = home / '.claude' / 'plugins' / 'cache' / 'plan-marshall'
-    content = content.replace('{{CACHE_RECOVERY_ROOTS}}', f"    '{recovery_root}',")
+    if recovery_roots is None:
+        recovery_roots = (home / '.claude' / 'plugins' / 'cache' / 'plan-marshall',)
+    content = content.replace('{{CACHE_RECOVERY_ROOTS}}', '\n'.join(f'    {str(root)!r},' for root in recovery_roots))
     content = content.replace('{{EXTRA_SCRIPT_DIRS}}', '')
     content = content.replace('{{PLAN_DIR_NAME}}', '.plan')
     content = content.replace(
@@ -432,6 +435,152 @@ class TestTemplateBootstrapSelfHeal:
         home = tmp_path / 'fakehome'
         executor.write_text(_render_executor(tmp_path / 'pruned-cache', home), encoding='utf-8')
         _stand_up_empty_cache_version(home, self._ALL_BOOTSTRAP_SKILLS, '0.1.9')
+
+        result = _run_executor(executor, home)
+
+        assert result.returncode != 0
+        assert 'plan_logging' in result.stderr
+
+
+# =============================================================================
+# Bootstrap recovery from a flat (OpenCode / Antigravity) skill root
+# =============================================================================
+#
+# The flat targets inject their user-global skill root as a recovery root, and
+# that root deploys the FLAT layout ``{skill_root}/{bundle}-{skill}/scripts`` with
+# no version segment. The root is handed over either as the skill root itself or
+# as the directory containing it under ``skills/`` (deployed) or ``skill/``
+# (generated, not yet installed). Every executor below sits in a ``.plan/`` whose
+# checkout carries no ``marketplace/bundles`` tree, so the checkout-source
+# recovery step finds nothing and the cache roots are the only way the
+# bootstrap imports can resolve.
+
+
+def _executor_outside_checkout(tmp_path: Path) -> Path:
+    """An executor path whose checkout holds no marketplace sources."""
+    plan_dir = tmp_path / 'project' / '.plan'
+    plan_dir.mkdir(parents=True)
+    return plan_dir / 'execute-script.py'
+
+
+def _stand_up_flat_skill_root(
+    skill_root: Path,
+    skills: tuple[str, ...],
+    *,
+    dir_name: Callable[[str], str] | None = None,
+    empty: bool = False,
+) -> None:
+    """Deploy ``skills`` into ``skill_root`` in the flat layout.
+
+    Each skill lands at ``{skill_root}/{bundle}-{skill}/scripts`` (or at
+    ``{skill_root}/{dir_name(skill)}/scripts`` when ``dir_name`` overrides the
+    directory name). The ``scripts`` dir is a symlink to the real marketplace
+    skill's scripts, or an empty directory when ``empty`` is set — a bootstrap
+    that selects an empty copy fails its imports, so selecting it is observable.
+    """
+    for skill in skills:
+        skill_dir = skill_root / (dir_name(skill) if dir_name else f'{_BOOTSTRAP_BUNDLE}-{skill}')
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        if empty:
+            (skill_dir / 'scripts').mkdir()
+        else:
+            (skill_dir / 'scripts').symlink_to(_skills_dir() / skill / 'scripts', target_is_directory=True)
+
+
+class TestTemplateBootstrapFlatRootRecovery:
+    """A pruned bootstrap dir is recovered from a flat target's skill root."""
+
+    _ALL_BOOTSTRAP_SKILLS = (*_BOOTSTRAP_SHARED_SKILLS, _BOOTSTRAP_LOGGING_SKILL)
+
+    def test_flat_skill_root_given_as_the_root_itself_is_recovered(self, tmp_path):
+        """The form the runtimes' bundle-cache-root op returns: the skill root itself."""
+        home = tmp_path / 'fakehome'
+        skill_root = home / '.config' / 'opencode' / 'skills'
+        executor = _executor_outside_checkout(tmp_path)
+        executor.write_text(
+            _render_executor(tmp_path / 'pruned-cache', home, recovery_roots=(skill_root,)), encoding='utf-8'
+        )
+        _stand_up_flat_skill_root(skill_root, self._ALL_BOOTSTRAP_SKILLS)
+
+        result = _run_executor(executor, home)
+
+        assert result.returncode == 0, result.stderr
+
+    @pytest.mark.parametrize('skill_root_name', ['skills', 'skill'])
+    def test_flat_skill_root_inside_a_containing_root_is_recovered(self, tmp_path, skill_root_name):
+        """The containing form: the root carries the skill root as ``skills/`` or ``skill/``."""
+        home = tmp_path / 'fakehome'
+        containing_root = home / '.config' / 'opencode'
+        executor = _executor_outside_checkout(tmp_path)
+        executor.write_text(
+            _render_executor(tmp_path / 'pruned-cache', home, recovery_roots=(containing_root,)), encoding='utf-8'
+        )
+        _stand_up_flat_skill_root(containing_root / skill_root_name, self._ALL_BOOTSTRAP_SKILLS)
+
+        result = _run_executor(executor, home)
+
+        assert result.returncode == 0, result.stderr
+
+    def test_a_flat_copy_without_the_bundle_prefix_is_not_recovered(self, tmp_path):
+        """Matched control: ``{root}/{skill}/scripts`` is not the flat layout.
+
+        The same real modules, filed under the bare skill name instead of
+        ``{bundle}-{skill}``. The flat layout always carries the bundle prefix, so
+        nothing is recovered and the import fails — which is also what proves the
+        two positive cases above resolved through the flat probe and not by some
+        other route.
+        """
+        home = tmp_path / 'fakehome'
+        skill_root = home / '.config' / 'opencode' / 'skills'
+        executor = _executor_outside_checkout(tmp_path)
+        executor.write_text(
+            _render_executor(tmp_path / 'pruned-cache', home, recovery_roots=(skill_root,)), encoding='utf-8'
+        )
+        _stand_up_flat_skill_root(skill_root, self._ALL_BOOTSTRAP_SKILLS, dir_name=lambda skill: skill)
+
+        result = _run_executor(executor, home)
+
+        assert result.returncode != 0
+        assert 'plan_logging' in result.stderr
+
+    def test_the_nested_cache_wins_over_a_flat_root_listed_before_it(self, tmp_path):
+        """Both layouts present: the nested versioned lookup runs across every root first.
+
+        The flat root is listed FIRST and holds empty ``scripts`` dirs; the nested
+        Claude cache, listed second, holds the real ones. The imports succeed only
+        when the nested copy is selected, so a probe that took the flat root
+        because it came first in root order would fail.
+        """
+        home = tmp_path / 'fakehome'
+        flat_root = home / '.config' / 'opencode' / 'skills'
+        claude_root = home / '.claude' / 'plugins' / 'cache' / 'plan-marshall'
+        executor = _executor_outside_checkout(tmp_path)
+        executor.write_text(
+            _render_executor(tmp_path / 'pruned-cache', home, recovery_roots=(flat_root, claude_root)),
+            encoding='utf-8',
+        )
+        _stand_up_flat_skill_root(flat_root, self._ALL_BOOTSTRAP_SKILLS, empty=True)
+        _stand_up_fake_cache(home, self._ALL_BOOTSTRAP_SKILLS)
+
+        result = _run_executor(executor, home)
+
+        assert result.returncode == 0, result.stderr
+
+    def test_the_empty_flat_copy_alone_does_not_supply_the_modules(self, tmp_path):
+        """Matched control: the empty flat copy on its own leaves the imports failing.
+
+        Without it the case above would pass on a bootstrap that never selected
+        the flat copy at all, because selecting it would be unobservable.
+        """
+        home = tmp_path / 'fakehome'
+        flat_root = home / '.config' / 'opencode' / 'skills'
+        claude_root = home / '.claude' / 'plugins' / 'cache' / 'plan-marshall'
+        executor = _executor_outside_checkout(tmp_path)
+        executor.write_text(
+            _render_executor(tmp_path / 'pruned-cache', home, recovery_roots=(flat_root, claude_root)),
+            encoding='utf-8',
+        )
+        _stand_up_flat_skill_root(flat_root, self._ALL_BOOTSTRAP_SKILLS, empty=True)
 
         result = _run_executor(executor, home)
 
