@@ -22,6 +22,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from _executor_template_render import render_executor_template
 
 from conftest import (
     EXECUTOR_GENERATION_ERROR_TOKEN,
@@ -265,12 +266,6 @@ def _skills_dir() -> Path:
     return tse_scripts.parent.parent
 
 
-def _template_path() -> Path:
-    """Absolute path to the executor template."""
-    tse_scripts: Path = get_scripts_dir('plan-marshall', 'tools-script-executor').resolve()
-    return tse_scripts.parent / 'templates' / 'execute-script.py.template'
-
-
 def _render_executor(pruned_base: Path, home: Path, recovery_roots: tuple[Path, ...] | None = None) -> str:
     """Render the executor template with every bootstrap dir PINNED at a pruned path.
 
@@ -281,36 +276,27 @@ def _render_executor(pruned_base: Path, home: Path, recovery_roots: tuple[Path, 
     generation-time injection the real generator performs, with the same
     ``HOME`` the executor is invoked under — unless ``recovery_roots`` names them
     explicitly, in order (a flat target's skill root, or several roots at once).
-    Every other substitution token is filled with a minimal valid value so the
+    Every other substitution token takes the shared renderer's inert value, so the
     rendered file is importable and its module-level shared imports
     (``plan_logging``, ``toon_parser``, ``_ledger_core``, ``worktree_sha``) must
     resolve exclusively through the template's cache-root self-heal.
     """
-    template = _template_path().read_text(encoding='utf-8')
 
     def pinned(skill: str) -> str:
         return str(pruned_base / 'skills' / skill / 'scripts')
 
     shared_pairs = '\n'.join(f'    ({skill!r}, {pinned(skill)!r}),' for skill in _BOOTSTRAP_SHARED_SKILLS)
-
-    content = template.replace('{{SCRIPT_MAPPINGS}}', '')
-    content = content.replace('{{SCRIPT_SURFACES}}', '')
-    content = content.replace('{{LOGGING_DIR}}', pinned(_BOOTSTRAP_LOGGING_SKILL))
-    content = content.replace('{{SHARED_MODULE_DIRS}}', shared_pairs)
-    content = content.replace('{{BOOTSTRAP_BUNDLE}}', _BOOTSTRAP_BUNDLE)
     if recovery_roots is None:
         recovery_roots = (home / '.claude' / 'plugins' / 'cache' / 'plan-marshall',)
-    content = content.replace('{{CACHE_RECOVERY_ROOTS}}', '\n'.join(f'    {str(root)!r},' for root in recovery_roots))
-    content = content.replace('{{EXTRA_SCRIPT_DIRS}}', '')
-    content = content.replace('{{PLAN_DIR_NAME}}', '.plan')
-    content = content.replace(
-        '{{TARGET_AWARE_RESOLVER}}',
-        'def _resolve_notation_by_target(notation):\n    return None',
+
+    return render_executor_template(
+        logging_dir=pinned(_BOOTSTRAP_LOGGING_SKILL),
+        shared_module_dirs=shared_pairs,
+        cache_recovery_roots='\n'.join(f'    {str(root)!r},' for root in recovery_roots),
+        bootstrap_bundle=_BOOTSTRAP_BUNDLE,
+        generated_version='',
+        mappings_fingerprint='',
     )
-    content = content.replace('{{EXECUTOR_TARGET}}', 'claude')
-    content = content.replace('{{GENERATED_VERSION}}', '')
-    content = content.replace('{{MAPPINGS_FINGERPRINT}}', '')
-    return content
 
 
 def _cache_version_skills_dir(home: Path, version: str) -> Path:

@@ -19,15 +19,13 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
+from _executor_template_render import render_executor_template
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import _MARKETPLACE_SCRIPT_DIRS, MARKETPLACE_ROOT
 
 SKILL_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-script-executor'
 SCRIPTS_DIR = SKILL_DIR / 'scripts'
-TEMPLATES_DIR = SKILL_DIR / 'templates'
-EXECUTOR_TEMPLATE = TEMPLATES_DIR / 'execute-script.py.template'
-LOGGING_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-logging' / 'scripts'
 
 # A simple script that we know exists for testing
 TEST_SCRIPT_BUNDLE = 'plan-marshall'
@@ -77,39 +75,21 @@ class ExecutorTestEnvironment:
 
     def _generate_test_executor(self):
         """Generate executor with embedded mappings for testing."""
-        template_content = EXECUTOR_TEMPLATE.read_text()
-
         # Build mappings for a few real scripts
         mappings = self._discover_test_scripts()
-        mappings_code = self._format_mappings(mappings)
 
-        # Replace placeholders
-        executor_content = template_content.replace('{{SCRIPT_MAPPINGS}}', mappings_code)
-        # Pre-flight validator placeholder — tests render with empty subcommand
-        # surface; the validator is exercised in dedicated tests.
-        executor_content = executor_content.replace('{{SCRIPT_SURFACES}}', '').replace('{{SUBCOMMAND_MAPPINGS}}', '')
-        # Point to real plan_logging.py location (isolation via PLAN_BASE_DIR env var)
-        executor_content = executor_content.replace(
-            '{{LOGGING_DIR}}',
-            str(LOGGING_DIR),  # Real marketplace location for plan_logging module
-        )
         # Shared module directories (input_validation etc.) — emitted as
         # (skill, pinned_dir) tuple entries per the _BOOTSTRAP_SKILL_DIRS
-        # contract (see generate_executor.get_shared_module_dirs()).
+        # contract (see generate_executor.get_shared_module_dirs()). The
+        # validator surface stays empty; it is exercised in dedicated tests.
         input_validation_dir = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-input-validation' / 'scripts'
-        executor_content = executor_content.replace(
-            '{{SHARED_MODULE_DIRS}}',
-            f"    ('tools-input-validation', '{input_validation_dir}'),"
-            if input_validation_dir.is_dir()
-            else '    # (none in test)',
-        )
-        executor_content = executor_content.replace('{{CACHE_RECOVERY_ROOTS}}', '# (none in test)')
-        executor_content = executor_content.replace('{{EXTRA_SCRIPT_DIRS}}', '')
-        executor_content = executor_content.replace('{{PLAN_DIR_NAME}}', '.plan')
-        executor_content = executor_content.replace('{{EXECUTOR_TARGET}}', 'claude')
-        executor_content = executor_content.replace(
-            '{{TARGET_AWARE_RESOLVER}}',
-            'def _resolve_notation_by_target(notation):\n    return None\n',
+        executor_content = render_executor_template(
+            self._format_mappings(mappings),
+            shared_module_dirs=(
+                f"    ('tools-input-validation', '{input_validation_dir}'),"
+                if input_validation_dir.is_dir()
+                else '    # (none in test)'
+            ),
         )
 
         self.executor_path = self.plan_dir / 'execute-script.py'
