@@ -1,0 +1,141 @@
+[INFO] Scanning for projects...
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Build Order:
+[INFO]
+[INFO] probe-parent                                                       [pom]
+[INFO] a                                                                  [jar]
+[INFO] b                                                                  [jar]
+[INFO] c                                                                  [jar]
+[INFO]
+[INFO] ----------------------< probe:probe-parent >----------------------
+[INFO] Building probe-parent 1.0-SNAPSHOT                                  [1/4]
+[INFO]   from pom.xml
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO]
+[INFO] ------------------------------< probe:a >-------------------------------
+[INFO] Building a 1.0-SNAPSHOT                                             [2/4]
+[INFO]   from a/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- resources:3.3.1:resources (default-resources) @ a ---
+[INFO] skip non existing resourceDirectory /home/dev/probe/a/src/main/resources
+[INFO]
+[INFO] --- compiler:3.13.0:compile (default-compile) @ a ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 1 source file with javac [debug release 17] to target/classes
+[INFO]
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ a ---
+[INFO] skip non existing resourceDirectory /home/dev/probe/a/src/test/resources
+[INFO]
+[INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ a ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 1 source file with javac [debug release 17] to target/test-classes
+[INFO]
+[INFO] --- surefire:3.5.2:test (default-test) @ a ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO]
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running probe.a.ATest
+[WARNING] Tests run: 2, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.041 s -- in probe.a.ATest
+[INFO]
+[INFO] Results:
+[INFO]
+[WARNING] Tests run: 2, Failures: 0, Errors: 0, Skipped: 1
+[INFO]
+[INFO]
+[INFO] ------------------------------< probe:b >-------------------------------
+[INFO] Building b 1.0-SNAPSHOT                                             [3/4]
+[INFO]   from b/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- resources:3.3.1:resources (default-resources) @ b ---
+[INFO] skip non existing resourceDirectory /home/dev/probe/b/src/main/resources
+[INFO]
+[INFO] --- compiler:3.13.0:compile (default-compile) @ b ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 1 source file with javac [debug release 17] to target/classes
+[INFO]
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ b ---
+[INFO] skip non existing resourceDirectory /home/dev/probe/b/src/test/resources
+[INFO]
+[INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ b ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 1 source file with javac [debug release 17] to target/test-classes
+[INFO]
+[INFO] --- surefire:3.5.2:test (default-test) @ b ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO]
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running probe.b.BTest
+[ERROR] Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.031 s <<< FAILURE! -- in probe.b.BTest
+[ERROR] probe.b.BTest.fails -- Time elapsed: 0.012 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <1> but was: <2>
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:151)
+	at org.junit.jupiter.api.AssertEquals.assertEquals(AssertEquals.java:150)
+	at probe.b.BTest.fails(BTest.java:10)
+
+[INFO]
+[INFO] Results:
+[INFO]
+[ERROR] Failures:
+[ERROR]   BTest.fails:10 expected: <1> but was: <2>
+[INFO]
+[ERROR] Tests run: 1, Failures: 1, Errors: 0, Skipped: 0
+[INFO]
+[INFO]
+[INFO] ------------------------------< probe:c >-------------------------------
+[INFO] Building c 1.0-SNAPSHOT                                             [4/4]
+[INFO]   from c/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- resources:3.3.1:resources (default-resources) @ c ---
+[INFO] skip non existing resourceDirectory /home/dev/probe/c/src/main/resources
+[INFO]
+[INFO] --- compiler:3.13.0:compile (default-compile) @ c ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 1 source file with javac [debug release 17] to target/classes
+[INFO] -------------------------------------------------------------
+[ERROR] COMPILATION ERROR :
+[INFO] -------------------------------------------------------------
+[ERROR] /home/dev/probe/c/src/main/java/probe/c/Broken.java:[5,9] cannot find symbol
+  symbol:   class Missing
+  location: class probe.c.Broken
+[INFO] 1 error
+[INFO] -------------------------------------------------------------
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Summary for probe-parent 1.0-SNAPSHOT:
+[INFO]
+[INFO] probe-parent ....................................... SUCCESS [  0.104 s]
+[INFO] a .................................................. SUCCESS [  1.236 s]
+[INFO] b .................................................. FAILURE [  0.953 s]
+[INFO] c .................................................. FAILURE [  0.412 s]
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  3.218 s
+[INFO] Finished at: 2026-10-10T16:31:44+02:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.2:test (default-test) on project b: There are test failures.
+[ERROR]
+[ERROR] See /home/dev/probe/b/target/surefire-reports for the individual test results.
+[ERROR] See dump files (if any exist) [date].dump, [date]-jvmRun[N].dump and [date].dumpstream.
+[ERROR] -> [Help 1]
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.13.0:compile (default-compile) on project c: Compilation failure
+[ERROR] /home/dev/probe/c/src/main/java/probe/c/Broken.java:[5,9] cannot find symbol
+[ERROR]   symbol:   class Missing
+[ERROR]   location: class probe.c.Broken
+[ERROR]
+[ERROR] -> [Help 1]
+[ERROR]
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR]
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException
+[ERROR]
+[ERROR] After correcting the problems, you can resume the build with the command
+[ERROR]   mvn <args> -rf :b

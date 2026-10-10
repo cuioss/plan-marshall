@@ -13,6 +13,9 @@ Data Sources:
         - coordinates: artifactId / groupId (parent-fallback) / packaging
         - profiles: declared ``/project/profiles/profile/id`` ids
         - description / parent GAV
+        - own dependencies: ``/project/dependencies/dependency`` of the module's
+          own POM, which decide whether the module consumes a reactor
+          sibling's test artifact (``metadata.reactor_test_artifacts``)
     FROM MAVEN (resolved/inherited — enrich path only, one module at a time):
         - resolved coordinates from dependency:tree header
         - profiles via help:all-profiles (includes parent POM profiles)
@@ -225,6 +228,11 @@ def discover_maven_modules(project_root: str) -> list:
     resolved-coordinate / inherited-profile / dependency-tree fields are filled
     lazily by :func:`enrich_maven_module` only when a consumer needs them.
 
+    Discovery runs in two passes. The first parses every POM and collects the
+    reactor's ``groupId:artifactId`` coordinates; the second builds each module
+    against that set, so a module whose own POM depends on a sibling's test
+    artifact is recognised before its command map is built.
+
     Args:
         project_root: Absolute path to project root.
 
@@ -236,17 +244,53 @@ def discover_maven_modules(project_root: str) -> list:
     # Use base library to find all pom.xml files
     descriptors = discover_descriptors(project_root, 'pom.xml')
 
-    modules = []
-    for pom_path in descriptors:
-        # Build base module info from descriptor
-        base = build_module_base(project_root, str(pom_path))
+    # Pass 1: parse every POM once and collect the reactor coordinate set.
+    parsed_poms = [(pom_path, _parse_pom_xml(pom_path)) for pom_path in descriptors]
+    reactor_coordinates = {
+        f'{pom_data["group_id"]}:{pom_data["artifact_id"]}'
+        for _, pom_data in parsed_poms
+        if pom_data.get('group_id') and pom_data.get('artifact_id')
+    }
 
-        # Build complete module data from the cheap POM parse + filesystem walk.
-        module_data = _build_module(base, pom_path, root)
+    # Pass 2: build each module from its parsed POM + filesystem walk.
+    modules = []
+    for pom_path, pom_data in parsed_poms:
+        base = build_module_base(project_root, str(pom_path))
+        module_data = _build_module(base, pom_path, root, pom_data, reactor_coordinates)
         if module_data:
             modules.append(module_data)
 
     return modules
+
+
+def _reactor_test_artifacts(pom_data: dict, reactor_coordinates: set[str]) -> list[str]:
+    """Return the reactor test artifacts a module's own POM depends on.
+
+    A dependency qualifies when its ``groupId:artifactId`` names ANOTHER module
+    of the same reactor and it is declared with ``<type>test-jar</type>`` or a
+    non-empty ``<classifier>``. Such an artifact is attached only at the
+    ``package`` phase, so a ``test``-phase run cannot be relied on to resolve it.
+
+    Args:
+        pom_data: The module's :func:`_parse_pom_xml` result.
+        reactor_coordinates: ``groupId:artifactId`` of every POM in the reactor.
+
+    Returns:
+        Sorted, de-duplicated ``groupId:artifactId:classifier-or-type`` strings
+        (the classifier when present, the type otherwise); empty when none.
+    """
+    own_coordinate = f'{pom_data.get("group_id")}:{pom_data.get("artifact_id")}'
+    found: set[str] = set()
+    for dependency in pom_data.get('dependencies', []):
+        coordinate = f'{dependency["group_id"]}:{dependency["artifact_id"]}'
+        if coordinate == own_coordinate or coordinate not in reactor_coordinates:
+            continue
+        classifier = dependency.get('classifier')
+        if classifier:
+            found.add(f'{coordinate}:{classifier}')
+        elif dependency.get('type') == 'test-jar':
+            found.add(f'{coordinate}:test-jar')
+    return sorted(found)
 
 
 # =============================================================================
@@ -254,19 +298,24 @@ def discover_maven_modules(project_root: str) -> list:
 # =============================================================================
 
 
-def _build_module(base, pom_path: Path, project_root: Path) -> dict | None:
+def _build_module(
+    base, pom_path: Path, project_root: Path, pom_data: dict, reactor_coordinates: set[str]
+) -> dict | None:
     """Build complete module dict from base info and a cheap POM parse.
 
     The whole module shape — coordinates, packaging, paths, sources/tests,
-    declared profiles, and the full command map — is computed WITHOUT invoking
-    Maven. Resolved-coordinate / inherited-profile / dependency-tree fields are
-    deliberately NOT populated here; ``dependencies`` is an empty list. A
-    consumer that needs the resolved view calls :func:`enrich_maven_module`.
+    declared profiles, reactor test artifacts, and the full command map — is
+    computed WITHOUT invoking Maven. Resolved-coordinate / inherited-profile /
+    dependency-tree fields are deliberately NOT populated here;
+    ``dependencies`` is an empty list. A consumer that needs the resolved view
+    calls :func:`enrich_maven_module`.
 
     Args:
         base: ModuleBase from build_module_base
         pom_path: Path to pom.xml file
         project_root: Project root path
+        pom_data: The module's :func:`_parse_pom_xml` result
+        reactor_coordinates: ``groupId:artifactId`` of every POM in the reactor
 
     Returns:
         Complete module dict conforming to module-discovery.md
@@ -275,7 +324,6 @@ def _build_module(base, pom_path: Path, project_root: Path) -> dict | None:
     relative_path = base.paths.module
 
     # Coordinates / packaging / declared profiles from the cheap POM parse.
-    pom_data = _parse_pom_xml(pom_path)
     artifact_id = pom_data.get('artifact_id') or base.name
     group_id = pom_data.get('group_id')
     packaging = pom_data.get('packaging') or 'jar'
@@ -303,6 +351,9 @@ def _build_module(base, pom_path: Path, project_root: Path) -> dict | None:
     source_files = count_source_files(module_path, sources['main'])
     test_files = count_source_files(module_path, sources['test'])
 
+    # Reactor test artifacts the module's own POM depends on.
+    reactor_test_artifacts = _reactor_test_artifacts(pom_data, reactor_coordinates)
+
     # Commands
     commands = _build_commands(
         module_name=artifact_id,
@@ -311,9 +362,10 @@ def _build_module(base, pom_path: Path, project_root: Path) -> dict | None:
         has_tests=test_files > 0,
         profiles=profiles,
         relative_path=relative_path,
+        consumes_reactor_test_artifact=bool(reactor_test_artifacts),
     )
 
-    # Build metadata - omit profiles if empty
+    # Build metadata - omit profiles and reactor_test_artifacts if empty
     metadata = {
         'artifact_id': artifact_id,
         'group_id': group_id,
@@ -323,6 +375,8 @@ def _build_module(base, pom_path: Path, project_root: Path) -> dict | None:
     }
     if profiles:
         metadata['profiles'] = profiles
+    if reactor_test_artifacts:
+        metadata['reactor_test_artifacts'] = reactor_test_artifacts
 
     return {
         'name': artifact_id,
@@ -424,6 +478,9 @@ def _parse_pom_xml(pom_path: Path) -> dict:
             - ``profile_ids``: declared ``/project/profiles/profile/id`` values.
             - ``description``: ``<description>`` text (or ``None``).
             - ``parent``: ``groupId:artifactId`` of ``<parent>`` (or ``None``).
+            - ``dependencies``: one ``{group_id, artifact_id, type, classifier,
+              scope}`` dict per ``/project/dependencies/dependency`` of the
+              module's own POM (see :func:`_parse_own_dependencies`).
         On a malformed/unreadable POM, returns the packaging default with all
         other fields ``None``/empty so discovery degrades gracefully.
     """
@@ -437,6 +494,7 @@ def _parse_pom_xml(pom_path: Path) -> dict:
             'profile_ids': [],
             'description': None,
             'parent': None,
+            'dependencies': [],
         }
 
     packaging = _child_text(root, 'packaging') or 'jar'
@@ -474,7 +532,54 @@ def _parse_pom_xml(pom_path: Path) -> dict:
         'profile_ids': profile_ids,
         'description': description,
         'parent': parent,
+        'dependencies': _parse_own_dependencies(root, group_id, parent_group_id),
     }
+
+
+def _parse_own_dependencies(root: ET.Element, group_id: str | None, parent_group_id: str | None) -> list[dict]:
+    """Read the dependencies declared directly in a POM's ``<dependencies>``.
+
+    Only ``/project/dependencies/dependency`` is read — ``dependencyManagement``,
+    profile-scoped dependencies and dependencies inherited from a parent POM are
+    not. ``${project.groupId}`` is interpolated to the module's own groupId and
+    ``${project.parent.groupId}`` to the parent's; any other property stays
+    literal, so a dependency using it never matches a reactor coordinate.
+    A dependency lacking a groupId or artifactId is skipped.
+
+    Args:
+        root: The POM's root ``<project>`` element.
+        group_id: The module's effective groupId (child, else parent).
+        parent_group_id: The ``<parent><groupId>`` value (or ``None``).
+
+    Returns:
+        One ``{group_id, artifact_id, type, classifier, scope}`` dict per
+        dependency, in declared order. ``type`` defaults to ``'jar'`` and
+        ``scope`` to ``'compile'`` (Maven's defaults); ``classifier`` is
+        ``None`` when not declared.
+    """
+    interpolations = {'${project.groupId}': group_id, '${project.parent.groupId}': parent_group_id}
+    dependencies: list[dict] = []
+    dependencies_el = _find_child(root, 'dependencies')
+    if dependencies_el is None:
+        return dependencies
+    for dependency_el in dependencies_el:
+        if _strip_ns(dependency_el.tag) != 'dependency':
+            continue
+        dep_group_id = _child_text(dependency_el, 'groupId')
+        dep_group_id = interpolations.get(dep_group_id, dep_group_id) if dep_group_id else None
+        dep_artifact_id = _child_text(dependency_el, 'artifactId')
+        if not dep_group_id or not dep_artifact_id:
+            continue
+        dependencies.append(
+            {
+                'group_id': dep_group_id,
+                'artifact_id': dep_artifact_id,
+                'type': _child_text(dependency_el, 'type') or 'jar',
+                'classifier': _child_text(dependency_el, 'classifier'),
+                'scope': _child_text(dependency_el, 'scope') or 'compile',
+            }
+        )
+    return dependencies
 
 
 # =============================================================================
@@ -743,7 +848,13 @@ def _parse_dependencies_from_maven_output(log_content: str) -> list:
 
 
 def _build_commands(
-    module_name: str, packaging: str, has_sources: bool, has_tests: bool, profiles: list, relative_path: str
+    module_name: str,
+    packaging: str,
+    has_sources: bool,
+    has_tests: bool,
+    profiles: list,
+    relative_path: str,
+    consumes_reactor_test_artifact: bool = False,
 ) -> dict:
     """Build commands object with resolved canonical command strings.
 
@@ -753,6 +864,12 @@ def _build_commands(
     - Test-conditional (non-pom): test-compile, module-tests
     - Non-pom: clean-install
     - Profile-based: integration-tests, coverage, benchmark
+
+    A non-root, non-pom module with tests that consumes a reactor sibling's
+    test artifact (``consumes_reactor_test_artifact``) gets the ``package``-phase
+    test ladder: ``module-tests`` = ``package -pl {path} -am`` and
+    ``test-compile`` = ``package -pl {path} -am -DskipTests``. Every other entry,
+    and every other module, keeps the ``test``-phase form.
 
     Entries derived from an authored-mutating profile (see
     ``EXT_KEY_PROFILES_MUTATING``) are emitted in dict form
@@ -776,12 +893,19 @@ def _build_commands(
         has_tests: Whether module has test files
         profiles: List of profile dicts with id, canonical
         relative_path: Path relative to project root ("" or "." for root module)
+        consumes_reactor_test_artifact: Whether the module's own POM depends on
+            a reactor sibling's ``test-jar`` / classified artifact
     """
     skill = 'plan-marshall:build-maven:maven'
     is_root_module = not relative_path or relative_path == '.'
     # ``-am`` (--also-make) builds the selected module's upstream reactor
-    # dependencies first, so an intra-reactor test-jar resolves on a clean
-    # checkout. It is safe for build commands, but MUST NOT be used with
+    # modules first, but only up to the requested phase. A sibling's
+    # classified or ``test-jar`` artifact is attached from ``package`` on; at an
+    # earlier phase Maven 3.9 falls back to the sibling's output directory —
+    # ``target/test-classes`` for a ``test-jar`` / ``tests`` dependency,
+    # ``target/classes`` for any other classifier, which lacks the test
+    # classes. Modules consuming such an artifact therefore get the
+    # ``package``-phase test ladder below. ``-am`` MUST NOT be used with
     # ``clean``: ``mvn clean -pl <module> -am`` would wipe the ``target/``
     # directories of all upstream reactor dependencies, forcing a full rebuild.
     pl_arg = '' if is_root_module else f' -pl {relative_path} -am'
@@ -805,7 +929,10 @@ def _build_commands(
     if packaging != 'pom':
         cmd_map['clean-install'] = f'clean install{pl_arg}'
 
-        if has_tests:
+        if has_tests and consumes_reactor_test_artifact and not is_root_module:
+            cmd_map['test-compile'] = f'package{pl_arg} -DskipTests'
+            cmd_map['module-tests'] = f'package{pl_arg}'
+        elif has_tests:
             cmd_map['test-compile'] = f'test-compile{pl_arg}'
             cmd_map['module-tests'] = f'test{pl_arg}'
 

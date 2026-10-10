@@ -18,6 +18,8 @@ from pathlib import Path
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
 from _build_jvm_patterns import JVM_BASE_PATTERNS, override_patterns, parse_jvm_file_location
 from _build_parse import (
+    POPULATION_MEASURED,
+    POPULATION_UNMEASURED,
     SEVERITY_ERROR,
     SEVERITY_WARNING,
     CategoryPatterns,
@@ -45,6 +47,40 @@ MAVEN_PATTERNS: CategoryPatterns = override_patterns(
         ],
     },
 )
+
+
+# Maven's failure epilogue: fixed advice, report pointers and banners Maven and
+# Surefire print at [ERROR] level after a failed build. None of them is a
+# diagnostic, so none may become an issue (and through it a blocking finding).
+# Derived from real failing builds on Maven 3.8.8, 3.9.16 and 4.0.0-rc-7, plus
+# both Surefire report-pointer wordings ("Please refer to ..." in older Surefire,
+# "See ..." in Surefire 3.5.x). Each pattern is matched with ``fullmatch``
+# against the prefix-stripped message, so a reworded line is filed again
+# (fail-visible) rather than a genuine diagnostic being silently dropped.
+_MAVEN_EPILOGUE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"To see the full stack trace of the errors, re-run Maven with the '?-e'? switch\.?"),
+    re.compile(r"Re-run Maven using the '?-X'? switch to enable (full debug logging|verbose output)\.?"),
+    re.compile(r'For more information about the errors and possible solutions, please read the following articles:'),
+    re.compile(r'\[Help \d+\] https?://\S+'),
+    re.compile(r'After correcting the problems, you can resume the build with the command'),
+    re.compile(r'mvn (<args>|\[args\]) -r(f :\S+)?'),
+    re.compile(r'(Please refer to|See) .+ for the individual test results\.'),
+    re.compile(r'(Please refer to|See) dump files \(if any exist\) .+'),
+    # Maven 4 logs the failing reactor-summary rows and the banner at [ERROR].
+    re.compile(r'\S.* \.{3,} (SUCCESS|FAILURE|SKIPPED)( \[.+\])?'),
+    re.compile(r'BUILD FAILURE'),
+)
+
+
+def _is_epilogue(message: str) -> bool:
+    """Whether a prefix-stripped message is a line of Maven's failure epilogue."""
+    return any(pattern.fullmatch(message) for pattern in _MAVEN_EPILOGUE_PATTERNS)
+
+
+def _is_passing_test_count(message: str) -> bool:
+    """Whether a message is a ``Tests run:`` line reporting no failure and no error."""
+    match = _TESTS_RUN_PATTERN.search(message)
+    return match is not None and int(match.group(2)) == 0 and int(match.group(3)) == 0
 
 
 def parse_file_location(line: str) -> dict[str, str | int | None]:
@@ -91,6 +127,8 @@ def _extract_issues(content: str) -> list[Issue]:
 
     Deduplicates issues by key (category:file:line:message_prefix) to avoid
     duplicates from reactor summary and per-module output in multi-module builds.
+    Lines of Maven's failure epilogue and ``Tests run:`` lines with zero failures
+    and zero errors are not issues and are skipped.
     """
     issues: list[Issue] = []
     seen: set[str] = set()
@@ -112,6 +150,8 @@ def _extract_issues(content: str) -> list[Issue]:
             message = re.sub(r'^\[(INFO|ERROR|WARNING)\]\s*', '', stripped)
             # Skip empty messages and continuation lines
             if not message or message.startswith('->'):
+                continue
+            if _is_epilogue(message) or _is_passing_test_count(message):
                 continue
 
             location = parse_file_location(line)
@@ -148,29 +188,126 @@ def _detect_build_status(content: str) -> str:
     )
 
 
-def _extract_test_summary(content: str) -> UnitTestSummary | None:
-    """Extract Maven test summary.
+# Maven/Surefire/Failsafe count line: Tests run: X, Failures: Y, Errors: Z, Skipped: W
+_TESTS_RUN_PATTERN = re.compile(r'Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+),\s*Skipped:\s*(\d+)')
 
-    Does NOT use the shared extract_test_summary() helper because Maven
-    reports Failures and Errors as separate fields that must be combined
-    into a single 'failed' count — a pattern the shared helper doesn't support.
+# Plugin execution header, e.g. `--- surefire:3.5.2:test (default-test) @ core ---`
+# (Maven 3.9 / 4) or `--- maven-surefire-plugin:3.5.2:test (default-test) @ core ---`
+# (Maven 3.8). Every header opens a new execution; the plugin token names it.
+_EXECUTION_HEADER_PATTERN = re.compile(r'---\s+([\w.\-]+):[\w.\-]+:[\w.\-]+\s.*@.*---')
+
+# Plugin token -> test runner it belongs to (short and long header forms).
+_TEST_RUNNERS = {
+    'surefire': 'surefire',
+    'maven-surefire-plugin': 'surefire',
+    'failsafe': 'failsafe',
+    'maven-failsafe-plugin': 'failsafe',
+}
+
+# Marker Surefire/Failsafe print immediately before an execution's summary block.
+_RESULTS_MARKER_PATTERN = re.compile(r'^(?:\[(?:INFO|ERROR|WARNING)\]\s*)?Results\s*:\s*$')
+
+# Banner of a parallel (`-T`) build: independent modules may interleave, so the
+# nearest preceding execution header no longer reliably names a summary's runner.
+_PARALLEL_BUILD_BANNER = 'MultiThreadedBuilder'
+
+
+def _sum_counts(matches: list[re.Match[str]]) -> tuple[int, int, int]:
+    """Sum (total, failed, skipped) over Maven count lines; failed = failures + errors."""
+    total = sum(int(m.group(1)) for m in matches)
+    failed = sum(int(m.group(2)) + int(m.group(3)) for m in matches)
+    skipped = sum(int(m.group(4)) for m in matches)
+    return total, failed, skipped
+
+
+def _extract_test_summary(content: str) -> UnitTestSummary | None:
+    """Extract the Maven test summary by summing every summary block.
+
+    Does NOT use the shared extract_test_summary() helper: Maven reports Failures
+    and Errors as separate fields combined into one 'failed' count, and a Maven
+    log carries several summary blocks (one per module, one per test plugin), so
+    keeping the last match would report only one of them.
+
+    Every ``Tests run:`` line is classified:
+
+    - **per-class** — the line carries ``Time elapsed``; it repeats counts already
+      in a summary line and is excluded.
+    - **summary** — no ``Time elapsed``, and it follows a ``Results:`` marker
+      inside the current test-plugin execution (an execution ends at the next
+      ``--- plugin:version:goal ... @ module ---`` header). Summary lines are
+      summed across modules and plugins.
+    - **ambiguous** — any other ``Tests run:`` line (e.g. a quiet ``-q`` log, where
+      the ``[INFO] Results:`` marker is suppressed).
+
+    Each summary line is attributed to the nearest preceding ``surefire`` /
+    ``failsafe`` execution header (the Maven 3.8 long form
+    ``maven-surefire-plugin:`` / ``maven-failsafe-plugin:`` is accepted), and
+    ``by_runner`` carries the executed count (passed + failed) per runner — a
+    runner absent from the log is absent from the dict. Attribution by nearest
+    header is only reliable for a sequential build: when the log carries the
+    ``MultiThreadedBuilder`` banner the summed total is kept but ``by_runner`` is
+    omitted.
+
+    The summary is declared ``population='unmeasured'`` when any ambiguous line
+    exists, or when no summary line was recognised while per-class lines were.
+    Its counts are then the sum of the non-per-class lines (or of the per-class
+    lines when nothing else exists), so a failed test stays visible to the
+    truthful-status check, and ``by_runner`` is omitted because nothing was
+    attributed from a recognised summary.
+
+    Returns:
+        The summed summary, or None only when the log has no ``Tests run:`` line.
     """
-    # Maven format: Tests run: X, Failures: Y, Errors: Z, Skipped: W
-    pattern = r'Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+),\s*Skipped:\s*(\d+)'
-    matches = list(re.finditer(pattern, content))
-    if not matches:
+    summary_lines: list[re.Match[str]] = []
+    ambiguous_lines: list[re.Match[str]] = []
+    per_class_lines: list[re.Match[str]] = []
+    runner_executed: dict[str, int] = {}
+
+    current_runner: str | None = None
+    results_seen = False
+
+    for line in content.split('\n'):
+        header = _EXECUTION_HEADER_PATTERN.search(line)
+        if header:
+            current_runner = _TEST_RUNNERS.get(header.group(1))
+            results_seen = False
+            continue
+
+        stripped = line.strip()
+        if _RESULTS_MARKER_PATTERN.match(stripped):
+            results_seen = True
+            continue
+
+        match = _TESTS_RUN_PATTERN.search(line)
+        if not match:
+            continue
+
+        if 'Time elapsed' in line:
+            per_class_lines.append(match)
+        elif results_seen:
+            summary_lines.append(match)
+            if current_runner is not None:
+                executed = int(match.group(1)) - int(match.group(4))
+                runner_executed[current_runner] = runner_executed.get(current_runner, 0) + executed
+        else:
+            ambiguous_lines.append(match)
+
+    if not (summary_lines or ambiguous_lines or per_class_lines):
         return None
 
-    m = matches[-1]
-    total = int(m.group(1))
-    failures = int(m.group(2))
-    errors = int(m.group(3))
-    skipped = int(m.group(4))
-    failed = failures + errors
+    unmeasured = bool(ambiguous_lines) or (not summary_lines and bool(per_class_lines))
+    counted = (summary_lines + ambiguous_lines) or per_class_lines
+    total, failed, skipped = _sum_counts(counted)
+
+    by_runner: dict[str, int] | None = None
+    if not unmeasured and runner_executed and _PARALLEL_BUILD_BANNER not in content:
+        by_runner = runner_executed
 
     return UnitTestSummary(
         passed=total - failed - skipped,
         failed=failed,
         skipped=skipped,
         total=total,
+        by_runner=by_runner,
+        population=POPULATION_UNMEASURED if unmeasured else POPULATION_MEASURED,
     )

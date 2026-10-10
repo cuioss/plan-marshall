@@ -579,10 +579,10 @@ def test_root_module_has_no_pl_arg():
 def test_nested_module_pl_includes_also_make():
     """Test that the test-ladder commands carry -am for a non-root module.
 
-    -am (--also-make) on the test ladder (test-compile, module-tests) is the
-    exact fix: without it, a module that depends on a sibling-produced test-jar
-    fails at test-compile / test on a clean checkout because the upstream
-    reactor module was never built. These rungs are the ones the bug broke.
+    -am (--also-make) on the test ladder (test-compile, module-tests) builds the
+    upstream reactor modules first on a clean checkout. This is the control for
+    a module that consumes no reactor test artifact; the package-phase ladder
+    for one that does is pinned by the reactor-test-artifact tests below.
     """
     commands = _build_commands(
         module_name='oauth-sheriff-quarkus',
@@ -597,6 +597,162 @@ def test_nested_module_pl_includes_also_make():
         assert '-pl oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus -am' in commands[cmd_name], (
             f'{cmd_name} must emit -am after the -pl selector'
         )
+
+
+# =============================================================================
+# Unit Tests: Package-Phase Test Ladder for Reactor Test Artifacts
+# =============================================================================
+
+REACTOR_TEST_ARTIFACT_PROJECT = FIXTURES_DIR / 'reactor-test-artifact-project'
+_MAVEN_RUN = 'python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args'
+
+
+def _executable(maven_args: str) -> str:
+    """Return the resolved build-maven executable for ``maven_args``."""
+    return f'{_MAVEN_RUN} "{maven_args}"'
+
+
+def _discover_reactor_fixture() -> dict[str, dict]:
+    """Discover the reactor-test-artifact fixture, keyed by module name."""
+    return {m['name']: m for m in discover_maven_modules(str(REACTOR_TEST_ARTIFACT_PROJECT))}
+
+
+def test_build_commands_package_ladder_when_consuming_reactor_test_artifact():
+    """A non-root module consuming a reactor test artifact gets the package-phase ladder."""
+    commands = _build_commands(
+        module_name='consumer',
+        packaging='jar',
+        has_sources=False,
+        has_tests=True,
+        profiles=[],
+        relative_path='consumer',
+        consumes_reactor_test_artifact=True,
+    )
+
+    assert commands['module-tests'] == _executable('package -pl consumer -am')
+    assert commands['test-compile'] == _executable('package -pl consumer -am -DskipTests')
+
+
+def test_build_commands_package_ladder_leaves_other_entries_unchanged():
+    """Only module-tests / test-compile change; every other entry matches the flag-off map."""
+    kwargs = {
+        'module_name': 'consumer',
+        'packaging': 'jar',
+        'has_sources': True,
+        'has_tests': True,
+        'profiles': [{'id': 'coverage', 'canonical': 'coverage'}],
+        'relative_path': 'consumer',
+    }
+    baseline = _build_commands(**kwargs)
+    with_ladder = _build_commands(**kwargs, consumes_reactor_test_artifact=True)
+
+    changed = {key for key in baseline if baseline[key] != with_ladder[key]}
+    assert changed == {'module-tests', 'test-compile'}
+    assert set(baseline) == set(with_ladder)
+
+
+def test_build_commands_package_ladder_not_applied_to_root_module():
+    """The root module keeps the test-phase ladder even when the flag is set."""
+    commands = _build_commands(
+        module_name='root-app',
+        packaging='jar',
+        has_sources=True,
+        has_tests=True,
+        profiles=[],
+        relative_path='.',
+        consumes_reactor_test_artifact=True,
+    )
+
+    assert commands['module-tests'] == _executable('test')
+    assert commands['test-compile'] == _executable('test-compile')
+
+
+def test_build_commands_package_ladder_needs_tests():
+    """A module without tests gets no test ladder, flag or not."""
+    commands = _build_commands(
+        module_name='consumer',
+        packaging='jar',
+        has_sources=True,
+        has_tests=False,
+        profiles=[],
+        relative_path='consumer',
+        consumes_reactor_test_artifact=True,
+    )
+
+    assert 'module-tests' not in commands
+    assert 'test-compile' not in commands
+
+
+def test_discover_classifier_consumer_gets_package_ladder():
+    """consumer depends on the reactor sibling producer with classifier generators."""
+    consumer = _discover_reactor_fixture()['consumer']
+
+    assert consumer['commands']['module-tests'] == _executable('package -pl consumer -am')
+    assert consumer['commands']['test-compile'] == _executable('package -pl consumer -am -DskipTests')
+    assert consumer['metadata']['reactor_test_artifacts'] == ['probe:producer:generators']
+
+
+def test_discover_test_jar_consumer_gets_package_ladder():
+    """typed-consumer depends on the reactor sibling producer with type test-jar."""
+    typed_consumer = _discover_reactor_fixture()['typed-consumer']
+
+    assert typed_consumer['commands']['module-tests'] == _executable('package -pl typed-consumer -am')
+    assert typed_consumer['commands']['test-compile'] == _executable('package -pl typed-consumer -am -DskipTests')
+    assert typed_consumer['metadata']['reactor_test_artifacts'] == ['probe:producer:test-jar']
+
+
+def test_discover_producer_keeps_test_ladder():
+    """producer consumes no reactor test artifact and keeps the test-phase ladder."""
+    producer = _discover_reactor_fixture()['producer']
+
+    assert producer['commands']['module-tests'] == _executable('test -pl producer -am')
+    assert producer['commands']['test-compile'] == _executable('test-compile -pl producer -am')
+    assert 'reactor_test_artifacts' not in producer['metadata']
+
+
+def test_discover_external_classifier_consumer_keeps_test_ladder():
+    """A classifier dependency outside the reactor does not switch the ladder."""
+    external = _discover_reactor_fixture()['external-consumer']
+
+    assert external['commands']['module-tests'] == _executable('test -pl external-consumer -am')
+    assert external['commands']['test-compile'] == _executable('test-compile -pl external-consumer -am')
+    assert 'reactor_test_artifacts' not in external['metadata']
+
+
+def test_discover_reactor_aggregator_has_no_test_ladder():
+    """The fixture's pom aggregator exposes no test ladder and no reactor test artifacts."""
+    parent = _discover_reactor_fixture()['reactor-test-artifact-parent']
+
+    assert 'module-tests' not in parent['commands']
+    assert 'reactor_test_artifacts' not in parent['metadata']
+
+
+def test_discover_dependency_on_self_coordinate_is_not_a_reactor_test_artifact():
+    """A module's classified dependency on its own coordinate does not qualify."""
+    self_pom = """<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>self-app</artifactId>
+  <version>1.0.0</version>
+  <dependencies>
+    <dependency>
+      <groupId>com.example</groupId>
+      <artifactId>self-app</artifactId>
+      <classifier>generators</classifier>
+    </dependency>
+  </dependencies>
+</project>
+"""
+    root = _make_module_tree({'.': _AGGREGATOR_POM, 'self': self_pom})
+    tests_dir = root / 'self' / 'src' / 'test' / 'java'
+    tests_dir.mkdir(parents=True)
+    (tests_dir / 'SelfTest.java').write_text('class SelfTest {}')
+
+    module = {m['name']: m for m in discover_maven_modules(str(root))}['self-app']
+
+    assert module['commands']['module-tests'] == _executable('test -pl self -am')
+    assert 'reactor_test_artifacts' not in module['metadata']
 
 
 # =============================================================================

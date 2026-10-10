@@ -42,6 +42,16 @@ load_merged_build_map = _architecture_core.load_merged_build_map
 resolve_module_for_path = _architecture_core.resolve_module_for_path
 cmd_derive_verification = _cmd_client.cmd_derive_verification
 
+_maven_cmd_discover = load_script_module(
+    'plan-marshall', 'build-maven', '_maven_cmd_discover.py', '_maven_cmd_discover'
+)
+
+#: The build-maven reactor fixture whose ``consumer`` module depends on the
+#: reactor sibling ``producer``'s ``generators``-classified test artifact.
+_REACTOR_TEST_ARTIFACT_PROJECT = (
+    Path(__file__).parent.parent / 'build-maven' / 'fixtures' / 'reactor-test-artifact-project'
+)
+
 #: The architecture script's address, as module-level string constants so the
 #: ``parse_ns`` call below stays statically resolvable.
 _ARCH_BUNDLE = 'plan-marshall'
@@ -625,6 +635,82 @@ def test_plain_test_java_still_derives_module_tests_beside_it_route():
         assert result['status'] == 'success'
         verbs = {c['command'] for c in result['commands']}
         assert verbs == {'test-compile', 'module-tests'}
+
+
+def _seed_discovered_maven_module(project_dir: str, module_name: str, build_map: dict) -> None:
+    """Seed one module from a real build-maven discovery of the reactor fixture.
+
+    The module's command map is the one ``discover_maven_modules`` emits for the
+    fixture, so the deriver is exercised against discovery's actual output rather
+    than a hand-written executable.
+    """
+    discovered = {m['name']: m for m in _maven_cmd_discover.discover_maven_modules(str(_REACTOR_TEST_ARTIFACT_PROJECT))}
+    module = discovered[module_name]
+    save_project_meta(
+        {
+            'name': 'reactor-test-artifact-test',
+            'description': '',
+            'description_reasoning': '',
+            'extensions_used': [],
+            'modules': {module_name: {}},
+        },
+        project_dir,
+    )
+    save_module_derived(
+        module_name,
+        {
+            'name': module_name,
+            'build_systems': ['maven'],
+            'paths': {'module': module['paths']['module']},
+            'metadata': module['metadata'],
+            'commands': {
+                verb: entry if isinstance(entry, dict) else {'executable': entry}
+                for verb, entry in module['commands'].items()
+            },
+        },
+        project_dir,
+    )
+    marshal = Path(project_dir) / '.plan' / 'marshal.json'
+    marshal.parent.mkdir(parents=True, exist_ok=True)
+    marshal.write_text(json.dumps({'build': {'map': build_map}}, indent=2), encoding='utf-8')
+
+
+def test_reactor_test_artifact_consumer_derives_package_phase_ladder():
+    """A test file in a module consuming a reactor sibling's test artifact derives
+    the package-phase test ladder discovery emitted for it.
+
+    ``consumer`` depends on ``producer``'s ``generators``-classified test
+    artifact, which Maven attaches only at ``package``; a ``test``-phase run
+    resolves the sibling's ``target/classes`` and cannot compile. The derived
+    executables are what phase 4 stamps on the task, so they must be the
+    ``package`` forms and never the ``test`` / ``test-compile`` ones.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        project = Path(tmp) / 'project'
+        project.mkdir()
+        build_map = {
+            'java': [
+                {'glob': '*/src/test/*.java', 'role': 'test', 'build_class': 'module-tests'},
+            ],
+        }
+        _seed_discovered_maven_module(str(project), 'consumer', build_map)
+
+        result = cmd_derive_verification(
+            _variant(
+                _DERIVE_ARGS,
+                changed_artifacts='consumer/src/test/java/probe/consumer/ConsumerTest.java',
+                project_dir=str(project),
+            )
+        )
+
+        assert result['status'] == 'success'
+        assert result['classified_count'] == 1
+        by_verb = {c['command']: c['executable'] for c in result['commands']}
+        assert set(by_verb) == {'test-compile', 'module-tests'}
+        assert 'plan-marshall:build-maven:maven run' in by_verb['module-tests']
+        assert '--command-args "package -pl consumer -am -DskipTests"' in by_verb['test-compile']
+        assert '--command-args "package -pl consumer -am"' in by_verb['module-tests']
+        assert not any('"test -pl' in e or '"test-compile -pl' in e for e in by_verb.values())
 
 
 def test_nested_pom_against_bare_route_derives_verify():

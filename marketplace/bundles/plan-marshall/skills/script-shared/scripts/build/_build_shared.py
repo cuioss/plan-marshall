@@ -26,6 +26,7 @@ from _build_examined import (
 )
 from _build_format import format_json, format_toon
 from _build_parse import (
+    POPULATION_UNMEASURED,
     SEVERITY_ERROR,
     Issue,
     UnitTestSummary,
@@ -665,6 +666,20 @@ def _applied_bound_fields(result: DirectCommandResult) -> dict:
     return {field: result[field] for field in _APPLIED_BOUND_FIELDS if result.get(field) is not None}  # type: ignore[literal-required]
 
 
+def _measured_executed(test_summary: UnitTestSummary | None) -> int | None:
+    """Return the summary's executed count only when it is a measurement.
+
+    ``None`` when no summary parsed, or when the parser declared its summary
+    ``unmeasured`` (it could not tell summary lines from other count lines). The
+    unmeasured summary's ``failed`` count is still read directly by the
+    truthful-status checks; only its executed count is withheld from the places
+    that publish it as a measured population.
+    """
+    if test_summary is None or test_summary.population == POPULATION_UNMEASURED:
+        return None
+    return test_summary.executed
+
+
 def cmd_run_common(
     result: DirectCommandResult,
     parser_fn: ParserFn,
@@ -856,9 +871,11 @@ def cmd_run_common(
             # already-recorded test-failure finding on the strength of a run that
             # tested nothing. That is the precise false-green the reconciliation
             # guard exists to prevent, so the guard must be fed the quantity its
-            # own name states.
+            # own name states. A summary the parser declared `unmeasured` yields
+            # no count at all, so `tests_population` stays "measured iff derived
+            # from recognised summary blocks".
             routed_total = result.get('routed_tests_run')
-            parsed_total = test_summary.executed if test_summary is not None else None
+            parsed_total = _measured_executed(test_summary)
             if routed_total is not None:
                 parsed_total = int(routed_total)
             tests_run = resolve_tests_run(analyses, parsed_total)
@@ -1025,8 +1042,11 @@ def cmd_run_common(
         if test_summary:
             output['tests'] = test_summary
             # Same hand-back as the green path: a failing run's executed count
-            # is a measurement too, and the ledger row should carry it.
-            result['measured_tests_run'] = test_summary.executed
+            # is a measurement too, and the ledger row should carry it — unless
+            # the parser declared the summary unmeasured.
+            measured_executed = _measured_executed(test_summary)
+            if measured_executed is not None:
+                result['measured_tests_run'] = measured_executed
 
         if qgate_persist_failure is not None:
             output['qgate_persist_failed'] = True
