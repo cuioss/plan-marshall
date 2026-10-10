@@ -112,7 +112,7 @@ The integration test module does **not** build the application — it only build
                 <artifactId>maven-failsafe-plugin</artifactId>
                 <configuration>
                     <includes>
-                        <include>**/integration/**/*IT.java</include>
+                        <include>**/*IT.java</include>
                     </includes>
                     <systemPropertyVariables>
                         <test.https.port>${test.https.port}</test.https.port>
@@ -127,7 +127,7 @@ The integration test module does **not** build the application — it only build
 
 **Key differences from the application module**:
 - No framework build plugin (e.g., no `quarkus-maven-plugin`) — the integration module doesn't build the app
-- Explicit Failsafe `<include>` pattern for test discovery
+- Explicit Failsafe `<include>` pattern for test discovery — the unqualified `**/*IT.java`, never a package-qualified one: a pattern that matches no class leaves the lane green with zero tests run (see SKILL.md, "An Include Pattern Can Match Nothing and Stay Green")
 - System properties pass port configuration to tests
 - Post-integration-test dumps service logs before stopping containers
 
@@ -219,6 +219,24 @@ void shouldExposeMetrics() {
 
 **Note**: The health/metrics endpoint paths vary by framework (e.g., `/q/health` for Quarkus, `/actuator/health` for Spring Boot). Adjust paths accordingly.
 
+**An overall `UP` is not evidence that a check ran.** An aggregate endpoint reports `UP` when every registered check is up — and also when no check is registered at all. A test that asserts only the status passes against an application whose health checks were never wired in. Assert the checks the application is expected to contribute, by name:
+
+```java
+@Test
+void shouldReportTheExpectedReadinessChecks() {
+    given()
+            .baseUri(managementBaseUri())
+            .when()
+            .get("/health/ready")
+            .then()
+            .statusCode(200)
+            .body("status", equalTo("UP"))
+            .body("checks.name", hasItem("backend-connection"));
+}
+```
+
+A readiness endpoint answers with a non-2xx status while a check is down, and still carries the JSON body. A test that inspects the body of a `DOWN` answer sets no status expectation, or expects the 503.
+
 ### Port Mapping Strategy
 
 | Port | Protocol | Purpose |
@@ -244,7 +262,7 @@ docker compose up -d
 # 1. Wait for dependent services first (e.g., identity provider)
 echo "Waiting for identity provider..."
 for i in {1..60}; do
-    if curl -s http://localhost:1090/health/ready > /dev/null 2>&1; then
+    if curl -sf http://localhost:1090/health/ready > /dev/null 2>&1; then
         echo "Identity provider is ready"
         break
     fi
@@ -256,7 +274,7 @@ done
 echo "Waiting for application..."
 START_TIME=$(date +%s)
 for i in {1..30}; do
-    if curl -s http://localhost:19000/health/live > /dev/null 2>&1; then
+    if curl -sf http://localhost:19000/health/live > /dev/null 2>&1; then
         TOTAL_TIME=$(( $(date +%s) - START_TIME ))
         echo "Application ready in ${TOTAL_TIME}s"
         break
@@ -265,6 +283,10 @@ for i in {1..30}; do
     sleep 1
 done
 ```
+
+**`curl` needs `-f` in a readiness wait.** Without it `curl` exits 0 for any HTTP answer, including the 503 a readiness endpoint gives while the service is not ready, so the loop reports "ready" on the first response instead of the first successful one. Keep the call as the condition of the `if`: under `set -e` a failing `curl` there does not end the script, and the loop goes on polling until its own limit.
+
+The wait for a dependent service has to cover that service's whole start. Where the stack is started in steps — dependencies first, the application once a setup step has finished — `docker compose up` no longer waits on the dependency's own health check, and the loop's limit is the only bound there is.
 
 ### Stop Script Pattern
 
@@ -298,6 +320,17 @@ docker compose logs application > "${TARGET_DIR}/application.log" 2>&1 || true
 echo "Service logs saved to ${TARGET_DIR}"
 ```
 
+Dump every container a test reads from, not only the application under test. A container added for one test — a second instance of the application with a different configuration, a stub — is the one whose log is needed when that test fails, and it is the one a script written earlier does not know. Write each dump under a name the CI workflow's artifact upload already matches, and print nothing for a container that does not exist in the current profile.
+
+### A New Integration Test Runs First in CI
+
+A test that needs the full stack — a built image, the compose services, an identity provider — is often written and compiled without ever being run, because the stack is too slow or too heavy to start locally. Its first execution is then the CI run of the pull request, and its first failure has to be diagnosed from the CI log alone. Write it for that:
+
+* **Put the evidence into the failure message.** An assertion on a response carries the HTTP status and the body in its message. "expected: not null" tells nothing; the body tells which part of the expectation was wrong.
+* **Make the logs it depends on reach the CI artifacts** — see above — before the first run, not after the first failure.
+* **Say in the pull request that the test has not run.** A reviewer reads a compiled-only test differently from a passing one.
+* **Read a first failure as information about the system as well as about the test.** A new test that probes a part of the application no test looked at before can fail because that part never worked. Reproduce against the running application before changing the test's expectation.
+
 ## Test Execution Phases
 
 ### Maven Lifecycle Integration
@@ -321,6 +354,8 @@ echo "Service logs saved to ${TARGET_DIR}"
 ./mvnw verify -pl integration-tests
 ```
 
+The first line assumes the application module's artifact is already installed. When it is not, build it with a separate `install -DskipTests -DskipITs -pl integration-tests -am` first — do not add `-am` to the `verify` line, which would run the upstream modules' unit suites inside this lane (see SKILL.md, "The Profile Skip Does Not Reach Upstream Modules").
+
 ## Anti-Patterns
 
 * **Internal Injection in Tests**: Never use `@Inject`/`@Autowired` — tests are external clients
@@ -329,6 +364,11 @@ echo "Service logs saved to ${TARGET_DIR}"
 * **Hardcoded Ports**: Always use configurable system properties
 * **Framework build plugin in IT module**: The integration module doesn't build the app
 * **Missing log dump**: Always dump service logs before stopping containers
+* **Package-qualified Failsafe include**: A pattern that matches nothing reports success with zero tests
+* **`-am` on the `verify` line**: Re-runs the upstream modules' unit suites inside the integration-test lane
+* **Status-only health assertion**: `status: UP` also holds with no check registered; assert the expected checks by name
+* **`curl` without `-f` in a readiness wait**: Exits 0 on a 503, so the wait ends on the first answer, not the first ready one
+* **Failure message without the response**: A first run in CI that fails with "expected: not null" cannot be diagnosed from the log
 
 ## Troubleshooting
 

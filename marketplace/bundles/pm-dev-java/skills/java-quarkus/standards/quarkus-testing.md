@@ -28,6 +28,20 @@ Quarkus-specific testing patterns. For general JUnit 5 patterns, see `pm-dev-jav
 
 The `quarkus-jacoco` dependency handles JaCoCo agent attachment for Quarkus's classloading model. Set `quarkus.jacoco.reuse-data-file=true` in test `application.properties` to accumulate coverage across test runs.
 
+Accumulated data cannot show a loss: a line that a change stopped covering still reads as covered from the earlier run. Delete the data file, or run a clean build, before any before/after coverage comparison — see `pm-dev-java:junit-core` → `standards/coverage-analysis-pattern.md`.
+
+### When the Report Comes From `jacoco-maven-plugin`
+
+A build can carry `quarkus-jacoco` and still take its coverage from `jacoco-maven-plugin`: `prepare-agent` puts the agent on the Surefire `argLine`, the agent writes the data file, and `jacoco:report` builds the report from it. In that build the extension's own report is a second path nobody reads, and it is not free. At JVM exit the extension waits for its own data file; when that file is never written, every `@QuarkusTest` JVM pays the wait — in the order of ten seconds each — and leaves a timeout message in `target/jacoco-report/error.txt`.
+
+Switch the extension's report off and keep the dependency:
+
+```properties
+quarkus.jacoco.report=false
+```
+
+Confirm on clean coverage data that per-class coverage is unchanged, and that `target/jacoco-report/error.txt` is no longer written.
+
 ## @QuarkusTest — CDI Integration Tests
 
 Starts the full Quarkus container. Use for tests that need CDI injection, configuration, or the full application context:
@@ -111,6 +125,12 @@ class AuthDisabledTest {
 
 **Note**: Each unique `@TestProfile` causes a Quarkus container restart. Minimize the number of distinct profiles to keep test suites fast.
 
+### One Boot Per Profile Needs One JVM
+
+Quarkus keeps the application running between test classes of the same profile, and orders the classes by profile so each profile boots once. Both hold only inside one JVM. Under Surefire's `reuseForks=false` every `@QuarkusTest` class starts its own JVM and boots the application again, whatever its profile.
+
+Give the `@QuarkusTest` classes a Surefire execution of their own with one reused fork, selected by a JUnit tag, and leave the classes that need a JVM to themselves in an isolated execution. In an extension's deployment module the classes that register a `QuarkusExtensionTest` boot an application too and belong to the same group; the guard test has to recognise both forms. The configuration, the criteria for isolation and the guard test that keeps the split correct are in `pm-dev-java:junit-core` → `standards/test-fork-policy.md`.
+
 ## REST Assured Patterns
 
 REST Assured is auto-configured in `@QuarkusTest` to point at the test instance:
@@ -159,6 +179,31 @@ class DatabaseHealthCheckTest {
 }
 ```
 
+This test proves what the check answers. It does not prove that an application gets the check.
+
+### A Health Check Shipped by an Extension
+
+A health check that lives in an extension's runtime module is a bean in a jar. A consuming application discovers it only when that jar is a bean archive (it carries a Jandex index or a `beans.xml`) or when the extension's deployment processor registers the class. When neither holds, the application starts, `/q/health` answers `{"status":"UP","checks":[]}`, and nothing fails — an injected-bean test inside the extension's own module passes all the while, because there the class is part of the application under test.
+
+Register the checks in the processor, unremovable, because nothing injects a health check:
+
+```java
+@BuildStep
+AdditionalBeanBuildItem healthChecks() {
+    return AdditionalBeanBuildItem.builder()
+            .addBeanClasses(BackendReadinessCheck.class, ValidatorLivenessCheck.class)
+            .setUnremovable()
+            .build();
+}
+```
+
+Then guard it at both ends:
+
+* A test of the build step asserts that the produced item names each health-check class.
+* A test against an application that only *depends on* the extension asserts each check by name in `/q/health/ready` and `/q/health/live` — not the overall status alone, which is `UP` for an empty list. See `pm-dev-java:junit-integration` → `standards/external-integration-testing.md`, "Health/Metrics Testing".
+
+Registering checks that were missing changes what consumers observe: readiness can now be `DOWN`, with HTTP 503, where it was always `UP`. Say so in the change description, and check every script and test that polls readiness for 200 — a start script, an end-to-end environment — against the time the checks need to turn `UP`.
+
 ## Troubleshooting
 
 | Problem | Cause | Solution |
@@ -167,6 +212,10 @@ class DatabaseHealthCheckTest {
 | SonarQube shows no coverage | Report path mismatch | Set `sonar.coverage.jacoco.xmlReportPaths` to `${project.build.directory}/site/jacoco/jacoco.xml` |
 | `@Inject` returns null in IT | Using `@QuarkusIntegrationTest` | No CDI injection — test via HTTP with REST Assured |
 | Slow test suite | Too many distinct `@TestProfile` classes | Consolidate profiles; use plain JUnit for non-CDI tests |
+| Slow test suite, one application boot per class | `reuseForks=false` starts a JVM per `@QuarkusTest` class | Run the `@QuarkusTest` classes in one reused fork — see "One Boot Per Profile Needs One JVM" |
+| Each `@QuarkusTest` JVM takes about ten seconds to exit; `target/jacoco-report/error.txt` holds a timeout | The `quarkus-jacoco` report waits for a data file this build never writes | Set `quarkus.jacoco.report=false` — see "When the Report Comes From `jacoco-maven-plugin`" |
+| Coverage did not drop after a test was removed | Coverage data accumulated from an earlier run | Delete the data file before comparing |
+| `/q/health` reports `UP` with an empty `checks` list | An extension's health checks are not registered in the consuming application | Register them in the deployment processor — see "A Health Check Shipped by an Extension" |
 
 ## References
 

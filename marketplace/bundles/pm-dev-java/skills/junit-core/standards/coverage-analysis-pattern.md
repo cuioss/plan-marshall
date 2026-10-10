@@ -55,6 +55,26 @@ void loadUser_whenNotFound_throwsUserNotFoundException() {
 | Uncovered branches | Test both true/false conditions; test all switch cases |
 | Uncovered methods | Add happy path test; add error path tests; add null/invalid input tests |
 
+## Comparing Coverage Before and After a Change
+
+A claim that a change did not lower coverage needs a comparison that could have shown a loss. Two things make a comparison unable to:
+
+**Accumulated coverage data.** The coverage agent appends to its data file; it does not replace it. A build that reuses the file of an earlier build reports the union of both, so a line the change stopped covering still reads as covered. Delete the data file — or run a clean build — before each of the two runs being compared.
+
+**Run-to-run variance.** Some branches are covered by chance: one that depends on the iteration order of an unordered collection, or on which of two threads arrives first. On an unchanged tree such a class shows different numbers on different runs, in both directions. Before attributing a difference to the change:
+
+1. Run the unchanged tree several times on clean data and note which classes vary.
+2. Compare per class, not by the module total, which hides one class's loss behind another's gain.
+3. Treat a difference in a class that varies on its own as unattributed, and say so.
+
+A branch that is covered by chance is itself a finding: no test fixes the condition that reaches it. Report it as a test-quality gap rather than leaving it as noise.
+
+### What an Unchanged Coverage Figure Does Not Show
+
+Coverage records which code ran, not what was asserted about it. Two tests that execute the same lines produce the same coverage whether they assert the whole result, one field of it, or nothing. Removing the stricter of the two leaves every per-class figure identical.
+
+An unchanged comparison therefore supports "no code stopped being exercised". It does not support "nothing stopped being checked". When a test is removed or merged, the assertions are compared by reading both tests — see `testing-junit-core.md`, "Removing a Redundant Test".
+
 ## Best Practices
 
 **Do:**
