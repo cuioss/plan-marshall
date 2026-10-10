@@ -53,6 +53,11 @@ When `run` is invoked with `--plan-id <P>`, every parsed issue from a failed bui
 
 Severity is mapped from `Issue.severity` (`error` → `error`, `warning` → `warning`). The finding's `module` carries `maven`, `rule` carries the parser category.
 
+Two kinds of `[ERROR]` / `[WARNING]` line are not issues, so they never become findings:
+
+- **Maven's failure epilogue** — the fixed advice printed after a failed build (the `-e` / `-X` re-run advice, the "For more information" and `[Help N]` link lines, the resume advice and its `mvn … -rf :module` / `mvn [args] -r` command), Surefire's report pointers (both the `Please refer to …` and the `See …` wording, for test results and for dump files), and Maven 4's `[ERROR]`-level reactor-summary rows and `BUILD FAILURE` banner. Each line is matched in full, so a reworded line is filed again rather than a genuine diagnostic being dropped; `Failed to execute goal …` and compiler `file:[line,col]` messages stay issues on every Maven version.
+- **Passing test-count lines** — a `Tests run:` line (summary or per-class) whose `Failures` and `Errors` are both 0, such as `[WARNING] Tests run: 27, Failures: 0, Errors: 0, Skipped: 1`. A count line with failures or errors is still filed.
+
 > For the producer→store→consumer→gate flow including the producer-mismatch fidelity contract, see [`ref-workflow-architecture/standards/findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md). This SKILL.md owns the per-tool issue→finding-type routing only.
 
 ### Additive OpenRewrite log-parse consumption (`rewrite-log`)

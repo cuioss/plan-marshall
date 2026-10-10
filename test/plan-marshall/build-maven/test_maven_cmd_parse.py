@@ -520,6 +520,177 @@ def test_no_maven_pattern_carries_an_unescaped_bracket():
 
 
 # =============================================================================
+# Maven's failure epilogue and passing test-count lines are not issues
+# =============================================================================
+#
+# Both fixtures reproduce a fail-at-end run of the same three-module reactor: `a`
+# passes with one skipped test, `b` has one failing Surefire test, `c` does not
+# compile. The expected diagnostics are written out rather than derived from the
+# parser, so a parser that drops a real diagnostic fails here as surely as one
+# that files an epilogue line.
+
+_MAVEN3_EPILOGUE_LOG = TEST_DATA_DIR / 'maven-failure-epilogue.log'
+_MAVEN4_EPILOGUE_LOG = TEST_DATA_DIR / 'maven4-failure-epilogue.log'
+
+_SUREFIRE_GOAL_FAILURE = (
+    'Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.2:test (default-test) '
+    'on project b: There are test failures.'
+)
+_COMPILER_GOAL_FAILURE = (
+    'Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.13.0:compile (default-compile) '
+    'on project c: Compilation failure'
+)
+_COMPILER_ERROR = '/home/dev/probe/c/src/main/java/probe/c/Broken.java:[5,9] cannot find symbol'
+
+#: The Maven 3.9.16 fixture's real diagnostics, in log order (the repeated compiler
+#: error in the goal-failure block is deduplicated).
+_MAVEN3_DIAGNOSTICS = [
+    'Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.031 s <<< FAILURE! -- in probe.b.BTest',
+    'probe.b.BTest.fails -- Time elapsed: 0.012 s  <<< FAILURE!',
+    'Failures:',
+    'BTest.fails:10 expected: <1> but was: <2>',
+    'Tests run: 1, Failures: 1, Errors: 0, Skipped: 0',
+    'COMPILATION ERROR :',
+    _COMPILER_ERROR,
+    _SUREFIRE_GOAL_FAILURE,
+    _COMPILER_GOAL_FAILURE,
+    'symbol:   class Missing',
+    'location: class probe.c.Broken',
+]
+
+#: The Maven 4.0.0-rc-7 fixture's real diagnostics, in log order.
+_MAVEN4_DIAGNOSTICS = [
+    'Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.029 s <<< FAILURE! -- in probe.b.BTest',
+    'probe.b.BTest.fails -- Time elapsed: 0.011 s  <<< FAILURE!',
+    'Failures:',
+    'BTest.fails:10 expected: <1> but was: <2>',
+    'Tests run: 1, Failures: 1, Errors: 0, Skipped: 0',
+    'COMPILATION ERROR :',
+    _COMPILER_ERROR,
+    _SUREFIRE_GOAL_FAILURE,
+    _COMPILER_GOAL_FAILURE,
+    'symbol:   class Missing',
+    'location: class probe.c.Broken',
+]
+
+#: The Maven 3 fixture's `[ERROR]` / `[WARNING]` lines that must never be filed.
+_MAVEN3_NOT_FILED = [
+    'Tests run: 2, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.041 s -- in probe.a.ATest',
+    'Tests run: 2, Failures: 0, Errors: 0, Skipped: 1',
+    'See /home/dev/probe/b/target/surefire-reports for the individual test results.',
+    'See dump files (if any exist) [date].dump, [date]-jvmRun[N].dump and [date].dumpstream.',
+    'To see the full stack trace of the errors, re-run Maven with the -e switch.',
+    'Re-run Maven using the -X switch to enable full debug logging.',
+    'For more information about the errors and possible solutions, please read the following articles:',
+    '[Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException',
+    'After correcting the problems, you can resume the build with the command',
+    'mvn <args> -rf :b',
+]
+
+#: The Maven 4 fixture's `[ERROR]` / `[WARNING]` lines that must never be filed.
+_MAVEN4_NOT_FILED = [
+    'Tests run: 2, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.044 s -- in probe.a.ATest',
+    'Tests run: 2, Failures: 0, Errors: 0, Skipped: 1',
+    'b .................................................. FAILURE [  0.953 s]',
+    'c .................................................. FAILURE [  0.388 s]',
+    'BUILD FAILURE',
+    'See /home/dev/probe/b/target/surefire-reports for the individual test results.',
+    'See dump files (if any exist) [date].dump, [date]-jvmRun[N].dump and [date].dumpstream.',
+    "To see the full stack trace of the errors, re-run Maven with the '-e' switch",
+    "Re-run Maven using the '-X' switch to enable verbose output",
+    'For more information about the errors and possible solutions, please read the following articles:',
+    '[Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException',
+    '[Help 2] http://cwiki.apache.org/confluence/display/MAVEN/CompilationFailureException',
+    'After correcting the problems, you can resume the build with the command',
+    'mvn [args] -r',
+]
+
+_EPILOGUE_FIXTURE_CASES = [
+    (_MAVEN3_EPILOGUE_LOG, _MAVEN3_DIAGNOSTICS, _MAVEN3_NOT_FILED),
+    (_MAVEN4_EPILOGUE_LOG, _MAVEN4_DIAGNOSTICS, _MAVEN4_NOT_FILED),
+]
+
+_EPILOGUE_FIXTURE_IDS = ['maven-3.9', 'maven-4']
+
+
+def _logged_messages(log_file: Path) -> list[str]:
+    """Every `[ERROR]` / `[WARNING]` line of the fixture with its level prefix stripped."""
+    prefix = re.compile(r'^\[(?:ERROR|WARNING)\]\s*')
+    return [
+        prefix.sub('', line.strip())
+        for line in log_file.read_text(encoding='utf-8').splitlines()
+        if prefix.match(line.strip())
+    ]
+
+
+@pytest.mark.parametrize('log_file,diagnostics,not_filed', _EPILOGUE_FIXTURE_CASES, ids=_EPILOGUE_FIXTURE_IDS)
+def test_failure_epilogue_is_not_filed_and_real_diagnostics_are(
+    log_file: Path, diagnostics: list[str], not_filed: list[str]
+):
+    # Arrange — every line the test names is really in the fixture at a filing level.
+    logged = _logged_messages(log_file)
+    assert set(diagnostics) <= set(logged)
+    assert set(not_filed) <= set(logged)
+
+    # Act
+    issues, _, _ = parse_log(log_file)
+
+    # Assert
+    messages = [issue.message for issue in issues]
+    assert not set(messages) & set(not_filed)
+    assert messages == diagnostics
+
+
+def test_older_surefire_report_pointer_is_not_filed():
+    """``maven-failure-real.log`` carries the older ``Please refer to …`` report pointer."""
+    log_file = TEST_DATA_DIR / 'maven-failure-real.log'
+    assert 'Please refer to' in log_file.read_text(encoding='utf-8')
+
+    issues, _, _ = parse_log(log_file)
+
+    assert not [issue for issue in issues if issue.message.startswith('Please refer to')]
+
+
+def test_older_surefire_dump_file_pointer_is_not_filed():
+    """``sample-maven-failure.log`` carries the older ``Please refer to dump files …`` line."""
+    log_file = TEST_DATA_DIR.parent / 'sample-maven-failure.log'
+    assert 'Please refer to dump files' in log_file.read_text(encoding='utf-8')
+
+    issues, _, _ = parse_log(log_file)
+
+    assert not [issue for issue in issues if issue.message.startswith('Please refer to')]
+
+
+def test_passing_test_count_line_is_not_a_test_failure(tmp_path):
+    # Arrange
+    log_file = tmp_path / 'passing-count.log'
+    log_file.write_text('[WARNING] Tests run: 27, Failures: 0, Errors: 0, Skipped: 1\n', encoding='utf-8')
+
+    # Act
+    issues, _, _ = parse_log(log_file)
+
+    # Assert
+    assert not [issue for issue in issues if issue.category == 'test_failure']
+
+
+def test_control_failing_test_count_line_is_still_filed(tmp_path):
+    """CONTROL: the zero-failure skip must not swallow a count line that reports failures."""
+    # Arrange
+    message = 'Tests run: 5, Failures: 2, Errors: 0, Skipped: 0'
+    log_file = tmp_path / 'failing-count.log'
+    log_file.write_text(f'[ERROR] {message}\n', encoding='utf-8')
+
+    # Act
+    issues, _, _ = parse_log(log_file)
+
+    # Assert
+    filed = [issue for issue in issues if issue.message == message]
+    assert len(filed) == 1
+    assert filed[0].category == 'test_failure'
+    assert filed[0].severity == SEVERITY_ERROR
+
+
+# =============================================================================
 # Edge Cases
 # =============================================================================
 

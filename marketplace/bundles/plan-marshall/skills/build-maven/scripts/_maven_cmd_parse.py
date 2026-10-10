@@ -49,6 +49,40 @@ MAVEN_PATTERNS: CategoryPatterns = override_patterns(
 )
 
 
+# Maven's failure epilogue: fixed advice, report pointers and banners Maven and
+# Surefire print at [ERROR] level after a failed build. None of them is a
+# diagnostic, so none may become an issue (and through it a blocking finding).
+# Derived from real failing builds on Maven 3.8.8, 3.9.16 and 4.0.0-rc-7, plus
+# both Surefire report-pointer wordings ("Please refer to ..." in older Surefire,
+# "See ..." in Surefire 3.5.x). Each pattern is matched with ``fullmatch``
+# against the prefix-stripped message, so a reworded line is filed again
+# (fail-visible) rather than a genuine diagnostic being silently dropped.
+_MAVEN_EPILOGUE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"To see the full stack trace of the errors, re-run Maven with the '?-e'? switch\.?"),
+    re.compile(r"Re-run Maven using the '?-X'? switch to enable (full debug logging|verbose output)\.?"),
+    re.compile(r'For more information about the errors and possible solutions, please read the following articles:'),
+    re.compile(r'\[Help \d+\] https?://\S+'),
+    re.compile(r'After correcting the problems, you can resume the build with the command'),
+    re.compile(r'mvn (<args>|\[args\]) -r(f :\S+)?'),
+    re.compile(r'(Please refer to|See) .+ for the individual test results\.'),
+    re.compile(r'(Please refer to|See) dump files \(if any exist\) .+'),
+    # Maven 4 logs the failing reactor-summary rows and the banner at [ERROR].
+    re.compile(r'\S.* \.{3,} (SUCCESS|FAILURE|SKIPPED)( \[.+\])?'),
+    re.compile(r'BUILD FAILURE'),
+)
+
+
+def _is_epilogue(message: str) -> bool:
+    """Whether a prefix-stripped message is a line of Maven's failure epilogue."""
+    return any(pattern.fullmatch(message) for pattern in _MAVEN_EPILOGUE_PATTERNS)
+
+
+def _is_passing_test_count(message: str) -> bool:
+    """Whether a message is a ``Tests run:`` line reporting no failure and no error."""
+    match = _TESTS_RUN_PATTERN.search(message)
+    return match is not None and int(match.group(2)) == 0 and int(match.group(3)) == 0
+
+
 def parse_file_location(line: str) -> dict[str, str | int | None]:
     """Extract file, line, and column from a Maven error/warning line.
 
@@ -93,6 +127,8 @@ def _extract_issues(content: str) -> list[Issue]:
 
     Deduplicates issues by key (category:file:line:message_prefix) to avoid
     duplicates from reactor summary and per-module output in multi-module builds.
+    Lines of Maven's failure epilogue and ``Tests run:`` lines with zero failures
+    and zero errors are not issues and are skipped.
     """
     issues: list[Issue] = []
     seen: set[str] = set()
@@ -114,6 +150,8 @@ def _extract_issues(content: str) -> list[Issue]:
             message = re.sub(r'^\[(INFO|ERROR|WARNING)\]\s*', '', stripped)
             # Skip empty messages and continuation lines
             if not message or message.startswith('->'):
+                continue
+            if _is_epilogue(message) or _is_passing_test_count(message):
                 continue
 
             location = parse_file_location(line)
