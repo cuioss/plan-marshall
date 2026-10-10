@@ -61,6 +61,11 @@ _STORE_STATE_KEYS = frozenset({'store_resolution', 'store_path', 'findings_store
 #: hash-keyed surfaces. Six hex chars, matching ``HASH_ID_LENGTH``.
 _ABSENT_HASH = 'deadbe'
 
+#: A well-formed commit id for the fix-stamp surface, and a second one to tell a
+#: replaced stamp from a kept one.
+_FIX_COMMIT = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
+_OTHER_FIX_COMMIT = '0f1e2d3c4b5a69788796a5b4c3d2e1f001234567'
+
 
 # =============================================================================
 # Population derivation — the roster every contract assertion below runs over
@@ -123,6 +128,9 @@ _SHAPE_A_INVOCATIONS = {
     'get_finding': lambda core, pid: core.get_finding(pid, _ABSENT_HASH),
     'resolve_finding': lambda core, pid: core.resolve_finding(pid, _ABSENT_HASH, 'fixed'),
     'resolve_findings_by_type': lambda core, pid: core.resolve_findings_by_type(pid, ('bug',), 'fixed'),
+    # Driven by finding, with a hash that is in no store: the by-task form would
+    # answer an empty selection with a success, which says nothing about a refusal.
+    'stamp_fix_commit': lambda core, pid: core.stamp_fix_commit(pid, _FIX_COMMIT, hash_id=_ABSENT_HASH),
     'promote_finding': lambda core, pid: core.promote_finding(pid, _ABSENT_HASH, 'architecture'),
     'mark_finding_responded': lambda core, pid: core.mark_finding_responded(pid, _ABSENT_HASH),
     'query_qgate_findings': lambda core, pid: core.query_qgate_findings(pid, '5-execute'),
@@ -168,8 +176,8 @@ def test_the_roster_is_non_empty():
     assert len(_operation_roster()) > 0, 'the derivation found no operation surfaces at all'
 
 
-def test_the_roster_partitions_exhaustively_and_disjointly_into_16_plus_4():
-    """Shape A (16) and Shape C (4) cover the derived roster with no overlap.
+def test_the_roster_partitions_exhaustively_and_disjointly_into_17_plus_4():
+    """Shape A (17) and Shape C (4) cover the derived roster with no overlap.
 
     The two counts are asserted alongside the exhaustiveness so a function added
     to either surface module later fails HERE — landing in neither bucket, or
@@ -183,9 +191,9 @@ def test_the_roster_partitions_exhaustively_and_disjointly_into_16_plus_4():
     assert shape_a | shape_c == set(roster), (
         f'buckets do not cover the roster; unbucketed: {sorted(set(roster) - shape_a - shape_c)}'
     )
-    assert len(shape_a) == 16, f'expected 16 Shape-A surfaces, got {sorted(shape_a)}'
+    assert len(shape_a) == 17, f'expected 17 Shape-A surfaces, got {sorted(shape_a)}'
     assert len(shape_c) == 4, f'expected 4 Shape-C surfaces, got {sorted(shape_c)}'
-    assert len(roster) == 20
+    assert len(roster) == 21
 
 
 def test_the_roster_spans_every_surface_module():
@@ -609,3 +617,310 @@ def test_add_qgate_finding_refusal_is_outside_the_persist_ok_partition(plan_cont
 
     assert result['status'] == 'error'
     assert result['status'] not in QGATE_PERSIST_OK
+
+
+# =============================================================================
+# Test: the fix stamp (fix_commit_sha / fix_task_number)
+# =============================================================================
+
+
+def _add_bug(plan_id: str, title: str) -> str:
+    """File one plan finding and return its hash id."""
+    return str(_findings_core.add_finding(plan_id, 'bug', title, 'Detail')['hash_id'])
+
+
+def _stored(plan_id: str, hash_id: str) -> dict:
+    """Read one finding back from the store."""
+    record = _findings_core.get_finding(plan_id, hash_id)
+    assert record['status'] == 'success', record
+    return dict(record)
+
+
+def test_resolve_stores_the_fix_task_number_on_a_fixed_finding(plan_context):
+    plan_id = 'fix-stamp-task-number'
+    plan_context.plan_dir_for(plan_id)
+    hash_id = _add_bug(plan_id, 'Owned by a task')
+
+    result = _findings_core.resolve_finding(plan_id, hash_id, 'fixed', detail='By TASK-7.', fix_task_number=7)
+
+    assert result['status'] == 'success'
+    assert result['fix_task_number'] == 7
+    assert _stored(plan_id, hash_id)['fix_task_number'] == 7
+
+
+def test_resolve_without_a_task_number_records_an_inline_fix(plan_context):
+    """⛔ MATCHED CONTROL — the same resolve with no task number stores none."""
+    plan_id = 'fix-stamp-inline'
+    plan_context.plan_dir_for(plan_id)
+    hash_id = _add_bug(plan_id, 'Fixed inline')
+
+    result = _findings_core.resolve_finding(plan_id, hash_id, 'fixed', detail='By an edit.')
+
+    assert 'fix_task_number' not in result
+    assert _stored(plan_id, hash_id).get('fix_task_number') is None
+
+
+@pytest.mark.parametrize('resolution', ['suppressed', 'accepted', 'taken_into_account', 'rejected', 'pending'])
+def test_a_fix_task_number_is_refused_on_every_resolution_but_fixed(plan_context, resolution):
+    """The refusal writes nothing: the finding keeps the resolution it had."""
+    plan_id = f'fix-stamp-refused-{resolution.replace("_", "-")}'
+    plan_context.plan_dir_for(plan_id)
+    hash_id = _add_bug(plan_id, 'Not a fix')
+
+    result = _findings_core.resolve_finding(plan_id, hash_id, resolution, fix_task_number=7)
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'fix_task_number_requires_fixed'
+    assert _stored(plan_id, hash_id)['resolution'] == 'pending'
+
+
+def test_stamp_by_fix_task_reaches_every_fixed_finding_that_task_owns_and_no_other(plan_context):
+    """One call, selected on the task number alone.
+
+    The store holds the four neighbours a looser selector would also stamp: a fixed
+    finding of another task, an inline fix, and a finding that is not fixed.
+    """
+    plan_id = 'fix-stamp-by-task'
+    plan_context.plan_dir_for(plan_id)
+    owned_a = _add_bug(plan_id, 'Owned A')
+    owned_b = _add_bug(plan_id, 'Owned B')
+    other_task = _add_bug(plan_id, 'Other task')
+    inline = _add_bug(plan_id, 'Inline')
+    accepted = _add_bug(plan_id, 'Accepted')
+    for hash_id in (owned_a, owned_b):
+        _findings_core.resolve_finding(plan_id, hash_id, 'fixed', fix_task_number=7)
+    _findings_core.resolve_finding(plan_id, other_task, 'fixed', fix_task_number=8)
+    _findings_core.resolve_finding(plan_id, inline, 'fixed')
+    _findings_core.resolve_finding(plan_id, accepted, 'accepted')
+
+    result = _findings_core.stamp_fix_commit(plan_id, _FIX_COMMIT.upper(), fix_task_number=7)
+
+    assert result['status'] == 'success'
+    assert result['selector'] == 'fix_task_number'
+    assert result['stamped_count'] == 2
+    assert sorted(result['hash_ids']) == sorted([owned_a, owned_b])
+    # Stored lower-cased, whatever case the caller supplied.
+    assert result['commit_sha'] == _FIX_COMMIT
+    for hash_id in (owned_a, owned_b):
+        assert _stored(plan_id, hash_id)['fix_commit_sha'] == _FIX_COMMIT
+    for hash_id in (other_task, inline, accepted):
+        assert _stored(plan_id, hash_id).get('fix_commit_sha') is None
+
+
+def test_stamp_by_fix_task_reports_an_empty_selection_as_zero_over_a_read_store(plan_context):
+    plan_id = 'fix-stamp-by-task-empty'
+    plan_context.plan_dir_for(plan_id)
+    _add_bug(plan_id, 'Still pending')
+
+    result = _findings_core.stamp_fix_commit(plan_id, _FIX_COMMIT, fix_task_number=7)
+
+    assert result['status'] == 'success'
+    assert result['stamped_count'] == 0
+    assert result['hash_ids'] == []
+    assert result['findings_store_state'] == 'present'
+
+
+def test_stamp_by_fix_task_returns_a_refused_query_unchanged_and_stamps_nothing(plan_context, monkeypatch):
+    """A query the store refuses carries no ``findings`` key; the by-task arm returns it as it is.
+
+    The finding is owned by the task and fixed, so the only thing keeping it
+    unstamped is the refused query. The same call with the query answering is the
+    matched control: it stamps that one finding.
+    """
+    plan_id = 'fix-stamp-by-task-refused-query'
+    plan_context.plan_dir_for(plan_id)
+    owned = _add_bug(plan_id, 'Owned by the task')
+    _findings_core.resolve_finding(plan_id, owned, 'fixed', fix_task_number=7)
+    refusal = {
+        'status': 'error',
+        'error': FINDINGS_STORE_UNRESOLVED,
+        'plan_id': plan_id,
+        'message': 'the findings store was never reached',
+        'findings_store_state': 'plan_absent',
+        'unresolved_store': True,
+    }
+    assert 'findings' not in refusal
+
+    with monkeypatch.context() as patched:
+        patched.setattr(_findings_core, 'query_findings', lambda _plan_id: refusal)
+        result = _findings_core.stamp_fix_commit(plan_id, _FIX_COMMIT, fix_task_number=7)
+
+    assert result is refusal
+    assert _stored(plan_id, owned).get('fix_commit_sha') is None
+
+    control = _findings_core.stamp_fix_commit(plan_id, _FIX_COMMIT, fix_task_number=7)
+
+    assert control['status'] == 'success'
+    assert control['hash_ids'] == [owned]
+    assert _stored(plan_id, owned)['fix_commit_sha'] == _FIX_COMMIT
+
+
+def test_stamp_by_finding_is_the_form_an_inline_fix_uses(plan_context):
+    plan_id = 'fix-stamp-by-finding'
+    plan_context.plan_dir_for(plan_id)
+    inline = _add_bug(plan_id, 'Inline')
+    neighbour = _add_bug(plan_id, 'Neighbour')
+    _findings_core.resolve_finding(plan_id, inline, 'fixed')
+    _findings_core.resolve_finding(plan_id, neighbour, 'fixed')
+
+    result = _findings_core.stamp_fix_commit(plan_id, _FIX_COMMIT, hash_id=inline)
+
+    assert result['status'] == 'success'
+    assert result['selector'] == 'hash_id'
+    assert result['hash_ids'] == [inline]
+    assert _stored(plan_id, inline)['fix_commit_sha'] == _FIX_COMMIT
+    assert _stored(plan_id, neighbour).get('fix_commit_sha') is None
+
+
+@pytest.mark.parametrize('resolution', ['pending', 'accepted', 'suppressed'])
+def test_stamp_by_finding_refuses_a_finding_that_is_not_fixed(plan_context, resolution):
+    plan_id = f'fix-stamp-not-fixed-{resolution}'
+    plan_context.plan_dir_for(plan_id)
+    hash_id = _add_bug(plan_id, 'Not fixed')
+    if resolution != 'pending':
+        _findings_core.resolve_finding(plan_id, hash_id, resolution)
+
+    result = _findings_core.stamp_fix_commit(plan_id, _FIX_COMMIT, hash_id=hash_id)
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'finding_not_fixed'
+    assert result['resolution'] == resolution
+    assert _stored(plan_id, hash_id).get('fix_commit_sha') is None
+
+
+@pytest.mark.parametrize(
+    'selectors',
+    [
+        pytest.param({}, id='neither'),
+        pytest.param({'fix_task_number': 7, 'hash_id': _ABSENT_HASH}, id='both'),
+    ],
+)
+def test_stamp_requires_exactly_one_selector(plan_context, selectors):
+    plan_id = 'fix-stamp-selector'
+    plan_context.plan_dir_for(plan_id)
+
+    result = _findings_core.stamp_fix_commit(plan_id, _FIX_COMMIT, **selectors)
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'fix_stamp_selector_required'
+
+
+@pytest.mark.parametrize('commit_sha', ['', 'abc123', 'HEAD', 'feature/branch', '-n', 'g' * 40, 'a' * 41])
+def test_stamp_refuses_a_value_that_is_not_a_commit_id(plan_context, commit_sha):
+    """Six hex characters is one short of the shortest form; forty-one is one too many."""
+    plan_id = 'fix-stamp-invalid-sha'
+    plan_context.plan_dir_for(plan_id)
+    hash_id = _add_bug(plan_id, 'Fixed')
+    _findings_core.resolve_finding(plan_id, hash_id, 'fixed')
+
+    result = _findings_core.stamp_fix_commit(plan_id, commit_sha, hash_id=hash_id)
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_commit_sha'
+    assert _stored(plan_id, hash_id).get('fix_commit_sha') is None
+
+
+@pytest.mark.parametrize('commit_sha', ['a1b2c3d', _FIX_COMMIT], ids=['seven-chars', 'forty-chars'])
+def test_stamp_accepts_the_short_and_the_full_commit_id(plan_context, commit_sha):
+    """⛔ MATCHED CONTROL for the refusals above — the two ends of the accepted range."""
+    plan_id = f'fix-stamp-valid-sha-{len(commit_sha)}'
+    plan_context.plan_dir_for(plan_id)
+    hash_id = _add_bug(plan_id, 'Fixed')
+    _findings_core.resolve_finding(plan_id, hash_id, 'fixed')
+
+    result = _findings_core.stamp_fix_commit(plan_id, commit_sha, hash_id=hash_id)
+
+    assert result['status'] == 'success'
+    assert _stored(plan_id, hash_id)['fix_commit_sha'] == commit_sha
+
+
+def test_stamping_again_replaces_the_commit(plan_context):
+    """The remedy after a rebase: the rewritten commit takes the place of the old one."""
+    plan_id = 'fix-stamp-restamp'
+    plan_context.plan_dir_for(plan_id)
+    hash_id = _add_bug(plan_id, 'Fixed')
+    _findings_core.resolve_finding(plan_id, hash_id, 'fixed')
+    _findings_core.stamp_fix_commit(plan_id, _FIX_COMMIT, hash_id=hash_id)
+
+    _findings_core.stamp_fix_commit(plan_id, _OTHER_FIX_COMMIT, hash_id=hash_id)
+
+    assert _stored(plan_id, hash_id)['fix_commit_sha'] == _OTHER_FIX_COMMIT
+
+
+@pytest.mark.parametrize('new_resolution', ['accepted', 'suppressed', 'taken_into_account', 'rejected', 'pending'])
+def test_a_changed_resolution_clears_the_stamp_and_the_task_number(plan_context, new_resolution):
+    plan_id = f'fix-stamp-cleared-{new_resolution.replace("_", "-")}'
+    plan_context.plan_dir_for(plan_id)
+    hash_id = _add_bug(plan_id, 'Re-decided')
+    _findings_core.resolve_finding(plan_id, hash_id, 'fixed', fix_task_number=7)
+    _findings_core.stamp_fix_commit(plan_id, _FIX_COMMIT, fix_task_number=7)
+
+    _findings_core.resolve_finding(plan_id, hash_id, new_resolution, detail='Decided otherwise.')
+
+    stored = _stored(plan_id, hash_id)
+    assert stored['resolution'] == new_resolution
+    assert stored.get('fix_commit_sha') is None
+    assert stored.get('fix_task_number') is None
+
+
+def test_an_unchanged_re_resolve_keeps_the_stamp(plan_context):
+    """⛔ MATCHED CONTROL — the same finding, re-resolved to the resolution it has."""
+    plan_id = 'fix-stamp-kept'
+    plan_context.plan_dir_for(plan_id)
+    hash_id = _add_bug(plan_id, 'Re-resolved fixed')
+    _findings_core.resolve_finding(plan_id, hash_id, 'fixed', fix_task_number=7)
+    _findings_core.stamp_fix_commit(plan_id, _FIX_COMMIT, fix_task_number=7)
+
+    _findings_core.resolve_finding(plan_id, hash_id, 'fixed', detail='A reworded reply.')
+
+    stored = _stored(plan_id, hash_id)
+    assert stored['fix_commit_sha'] == _FIX_COMMIT
+    assert stored['fix_task_number'] == 7
+
+
+def test_a_re_resolve_to_fixed_under_another_task_clears_the_commit(plan_context):
+    """The stamped commit belonged to the other task, so it does not carry over."""
+    plan_id = 'fix-stamp-other-task'
+    plan_context.plan_dir_for(plan_id)
+    hash_id = _add_bug(plan_id, 'Moved to another task')
+    _findings_core.resolve_finding(plan_id, hash_id, 'fixed', fix_task_number=7)
+    _findings_core.stamp_fix_commit(plan_id, _FIX_COMMIT, fix_task_number=7)
+
+    _findings_core.resolve_finding(plan_id, hash_id, 'fixed', fix_task_number=8)
+
+    stored = _stored(plan_id, hash_id)
+    assert stored.get('fix_commit_sha') is None
+    assert stored['fix_task_number'] == 8
+
+
+def test_the_typed_bulk_resolve_clears_the_stamp_on_the_same_terms(plan_context):
+    plan_id = 'fix-stamp-bulk'
+    plan_context.plan_dir_for(plan_id)
+    hash_id = _add_bug(plan_id, 'Bulk re-decided')
+    _findings_core.resolve_finding(plan_id, hash_id, 'fixed', fix_task_number=7)
+    _findings_core.stamp_fix_commit(plan_id, _FIX_COMMIT, fix_task_number=7)
+
+    result = _findings_core.resolve_findings_by_type(plan_id, ('bug',), 'accepted', from_resolution='fixed')
+
+    assert result['hash_ids'] == [hash_id]
+    stored = _stored(plan_id, hash_id)
+    assert stored.get('fix_commit_sha') is None
+    assert stored.get('fix_task_number') is None
+
+
+@pytest.mark.parametrize('sibling', ['qgate', 'assessment'])
+def test_stamp_by_finding_leaves_a_sibling_store_byte_identical(plan_context, sibling):
+    """A Q-Gate or assessment hash is identified and refused, never stamped."""
+    plan_id = f'fix-stamp-sibling-{sibling}'
+    _plan_hash, qgate_hash, assessment_hash = _seed_cross_store(plan_context, plan_id)
+    store = resolve_findings_store(plan_id)
+    assert store.path is not None
+    target_path = store.path / ('qgate-5-execute.jsonl' if sibling == 'qgate' else 'assessments.jsonl')
+    target_hash = qgate_hash if sibling == 'qgate' else assessment_hash
+    before = target_path.read_bytes()
+
+    result = _findings_core.stamp_fix_commit(plan_id, _FIX_COMMIT, hash_id=target_hash)
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'finding_in_other_store'
+    assert target_path.read_bytes() == before

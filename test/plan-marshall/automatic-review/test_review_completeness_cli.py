@@ -61,6 +61,10 @@ See ``automatic-review/standards/bot-participation-contract.md``.
 The store is seeded in-process via ``_findings_core.add_finding`` /
 ``resolve_finding`` under the ``plan_context`` PLAN_BASE_DIR sandbox, so
 ``check_completeness`` reads a real per-plan store rather than a stub.
+
+``TestTriggerBot`` covers the ``trigger-bot`` verb, which lists every bot a
+re-review must be requested from: the bots whose participation is stale at the
+current HEAD, joined with the bots that have a stored finding.
 """
 
 from __future__ import annotations
@@ -68,6 +72,7 @@ from __future__ import annotations
 import _findings_core as fc
 import pytest
 from _bot_flag_derivation import derive_bot_flags
+from toon_parser import parse_toon
 
 from conftest import get_script_path, load_script_module, run_script
 
@@ -663,3 +668,260 @@ class TestLoadFailure:
         assert 'status: error' in captured.out
         assert 'error: load_failure' in captured.out
         assert 'detail:' in captured.out
+
+
+def _trigger_bot(*argv: str) -> dict:
+    """Run ``trigger-bot`` through the real CLI and return its parsed TOON.
+
+    Driven through the constructed-argv subprocess runner, so the argparse
+    declaration is part of what every case below exercises.
+    """
+    result = run_script(SCRIPT_PATH, 'trigger-bot', *argv)
+    assert result.success, result.stderr
+    parsed: dict = parse_toon(result.stdout)
+    assert parsed['status'] == 'success', parsed
+    return parsed
+
+
+class TestTriggerBot:
+    """``trigger-bot`` lists every bot a re-review must be requested from.
+
+    The list is the union of two sources: the bots whose participation is stale at
+    the current HEAD, and the bots that have a stored finding. The first source is
+    what makes a bot with no stored finding reachable at all.
+    """
+
+    def test_a_stale_required_bot_with_no_stored_finding_is_listed(self, plan_context):
+        """The regression case: no finding is stored for the bot, and it is still listed."""
+        plan_id = 'rc-trigger-no-finding'
+        plan_context.plan_dir_for(plan_id)
+
+        parsed = _trigger_bot(
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'cuioss-review-bot',
+            '--stale-participation-bots',
+            'cuioss-review-bot:issue_comment',
+        )
+
+        assert parsed['trigger_bots'] == ['cuioss-review-bot']
+        assert parsed['required_stale_bots'] == ['cuioss-review-bot']
+        assert not parsed.get('stored_finding_bots')
+
+    def test_the_same_bot_without_the_stale_observation_is_not_listed(self, plan_context):
+        """The paired control: the participation input is the only difference."""
+        plan_id = 'rc-trigger-no-finding-control'
+        plan_context.plan_dir_for(plan_id)
+
+        parsed = _trigger_bot('--plan-id', plan_id, '--required-bots', 'cuioss-review-bot')
+
+        assert not parsed.get('trigger_bots')
+        assert not parsed.get('required_stale_bots')
+
+    def test_two_stale_bots_are_both_listed_required_first(self, plan_context):
+        """The required bot leads although its name sorts after the optional one."""
+        plan_id = 'rc-trigger-two-stale'
+        plan_context.plan_dir_for(plan_id)
+
+        parsed = _trigger_bot(
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'sourcery',
+            '--optional-bots',
+            'coderabbit',
+            '--stale-participation-bots',
+            'coderabbit:inline,sourcery:review_body',
+        )
+
+        assert parsed['trigger_bots'] == ['sourcery', 'coderabbit']
+        assert parsed['required_stale_bots'] == ['sourcery']
+
+    def test_required_bots_keep_the_order_they_were_configured_in(self, plan_context):
+        plan_id = 'rc-trigger-required-order'
+        plan_context.plan_dir_for(plan_id)
+
+        parsed = _trigger_bot(
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'sourcery,coderabbit',
+            '--stale-participation-bots',
+            'coderabbit:inline,sourcery:review_body',
+        )
+
+        assert parsed['trigger_bots'] == ['sourcery', 'coderabbit']
+        assert parsed['required_stale_bots'] == ['sourcery', 'coderabbit']
+
+    def test_a_stored_finding_bot_is_joined_when_head_moved_past_the_reviewed_commit(self, plan_context):
+        plan_id = 'rc-trigger-stored-joined'
+        plan_context.plan_dir_for(plan_id)
+        _seed(plan_id, 'coderabbit')
+
+        parsed = _trigger_bot(
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'cuioss-review-bot',
+            '--optional-bots',
+            'coderabbit',
+            '--stale-participation-bots',
+            'cuioss-review-bot:issue_comment',
+            '--reviewed-commit-sha',
+            'a' * 40,
+            '--head-sha',
+            'b' * 40,
+        )
+
+        assert parsed['trigger_bots'] == ['cuioss-review-bot', 'coderabbit']
+        assert parsed['stored_finding_bots'] == ['coderabbit']
+        assert parsed['stored_findings_stale'] is True
+        # The stored-finding bot is listed, but it is not a required bot whose
+        # participation is stale.
+        assert parsed['required_stale_bots'] == ['cuioss-review-bot']
+
+    def test_a_stored_finding_bot_is_not_joined_when_head_is_the_reviewed_commit(self, plan_context):
+        """The paired control: equal commits join nothing, and the population is still reported."""
+        plan_id = 'rc-trigger-stored-current'
+        plan_context.plan_dir_for(plan_id)
+        _seed(plan_id, 'coderabbit')
+
+        parsed = _trigger_bot(
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'coderabbit',
+            '--reviewed-commit-sha',
+            'a' * 40,
+            '--head-sha',
+            'a' * 40,
+        )
+
+        assert not parsed.get('trigger_bots')
+        assert parsed['stored_finding_bots'] == ['coderabbit']
+        assert parsed['stored_findings_stale'] is False
+
+    @pytest.mark.parametrize(
+        'sha_args',
+        [
+            (),
+            ('--reviewed-commit-sha', 'a' * 40),
+            ('--head-sha', 'b' * 40),
+        ],
+        ids=['neither-commit', 'no-head', 'no-reviewed-commit'],
+    )
+    def test_a_comparison_that_was_not_made_joins_no_stored_finding_bot(self, plan_context, sha_args):
+        plan_id = 'rc-trigger-stored-unobserved'
+        plan_context.plan_dir_for(plan_id)
+        _seed(plan_id, 'coderabbit')
+
+        parsed = _trigger_bot('--plan-id', plan_id, '--required-bots', 'coderabbit', *sha_args)
+
+        assert not parsed.get('trigger_bots')
+        assert parsed['stored_findings_stale'] is False
+
+    def test_a_bot_in_neither_list_is_reported_and_not_triggered(self, plan_context):
+        plan_id = 'rc-trigger-unclassified'
+        plan_context.plan_dir_for(plan_id)
+
+        parsed = _trigger_bot(
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'coderabbit',
+            '--stale-participation-bots',
+            'coderabbit:inline,sourcery:review_body',
+        )
+
+        assert parsed['trigger_bots'] == ['coderabbit']
+        assert parsed['unclassified_bots'] == ['sourcery']
+
+    def test_an_optional_stale_bot_is_listed_but_is_not_a_required_stale_bot(self, plan_context):
+        plan_id = 'rc-trigger-optional-stale'
+        plan_context.plan_dir_for(plan_id)
+
+        parsed = _trigger_bot(
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'coderabbit',
+            '--optional-bots',
+            'sourcery',
+            '--stale-participation-bots',
+            'sourcery:review_body',
+        )
+
+        assert parsed['trigger_bots'] == ['sourcery']
+        assert not parsed.get('required_stale_bots')
+
+    def test_a_bare_kind_on_the_participation_flag_is_a_caller_error(self, plan_context):
+        """The pair form is enforced here as it is on ``check``: no list is returned."""
+        plan_id = 'rc-trigger-bare-kind'
+        plan_context.plan_dir_for(plan_id)
+
+        result = run_script(
+            SCRIPT_PATH,
+            'trigger-bot',
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'coderabbit',
+            '--stale-participation-bots',
+            'coderabbit',
+        )
+
+        assert result.returncode == 1, result.stderr
+        assert 'status: error' in result.stdout
+        assert 'malformed_bot_flag' in result.stdout
+        assert 'trigger_bots' not in result.stdout
+
+    def test_every_flag_may_be_supplied_bare(self, plan_context, capsys):
+        """An empty value reaches the parser as a bare flag; each one reads as empty."""
+        plan_id = 'rc-trigger-bare-flags'
+        plan_context.plan_dir_for(plan_id)
+
+        exit_code = rc.main(
+            [
+                'trigger-bot',
+                '--plan-id',
+                plan_id,
+                '--required-bots',
+                '--optional-bots',
+                '--stale-participation-bots',
+                '--reviewed-commit-sha',
+                '--head-sha',
+            ]
+        )
+
+        parsed = parse_toon(capsys.readouterr().out)
+        assert exit_code == 0
+        assert parsed['status'] == 'success'
+        assert not parsed.get('trigger_bots')
+
+    def test_an_unreadable_store_is_an_error_not_an_empty_list(self, plan_context, monkeypatch, capsys):
+        plan_id = 'rc-trigger-load-fail'
+        plan_context.plan_dir_for(plan_id)
+
+        def _raise(*_args, **_kwargs):
+            raise OSError('store gone')
+
+        monkeypatch.setattr(rc, 'query_findings', _raise)
+
+        exit_code = rc.main(
+            [
+                'trigger-bot',
+                '--plan-id',
+                plan_id,
+                '--required-bots',
+                'coderabbit',
+                '--stale-participation-bots',
+                'coderabbit:inline',
+            ]
+        )
+
+        captured = capsys.readouterr()
+        assert exit_code == 1
+        assert 'status: error' in captured.out
+        assert 'error: load_failure' in captured.out
+        assert 'trigger_bots' not in captured.out

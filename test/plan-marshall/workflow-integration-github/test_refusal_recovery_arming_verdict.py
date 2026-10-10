@@ -66,6 +66,7 @@ def _verdict(
     *,
     window_expired: bool | None = False,
     attempts_remaining: int | None = _ATTEMPTS_REMAINING,
+    notice_stale: bool = False,
 ) -> dict:
     """The SHIPPED selector's verdict for a detected refusal from ``bot_kind``.
 
@@ -78,13 +79,29 @@ def _verdict(
     expresses the quota case. ``window_expired=False`` is the freshly-claimed
     clock, which is the observation under which the class axis is visible: it is
     the only one where an ``awaitable_window`` bot's answer differs from an
-    escalating one.
+    escalating one. ``notice_stale`` defaults to a fresh notice, which is what
+    every case not about staleness means.
     """
     return github_re_review.resolve_recovery_action(
         bot_kind,
         cause=cause,
         window_expired=window_expired,
         attempts_remaining=attempts_remaining,
+        notice_stale=notice_stale,
+    )
+
+
+def _no_unreviewed_verdict(bot_kind: str, review_on_record: str = '', pending_findings: int | None = None) -> dict:
+    """The SHIPPED selector's verdict for a ``no_unreviewed_commit`` reply from ``bot_kind``.
+
+    The two observations default to "not supplied", so a call site names exactly
+    the ones the case is about.
+    """
+    return github_re_review.resolve_recovery_action(
+        bot_kind,
+        condition=_github_pr.REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT,
+        review_on_record=review_on_record,
+        pending_findings=pending_findings,
     )
 
 
@@ -155,7 +172,7 @@ _DECLARED_WORDING_PAIRS: list[tuple[str, str]] = [
     (bot_kind, pattern) for bot_kind in bot_registry.bot_kinds() for pattern in bot_registry.refusal_patterns(bot_kind)
 ]
 _DECLARED_WORDING_POPULATION_SIZE = len(_DECLARED_WORDING_PAIRS)
-_DECLARED_WORDING_POPULATION_BASELINE = 7
+_DECLARED_WORDING_POPULATION_BASELINE = 9
 
 
 def _login(bot_kind: str) -> str:
@@ -195,7 +212,12 @@ def _set_trigger_semantics(monkeypatch, bot_kind: str, value: str) -> None:
     monkeypatch.setitem(bot_registry.REGISTRY._by_kind, bot_kind, record)
 
 
-_PRODUCER_ONLY_FIELDS = {'rate_limited_bots': {'rate_limit_class'}, 'refusals': {'source'}}
+# ``written_at`` and ``stale`` are the comment detector's alone: only it reports when
+# a notice was last written and whether its stated window had elapsed by the read.
+_PRODUCER_ONLY_FIELDS = {
+    'rate_limited_bots': {'rate_limit_class', 'written_at', 'stale'},
+    'refusals': {'source'},
+}
 _AR_SKILL = (
     get_script_path('plan-marshall', 'workflow-integration-github', '_github_pr.py').parents[4]
     / 'plan-marshall'
@@ -203,8 +225,9 @@ _AR_SKILL = (
     / 'automatic-review'
     / 'SKILL.md'
 )
-_DISCLOSED = {'producer', 'layer', 'eta', 'body'}
+_DISCLOSED = {'producer', 'layer', 'eta', 'eta_extracted', 'body'}
 _LOGGED = _DISCLOSED - {'body'}
+_RESET_TIME_FIELDS = {'eta', 'eta_seconds', 'eta_extracted'}
 
 
 def _section(heading_prefix: str) -> str:
@@ -518,15 +541,66 @@ class TestTheRecoveryActionSelectorDerivesItsVerdict:
                 'attempt_cap_exhausted',
             ),
             (_verdict(awaitable), github_re_review.RECOVERY_ACTION_AWAIT_WINDOW, 'claim_window_open'),
+            # The same open window, read off a notice whose stated window is over.
+            (
+                _verdict(awaitable, notice_stale=True),
+                github_re_review.RECOVERY_ACTION_SETTLE_STALE_NOTICE,
+                'notice_window_elapsed',
+            ),
             (
                 _verdict(awaitable, window_expired=True),
                 github_re_review.RECOVERY_ACTION_CLOSE_AND_REOPEN,
                 'claim_window_elapsed',
             ),
+            # The no_unreviewed_commit arms: one per review-on-record state, the
+            # credited state split on whether a finding is pending, one unmeasured
+            # arm per missing observation, and one for a review state the producer
+            # could not decide.
+            (
+                _no_unreviewed_verdict(awaitable, github_re_review.REVIEW_ON_RECORD_UNDECIDABLE, 0),
+                github_re_review.RECOVERY_ACTION_UNMEASURED,
+                'review_state_undecidable',
+            ),
+            (
+                _no_unreviewed_verdict(awaitable, github_re_review.REVIEW_ON_RECORD_CREDITED, 0),
+                github_re_review.RECOVERY_ACTION_ACCEPT_REVIEW_ON_RECORD,
+                'review_on_record_findings_handled',
+            ),
+            (
+                _no_unreviewed_verdict(awaitable, github_re_review.REVIEW_ON_RECORD_CREDITED, 2),
+                github_re_review.RECOVERY_ACTION_AWAIT_TRIAGE,
+                'findings_pending',
+            ),
+            (
+                _no_unreviewed_verdict(awaitable, github_re_review.REVIEW_ON_RECORD_STALE, 0),
+                github_re_review.RECOVERY_ACTION_LEAVE_TO_STALE_REVIEW,
+                'merge_candidate_newer_than_reply',
+            ),
+            (
+                _no_unreviewed_verdict(awaitable, github_re_review.REVIEW_ON_RECORD_ABSENT, 0),
+                github_re_review.RECOVERY_ACTION_POST_ESCALATED_COMMAND,
+                'no_review_on_record',
+            ),
+            (
+                _no_unreviewed_verdict(awaitable, pending_findings=0),
+                github_re_review.RECOVERY_ACTION_UNMEASURED,
+                'no_review_observation',
+            ),
+            (
+                _no_unreviewed_verdict(awaitable, github_re_review.REVIEW_ON_RECORD_CREDITED),
+                github_re_review.RECOVERY_ACTION_UNMEASURED,
+                'no_findings_observation',
+            ),
         ]
         derived_inputs = (
             'bot_kind',
             'cause',
+            'condition',
+            'review_on_record',
+            'pending_findings',
+            'refusal_conditions',
+            'review_on_record_states',
+            'escalated_trigger_comment',
             'rate_limit_class',
             'trigger_semantics',
             'known_bot_kinds',
@@ -535,6 +609,7 @@ class TestTheRecoveryActionSelectorDerivesItsVerdict:
             'window_expired',
             'attempts_remaining',
             'attempt_held',
+            'notice_stale',
             'recovery_actions',
         )
 
@@ -579,11 +654,17 @@ class TestBothProducersCarryOneObservationShape:
             set(refusal) - _PRODUCER_ONLY_FIELDS['refusals']
         )
         assert {'layer', 'body'} <= set(detected)
+        # The reset time rides both records three ways — text, seconds, and the
+        # explicit statement of whether one was read — and is producer-specific on
+        # neither, so it is inside the shared comparison above.
+        assert _RESET_TIME_FIELDS <= set(detected)
+        assert _RESET_TIME_FIELDS <= set(refusal)
+        assert not _RESET_TIME_FIELDS & (_PRODUCER_ONLY_FIELDS['rate_limited_bots'] | _PRODUCER_ONLY_FIELDS['refusals'])
 
     @pytest.mark.parametrize('bot_kind', _registered_bots())
     @pytest.mark.parametrize('body_kind', ['declared_or_shape', 'shape_only'])
     def test_the_two_producers_name_one_observation_for_one_notice(self, bot_kind, body_kind):
-        """Same notice, same bot: the same layer, excerpt, ETA, cause and cap.
+        """Same notice, same bot: the same layer, excerpt, reset time, cause and cap.
 
         Swept over a body the bot's own wording reads (where it declares any) AND
         the shape-only notice, so both pre-filter arms are exercised — a producer
@@ -619,7 +700,7 @@ class TestTheArmingDisclosureIsEmittedOnlyWhenAWaitIsArmed:
     """
 
     def test_the_armed_line_names_the_observation_that_armed_the_wait(self):
-        """EMIT: producer, layer and ETA ride the ARMED decision-log line."""
+        """EMIT: producer, layer, ETA and whether one was read ride the ARMED line."""
         placeholders = dict(re.findall(r'(\w+)=\{(\w+)\}', _armed_line()))
 
         assert _LOGGED <= set(placeholders), sorted(placeholders)

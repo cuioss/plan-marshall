@@ -79,6 +79,12 @@ import bot_registry
 import ci_base
 import github_re_review
 import pytest
+from _github_pr_fixtures import (
+    CODERABBIT_NO_UNREVIEWED_COMMIT_REPLIES,
+    CODERABBIT_NO_UNREVIEWED_COMMIT_REPLY_COUNT,
+    CODERABBIT_RATE_LIMITED_COMMAND_REPLY,
+    NO_UNREVIEWED_COMMIT_BOT_KIND,
+)
 
 _NO_RECORD_WINDOW = {'status': 'free', 'expired': True, 'holder': '', 'seconds_remaining': 0.0}
 _OPEN_WINDOW = {
@@ -127,6 +133,18 @@ def _neutralize_rate_window(monkeypatch):
     named in the module docstring is what keeps this fixture honest.
     """
     monkeypatch.setattr(github_re_review, 'read_rate_window', _window_reader(_NO_RECORD_WINDOW))
+
+
+@pytest.fixture(autouse=True)
+def _neutralize_in_progress_read(monkeypatch):
+    """Hold the completion read at NOT OBSERVED RUNNING for every test here.
+
+    A poll that would end on a comment naming no commit consults
+    ``read_bot_in_progress``, which reads the awaited bot's check-run through ``gh``.
+    Default-on, so no case in this module shells out or depends on a real PR's check.
+    The matched pair proving this fixture lives in ``test_re_review_strategy_match.py``.
+    """
+    monkeypatch.setattr(github_re_review, 'read_bot_in_progress', lambda _pr_number, _bot_kind: False)
 
 
 @pytest.fixture(autouse=True)
@@ -678,3 +696,372 @@ def test_main_timeout_defaults_when_flag_omitted(monkeypatch):
 
     assert rc == 0
     assert captured['timeout'] == ci_base.DEFAULT_CI_TIMEOUT
+
+
+def test_the_no_new_commit_reply_population_is_published():
+    """The parametrized condition cases below run over a stated, non-empty population."""
+    assert len(CODERABBIT_NO_UNREVIEWED_COMMIT_REPLIES) > 0, 'no "nothing new to review" reply is declared'
+    assert CODERABBIT_NO_UNREVIEWED_COMMIT_REPLY_COUNT == len(CODERABBIT_NO_UNREVIEWED_COMMIT_REPLIES)
+    assert CODERABBIT_NO_UNREVIEWED_COMMIT_REPLY_COUNT == len(
+        bot_registry.no_unreviewed_commit_patterns(NO_UNREVIEWED_COMMIT_BOT_KIND)
+    )
+
+
+@pytest.mark.parametrize(
+    'body',
+    [body for _case, body, _provenance in CODERABBIT_NO_UNREVIEWED_COMMIT_REPLIES],
+    ids=[case for case, _body, _provenance in CODERABBIT_NO_UNREVIEWED_COMMIT_REPLIES],
+)
+def test_a_no_new_commit_reply_and_a_rate_limit_reply_carry_two_conditions(body):
+    """Both replies are refusals, and their records name different conditions.
+
+    The rate-limit reply is the matched control: it arrives in the same disclosure
+    from the same bot, so a record that labelled every declined command reply
+    ``no_unreviewed_commit`` would fail here.
+    """
+    nothing_new = github_re_review._ReReviewStrategy._refusal_record(
+        body, NO_UNREVIEWED_COMMIT_BOT_KIND, 'issue_comment'
+    )
+    limited = github_re_review._ReReviewStrategy._refusal_record(
+        CODERABBIT_RATE_LIMITED_COMMAND_REPLY, NO_UNREVIEWED_COMMIT_BOT_KIND, 'issue_comment'
+    )
+
+    assert nothing_new is not None
+    assert limited is not None
+    assert nothing_new['condition'] == _github_pr.REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT
+    assert limited['condition'] == _github_pr.REFUSAL_CONDITION_RATE_LIMITED
+    assert nothing_new['condition'] != limited['condition']
+    assert {nothing_new['condition'], limited['condition']} == set(_github_pr.REFUSAL_CONDITIONS)
+
+
+def test_a_bot_declaring_no_such_pattern_never_carries_the_no_unreviewed_condition():
+    """The condition is asserted only on a literal the refusing bot itself declares."""
+    body = CODERABBIT_NO_UNREVIEWED_COMMIT_REPLIES[0][1]
+    undeclared = [bot for bot in bot_registry.bot_kinds() if not bot_registry.no_unreviewed_commit_patterns(bot)]
+    assert undeclared, 'every registered bot declares the overlay — this control has no subject'
+
+    for bot in undeclared:
+        assert _github_pr.refusal_condition(body, bot) == _github_pr.REFUSAL_CONDITION_RATE_LIMITED
+
+
+@pytest.mark.parametrize(
+    ('review_on_record', 'pending_findings', 'action', 'reason'),
+    [
+        pytest.param('credited', 0, 'accept_review_on_record', 'review_on_record_findings_handled', id='accept'),
+        pytest.param('credited', 3, 'await_triage', 'findings_pending', id='pending-findings'),
+        pytest.param('stale', 0, 'leave_to_stale_review', 'merge_candidate_newer_than_reply', id='stale'),
+        pytest.param('stale', 3, 'leave_to_stale_review', 'merge_candidate_newer_than_reply', id='stale-pending'),
+        pytest.param('absent', 0, 'post_escalated_command', 'no_review_on_record', id='no-review'),
+    ],
+)
+def test_recovery_action_resolves_no_unreviewed_commit_from_its_two_observations(
+    review_on_record, pending_findings, action, reason, monkeypatch, capsys
+):
+    """Through the CLI: each review state resolves its own action, and one of them posts."""
+    verdict = _run_recovery_action(
+        monkeypatch,
+        capsys,
+        '--bot-kind',
+        NO_UNREVIEWED_COMMIT_BOT_KIND,
+        '--condition',
+        'no_unreviewed_commit',
+        '--review-on-record',
+        review_on_record,
+        '--pending-findings',
+        str(pending_findings),
+    )
+
+    assert verdict['action'] == action
+    assert verdict['reason'] == reason
+    assert verdict['condition'] == 'no_unreviewed_commit'
+    assert verdict['escalated_trigger_comment'] == bot_registry.escalated_trigger_comment(NO_UNREVIEWED_COMMIT_BOT_KIND)
+
+
+def test_only_an_absent_review_resolves_the_posting_action():
+    """Swept over the whole review-on-record vocabulary and both finding states.
+
+    ``post_escalated_command`` spends a review from the bot's allowance, so it must be
+    reachable from exactly one state. A state added to the vocabulary later is swept
+    here without an edit.
+    """
+    posting = set()
+    for state in github_re_review.REVIEW_ON_RECORD_STATES:
+        for pending in (0, 1):
+            verdict = github_re_review.resolve_recovery_action(
+                NO_UNREVIEWED_COMMIT_BOT_KIND,
+                condition=_github_pr.REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT,
+                review_on_record=state,
+                pending_findings=pending,
+            )
+            if verdict['action'] == github_re_review.RECOVERY_ACTION_POST_ESCALATED_COMMAND:
+                posting.add(state)
+
+    assert posting == {github_re_review.REVIEW_ON_RECORD_ABSENT}
+
+
+@pytest.mark.parametrize(
+    'pending_args',
+    [
+        pytest.param(('--pending-findings', '0'), id='no-pending-findings'),
+        pytest.param(('--pending-findings', '3'), id='pending-findings'),
+        pytest.param((), id='findings-unobserved'),
+    ],
+)
+def test_recovery_action_is_unmeasured_for_a_review_state_the_producer_could_not_decide(
+    pending_args, monkeypatch, capsys
+):
+    """Through the CLI: an undecidable review resolves no verdict, whatever the findings say.
+
+    The producer names a bot ``undecidable`` when it could not read the merge
+    candidate, so the review may exist. The posting arm is reserved for a review that
+    was observed to be absent; the matched control is the ``no-review`` case above.
+    """
+    verdict = _run_recovery_action(
+        monkeypatch,
+        capsys,
+        '--bot-kind',
+        NO_UNREVIEWED_COMMIT_BOT_KIND,
+        '--condition',
+        'no_unreviewed_commit',
+        '--review-on-record',
+        'undecidable',
+        *pending_args,
+    )
+
+    assert verdict['action'] == github_re_review.RECOVERY_ACTION_UNMEASURED
+    assert verdict['action'] != github_re_review.RECOVERY_ACTION_POST_ESCALATED_COMMAND
+    assert verdict['reason'] == 'review_state_undecidable'
+    assert verdict['review_on_record'] == github_re_review.REVIEW_ON_RECORD_UNDECIDABLE
+    assert github_re_review.REVIEW_ON_RECORD_UNDECIDABLE in verdict['review_on_record_states']
+
+
+@pytest.mark.parametrize(
+    ('extra', 'reason'),
+    [
+        pytest.param(('--pending-findings', '0'), 'no_review_observation', id='no-review-observation'),
+        pytest.param(('--review-on-record', 'credited'), 'no_findings_observation', id='no-findings-observation'),
+        pytest.param((), 'no_review_observation', id='neither'),
+    ],
+)
+def test_recovery_action_is_unmeasured_when_an_observation_is_missing(extra, reason, monkeypatch, capsys):
+    """A missing observation authorizes nothing — in particular not the posting arm."""
+    verdict = _run_recovery_action(
+        monkeypatch,
+        capsys,
+        '--bot-kind',
+        NO_UNREVIEWED_COMMIT_BOT_KIND,
+        '--condition',
+        'no_unreviewed_commit',
+        *extra,
+    )
+
+    assert verdict['action'] == github_re_review.RECOVERY_ACTION_UNMEASURED
+    assert verdict['reason'] == reason
+
+
+def test_a_review_state_outside_the_vocabulary_is_unmeasured_not_the_posting_arm():
+    """A direct caller passing an unknown state gets no verdict, never a spent review."""
+    verdict = github_re_review.resolve_recovery_action(
+        NO_UNREVIEWED_COMMIT_BOT_KIND,
+        condition=_github_pr.REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT,
+        review_on_record='true',
+        pending_findings=0,
+    )
+
+    assert verdict['action'] == github_re_review.RECOVERY_ACTION_UNMEASURED
+    assert verdict['reason'] == 'no_review_observation'
+
+
+def test_recovery_action_still_resolves_await_window_for_rate_limited(monkeypatch, capsys):
+    """MATCHED CONTROL — the other condition takes the window derivation unchanged.
+
+    The same bot, with the two no-unreviewed-commit observations supplied as well:
+    they are read only for that condition, so they must not move this verdict.
+    """
+    verdict = _run_recovery_action(
+        monkeypatch,
+        capsys,
+        '--bot-kind',
+        NO_UNREVIEWED_COMMIT_BOT_KIND,
+        '--condition',
+        'rate_limited',
+        '--cause',
+        'quota',
+        '--review-on-record',
+        'absent',
+        '--pending-findings',
+        '0',
+        '--window-expired',
+        'false',
+        '--attempts-remaining',
+        '2',
+    )
+
+    assert verdict['action'] == github_re_review.RECOVERY_ACTION_AWAIT_WINDOW
+    assert verdict['reason'] == 'claim_window_open'
+
+
+def _awaitable_bot() -> str:
+    """A registered bot whose refusals reopen on their own — the only class with window arms."""
+    awaitable = [bot for bot in bot_registry.bot_kinds() if bot_registry.rate_limit_class(bot) == 'awaitable_window']
+    assert awaitable, 'the registry declares no awaitable_window bot — the stale-notice cases have no subject'
+    return awaitable[0]
+
+
+@pytest.mark.parametrize('window_expired', ['false', 'true'])
+def test_recovery_action_does_not_return_await_window_for_a_stale_notice(window_expired, monkeypatch, capsys):
+    """Through the CLI: a notice whose window is already over arms no wait.
+
+    Swept over both window states. With the window reported open the verdict would
+    otherwise be ``await_window``; with it reported elapsed it would otherwise be a
+    trigger arm, and a stale notice bought no event to deliver.
+    """
+    verdict = _run_recovery_action(
+        monkeypatch,
+        capsys,
+        '--bot-kind',
+        _awaitable_bot(),
+        '--cause',
+        'quota',
+        '--window-expired',
+        window_expired,
+        '--attempts-remaining',
+        '2',
+        '--notice-stale',
+        'true',
+    )
+
+    assert verdict['action'] == github_re_review.RECOVERY_ACTION_SETTLE_STALE_NOTICE
+    assert verdict['action'] != github_re_review.RECOVERY_ACTION_AWAIT_WINDOW
+    assert verdict['reason'] == 'notice_window_elapsed'
+    assert verdict['notice_stale'] is True
+
+
+@pytest.mark.parametrize(
+    'stale_args',
+    [
+        pytest.param(('--notice-stale', 'false'), id='not-stale'),
+        pytest.param((), id='flag-omitted'),
+    ],
+)
+def test_the_same_consult_without_a_stale_notice_still_returns_await_window(stale_args, monkeypatch, capsys):
+    """MATCHED CONTROL — the same bot and the same open window, with a fresh notice.
+
+    Without it the case above would pass on a selector that never returned
+    ``await_window`` at all. An omitted flag reads as not stale, so a caller that
+    forwards nothing keeps the derivation it had.
+    """
+    verdict = _run_recovery_action(
+        monkeypatch,
+        capsys,
+        '--bot-kind',
+        _awaitable_bot(),
+        '--cause',
+        'quota',
+        '--window-expired',
+        'false',
+        '--attempts-remaining',
+        '2',
+        *stale_args,
+    )
+
+    assert verdict['action'] == github_re_review.RECOVERY_ACTION_AWAIT_WINDOW
+    assert verdict['notice_stale'] is False
+
+
+def test_a_stale_notice_outranks_an_exhausted_budget():
+    """A stale notice claims nothing, so a spent budget is not what stops it."""
+    verdict = github_re_review.resolve_recovery_action(
+        _awaitable_bot(),
+        cause=_github_pr.REFUSAL_CAUSE_QUOTA,
+        window_expired=False,
+        attempts_remaining=0,
+        notice_stale=True,
+    )
+
+    assert verdict['action'] == github_re_review.RECOVERY_ACTION_SETTLE_STALE_NOTICE
+
+
+def test_a_held_attempt_is_still_delivered_when_its_notice_has_gone_stale():
+    """⛔ The re-entry after the wait reads the notice that armed it, and it is stale by then.
+
+    The caller claimed a window on this notice, waited it out, and consults again
+    holding that claim. Settling here would drop the event the claim bought, so the
+    held attempt takes the elapsed arms exactly as it does for a fresh notice.
+    """
+    bot = _awaitable_bot()
+    held = {
+        'cause': _github_pr.REFUSAL_CAUSE_QUOTA,
+        'window_expired': True,
+        'attempts_remaining': 0,
+        'attempt_held': True,
+    }
+
+    stale = github_re_review.resolve_recovery_action(bot, notice_stale=True, **held)
+    fresh = github_re_review.resolve_recovery_action(bot, notice_stale=False, **held)
+
+    assert stale['action'] in (
+        github_re_review.RECOVERY_ACTION_CLOSE_AND_REOPEN,
+        github_re_review.RECOVERY_ACTION_GENERATE_TRIGGER,
+    )
+    assert stale['action'] == fresh['action']
+    assert stale['reason'] == fresh['reason'] == 'claim_window_elapsed'
+
+
+def test_a_stale_notice_without_a_window_observation_is_unmeasured():
+    """Whether a claim is already held is known only once the window was read."""
+    verdict = github_re_review.resolve_recovery_action(
+        _awaitable_bot(),
+        cause=_github_pr.REFUSAL_CAUSE_QUOTA,
+        notice_stale=True,
+    )
+
+    assert verdict['action'] == github_re_review.RECOVERY_ACTION_UNMEASURED
+    assert verdict['reason'] == 'no_window_observation'
+
+
+def test_a_stale_notice_does_not_displace_the_cause_or_the_class():
+    """The arms ahead of the window arms answer as they did: stale changes neither."""
+    structural = github_re_review.resolve_recovery_action(
+        _awaitable_bot(),
+        cause=_github_pr.REFUSAL_CAUSE_SIZE,
+        window_expired=False,
+        attempts_remaining=2,
+        notice_stale=True,
+    )
+    not_awaitable = [
+        bot for bot in bot_registry.bot_kinds() if bot_registry.rate_limit_class(bot) != 'awaitable_window'
+    ]
+    assert not_awaitable, 'every registered bot is awaitable — the class control has no subject'
+
+    assert structural['action'] == github_re_review.RECOVERY_ACTION_ESCALATE_STRUCTURAL
+    for bot in not_awaitable:
+        verdict = github_re_review.resolve_recovery_action(
+            bot,
+            cause=_github_pr.REFUSAL_CAUSE_QUOTA,
+            window_expired=False,
+            attempts_remaining=2,
+            notice_stale=True,
+        )
+        assert verdict['action'] == github_re_review.RECOVERY_ACTION_ESCALATE_NOT_AWAITABLE, bot
+
+
+def test_recovery_action_rejects_a_review_state_outside_the_vocabulary_at_the_parser(monkeypatch):
+    """The CLI accepts exactly the selector's own vocabulary."""
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'github_re_review.py',
+            'recovery-action',
+            '--bot-kind',
+            NO_UNREVIEWED_COMMIT_BOT_KIND,
+            '--review-on-record',
+            'true',
+        ],
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        github_re_review.main()
+
+    assert excinfo.value.code == 2

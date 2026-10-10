@@ -125,7 +125,7 @@ Usage:
     review_completeness.py check --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--unrecognised-refusal-bots [<csv>]] [--not-triggered] [--triage-ran] [--refused-causes [<csv>]] [--refusal-size-caps [<csv>]] [--measured-diff-size [<s>]]
     review_completeness.py deficit --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--unrecognised-refusal-bots [<csv>]] [--not-triggered] [--refused-causes [<csv>]] [--refusal-size-caps [<csv>]] [--min-deficit <n>]
     review_completeness.py size-caps
-    review_completeness.py trigger-bot --plan-id <id> [--stale-bots [<csv>]] [--newest-kind [<kind>]]
+    review_completeness.py trigger-bot --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--stale-participation-bots [<csv>]] [--reviewed-commit-sha [<sha>]] [--head-sha [<sha>]]
     review_completeness.py --help
 
 Every list flag above takes an OPTIONAL value: it may be supplied bare (the flag
@@ -191,6 +191,24 @@ Subcommands:
                property of the reviewer, so a plan whose footprint will exceed one can
                learn at outline time that the reviewer will not review it, instead of
                discovering it as an unexplained non-participation at the merge gate.
+    trigger-bot
+               List every bot a re-review must be requested from after a fix commit,
+               required bots first: the bots whose participation is stale at the
+               current HEAD, joined with the bots that have stored findings. Its
+               ``--required-bots`` / ``--optional-bots`` are bare-form and its
+               ``--stale-participation-bots`` is pair-form, exactly as on ``check``.
+
+Return TOON shape (trigger-bot):
+    status: success
+    trigger_bots[N]:                     # every bot to trigger, required bots first
+      - bot
+    required_stale_bots[N]:              # the required bots whose participation is stale
+      - bot
+    stored_finding_bots[N]:              # the bots with a stored finding, joined or not
+      - bot
+    stored_findings_stale: true|false    # whether the stored-finding bots were joined
+    unclassified_bots[N]:                # candidates in neither list — not triggered
+      - bot
 
 Return TOON shape (check):
     status: success
@@ -364,26 +382,65 @@ CAUSE_SIZE = 'size'
 _REVIEWED_STATES = frozenset({STATE_PARTICIPATED, STATE_PARTICIPATED_BUT_EMPTY})
 
 
-def select_stale_bot_for_trigger(
-    stale_bots: list[str],
-    newest_finding_kind_bot: str | None = None,
-) -> str:
-    """Return the bot a re-review trigger should address.
+def list_bots_for_trigger(
+    stale_participation_bots: list[str],
+    stored_finding_bots: list[str],
+    required_bots: list[str],
+    optional_bots: list[str] | None = None,
+    stored_findings_stale: bool = False,
+) -> dict:
+    """Return every bot a re-review trigger should address, required bots first.
 
-    Trigger-B reach (PLAN-03): select the actually-stale bot rather than
-    structurally only the newest bot-authored finding's kind. A stale publish
-    means the bot engaged against an earlier commit, so re-triggering the stale
-    bot recovers coverage; triggering the newest finding's bot when it differs
-    re-asks a reviewer that already reviewed this HEAD. The newest-kind hint is
-    only a tie-breaker when several bots are stale. Required-bot plus await pair
-    semantics are unchanged: an awaitable refusal is awaited, CodeRabbit stays
-    required.
+    Trigger B re-requests a review after a fix commit moved HEAD. Two sources say
+    a bot's review is out of date, and the list is their union:
+
+    - ``stale_participation_bots`` — the bots the producer reports in
+      ``stale_participation_bots[]`` at the current HEAD: each published a review
+      that predates the merge candidate. This source does not depend on a stored
+      finding, which is the point of it. A bot whose only comment was filtered as
+      noise files no finding, so a list built from stored findings alone never
+      names it and its stale review is never refreshed.
+    - ``stored_finding_bots`` — the bots with a filed ``pr-comment`` finding.
+      They are joined only when ``stored_findings_stale`` is true, i.e. when the
+      commit those findings were filed against is not the current HEAD.
+
+    Only a bot the configuration classifies is triggered: a candidate in neither
+    ``required_bots`` nor ``optional_bots`` is reported in ``unclassified_bots``
+    and left out of the list.
+
+    Returns a dict with:
+
+    - ``trigger_bots`` — every classified candidate, required bots first in the
+      caller's ``required_bots`` order, then the optional ones sorted by name.
+    - ``required_stale_bots`` — the required bots named by the participation
+      source. A required bot whose review is stale holds the step open and no
+      wait refreshes it, so these are triggered even when the operator has not
+      opted in to re-review after a fix commit.
+    - ``stored_finding_bots`` — the stored-finding population that was read,
+      whether or not it was joined, sorted by name.
+    - ``stored_findings_stale`` — whether that population was joined.
+    - ``unclassified_bots`` — candidates left out because no list names them.
     """
-    if not stale_bots:
-        return newest_finding_kind_bot or ''
-    if newest_finding_kind_bot in stale_bots:
-        return newest_finding_kind_bot
-    return sorted(stale_bots)[0]
+    required = list(required_bots)
+    required_set = set(required)
+    optional_set = set(optional_bots or [])
+    stale_set = set(stale_participation_bots)
+    stored_set = set(stored_finding_bots)
+
+    candidates = set(stale_set)
+    if stored_findings_stale:
+        candidates |= stored_set
+
+    trigger_bots = [bot for bot in required if bot in candidates]
+    trigger_bots += sorted(bot for bot in candidates if bot in optional_set and bot not in required_set)
+    return {
+        'status': 'success',
+        'trigger_bots': trigger_bots,
+        'required_stale_bots': [bot for bot in required if bot in stale_set],
+        'stored_finding_bots': sorted(stored_set),
+        'stored_findings_stale': stored_findings_stale,
+        'unclassified_bots': sorted(candidates - required_set - optional_set),
+    }
 
 
 # Deficit-signal verdicts (D2). A REVIEWER-QUALITY observation about a required
@@ -1710,22 +1767,50 @@ def cmd_deficit(args: argparse.Namespace) -> int:
 
 
 def cmd_trigger_bot(args: argparse.Namespace) -> int:
-    """Resolve the Trigger-B re-review target through the stale-bot selector.
+    """List the bots trigger B must request a fresh review from.
 
-    Production entry point for the automatic-review Trigger-B workflow: the
-    caller supplies the stale-bot set (the distinct bot-authored ``bot_kind``
-    values whose reviews predate the advanced HEAD) and the newest
-    bot-authored finding's kind as a tie-breaker hint, and this command
-    returns the bot the re-review registry must be invoked for. It is a thin
-    CLI wrapper over :func:`select_stale_bot_for_trigger` — the selection
-    rule lives there once, and this command only transports its inputs and
-    publishes its output as TOON, so the workflow never re-derives the rule
-    from a second copy.
+    Production entry point for the automatic-review trigger-B workflow. The
+    caller forwards what it observed and this command returns the list — the
+    selection rule lives in :func:`list_bots_for_trigger` once, so the workflow
+    never re-derives it:
+
+    - ``--stale-participation-bots`` takes the producer's
+      ``stale_participation_bots[]`` verbatim, in the same
+      ``bot_kind:evidence_kind`` pair form the ``check`` flag of that name takes
+      and through the same :func:`parse_stale_participation`.
+    - ``--required-bots`` / ``--optional-bots`` take the configured lists.
+    - ``--reviewed-commit-sha`` and ``--head-sha`` decide whether the bots with a
+      stored finding are joined: they are when both are supplied and differ. An
+      absent value on either side joins nothing, because a comparison that was
+      not made says nothing about whether those findings are out of date.
+
+    The stored-finding bots are read from the plan's findings store here, not
+    supplied by the caller. A store that cannot be read is the same structured
+    error ``check`` returns — never an empty population, which would silently
+    drop every stored-finding bot from the list.
     """
-    stale_bots = _split_bots(args.stale_bots, '--stale-bots')
-    newest_kind = (args.newest_kind or '').strip() or None
-    selected = select_stale_bot_for_trigger(stale_bots, newest_kind)
-    print(serialize_toon({'status': 'success', 'selected_bot_kind': selected}))
+    try:
+        stale = list(parse_stale_participation(args.stale_participation_bots, '--stale-participation-bots'))
+        required = _split_bots(args.required_bots, '--required-bots')
+        optional = _split_bots(args.optional_bots, '--optional-bots')
+    except MalformedBotFlag as exc:
+        print(serialize_toon({'status': 'error', 'error': 'malformed_bot_flag', 'detail': str(exc)}))
+        return 1
+    read = _read_pr_comment_findings(args.plan_id)
+    if read['status'] != 'success':
+        print(serialize_toon(read))
+        return 1
+    stored = sorted({str(f.get('bot_kind') or '') for f in read['findings']} - {''})
+    reviewed_sha = (args.reviewed_commit_sha or '').strip()
+    head_sha = (args.head_sha or '').strip()
+    payload = list_bots_for_trigger(
+        stale,
+        stored,
+        required,
+        optional_bots=optional,
+        stored_findings_stale=bool(reviewed_sha and head_sha and reviewed_sha != head_sha),
+    )
+    print(serialize_toon(payload))
     return 0
 
 
@@ -2023,34 +2108,74 @@ def main(argv: list[str] | None = None) -> int:
     trigger_bot_parser = subparsers.add_parser(
         'trigger-bot',
         help=(
-            'Resolve the Trigger-B re-review target: select the actually-stale '
-            'bot through select_stale_bot_for_trigger rather than only the '
-            'newest finding kind'
+            'List every bot trigger B must request a fresh review from, required '
+            'bots first: the bots whose participation is stale at the current '
+            'HEAD, joined with the bots that have stored findings'
         ),
         allow_abbrev=False,
     )
     trigger_bot_parser.add_argument('--plan-id', required=True)
     trigger_bot_parser.add_argument(
-        '--stale-bots',
+        '--required-bots',
         nargs='?',
         const='',
         default='',
         help=(
-            'Comma-separated bot_kinds whose reviews predate the advanced HEAD '
-            '— the stale-bot set select_stale_bot_for_trigger selects from, '
-            'with --newest-kind only as the tie-breaker. May be supplied bare '
-            '(no value), which reads as the empty list.'
+            'Comma-separated review-bot kinds whose participation is REQUIRED. '
+            'They lead the returned list, in this order, and the ones whose '
+            'participation is stale are also returned as required_stale_bots. '
+            'May be supplied bare (no value), which reads as the empty list.'
         ),
     )
     trigger_bot_parser.add_argument(
-        '--newest-kind',
+        '--optional-bots',
         nargs='?',
         const='',
         default='',
         help=(
-            'The newest bot-authored finding\u2019s bot_kind — the tie-breaker '
-            'hint when several bots are stale, never the selection on its own. '
-            'May be supplied bare (no value), which reads as no hint.'
+            'Comma-separated review-bot kinds whose participation is OPTIONAL. '
+            'They follow the required bots in the returned list. A bot in '
+            'neither list is not triggered and is returned as unclassified. May '
+            'be supplied bare (no value), which reads as the empty list.'
+        ),
+    )
+    trigger_bot_parser.add_argument(
+        '--stale-participation-bots',
+        nargs='?',
+        const='',
+        default='',
+        help=(
+            'Comma-separated bot_kind:evidence_kind pairs — the exact shape '
+            'github_pr fetch_findings emits in stale_participation_bots[] at the '
+            "current HEAD, so the producer's output forwards here verbatim. Each "
+            'names a bot whose review predates the merge candidate; it is listed '
+            'whether or not it has a stored finding. A bare bot_kind with no '
+            'evidence_kind is rejected as malformed. May be supplied bare (no '
+            'value), which reads as the empty list.'
+        ),
+    )
+    trigger_bot_parser.add_argument(
+        '--reviewed-commit-sha',
+        nargs='?',
+        const='',
+        default='',
+        help=(
+            'The reviewed_commit_sha of the most recent bot-authored stored '
+            'finding. Compared with --head-sha: the bots that have stored '
+            'findings are joined into the list only when both are supplied and '
+            'differ. May be supplied bare (no value), which reads as not '
+            'observed and joins none of them.'
+        ),
+    )
+    trigger_bot_parser.add_argument(
+        '--head-sha',
+        nargs='?',
+        const='',
+        default='',
+        help=(
+            'The current worktree HEAD commit. See --reviewed-commit-sha. May '
+            'be supplied bare (no value), which reads as not observed and joins '
+            'no stored-finding bot.'
         ),
     )
     trigger_bot_parser.set_defaults(func=cmd_trigger_bot)

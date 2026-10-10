@@ -17,6 +17,8 @@ lives here:
   excludes the re-review triggers this workflow itself posted by provenance
   (workflow identity plus an exact registered trigger body, counted in
   ``count_skipped_own_trigger`` and listed in ``own_trigger_exclusions``),
+  drops a reviewer bot's acknowledgment of such a trigger as noise (its registry
+  ``acknowledgment_patterns``, counted in ``count_skipped_noise``),
   then files one ``pr-comment`` finding per surviving comment via ``manage-findings
   add``. The untrusted comment body is quarantined under ``raw_input.{body}``
   (never embedded raw in the top-level ``detail``); the batched ``manage-findings
@@ -36,14 +38,21 @@ lives here:
   whose disposition has a body is transmitted in ONE batched PR-level comment
   anchored on each source ``comment_id``. Anything that had something to say but
   could not be delivered lands in ``untransmitted`` and drives ``status:
-  partial``. It reads only findings the triage pass already resolved.
+  partial``. It reads only findings the triage pass already resolved. A ``fixed``
+  disposition is held, and listed in ``deferred_until_commit``, until the finding
+  carries a fix commit that the provider reports on the pull request head. With
+  ``--send-unstamped-fixed`` a ``fixed`` finding that carries no fix commit is
+  transmitted in the same pass instead; one that carries a fix commit is held or
+  released by that commit either way.
 
 Beside the findings contract sits one auxiliary provider read:
 
 - ``bot_completion`` reports a named bot's check-run completion state
   (``{status, in_progress, completed}``) for the PR HEAD, so the
   ``automatic-review`` wait step can await a slow bot's IN_PROGRESS check to
-  completion instead of racing a fixed buffer. Pure read — files no finding.
+  completion instead of racing a fixed buffer. With ``--wait-seconds`` the one
+  call holds a bounded wait over that check-run and adds ``timed_out`` and
+  ``waited_seconds``. Pure read — files no finding.
 - ``pull_request_runs`` reports whether ANY ``pull_request``-event workflow run
   exists for the PR's head branch — the PR-WIDE observable behind the
   ``not_triggered`` participation state, where nothing ever ran on account of the
@@ -59,8 +68,8 @@ status, never a silent ``done`` no-op. LLM consumers query the ledger via
 Usage:
     github_pr.py fetch-comments [--pr <number>] [--unresolved-only]
     github_pr.py fetch_findings --pr-number <N> --plan-id <P> [--required-bots [<csv>]] [--optional-bots [<csv>]]
-    github_pr.py post_responses --pr-number <N> --plan-id <P>
-    github_pr.py bot_completion --pr-number <N> --bot-kind <kind>
+    github_pr.py post_responses --pr-number <N> --plan-id <P> [--send-unstamped-fixed]
+    github_pr.py bot_completion --pr-number <N> --bot-kind <kind> [--wait-seconds <S> [--interval-seconds <S>]]
     github_pr.py pull_request_runs --pr-number <N>
     github_pr.py --help
 
@@ -93,6 +102,7 @@ import hashlib
 import json
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -100,6 +110,7 @@ import bot_registry
 import github_ops as _github
 from _github_pr import (
     REFUSAL_CAUSE_SIZE,
+    REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT,
     REFUSAL_LAYER_ENUMERATIVE,
     REFUSAL_LAYER_REGISTRY,
     REFUSAL_LAYER_STRUCTURAL,
@@ -109,12 +120,14 @@ from _github_pr import (
     _is_unrecognised_refusal,
     get_viewer_login,
     measure_diff_size,
+    named_commit_currency,
     refusal_cause,
+    refusal_condition,
     refusal_layers,
     refusal_size_cap,
 )
 from ci_base import extract_routing_args, register_subcommands, set_default_cwd
-from github_re_review import bot_kind_for_author, is_registered_trigger_comment
+from github_re_review import bot_kind_for_author, is_acknowledgment_comment, is_registered_trigger_comment
 from triage_helpers import (
     ErrorCode,
     compile_patterns_from_config,
@@ -432,6 +445,13 @@ def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
       and reported per comment. What remains here is an exact-trigger body from any
       OTHER author, or from the workflow account when its identity could not be
       read — both keep this noise disposition.
+    - ACKNOWLEDGMENT — a reviewer bot's reply that only confirms a command was
+      received (``github_re_review.is_acknowledgment_comment``, derived from that
+      bot's registry ``acknowledgment_patterns``). It is the counterpart of the
+      trigger above — the trigger asks for a review, the acknowledgment confirms
+      the ask arrived — and like it carries no review feedback, so it is dropped
+      here and counted in ``count_skipped_noise``. Reviewer-bot-scoped: only the
+      bot that declared the literal can acknowledge with it.
 
     **A REFUSAL IS NOT NOISE AND NO ARM OF THE REFUSAL-RECOGNITION STACK IS
     CONSULTED HERE.** None of the arms named in ``_github_pr.REFUSAL_LAYERS`` runs
@@ -469,6 +489,10 @@ def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
     if _is_whole_comment_acknowledgment(body):
         return True
     if bot_kind:
+        # The bot's own confirmation that a command was received — the reply to the
+        # trigger above, never review feedback.
+        if is_acknowledgment_comment(body, bot_kind):
+            return True
         if any(marker in body for marker in bot_registry.ignore_patterns(bot_kind)):
             return True
         return _is_contentless_boilerplate(body, bot_kind)
@@ -1230,6 +1254,59 @@ def _reviewed_at_merge_candidate(
     return bool(updated_at) and updated_at != recorded_updated_at
 
 
+def _stale_review_covered_by_reply(comments: list[dict], bot_kind: str, merge_candidate_committed_at: str) -> str:
+    """Return the id of ``bot_kind``'s reply that covers the merge candidate, or ``''``.
+
+    The one arm that credits a review the currency test placed at an EARLIER commit.
+    It rests on the bot's own statement: a reply whose condition is
+    ``no_unreviewed_commit`` says every commit on the PR is already reviewed. When
+    that reply was written AFTER the merge-candidate commit existed, the statement
+    includes that commit, so the review on record covers it.
+
+    The ordering is the whole safety condition. A commit made after the reply is one
+    the bot said nothing about, so the reply must be strictly NEWER than the commit:
+
+    - the reply's instant is the later of its ``updated_at`` / ``created_at`` — the
+      moment it last said what it now says;
+    - the commit's instant is ``merge_candidate_committed_at``;
+    - every timestamp that reaches the comparison must match
+      :data:`_ISO_UTC_TIMESTAMP`. An unreadable instant on either side yields no
+      credit, and so does an equal one.
+
+    ⚠ ``merge_candidate_committed_at`` is the time the commit was MADE, not the time
+    it reached the PR. A commit made before the reply and pushed after it passes this
+    comparison although the bot never saw it. The pipeline reads no push time, so
+    this arm cannot close that gap; it is stated here rather than left implicit.
+
+    Only a reply the recognition stack reads as a refusal AND whose condition is
+    ``no_unreviewed_commit`` counts. A comment that merely names another commit is
+    not such a reply and never reaches this arm.
+
+    The newest covering reply is returned, so the disclosed id is deterministic.
+    """
+    commit_at = str(merge_candidate_committed_at or '')
+    if not _ISO_UTC_TIMESTAMP.match(commit_at):
+        return ''
+    covering: list[tuple[str, str]] = []
+    for comment in comments:
+        if bot_kind_for_author(comment.get('author') or 'unknown') != bot_kind:
+            continue
+        body = str(comment.get('body') or '')
+        if not _is_refusal_notice(body, bot_kind):
+            continue
+        if refusal_condition(body, bot_kind) != REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT:
+            continue
+        stamps = [
+            stamp for stamp in (str(comment.get('updated_at') or ''), str(comment.get('created_at') or '')) if stamp
+        ]
+        if not stamps or not all(_ISO_UTC_TIMESTAMP.match(stamp) for stamp in stamps):
+            continue
+        reply_at = max(stamps)
+        if reply_at > commit_at:
+            covering.append((reply_at, str(comment.get('id') or 'unknown')))
+    return max(covering)[1] if covering else ''
+
+
 #: ``stored_zero_state`` values in the fetch result. A pass in which no comment
 #: survived the filters stored nothing, and ``count_stored: 0`` alone cannot say
 #: which of three different situations produced that zero. Exactly one of the three
@@ -1285,6 +1362,86 @@ def _stored_zero_state(
     return ZERO_STATE_NO_COVERAGE
 
 
+def _review_instant(review: dict) -> str:
+    """Return the instant ``review`` was last written, or ``''`` when none is comparable.
+
+    The later of ``updated_at`` / ``created_at``, taken over the values that match
+    :data:`_ISO_UTC_TIMESTAMP` only. A value of any other shape does not sort against
+    that shape, so it is left out of the comparison instead of being allowed to outrank
+    a well-formed one. ``''`` sorts below every well-formed timestamp, so a review with
+    no comparable timestamp never displaces one that has one.
+    """
+    stamps = [
+        stamp
+        for stamp in (str(review.get('updated_at') or ''), str(review.get('created_at') or ''))
+        if _ISO_UTC_TIMESTAMP.match(stamp)
+    ]
+    return max(stamps) if stamps else ''
+
+
+def _reviews_at_another_commit(
+    raw_comments: list[dict], credited_bots: list[str], merge_candidate_sha: str
+) -> list[dict[str, str]]:
+    """Name each credited append-per-review bot none of whose reviews covers the merge candidate.
+
+    DISCLOSURE ONLY. The result changes no participation set and no verdict: every
+    bot it names stays in ``participated_bots`` exactly as it was credited.
+
+    A bot is named when all of these hold:
+
+    - it is credited, and its registry record declares
+      ``participation_requires_update: false`` — it posts a new review per pass, so
+      the commit a review was submitted against is the commit that review covered.
+      An in-place re-reviewer is left out on an ASSUMPTION, not an observation:
+      that its review keeps the commit it was first submitted against however often
+      it is edited. No edited review was read from the provider to confirm it. Its
+      currency is already decided by the currency test, so no verdict rests on this;
+    - at least one of its admissible ``review_body`` comments carries a review commit
+      (``commit_id``, as the provider reported it);
+    - none of those commits is the merge candidate.
+
+    Each record is ``{bot_kind, review_id, review_commit_sha}`` and names the bot's
+    most recently written such review. "Most recently written" is decided by
+    :func:`_review_instant`, which compares well-formed ISO-UTC timestamps only; among
+    reviews none of which carries one, the first in provider order is named.
+
+    Nothing is named when ``merge_candidate_sha`` is empty: with no merge candidate
+    to compare against, no review can be placed at another commit. A review whose
+    commit the provider did not report is not evidence either way and is skipped.
+    An empty result is therefore not a statement that every credited review covers
+    the merge candidate.
+    """
+    candidate = (merge_candidate_sha or '').strip().lower()
+    if not candidate:
+        return []
+    disclosed: list[dict[str, str]] = []
+    for bot in credited_bots:
+        if bot_registry.participation_requires_update(bot):
+            continue
+        reviews = [
+            comment
+            for comment in raw_comments
+            if comment.get('kind') == 'review_body'
+            and str(comment.get('commit_id') or '').strip()
+            and bot_kind_for_author(comment.get('author') or 'unknown') == bot
+            and not _is_refusal_notice(str(comment.get('body') or ''), bot)
+            and _is_participation_evidence(comment, bot)
+        ]
+        if not reviews:
+            continue
+        if any(str(review['commit_id']).strip().lower() == candidate for review in reviews):
+            continue
+        newest = max(reviews, key=_review_instant)
+        disclosed.append(
+            {
+                'bot_kind': bot,
+                'review_id': str(newest.get('id') or 'unknown'),
+                'review_commit_sha': str(newest['commit_id']).strip().lower(),
+            }
+        )
+    return disclosed
+
+
 def cmd_fetch_findings(args):
     """Producer-side FIND verb: fetch + pre-filter + file one finding per surviving comment.
 
@@ -1323,7 +1480,12 @@ def cmd_fetch_findings(args):
        keeps the noise disposition of stage 4; a body that merely quotes a trigger
        is ingested.
     4. Obvious text noise — matched via ``_is_obvious_noise`` (lgtm, bot sigs, etc.),
-       counted in ``count_skipped_noise``.
+       counted in ``count_skipped_noise``. This is also where a reviewer bot's
+       ACKNOWLEDGMENT reply is dropped — its confirmation that a command was received
+       (the registry ``acknowledgment_patterns``), which is the reply to a trigger and
+       carries no finding. A refusal the stack can read is taken at stage 2 first, and
+       the enumerative arm at stage 5 never sees an acknowledgment, so it is neither
+       stored as a ``pr-comment`` finding nor reported as an unrecognised refusal.
     5. UNRECOGNISED REFUSAL — a comment the enumerative arm
        (``_github_pr._is_unrecognised_refusal``) reads as a refusal no earlier arm
        matched. Counted in ``count_skipped_refusal`` alongside stage 2 (so
@@ -1437,6 +1599,13 @@ def cmd_fetch_findings(args):
     against ``created_at``, an edit at one commit credits that commit only, not every
     later HEAD.
 
+    One arm outranks the ledger: a comment of such a bot that NAMES a commit — a full
+    commit id, bare or inside a permalink (``_github_pr.named_commit_currency``) — is
+    current only when that commit is the merge candidate, and stale when it names
+    another, whatever its timestamps or edit history say. A comment naming no commit,
+    and every comment on a fetch whose merge candidate could not be read, is decided
+    by the ledger exactly as described above.
+
     ``stale_participation_bots``: where that currency-test failure now GOES, instead
     of being discarded. Same ``{bot_kind, evidence_kind}`` record shape as
     ``participated_bots``, carrying one entry per bot whose observed comment was
@@ -1448,6 +1617,31 @@ def cmd_fetch_findings(args):
     ``--stale-participation-bots`` and classifies the bot ``participated_stale``
     rather than ``absent`` — two states whose remedies are opposite, since a stale
     publish is re-triggered while a true absence is escalated.
+
+    ``reply_covered_participation_bots``: the one way out of the stale set that is
+    not a fresh review. A bot the currency test left stale is credited — moved into
+    ``participated_bots`` — when its own ``no_unreviewed_commit`` reply (it said every
+    commit is already reviewed) is strictly newer than the merge-candidate commit
+    (``_stale_review_covered_by_reply``). Each such bot is listed here as
+    ``{bot_kind, evidence_kind, reply_comment_id}``, so the credit names the reply it
+    rests on. A reply older than the commit, an unreadable instant on either side, and
+    an unreadable merge candidate all leave the bot stale. The credit applies on either
+    ground the bot went stale on — a failed ledger test, or a comment that names
+    another commit: the named-commit arm marks that comment stale, and the bot's own
+    newer reply then credits the bot. No currency-ledger row is
+    staged for this credit, so it is re-derived from the reply on every fetch.
+
+    ``reviewed_other_commit_bots``: DISCLOSURE ONLY, for the bots the currency test
+    does not reach. One ``{bot_kind, review_id, review_commit_sha}`` record per
+    credited bot that posts a new review per pass
+    (``participation_requires_update: false``) and none of whose admissible
+    ``review_body`` comments was submitted against the merge candidate
+    (``_reviews_at_another_commit``). Every bot named here is ALSO in
+    ``participated_bots``: the field moves no bot between sets and changes no verdict,
+    so a required bot named here still satisfies the quorum. It is empty when the
+    merge candidate could not be read and skips a review whose commit the provider
+    did not report, so an empty list is not a claim that every credited review
+    covers the merge candidate.
 
     ``merge_candidate_sha_resolved`` / ``undecidable_participation_bots``: the THIRD
     outcome, for when the merge candidate itself could not be read.
@@ -1462,11 +1656,15 @@ def cmd_fetch_findings(args):
     ``stale_participation_bots`` is structural — the head read is per-fetch, so a fetch
     either resolved the candidate or did not.
 
-    ⚠ ``undecidable_participation_bots`` is PRODUCER-SIDE DISCLOSURE with no consumer
-    yet: ``review_completeness``'s taxonomy has no member for this state, so nothing
-    routes on it today. Widening the classifier is a separate plan, for which this field
-    is the prerequisite. The gap is stated rather than left to surface as an unreachable
-    branch.
+    ⚠ ``undecidable_participation_bots`` has ONE consumer: the ``no_unreviewed_commit``
+    recovery of the ``automatic-review`` step (its "Rate-limit refusal recovery"
+    Branch 6), which reads a bot named here as ``--review-on-record undecidable`` so
+    that ``github_re_review recovery-action`` resolves ``unmeasured`` and nothing is
+    posted on a review state nobody could read. ``review_completeness``'s taxonomy has
+    no member for this state, so the participation classifier does not route on it: a
+    bot named here is in neither set that classifier counts and is held as unproven.
+    Widening the classifier is a separate plan, for which this field is the
+    prerequisite.
 
     A bot declaring no evidence shape resolves FAIL-CLOSED — it can never be proven
     a participant. This proves PARTICIPATION only, never review QUALITY: the
@@ -1726,13 +1924,28 @@ def cmd_fetch_findings(args):
         if not _is_participation_evidence(_comment, _bot_kind):
             continue
         _kind = _comment.get('kind') or 'inline'
-        if _requires_update and not _reviewed_at_merge_candidate(
-            _comment,
-            currency_records,
-            _bot_kind,
-            reviewed_commit_sha,
-            merge_candidate_committed_at,
-        ):
+        # The NAMED-COMMIT arm, read before the ledger arms and outranking them. A
+        # comment that names a commit is about THAT commit: current when it is the
+        # merge candidate, stale when it is another, whatever the comment's timestamps
+        # or edit history say. Without it a fresh edit credited a comment whose own
+        # text names the previous HEAD. ``None`` is no verdict — the comment names no
+        # commit, or the merge candidate could not be read — and the ledger arms then
+        # decide exactly as before, including their fail-closed read of an unreadable
+        # head.
+        _named_verdict = (
+            named_commit_currency(str(_comment.get('body') or ''), reviewed_commit_sha) if _requires_update else None
+        )
+        if _named_verdict is None:
+            _current = not _requires_update or _reviewed_at_merge_candidate(
+                _comment,
+                currency_records,
+                _bot_kind,
+                reviewed_commit_sha,
+                merge_candidate_committed_at,
+            )
+        else:
+            _current = _named_verdict
+        if not _current:
             # The comment was ALREADY admissible evidence — only the currency test
             # failed. Discarding it here is what collapsed a stale
             # review into ``absent``, and the two have OPPOSITE remedies: ``absent``
@@ -1777,6 +1990,38 @@ def cmd_fetch_findings(args):
         # is never overwritten by a later pass, so the emitted record stays deterministic
         # however many of the bot's comments pass.
         participated.setdefault(_bot_kind, _kind)
+
+    # REPLY-COVERED CREDIT — the one arm that credits a review the currency test placed
+    # at an earlier commit. A bot that is stale after the loop, and whose own
+    # ``no_unreviewed_commit`` reply is strictly newer than the merge-candidate commit,
+    # has said that commit is reviewed; its review on record then counts. See
+    # ``_stale_review_covered_by_reply`` for the ordering rule and its fail-closed
+    # arms. A bot the reply does not cover stays in ``stale_participation``.
+    #
+    # It runs AFTER the loop and reads only ``stale_participation``, so it can lift a
+    # bot out of that set and can never credit one the loop did not already find
+    # admissible evidence for. It stages NO currency-ledger row: the credit is derived
+    # from the reply on every fetch, so a HEAD that advances past the reply returns the
+    # bot to stale by the same comparison, with no ledger state to unwind.
+    #
+    # The pass lifts a stale bot on EITHER ground it entered ``stale_participation``
+    # on — a failed ledger test, or a comment whose own text names another commit.
+    # The precedence is: the named-commit arm marks the COMMENT stale, and the bot's
+    # own newer reply then credits the BOT. The comment still names the commit it
+    # names; the reply is a later statement by the same bot that every commit on the
+    # PR, the merge candidate included, is reviewed. Withholding the credit there
+    # would leave the bot stale beside a reply that covers the head — the one stale
+    # state a re-trigger cannot move, because the bot answers it with that same reply.
+    # A stale bot with no covering reply stays stale and is re-triggered.
+    reply_covered_participation: dict[str, str] = {}
+    if reviewed_commit_sha:
+        for _stale_bot, _stale_kind in stale_participation.items():
+            if _stale_bot in participated:
+                continue
+            _reply_id = _stale_review_covered_by_reply(raw_comments, _stale_bot, merge_candidate_committed_at)
+            if _reply_id:
+                participated[_stale_bot] = _stale_kind
+                reply_covered_participation[_stale_bot] = _reply_id
 
     # Persist the currency ledger for the NEXT fetch: for each
     # ``participation_requires_update`` comment credited above, record (merge-candidate
@@ -2342,6 +2587,26 @@ def cmd_fetch_findings(args):
             for bot in sorted(stale_participation)
             if bot not in participated
         ],
+        # Which credited bots owe their credit to the REPLY-COVERED arm rather than to
+        # the currency test: a review placed at an earlier commit, counted because the
+        # bot's own no-unreviewed-commit reply is newer than the merge-candidate commit.
+        # Each is ALSO in ``participated_bots`` — this list adds the reason and the
+        # reply it rests on, it is not a fourth participation set. A bot subtracted
+        # from the credited set is subtracted here too.
+        'reply_covered_participation_bots': [
+            {
+                'bot_kind': bot,
+                'evidence_kind': participated[bot],
+                'reply_comment_id': reply_covered_participation[bot],
+            }
+            for bot in sorted(reply_covered_participation)
+            if bot in credited_bots
+        ],
+        # DISCLOSURE ONLY: the credited append-per-review bots none of whose reviews
+        # was submitted against the merge candidate. Each is ALSO in
+        # ``participated_bots`` and stays there — no set and no verdict reads this
+        # list. Empty on an unreadable merge candidate, so empty is not "all current".
+        'reviewed_other_commit_bots': _reviews_at_another_commit(raw_comments, credited_bots, reviewed_commit_sha),
         # Whether the merge candidate could be READ at all. It reports the read, and
         # nothing else: ``fetch_pr_head_sha`` returns '' on every failure path, so a
         # false here is "the head is unresolvable", never a verdict about any bot that
@@ -2355,11 +2620,16 @@ def cmd_fetch_findings(args):
         # read is per-FETCH, so a fetch either resolved the merge candidate (nothing can
         # be undecidable) or did not (nothing can be stale).
         #
-        # ⚠ PRODUCER-SIDE DISCLOSURE ONLY: ``review_completeness``'s taxonomy has no
-        # member for this state yet, so no consumer routes on it. Widening the
-        # classifier is a plan of its own; this field is the prerequisite it needs, and
-        # the gap is REPORTED here rather than left to be discovered as an unreachable
-        # branch.
+        # ⚠ ``review_completeness``'s taxonomy has no member for this state, so the
+        # classifier does not route on it. Widening the classifier is a plan of its
+        # own; this field is the prerequisite it needs, and the gap is REPORTED here
+        # rather than left to be discovered as an unreachable branch.
+        #
+        # ONE consumer does read it: the ``no_unreviewed_commit`` recovery in
+        # ``automatic-review`` maps a bot named here to the review-on-record state
+        # ``undecidable`` (``github_re_review.REVIEW_ON_RECORD_UNDECIDABLE``), which
+        # resolves ``unmeasured``. Without that read the bot is in neither of the two
+        # lists above and would be taken for one with no review on record at all.
         'undecidable_participation_bots': [
             {'bot_kind': bot, 'evidence_kind': undecidable_participation[bot]}
             for bot in sorted(undecidable_participation)
@@ -2427,7 +2697,22 @@ def cmd_fetch_findings(args):
 _IN_PROGRESS_CHECK_STATES = frozenset({'IN_PROGRESS', 'QUEUED', 'PENDING', 'WAITING', 'REQUESTED'})
 
 
-def cmd_bot_completion(args):
+#: Seconds between two reads of the check-run when ``--wait-seconds`` is supplied
+#: and the caller named no interval of its own.
+_BOT_COMPLETION_DEFAULT_INTERVAL_SECONDS = 15
+
+#: The longest a single ``bot_completion`` call holds its wait, whatever the caller
+#: asked for. The call is issued through a host tool call whose ceiling the verb does
+#: not control (600 s on the reference target), and one read may itself run to the
+#: 60 s ``run_gh`` timeout AFTER the deadline check let it start — so the internal
+#: deadline sits a full read plus a serialisation margin below that ceiling. The verb
+#: owns this margin; a caller with a longer budget re-issues the call
+#: (``plan-marshall/standards/waiting.md`` § "The inner ceiling must margin-clear the
+#: outer one").
+_BOT_COMPLETION_WAIT_CEILING_SECONDS = 480
+
+
+def cmd_bot_completion(args, *, sleep=time.sleep, clock=time.monotonic):
     """Read the named bot's most-recent check-run completion state for the PR HEAD.
 
     Pure provider read — no triage, no LLM. Given ``--pr-number`` and
@@ -2447,33 +2732,104 @@ def cmd_bot_completion(args):
       all) yields status ``not_found`` with both flags ``false`` — the caller
       keeps polling within its bound.
 
+    **Bounded wait (``--wait-seconds``).** Without the flag the verb reads once and
+    returns, exactly as above. With it, the verb re-reads the check-run every
+    ``--interval-seconds`` until the check completes or the bound lapses, and the
+    result additionally carries ``timed_out`` and ``waited_seconds``. The bound is
+    clamped to ``_BOT_COMPLETION_WAIT_CEILING_SECONDS``, so one call never outlives
+    the host ceiling it is issued through; a caller with a longer budget re-issues
+    the call. Three results end the wait at once, because waiting cannot change
+    them: ``no_check_name`` (there is no check to observe), ``unconfigured``, and a
+    read that failed or whose output could not be parsed (``status: error``, with
+    both flags absent — an unreadable check is never reported as completed).
+    ``not_found`` does NOT end it — the check may simply not be posted yet.
+
+    ``timed_out: true`` says only that the bound lapsed before the check concluded.
+    It is a bound, not a verdict: the accompanying ``in_progress`` / ``completed``
+    flags still report the last state actually read.
+
     Fail-loud: returns a typed ``unconfigured`` status when GitHub is not
     authenticated.
+
+    Args:
+        args: Parsed CLI arguments (``pr_number``, ``bot_kind``, optional
+            ``wait_seconds`` / ``interval_seconds``).
+        sleep: The pause between two reads. Injectable so a test waits no real time.
+        clock: The monotonic clock the bound is measured on. Injectable together
+            with ``sleep`` so a test can advance time deterministically.
     """
     pr_number: int = args.pr_number
     bot_kind: str = getattr(args, 'bot_kind', '') or ''
     check_name: str = bot_registry.completion_check_name(bot_kind)
+    wait_seconds = getattr(args, 'wait_seconds', None)
+    waiting = wait_seconds is not None
+
+    def _with_wait_fields(result: dict[str, Any], *, timed_out: bool, waited: float) -> dict[str, Any]:
+        if waiting:
+            result['timed_out'] = timed_out
+            result['waited_seconds'] = int(waited)
+        return result
 
     is_auth, auth_err = _github.check_auth()
     if not is_auth:
-        return _unconfigured_result('bot_completion', auth_err)
+        return _with_wait_fields(_unconfigured_result('bot_completion', auth_err), timed_out=False, waited=0)
 
     # A bot with no completion check-run has an empty registry marker. Report
     # neither flag so the caller does not spin polling a check that never appears
     # — it falls back to the review_bot_buffer_seconds wait instead.
     if not check_name:
-        return {
-            'status': 'no_check_name',
-            'operation': 'bot_completion',
-            'provider': 'github',
-            'pr_number': pr_number,
-            'bot_kind': bot_kind,
-            'check_name': '',
-            'in_progress': False,
-            'completed': False,
-        }
+        return _with_wait_fields(
+            {
+                'status': 'no_check_name',
+                'operation': 'bot_completion',
+                'provider': 'github',
+                'pr_number': pr_number,
+                'bot_kind': bot_kind,
+                'check_name': '',
+                'in_progress': False,
+                'completed': False,
+            },
+            timed_out=False,
+            waited=0,
+        )
 
-    _rc, stdout, _stderr = _github.run_gh(['pr', 'checks', str(pr_number), '--json', 'name,state,bucket'])
+    if not waiting:
+        return _read_bot_completion(pr_number, bot_kind, check_name)
+
+    bound = min(max(int(wait_seconds), 0), _BOT_COMPLETION_WAIT_CEILING_SECONDS)
+    interval = max(int(getattr(args, 'interval_seconds', None) or _BOT_COMPLETION_DEFAULT_INTERVAL_SECONDS), 1)
+    started = clock()
+    while True:
+        result = _read_bot_completion(pr_number, bot_kind, check_name)
+        waited = clock() - started
+        # A completed check is the awaited terminal state; a failed or unparseable
+        # read is one that further reads cannot be expected to improve.
+        if result.get('completed') or result.get('status') == 'error':
+            return _with_wait_fields(result, timed_out=False, waited=waited)
+        remaining = bound - waited
+        if remaining <= 0:
+            return _with_wait_fields(result, timed_out=True, waited=waited)
+        sleep(min(interval, remaining))
+
+
+#: What ``gh pr checks`` writes to stderr, beside a non-zero exit and empty stdout,
+#: for a PR that has no checks at all. Compared lower-cased.
+_GH_NO_CHECKS_REPORTED = 'no checks reported'
+
+
+def _read_bot_completion(pr_number: int, bot_kind: str, check_name: str) -> dict[str, Any]:
+    """Read ``check_name``'s state on the PR ONCE and report it.
+
+    The single provider read behind :func:`cmd_bot_completion`, which calls it once
+    for a plain read and repeatedly under ``--wait-seconds``. ``check_name`` is
+    non-empty: the markerless-bot case is settled by the caller before any read.
+
+    A read that could not be made — a non-zero exit with no output that is not gh's
+    own "no checks reported" answer — and output that could not be parsed both
+    return ``status: error``, never ``not_found``: ``not_found`` is reserved for a
+    read that succeeded and did not list the check.
+    """
+    rc, stdout, stderr = _github.run_gh(['pr', 'checks', str(pr_number), '--json', 'name,state,bucket'])
 
     # gh emits the JSON array whenever checks exist (regardless of the rollup
     # exit code it also sets for pending/failing checks), and empty output when
@@ -2481,6 +2837,16 @@ def cmd_bot_completion(args):
     # leaves the check list empty, so the named check resolves to ``not_found``.
     checks: list = []
     stdout_stripped = stdout.strip()
+    # Empty output has two causes that must not share a status. A PR with no checks
+    # exits non-zero and SAYS so; any other non-zero exit with nothing on stdout is
+    # a read that failed. Reporting that one as ``not_found`` would read "the check
+    # is not posted yet" out of a read that observed nothing, and a bounded wait
+    # would then run out on it.
+    if not stdout_stripped and rc != 0 and _GH_NO_CHECKS_REPORTED not in stderr.lower():
+        return make_error(
+            f'could not read gh pr checks (exit {rc}): {stderr.strip()[:100]}',
+            code=ErrorCode.FETCH_FAILURE,
+        )
     if stdout_stripped:
         try:
             parsed = json.loads(stdout_stripped)
@@ -2593,6 +2959,76 @@ def _build_batched_response_body(entries: list[tuple[str, str]]) -> str:
     return '\n'.join(parts).rstrip() + '\n'
 
 
+# Why a ``fixed`` disposition is held back, one value per row of
+# ``deferred_until_commit``. Every value is a reason the reply is NOT sent yet; none
+# is a failure of the run, so none of them moves ``status`` to ``partial``.
+DEFERRED_NO_FIX_COMMIT = 'no_fix_commit'
+DEFERRED_PR_HEAD_UNREADABLE = 'pr_head_unreadable'
+DEFERRED_NOT_ON_PR_HEAD = 'fix_commit_not_on_pr_head'
+DEFERRED_ANCESTRY_UNREADABLE = 'fix_commit_ancestry_unreadable'
+
+# The compare states that say the first commit is reachable from the second: the
+# second is ahead of it, or the two are the same commit.
+_COMPARE_STATES_REACHABLE = frozenset({'ahead', 'identical'})
+# The compare states that say it is not.
+_COMPARE_STATES_UNREACHABLE = frozenset({'behind', 'diverged'})
+
+# How many characters of the fix commit the transmitted reply carries.
+_SHORT_COMMIT_LENGTH = 7
+
+
+def _fix_commit_reaches_pr_head(commit_sha: str, pr_head_sha: str) -> bool | None:
+    """Whether ``commit_sha`` is an ancestor of (or is) the pull request head.
+
+    Asked of the provider, not of the local clone: the question is whether the fix
+    is on the pull request the reviewer sees, and a commit that exists only locally
+    is not. One ``compare`` read, ``commit_sha`` as the base and ``pr_head_sha`` as
+    the head.
+
+    Returns ``True`` when the head is ahead of the commit or identical to it,
+    ``False`` when it is behind or the two have diverged, and ``None`` when the
+    read failed or reported a state outside those four. ``None`` is not a verdict:
+    a commit the provider does not know (not pushed, or rewritten away) fails the
+    read, and so does an outage, and the two cannot be told apart from here.
+    """
+    rc, stdout, _stderr = _github.run_gh(
+        ['api', f'repos/{{owner}}/{{repo}}/compare/{commit_sha}...{pr_head_sha}', '--jq', '.status']
+    )
+    if rc != 0:
+        return None
+    state = stdout.strip().strip('"').lower()
+    if state in _COMPARE_STATES_REACHABLE:
+        return True
+    if state in _COMPARE_STATES_UNREACHABLE:
+        return False
+    return None
+
+
+def _fix_commit_hold_reason(fix_commit_sha: str, pr_head_sha: str, reachable: dict[str, bool | None]) -> str:
+    """Return why a ``fixed`` reply is held, or ``''`` when it may be sent.
+
+    The reply may be sent only when the finding carries a fix commit AND that commit
+    reaches the pull request head. Every other state holds it, and each has its own
+    reason so the row says which fact is missing. ``reachable`` caches the provider
+    read per commit for the duration of one call.
+    """
+    if not fix_commit_sha:
+        return DEFERRED_NO_FIX_COMMIT
+    if not pr_head_sha:
+        return DEFERRED_PR_HEAD_UNREADABLE
+    if fix_commit_sha not in reachable:
+        reachable[fix_commit_sha] = _fix_commit_reaches_pr_head(fix_commit_sha, pr_head_sha)
+    verdict = reachable[fix_commit_sha]
+    if verdict is None:
+        return DEFERRED_ANCESTRY_UNREADABLE
+    return '' if verdict else DEFERRED_NOT_ON_PR_HEAD
+
+
+def _reply_with_fix_commit(reply_body: str, fix_commit_sha: str) -> str:
+    """Return the stored reply with the short fix commit id added on its own line."""
+    return f'{reply_body.rstrip()}\n\nFix commit: {fix_commit_sha[:_SHORT_COMMIT_LENGTH]}'
+
+
 def cmd_post_responses(args):
     """RESPOND verb: apply already-decided triage dispositions back to the PR.
 
@@ -2643,6 +3079,32 @@ def cmd_post_responses(args):
     Nothing is folded into a generic skip and nothing is masked by an
     unconditional ``success``.
 
+    **A ``fixed`` disposition is held until its fix commit is on the pull
+    request.** Triage records ``fixed`` when the fix is decided, before it is a
+    commit. Such a finding is transmitted only when it carries a ``fix_commit_sha``
+    stamp (``manage-findings stamp-fix-commit``) AND the provider reports that
+    commit as an ancestor of, or identical to, the pull request head. Until then it
+    is listed in ``deferred_until_commit`` with the reason — ``no_fix_commit``,
+    ``pr_head_unreadable``, ``fix_commit_not_on_pr_head`` or
+    ``fix_commit_ancestry_unreadable`` — and gets no reply, no resolve call and no
+    ``responded`` marker, so every later pass looks at it again. A held finding is
+    not a failure: it does not count as untransmitted and does not make the run
+    ``partial``. Once released, the transmitted reply is the stored
+    ``resolution_detail`` with the short commit id added, and a thread-bearing
+    finding's thread is resolved in the same call. The predicate reads the stamp
+    alone, so a fix a task produced and an inline fix are held and released the same
+    way. The other four dispositions are transmitted at once.
+
+    **``--send-unstamped-fixed`` lifts the hold for a finding with no stamp.** The
+    hold is the default. A caller that runs no later respond pass passes the flag
+    (``args.send_unstamped_fixed``); a ``fixed`` finding that carries no
+    ``fix_commit_sha`` is then transmitted in this pass like the other four
+    dispositions, with the stored ``resolution_detail`` unchanged and no
+    ``Fix commit:`` line, instead of being listed with ``no_fix_commit``. The flag
+    changes nothing for a finding that does carry a stamp: its commit is still
+    checked against the pull request head, it is still held on the other three
+    reasons, and its reply still carries the commit id when it is released.
+
     **Idempotent across rounds, keyed on (finding, disposition).** The findings
     store is plan-scoped and persists between passes, and terminality
     (``_RESPONDABLE_RESOLUTIONS``) is the SELECTION criterion — a terminal finding
@@ -2663,10 +3125,19 @@ def cmd_post_responses(args):
     never opened. A resolved store holding no ``pr-comment`` finding still returns
     the ordinary success with zero counts.
     """
-    from _findings_core import mark_finding_responded, query_findings
+    from _findings_core import (
+        FIX_COMMIT_FIELD,
+        FIX_TASK_FIELD,
+        FIXED_RESOLUTION,
+        mark_finding_responded,
+        query_findings,
+    )
 
     pr_number: int = args.pr_number
     plan_id: str = args.plan_id
+    # Read defensively: in-process callers hand this handler a namespace that
+    # carries only the two required attributes.
+    send_unstamped_fixed: bool = bool(getattr(args, 'send_unstamped_fixed', False))
 
     is_auth, auth_err = _github.check_auth()
     if not is_auth:
@@ -2687,6 +3158,13 @@ def cmd_post_responses(args):
     # Thread-less dispositions accumulate here and go out in ONE batched comment
     # after the loop: (hash_id, comment_id, reply_body).
     batch: list[tuple[str, str, str]] = []
+    # ``fixed`` dispositions held back until their fix commit is on the pull request.
+    deferred: list[dict[str, str]] = []
+    # The pull request head, read at most once and only when a stamped ``fixed``
+    # finding needs it; ``None`` means not read yet, ``''`` means the read failed.
+    pr_head_sha: str | None = None
+    # One provider read per distinct fix commit.
+    reachable: dict[str, bool | None] = {}
 
     for finding in findings:
         hash_id = finding.get('hash_id', '')
@@ -2735,6 +3213,39 @@ def cmd_post_responses(args):
         if not reply_body:
             skipped.append({'hash_id': hash_id, 'reason': 'no_resolution_detail'})
             continue
+
+        # Hold a ``fixed`` reply until the fix is on the pull request. Triage
+        # records ``fixed`` when it decides the fix, which is before the fix is a
+        # commit; telling the reviewer "fixed" and resolving the thread at that
+        # point points them at code that is not there. The predicate reads the
+        # stamp only, so a fix a task produced and a fix applied inline are held
+        # alike. A held finding gets no reply and no resolve call, carries no
+        # ``responded`` marker, and is therefore looked at again on every pass.
+        #
+        # ``--send-unstamped-fixed`` lifts the hold for one state only: a ``fixed``
+        # finding that carries NO stamp. A caller with no later respond pass sets it,
+        # because nothing would ever release that reply. Such a finding skips this
+        # block and is routed below with its stored reply unchanged — there is no
+        # commit to name. A finding that DOES carry a stamp takes the block whatever
+        # the flag says: its commit is still checked against the pull request head.
+        if finding.get('resolution') == FIXED_RESOLUTION:
+            fix_commit_sha = str(finding.get(FIX_COMMIT_FIELD) or '').strip().lower()
+            if fix_commit_sha or not send_unstamped_fixed:
+                if fix_commit_sha and pr_head_sha is None:
+                    pr_head_sha = str(_github.fetch_pr_head_sha(pr_number) or '').strip().lower()
+                hold_reason = _fix_commit_hold_reason(fix_commit_sha, pr_head_sha or '', reachable)
+                if hold_reason:
+                    fix_task_number = finding.get(FIX_TASK_FIELD)
+                    deferred.append(
+                        {
+                            'hash_id': hash_id,
+                            'reason': hold_reason,
+                            'fix_commit_sha': fix_commit_sha,
+                            'fix_task_number': '' if fix_task_number is None else str(fix_task_number),
+                        }
+                    )
+                    continue
+                reply_body = _reply_with_fix_commit(reply_body, fix_commit_sha)
 
         detail = finding.get('detail')
         kind = _detail_field(detail, _KIND_DETAIL)
@@ -2817,9 +3328,11 @@ def cmd_post_responses(args):
         'count_responded': len(responded),
         'count_skipped': len(skipped),
         'count_untransmitted': len(untransmitted),
+        'count_deferred_until_commit': len(deferred),
         'responded': responded,
         'skipped': skipped,
         'untransmitted': untransmitted,
+        'deferred_until_commit': deferred,
     }
 
 
@@ -2956,6 +3469,21 @@ Examples:
                 'args': [
                     {'flags': ['--pr-number'], 'dest': 'pr_number', 'type': int, 'required': True, 'help': 'PR number'},
                     {'flags': ['--plan-id'], 'dest': 'plan_id', 'required': True, 'help': 'Plan ID for finding store'},
+                    {
+                        'flags': ['--send-unstamped-fixed'],
+                        'dest': 'send_unstamped_fixed',
+                        'action': 'store_true',
+                        'default': False,
+                        'help': (
+                            'Transmit a fixed finding that carries no stamped fix commit in this pass, with '
+                            'its stored reply unchanged, instead of holding it as deferred_until_commit '
+                            '(no_fix_commit). Passed by a caller that runs no later respond pass: every '
+                            'verification-feedback producer except finalize-feedback, whose held replies '
+                            'the phase-6-finalize hook transmits after it stamps the fix commit. A finding '
+                            'that does carry a stamp is unaffected: its commit is still checked against '
+                            'the pull request head.'
+                        ),
+                    },
                 ],
             },
             {
@@ -2990,6 +3518,31 @@ Examples:
                             'Reviewer bot_kind (e.g. coderabbit). Its registry completion_check_name is '
                             'resolved internally; a bot with an empty completion_check_name reports status '
                             'no_check_name so the caller falls back to the review_bot_buffer_seconds wait.'
+                        ),
+                    },
+                    {
+                        'flags': ['--wait-seconds'],
+                        'dest': 'wait_seconds',
+                        'type': int,
+                        'required': False,
+                        'default': None,
+                        'help': (
+                            'Wait, bounded, until the check-run completes: re-read it until it concludes or '
+                            'this many seconds have passed, and add timed_out and waited_seconds to the '
+                            f'result. Clamped to {_BOT_COMPLETION_WAIT_CEILING_SECONDS} s per call so the call '
+                            'returns before the host ceiling; re-issue the call for a longer budget. Omit for '
+                            'the single read.'
+                        ),
+                    },
+                    {
+                        'flags': ['--interval-seconds'],
+                        'dest': 'interval_seconds',
+                        'type': int,
+                        'required': False,
+                        'default': _BOT_COMPLETION_DEFAULT_INTERVAL_SECONDS,
+                        'help': (
+                            'Seconds between two reads under --wait-seconds '
+                            f'(default: {_BOT_COMPLETION_DEFAULT_INTERVAL_SECONDS}). Ignored without it.'
                         ),
                     },
                     {

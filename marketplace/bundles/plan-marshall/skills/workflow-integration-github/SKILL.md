@@ -10,8 +10,8 @@ mode: workflow
 GitHub provider for the findings-pipeline `pr-comment` producer. The provider surface is exactly FOUR pure, zero-LLM verbs — no triage judgment lives here:
 
 - **`fetch_findings`** — fetch PR review comments, apply the pre-filter (`comment-patterns.json`), exclude the batched response body `post_responses` itself posted, and file one `pr-comment` finding per surviving comment via `manage-findings add`. The untrusted comment body is quarantined under `raw_input.{body}` (never embedded raw in the top-level `detail`); the batched `manage-findings ingest` pass promotes it to top-level only after `validate_struct`. A bounded guard reports a non-converging respond → re-fetch cycle as a `(self-response-loop)` Q-Gate finding.
-- **`post_responses`** — apply already-decided triage dispositions back to the PR, keyed by each finding's own `hash_id`, via a three-way transmit keyed on the finding's `kind`: thread-reply-then-resolve for a thread-bearing finding (untransmitted, never batched, when its thread is missing), ONE batched PR-level comment for the genuinely threadless kinds, and `skipped` only when there is genuinely nothing to say.
-- **`bot_completion`** — report a review bot's registry `completion_check_name` check-run state (`{status, in_progress, completed}`) for the PR HEAD, so the `automatic-review` completion-aware poll can wait for a slow bot to finish before fetching; a bot with no completion check-run reports `no_check_name` and the caller falls back to the `review_bot_buffer_seconds` wait.
+- **`post_responses`** — apply already-decided triage dispositions back to the PR, keyed by each finding's own `hash_id`, via a three-way transmit keyed on the finding's `kind`: thread-reply-then-resolve for a thread-bearing finding (untransmitted, never batched, when its thread is missing), ONE batched PR-level comment for the genuinely threadless kinds, and `skipped` only when there is genuinely nothing to say. A `fixed` disposition is held, and listed in `deferred_until_commit[]`, until its fix commit is stamped on the finding and is on the pull request head; with `--send-unstamped-fixed` a `fixed` finding that carries no stamp is transmitted in the same pass instead.
+- **`bot_completion`** — report a review bot's registry `completion_check_name` check-run state (`{status, in_progress, completed}`) for the PR HEAD, so the `automatic-review` completion-aware poll can wait for a slow bot to finish before fetching — with `--wait-seconds`, in one bounded call that also returns `timed_out` and `waited_seconds`; a bot with no completion check-run reports `no_check_name` and the caller falls back to the `review_bot_buffer_seconds` wait.
 - **`pull_request_runs`** — report whether ANY `pull_request`-event workflow run exists for the requested PR. The head branch is how the runs are FETCHED, not what the answer is scoped to: a run is excluded only when its `pull_requests` association reliably names a DIFFERENT PR. This is the PR-WIDE observable behind the `not_triggered` participation state: when no such run exists, nothing ever ran on account of the PR, so no bot could have published and a required bot's silence says nothing about that bot. A run that EXISTS and concluded `skipped` keeps the observable false — the workflow *was* triggered. Never reads `mergeable_state`.
 
 All four verbs FAIL LOUD when GitHub is not configured (a typed `unconfigured` status, never a silent no-op). Uses the `gh` CLI for all GitHub operations.
@@ -128,7 +128,7 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
    ```bash
    python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr fetch_findings --pr-number {pr} --plan-id {plan_id}
    ```
-   Output reports `fetch_complete`, `capped_connections[]`, `count_fetched`, `count_skipped_noise`, `count_skipped_duplicate`, `count_skipped_refusal`, `count_skipped_self_response`, `count_skipped_emitter_bypass`, `emitter_bypass_hash_id`, `count_skipped_own_trigger`, `own_trigger_exclusions[]`, `workflow_identity`, `count_self_response_current_cycle`, `self_response_loop_detected`, `self_response_loop_hash_id`, `count_stored`, `stored_zero_state`, `stored_zero_state_source`, `participated_bots[]`, `stale_participation_bots[]`, `merge_candidate_sha_resolved`, `undecidable_participation_bots[]`, `refused_bots[]`, `unrecognised_refusal[]`, `refusal_pattern_drift[]`, `refused_causes[]`, `refused_size_caps[]`, `measured_diff_size`, `unclassified_bots[]`, and `producer_mismatch_hash_id` (set when count_stored ≠ count_fetched − count_skipped_noise − count_skipped_duplicate − count_skipped_refusal − count_skipped_self_response − count_skipped_emitter_bypass − count_skipped_own_trigger; the mismatch is also persisted as a Q-Gate finding under phase `5-execute` with title prefix `(producer-mismatch)`). An unclassified bot's comments are stored like any other, so they are NOT subtracted from the expected count. When that mismatch finding's own persist is REJECTED, `producer_mismatch_hash_id` stays `null` and the output carries `qgate_persist_failed: true` plus `qgate_persist_failure{title, detail, message}` — the mismatch content that never reached the store, with the primitive's rejection message. Both fields are absent when the mismatch finding landed (or when there was no mismatch). Read `qgate_persist_failed`, not a `null` hash id, to tell a lost mismatch finding from no mismatch at all; `status` stays `success` because the fetch itself succeeded. A `status: unconfigured` return means GitHub is not authenticated — never a silent zero-findings success.
+   Output reports `fetch_complete`, `capped_connections[]`, `count_fetched`, `count_skipped_noise`, `count_skipped_duplicate`, `count_skipped_refusal`, `count_skipped_self_response`, `count_skipped_emitter_bypass`, `emitter_bypass_hash_id`, `count_skipped_own_trigger`, `own_trigger_exclusions[]`, `workflow_identity`, `count_self_response_current_cycle`, `self_response_loop_detected`, `self_response_loop_hash_id`, `count_stored`, `stored_zero_state`, `stored_zero_state_source`, `participated_bots[]`, `stale_participation_bots[]`, `reply_covered_participation_bots[]`, `reviewed_other_commit_bots[]`, `merge_candidate_sha_resolved`, `undecidable_participation_bots[]`, `refused_bots[]`, `unrecognised_refusal[]`, `refusal_pattern_drift[]`, `refused_causes[]`, `refused_size_caps[]`, `measured_diff_size`, `unclassified_bots[]`, and `producer_mismatch_hash_id` (set when count_stored ≠ count_fetched − count_skipped_noise − count_skipped_duplicate − count_skipped_refusal − count_skipped_self_response − count_skipped_emitter_bypass − count_skipped_own_trigger; the mismatch is also persisted as a Q-Gate finding under phase `5-execute` with title prefix `(producer-mismatch)`). An unclassified bot's comments are stored like any other, so they are NOT subtracted from the expected count. When that mismatch finding's own persist is REJECTED, `producer_mismatch_hash_id` stays `null` and the output carries `qgate_persist_failed: true` plus `qgate_persist_failure{title, detail, message}` — the mismatch content that never reached the store, with the primitive's rejection message. Both fields are absent when the mismatch finding landed (or when there was no mismatch). Read `qgate_persist_failed`, not a `null` hash id, to tell a lost mismatch finding from no mismatch at all; `status` stays `success` because the fetch itself succeeded. A `status: unconfigured` return means GitHub is not authenticated — never a silent zero-findings success.
 
    **A clipped fetch is reported, never published as the PR's whole comment set.** Every count above is computed over the comments the provider fetch returned, so the fetch's own coverage travels with them. `fetch_complete` is `true` only when the provider proved every connection read to its end — the underlying `pr comments` read paginates each connection by cursor (see Canonical invocations → `github_ops pr comments`), so a page size is never a silent ceiling — and a provider result carrying no completeness claim reads as `false`. `capped_connections[]` carries the provider's coverage record for each connection that was NOT proven whole, so the result names what was observed against what cap:
 
@@ -151,19 +151,37 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
 
    **A failed currency test is a branch, never a discard — and it has THREE outcomes, not two.** `participated_bots[]` credits a bot only when an observed comment's `kind` matches a declared `participation_evidence` publish shape, AND — where that bot declares a `participation_evidence_markers` entry for that shape — the comment body carries the declared marker, AND — for a bot declaring `participation_requires_update` — the currency test holds. The marker gate runs FIRST, so a comment it rejects reaches neither the credited set nor the stale one.
 
-   **The currency test reads ONE source: the plan-scoped currency ledger.** `pr-participation-currency-ledger.jsonl` sits beside the findings store and records, per `(bot_kind, comment_id)`, the merge-candidate SHA and the comment's `updated_at` at the fetch that LAST credited it. It is the SOLE source the test consults — there is no second set of SHAs to union in, and a comment dropped as noise (PR-Agent's contentless Guide) is recorded there exactly as one filed as a finding, so the credit does not depend on whether the comment produced a finding. The credit holds on any ONE of three arms, and each is anchored to that ledger:
+   **A comment that names a commit is decided by that commit, before the ledger is read.** For a bot declaring `participation_requires_update`, a comment whose body names a full commit id — bare, or inside a `…/commit/{sha}` permalink — is **current only when that commit is the merge candidate** and **stale when it names another**, whatever its timestamps or edit history say. A comment naming the merge candidate is credited on first sight; one that was edited after its last credit and still names the previous HEAD is reported in `stale_participation_bots[]`, where the fresh-edit arm below would have credited it. A comment naming several commits is current when any of them is the merge candidate. Only a full-length id counts as naming a commit — an abbreviated run is hex-shaped but is not evidence of a commit reference. A comment naming no commit, and every comment on a fetch whose merge candidate could not be read, gets no verdict from this arm and is decided by the ledger exactly as described next. The commit reference is read through `_github_pr.commit_tokens`, the one recogniser the re-review matcher also uses.
+
+   **For a comment that names no commit, the currency test reads ONE source: the plan-scoped currency ledger.** `pr-participation-currency-ledger.jsonl` sits beside the findings store and records, per `(bot_kind, comment_id)`, the merge-candidate SHA and the comment's `updated_at` at the fetch that LAST credited it. It is the SOLE source the test consults — there is no second set of SHAs to union in, and a comment dropped as noise (PR-Agent's contentless Guide) is recorded there exactly as one filed as a finding, so the credit does not depend on whether the comment produced a finding. The credit holds on any ONE of three arms, and each is anchored to that ledger:
 
    - **SHA currency** — the SHA recorded at the last credit IS the merge candidate. Re-running at the same HEAD reads the same recorded SHA and returns the same answer, so the verdict consumes no observation state.
    - **First observation** — the key is absent from the ledger, so this fetch is the one observing the comment. It credits only when the merge-candidate SHA is resolvable AND the comment does not demonstrably predate the merge-candidate commit (its own latest timestamp is not earlier than the commit's); an unreadable commit timestamp is not an ordering claim and leaves the arm SHA-only.
    - **Fresh edit** — the comment's `updated_at` differs from the value recorded at the last credit, so the bot edited it in place since then and published a fresh review. Comparing against the RECORDED `updated_at` rather than against `created_at` is what stops this becoming a permanent *was-ever-edited* flag: an edit at commit N credits N, not N+1.
 
-   A ledger row that exists but carries no usable SHA anchors nothing and is REFUSED outright — never read as a first observation, which would credit it at any resolvable advanced HEAD. An unresolvable merge-candidate SHA fails EVERY arm closed. When the comment was admissible evidence (kind matched, and the declared marker carried where one is declared) but the *currency test* failed, WHY it failed decides where the observation goes. A comment anchored to an **earlier** commit is **stale**. A merge candidate that could not be READ at all is neither: `merge_candidate_sha_resolved: false` reports that the head read produced no SHA, and the affected bots are named in **`undecidable_participation_bots[]`** — the same `{bot_kind, evidence_kind}` shape, carried in its own DISJOINT set. Such a bot is in neither `participated_bots[]` (nothing anchors the credit) nor `stale_participation_bots[]` (stale prescribes re-triggering the review, which cannot fix a failed read). Disjointness is structural: the head read is per-fetch, so a fetch either resolved the candidate or did not. ⚠ `undecidable_participation_bots[]` is **producer-side disclosure with no classifier member yet** — `review_completeness`'s taxonomy has no member for this state, so nothing routes on it today; widening the classifier is a separate plan for which this field is the prerequisite. In the resolved case the bot is named in **`stale_participation_bots[]`** rather than dropped:
+   A ledger row that exists but carries no usable SHA anchors nothing and is REFUSED outright — never read as a first observation, which would credit it at any resolvable advanced HEAD. An unresolvable merge-candidate SHA fails EVERY arm closed. When the comment was admissible evidence (kind matched, and the declared marker carried where one is declared) but the *currency test* failed, WHY it failed decides where the observation goes. A comment anchored to an **earlier** commit is **stale**. A merge candidate that could not be READ at all is neither: `merge_candidate_sha_resolved: false` reports that the head read produced no SHA, and the affected bots are named in **`undecidable_participation_bots[]`** — the same `{bot_kind, evidence_kind}` shape, carried in its own DISJOINT set. Such a bot is in neither `participated_bots[]` (nothing anchors the credit) nor `stale_participation_bots[]` (stale prescribes re-triggering the review, which cannot fix a failed read). Disjointness is structural: the head read is per-fetch, so a fetch either resolved the candidate or did not. An unreadable merge candidate is the ONLY ground on which a bot is named there, and only a bot declaring `participation_requires_update` can be: no other bot is currency-tested. ⚠ `undecidable_participation_bots[]` has **no classifier member** — `review_completeness`'s taxonomy has no member for this state, so the quorum layer does not route on it; widening the classifier is a separate plan for which this field is the prerequisite. One consumer reads it: the `no_unreviewed_commit` recovery maps a bot named there to `--review-on-record undecidable` (see Canonical invocations → `github_re_review recovery-action`), so a review the producer could not place is never taken for no review at all. In the resolved case the bot is named in **`stale_participation_bots[]`** rather than dropped:
 
    ```toon
    stale_participation_bots[N]{bot_kind,evidence_kind}:
    ```
 
    Same record shape as `participated_bots[]`, and the proven set is **subtracted before emitting** — a bot with one stale comment and one fresh one appears only in `participated_bots[]`, never in both. Forward the list to `review_completeness check --stale-participation-bots` so the quorum layer classifies the bot `participated_stale` instead of `absent`. The two are not interchangeable and their remedies are opposite: a stale publish is **re-triggered** (the review exists, it merely predates this HEAD), while a true absence is **escalated** (there is no review to refresh). Discarding the failed currency test is what collapsed the two.
+
+   **One reply lifts a bot out of the stale set: its own statement that nothing is unreviewed.** A bot the currency test left stale is counted after all — moved into `participated_bots[]` and out of `stale_participation_bots[]` — when a reply of its with `condition: no_unreviewed_commit` was written AFTER the merge-candidate commit. The bot said every commit is already reviewed, and that commit existed when it said so, so its review on record covers it. Each bot counted this way is also named in:
+
+   ```toon
+   reply_covered_participation_bots[N]{bot_kind,evidence_kind,reply_comment_id}:
+   ```
+
+   The list adds the reason and the reply the credit rests on; it is not a fourth participation set. The comparison fails closed: the reply's latest timestamp must be strictly later than the commit's, and a timestamp that cannot be read on either side, an equal one, or an unreadable merge candidate leaves the bot stale. A commit pushed after the reply is therefore never covered by it. The credit applies on either ground the bot went stale on. A comment that names another commit is marked stale by the named-commit arm; the bot's own newer `no_unreviewed_commit` reply then credits the bot, because that reply is its later statement about every commit on the PR. A bot whose comment names another commit and that has no covering reply stays stale. ⚠ The commit's timestamp is the time it was made, not the time it reached the PR — a commit made before the reply and pushed after it passes the comparison, and no push time is read that could tell the two apart. No currency-ledger row is written for this credit, so it is derived again from the reply on every fetch. See [`automatic-review/standards/bot-participation-contract.md`](../automatic-review/standards/bot-participation-contract.md) § "The reply-covered credit".
+
+   **A bot the currency test does not reach is disclosed when none of its reviews covers the merge candidate — and stays credited.** A bot declaring `participation_requires_update: false` posts a new review per pass and is credited on the presence of one, with no commit compared. Each `review_body` record carries `commit_id`, the commit the provider says the review was submitted against. A credited bot of this kind is named when at least one of its admissible `review_body` comments carries a commit and none of them is the merge candidate:
+
+   ```toon
+   reviewed_other_commit_bots[N]{bot_kind,review_id,review_commit_sha}:
+   ```
+
+   The record names the bot's most recently written such review and the commit it was submitted against. ⚠ **Disclosure only.** Every bot named here is also in `participated_bots[]`; the field moves no bot into `stale_participation_bots[]`, changes no verdict, and is forwarded to no `review_completeness` flag, so a required bot named here still satisfies the quorum. The list is empty when the merge candidate could not be read, and a review whose commit the provider did not report is skipped, so an empty list does not say that every credited review covers the merge candidate. See [`automatic-review/standards/bot-participation-contract.md`](../automatic-review/standards/bot-participation-contract.md) § "The currency-blind path for append-per-review bots".
 
    **A refusal is a branch, never a noise drop.** A comment recognized as a bot DECLINING to review — by any arm of the refusal-recognition stack, which `_github_pr.REFUSAL_LAYERS` names in one place — files no `pr-comment` finding — it is a signal *about* the review, not feedback about the code, so the operator is never asked to triage it — but it is counted in `count_skipped_refusal` and its bot is named in `refused_bots[]`, and it is excluded from `participated_bots[]`. Forward `refused_bots[]` to `review_completeness check --refused-bots` so the quorum layer classifies the bot into a refusal member. Alongside it the producer emits **`refused_causes[]`** — one `{bot_kind, cause}` per refusing bot, `cause` in `size` / `quota` — the CAUSE axis; forward it to `review_completeness check --refused-causes`. ⛔ **A `size` cause is STATE-DETERMINING, not advisory**: it resolves the bot to `refused_structural` (remedies: split / accept / disable-for-this-PR — never wait) whatever its `rate_limit_class` declares, because that field is per-BOT while a cause is per-REFUSAL and one bot can refuse for both at one class. Every OTHER refusal takes the DEFAULT member from the bot's three-valued `rate_limit_class` — `refused_awaitable` / `refused_hard` / `refused_unknown` — and every other cause is advisory: reported as the remedy (`quota` → backoff) in `refusal_causes[]`, gating nothing and moving no member. ⛔ **The class mapping is a default, not a bijection: TWO per-refusal observations displace it.** The `size` cause above is one; the second is a refusal NO arm of the stack could READ, emitted in **`unrecognised_refusal[]`** and forwarded to `review_completeness check --unrecognised-refusal-bots`, which resolves the bot to `refused_unknown` whatever its declared class says — because an unparsed notice supports no claim about its own awaitability, least of all that a window will reopen. Each `unrecognised_refusal[]` record carries `{bot_kind, layer, excerpt}` plus the mechanism that closes the gap — `registry_file`, `registry_field`, `remedy` — so the phrasing to file and the file to file it in travel with the finding rather than being described elsewhere. Such a comment is counted in `count_skipped_refusal` (keeping `expected_stored` balanced) and its bot is denied participation credit when EVERY one of its publish-shape comments was unrecognised; a bot with any genuine review keeps its credit and the record stays a diagnostic. The producer also emits **`refused_size_caps[]`** (one `{bot_kind, cap}` per bot whose size notice stated its ceiling) and the scalar **`measured_diff_size`** (how big the refused diff was, measured only when a size refusal occurred); forward them to `--refusal-size-caps` and `--measured-diff-size` so an accepted coverage gap is quantified rather than asserted. Folding a refusal into `count_skipped_noise` instead is what let a PR whose every required reviewer refused report a clean, complete review; `count_skipped_noise` and `count_skipped_refusal` are deliberately separate counters for that reason.
 
@@ -183,6 +201,8 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
    **The chosen trade, and why neither key suffices alone.** Identity is the PRIMARY key, but a transmission shape is REQUIRED beside it, because the repo-owner account is both this workflow's emitter and a genuine reviewer — identity alone would swallow the operator's own review comments. The heading alone cannot see a bypass and would drop another author's comment that opens with it. Both counters are subtracted from the expected count and neither is `count_skipped_noise` — our own output is not acknowledgment noise. The heading test stays start-anchored: a comment that blockquotes the heading does not open with it.
 
    **A re-review trigger this workflow posted is excluded by provenance, and reported.** A comment authored by the workflow identity whose whitespace-stripped body EQUALS a registered bot re-review trigger (the registry-derived set `github_re_review.is_registered_trigger_comment` reads, the same data the trigger poster sends) is this workflow's own re-review request, not reviewer feedback. It files no finding, is counted in `count_skipped_own_trigger` — never in `count_skipped_noise`, since the exclusion is keyed on who posted it, not on its shape — and is subtracted from the expected count. `own_trigger_exclusions[]` carries one `{comment_id, trigger}` record per excluded comment, naming the registered trigger it matched, so the result says how many were excluded and why. An exact-trigger body from any OTHER author keeps its noise disposition (`count_skipped_noise`), and a body that merely quotes a trigger string is not an exact match and is filed.
+
+   **A bot's acknowledgment of a trigger is dropped as noise.** The reply with which a reviewer bot only confirms that a command was received — a comment from that bot carrying one of its registry `acknowledgment_patterns` — says nothing about the code, so it files no finding and is counted in `count_skipped_noise`. It is recognised by `github_re_review.is_acknowledgment_comment`, the same function the re-review matcher uses, so the two sites cannot disagree about which comments are acknowledgments. A refusal the stack can read is taken by the refusal branch first, and an acknowledgment never reaches the enumerative arm, so it is not reported in `unrecognised_refusal[]`.
 
    **An unresolved identity is disclosed, never read as resolved.** The identity is read at most once per fetch, and only when some fetched comment opens with the heading, carries the section signature, or is a registered trigger. `workflow_identity` reports how it stood: `resolved`; `unresolved` — the viewer read failed, so the self-response stage fell back to the heading-only test, and the emitter-bypass and own-trigger stages could not run (a workflow-authored trigger keeps its noise disposition); or `not_needed` — no comment carried any of those shapes, so no stage asked for it.
 
@@ -205,7 +225,7 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
    ```
    Every thread-less disposition batch is transmitted through this call — an agent never composes the batched PR comment itself (a hand-composed batch is reported as an `(emitter-bypass)`, see step 1).
 
-   `post_responses` transmits every terminal-disposition finding through a three-way branch — no decision is lost and none is guessed at. **The routing predicate is the finding's `kind` — its thread-BEARING-ness — never the presence of an extractable `thread_id`:**
+   `post_responses` routes every terminal-disposition finding through a three-way branch — no decision is lost and none is guessed at. One disposition is held before it reaches that branch: a `fixed` finding whose fix commit is not yet on the pull request (see "The `fixed` reply is held until the fix commit is on the pull request" below). **The routing predicate is the finding's `kind` — its thread-BEARING-ness — never the presence of an extractable `thread_id`:**
 
    | Finding shape | Transmit | Recorded as |
    |---------------|----------|-------------|
@@ -213,6 +233,7 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
    | `pr_number` absent from `detail` | nothing — the row cannot be shown to belong here (fail closed) | `skipped[]`, reason `pr_number_unrecorded` |
    | already transmitted on a prior pass (carries the `responded` marker), disposition unchanged | nothing — the reply was already sent | `skipped[]`, reason `already responded` |
    | no `resolution_detail` | nothing — there is genuinely nothing to say | `skipped[]`, reason `no_resolution_detail` |
+   | `fixed`, and its fix commit is not stamped or not on the pull request head (with `--send-unstamped-fixed`: stamped and not on the pull request head only) | nothing — no reply, no resolve-thread, no `responded` marker | `deferred_until_commit[]`, with the reason |
    | genuinely threadless `kind` (`review_body`, `issue_comment`) | ONE batched PR-level comment for ALL such findings in the run, each section anchored on its source `comment_id` | `responded[]`, `transmit_mode: batched_issue_comment`, `resolved_on_provider: false` |
    | thread-bearing `kind` (`inline`, and any unrecognised kind) | thread-reply carrying the `resolution_detail`, then resolve-thread | `responded[]`, `transmit_mode: thread_reply`, `resolved_on_provider: true` |
 
@@ -225,6 +246,45 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
    **An undeliverable in-thread reply is untransmitted, never silently batched.** A thread-bearing finding whose `thread_id` is empty or unextractable is *undeliverable*, not threadless: it lands in `untransmitted[]` with a reason naming the missing thread and the run reports `status: partial`. It is NEVER re-routed into the batch — a silent downgrade would report the disposition as delivered while the reviewer's own thread stays unanswered and unresolved. Only genuinely threadless kinds enter the batch, so the batch membership is decided by the kind alone and cannot be reached by losing a `thread_id`.
 
    Any disposition that had something to say but could not be delivered — a missing thread on a thread-bearing finding, a failed thread-reply, a failed resolve-thread, or a failed batched post (which untransmits the WHOLE batch) — lands in `untransmitted[]` with a reason, drives `count_untransmitted`, and sets the envelope `status` to `partial`. The envelope reports `success` only when `count_untransmitted` is 0; it is never unconditionally `success`.
+
+   **The `fixed` reply is held until the fix commit is on the pull request.** Triage records `fixed` when it decides the fix, which is before the fix is a commit. A reply sent then tells the reviewer the code is fixed and resolves the thread while the pull request still shows the old code. Called without `--send-unstamped-fixed` — the default — `post_responses` therefore transmits a `fixed` finding only when both of these hold:
+
+   - the finding carries a `fix_commit_sha` stamp (written by `manage-findings stamp-fix-commit` — see [`manage-findings` SKILL.md](../manage-findings/SKILL.md) § "The fix stamp");
+   - the provider reports that commit as an ancestor of the pull request head, or as the head itself. This is one `compare` read per distinct fix commit, asked of GitHub and not of the local clone, so a commit that was never pushed does not pass.
+
+   Until then the finding is listed in `deferred_until_commit[]` and nothing is sent for it:
+
+   ```toon
+   deferred_until_commit[N]{hash_id,reason,fix_commit_sha,fix_task_number}:
+   ```
+
+   | `reason` | What is missing |
+   |----------|-----------------|
+   | `no_fix_commit` | The finding carries no stamp. |
+   | `pr_head_unreadable` | The stamp is there, but the pull request head could not be read. |
+   | `fix_commit_not_on_pr_head` | The provider reports the stamped commit as behind the head or diverged from it — for example after a rebase rewrote it. The phase-6-finalize hook stamps the finding again only with the one commit on the branch whose patch for the finding's file equals the replaced commit's, once `branch-sync-state` reports `synced`, and then runs the respond pass once more. When it finds no such commit, or more than one, the finding stays held. A caller without that hook stamps the new commit itself. |
+   | `fix_commit_ancestry_unreadable` | The `compare` read failed or returned a state it does not define. A commit GitHub does not know fails this read too, so it also covers a stamp for a commit that was not pushed. |
+
+   `fix_commit_sha` and `fix_task_number` are empty strings where the finding carries none; an empty `fix_task_number` beside a `fixed` finding is an inline fix. The predicate reads the stamp alone, so a fix a task produced and an inline fix are held and released the same way.
+
+   A held finding gets no thread reply, no resolve-thread call and no `responded` marker, so every later pass looks at it again. It is not a failure: it is counted in `count_deferred_until_commit`, not in `count_untransmitted`, and it does not make the run `partial`. Once the two conditions hold, the transmitted reply is the stored `resolution_detail` followed by a line `Fix commit: <first seven characters>`, the finding goes down the ordinary kind routing above, and a thread-bearing finding's thread is resolved in that same call. `rejected`, `suppressed`, `accepted` and `taken_into_account` are never held.
+
+   **The commit named in that line is the one the caller stamped, and this verb does not check that it made the fix.** The phase-6-finalize hook that stamps in a plan run ([`phase-6-finalize/SKILL.md`](../phase-6-finalize/SKILL.md) Step 3 item 7c) stamps the commit that holds the edit for an inline fix, and the pushed head of the branch for a task fix. A pushed head contains the fix and may be later than the commit that made it, so `Fix commit:` names a commit as of which the fix is on the pull request. Such a stamp satisfies the second condition above when it is written — the stamped commit is the head — and keeps satisfying it while further commits are pushed on top, because it stays an ancestor of the head.
+
+   The hook stamps an evidence commit in two further cases, each only while the branch is `synced`, and in neither does it stamp the pushed head. A finding this verb reports with `fix_commit_not_on_pr_head` is stamped again only with the one commit on the branch whose patch for the finding's file equals the replaced commit's; one reported with `pr_head_unreadable` or `fix_commit_ancestry_unreadable` is not stamped again, because a failed read does not show that the stamped commit was replaced. An inline fix that a stopped firing of the hook left unstamped is stamped only with the one commit the hook made for inline dispositions that touches the finding's file after the reviewed commit. In both cases no such commit, more than one, a comparison that cannot be made and a finding with no `file_path` stamp nothing, and the finding stays held. For these two recoveries `Fix commit:` names a commit that carries a change to the finding's file: for the first the same patch for that file as the replaced commit, for the second inline dispositions the hook committed to it. The line does not show that a later commit kept that change, that other files of the fix are on the branch, or which of several edits in the commit belongs to the finding. The conditions and the commands are stated in that item 7c.
+
+   ⚠ **A held `fixed` finding that no caller stamps is never answered.** It stays in `deferred_until_commit[]` on every pass until it is re-resolved to another disposition, which clears the stamp and makes it transmittable under that disposition. In a plan run that is a task fix whose task never becomes `done`; an unstamped inline fix for which the hook finds no single commit with its inline message that touches the finding's file, or that carries no `file_path` or no `reviewed_commit_sha`; a finding held with `fix_commit_not_on_pr_head` for which the hook finds no single commit with an equal patch for the finding's file, which includes every `review_body` finding; and a stamped finding held with `pr_head_unreadable` or `fix_commit_ancestry_unreadable` for as long as that read fails. What the reviewer sees on each such path is stated in [`plan-marshall/workflow/verification-feedback.md`](../plan-marshall/workflow/verification-feedback.md) Step 8.
+
+   **`--send-unstamped-fixed` lifts the hold for a finding with no stamp.** The hold releases a reply only after a caller has stamped the fix commit and run a further respond pass. The phase-6-finalize hook does both, and calls this verb without the flag. A caller that runs no later pass — `verification-feedback.md` Step 8 under every producer except `finalize-feedback`, which includes the `/workflow-pr-doctor` run (`producer=pr-state`) — passes the flag, because a reply held there would never be sent. With the flag:
+
+   | `fixed` finding | Outcome |
+   |-----------------|---------|
+   | carries no `fix_commit_sha` | Transmitted in this pass down the ordinary kind routing, like the other four dispositions. The reply is the stored `resolution_detail` unchanged, with no `Fix commit:` line. It is not listed in `deferred_until_commit[]`, so the reason `no_fix_commit` is not reported. |
+   | carries a `fix_commit_sha` | Unaffected by the flag. Both conditions above still apply: it is held with `pr_head_unreadable`, `fix_commit_not_on_pr_head` or `fix_commit_ancestry_unreadable` until the commit is on the pull request head, and the released reply carries the `Fix commit:` line. |
+
+   A reply sent under the flag tells the reviewer "fixed" and resolves the thread when the fix is decided, which may be before any commit carries it. Which producer passes the flag, and what the reviewer then sees, is stated in [`plan-marshall/workflow/verification-feedback.md`](../plan-marshall/workflow/verification-feedback.md) Step 8.
+
+   The hold-back is this verb's alone. The GitLab `post_responses` verb transmits `fixed` at once and declares no such flag.
 
 ### Workflow 3: Re-Review After a HEAD-Advancing Branch Operation
 
@@ -264,6 +324,20 @@ The refusal is a **returned envelope, never an exception** — a caller branches
 
 ⛔ **A re-trigger inside an open window RESETS it rather than shortening it** (an advertised wait was observed going from 50 to 59 minutes) and spends quota doing so. That is why the guard refuses rather than merely warning, and why the recovery selector below never reaches a trigger arm while a claim is still running.
 
+#### The escalated command
+
+A bot may declare a second command in its registry record, `escalated_trigger_comment` — the one that makes it review the whole changeset again rather than only what it has not reviewed yet. `re-review --escalated` posts that command in place of the ordinary trigger. It leaves through the same single `_github.post_pr_comment` call, so the rate-window guard above applies to it unchanged: into a claimed, unexpired window nothing is posted and the return is `status: refused` / `reason: window_open`.
+
+The escalated command uses one review from the bot's allowance each time it runs, so one further guard applies to it alone, and it is likewise enforced in code. The command is posted **at most once per reply**: when a comment whose body is the command already sits on the PR after the bot's newest comment, the bot has not answered it yet, and it is not posted again. Three refusals come back as returned envelopes, each carrying `escalated: true`:
+
+| `reason` | Meaning |
+|----------|---------|
+| `no_escalated_command` | The bot's registry record declares no `escalated_trigger_comment`. |
+| `escalated_command_already_posted` | The command is on the PR, newer than every comment of this bot. |
+| `escalated_history_unreadable` | The PR's comments could not be read. Unlike the rate-window read, an unreadable read refuses here: posting blind risks a second spent review, while not posting leaves a state the next pass reads again. |
+
+On a successful post the await is the ordinary one, and the returned envelope carries `escalated: true`. A posted escalated command is also a registered trigger for the producer: `is_registered_trigger_comment` recognises it, so `fetch_findings` never files it as reviewer feedback.
+
 #### Completion signals (`await_fresh_review`)
 
 `await_fresh_review` is **identical** for every bot and is satisfied by **either** of two completion signals, checked in order of evidential strength:
@@ -271,7 +345,22 @@ The refusal is a **returned envelope, never an exception** — a caller branches
 | Signal | Match condition | Envelope |
 |--------|-----------------|----------|
 | **review** (preferred) | a review whose reviewed-commit evidence **references** `--head-sha` AND whose `submittedAt` strictly post-dates the trigger time, and which is not a refusal notice | `matched_signal: review`, `matched_review: {…}`, `head_sha_verified: true` |
-| **issue comment** (fallback) | a comment whose author resolves to the awaited `bot_kind`, whose later of `updated_at` / `created_at` strictly post-dates the trigger time, and which is not a refusal notice | `matched_signal: issue_comment`, `matched_comment: {…}`, `head_sha_verified:` **whether the comment BODY references `--head-sha`** |
+| **issue comment** (fallback) | a comment whose author resolves to the awaited `bot_kind`, whose later of `updated_at` / `created_at` strictly post-dates the trigger time, and which is neither a refusal notice nor an acknowledgment | `matched_signal: issue_comment`, `matched_comment: {…}`, `head_sha_verified:` **whether the comment BODY references `--head-sha`** |
+
+Two classifications never complete the await, and the envelope names each:
+
+| Classification | Condition | Envelope |
+|----------------|-----------|----------|
+| **`acknowledged`** | a comment from the awaited `bot_kind` carrying one of its registry `acknowledgment_patterns` — the reply that only confirms the trigger was received | never the match; the poll continues. `acknowledged: true`, and one `acknowledgments[]` record per acknowledgment posted or edited after the trigger time |
+| **withheld in progress** | an issue-comment match whose body does not reference `--head-sha`, while the bot's completion check-run is positively observed `in_progress` | never the match; the poll continues. `answer_withheld_in_progress: true` |
+
+**An acknowledgment is not an answer.** CodeRabbit replies to `@coderabbitai review` with "Review triggered" and edits that reply to "Review finished"; it post-dates the trigger and names no commit, so admitting it ended the await on `matched: true` / `head_sha_verified: false` — a decline the bot never made. `is_acknowledgment_comment` in `github_re_review.py` recognises the class by a whitespace-normalised substring test against the awaited bot's own comments, and the producer drops the same comments as noise through the same function (Workflow 2 step 1). A refusal the stack can READ still outranks it; the class displaces only the enumerative arm, so an acknowledgment yields no `refusals[]` record either. Which bodies are acknowledgments is registry data — see [`automatic-review/standards/bot-participation-contract.md`](../automatic-review/standards/bot-participation-contract.md) § "An acknowledgment is not an answer".
+
+**A non-verifying answer is withheld while the review is still running.** The completion read is the one `bot_completion` performs, taken at most once per poll and only when that poll would otherwise end on a comment that does not verify. Only a positive `in_progress: true` withholds: a concluded check, a check never posted, a bot with no `completion_check_name`, and a failed read all leave the match as it stands, so `matched: true` / `head_sha_verified: false` still reports a genuine decline once the review has ended.
+
+```toon
+acknowledgments[N]{source,bot_kind,body}:
+```
 
 **"References" is not whole-field equality.** The SHA is recognised wherever the evidence carries it — as a bare token, or embedded in a commit URL — and compared for equality either way, so evidence naming a *different* commit still fails to verify. Matching the whole field for string equality would recognise only the bare shape, drop a URL-shaped review onto signal 2, and publish `head_sha_verified: false` for a HEAD the bot HAD reviewed. The predicate is `_references_head_sha` in `github_re_review.py`, whose module docstring is the authoritative statement.
 
@@ -281,12 +370,16 @@ The refusal is a **returned envelope, never an exception** — a caller branches
 
 ⛔ **The enumerative arm is what closes this path's worst failure.** Before it, a refusal no arm recognised fell through to the review matcher, which admits any body that is "not a refusal notice" — so the envelope reported `head_sha_verified: true` for a HEAD the bot had explicitly declined to review. It is also fail-safe: the arm requires a measured threshold, and with none derived it never fires, so this path behaves exactly as it did before the arm existed.
 
-Every rejected refusal is **RECORDED, never a silent skip**. The envelope carries `refusal_detected`, `refusal_class`, `refusal_eta` (the reset time the notice itself stated, or `""`), a `refusals[]` record per detected refusal, and **`refusal_layers[]`** — the declared `layer` vocabulary the producer emits, published so a consumer validates a value against the producer's own population rather than a hand-copied list:
+Every rejected refusal **written after the trigger** is **RECORDED, never a silent skip**. The gate is the one a match passes: a review's `submitted_at`, or the later of a comment's `updated_at` / `created_at`, strictly after the trigger instant. A refusal written at or before it answered some other request, so it is skipped without a record — as is one with no readable timestamp — and a bot that then stays silent returns `refusal_detected: false` beside `timed_out: true`, an ordinary timeout. A refusal already on the PR before any trigger is the `pr wait-for-comments` `rate_limited_bots[]` record's to report, not this envelope's. The envelope carries `refusal_detected`, `refusal_class`, `refusal_eta` (the reset time the notice itself stated, or `""`), `refusal_eta_seconds` (that reset time as whole seconds, or `null`), `refusal_eta_extracted` (`false` when no reset time could be read), a `refusals[]` record per detected refusal, and **`refusal_layers[]`** — the declared `layer` vocabulary the producer emits, published so a consumer validates a value against the producer's own population rather than a hand-copied list:
 
 ```toon
-refusals[N]{source,bot_kind,layer,eta,cause,cap,body}:
+refusals[N]{source,bot_kind,layer,eta,eta_seconds,eta_extracted,cause,cap,condition,body}:
 refusal_layers[N]: [the declared layer vocabulary]
 ```
+
+`condition` is on every refusal record and is read FIRST. It names what the reply reports, from the vocabulary `_github_pr.REFUSAL_CONDITIONS` publishes: `rate_limited` when a limit was hit, and `no_unreviewed_commit` when the bot replied that every commit on the PR is already reviewed. The second is recognised from the bot's registry `no_unreviewed_commit_patterns` — a subset of its `refusal_patterns` — and is not a limit: no window is open, so a consumer never waits for it, whatever `refusal_class` reports for the bot. The `pr wait-for-comments` `rate_limited_bots[]` record carries the same field. See [`automatic-review/standards/bot-participation-contract.md`](../automatic-review/standards/bot-participation-contract.md) § "The refusal condition".
+
+`eta`, `eta_seconds` and `eta_extracted` state one reset time three ways, on every refusal record. `eta` is the text the notice stated (`"38 minutes"`), or `""`. `eta_seconds` is that time as whole seconds (`2280`), or `null` when none could be read — never `0`, which is a real duration. `eta_extracted` is `true` exactly when `eta_seconds` is a number; its `false` is the explicit statement that a recognised refusal yielded no reset time, so a consumer reads the field rather than inferring it from an empty `eta`. The three envelope fields describe one record — the first reporting `eta_extracted: true`, else the first carrying a non-empty `eta` — and share the vocabulary the `pr wait-for-comments` `rate_limited_bots[]` record carries.
 
 `cause` and `cap` are on EVERY refusal record, not only a size one, so the shape does not vary by cause. `cause` names WHY the bot declined on the axis a recovery branches on — a `size` refusal is a structural ceiling that waiting does not move, so it is not derivable from `rate_limit_class` and shares the vocabulary the `pr wait-for-comments` `rate_limited_bots[]` record carries. `cap` is the ceiling the size notice itself stated, or `""` when it stated none; empty reports as UNKNOWN and is never defaulted, because a figure nobody observed would make the recorded gap look audited when it was not.
 
@@ -301,12 +394,14 @@ A comment that does NOT reference the awaited HEAD still reports `false`, and th
 1. **Invoke the registry** for the new HEAD:
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review --pr-number {pr} --bot-kind {coderabbit|sourcery|cuioss-review-bot} --head-sha {new HEAD} --push-time {ISO8601 push time} [--timeout {seconds}] --plan-id {plan_id}
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review --pr-number {pr} --bot-kind {coderabbit|sourcery|cuioss-review-bot} --head-sha {new HEAD} --push-time {ISO8601 push time} [--timeout {seconds}] [--escalated] --plan-id {plan_id}
    ```
 
-   The subcommand resolves the strategy by `bot_kind`, runs `request_fresh_review` (which first consults the bot's rate window and returns `status: refused` / `reason: window_open` **without posting** when a claim is unexpired; otherwise posts that bot's registry `trigger_comment` — `@coderabbitai review`, `@sourcery-ai review`, `/review` — using the comment-post time as the trigger time), then awaits either completion signal. **A `refused` return short-circuits the whole subcommand**: it is returned verbatim, no comment was published and no await ran, so the caller reads `holder` and `seconds_remaining` and waits rather than re-issuing the call. The await budget is configurable via `--timeout` (default `DEFAULT_CI_TIMEOUT`); the phase-6-finalize trigger sites pass their `re_review_await_timeout_seconds` step-param value. It emits a TOON envelope with `matched: true|false`, `timed_out: true|false`, `matched_signal` (`review` | `issue_comment`, empty when unmatched), the matched `matched_review` / `matched_comment` record, and `head_sha_verified`.
+   `--escalated` posts the bot's registry `escalated_trigger_comment` — for CodeRabbit `@coderabbitai full review`, the command that reviews the whole changeset again — instead of its `trigger_comment`. It is the remedy for a `no_unreviewed_commit` refusal and is reached only from the recovery selector's `post_escalated_command` action. See § "The escalated command" below.
 
-2. **Consume the match outcome.** On `status: refused` / `reason: window_open` the guard stopped the trigger before it was posted — there is no match outcome to read at all. Wait out the reported `seconds_remaining` (or let the holding plan's recovery run) and re-issue the call afterwards; re-issuing it now only resets the bot's window. On `matched: true`, re-run `fetch_findings` to file the fresh review's comments, then re-run the consolidated ingest → triage → respond pass (Workflow 2). On `matched: false` / `timed_out: true`, the await budget expired with no fresh review — the consumer decides how to handle the timeout. This registry surfaces `timed_out` and does NOT decide policy itself; the timeout-handling responsibility (the `re_review_on_timeout` ask/defer/proceed branches) lives in the two trigger docs: trigger A in [`phase-6-finalize/standards/branch-cleanup.md`](../phase-6-finalize/standards/branch-cleanup.md) § "On re-review timeout (trigger A)" and trigger B in [`automatic-review`](../automatic-review/SKILL.md) § "On re-review timeout (trigger B)".
+   The subcommand resolves the strategy by `bot_kind`, runs `request_fresh_review` (which first consults the bot's rate window and returns `status: refused` / `reason: window_open` **without posting** when a claim is unexpired; otherwise posts that bot's registry `trigger_comment` — `@coderabbitai review`, `@sourcery-ai review`, `/review` — using the comment-post time as the trigger time), then awaits either completion signal. **A `refused` return short-circuits the whole subcommand**: it is returned verbatim, no comment was published and no await ran, so the caller reads `holder` and `seconds_remaining` and does not re-issue the call while the claim is running. The await budget is configurable via `--timeout` (default `DEFAULT_CI_TIMEOUT`); the phase-6-finalize trigger sites pass their `re_review_await_timeout_seconds` step-param value. It emits a TOON envelope with `matched: true|false`, `timed_out: true|false`, `matched_signal` (`review` | `issue_comment`, empty when unmatched), the matched `matched_review` / `matched_comment` record, `head_sha_verified`, `acknowledged: true|false` with its `acknowledgments[]` records, and `answer_withheld_in_progress: true|false`.
+
+2. **Consume the match outcome.** On `status: refused` / `reason: window_open` the guard stopped the trigger before it was posted — there is no match outcome to read at all. Re-issue the call only after the claim has elapsed (or let the holding plan's recovery run); re-issuing it now only resets the bot's window. The reported `seconds_remaining` is a reading, not an instruction to pause for that long: a dispatched step holds no such wait, and where the claim is this plan's own the wait belongs to the main context, which polls the claim's expiry through `merge_lock rate-window wait` (see [`../manage-locks/SKILL.md`](../manage-locks/SKILL.md) § Canonical invocations). On `matched: true`, re-run `fetch_findings` to file the fresh review's comments, then re-run the consolidated ingest → triage → respond pass (Workflow 2). On `matched: false` / `timed_out: true`, the await budget expired with no fresh review — the consumer decides how to handle the timeout. `acknowledged: true` or `answer_withheld_in_progress: true` on that return says the bot received the request and had not answered it yet; neither is a match and neither is a decline. This registry surfaces `timed_out` and does NOT decide policy itself; the timeout-handling responsibility (the `re_review_on_timeout` ask/defer/proceed branches) lives in the two trigger docs: trigger A in [`phase-6-finalize/standards/branch-cleanup.md`](../phase-6-finalize/standards/branch-cleanup.md) § "On re-review timeout (trigger A)" and trigger B in [`automatic-review`](../automatic-review/SKILL.md) § "On re-review timeout (trigger B)".
 
 **Registry extension pattern:** to support a new `bot_kind`, add its `automatic-review/standards/{bot_kind}.md` registry doc and nothing else. `_findings_core.BOT_KINDS`, the login→`bot_kind` map, the `--bot-kind` `choices=` surface, and the strategy instance all DERIVE from that data. There is exactly ONE generic strategy class parameterized by the doc's `trigger_comment` — no per-bot subclass, and neither `request_fresh_review` nor `await_fresh_review` is re-implemented per bot. A newly registered bot therefore inherits the refusal re-trigger guard, and its `status: refused` / `reason: window_open` outcome, with no code change: the guard sits in that one generic `request_fresh_review`, so it covers every registered bot by construction rather than by a per-bot opt-in. It likewise inherits `recovery-action`'s derivation, whose arms read that doc's own `rate_limit_class` and `trigger_semantics`.
 
@@ -635,15 +730,23 @@ fail-closed never-provable state). `unanswerable_reason` is `""` when answerable
 starts with zero comments, or whose bots stay silent, is `detector_answerable: true` — a genuine
 timeout, NOT an unanswerable one.
 
-**`rate_limited_bots[]`** names one record per REGISTERED bot whose newest
-comment on the PR is a rate-limit / service notice posted in place of a review:
+**`rate_limited_bots[]`** names one record per REGISTERED bot whose most recently written
+comment on the PR is a refusal notice posted in place of a review — a rate-limit / service notice, or
+a reply saying nothing new is left to review. "Most recently written" is the later of the comment's
+`updated_at` and `created_at`: a bot that rewrites an older comment into a refusal leaves its
+`created_at` unchanged, so sampling by creation time would never read that refusal while a
+newer-created comment by the same bot exists. The record's `condition` tells the two kinds of record apart:
 
 ```toon
-rate_limited_bots[N]{bot_kind,rate_limit_class,eta,cause,cap,layer,body}:
+rate_limited_bots[N]{bot_kind,rate_limit_class,condition,eta,eta_seconds,eta_extracted,written_at,stale,cause,cap,layer,body}:
 ```
 
 - `bot_kind` — the registry key of the refusing bot. The bot set, and each bot's login, are derived
   from `automatic-review/standards/{bot_kind}.md`; no bot is named in the detection path.
+- `condition` — what the reply reports: `rate_limited` (a limit was hit) or `no_unreviewed_commit`
+  (the bot replied that every commit on the PR is already reviewed). Derived from the bot's registry
+  `no_unreviewed_commit_patterns`, a subset overlay on `refusal_patterns`; a refusal matching no
+  declared marker is `rate_limited`, the default. Read it before every other field.
 - `rate_limit_class` — that bot's registry `rate_limit_class`: `awaitable_window` (a rolling window
   that reopens, so awaiting the reset is productive), `hard_quota` (a budget that does not reopen on
   a useful timescale, so awaiting it only burns budget), or `unknown` (no refusal observed for this
@@ -652,6 +755,17 @@ rate_limited_bots[N]{bot_kind,rate_limit_class,eta,cause,cap,layer,body}:
 - `eta` — the reset time the notice itself stated, extracted via that bot's registry
   `rate_limit_eta_patterns`, or `""` when the notice stated none. An empty `eta` means *unknown*,
   never *reopens now*.
+- `eta_seconds` — that reset time as whole seconds (`"38 minutes"` is `2280`), or `null` when none
+  could be read. Never `0` for an unread time: zero is a real duration. It is the figure a caller
+  claims the rate window with.
+- `eta_extracted` — `true` exactly when `eta_seconds` is a number. `false` is the explicit statement
+  that a recognised refusal yielded no reset time; read this field rather than inferring it from an
+  empty `eta`.
+- `written_at` — the instant the notice was last written, the later of the comment's `updated_at` and
+  `created_at`, as a UTC timestamp (`2026-01-01T12:00:00Z`), or `""` when neither could be read.
+- `stale` — `true` when the window the notice stated had already elapsed when the notice was read:
+  `written_at` plus `eta_seconds` is not later than the time of the read. `false` whenever either
+  figure is missing, so a notice that stated no reset time is never reported stale.
 - `cause` — WHY the bot declined: `size` (the diff is over a per-PR ceiling) or `quota` (a
   rate/budget limit). Derived from the bot's registry `refusal_size_patterns`, a subset overlay on
   `refusal_patterns`; a refusal matching no declared size marker is `quota`, the default.
@@ -665,10 +779,21 @@ rate_limited_bots[N]{bot_kind,rate_limit_class,eta,cause,cap,layer,body}:
 - `body` — the notice itself, whitespace-collapsed and truncated to one TOON-safe line: the same
   excerpt the `github_re_review` `refusals[]` record carries.
 
-`layer` and `body` give this record the same observation fields as the `refusals[]` record, so a
+`eta_seconds`, `eta_extracted`, `layer` and `body` give this record the same reset-time and observation fields as the `refusals[]` record, so a
 consumer that arms a wait on either producer's refusal can state which arm read the notice and what the
 notice said, rather than re-deriving it after the fact. `body` is untrusted bot text; a consumer that
-interpolates it into a shell argument owns its quoting.
+interpolates it into a shell argument owns its quoting. `written_at` and `stale` are on this record
+only; a `refusals[]` record does not carry them.
+
+**A record with `stale: true` is not waited for.** Its stated window was already over when it was read,
+so there is no open window to claim. `github_re_review recovery-action --notice-stale true` resolves
+`settle_stale_notice` for it instead of `await_window`.
+
+⛔ **Read `condition` FIRST.** A `no_unreviewed_commit` record is not a limit: no window is open, so
+it is never waited for, and `rate_limit_class`, `eta` and `cause` say nothing about it — they are
+emitted so every record has one shape. Its remedy is the bot's registry `escalated_trigger_comment`,
+or nothing; `github_re_review recovery-action --condition` makes that selection. Everything below
+applies to a `rate_limited` record.
 
 ⛔ **Read `cause` BEFORE `rate_limit_class` when choosing a remedy.** The two are INDEPENDENT axes,
 not one axis restated: `cause` is observed per REFUSAL while `rate_limit_class` is declared per BOT,
@@ -677,7 +802,7 @@ is this size, so waiting is a NON-OPTION for it whatever its class says — the 
 the diff, accepting the gap, or disabling that reviewer for this PR. Only a `quota` cause makes the
 class the deciding field. Both keys are present on EVERY record, so a consumer reads one shape.
 
-An **empty list means no registered bot is rate-limited**. The list is per-bot by design: a single
+An **empty list means no registered bot's most recently written comment is a refusal notice**. The list is per-bot by design: a single
 boolean cannot say WHICH bot refused, and — because the causes and classes differ per bot — cannot
 say whether awaiting is worth anything. Detection is best-effort and never alters poll behaviour: a
 failed post-poll fetch leaves the list empty.
@@ -981,17 +1106,36 @@ backstop, not a licence to leave the interpolation unquoted.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr post_responses \
-  --pr-number N --plan-id PLAN_ID
+  --pr-number N --plan-id PLAN_ID [--send-unstamped-fixed]
 ```
+
+`--send-unstamped-fixed` transmits a `fixed` finding that carries no stamped fix commit in this pass,
+with its stored reply unchanged, instead of holding it in `deferred_until_commit[]` with
+`no_fix_commit`. It is off by default. A caller that runs no later respond pass passes it — every
+`verification-feedback` producer except `finalize-feedback`. A finding that carries a stamp is
+unaffected by it. See Workflow 2 step 4 → "`--send-unstamped-fixed` lifts the hold for a finding with
+no stamp".
 
 ### github_pr bot_completion
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr bot_completion \
-  --pr-number N --bot-kind {coderabbit|sourcery|cuioss-review-bot}
+  --pr-number N --bot-kind {coderabbit|sourcery|cuioss-review-bot} \
+  [--wait-seconds SECONDS] [--interval-seconds SECONDS]
 ```
 
 Pure provider read — reports the bot's registry `completion_check_name` check-run state as `{status, in_progress, completed}` for the PR HEAD. A bot with an empty `completion_check_name` reports status `no_check_name` (the caller falls back to the `review_bot_buffer_seconds` wait); the `automatic-review` completion-aware poll consumes this verb.
+
+**Without `--wait-seconds` the verb reads once and returns.** With it, the one call holds a bounded wait: it re-reads the check-run every `--interval-seconds` (default 15) until the check completes or the bound lapses, and the result carries two further fields:
+
+| Field | Meaning |
+|-------|---------|
+| `timed_out` | `true` when the bound lapsed before the check completed. A bound, not a verdict — `in_progress` / `completed` still report the last state actually read |
+| `waited_seconds` | Whole seconds the call spent waiting |
+
+Both fields are present on every return of a call that supplied `--wait-seconds`, and absent from a single read. Three results end the wait at once, because waiting cannot change them: `no_check_name`, `unconfigured`, and `status: error` — a read that failed (a non-zero `gh` exit with no output, other than its own "no checks reported" answer) or whose output could not be parsed. An unreadable check-run is never reported as completed. `not_found` does not end it — the check may not be posted yet — so a check that never appears returns `status: not_found` with `timed_out: true`.
+
+The bound is clamped to 480 seconds per call, whatever value is passed, so the call returns before the host's per-call ceiling can cut it off mid-wait (see [`plan-marshall/standards/waiting.md`](../plan-marshall/standards/waiting.md) § "The inner ceiling must margin-clear the outer one"). A caller with a longer budget re-issues the call; `waited_seconds` is what it subtracts from that budget.
 
 ### github_pr pull_request_runs
 
@@ -1061,20 +1205,24 @@ invocations → `ci checks pull-request-runs` for the abstraction-layer entry po
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review \
   --pr-number N --bot-kind {coderabbit|sourcery|cuioss-review-bot} --head-sha SHA --push-time ISO8601 \
-  [--timeout SECONDS] [--plan-id PLAN_ID]
+  [--timeout SECONDS] [--escalated] [--plan-id PLAN_ID]
 ```
 
 `--timeout SECONDS` bounds the `await_fresh_review` poll (default `DEFAULT_CI_TIMEOUT`); consumers (the trigger-A / trigger-B re-review sites in phase-6-finalize) supply their `re_review_await_timeout_seconds` step-param value here.
 
-The verb has three terminal shapes, not two: `status: success` (the trigger was posted and the await ran to a verdict), `status: error`, and `status: refused` with `reason: window_open` — the refusal re-trigger guard declining to post into an unexpired rate window. See § "The refusal re-trigger guard" for the envelope's field set.
+`--escalated` posts the bot's registry `escalated_trigger_comment` instead of its `trigger_comment`. It takes no value. See § "The escalated command" for when it is used and the guard that applies to it alone.
+
+The verb has three terminal shapes, not two: `status: success` (the trigger was posted and the await ran to a verdict), `status: error`, and `status: refused`. A refusal names its `reason`: `window_open` — the refusal re-trigger guard declining to post into an unexpired rate window, for either command (see § "The refusal re-trigger guard" for the envelope's field set) — or, under `--escalated` only, `no_escalated_command`, `escalated_command_already_posted` or `escalated_history_unreadable` (§ "The escalated command"). A `status: success` return carries `escalated: true|false`, naming which command was sent.
 
 ### github_re_review recovery-action
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review recovery-action \
   --bot-kind BOT_KIND \
-  [--cause {size|quota}] [--window-expired {true|false}] [--attempts-remaining N] \
-  [--attempt-held {true|false}] [--plan-id PLAN_ID]
+  [--cause {size|quota}] [--condition {rate_limited|no_unreviewed_commit}] \
+  [--review-on-record {credited|stale|undecidable|absent}] [--pending-findings N] \
+  [--window-expired {true|false}] [--attempts-remaining N] \
+  [--attempt-held {true|false}] [--notice-stale {true|false}] [--plan-id PLAN_ID]
 ```
 
 DERIVES which recovery a detected refusal arms, from the bot registry plus the caller's own observations. A pure read: it touches no PR, claims no window, and posts nothing.
@@ -1083,25 +1231,48 @@ DERIVES which recovery a detected refusal arms, from the bot registry plus the c
 
 `--bot-kind` deliberately takes **no `choices=`**: an unregistered token must reach the derivation and fail closed to `escalate_not_awaitable` with the live kind set published beside it, which is exactly the answer an operator holding a stale config token needs. An argparse rejection would replace that verdict with exit 2 and name no remedy.
 
-`--window-expired` and `--attempts-remaining` are the `expired` and `attempts_remaining` fields of `merge_lock rate-window check`. **Omit either when it was not observed** — the derivation then returns the distinct `action: unmeasured` rather than an authorizing verdict, because acting on an unobserved window is the move that spent the bot's quota in the first place.
+`--window-expired` and `--attempts-remaining` are the `expired` and `attempts_remaining` fields of `merge_lock rate-window check`. The recovery reads them ONCE, on re-entry: the `automatic-review` step that claimed the window does not poll it — it returns the wait to the main context (`escalate_ask{reason: rate_window_await}`), `phase-6-finalize` item 7a holds the wait through `merge_lock rate-window wait` until the claim has expired, and the step dispatched afterwards reads its own elapsed claim and consults this verb with both observations (see [`../automatic-review/SKILL.md`](../automatic-review/SKILL.md) § "Rate-limit refusal recovery (opt-in)" Branch 2 and Branch 3). **Omit either when it was not observed** — the derivation then returns the distinct `action: unmeasured` rather than an authorizing verdict, because acting on an unobserved window is the move that spent the bot's quota in the first place.
 
 ⛔ **`--attempt-held true` is what tells the derivation WHICH question the budget was read for.** `attempts_remaining` answers *may a FURTHER claim be made?*, never *may the event this claim already bought be delivered?* — and the arithmetic cannot recover which is being asked, because a successful `rate-window claim` increments the ledger before it returns. The cap-final claim, the one the primitive deliberately admitted, therefore reports `attempts_remaining: 0` the moment it is granted; a post-claim re-consult that omits this flag reads that zero as *budget spent*, escalates, and delivers no event at all — so a cap of 1 yields zero recovery events and the default cap of 6 yields five. Pass it whenever a claim for this recovery already succeeded. Omit it for a pre-claim budget read, where a zero genuinely means no further claim is allowed. The cap itself is enforced by `rate-window claim`'s own `recovery_cap_exhausted` refusal, not by this verb.
+
+`--notice-stale` is the `stale` field of a `pr wait-for-comments` `rate_limited_bots[]` record: `true` when the window the notice stated had already elapsed when the notice was read. **Omit it when the record carries no such field** — a `refusals[]` record does not — and it reads as not stale. A stale notice resolves `settle_stale_notice` in place of `await_window` and of `escalate_exhausted`: there is no open window to claim, so nothing is claimed, waited for or triggered on it. Two things bound that arm. It needs both window observations, like every window arm, so a consult carrying neither is still `unmeasured`. And `--attempt-held true` skips it: a caller that claimed a window on this notice and waited it out reads the same notice again afterwards, stale by then, and the event its claim bought is still owed through the elapsed arms.
+
+`--condition` is the refusal record's `condition`. **Omit it when the record carries none** — an omitted condition reads as empty and takes the rate-limit derivation below. `no_unreviewed_commit` is resolved before the cause and the class: the bot said every commit is already reviewed, so there is no limit to classify and no window to claim. It resolves from two observations, each of which reads as `unmeasured` when omitted:
+
+- `--review-on-record` — where this bot's review stands for the merge candidate, read off the consuming step's `fetch_findings` return. That return has three disjoint per-bot participation lists, and the state is derived from all three:
+
+  | Value | The bot on the `fetch_findings` return |
+  |-------|-----------------------------------------|
+  | `credited` | named in `participated_bots[]` |
+  | `stale` | named only in `stale_participation_bots[]` |
+  | `undecidable` | named in `undecidable_participation_bots[]` — its comment was admissible evidence and the merge candidate could not be read (`merge_candidate_sha_resolved: false`) — or named in none of the three lists while `fetch_complete` is `false`, where a review may sit in the part of the PR that was not read |
+  | `absent` | named in none of the three lists, on a fetch reporting `fetch_complete: true` |
+
+  `fetch_findings` credits a stale bot whose own `no_unreviewed_commit` reply is strictly newer than the merge-candidate commit — on either ground it went stale on, a failed ledger test or a comment naming another commit — so `stale` here means the reply does not cover the merge candidate.
+- `--pending-findings` — how many of this bot's `pr-comment` findings are still pending.
+
+Only an `absent` review resolves `post_escalated_command`. A `credited` review resolves `accept_review_on_record` when no finding is pending and `await_triage` when one is; a `stale` review resolves `leave_to_stale_review`. An `undecidable` review resolves `unmeasured` with `reason: review_state_undecidable`, whatever `--pending-findings` carries: the producer did not observe where the review stands, and an unobserved review state never selects the arm that posts. `post_escalated_command` is the only action of this condition that posts: the other four — `accept_review_on_record`, `await_triage`, `leave_to_stale_review` and `unmeasured` — post nothing. Both flags are ignored for any other condition. See [`../automatic-review/SKILL.md`](../automatic-review/SKILL.md) § "Rate-limit refusal recovery (opt-in)" Branch 6 for the step that gathers the two observations and acts on the result.
 
 The returned `action` is one of:
 
 | `action` | `reason` | Meaning |
 |----------|----------|---------|
+| `accept_review_on_record` | `review_on_record_findings_handled` | The condition is `no_unreviewed_commit`, a review by the bot is credited for the merge candidate, and none of its findings is pending. Post nothing. |
+| `await_triage` | `findings_pending` | The condition is `no_unreviewed_commit`, a review by the bot is credited for the merge candidate, and findings of it are still pending. Post nothing; the triage that follows handles them. |
+| `leave_to_stale_review` | `merge_candidate_newer_than_reply` | The condition is `no_unreviewed_commit`, but the bot's review is stale and the reply does not cover the merge candidate: the merge candidate is newer than the reply. Post nothing; the stale review is re-triggered with the bot's ordinary trigger. A reply strictly newer than the merge-candidate commit never reaches this arm — `fetch_findings` credits that bot, a bot whose comment names another commit included. The one remainder is a reply whose order against the commit could not be read: `fetch_findings` fails closed, the bot stays stale, and this arm is returned for it too. |
+| `post_escalated_command` | `no_review_on_record` | The condition is `no_unreviewed_commit` and no review by the bot is on record at all. Post the bot's `escalated_trigger_comment` through `re-review --escalated`, which sends it at most once per reply and never into an open rate window. |
 | `escalate_structural` | `size_ceiling` | The cause is a diff-size ceiling. It DOMINATES the class — a class is declared per BOT while a cause is observed per REFUSAL — and waiting cannot move it. |
 | `escalate_not_awaitable` | `class_not_awaitable` | `hard_quota` or `unknown`. Fail-closed per ADR-009; an unregistered `bot_kind` lands here by derivation, not by a special case. |
+| `settle_stale_notice` | `notice_window_elapsed` | The notice is stale and no attempt is held. Claim nothing, wait for nothing, trigger nothing; the consuming step proceeds to its FIND. Checked before the budget and window arms. |
 | `escalate_exhausted` | `attempt_cap_exhausted` | The per-(bot, PR) recovery budget is spent and no attempt is held. Checked before both trigger arms, since each would spend one — but skipped under `--attempt-held true`, where the attempt is already paid for. |
-| `await_window` | `claim_window_open` | The claim clock is still running. |
+| `await_window` | `claim_window_open` | The claim clock is still running. The consuming step does not wait it out itself: it claims the window (or finds its own claim still open) and hands the wait to the main context. |
 | `close_and_reopen` | `claim_window_elapsed` | The claim elapsed and the bot declares `requires_explicit_trigger` — re-DELIVER the dropped request (see [`../tools-integration-ci/standards/pr-review-operations.md`](../tools-integration-ci/standards/pr-review-operations.md) § "Workflow: Close and Re-open a PR to Re-deliver a Review Request"). |
 | `generate_trigger` | `claim_window_elapsed` | The claim elapsed and the bot re-reviews on push — produce new commits. |
-| `unmeasured` | `registry_empty` / `no_window_observation` / `no_attempt_budget_observation` | An input the derivation needs was absent, so no verdict was computed. Authorizes nothing. |
+| `unmeasured` | `registry_empty` / `no_window_observation` / `no_attempt_budget_observation` / `no_review_observation` / `review_state_undecidable` / `no_findings_observation` | An input the derivation needs was absent — or, for `review_state_undecidable`, supplied as the producer's own statement that it could not be decided — so no verdict was computed. Authorizes nothing. |
 
 ⛔ **The elapsed arm is named `claim_window_elapsed`, never `bot_window_reopened`.** What elapsed is the CLAIM clock this pipeline set, not the bot's real window: a stated ETA is an estimate (observed wrong by roughly 2.4x, then roughly 15x) and the real window slides. The arm lifts the refusal without asserting the bot is ready.
 
-Every return publishes `rate_limit_class`, `trigger_semantics`, `known_bot_kinds`, `known_bot_kind_count`, `bot_kind_registered`, `attempt_held`, and the declared `recovery_actions` vocabulary — so the verdict names the registry facts and the population it was computed from (ADR-019) rather than only its conclusion.
+Every return publishes `rate_limit_class`, `trigger_semantics`, `escalated_trigger_comment`, `known_bot_kinds`, `known_bot_kind_count`, `bot_kind_registered`, `attempt_held`, `notice_stale`, the `condition`, `review_on_record` and `pending_findings` it received, and the declared `recovery_actions`, `refusal_conditions` and `review_on_record_states` vocabularies — so the verdict names the registry facts and the population it was computed from (ADR-019) rather than only its conclusion.
 
 ## Error Handling
 

@@ -68,16 +68,39 @@ predicate injects its own ``window_reader`` rather than depending on the store.
 The matched pair proving that fixture (neutralized-posts vs unneutralized-refuses
 over the same claimed window) lives in ``test_re_review_strategy_await.py``;
 this module relies on the same autouse fixture without re-proving it.
+
+Tests never reach the provider's check-runs either. A poll that would end on a
+comment naming no commit consults ``read_bot_in_progress``, which reads the awaited
+bot's completion check-run through ``gh``. The autouse
+``_neutralize_in_progress_read`` fixture below holds that seam at NOT OBSERVED
+RUNNING for every test here; a test that needs the other side injects its own
+``in_progress_reader``. ``test_the_neutralized_in_progress_read_leaves_the_answer_matched``
+and ``test_the_unneutralized_in_progress_read_withholds_the_same_answer`` are the
+matched pair standing guard over it — they differ only in whether the fixture is
+engaged, so deleting either arm voids the other's evidence.
 """
 
 import argparse
+import sys
 import time
+import types
 
 import _github_pr
 import bot_registry
 import ci_base
 import github_re_review
 import pytest
+from _github_pr_fixtures import (
+    ACKNOWLEDGMENT_BOT_KIND,
+    ACKNOWLEDGMENT_BOT_LOGIN,
+    CODERABBIT_ACKNOWLEDGMENT_COUNT,
+    CODERABBIT_ACKNOWLEDGMENTS,
+    CODERABBIT_GENUINE_SHORT_REVIEW_COMMENT,
+    HUMAN_COMMENT_QUOTING_AN_ACKNOWLEDGMENT,
+)
+
+_LIVE_IN_PROGRESS_READER = github_re_review.read_bot_in_progress
+_ACKNOWLEDGMENT_PARAMS = [pytest.param(body, id=case_id) for case_id, body, _provenance in CODERABBIT_ACKNOWLEDGMENTS]
 
 _NO_RECORD_WINDOW = {'status': 'free', 'expired': True, 'holder': '', 'seconds_remaining': 0.0}
 _OPEN_WINDOW = {
@@ -126,6 +149,23 @@ def _neutralize_rate_window(monkeypatch):
     named in the module docstring is what keeps this fixture honest.
     """
     monkeypatch.setattr(github_re_review, 'read_rate_window', _window_reader(_NO_RECORD_WINDOW))
+
+
+@pytest.fixture(autouse=True)
+def _neutralize_in_progress_read(monkeypatch):
+    """Hold the completion read at NOT OBSERVED RUNNING for every test here.
+
+    ``await_fresh_review`` consults ``read_bot_in_progress`` whenever a poll would end
+    on a comment that names no commit, and that function reads the awaited bot's
+    check-run through ``gh``. Left alone, every such case in this module would shell
+    out, and its verdict would depend on whether some real PR's check happened to be
+    running.
+
+    Default-on and inherited by construction. A test that needs the withholding side
+    injects its own ``in_progress_reader``; the matched pair named in the module
+    docstring is what keeps this fixture honest.
+    """
+    monkeypatch.setattr(github_re_review, 'read_bot_in_progress', lambda _pr_number, _bot_kind: False)
 
 
 @pytest.fixture(autouse=True)
@@ -215,15 +255,16 @@ def _match_review(reviews, head_sha, trigger_dt, bot_kind, refusals=None):
     )
 
 
-def _match_bot_comment(comments, head_sha, bot_kind, trigger_dt, refusals=None):
+def _match_bot_comment(comments, head_sha, bot_kind, trigger_dt, refusals=None, acknowledgments=None):
     """Call ``_match_bot_comment`` with a throwaway refusal accumulator.
 
     ``head_sha`` sits where :meth:`_match_review`'s does, because the comment arm
     now reads it too: among the eligible comments it prefers one whose body names
-    that SHA.
+    that SHA. ``acknowledgments`` is passed through untouched, so ``None`` exercises
+    the caller that supplies no accumulator.
     """
     return github_re_review._ReReviewStrategy._match_bot_comment(
-        comments, head_sha, bot_kind, trigger_dt, [] if refusals is None else refusals
+        comments, head_sha, bot_kind, trigger_dt, [] if refusals is None else refusals, acknowledgments
     )
 
 
@@ -231,12 +272,24 @@ _PR_AGENT_LOGIN = 'cuioss-review-bot'
 _TRIGGER = '2026-01-01T00:02:00Z'
 
 
-def _await_with_comments(monkeypatch, comments, *, reviews=None, bot_kind='cuioss-review-bot', head_sha='headsha'):
+def _await_with_comments(
+    monkeypatch,
+    comments,
+    *,
+    reviews=None,
+    bot_kind='cuioss-review-bot',
+    head_sha='headsha',
+    in_progress_reader=None,
+):
     """Run ``await_fresh_review`` over a fixed comment (and review) set.
 
     ``head_sha`` is parametrized for the reviewed-commit-reference cases below, which
     need a real 40-hex SHA to exercise the URL-embedded shape. It defaults to the
     ``'headsha'`` token every other case uses, so those are unaffected.
+
+    ``in_progress_reader`` is forwarded only when a test supplies one. Left unset the
+    call takes the default seam — which the autouse fixture neutralises — so the
+    cases that do not care about the completion read exercise the production default.
     """
     _noop_sleep(monkeypatch)
     monkeypatch.setattr(
@@ -246,7 +299,43 @@ def _await_with_comments(monkeypatch, comments, *, reviews=None, bot_kind='cuios
     )
     _patch_comments(monkeypatch, comments)
     strategy = github_re_review.resolve_strategy(bot_kind)
-    return strategy.await_fresh_review(42, head_sha, _TRIGGER, bot_kind=bot_kind, timeout=1, interval=0)
+    extra = {} if in_progress_reader is None else {'in_progress_reader': in_progress_reader}
+    return strategy.await_fresh_review(42, head_sha, _TRIGGER, bot_kind=bot_kind, timeout=1, interval=0, **extra)
+
+
+def _recording_reader(answer, calls):
+    """Build an ``in_progress_reader`` that records each consult and returns ``answer``."""
+
+    def _read(pr_number, bot_kind):
+        calls.append((pr_number, bot_kind))
+        return answer
+
+    return _read
+
+
+def _fake_completion_module(monkeypatch, result, calls=None, *, raises=None):
+    """Stand a fake ``github_pr`` in for the completion read ``read_bot_in_progress`` makes.
+
+    ``read_bot_in_progress`` imports ``github_pr`` at call time, so the entry in
+    ``sys.modules`` is what it resolves. Replacing that entry reaches the read at its
+    own boundary without this module importing ``github_pr`` itself.
+    """
+
+    def _read_bot_completion(pr_number, bot_kind, check_name):
+        if calls is not None:
+            calls.append((pr_number, bot_kind, check_name))
+        if raises is not None:
+            raise raises
+        return result
+
+    fake = types.ModuleType('github_pr')
+    setattr(fake, '_read_bot_completion', _read_bot_completion)  # noqa: B010 - ModuleType declares no such attribute
+    monkeypatch.setitem(sys.modules, 'github_pr', fake)
+
+
+def _acknowledgment_comment(body, *, created_at='2026-01-01T00:05:00Z', updated_at=''):
+    """An acknowledgment reply from the acknowledging bot, post-dating ``_TRIGGER`` by default."""
+    return _comment(ACKNOWLEDGMENT_BOT_LOGIN, created_at=created_at, updated_at=updated_at, body=body)
 
 
 _HEAD_SHA = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
@@ -850,3 +939,441 @@ def test_match_review_without_bot_kind_applies_only_the_structural_layer():
     assert _match_review(marker_bearing, 'headsha', trigger_dt, None) is not None
     # ...and the SAME body IS rejected once the awaited bot is known.
     assert _match_review(marker_bearing, 'headsha', trigger_dt, 'sourcery') is None
+
+
+# =============================================================================
+# An acknowledgment is not an answer
+# =============================================================================
+
+
+def test_the_acknowledgment_population_is_the_declared_pair():
+    """Non-vacuity: the acknowledgment cases below run over both declared wordings."""
+    assert CODERABBIT_ACKNOWLEDGMENT_COUNT == len(_ACKNOWLEDGMENT_PARAMS) == 2
+    assert bot_registry.acknowledgment_patterns(ACKNOWLEDGMENT_BOT_KIND), (
+        'the acknowledging bot declares no acknowledgment_patterns — every case below '
+        'would assert over a class nothing can be a member of'
+    )
+
+
+@pytest.mark.parametrize('body', _ACKNOWLEDGMENT_PARAMS)
+def test_an_acknowledgment_after_the_trigger_is_neither_a_match_nor_a_refusal(monkeypatch, body):
+    """⛔ The false decline this deliverable closes, pinned directly.
+
+    The reply is authored by the awaited bot and post-dates the trigger, so it
+    satisfied every eligibility gate while naming no commit: the await ended on it as
+    ``matched: true`` / ``head_sha_verified: false``. It must now end as a truthful
+    timeout that still says the bot received the request.
+    """
+    result = _await_with_comments(monkeypatch, [_acknowledgment_comment(body)], bot_kind=ACKNOWLEDGMENT_BOT_KIND)
+
+    assert result['status'] == 'success'
+    assert result['matched'] is False
+    assert result['matched_signal'] == ''
+    assert result['matched_comment'] == {}
+    assert result['head_sha_verified'] is False
+    assert result['timed_out'] is True
+    # Not a refusal either: nothing arms a recovery for a bot that merely confirmed.
+    assert result['refusal_detected'] is False
+    assert result['refusals'] == []
+    # ...but it IS reported, so this timeout is distinguishable from silence.
+    assert result['acknowledged'] is True
+    assert len(result['acknowledgments']) == 1
+    record = result['acknowledgments'][0]
+    assert record['source'] == 'issue_comment'
+    assert record['bot_kind'] == ACKNOWLEDGMENT_BOT_KIND
+    assert 'Review' in record['body']
+
+
+@pytest.mark.parametrize('body', _ACKNOWLEDGMENT_PARAMS)
+def test_an_acknowledgment_is_not_read_as_an_unrecognised_refusal(monkeypatch, body):
+    """The class displaces the enumerative arm, which reads a short anchor-less body as a refusal.
+
+    Armed exactly as in the control below, so the only difference between the two is
+    whether the body is a declared acknowledgment.
+    """
+    _arm_enumerative(monkeypatch)
+
+    result = _await_with_comments(monkeypatch, [_acknowledgment_comment(body)], bot_kind=ACKNOWLEDGMENT_BOT_KIND)
+
+    assert result['matched'] is False
+    assert result['refusal_detected'] is False
+    assert result['refusals'] == []
+    assert result['acknowledged'] is True
+
+
+def test_the_enumerative_arm_still_records_a_short_body_that_is_no_acknowledgment(monkeypatch):
+    """MATCHED CONTROL for the case above: the arm is live for the same bot.
+
+    Without it the case above would pass just as happily with the enumerative arm
+    disabled for this bot altogether.
+    """
+    _arm_enumerative(monkeypatch)
+
+    result = _await_with_comments(
+        monkeypatch,
+        [_acknowledgment_comment(_UNRECOGNISED_REFUSAL)],
+        bot_kind=ACKNOWLEDGMENT_BOT_KIND,
+    )
+
+    assert result['matched'] is False
+    assert result['refusal_detected'] is True
+    assert result['refusals'][0]['layer'] == _github_pr.REFUSAL_LAYER_ENUMERATIVE
+    assert result['acknowledged'] is False
+    assert result['acknowledgments'] == []
+
+
+def test_a_genuine_short_comment_from_the_acknowledging_bot_is_still_matched(monkeypatch):
+    """⛔ NEGATIVE CONTROL: a short review comment from the same bot completes the await.
+
+    Same bot, same timestamps, same length class as an acknowledgment. Asserting only
+    that acknowledgments are skipped would pass on a change that skipped every short
+    comment from this bot, turning the false decline into a permanent false timeout.
+    """
+    result = _await_with_comments(
+        monkeypatch,
+        [_acknowledgment_comment(CODERABBIT_GENUINE_SHORT_REVIEW_COMMENT)],
+        bot_kind=ACKNOWLEDGMENT_BOT_KIND,
+    )
+
+    assert result['matched'] is True
+    assert result['matched_signal'] == 'issue_comment'
+    assert result['matched_comment']['body'] == CODERABBIT_GENUINE_SHORT_REVIEW_COMMENT
+    assert result['acknowledged'] is False
+    assert result['acknowledgments'] == []
+    assert result['refusal_detected'] is False
+
+
+@pytest.mark.parametrize('body', _ACKNOWLEDGMENT_PARAMS)
+def test_the_answer_beside_an_acknowledgment_is_the_match(monkeypatch, body):
+    """The acknowledgment is skipped, not the poll: the answer posted after it matches.
+
+    The acknowledgment is listed FIRST, so a matcher that returned the first eligible
+    comment would return it.
+    """
+    answer = _acknowledgment_comment(CODERABBIT_GENUINE_SHORT_REVIEW_COMMENT, created_at='2026-01-01T00:06:00Z')
+
+    result = _await_with_comments(
+        monkeypatch,
+        [_acknowledgment_comment(body), answer],
+        bot_kind=ACKNOWLEDGMENT_BOT_KIND,
+    )
+
+    assert result['matched'] is True
+    assert result['matched_comment']['body'] == CODERABBIT_GENUINE_SHORT_REVIEW_COMMENT
+    assert result['acknowledged'] is True
+
+
+@pytest.mark.parametrize('body', _ACKNOWLEDGMENT_PARAMS)
+def test_an_acknowledgment_edited_after_the_trigger_is_recorded(monkeypatch, body):
+    """The reply is edited in place, so it is dated by ``updated_at`` like any other comment."""
+    edited = _acknowledgment_comment(body, created_at='2026-01-01T00:00:00Z', updated_at='2026-01-01T00:05:00Z')
+
+    result = _await_with_comments(monkeypatch, [edited], bot_kind=ACKNOWLEDGMENT_BOT_KIND)
+
+    assert result['matched'] is False
+    assert result['acknowledged'] is True
+    assert len(result['acknowledgments']) == 1
+
+
+@pytest.mark.parametrize('body', _ACKNOWLEDGMENT_PARAMS)
+def test_an_acknowledgment_predating_the_trigger_is_skipped_without_a_record(monkeypatch, body):
+    """An older acknowledgment confirmed some earlier command, not this one."""
+    stale = _acknowledgment_comment(body, created_at='2026-01-01T00:00:00Z')
+
+    result = _await_with_comments(monkeypatch, [stale], bot_kind=ACKNOWLEDGMENT_BOT_KIND)
+
+    assert result['matched'] is False
+    assert result['acknowledged'] is False
+    assert result['acknowledgments'] == []
+
+
+def test_a_readable_refusal_outranks_an_acknowledgment_literal(monkeypatch):
+    """A refusal the stack can READ stays a refusal even beside an acknowledgment wording."""
+    body = f'{_CODERABBIT_COMMAND_REPLY_REFUSAL} Review triggered.'
+
+    result = _await_with_comments(monkeypatch, [_acknowledgment_comment(body)], bot_kind=ACKNOWLEDGMENT_BOT_KIND)
+
+    assert result['matched'] is False
+    assert result['refusal_detected'] is True
+    assert result['refusals'][0]['layer'] != _github_pr.REFUSAL_LAYER_ENUMERATIVE
+    assert result['acknowledged'] is False
+
+
+@pytest.mark.parametrize(
+    ('created_at', 'updated_at', 'recorded'),
+    [
+        pytest.param('2026-01-01T00:05:00Z', '', True, id='written-after-the-trigger'),
+        pytest.param('2026-01-01T00:00:00Z', '2026-01-01T00:05:00Z', True, id='edited-after-the-trigger'),
+        pytest.param('2026-01-01T00:00:00Z', '', False, id='written-before-the-trigger'),
+        pytest.param(_TRIGGER, '', False, id='written-at-the-trigger-instant'),
+        pytest.param('2026-01-01T00:00:00Z', '2026-01-01T00:01:00Z', False, id='edited-before-the-trigger'),
+        pytest.param('not-a-timestamp', '', False, id='no-readable-timestamp'),
+    ],
+)
+def test_a_refusal_is_this_awaits_refusal_only_when_written_after_the_trigger(
+    monkeypatch, created_at, updated_at, recorded
+):
+    """A refusal that answered some other request is not reported as this await's refusal.
+
+    One body, one bot, one trigger — only the instant the comment was written
+    differs, so the recorded and unrecorded rows are each other's control. An
+    unrecorded refusal leaves a bare timeout: the bot said nothing to THIS trigger.
+    """
+    refusal = _comment(
+        _CODERABBIT_LOGIN, created_at=created_at, updated_at=updated_at, body=_CODERABBIT_COMMAND_REPLY_REFUSAL
+    )
+
+    result = _await_with_comments(monkeypatch, [refusal], bot_kind='coderabbit')
+
+    assert result['matched'] is False
+    assert result['timed_out'] is True
+    assert result['refusal_detected'] is recorded
+    assert len(result['refusals']) == (1 if recorded else 0)
+    assert result['refusal_class'] == (bot_registry.rate_limit_class('coderabbit') if recorded else '')
+
+
+def test_an_unreadable_refusal_predating_the_trigger_is_skipped_without_a_record(monkeypatch):
+    """The enumerative arm is gated on the same instant as the arms that read the body."""
+    _arm_enumerative(monkeypatch)
+    stale = _comment(_SOURCERY_LOGIN, created_at='2026-01-01T00:00:00Z', body=_UNRECOGNISED_REFUSAL)
+
+    result = _await_with_comments(monkeypatch, [stale], bot_kind='sourcery')
+
+    assert result['matched'] is False
+    assert result['refusal_detected'] is False
+    assert result['refusals'] == []
+
+
+def test_an_older_refusal_does_not_hide_the_answer_written_after_the_trigger(monkeypatch):
+    """The older refusal is skipped, not the poll: the later answer is the match."""
+    stale = _comment(_CODERABBIT_LOGIN, created_at='2026-01-01T00:00:00Z', body=_CODERABBIT_COMMAND_REPLY_REFUSAL)
+    answer = _comment(_CODERABBIT_LOGIN, created_at='2026-01-01T00:05:00Z', body=_CODERABBIT_GENUINE_COMMENT)
+
+    result = _await_with_comments(monkeypatch, [stale, answer], bot_kind='coderabbit')
+
+    assert result['matched'] is True
+    assert result['matched_comment']['body'] == _CODERABBIT_GENUINE_COMMENT
+    assert result['refusal_detected'] is False
+    assert result['refusals'] == []
+
+
+@pytest.mark.parametrize('body', _ACKNOWLEDGMENT_PARAMS)
+def test_match_bot_comment_skips_an_acknowledgment_without_an_accumulator(body):
+    """A caller passing no ``acknowledgments`` list still never receives the reply as the match."""
+    trigger_dt = _parse(_TRIGGER)
+
+    matched = _match_bot_comment([_acknowledgment_comment(body)], 'headsha', ACKNOWLEDGMENT_BOT_KIND, trigger_dt)
+
+    assert matched is None
+
+
+@pytest.mark.parametrize('body', _ACKNOWLEDGMENT_PARAMS)
+def test_the_acknowledgment_class_is_scoped_to_the_bot_that_declared_it(body):
+    """Only the declaring bot can acknowledge with its literal."""
+    assert github_re_review.is_acknowledgment_comment(body, ACKNOWLEDGMENT_BOT_KIND) is True
+
+    undeclared = [kind for kind in bot_registry.bot_kinds() if not bot_registry.acknowledgment_patterns(kind)]
+    assert undeclared, 'every bot declares acknowledgment_patterns — the scoping sweep would be vacuous'
+    for kind in undeclared:
+        assert github_re_review.is_acknowledgment_comment(body, kind) is False
+    assert github_re_review.is_acknowledgment_comment(body, None) is False
+
+
+def test_a_human_quoting_an_acknowledgment_is_not_an_acknowledgment():
+    """NEGATIVE control: an unresolvable author carries no ``bot_kind`` to scope the class to."""
+    author_kind = github_re_review.bot_kind_for_author('alice')
+
+    assert not author_kind
+    assert github_re_review.is_acknowledgment_comment(HUMAN_COMMENT_QUOTING_AN_ACKNOWLEDGMENT, author_kind) is False
+
+
+def test_the_acknowledgment_match_ignores_how_the_reply_is_wrapped():
+    """Both sides are whitespace-collapsed, so a line break inside the statement still matches."""
+    assert github_re_review.is_acknowledgment_comment('Review\n   finished.', ACKNOWLEDGMENT_BOT_KIND) is True
+    assert (
+        github_re_review.is_acknowledgment_comment('Review of the diff is finished.', ACKNOWLEDGMENT_BOT_KIND) is False
+    )
+
+
+def test_a_blank_registry_entry_never_makes_every_body_an_acknowledgment(monkeypatch):
+    """A blank declared literal is dropped — the empty string is contained in every body."""
+    monkeypatch.setattr(bot_registry, 'acknowledgment_patterns', lambda _kind: ['', '   '])
+
+    assert github_re_review.is_acknowledgment_comment(CODERABBIT_GENUINE_SHORT_REVIEW_COMMENT, 'coderabbit') is False
+
+
+def test_a_padded_registry_entry_is_normalised_before_it_is_compared(monkeypatch):
+    """MATCHED CONTROL: a padded literal still recognises its own wording."""
+    monkeypatch.setattr(bot_registry, 'acknowledgment_patterns', lambda _kind: ['  Review   triggered  ', ''])
+
+    assert github_re_review.is_acknowledgment_comment('Review triggered.', 'coderabbit') is True
+    assert github_re_review.is_acknowledgment_comment(CODERABBIT_GENUINE_SHORT_REVIEW_COMMENT, 'coderabbit') is False
+
+
+# =============================================================================
+# A non-verifying answer is withheld while the review is still running
+# =============================================================================
+
+
+def _non_verifying_answer():
+    """A genuine CodeRabbit comment that names no commit — a decline once the review has ended."""
+    return _comment(_CODERABBIT_LOGIN, created_at='2026-01-01T00:05:00Z', body=_CODERABBIT_GENUINE_COMMENT)
+
+
+def test_a_non_verifying_answer_is_withheld_while_the_review_is_running(monkeypatch):
+    """A running review has not answered, so the comment is not reported as its decline."""
+    calls: list = []
+
+    result = _await_with_comments(
+        monkeypatch,
+        [_non_verifying_answer()],
+        bot_kind='coderabbit',
+        in_progress_reader=_recording_reader(True, calls),
+    )
+
+    assert calls, 'the completion read was never consulted'
+    assert all(call == (42, 'coderabbit') for call in calls)
+    assert result['matched'] is False
+    assert result['matched_signal'] == ''
+    assert result['matched_comment'] == {}
+    assert result['head_sha_verified'] is False
+    assert result['answer_withheld_in_progress'] is True
+    assert result['timed_out'] is True
+    assert result['refusal_detected'] is False
+
+
+def test_the_same_answer_is_matched_once_the_review_is_not_running(monkeypatch):
+    """MATCHED CONTROL: same comment, same reader seam — only the observation differs."""
+    calls: list = []
+
+    result = _await_with_comments(
+        monkeypatch,
+        [_non_verifying_answer()],
+        bot_kind='coderabbit',
+        in_progress_reader=_recording_reader(False, calls),
+    )
+
+    assert calls, 'the completion read was never consulted'
+    assert result['matched'] is True
+    assert result['matched_signal'] == 'issue_comment'
+    assert result['head_sha_verified'] is False
+    assert result['answer_withheld_in_progress'] is False
+
+
+def test_a_verifying_answer_is_matched_without_consulting_the_completion_read(monkeypatch):
+    """A comment that names the awaited HEAD is the answer however the check stands."""
+    calls: list = []
+
+    result = _await_with_comments(
+        monkeypatch,
+        [_republished_comment(_VERIFYING_REFERENCE)],
+        bot_kind='coderabbit',
+        head_sha=_HEAD_SHA,
+        in_progress_reader=_recording_reader(True, calls),
+    )
+
+    assert result['matched'] is True
+    assert result['head_sha_verified'] is True
+    assert result['answer_withheld_in_progress'] is False
+    assert calls == []
+
+
+def test_a_matched_review_never_consults_the_completion_read(monkeypatch):
+    """The read is taken only for a comment that does not verify — a review costs none."""
+    calls: list = []
+
+    result = _await_with_comments(
+        monkeypatch,
+        [],
+        reviews=[_review('headsha', '2026-01-01T00:05:00Z', body=_GENUINE_REVIEW_BODY)],
+        bot_kind='coderabbit',
+        in_progress_reader=_recording_reader(True, calls),
+    )
+
+    assert result['matched'] is True
+    assert result['matched_signal'] == 'review'
+    assert result['answer_withheld_in_progress'] is False
+    assert calls == []
+
+
+def test_the_neutralized_in_progress_read_leaves_the_answer_matched(monkeypatch):
+    """POSITIVE arm of the fixture's matched pair: the provider reports a running review, unseen.
+
+    The fake completion read below reports ``in_progress: true``. With the autouse
+    fixture engaged the default seam never reaches it, so the answer is matched.
+    """
+    calls: list = []
+    monkeypatch.setattr(bot_registry, 'completion_check_name', lambda _kind: 'CodeRabbit')
+    _fake_completion_module(monkeypatch, {'in_progress': True}, calls)
+
+    result = _await_with_comments(monkeypatch, [_non_verifying_answer()], bot_kind='coderabbit')
+
+    assert result['matched'] is True
+    assert result['answer_withheld_in_progress'] is False
+    assert calls == []
+
+
+def test_the_unneutralized_in_progress_read_withholds_the_same_answer(monkeypatch):
+    """NEGATIVE arm: with the live reader restored, the same running review withholds it.
+
+    Identical to the arm above except that the fixture's patch is undone, which is
+    what proves the fixture — and not an absent read — is what kept that arm matched.
+    """
+    calls: list = []
+    monkeypatch.setattr(bot_registry, 'completion_check_name', lambda _kind: 'CodeRabbit')
+    _fake_completion_module(monkeypatch, {'in_progress': True}, calls)
+    monkeypatch.setattr(github_re_review, 'read_bot_in_progress', _LIVE_IN_PROGRESS_READER)
+
+    result = _await_with_comments(monkeypatch, [_non_verifying_answer()], bot_kind='coderabbit')
+
+    assert calls, 'the live reader never reached the completion read'
+    assert all(call == (42, 'coderabbit', 'CodeRabbit') for call in calls)
+    assert result['matched'] is False
+    assert result['answer_withheld_in_progress'] is True
+
+
+def test_read_bot_in_progress_reports_a_positive_observation(monkeypatch):
+    """Only ``in_progress: true`` from the completion read answers True."""
+    calls: list = []
+    monkeypatch.setattr(bot_registry, 'completion_check_name', lambda _kind: 'CodeRabbit')
+    _fake_completion_module(monkeypatch, {'in_progress': True}, calls)
+
+    assert _LIVE_IN_PROGRESS_READER('42', 'coderabbit') is True
+    assert calls == [(42, 'coderabbit', 'CodeRabbit')]
+
+
+@pytest.mark.parametrize(
+    'observation',
+    [
+        pytest.param({'in_progress': False}, id='concluded'),
+        pytest.param({}, id='no-field'),
+        pytest.param({'in_progress': 'true'}, id='truthy-but-not-true'),
+        pytest.param(None, id='no-envelope'),
+    ],
+)
+def test_read_bot_in_progress_answers_false_for_anything_but_a_positive_observation(monkeypatch, observation):
+    """A hold is armed by a positive observation only — every other read changes nothing."""
+    monkeypatch.setattr(bot_registry, 'completion_check_name', lambda _kind: 'CodeRabbit')
+    _fake_completion_module(monkeypatch, observation)
+
+    assert _LIVE_IN_PROGRESS_READER(42, 'coderabbit') is False
+
+
+def test_read_bot_in_progress_answers_false_when_the_read_fails(monkeypatch):
+    """A failed read is no observation — it must not withhold an answer."""
+    calls: list = []
+    monkeypatch.setattr(bot_registry, 'completion_check_name', lambda _kind: 'CodeRabbit')
+    _fake_completion_module(monkeypatch, {'in_progress': True}, calls, raises=RuntimeError('gh unavailable'))
+
+    assert _LIVE_IN_PROGRESS_READER(42, 'coderabbit') is False
+    assert calls, 'the failing read was never reached, so the failure path went unexercised'
+
+
+def test_read_bot_in_progress_makes_no_read_for_a_bot_without_a_completion_check(monkeypatch):
+    """A bot that declares no check-run has nothing to observe, and costs no provider read."""
+    calls: list = []
+    monkeypatch.setattr(bot_registry, 'completion_check_name', lambda _kind: '')
+    _fake_completion_module(monkeypatch, {'in_progress': True}, calls)
+
+    assert _LIVE_IN_PROGRESS_READER(42, 'coderabbit') is False
+    assert calls == []

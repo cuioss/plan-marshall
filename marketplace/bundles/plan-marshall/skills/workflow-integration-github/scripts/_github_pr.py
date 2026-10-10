@@ -312,29 +312,97 @@ def refusal_layers(body: str, bot_kind: str | None = None) -> list[str]:
     return layers
 
 
-_SHA_TOKEN = re.compile(r'\b[0-9a-f]{40}\b', re.IGNORECASE)
+# ---------------------------------------------------------------------------
+# The commit recogniser — ONE definition, read by every consumer that looks for a
+# commit reference in bot-written text
+# ---------------------------------------------------------------------------
+#
+# A commit reference is recognised WHEREVER the text carries it: as a bare token, or
+# sitting inside a ``…/commit/{sha}`` permalink. Both name the same commit.
+#
+# The surrounding-character guards keep the extraction from reading a SLICE of a
+# longer alphanumeric run as a commit id, so a 64-hex digest yields no spurious
+# 40-character prefix.
+#
+# The recogniser admits abbreviated runs (7 to 40 characters) because its EQUALITY
+# consumers compare each token against a caller-supplied id of whatever length the
+# provider handed over. A consumer that asks "does this text name a commit AT ALL?"
+# must not read an abbreviated run that way — see :func:`named_commits`.
+_COMMIT_TOKEN = re.compile(r'(?<![0-9A-Za-z])[0-9a-fA-F]{7,40}(?![0-9A-Za-z])')
+
+#: Length of a full commit id. Only a token of this length NAMES a commit on its own.
+_FULL_COMMIT_ID_LENGTH = 40
+
+
+def commit_tokens(text: str) -> list[str]:
+    """Return every commit-shaped token in ``text``, lower-cased, in order of appearance.
+
+    The single commit recogniser. ``github_re_review._references_head_sha`` and
+    :func:`bot_claimed_sha_matches_head` both read through it, so the two cannot
+    disagree about where a commit id may sit.
+
+    A token here is commit-SHAPED, nothing more: a seven-digit number is hex-shaped
+    too. Every consumer therefore compares the tokens for EQUALITY against a commit it
+    already holds, or narrows them with :func:`named_commits`.
+    """
+    return [token.lower() for token in _COMMIT_TOKEN.findall(text or '')]
+
+
+def named_commits(text: str) -> list[str]:
+    """Return the FULL commit ids ``text`` names, lower-cased, in order of appearance.
+
+    The narrowing of :func:`commit_tokens` for the one question equality cannot
+    answer: does this text name a commit at all? Only a full-length id counts. An
+    abbreviated run is not evidence of a commit reference — a run id, a line count or
+    a byte size of seven or more digits is hex-shaped — and reading one as a named
+    commit would report a review stale on the strength of a number.
+    """
+    return [token for token in commit_tokens(text) if len(token) == _FULL_COMMIT_ID_LENGTH]
 
 
 def bot_claimed_sha_matches_head(body: str, head_sha: str) -> bool:
-    """Return True when the bot-claimed reviewed SHA equals the merge HEAD.
+    """Return True when a commit ``body`` names equals the merge HEAD.
 
-    SHA-comparison currency guard (PLAN-03): the guard compares the SHA the bot
-    says it reviewed — a bare 40-hex token or a ``.../commit/{sha}`` permalink
-    embedded in the comment body — against the merge HEAD instead of
-    ordering comment timestamps. A force-push after a bot review therefore no
-    longer credits the stale review as current, while the current-review path
-    keeps crediting when the SHAs match. No SHA token means no claim, never a
-    match.
+    The comparison is against the commit the bot says it reviewed — a bare id or a
+    ``.../commit/{sha}`` permalink in the comment body — never against comment
+    timestamps. A force-push after a bot review therefore does not credit the older
+    review as current, while a review naming the current HEAD keeps its credit. Text
+    carrying no commit token makes no claim, and no claim is never a match.
+
+    Equality, never prefix: a token that merely shares a leading run with
+    ``head_sha`` does not match.
     """
     if not body or not head_sha:
         return False
     candidate = head_sha.strip().lower()
     if not candidate:
         return False
-    for token in _SHA_TOKEN.findall(body):
-        if token.lower() == candidate:
-            return True
-    return False
+    return candidate in commit_tokens(body)
+
+
+def named_commit_currency(body: str, head_sha: str) -> bool | None:
+    """Return what the commits ``body`` names say about a review of ``head_sha``.
+
+    Three answers, because the question has three outcomes:
+
+    - ``True`` — ``body`` names ``head_sha``. The comment is about the merge
+      candidate.
+    - ``False`` — ``body`` names at least one commit and none of them is
+      ``head_sha``. The comment is about another commit, whatever its timestamps or
+      edit history say.
+    - ``None`` — no verdict. ``body`` names no commit, or ``head_sha`` could not be
+      read. The caller falls back to whatever rule it applied before this one
+      existed; ``None`` is never a claim that the review is current.
+
+    A body naming several commits is current when ANY of them is ``head_sha``: a
+    review that lists a base and a head, or quotes another commit beside the one it
+    reviewed, is still a review of the merge candidate.
+    """
+    if not (head_sha or '').strip():
+        return None
+    if not named_commits(body):
+        return None
+    return bot_claimed_sha_matches_head(body, head_sha)
 
 
 # ---------------------------------------------------------------------------
@@ -499,6 +567,46 @@ def refusal_cause(body: str, bot_kind: str | None = None) -> str:
     return REFUSAL_CAUSE_QUOTA
 
 
+# The refusal CONDITION — what state of the world the bot's reply reports. It is read
+# BEFORE the cause and the awaitability class, because one of its values says the reply
+# is not a limit at all.
+#
+# ``rate_limited`` is the default: the bot could not review because a limit was hit, and
+# the cause and class axes say which limit and whether waiting moves it.
+# ``no_unreviewed_commit`` says the bot has already reviewed every commit on the PR, so
+# there is nothing new for it to review. No window is open and nothing reopens by
+# waiting; a caller that waits on such a record waits for nothing.
+REFUSAL_CONDITION_RATE_LIMITED = 'rate_limited'
+REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT = 'no_unreviewed_commit'
+
+#: The declared condition vocabulary. Consumers that validate or iterate a condition
+#: value derive their population from this tuple rather than restating the members.
+REFUSAL_CONDITIONS = (
+    REFUSAL_CONDITION_RATE_LIMITED,
+    REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT,
+)
+
+
+def refusal_condition(body: str, bot_kind: str | None = None) -> str:
+    """Classify a detected refusal's CONDITION — ``rate_limited`` or ``no_unreviewed_commit``.
+
+    ``no_unreviewed_commit`` iff ``body`` matches one of the bot's declared
+    ``no_unreviewed_commit_patterns``; every other refusal is ``rate_limited``. Like
+    :func:`refusal_cause`, this assumes ``body`` is ALREADY a refusal — the caller
+    gates on the recognition stack — so it names the condition rather than
+    re-detecting anything. The patterns are a subset of the bot's
+    ``refusal_patterns`` (enforced by the registry accessor), so a body can carry the
+    ``no_unreviewed_commit`` condition only when the registry arm recognised it.
+
+    An unregistered bot, and a bot declaring no such pattern, yield ``rate_limited``:
+    the condition that says nothing new is left to review is asserted only on a
+    literal the bot's own record declares.
+    """
+    if bot_kind and any(marker in body for marker in bot_registry.no_unreviewed_commit_patterns(bot_kind)):
+        return REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT
+    return REFUSAL_CONDITION_RATE_LIMITED
+
+
 def refusal_size_cap(body: str, bot_kind: str | None = None) -> str:
     """Return the diff-size CAP ``body`` states, or ``''`` when it states none.
 
@@ -642,18 +750,118 @@ def _extract_rate_limit_eta(body: str, bot_kind: str) -> str:
     return ''
 
 
-def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
-    """Return one record per registered bot whose newest comment is a rate-limit notice.
+#: One ``<number> <unit>`` term of a stated reset time. The unit is matched on its
+#: stem, so ``minute`` / ``minutes`` and the abbreviations a notice may use
+#: (``min``, ``sec``, ``hr``) all read as the same unit. Days are included because
+#: a budget notice states its reset days ahead ("3 days and 17 hours").
+_ETA_TERM = re.compile(r'([0-9]+)\s*(days?|hours?|hrs?|minutes?|mins?|seconds?|secs?)\b', re.IGNORECASE)
+
+#: Seconds per unit, keyed by the first letter of the matched unit word.
+_ETA_UNIT_SECONDS = {'d': 86400, 'h': 3600, 'm': 60, 's': 1}
+
+
+def rate_limit_eta_seconds(eta: str) -> int | None:
+    """Return the stated reset time ``eta`` as whole seconds, or ``None`` when unreadable.
+
+    The duration counterpart of :func:`_extract_rate_limit_eta`: that function reads
+    the reset time off the notice as the text the bot wrote (``"38 minutes"``), this
+    one converts that text into the number a caller claims a window with (``2280``).
+    Doing the conversion here, once, is what keeps it out of the calling prose.
+
+    Every ``<number> <unit>`` term in ``eta`` is summed, so the compound form
+    ``"12 minutes and 30 seconds"`` reads as ``750`` and ``"3 days and 17 hours"`` as
+    ``320400``.
+
+    ``None`` — never ``0`` — is returned for an empty ``eta`` and for text carrying no
+    readable term. Zero is a real duration ("the window is open now"); a caller that
+    received it for a notice nobody could read would act on a reset time the bot never
+    stated. The explicit statement that nothing was read is the record's
+    ``eta_extracted`` field, which is derived from this return.
+    """
+    if not eta:
+        return None
+    terms = _ETA_TERM.findall(eta)
+    if not terms:
+        return None
+    return sum(int(number) * _ETA_UNIT_SECONDS[unit[0].lower()] for number, unit in terms)
+
+
+#: The timestamp format a record's ``written_at`` is published in — UTC, whole
+#: seconds, the same shape the provider's own comment timestamps carry.
+_WRITTEN_AT_FORMAT = '%Y-%m-%dT%H:%M:%SZ'
+
+
+def _last_written(comment: dict) -> datetime | None:
+    """Return the instant ``comment`` was last written, or ``None`` when unreadable.
+
+    The later of the comment's ``updated_at`` and ``created_at``. A bot that
+    rewrites a comment in place leaves ``created_at`` where it was, so only the
+    later of the two says when the text now on the PR was written.
+
+    ``None`` when neither stamp parses. The caller treats that as the oldest
+    possible instant when choosing among comments and as unknown when it reports
+    the instant, never as "written now".
+    """
+    # Deferred import, for the reason :func:`_detect_rate_limited_bots` states.
+    import github_re_review
+
+    stamps = [
+        dt
+        for dt in (
+            github_re_review._parse_iso(str(comment.get('updated_at') or '')),
+            github_re_review._parse_iso(str(comment.get('created_at') or '')),
+        )
+        if dt is not None
+    ]
+    return max(stamps) if stamps else None
+
+
+def notice_is_stale(written: datetime | None, eta_seconds: int | None, now: datetime) -> bool:
+    """Return True when a notice's stated window had already elapsed at ``now``.
+
+    A notice written at ``written`` and stating a reset time of ``eta_seconds``
+    says its window reopens at ``written + eta_seconds``. Once ``now`` has reached
+    that instant the notice no longer describes an open window, and a caller that
+    waited on it would wait out a time that is already over.
+
+    ``True`` needs both figures: an unreadable write instant or a notice that
+    stated no reset time yields ``False``. Nothing is called stale on the strength
+    of a figure nobody read, so such a record is handled exactly as it was before
+    this field existed.
+    """
+    if written is None or eta_seconds is None:
+        return False
+    return (now - written).total_seconds() >= eta_seconds
+
+
+def _detect_rate_limited_bots(comments: list[dict], now: datetime | None = None) -> list[dict]:
+    """Return one record per registered bot whose most recently written comment is a refusal notice.
+
+    A record is usually a rate-limit notice, and may instead be a reply saying
+    nothing new is left to review; the record's ``condition`` field tells the two
+    apart and is read before every other field.
 
     Generalizes the former single-bot discriminator to every registered
     ``bot_kind``: for each bot in the registry, select the comments that bot
     authored (resolving each comment's author through
     :func:`github_re_review.bot_kind_for_author`, which owns the ``[bot]``-suffix
-    stripping and case-insensitive matching), pick that bot's newest comment by
-    ``created_at``, and classify its body through the refusal-recognition arms that
-    are answerable at this position. No bot-name literal appears in this path — the
-    bot set, each bot's login, its refusal markers, its rate-limit class, and its ETA
-    phrasings are all registry data.
+    stripping and case-insensitive matching), pick the comment that bot wrote most
+    recently — by the later of ``updated_at`` and ``created_at``
+    (:func:`_last_written`) — and classify its body through the refusal-recognition
+    arms that are answerable at this position. No bot-name literal appears in this
+    path — the bot set, each bot's login, its refusal markers, its rate-limit class,
+    and its ETA phrasings are all registry data.
+
+    Sampling by the last write rather than by ``created_at`` is what makes a
+    refusal written as an EDIT visible. A bot that rewrites its summary comment
+    into a refusal leaves that comment's ``created_at`` unchanged, so while a
+    newer-created comment by the same bot exists, sampling by creation time never
+    reads the refusal. The same later-of-the-two rule is the one
+    ``github_re_review._match_bot_comment`` and :func:`_detect_movement_bots` apply.
+
+    ``now`` is the instant the comments were read, against which a notice's stated
+    window is judged elapsed; it defaults to the current time and is a parameter so
+    a caller that fetched the comments earlier, and a test, can state it.
 
     Classification goes through the shared :func:`refusal_layers` seam — the one
     :func:`_is_refusal_notice` is derived from — so this detector and the
@@ -664,14 +872,35 @@ def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
     currently defines — including the enumerative arm, which sits after the noise
     filter and so is deliberately outside this seam.
 
-    Each detected bot yields ``{bot_kind, rate_limit_class, eta, cause, cap, layer,
-    body}``:
+    Each detected bot yields ``{bot_kind, rate_limit_class, condition, eta,
+    eta_seconds, eta_extracted, written_at, stale, cause, cap, layer, body}``:
 
+    - ``condition`` is what the reply reports (:func:`refusal_condition`):
+      ``rate_limited`` for a limit that was hit, ``no_unreviewed_commit`` for a
+      reply saying every commit is already reviewed. It is read FIRST. A
+      ``no_unreviewed_commit`` record is not a limit and is never waited for,
+      whatever ``rate_limit_class`` says — that field is declared per bot and is
+      emitted on every record so the shape does not vary by condition.
     - ``rate_limit_class`` distinguishes a window the caller can usefully await
       from a quota it cannot; it is registry data and fails closed to ``unknown``
       for a bot that declares none.
     - ``eta`` is the reset time the notice itself stated, or ``''`` when the
       notice stated none.
+    - ``eta_seconds`` is that reset time as whole seconds
+      (:func:`rate_limit_eta_seconds`), or ``None`` when none could be read. It is
+      the figure a caller claims the rate window with.
+    - ``eta_extracted`` is ``True`` exactly when ``eta_seconds`` is a number. Its
+      ``False`` is the explicit statement that a recognised refusal yielded no
+      reset time — a field of its own, so a consumer never has to infer that from
+      an empty ``eta`` or an absent number.
+    - ``written_at`` is the instant the notice was last written — the later of the
+      comment's ``updated_at`` and ``created_at`` — as a UTC timestamp, or ``''``
+      when neither stamp could be read.
+    - ``stale`` is ``True`` when the window the notice stated had already elapsed
+      when it was read: ``written_at`` plus ``eta_seconds`` is not after ``now``
+      (:func:`notice_is_stale`). A stale record is not waited for and no window is
+      claimed on it. ``False`` whenever either figure is missing, so a notice that
+      stated no reset time is never called stale.
     - ``cause`` is the orthogonal SIZE-vs-QUOTA axis (:func:`refusal_cause`). A
       refusal caused by a per-PR diff ceiling is answered by a smaller diff, one
       caused by a rate/budget quota by backoff. The axes are INDEPENDENT — a size
@@ -690,10 +919,11 @@ def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
     - ``body`` is the notice itself as a whitespace-collapsed, truncated excerpt
       (``github_re_review._body_excerpt``), the same excerpt ``refusals[]`` carries.
 
-    ``layer`` and ``body`` are what make this record the SAME shape as
-    ``github_re_review``'s ``refusals[]`` record, so a consumer that arms a wait on
-    either producer's refusal can state which arm read the notice and what the
-    notice said, instead of re-deriving it after the fact.
+    ``layer`` and ``body`` are what this record shares with ``github_re_review``'s
+    ``refusals[]`` record, so a consumer that arms a wait on either producer's
+    refusal can state which arm read the notice and what the notice said, instead
+    of re-deriving it after the fact. ``written_at`` and ``stale`` are this
+    detector's alone; a ``refusals[]`` record does not carry them.
 
     ``cause`` and ``cap`` are emitted for EVERY detected refusal rather than only a
     size one, so every consumer reads ONE record shape whatever the cause; on a
@@ -713,6 +943,11 @@ def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
     # the refusal excerpt both producers carry.
     import github_re_review
 
+    read_at = now if now is not None else datetime.now(UTC)
+    # A comment with no readable stamp sorts as the oldest possible, so it is
+    # sampled only when the bot has no comment whose write instant could be read.
+    oldest = datetime.min.replace(tzinfo=UTC)
+
     detected: list[dict] = []
     for bot_kind in bot_registry.bot_kinds():
         bot_comments = [
@@ -722,16 +957,24 @@ def _detect_rate_limited_bots(comments: list[dict]) -> list[dict]:
         ]
         if not bot_comments:
             continue
-        newest = max(bot_comments, key=lambda c: str(c.get('created_at') or ''))
+        newest = max(bot_comments, key=lambda c: _last_written(c) or oldest)
         body = str(newest.get('body') or '')
         layers = refusal_layers(body, bot_kind)
         if not layers:
             continue
+        eta = _extract_rate_limit_eta(body, bot_kind)
+        eta_seconds = rate_limit_eta_seconds(eta)
+        written = _last_written(newest)
         detected.append(
             {
                 'bot_kind': bot_kind,
                 'rate_limit_class': bot_registry.rate_limit_class(bot_kind),
-                'eta': _extract_rate_limit_eta(body, bot_kind),
+                'condition': refusal_condition(body, bot_kind),
+                'eta': eta,
+                'eta_seconds': eta_seconds,
+                'eta_extracted': eta_seconds is not None,
+                'written_at': written.astimezone(UTC).strftime(_WRITTEN_AT_FORMAT) if written is not None else '',
+                'stale': notice_is_stale(written, eta_seconds, read_at),
                 'cause': refusal_cause(body, bot_kind),
                 'cap': refusal_size_cap(body, bot_kind),
                 'layer': layers[0],
@@ -1548,7 +1791,8 @@ def cmd_pr_wait_for_comments(args: argparse.Namespace) -> dict:
     detector_answerable, unanswerable_reason = _detector_answerability()
 
     # Per-bot rate-limit discriminator: after the poll settles, inspect each
-    # REGISTERED bot's newest comment for a rate-limit status notice. Best-effort
+    # REGISTERED bot's most recently written comment — the later of its
+    # ``updated_at`` and ``created_at`` — for a rate-limit status notice. Best-effort
     # — a failed fetch leaves the default empty list and never alters poll
     # behaviour. An empty list means no registered bot is rate-limited.
     rate_limited_bots: list[dict] = []

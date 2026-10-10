@@ -151,7 +151,7 @@ The settings below govern how a plan crosses the shared merge-to-`main` boundary
 
 NOTE: All `default:branch-cleanup` step params — `pr_merge_strategy`, `final_merge_without_asking`, `auto_rebase_threshold`, `merge_queue_wait_budget_seconds`, `merge_hold_window`, `merge_hold_budget_seconds`, `use_merge_queue`, `pre_merge_comment_barrier`, and `admin_merge_on_stuck_state` — are nested under the `default:branch-cleanup` step in the `plan.phase-6-finalize.steps` keyed map, not flat phase-level fields. Read the whole param object in one call with `manage-config plan phase-6-finalize step get --step-id default:branch-cleanup`.
 
-NOTE: The `pre_merge_comment_barrier` is the final safety net that makes leaving `re_review_on_loopback` off (its `false` default, see xref:configuration.adoc#automated-review[Configuration → Automated PR review]) safe: even when a loop-back fix commit is not re-reviewed by the bots, the barrier re-fetches and blocks on any unhandled comment before the merge. It is independent of the initial-wait settings (`review_bot_buffer_seconds`, `review_completion_poll_timeout_seconds`, and the rate-window await of <<rate-window-await>>): those bound how long the *initial* review wait polls, whereas the barrier is a distinct, always-on re-fetch at merge time — so a comment that lands after the initial wait (a late pass, or one posted once a bot's rate window reopens) is still caught.
+NOTE: Leaving `re_review_on_loopback` off (its `false` default, see xref:configuration.adoc#automated-review[Configuration → Automated PR review]) does not leave a required bot's review stale. A required bot whose review does not cover the current HEAD is re-triggered on loop-back even with the setting off. The `pre_merge_comment_barrier` is the final safety net behind that: it re-fetches before the merge and blocks on any unhandled comment and on any required bot whose review of the merge HEAD is unproven. It is independent of the initial-wait settings (`review_bot_buffer_seconds`, `review_completion_poll_timeout_seconds`, and the rate-window await of <<rate-window-await>>): those bound how long the *initial* review wait polls, whereas the barrier is a distinct, always-on re-fetch at merge time — so a comment that lands after the initial wait (a late pass, or one posted once a bot's rate window reopens) is still caught.
 
 [#merge-queue]
 === Platform merge queue (both providers)
@@ -188,9 +188,23 @@ The two provider paths are verified differently:
 [#rate-window-await]
 == Review-bot rate window
 
-A rate-limited review bot can answer a review request with a *refusal* instead of a review — CodeRabbit accepts roughly one review per hour, and its window then resets. When the refusing bot is a required one, finalize has no review verdict to proceed on, and the window it is waiting for is a shared resource: the claim co-tenants the merge-mutex store, so concurrent plans queue for the same window instead of each spending it. Whether finalize waits at all is governed by two step-owned params of `plan-marshall:automatic-review` — `review_rate_window_await`, which is off by default, and `review_rate_window_timeout_seconds`, which caps the wait at 3600 s.
+A rate-limited review bot can answer a review request with a *refusal* instead of a review — CodeRabbit accepts roughly one review per hour, and its window then resets. When the refusing bot is a required one, finalize has no review verdict to proceed on, and the window it is waiting for is a shared resource: the claim co-tenants the merge-mutex store, so concurrent plans queue for the same window instead of each spending it. Whether finalize waits at all is governed by two step-owned params of `plan-marshall:automatic-review` — `review_rate_window_await`, which is off by default, and `review_rate_window_timeout_seconds`, which caps the wait for the window at 3600 s.
 
-*This repository arms the await.* `review_rate_window_await` is `true` here, so on a required bot's *awaitable* refusal finalize blocks for up to `review_rate_window_timeout_seconds` — 3600 s — waiting for the window to reopen, and escalates to the operator only once that budget is spent. A *structural* refusal is unaffected and never waits: the diff exceeds a ceiling the reviewer itself declares, so no reopening window would admit it, and the step escalates immediately. With the await left off, a detected refusal settles as ordinary and the step proceeds without waiting at all.
+*This repository arms the await.* `review_rate_window_await` is `true` here. On a required bot's *awaitable* refusal the review step claims the window and hands the wait back; it does not wait itself. The main session carries out the wait:
+
+* the work log names the bot and the time its window reopens;
+* the terminal title shows a waiting state for as long as the wait lasts;
+* as soon as the window has reopened, the review step is run again and requests the review.
+
+`review_rate_window_timeout_seconds` — 3600 s — bounds the whole wait, and a window that reopens within the budget is always followed by the review request. No question is put to you while the wait runs. When the budget is spent and the window is still closed, the decision comes to you.
+
+Three cases never wait, whatever the setting:
+
+* A *structural* refusal. The diff exceeds a ceiling the reviewer itself declares, so no reopening window would admit it, and the step escalates immediately.
+* A *"nothing new to review"* reply. The bot is not refusing for quota, so there is no window to wait for. The step sends one request for a full review only when no review by the bot is on record at all. It sends nothing when a review is on record, whether or not findings of it are still open — open findings go to triage. It sends nothing when where the bot's review stands could not be determined, and the step stays open until it can be. And it sends nothing whenever the await is left off.
+* A notice whose *stated window had already elapsed* when it was read. There is no closed window left to wait for, so the step claims nothing and carries on to read the review comments. It sends no review request on such a notice, and the bot still counts as not having reviewed.
+
+With the await left off, a detected refusal settles as ordinary and the step proceeds without waiting at all.
 
 Read both params in one call:
 

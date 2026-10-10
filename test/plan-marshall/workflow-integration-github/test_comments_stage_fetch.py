@@ -629,14 +629,18 @@ class TestRefusalNoticeProducerFilter:
         """The wait-return discriminator answers per REGISTERED bot, not per one bot.
 
         The retired discriminator selected CodeRabbit-authored comments only, so a
-        refusing Sourcery scored negative whenever CodeRabbit's own newest comment
-        was a genuine review — the two bots' states were collapsed into one answer.
-        The registry-driven detector reports each bot independently: CodeRabbit is
-        absent because its newest comment is real feedback, while Sourcery appears
-        with the class its own registry record declares.
+        refusing Sourcery scored negative whenever CodeRabbit's own last-written
+        comment was a genuine review — the two bots' states were collapsed into one
+        answer. The registry-driven detector reports each bot independently:
+        CodeRabbit is absent because the comment it wrote last is real feedback,
+        while Sourcery appears with the class its own registry record declares.
         """
         import github_re_review
-        from _github_pr import REFUSAL_LAYER_STRUCTURAL, _detect_rate_limited_bots
+        from _github_pr import (
+            REFUSAL_CONDITION_RATE_LIMITED,
+            REFUSAL_LAYER_STRUCTURAL,
+            _detect_rate_limited_bots,
+        )
 
         comments = [
             {
@@ -662,13 +666,78 @@ class TestRefusalNoticeProducerFilter:
             {
                 'bot_kind': 'sourcery',
                 'rate_limit_class': 'hard_quota',
+                # A limit notice, so the record carries the default condition.
+                'condition': REFUSAL_CONDITION_RATE_LIMITED,
                 'eta': '',
+                # This notice states no reset time: no seconds, and the record says so.
+                'eta_seconds': None,
+                'eta_extracted': False,
+                # The comment carries no ``updated_at``, so its last write is its
+                # creation; with no reset time read, nothing says its window is over.
+                'written_at': '2026-01-09T00:00:00Z',
+                'stale': False,
                 'cause': 'quota',
                 'cap': '',
                 'layer': REFUSAL_LAYER_STRUCTURAL,
                 'body': github_re_review._body_excerpt(_SOURCERY_SHAPED_REFUSAL),
             }
         ]
+
+    def test_fetch_findings_files_no_finding_for_a_nothing_new_to_review_reply(self, plan_context):
+        """End-to-end: CodeRabbit's "Already reviewed the last commit" reply is a refusal.
+
+        It is posted in place of a review, so it must not reach triage as a finding and
+        must not be dropped as noise. The genuine inline finding in the same batch is the
+        negative control: it still reaches the store.
+        """
+        from _github_pr import REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT, _detect_rate_limited_bots
+
+        reply = (
+            '<details> <summary>(warning) Action not completed</summary> '
+            'Already reviewed the last commit. '
+            'Use @coderabbitai full review to rerun a review of the entire changeset. </details>'
+        )
+        comments = [
+            {
+                'id': 'N1',
+                'kind': 'issue_comment',
+                'author': 'coderabbitai',
+                'body': reply,
+                'path': '',
+                'line': 0,
+                'thread_id': '',
+                'created_at': '2026-01-09T00:00:00Z',
+            },
+            {
+                'id': 'N2',
+                'kind': 'inline',
+                'author': 'coderabbitai',
+                'body': _CODERABBIT_GENUINE_INLINE,
+                'path': 'src/Retry.java',
+                'line': 31,
+                'thread_id': 'PRRT_n2',
+                'created_at': '2026-01-02T00:00:00Z',
+            },
+        ]
+
+        plan_context.plan_dir_for('gh-pr-refusal-cr-nothing-new')
+        result = _fetch_over(comments, _stage_make_args(1654, 'gh-pr-refusal-cr-nothing-new'))
+
+        assert result['status'] == 'success'
+        assert result['count_skipped_refusal'] == 1
+        assert result['refused_bots'] == ['coderabbit']
+        assert result['count_skipped_noise'] == 0
+        assert result['count_stored'] == 1
+
+        from _findings_core import query_findings
+
+        q = query_findings('gh-pr-refusal-cr-nothing-new', finding_type='pr-comment')
+        assert q['filtered_count'] == 1
+        assert 'comment_id: N2' in q['findings'][0]['detail']
+        # The wait-return discriminator names the same reply, with its own condition.
+        [record] = _detect_rate_limited_bots(comments)
+        assert record['bot_kind'] == 'coderabbit'
+        assert record['condition'] == REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT
 
     def test_detect_rate_limited_bots_ignores_human_quoting_refusal(self):
         """A human quoting a full refusal notice never trips the discriminator.

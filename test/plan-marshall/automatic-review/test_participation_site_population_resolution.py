@@ -55,8 +55,13 @@ from conftest import get_script_path, get_skill_dir
 #: outside the record's declared shapes at load. A marker keyed on a typo gates
 #: nothing and credits on shape alone, so what enforces the keys decides whether the
 #: gate runs at all.
+#:
+#: ``_stale_review_covered_by_reply`` is the one arm that credits a review the currency
+#: test placed at an earlier commit, on the bot's own no-unreviewed-commit reply. It
+#: grants a credit, so it is a seed rather than an exclusion.
 SEED_SYMBOLS: tuple[str, ...] = (
     '_reviewed_at_merge_candidate',
+    '_stale_review_covered_by_reply',
     'participation_requires_update',
     'participation_evidence',
     'participation_evidence_marker',
@@ -264,7 +269,7 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
     ),
     f'{_SKILLS}/workflow-integration-github/scripts/github_pr.py': SiteExpectation(
         'currency_ledger',
-        'commit_sha',
+        'both',
         'yes',
         'The producer. Evaluates the currency test for a participation_requires_update bot '
         'against the merge-candidate SHA, reading the durable currency ledger it writes on '
@@ -272,7 +277,11 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
         'participated_bots[], a test failed against an earlier commit in '
         'stale_participation_bots[], and one failed because the merge candidate itself '
         'could not be read in undecidable_participation_bots[] (with the read disclosed '
-        'as merge_candidate_sha_resolved).',
+        'as merge_candidate_sha_resolved). One further arm is TIMESTAMP-anchored: a bot left '
+        'stale is credited when its own no-unreviewed-commit reply is strictly newer than the '
+        'merge-candidate commit (_stale_review_covered_by_reply), disclosed in '
+        'reply_covered_participation_bots[]. That arm writes no ledger row and is a pure '
+        'comparison over the fetched comments, so the verdict stays idempotent.',
     ),
     f'{_SKILLS}/workflow-integration-github/scripts/github_re_review.py': SiteExpectation(
         'live_comment_scan',
@@ -312,6 +321,27 @@ CANDIDATE_EXCLUSIONS: dict[str, str] = {
         'The FILING dedup’s key reconstruction: it decides whether a comment is new '
         'INFORMATION to file, never whether a bot participated. Its site is already in the '
         'population through the seed existing_comment_keys, which names the key set it rebuilds.'
+    ),
+    'no_unreviewed_commit_patterns': (
+        'A REFUSAL overlay, not a crediting decision: it names the condition of a reply the bot '
+        'posted in place of a review. Such a reply is never itself participation evidence — the '
+        'refusal_patterns detection it is a subset of excludes it — and this accessor credits '
+        'nothing and anchors on no commit. It is collected only because "unreviewed" carries '
+        'the stem. The decision that READS the condition to credit a stale review is seeded '
+        'separately, as _stale_review_covered_by_reply.'
+    ),
+    'REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT': (
+        'The condition VALUE that overlay assigns: a label on a refusal record, not a '
+        'decision. Two sites read it — the recovery selector, to decide whether anything is '
+        'posted, and the producer’s reply-covered arm, whose crediting decision is the seed '
+        '_stale_review_covered_by_reply. The quorum classifier receives no condition at all.'
+    ),
+    'notice_is_stale': (
+        'A REFUSAL-NOTICE predicate, not a crediting decision: it says whether the window a '
+        'rate-limit notice stated had already elapsed when the notice was read. "Stale" here '
+        'describes a notice, never a review — it shares the word with stale_participation and '
+        'nothing else. It credits no bot and anchors on no commit; its one consumer is the '
+        'recovery selector, which uses it to decide that no rate window is claimed.'
     ),
 }
 

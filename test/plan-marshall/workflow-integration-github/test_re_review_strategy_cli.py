@@ -110,6 +110,18 @@ def _neutralize_rate_window(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _neutralize_in_progress_read(monkeypatch):
+    """Hold the completion read at NOT OBSERVED RUNNING for every test here.
+
+    A poll that would end on a comment naming no commit consults
+    ``read_bot_in_progress``, which reads the awaited bot's check-run through ``gh``.
+    Default-on, so no case in this module shells out or depends on a real PR's check.
+    The matched pair proving this fixture lives in ``test_re_review_strategy_match.py``.
+    """
+    monkeypatch.setattr(github_re_review, 'read_bot_in_progress', lambda _pr_number, _bot_kind: False)
+
+
+@pytest.fixture(autouse=True)
 def _no_provider_comments(monkeypatch):
     """Default every test to an empty provider comment list.
 
@@ -279,8 +291,14 @@ def _re_review_args(
     head_sha='headsha',
     push_time='2026-01-01T00:00:00Z',
     timeout=ci_base.DEFAULT_CI_TIMEOUT,
+    escalated=None,
 ):
-    return argparse.Namespace(
+    """Build the ``re-review`` namespace; ``escalated=None`` omits the attribute.
+
+    Omitting it is the shape a direct-Namespace caller written before the flag
+    existed still passes, so the default keeps that path exercised.
+    """
+    namespace = argparse.Namespace(
         pr_number=pr_number,
         bot_kind=bot_kind,
         head_sha=head_sha,
@@ -288,6 +306,30 @@ def _re_review_args(
         timeout=timeout,
         plan_id=None,
     )
+    if escalated is not None:
+        namespace.escalated = escalated
+    return namespace
+
+
+def _record_posts(monkeypatch) -> list[tuple]:
+    """Replace ``post_pr_comment`` with a recorder; return the list it appends to."""
+    posted: list[tuple] = []
+
+    def fake_post(pr_number, body):
+        posted.append((pr_number, body))
+        return {'status': 'success', 'operation': 'post_pr_comment', 'pr_number': pr_number}
+
+    monkeypatch.setattr(github_re_review._github, 'post_pr_comment', fake_post)
+    return posted
+
+
+def _bots_declaring_an_escalated_command() -> list[str]:
+    """The registered bots whose record declares an ``escalated_trigger_comment``."""
+    return [bot for bot in bot_registry.bot_kinds() if bot_registry.escalated_trigger_comment(bot).strip()]
+
+
+_ESCALATING_BOTS = _bots_declaring_an_escalated_command()
+assert _ESCALATING_BOTS, 'no registered bot declares an escalated_trigger_comment — the cases below would be vacuous'
 
 
 def _run_recovery_action(monkeypatch, capsys, *extra: str) -> dict:
@@ -633,3 +675,93 @@ def test_main_recovery_action_derives_a_registered_bots_verdict(monkeypatch, cap
 
     assert verdict['action'] == github_re_review.RECOVERY_ACTION_ESCALATE_STRUCTURAL
     assert verdict['bot_kind_registered'] is True
+
+
+@pytest.mark.parametrize('bot_kind', _ESCALATING_BOTS)
+def test_cmd_re_review_escalated_posts_the_registry_escalated_command(bot_kind, monkeypatch):
+    """The string posted IS the registry's ``escalated_trigger_comment``, read from the data.
+
+    Compared against the accessor rather than a literal, so the command follows the
+    registry doc; the matched control below posts the ordinary trigger through the
+    same handler.
+    """
+    _noop_sleep(monkeypatch)
+    monkeypatch.setattr(github_re_review, '_now_iso', lambda: '2026-01-01T00:00:00Z')
+    posted = _record_posts(monkeypatch)
+    monkeypatch.setattr(
+        github_re_review._github,
+        'fetch_pr_reviews_with_commits',
+        lambda pr_number: {'status': 'success', 'reviews': [_review('headsha', '2026-01-01T00:05:00Z')]},
+    )
+
+    result = github_re_review.cmd_re_review(_re_review_args(bot_kind=bot_kind, escalated=True))
+
+    escalated_command = bot_registry.escalated_trigger_comment(bot_kind).strip()
+    assert posted == [(42, escalated_command)]
+    assert escalated_command != bot_registry.trigger_comment(bot_kind).strip()
+    assert result['status'] == 'success'
+    assert result['escalated'] is True
+
+
+@pytest.mark.parametrize('bot_kind', _ESCALATING_BOTS)
+@pytest.mark.parametrize('escalated', [False, None], ids=['flag-false', 'attribute-absent'])
+def test_cmd_re_review_without_escalated_posts_the_ordinary_trigger(bot_kind, escalated, monkeypatch):
+    """MATCHED CONTROL — the same handler posts the ordinary trigger without the flag.
+
+    ``attribute-absent`` is the namespace a caller written before the flag existed
+    still builds: it must post the ordinary trigger, exactly as ``False`` does.
+    """
+    _noop_sleep(monkeypatch)
+    monkeypatch.setattr(github_re_review, '_now_iso', lambda: '2026-01-01T00:00:00Z')
+    posted = _record_posts(monkeypatch)
+    monkeypatch.setattr(
+        github_re_review._github,
+        'fetch_pr_reviews_with_commits',
+        lambda pr_number: {'status': 'success', 'reviews': [_review('headsha', '2026-01-01T00:05:00Z')]},
+    )
+
+    result = github_re_review.cmd_re_review(_re_review_args(bot_kind=bot_kind, escalated=escalated))
+
+    assert posted == [(42, bot_registry.trigger_comment(bot_kind))]
+    assert result['escalated'] is False
+
+
+def test_main_re_review_parses_the_escalated_flag(monkeypatch):
+    """``--escalated`` is a value-less flag, and it defaults to off."""
+    captured = []
+
+    def fake_handler(args):
+        captured.append(args.escalated)
+        return {'status': 'success'}
+
+    monkeypatch.setattr(github_re_review, 'cmd_re_review', fake_handler)
+    base = [
+        'github_re_review.py',
+        're-review',
+        '--pr-number',
+        '42',
+        '--bot-kind',
+        'coderabbit',
+        '--head-sha',
+        'headsha',
+        '--push-time',
+        '2026-01-01T00:00:00Z',
+    ]
+
+    monkeypatch.setattr(sys, 'argv', base)
+    assert github_re_review.main() == 0
+    monkeypatch.setattr(sys, 'argv', [*base, '--escalated'])
+    assert github_re_review.main() == 0
+
+    assert captured == [False, True]
+
+
+@pytest.mark.parametrize('bot_kind', _ESCALATING_BOTS)
+def test_a_posted_escalated_command_is_a_registered_trigger(bot_kind):
+    """The producer recognises the escalated command, so it is never filed as feedback."""
+    command = bot_registry.escalated_trigger_comment(bot_kind)
+
+    assert github_re_review.is_registered_trigger_comment(command) is True
+    assert github_re_review.is_registered_trigger_comment(f'  {command}\n') is True
+    # A body that merely quotes the command is not the command.
+    assert github_re_review.is_registered_trigger_comment(f'Please run {command}') is False

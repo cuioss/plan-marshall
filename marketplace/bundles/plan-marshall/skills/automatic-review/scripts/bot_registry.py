@@ -8,9 +8,10 @@ ships one machine-readable record — a fenced-YAML data block embedded in its
 time and exposes stable accessors so the finding store, the re-review strategy
 registry, the producer pre-filter, and the rate-limit detector DERIVE what they
 need (the bot-kind set, the login->bot_kind map, each bot's re-review trigger
-comment, its trigger semantics, its completion check-run name, its
-skip-label-honoring flag, its ignore patterns, its refusal patterns, its
-contentless-review markers, its actionable-content markers, its
+comment, its escalated trigger comment, its trigger semantics, its completion
+check-run name, its skip-label-honoring flag, its ignore patterns, its
+acknowledgment patterns, its refusal patterns, its no-unreviewed-commit patterns,
+its contentless-review markers, its actionable-content markers, its
 participation-evidence publish shapes and the content marker each of those
 shapes must carry to count, its severity map, its rate-limit class, and its
 rate-limit ETA patterns) instead of hard-coding three bots across several code
@@ -26,6 +27,7 @@ Data-block shape (one per ``standards/{bot_kind}.md``)::
     bot_kind: coderabbit
     author_login: coderabbitai
     trigger_comment: "@coderabbitai review"
+    escalated_trigger_comment: "@coderabbitai full review"   # the command that re-reviews the whole changeset
     trigger_semantics: requires_explicit_trigger   # or auto_on_push
     honors_skip_label: true
     rate_limit_class: awaitable_window
@@ -39,12 +41,16 @@ Data-block shape (one per ``standards/{bot_kind}.md``)::
     ignore_patterns:
       - "## Walkthrough"
       - "No actionable comments were generated"
+    acknowledgment_patterns:          # a reply confirming a command was RECEIVED, never its answer
+      - "Review triggered"
     review_body_summary_patterns:     # a review_body OPENING with one of these is a status summary
       - "Actionable comments posted:"
     refusal_patterns:
       - "Review limit reached"
     refusal_size_patterns:            # subset of refusal_patterns whose CAUSE is diff-size
       - "your pull request is larger than the review limit of"
+    no_unreviewed_commit_patterns:    # subset of refusal_patterns saying there is nothing NEW to review
+      - "Already reviewed the last commit"
     refusal_size_cap_patterns:        # regexes extracting the CAP the size refusal states
       - "review limit of ([0-9][0-9,]*(?: [A-Za-z]+){0,2})"
     contentless_review_markers:
@@ -60,9 +66,10 @@ Data-block shape (one per ``standards/{bot_kind}.md``)::
     ```
 
 Stdlib-only (no PyYAML): the block is a tightly-constrained subset — top-level
-scalars, lists (``ignore_patterns``, ``review_body_summary_patterns``,
-``refusal_patterns``, ``refusal_size_patterns``, ``refusal_size_cap_patterns``,
-``contentless_review_markers``,
+scalars, lists (``ignore_patterns``, ``acknowledgment_patterns``,
+``review_body_summary_patterns``,
+``refusal_patterns``, ``refusal_size_patterns``, ``no_unreviewed_commit_patterns``,
+``refusal_size_cap_patterns``, ``contentless_review_markers``,
 ``actionable_content_markers``, ``participation_evidence``,
 ``rate_limit_eta_patterns``), and two nested maps
 (``participation_evidence_markers``, ``severity_map``) — parsed by a small
@@ -392,6 +399,23 @@ class BotRegistry:
         value = self._by_kind.get(bot_kind, {}).get('trigger_comment', '')
         return value if isinstance(value, str) else ''
 
+    def escalated_trigger_comment(self, bot_kind: str) -> str:
+        """Return the ESCALATED re-review command for ``bot_kind`` (``''`` if unknown/absent).
+
+        The companion to :meth:`trigger_comment`. That one asks the bot for a review
+        of what it has not reviewed yet; this one asks it to review the whole
+        changeset again. It is the remedy for a bot that answered the ordinary
+        trigger by saying no commit is unreviewed (:meth:`no_unreviewed_commit_patterns`):
+        repeating the ordinary trigger there produces the same reply.
+
+        An empty string is the default and means the bot declares no such command,
+        so nothing is posted in its name. The value is whitespace-stripped, matching
+        how every other registry-sourced literal is normalised before it is compared
+        or posted.
+        """
+        value = self._by_kind.get(bot_kind, {}).get('escalated_trigger_comment', '')
+        return value.strip() if isinstance(value, str) else ''
+
     def trigger_semantics(self, bot_kind: str) -> str:
         """Return whether ``bot_kind`` re-reviews on push or must be ASKED.
 
@@ -443,6 +467,32 @@ class BotRegistry:
     def ignore_patterns(self, bot_kind: str) -> list[str]:
         """Return the per-bot whole-comment ignore patterns (``[]`` if unknown)."""
         value = self._by_kind.get(bot_kind, {}).get('ignore_patterns', [])
+        return list(value) if isinstance(value, list) else []
+
+    def acknowledgment_patterns(self, bot_kind: str) -> list[str]:
+        """Return the per-bot literal ACKNOWLEDGMENT markers (``[]`` if unknown/absent).
+
+        Each entry is an exact substring the bot emits in a reply that only confirms
+        a command was RECEIVED — "the review you asked for has started", or "the
+        review you asked for has ended". Such a reply is the bot talking about the
+        command, so it is neither the bot's answer to a re-review request nor review
+        feedback about the code. See
+        ``automatic-review/standards/bot-participation-contract.md`` § "An
+        acknowledgment is not an answer".
+
+        A DEDICATED field, for the reason :meth:`refusal_patterns` is one: the three
+        lists answer different questions. ``ignore_patterns`` names sections of a
+        *successful* review and ``refusal_patterns`` names what a bot posts when it
+        *declines*; an acknowledgment is neither, and reading it from either list
+        would report a bot that merely confirmed a command as having reviewed, or as
+        having refused.
+
+        An empty list is the default and means the bot posts no acknowledgment this
+        pipeline knows of: nothing is classified an acknowledgment for it, so a bot
+        that has not declared the field behaves exactly as it did before the field
+        existed.
+        """
+        value = self._by_kind.get(bot_kind, {}).get('acknowledgment_patterns', [])
         return list(value) if isinstance(value, list) else []
 
     def refusal_patterns(self, bot_kind: str) -> list[str]:
@@ -509,6 +559,31 @@ class BotRegistry:
         # refusal_size_patterns(bot) ⊆ refusal_patterns(bot) true at runtime, so a
         # size entry left outside the detection set cannot reclassify a quota refusal
         # as size. Declared order is preserved.
+        refusal = set(self.refusal_patterns(bot_kind))
+        return [marker for marker in declared if marker in refusal]
+
+    def no_unreviewed_commit_patterns(self, bot_kind: str) -> list[str]:
+        """Return the refusal markers that say NOTHING NEW is left to review (``[]`` if absent).
+
+        A **subset overlay** on :meth:`refusal_patterns`, built exactly as
+        :meth:`refusal_size_patterns` is and for the same reason. ``refusal_patterns``
+        answers *"did the bot decline?"*; this field answers *"did it decline because
+        it has already reviewed every commit?"* — the refusal's **condition**. A reply
+        matching an entry here is not a limit: no window is open, nothing reopens by
+        waiting, and the remedy is either nothing at all or the bot's
+        :meth:`escalated_trigger_comment`. Any other detected refusal keeps the
+        ``rate_limited`` condition.
+
+        Every returned entry ALSO appears in ``refusal_patterns`` — detection stays
+        that field's job, and it is what keeps the reply from being filed as a
+        finding or credited as participation. The subset invariant is ENFORCED here:
+        an entry declared outside ``refusal_patterns`` is dropped, so a stray marker
+        can never assign a condition to a body the detection layer does not
+        recognise. Declared order is preserved. An empty list is the default, and
+        means every refusal the bot emits carries the ``rate_limited`` condition.
+        """
+        value = self._by_kind.get(bot_kind, {}).get('no_unreviewed_commit_patterns', [])
+        declared = list(value) if isinstance(value, list) else []
         refusal = set(self.refusal_patterns(bot_kind))
         return [marker for marker in declared if marker in refusal]
 
@@ -808,6 +883,11 @@ def trigger_comment(bot_kind: str) -> str:
     return REGISTRY.trigger_comment(bot_kind)
 
 
+def escalated_trigger_comment(bot_kind: str) -> str:
+    """The escalated (whole-changeset) re-review command for ``bot_kind`` (``''`` if absent)."""
+    return REGISTRY.escalated_trigger_comment(bot_kind)
+
+
 def completion_check_name(bot_kind: str) -> str:
     """The completion check-run name for ``bot_kind`` (``''`` if unknown/absent)."""
     return REGISTRY.completion_check_name(bot_kind)
@@ -828,6 +908,11 @@ def ignore_patterns(bot_kind: str) -> list[str]:
     return REGISTRY.ignore_patterns(bot_kind)
 
 
+def acknowledgment_patterns(bot_kind: str) -> list[str]:
+    """The per-bot literal acknowledgment markers for ``bot_kind`` (``[]`` if absent)."""
+    return REGISTRY.acknowledgment_patterns(bot_kind)
+
+
 def refusal_patterns(bot_kind: str) -> list[str]:
     """The per-bot literal refusal-notice markers for ``bot_kind`` (``[]`` if absent)."""
     return REGISTRY.refusal_patterns(bot_kind)
@@ -836,6 +921,11 @@ def refusal_patterns(bot_kind: str) -> list[str]:
 def refusal_size_patterns(bot_kind: str) -> list[str]:
     """The refusal markers whose cause is a diff-SIZE ceiling for ``bot_kind`` (``[]`` if absent)."""
     return REGISTRY.refusal_size_patterns(bot_kind)
+
+
+def no_unreviewed_commit_patterns(bot_kind: str) -> list[str]:
+    """The refusal markers saying nothing new is left to review for ``bot_kind`` (``[]`` if absent)."""
+    return REGISTRY.no_unreviewed_commit_patterns(bot_kind)
 
 
 def refusal_size_cap_patterns(bot_kind: str) -> list[str]:

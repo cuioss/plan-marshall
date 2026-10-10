@@ -43,12 +43,14 @@ Two primitives live here:
   last-resort orchestrator escalation. **`queue-list`** is the read-only inspection
   of that FIFO queue — ordered entries with each holder's liveness, mutating
   nothing — so diagnosing a `blocked` never requires opening `merge-queue.json` by
-  hand. The same entry point also carries the **rate-window claim** (`rate-window claim` / `check` / `release`) — a cross-plan claim on ONE
+  hand. The same entry point also carries the **rate-window claim** (`rate-window claim` / `check` / `wait` / `release`) — a cross-plan claim on ONE
   review bot's rate window that shares the merge-lock STORE but never the merge
-  MUTEX (see below) — and the **`poll-delay`** computation, a bounded jittered
-  delay for a caller about to wake from an elapsed rate window. `poll-delay` shares
-  neither the store nor the mutex: it is a pure computation that touches no state
-  and never sleeps, returning the number for its CALLER to wait.
+  MUTEX (see below) — and the **`poll-delay`** computation, a bounded random
+  delay in seconds. `rate-window wait`
+  is the one verb of this script that waits: a bounded, read-only poll of the
+  claim's expiry that writes nothing and takes no guard between reads. `poll-delay`
+  shares neither the store nor the mutex: it is a pure computation that touches no
+  state and never sleeps.
 - **The build-queue limiter** (`scripts/build_queue.py`, notation
   `plan-marshall:manage-locks:build_queue`) — a bounded-`k`-slot admitter with a
   FIFO waiting queue, persisted in the machine-global `build-queue.json` under the
@@ -592,8 +594,15 @@ A pure non-mutating read: `status: held` while a holder's window is unexpired,
 `pr_number`, `expires_at`, `seconds_remaining`, `expired`, `attempts`,
 `attempts_for_pr`, `attempt_cap`, `attempts_remaining` — on BOTH branches, including
 the one where no record exists yet, so a consumer never branches on whether the
-window has been claimed. This is the observable the recovery sequence polls between
-paced `sleep` calls — never a single long blocking sleep of the parsed ETA.
+window has been claimed. It reads once and returns at once; the verb that waits on
+this same read is `rate-window wait` below.
+
+**Re-entry read.** A `check` by the plan whose own claim has elapsed and was never
+released reports `status: free`, `expired: true` and `holder` naming that plan — for
+this PR, with `attempts_for_pr` unchanged. That is how a re-dispatched
+`automatic-review` step recognises its own elapsed claim without issuing a second
+`claim`, which matters because a self-holder re-claim (`action: renewed`) advances
+the attempt counter exactly as a first claim does.
 
 `--pr-number` is REQUIRED here for the same reason it is on `claim`: the budget
 `check` reports is the budget the caller's PR has left, which is unanswerable
@@ -613,6 +622,58 @@ makes `check` safe to read before acting: when the two disagreed, a `check` for 
 PR the stored record did not belong to reported the budget exhausted while the
 `claim` that followed would have succeeded, so a read-before-act consumer skipped a
 recovery it was still allowed to run.
+
+### merge_lock — rate-window wait
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-window wait \
+  --plan-id PLAN_ID --bot-kind BOT_KIND --pr-number PR_NUMBER \
+  [--grace-seconds GRACE_SECONDS] [--wait-seconds WAIT_SECONDS] \
+  [--interval-seconds INTERVAL_SECONDS] [--attempt-cap ATTEMPT_CAP]
+```
+
+A bounded, read-only wait until `--bot-kind`'s rate window has elapsed. It re-reads
+the claim's own expiry — the same read `rate-window check` performs — every
+`--interval-seconds` (default `15`) until the **wake instant**, the stored
+`expires_at` plus `--grace-seconds` (default `0`), has passed, or until the per-call
+bound `--wait-seconds` lapses first. `--pr-number` is REQUIRED, as on `check`.
+
+It returns every `check` field as of its last read, plus:
+
+| Field | Meaning |
+|-------|---------|
+| `timed_out` | `true` when the per-call bound lapsed before the wake instant. A bound, not a verdict — the caller re-issues the call. `false` means the wake instant was reached |
+| `waited_seconds` | Whole seconds this call spent waiting; a caller holding a total budget subtracts it |
+| `wake_at` | The wake instant in epoch seconds, or `null` when no window is recorded (never claimed, or released) — there is then nothing to wait for and the call returns at once |
+
+The per-call bound is clamped to 480 seconds, whatever value is passed, so the call
+returns before the host's per-call ceiling can cut it off mid-wait (see
+[`plan-marshall/standards/waiting.md`](../plan-marshall/standards/waiting.md) § "The
+inner ceiling must margin-clear the outer one"). A rate window runs to an hour, so
+the caller re-issues the call until `timed_out` is `false`. The expiry is re-read on
+every iteration rather than captured once, so a release, a renewal, or a takeover
+while the call sleeps moves the wake instant with it, and each sleep is cut to the
+wake instant so the call returns as the window elapses.
+
+**It writes nothing and decides nothing.** The verb mutates no key of the store,
+emits no `[LOCK]` event, and takes no guard between reads — it is the one verb of
+this script that sleeps, and it does so holding nothing. Its return is a wake signal
+only. Another plan can claim the window between this call reporting the wake and the
+caller acting on it, so whoever acts re-reads the claim itself, and every claim or
+release still goes through the guarded read-modify-write core: the decision is made
+on a fresh read under the guard, never on this verb's answer. The mitigation menu
+for that shape is
+[`ref-code-quality/standards/code-organization.md`](../ref-code-quality/standards/code-organization.md#toctou--check-then-act-hazards).
+
+A non-finite or negative `--grace-seconds` / `--wait-seconds`, or a non-finite or
+non-positive `--interval-seconds`, is refused (`status: error`,
+`error_code: INVALID_INPUT`) before the store is read.
+
+The consumer is `phase-6-finalize` item 7a, in the main context. It issues this call
+with no `--grace-seconds`, so the wake instant is the claim's `expires_at` itself, and
+re-issues it under its total budget until `timed_out` is `false`. A `status: error`
+return is a failed call, not a spent budget, and the consumer does not treat it as
+one. No dispatched step calls this verb.
 
 ### merge_lock — rate-window release
 
@@ -646,22 +707,21 @@ Returns ONE uniformly-drawn delay in seconds, bounded by `--min-seconds` (defaul
 - **`status: error`** (`error_code: INVALID_INPUT`) — the bounds are malformed, in
   exactly three ways, checked in this order. Either bound is **non-finite** (`nan`,
   `inf`, `-inf`): `nan` compares False against every bound so neither check below can
-  see it, and both it and `+inf` produce a non-finite draw that reaches the caller's
-  `sleep`. Either bound is **negative**: the drawn value is interpolated straight into
-  the caller's `sleep` command, so a negative bound leaves this verb as a malformed
-  shell command rather than as a merely-odd number. Or `--min-seconds` **exceeds**
+  see it, and both it and `+inf` produce a non-finite draw. Either bound is
+  **negative**: the drawn value is a duration a caller passes on, so a
+  negative bound leaves this verb as a refused call rather than as a merely-odd
+  number. Or `--min-seconds` **exceeds**
   `--max-seconds`: the pair is REFUSED, never silently swapped, because a swap returns
   a plausible delay drawn from a range the caller never asked for, so the caller's
   mistake survives as a wrong-but-believable number instead of surfacing as an error
   it can act on. Every refusal echoes `min_seconds` and `max_seconds`.
 
-**It computes; it does not wait.** The verb returns the number and exits — the
-CALLER sleeps it. `automatic-review` awaits it once at the Branch 3 → trigger-arm
-boundary of its rate-limit recovery, as a single standalone `sleep` Bash call. The
-split is deliberate and matches the rate-window verbs, which are likewise
-non-waiting (an atomic claim or release, with the caller re-polling): a wait
-embedded in this script would hold a process open inside a primitive every
-concurrently-finalizing plan contends on.
+**It computes; it does not wait.** The verb returns the number and exits. No verb that
+writes the store sleeps, and none sleeps while holding the guard, because a wait
+embedded in a claim or a release would hold a process open inside a critical section
+every concurrently-finalizing plan contends on. `rate-window wait` is the one verb
+that waits, and it is read-only and guard-free; its `--grace-seconds` flag is where a
+caller would pass a drawn delay. No workflow in this bundle calls `poll-delay`.
 
 **It shares neither the store nor the mutex — it touches no state at all.** Unlike
 the `rate-window` verbs, which at least co-tenant `merge-queue.json`, `poll-delay`
@@ -736,7 +796,7 @@ script.
 | build wrappers (`_build_execute_factory`, `_pyproject_execute`) | consume | `build_queue acquire`/`release` around `execute_direct` — the in-process fallback path (unregistered / daemon-down) |
 | `manage-build-server:_marshalld_scheduler` (via the D5 routing seam) | consumes | the same machine-global `build-queue.json` — the registered path (daemon-served builds) |
 | `automatic-review/SKILL.md` rate-limit recovery sequence | consumes | `merge_lock rate-window claim`/`check`/`release` |
-| `automatic-review/SKILL.md` Branch 3 → trigger-arm boundary | consumes | `merge_lock poll-delay` — awaits the returned `delay_seconds` once before the boundary's selector re-consult routes |
+| `phase-6-finalize/SKILL.md` item 7a (`rate_window_await` branch, main context) | consumes | `merge_lock rate-window wait`, re-issued one bounded call at a time under the total budget until the window has expired; `merge_lock rate-window release` when the budget is spent with the window still open |
 | machine-global `machine-config.json` | produces | the machine-global `max_slots` that `build_queue acquire`/`release` resolve and report the source of; this skill only READS it |
 | `_locks_core.rmw_json` | consumed by | both `build_queue` (`build-queue.json`) and `merge_lock` (`merge-queue.json` FIFO layer AND `rate_windows` claims) |
 

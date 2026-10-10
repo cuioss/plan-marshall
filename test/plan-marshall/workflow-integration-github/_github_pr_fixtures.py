@@ -27,6 +27,23 @@ evidence pairing is either GATED on a content marker (:data:`MARKER_GATED_EVIDEN
 or credited on the shape alone (:data:`UNGATED_EVIDENCE`). Both halves are derived from
 one registry read, guarded non-empty, and sized, so a marker newly declared by a bot
 moves its pairing from one half to the other with no test edit.
+
+It is also the home of the **CodeRabbit quota-notice bodies** that state a reset time
+in the review-summary wording ("Next included review available in N minutes"), each
+paired with the reset time it states and that time in seconds, and of the matched
+body that states none. They are literals rather than registry-derived because they
+are the observed notice text the registry's extraction patterns must read.
+
+And of the **CodeRabbit acknowledgment replies** — the command replies that only
+confirm ``@coderabbitai review`` was received (:data:`CODERABBIT_ACKNOWLEDGMENTS`) —
+each carrying the PROVENANCE of its wording, beside the matched bodies that are not
+acknowledgments: a genuine short review comment from the same bot, and a human
+comment that quotes an acknowledgment.
+
+And of the **CodeRabbit "nothing new to review" replies**
+(:data:`CODERABBIT_NO_UNREVIEWED_COMMIT_REPLIES`) — the refusals whose condition is
+``no_unreviewed_commit`` — each carrying the provenance of its wording, beside the
+matched command reply that is a rate limit (:data:`CODERABBIT_RATE_LIMITED_COMMAND_REPLY`).
 """
 
 from __future__ import annotations
@@ -128,3 +145,159 @@ UNGATED_EVIDENCE: tuple[tuple[str, str], ...] = guard_non_empty(
 
 #: The published size of the ungated evidence population.
 UNGATED_EVIDENCE_COUNT: int = len(UNGATED_EVIDENCE)
+
+#: The bot the quota-notice bodies below belong to.
+QUOTA_NOTICE_BOT_KIND = 'coderabbit'
+
+#: ``(body, stated reset time, that time in seconds)`` for CodeRabbit's review-summary
+#: quota notice. Every body carries the bot's declared ``Review limit reached`` wording
+#: and states its reset time as "Next included review available in ...": in minutes, in
+#: hours, and in the two compound forms.
+CODERABBIT_NEXT_REVIEW_NOTICES: tuple[tuple[str, str, int], ...] = guard_non_empty(
+    (
+        (
+            '> [!WARNING] > ## Review limit reached > '
+            'You have reached your review limit. Next included review available in 38 minutes.',
+            '38 minutes',
+            2280,
+        ),
+        (
+            '> [!WARNING] > ## Review limit reached > '
+            'You have reached your review limit. Next included review available in 2 hours.',
+            '2 hours',
+            7200,
+        ),
+        (
+            '> [!WARNING] > ## Review limit reached > '
+            'You have reached your review limit. Next included review available in 12 minutes and 30 seconds.',
+            '12 minutes and 30 seconds',
+            750,
+        ),
+        (
+            '> [!WARNING] > ## Review limit reached > '
+            'You have reached your review limit. Next included review available in 1 hour and 5 minutes.',
+            '1 hour and 5 minutes',
+            3900,
+        ),
+    ),
+    'CODERABBIT_NEXT_REVIEW_NOTICES',
+    'the literal notice bodies declared in _github_pr_fixtures',
+)
+
+#: The published size of the stated-reset-time notice population.
+CODERABBIT_NEXT_REVIEW_NOTICE_COUNT: int = len(CODERABBIT_NEXT_REVIEW_NOTICES)
+
+#: The matched body: the same declared wording, stating NO reset time at all.
+CODERABBIT_NOTICE_STATING_NO_RESET_TIME = (
+    '> [!WARNING] > ## Review limit reached > '
+    'You have reached your review limit for the current billing cycle. '
+    'Reviews will resume once the limit resets.'
+)
+
+#: The bot the acknowledgment bodies below belong to, and the login it comments under.
+ACKNOWLEDGMENT_BOT_KIND = 'coderabbit'
+ACKNOWLEDGMENT_BOT_LOGIN = 'coderabbitai'
+
+#: Provenance of an acknowledgment fixture's WORDING. ``observed`` — the statement was
+#: read off a live command reply. ``constructed`` — the statement is the reported
+#: wording and has NOT been read off a live comment: CodeRabbit edits the one reply in
+#: place, so the earlier wording is gone by the time the reply is read.
+ACKNOWLEDGMENT_OBSERVED = 'observed'
+ACKNOWLEDGMENT_CONSTRUCTED = 'constructed'
+
+
+def _command_reply(statement: str) -> str:
+    """Wrap ``statement`` in the disclosure CodeRabbit's command replies arrive in.
+
+    The ``Action performed`` summary and the one-line statement are the parts that
+    carry meaning; the line breaks around them are this builder's own, which is why
+    the recogniser under test collapses whitespace before it compares.
+    """
+    return f'<details>\n<summary>✅ Action performed</summary>\n\n{statement}\n\n</details>'
+
+
+#: ``(case id, body, provenance)`` for each CodeRabbit acknowledgment reply.
+#:
+#: ``Review finished.`` is OBSERVED: it was read off the command replies on
+#: ``cuioss/plan-marshall#1654``, inside the ``Action performed`` disclosure.
+#: ``Review triggered.`` is CONSTRUCTED: those replies had already been edited to their
+#: final wording when they were read, so this body has never been seen on a live
+#: comment. A case that passes only on the constructed body proves the declared literal
+#: is honoured, not that CodeRabbit posts it.
+CODERABBIT_ACKNOWLEDGMENTS: tuple[tuple[str, str, str], ...] = guard_non_empty(
+    (
+        ('review-finished', _command_reply('Review finished.'), ACKNOWLEDGMENT_OBSERVED),
+        ('review-triggered', _command_reply('Review triggered.'), ACKNOWLEDGMENT_CONSTRUCTED),
+    ),
+    'CODERABBIT_ACKNOWLEDGMENTS',
+    'the literal acknowledgment bodies declared in _github_pr_fixtures',
+)
+
+#: The published size of the acknowledgment population.
+CODERABBIT_ACKNOWLEDGMENT_COUNT: int = len(CODERABBIT_ACKNOWLEDGMENTS)
+
+#: NEGATIVE control, same bot: a genuine review comment as short as an acknowledgment.
+#: It carries a code anchor and neither acknowledgment statement, so it is feedback
+#: about the code — matched as the bot's answer, and filed as a finding.
+CODERABBIT_GENUINE_SHORT_REVIEW_COMMENT = 'Guard the bound at `src/idx.py:12` before indexing.'
+
+#: NEGATIVE control, other author: a HUMAN comment quoting an acknowledgment statement.
+#: The class is scoped to the bot that declared the literal, so the quotation does not
+#: make this an acknowledgment.
+HUMAN_COMMENT_QUOTING_AN_ACKNOWLEDGMENT = (
+    'CodeRabbit replied "Review finished." but the retry loop at `src/idx.py:12` '
+    'still spins forever when the backoff cap is zero.'
+)
+
+#: The bot the "nothing new to review" bodies below belong to, and its login.
+NO_UNREVIEWED_COMMIT_BOT_KIND = 'coderabbit'
+NO_UNREVIEWED_COMMIT_BOT_LOGIN = 'coderabbitai'
+
+
+def _declined_command_reply(statement: str) -> str:
+    """Wrap ``statement`` in the disclosure CodeRabbit's DECLINED command replies arrive in.
+
+    The same disclosure as :func:`_command_reply`, under the ``Action not completed``
+    summary, followed by the note CodeRabbit appends to every such reply.
+    """
+    return (
+        '<details>\n<summary>⚠️ Action not completed</summary>\n\n'
+        f'{statement}\n\n'
+        '> Note: CodeRabbit is an incremental review system and does not re-review already '
+        'reviewed commits. This command is applicable only when automatic reviews are paused.\n\n'
+        '</details>'
+    )
+
+
+#: ``(case id, body, provenance)`` for each CodeRabbit reply saying nothing new is left
+#: to review. Provenance uses the acknowledgment vocabulary above.
+#:
+#: ``Already reviewed the last commit`` is OBSERVED: it was read off a command reply on
+#: ``cuioss/plan-marshall#1654``. ``No new commits to review`` is CONSTRUCTED: it is the
+#: reported wording of the skip notice and has not been read off a live comment.
+CODERABBIT_NO_UNREVIEWED_COMMIT_REPLIES: tuple[tuple[str, str, str], ...] = guard_non_empty(
+    (
+        (
+            'already-reviewed',
+            _declined_command_reply(
+                'Already reviewed the last commit. '
+                'Use @coderabbitai full review to rerun a review of the entire changeset.'
+            ),
+            ACKNOWLEDGMENT_OBSERVED,
+        ),
+        (
+            'no-new-commits',
+            '> [!IMPORTANT]\n> ## Review skipped\n>\n> No new commits to review.',
+            ACKNOWLEDGMENT_CONSTRUCTED,
+        ),
+    ),
+    'CODERABBIT_NO_UNREVIEWED_COMMIT_REPLIES',
+    'the literal no-new-commit bodies declared in _github_pr_fixtures',
+)
+
+#: The published size of the no-new-commit reply population.
+CODERABBIT_NO_UNREVIEWED_COMMIT_REPLY_COUNT: int = len(CODERABBIT_NO_UNREVIEWED_COMMIT_REPLIES)
+
+#: The matched body: a declined command reply from the same bot, in the same disclosure,
+#: that IS a limit. Its condition is ``rate_limited``.
+CODERABBIT_RATE_LIMITED_COMMAND_REPLY = _declined_command_reply('Review rate limited.')

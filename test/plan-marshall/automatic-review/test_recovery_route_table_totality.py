@@ -4,7 +4,7 @@
 
 ``automatic-review/SKILL.md`` consumes ``github_re_review recovery-action``'s
 ``action`` and routes on it through a table of its own. That table cannot live in
-the selector: the branches it names — ``Branch 0`` … ``Branch 5`` — are anchors
+the selector: the branches it names — ``Branch 0`` … ``Branch 6`` — are anchors
 this DOCUMENT owns, and a selector that published them would be declaring the
 structure of a workflow it knows nothing about. Route metadata therefore stays with
 the router.
@@ -31,6 +31,16 @@ This suite closes both directions, and every population is DERIVED:
 which action is a routing decision this document is free to change; pinning the
 pairs would make an intentional restructure fail as though it were a defect. What
 is pinned is that the mapping is TOTAL and its targets EXIST.
+
+One property of the routes IS pinned beside totality, because it is a contract and
+not a layout: the step never waits for a rate window itself. The route for an open
+window hands the wait back to the main context, and the two routes that deliver a
+recovery event are reached only from the re-entry consult that follows that wait.
+Those assertions read the wording of the target cells, never a branch number.
+
+A second such contract covers the routes for a ``no_unreviewed_commit`` reply: of
+the four actions the selector resolves for it, exactly one posts a command, and
+every one of them is reached only after the pass's FIND.
 """
 
 from __future__ import annotations
@@ -46,6 +56,8 @@ from pathlib import Path
 # arrangement of plain imports can express the ordering.
 importlib.import_module('github_ops')
 
+import _github_pr  # noqa: E402
+import bot_registry  # noqa: E402
 import github_re_review  # noqa: E402
 
 from conftest import get_skill_dir  # noqa: E402
@@ -159,6 +171,139 @@ class TestTheRouteTableIsTotalOverTheSelectorVocabulary:
         """A row with an empty target cell routes an action to nothing at all."""
         for action_cell, target_cell in _ROUTE_ROWS:
             assert target_cell, f'route row for {action_cell!r} names no destination'
+
+
+def _targets_routing(action: str) -> list[str]:
+    """The target cells of every route row whose action cell names ``action``."""
+    return [target for action_cell, target in _ROUTE_ROWS if f'`{action}`' in action_cell]
+
+
+class TestTheRoutesHandTheWaitBack:
+    """No route leaves the step waiting for a rate window.
+
+    The step is a dispatched leaf and holds no wait that runs to an hour. The open
+    window is therefore routed to a hand-back, and the event-delivering routes are
+    entered only after the main context has held the wait.
+    """
+
+    def test_the_open_window_route_hands_the_wait_to_the_main_context(self):
+        targets = _targets_routing(github_re_review.RECOVERY_ACTION_AWAIT_WINDOW)
+
+        assert len(targets) == 1, f'expected one route for an open window, found {len(targets)}'
+        assert 'hand the wait back to the main context' in targets[0], targets[0]
+
+    def test_no_route_sends_an_action_to_a_poll(self):
+        """The step polls no window: a route that names a poll names a wait it cannot hold."""
+        for action_cell, target_cell in _ROUTE_ROWS:
+            assert 'poll' not in target_cell.lower(), f'route {action_cell!r} still sends to a poll: {target_cell!r}'
+
+    def test_the_event_delivering_routes_are_reached_from_the_re_entry_consult(self):
+        """A recovery event is generated only after the window elapsed, on re-entry."""
+        for action in (
+            github_re_review.RECOVERY_ACTION_CLOSE_AND_REOPEN,
+            github_re_review.RECOVERY_ACTION_GENERATE_TRIGGER,
+        ):
+            targets = _targets_routing(action)
+
+            assert len(targets) == 1, f'expected one route for {action}, found {len(targets)}'
+            assert 're-entry consult' in targets[0], targets[0]
+            assert 'after the window elapsed' in targets[0], targets[0]
+
+    def test_a_route_that_escalates_names_no_re_entry(self):
+        """Matched control: the re-entry wording belongs to the delivering routes only."""
+        targets = _targets_routing(github_re_review.RECOVERY_ACTION_ESCALATE_STRUCTURAL)
+
+        assert len(targets) == 1, f'expected one structural route, found {len(targets)}'
+        assert 're-entry consult' not in targets[0], targets[0]
+
+
+#: The actions the selector resolves for a ``no_unreviewed_commit`` reply, split by
+#: whether the route posts anything. Named through the selector's own constants, so a
+#: renamed action fails at import rather than leaving a stale string here.
+_NON_POSTING_NO_UNREVIEWED_ACTIONS = (
+    github_re_review.RECOVERY_ACTION_ACCEPT_REVIEW_ON_RECORD,
+    github_re_review.RECOVERY_ACTION_AWAIT_TRIAGE,
+    github_re_review.RECOVERY_ACTION_LEAVE_TO_STALE_REVIEW,
+)
+_POSTING_NO_UNREVIEWED_ACTION = github_re_review.RECOVERY_ACTION_POST_ESCALATED_COMMAND
+
+
+class TestTheNoUnreviewedCommitRoutes:
+    """A "nothing new to review" reply is routed to four outcomes, and one of them posts.
+
+    The escalated command uses a review from the bot's allowance, so which routes
+    post is a contract, not a layout.
+    """
+
+    def test_each_action_has_exactly_one_route(self):
+        for action in (*_NON_POSTING_NO_UNREVIEWED_ACTIONS, _POSTING_NO_UNREVIEWED_ACTION):
+            targets = _targets_routing(action)
+
+            assert len(targets) == 1, f'expected one route for {action}, found {len(targets)}'
+
+    def test_the_three_routes_with_a_review_on_record_post_nothing(self):
+        for action in _NON_POSTING_NO_UNREVIEWED_ACTIONS:
+            [target] = _targets_routing(action)
+
+            assert 'post nothing' in target, (action, target)
+            assert 'escalated command' not in target, (action, target)
+
+    def test_only_the_route_with_no_review_on_record_posts_the_escalated_command(self):
+        """MATCHED CONTROL — the posting wording is present on the one route that posts."""
+        [target] = _targets_routing(_POSTING_NO_UNREVIEWED_ACTION)
+
+        assert 'post nothing' not in target, target
+        assert 'escalated command' in target, target
+        assert 'once' in target, target
+
+    def test_every_route_is_reached_after_find(self):
+        """Both observations exist only after FIND, so no route is entered before it."""
+        for action in (*_NON_POSTING_NO_UNREVIEWED_ACTIONS, _POSTING_NO_UNREVIEWED_ACTION):
+            [target] = _targets_routing(action)
+
+            assert 'after FIND' in target, (action, target)
+
+    def test_the_pending_findings_route_names_the_triage(self):
+        """The pending-findings case is its own route, and it leaves the findings to triage."""
+        [target] = _targets_routing(github_re_review.RECOVERY_ACTION_AWAIT_TRIAGE)
+
+        assert 'triage' in target, target
+
+    def test_the_undecidable_review_state_is_routed_and_posts_nothing(self):
+        """A review the producer could not place is routed apart from one observed absent.
+
+        The row is located by the ``reason`` the selector publishes for that state,
+        so the two must agree. It carries the non-posting wording of the routes with
+        a review on record; the posting route is the matched control above.
+        """
+        bots = bot_registry.bot_kinds()
+        assert bots, 'the registry declares no bot — the selector would answer registry_empty'
+        undecidable = github_re_review.resolve_recovery_action(
+            bots[0],
+            condition=_github_pr.REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT,
+            review_on_record=github_re_review.REVIEW_ON_RECORD_UNDECIDABLE,
+            pending_findings=0,
+        )
+        assert undecidable['action'] == github_re_review.RECOVERY_ACTION_UNMEASURED
+
+        targets = [
+            target
+            for action_cell, target in _ROUTE_ROWS
+            if f'`{undecidable["action"]}`' in action_cell and f'reason: {undecidable["reason"]}' in action_cell
+        ]
+
+        assert len(targets) == 1, f'expected one route for {undecidable["reason"]}, found {len(targets)}'
+        assert 'post nothing' in targets[0], targets[0]
+        assert 'escalated command' not in targets[0], targets[0]
+        assert 'after FIND' in targets[0], targets[0]
+        assert 'hand the wait back' not in targets[0], targets[0]
+
+    def test_none_of_the_routes_claims_or_waits_for_a_window(self):
+        """The reply is not a limit, so no route hands a wait back."""
+        for action in (*_NON_POSTING_NO_UNREVIEWED_ACTIONS, _POSTING_NO_UNREVIEWED_ACTION):
+            [target] = _targets_routing(action)
+
+            assert 'hand the wait back' not in target, (action, target)
 
 
 class TestEveryCitedBranchExists:

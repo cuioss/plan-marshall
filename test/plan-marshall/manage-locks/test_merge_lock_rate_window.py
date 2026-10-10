@@ -2,20 +2,22 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 
 """Tests for the ``merge_lock.py`` ``rate-window`` verbs — the cross-plan claim on
-ONE review bot's rate window, co-tenanting the merge-lock store — and for the
-``poll-delay`` verb, the storeless jitter computation a caller waits after that
-window elapses.
+ONE review bot's rate window, co-tenanting the merge-lock store — for the
+``rate-window wait`` verb, the bounded read-only wait on that claim's expiry, and
+for the ``poll-delay`` verb, the storeless bounded-delay computation.
 """
 
 from __future__ import annotations
 
 import json
+import math
 import time
 from argparse import Namespace
 from pathlib import Path
 
 import pytest
 from _merge_lock_rate_window_fixtures import (
+    _DEFAULT_ATTEMPT_CAP,
     SCRIPT_PATH,
     _check,
     _claim,
@@ -304,6 +306,62 @@ class TestRateWindowCli:
         assert '--pr-number' in parsed['error'], parsed
         assert not isolated_base['queue_path'].exists()
 
+    def test_wait_returns_at_once_for_an_unclaimed_window(self, isolated_base: dict) -> None:
+        """The shipped ``rate-window wait`` parses and reports the wait fields.
+
+        No window is stored, so there is nothing to wait for and the call does not
+        pause — which is what lets the real entry point be driven here with the real
+        clock. The defaults of the three wait flags are whatever the parser supplies.
+        """
+        result = run_script(
+            SCRIPT_PATH,
+            'rate-window',
+            'wait',
+            '--plan-id',
+            'plan-a',
+            '--bot-kind',
+            'coderabbit',
+            '--pr-number',
+            '42',
+            env_overrides={'PLAN_BASE_DIR': str(isolated_base['base'])},
+        )
+
+        assert result.returncode == 0, result.stderr
+        parsed = parse_toon(result.stdout)
+        assert parsed['status'] == 'free', parsed
+        assert parsed['timed_out'] is False, parsed
+        assert parsed['waited_seconds'] == 0, parsed
+        assert parsed.get('wake_at') is None, parsed
+        assert not isolated_base['queue_path'].exists()
+
+    def test_wait_refuses_a_missing_pr_number(self, isolated_base: dict) -> None:
+        """``wait`` repeats the read ``check`` performs, so it refuses identically."""
+        result = run_script(
+            SCRIPT_PATH,
+            'rate-window',
+            'wait',
+            '--plan-id',
+            'plan-a',
+            '--bot-kind',
+            'coderabbit',
+            env_overrides={'PLAN_BASE_DIR': str(isolated_base['base'])},
+        )
+
+        parsed = parse_toon(result.stdout)
+        assert parsed['status'] == 'error', parsed
+        assert parsed['error_code'] == 'INVALID_INPUT', parsed
+        assert '--pr-number' in parsed['error'], parsed
+        assert not isolated_base['queue_path'].exists()
+
+    def test_help_advertises_the_wait_action_and_its_flags(self) -> None:
+        result = run_script(SCRIPT_PATH, 'rate-window', '--help')
+
+        assert result.returncode == 0, result.stderr
+        advertised = ' '.join(result.stdout.split())
+        assert '{claim,check,wait,release}' in advertised, advertised
+        for flag in ('--grace-seconds', '--wait-seconds', '--interval-seconds'):
+            assert flag in advertised, advertised
+
     def test_release_still_accepts_an_absent_pr_number(self, isolated_base: dict) -> None:
         """Matched negative control for the two refusals above.
 
@@ -343,7 +401,346 @@ def test_expires_at_is_derived_from_the_supplied_window_length(isolated_base: di
 
 
 # =============================================================================
-# poll-delay — a bounded jittered delay the CALLER waits
+# rate-window wait — the bounded, read-only wait on the claim's own expiry
+# =============================================================================
+#
+# Every case drives `_run_rate_window_wait` with an injected sleep and two injected
+# clocks, so no test waits real time and each one knows exactly how long the verb
+# believes it waited. The window is written into the store with a WHOLE-NUMBER
+# expiry rather than produced by a real `claim`: the verb compares that expiry
+# against the injected wall clock, and whole numbers keep every subtraction exact,
+# so `waited_seconds` is asserted as a value rather than as a range.
+
+#: The stored expiry every wait case measures against, in epoch seconds.
+_EXPIRES_AT = 2_000_000_000.0
+
+#: The PR every wait case claims for.
+_WAIT_PR = 42
+
+
+class _FakeTime:
+    """A wall clock and a monotonic clock that advance only when ``sleep`` is called."""
+
+    def __init__(self, wall_start: float) -> None:
+        self._wall_start = wall_start
+        self.elapsed = 0.0
+        self.sleeps: list[float] = []
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.elapsed += seconds
+
+    def clock(self) -> float:
+        return self.elapsed
+
+    def wall_clock(self) -> float:
+        return self._wall_start + self.elapsed
+
+
+def _store_window(queue_path: Path, holder: str = 'plan-a', expires_at: float = _EXPIRES_AT) -> None:
+    """Write one claimed ``coderabbit`` window straight into the store."""
+    queue_path.write_text(
+        json.dumps(
+            {
+                'waiting': [],
+                'rate_windows': {
+                    'coderabbit': {
+                        'holder': holder,
+                        'pr_number': _WAIT_PR,
+                        'expires_at': expires_at,
+                        'attempts': 1,
+                        'attempts_by_pr': {str(_WAIT_PR): 1},
+                    }
+                },
+            }
+        ),
+        encoding='utf-8',
+    )
+
+
+def _wait(
+    fake: _FakeTime,
+    *,
+    grace_seconds: float = 0.0,
+    wait_seconds: float = 480.0,
+    interval_seconds: float = 15.0,
+    pr_number: int | None = _WAIT_PR,
+) -> dict:
+    result: dict = merge_lock._run_rate_window_wait(
+        Namespace(
+            action='wait',
+            plan_id='plan-a',
+            bot_kind='coderabbit',
+            pr_number=pr_number,
+            attempt_cap=_DEFAULT_ATTEMPT_CAP,
+            grace_seconds=grace_seconds,
+            wait_seconds=wait_seconds,
+            interval_seconds=interval_seconds,
+        ),
+        sleep=fake.sleep,
+        clock=fake.clock,
+        wall_clock=fake.wall_clock,
+    )
+    return result
+
+
+class TestRateWindowWait:
+    def test_an_elapsed_window_returns_at_once(self, isolated_base: dict) -> None:
+        _store_window(isolated_base['queue_path'])
+        fake = _FakeTime(_EXPIRES_AT + 1.0)
+
+        result = _wait(fake)
+
+        assert fake.sleeps == [], fake.sleeps
+        assert result['timed_out'] is False, result
+        assert result['waited_seconds'] == 0, result
+        assert result['wake_at'] == _EXPIRES_AT, result
+        # The check fields ride along: the claim is still this plan's, and elapsed.
+        assert result['holder'] == 'plan-a', result
+        assert result['expired'] is True, result
+
+    def test_an_open_window_is_waited_until_it_elapses(self, isolated_base: dict) -> None:
+        """Matched control for the case above: the verb does wait when there is a window.
+
+        Without it, "returns at once" would hold just as well for a verb that never
+        waited for anything.
+        """
+        _store_window(isolated_base['queue_path'])
+        fake = _FakeTime(_EXPIRES_AT - 40.0)
+
+        result = _wait(fake)
+
+        # Two full intervals, then a last sleep cut to the wake instant.
+        assert fake.sleeps == [15.0, 15.0, 10.0], fake.sleeps
+        assert result['timed_out'] is False, result
+        assert result['waited_seconds'] == 40, result
+        assert result['expired'] is True, result
+
+    def test_the_per_call_bound_lapsing_first_reports_timed_out(self, isolated_base: dict) -> None:
+        _store_window(isolated_base['queue_path'])
+        fake = _FakeTime(_EXPIRES_AT - 600.0)
+
+        result = _wait(fake, wait_seconds=30.0)
+
+        assert fake.sleeps == [15.0, 15.0], fake.sleeps
+        assert result['timed_out'] is True, result
+        assert result['waited_seconds'] == 30, result
+        # A bound, not a verdict: the fields still report the last state read.
+        assert result['expired'] is False, result
+        assert result['status'] == 'held', result
+        assert result['wake_at'] == _EXPIRES_AT, result
+
+    def test_the_grace_period_is_waited_on_top_of_an_elapsed_window(self, isolated_base: dict) -> None:
+        """The window alone has elapsed; the wake instant has not.
+
+        The same store and the same clock return at once with no grace period — the
+        first case of this class — so the wait observed here is the grace period's.
+        """
+        _store_window(isolated_base['queue_path'])
+        fake = _FakeTime(_EXPIRES_AT + 1.0)
+
+        result = _wait(fake, grace_seconds=120.0)
+
+        assert sum(fake.sleeps) == 119.0, fake.sleeps
+        assert result['timed_out'] is False, result
+        assert result['waited_seconds'] == 119, result
+        assert result['wake_at'] == _EXPIRES_AT + 120.0, result
+        assert result['expired'] is True, result
+
+    def test_the_grace_period_can_outlast_the_per_call_bound(self, isolated_base: dict) -> None:
+        """An elapsed window with grace still open is ``timed_out``, not a wake."""
+        _store_window(isolated_base['queue_path'])
+        fake = _FakeTime(_EXPIRES_AT + 1.0)
+
+        result = _wait(fake, grace_seconds=1200.0, wait_seconds=30.0)
+
+        assert result['timed_out'] is True, result
+        assert result['expired'] is True, result
+        assert result['wake_at'] == _EXPIRES_AT + 1200.0, result
+
+    @pytest.mark.parametrize(
+        ('wall_start', 'wait_seconds'),
+        [
+            (_EXPIRES_AT + 1.0, 480.0),  # returns at once
+            (_EXPIRES_AT - 40.0, 480.0),  # waits to the wake instant
+            (_EXPIRES_AT - 600.0, 30.0),  # times out on its per-call bound
+        ],
+    )
+    def test_the_wait_mutates_nothing(self, isolated_base: dict, wall_start: float, wait_seconds: float) -> None:
+        _store_window(isolated_base['queue_path'])
+        before = isolated_base['queue_path'].read_bytes()
+
+        _wait(_FakeTime(wall_start), wait_seconds=wait_seconds)
+
+        assert isolated_base['queue_path'].read_bytes() == before
+        assert not isolated_base['lock_path'].exists()
+
+    def test_an_unclaimed_window_returns_at_once_and_creates_no_store(self, isolated_base: dict) -> None:
+        fake = _FakeTime(_EXPIRES_AT)
+
+        result = _wait(fake)
+
+        assert fake.sleeps == [], fake.sleeps
+        assert result['timed_out'] is False, result
+        assert result['wake_at'] is None, result
+        assert result['status'] == 'free', result
+        assert not isolated_base['queue_path'].exists()
+
+    def test_the_expiry_is_re_read_on_every_iteration(self, isolated_base: dict) -> None:
+        """A release while the call sleeps ends the wait — the expiry is not captured once."""
+        _store_window(isolated_base['queue_path'])
+        fake = _FakeTime(_EXPIRES_AT - 600.0)
+        plain_sleep = fake.sleep
+
+        def _sleep_then_release(seconds: float) -> None:
+            plain_sleep(seconds)
+            _release('plan-a')
+
+        fake.sleep = _sleep_then_release  # type: ignore[method-assign]
+
+        result = _wait(fake)
+
+        assert fake.sleeps == [15.0], fake.sleeps
+        assert result['timed_out'] is False, result
+        assert result['wake_at'] is None, result
+        assert result['holder'] is None, result
+
+    def test_the_per_call_bound_is_clamped_below_the_host_ceiling(self, isolated_base: dict) -> None:
+        """A caller asking for hours still gets one call that returns inside 600 s.
+
+        The literal is the assertion: a clamp compared only against the module's own
+        constant would agree with any value that constant took, including one above
+        the host ceiling the clamp exists to stay under.
+        """
+        _store_window(isolated_base['queue_path'])
+        fake = _FakeTime(_EXPIRES_AT - 100_000.0)
+
+        result = _wait(fake, wait_seconds=10_000.0)
+
+        assert result['timed_out'] is True, result
+        assert sum(fake.sleeps) == merge_lock._RATE_WINDOW_WAIT_CEILING_SECONDS, fake.sleeps
+        assert sum(fake.sleeps) < 600.0, fake.sleeps
+
+    @pytest.mark.parametrize(
+        ('grace_seconds', 'wait_seconds', 'interval_seconds'),
+        [
+            (math.nan, 480.0, 15.0),  # nan compares False against every deadline
+            (math.inf, 480.0, 15.0),
+            (-1.0, 480.0, 15.0),
+            (0.0, math.nan, 15.0),
+            (0.0, -1.0, 15.0),
+            (0.0, 480.0, 0.0),  # a zero interval would spin without pausing
+            (0.0, 480.0, -15.0),
+            (0.0, 480.0, math.nan),
+        ],
+    )
+    def test_malformed_numbers_are_refused_before_the_store_is_read(
+        self,
+        isolated_base: dict,
+        grace_seconds: float,
+        wait_seconds: float,
+        interval_seconds: float,
+    ) -> None:
+        _store_window(isolated_base['queue_path'])
+        fake = _FakeTime(_EXPIRES_AT - 600.0)
+
+        result = _wait(
+            fake,
+            grace_seconds=grace_seconds,
+            wait_seconds=wait_seconds,
+            interval_seconds=interval_seconds,
+        )
+
+        assert result['status'] == 'error', result
+        assert result['error_code'] == 'INVALID_INPUT', result
+        assert 'timed_out' not in result, result
+        assert fake.sleeps == [], fake.sleeps
+
+    def test_a_zero_grace_and_a_zero_bound_are_still_accepted(self, isolated_base: dict) -> None:
+        """Matched control for the refusals above: the guard rejects negatives, not zeros."""
+        _store_window(isolated_base['queue_path'])
+        fake = _FakeTime(_EXPIRES_AT - 600.0)
+
+        result = _wait(fake, grace_seconds=0.0, wait_seconds=0.0)
+
+        assert result['status'] == 'held', result
+        assert result['timed_out'] is True, result
+        assert fake.sleeps == [], fake.sleeps
+
+    def test_a_missing_pr_number_is_refused(self, isolated_base: dict) -> None:
+        fake = _FakeTime(_EXPIRES_AT)
+
+        result = _wait(fake, pr_number=None)
+
+        assert result['status'] == 'error', result
+        assert '--pr-number' in result['error'], result
+        assert fake.sleeps == [], fake.sleeps
+
+    def test_the_verb_is_reachable_through_the_rate_window_dispatcher(self, isolated_base: dict) -> None:
+        """``wait`` is a registered action, with the real clocks — no window, so no pause."""
+        result = merge_lock.run_rate_window(
+            Namespace(
+                action='wait',
+                plan_id='plan-a',
+                bot_kind='coderabbit',
+                pr_number=_WAIT_PR,
+                attempt_cap=_DEFAULT_ATTEMPT_CAP,
+                grace_seconds=0.0,
+                wait_seconds=480.0,
+                interval_seconds=15.0,
+            )
+        )
+
+        assert result['timed_out'] is False, result
+        assert result['wake_at'] is None, result
+
+
+class TestReEntryCheckOnAnElapsedOwnClaim:
+    """What a re-dispatched step reads to recognise its own claim without re-claiming."""
+
+    def test_the_check_reports_the_holder_and_expired_without_spending_an_attempt(self, isolated_base: dict) -> None:
+        _make_live_plan(isolated_base['base'], 'plan-a')
+        claimed = _claim('plan-a', window_seconds=0.0)
+        assert claimed['status'] == 'success', claimed
+        before = isolated_base['queue_path'].read_bytes()
+
+        result = _check('plan-a', pr_number=42)
+
+        assert result['holder'] == 'plan-a', result
+        assert result['pr_number'] == 42, result
+        assert result['expired'] is True, result
+        assert result['attempts_for_pr'] == claimed['attempts'] == 1, result
+        assert result['attempts_remaining'] == claimed['attempts_remaining'], result
+        assert isolated_base['queue_path'].read_bytes() == before
+
+    def test_a_second_claim_would_have_spent_an_attempt(self, isolated_base: dict) -> None:
+        """Matched control: the re-entry path must READ, because claiming again costs.
+
+        A self-holder re-claim reports ``renewed`` and advances the counter exactly
+        as a first claim does — which is why the case above matters at all.
+        """
+        _make_live_plan(isolated_base['base'], 'plan-a')
+        first = _claim('plan-a', window_seconds=0.0)
+
+        second = _claim('plan-a', window_seconds=0.0)
+
+        assert second['action'] == 'renewed', second
+        assert second['attempts'] == first['attempts'] + 1, second
+
+    def test_a_released_claim_no_longer_reads_as_this_plans_own(self, isolated_base: dict) -> None:
+        """The other side of the discriminator: after a release there is no holder to match."""
+        _make_live_plan(isolated_base['base'], 'plan-a')
+        _claim('plan-a', window_seconds=0.0)
+        _release('plan-a')
+
+        result = _check('plan-a', pr_number=42)
+
+        assert result['holder'] is None, result
+        assert result['expired'] is True, result
+
+
+# =============================================================================
+# poll-delay — a bounded jittered delay, waited as `rate-window wait`'s grace
 # =============================================================================
 #
 # The verb's whole value is a RANGE, and a range assertion is the easiest thing in
@@ -491,8 +888,9 @@ class TestPollDelayBoundsRefusals:
         ``nan`` compares False against every bound, so it is neither negative nor
         inverted, and ``+inf`` as the ceiling is a well-ordered non-negative pair. Both
         pass straight through to ``random.uniform``, which returns a NON-FINITE draw —
-        and that draw is interpolated into the caller's ``sleep``, so the verb leaves as
-        ``sleep nan`` at the one site that consumes it.
+        and that draw is interpolated into the caller's ``rate-window wait
+        --grace-seconds``, so the verb leaves as a ``nan`` grace period at the one site
+        that consumes it.
 
         The last two cases pin the ORDER rather than a second hole: they are reachable
         by the checks below, and the assertion that they carry the ``finite`` refusal is
@@ -543,9 +941,9 @@ class TestPollDelayBoundsRefusals:
     def test_negative_bounds_are_refused(self, min_seconds: float, max_seconds: float) -> None:
         """A negative bound does not stay inside this function as an odd number.
 
-        ``delay_seconds`` is interpolated straight into the caller's ``sleep``
-        command, so a negative draw leaves the verb as a malformed shell command at
-        the one site that consumes it. The third case is the one an
+        ``delay_seconds`` is interpolated straight into the caller's ``rate-window
+        wait --grace-seconds`` argument, so a negative draw leaves the verb as a
+        refused call at the one site that consumes it. The third case is the one an
         ordering-only guard misses entirely: ``-1200 <= -300`` is well-ordered.
         """
         result = _poll_delay(min_seconds, max_seconds)

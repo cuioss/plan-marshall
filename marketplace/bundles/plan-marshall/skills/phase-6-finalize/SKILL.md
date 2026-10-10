@@ -1344,7 +1344,7 @@ FOR each step_id in manifest.phase_6.steps:
 
           The `push` step's freshness precondition reads this record — matching `commit_sha` against the live HEAD — to distinguish the known-safe finalize-internal re-stale from genuine un-built source drift, which stays fail-closed. Genuine drift never produces this record (no finalize-internal commit authored it), so the fail-closed path is preserved.
 
-      **Post-PR re-push**: when a `mutates_source: true` step that runs AFTER `push` and BEFORE the merge gate (e.g. `plan-marshall:automatic-review` or `sonar-roundtrip` committing a loop-back fix) commits via this instrumentation, the dispatcher re-invokes the `push` step so the PR HEAD advances (and, for review-bearing steps, re-review fires) inside the normal settle band instead of at the merge gate. A step ordered between `push` and `create-pr` is covered the same way: its re-push lands before the PR exists, and `create-pr` opens the PR on the advanced HEAD. The `push` step is a pure barrier (it carries no commit logic and is not head-dependent); the dispatcher re-invokes it explicitly here rather than relying on a HEAD-comparison re-fire. This explicit re-invocation is the **fast path**; the item-1 `branch-sync-state` parity check is the **structural backstop** — even if this re-invocation is missed (crash, session loss), the next re-entry observes `state: ahead` and re-fires the push rather than trusting the stale `done` record. Read-only (`mutates_source: false`) steps never reach item 5f's instrumentation and never trigger a re-push.
+      **Post-PR re-push**: when a `mutates_source: true` step that runs AFTER `push` and BEFORE the merge gate commits via this instrumentation, the dispatcher re-invokes the `push` step so the PR HEAD advances (and, for review-bearing steps, re-review fires) inside the normal settle band instead of at the merge gate. The two wait-region producers (`plan-marshall:automatic-review`, `sonar-roundtrip`) are FIND-only and leave no edit for this instrumentation to commit: a fix the unified triage decides is committed by phase-5-execute when it is a fix task, and by the item 7c hook when it is an inline edit, and that hook re-invokes `push` the same way. A step ordered between `push` and `create-pr` is covered the same way: its re-push lands before the PR exists, and `create-pr` opens the PR on the advanced HEAD. The `push` step is a pure barrier (it carries no commit logic and is not head-dependent); the dispatcher re-invokes it explicitly here rather than relying on a HEAD-comparison re-fire. This explicit re-invocation is the **fast path**; the item-1 `branch-sync-state` parity check is the **structural backstop** — even if this re-invocation is missed (crash, session loss), the next re-entry observes `state: ahead` and re-fires the push rather than trusting the stale `done` record. Read-only (`mutates_source: false`) steps never reach item 5f's instrumentation and never trigger a re-push.
 
   6. Capture archive result (only when step_id == "archive-plan"):
      Record the returned `archive_path` into model context alongside the pre-archive snapshot — it is consumed by Step 4 (Render Final Output Template).
@@ -1368,7 +1368,8 @@ FOR each step_id in manifest.phase_6.steps:
      **Because the emission rides the write, the pairing holds on EVERY path a step's outcome is
      recorded on — structurally, not by convention.** The item-4b.b / item-4c.b Signal-Gate skips
      (`outcome=skipped`), the item-5 dispatch-timeout path (`outcome=failed`), the item-5d.c
-     post-dispatch-guard halt (`outcome=failed`), and a dispatched leaf's own terminal
+     post-dispatch-guard halt (`outcome=failed`), the item-7c record of a failed triage commit,
+     push or pending-task read (`outcome=failed`), and a dispatched leaf's own terminal
      `mark-step-done` each emit the completion line from the write itself, with no adjacent emit
      step to forget. Two paths deliberately produce NO line, and both are correct by construction:
      the item-1 re-entry SKIP records nothing (the step is already terminal on
@@ -1392,19 +1393,94 @@ FOR each step_id in manifest.phase_6.steps:
       The two classes are exhaustive over every branch below: each one either stamps a
       terminal `done` or deliberately leaves the record absent for re-entry.
 
-      When the dispatched `plan-marshall:automatic-review` step returns `status: escalate_ask`, the leaf has returned an escalation envelope rather than firing an `AskUserQuestion` itself (a dispatched leaf cannot own the prompt — see the leaf/dispatch-topology contract in `ref-workflow-architecture/standards/agents.md`). The dispatcher owns the consumption. Five escalation reasons reach this hook, discriminated by the return TOON's `reason` field. **Four of them are handled identically at the AskUserQuestion layer; the fifth is not, and must not be** — see the `refusal_structural` carve-out below:
+      When the dispatched `plan-marshall:automatic-review` step returns `status: escalate_ask`, the leaf has returned an escalation envelope rather than firing an `AskUserQuestion` itself (a dispatched leaf cannot own the prompt — see the leaf/dispatch-topology contract in `ref-workflow-architecture/standards/agents.md`). The dispatcher owns the consumption. Six escalation reasons are handled in this hook, discriminated by the `reason` field. **Four of them are handled identically at the AskUserQuestion layer; `refusal_structural` is not, and must not be** — see its carve-out below — **and `rate_window_await` never reaches that layer at all: it asks the operator nothing**, and the hook answers it by waiting and re-dispatching:
 
-      - **`reason: re_review_timeout`** — the "On re-review timeout (trigger B)" sub-block fired at trigger B (see `../automatic-review/SKILL.md` § "On re-review timeout (trigger B)"). ⛔ **This reason covers TWO distinct entry paths, and the envelope's `outcome` field — never `reason` — is what says which one fired.** `outcome: timed_out` is a genuine budget expiry: `timeout_seconds` elapsed with no fresh bot review. `outcome: declined` is an incremental-review DECLINE: the bot answered the trigger with a comment that does not reference the awaited HEAD — naming no reviewed commit at all, or naming a different one (`matched: true` / `head_sha_verified: false`) — so no budget expired and `declined_bots` names the bot(s) that declined. The envelope's `timed_out` field states the observed fact rather than a constant, so it is `false` on the decline path. **Read `outcome` on every branch below and render a decline AS a decline** — reporting one as a timeout asserts a budget expiry that never happened, which is the false signal this discriminator exists to prevent. The `re_review_on_timeout` policy knob selects `action: defer` vs `action: ask` (or `proceed`, which never returns `escalate_ask`) identically on both paths, so the discrimination is about what is REPORTED, not about which branch runs.
-      - **`reason: rate_window_timeout`** — the rate-window expiry poll exhausted `review_rate_window_timeout_seconds` while the claimed window was still open.
+      - **`reason: re_review_timeout`** — the "On re-review timeout (trigger B)" sub-block fired at trigger B (see `../automatic-review/SKILL.md` § "On re-review timeout (trigger B)"). ⛔ **This reason covers TWO distinct entry paths, and the envelope's `outcome` field — never `reason` — is what says which one fired.** `outcome: timed_out` is a genuine budget expiry: `timeout_seconds` elapsed with no fresh bot review. It does NOT say that nothing declined: trigger B asks every listed bot before it escalates, so a pass on which one bot timed out and another declined reports `outcome: timed_out` with a non-empty `declined_bots` — read that field on this path too. `outcome: declined` is an incremental-review DECLINE: the bot answered the trigger with a comment that does not reference the awaited HEAD — naming no reviewed commit at all, or naming a different one (`matched: true` / `head_sha_verified: false`) — so no budget expired and `declined_bots` names the bot(s) that declined. The envelope's `timed_out` field states the observed fact rather than a constant, so it is `false` on the decline path. **Read `outcome` on every branch below and render a decline AS a decline** — reporting one as a timeout asserts a budget expiry that never happened, which is the false signal this discriminator exists to prevent. The `re_review_on_timeout` policy knob selects `action: defer` vs `action: ask` (or `proceed`, which never returns `escalate_ask`) identically on both paths, so the discrimination is about what is REPORTED, not about which branch runs.
+      - **`reason: rate_window_await`** — ⛔ **the one NON-ASKING reason: no `AskUserQuestion` fires for it.** The step claimed a review bot's rate window and returned instead of waiting for it, because a dispatched step cannot hold a wait that runs to an hour. The envelope carries `bot_kind`, `pr_number`, the claim's `expires_at`, `seconds_remaining`, `timeout_seconds` and the `rate_window_arming[]` row, and no `action` and no `prompt_options[]`. This hook holds the wait and then dispatches the step again — see the `rate_window_await` branch below.
+      - **`reason: rate_window_timeout`** — the rate-window wait spent `review_rate_window_timeout_seconds` while the claimed window was still open. This reason is not returned by the step: it arises HERE, on that one path (item 4 of the `rate_window_await` branch below), and is then handled exactly as the other temporal reasons are.
       - **`reason: rate_window_not_awaitable`** — the refusing bot's `rate_limit_class` is `hard_quota` or `unknown`, so neither awaiting nor generating an event is productive; the leaf escalated without claiming a window.
       - **`reason: rate_window_exhausted`** — the recovery recursion cap for that bot on that PR is spent; the leaf escalated rather than re-triggering a bot it has already re-triggered `attempt_cap` times.
-      - **`reason: refusal_structural`** — ⛔ **the one reason whose option set is DISJOINT from the other four.** The refusing bot's refusal cause is a diff-SIZE ceiling, so it classified `refused_structural` and the limit is on the diff rather than on a window. Its `prompt_options[]` are *split / accept / disable-for-this-PR*, it carries `cap` and `measured_diff_size` instead of `timeout_seconds`, and **it must NEVER be offered a wait** — waiting is an action the operator can take that is guaranteed not to work, because the diff is the same size an hour later. See `../automatic-review/SKILL.md` § "Rate-limit refusal recovery (opt-in)" Branch 0.
+      - **`reason: refusal_structural`** — ⛔ **the one asking reason whose option set is DISJOINT from that of the four temporal ones.** The refusing bot's refusal cause is a diff-SIZE ceiling, so it classified `refused_structural` and the limit is on the diff rather than on a window. Its `prompt_options[]` are *split / accept / disable-for-this-PR*, it carries `cap` and `measured_diff_size` instead of `timeout_seconds`, and **it must NEVER be offered a wait** — waiting is an action the operator can take that is guaranteed not to work, because the diff is the same size an hour later. See `../automatic-review/SKILL.md` § "Rate-limit refusal recovery (opt-in)" Branch 0.
 
-      The three rate-window reasons and `refusal_structural` (see `../automatic-review/SKILL.md` § "Rate-limit refusal recovery (opt-in)") always carry `action: ask` and consult NO policy knob — they always fire the AskUserQuestion.
+      The three asking rate-window reasons (`rate_window_timeout`, `rate_window_not_awaitable`, `rate_window_exhausted`) and `refusal_structural` (see `../automatic-review/SKILL.md` § "Rate-limit refusal recovery (opt-in)") always carry `action: ask` and consult NO policy knob — they always fire the AskUserQuestion. `rate_window_await` consults no policy knob either, and fires none.
 
-      The full field set of the `escalate_ask` return TOON (all five `reason` variants) is defined in [`../automatic-review/SKILL.md`](../automatic-review/SKILL.md) § "`escalate_ask` return (timeout escalations)" — read it there; do NOT restate the field set here.
+      The full field set of the `escalate_ask` return TOON (all six `reason` variants) is defined in [`../automatic-review/SKILL.md`](../automatic-review/SKILL.md) § "`escalate_ask` return (timeout escalations)" — read it there; do NOT restate the field set here.
 
-      For `reason: re_review_timeout`, read the timeout policy from the `plan-marshall:automatic-review` step-params snapshot (the other four variants skip this read — they have no policy knob):
+      **`reason: rate_window_await` — hold the wait here, ask nothing, then dispatch the step again.** Evaluate this branch FIRST: it is the only reason that produces no prompt and reads no policy, and a hook that fell through to the `action` branches below would find no `action` on the envelope to branch on.
+
+      *Termination cause.* Item 5c stamps this return **`blocked_session_restart`** — the existing cause for a dispatch that ended before its step settled and that a fresh dispatch recovers. It is NOT `blocked_user_review`: no review gate is raised and nobody is asked, and stamping that cause would report an operator prompt that never happened. It is not `step_complete` or `returned_with_findings` either, because the step recorded no outcome at all, and it is not `error`, because nothing failed.
+
+      *The wait.* The claim's own expiry is the observable; the stated ETA is not waited out blind. The hook waits until the claim's `expires_at` has passed and then dispatches the step again at once. Nothing is waited after the expiry, so several plans waiting on the same bot may re-trigger it at the same moment; that cost is accepted. The whole wait is bounded by the envelope's `timeout_seconds` — `review_rate_window_timeout_seconds` — and by nothing else. A window that expires within the budget is never reported as a timeout — including a claim made on the default window, whose length equals the default budget and whose expiry precedes the end of a budget that only starts counting here. `rate_window_timeout` (item 4) arises only when the window is still open when the budget is spent, which takes a stated window longer than the budget.
+
+      The wait is driven across tool calls — there is no shell loop and no pause of its own anywhere in it, because `merge_lock rate-window wait` holds each bounded wait itself. The verb clamps every call below the host's per-call ceiling whatever `--wait-seconds` asks for, so the budget is spent one bounded call at a time:
+
+      1. Show the waiting state before the first wait call. Name the bot and the expiry time in the work log, and put the plan's terminal title into the existing `lock-waiting` state through the title-token surface — the `manage-status title-token` verbs and the `platform-runtime` repaint seam, which already render that state as the waiting glyph. No new title state is introduced for this wait, and the `cli` owner keeps the token apart from a merge-lock or build token another surface holds:
+
+            python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+              work --plan-id {plan_id} --level INFO \
+              --message "[STATUS] (plan-marshall:phase-6-finalize) Waiting for the {bot_kind} review rate window on pr {pr_number} — window expires at {expires_at} ({seconds_remaining}s from the claim); the wait is bounded by {timeout_seconds}s. No operator action is needed; plan-marshall:automatic-review is dispatched again when the window has elapsed"
+
+            python3 .plan/execute-script.py plan-marshall:manage-status:manage-status title-token set \
+              --plan-id {plan_id} --state lock-waiting --owner cli
+
+            python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime session push-title-token \
+              --plan-id {plan_id}
+
+      2. **Wait for the window.** Start with `{remaining_budget}` = the envelope's `timeout_seconds`, rounded up to a whole number of seconds, and issue ONE bounded wait for the claim's `expires_at` (see `manage-locks` Canonical invocations → `merge_lock — rate-window wait`). Issue the Bash call with the host's maximum per-call timeout, so the script's own clamped bound is always the one that ends it:
+
+            python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-window wait \
+              --plan-id {plan_id} --bot-kind {bot_kind} --pr-number {pr_number} \
+              --wait-seconds {remaining_budget}
+
+         Read `status` first, then `timed_out`:
+
+         | `rate-window wait` return | Action |
+         |---------------------------|--------|
+         | `status: error` | The call failed; it carries no `timed_out` to read. Go to item 5. |
+         | `timed_out: false` | The window has expired — or no window is recorded any more (`wake_at` is null: the claim was released). Go to item 3. |
+         | `timed_out: true`, `{remaining_budget}` still positive after subtracting `waited_seconds` | The call's own per-call bound lapsed first. Re-issue the SAME call with the reduced `{remaining_budget}`. |
+         | `timed_out: true`, `{remaining_budget}` zero or below after subtracting `waited_seconds` | The budget is spent with the window still open — the return's `expired` is `false`. Go to item 4. |
+
+         The re-issue ends. `{remaining_budget}` is a whole number and a timed-out call reports a `waited_seconds` no smaller than the bound it ran under, so every re-issue lowers the budget by at least 1 and the last one spends it.
+
+         A call whose bound and whose window lapse together reports `timed_out: false`: the verb reads the expiry before it reads its own bound, so an expired window is never reported as a spent budget.
+
+         The answer of the wait is a signal and nothing more: it writes nothing and decides nothing. The re-dispatched step re-reads the claim itself and acts on that read, so a claim another plan makes in between is seen there.
+
+      3. **Window expired.** Clear the waiting state, log, and dispatch `plan-marshall:automatic-review` again from scratch — re-enter the Step 3 dispatch with the SAME role/level resolution, exactly as the "wait again" branch below does. Leave the step record ABSENT across the re-dispatch: the leaf recorded nothing, this branch records nothing, and the terminal record is written by the pass that settles. Do NOT release the claim — the re-dispatched step recognises its own elapsed claim by reading it, and releases it itself once the review request is re-delivered:
+
+            python3 .plan/execute-script.py plan-marshall:manage-status:manage-status title-token clear \
+              --plan-id {plan_id} --owner cli
+
+            python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime session push-title-token \
+              --plan-id {plan_id}
+
+            python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+              work --plan-id {plan_id} --level INFO \
+              --message "[STATUS] (plan-marshall:phase-6-finalize) {bot_kind} review rate window on pr {pr_number} has elapsed after {total_waited_seconds}s — dispatching plan-marshall:automatic-review again"
+
+      4. **Budget spent.** Reached only from the budget-spent row of item 2, and the only path on which `rate_window_timeout` arises. Clear the waiting state as item 3 does, release the claim, decision-log, and then proceed exactly as the `rate_window_timeout` reason does — the temporal `ask` branch below, with its three options. The envelope that branch consumes is the `rate_window_await` envelope this hook was waiting on, re-labelled: `reason: rate_window_timeout`, `action: ask`, `timed_out: true`, the same `bot_kind` / `refusal_class` / `pr_number` / `timeout_seconds` / `rate_window_arming[]`, and the rate-window `prompt_options[]` defined in [`../automatic-review/SKILL.md`](../automatic-review/SKILL.md) § "`escalate_ask` return (timeout escalations)":
+
+            python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-window release \
+              --plan-id {plan_id} --bot-kind {bot_kind}
+
+            python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+              decision --plan-id {plan_id} --level INFO \
+              --message "(plan-marshall:phase-6-finalize) rate-window wait for {bot_kind} on pr {pr_number}: review_rate_window_timeout_seconds={timeout_seconds} spent with the window still open — released the claim; handling as rate_window_timeout"
+
+         The release matters for the operator's "Wait another" choice: the fresh dispatch finds no claim of its own, claims again — spending one recovery attempt — and returns a new `rate_window_await`.
+
+      5. **Wait call failed.** Reached only from the `status: error` row of item 2. A failed call is not a timeout: no budget was spent, so no `rate_window_timeout` is raised and nothing is asked. Clear the waiting state as item 3 does, log the returned `error_code` and `error` at ERROR, tell the operator, and STOP — halt the FOR loop and return control. Record nothing for `plan-marshall:automatic-review` and do NOT release the claim:
+
+            python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+              work --plan-id {plan_id} --level ERROR \
+              --message "[ERROR] (plan-marshall:phase-6-finalize) The wait for the {bot_kind} review rate window on pr {pr_number} failed ({error_code}): {error} — no budget was spent and the claim is left in place; plan-marshall:automatic-review is dispatched again on the next finalize entry"
+
+            Display: "The wait for the {bot_kind} review window could not be carried out: {error}. Nothing timed out and nothing was merged. Run '/plan-marshall action=finalize plan={plan_id}' to resume."
+
+         The next finalize entry finds no record for the step, so the item-1 re-entry check dispatches it. That pass reads the claim itself (`../automatic-review/SKILL.md` § "Rate-limit refusal recovery (opt-in)" Branch 2): a claim still running hands the wait back to this branch without a second claim, so no recovery attempt is spent, and an elapsed claim continues to the review request. The claim is not leaked. It expires on its own at `expires_at`, and the step releases it on the pass that delivers the review request or on the first pass that sees no refusal from the bot.
+
+      For `reason: re_review_timeout`, read the timeout policy from the `plan-marshall:automatic-review` step-params snapshot (the other five variants skip this read — they have no policy knob):
 
          python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
            step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review
@@ -1415,10 +1491,11 @@ FOR each step_id in manifest.phase_6.steps:
 
       | Envelope | `{outcome_detail}` renders as |
       |----------|-------------------------------|
-      | `reason: re_review_timeout`, `outcome: timed_out` | `re-review timed out after {timeout_seconds}s with no fresh review` |
+      | `reason: re_review_timeout`, `outcome: timed_out`, `declined_bots` empty | `re-review timed out after {timeout_seconds}s with no fresh review` |
+      | `reason: re_review_timeout`, `outcome: timed_out`, `declined_bots` non-empty | `re-review timed out after {timeout_seconds}s with no fresh review; {declined_bots} additionally DECLINED — answered without referencing this HEAD` |
       | `reason: re_review_timeout`, `outcome: declined` | `re-review DECLINED by {declined_bots} — the bot answered without referencing this HEAD; no budget expired` |
       | `reason: re_review_timeout`, `outcome` absent or any other value | `re-review outcome UNKNOWN (envelope carried no readable outcome)` |
-      | any of the other four reasons | the bare `{reason}` — each has a single entry path, so there is nothing to discriminate |
+      | any of the other four asking reasons | the bare `{reason}` — each has a single entry path, so there is nothing to discriminate |
 
       ⛔ **An absent or unrecognised `outcome` is UNKNOWN, never a timeout.** Defaulting it to `timed_out` re-creates exactly the false budget-expiry claim the discriminator was added to stop, this time silently. Render it as unknown and let the operator see that the envelope did not say.
 
@@ -1439,7 +1516,7 @@ FOR each step_id in manifest.phase_6.steps:
         **The four TEMPORAL reasons** (`re_review_timeout`, `rate_window_timeout`, `rate_window_not_awaitable`, `rate_window_exhausted`) share one option set and one terminal-record contract, differing only in how the "merge anyway" branch resolves the SHA it stamps (the three rate-window envelopes carry no `head_sha`; see the sub-branch note below).
 
         ⛔ **Alongside the question, name `{outcome_detail}`** — resolved from the table above — exactly as the `refusal_structural` branch below names the two figures its envelope carries. This is the prompt the UNKNOWN row exists for: an operator choosing between *wait / merge anyway / defer* is choosing on the strength of what the envelope reported, and the three rows read differently — a timeout says a budget expired, a decline says the bot answered without reviewing, and UNKNOWN says the envelope did not state which. Rendering the bare `{reason}` here collapses all three into "re-review timeout" and hands the operator a claim the envelope never made. Branch on the operator's selection:
-        - **"Wait another {timeout_seconds}s"** → re-dispatch `plan-marshall:automatic-review` from scratch with a fresh budget (re-enter the Step 3 dispatch with the SAME role/level resolution — NOT a SendMessage resume; the harness cannot resume a spawned agent, see the harness-no-resume contract). For `reason: re_review_timeout` the fresh dispatch re-runs the re-review await against a new budget; for the three rate-window reasons it re-runs the refusal-recovery sequence against a fresh `review_rate_window_timeout_seconds` budget. ⚠ On `outcome: declined` this option is still OFFERED — the envelope returns the same three — but it is the WEAKEST of them, and the prompt must say so alongside `{outcome_detail}`: no budget expired, so there is nothing a longer one buys, and a bot that declined this HEAD answers a re-trigger with another decline rather than a review. Note that `rate_window_exhausted` is NOT reset by the re-dispatch — the recursion cap is stored per bot per PR and survives, so the fresh dispatch will re-escalate rather than silently re-triggering the bot a third time. ⛔ **This branch does not exist for `refusal_structural`**, whose envelope deliberately carries no `timeout_seconds` — rendering it there would interpolate an unresolved placeholder into a non-option.
+        - **"Wait another {timeout_seconds}s"** → re-dispatch `plan-marshall:automatic-review` from scratch with a fresh budget (re-enter the Step 3 dispatch with the SAME role/level resolution — NOT a SendMessage resume; the harness cannot resume a spawned agent, see the harness-no-resume contract). For `reason: re_review_timeout` the fresh dispatch re-runs the re-review await against a new budget; for the three rate-window reasons it re-runs the refusal-recovery sequence against a fresh `review_rate_window_timeout_seconds` budget. ⚠ On `outcome: declined` this option is still OFFERED — the envelope returns the same three — but it is the WEAKEST of them, and the prompt must say so alongside `{outcome_detail}`: no budget expired, so there is nothing a longer one buys, and a bot that declined this HEAD answers a re-trigger with another decline rather than a review. On `outcome: timed_out` with a non-empty `declined_bots` the wait is worth less than it looks, and the prompt must say that too: a longer budget can still land the review of the bot that timed out, but each bot in `{declined_bots}` answers the re-trigger with another decline, so this HEAD stays unreviewed by it however long the wait. ⚠ On `rate_window_not_awaitable` and on `rate_window_exhausted` this option is likewise still OFFERED — the envelope returns the same three — and it changes the outcome only when the bot has stopped refusing by the time the fresh dispatch reads the PR; the prompt must say so alongside `{outcome_detail}`. A `rate_window_not_awaitable` bot has a limit that does not reopen on a timescale a wait covers, so the fresh dispatch meets the same class and escalates again without claiming or waiting for anything. `rate_window_exhausted` is NOT reset by the re-dispatch — the recursion cap is stored per bot per PR and survives, so the fresh dispatch will re-escalate rather than silently re-triggering the bot a third time. For both reasons the wait is the weakest of the three options, and the choice that decides the run is between merging unreviewed and deferring. ⛔ **This branch does not exist for `refusal_structural`**, whose envelope deliberately carries no `timeout_seconds` — rendering it there would interpolate an unresolved placeholder into a non-option.
         - **"Merge anyway — proceed unreviewed"** → decision-log a WARNING, then record the terminal step outcome on the `plan-marshall:automatic-review` REQUIRED step BEFORE advancing, then continue the FOR loop (advance to `branch-cleanup`). The terminal record is mandatory: `plan-marshall:automatic-review` is head-dependent (its doc declares `head_dependent: true`) and a REQUIRED step in the `phase_steps_complete` handshake — without an `--outcome done` record on this branch the handshake deadlocks at the 6-finalize phase transition with a `step_record_missing` gap. `plan-marshall:automatic-review` requires a `--head-at-completion {sha}` on its terminal `done` record; resolve `{sha}` by reason:
            - `reason: re_review_timeout` → use the `{head_sha}` from the escalation envelope (the unreviewed commit the operator's decision applies to).
            - `reason: rate_window_timeout` / `rate_window_not_awaitable` / `rate_window_exhausted` → the envelope carries no `head_sha`; resolve the live worktree HEAD via `git -C {worktree_path} rev-parse HEAD` and stamp that.
@@ -1627,6 +1704,141 @@ FOR each step_id in manifest.phase_6.steps:
 
       Fire this hook when the just-completed step is the LATER of the two producers present in `manifest.phase_6.steps` (canonically `default:sonar-roundtrip`, which the manifest orders after `plan-marshall:automatic-review`) AND every wait-region producer that IS in the manifest has recorded a terminal `done` outcome on `status.metadata.phase_steps["6-finalize"]`. When only one of the two producers is in the manifest, that one is the "later" producer and the union query naturally covers only its finding-type.
 
+      (0) **Stamp the pushed fix commits, then run the respond pass again.** A `fixed` finding's reply is held until a commit that contains its fix is stamped on the finding and is on the pull request head (see [`../plan-marshall/workflow/verification-feedback.md`](../plan-marshall/workflow/verification-feedback.md) § "Step 8", "Ordering"). The triage that resolved the finding could not stamp it — no commit carried the fix then. This hook stamps it once the fix is pushed, and it does so FIRST on every firing: by the time the later producer has completed again, the `push` step has re-fired and every fix commit made in between is on the remote.
+
+          List the `fixed` `pr-comment` findings and keep those that carry no `fix_commit_sha`:
+
+          ```bash
+          python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list \
+            --plan-id {plan_id} --type pr-comment --resolution fixed
+          ```
+
+          When none is left there is nothing to stamp before the respond pass: skip the two shapes below and continue with the respond pass. Otherwise handle the two shapes:
+
+          - **A finding with a `fix_task_number`** (a task fix). Read the task; keep it only when its `status` is `done`:
+
+            ```bash
+            python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read \
+              --plan-id {plan_id} --task-number {fix_task_number}
+            ```
+
+            A `done` fix task has its fix in a commit: phase-5-execute commits a deliverable's changes at its Step 10a and hands back to finalize on a clean worktree. What is still open is whether that commit is on the remote. When at least one fix task is `done`, read the push parity of the branch once in this firing (see `workflow-integration-git` Canonical invocations → `branch-sync-state`):
+
+            ```bash
+            python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow branch-sync-state \
+              --plan-id {plan_id}
+            ```
+
+            Stamp only on `state: synced`. The local head and the remote head are the same commit on that state, and the payload's `head_sha` is that commit — the pushed head, `{pushed_head_sha}`. Branch on the member itself: every other state (`ahead`, `remote_absent_landed`, `remote_absent_unverified`) and a `status: error` return stamp nothing, because the fix is not known to be on the remote.
+
+            One call per `done` fix task stamps every finding that task owns:
+
+            ```bash
+            python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings stamp-fix-commit \
+              --plan-id {plan_id} --commit-sha {pushed_head_sha} --task-number {fix_task_number}
+            ```
+
+            ⚠ **The stamped commit is the pushed head at the time of stamping, which may be later than the commit that made the fix.** It contains the fix. It is a different commit from the one that changed the lines whenever anything was committed on top of that one before this firing — another fix task's commit, or a finalize step's. The `Fix commit:` line of the reply therefore names a commit as of which the fix is on the pull request, and a reviewer who opens it may see a change that is not the fix.
+
+            A pushed head passes the respond pass's check by construction: `post_responses` releases a `fixed` finding when GitHub reports the stamped commit as the pull request head or as an ancestor of it, and at stamping time it is the head. When the head moves again before a respond pass reads the stamp — further commits pushed on top — the stamped commit is an ancestor of the new head and still passes. Only a rewritten branch fails the check: after a rebase or a force-push that replaces the stamped commit the finding is held with `fix_commit_not_on_pr_head` until it is stamped again. This step stamps it again after its respond pass below, and only with a commit on the branch that carries the same change to the finding's file as the replaced commit did; a finding for which no such commit is found stays held.
+
+            A task that is not `done` is not stamped, and no task is stamped while the branch is not `synced`. Their findings stay held, and the respond pass below reports them as `deferred_until_commit`; the next firing reads the task and the push parity again.
+          - **A finding with no `fix_task_number`** (an inline fix). An inline fix is stamped at (4a) below, in the firing that commits its edit, with the commit that holds the edit. Every firing runs (4a) on every return of the triage, before it evaluates any gate, so a halt at item 7b leaves no inline fix behind. One still unstamped here therefore belongs to a firing that ended before (4a) wrote its stamp — the commit or the push failed, or the session ended in between. This firing stamps it only with a commit that is shown to hold inline edits to the finding's file: a commit this hook made at (4a) under its fixed message `fix(review): apply inline review dispositions`, after the reviewed commit, on the pushed head, touching the finding's file. A changed file alone is not evidence, and the pushed head is never stamped here. The search for that commit is issued only when both of these hold:
+
+            - the `branch-sync-state` read of this firing reports `state: synced` — the same call as in the task-fix branch above, issued here when this firing has not issued it yet. Its `head_sha` is `{pushed_head_sha}`;
+            - the finding carries a `file_path` and a `reviewed_commit_sha`.
+
+            The search is one command:
+
+            ```bash
+            git -C {worktree_path} log --no-merges --format=%H%x09%s --fixed-strings --grep="fix(review): apply inline review dispositions" {reviewed_commit_sha}..{pushed_head_sha} -- {file_path}
+            ```
+
+            Each output line is a commit id, a tab and the subject of that commit. `--grep` matches any line of a commit message, so a line is counted only when the text after the tab equals `fix(review): apply inline review dispositions` exactly. The hook branches on the exit status and on the number of counted lines:
+
+            | What the search returns | The finding |
+            |-------------------------|-------------|
+            | Exit status 0 and exactly one counted line | Is stamped with that commit, `{evidence_commit_sha}` — the 40 characters before the tab. |
+            | Exit status 0 and no counted line | Is not stamped. |
+            | Exit status 0 and more than one counted line | Is not stamped. |
+            | Any other exit status | Is not stamped. The search could not be made — for example a reviewed commit the clone does not know. |
+
+            A finding with no `file_path` (a `review_body` or `issue_comment` finding) or with no `reviewed_commit_sha` is not searched for and is not stamped. On any state other than `synced`, and on a `status: error` return of the parity read, no inline fix is stamped here.
+
+            One call per finding with exactly one counted line:
+
+            ```bash
+            python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings stamp-fix-commit \
+              --plan-id {plan_id} --commit-sha {evidence_commit_sha} --hash-id {hash_id}
+            ```
+
+            ⚠ **The commit shows that this hook committed inline dispositions to the finding's file after the review. It does not show which of several edits in that commit belongs to this finding, nor that a later commit kept the edit.** A second inline edit to the same file in the same commit, and a commit that reverts the edit afterwards, each leave exactly one counted line.
+
+            Every inline fix left unstamped here is logged at WARNING, naming its `hash_id` and the reason — the branch is not `synced`, no commit with the hook's message touches the file, more than one does, the search exited with a non-zero status, or the finding carries no `file_path` or no `reviewed_commit_sha` — and stays held.
+
+            An edit a stopped firing left uncommitted in the worktree has no such commit yet. (4a) of the next firing commits it under the same message and leaves the finding out of its own stamps, because (0) logged it in that firing; (0) of the firing after that finds the commit and stamps it.
+
+          These stamps are written before the respond pass, so that pass sends their replies. Run the respond pass once, whether or not anything was stamped in this firing — a finding that already carries a stamp may still be waiting for its commit to reach the pull request:
+
+          ```bash
+          python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr \
+            post_responses --pr-number {pr_number} --plan-id {plan_id}
+          ```
+
+          Read `status`, `count_untransmitted`, `count_deferred_until_commit` and the `deferred_until_commit` rows from the return, and log the three values.
+
+          **Stamp again a stamp that does not reach the pull request head.** A `deferred_until_commit` row whose `reason` is `fix_commit_not_on_pr_head` names a finding whose stamped commit GitHub does not report on the pull request head: a rebase or a force-push replaced it. The row shows that a stamp was written, so the fix was committed and pushed once — for a task fix and for an inline fix alike. It does not show that the rewrite kept the fix, so the pushed head is not stamped. The finding is stamped again only with the one commit on the branch whose change to the finding's file equals the replaced commit's. Branch on the row's `reason`:
+
+          | Row `reason` | What this step does |
+          |--------------|---------------------|
+          | `fix_commit_not_on_pr_head` | Looks for the commit on the branch whose patch for the finding's file equals the replaced commit's, as stated below, and stamps the finding again with that commit when exactly one is found. It does so only when the `branch-sync-state` read of this firing reports `state: synced` — the same call again, issued here when this firing has not issued it yet. |
+          | `pr_head_unreadable` | Stamps nothing. A failed read does not show that the stamped commit was replaced. |
+          | `fix_commit_ancestry_unreadable` | Stamps nothing, on the same ground. |
+
+          On any state other than `synced`, and on a `status: error` return of the parity read, nothing is stamped again. On `synced`, read each such finding for its `file_path` and its current `fix_commit_sha`, here `{stamped_commit_sha}`:
+
+          ```bash
+          python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings get \
+            --plan-id {plan_id} --hash-id {hash_id}
+          ```
+
+          `{base_branch}` is the plan's base branch. Item 7c has no other read of it, so the hook reads it once per firing, before the first comparison:
+
+          ```bash
+          python3 .plan/execute-script.py plan-marshall:manage-references:manage-references get \
+            --plan-id {plan_id} --field base_branch
+          ```
+
+          The comparison is one command, with no pipe:
+
+          ```bash
+          git -C {worktree_path} log --cherry-mark --right-only --no-merges --format=%m%H {stamped_commit_sha}...{pushed_head_sha} ^{stamped_commit_sha}^ ^origin/{base_branch} -- {file_path}
+          ```
+
+          `^{stamped_commit_sha}^` leaves the stamped commit as the only commit on the left side. The right side is the commits of the pushed head that are reachable neither from the stamped commit nor from the base branch, limited to those that touch `{file_path}`. `--cherry-mark` compares patches restricted to that path: it prints `=` in front of a right-side commit whose patch for the file equals the stamped commit's, and `>` in front of every other. The hook branches on the exit status and on the lines that start with `=`:
+
+          | What the comparison returns | The finding |
+          |-----------------------------|-------------|
+          | Exit status 0 and exactly one line that starts with `=` | Is stamped again with that commit, `{evidence_commit_sha}` — the 40 characters after the `=`. |
+          | Exit status 0 and no line that starts with `=` | Is not stamped again. |
+          | Exit status 0 and more than one line that starts with `=` | Is not stamped again. |
+          | Any other exit status | Is not stamped again. The comparison could not be made — the stamped commit is not in the local repository, it has no parent, or the base ref is unknown. |
+
+          A finding with no `file_path` (a `review_body` or `issue_comment` finding), and a finding whose `fix_commit_sha` cannot be read, is not compared and is not stamped again. One call per finding with exactly one `=` line:
+
+          ```bash
+          python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings stamp-fix-commit \
+            --plan-id {plan_id} --commit-sha {evidence_commit_sha} --hash-id {hash_id}
+          ```
+
+          Every finding left unstamped here is logged at WARNING, naming its `hash_id` and the reason — the branch is not `synced`, no commit carries an equal patch for the file, more than one does, the comparison exited with a non-zero status, or the finding carries no `file_path` or no readable `fix_commit_sha` — and stays held.
+
+          When at least one finding was stamped again, run the respond pass once more, with the same `github_pr post_responses` call as above and no added flag. When none was, the respond pass is not repeated.
+
+          ⚠ **An equal patch for one file shows that this file's change is in a commit on the branch. It does not show that a later commit did not undo it, and it says nothing about other files the fix touched.** A `review_body` finding has no file path, so after a rewrite it stays held until it is re-resolved or stamped by hand.
+
+          A non-zero `count_deferred_until_commit` on the last respond pass of (0) is not a failure of this hook; it names fixes that are still on their way, or that never arrived. On a GitLab project skip (0) entirely: the GitLab verb reads no stamp and has already transmitted every `fixed` reply.
+
       (1) Resolve the level-bound target under the `verification-feedback` role, passing the dispatch context so the **resolve seam** emits the standardized `[DISPATCH]` work-log line and its paired decision-log resolution record itself — see [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract. Do NOT hand-write a separate `[DISPATCH]` line; each re-fire of this hook re-runs the resolve, so the record is re-emitted per firing:
           ```bash
           python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -1657,9 +1869,70 @@ FOR each step_id in manifest.phase_6.steps:
 
               WORKTREE: {worktree_path}
           ```
-      (4) Consume the return. The unified triage owns the RESPOND loop (both `github_pr post_responses` for `pr-comment` thread-replies AND `sonar post_responses` for `sonar-issue` server-side dismissals, each keyed by `hash_id`). On `status: loop_back` (FIX dispositions created fix tasks OR overflow deferred), route it through the SAME continuation machinery as item 7b: read `loop_back_target` from the return, run the item-7b admission gate, then apply the symmetric `loop_back_without_asking` knob. The unified triage is dispatcher-owned and is not a manifest step, so it has no `step_ref` to spend from — the admission call passes the fixed source name `wait-region-unified-triage` (`loop-back admit --source wait-region-unified-triage --ceiling {max_iterations}`), which gives the triage a budget of its own, separate from every step's. That name stands wherever item 7b names `{step_ref}`, so a refused triage round is granted to `wait-region-unified-triage` and to no step. Omit the refusal Display's `loop-back close` remedy for the triage: `close` takes a manifest step, and the triage is not one. Re-enter per the granularity branch (`5-execute` full-phase rollback / `6-finalize` inline replay). A `6-finalize` re-entry re-fires the wait-region producers (they are HEAD-dependent — a fix commit advanced HEAD), which re-FIND against the new tree, and this hook runs the unified triage again. On `status: success`, every pending finding resolved with no loop-back — continue the FOR loop.
+      (4) Consume the return, in two parts and in this order: (4a) commit the triage's own edits, push, stamp and respond; (4b) route the return. ⛔ **(4a) runs on EVERY return of the unified triage — `status: loop_back` and `status: success` alike — and it runs to completion BEFORE (4b) evaluates anything.** Item 7b has two paths that STOP: the ceiling refusal at its (i), and the `loop_back_without_asking: false` halt at its (ii). Both are reached from (4b), so both halt with the triage's edits already committed and pushed. No return of the triage and no path through (4b) leaves an inline edit uncommitted in the worktree.
 
-      This hook is dispatcher-owned and produces NO `phase_steps["6-finalize"]` record of its own (it is not a manifest step); the wait-region producer steps carry the `done` records. The single unified pass is the ONLY place `pr-comment` and `sonar-issue` findings are triaged in finalize — the retired per-producer `producer=pr-comment` and `producer=sonar` dispatches no longer run.
+          **(4a) On every return, before anything is routed — commit the triage's own edits, push, stamp the inline fixes, respond again.** The triage applies its inline edits (a SUPPRESS annotation, or the one edit of an inline fix) in the worktree and commits nothing. The triage is not a manifest step, so item 5f never sees those edits; this hook commits them, whatever `status` the triage returned and on either `loop_back_target`:
+
+          - Check the worktree and, when it is dirty, commit exactly as item 5f (a)-(b) does for a mutating step — `git -C {worktree_path} status --porcelain`, then `Skill: plan-marshall:workflow-integration-git` with `push: false` and the message `fix(review): apply inline review dispositions` — and resolve the new HEAD as `{inline_commit_sha}` with `git -C {worktree_path} rev-parse HEAD`. Emit the item 5f (d) freshness reconciliation record for it. A clean worktree means the triage edited nothing: skip the rest of (4a) and go to (4b).
+          - Re-invoke the `push` step, as item 5f § "Post-PR re-push" does, so the commit is on the pull request.
+          - Stamp each inline fix this firing resolved: every `fixed` `pr-comment` finding with no `fix_task_number` and no `fix_commit_sha`, except the ones (0) left unstamped and logged in this same firing — which commit holds their edit is not known to this firing. An inline fix (0) stamped with its evidence commit carries a `fix_commit_sha` and is not selected here:
+
+            ```bash
+            python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings stamp-fix-commit \
+              --plan-id {plan_id} --commit-sha {inline_commit_sha} --hash-id {hash_id}
+            ```
+
+          - Run the respond pass again, with the same `github_pr post_responses` call as (0). It transmits the inline fixes just stamped; a task fix resolved in this firing has no commit yet and stays `deferred_until_commit` until (0) of a later firing stamps it.
+
+          On a GitLab project the commit and the push still happen; the stamp and the second respond pass are skipped, as in (0).
+
+          When the commit or the push fails, mark the wait-region producer whose completion fired this hook `failed`, log the failure at ERROR, and STOP here, before the stamp and before (4b): nothing is stamped with a commit that is not on the pull request, and nothing is routed past an edit that is not committed. `{step_id}` is that producer — the step this FOR iteration just completed — and `{failed_action}` is `commit` or `push`:
+
+          ```bash
+          python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+            --plan-id {plan_id} --phase 6-finalize --step {step_id} --outcome failed \
+            --display-detail "unified triage: {failed_action} of the inline review edits failed"
+          ```
+
+          **Parse the failed-record result.** Read the returned `status`. On anything other than `success`, log the returned `error` and `message` at ERROR and STOP — do NOT continue as though the failure had been recorded:
+
+          ```bash
+          python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+            work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Failed record for step {step_id} was refused: {error} — {message}"
+          ```
+
+          On `status: success`, log the failure itself:
+
+          ```bash
+          python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+            work --plan-id {plan_id} --level ERROR \
+            --message "[ERROR] (plan-marshall:phase-6-finalize) Wait-region unified triage: {failed_action} of the inline review edits failed — marked {step_id} failed so the next finalize entry retries it and fires this hook again"
+          ```
+
+          The `failed` record is what the next finalize entry acts on. A `done` producer is skipped by the item-1 re-entry check while HEAD is unchanged, and this hook then never fires; a `failed` step is retried there whatever HEAD is. The retried producer completes, this hook fires again, and (4a) of that firing commits every tracked edit the worktree holds — one a previous firing left behind included — and pushes. A commit that was made and not pushed is on the remote before that: item 1 re-fires the `push` step on `state: ahead`.
+
+          The triage of that later firing finds no pending finding and returns `status: success`. (4b) below still routes the loop-back the stopped firing owed: an edit committed by (4a) is routed as a `6-finalize` loop-back, and a fix task the stopped firing allocated is still pending and is routed to `5-execute`.
+
+          **(4b) Route the return — only after (4a) has finished.** The unified triage owns the RESPOND loop (both `github_pr post_responses` for `pr-comment` thread-replies AND `sonar post_responses` for `sonar-issue` server-side dismissals, each keyed by `hash_id`); its pass transmits every disposition except a `fixed` one whose fix commit is not yet stamped, which this hook transmits at (0) or at (4a). On `status: loop_back` (a FIX disposition in either shape, an overflow deferral, or an inline-fixable disposition such as a SUPPRESS annotation — see [`../plan-marshall/workflow/triage.md`](../plan-marshall/workflow/triage.md) § Step 7), route it through the SAME continuation machinery as item 7b: read `loop_back_target` from the return, run the item-7b admission gate, then apply the symmetric `loop_back_without_asking` knob. The unified triage is dispatcher-owned and is not a manifest step, so it has no `step_ref` to spend from — the admission call passes the fixed source name `wait-region-unified-triage` (`loop-back admit --source wait-region-unified-triage --ceiling {max_iterations}`), which gives the triage a budget of its own, separate from every step's. That name stands wherever item 7b names `{step_ref}`, so a refused triage round is granted to `wait-region-unified-triage` and to no step. Omit the refusal Display's `loop-back close` remedy for the triage: `close` takes a manifest step, and the triage is not one. Re-enter per the granularity branch (`5-execute` full-phase rollback / `6-finalize` inline replay). A `6-finalize` re-entry re-fires the wait-region producers (they are HEAD-dependent — a fix commit advanced HEAD), which re-FIND against the new tree, and this hook runs the unified triage again. On `status: success`, read the plan's pending tasks before continuing:
+
+          ```bash
+          python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list \
+            --plan-id {plan_id} --status pending
+          ```
+
+          Read `counts.pending` and take the first row that applies:
+
+          | `status: success` return | Route |
+          |--------------------------|-------|
+          | `counts.pending` above zero | A fix task is allocated and has not run. Every task of the plan was done when finalize was entered, so a pending one is a fix task a firing of this hook allocated and never routed — that firing stopped at (4a). Log it at WARNING and route the return exactly as a `status: loop_back` return with `loop_back_target: 5-execute`. |
+          | `counts.pending` zero, and (4a) committed an edit | See the next paragraph: routed as a `loop_back_target: 6-finalize` loop-back. |
+          | `counts.pending` zero, and (4a) found the worktree clean | Every pending finding resolved with no loop-back — continue the FOR loop. |
+
+          A `status: error` return of the read is handled as a failed commit is in (4a) — mark `{step_id}` `failed` with the same call and a `--display-detail` of `unified triage: pending-task read failed`, parse that call's result exactly as (4a) does, log the returned message at ERROR, and STOP. A task count that could not be read is not a count of zero, and the `failed` record makes the next finalize entry fire this hook and read it again.
+
+          A `status: success` return on which (4a) committed an edit is NOT continued past. The commit advanced HEAD beyond the tree the wait-region producers read, and a return that edited a file owed a `loop_back` (`triage.md` § Step 7). Log it at WARNING, naming `{inline_commit_sha}`, and route it exactly as a `status: loop_back` return with `loop_back_target: 6-finalize` — through the same admission gate and knob, under the same `wait-region-unified-triage` source. The `5-execute` row above routes through that same gate, knob and source.
+
+      This hook is dispatcher-owned and produces NO `phase_steps["6-finalize"]` record of its own (it is not a manifest step); the wait-region producer steps carry the `done` records. The one record it writes is on the producer that fired it: `failed`, when its own commit, push or pending-task read fails ((4a), (4b)). The single unified pass is the ONLY place `pr-comment` and `sonar-issue` findings are triaged in finalize — the retired per-producer `producer=pr-comment` and `producer=sonar` dispatches no longer run.
 END FOR
 ```text
 
