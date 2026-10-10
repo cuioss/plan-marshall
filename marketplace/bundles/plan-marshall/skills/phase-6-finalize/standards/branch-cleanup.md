@@ -722,7 +722,7 @@ Then proceed to **Merge PR (if not yet merged)** below, where the **Merge routin
 
 ### Pre-Merge Review-Completeness Barrier
 
-**Only if `state == open` AND `{merge_consent} == explicit_yes`** (the `final_merge_without_asking == true` bypass and the interactive "Yes, merge" both set `{merge_consent} = explicit_yes`). This fail-closed barrier fires AFTER the pre-merge gate authorized the merge and BEFORE the **Merge PR (if not yet merged)** routing below, so it gates BOTH the `use_merge_queue == false` safe-merge path and the `use_merge_queue == true` merge-queue path (both live inside **Merge PR**). It re-fetches bot comments from the provider against the current HEAD and refuses to merge while any `pr-comment` finding is still unhandled — closing the window where a comment that lands after `automatic-review` (order 30) marked done is never re-fetched by the time `branch-cleanup` (order 70) merges. The existing `phase_handshake findings-check` gate only re-reads the findings *store*; this barrier re-reads the *provider*, so a comment that was never fetched is visible to it.
+**Only if `state == open` AND `{merge_consent} == explicit_yes`** (the `final_merge_without_asking == true` bypass and the interactive "Yes, merge" both set `{merge_consent} = explicit_yes`). This fail-closed barrier fires AFTER the pre-merge gate authorized the merge and BEFORE the **Merge PR (if not yet merged)** routing below, so it gates BOTH the `use_merge_queue == false` safe-merge path and the `use_merge_queue == true` merge-queue path (both live inside **Merge PR**). It re-fetches bot comments from the provider against the current HEAD and refuses to merge while any `pr-comment` finding is still unhandled — closing the window where a comment that lands after `automatic-review` (order 30) marked done is never re-fetched by the time `branch-cleanup` (order 70) merges. The store-side gate (`pre_merge_gate merge`, which runs the `findings-check` verdict at the merge dispatch) only re-reads the findings *store*; this barrier re-reads the *provider*, so a comment that was never fetched is visible to it.
 
 **The barrier has TWO predicates, and the second exists because the first cannot see an absence.** Unhandled-comment completeness asks whether every comment that EXISTS has been handled; a required bot that never reviewed at all publishes nothing, contributes zero pending findings, and therefore reads as *clean* to that predicate alone. Silence and satisfaction are indistinguishable to a comment count. The participation predicate below closes that by asking the complementary question — did every REQUIRED bot actually publish a review artifact against this HEAD — and both must pass before the merge proceeds.
 
@@ -732,22 +732,11 @@ Every mechanism that can authorize advancing a tree past a merge gate is enumera
 
 #### Pre-merge blocking-findings store gate
 
-Before the provider re-fetch below, assert the finding **store** is clean. This is the store-side gate line 655 names — the read-only single-invariant `phase_handshake findings-check`, evaluated over every actionable finding type at the finalize phase (the hardcoded `_ACTIONABLE_FINDING_TYPES` set in `_invariants.py` — see [`../../plan-marshall/references/phase-handshake.md`](../../plan-marshall/references/phase-handshake.md) § `pending_findings_blocking_count` resolution; not restated here so the doc cannot drift from the authoritative set). It re-reads the store; the provider re-fetch below re-reads the provider for comments never fetched. The two are complementary and both run before the merge.
+The finding **store** gate is enforced **mechanically, at the merge dispatch itself**, by `pre_merge_gate merge` (`plan-marshall:phase-6-finalize:pre_merge_gate`) — there is no separate check call in this barrier for the step body to issue or to parse. The entry point evaluates the blocking-findings invariant for the finalize phase over every actionable finding type (the hardcoded `_ACTIONABLE_FINDING_TYPES` set in `_invariants.py` — see [`../../plan-marshall/references/phase-handshake.md`](../../plan-marshall/references/phase-handshake.md) § `pending_findings_blocking_count` resolution; not restated here so the doc cannot drift from the authoritative set) by calling the `phase_handshake findings-check` handler in-process, so its verdict vocabulary is that verb's own; and it issues the routed merge verb ONLY when that evaluation proved the store clean. The gate cannot be skipped, because the merge is only reachable through it: § "Merge routing (`use_merge_queue`)" below dispatches `pre_merge_gate merge` and never a bare `ci pr safe-merge` / `ci pr merge-queue`. Like `findings-check`, the entry point writes NO handshake row (see [`../../plan-marshall/references/phase-handshake.md`](../../plan-marshall/references/phase-handshake.md) § `findings-check`).
 
-Wiring this call HERE is deliberate: the blocking-findings gate raises only when a `findings-check` / `capture` carrying `--phase 6-finalize` is issued, and no finalize step issued one, so the store-side gate had been inert on the merge path (a plan could merge with actionable findings still `pending`). This call is that missing issuance.
+It re-reads the store; the provider re-fetch below re-reads the provider for comments never fetched. The two are complementary and both run before the merge — the provider re-fetch here, the store gate at the dispatch, which is the latest point a pending finding can still stop the merge. The gate's refusals (`blocking_findings_present`, `query_failed`) and the disposition each one takes are stated where the gate fires, in § "Merge routing (`use_merge_queue`)" → "Gate result — branch on `dispatched` first".
 
-```bash
-python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake \
-  findings-check --plan-id {plan_id} --phase 6-finalize
-```
-
-`findings-check` writes NO handshake row (see [`../../plan-marshall/references/phase-handshake.md`](../../plan-marshall/references/phase-handshake.md) § `findings-check`) and, like the other finalize gates, carries its verdict in the TOON `status` field while still exiting 0 — so **parse `status`, never the exit code**:
-
-- `status: success` with `blocking_count: 0` → the store is clean; proceed to the barrier knob read below.
-- `status: error, error: blocking_findings_present` (carrying `blocking_count`, `blocking_types`, `per_type`) → an actionable finding is still `pending`. The merge is BLOCKED. Route the pending finding(s) through the same `verification-feedback` triage / loop-back the wait-region findings use, then re-enter finalize; do NOT merge.
-- `status: error, error: query_failed` → the count could not be evaluated (executor unreachable / partial query failure). The gate **fails closed**: take the § "UNKNOWN disposition — blocked, and never authorizable" below. A merge NEVER proceeds on an unevaluable store gate.
-
-This gate is the fail-closed pre-merge complement to the lifecycle completion boundary's `assert_finalize_findings_clean` state assertion (`manage-status transition --completed 6-finalize` / `archive`): the completion boundary catches a plan that reached completion without this gate having run, and this gate catches the pending findings BEFORE the merge rather than after.
+This gate is the fail-closed pre-merge complement to the lifecycle completion boundary's `assert_finalize_findings_clean` state assertion (`manage-status transition --completed 6-finalize` / `archive`): the completion boundary catches a plan that reached completion with an actionable finding still pending, and this gate catches the pending findings BEFORE the merge rather than after.
 
 #### Read the barrier knob and the bot participation lists
 
@@ -1426,27 +1415,53 @@ Read `use_merge_queue` off the same one-stop `step-params get` `params` object r
 
 ##### The dispatch set is CLOSED
 
-`ci pr safe-merge` and `ci pr merge-queue` are the **only** merge-shaped dispatches this step may issue, on any code path, under any parameter combination. The set has exactly two members and admits no third:
+This step body issues exactly ONE merge-shaped dispatch: `pre_merge_gate merge` (`plan-marshall:phase-6-finalize:pre_merge_gate`). It is the pre-merge findings gate and it owns the merge dispatch — it evaluates the blocking-findings store and, only on a clean store, issues the verb its `--route` names. Its routed set is closed: `--route` accepts exactly `safe-merge` and `merge-queue`, so `ci pr safe-merge` and `ci pr merge-queue` are the **only** merge verbs this step can reach, on any code path, under any parameter combination, and both are reached only through the entry point. The set has exactly two members and admits no third:
 
 | Verb | Reachable from this step | Selected by |
 |------|--------------------------|-------------|
-| `ci pr safe-merge` | yes | `use_merge_queue == false` |
-| `ci pr merge-queue` | yes | `use_merge_queue == true` |
+| `ci pr safe-merge` | yes | `pre_merge_gate merge --route safe-merge`, when `use_merge_queue == false` |
+| `ci pr merge-queue` | yes | `pre_merge_gate merge --route merge-queue`, when `use_merge_queue == true` |
 | `ci pr merge` | **never** | — not reachable under any condition |
 | `ci pr auto-merge` | **never** | — not reachable under any condition |
 
-`ci pr merge` and `ci pr auto-merge` are **not reachable from this step under any condition**. Neither is a fallback for the other's failure, neither is a degraded mode for a stuck PR, and neither is reachable when the enqueue fails — the enqueue's error path aborts (see the no-fallback contract below), it does not re-route. A branch-protection fallback sequence at this layer is unnecessary in the first place: `pr safe-merge` carries the poll-then-merge path and the stuck-state admin fallback internally. Do not reintroduce either verb here as a recovery path. The two verbs remain part of the `ci pr` surface for other callers — the closure is over THIS step's dispatch set, not over the provider API.
+`ci pr merge` and `ci pr auto-merge` are **not reachable from this step under any condition** — the entry point's `--route` admits neither. Neither is a fallback for the other's failure, neither is a degraded mode for a stuck PR, and neither is reachable when the enqueue fails — the enqueue's error path aborts (see the no-fallback contract below), it does not re-route. A branch-protection fallback sequence at this layer is unnecessary in the first place: `pr safe-merge` carries the poll-then-merge path and the stuck-state admin fallback internally. Do not reintroduce either verb here as a recovery path, and do not issue `ci pr safe-merge` / `ci pr merge-queue` directly — a bare merge verb bypasses the findings gate. The two forbidden verbs remain part of the `ci pr` surface for other callers — the closure is over THIS step's dispatch set, not over the provider API.
 
-**Observability (mandatory)** — immediately after the routing predicate above is evaluated and BEFORE the dispatch it selects, emit one decision-log line naming the bound `use_merge_queue` value, its provenance, and the verb about to be dispatched. This line is what makes "which verb did this run actually merge with?" answerable from the log alone, rather than inferred from downstream side effects:
+**Observability (mandatory)** — immediately after the routing predicate above is evaluated and BEFORE the dispatch it selects, emit one decision-log line naming the bound `use_merge_queue` value, its provenance, the entry point, and the verb it routes to. This line is what makes "which verb did this run actually merge with?" answerable from the log alone, rather than inferred from downstream side effects:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup merge routing: use_merge_queue={use_merge_queue} (provenance: default:branch-cleanup step-params object, Conflict-Severity Classifier one-stop read) — dispatching {ci pr safe-merge | ci pr merge-queue} for PR #{pr_number}"
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup merge routing: use_merge_queue={use_merge_queue} (provenance: default:branch-cleanup step-params object, Conflict-Severity Classifier one-stop read) — dispatching pre_merge_gate merge --route {safe-merge | merge-queue} (routed verb {ci pr safe-merge | ci pr merge-queue}) for PR #{pr_number}"
 ```
+
+##### Gate result — branch on `dispatched` first
+
+Both routes below return the entry point's TOON, and it exits 0 on every outcome — so **branch on the payload, never on the exit code**, and read `dispatched` BEFORE anything the routed verb may have said:
+
+- **`dispatched: false` AND `error: blocking_findings_present`** (carrying `blocking_count`, `blocking_types`, `per_type`) → an actionable finding is still `pending`, so the gate issued no merge verb. The merge is BLOCKED. Release the merge mutex if held (§ "Merge-Mutex Hold Window" invariant 4), then route the pending finding(s) through the same `verification-feedback` triage / loop-back the wait-region findings use: record `branch-cleanup` as a loop-back to `6-finalize` so the finalize pipeline re-fires, triages the findings, and re-enters this gate. Do NOT merge, and do NOT run any section after **Merge PR** — none of them is merge-gated.
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock release \
+    --plan-id {plan_id}
+  ```
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+    --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome loop_back \
+    --loop-back-target 6-finalize --display-detail "pre-merge findings gate: {blocking_count} pending, looping back to triage"
+  ```
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level WARNING --message "(plan-marshall:phase-6-finalize) Pre-merge findings gate: {blocking_count} actionable finding(s) pending (per_type={per_type}) — pre_merge_gate merge dispatched nothing; looping back to triage (merge blocked)"
+  ```
+
+  Then return control to the finalize dispatcher.
+- **`dispatched: false` with any other error** — `error: query_failed` (the pending count could not be evaluated: executor unreachable / partial query failure), or any other refusal the gate returns → the store gate **fails closed**: take § "UNKNOWN disposition — blocked, and never authorizable" above, exactly as written there. A merge NEVER proceeds on an unevaluable store gate, and no `merge-authorization` grant covers this gap.
+- **`dispatched: true`** → the store was proven clean (`findings_gate: clean`) and the gate issued the routed verb. The rest of the payload IS that verb's payload, verbatim, so the existing route-specific branches below apply to it unchanged.
 
 The routing itself:
 
-- **`use_merge_queue == false`** (default) → issue the immediate `pr safe-merge` call below. The plan merges the PR itself under the widened mutex.
+- **`use_merge_queue == false`** (default) → issue the `pre_merge_gate merge --route safe-merge` call below. The plan merges the PR itself under the widened mutex.
 - **`use_merge_queue == true`** → route the merge through the platform merge queue via the `pr merge-queue` verb INSTEAD of `pr safe-merge`, so the platform rebases, re-tests and merges against the latest base and serializes a truly-external commit the session-scoped mutex cannot. The widened D4 mutex still guards the window up to and including the enqueue; the two mechanisms compose. It is NOT guarding a rebase or force-push on this path — § "Rebase Branch onto Base" routes both away precisely because the queue performs them. The enqueue takes no `--strategy` or `--delete-branch` flag — unchanged: the platform merges queued PRs with the method configured on the queue itself, GitHub rejects `--delete-branch` when a merge queue is enabled, and the platform auto-deletes the head branch after the queue merge. The queue's configured method is no longer an independent knob, though — `repo merge-queue enable` provisions and reconciles it from `pr_merge_strategy`, and the mismatch warn below catches residual drift. All engagement is routed through the `ci` abstraction — NEVER a direct `gh`/`glab` call.
 
   **Merge-method mismatch warn (best-effort, advisory)** — BEFORE the enqueue, probe the queue's configured merge method and warn when it disagrees with the configured `pr_merge_strategy`:
@@ -1464,12 +1479,14 @@ The routing itself:
 
   When the probe fails, returns `status: error`, or returns no `merge_method` field (GitLab, an unconfigured queue, an auth-scope failure), skip the comparison silently and proceed — the probe is advisory here, never a gate.
 
-  Then enqueue:
+  Then enqueue through the entry point — `--route merge-queue` makes it issue `ci pr merge-queue --pr-number {pr_number}` against `--project-dir {worktree_path}`, and only on a clean store:
 
   ```bash
-  python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr merge-queue \
-      --pr-number {pr_number}
+  python3 .plan/execute-script.py plan-marshall:phase-6-finalize:pre_merge_gate merge \
+      --plan-id {plan_id} --pr-number {pr_number} --route merge-queue --project-dir {worktree_path}
   ```
+
+  Branch on `dispatched` first (§ "Gate result — branch on `dispatched` first" above). The branches below read the enqueue payload the gate returned with `dispatched: true`.
 
   Because the platform auto-deletes the remote head branch after the queue merge, no `--delete-branch` follow-up is needed; the later `prune-local-and-remote-ref` tail accounts for the local-branch prune either way — it deletes the local feature branch and, via its internal `show-ref` guard, produces a `status: partial` no-op when the remote-tracking ref is already gone (the platform already deleted the remote branch) or deletes the stale ref when it is still present.
 
@@ -1536,14 +1553,19 @@ The routing itself:
 
 The remainder of this section (the immediate `pr safe-merge` path) applies only when `use_merge_queue == false`.
 
-Issue a single `pr safe-merge` call. It polls the PR's mergeability until ready, then merges (and deletes the remote branch via `--delete-branch`); on GitHub it additionally falls back to an `--admin` merge when the PR stays stuck `mergeable_state: blocked` past the poll timeout AND every active ruleset requirement is provably met. This single verb replaces the former `pr merge` → `pr auto-merge` branch-protection fallback sequence: the poll-then-merge path and the stuck-state admin fallback are both internal to `pr safe-merge`.
+Issue a single `pre_merge_gate merge --route safe-merge` call; on a clean store it issues `ci pr safe-merge` with the PR number, strategy and flags below, unchanged. The routed verb polls the PR's mergeability until ready, then merges (and deletes the remote branch via `--delete-branch`); on GitHub it additionally falls back to an `--admin` merge when the PR stays stuck `mergeable_state: blocked` past the poll timeout AND every active ruleset requirement is provably met. This single verb replaces the former `pr merge` → `pr auto-merge` branch-protection fallback sequence: the poll-then-merge path and the stuck-state admin fallback are both internal to `pr safe-merge`.
 
 The GitHub-only `--admin` fallback is gated by the `{admin_merge_on_stuck_state}` param read from the one-stop `step-params get` call in the **Conflict-Severity Classifier** section above (default: `false`). Resolve `{admin_flag}` from that param: when `{admin_merge_on_stuck_state} == true`, `{admin_flag}` is the literal `--admin-merge-on-stuck-state`; when it is `false` (the default), `{admin_flag}` is the empty string and the flag is omitted entirely (it is `store_true`). On GitLab the flag is accepted but has no effect — there is no admin-merge equivalent, so a stuck MR surfaces as an error rather than force-merging.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr safe-merge \
-    --pr-number {pr_number} --strategy {pr_merge_strategy} --delete-branch {admin_flag}
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:pre_merge_gate merge \
+    --plan-id {plan_id} --pr-number {pr_number} --route safe-merge --project-dir {worktree_path} \
+    --strategy {pr_merge_strategy} --delete-branch {admin_flag}
 ```
+
+**Bash tool timeout**: pass the seam-resolved host cap (`harness bash-timeout-ceiling` — 600s on the Claude target); the routed `pr safe-merge` bounds its own readiness poll.
+
+Branch on `dispatched` first (§ "Gate result — branch on `dispatched` first" above). With `dispatched: true`, the payload is the `pr safe-merge` result, read as below.
 
 If `safe-merge` fails (poll timeout with the admin fallback disabled or unmet, a GitLab stuck state, or any merge error) → log error and abort:
 ```bash

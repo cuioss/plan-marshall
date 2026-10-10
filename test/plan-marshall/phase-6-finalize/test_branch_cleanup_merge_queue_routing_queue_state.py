@@ -729,63 +729,6 @@ def test_the_false_polarity_is_the_antecedent_of_the_decline_branch(doc):
     assert not defects, f'{doc.name} does not route the re-review outcome on head_sha_verified: ' + '; '.join(defects)
 
 
-def test_dispatch_set_over_the_derived_document_set_is_closed():
-    """(1) Over the UNION of the derived document set, the dispatch set is exactly two.
-
-    ``pr merge`` and ``pr auto-merge`` appear nowhere in any member AS A DISPATCH.
-    The assertion is bound to the derived set rather than to a filename, so
-    relocating a merge-shaped dispatch out of ``branch-cleanup.md`` and into
-    ``branch-cleanup-rereview.md`` — or into any future sibling the step body
-    loads — fails here rather than slipping through.
-    """
-    per_doc = {doc.name: sorted(_dispatched_merge_verbs(doc)) for doc in _DOCUMENT_SET}
-    union: set[str] = set()
-    for verbs in per_doc.values():
-        union.update(verbs)
-
-    assert union, (
-        f'ZERO merge-shaped dispatches were derived across the {len(_DOCUMENT_SET)} '
-        f'document(s) {list(per_doc)}. The step body demonstrably issues a merge, so an '
-        'empty derivation means the invocation-shape predicate stopped matching — and '
-        'every closure assertion below would pass vacuously.'
-    )
-    assert union == set(_EXPECTED_DISPATCH_SET), (
-        f'The derived dispatch set is {sorted(union)}, not {sorted(_EXPECTED_DISPATCH_SET)}. '
-        f'Per document: {per_doc}. `ci pr safe-merge` and `ci pr merge-queue` are the ONLY '
-        'merge dispatches this step may issue; `ci pr merge` and `ci pr auto-merge` are not '
-        'reachable from it under any condition, and neither is a fallback for the other.'
-    )
-
-    # Second, independent side: what the owning section DECLARES as reachable.
-    # Comparing the derived set against a literal in this file alone would be
-    # half a check — it would catch a document that gained a dispatch, but not a
-    # document whose own closure declaration disagreed with what it dispatches.
-    rows = _DISPATCH_TABLE_ROW_RE.findall(_read(_BRANCH_CLEANUP))
-    assert rows, (
-        'branch-cleanup.md declares no closed-dispatch-set table. The closure must be '
-        'STATED at the owning section — a reader of the step body cannot otherwise tell '
-        'that `ci pr merge` and `ci pr auto-merge` are unreachable rather than merely '
-        'unused today. See § "Merge routing (`use_merge_queue`)" → "The dispatch set is '
-        'CLOSED".'
-    )
-    declared_reachable = {verb for verb, mark in rows if mark == 'yes'}
-    declared_unreachable = {verb for verb, mark in rows if mark != 'yes'}
-
-    assert declared_unreachable, (
-        f'The declared dispatch table marks nothing unreachable ({rows}). A table listing '
-        'only the permitted verbs states no closure at all — the whole point is naming the '
-        'verbs that must NOT be reachable.'
-    )
-    assert declared_reachable == union, (
-        f'The section DECLARES {sorted(declared_reachable)} reachable but the derived '
-        f'dispatch set is {sorted(union)}. The declaration and the executable body must '
-        'agree; a divergence means one of the two silently moved.'
-    )
-    assert not (declared_unreachable & union), (
-        f'{sorted(declared_unreachable & union)} is declared unreachable yet is actually dispatched by the step body.'
-    )
-
-
 def test_the_predicate_can_see_inside_an_f_string():
     """The identifier predicate depends on PEP 701, and the dependency is ASSERTED.
 
@@ -925,44 +868,4 @@ def test_one_stop_enumeration_names_every_declared_param():
         f'{missing}. Every param the step declares is read off the SAME one-stop `params` '
         'object, so one left out of the enumeration is a read no reader of that section '
         'knows to expect.'
-    )
-
-
-def test_merge_routing_decision_precedes_the_dispatch_it_selects():
-    """(4c) The routing line is emitted BEFORE the dispatch, not after it.
-
-    An observability line written after the dispatch records what happened but
-    cannot be read as the reason it happened — and on an aborted run it is never
-    written at all, which is exactly the run whose routing a reader most needs.
-    """
-    text = _read(_BRANCH_CLEANUP)
-    heading = '#### Merge routing (`use_merge_queue`)'
-    start = text.find(heading)
-    assert start != -1, f'{_BRANCH_CLEANUP.name} carries no {heading!r} section.'
-    # Bound the slice at the next heading of the same or higher level: a
-    # later merge dispatch outside this section must not satisfy the search.
-    rest = text[start + len(heading) :]
-    following = re.search(r'\n#{1,4} ', rest)
-    section = text[start : start + len(heading) + following.start()] if following else text[start:]
-
-    log_at = section.find('Branch cleanup merge routing: use_merge_queue=')
-    assert log_at != -1, (
-        'The merge-routing section emits no decision-log line naming the bound '
-        '`use_merge_queue` value and the verb about to be dispatched.'
-    )
-
-    dispatch_at = -1
-    for block in _fenced_blocks(section):
-        if _EXECUTOR_MARKER in block and _CI_NOTATION in block and _PR_VERB_RE.search(block):
-            dispatch_at = section.find(block)
-            break
-    assert dispatch_at != -1, (
-        'The merge-routing section issues no merge-shaped `ci pr` dispatch, so the '
-        'ordering this test asserts has nothing to order against — the section moved and '
-        'this guard is now anchored to the wrong place.'
-    )
-    assert log_at < dispatch_at, (
-        f'The merge-routing decision-log line appears at {log_at}, AFTER the dispatch it '
-        f'selects at {dispatch_at}. Bypass-before-dispatch ordering requires the routing '
-        'decision be recorded before the verb it chooses is issued.'
     )

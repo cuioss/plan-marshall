@@ -2228,10 +2228,11 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 | `scripts/post_run_source_guard.py` | `plan-marshall:phase-6-finalize:post_run_source_guard` | Runtime tracked-source guard for the `post_run_review` band (item 5f sub-item 0) — reports dirty TRACKED paths (source, or a tracked `.plan/` config/descriptor) left by a step that declared `mutates_source: false`; the `.plan/` exemption is keyed on git trackedness, not the path prefix; publishes the examined population (`considered_paths` / `exempted_paths` / `offending_paths`); advisory and non-blocking (always exits 0) |
 | `scripts/verdict_currency.py` | `plan-marshall:phase-6-finalize:verdict_currency` | Classifies whether a HEAD advance invalidates a head-dependent step's recorded verdict, by diffing the recorded SHA's tree against the live HEAD over the step's declared `verdict_inputs` surface; fails closed to `invalidated` on every uncertainty (`classify`). Its read-only `changed-paths` verb lists the paths that differ between a step's own recorded `head_at_completion` and the live HEAD, through the same tree-difference derivation |
 | `scripts/foreign_pr_gate.py` | `plan-marshall:phase-6-finalize:foreign_pr_gate` | Pre-archive foreign-PR landing gate — refuses to archive while any *foreign* deliverable's change is `pushed_no_pr` (committed and pushed to a branch no PR carries). Consumes deterministic signals, never artifact prose — its population and exclusion reporting are specified in [`standards/archive-plan.md`](standards/archive-plan.md) § "Pre-Archive Foreign-PR Landing Gate". Returns `clear` / `blocked` / `error`; fails CLOSED, so unreadable evidence stops the archive exactly as `blocked` does |
+| `scripts/pre_merge_gate.py` | `plan-marshall:phase-6-finalize:pre_merge_gate` | Pre-merge findings gate that owns the merge dispatch for `default:branch-cleanup` — evaluates the `6-finalize` blocking-findings invariant through the `phase_handshake findings-check` handler and, only on a clean store, issues the routed merge verb (`ci pr safe-merge` or `ci pr merge-queue`); a pending actionable finding (`blocking_findings_present`) or an unevaluable count (`query_failed`) returns `dispatched: false` and merges nothing. See [`standards/branch-cleanup.md`](standards/branch-cleanup.md) § "Merge routing (`use_merge_queue`)" |
 
 ## Canonical invocations
 
-The canonical argparse surface for `ci_complete_precondition.py`, `pr_intent_section.py`, `post_run_source_guard.py`, `review_commitments.py` and `verdict_currency.py`. The plugin-doctor `missing-canonical-block` rule checks that this section is PRESENT, matching its heading only — the body is never read; `manage-invocation-invalid` derives its accept-set from a live `--help` walk rather than from this section. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+The canonical argparse surface for `ci_complete_precondition.py`, `pr_intent_section.py`, `post_run_source_guard.py`, `pre_merge_gate.py`, `review_commitments.py` and `verdict_currency.py`. The plugin-doctor `missing-canonical-block` rule checks that this section is PRESENT, matching its heading only — the body is never read; `manage-invocation-invalid` derives its accept-set from a live `--help` walk rather than from this section. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
 
 ### ci_complete_precondition — resolve
 
@@ -2258,6 +2259,22 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:post_run_source_g
 `--project-dir` is required and takes the MAIN CHECKOUT — it carries no default
 because every caller runs after `default:branch-cleanup` removed the worktree,
 so a cwd default would silently observe a deleted tree.
+
+### pre_merge_gate — merge
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:pre_merge_gate merge \
+  --plan-id PLAN_ID --pr-number PR_NUMBER --route {safe-merge,merge-queue} \
+  --project-dir PROJECT_DIR \
+  [--strategy {squash,merge,rebase}] [--delete-branch] [--admin-merge-on-stuck-state]
+```
+
+`--strategy` is required on the `safe-merge` route; `--strategy`, `--delete-branch`
+and `--admin-merge-on-stuck-state` are refused on the `merge-queue` route. The
+command always exits `0`: branch on `dispatched` first — `false` carries the
+findings refusal (`blocking_findings_present`, `query_failed`, …) and nothing was
+merged; `true` carries the routed verb's payload verbatim plus `findings_gate: clean`.
+`--plan-id` scopes the findings check only and is never forwarded to the CI router.
 
 ### verdict_currency — classify
 
