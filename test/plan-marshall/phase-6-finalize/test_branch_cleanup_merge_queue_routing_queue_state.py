@@ -869,3 +869,105 @@ def test_one_stop_enumeration_names_every_declared_param():
         'object, so one left out of the enumeration is a read no reader of that section '
         'knows to expect.'
     )
+
+
+# ---------------------------------------------------------------------------
+# (5) The queue-landing wait is the settle call, anchored before the prune
+# ---------------------------------------------------------------------------
+
+_LANDING_GATE_HEADING = '### Wait for the Queue Merge to Land (bounded)'
+_NEXT_SECTION_HEADING = '### Wait for Merge CI'
+_SETTLE_VERB = 'pr wait-for-queue-settle'
+_PR_VIEW_RE = re.compile(r'\bpr view\b')
+
+
+def _landing_wait_defects(text: str) -> list[str]:
+    """Every way ``text``'s queue-landing wait departs from the settle-call contract.
+
+    The wait is the gate's executable ``pr wait-for-queue-settle`` dispatch, and it
+    is bound to an observation taken BEFORE the branch prune, never after it: a
+    prune that has already run cannot witness whether the merge it assumed had
+    landed. The call keys on ``--pr-number`` — the platform deletes the head branch
+    as the queue merges, so a ``--head``-keyed read stops resolving at exactly the
+    moment the landing becomes observable. And the gate no longer polls ``pr view``:
+    a poll alongside the settle call would be a second, unbounded wait.
+
+    Takes TEXT so the negative control below drives this exact predicate over a
+    synthetic pre-fix document.
+    """
+    gate_at = text.find(_LANDING_GATE_HEADING)
+    if gate_at == -1:
+        return ['no queue-landing gate section']
+    end_at = text.find(_NEXT_SECTION_HEADING, gate_at)
+    gate = text[gate_at : end_at if end_at != -1 else len(text)]
+    calls = [block for block in _fenced_blocks(gate) if _EXECUTOR_MARKER in block and _CI_NOTATION in block]
+
+    defects: list[str] = []
+    settle_calls = [block for block in calls if _SETTLE_VERB in block]
+    if len(settle_calls) != 1:
+        defects.append(f'the gate issues {len(settle_calls)} settle call(s), expected exactly one')
+    for block in settle_calls:
+        if '--pr-number' not in block or '--head' in block:
+            defects.append('the settle call is not keyed on --pr-number alone')
+    if any(_PR_VIEW_RE.search(block) for block in calls):
+        defects.append('the gate still polls pr view')
+
+    prune_at = -1
+    for block in _fenced_blocks(text):
+        if _EXECUTOR_MARKER in block and 'prune-local-and-remote-ref' in block:
+            found = text.find(block)
+            if found > gate_at:
+                prune_at = found
+                break
+    settle_at = text.find(settle_calls[0], gate_at) if settle_calls else -1
+    if prune_at == -1:
+        defects.append('no prune-local-and-remote-ref dispatch follows the gate')
+    elif settle_at == -1 or not gate_at < settle_at < prune_at:
+        defects.append('the settle call is not anchored between the gate heading and the prune dispatch')
+    return defects
+
+
+_PRE_FIX_LANDING_DOC = """\
+### Wait for the Queue Merge to Land (bounded)
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr view \\
+    --head {head_branch}
+```
+
+### Wait for Merge CI
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow \\
+  prune-local-and-remote-ref --plan-id {plan_id}
+```
+"""
+
+
+def test_landing_wait_predicate_rejects_a_pre_fix_pr_view_poll():
+    """Matched negative control: the pre-fix ``pr view`` poll is reported on both counts.
+
+    A predicate only ever observed against the compliant document shows it can
+    recognise a settle call — never that it can reject the poll it replaced.
+    """
+    assert _landing_wait_defects(_PRE_FIX_LANDING_DOC) == [
+        'the gate issues 0 settle call(s), expected exactly one',
+        'the gate still polls pr view',
+        'the settle call is not anchored between the gate heading and the prune dispatch',
+    ]
+
+
+def test_landing_wait_predicate_rejects_a_head_keyed_settle_call():
+    """A settle call keyed on ``--head`` is reported, so the selector arm can fail."""
+    head_keyed = _PRE_FIX_LANDING_DOC.replace(
+        'pr view \\\n    --head {head_branch}', 'pr wait-for-queue-settle \\\n    --head {head_branch}'
+    )
+
+    assert _SETTLE_VERB in head_keyed, 'the mutation did not apply, so the control proves nothing'
+    assert _landing_wait_defects(head_keyed) == ['the settle call is not keyed on --pr-number alone']
+
+
+def test_queue_landing_wait_is_the_settle_call_before_the_prune():
+    """(5) The gate waits through ``pr wait-for-queue-settle --pr-number``, issues no
+    ``pr view`` poll, and its wait is anchored before the branch prune."""
+    assert _landing_wait_defects(_read(_BRANCH_CLEANUP)) == []
