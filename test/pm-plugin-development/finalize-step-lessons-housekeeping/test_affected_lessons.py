@@ -649,7 +649,7 @@ def test_path_whose_file_name_carries_a_colon_selects_the_lesson_citing_it() -> 
 @pytest.mark.parametrize(
     ('cited', 'changed'),
     [
-        ('src/app.py:598', 'src/other.py'),
+        ('src/app.py:598', '598/other.py'),
         ('origin/main:src/app.py', 'main/other.py'),
     ],
     ids=['line-number-piece', 'revision-piece'],

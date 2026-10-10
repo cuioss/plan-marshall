@@ -780,6 +780,6 @@ def test_delta_rule_names_the_failed_action_route_beside_the_commit_restamp() ->
     delta_rule = _section(content, _DELTA_RULE_HEADING)
 
     # Assert
-    assert 'A failed per-lesson action is the other route' in delta_rule
+    assert 'A failed per-lesson action is a second route' in delta_rule
     assert 'Step 7 therefore withholds the `classified_at` fact' in delta_rule
     assert 'downgrades that end in a trim or a deliberate retain, not failed actions' in delta_rule

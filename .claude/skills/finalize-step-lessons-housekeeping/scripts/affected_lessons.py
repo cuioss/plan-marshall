@@ -413,7 +413,7 @@ def resolve_delta(plan_id: str, worktree_path: str, firing_started_at: str) -> d
         plan_id: The plan whose status holds the step record.
         worktree_path: The worktree the change list is computed in.
         firing_started_at: The start of this firing, echoed on every payload so
-            the step records it as ``classified_at`` whichever mode it runs in.
+            the step can record it as ``classified_at`` whichever mode it runs in.
 
     Returns:
         The verb's payload — ``mode: full``, ``mode: delta``, or ``status: error``.
