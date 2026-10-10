@@ -63,7 +63,7 @@ Use when: Analyzing test coverage or improving coverage metrics, or comparing co
 Read: standards/test-fork-policy.md
 ```
 
-Use when: Deciding how many JVMs a unit suite starts — reusing one JVM for most classes, declaring isolation by JUnit tag, guarding the split with a contract test, and keeping a `-Dtest` selection strict across several executions.
+Use when: Deciding how many JVMs a unit suite starts — reusing one JVM for most classes, declaring isolation by JUnit tag, and guarding the split with a contract test.
 
 ## Key Rules Summary
 
@@ -136,4 +136,4 @@ Replace `${PACKAGE}`, `${CLASS_UNDER_TEST}`, `${METHOD_1}`, and placeholder comm
 | testing-integration.md | Integration test naming, separation, lifecycle |
 | testing-async-patterns.md | Awaitility patterns (never Thread.sleep), the wall-clock exception, deadlines for signal-based waits, transient-state observation, failure-path back-off |
 | coverage-analysis-pattern.md | Coverage analysis, gap improvement, before/after comparison and what it cannot show |
-| test-fork-policy.md | Surefire fork groups by JUnit tag, isolation criteria, the partition guard, `-Dtest` across executions |
+| test-fork-policy.md | Surefire fork groups by JUnit tag, isolation criteria, the partition guard |

@@ -135,7 +135,7 @@ Every other class stays sequential because of the two `same_thread` defaults; th
 What differs from the tagged execution:
 
 * **The classes share a JVM.** Static state is shared as well — a static HTTP-client configuration, a static base URI. The opted-in class passes what it needs per request and changes no static setting.
-* **`@Execution(CONCURRENT)` on the class is inherited by its methods.** They may run concurrently with each other. Annotate the methods `SAME_THREAD` when they must not.
+* **`@Execution(CONCURRENT)` on the class is inherited by its methods.** They run concurrently with each other. Annotate the methods `SAME_THREAD` when they must not; they then run one after the other.
 * **A class that must run last still can.** Give it the highest `@Order`, select `ClassOrderer$OrderAnnotation`, and keep it `SAME_THREAD`. Set the orderer through Failsafe's `configurationParameters` when a `junit-platform.properties` from a dependency could otherwise decide.
 
 The table below applies unchanged; "tagged" then reads "opted in".
