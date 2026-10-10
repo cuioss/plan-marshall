@@ -407,8 +407,30 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture c
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve \
-  --command COMMAND [--module MODULE]
+  --command COMMAND [--module MODULE] [--narrow-unit NARROW_UNIT]
 ```
+
+`--narrow-unit` resolves one **narrow unit** of the named module instead of the whole module: a test directory or a test file, written relative to the test root and starting with the module's own test target (for example `plan-marshall/build-server` for module `plan-marshall`). The values `build-pyproject`'s `resolve-test-scope` returns in `narrow_units[]` are in this form. The resolved `executable` then carries `module-tests {narrow unit}` and the tier fields are computed for that command.
+
+The argument is accepted for `--command module-tests` only, and a resolve it cannot honour returns a structured error rather than a guessed command:
+
+| `error` | When |
+|---------|------|
+| `narrow_unit_unsupported_command` | The command is not `module-tests`, or the module has no test target of its own to check the unit against. |
+| `invalid_narrow_unit` | The unit is not a plain `/`-separated path below a test target — it carries whitespace or shell syntax, or a segment that is exactly `.` or `..`. |
+| `narrow_unit_outside_module` | The unit does not start with the module's own test target; the payload names the expected `test_target`. |
+
+A narrow resolve returns the four tier fields plus a fifth, `bound_source`, naming where `bash_timeout_seconds` came from:
+
+| `bound_source` | Meaning | `bash_timeout_seconds` |
+|----------------|---------|------------------------|
+| `measured` | The narrow unit's own run-config key has been measured. | Derived exactly as for any measured command. |
+| `module_bound` | The unit is unmeasured; the module's own `module-tests` command is measured and its stamp is within the Bash ceiling. | The module's stamp — a part cannot outlast the whole. |
+| `narrow_default` | The unit is unmeasured and the module's stamp is unusable (the module is unmeasured, or its stamp is beyond the ceiling). | The stated default. |
+
+The **stated default** is the build tool's own outer floor — the `min_timeout` of the tool's execute configuration, which is the timeout an unmeasured run executes under anyway — plus the outer buffer every stamp carries. It is read from that configuration and has no second declaration here; for pyprojectx see [`build-pyproject/standards/pyproject-impl.md`](../build-pyproject/standards/pyproject-impl.md) § "Timeout bound ordering". Both unmeasured sources route to `per_task` whenever their stamp is within the Bash ceiling, and neither ever replaces a measured bound: once a narrow unit has run — including a run that timed out, which records a learned value for its key — the next resolve reports `measured`.
+
+`bound_source` appears on a narrow resolve only. A resolve without `--narrow-unit` returns exactly the fields it returned before the argument existed.
 
 ### derive-verification
 

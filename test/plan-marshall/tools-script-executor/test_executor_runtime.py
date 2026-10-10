@@ -39,6 +39,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from _executor_template_render import format_script_mappings, render_executor_template
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import _MARKETPLACE_SCRIPT_DIRS, MARKETPLACE_ROOT
@@ -50,14 +51,10 @@ def no_pm_marketplace_root(monkeypatch):
     monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
 
 
-SKILL_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-script-executor'
-TEMPLATES_DIR = SKILL_DIR / 'templates'
-EXECUTOR_TEMPLATE = TEMPLATES_DIR / 'execute-script.py.template'
-
-# Real marketplace dirs used purely so the rendered executor can import
-# ``plan_logging``. Path-rewrite logic only touches SCRIPTS values whose
-# embedded prefix matches ``{embedded_root}/marketplace/bundles/``.
-LOGGING_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-logging' / 'scripts'
+# Real marketplace dir used purely so the rendered executor can import
+# ``input_validation`` (the shared renderer already points ``plan_logging`` at
+# the real tree). Path-rewrite logic only touches SCRIPTS values whose embedded
+# prefix matches ``{embedded_root}/marketplace/bundles/``.
 INPUT_VALIDATION_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-input-validation' / 'scripts'
 
 # The notation we'll register in the embedded SCRIPTS dict. Format is
@@ -98,31 +95,19 @@ def _build_fake_marketplace(root: Path, tree_id: str) -> Path:
     return script_path.resolve()
 
 
-def _render_executor(target_path: Path, embedded_script_path: Path) -> Path:
+def _render_executor(target_path: Path, embedded_script_path: Path, notation: str = TEST_NOTATION) -> Path:
     """
     Render the executor template into ``target_path`` with the SCRIPTS dict
-    pointing at ``embedded_script_path``.
+    mapping ``notation`` to ``embedded_script_path``.
+
+    Rendered through the directory's shared renderer; the one substitution this
+    module owns is the shared-module block, which points at the real
+    ``tools-input-validation`` scripts because the fake trees carry none.
     """
-    template_content = EXECUTOR_TEMPLATE.read_text()
-
-    mappings_code = f'    "{TEST_NOTATION}": "{embedded_script_path}",'
-
-    rendered = template_content.replace('{{SCRIPT_MAPPINGS}}', mappings_code)
-    rendered = rendered.replace('{{SCRIPT_SURFACES}}', '').replace('{{SUBCOMMAND_MAPPINGS}}', '')
-    rendered = rendered.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
-    rendered = rendered.replace(
-        '{{SHARED_MODULE_DIRS}}',
-        f"    ('tools-input-validation', '{INPUT_VALIDATION_DIR}'),",
+    rendered = render_executor_template(
+        format_script_mappings({notation: embedded_script_path}),
+        shared_module_dirs=f"    ('tools-input-validation', '{INPUT_VALIDATION_DIR}'),",
     )
-    rendered = rendered.replace('{{CACHE_RECOVERY_ROOTS}}', '# (none in test)')
-    rendered = rendered.replace('{{EXTRA_SCRIPT_DIRS}}', '')
-    rendered = rendered.replace('{{PLAN_DIR_NAME}}', '.plan')
-    rendered = rendered.replace('{{EXECUTOR_TARGET}}', 'claude')
-    rendered = rendered.replace(
-        '{{TARGET_AWARE_RESOLVER}}',
-        'def _resolve_notation_by_target(notation):\n    return None\n',
-    )
-
     target_path.write_text(rendered)
     return target_path
 
@@ -294,36 +279,6 @@ if __name__ == '__main__':
 POST_REMOVAL_NOTATION = 'fakebundle:fakeskill'
 
 
-def _render_executor_for_post_removal(
-    target_path: Path,
-    embedded_script_path: Path,
-) -> Path:
-    """Render the template with no SUBCOMMANDS surface — the template no
-    longer contains a {{SUBCOMMAND_MAPPINGS}} placeholder after the
-    pre-flight validator was removed."""
-    template_content = EXECUTOR_TEMPLATE.read_text()
-    mappings_code = f'    "{POST_REMOVAL_NOTATION}": "{embedded_script_path}",'
-
-    rendered = template_content.replace('{{SCRIPT_MAPPINGS}}', mappings_code)
-    rendered = rendered.replace('{{SCRIPT_SURFACES}}', '')
-    rendered = rendered.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
-    rendered = rendered.replace(
-        '{{SHARED_MODULE_DIRS}}',
-        f"    ('tools-input-validation', '{INPUT_VALIDATION_DIR}'),",
-    )
-    rendered = rendered.replace('{{CACHE_RECOVERY_ROOTS}}', '# (none in test)')
-    rendered = rendered.replace('{{EXTRA_SCRIPT_DIRS}}', '')
-    rendered = rendered.replace('{{PLAN_DIR_NAME}}', '.plan')
-    rendered = rendered.replace('{{EXECUTOR_TARGET}}', 'claude')
-    rendered = rendered.replace(
-        '{{TARGET_AWARE_RESOLVER}}',
-        'def _resolve_notation_by_target(notation):\n    return None\n',
-    )
-
-    target_path.write_text(rendered)
-    return target_path
-
-
 @pytest.fixture
 def post_removal_executor(tmp_path):
     """Render an executor that embeds a multi-subcommand script. With the
@@ -341,7 +296,8 @@ def post_removal_executor(tmp_path):
 
     executor_path = plan_dir / 'execute-script.py'
 
-    _render_executor_for_post_removal(executor_path, script_path)
+    # No SCRIPT_SURFACES entry: the dispatch flows straight to the script's argparse.
+    _render_executor(executor_path, script_path, POST_REMOVAL_NOTATION)
 
     yield {
         'executor': executor_path,
@@ -427,34 +383,13 @@ SELF_HEAL_NOTATION = 'fakebundle:fakeskill:fakeskill'
 def _render_executor_with_cwd_walk(target_path: Path, embedded_script_path: Path) -> Path:
     """Render the executor template with the real cwd-walk fallback intact.
 
-    Identical to :func:`_render_executor` except the SCRIPTS dict is keyed by
-    the full three-part ``SELF_HEAL_NOTATION`` (so the cwd-walk's
-    ``notation.split(':')`` yields a real bundle/skill/script triple), and the
-    target-aware resolver is stubbed to ``None`` so resolution must fall through
-    to ``_resolve_notation_by_cwd_walk``.
+    :func:`_render_executor` with the SCRIPTS dict keyed by the full three-part
+    ``SELF_HEAL_NOTATION`` (so the cwd-walk's ``notation.split(':')`` yields a
+    real bundle/skill/script triple). The shared renderer's inert target-aware
+    resolver returns ``None``, so resolution must fall through to
+    ``_resolve_notation_by_cwd_walk``.
     """
-    template_content = EXECUTOR_TEMPLATE.read_text()
-
-    mappings_code = f'    "{SELF_HEAL_NOTATION}": "{embedded_script_path}",'
-
-    rendered = template_content.replace('{{SCRIPT_MAPPINGS}}', mappings_code)
-    rendered = rendered.replace('{{SCRIPT_SURFACES}}', '')
-    rendered = rendered.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
-    rendered = rendered.replace(
-        '{{SHARED_MODULE_DIRS}}',
-        f"    ('tools-input-validation', '{INPUT_VALIDATION_DIR}'),",
-    )
-    rendered = rendered.replace('{{CACHE_RECOVERY_ROOTS}}', '# (none in test)')
-    rendered = rendered.replace('{{EXTRA_SCRIPT_DIRS}}', '')
-    rendered = rendered.replace('{{PLAN_DIR_NAME}}', '.plan')
-    rendered = rendered.replace('{{EXECUTOR_TARGET}}', 'claude')
-    rendered = rendered.replace(
-        '{{TARGET_AWARE_RESOLVER}}',
-        'def _resolve_notation_by_target(notation):\n    return None\n',
-    )
-
-    target_path.write_text(rendered)
-    return target_path
+    return _render_executor(target_path, embedded_script_path, SELF_HEAL_NOTATION)
 
 
 def test_stale_embedded_path_self_heals_via_cwd_walk(tmp_path, no_pm_marketplace_root):
@@ -623,31 +558,6 @@ def _build_fake_build_skill(root: Path, body: str) -> Path:
     return script_path.resolve()
 
 
-def _render_build_executor(target_path: Path, embedded_script_path: Path) -> Path:
-    """Render the template with the fake build-class script registered."""
-    template_content = EXECUTOR_TEMPLATE.read_text()
-    mappings_code = f'    "{BUILD_CLASS_NOTATION}": "{embedded_script_path}",'
-
-    rendered = template_content.replace('{{SCRIPT_MAPPINGS}}', mappings_code)
-    rendered = rendered.replace('{{SCRIPT_SURFACES}}', '')
-    rendered = rendered.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
-    rendered = rendered.replace(
-        '{{SHARED_MODULE_DIRS}}',
-        f"    ('tools-input-validation', '{INPUT_VALIDATION_DIR}'),",
-    )
-    rendered = rendered.replace('{{CACHE_RECOVERY_ROOTS}}', '# (none in test)')
-    rendered = rendered.replace('{{EXTRA_SCRIPT_DIRS}}', '')
-    rendered = rendered.replace('{{PLAN_DIR_NAME}}', '.plan')
-    rendered = rendered.replace('{{EXECUTOR_TARGET}}', 'claude')
-    rendered = rendered.replace(
-        '{{TARGET_AWARE_RESOLVER}}',
-        'def _resolve_notation_by_target(notation):\n    return None\n',
-    )
-
-    target_path.write_text(rendered)
-    return target_path
-
-
 def _run_build_dispatch(tmp_path: Path, script_body: str) -> list[dict]:
     """Dispatch the fake build script through a rendered executor.
 
@@ -661,7 +571,7 @@ def _run_build_dispatch(tmp_path: Path, script_body: str) -> list[dict]:
     plan_dir.mkdir()
     (plan_dir / 'logs').mkdir()
     executor_path = plan_dir / 'execute-script.py'
-    _render_build_executor(executor_path, embedded_script_path=script_path)
+    _render_executor(executor_path, script_path, BUILD_CLASS_NOTATION)
 
     _run_executor(executor_path, plan_dir, BUILD_CLASS_NOTATION, 'run')
 

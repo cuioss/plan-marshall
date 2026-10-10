@@ -564,7 +564,7 @@ install,Install to local repository
 Resolve a command to its executable form.
 
 ```bash
-architecture.py resolve --command COMMAND [--module MODULE]
+architecture.py resolve --command COMMAND [--module MODULE] [--narrow-unit NARROW_UNIT]
 ```
 
 **Options**:
@@ -572,6 +572,7 @@ architecture.py resolve --command COMMAND [--module MODULE]
 |--------|----------|---------|-------------|
 | `--command` | Yes | - | Command name to resolve |
 | `--module` | No | (root module) | Module name |
+| `--narrow-unit` | No | (whole module) | Narrow unit of the named module to resolve instead of the whole module: a test directory or test file relative to the test root, starting with the module's test target (e.g. `plan-marshall/build-server`). Accepted for `--command module-tests` only. See **Narrow unit** below. |
 
 **Output** (TOON):
 ```toon
@@ -595,6 +596,26 @@ executables[2]{build_system,command}:
 maven,python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "test -pl nifi-cuioss-ui -am"
 npm,python3 .plan/execute-script.py plan-marshall:build-npm:npm run --command-args "--prefix nifi-cuioss-ui test"
 ```
+
+**Narrow unit** (`--narrow-unit`):
+
+The returned `executable` runs `module-tests {narrow unit}` instead of the module-wide command, and the tier fields (`bash_timeout_seconds`, `exceeds_bash_ceiling`, `execution_tier`, `hint`) are computed for that narrow command. A narrow unit that has never run is bounded from what is known rather than failed closed to the orchestrator tier, and one further field names where the bound came from. Without `--narrow-unit` the result carries no `bound_source` and is otherwise unchanged.
+
+| `bound_source` | Meaning |
+|----------------|---------|
+| `measured` | The narrow unit's own run has been measured; the fields are derived from that measurement. |
+| `module_bound` | The narrow unit is unmeasured, the module's own `module-tests` command is measured and its stamp is within the Bash ceiling. The unit takes the module's stamp. |
+| `narrow_default` | The narrow unit is unmeasured and the module's stamp is unusable (unmeasured, or beyond the ceiling). The unit takes the build tool's own outer floor plus the outer buffer. |
+
+`module_bound` and `narrow_default` are bounds, not measurements of the unit. The value set is distinct from the `timeout_source` a build run reports.
+
+A narrow unit `resolve` cannot honour is refused with `status: error`, the `error` code below, the rejected `narrow_unit`, and a `message`:
+
+| `error` | Cause | Additional fields |
+|---------|-------|-------------------|
+| `narrow_unit_unsupported_command` | The resolved command is not `module-tests`, or its executable is not a build executable carrying a module test target of its own. | `command`, `module` |
+| `invalid_narrow_unit` | The unit is not a plain `/`-separated path of at least two segments built from letters, digits, `_`, `.` and `-`, or one of its segments is exactly `.` or `..`. A segment that merely contains a dot (`test_x.py`, `a.b`) is accepted. | — |
+| `narrow_unit_outside_module` | The unit does not start with the named module's test target followed by `/`. | `module`, `test_target` |
 
 ---
 

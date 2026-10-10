@@ -290,6 +290,51 @@ def _run_gate_over_rows(
     return result
 
 
+# A source-bearing footprint outside the bundles. Its module is found through
+# the declared source-to-test mapping, and is a test tree rather than a bundle,
+# so it is named only: the change requires the whole tree.
+_TARGETS_FOOTPRINT = ['marketplace/targets/sync.py']
+
+
+_TARGETS_MODULE = 'marketplace'
+
+
+# One test directory of that module: a narrow unit, not the module itself.
+_TARGETS_NARROW_UNIT = 'marketplace/targets'
+
+
+def _run_gate_over_footprint(
+    plan_context,
+    monkeypatch,
+    tmp_path: Path,
+    rows: list[dict],
+    *,
+    footprint: list[str],
+    registered: frozenset[str],
+    bundles: frozenset[str],
+    plan_id: str,
+) -> dict:
+    """Drive the gate over ``rows`` with what the change requires derived for real.
+
+    Unlike :func:`_run_gate_over_rows`, the required coverage is not handed in:
+    the gate's own derivation runs, and only its four inputs are pinned at
+    their seams — the live footprint, the ``build.map`` globs, and the
+    registered targets and bundle modules the shared helper returns.
+    """
+    import _test_scope_targets
+    import extension_base
+
+    _write_status(plan_context.plan_dir_for(plan_id))
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    _stub_ledger_path(monkeypatch, _write_ledger(tmp_path, rows))
+    monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan_id: list(footprint))
+    monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _project_dir: [])
+    monkeypatch.setattr(_test_scope_targets, 'resolve_registered_targets', lambda _project_dir: registered)
+    monkeypatch.setattr(_test_scope_targets, 'resolve_bundle_modules', lambda _project_dir: bundles)
+    result: dict = cmd_pre_commit_verify_freshness(Namespace(plan_id=plan_id))
+    return result
+
+
 def _stub_verdict(monkeypatch, verdict: dict) -> None:
     """Patch the command-free build-necessity consult to a fixed verdict.
 

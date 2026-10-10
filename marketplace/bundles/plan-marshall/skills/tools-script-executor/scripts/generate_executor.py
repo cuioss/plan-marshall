@@ -143,16 +143,20 @@ Executor-guard backstop decision (ADR-002):
     plan-dir move-back only). Because the worktree-bound generation pins cwd to
     the worktree, it never clobbers main's executor.
 
-    DECISION: no runtime worktree-write refusal guard is added to this generator.
-    A secondary runtime guard inside ``generate_executor.py`` was evaluated and
-    REJECTED as redundant — the caller-owned cwd-pinning already lands each tree's
-    output in the correct ``.plan/``, so the guard would add no residual
-    defense-in-depth value while enlarging the surface. Per
-    ``compatibility: breaking`` and the ``lean`` simplicity setting, the smaller
-    surface is preferred. The ``--marketplace-root`` / ``PM_MARKETPLACE_ROOT``
-    anchor (documented above) survives as the explicit escape hatch for a
-    non-cwd-pinned caller that must pin discovery to an alternate marketplace
-    tree; it is not a guard.
+    DECISION: caller-owned cwd-pinning stays the primary enforcement, and this
+    generator carries exactly one secondary backstop behind it — the
+    cross-checkout refusal (:func:`cross_checkout_refusal`). The
+    ``--marketplace-root`` / ``PM_MARKETPLACE_ROOT`` anchor pins where scripts
+    are DISCOVERED; the output path comes from the nearest ``.plan`` above the
+    working directory. The two are resolved independently, so a caller that pins
+    discovery to one checkout while standing in another would write the second
+    checkout's executor from the first checkout's scripts. ``generate`` refuses
+    that before anything is written. The rule a caller follows is to run the
+    generation from inside the checkout whose executor it writes.
+
+    The backstop compares two checkouts and nothing else. It is not a
+    worktree-write refusal: a generation that writes a worktree's executor from
+    that worktree's own scripts is the normal case and is never refused.
 """
 
 import argparse
@@ -405,6 +409,13 @@ SHARED_MODULE_SKILLS: tuple[str, ...] = (
     'script-shared',
     'manage-change-ledger',
 )
+
+
+#: The bundle the logging skill and every entry of :data:`SHARED_MODULE_SKILLS`
+#: belong to. Emitted into the executor so its bootstrap can map a skill name
+#: back to a directory when a pinned path is gone: the plugin cache and the
+#: marketplace tree both file a skill under its bundle.
+BOOTSTRAP_BUNDLE = 'plan-marshall'
 
 
 def shared_module_skill_label(scripts_dir: Path) -> str:
@@ -1247,7 +1258,10 @@ def generate_mappings_code(mappings: dict[str, str]) -> str:
 #     walk needs to tell a flag's VALUE from the next verb.
 # v4: adds the CACHE_RECOVERY_ROOTS placeholder (runtime-resolved bundle cache
 #     roots injected per target for the bootstrap's pruned-version self-heal).
-_SUPPORTED_TEMPLATE_FORMAT_VERSION = 4
+# v5: adds the BOOTSTRAP_BUNDLE placeholder (the bundle the bootstrap skills
+#     belong to, which the bootstrap needs to find a skill's scripts dir in the
+#     plugin cache and in the checkout's own sources).
+_SUPPORTED_TEMPLATE_FORMAT_VERSION = 5
 
 # Matches the template's ``# TEMPLATE_FORMAT_VERSION: N`` marker comment.
 _TEMPLATE_FORMAT_VERSION_RE = re.compile(r'^#\s*TEMPLATE_FORMAT_VERSION:\s*(\d+)\s*$', re.MULTILINE)
@@ -2115,6 +2129,7 @@ def generate_executor(
         content = content.replace('{{SCRIPT_SURFACES}}', surfaces_code)
         content = content.replace('{{LOGGING_DIR}}', logging_dir)
         content = content.replace('{{SHARED_MODULE_DIRS}}', shared_module_lines)
+        content = content.replace('{{BOOTSTRAP_BUNDLE}}', BOOTSTRAP_BUNDLE)
         content = content.replace('{{CACHE_RECOVERY_ROOTS}}', cache_recovery_lines)
         content = content.replace('{{EXTRA_SCRIPT_DIRS}}', extra_dirs_code)
         content = content.replace('{{PLAN_DIR_NAME}}', PLAN_DIR_NAME)
@@ -2835,6 +2850,58 @@ def read_marshal_provisioned_version(cwd: Path | None = None) -> str:
 # COMMANDS
 # ============================================================================
 
+#: ``error`` code of the refusal :func:`cross_checkout_refusal` returns.
+ERROR_CROSS_CHECKOUT_GENERATION = 'cross_checkout_generation'
+
+
+def cross_checkout_refusal(base_path: Path, output_path: Path) -> dict | None:
+    """Refuse a generation whose scripts and output lie in different checkouts.
+
+    A *checkout* is a directory that holds ``marketplace/bundles``. The
+    discovery checkout is the one ``base_path`` sits in
+    (:func:`marketplace_root_for_base`); the output checkout is the directory
+    holding the ``.plan`` the executor is written into, when that directory is
+    itself a checkout. When both exist and differ, the executor of one checkout
+    would embed the script paths of another, so nothing is generated.
+
+    Both roots are compared as resolved paths. A worktree nested under the main
+    checkout's ``.plan/local/worktrees/`` is therefore a different checkout from
+    the main one, although its path starts with the main checkout's.
+
+    Two cases are not refused, because there are not two checkouts to disagree:
+    a plugin-cache ``base_path`` (no discovery checkout), and an output
+    directory that holds no ``marketplace/bundles`` (a consumer project, whose
+    scripts always come from elsewhere).
+
+    Args:
+        base_path: The resolved bundles root scripts are discovered under.
+        output_path: The executor file the generation would write.
+
+    Returns:
+        ``None`` when the generation may proceed, otherwise the
+        ``status: error`` payload naming both checkout roots.
+    """
+    discovery_root = marketplace_root_for_base(base_path)
+    if discovery_root is None:
+        return None
+    output_root = output_path.resolve().parent.parent
+    if not (output_root / MARKETPLACE_BUNDLES_PATH).is_dir():
+        return None
+    if output_root == discovery_root.resolve():
+        return None
+    return {
+        'status': 'error',
+        'error': ERROR_CROSS_CHECKOUT_GENERATION,
+        'detail': (
+            f'scripts would be discovered in the checkout {discovery_root} while the executor would be '
+            f'written into the checkout {output_root}; nothing was written. Run the generation from '
+            f'inside the checkout whose executor it writes.'
+        ),
+        'discovery_root': str(discovery_root),
+        'output_root': str(output_root),
+        'executor': str(output_path),
+    }
+
 
 def cmd_generate(args: argparse.Namespace) -> dict:
     """Generate executor with embedded script mappings.
@@ -2872,6 +2939,11 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         return {'status': 'error', 'error': str(e)}
 
     print(f'Target: {resolved_target} (source: {ctx["target_source"]})')
+
+    # Checked before discovery, so a refused call has written nothing at all.
+    refusal = cross_checkout_refusal(base_path, executor_path())
+    if refusal is not None:
+        return {**refusal, 'executor_target': resolved_target, 'target_source': ctx['target_source']}
 
     # Discover marketplace scripts
     print('Discovering marketplace scripts...')

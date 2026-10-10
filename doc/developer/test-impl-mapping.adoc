@@ -35,8 +35,13 @@ a|
 | `test/finalize-step-sync-plugin-cache/test_sync_plugin_cache_step.py`
 | `.claude/skills/finalize-step-sync-plugin-cache/SKILL.md`
 | The project-local finalize step file has no test tree of its own module, so its contract test lives under `test/` in the default module.
+
+| `test/pm-plugin-development/finalize-step-plugin-doctor/test_finalize_step_plugin_doctor.py`
+| `.claude/skills/finalize-step-plugin-doctor/SKILL.md`
+| The project-local finalize step file has no test tree of its own module, so its contract test lives under `test/pm-plugin-development/`, beside the tests of the plugin-doctor gate the step runs.
 |===
 
 == Related
 
 * xref:testing.adoc[Testing] — how marketplace scripts are tested
+* link:../../marketplace/bundles/plan-marshall/skills/script-shared/scripts/build/_test_scope_divergence.py[`_test_scope_divergence.py`] — its `SOURCE_TO_TEST_TARGET` constant is the machine-readable source-to-test mapping the test-scope resolver reads. An entry names a test tree that holds tests for the source so the resolver can name it; it does not narrow what a change to that source must be tested against, which stays the whole tree. The table in this document serves the module-mapping check only.

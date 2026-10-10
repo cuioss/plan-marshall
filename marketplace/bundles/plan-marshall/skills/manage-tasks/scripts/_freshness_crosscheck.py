@@ -74,6 +74,15 @@ ones that refuse it alone — a row that measured zero tests contributes no test
 coverage, and a row whose ``args`` cannot be read or whose canonical is outside
 the vocabulary contributes nothing at all.
 
+⛔ **Narrow units are never an input to the coverage dimension.** The change
+side is the change's module set and its whole-tree verdict, derived without the
+resolver's narrow-unit lists; nothing here reads ``narrow_units``. On the row
+side, a row scoped to a narrow unit - one test directory or one test file of a
+module - names a part of that module, so it does not contain the change's
+module set and is adequate for no required analysis. A green narrow-unit row is
+a faster first signal for the step that ran it; it is not evidence that the
+change was covered.
+
 The contributing set is deterministic: per required analysis, the first adequate
 admissible row in ledger file order. Only rows the attribution dimension admits
 may contribute; where attribution could not judge, every row stays admissible.
@@ -346,7 +355,9 @@ class RequiredCoverage:
         analyses: The analysis kinds the change can break.
         whole_tree: True when only a whole-tree run covers the change — the
             footprint spans several modules, touches cross-module infrastructure,
-            or contains a path no registered module owns.
+            contains a path no registered module owns, or resolves to a module
+            that is named only (a test tree that is no bundle, or one reached
+            through the declared source-to-test mapping).
         modules: The module set a scoped run must cover when ``whole_tree`` is
             False. Empty only for an empty footprint, which requires nothing.
     """
@@ -430,7 +441,9 @@ def required_coverage(
     ``_test_scope_divergence.resolve_test_scope`` — the single existing authority
     on whether a scoped run could pass while a whole-tree run fails. When it is
     True only a whole-tree row covers the change; otherwise a row scoped to the
-    resolved module set does.
+    resolved module set does. A row scoped to a test tree that is no bundle is
+    never adequate: the resolver reports every footprint that names such a tree
+    as ``divergence_possible``.
 
     The empty footprint requires nothing at all (no analyses, no modules,
     ``whole_tree`` False), so every row covers it. That state is unreachable in

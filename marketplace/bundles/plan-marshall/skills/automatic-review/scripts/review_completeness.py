@@ -139,11 +139,14 @@ unproven bot into a pass.
 ``--measured-diff-size`` takes an optional value for the SAME transport reason,
 and it is NOT a list flag — it is a single scalar, parsed by nobody and echoed
 onto the return. What it shares with the list flags is the caller: both
-documented call sites interpolate it unconditionally into one command block, and
-the executor strips every empty-string argument, so an unmeasured diff delivers a
-BARE flag. Bare reads as ``''``, exactly as omitting it does, so the value
-contract is unchanged — an unmeasured size is reported as unknown and never as
-``0``, which would read as an empty diff refused for being too big.
+documented call sites interpolate it unconditionally into one command block, so
+an unmeasured diff reaches this parser in one of two forms. A quoted empty
+placeholder arrives as an empty VALUE — the executor keeps an empty string that
+is the value of the option before it. An unquoted empty placeholder is removed
+by the shell and arrives as a BARE flag. Both read as ``''``, exactly as omitting
+the flag does, so the value contract is unchanged — an unmeasured size is
+reported as unknown and never as ``0``, which would read as an empty diff refused
+for being too big.
 
 **THE PAIR-FORM SET IS DECLARED HERE, ONCE.** This module's ``_parse_bot_observations``
 is the single source of the form partition; every other site cross-references this
@@ -2043,15 +2046,16 @@ def main(argv: list[str] | None = None) -> int:
         # ``_add_bot_observation_flags`` carries it, and the reason is the caller's
         # transport rather than this flag's type. Both documented call sites (the FIND
         # step's participation guard and the pre-merge barrier) interpolate this flag
-        # UNCONDITIONALLY into one command block, and the generated executor strips every
-        # empty-string argument before argparse sees it — so on the COMMON path, where no
-        # size refusal occurred and the producer measured nothing, the documented call
-        # arrives as a BARE ``--measured-diff-size``. Without the optional value that is an
-        # argparse rejection (exit 2), which both call sites route to their UNKNOWN verdict
-        # — the one verdict where the force-done hatch is explicitly unavailable — so the
-        # documented happy path deadlocked the step. The relaxation changes no verdict: the
-        # bare form reads as ``''``, byte-identical to omitting the flag, so "unmeasured is
-        # reported as unknown, never as zero" holds exactly as before.
+        # UNCONDITIONALLY into one command block — so on the COMMON path, where no size
+        # refusal occurred and the producer measured nothing, the placeholder is empty.
+        # Quoted, it arrives as ``--measured-diff-size ''``: the generated executor keeps
+        # an empty string that is the value of the option before it. Unquoted, the shell
+        # removes it and the call arrives as a BARE ``--measured-diff-size``. Without the
+        # optional value the bare form is an argparse rejection (exit 2), which both call
+        # sites route to their UNKNOWN verdict — the one verdict where the force-done
+        # hatch is explicitly unavailable — so that form would deadlock the step. Both
+        # forms read as ``''``, byte-identical to omitting the flag, so "unmeasured is
+        # reported as unknown, never as zero" holds for each.
         nargs='?',
         const='',
         default='',

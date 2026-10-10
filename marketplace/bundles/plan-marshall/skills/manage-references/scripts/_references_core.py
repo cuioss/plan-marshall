@@ -28,11 +28,6 @@ class ReferencesData(TypedDict, total=False):
 
     branch: str
     base_branch: str
-    # The HEAD SHA pinned at plan creation (written by ``cmd_create`` alongside
-    # ``base_branch``). ``scope_creep_check`` grades the residual drift against
-    # this pinned baseline instead of the floating base tip, so the baseline
-    # survives later base moves.
-    plan_creation_sha: str
     issue_url: str
     build_system: str
     domains: list[str]

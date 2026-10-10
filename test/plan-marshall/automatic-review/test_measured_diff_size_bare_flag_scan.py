@@ -1,50 +1,37 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""`--measured-diff-size` survives the executor's empty-argument strip.
+"""The documented `--measured-diff-size` calls parse as the executor delivers them.
 
-The defect: both documented `review_completeness check` call sites interpolate
+Both documented `review_completeness check` call sites interpolate
 `--measured-diff-size "{measured_diff_size}"` UNCONDITIONALLY, while the producer
-measures the diff **only** when a size refusal was actually seen. The generated
-executor strips every empty-string argument before argparse sees it, so on the
-COMMON path — no size refusal — the documented call arrives as a bare
-`--measured-diff-size`. The flag declared no `nargs='?'`/`const=''`, unlike every
-sibling list flag on the same command, so that call was an argparse rejection
-(exit 2). Both call sites route a rejected predicate to their **UNKNOWN** verdict,
-and UNKNOWN is the one verdict whose force-done / authorization hatch is explicitly
-unavailable — so the documented happy path deadlocked the step. Observed live twice
-in one finalize run, worked around both times by omitting the flag by hand.
+measures the diff **only** when a size refusal was actually seen. So on the COMMON
+path — no size refusal — the placeholder is empty, and the call must still parse:
+both call sites route a rejected predicate to their **UNKNOWN** verdict, and
+UNKNOWN is the one verdict whose force-done / authorization hatch is explicitly
+unavailable.
 
-⛔ **Why the existing D3 guard could not see this.**
-`test_review_merge_invocation_contract.py` already parses every documented
-review/merge invocation against its real parser, and it passed throughout. It
-substitutes an unknown placeholder with `''` and then `shlex.split`s, which yields
-`['--measured-diff-size', '']` — an empty-string VALUE, which a value-required flag
-accepts. The executor does not deliver that: it DROPS the empty token, leaving a
-bare flag. The gap that module misses is therefore a missing TRANSPORT step, which
-is what this module models.
+The generated executor keeps an empty string that is the value of the option
+before it and drops an empty string in any other position, so the quoted empty
+placeholder arrives as `['--measured-diff-size', '']`. This module models that
+TRANSPORT step (`_executor_argv`) and then parses with the real parser. The bare
+form — the flag with no value at all — is still reachable, from an unquoted
+placeholder the shell removes or from a direct invocation; its parser contract is
+pinned by `test_measured_diff_size_bare_flag_parsing.py`.
 
-The call population it models the transport over is DERIVED from the bundle tree,
+The call population the transport is modelled over is DERIVED from the bundle tree,
 never listed: a hand-named pair reports a known doc that stopped matching but is
 blind to a `check` call added in a third document, which would then sit outside the
 sweep with nothing saying so. A two-element floor is still asserted, because that
 blind spot runs both ways — see `_KNOWN_CALL_SITE_DOCS`.
 
-Three layers, and the middle one is what keeps the outer two honest:
-
-1. **The parser accepts the bare form, and bare means the same as omitted.** A
-   matched pair — bare vs. omitted — rather than a lone positive, so "the flag
-   parses" cannot pass while quietly meaning something else than unmeasured.
-2. **The relaxation did not make the flag greedy.** `nargs='?'` must not swallow a
-   following flag as its value; asserted against a real sibling flag.
-3. **The documented calls survive the strip.** The population is derived by
-   scanning every Markdown document under the bundle's `skills/` tree; each
-   invocation is stripped as the executor strips and parsed by the real parser —
-   with a NON-VACUITY assertion that the strip genuinely produced a bare flag, so a
-   doc that stopped interpolating the flag unconditionally fails here instead of
-   silently emptying the population this sweep runs over. A document the scan could
-   not READ is a HOLE in that population rather than an absence from it — it might
-   carry a `check` call and nothing looked — so it is recorded and fails the guard
-   by path, never skipped.
+The population is derived by scanning every Markdown document under the bundle's
+`skills/` tree; each invocation is transported as the executor transports it and
+parsed by the real parser — with a NON-VACUITY assertion that the transport
+genuinely delivered an empty value for the flag, so a doc that stopped
+interpolating the flag unconditionally fails here instead of silently emptying the
+population this sweep runs over. A document the scan could not READ is a HOLE in
+that population rather than an absence from it — it might carry a `check` call and
+nothing looked — so it is recorded and fails the guard by path, never skipped.
 """
 
 from __future__ import annotations
@@ -81,7 +68,7 @@ def _parse(*argv: str):
 
 
 # =============================================================================
-# 1 + 2 — the parser contract for the bare form
+# The documented calls, transported as the executor transports them
 # =============================================================================
 
 
@@ -120,16 +107,31 @@ def _fenced_commands(text: str) -> list[str]:
     return blocks
 
 
+def _drop_stray_empty_args(tokens: list[str]) -> list[str]:
+    """Mirror of the executor's empty-argument rule (``_drop_stray_empty_args``).
+
+    An empty string is kept when the token directly before it is an option token
+    (starts with ``-``) and dropped in every other position. The executor's own
+    behaviour is pinned in ``test_execute_script.py``; this copy exists because the
+    executor is a generated artifact this module cannot import.
+    """
+    kept: list[str] = []
+    previous = ''
+    for token in tokens:
+        if token or previous.startswith('-'):
+            kept.append(token)
+        previous = token
+    return kept
+
+
 def _executor_argv(command: str) -> list[str]:
     """The argv the GENERATED EXECUTOR hands the script for a documented call.
 
-    Two transport steps, in this order, and the second is the one the sibling D3
-    sweep omits:
+    Two transport steps, in this order:
 
     1. placeholder substitution — an unmeasured size interpolates as empty;
-    2. the executor's empty-argument strip (``script_args = [a for a in
-       script_args if a]`` in ``.plan/execute-script.py``), which DROPS that empty
-       token rather than passing it through as a value.
+    2. the executor's empty-argument rule, which KEEPS an empty string that is the
+       value of the option before it and drops an empty string anywhere else.
 
     The leading ``python3`` / executor path / notation tokens are dropped, leaving
     the verb and its arguments. A block documenting more than one call is cut at the
@@ -146,7 +148,7 @@ def _executor_argv(command: str) -> list[str]:
     """
     substituted = _PLACEHOLDER.sub(lambda m: _SUBSTITUTIONS.get(m.group(0)[1:-1], ''), command)
     try:
-        tokens = [token for token in shlex.split(substituted) if token]
+        tokens = _drop_stray_empty_args(shlex.split(substituted))
     except ValueError:
         return []
     notation = 'plan-marshall:automatic-review:review_completeness'
@@ -290,34 +292,50 @@ def test_every_known_call_site_doc_contributes_an_invocation():
     )
 
 
-def test_the_strip_actually_produces_a_bare_flag():
+def test_the_transport_delivers_an_empty_value_for_the_flag():
     """NON-VACUITY: the transport step under test genuinely fires on a real doc.
 
     This is what stops the sweep below from being a tautology. If a doc were changed
     to interpolate `--measured-diff-size` conditionally — or to drop it — every
     invocation would parse trivially and the sweep would go green while proving
-    nothing about the bare form. The assertion names the condition the sweep's value
-    rests on, rather than leaving it to be inferred from a passing run.
+    nothing about the empty case. The assertion names the condition the sweep's
+    value rests on, rather than leaving it to be inferred from a passing run.
     """
-    bare_sites = [
+    empty_value_sites = [
         f'{name}: {argv}'
         for name, argv in _DOCUMENTED
-        if _FLAG in argv and (argv.index(_FLAG) == len(argv) - 1 or argv[argv.index(_FLAG) + 1].startswith('-'))
+        if _FLAG in argv and argv.index(_FLAG) < len(argv) - 1 and argv[argv.index(_FLAG) + 1] == ''
     ]
 
-    assert bare_sites, (
-        f'no documented call site delivered a BARE {_FLAG} after the executor strip, over a '
-        f'population of {len(_DOCUMENTED)}. Either the docs no longer interpolate it '
-        'unconditionally, or the strip model above stopped matching — in both cases the sweep '
-        'below no longer exercises the rejection this module exists to pin.'
+    assert empty_value_sites, (
+        f'no documented call site delivered {_FLAG} with an EMPTY value after the executor '
+        f'transport, over a population of {len(_DOCUMENTED)}. Either the docs no longer '
+        'interpolate it unconditionally as a quoted placeholder, or the transport model above '
+        'stopped matching — in both cases the sweep below no longer exercises the unmeasured '
+        'case this module exists to pin.'
     )
 
 
+def test_the_transport_drops_an_empty_token_that_is_not_an_option_value():
+    """MATCHED CONTROL: the transport model keeps only an option's empty value.
+
+    Without it, the non-vacuity test above would pass on a model that kept EVERY
+    empty token — and a doc interpolating an empty placeholder as a positional would
+    then hand the parser an argument the executor never delivers.
+    """
+    command = (
+        'python3 .plan/execute-script.py plan-marshall:automatic-review:review_completeness '
+        'check "{unset}" --plan-id {plan_id} --measured-diff-size "{measured_diff_size}"'
+    )
+
+    assert _executor_argv(command) == ['check', '--plan-id', 'mds-parse-probe', _FLAG, '']
+
+
 @pytest.mark.parametrize('invocation', _DOCUMENTED, ids=_invocation_id)
-def test_documented_invocation_parses_after_the_executor_strip(invocation):
+def test_documented_invocation_parses_as_the_executor_delivers_it(invocation):
     """The documented call, transported as the executor transports it, parses.
 
-    A `SystemExit` here is the live defect: the doc prescribes a call that a leaf
+    A `SystemExit` here is a live defect: the doc prescribes a call that a leaf
     quoting it verbatim cannot run, and the rejection routes to an UNKNOWN verdict
     the run has no sanctioned way out of.
     """
@@ -328,14 +346,14 @@ def test_documented_invocation_parses_after_the_executor_strip(invocation):
     except SystemExit as exit_code:
         pytest.fail(
             f'{doc_name}: the documented `review_completeness check` call is an argparse '
-            f'rejection (exit {exit_code.code}) once the executor strips its empty arguments.\n'
+            f'rejection (exit {exit_code.code}) as the executor delivers it.\n'
             f'  executor argv: {argv}\n'
             'This is the COMMON path — no size refusal means no measured diff size — and the '
             'rejection routes to the UNKNOWN verdict, whose force-done hatch is unavailable.'
         )
 
     assert parsed.measured_diff_size == '', (
-        f'{doc_name}: the stripped call parsed, but the unmeasured diff size did not read as '
-        f'unmeasured (got {parsed.measured_diff_size!r}). An unmeasured size must never be '
+        f'{doc_name}: the transported call parsed, but the unmeasured diff size did not read '
+        f'as unmeasured (got {parsed.measured_diff_size!r}). An unmeasured size must never be '
         'reported as a measured one.'
     )

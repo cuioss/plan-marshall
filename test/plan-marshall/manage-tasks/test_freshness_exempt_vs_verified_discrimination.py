@@ -211,9 +211,10 @@ _D1_PUBLISHED_BRANCHES_COUNT = 10
 #: Branching consumers that joined the class after that survey was recorded. The
 #: surveyed count is a published figure and is not edited to absorb them; the
 #: growth is stated here instead, so the reconciliation below still fails on a
-#: member nobody accounted for. The three are the gate-owning slice's own suites
-#: for rows credited together: union coverage, missing analyses, union controls.
-_JOINED_SINCE_D1_SURVEY = 3
+#: member nobody accounted for. All four are the gate-owning slice's own suites:
+#: three for rows credited together (union coverage, missing analyses, union
+#: controls) and one for a row scoped to a narrow unit (narrow-unit control).
+_JOINED_SINCE_D1_SURVEY = 4
 
 #: The two workflow documents in that class. A document "branches" by carrying a
 #: normative instruction that selects behaviour on the status VALUE.

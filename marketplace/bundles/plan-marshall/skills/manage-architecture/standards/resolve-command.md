@@ -1,6 +1,6 @@
 # `architecture resolve` — Augmented TOON Contract
 
-`architecture resolve --command COMMAND [--module MODULE]` returns the executable form of a project-architecture command. For Bucket B build notations (Maven / Gradle / npm / pyprojectx builds invoked via `python3 .plan/execute-script.py plan-marshall:build-{tool}:{tool} run --command-args "<args>"`), the resolve TOON is augmented with four additional fields so the calling LLM can apply the correct Bash-tool timeout and routing without re-implementing the lookup.
+`architecture resolve --command COMMAND [--module MODULE] [--narrow-unit UNIT]` returns the executable form of a project-architecture command. For Bucket B build notations (Maven / Gradle / npm / pyprojectx builds invoked via `python3 .plan/execute-script.py plan-marshall:build-{tool}:{tool} run --command-args "<args>"`), the resolve TOON is augmented with four additional fields so the calling LLM can apply the correct Bash-tool timeout and routing without re-implementing the lookup. A resolve carrying `--narrow-unit` adds a fifth, `bound_source` — see [Narrow-Unit Resolve](#narrow-unit-resolve).
 
 This document is the authoritative source for the augmented fields. The base resolve invocation, options, error contract, and the un-augmented TOON shape are documented in [`client-api.md`](client-api.md) § `resolve`.
 
@@ -16,10 +16,10 @@ When the resolved `executable` matches the Bucket B build shape, the result carr
 |-------|------|-------------|
 | `bash_timeout_seconds` | int | Recommended Bash-tool timeout in seconds. Computed as `max(timeout_get(command_key, DEFAULT_BUILD_TIMEOUT), config.min_timeout) + OUTER_TIMEOUT_BUFFER` — identical arithmetic to `cmd_run`, **including the engine's declared floor**. `config.min_timeout` is the floor the engine declares on its own `ExecuteConfig`: `MAVEN_OUTER_FLOOR_SECONDS` / `GRADLE_OUTER_FLOOR_SECONDS` / `NPM_OUTER_FLOOR_SECONDS` = `300`, `PYTEST_OUTER_FLOOR_SECONDS` = `330`. The clamp is what makes the stamp truthful: without it the stamp can report a bound strictly below what the run will consume. Every engine floor is chosen so the buffered stamp stays at or below the harness ceiling, i.e. the stamped bound is always passable on a Bash call. |
 | `exceeds_bash_ceiling` | bool | `bash_timeout_seconds > HARNESS_BASH_CEILING_SECONDS` (600 on the Claude target). That ceiling is resolved per active target through the platform-runtime `harness bash-timeout-ceiling` seam — never re-declared in `tools-file-ops/scripts/constants.py`; the Bash tool's `timeout` parameter is capped by the host platform at the resolved value, and stamps above the ceiling cannot be invoked synchronously from a sub-agent. The flag keeps this literal ceiling meaning and nothing more — it is coupled to `execution_tier` on every branch **except** the unmeasured fail-closed branch, where the tier is `orchestrator` while this flag is `false`. That single decoupling is deliberate and documented, not an inconsistency. |
-| `execution_tier` | enum | `"per_task"` **only when the command key has actually been measured AND `exceeds_bash_ceiling` is false**; `"orchestrator"` otherwise. Drives the manifest composer's per-command routing decision (per-task verification vs `phase_5.verification_steps`) and the caller's run-inline-vs-hand-back decision. **The tier follows the MEASUREMENT, never the floor** — the floor bounds the stamp, it does not decide the tier. An UNMEASURED command fails closed to `orchestrator` uniformly across all four engines, so a slow first run is never made runnable in-leaf before any measurement of it exists. |
+| `execution_tier` | enum | `"per_task"` **only when the command key has actually been measured AND `exceeds_bash_ceiling` is false**; `"orchestrator"` otherwise. Drives the manifest composer's per-command routing decision (per-task verification vs `phase_5.verification_steps`) and the caller's run-inline-vs-hand-back decision. **The tier follows the MEASUREMENT, never the floor** — the floor bounds the stamp, it does not decide the tier. An UNMEASURED command fails closed to `orchestrator` uniformly across all four engines, so a slow first run is never made runnable in-leaf before any measurement of it exists. **One exception, and it is bounded:** an unmeasured *narrow unit* (a resolve carrying `--narrow-unit`) does not fail closed — it is a strict subset of a module run, so it takes a bound that is already established and resolves `per_task` when that bound is within the ceiling. See [Narrow-Unit Resolve](#narrow-unit-resolve). |
 | `hint` | string | Short pinned recognition phrase, selected from the `(execution_tier, exceeds_bash_ceiling)` **pair**. See [Hint Strings](#hint-strings) below. |
 
-The four fields are emitted **as a unit** — either all four are present (Bucket B build executable, resolvable timeout) or all four are omitted (non-build executable, or the build skill could not be loaded). Consumers detect their absence and fall back to today's behaviour.
+The four fields are emitted **as a unit** — either all four are present (Bucket B build executable, resolvable timeout) or all four are omitted (non-build executable, or the build skill could not be loaded). Consumers detect their absence and fall back to today's behaviour. A narrow-unit resolve emits the unit as **five** fields — the four above plus `bound_source` — under the same all-or-none rule; a resolve without `--narrow-unit` never carries `bound_source`.
 
 **All four fields are point-in-time measurements, not durable facts.** `bash_timeout_seconds` reads the adaptive learned duration (see [Threshold Rationale](#threshold-rationale--600)), which every run of the command updates, so `exceeds_bash_ceiling` / `execution_tier` / `hint` all move with it — a ceiling-adjacent command's tier flips in ordinary operation. A consumer that must ROUTE on the tier MUST resolve it at the moment it acts, never from a value persisted earlier. This is why `manage-execution-manifest`'s `phase_5.step_execution_tier` stamp is advisory and `phase-5-execute` re-resolves the tier live before running each verification step.
 
@@ -75,13 +75,40 @@ execution_tier: orchestrator
 hint: Unmeasured; orchestrator-tier until first measurement
 ```
 
+## Narrow-Unit Resolve
+
+`resolve --command module-tests --module MODULE --narrow-unit UNIT` resolves a `module-tests` target narrower than its module — one test directory, or one test file — and returns the module's executable with `UNIT` in place of the module scope. The invocation, its refusals (`narrow_unit_unsupported_command` for a command other than `module-tests` or a module with no test target of its own, `invalid_narrow_unit` for a unit that is not a plain path below a test target, `narrow_unit_outside_module` for a unit that is not part of the named module) and the un-augmented shape are documented in [`client-api.md`](client-api.md) § `resolve`. This section owns the tier derivation.
+
+A narrow unit's run-config key is its own, so a unit that has never run is unmeasured, and the ordinary derivation would hand it to the orchestrator. That is the wrong answer for a strict subset of a module run: its duration is bounded by what is already known about the module, and where nothing is known, by the engine's own floor — the timeout the run executes under anyway. The narrow branch therefore applies **only to an unmeasured key**, and a fifth field names where the bound came from:
+
+| `bound_source` | When | `bash_timeout_seconds` | `execution_tier` |
+|---|---|---|---|
+| `measured` | The narrow unit's own key is measured | The unit's own stamp — the ordinary derivation, unchanged | `per_task` within the ceiling, `orchestrator` beyond it |
+| `module_bound` | The unit is unmeasured; the module's own `module-tests` command is measured and its stamp is within the ceiling | The module's stamp — a subset cannot outlast the whole | `per_task` |
+| `narrow_default` | The unit is unmeasured and the module's stamp is unusable (unmeasured, or beyond the ceiling) | The stated default: the engine's outer floor (`config.min_timeout`) plus `OUTER_TIMEOUT_BUFFER` — `330 + 30 = 360` for pyproject | `per_task` within the ceiling, `orchestrator` beyond it |
+
+A measured bound is never replaced: the module and the default are consulted only when the unit itself has no measurement. `bound_source` is what keeps a borrowed bound from posing as a measurement of the unit, and its vocabulary is **not** the run result's `timeout_source` vocabulary (`explicit` / `learned` / `default` / `floor`) — that one describes the timeout a build executed under, this one how a stamp was bounded before the build ran. A narrow run that outlives its bound returns `status: timeout` and records a learned value for its key, so the next resolve of that unit reports `measured`.
+
+```toon
+status: success
+module: plan-marshall
+command: module-tests
+executable: python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "module-tests plan-marshall/build-server"
+resolution_level: module
+bash_timeout_seconds: 360
+exceeds_bash_ceiling: false
+execution_tier: per_task
+hint: Bash timeout=360000ms
+bound_source: narrow_default
+```
+
 ## Threshold Rationale: `> 600`
 
 The threshold is `HARNESS_BASH_CEILING_SECONDS` — the Bash tool's `timeout` parameter ceiling on the active host platform, resolved per target through the platform-runtime `harness bash-timeout-ceiling` seam (600 s on the Claude target, and a per-target value wherever a different platform is active). A build whose recommended Bash timeout exceeds the ceiling cannot be invoked from a per-task sub-agent's Bash call without auto-backgrounding, which produces ≈ 600K tokens of re-dispatch overhead per 12-task plan.
 
 The threshold bounds `exceeds_bash_ceiling`, and is applied to a value computed from real measurements via the adaptive-timeout infrastructure, floored by the engine's own declaration — nothing hard-codes a list of "long-running" commands:
 
-1. First run of any UNMEASURED command — Maven, Gradle, npm, or pyproject alike — resolves `orchestrator` tier by the fail-closed rule, regardless of where the floored stamp lands relative to the ceiling. No command is made runnable in-leaf before it has ever been observed. The stamp itself is still truthful and passable (`max(DEFAULT_BUILD_TIMEOUT, 300) + 30 = 330` for Maven / Gradle / npm; `max(300, 330) + 30 = 360` for pyproject).
+1. First run of any UNMEASURED command — Maven, Gradle, npm, or pyproject alike — resolves `orchestrator` tier by the fail-closed rule, regardless of where the floored stamp lands relative to the ceiling. No module- or whole-tree-scoped command is made runnable in-leaf before it has ever been observed; the one bounded exception is a narrow unit (see [Narrow-Unit Resolve](#narrow-unit-resolve)). The stamp itself is still truthful and passable (`max(DEFAULT_BUILD_TIMEOUT, 300) + 30 = 330` for Maven / Gradle / npm; `max(300, 330) + 30 = 360` for pyproject).
 2. The first run persists a real duration via `timeout_set` (compute_weighted_timeout favours the higher value), so the key becomes measured.
 3. From the next composition on, the tier follows that measurement without any catalogue maintenance: a measured command whose buffered bound stays within the ceiling routes `per_task`, and one that crosses the ceiling routes `orchestrator`.
 
@@ -154,7 +181,7 @@ executable: python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproj
 
 The rest of the string is exactly what the architecture resolves. Running it records the build — its log file and its change-ledger row — under that plan instead of under the `NO_PLAN` sentinel.
 
-**One flag, one meaning.** `resolve` declares no attribution flag of its own; its leaf flags are `--command` and `--module` only. The top-level `--plan-id` is the single flag: it selects the working tree the architecture is read from, and it is the plan a resolved build is attributed to. The two cannot name different plans, because there is one value.
+**One flag, one meaning.** `resolve` declares no attribution flag of its own; its leaf flags are `--command`, `--module` and `--narrow-unit`, and none of the three attributes a build. The top-level `--plan-id` is the single flag: it selects the working tree the architecture is read from, and it is the plan a resolved build is attributed to. The two cannot name different plans, because there is one value.
 
 | Call shape | Returned build `executable` |
 |------------|-----------------------------|

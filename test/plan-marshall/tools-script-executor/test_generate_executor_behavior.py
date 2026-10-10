@@ -21,6 +21,7 @@ from pathlib import Path
 
 import pytest
 import target_context
+from _executor_template_render import TEMPLATE_PATH, render_executor_template
 
 from conftest import _MARKETPLACE_SCRIPT_DIRS, PROJECT_ROOT, load_script_module
 
@@ -61,50 +62,33 @@ def plan_base_dir_at_tmp(tmp_path, monkeypatch):
 # and does NOT count for coverage).
 _gen = load_script_module('plan-marshall', 'tools-script-executor', 'generate_executor.py', 'gen_executor_behavior')
 
+
 # The build-class change-ledger boundary lives in the executor TEMPLATE (the
 # generated executor), not in generate_executor.py. Rendering the template into
 # an importable module is the established pattern for unit-testing its dispatch
 # boundary helpers (mirrors ``_load_template_module`` in test_generate_executor.py).
-_TEMPLATE_PATH = (
-    PROJECT_ROOT / 'marketplace/bundles/plan-marshall/skills/tools-script-executor/templates/execute-script.py.template'
-)
-
-
 def _load_template_module() -> types.ModuleType:
     """Render the executor template with inert placeholders and exec it as a module.
 
-    Fills the ``{{...}}`` substitution tokens with inert stand-ins (empty
-    mappings, no target-aware resolver body) and points ``{{LOGGING_DIR}}`` at
-    the real manage-logging scripts so the module-level ``from plan_logging
-    import ...`` succeeds. The template's ``_ledger_core`` / ``worktree_sha`` /
-    ``toon_parser`` imports resolve without a bootstrap, because the root conftest
-    already put the shared script dirs on ``sys.path``. ``main()`` is guarded by
-    ``__name__ == '__main__'`` so exec does not dispatch anything.
+    Rendered through the directory's shared renderer: every ``{{...}}`` token
+    takes an inert stand-in (empty mappings, no target-aware resolver body), the
+    version and fingerprint take the fresh-install empty sentinel, and
+    ``{{LOGGING_DIR}}`` points at the real manage-logging scripts so the
+    module-level ``from plan_logging import ...`` succeeds. The template's
+    ``_ledger_core`` / ``worktree_sha`` / ``toon_parser`` imports resolve without
+    a bootstrap, because the root conftest already put the shared script dirs on
+    ``sys.path``. ``main()`` is guarded by ``__name__ == '__main__'`` so exec
+    does not dispatch anything.
     """
-    source = _TEMPLATE_PATH.read_text(encoding='utf-8')
-    logging_dir = str(PROJECT_ROOT / 'marketplace/bundles/plan-marshall/skills/manage-logging/scripts')
-    source = source.replace('{{SCRIPT_MAPPINGS}}', '')
-    source = source.replace('{{SCRIPT_SURFACES}}', '').replace('{{SUBCOMMAND_MAPPINGS}}', '')
-    source = source.replace('{{LOGGING_DIR}}', logging_dir)
-    source = source.replace('{{SHARED_MODULE_DIRS}}', '# (none)')
-    source = source.replace('{{CACHE_RECOVERY_ROOTS}}', '# (none)')
-    source = source.replace('{{EXTRA_SCRIPT_DIRS}}', '')
-    source = source.replace('{{PLAN_DIR_NAME}}', '.plan')
-    source = source.replace('{{EXECUTOR_TARGET}}', 'claude')
-    source = source.replace('{{GENERATED_VERSION}}', '')
-    source = source.replace('{{MAPPINGS_FINGERPRINT}}', '')
-    source = source.replace(
-        '{{TARGET_AWARE_RESOLVER}}',
-        'def _resolve_notation_by_target(notation):\n    return None\n',
-    )
+    source = render_executor_template(generated_version='', mappings_fingerprint='')
 
     # No bootstrap: the root conftest already put every entry of
     # ``_MARKETPLACE_SCRIPT_DIRS`` on ``sys.path`` at its own import time, so the
     # exec'd template's transitive imports resolve.
 
     module = types.ModuleType('executor_template_ledger_boundary')
-    module.__dict__['__file__'] = str(_TEMPLATE_PATH)
-    exec(compile(source, str(_TEMPLATE_PATH), 'exec'), module.__dict__)
+    module.__dict__['__file__'] = str(TEMPLATE_PATH)
+    exec(compile(source, str(TEMPLATE_PATH), 'exec'), module.__dict__)
     return module
 
 

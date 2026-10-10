@@ -17,10 +17,17 @@ seam (NOT over ``_emit_finding`` wholesale), so every test exercises the real
 values — ``success``, ``deduplicated``, ``reopened`` and ``error``. Stubbing
 ``_emit_finding`` itself is what hid the original defect: the function and its
 argv were never executed by any test.
+
+The guard's read of the phase-5 Q-Gate store is NOT stubbed. The fixture creates
+a real plan directory whose phase-5 store is empty, so the read finds no settled
+record and every stubbed-persist case reaches the persist seam. The cases that
+need a record in the store live in ``test_qgate_persist_contract.py``, which
+drives the real primitive.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 from argparse import Namespace
 from pathlib import Path
@@ -53,7 +60,7 @@ def plan_with_refs(plan_context):
     """Plan context pre-populated with references.json and one TASK file."""
     plan_dir = plan_context.plan_dir_for('scope-creep-test')
     refs = {
-        'plan_creation_sha': 'deadbeef',
+        'base_branch': 'main',
         'affected_files': [
             'src/a.py',
             'src/b.py',
@@ -94,7 +101,31 @@ class _PersistStub:
         return {'status': self.status, 'hash_id': 'abc123', 'phase': kwargs.get('phase')}
 
 
+_MERGE_BASE = 'mergebase123'
+
+
+def _patch_merge_base(monkeypatch, merge_base: str | None = _MERGE_BASE) -> list[tuple[Path, str]]:
+    """Hold the merge-base resolution at a fixed value; return the recorded calls.
+
+    The one helper every measured-path case goes through: the cases in this file
+    are about what the guard does WITH a baseline, so none of them may depend on
+    whether the checkout the suite happens to run in has an ``origin/main``.
+    ``None`` makes the merge-base unresolved. The real resolution — against a
+    real repository — is exercised by ``test_scope_creep_merge_base.py``.
+    """
+    calls: list[tuple[Path, str]] = []
+
+    def _resolve(worktree, base_branch):
+        calls.append((worktree, base_branch))
+        return merge_base
+
+    monkeypatch.setattr(scc, '_resolve_merge_base', _resolve)
+    return calls
+
+
 def _patch_diff(monkeypatch, files):
+    """Hold the diff at a fixed file list, over a resolvable merge-base."""
+    _patch_merge_base(monkeypatch)
     monkeypatch.setattr(scc, '_git_diff_files', lambda worktree, sha: list(files))
 
 
@@ -182,14 +213,20 @@ def test_residual_over_threshold_emits_finding(plan_with_refs, monkeypatch, caps
     assert 'finding_emitted: true' in out
     assert len(stub.calls) == 1
     call = stub.calls[0]
-    # The real _emit_finding body ran: named arguments, no argv, and the
-    # finding type is still the (deliberately un-taxonomised) scope_creep_warning.
+    # The real _emit_finding body ran: named arguments, no argv. The warning is
+    # filed under the type the store accepts, and the rule key is what names
+    # this guard.
     assert call['plan_id'] == 'scope-creep-test'
     assert call['phase'] == '5-execute'
     assert call['source'] == 'qgate'
-    assert call['finding_type'] == 'scope_creep_warning'
+    assert call['finding_type'] == 'triage'
+    assert call['rule'] == 'scope_creep_warning'
     assert call['severity'] == 'warning'
     assert 'threshold=5' in call['detail']
+    # The digest covers the COMPLETE sorted residual list, computed here
+    # independently of the guard so the assertion cannot agree by construction.
+    expected_digest = hashlib.sha256('\n'.join(sorted(extras)).encode('utf-8')).hexdigest()[:12]
+    assert f'residual_set={expected_digest}' in call['detail']
     for extra in extras:
         assert extra in call['title']
 
@@ -286,7 +323,7 @@ def test_rejected_persist_fails_loud(plan_with_refs, monkeypatch, capsys):
     extras = _over_threshold(monkeypatch, plan_with_refs)
     stub = _PersistStub(
         status='error',
-        message='Invalid finding type: scope_creep_warning. Must be one of (...)',
+        message='findings store unresolved: no plan directory under the resolved root',
     )
     _patch_persist(monkeypatch, stub)
 
@@ -301,7 +338,7 @@ def test_rejected_persist_fails_loud(plan_with_refs, monkeypatch, capsys):
     assert rc == 1
     assert payload['status'] == 'error'
     assert payload['error'] == 'finding_persist_failed'
-    assert 'Invalid finding type: scope_creep_warning' in payload['message']
+    assert 'findings store unresolved' in payload['message']
     # The rejected finding's own content travels inline.
     assert payload['finding_title'].startswith('Scope creep detected')
     assert 'threshold=5' in payload['finding_detail']
@@ -380,22 +417,26 @@ def test_resolve_worktree_falls_back_to_cwd_when_resolution_fails(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Creation-SHA pinning contract (plan-07-footprint-surface deliverable 2)
+# Merge-base contract
 # ---------------------------------------------------------------------------
 #
-# The guard grades the residual drift against the pinned ``plan_creation_sha``
-# instead of the floating base tip, so the baseline survives later base moves.
-# A missing (or whitespace-only) key degrades diagnosably to ``could_not_look``
-# instead of grading a fabricated baseline.
+# The guard grades the residual drift from the merge-base of HEAD and
+# ``origin/{base_branch}``, recomputed on every run. An unresolved merge-base
+# degrades diagnosably to ``could_not_look`` instead of grading a fabricated
+# baseline.
 
 
 @pytest.fixture
-def plan_with_moved_base(plan_context):
-    """Refs whose base_branch moved on from the pinned creation SHA."""
-    plan_dir = plan_context.plan_dir_for('scope-creep-pinned')
+def plan_with_stale_recorded_sha(plan_context):
+    """Refs that still carry a SHA recorded when the plan was created.
+
+    An older plan's references.json may hold the key. It is seeded here only to
+    prove the guard ignores it.
+    """
+    plan_dir = plan_context.plan_dir_for('scope-creep-merge-base')
     refs = {
         'base_branch': 'main',
-        'plan_creation_sha': 'pinnedsha123',
+        'plan_creation_sha': 'recordedsha123',
         'affected_files': ['src/a.py'],
     }
     (plan_dir / 'references.json').write_text(json.dumps(refs))
@@ -403,71 +444,141 @@ def plan_with_moved_base(plan_context):
     yield plan_context
 
 
-def test_diff_grades_pinned_sha_despite_moved_base(plan_with_moved_base, monkeypatch, capsys):
-    """The pinned SHA reaches the diff even though the base tip moved on."""
+def test_diff_grades_merge_base_and_ignores_recorded_sha(plan_with_stale_recorded_sha, monkeypatch, capsys):
+    """The merge-base reaches the diff; a SHA recorded at plan creation never does.
+
+    This is the reverse of the contract this case used to pin, reversed by
+    operator decision 5. The earlier contract graded the diff from the recorded
+    SHA so the baseline would survive base moves. A recorded SHA stops describing
+    the plan's own changes as soon as the branch contains base commits newer
+    than it: the range then also covers those base commits, and their files
+    count as residual although the plan never touched them.
+    """
     seen: dict = {}
 
     def _record(worktree, sha):
         seen['sha'] = sha
         return ['src/a.py']
 
+    merge_base_calls = _patch_merge_base(monkeypatch, 'mergebase456')
     monkeypatch.setattr(scc, '_git_diff_files', _record)
-    _patch_resolve(monkeypatch, plan_with_moved_base.plan_dir)
+    _patch_resolve(monkeypatch, plan_with_stale_recorded_sha.plan_dir)
     stub = _PersistStub()
     _patch_persist(monkeypatch, stub)
 
-    rc = scc.cmd_check(Namespace(plan_id='scope-creep-pinned', threshold=None))
+    rc = scc.cmd_check(Namespace(plan_id='scope-creep-merge-base', threshold=None))
     out = capsys.readouterr().out
 
     assert rc == 0
-    assert seen['sha'] == 'pinnedsha123'
+    assert seen['sha'] == 'mergebase456'
+    assert seen['sha'] != 'recordedsha123'
+    assert [base_branch for _worktree, base_branch in merge_base_calls] == ['main']
     assert 'residual_count: 0' in out
     assert stub.calls == []
 
 
-def test_missing_creation_sha_is_could_not_look(plan_context, monkeypatch, capsys):
-    """No plan_creation_sha means nothing to diff against — could_not_look."""
-    plan_dir = plan_context.plan_dir_for('scope-creep-nosha')
-    (plan_dir / 'references.json').write_text(json.dumps({'affected_files': []}))
-    plan_context.plan_dir = plan_dir
+def test_unresolved_merge_base_is_could_not_look(plan_with_refs, monkeypatch, capsys):
+    """No merge-base means nothing to diff against — could_not_look, and no diff."""
 
     def _raise(*_a, **_k):
-        raise AssertionError('diff should not be invoked without a baseline sha')
+        raise AssertionError('diff should not be invoked without a merge-base')
 
+    _patch_merge_base(monkeypatch, None)
     monkeypatch.setattr(scc, '_git_diff_files', _raise)
+    _patch_resolve(monkeypatch, plan_with_refs.plan_dir)
+    stub = _PersistStub()
+    _patch_persist(monkeypatch, stub)
+
+    rc = scc.cmd_check(Namespace(plan_id='scope-creep-test', threshold=None))
+    payload = parse_toon(capsys.readouterr().out)
+
+    assert rc == 0
+    assert payload['status'] == 'could_not_look'
+    assert payload['reason'] == 'merge_base_unresolved'
+    assert 'residual_count' not in payload
+    # The detail names the ref that could not be resolved.
+    assert 'origin/main' in payload['detail']
+    assert payload['detail'].endswith('nothing was measured')
+    assert payload['finding_emitted'] is False
+    assert stub.calls == []
+
+
+@pytest.mark.parametrize(
+    'refs',
+    [
+        {'affected_files': []},
+        {'base_branch': '', 'affected_files': []},
+        {'base_branch': '   ', 'affected_files': []},
+    ],
+    ids=['absent', 'empty', 'blank'],
+)
+def test_missing_base_branch_asks_for_origin_main(plan_context, monkeypatch, capsys, refs):
+    """An absent or blank base_branch reads as main."""
+    plan_dir = plan_context.plan_dir_for('scope-creep-no-base-branch')
+    (plan_dir / 'references.json').write_text(json.dumps(refs))
+    plan_context.plan_dir = plan_dir
+
+    merge_base_calls = _patch_merge_base(monkeypatch)
+    monkeypatch.setattr(scc, '_git_diff_files', lambda worktree, sha: [])
     _patch_resolve(monkeypatch, plan_dir)
     stub = _PersistStub()
     _patch_persist(monkeypatch, stub)
 
-    rc = scc.cmd_check(Namespace(plan_id='scope-creep-nosha', threshold=None))
+    rc = scc.cmd_check(Namespace(plan_id='scope-creep-no-base-branch', threshold=None))
     out = capsys.readouterr().out
 
     assert rc == 0
-    assert 'status: could_not_look' in out
-    assert 'reason: no_baseline_sha' in out
-    assert 'residual_count:' not in out
-    assert stub.calls == []
+    assert [base_branch for _worktree, base_branch in merge_base_calls] == ['main']
+    assert 'residual_count: 0' in out
 
 
-def test_whitespace_creation_sha_is_could_not_look(plan_context, monkeypatch, capsys):
-    """A whitespace-only SHA is no baseline — it degrades like a missing one."""
-    plan_dir = plan_context.plan_dir_for('scope-creep-blanksha')
-    (plan_dir / 'references.json').write_text(json.dumps({'plan_creation_sha': '   '}))
-    plan_context.plan_dir = plan_dir
+# ---------------------------------------------------------------------------
+# The merge-base helper, at the subprocess seam
+# ---------------------------------------------------------------------------
+#
+# The helper is patched out everywhere above, so its own contract is pinned here
+# at the lowest primitive: the argv it constructs and how it reads each outcome.
+# ``test_scope_creep_merge_base.py`` runs it against a real repository.
 
-    def _raise(*_a, **_k):
-        raise AssertionError('diff should not be invoked with a blank baseline sha')
 
-    monkeypatch.setattr(scc, '_git_diff_files', _raise)
-    _patch_resolve(monkeypatch, plan_dir)
-    stub = _PersistStub()
-    _patch_persist(monkeypatch, stub)
+class _CompletedGit:
+    def __init__(self, returncode: int, stdout: str):
+        self.returncode = returncode
+        self.stdout = stdout
 
-    rc = scc.cmd_check(Namespace(plan_id='scope-creep-blanksha', threshold=None))
-    out = capsys.readouterr().out
 
-    assert rc == 0
-    assert 'status: could_not_look' in out
-    assert 'reason: no_baseline_sha' in out
-    assert 'residual_count:' not in out
-    assert stub.calls == []
+def test_merge_base_helper_asks_git_for_head_against_origin_base(monkeypatch):
+    """One ``git merge-base`` call, bound to the worktree, and no fetch."""
+    argvs: list[list[str]] = []
+
+    def _run(argv, **_kwargs):
+        argvs.append(list(argv))
+        return _CompletedGit(0, 'abc123\n')
+
+    monkeypatch.setattr(scc.subprocess, 'run', _run)
+
+    assert scc._resolve_merge_base(Path('/some/worktree'), 'develop') == 'abc123'
+    assert argvs == [['git', '-C', '/some/worktree', 'merge-base', 'HEAD', 'origin/develop']]
+
+
+@pytest.mark.parametrize(
+    ('returncode', 'stdout'),
+    [(1, ''), (128, 'fatal: Not a valid object name origin/main\n'), (0, ''), (0, '  \n')],
+    ids=['no-common-ancestor', 'unresolvable-ref', 'empty-output', 'blank-output'],
+)
+def test_merge_base_helper_returns_nothing_when_git_resolves_nothing(monkeypatch, returncode, stdout):
+    """A non-zero exit or empty output is no merge-base."""
+    monkeypatch.setattr(scc.subprocess, 'run', lambda argv, **_kwargs: _CompletedGit(returncode, stdout))
+
+    assert scc._resolve_merge_base(Path('/some/worktree'), 'main') is None
+
+
+def test_merge_base_helper_returns_nothing_when_git_cannot_run(monkeypatch):
+    """A git that cannot be started resolved nothing either."""
+
+    def _run(argv, **_kwargs):
+        raise OSError('git: command not found')
+
+    monkeypatch.setattr(scc.subprocess, 'run', _run)
+
+    assert scc._resolve_merge_base(Path('/some/worktree'), 'main') is None
