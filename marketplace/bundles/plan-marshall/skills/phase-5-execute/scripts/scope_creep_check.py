@@ -32,8 +32,10 @@ The detail carries a digest of the COMPLETE sorted residual list
 (`residual_set=` plus twelve hex characters), because the title names ten paths
 at most and two different sets must not read as the same one. Before persisting,
 the guard reads the phase-5 Q-Gate store: when a record with this rule, this
-title and this detail is already resolved as `accepted` or `suppressed`, the
-same residual set has been decided and nothing is filed. That one case reports
+title and this `residual_set=` term is already resolved as `accepted` or
+`suppressed`, the same residual set has been decided and nothing is filed. The
+threshold the detail also names is not compared, so the decision holds when a
+later run measures the same set at a different threshold. That one case reports
 the measured shape with `finding_emitted: false` plus `finding_resolved_as` and
 `finding_hash_id`, the two fields that appear in no other case. A changed set
 has a different digest, so it is filed as a new finding. Every other outcome —
@@ -114,6 +116,7 @@ _PHASE = '5-execute'
 _FINDING_TYPE = 'triage'
 _RULE = 'scope_creep_warning'
 _RESIDUAL_DIGEST_LENGTH = 12
+_DETAIL_SEPARATOR = '; '
 
 _SETTLED_RESOLUTIONS = frozenset({RESOLUTION_ACCEPTED, RESOLUTION_SUPPRESSED})
 """Resolutions that mean an operator has decided this exact residual set.
@@ -368,25 +371,43 @@ def _residual_digest(residual: list[str]) -> str:
     return hashlib.sha256(joined.encode('utf-8')).hexdigest()[:_RESIDUAL_DIGEST_LENGTH]
 
 
+def _residual_set_term(residual: list[str]) -> str:
+    """Return the ``residual_set=<digest>`` term that identifies one residual set.
+
+    The one place the term is produced: the detail is written with it and the
+    settled-record lookup searches for it, so the two cannot drift.
+    """
+    return f'residual_set={_residual_digest(residual)}'
+
+
+def _finding_title(residual: list[str]) -> str:
+    """Return the title the warning is filed under: the first ten sorted paths."""
+    return f'Scope creep detected: {", ".join(sorted(residual)[:10])}'
+
+
 def _finding_content(residual: list[str], threshold: int) -> tuple[str, str]:
     """Return the ``(title, detail)`` the warning is filed under.
 
-    Built in one place because the settled-record lookup and the persist call
-    must compare and write the SAME two strings.
+    The detail has two ``; ``-separated terms. The first is for the reader: the
+    residual count and the threshold the run used. The second is the
+    ``residual_set=`` term, which together with the title is the identity of the
+    residual set. The threshold is NOT part of that identity.
     """
-    title = f'Scope creep detected: {", ".join(sorted(residual)[:10])}'
     detail = (
-        f'{len(residual)} file(s) outside declared scope (threshold={threshold}); '
-        f'residual_set={_residual_digest(residual)}'
+        f'{len(residual)} file(s) outside declared scope (threshold={threshold}){_DETAIL_SEPARATOR}'
+        f'{_residual_set_term(residual)}'
     )
-    return title, detail
+    return _finding_title(residual), detail
 
 
-def _find_settled_finding(plan_id: str, title: str, detail: str) -> dict[str, Any] | None:
+def _find_settled_finding(plan_id: str, residual: list[str]) -> dict[str, Any] | None:
     """Return the record that already settled this exact residual set, if any.
 
-    A match carries this guard's rule, the title and detail about to be filed,
-    and a resolution of ``accepted`` or ``suppressed``.
+    A record is identified by this guard's rule, the title of the residual set
+    and its ``residual_set=`` term, and it settles the set when its resolution
+    is ``accepted`` or ``suppressed``. The rest of the detail is not compared:
+    it carries the threshold the filing run used, and a decision about a
+    residual set holds at whatever threshold a later run measures it with.
 
     Returns ``None`` when the store read does not return ``success``. An
     unreadable store is no evidence that the set was settled, so the caller
@@ -396,11 +417,13 @@ def _find_settled_finding(plan_id: str, title: str, detail: str) -> dict[str, An
     result = query_qgate_findings(plan_id, _PHASE)
     if result.get('status') != 'success':
         return None
+    title = _finding_title(residual)
+    residual_set_term = _residual_set_term(residual)
     for record in result.get('findings') or []:
         if (
             record.get('rule') == _RULE
             and record.get('title') == title
-            and record.get('detail') == detail
+            and residual_set_term in str(record.get('detail') or '').split(_DETAIL_SEPARATOR)
             and record.get('resolution') in _SETTLED_RESOLUTIONS
         ):
             settled: dict[str, Any] = record
@@ -486,7 +509,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     emitted = False
     settled: dict[str, Any] | None = None
     if len(residual) > threshold:
-        settled = _find_settled_finding(plan_id, *_finding_content(residual, threshold))
+        settled = _find_settled_finding(plan_id, residual)
     if len(residual) > threshold and settled is None:
         failure = _emit_finding(plan_id, residual, threshold)
         if failure is not None:

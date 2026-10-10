@@ -35,7 +35,8 @@ Four contracts:
       re-persist stays benign. This includes the guard's own warning, read back
       from the store as a pending ``triage`` record.
   (d) A residual set the operator already resolved as ``accepted`` or
-      ``suppressed`` is not filed again, while a set resolved any other way, a
+      ``suppressed`` is not filed again, at the threshold it was filed under or
+      at any other the set still exceeds, while a set resolved any other way, a
       grown set, and a different set sharing its first ten names all are.
 
 Every test uses a unique ``plan_id`` (Q-Gate store isolation).
@@ -423,6 +424,46 @@ def test_settled_residual_set_is_not_filed_again(plan_context, monkeypatch, caps
     assert len(records) == 1
     assert records[0]['hash_id'] == filed['hash_id']
     assert records[0]['resolution'] == settled_as
+    assert _records(plan_id, 'pending') == []
+
+
+@pytest.mark.parametrize('changed_threshold', [scc.DEFAULT_THRESHOLD - 1, 1])
+def test_settled_residual_set_stays_settled_under_a_different_threshold(
+    plan_context, monkeypatch, capsys, changed_threshold
+):
+    """The decision is about the residual set, so a different threshold does not undo it.
+
+    The set is filed and accepted at the default threshold, then measured again
+    at a threshold it still exceeds. The detail the second run would write
+    differs from the stored one in its ``threshold=`` part only.
+    """
+    plan_id = f'qgate-contract-settled-threshold-{changed_threshold}'
+    _seed_plan(plan_context, plan_id)
+    _patch_worktree_reads(monkeypatch)
+    filed = _file_and_resolve(plan_id, capsys, 'accepted')
+    assert changed_threshold < len(_EXCESS_FILES)
+    assert f'threshold={scc.DEFAULT_THRESHOLD})' in filed['detail']
+
+    rc = scc.cmd_check(Namespace(plan_id=plan_id, threshold=changed_threshold))
+    out = capsys.readouterr().out
+    payload: dict[str, Any] = parse_toon(out)
+
+    assert rc == 0
+    assert payload['status'] == 'success'
+    assert payload['threshold'] == changed_threshold
+    assert payload['threshold_source'] == 'flag'
+    assert payload['residual_count'] == len(_EXCESS_FILES)
+    assert payload['finding_emitted'] is False
+    assert payload['finding_resolved_as'] == 'accepted'
+    assert re.search(rf'^finding_hash_id: "?{re.escape(filed["hash_id"])}"?$', out, re.MULTILINE)
+
+    # The store is unchanged: the one record, still accepted, with the detail it
+    # was filed under.
+    records = _records(plan_id)
+    assert len(records) == 1
+    assert records[0]['hash_id'] == filed['hash_id']
+    assert records[0]['resolution'] == 'accepted'
+    assert records[0]['detail'] == filed['detail']
     assert _records(plan_id, 'pending') == []
 
 
