@@ -39,11 +39,10 @@ redirects that resolution to a temporary directory for the whole module, and
 :func:`test_ledger_path_is_redirected_away_from_production` asserts the redirect
 is actually in force rather than assuming it.
 
-**Template render helper.** :func:`_render_executor` substitutes the
-``execute-script.py.template`` placeholders and writes the result. It is one of
-the test-local render helpers a template-contract change must sweep: per-task
-quality-gate and test-compile validate the template in isolation, so a desynced
-renderer is caught only by a whole-tree module-tests run.
+**Template render helper.** :func:`_render_executor` writes the template as
+rendered by the directory's shared ``_executor_template_render`` renderer, which
+substitutes every placeholder and fails on any it leaves behind — so a
+template-contract change is absorbed in that one renderer, not swept here.
 """
 
 from __future__ import annotations
@@ -55,12 +54,10 @@ import types
 from pathlib import Path
 
 import pytest
+from _executor_template_render import TEMPLATE_PATH, format_script_mappings, render_executor_template
 
 from conftest import _MARKETPLACE_SCRIPT_DIRS, PROJECT_ROOT
 
-_SKILL_DIR = PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'tools-script-executor'
-_TEMPLATE_PATH = _SKILL_DIR / 'templates' / 'execute-script.py.template'
-_LOGGING_DIR = PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-logging' / 'scripts'
 _PRODUCTION_LEDGER = PROJECT_ROOT / '.plan' / 'work' / 'change-ledger.jsonl'
 
 #: A build-class notation. Paired with :data:`_BUILD_EXECUTING_SUBCOMMAND` below
@@ -136,23 +133,8 @@ def _subprocess_env() -> dict[str, str]:
 
 
 def _render_code(mappings: dict[str, Path]) -> str:
-    """Substitute every ``execute-script.py.template`` placeholder and return the source."""
-    code: str = _TEMPLATE_PATH.read_text(encoding='utf-8')
-    rendered = ''.join(f'    "{notation}": "{path}",\n' for notation, path in mappings.items())
-    code = code.replace('{{SCRIPT_MAPPINGS}}', rendered)
-    code = code.replace('{{SCRIPT_SURFACES}}', '').replace('{{SUBCOMMAND_MAPPINGS}}', '')
-    code = code.replace('{{LOGGING_DIR}}', str(_LOGGING_DIR))
-    code = code.replace('{{SHARED_MODULE_DIRS}}', '# (none in test)')
-    code = code.replace('{{CACHE_RECOVERY_ROOTS}}', '# (none in test)')
-    code = code.replace('{{EXTRA_SCRIPT_DIRS}}', '')
-    code = code.replace('{{PLAN_DIR_NAME}}', '.plan')
-    code = code.replace('{{EXECUTOR_TARGET}}', 'claude')
-    code = code.replace('{{GENERATED_VERSION}}', '0.0.0-test')
-    code = code.replace('{{MAPPINGS_FINGERPRINT}}', 'test-fingerprint')
-    return code.replace(
-        '{{TARGET_AWARE_RESOLVER}}',
-        'def _resolve_notation_by_target(notation):\n    return None\n',
-    )
+    """Render the executor template with ``mappings`` registered, through the shared renderer."""
+    return render_executor_template(format_script_mappings(mappings))
 
 
 def _render_executor(target_path: Path, mappings: dict[str, Path]) -> None:
@@ -167,7 +149,7 @@ def _load_executor_module() -> types.ModuleType:
     the marketplace source tree the suite is asserting against.
     """
     module = types.ModuleType('execute_script_launch_abort')
-    module.__dict__['__file__'] = str(_TEMPLATE_PATH)
+    module.__dict__['__file__'] = str(TEMPLATE_PATH)
     exec(_render_code({}), module.__dict__)
     return module
 

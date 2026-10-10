@@ -752,6 +752,19 @@ python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_exe
   [--force] [--dry-run] [--marketplace] [--marketplace-root PATH] [--target TARGET]
 ```
 
+**Run the generation from inside the checkout whose executor it writes.** `--marketplace-root` (and `PM_MARKETPLACE_ROOT`) pins where scripts are *discovered*; the executor is *written* into the nearest `.plan` above the working directory. The two are resolved independently, so pinning discovery to one checkout while standing in another would write the second checkout's executor from the first checkout's scripts. `generate` refuses that before anything is written, with `status: error` at exit code `0`:
+
+```toon
+status: error
+error: cross_checkout_generation
+detail: "scripts would be discovered in the checkout … while the executor would be written into the checkout …; nothing was written. …"
+discovery_root: /path/to/the/checkout/scripts/are/discovered/in
+output_root: /path/to/the/checkout/the/executor/would/be/written/into
+executor: /path/to/the/checkout/the/executor/would/be/written/into/.plan/execute-script.py
+```
+
+A checkout is a directory that holds `marketplace/bundles`. Both roots are compared as resolved paths, so a worktree under the main checkout's `.plan/local/worktrees/` is a different checkout from the main one. The refusal needs two checkouts to disagree and is not raised otherwise: a plugin-cache discovery root is not a checkout, and neither is an output directory that holds no `marketplace/bundles` (a consumer project). `bootstrap` generates through the same path and reports the refusal as its own `bootstrap failed: cross_checkout_generation`.
+
 ### generate_executor — verify
 
 ```bash

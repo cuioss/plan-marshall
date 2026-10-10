@@ -13,15 +13,12 @@ dirs first, cache/deployed dirs second, alphabetical within each partition.
 """
 
 import types
-from pathlib import Path
+
+from _executor_template_render import TEMPLATE_PATH, render_executor_template
 
 from conftest import PROJECT_ROOT, load_script_module
 
 _gen = load_script_module('plan-marshall', 'tools-script-executor', 'generate_executor.py', 'gen_executor_tree_first')
-
-_TEMPLATE_PATH = (
-    PROJECT_ROOT / 'marketplace/bundles/plan-marshall/skills/tools-script-executor/templates/execute-script.py.template'
-)
 
 _TREE_DIR = str(PROJECT_ROOT / 'marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts')
 _CACHE_DIR = '/home/oliver/.config/opencode/skills/plan-marshall-manage-execution-manifest/scripts'
@@ -36,29 +33,19 @@ def _load_template_module_with_mixed_dirs() -> types.ModuleType:
     template's shared-module imports resolve through the root conftest's
     ``sys.path``; ``main()`` stays guarded.
     """
-    source = _TEMPLATE_PATH.read_text(encoding='utf-8')
-    logging_dir = str(PROJECT_ROOT / 'marketplace/bundles/plan-marshall/skills/manage-logging/scripts')
     mappings = (
         f"    'plan-marshall:manage-execution-manifest:tree-copy': '{_TREE_DIR}/_manifest_validation.py',\n"
         f"    'plan-marshall:manage-execution-manifest:cache-copy': '{_CACHE_DIR}/_manifest_validation.py',\n"
     )
-    source = source.replace('{{SCRIPT_MAPPINGS}}', mappings)
-    source = source.replace('{{SCRIPT_SURFACES}}', '').replace('{{SUBCOMMAND_MAPPINGS}}', '')
-    source = source.replace('{{LOGGING_DIR}}', logging_dir)
-    source = source.replace('{{SHARED_MODULE_DIRS}}', '# (none)')
-    source = source.replace('{{CACHE_RECOVERY_ROOTS}}', '# (none)')
-    source = source.replace('{{EXTRA_SCRIPT_DIRS}}', f"'{_CACHE_DIR}', '{_TREE_DIR}'")
-    source = source.replace('{{PLAN_DIR_NAME}}', '.plan')
-    source = source.replace('{{EXECUTOR_TARGET}}', 'claude')
-    source = source.replace('{{GENERATED_VERSION}}', '')
-    source = source.replace('{{MAPPINGS_FINGERPRINT}}', '')
-    source = source.replace(
-        '{{TARGET_AWARE_RESOLVER}}',
-        'def _resolve_notation_by_target(notation):\n    return None\n',
+    source = render_executor_template(
+        mappings,
+        extra_script_dirs=f"'{_CACHE_DIR}', '{_TREE_DIR}'",
+        generated_version='',
+        mappings_fingerprint='',
     )
     module = types.ModuleType('executor_template_tree_first')
-    module.__dict__['__file__'] = str(_TEMPLATE_PATH)
-    exec(compile(source, str(_TEMPLATE_PATH), 'exec'), module.__dict__)
+    module.__dict__['__file__'] = str(TEMPLATE_PATH)
+    exec(compile(source, str(TEMPLATE_PATH), 'exec'), module.__dict__)
     return module
 
 

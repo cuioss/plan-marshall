@@ -68,6 +68,18 @@ def main() -> int:
     resolve_parser = subparsers.add_parser('resolve', help='Resolve command to executable form', allow_abbrev=False)
     resolve_parser.add_argument('--command', required=True, dest='resolve_command', help='Command name to resolve')
     resolve_parser.add_argument('--module', help='Module name (default: root module)')
+    # Declared here as well as in manage-architecture's architecture.py: this
+    # file builds its own parser and hands the namespace to the same cmd_resolve
+    # handler, so the name, dest and help text are kept identical in both.
+    resolve_parser.add_argument(
+        '--narrow-unit',
+        dest='narrow_unit',
+        help=(
+            'Narrow unit of the named module to resolve instead of the whole module: a test directory or '
+            'test file relative to the test root, starting with the module test target (e.g. '
+            'plan-marshall/build-server). Accepted for --command module-tests only.'
+        ),
+    )
 
     # siblings - Find sibling virtual modules
     siblings_parser = subparsers.add_parser(

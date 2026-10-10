@@ -26,7 +26,7 @@ The wrapper runs in one of three mutually-exclusive modes, selected deterministi
 
 Ordered at `order: 6` so it slots between `default:finalize-step-simplify` (order 5) and `default:finalize-step-security-audit` (order 7) — structural lint gates before the commit is pushed, not after CI.
 
-When the plan runs in an isolated worktree, the gate first regenerates a worktree-bound executor so the `manage-invocation-invalid` rule probes each script's `--help` against the worktree's TRUE argparse surface. Without this step, the worktree's `.plan/execute-script.py` is a symlink to the main checkout's executor, whose embedded mappings resolve every `manage-*` notation to the main-checkout (pre-plan) script — making a newly added subcommand read as a false-positive "unregistered" and a newly required flag read as a false-negative that masks the real CI finding.
+When the plan runs in an isolated worktree, the gate first regenerates the worktree's executor so the `manage-invocation-invalid` rule probes each script's `--help` against the worktree's TRUE argparse surface. The worktree's `.plan/execute-script.py` is a generated file bound to the worktree: it is written when the worktree is created and again after a rebase that changes the script set, it is never shared with the main checkout, and the notation mappings and script surfaces it embeds are the ones read at its last generation. Without this step, a script the plan has added or changed since that generation is gated against the earlier state — making a newly added subcommand read as a false-positive "unregistered" and a newly required flag read as a false-negative that masks the real CI finding.
 
 ## Interface Contract
 
@@ -39,7 +39,7 @@ Accepts the standard finalize-step arguments:
 
 MUST be ordered **before** `default:commit-push` in the steps list so structural lint gates before push.
 
-In a worktree-backed plan, the gate step is preceded by a worktree-fresh-executor regeneration (Step 4 below) that rebinds notation→path resolution to the worktree's scripts. Regeneration failure is non-fatal (logged WARN) — a gate run against the still-stale executor is no worse than not regenerating, so finalize must not hard-block on a mapping refresh.
+In a worktree-backed plan, the gate step is preceded by a worktree-fresh-executor regeneration (Step 4 below) that refreshes the worktree executor's notation→path mappings and script surfaces from the worktree's current scripts. Regeneration failure is non-fatal (logged WARN) — a gate run against the still-stale executor is no worse than not regenerating, so finalize must not hard-block on a mapping refresh.
 
 ## HEAD-dependency
 
@@ -200,14 +200,16 @@ Reuse the `worktree_path` Step 1 resolved — the raw returned value, before the
 - **Non-empty `worktree_path`** (worktree-backed plan) — Step 5 uses `--marketplace-root {worktree_path}/marketplace` (the parent of `bundles/` inside the worktree, NOT `bundles/`), so the gate runs against the in-progress edits.
 - **Empty `worktree_path`** (main-checkout flow) — Step 5 uses `--marketplace-root marketplace`. Skip the executor regeneration below and proceed to Step 5.
 
-When `worktree_path` is non-empty, replace the worktree's `.plan/execute-script.py` symlink (which points at the main-checkout executor) with a worktree-bound executor so the `manage-invocation-invalid` rule probes `--help` against the worktree's argparse:
+When `worktree_path` is non-empty, regenerate the worktree's `.plan/execute-script.py` — a generated file bound to the worktree — so the `manage-invocation-invalid` rule probes `--help` against the worktree's current argparse.
+
+**Run the call with `{worktree_path}` as the working directory.** `--marketplace-root` pins only where the scripts are discovered; the executor is written into the nearest `.plan` above the working directory. Issued from the main checkout, the same call would write the main checkout's executor from the worktree's scripts, and `generate` refuses it with `error: cross_checkout_generation` before anything is written (see `plan-marshall:tools-script-executor` § Canonical invocations → `generate_executor — generate`). Finalize keeps its working directory on the worktree until the plan directory moves back, which is after this step, so the call is issued as written, with no change of directory:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor generate \
   --marketplace-root {worktree_path}
 ```
 
-This mirrors `test/conftest.py::_ensure_executor_present` on CI. Regeneration failure is **non-fatal**: log a WARN line and proceed to Step 5 with the existing executor.
+This mirrors `test/conftest.py::_ensure_executor_present` on CI. Read `status` from the returned TOON, not the exit code: the cross-checkout refusal reports `status: error` at exit code `0`. Regeneration failure is **non-fatal**: log a WARN line and proceed to Step 5 with the existing executor.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \

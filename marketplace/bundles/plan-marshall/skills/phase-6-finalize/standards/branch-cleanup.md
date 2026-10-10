@@ -779,14 +779,15 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
   --required-bots "{required_bots}" --optional-bots "{optional_bots}"
 ```
 
-Both lists default EMPTY. **The load-bearing defence is the parser, not the quoting.** The generated
-executor strips every empty-string argument before argparse sees it (`script_args = [a for a in
-script_args if a]` in `.plan/execute-script.py`), so through the executor `--required-bots ""` and a
-bare `--required-bots` are indistinguishable — the quotes do NOT survive to the parser. What makes the
-empty case safe is that each flag declares `nargs='?'` with `const=''` (see
+Both lists default EMPTY. **The load-bearing defence is the parser, not the quoting.** Through the
+generated executor a quoted empty placeholder arrives as an empty value: `--required-bots ""` reaches
+the parser as `--required-bots ''`, because the executor keeps an empty string that is the value of
+the option before it. An UNQUOTED empty placeholder is removed by the shell before the executor runs,
+which leaves a bare `--required-bots`. What makes both forms safe is that each flag declares
+`nargs='?'` with `const=''` (see
 [`../../workflow-integration-github/SKILL.md`](../../workflow-integration-github/SKILL.md) § Canonical
-invocations → `github_pr fetch_findings`), so a bare flag reads as the empty list instead of consuming
-the next token as its own.
+invocations → `github_pr fetch_findings`), so the empty value and the bare flag both read as the empty
+list, and a bare flag does not consume the next token as its own.
 
 The placeholders are still double-quoted above, and should stay quoted — quoting is what keeps a
 *non-empty* value with spaces as one argument, and it is the correct habit for any direct
@@ -931,23 +932,24 @@ a notice nobody could read — and quantifying the gap most help the operator de
 override a merge blocked by refusing required bots. So the list flags interpolated above are the set
 here — enumerated rather than counted, so widening the set does not leave a stale number behind. Each
 is legitimately empty in normal operation (no optional bots, no refusals, no stale publishes, no
-declines, no causes, no stated caps, no unreadable notices). **The load-bearing defence is the parser, not the quoting.** The generated
-executor strips every empty-string argument before argparse sees it (`script_args = [a for a in
-script_args if a]` in `.plan/execute-script.py`), so through the executor `--refused-bots ""` arrives
-as a bare `--refused-bots` exactly as an unquoted empty placeholder would — the quotes do NOT survive
-to the parser. What makes the empty case safe is that each flag declares `nargs='?'` with `const=''`
-(see [`../../automatic-review/SKILL.md`](../../automatic-review/SKILL.md) § Canonical invocations →
-`review_completeness — check`), so a bare flag reads as the empty list instead of swallowing the next
-token or tripping an argparse rejection at end of line.
+declines, no causes, no stated caps, no unreadable notices). **The load-bearing defence is the parser, not the quoting.** Through the
+generated executor a quoted empty placeholder arrives as an empty value: `--refused-bots ""` reaches
+the parser as `--refused-bots ''`, because the executor keeps an empty string that is the value of the
+option before it. An unquoted empty placeholder is removed by the shell before the executor runs, which
+leaves a bare `--refused-bots`. What makes both forms safe is that each flag declares `nargs='?'` with
+`const=''` (see [`../../automatic-review/SKILL.md`](../../automatic-review/SKILL.md) § Canonical
+invocations → `review_completeness — check`), so the empty value and the bare flag both read as the
+empty list, and a bare flag neither swallows the next token nor trips an argparse rejection at end of
+line.
 
 ⛔ **The scalar `--measured-diff-size` is covered by that same defence, and for it the empty case is
 the COMMON one.** The producer measures the diff **only** when a size refusal was actually seen, while
 the call above interpolates the flag unconditionally — so on every run where no reviewer refused on
-size, the executor delivers a bare `--measured-diff-size`. It declares `nargs='?'` with `const=''` for
-exactly that reason, and bare reads as unmeasured. Were it a value-required flag, the documented call
-would be an argparse rejection on the ordinary path, which § "UNKNOWN — the predicate itself failed"
-below names UNKNOWN — and an UNKNOWN verdict is never authorizable, so the happy path would block the
-merge with no way out.
+size, the call carries `--measured-diff-size ''`, or a bare `--measured-diff-size` where the
+placeholder was left unquoted. It declares `nargs='?'` with `const=''` for exactly that reason, and
+both forms read as unmeasured. Were it a value-required flag, the bare form would be an argparse
+rejection, which § "UNKNOWN — the predicate itself failed" below names UNKNOWN — and an UNKNOWN verdict
+is never authorizable, so that form would block the merge with no way out.
 
 The placeholders are still double-quoted above, and should stay quoted — quoting is what keeps a
 *non-empty* value with spaces as one argument, and it is the correct habit for any direct

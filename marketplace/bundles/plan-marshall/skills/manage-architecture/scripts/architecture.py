@@ -240,6 +240,15 @@ def main() -> int:
     )
     resolve_parser.add_argument('--command', required=True, dest='resolve_command', help='Command name to resolve')
     add_module_arg(resolve_parser, required=False)
+    resolve_parser.add_argument(
+        '--narrow-unit',
+        dest='narrow_unit',
+        help=(
+            'Narrow unit of the named module to resolve instead of the whole module: a test directory or '
+            'test file relative to the test root, starting with the module test target (e.g. '
+            'plan-marshall/build-server). Accepted for --command module-tests only.'
+        ),
+    )
 
     # derive-verification - Derive the verification command set for a changed-artifact list
     derive_parser = subparsers.add_parser(

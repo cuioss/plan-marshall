@@ -47,7 +47,6 @@ Subcommands:
 
 import json
 from dataclasses import replace
-from pathlib import Path
 
 from _build_check_warnings import create_check_warnings_handler
 from _build_cli import (
@@ -63,8 +62,13 @@ from _pyproject_cmd_discover import discover_python_modules
 from _pyproject_cmd_parse import parse_log, slice_failure_details
 from _pyproject_execute import _CONFIG, cmd_run
 from _test_scope_divergence import resolve_test_scope
-from marketplace_bundles import extract_bundle_name, find_bundles
-from marketplace_paths import find_marketplace_path, names_real_plan
+from _test_scope_targets import (
+    resolve_bundle_modules,
+    resolve_existing_paths,
+    resolve_registered_targets,
+    resolve_test_directories,
+)
+from marketplace_paths import names_real_plan
 from toon_parser import serialize_toon
 
 # --- Tool-specific configuration inlined from former wrapper files ---
@@ -149,38 +153,59 @@ def _register_pyproject_parse(subparsers) -> None:
 
 
 def _resolve_registered_modules(project_dir: str | None) -> frozenset[str]:
-    """Enumerate the registered module names for ``project_dir``'s marketplace.
+    """Enumerate the registered targets for ``project_dir``'s marketplace.
 
-    The registered-module set the pure ``resolve_test_scope`` helper needs to
-    reject a derived name that no module actually carries. It is resolved HERE,
-    in the handler that already performs I/O, so the pure module stays free of
-    it. The enumeration reuses the existing tested
-    ``marketplace_bundles.find_bundles()`` + ``extract_bundle_name()`` seam
-    anchored on the marketplace root ``find_marketplace_path()`` resolves from the
-    already-available ``project_dir`` - no new inventory mechanism.
+    The set the pure ``resolve_test_scope`` helper needs to reject a derived
+    name that no target actually carries. A registered target is a bundle or a
+    test tree holding tests; the enumeration itself lives in
+    ``_test_scope_targets.resolve_registered_targets`` - the single derivation
+    of that set - and this function only delegates to it, so the handler that
+    already performs I/O stays the place the I/O is requested while the pure
+    module stays free of it.
 
-    Returns an EMPTY frozenset in exactly the two cases the body guards: the
-    marketplace root does not resolve (``find_marketplace_path`` returns
-    ``None``), or the walk raises ``OSError`` (an unreadable or vanished
-    directory). The caller reads emptiness as ``modules_resolvable: false`` and
-    fails toward the whole tree rather than silently disabling the check.
-
-    The guard is deliberately no wider than the claim above. ``find_bundles`` /
-    ``extract_bundle_name`` derive every name by ``re.match`` over a directory
-    name and touch the filesystem only through calls whose failure mode is
-    ``OSError``, so ``OSError`` is the walk's only expected failure. Anything
-    else escapes as a crash, which is loud rather than a false
-    ``modules_resolvable: true``; do NOT widen the ``except`` to a bare
-    ``Exception``, which would relabel an unforeseen bug as a routine-looking
-    ``modules_resolvable: false``.
+    Returns an EMPTY frozenset in exactly the two cases the helper guards: the
+    marketplace root does not resolve, or the walk raises ``OSError`` (an
+    unreadable or vanished directory). The caller reads emptiness as
+    ``modules_resolvable: false`` and fails toward the whole tree rather than
+    silently disabling the check.
     """
-    try:
-        bundles_root = find_marketplace_path(Path(project_dir) if project_dir else None)
-        if bundles_root is None:
-            return frozenset()
-        return frozenset(extract_bundle_name(bundle_dir) for bundle_dir in find_bundles(bundles_root))
-    except OSError:
-        return frozenset()
+    return resolve_registered_targets(project_dir)
+
+
+def _resolve_test_directories(project_dir: str | None) -> frozenset[str]:
+    """Enumerate the existing second-level test directories for ``project_dir``.
+
+    The set the pure ``resolve_test_scope`` helper needs to return a narrow unit
+    only for a skill that has a test directory. Like
+    :func:`_resolve_registered_modules` it only delegates - to
+    ``_test_scope_targets.resolve_test_directories`` - so the I/O is requested
+    here and the pure module stays free of it. An empty return names no
+    directory, which the helper reports path by path in
+    ``narrow_units_unresolved``.
+    """
+    return resolve_test_directories(project_dir)
+
+
+def _resolve_bundle_modules(project_dir: str | None) -> frozenset[str]:
+    """Enumerate the bundle modules for ``project_dir``'s marketplace.
+
+    The subset of the registered targets the pure ``resolve_test_scope`` helper
+    may hand out as ``recommended_target`` and resolve a narrow unit against.
+    Delegates to ``_test_scope_targets.resolve_bundle_modules``. An empty return
+    names no bundle module, which the helper answers with the whole-tree
+    verdict.
+    """
+    return resolve_bundle_modules(project_dir)
+
+
+def _resolve_existing_paths(project_dir: str | None, footprint: list[str]) -> frozenset[str]:
+    """Return the footprint entries that are existing files in ``project_dir``'s checkout.
+
+    The set the pure ``resolve_test_scope`` helper needs to return a changed test
+    file as a narrow unit only while the file exists. Delegates to
+    ``_test_scope_targets.resolve_existing_paths``.
+    """
+    return resolve_existing_paths(project_dir, footprint)
 
 
 def cmd_resolve_test_scope(args) -> int:
@@ -197,7 +222,27 @@ def cmd_resolve_test_scope(args) -> int:
     whole-tree pytest run is structurally possible (a discoverable Python module
     set exists). Prints the resolution as TOON: ``scoped_modules[]``,
     ``divergence_possible``, ``recommended_target``, ``unresolved_paths[]``,
-    ``whole_tree_available``, ``footprint_resolvable``, ``modules_resolvable``.
+    ``narrow_units[]``, ``narrow_units_unresolved[]``, ``named_only_modules[]``,
+    ``narrow_unit_module``, ``whole_tree_available``, ``footprint_resolvable``,
+    ``modules_resolvable``.
+
+    ``narrow_units`` names the ``module-tests`` targets narrower than the module
+    that a single-bundle-module footprint points at (a skill's test directory, a
+    changed test file that exists); ``narrow_units_unresolved`` names every
+    changed path that contributed none - a deleted test file among them.
+    ``narrow_unit_module`` names the bundle module those units belong to and is
+    non-null exactly when ``narrow_units`` is non-empty. All three are advisory
+    for a step that wants a faster first signal, the two lists are empty for a
+    footprint that does not resolve to exactly one bundle module, and all three
+    are emptied on the fail-toward-whole-tree branch below.
+
+    ``named_only_modules`` names the entries of ``scoped_modules`` that are
+    named but not authoritative: a test tree that is no bundle, or a module
+    reached through the declared source-to-test mapping. A footprint carrying
+    one reports ``divergence_possible: true`` with ``recommended_target: null``
+    - the whole tree is required - so no consumer is handed a name that
+    ``architecture resolve --module`` does not reliably resolve to a run scoped
+    to that module.
 
     Footprint source: ``--changed-paths`` (task-scoped) supersedes the whole-plan
     footprint; when it is absent a REAL ``--plan-id`` is required to resolve the
@@ -215,15 +260,20 @@ def cmd_resolve_test_scope(args) -> int:
       whole-tree answer. Reporting it as a resolvable-but-empty footprint would
       instead claim ``divergence_possible: false`` ("a scoped run cannot miss a
       regression") on no evidence whatever.
-    * ``modules_resolvable`` is ``false`` when the registered-module enumeration
-      failed or came back empty. Without that set every derived module name is
-      unverifiable, so a confident scoped target would rest on nothing. Failing
-      closed here is what stops "the caller could not enumerate modules" from
-      silently disabling the registered-module check.
+    * ``modules_resolvable`` is ``false`` when the registered-target enumeration
+      (bundles united with the test trees holding tests) failed or came back
+      empty. Without that set every derived name is unverifiable, so a confident
+      scoped target would rest on nothing. Failing closed here is what stops
+      "the caller could not enumerate targets" from silently disabling the
+      registered-target check.
 
     ``unresolved_paths`` carries every footprint entry that mapped to no
-    registered module, so the suppression is disclosed to the consumer (ADR-014)
+    registered target, so the suppression is disclosed to the consumer (ADR-014)
     instead of dying inside the dataclass.
+
+    A ``recommended_target`` is always a bundle module. A test tree that is no
+    bundle is named in ``scoped_modules`` and ``named_only_modules`` and never
+    recommended.
     """
     # In-process form of the manage-references compute-footprint /
     # manage-config build-map read seams — same script-shared bundle, no
@@ -268,9 +318,25 @@ def cmd_resolve_test_scope(args) -> int:
     registered_modules = _resolve_registered_modules(project_dir)
     modules_resolvable = bool(registered_modules)
 
-    resolution = resolve_test_scope(footprint, globs, registered_modules)
+    resolution = resolve_test_scope(
+        footprint,
+        globs,
+        registered_modules,
+        test_directories=_resolve_test_directories(project_dir),
+        bundle_modules=_resolve_bundle_modules(project_dir),
+        existing_paths=_resolve_existing_paths(project_dir, footprint),
+    )
     if not footprint_resolvable or not modules_resolvable:
-        resolution = replace(resolution, divergence_possible=True, recommended_target=None)
+        # The narrow lists are emptied with the target they sit beside: a
+        # resolution that could not be substantiated offers no narrow unit either.
+        resolution = replace(
+            resolution,
+            divergence_possible=True,
+            recommended_target=None,
+            narrow_units=(),
+            narrow_units_unresolved=(),
+            narrow_unit_module=None,
+        )
     # discover_python_modules requires a concrete project root; when project_dir
     # is absent (args constructed dynamically or a test env lacking the
     # attribute) a whole-tree run is not structurally possible.
@@ -284,6 +350,10 @@ def cmd_resolve_test_scope(args) -> int:
                 'divergence_possible': resolution.divergence_possible,
                 'recommended_target': resolution.recommended_target,
                 'unresolved_paths': list(resolution.unresolved_paths),
+                'narrow_units': list(resolution.narrow_units),
+                'narrow_units_unresolved': list(resolution.narrow_units_unresolved),
+                'named_only_modules': list(resolution.named_only_modules),
+                'narrow_unit_module': resolution.narrow_unit_module,
                 'whole_tree_available': whole_tree_available,
                 'footprint_resolvable': footprint_resolvable,
                 'modules_resolvable': modules_resolvable,

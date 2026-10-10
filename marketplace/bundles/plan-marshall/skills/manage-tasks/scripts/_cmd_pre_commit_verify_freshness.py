@@ -331,13 +331,28 @@ def _resolve_required_coverage(plan_id: str) -> tuple[RequiredCoverage | None, s
     """Derive what a build must have covered to be evidence for THIS change.
 
     Assembles the three inputs the pure derivation needs — the live plan
-    footprint, the ``build.map`` globs and the registered-module set — through
+    footprint, the ``build.map`` globs and the registered-target set — through
     the SAME in-process seams ``build-pyproject``'s ``resolve-test-scope`` handler
     uses, so the coverage requirement this gate enforces and the scope a build is
     told to run against are computed from one derivation rather than two that can
-    drift. Every import is deferred for the reason the rest of this module defers
-    its cross-skill imports: no hard top-level dependency on another skill's
-    scripts dir.
+    drift. The registered targets come from the shared helper
+    ``_test_scope_targets.resolve_registered_targets``, the single derivation of
+    that set; this module enumerates nothing itself. The bundle subset comes from
+    its sibling ``resolve_bundle_modules``, and it decides which footprints a
+    module-scoped row can cover at all: a footprint naming a test tree that is no
+    bundle, or source reached through the declared source-to-test mapping, is
+    reported by the resolver as ``divergence_possible``, so only a whole-tree row
+    covers it. An unenumerable bundle subset reads as "no bundle module" and so
+    requires the whole tree as well. Every import is deferred for
+    the reason the rest of this module defers its cross-skill imports: no hard
+    top-level dependency on another skill's scripts dir.
+
+    ⛔ Narrow units are never an input here. ``resolve_test_scope`` is called
+    WITHOUT its optional test-directory set, so the resolution carries two empty
+    narrow lists, and only ``scoped_modules`` and ``divergence_possible`` are
+    read from it. A narrow unit is an advisory first signal for a step; what a
+    build must have covered is the change's module set, which a narrow unit does
+    not contain.
 
     ⛔ Every inability returns ``(None, reason)``, never a permissive
     :class:`RequiredCoverage`. An unresolvable footprint rendered as an empty one
@@ -358,21 +373,21 @@ def _resolve_required_coverage(plan_id: str) -> tuple[RequiredCoverage | None, s
         return None, vocabulary_reason
     try:
         from _test_scope_divergence import resolve_test_scope
+        from _test_scope_targets import resolve_bundle_modules, resolve_registered_targets
         from extension_base import _read_build_map_globs, _resolve_plan_footprint
-        from marketplace_bundles import extract_bundle_name, find_bundles
-        from marketplace_paths import find_marketplace_path
     except Exception:  # an import can fail as more than ImportError
         return None, REASON_REQUIRED_COVERAGE_UNKNOWN
 
     try:
         footprint = _resolve_plan_footprint(plan_id)
         globs = _read_build_map_globs(None)
-        bundles_root = find_marketplace_path(None)
-        registered = (
-            frozenset(extract_bundle_name(d) for d in find_bundles(bundles_root))
-            if bundles_root is not None
-            else frozenset()
-        )
+        # Empty when the targets cannot be enumerated; read below as an
+        # inability, never as "no target exists".
+        registered = resolve_registered_targets(None)
+        # Empty when no bundle can be enumerated. That needs no branch of its
+        # own: the resolver then recommends no scoped target, which requires the
+        # whole tree - the strict direction.
+        bundles = resolve_bundle_modules(None)
     except (OSError, RuntimeError):
         # RuntimeError is NOT a redundant widening of OSError: it is the
         # documented raise of ``file_ops.get_base_dir``, which
@@ -398,7 +413,7 @@ def _resolve_required_coverage(plan_id: str) -> tuple[RequiredCoverage | None, s
     if footprint is None or not registered:
         return None, REASON_REQUIRED_COVERAGE_UNKNOWN
 
-    resolution = resolve_test_scope(footprint, globs, registered)
+    resolution = resolve_test_scope(footprint, globs, registered, bundle_modules=bundles)
     return (
         required_coverage(
             footprint,

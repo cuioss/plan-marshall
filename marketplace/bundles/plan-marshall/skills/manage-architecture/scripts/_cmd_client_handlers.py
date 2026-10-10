@@ -77,6 +77,7 @@ from _architecture_core import (
 from _cmd_client_build import (
     _classify_build_executable,
     _compute_execution_tier_fields,
+    _compute_narrow_unit_tier_fields,
     _lookup_bash_timeout,
     _parse_build_executable,
 )
@@ -402,6 +403,12 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
     shape unchanged. See the module-level "Build-executable classification"
     section for the full contract.
 
+    With ``--narrow-unit`` the resolved ``module-tests`` command is narrowed to
+    one unit of the named module (a test directory or a test file) and bounded
+    from what is known: the result then carries a fifth field, ``bound_source``,
+    naming where the stamp came from. Without the argument the result is exactly
+    what it was before the argument existed. See :func:`_narrow_resolved`.
+
     When the top-level ``--plan-id`` names a real plan, a build ``executable``
     is returned carrying that plan id (see :func:`_attribute_build_executable`).
     Without a plan id, or with the ``NO_PLAN``
@@ -409,9 +416,19 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
     """
     try:
         result = resolve_command(args.resolve_command, args.module, args.project_dir)
-        # Augment with adaptive-timeout / execution-tier fields when the
-        # executable is a Bucket B build notation.
-        augmented = {'status': 'success', **_augment_resolved(result, args.project_dir)}
+        narrow_unit = getattr(args, 'narrow_unit', None)
+        if narrow_unit:
+            # A narrow unit replaces the module-wide run with one of its parts
+            # and is bounded from what is known about the module. A refusal is a
+            # structured error, returned as-is.
+            narrowed = _narrow_resolved(result, narrow_unit, args.project_dir)
+            if narrowed.get('status') == 'error':
+                return narrowed
+            augmented = {'status': 'success', **narrowed}
+        else:
+            # Augment with adaptive-timeout / execution-tier fields when the
+            # executable is a Bucket B build notation.
+            augmented = {'status': 'success', **_augment_resolved(result, args.project_dir)}
     except DataNotFoundError:
         return require_project_meta_result(args.project_dir)
     except ModuleNotFoundInProjectError:
@@ -450,6 +467,104 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         except ValueError as e:
             return {'status': 'error', 'error': 'invalid_plan_id', 'plan_id': plan_id, 'message': str(e)}
     return augmented
+
+
+#: The one command a narrow unit is a target of. ``compile`` / ``quality-gate`` /
+#: ``coverage`` / ``verify`` resolve their argument to a bundle directory, which
+#: a test directory or a test file is not.
+_NARROW_UNIT_COMMAND = 'module-tests'
+
+#: The characters a narrow unit may carry. ``--command-args`` is split on
+#: whitespace and forwarded to the build wrapper, so a unit with a space, a
+#: quote or a shell metacharacter would change what is run rather than name a
+#: test path.
+_NARROW_UNIT_RE = re.compile(r'[A-Za-z0-9_.\-]+(/[A-Za-z0-9_.\-]+)+')
+
+#: The path segments a narrow unit may not carry although ``_NARROW_UNIT_RE``
+#: admits them. ``..`` leaves the test target; ``.`` stays inside it but spells
+#: the same unit a second way, so one unit would be measured under two
+#: run-config keys. A segment that merely contains a dot (``test_x.py``,
+#: ``a.b``) is a real name and is accepted.
+_NARROW_UNIT_REJECTED_SEGMENTS = frozenset({'.', '..'})
+
+
+def _narrow_unit_error(error: str, narrow_unit: str, message: str, **context: Any) -> dict[str, Any]:
+    """Build the structured refusal for a narrow unit ``resolve`` cannot honour."""
+    return {'status': 'error', 'error': error, 'narrow_unit': narrow_unit, **context, 'message': message}
+
+
+def _narrow_resolved(executable_result: dict[str, Any], narrow_unit: str, project_dir: str) -> dict[str, Any]:
+    """Narrow a resolved ``module-tests`` command to one unit of its module.
+
+    The resolved executable is rewritten to carry ``module-tests {narrow_unit}``
+    and the tier fields are computed for THAT command, with the module's own
+    command as the known parent that can bound it (see
+    ``_cmd_client_build._compute_narrow_unit_tier_fields``).
+
+    Three refusals, each a structured error and none of them a guess:
+
+    * ``narrow_unit_unsupported_command`` - the resolved command is not
+      ``module-tests``, or its executable is not a build executable carrying a
+      module test target the unit could be checked against.
+    * ``invalid_narrow_unit`` - the unit is not a plain ``/``-separated path
+      below a test target (it carries whitespace or shell syntax, or a ``.``
+      or ``..`` segment).
+    * ``narrow_unit_outside_module`` - the unit does not start with the module's
+      own test target, so it is not a part of the module that was named.
+
+    Args:
+        executable_result: ``resolve_command``'s result for the module command.
+        narrow_unit: The unit to narrow to, relative to the test root.
+        project_dir: The project the run-config keys are read from.
+
+    Returns:
+        The narrowed result dict (without ``status``), or a refusal dict whose
+        ``status`` is ``error``.
+    """
+    command = executable_result.get('command', '')
+    module = executable_result.get('module', '')
+    executable = executable_result.get('executable', '')
+    classification = _classify_build_executable(executable)
+    parent_tokens = classification[1].split() if classification is not None else []
+    if command != _NARROW_UNIT_COMMAND or len(parent_tokens) != 2 or parent_tokens[0] != _NARROW_UNIT_COMMAND:
+        return _narrow_unit_error(
+            'narrow_unit_unsupported_command',
+            narrow_unit,
+            f'--narrow-unit is accepted for {_NARROW_UNIT_COMMAND} of a module with a test target of its own; '
+            f'{command!r} of module {module!r} is not that.',
+            command=command,
+            module=module,
+        )
+    if not _NARROW_UNIT_RE.fullmatch(narrow_unit) or any(
+        segment in _NARROW_UNIT_REJECTED_SEGMENTS for segment in narrow_unit.split('/')
+    ):
+        return _narrow_unit_error(
+            'invalid_narrow_unit',
+            narrow_unit,
+            'A narrow unit is a /-separated path below a test target, e.g. {target}/{directory}.',
+        )
+    assert classification is not None  # narrowed by the guard above
+    tool_name, parent_command_args = classification
+    test_target = parent_tokens[1]
+    if not narrow_unit.startswith(f'{test_target}/'):
+        return _narrow_unit_error(
+            'narrow_unit_outside_module',
+            narrow_unit,
+            f'The narrow unit must start with the test target of module {module!r}: {test_target}/',
+            module=module,
+            test_target=test_target,
+        )
+
+    narrow_command_args = f'{_NARROW_UNIT_COMMAND} {narrow_unit}'
+    narrowed = dict(executable_result)
+    # The command args appear exactly once, as the quoted --command-args value
+    # ``_classify_build_executable`` just read; swapping that one occurrence
+    # leaves the rest of the string, quoting included, as resolved.
+    narrowed['executable'] = executable.replace(parent_command_args, narrow_command_args, 1)
+    fields = _compute_narrow_unit_tier_fields(tool_name, narrow_command_args, parent_command_args, project_dir)
+    if fields is not None:
+        narrowed.update(fields)
+    return narrowed
 
 
 _ROUTING_FLAGS: tuple[str, ...] = ('--plan-id', '--project-dir')

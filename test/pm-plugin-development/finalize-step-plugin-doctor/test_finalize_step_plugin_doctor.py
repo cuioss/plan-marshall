@@ -211,6 +211,15 @@ def _step1_scope_block(content: str) -> str:
     return content[start:end]
 
 
+def _step4_regeneration_block(content: str) -> str:
+    """Return the Step 4 section of the wrapper SKILL.md, up to the Step 5 heading."""
+    start = content.find('### Step 4')
+    assert start != -1, 'Wrapper SKILL.md should declare a Step 4 executor-regeneration section'
+    end = content.find('\n### Step 5', start)
+    assert end != -1, 'Wrapper SKILL.md should declare a Step 5 section after Step 4'
+    return content[start:end]
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -575,6 +584,41 @@ class TestStep1NamesBothReads:
         assert step_2_5 and step_3, 'Steps 2.5 and 3 must both be locatable in the wrapper document'
         assert 'Step 1 union' in step_2_5, 'the F1 trigger must be evaluated against the Step 1 union'
         assert 'union' in step_3, 'the skip-clean exit must be stated against the union'
+
+
+class TestWorktreeExecutorIsAGeneratedFile:
+    """The wrapper describes the worktree executor as generated, and says where its generation runs."""
+
+    def test_document_never_calls_the_worktree_executor_a_symlink(self):
+        # Arrange
+        content = _WRAPPER_SKILL_MD.read_text(encoding='utf-8')
+
+        # Assert
+        assert 'symlink' not in content.lower(), (
+            'the worktree executor is a generated file bound to the worktree; the wrapper must not call it a symlink'
+        )
+
+    def test_step4_generation_call_runs_with_the_worktree_as_working_directory(self):
+        # Arrange
+        block = _step4_regeneration_block(_WRAPPER_SKILL_MD.read_text(encoding='utf-8'))
+
+        # Assert
+        assert 'generate_executor generate' in block, 'Step 4 must issue the executor generation call'
+        assert '--marketplace-root {worktree_path}' in block, (
+            'the Step 4 generation call must discover scripts in the worktree'
+        )
+        assert re.search(r'`\{worktree_path\}` as (?:the|its) working directory', block), (
+            'Step 4 must state that the generation call runs with the worktree as its working directory'
+        )
+
+    def test_step4_names_the_refusal_a_call_from_another_checkout_meets(self):
+        # Arrange
+        block = _step4_regeneration_block(_WRAPPER_SKILL_MD.read_text(encoding='utf-8'))
+
+        # Assert
+        assert 'cross_checkout_generation' in block, (
+            'Step 4 must name the refusal the generation call meets when it is issued from another checkout'
+        )
 
 
 # ---------------------------------------------------------------------------

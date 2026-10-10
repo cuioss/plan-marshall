@@ -300,7 +300,20 @@ compared on **blast radius**:
 |---|---|---|
 | The row | `args`, at `--command-args` | The canonical it ran and the scope tokens that followed — no tokens means whole-tree |
 | The row | `outcome.tests_run` + `outcome.tests_population` | Whether it MEASURED that it executed zero tests |
-| The change | the live plan footprint via `_test_scope_divergence.resolve_test_scope` | The module set a scoped run must cover, and whether only a whole-tree run will do |
+| The change | the live plan footprint via `_test_scope_divergence.resolve_test_scope`, with the registered targets and the bundle modules from the shared helpers `_test_scope_targets.resolve_registered_targets` and `resolve_bundle_modules` | The module set a scoped run must cover, and whether only a whole-tree run will do |
+
+The registered targets have one derivation, the shared helper named above; the
+gate carries no enumeration of its own. **Only a bundle module can be covered by
+a module-scoped row.** A footprint that names a test tree that is no bundle, or
+reaches a module through the declared source-to-test mapping
+(`SOURCE_TO_TEST_TARGET`), is reported by the resolver as whole-tree, so a row
+scoped to that tree is refused exactly as a narrower one is and only a
+whole-tree test row covers the change. **Narrow units are never an input to the
+coverage dimension.** The gate calls the resolver without its test-directory
+set and reads `scoped_modules` and `divergence_possible` only, never
+`narrow_units`. A row scoped to a narrow unit — one test directory or one test
+file of a module — does not contain the change's module set, so it is adequate
+for no required analysis.
 
 `args` is the scope source rather than `command` because it is *our* argv shape,
 uniform across build tools: the canonical and its scope always follow
@@ -343,7 +356,7 @@ owners:
 | `scope_cross_check_reason` | What it means | Who owns it |
 |---|---|---|
 | `analysis_vocabulary_unimportable` | The canonical→analyses map (`_build_examined`) could not be imported | **This check is broken** — a deployment or `PYTHONPATH` fault, not a quiet pass. |
-| `required_coverage_unknown` | The live footprint or the registered-module set could not be resolved | The plan state — a worktree not yet materialised, or an unreadable marketplace root. |
+| `required_coverage_unknown` | The live footprint or the registered-target set could not be resolved | The plan state — a worktree not yet materialised, or an unreadable marketplace root. |
 | `build_scope_unreadable` | Rows were read, but none carries a usable `--command-args` or names a canonical in the vocabulary | The producer — something wrote rows the dispatch boundary would not have written. |
 
 ⛔ An unresolvable footprint is an **inability**, never an empty one. Rendering it

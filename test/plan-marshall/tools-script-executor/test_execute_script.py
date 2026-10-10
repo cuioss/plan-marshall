@@ -10,8 +10,15 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+from _executor_template_render import BOOTSTRAP_BUNDLE, PLACEHOLDER_RE, TEMPLATE_PATH, render_executor_template
 
-from conftest import _MARKETPLACE_SCRIPT_DIRS, MARKETPLACE_ROOT, PROJECT_ROOT, PlanContext, get_scripts_dir
+from conftest import (
+    _MARKETPLACE_SCRIPT_DIRS,
+    MARKETPLACE_ROOT,
+    PROJECT_ROOT,
+    PlanContext,
+    get_scripts_dir,
+)
 
 
 def _subprocess_env() -> dict[str, str]:
@@ -24,11 +31,9 @@ def _subprocess_env() -> dict[str, str]:
     return env
 
 
-# Path to templates and scripts
+# Path to the generator scripts
 SKILL_DIR = MARKETPLACE_ROOT / 'plan-marshall/skills/tools-script-executor'
-TEMPLATE_DIR = SKILL_DIR / 'templates'
 SCRIPTS_DIR = SKILL_DIR / 'scripts'
-LOGGING_DIR = get_scripts_dir('plan-marshall', 'manage-logging')
 
 # resolve_notation existence-checks embedded SCRIPTS paths (self-healing contract),
 # so the mapped targets must be real files on disk for the direct-hit branch to return
@@ -41,32 +46,44 @@ for _stub in (_MAP_MANAGE_FILES, _MAP_MAVEN, _MAP_TEST_SKILL):
     _stub.write_text('# test stub\n')
 
 
+def test_rendered_template_carries_the_generator_bootstrap_bundle():
+    """The test render binds ``_BOOTSTRAP_BUNDLE`` to the generator's own value."""
+    executor = load_executor_module()
+
+    assert executor._BOOTSTRAP_BUNDLE == BOOTSTRAP_BUNDLE
+
+
+def test_shared_renderer_refuses_a_placeholder_it_does_not_substitute(tmp_path, monkeypatch):
+    """A placeholder the template gains and the renderer lacks fails the render.
+
+    The guard every caller in this directory relies on: an unsubstituted token
+    would otherwise compile as a literal string and the tests would exercise an
+    executor no generator produces. The template copy differs from the real one
+    only by the added token, so the refusal is attributable to it alone.
+    """
+    import _executor_template_render
+
+    template = tmp_path / 'execute-script.py.template'
+    template.write_text(TEMPLATE_PATH.read_text(encoding='utf-8') + "\nNEW = '{{NEWLY_ADDED_TOKEN}}'\n")
+    monkeypatch.setattr(_executor_template_render, 'TEMPLATE_PATH', template)
+
+    with pytest.raises(AssertionError, match=r'\{\{NEWLY_ADDED_TOKEN\}\}'):
+        render_executor_template()
+
+
+def test_shared_renderer_leaves_no_placeholder_in_the_real_template():
+    """Matched control: the real template renders with nothing left over."""
+    assert PLACEHOLDER_RE.search(render_executor_template()) is None
+
+
 def load_executor_module():
     """Load the execute-script module from template for testing."""
-    template_path = TEMPLATE_DIR / 'execute-script.py.template'
-    with open(template_path) as f:
-        code = f.read()
-
-    # Replace the placeholders with test values
-    code = code.replace(
-        '{{SCRIPT_MAPPINGS}}',
+    code = render_executor_template(
         f"""
     "plan-marshall:manage-files": "{_MAP_MANAGE_FILES}",
     "pm-dev-builder:builder-maven-rules": "{_MAP_MAVEN}",
     "test:skill": "{_MAP_TEST_SKILL}",
 """,
-    )
-    code = code.replace('{{SCRIPT_SURFACES}}', '')
-    code = code.replace('{{SUBCOMMAND_MAPPINGS}}', '')
-    code = code.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
-    code = code.replace('{{SHARED_MODULE_DIRS}}', '# (none in test)')
-    code = code.replace('{{CACHE_RECOVERY_ROOTS}}', '# (none in test)')
-    code = code.replace('{{EXTRA_SCRIPT_DIRS}}', '')
-    code = code.replace('{{PLAN_DIR_NAME}}', '.plan')
-    code = code.replace('{{EXECUTOR_TARGET}}', 'claude')
-    code = code.replace(
-        '{{TARGET_AWARE_RESOLVER}}',
-        'def _resolve_notation_by_target(notation):\n    return None\n',
     )
 
     # ``plan_logging`` resolves for the exec'd template without a bootstrap: the
@@ -77,7 +94,7 @@ def load_executor_module():
     import types
 
     module = types.ModuleType('execute_script')
-    module.__dict__['__file__'] = str(template_path)
+    module.__dict__['__file__'] = str(TEMPLATE_PATH)
 
     exec(code, module.__dict__)
     return module
@@ -473,26 +490,7 @@ def _materialize_executor(target_path: Path, stub_notation: str, stub_script_pat
     ``plan_logging`` are additionally importable via the PYTHONPATH supplied to
     the subprocess (``_subprocess_env``).
     """
-    template_path = TEMPLATE_DIR / 'execute-script.py.template'
-    with open(template_path) as f:
-        code = f.read()
-
-    code = code.replace(
-        '{{SCRIPT_MAPPINGS}}',
-        f'    "{stub_notation}": "{stub_script_path}",\n',
-    )
-    code = code.replace('{{SCRIPT_SURFACES}}', '')
-    code = code.replace('{{SUBCOMMAND_MAPPINGS}}', '')
-    code = code.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
-    code = code.replace('{{SHARED_MODULE_DIRS}}', '# (none in test)')
-    code = code.replace('{{CACHE_RECOVERY_ROOTS}}', '# (none in test)')
-    code = code.replace('{{EXTRA_SCRIPT_DIRS}}', '')
-    code = code.replace('{{PLAN_DIR_NAME}}', '.plan')
-    code = code.replace('{{EXECUTOR_TARGET}}', 'claude')
-    code = code.replace(
-        '{{TARGET_AWARE_RESOLVER}}',
-        'def _resolve_notation_by_target(notation):\n    return None\n',
-    )
+    code = render_executor_template(f'    "{stub_notation}": "{stub_script_path}",\n')
     target_path.write_text(code)
 
 
@@ -806,24 +804,8 @@ def _node(flags=(), required=(), arity=None, children=None, alias_of=None, confi
 
 def _render_validating_executor(target_path: Path, script_path: Path, surfaces: dict) -> None:
     """Render the template with a SCRIPTS mapping AND a SCRIPT_SURFACES map."""
-    template_path = TEMPLATE_DIR / 'execute-script.py.template'
-    code = template_path.read_text(encoding='utf-8')
-    code = code.replace('{{SCRIPT_MAPPINGS}}', f'    "{_SPAWN_NOTATION}": "{script_path}",\n')
     surfaces_code = '\n'.join(f'    "{notation}": {entry!r},' for notation, entry in sorted(surfaces.items()))
-    code = code.replace('{{SCRIPT_SURFACES}}', surfaces_code)
-    code = code.replace('{{SUBCOMMAND_MAPPINGS}}', '')
-    code = code.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
-    code = code.replace('{{SHARED_MODULE_DIRS}}', '# (none in test)')
-    code = code.replace('{{CACHE_RECOVERY_ROOTS}}', '# (none in test)')
-    code = code.replace('{{EXTRA_SCRIPT_DIRS}}', '')
-    code = code.replace('{{PLAN_DIR_NAME}}', '.plan')
-    code = code.replace('{{EXECUTOR_TARGET}}', 'claude')
-    code = code.replace('{{GENERATED_VERSION}}', '0.0.0-test')
-    code = code.replace('{{MAPPINGS_FINGERPRINT}}', 'test-fingerprint')
-    code = code.replace(
-        '{{TARGET_AWARE_RESOLVER}}',
-        'def _resolve_notation_by_target(notation):\n    return None\n',
-    )
+    code = render_executor_template(f'    "{_SPAWN_NOTATION}": "{script_path}",\n', surfaces_code)
     target_path.write_text(code, encoding='utf-8')
 
 
@@ -1682,3 +1664,133 @@ def test_build_class_dispatch_with_unparseable_stdout_still_writes_a_row():
     # No wrapper facts are invented from an unusable payload.
     assert entry['command'] is None
     assert entry['duration_seconds'] is None
+
+
+# =============================================================================
+# Empty-string arguments — an option's value is kept, a stray one is dropped
+# =============================================================================
+#
+# One rule, two directions, asserted as a pair: an empty string directly after
+# an option token is that option's value and reaches the script; an empty string
+# in any other position is dropped. Either half alone is satisfied by the wrong
+# implementation — "keep every empty string" passes the first, "drop every empty
+# string" passes the second.
+
+_REFERENCES_NOTATION = 'plan-marshall:manage-references:manage-references'
+_REFERENCES_SCRIPT = get_scripts_dir('plan-marshall', 'manage-references') / 'manage-references.py'
+
+
+@pytest.mark.parametrize(
+    ('argv', 'expected'),
+    [
+        (['set-list', '--values', ''], ['set-list', '--values', '']),
+        (['verb', '--flag', '', '--other', 'x'], ['verb', '--flag', '', '--other', 'x']),
+        (['verb', '-f', ''], ['verb', '-f', '']),
+        (['verb', ''], ['verb']),
+        ([''], []),
+        (['verb', '--flag', 'value', ''], ['verb', '--flag', 'value']),
+        (['verb', '--flag', '', ''], ['verb', '--flag', '']),
+        (['verb', '--force', '', 'positional'], ['verb', '--force', '', 'positional']),
+        (['verb', '--flag', 'value'], ['verb', '--flag', 'value']),
+    ],
+    ids=[
+        'empty-value-of-a-long-option-is-kept',
+        'empty-value-between-two-options-is-kept',
+        'empty-value-of-a-short-option-is-kept',
+        'empty-after-a-positional-is-dropped',
+        'empty-in-first-position-is-dropped',
+        'empty-after-an-option-value-is-dropped',
+        'second-of-two-empties-after-one-option-is-dropped',
+        'empty-after-a-valueless-flag-is-kept-as-a-positional',
+        'argv-without-an-empty-string-is-unchanged',
+    ],
+)
+def test_drop_stray_empty_args(argv, expected):
+    """An empty string survives exactly when the argument before it is an option token.
+
+    The rows cover both directions of the rule and its boundaries: the kept
+    value after a long and a short option, the dropped empty after a positional,
+    after another value and in first position, and the pair of empties of which
+    only the first is the option's value. One row pins the rule's remaining
+    limit: the filter cannot tell a flag that takes no value from an option that
+    takes one, so an empty string after such a flag is kept and reaches the
+    script as a positional. The last row is the control that the filter touches
+    nothing else.
+    """
+    executor = load_executor_module()
+
+    assert executor._drop_stray_empty_args(argv) == expected
+
+
+def test_empty_option_value_reaches_the_script_through_the_executor():
+    """``set-list --values ""`` clears the list when dispatched through an executor.
+
+    The documented clearing form of ``manage-references set-list`` passes an
+    empty string as the value of ``--values``. The call must exit 0, and a
+    following ``get`` of the same field must return an empty list.
+    """
+    from toon_parser import parse_toon
+
+    plan_id = 'empty-option-value-through-executor'
+
+    with tempfile.TemporaryDirectory() as tmp:
+        executor_path = Path(tmp) / 'execute-script.py'
+        _materialize_executor(executor_path, _REFERENCES_NOTATION, _REFERENCES_SCRIPT)
+
+        def dispatch(*argv: str) -> subprocess.CompletedProcess:
+            return subprocess.run(
+                [sys.executable, str(executor_path), _REFERENCES_NOTATION, *argv],
+                capture_output=True,
+                text=True,
+                env=_subprocess_env(),
+                timeout=60,
+            )
+
+        with PlanContext(plan_id=plan_id):
+            created = dispatch(
+                'create', '--plan-id', plan_id, '--branch', 'feature/x', '--domains', 'java,documentation'
+            )
+            assert created.returncode == 0, f'fixture create failed: {created.stdout!r} {created.stderr!r}'
+
+            cleared = dispatch('set-list', '--plan-id', plan_id, '--field', 'domains', '--values', '')
+            read_back = dispatch('get', '--plan-id', plan_id, '--field', 'domains')
+
+    assert cleared.returncode == 0, (
+        f'set-list --values "" exited {cleared.returncode}: the empty value did not reach the script '
+        f'(stdout: {cleared.stdout!r}, stderr: {cleared.stderr!r})'
+    )
+    assert parse_toon(cleared.stdout)['previous_count'] == 2
+    assert parse_toon(cleared.stdout)['count'] == 0
+    assert read_back.returncode == 0, read_back.stderr
+    assert parse_toon(read_back.stdout)['value'] == []
+
+
+def test_unset_shell_variable_as_bare_positional_is_still_dropped():
+    """An empty string that is NOT an option's value never reaches the script.
+
+    This is the unset-shell-variable-as-bare-positional case: ``verb "$UNSET"``
+    arrives as an empty positional, which the executor drops so the script does
+    not read it as a real argument. The same argv carries an empty OPTION value,
+    which must arrive — so the assertion fails both when every empty string is
+    kept and when every empty string is dropped.
+    """
+    import json
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        echo_script = tmp_path / 'echo_argv.py'
+        echo_script.write_text('#!/usr/bin/env python3\nimport json\nimport sys\nprint(json.dumps(sys.argv[1:]))\n')
+        notation = 'test:stub:echo-argv'
+        executor_path = tmp_path / 'execute-script.py'
+        _materialize_executor(executor_path, notation, echo_script)
+
+        result = subprocess.run(
+            [sys.executable, str(executor_path), notation, 'verb', '', '--values', '', 'tail', ''],
+            capture_output=True,
+            text=True,
+            env=_subprocess_env(),
+            timeout=60,
+        )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == ['verb', '--values', '', 'tail']

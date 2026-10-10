@@ -527,6 +527,15 @@ import argparse  # noqa: E402
 import copy  # noqa: E402
 
 import pytest  # noqa: E402
+
+# The declared-mapping fixture is defined once, beside the pure-function cases,
+# and imported here so the handler cases assert on the same inputs.
+from test_test_scope_divergence import (  # noqa: E402
+    DECLARED_MAPPING_FIXTURE,
+    NARROW_UNIT_CASES,
+    NARROW_UNIT_EXISTING_PATHS,
+    NARROW_UNIT_TEST_DIRECTORIES,
+)
 from toon_parser import parse_toon  # noqa: E402
 
 # Controlled build.map globs mirroring the real repo behaviour: everything
@@ -731,6 +740,273 @@ def test_resolve_registered_modules_returns_empty_without_a_marketplace_tree(tmp
     ``modules_resolvable: false``; the enumeration never guesses.
     """
     assert pyproject_build._resolve_registered_modules(str(tmp_path)) == frozenset()
+
+
+#: The test trees in this repository that hold tests and belong to no bundle.
+_NON_BUNDLE_TEST_TREES = (
+    'default',
+    'finalize-step-deploy-target',
+    'finalize-step-sync-plugin-cache',
+    'marketplace',
+    'sync-harnesses',
+)
+
+
+def test_resolve_registered_modules_enumerates_the_non_bundle_test_trees():
+    """The enumeration seam also returns the test trees that belong to no bundle."""
+    modules = pyproject_build._resolve_registered_modules(str(PROJECT_ROOT))
+
+    for tree in _NON_BUNDLE_TEST_TREES:
+        assert tree in modules, f'the non-bundle test tree {tree!r} is not a registered target'
+    # The helper home holds no suite a scoped run could target.
+    assert '_shared' not in modules
+
+
+def test_resolve_bundle_modules_enumerates_bundles_and_no_test_tree():
+    """The bundle seam returns this repository's bundles and none of its non-bundle trees."""
+    bundles = pyproject_build._resolve_bundle_modules(str(PROJECT_ROOT))
+
+    assert 'plan-marshall' in bundles
+    assert 'pm-dev-python' in bundles
+    assert bundles.isdisjoint(_NON_BUNDLE_TEST_TREES)
+    assert bundles <= pyproject_build._resolve_registered_modules(str(PROJECT_ROOT))
+
+
+@pytest.mark.parametrize('tree', _NON_BUNDLE_TEST_TREES)
+def test_resolve_test_scope_changed_path_in_a_non_bundle_test_tree_names_it_and_requires_the_whole_tree(capsys, tree):
+    """One changed path under a non-bundle test tree names the tree and recommends nothing.
+
+    Both enumerations run for real against this repository, so the case holds
+    only while the tree exists, holds at least one test and is no bundle. The
+    tree is named - the path is not unresolved - while the verdict is the whole
+    tree, because ``architecture resolve --module`` knows no module of that name.
+    """
+    path = f'test/{tree}/test_something.py'
+
+    out = _run_resolve_scope(capsys, changed_paths=path)
+
+    assert out['status'] == 'success'
+    assert out['modules_resolvable'] is True
+    assert out['scoped_modules'] == [tree]
+    assert out['named_only_modules'] == [tree]
+    assert out['unresolved_paths'] == []
+    assert out['divergence_possible'] is True
+    assert out['recommended_target'] is None
+    assert out['narrow_units'] == []
+    assert out['narrow_unit_module'] is None
+
+
+def test_resolve_test_scope_changed_path_in_the_shared_helper_home_fails_closed(capsys):
+    """A changed path under ``test/_shared/`` still routes to the whole tree."""
+    path = 'test/_shared/_build_class_roster.py'
+
+    out = _run_resolve_scope(capsys, changed_paths=path)
+
+    assert out['status'] == 'success'
+    assert out['modules_resolvable'] is True
+    assert out['scoped_modules'] == []
+    assert out['unresolved_paths'] == [path]
+    assert out['divergence_possible'] is True
+    assert out['recommended_target'] is None
+
+
+def _run_resolve_scope_against(capsys, *, changed_paths, registered, bundles):
+    """Invoke the handler with both target enumerations pinned."""
+    args = _resolve_scope_args(changed_paths=changed_paths)
+    with (
+        patch('extension_base._read_build_map_globs', return_value=_SCOPE_BUILD_MAP_GLOBS),
+        patch.object(pyproject_build, '_resolve_registered_modules', return_value=registered),
+        patch.object(pyproject_build, '_resolve_bundle_modules', return_value=bundles),
+    ):
+        rc = pyproject_build.cmd_resolve_test_scope(args)
+    assert rc == 0
+    return parse_toon(capsys.readouterr().out)
+
+
+def test_resolve_test_scope_mapped_source_path_names_its_declared_target_and_requires_the_whole_tree(capsys):
+    """A source path outside the bundles is named through the declared mapping, never recommended."""
+    fixture = DECLARED_MAPPING_FIXTURE
+
+    out = _run_resolve_scope_against(
+        capsys, changed_paths=fixture.mapped_path, registered=fixture.registered, bundles=fixture.bundles
+    )
+
+    assert out['status'] == 'success'
+    assert out['modules_resolvable'] is True
+    assert out['scoped_modules'] == [fixture.mapped_target]
+    assert out['named_only_modules'] == [fixture.mapped_target]
+    assert out['unresolved_paths'] == []
+    assert out['divergence_possible'] is True
+    assert out['recommended_target'] is None
+
+
+def test_resolve_test_scope_unenumerable_bundle_set_recommends_nothing(capsys):
+    """A caller that cannot enumerate the bundles fails toward the whole tree.
+
+    The footprint resolves confidently when the bundles enumerate (see
+    ``test_resolve_test_scope_changed_paths_single_module_resolves_target``), so
+    the difference is attributable to the bundle enumeration alone.
+    """
+    out = _run_resolve_scope_against(
+        capsys,
+        changed_paths=_SINGLE_MODULE_PATH,
+        registered=frozenset({'plan-marshall'}),
+        bundles=frozenset(),
+    )
+
+    assert out['scoped_modules'] == ['plan-marshall']
+    assert out['named_only_modules'] == ['plan-marshall']
+    assert out['divergence_possible'] is True
+    assert out['recommended_target'] is None
+    assert out['narrow_units'] == []
+
+
+def test_resolve_test_scope_unmapped_source_path_fails_closed(capsys):
+    """A source path no declared mapping covers still routes to the whole tree."""
+    fixture = DECLARED_MAPPING_FIXTURE
+
+    out = _run_resolve_scope_against(
+        capsys, changed_paths=fixture.unmapped_path, registered=fixture.registered, bundles=fixture.bundles
+    )
+
+    assert out['status'] == 'success'
+    assert out['modules_resolvable'] is True
+    assert out['scoped_modules'] == []
+    assert out['unresolved_paths'] == [fixture.unmapped_path]
+    assert out['divergence_possible'] is True
+    assert out['recommended_target'] is None
+
+
+def test_resolve_test_scope_declared_mapping_target_is_a_real_registered_target():
+    """The fixture's mapped target is one this repository actually registers.
+
+    The handler cases above pin the enumeration to the fixture's set; this
+    one ties that set back to the live tree, so the mapping cannot point at a
+    test target that no longer exists while the pinned cases stay green.
+    """
+    modules = pyproject_build._resolve_registered_modules(str(PROJECT_ROOT))
+
+    assert DECLARED_MAPPING_FIXTURE.mapped_target in modules
+
+
+# Narrow units: the handler supplies the existing test directories and the
+# existing footprint files, and prints the two narrow lists and their module
+# beside the module-level answer.
+
+
+def _run_resolve_scope_with_directories(capsys, *, changed_paths, directories):
+    """Invoke the handler with the directory and file-existence enumerations pinned.
+
+    The target enumerations run for real, so ``plan-marshall`` is a registered
+    bundle module because this repository carries the bundle.
+    """
+    args = _resolve_scope_args(changed_paths=changed_paths)
+    with (
+        patch('extension_base._read_build_map_globs', return_value=_SCOPE_BUILD_MAP_GLOBS),
+        patch.object(pyproject_build, '_resolve_test_directories', return_value=directories),
+        patch.object(pyproject_build, '_resolve_existing_paths', return_value=NARROW_UNIT_EXISTING_PATHS),
+    ):
+        rc = pyproject_build.cmd_resolve_test_scope(args)
+    assert rc == 0
+    return parse_toon(capsys.readouterr().out)
+
+
+#: One parameter per named footprint. Bound at module level so the population
+#: is asserted where it is derived: an emptied case table fails collection
+#: instead of collecting no case and passing.
+_NARROW_UNIT_PARAMS = [pytest.param(case, id=case_id) for case_id, case in NARROW_UNIT_CASES.items()]
+assert _NARROW_UNIT_PARAMS, 'the narrow-unit case population is empty'
+
+
+@pytest.mark.parametrize('case', _NARROW_UNIT_PARAMS)
+def test_resolve_test_scope_prints_the_narrow_units(capsys, case):
+    """Each named footprint prints its narrow units and names what contributed none.
+
+    ``recommended_target`` is asserted too: the module-level answer the handler
+    printed before the narrow lists existed is unchanged in every case.
+    """
+    out = _run_resolve_scope_with_directories(
+        capsys,
+        changed_paths=','.join(case.footprint),
+        directories=NARROW_UNIT_TEST_DIRECTORIES,
+    )
+
+    assert out['status'] == 'success'
+    assert out['narrow_units'] == list(case.narrow_units)
+    assert out['narrow_units_unresolved'] == list(case.narrow_units_unresolved)
+    assert out['narrow_unit_module'] == 'plan-marshall'
+    assert out['scoped_modules'] == ['plan-marshall']
+    assert out['recommended_target'] == 'plan-marshall'
+    assert out['divergence_possible'] is False
+    assert out['unresolved_paths'] == []
+
+
+def test_resolve_test_scope_enumerates_this_repositorys_test_directories(capsys):
+    """With nothing pinned, a real skill path reads its real test directory.
+
+    The pinned cases above cannot tell a handler that passes the enumerated set
+    from one that passes nothing; this one runs the enumeration for real.
+    """
+    out = _run_resolve_scope(capsys, changed_paths=_SINGLE_MODULE_PATH)
+
+    assert out['narrow_units'] == ['plan-marshall/build-pyproject']
+    assert out['narrow_units_unresolved'] == []
+    assert out['narrow_unit_module'] == 'plan-marshall'
+    assert out['recommended_target'] == 'plan-marshall'
+
+
+#: This very file, as a repo-relative path: a changed test file that exists.
+_EXISTING_TEST_FILE = 'test/plan-marshall/build-pyproject/test_pyproject_build.py'
+#: A changed test file of the same shape, in the same directory, that does not exist.
+_DELETED_TEST_FILE = 'test/plan-marshall/build-pyproject/test_a_file_this_repository_does_not_carry.py'
+
+
+def test_resolve_test_scope_offers_an_existing_changed_test_file_as_a_narrow_unit(capsys):
+    """With nothing pinned, a changed test file that is on disk is a narrow unit."""
+    out = _run_resolve_scope(capsys, changed_paths=_EXISTING_TEST_FILE)
+
+    assert out['narrow_units'] == ['plan-marshall/build-pyproject/test_pyproject_build.py']
+    assert out['narrow_units_unresolved'] == []
+    assert out['narrow_unit_module'] == 'plan-marshall'
+
+
+def test_resolve_test_scope_names_a_deleted_changed_test_file_instead_of_offering_it(capsys):
+    """A changed test file that is not on disk is named unresolved, never a unit.
+
+    Matched control: the case above differs in the file's existence alone.
+    """
+    out = _run_resolve_scope(capsys, changed_paths=_DELETED_TEST_FILE)
+
+    assert out['scoped_modules'] == ['plan-marshall']
+    assert out['narrow_units'] == []
+    assert out['narrow_units_unresolved'] == [_DELETED_TEST_FILE]
+    assert out['narrow_unit_module'] is None
+
+
+def test_resolve_test_scope_empties_the_narrow_lists_when_it_fails_toward_the_whole_tree(capsys):
+    """An unenumerable target set prints no narrow unit beside its null target.
+
+    Matched control: the same footprint with the same directory set prints a
+    narrow unit when the registered targets do enumerate (the parametrized case
+    above), so the empty lists here follow from the targets alone. This pins the
+    printed outcome; it does not isolate the handler's own reset, because a
+    footprint that resolves no module already reads both lists empty.
+    """
+    case = NARROW_UNIT_CASES['skill_without_test_directory']
+    args = _resolve_scope_args(changed_paths=','.join(case.footprint))
+    with (
+        patch('extension_base._read_build_map_globs', return_value=_SCOPE_BUILD_MAP_GLOBS),
+        patch.object(pyproject_build, '_resolve_registered_modules', return_value=frozenset()),
+        patch.object(pyproject_build, '_resolve_test_directories', return_value=NARROW_UNIT_TEST_DIRECTORIES),
+    ):
+        rc = pyproject_build.cmd_resolve_test_scope(args)
+
+    assert rc == 0
+    out = parse_toon(capsys.readouterr().out)
+    assert out['modules_resolvable'] is False
+    assert out['recommended_target'] is None
+    assert out['narrow_units'] == []
+    assert out['narrow_units_unresolved'] == []
 
 
 def test_resolve_test_scope_threads_the_caller_enumerated_module_set(capsys):

@@ -279,6 +279,38 @@ def test_cmd_resolve_bucket_b_short_learned_value_is_raised_by_the_engine_floor(
     assert result['hint'] == _per_task_hint(360)
 
 
+def test_cmd_resolve_without_a_narrow_unit_returns_exactly_the_fields_it_always_did(isolated_run_config):
+    """A module resolve that omits ``--narrow-unit`` is unchanged by the argument.
+
+    The whole result is compared, keys included, for a measured module command:
+    the resolved executable and the four tier fields carry the values they
+    carried before, and nothing was added beside them — in particular no
+    ``bound_source``, which belongs to a narrow resolve only. The namespace comes
+    from ``architecture.py``'s own parser, so the argument's parser default is
+    what the handler sees.
+    """
+    _set_persisted_timeout(isolated_run_config, 'python:verify_plan_marshall', 200)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_single_module(tmpdir, 'verify', _PYPROJECT_VERIFY_EXECUTABLE)
+
+        args = _variant(_RESOLVE_ARGS, project_dir=tmpdir)
+        assert args.narrow_unit is None
+        result = cmd_resolve(args)
+
+    assert result == {
+        'status': 'success',
+        'module': 'root',
+        'command': 'verify',
+        'executable': _PYPROJECT_VERIFY_EXECUTABLE,
+        'resolution_level': 'module',
+        'bash_timeout_seconds': 360,
+        'exceeds_bash_ceiling': False,
+        'execution_tier': 'per_task',
+        'hint': _per_task_hint(360),
+    }
+
+
 # =============================================================================
 # Case (b): Bucket B notation, long duration -> orchestrator tier
 # =============================================================================
