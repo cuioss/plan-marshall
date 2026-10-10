@@ -297,14 +297,16 @@ class TestIntegrateWhenMergeLockAlreadySelfHeld:
         assert (env['main_plan_dir'] / 'status.json').is_file()
         assert not env['wt_plan_dir'].exists()
 
-    def test_integrate_release_frees_the_single_underlying_lock(
+    def test_outer_holder_release_frees_the_single_underlying_lock(
         self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A single net release: the reentrant grant is NOT an independent second
-        acquisition, so integrate's release removes the one underlying lock file.
-        After integrate, the merge lock is genuinely free — a foreign plan can
-        acquire it (proving integrate's release actually freed it, not left it held
-        by a phantom second acquisition)."""
+        """Exactly one release — the outer holder's — removes the lock.
+
+        The reentrant grant is NOT an independent second acquisition, and the
+        call that did not take the lock does not release it: after integrate the
+        lock is still held by the plan, so the merge window branch-cleanup opened
+        stays closed to other plans. The outer holder's own release then removes
+        the one underlying lock file, and a foreign plan can acquire it."""
         env = isolated_env
         real_merge_lock = self._install_real_merge_lock(env, monkeypatch)
         # Resolve the authoritative lock path through the real module's own
@@ -318,9 +320,12 @@ class TestIntegrateWhenMergeLockAlreadySelfHeld:
 
         integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
 
-        # integrate released the single underlying lock — the file is gone.
+        # integrate did not take the lock, so it left it with its holder.
+        assert lock_path.read_text(encoding='utf-8').strip() == env['plan_id']
+
+        # The outer holder's single release frees the one underlying lock.
+        real_merge_lock.run_release(Namespace(plan_id=env['plan_id'], set_title_token=False))
         assert not lock_path.exists()
-        # The lock is genuinely free: a foreign plan can now acquire it.
         other = real_merge_lock.run_acquire(Namespace(plan_id='other-plan', set_title_token=False))
         assert other['status'] == 'success'
         assert other['action'] == 'acquired'

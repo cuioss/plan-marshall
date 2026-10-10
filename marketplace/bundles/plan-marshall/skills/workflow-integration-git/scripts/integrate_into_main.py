@@ -21,8 +21,10 @@ cleanup removes the worktree AFTER this script returns. In one call it:
      directory (``.plan/local/plans/{plan_id}/logs/``) BEFORE move-back so the
      retrospective can read them after the plan dir lands on main.
   3. **MOVES** the plan directory back from the worktree to the main checkout.
-  4. **RELEASES** the merge lock — on EVERY exit path, including the rollback
-     path, so a crashed-and-retried finalize never wedges the lock.
+  4. **RELEASES** the merge lock it took — a lock this call took is released on
+     every exit path, including the rollback path, so a crashed-and-retried
+     finalize never wedges the lock; a lock already held by the same plan
+     (reentrant acquire, ``action: already_held``) is left to its holder.
 
 The on-main executor is NOT regenerated here. Regeneration is a project-level,
 meta-project-only finalize step (``finalize-step-sync-plugin-cache``, run after
@@ -54,7 +56,7 @@ not treated as a completed integration.
 
 Atomic-with-rollback (solution_outline.md §5): a partial move-back failure rolls
 the plan dir BACK into the worktree so the authoritative copy is never split, and
-the merge lock is released on the rollback path too. Idempotent: an
+a lock this call took is released on the rollback path too. Idempotent: an
 already-moved-back plan (real plan dir already resident on main, none in the
 worktree) is a no-op success.
 
@@ -401,8 +403,9 @@ def run_integrate_into_main(args: Namespace) -> dict[str, Any]:
     """Acquire lock → fold logs → move-back → release (one action).
 
     Returns a TOON-shaped payload carrying ``status``. Never changes the caller's
-    cwd; never removes the worktree; never regenerates the executor. The merge
-    lock is released on EVERY exit path, including rollback.
+    cwd; never removes the worktree; never regenerates the executor. A lock
+    this call took is released on every exit path, including rollback; a lock
+    the same plan already held is left to its holder.
     """
     plan_id: str = args.plan_id
 
@@ -482,8 +485,17 @@ def run_integrate_into_main(args: Namespace) -> dict[str, Any]:
         # No lock was acquired, so there is nothing to release.
         return _assert_cwd_unchanged({**acquire_result, 'plan_id': plan_id})
 
+    # Ownership of the release: this call releases the lock only when it TOOK
+    # it. A reentrant acquire (``action: already_held``) means the same plan
+    # already holds the lock — typically the branch-cleanup merge window that
+    # wraps this call — so the outer holder keeps it and does the one release.
+    # Releasing here would drop the lock out from under that holder mid-merge.
+    took_lock = acquire_result.get('action') != 'already_held'
+
     def _release_and(payload: dict[str, Any]) -> dict[str, Any]:
-        """Release the lock (idempotent) and return ``payload`` unchanged."""
+        """Release the lock if this call took it, and return ``payload`` unchanged."""
+        if not took_lock:
+            return _assert_cwd_unchanged(payload)
         try:
             # set_title_token=False mirrors the acquire above — the move-back
             # lock never set a title token, so there is nothing to clear.
