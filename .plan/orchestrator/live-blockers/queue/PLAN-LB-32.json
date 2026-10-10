@@ -2,9 +2,9 @@
   "id": "PLAN-LB-32",
   "slug": "head-dependent-step-refire",
   "workstream": "WS-01",
-  "status": "running",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "plan_marshall_plan_id": "lb-32-head-dependent-step-refire",
+  "pr": "1741",
+  "landing": "landings/PLAN-LB-32.md",
   "seq": 32
 }
