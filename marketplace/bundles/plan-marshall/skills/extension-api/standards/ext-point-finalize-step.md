@@ -100,6 +100,32 @@ Implementors that record a **non-`done`** outcome MAY also forward the anchor ev
 
 **`post_run_review` is consumed at the same two granularities**, under the table above rather than a second contract of its own. The dispatcher's effort-role resolution reads the ONE step it is about to dispatch to decide whether that step resolves under the `post-run-review` sub-key — a per-step membership test, never a whole-set materialisation. The derivation guard materialises the full `post_run_review` set through `find_implementors()` and asserts the ordering and mutual-exclusion invariants over it. Deriving the role key from the declared fact is what keeps the ordering obligation and the dispatch sub-key on one source instead of two hand-maintained step lists.
 
+#### Reading the change list since the last `done` firing
+
+A `head_dependent: true` step MAY read which tracked paths changed between the commit its last `done` record is anchored to and the live HEAD, and use that list to narrow what a re-fire examines:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:verdict_currency changed-paths \
+  --plan-id {plan_id} --step {step_id} --worktree-path {worktree_path}
+```
+
+The verb reads the anchor from the step's own record — the `head_at_completion` the obligation above makes every `done` record carry — so the step supplies no SHA of its own.
+
+**Read `outcome` before `changed_paths`.** The payload carries `changed_paths` on `outcome: computed` alone. On the three other outcomes nothing was compared and the key is absent:
+
+| `outcome` | What it means | What the step MUST do |
+|-----------|---------------|-----------------------|
+| `computed` | The two trees were compared; `changed_paths` lists every path that differs, and an empty list means none does | It MAY narrow its work to what the list could affect |
+| `first_firing` | The plan holds no record for the step | Run in full |
+| `last_firing_not_done` | A record exists but is not a completed one, or carries no commit | Run in full |
+| `diff_unavailable` | The difference could not be computed — the live HEAD or the recorded commit did not resolve, or git failed | Run in full |
+
+**A step MUST NOT read a missing `changed_paths` as "nothing changed".** An absent key says no comparison was made; only an empty list on `computed` says the trees are equal. A `status: error` payload carries no `outcome` at all and is likewise a full run.
+
+A step whose narrowing carries results over from the previous firing needs more than the anchor. `head_at_completion` says which tree the record was computed against, not what the step had examined by then, and the dispatcher re-stamps it with no fact arguments after committing a mutating step's edits. Such a step records a fact of its own (see [Structured step facts](#structured-step-facts-records_facts)) and runs in full when that fact is absent — `project:finalize-step-lessons-housekeeping` records `classified_at` for this purpose.
+
+**Reading the change list is not a `verdict_inputs` declaration, and it buys no dispatcher-side skip.** The dispatcher's re-entry check consults `verdict_inputs` alone. A step that reads the change list still declares no surface, is still re-fired on every HEAD advance, and narrows only what its own body does once it runs. The two bound different things — see [phase-6-finalize/standards/verdict-currency.md](../../phase-6-finalize/standards/verdict-currency.md) § "Three levers, two columns".
+
 ### Structured step facts (`records_facts`)
 
 A step record persists its outcome as `outcome` plus a free-text `display_detail`. Prose is not queryable: a retrospective cannot ask "did this rebase replay anything?" of a sentence. `records_facts` names the structured keys a step persists through `mark-step-done --fact KEY=VALUE` so `display_detail` becomes a **rendering** of recorded facts rather than their sole record.
@@ -147,6 +173,7 @@ Each row is the step-level **union** per the reconciliation rule above — NOT a
 | `default:record-metrics` | operator-added (plan 302) — NOT a Watch-entry member | `total_tokens`, `total_wall_seconds`, `any_phase_missing_end_time` | All three carried at the single `--outcome done` call site (this step has one terminal branch). | `total_tokens` — *"what did this run cost?"* (the token-total-disagreement finding the terminal landing must make drainable); `total_wall_seconds` — *"how long did it take?"*; `any_phase_missing_end_time` — *"is the token total a floor because a phase boundary was dropped?"*. |
 | `default:create-pr` | operator-added (plan 510) — NOT a Watch-entry member | `pr_number` | Both `--outcome done` branches record it — the new-PR branch and the existing-PR-reused branch. There is no `skipped` branch. | `pr_number` — *"which PR did this run open or reuse?"* The consumer is `default:emit-landing`'s required `pr` landing key, which otherwise has to re-parse the number out of a `display_detail` string the two branches word differently. |
 | `default:emit-landing` | operator-added (plan 510) — NOT a Watch-entry member | `work_performed` | The Step 4 success path records `work_performed=true`; the Error Handling branch that marks `done` after a failed `orchestrator inbox write` records `work_performed=false`. Both `--outcome done` call sites carry it, per the `work_performed` exception. | `work_performed` — *"did this run actually emit a landing?"* The step has an `--outcome done` branch reachable without having emitted one (the inbox write errored and the step marked `done` anyway, because a failed landing write never blocks finalize), so `outcome` alone cannot distinguish a landing that reached the epic from one that did not. |
+| `project:finalize-step-lessons-housekeeping` | operator-added — NOT a Watch-entry member | `classified_at`, `work_performed` | The Step 7 completion record carries `work_performed=true`, and `classified_at` (the time the firing started) unless the step withholds it — which it does when the firing cannot stand as a carry-over anchor (a failed per-lesson action, an unreadable plan footprint, a delta-rule error or a missing delta-rule payload; the step's own Step 7 owns the list). The empty-corpus `done` record and the unresolved-store `done` record each carry `work_performed=false` and no `classified_at`. All three `--outcome done` call sites carry `work_performed`, per the `work_performed` exception. | `classified_at` — *"from which firing may a later firing carry results over?"* It is the anchor the step's delta rule measures "edited since" against, which neither `outcome` nor `head_at_completion` can supply: the SHA says which tree the record was computed against, not which lessons had been judged by then. `work_performed` — *"did this firing examine a corpus at all?"* The step has two `done` branches reachable without having judged anything (an unresolved store, an empty corpus). ⚠ **One case leaves the record carrying neither fact although the step wired both**: after the dispatcher's commit re-stamp of a source-editing firing, which rewrites the record with the new HEAD and no fact arguments (see [phase-6-finalize/SKILL.md](../../phase-6-finalize/SKILL.md) Step 3 item 5f). A consumer reads the absence of `classified_at` as **no carry-over anchor — run in full**, never as a defect of the record. |
 
 The three scan facts on `default:sonar-roundtrip` are already computed from the `sonar-scan-summary.jsonl` marker and already declared in that step's `## Output` TOON — they are discarded at the record boundary today, which is what wiring them fixes. The three `default:record-metrics` facts are the same shape: `generate` already computes `total_tokens` / `total_wall_seconds` / `any_phase_missing_end_time` for the step's output contract, and wiring them as `--fact` is what lets the terminal `default:emit-landing` step carry the run's cost into the epic landing as machine-readable data rather than a re-parsed prose row.
 

@@ -12,6 +12,9 @@ allowed-tools: Bash, Read, Edit
 order: 4
 mutates_source: true
 head_dependent: true
+records_facts:
+  - classified_at
+  - work_performed
 default_on: false
 presets: []
 implements: plan-marshall:extension-api/standards/ext-point-finalize-step
@@ -30,7 +33,9 @@ Perform lessons-learned housekeeping after a plan finishes. Reason from the just
 
 Both removal dispositions run behind a **two-key retirement path**: Step 3's Evidence bar produces a verdict that names the covering clause and the concrete input its worked example resolves, and Steps 4.1 / 4b.2 turn the second key by independently re-reading that example before any `remove` call fires. A verdict that cannot be evidenced caps at *Partially covered* and is trimmed instead of deleted.
 
-Every change — removal, promotion-then-retire, adaptation, or deliberate retain — is recorded to the decision log so the housekeeping is fully auditable.
+Every change to the corpus — removal, promotion-then-retire, or adaptation — is recorded to the decision log with one entry each, so every changed lesson stays individually traceable. Deliberate retains change nothing and are not logged per lesson: each firing writes one aggregate entry that counts them, alongside how many lessons it examined and how many it carried over (Step 6).
+
+The step is re-fired whenever HEAD advances. A re-fire does not judge the whole corpus again: the **delta rule** (Step 2b) names the lessons the advance could affect, the step judges those, and every other lesson keeps the result of the previous firing. When there is no trustworthy previous firing to carry results over from, the rule falls back to judging the whole corpus.
 
 ## Interface Contract
 
@@ -52,17 +57,21 @@ This settle-band constraint **supersedes** the former requirement to run after `
 
 This step declares `head_dependent: true` in its frontmatter — that fact IS the membership declaration the dispatcher's re-entry check reads (see [ext-point-finalize-step.md](../../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter"; the governing discriminator lives there and is deliberately not restated here).
 
-It matches on the settle-stage shape: this is a pre-merge settle-band step whose edits land directly in the worktree (`mutates_source: true` — the Step 4b promotions write governing-skill docs). Those edits were computed against the HEAD this step read, so a HEAD advance supersedes them. Concretely, the classification in Step 3 reasons about *what the plan changed* from `modified_files` and the plan outcome; a loop-back commit landing after this step recorded `done` changes that input, so a lesson that was correctly retained against the old HEAD may be completely covered against the new one — and the standing `done` record would let the corpus ship unreconciled. The empty-corpus skip-clean exit (Step 2) is the sharpest case, because it records `done` while having changed nothing.
+It matches on the settle-stage shape: this is a pre-merge settle-band step whose edits land directly in the worktree (`mutates_source: true` — the Step 4b promotions write governing-skill docs). Those edits were computed against the HEAD this step read, so a HEAD advance supersedes them. Concretely, the classification in Step 3 reasons about *what the plan changed* from the plan's realized footprint and the plan outcome; a loop-back commit landing after this step recorded `done` changes that input, so a lesson that was correctly retained against the old HEAD may be completely covered against the new one — and the standing `done` record would let the corpus ship unreconciled. The empty-corpus skip-clean exit (Step 2) is the sharpest case, because it records `done` while having changed nothing.
 
-Both `--outcome done` records therefore capture the worktree HEAD immediately before their `mark-step-done` call and forward it via `--head-at-completion {sha}`: the Step 7 completion record and the Step 2 empty-corpus skip-clean record. Re-firing is safe: the classification is a fresh read each time, and the pass is non-fatal throughout.
+Every `--outcome done` record therefore captures the worktree HEAD immediately before its `mark-step-done` call and forwards it via `--head-at-completion {sha}`: the Step 7 completion record and the two Step 2 exits that examined no corpus (unresolved store, empty corpus).
+
+Re-firing is safe, and bounded by the delta rule (Step 2b) rather than by re-reading everything. A lesson's coverage verdict is a function of two things: the lesson's own content, and the files the lesson is about. A re-fire re-judges every lesson for which either moved since the previous firing started — the lesson file was edited or added, or a changed path lies under its component's standards directory or under a path its body names — and carries the previous result over only for a lesson where neither moved. The rule's premise is stated rather than hidden: a commit can change a lesson's verdict only through a file the lesson is about. Whenever the previous firing cannot serve as a carry-over source — no record, no computable difference, or a record that did not finish cleanly under this rule — the whole corpus is judged, exactly as on a first firing. The pass is non-fatal throughout.
 
 ### Verdict-input surface — deliberately undeclared
 
-This step declares **no** `verdict_inputs`, so the dispatcher's verdict-currency classifier never narrows its re-fire: every HEAD advance re-runs it. The absence is a recorded refusal on evidence, not a declaration left unwritten.
+This step declares **no** `verdict_inputs`, so the dispatcher's verdict-currency classifier never narrows its re-fire: the dispatcher re-fires it on every HEAD advance. The absence is a recorded refusal on evidence, not a declaration left unwritten.
+
+**What is refused is a static glob declaration, and only that.** The refusal is about whether the dispatcher may *skip* this step, and the answer is no. It says nothing about how much the step does once it runs: that is bounded by the delta rule (Step 2b), which reads the change list since the previous firing and judges only the lessons it could affect. The delta rule is not a `verdict_inputs` declaration and buys no dispatcher-side skip — every HEAD advance still dispatches the step, and the step narrows its own work from inside. See [verdict-currency.md](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/verdict-currency.md) § "Three levers, two columns" for why the two bound different things.
 
 A `verdict_inputs` declaration is a set of globs over **tracked** paths, and the classifier decides currency from the tree difference between two commits (see [verdict-currency.md](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/verdict-currency.md) § "The classification"). Most of what this step's verdict reads is not in any tree:
 
-- **The plan's own records.** Step 1 reads `modified_files` from `references.json` and the request document. Both live in the plan directory under the git-ignored `.plan/local/`, so no commit carries them and no tree difference reports a change to them.
+- **The plan's own records.** Step 1 derives the plan's realized footprint and reads the request document. The request document lives in the plan directory under the git-ignored `.plan/local/`, so no commit carries it and no tree difference reports a change to it. The realized footprint is derived at run time from the worktree — the diff against a base ref that moves without any commit on this branch, plus the uncommitted working-tree state — so it is a discovered set rather than a fixed list of tracked paths.
 - **The lessons corpus.** Step 2 enumerates the main-anchored corpus under `.plan/local/lessons-learned/`, and Step 3 classifies every lesson in it. The corpus is git-ignored too: a lesson added, trimmed or removed between two firings changes this step's verdict while the two trees compare equal.
 - **Whichever standards clause a lesson names.** The Evidence bar re-reads the clause a completely-covered verdict cites and that clause's own worked example. Those files are tracked, but which ones are read is decided by the lessons in the corpus at run time, so the set cannot be written down ahead of the run.
 
@@ -97,9 +106,35 @@ The step runs inside the pre-merge settle band, so its promotion edits are linte
 
 ### Step 1: Read the just-finished plan's outcome
 
+Resolve the worktree path first — the footprint below is derived from that tree, and Steps 2 and 7 read HEAD from it:
+
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-references:manage-references get \
-  --plan-id {plan_id} --field modified_files
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-worktree-path \
+  --plan-id {plan_id}
+```
+
+Capture `worktree_path` as `{worktree_path}` (substitute `.` on the main-checkout flow, where the returned path is empty). Then derive the plan's **realized footprint** — the files the plan actually changed, computed live from the worktree's git state rather than read from a stored list:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references compute-footprint \
+  --plan-id {plan_id} --worktree-path {worktree_path}
+```
+
+On `status: success`, `files` is the realized footprint and `live_count` its size. **Branch on `status` before reading `files`**: an error payload carries no `files` key, and an absent footprint is never an empty one — "the plan changed nothing" and "the footprint could not be derived" demand different classifications in Step 3. Every error outcome is **non-fatal**: log the named error and continue on the request document alone, classifying under the bias-to-retain posture because what the plan changed is unknown. A firing that took this path judged its lessons without the realized footprint, so Step 7 withholds `classified_at` and the next firing judges the whole corpus again.
+
+| `error` | What it means | Action |
+|---------|---------------|--------|
+| `worktree_not_found` | `{worktree_path}` does not exist or is not a directory | Log the named error; continue on the request document alone |
+| `references_not_found` | the plan has no `references.json`, so the diff base cannot be resolved | Log the named error; continue on the request document alone |
+| `not_a_git_worktree` | `{worktree_path}` exists but is not inside a git worktree | Log the named error; continue on the request document alone |
+| `git_error` | the base ref does not resolve in the worktree, or the diff itself failed — the payload's `message` says which | Log the named error with its `message`; continue on the request document alone |
+| `files_out_refused` | a `--files-out` destination the verb declines to write | Log the named error; continue on the request document alone. This step passes no `--files-out`, so reaching it means the call was altered — do not retry with a different destination |
+| `files_out_unwritable` | a `--files-out` destination that could not be written | Log the named error; continue on the request document alone. Same note as `files_out_refused` |
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level WARNING \
+  --message "[STATUS] (project:finalize-step-lessons-housekeeping) Realized footprint UNAVAILABLE: {error} — classifying on the request document alone, this is NOT an empty footprint"
 ```
 
 ```bash
@@ -107,14 +142,14 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
   --plan-id {plan_id}
 ```
 
-Read the retrospective's quality-verification report (written by `plan-marshall:plan-retrospective`, order 995). At this step's settle-band order the retrospective has not yet run, so this read is **best-effort**: the report is normally absent, and its absence is already non-fatal — see the "Missing `quality-verification-report.md`" row in Error Handling, which proceeds on `request.md` + `modified_files` alone.
+Read the retrospective's quality-verification report (written by `plan-marshall:plan-retrospective`, order 995). At this step's settle-band order the retrospective has not yet run, so this read is **best-effort**: the report is normally absent, and its absence is already non-fatal — see the "Missing `quality-verification-report.md`" row in Error Handling, which proceeds on the request document and the realized footprint alone.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-files:manage-files read \
   --plan-id {plan_id} --file quality-verification-report.md
 ```
 
-Together these establish what the plan changed (modified files), why (the request), and the verified outcome — the basis for coverage classification.
+Together these establish what the plan changed (the realized footprint), why (the request), and the verified outcome — the basis for coverage classification.
 
 ### Step 2: Resolve the corpus substrate, then enumerate it
 
@@ -138,7 +173,21 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "[STATUS] (project:finalize-step-lessons-housekeeping) Required store UNRESOLVED: {unresolved_store} — nothing was read or reconciled, this is NOT a clean-corpus result"
 ```
 
-Then mark done with `--display-detail "{unresolved_store} store unresolved — nothing read"` following the HEAD-capture sequence below.
+Resolve the worktree HEAD SHA immediately before marking done, per § HEAD-dependency (`{worktree_path}` is the value Step 1 resolved):
+
+```bash
+git -C {worktree_path} rev-parse HEAD
+```
+
+Capture stdout as `{sha}`, then record the exit. It examined no corpus, so it records `work_performed=false` and no `classified_at` — the next firing finds no carry-over anchor and judges the whole corpus:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step project:finalize-step-lessons-housekeeping --outcome done \
+  --display-detail "{unresolved_store} store unresolved — nothing read" \
+  --head-at-completion {sha} \
+  --fact work_performed=false
+```
 
 **Enumerate** (only when the store resolved):
 
@@ -160,25 +209,78 @@ Resolve the worktree HEAD SHA immediately before marking done, per § HEAD-depen
 git -C {worktree_path} rev-parse HEAD
 ```
 
-Capture stdout as `{sha}` and forward it via `--head-at-completion`:
+Capture stdout as `{sha}` and forward it via `--head-at-completion`. An empty corpus was looked at but nothing in it was judged, so the record carries `work_performed=false` and no `classified_at`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step project:finalize-step-lessons-housekeeping --outcome done \
   --display-detail "0 lessons in {store_resolution} corpus — nothing to reconcile" \
-  --head-at-completion {sha}
+  --head-at-completion {sha} \
+  --fact work_performed=false
 ```
 
 **Out of scope — the classify/apply split.** Resolving the substrate explicitly closes the *which corpus did I read* question, not the *where may I write* one. Splitting this step into a main-anchored classify pass and a separately-scheduled pushable apply pass is deliberately NOT done here: it is a finalize band-contract change (whether a `mutates_source: true` step may run post-merge, and the reordering that follows) owned by `PLAN-CIS-034`.
 
+### Step 2b: Select what this firing judges (the delta rule)
+
+A re-fire judges only the lessons the HEAD advance could affect. Call the script **once**, after the corpus is enumerated and before any lesson is judged:
+
+```bash
+python3 .plan/execute-script.py default-bundle:finalize-step-lessons-housekeeping:affected_lessons resolve \
+  --plan-id {plan_id} --worktree-path {worktree_path}
+```
+
+**The call is also the firing-start capture.** The script stamps the time on entry, before it reads the corpus, and returns it as `firing_started_at` on every payload — `mode: full`, `mode: delta` and `status: error` alike. Retain it as `{firing_started_at}`; Step 7 records it as the `classified_at` fact, subject to the condition stated there, which is what the next firing measures "edited since" against. Because it is the *start* of the firing, a lesson this firing itself trims in Step 5 is later than it and is re-examined next time.
+
+Read `status` first, then `mode`.
+
+**`mode: delta`** — the payload carries `recorded_head`, `live_head`, the counts `examined` and `carried_over`, and `affected`: the lessons to judge, each with the `reason` it was selected for.
+
+| `reason` | The lesson is affected because |
+|----------|--------------------------------|
+| `edited_since_last_firing` | its file was modified after the previous firing started — which also covers a lesson added since |
+| `standards_dir_changed` | a changed path lies under the standards directory of the lesson's component |
+| `named_path_changed` | a changed path contains, as a run of whole path segments, a path the lesson body names in backticks. The citation is first reduced to the literal paths it can stand for: a test-id or anchor reference behind it is ignored, and a glob or placeholder ends it — the directory in front of the pattern is kept, or the tail behind it when nothing literal precedes it. A colon does not force one reading, because it may introduce a line or symbol reference, end a notation prefix, separate a revision from its path (`origin/main:src/app.py`) or belong to a file name (`src/a:b.py`): the lesson is selected when a changed path contains either the citation with its colons kept or any colon-delimited piece of it that contains a `/`. A piece without a `/` — a line number, a symbol, a bundle or skill token — names no path and selects nothing. The match is not anchored at the repository root, so a path cited relative to its skill still selects the lesson |
+
+Run Steps 3 to 5 over the lessons in `affected` **only**. Every other lesson keeps the result of the previous firing: it is not re-read, not re-judged and not edited. Retain `carried_over` as `{X}` for the Step 7 outcome line.
+
+**The empty delta is an answer, not a gap.** When the commit touched only files that match no lesson and no lesson changed, `affected` is an empty list and `examined` is `0`. The answer is **none — carry the previous result**: skip Steps 3 to 5 entirely, write the Step 6 aggregate entry, and proceed to Step 7 with zero removed, promoted, adapted and retained and `{X}` equal to the corpus size.
+
+**`mode: full`** — judge the whole corpus as enumerated in Step 2, exactly as a first firing does; `{X}` is `0`. The payload names why in `reason`. There are exactly three full-run conditions:
+
+1. **First firing** (`first_firing`) — the step has no record for this plan.
+2. **No computable difference** (`diff_unavailable`) — the difference between the previous firing's commit and the live HEAD could not be computed.
+3. **The previous firing did not finish cleanly under this rule** — reached by three routes, each with its own `reason`:
+   - `last_firing_not_done` — the previous record is not a completed one, or carries no commit.
+   - `classified_at_absent` — the previous record is complete but carries no `classified_at` fact.
+   - `classified_at_unreadable` — the fact is present but is not a timestamp.
+
+A record without a readable `classified_at` always forces a full run. The script never infers a carry-over anchor from `head_at_completion` alone: that SHA says which tree the record was computed against, not which lessons had been judged by then.
+
+**The commit re-stamp is a known, accepted route into the third condition.** This step declares both `mutates_source` and `head_dependent`, so whenever a firing edits source the dispatcher commits the edit and re-stamps the step record with the new HEAD and no fact arguments (see [phase-6-finalize/SKILL.md](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md) Step 3 item 5f). The re-stamped record carries neither `classified_at` nor `work_performed`, so the next firing after a source-editing firing reports `classified_at_absent` and runs in full. That is the fallback working as designed, not an error. It follows that the delta rule saves work only after firings that edited no source. The facts are deliberately not carried through the re-stamp: doing so would mean editing the dispatcher and `manage-status`, and a full run after a firing that changed governing docs is the conservative answer anyway.
+
+**A failed per-lesson action is a second route, and the step takes it itself.** When a `manage-lessons remove` call (Step 4.2 or Step 4b.3), a promotion `Edit` (Step 4b.1) or an adaptation `Edit` (Step 5) failed in a firing, that firing produced no result for the lesson and left its file unmodified — so no rule of a later delta would select it, and it would be carried over without ever having been judged to a result. Step 7 therefore withholds the `classified_at` fact from such a firing's record, the next firing reports `classified_at_absent`, and the whole corpus is judged. A reconfirmation-gate failure (Step 4.1 or Step 4b.2) and a `remove` evidence rejection are outside this route: they are downgrades that end in a trim or a deliberate retain, not failed actions, and a successful trim already moves the lesson's modification time past the firing start.
+
+**An unknown footprint is a third route.** When the Step 1 footprint read returned an error, the firing judged every lesson on the request document alone and retained under the bias-to-retain posture. Those retains were never measured against what the plan changed, and a later delta covers only the commits since this firing — so it would carry them over for the rest of the plan. Step 7 therefore withholds the `classified_at` fact from such a firing's record as well, and the next firing judges the whole corpus against the footprint it can then read.
+
+**`status: error`** — the script could not look at something it needs (the change list, the lessons store, a lesson file, or the component-to-directory mapping); `error` names which. Treat every error as `mode: full`: judge the whole corpus and log the named error. Non-fatal. Step 7 withholds `classified_at` after such a firing, because something the rule depends on — possibly a lesson file itself — could not be read.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level WARNING \
+  --message "[STATUS] (project:finalize-step-lessons-housekeeping) Delta rule unavailable: {error} — judging the whole corpus"
+```
+
+When the call returns no payload at all, there is no `{firing_started_at}` either: judge the whole corpus and record Step 7 without the `classified_at` fact, so the next firing runs in full too.
+
 ### Step 3: Classify each lesson's coverage against the plan outcome
 
-For each lesson, classify it against the plan outcome using a **conservative subsumption bar**:
+For each lesson Step 2b selected — the `affected` lessons on `mode: delta`, the whole corpus on `mode: full` — classify it against the plan outcome using a **conservative subsumption bar**:
 
 - **Completely covered** — requires that the lesson's guarded failure mode can no longer occur, **OR** its recommended practice is now codified/enforced by this plan. Nothing weaker qualifies, and the **Evidence bar** below must additionally be met. The residue is already codified elsewhere, so the lesson is removed outright (Step 4).
 - **Completely covered, residue is a reusable rule** — the lesson's guarded failure mode can no longer occur (so it qualifies as completely covered, **Evidence bar** included) **AND** the lesson body still carries a durable reusable rule — an operating rule, a convention, an anti-pattern, or a contract-guard — whose correct home is the governing skill's `standards/`/`references/` (or `CLAUDE.md` for repo-wide rules) rather than the lessons queue. Distinguish it from plain "Completely covered" (residue already codified elsewhere → remove outright) using the **Placement test** below. This classification routes to the promote-then-retire disposition (Step 4b).
 - **Partially covered** — the plan eliminated or codified *part* of what the lesson guards, but a residual concern remains.
-- **Ambiguous / none** — anything that does not clearly meet the bar above. **Leave untouched (bias to retain)** and log the no-action decision.
+- **Ambiguous / none** — anything that does not clearly meet the bar above. **Leave untouched (bias to retain)** and count it as retained for the Step 6 aggregate entry.
 
 When in doubt, retain. The cost of keeping a stale lesson is far lower than the cost of deleting a still-load-bearing one. Promote-then-retire fires only when the residue clearly maps to a load-bearing home; an ambiguous residue retains.
 
@@ -279,15 +381,45 @@ Edit: .plan/local/lessons-learned/{id}.md
 
 Trim **only** the now-covered portion. Preserve the `key=value` header block at the top of the file verbatim, and preserve every still-relevant section of the body.
 
-### Step 6: Log every change
+### Step 6: Log every change, and one aggregate entry for the firing
 
-Record a decision-log entry for **every** removal, **every** promote-then-retire, **every** adaptation, **and every** deliberate retain. For a promotion, name the target doc the residue was promoted into:
+The decision log carries two kinds of entry, and they answer different questions.
+
+**One entry per changed lesson.** Record a decision-log entry for **every** removal, **every** promote-then-retire, and **every** adaptation. Each of these changes the corpus, so each stays individually traceable. For a promotion, name the target doc the residue was promoted into:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO \
-  --message "(project:finalize-step-lessons-housekeeping) {removed|promoted|adapted|retained} {id}: {reason}"
+  --message "(project:finalize-step-lessons-housekeeping) {removed|promoted|adapted} {id}: {reason}"
 ```
+
+**Exactly one aggregate entry per firing.** A deliberate retain changes nothing, so it gets no entry of its own. Instead, every firing that reached Step 2b writes one entry naming three counts:
+
+- `examined` — the lessons this firing judged: the Step 2b `examined` count on a delta firing, the corpus size on a full run.
+- `carried_over` — the lessons that kept the previous firing's result without being judged: the Step 2b `carried_over` count on a delta firing, `0` on a full run.
+- `retained` — the examined lessons this firing left in place unchanged. A lesson kept after a failed reconfirmation gate (Step 4b.2) counts here. So does a lesson whose removal, promotion or adaptation failed: it is still in place, and what marks it is its failure entry, not this count.
+
+On a **full run**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(project:finalize-step-lessons-housekeeping) firing summary: examined={E} carried_over=0 retained={K} mode=full"
+```
+
+On a **delta firing**, the entry also names the recorded HEAD the delta started from — the `recorded_head` Step 2b returned — so the entry says which commit the carried-over results date from:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(project:finalize-step-lessons-housekeeping) firing summary: examined={E} carried_over={X} retained={K} mode=delta recorded_head={recorded_head}"
+```
+
+The aggregate entry is written once, after Steps 3 to 5 have finished for every selected lesson. The empty delta writes it too, with `examined=0` and `retained=0`. The two Step 2 exits (unresolved store, empty corpus) judged no corpus and return before this step, so they write none; their own work-log line is their record.
+
+A failure is not a deliberate retain. The entries Steps 4.1 and 4b.2 write when a reconfirmation gate fails, and the failure entries the Error Handling table names, are written where they occur and are unaffected by this step.
+
+Which lessons were retained is not lost by counting them: a retained lesson is, by definition, one this firing examined that is still in the corpus with no removal, promotion or adaptation entry from this firing.
 
 ### Step 7: Record the step outcome
 
@@ -296,8 +428,10 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO \
-  --message "[STATUS] (project:finalize-step-lessons-housekeeping) {N} removed, {P} promoted, {M} adapted, {K} retained over {C} lesson(s) in {corpus_path} ({store_resolution})"
+  --message "[STATUS] (project:finalize-step-lessons-housekeeping) {N} removed, {P} promoted, {M} adapted, {K} retained, {X} carried over from the previous firing — {C} lesson(s) in {corpus_path} ({store_resolution})"
 ```
+
+`{X}` is the Step 2b `carried_over` count (`0` on a full run). A carried-over lesson was not judged by this firing, so it is counted apart from `{K}`: a retained lesson was examined and kept, a carried-over one was not examined at all.
 
 Resolve the worktree HEAD SHA immediately before marking done, per § HEAD-dependency (substitute `.` for `{worktree_path}` on the main-checkout flow):
 
@@ -305,32 +439,59 @@ Resolve the worktree HEAD SHA immediately before marking done, per § HEAD-depen
 git -C {worktree_path} rev-parse HEAD
 ```
 
-Capture stdout as `{sha}` and forward it via `--head-at-completion`. The `display_detail` is capped at 80 ASCII chars, so it carries the resolution token rather than the full path — the work-log line above carries the path:
+Capture stdout as `{sha}` and forward it via `--head-at-completion`. The `display_detail` is capped at 80 ASCII chars, so it carries the resolution token rather than the full path — the work-log line above carries the path.
+
+The record carries two facts. `classified_at` is the `{firing_started_at}` Step 2b returned — the anchor the next firing's delta rule measures against, recorded unless one of the withholding rules below applies. `work_performed=true` says this firing examined a corpus, which the two Step 2 exits did not:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step project:finalize-step-lessons-housekeeping --outcome done \
-  --display-detail "{N} rm, {P} promo, {M} adapt, {K} keep ({store_resolution} corpus)" \
-  --head-at-completion {sha}
+  --display-detail "{N} rm, {P} promo, {M} adapt, {K} keep, {X} carried ({store_resolution} corpus)" \
+  --head-at-completion {sha} \
+  --fact classified_at={firing_started_at} \
+  --fact work_performed=true
 ```
+
+**Withhold `classified_at` after a failed per-lesson action.** When a per-lesson removal (`manage-lessons remove`, Step 4.2 or Step 4b.3), promotion `Edit` (Step 4b.1) or adaptation `Edit` (Step 5) failed in this firing, omit `--fact classified_at=…` from the call above. The failed lesson has no result from this firing and its file is unmodified, so a record carrying the anchor would let the next firing carry it over unjudged; without the fact the next firing reports `classified_at_absent` and judges the whole corpus (Step 2b). Everything else on the record is unchanged: `--outcome done`, `--head-at-completion {sha}` and `--fact work_performed=true` are still recorded, and the step stays non-fatal. A reconfirmation-gate failure (Step 4.1 or Step 4b.2) and a `remove` evidence rejection are downgrades, not failed actions, and do not withhold the fact. Note each failed action when it occurs in Steps 4 to 5, so that this step knows whether one happened.
+
+**Withhold it too when the realized footprint was unknown.** When the Step 1 `compute-footprint` call returned an error, omit `--fact classified_at=…` in the same way. The lessons this firing retained were judged on the request document alone, so a record carrying the anchor would let every later delta carry them over without their ever being measured against what the plan changed (Step 2b). The same holds when Step 2b returned `status: error`: the script could not look at something the rule depends on, and a lesson file it could not read has no result from the full run that followed. The rest of the record is unchanged here as well.
+
+Omit `--fact classified_at=…` only when a per-lesson removal, promotion or adaptation failed in this firing, when the Step 1 footprint read returned an error, when Step 2b returned `status: error`, or when Step 2b returned no payload at all and so no `{firing_started_at}` exists; `work_performed=true` is still recorded in every one of these cases.
 
 ## Error Handling
 
 | Scenario | Action |
 |----------|--------|
-| Unresolvable required store (`store_resolution: unresolved` from the Step 2 substrate probe; `unresolved_store` names whether the `plans` root or the `lessons` corpus failed) | Non-fatal, but **never reported as clean** — no corpus was scanned, so nothing was classified. Record `mark-step-done --outcome done --display-detail "{unresolved_store} store unresolved — nothing read" --head-at-completion {sha}` and emit the WARNING work-log line naming the store that failed. Distinguishing this from an empty corpus is the whole point: the two produce identical counts and demand opposite responses. |
-| Empty lessons corpus (store resolved, zero lessons in it) | Skip-clean exit — record `mark-step-done --outcome done --display-detail "0 lessons in {store_resolution} corpus — nothing to reconcile" --head-at-completion {sha}` so the `phase_steps_complete` handshake counts the step as done and a later HEAD advance re-fires it. The `display_detail` names the substrate so the zero is not substrate-blind. |
-| Coverage ambiguous (including ambiguous residue home) | Retain the lesson untouched (bias to retain) and log the no-action decision via `manage-logging decision` |
-| `manage-lessons remove` failure on one lesson | Non-fatal — log the failure, leave that lesson in place, and continue with the remaining lessons. Housekeeping must never block finalize. |
-| `manage-lessons remove` **evidence rejection** on one lesson (`--coverage-verdict completely_covered` without both evidence flags — argparse exit 2, or `error: missing_coverage_evidence` on the handler path) | Non-fatal per-lesson — the lesson is left in place by construction (the rejection precedes any unlink). Treat it as a **classification defect, not a call-shape defect**: the verdict claimed coverage the Step 3 Evidence bar could not evidence, so downgrade the lesson to Partially covered and route it to the Step 5 trim. Never re-issue the call with invented or placeholder evidence values to get past the rejection. Log the downgrade and continue with the remaining lessons. |
-| Independent-reconfirmation gate failure (Step 4.1 or Step 4b.2) on one lesson | Non-fatal — the named clause is missing, its worked example resolves a different input, or its example contradicts its own clause. Do NOT call `remove`. On the Step 4 path, downgrade the lesson to Partially covered and route it to the Step 5 trim; on the Step 4b path, keep the promotion and retain the lesson. Log which of the three failures fired via `manage-logging decision` and continue with the remaining lessons. |
-| Promotion `Edit` failure (Step 4b.1) on one lesson | Non-fatal — log the failure, leave the lesson in place, and **do NOT** proceed to the Step 4b.2 gate or the Step 4b.3 retirement for that lesson. A retirement without a successful promotion would lose the rule, so they stay atomic-by-convention: no promotion, no retire. Continue with the remaining lessons. |
+| Unresolvable required store (`store_resolution: unresolved` from the Step 2 substrate probe; `unresolved_store` names whether the `plans` root or the `lessons` corpus failed) | Non-fatal, but **never reported as clean** — no corpus was scanned, so nothing was classified. Record `mark-step-done --outcome done --display-detail "{unresolved_store} store unresolved — nothing read" --head-at-completion {sha} --fact work_performed=false` and emit the WARNING work-log line naming the store that failed. Distinguishing this from an empty corpus is the whole point: the two produce identical counts and demand opposite responses. |
+| Empty lessons corpus (store resolved, zero lessons in it) | Skip-clean exit — record `mark-step-done --outcome done --display-detail "0 lessons in {store_resolution} corpus — nothing to reconcile" --head-at-completion {sha} --fact work_performed=false` so the `phase_steps_complete` handshake counts the step as done and a later HEAD advance re-fires it. The `display_detail` names the substrate so the zero is not substrate-blind. |
+| Coverage ambiguous (including ambiguous residue home) | Retain the lesson untouched (bias to retain). Write no entry for it: it is counted in `retained` on the firing's one aggregate decision-log entry (Step 6) |
+| `manage-lessons remove` failure on one lesson | Non-fatal — log the failure, leave that lesson in place, and continue with the remaining lessons. Housekeeping must never block finalize. The lesson has no result from this firing, so Step 7 withholds `classified_at` and the next firing judges the whole corpus. |
+| `manage-lessons remove` **evidence rejection** on one lesson (`--coverage-verdict completely_covered` without both evidence flags — argparse exit 2, or `error: missing_coverage_evidence` on the handler path) | Non-fatal per-lesson — the lesson is left in place by construction (the rejection precedes any unlink). Treat it as a **classification defect, not a call-shape defect**: the verdict claimed coverage the Step 3 Evidence bar could not evidence, so downgrade the lesson to Partially covered and route it to the Step 5 trim. Never re-issue the call with invented or placeholder evidence values to get past the rejection. Log the downgrade and continue with the remaining lessons. A downgrade is not a failed action: it does not by itself keep `classified_at` off the Step 7 record. |
+| Independent-reconfirmation gate failure (Step 4.1 or Step 4b.2) on one lesson | Non-fatal — the named clause is missing, its worked example resolves a different input, or its example contradicts its own clause. Do NOT call `remove`. On the Step 4 path, downgrade the lesson to Partially covered and route it to the Step 5 trim; on the Step 4b path, keep the promotion and retain the lesson. Log which of the three failures fired via `manage-logging decision` and continue with the remaining lessons. A downgrade is not a failed action: it does not by itself keep `classified_at` off the Step 7 record. |
+| Promotion `Edit` failure (Step 4b.1) on one lesson | Non-fatal — log the failure, leave the lesson in place, and **do NOT** proceed to the Step 4b.2 gate or the Step 4b.3 retirement for that lesson. A retirement without a successful promotion would lose the rule, so they stay atomic-by-convention: no promotion, no retire. Continue with the remaining lessons. The lesson has no result from this firing, so Step 7 withholds `classified_at` and the next firing judges the whole corpus. |
 | Promote-then-retire disposition — commit carriage | The step issues no tree-mutating git call (its only git calls are the read-only `rev-parse HEAD` in Steps 2 and 7). Its promotion edits are committed onto the feature branch by the dispatcher's commit instrumentation (phase-6-finalize Step 3 item 5f); because the step runs in the settle band it never writes source after the push barrier, every promotion edit it makes is still ahead of that commit and is therefore carried onto the branch — no promotion can be stranded as an uncommitted edit. |
-| Adaptation `Edit` failure on one lesson | Non-fatal — log the failure, leave that lesson untouched, and continue. |
-| Missing `quality-verification-report.md` | Non-fatal — proceed using `request.md` + `modified_files` alone; log that the retrospective report was unavailable |
-| Step completes | Record `mark-step-done --outcome done --display-detail "{N} rm, {P} promo, {M} adapt, {K} keep ({store_resolution} corpus)" --head-at-completion {sha}`, plus the Step 7 work-log line naming `{corpus_path}`. Every count this step reports rides with the substrate it was computed from. |
+| Adaptation `Edit` failure on one lesson | Non-fatal — log the failure, leave that lesson untouched, and continue. The lesson has no result from this firing, so Step 7 withholds `classified_at` and the next firing judges the whole corpus. |
+| Missing `quality-verification-report.md` | Non-fatal — proceed using the request document and the realized footprint alone; log that the retrospective report was unavailable |
+| `compute-footprint` error in Step 1 (`worktree_not_found`, `references_not_found`, `not_a_git_worktree`, `git_error`, `files_out_refused`, `files_out_unwritable`) | Non-fatal — log the named error and continue on the request document alone. Never treat the missing footprint as an empty one: the Step 1 table states the action per error. The firing judged without the realized footprint, so Step 7 withholds `classified_at` and the next firing judges the whole corpus. |
+| `affected_lessons resolve` returns `status: error` in Step 2b (the change list, the lessons store, a lesson file, or the component-to-directory mapping could not be looked at) | Non-fatal — fall back to a full run: judge the whole corpus, log the named `error`, and record Step 7 without the fact: Step 7 withholds `classified_at` after a Step 2b error, so the next firing judges the whole corpus. An error is never read as an empty delta. |
+| `affected_lessons resolve` returns `mode: full` in Step 2b | Not an error — one of the three full-run conditions holds (see Step 2b). Judge the whole corpus. `classified_at_absent` is the expected consequence of the dispatcher's commit re-stamp after a source-editing firing, and of Step 7 withholding the fact after a firing in which a per-lesson removal, promotion or adaptation failed or the Step 1 footprint read or the Step 2b call returned an error. A firing that ended at a Step 2 exit, or whose Step 2b call returned no payload, leaves the same shape. |
+| `affected_lessons resolve` returns `mode: delta` with no `affected` lessons | The empty delta: none — carry the previous result. Skip Steps 3 to 5, write the Step 6 aggregate entry with `examined=0`, and record Step 7 with every count but `{X}` at zero. |
+| Step completes | Record `mark-step-done --outcome done --display-detail "{N} rm, {P} promo, {M} adapt, {K} keep, {X} carried ({store_resolution} corpus)" --head-at-completion {sha} --fact work_performed=true`, plus the Step 7 work-log line naming `{corpus_path}`. Add `--fact classified_at={firing_started_at}` only when no per-lesson removal, promotion or adaptation failed in this firing the Step 1 footprint read succeeded, and Step 2b returned `mode: full` or `mode: delta` (not an error, and not no payload); otherwise the fact is withheld and the next firing judges the whole corpus. Every count this step reports rides with the substrate it was computed from. |
 
 The step's posture is **non-fatal throughout**: finalize must never abort because lessons housekeeping hit a snag on an individual lesson.
+
+## Canonical invocations
+
+The canonical argparse surface for the one script this skill registers, `affected_lessons.py`. A project-local script is registered under the `default-bundle:{skill}:{script}` notation.
+
+### affected_lessons — resolve
+
+```bash
+python3 .plan/execute-script.py default-bundle:finalize-step-lessons-housekeeping:affected_lessons resolve \
+  --plan-id PLAN_ID --worktree-path WORKTREE_PATH
+```
+
+Returns `mode: full` (with a `reason`), `mode: delta` (with `affected`, `examined` and `carried_over`), or `status: error` (with a named `error`). Every payload carries `firing_started_at`. The exit code is `0` on all three; branch on `status`, then `mode`. See Step 2b for the contract.
 
 ## Related
 
