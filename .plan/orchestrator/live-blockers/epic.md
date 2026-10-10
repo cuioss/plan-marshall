@@ -249,6 +249,40 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   - `lessons-routing-001` — two of its four items shipped with #1726 (the verifier is
     dispatched by the dispatcher; a class sweep exists, limited to the surfaced
     candidates), one went to PLAN-LB-32, one is open (see Open Defects).
+- **PLAN-LB-32 shipped on 2026-10-10 (#1741, `ef7d36617`)** — record at `landings/PLAN-LB-32.md`.
+  All seven deliverables are accounted for, and the objective is not met yet: a re-fire of
+  the two project steps is not cheaper in practice. Plugin-doctor keeps its full re-fire —
+  the narrower skip rule was examined and refuted with a named counter-example, as the spec
+  allowed. Housekeeping gained the delta rule, but it narrows the judging and not the
+  dispatch, runs after every lesson body has been loaded, and never met a real lesson on
+  this run, because the corpus was empty. On its own run the plan fired the two steps 11 and
+  10 times and spent 70 percent of 13.7 million tokens in finalize. What it did deliver for
+  good: both steps read the realized footprint (the retired-field read is gone from
+  housekeeping), one log line per firing, and a verb any step can call to ask what changed
+  since its last firing. See Open Defects and the Watch.
+  - Its self-review closed by the verifier, with no operator close: the first such landing.
+  - Its `sync-plugin-cache` step is recorded failed: the registry pins 0.1.1892, the cache
+    was synced to 0.1.1894, and repinning is disabled on this machine. The remedy is the
+    operator's: `python3 marketplace/targets/claude/registry_pin.py --apply`, then a restart.
+  - PLAN-LB-33 may now do its last deliverable: the plugin-doctor passage it targets is
+    unchanged by this landing (the symlink sentence at lines 29 and 203, the generation call
+    at 206-207). PLAN-LB-25 and PLAN-LB-27 no longer share a file with a running PLAN-LB-32.
+- **Inbox drain of 2026-10-10, seven messages from PLAN-LB-32:**
+  - `-007` (landing) — reconciled; complete.
+  - `-001` (scope-creep guard, fifth plan in a row without a signal) — folded into
+    PLAN-LB-27. No surface added.
+  - Promoted to the lessons corpus: `-002` as `2026-10-10-06-001` (no verb edits a task's
+    verification commands, so moving a test re-creates every task), `-003` as `-06-002`
+    (check for an empty corpus before dispatching housekeeping), `-004` as `-06-003` (an
+    empty-corpus exit should name the non-active records), `-006` as `-06-004` (the
+    automatic-review `display_detail` template is 87 characters with an em dash against an
+    80-character ASCII rule).
+  - `-005` (every dispatch-boundary row without a step id) — third landing in a row;
+    absorbed as an Open Defect.
+  - The question `-004` leaves open — where 18 lessons went between two outline passes — is
+    answered here: the `lessons-routing` ingest runs of 2026-10-09 retired the corpus into
+    `lessons-routing/lessons-archive/`. `manage-lessons list` read `total: 1, filtered: 0`
+    on 2026-10-10 before this drain's promotions.
 - **PLAN-LB-34, 35 and 36, staged on 2026-10-09: self-review surfacers for every domain.**
   PLAN-LB-34 is the operator's top priority. Measured with `corpus cross-check`: it shares
   no declared file with PLAN-LB-24 or PLAN-LB-32 (both running), and one with PLAN-LB-26
@@ -712,6 +746,28 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   once. Graded high by the operator in the `lessons-routing` session. Not verified at HEAD
   and not owned by any staged plan. — source: inbox message `lessons-routing-010.md`
   (retired lesson `2026-10-05-17-002`), 2026-10-09.
+- **The housekeeping delta rule PLAN-LB-32 shipped has three gaps.** (1) It decides "edited
+  since the last firing" by file modification time
+  (`.claude/skills/finalize-step-lessons-housekeeping/scripts/affected_lessons.py`, lines
+  245 and 339). `restore-from-plan` moves a lesson file and keeps its old modification time,
+  so a lesson restored after the last firing is carried over without ever being judged; the
+  spec required a content hash for this reason. (2) The rule applies after the corpus has
+  been enumerated with every lesson body, and the empty-corpus exit records no firing time,
+  so the firing after an empty one is a full run. (3) Unconfirmed: the imported helper finds
+  the bundles root by walking up from the working directory, so a firing whose script runs
+  from the main checkout while given the worktree path would fall back to a full run every
+  time; the tests pin the root and cannot see it. Also left: one document still names the
+  retired `modified_files` field (`.claude/skills/recipe-plan-review/SKILL.md`, lines 70 and
+  86). Not owned by any staged plan. — source: read-only review of `ef7d36617`, 2026-10-10.
+- **Dispatch-boundary rows carry no step id, on three landings in a row.** PLAN-LB-23 (30 of
+  34 rows), PLAN-LB-29 (38 of 38) and PLAN-LB-32 (54 of 54) recorded their dispatch
+  boundaries without a step key and with all four context-load figures unmeasured. The
+  effect is that no landing can say what a finalize step cost: the figures this ledger
+  quotes for housekeeping and plugin-doctor re-fires are estimates from row shape. The flag
+  is optional, so the omission is silent. Not owned by any staged plan; it is what every
+  cost decision in this epic is measured with. — source: inbox messages
+  `lb-23-verify-builds-013.md`, `plan-lb-29-harness-sync-010.md`,
+  `lb-32-head-dependent-step-refire-005.md`.
 - **The self-review has no outcome for "could not establish coverage".** A round that cannot
   read everything it is asked to judge still returns an ordinary verdict: the figures
   `contract_sources_read` and `contract_sources_listed` are reported and nothing branches on
@@ -762,6 +818,13 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
     documentation-claims plan): about seven rounds, each reworded claim producing new
     findings, the ceiling exceeded twice on operator authorisation. — source: inbox message
     `lessons-routing-005.md` (retired lesson `2026-10-05-17-003`).
+  - **First landing on the regraded review: PLAN-LB-32 closed by verifier**
+    (`acceptance=accepted`, `may_close=yes`, 0 blocking, 12 advisory notes left open; no
+    operator close). One of the two landings this Watch asks for. Its round count and the
+    review's token cost are not in the landing facts, and whether any of the 12 advisory
+    notes was a real defect was not checked; three of them named the same out-of-scope
+    observation in three rounds. — source: inbox message
+    `lb-32-head-dependent-step-refire-007.md`.
 
 - **A landing from the Antigravity harness reported `total_tokens=0`** (PLAN-LB-30) and still
   passed the completeness check, which accepts any value that is not `n/a` or `unknown`.
@@ -783,6 +846,15 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
     the retired lesson names. After PLAN-LB-32 lands, read the next landing's finalize cost
     by step before deciding whether any of them needs the same treatment. — source: inbox
     message `lessons-routing-005.md`, 2026-10-09.
+  - **PLAN-LB-32 landed on 2026-10-10 and this Watch stays open.** The cost it was staged
+    against is the dispatch of each re-fire, about 100,000 to 125,000 tokens for
+    housekeeping, and nothing it shipped avoids a dispatch: plugin-doctor's skip was refuted,
+    and housekeeping's delta rule and its empty-corpus exit both run inside the dispatched
+    step. Its own run: 11 and 10 firings. Only a decision the dispatcher can take from a
+    script before dispatching saves that cost — for housekeeping, "no active lesson" and
+    "nothing a lesson depends on changed"; lesson `2026-10-10-06-002` carries the first. The
+    standard rules out a derived verdict surface, so this needs a design decision, not only
+    a fix. Retire when a landing reports the two steps' re-fires as not dispatched.
   - **Trigger met on 2026-10-09.** Of the two landings
     since, PLAN-LB-30 had no fix commit and so no re-fire; PLAN-LB-23 had both steps fire
     eight times with identical verdicts ("0 rm, 0 promo, 0 adapt, 64 keep"; plugin-doctor
