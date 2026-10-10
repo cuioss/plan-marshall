@@ -33,6 +33,7 @@ This provides foundational rules for:
 - @Nested for grouping (3+ related tests)
 - Corner case testing
 - Coverage requirements (80% line/branch minimum)
+- Removing a redundant test (compare assertions before deleting, re-point references)
 
 ### Step 2: Load Additional Standards (As Needed)
 
@@ -48,14 +49,21 @@ Use when: Writing or reviewing integration tests (`*IT.java`). Covers naming, se
 Read: standards/testing-async-patterns.md
 ```
 
-Use when: Testing asynchronous behavior. Covers Awaitility patterns (never Thread.sleep).
+Use when: Testing asynchronous behavior, or shortening a test that waits. Covers Awaitility patterns (never Thread.sleep), waits that are the subject of the test, deadlines for signal-based waits, observing a transient state deterministically, and failure-path tests that would otherwise pay production back-off.
 
 **Coverage Analysis** (load for coverage work):
 ```text
 Read: standards/coverage-analysis-pattern.md
 ```
 
-Use when: Analyzing test coverage or improving coverage metrics.
+Use when: Analyzing test coverage or improving coverage metrics, or comparing coverage before and after a change.
+
+**Test Fork Policy** (load when the unit suite is slow or order-dependent):
+```text
+Read: standards/test-fork-policy.md
+```
+
+Use when: Deciding how many JVMs a unit suite starts — reusing one JVM for most classes, declaring isolation by JUnit tag, guarding the split with a contract test, and keeping a `-Dtest` selection strict across several executions.
 
 ## Key Rules Summary
 
@@ -124,7 +132,8 @@ Replace `${PACKAGE}`, `${CLASS_UNDER_TEST}`, `${METHOD_1}`, and placeholder comm
 
 | Standard | Purpose |
 |----------|---------|
-| testing-junit-core.md | Test structure, AAA pattern, assertions, nesting |
+| testing-junit-core.md | Test structure, AAA pattern, assertions, nesting, removing a redundant test |
 | testing-integration.md | Integration test naming, separation, lifecycle |
-| testing-async-patterns.md | Awaitility patterns (never Thread.sleep) |
-| coverage-analysis-pattern.md | Coverage analysis and gap improvement |
+| testing-async-patterns.md | Awaitility patterns (never Thread.sleep), the wall-clock exception, deadlines for signal-based waits, transient-state observation, failure-path back-off |
+| coverage-analysis-pattern.md | Coverage analysis, gap improvement, before/after comparison and what it cannot show |
+| test-fork-policy.md | Surefire fork groups by JUnit tag, isolation criteria, the partition guard, `-Dtest` across executions |

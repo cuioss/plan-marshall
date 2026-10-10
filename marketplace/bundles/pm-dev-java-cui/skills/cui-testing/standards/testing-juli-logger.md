@@ -29,7 +29,11 @@ class PortalHealthServletTest {}
 class PortalHealthServletTest {}
 ```
 
-The logger and level are reset for each test.
+Before each test the captured records are cleared, the root level is set back to the configured default, and the levels the annotation declares are applied again.
+
+A level set on a **named** logger is not reset — neither after the test nor after the class. `trace = List.class` above, and a direct `TestLogLevel.DEBUG.addLogger(...)` call, leave that logger at that level for every class that runs later in the same JVM. Under a build that starts a JVM per test class this is invisible. Under a reused JVM it makes a later, unrelated class observe log records — or miss them — depending on which class ran before it, and that class fails only in some orders.
+
+A class that sets a named logger's level therefore needs a JVM of its own when the suite reuses forks. The separate JVM stops the level from reaching other classes only: the methods of the class itself still share it, so a method that asserts on log records must not depend on a level another method of the same class set. See `pm-dev-java:junit-core` → `standards/test-fork-policy.md`.
 
 ### Asserting Log Statements
 
