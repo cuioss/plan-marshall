@@ -11,9 +11,10 @@ finalize integration step of the move-based, cwd-pinned hermetic worktree model
 cleanup removes the worktree AFTER this script returns. In one call it:
 
   1. **ACQUIRES** the cooperative merge lock (delegating to the unified
-     ``plan-marshall:manage-locks:merge_lock`` script — atomic ``O_EXCL`` create,
-     holder = this ``plan_id``, simple-backoff retry, plan-liveness stale
-     reclamation). The merge lock is the SINGLE deliberate main-anchored
+     ``plan-marshall:manage-locks:merge_lock`` script — FIFO-front-only
+     admission, atomic ``O_EXCL`` create, holder = this ``plan_id``, a single
+     non-waiting attempt, plan-liveness stale reclamation). The merge lock is the
+     SINGLE deliberate main-anchored
      exception to cwd-relative resolution (ADR-002).
   2. **FOLDS** the plan's OWN global logs (only logs generated for this plan,
      currently resident in the worktree's ``.plan/local/logs/``) into the plan
@@ -475,9 +476,9 @@ def run_integrate_into_main(args: Namespace) -> dict[str, Any]:
     # flashing a lock glyph into the title is spurious noise the user never needs
     # to see. The token is a display affordance, not a correctness primitive.
     merge_lock = _load_merge_lock()
-    acquire_result = merge_lock.run_acquire(Namespace(plan_id=plan_id, timeout=None, set_title_token=False))
+    acquire_result = merge_lock.run_acquire(Namespace(plan_id=plan_id, set_title_token=False))
     if acquire_result.get('status') != 'success':
-        # Could not acquire (timeout / resolution failure) — surface verbatim.
+        # Could not acquire (admission blocked / resolution failure) — surface verbatim.
         # No lock was acquired, so there is nothing to release.
         return _assert_cwd_unchanged({**acquire_result, 'plan_id': plan_id})
 

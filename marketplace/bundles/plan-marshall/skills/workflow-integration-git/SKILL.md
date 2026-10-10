@@ -215,7 +215,7 @@ pushed: true
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `acquire` | `--plan-id [--timeout]` | Atomically acquire the single main-anchored merge lock (`.plan/local/merge.lock` on the MAIN checkout, recording the holder `plan-id`). Uses an `O_EXCL` create so concurrent acquirers serialize — exactly one wins, losers retry with simple backoff until the lock frees or `--timeout` (default 30s) elapses. A lock whose recorded holder no longer corresponds to a live plan is reclaimed (re-verified atomically). See ADR-002. |
+| `acquire` | `--plan-id [--wait-seconds] [--interval-seconds] [--no-title-token]` | Acquire the single main-anchored merge lock (`.plan/local/merge.lock` on the MAIN checkout, recording the holder `plan-id`) through a FIFO admission queue: only the FIFO-front plan attempts the `O_EXCL` create, so exactly one holder wins. By default the call is one non-waiting attempt that returns `admission: blocked` for the consumer to re-poll; `--wait-seconds` repeats whole non-waiting attempts within one bounded call (clamped below the host's per-call ceiling) and adds `waited_seconds` / `timed_out`. A lock whose recorded holder no longer corresponds to a live plan is reclaimed (re-verified atomically). See `plan-marshall:manage-locks` Canonical invocations → `merge_lock — acquire` and ADR-002. |
 | `release` | `--plan-id` | Remove the merge lock when this caller is the recorded holder. Idempotent: releasing a lock that is already free, or held by a foreign holder, is a no-op success. |
 
 **Script**: `plan-marshall:workflow-integration-git:integrate_into_main`
@@ -712,20 +712,21 @@ Cooperative merge lock (notation `plan-marshall:manage-locks:merge_lock`) — th
 
 **Main-anchored resolution — the single deliberate exception (ADR-002).** This script — and ONLY this script — always resolves its lock file against the MAIN checkout regardless of the caller's cwd, because cross-session coordination is inherently main-scoped (phase-5+ callers run with cwd pinned to their own worktree, yet must all contend for one shared lock). It MUST remain the only main-anchored resolver so the codebase cannot regrow a pervasive git-common-dir-style hack. See ADR-002 and `tools-script-executor/standards/cwd-policy.md` (D6).
 
-**Concurrency correctness.** `acquire` collapses the does-the-lock-exist → create-it check-then-act into a single atomic `os.open(..., O_CREAT | O_EXCL | O_WRONLY)`: two sessions racing to create the path — exactly one wins, the loser gets `EEXIST` and retries with simple backoff. Stale reclamation (a holder whose plan directory no longer exists) is itself a check-then-act and re-verifies atomically: the stale file is removed and the `O_EXCL` create immediately re-attempted, so a third session winning the race in between makes the reclaimer lose cleanly and retry. No fair queue, no elaborate data structure — the lock contents are a single line recording the holder. See the TOCTOU mitigation menu in `ref-code-quality/standards/code-organization.md#toctou--check-then-act-hazards`.
+**Admission and concurrency correctness.** `acquire` FIFO-enqueues the plan into the main-anchored `merge-queue.json` (idempotently, preserving its position on re-poll) and admits ONLY the FIFO-front plan, which then collapses the does-the-lock-exist → create-it check-then-act into a single atomic `os.open(..., O_CREAT | O_EXCL | O_WRONLY)`: exactly one racing creator wins. A non-front plan, or a front plan that loses to a live holder, gets `status: blocked` / `admission: blocked` — a structured re-poll signal, not an error. By default the call is ONE non-waiting attempt and the consumer re-polls; `--wait-seconds` repeats whole non-waiting attempts inside one bounded call (clamped below the host's per-call ceiling), re-deciding admission from a fresh guarded read each time and pausing only between attempts, and adds `waited_seconds` / `timed_out` to the last attempt's payload. Stale reclamation (a holder whose plan is no longer live) is itself a check-then-act and re-verifies atomically against the specific observed lock file, so a concurrent session winning the race in between makes the reclaimer lose cleanly. The full contract is `plan-marshall:manage-locks` Canonical invocations → `merge_lock — acquire`. See the TOCTOU mitigation menu in `ref-code-quality/standards/code-organization.md#toctou--check-then-act-hazards`.
 
 `integrate_into_main` (D5) acquires before move-back/merge and releases after, on every exit path.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock acquire \
-  --plan-id PLAN_ID [--timeout 30]
+  --plan-id PLAN_ID [--wait-seconds WAIT_SECONDS] [--interval-seconds INTERVAL_SECONDS]
 python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock release \
   --plan-id PLAN_ID
 ```
 
 **Parameters**:
 - `acquire --plan-id` (required): holder source — the `plan-id` acquiring the lock.
-- `acquire --timeout`: max seconds to wait for a held lock to free before returning `TIMEOUT` (default 30).
+- `acquire --wait-seconds`: per-call bound for repeating whole non-waiting attempts until admitted (default `0` — a single attempt; clamped to the verb's per-call ceiling).
+- `acquire --interval-seconds`: seconds between two attempts under `--wait-seconds` (default `15`).
 - `release --plan-id` (required): holder source — removes the lock only when this caller is the recorded holder.
 
 **Output** (TOON, acquire success):
@@ -733,9 +734,13 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock release \
 status: success
 plan_id: EXAMPLE-PLAN
 action: acquired
+admission: admitted
 lock_path: /repo/.plan/local/merge.lock
 holder: EXAMPLE-PLAN
 reclaimed: false
+waiting_count: 1
+timed_out: false
+waited_seconds: 0
 ```
 
 **Output** (TOON, release):
@@ -751,8 +756,9 @@ lock_path: /repo/.plan/local/merge.lock
 | `error_code` | Cause |
 |-------------|-------|
 | `NOT_FOUND` | The main checkout (and thus the lock path) could not be resolved (not a git repo) |
-| `TIMEOUT` | The lock was held by a live holder for the entire `--timeout` budget |
-| `INVALID_INPUT` | `release` failed to remove the lock file (filesystem error) |
+| `INVALID_INPUT` | `acquire` received a non-finite or negative `--wait-seconds` or a non-finite or non-positive `--interval-seconds` (refused before the store is touched), or `release` failed to remove the lock file (filesystem error) |
+
+A lock still held when the wait ends is not an error: it is the `status: blocked` / `admission: blocked` re-poll signal, with `timed_out: true` once a `--wait-seconds` bound lapsed.
 
 ### integrate_into_main — integrate
 
@@ -793,8 +799,9 @@ message: "plan state already integrated into main"
 | `error_code` | Cause |
 |-------------|-------|
 | `NOT_FOUND` | Worktree root unresolvable, or the worktree-resident plan directory is absent (and not already on main) |
-| `TIMEOUT` | The merge lock was held by a live holder for the entire wait budget (surfaced verbatim from `merge_lock acquire`) |
 | `INVALID_INPUT` | A move-back step failed (rolled back to the worktree, lock released) |
+
+When the merge lock cannot be acquired, the `merge_lock acquire` payload is surfaced verbatim instead — its `status: blocked` / `admission: blocked` re-poll signal (another plan holds the lock or is ahead in the FIFO queue), or its own `status: error`. Nothing was acquired on either path, so nothing is released.
 
 ## Canonical invocations
 
@@ -982,7 +989,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:prepare_e
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock acquire \
-  --plan-id PLAN_ID [--timeout SECONDS]
+  --plan-id PLAN_ID [--wait-seconds WAIT_SECONDS] [--interval-seconds INTERVAL_SECONDS]
 python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock release \
   --plan-id PLAN_ID
 ```

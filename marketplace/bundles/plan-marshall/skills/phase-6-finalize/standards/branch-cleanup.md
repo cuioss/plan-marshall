@@ -363,14 +363,14 @@ Extract `pr_merge_strategy` from the returned `params` object as `{pr_merge_stra
 
 This is the widened-hold acquire point: it takes the cross-plan merge mutex before the first staleness-creating operation, so the lock spans the entire remaining window through the merge. On the default `use_merge_queue == false` path that first operation is the rebase force-push and the window is `force-push → CI wait → merge → merge-CI-wait`; on the `use_merge_queue == true` path no rebase or force-push happens (§ "Rebase Branch onto Base") and the window is `CI snapshot → enqueue → queue landing`, or ends at the enqueue when the enqueue is unobserved (§ "Merge-Mutex Hold Window" invariant 4). The acquire is unconditional across both — the enqueue is itself a merge action, and a plan that enqueued while another held the mutex would land against a base the mutex exists to pin. It runs on BOTH the auto (`final_merge_without_asking == true`) and interactive paths — the interactive path previously never locked. The Pre-Rebase Confirmation Gate has already resolved above (an operator wait that completed while NO lock was held), so acquiring here does not hold the lock across a human prompt.
 
-Acquire via the FIFO admission queue exactly as documented in **Budget-exhaustion escalation** below — the same poll/backoff mechanism, bounded by `merge_queue_wait_budget_seconds`:
+Acquire via the FIFO admission queue exactly as documented in **Budget-exhaustion escalation** below — the same bounded admission wait, bounded by `merge_queue_wait_budget_seconds`. The wait runs inside the script: each call repeats whole non-waiting admission attempts for up to `{per_call}` seconds, where `{per_call}` is the remaining `{wait_budget}` capped at the verb's 480-second per-call bound:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock acquire \
-  --plan-id {plan_id}
+  --plan-id {plan_id} --wait-seconds {per_call}
 ```
 
-Follow the **FIFO poll/backoff loop** and **Budget-exhaustion escalation** procedure (see the Pre-Merge Gate section below for the canonical poll-loop body — `acquire` returns immediately, pace polls with a single standalone `sleep {interval}` Bash call, evaluate the `admission` discriminator, fall back to the last-resort `AskUserQuestion` on budget exhaustion). On `admission: admitted`, **bind `{hold_start}` immediately with a single standalone `date +%s` Bash call** — its integer POSIX-epoch-seconds output is the value (§ "Merge-Mutex Hold Window" invariant 2 owns this binding) — so the `merge_hold_budget_seconds` bound (see § "Merge-Mutex Hold Window") can be tracked across the held window, then continue to **Rebase Branch onto Base** below. The lock is now held; every operator-wait and abort path from here on obeys the release invariants in § "Merge-Mutex Hold Window".
+Follow the **FIFO poll/backoff loop** and **Budget-exhaustion escalation** procedure (see the Pre-Merge Gate section below for the canonical admission-loop body — re-issue `acquire --wait-seconds {per_call}` while it returns `admission: blocked` within budget, evaluate the `admission` discriminator after each call, fall back to the last-resort `AskUserQuestion` on budget exhaustion). On `admission: admitted`, **bind `{hold_start}` immediately with a single standalone `date +%s` Bash call** — its integer POSIX-epoch-seconds output is the value (§ "Merge-Mutex Hold Window" invariant 2 owns this binding) — so the `merge_hold_budget_seconds` bound (see § "Merge-Mutex Hold Window") can be tracked across the held window, then continue to **Rebase Branch onto Base** below. The lock is now held; every operator-wait and abort path from here on obeys the release invariants in § "Merge-Mutex Hold Window".
 
 ### Rebase Branch onto Base
 
@@ -576,7 +576,7 @@ The merge is ALWAYS lock-coordinated: because the merge-to-main critical section
 
 **Under `merge_hold_window == full_window_release_at_waits`** (default): the lock was ALREADY acquired before the first staleness-creating operation (§ "Acquire the Merge Mutex") and — unless a subsequent operator-wait released it — is still held here. In that case do NOT re-run the poll loop; the freshly-re-run classifier above IS the required re-validation, so proceed directly to **Merge PR (if not yet merged)**. Only when a prior operator-wait boundary released the lock (trigger-A timeout, or the interactive Pre-Merge prompt) do you re-enter the poll loop below to RE-ACQUIRE, then re-validate before merging.
 
-**Under `merge_hold_window == pre_merge_only`** (legacy narrow hold): the lock was NOT acquired earlier — acquire it here now via the poll loop below. BEFORE the merge, this plan takes its turn at the head of the FIFO merge queue. `acquire` is **non-blocking for the queue case** — it FIFO-enqueues `--plan-id` into `merge-queue.json` (idempotently, preserving FIFO position on re-poll), admits ONLY the FIFO-front plan, and returns an `admission` discriminator; the poll/backoff wait is the consumer's job here, NOT an internal `time.sleep` inside the script (see `plan-marshall:manage-locks` Canonical invocations → `merge_lock acquire`). `acquire` returns IMMEDIATELY — the `--timeout` flag is a legacy compatibility no-op (default `0`) and drives no internal backoff. The consumer paces successive polls by issuing a SINGLE standalone `sleep {interval}` Bash call between `acquire` invocations — one command, never a Bash `for`/`while`/`until` loop.
+**Under `merge_hold_window == pre_merge_only`** (legacy narrow hold): the lock was NOT acquired earlier — acquire it here now via the poll loop below. BEFORE the merge, this plan takes its turn at the head of the FIFO merge queue. `acquire` FIFO-enqueues `--plan-id` into `merge-queue.json` (idempotently, preserving FIFO position on re-poll), admits ONLY the FIFO-front plan, and returns an `admission` discriminator. With `--wait-seconds {per_call}` one call repeats whole non-waiting admission attempts inside the script, pacing between them and holding no guard while it waits, until it is admitted or the per-call bound lapses (see `plan-marshall:manage-locks` Canonical invocations → `merge_lock acquire`). The consumer's only job is to re-issue that call — one Bash command per call, never a Bash `for`/`while`/`until` loop and never a separate pause between calls.
 
 ###### Read the wait budget
 
@@ -591,29 +591,29 @@ Extract `merge_queue_wait_budget_seconds` from the returned `params` object as `
 
 ###### FIFO poll/backoff loop
 
-Record the wall-clock start time — the `{wait_budget}` clock. On entry from an unheld state, and before the first `acquire`, also bind `{admission_wait_start}` with a single standalone `date +%s` Bash call; a **Wait and retry** re-entry resets only the `{wait_budget}` clock and keeps `{admission_wait_start}`, because the admission wait it measures has not ended (§ "Merge-Mutex Hold Window" invariant 2 owns this binding and the waiter-side `budget-reclaim` that consumes it). Then re-poll `merge_lock acquire` until the plan is admitted at the FIFO front or the `{wait_budget}` is exhausted. Each poll is a SINGLE Bash command — there is NO `for`/`while`/`until` shell loop. `acquire` returns immediately (it does not wait internally), so the model issues one `acquire` Bash call per poll iteration, evaluates the `admission` discriminator, and — when still blocked and within budget — paces the next poll with a SINGLE standalone `sleep {interval}` Bash call (one command, e.g. `sleep 30`) before re-issuing `acquire`:
+Start the `{wait_budget}` clock: `{waited}` — the seconds of admission wait spent so far — starts at `0`. On entry from an unheld state, and before the first `acquire`, also bind `{admission_wait_start}` with a single standalone `date +%s` Bash call; a **Wait and retry** re-entry resets only the `{wait_budget}` clock and keeps `{admission_wait_start}`, because the admission wait it measures has not ended (§ "Merge-Mutex Hold Window" invariant 2 owns this binding and the waiter-side `budget-reclaim` that consumes it). Then re-issue `merge_lock acquire --wait-seconds {per_call}` until the plan is admitted at the FIFO front or the `{wait_budget}` is exhausted. `{per_call}` is the remaining budget (`{wait_budget}` minus `{waited}`) capped at the verb's 480-second per-call bound. Each call is a SINGLE Bash command — there is NO `for`/`while`/`until` shell loop and no pause between calls: the waiting happens inside the call, which repeats whole non-waiting admission attempts and returns as soon as the plan is admitted or its per-call bound lapses:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock acquire \
-  --plan-id {plan_id}
+  --plan-id {plan_id} --wait-seconds {per_call}
 ```
 
-**Bash tool timeout**: the `acquire` poll returns immediately, so the default Bash timeout suffices; the inter-poll pacing is the separate standalone `sleep {interval}` call.
+**Bash tool timeout**: pass the seam-resolved host cap (`harness bash-timeout-ceiling` — 600s on the Claude target) as the outer Bash timeout. The verb clamps `--wait-seconds` to 480 seconds, so a call always returns inside that cap. After each call, add the returned `waited_seconds` to `{waited}`.
 
 Parse the TOON output and branch on the `admission` discriminator:
 
 - **`status: success`, `admission: admitted`** (`action: acquired`, or `action: already_held` on a reentrant self-holder re-acquire) → this plan is the FIFO front and holds the `O_EXCL` lock (created via `O_EXCL`, or a dead holder's lock reclaimed with `reclaimed: true`). Exit the poll loop and proceed to **Merge PR (if not yet merged)** below.
-- **`status: blocked`, `admission: blocked`** → this plan is not yet the FIFO front, or is the front but a FOREIGN live holder still holds the lock. The script returns `blocking_plan_id` and `waiting_count` (NOT a hard error). Check the elapsed wall-clock time, in this order:
-  - **Elapsed since `{admission_wait_start}` ≥ `merge_hold_budget_seconds`** → run the waiter-side `budget-reclaim` (§ "Merge-Mutex Hold Window" invariant 2); on `action: released` re-poll `acquire`, otherwise fall through to the `{wait_budget}` checks below.
-  - **Elapsed < `{wait_budget}`** → pace the next poll with a single standalone `sleep {interval}` Bash call (one command, e.g. `sleep 30`), then re-issue the single `merge_lock acquire --plan-id {plan_id}` Bash call above (the next poll). The FIFO position is preserved across polls, so re-polling never loses the plan's place in line.
-  - **Elapsed ≥ `{wait_budget}`** → the budget is exhausted; the poll loop ends and the last-resort `AskUserQuestion` escalation below fires.
+- **`status: blocked`, `admission: blocked`** (with `timed_out: true` — the call's own bound lapsed) → this plan is not yet the FIFO front, or is the front but a FOREIGN live holder still holds the lock. The script returns `blocked_reason`, `blocking_plan_id` and `waiting_count` (NOT a hard error). Check the elapsed time, in this order:
+  - **Elapsed since `{admission_wait_start}` ≥ `merge_hold_budget_seconds`** → run the waiter-side `budget-reclaim` (§ "Merge-Mutex Hold Window" invariant 2); on `action: released` re-issue `acquire`, otherwise fall through to the `{wait_budget}` checks below.
+  - **`{waited}` < `{wait_budget}`** → re-issue the single `merge_lock acquire --plan-id {plan_id} --wait-seconds {per_call}` Bash call above with the recomputed `{per_call}`. The FIFO position is preserved across calls, so re-issuing never loses the plan's place in line.
+  - **`{waited}` ≥ `{wait_budget}`** → the budget is exhausted; the loop ends and the last-resort `AskUserQuestion` escalation below fires.
 - **`status: error`** (a resolution failure, distinct from `admission: blocked`) → STOP and surface the stderr verbatim per the **Exit-code convention** at the top of this document. Do NOT route a hard error to the escalation prompt — a broken lock primitive is a different signal than queue contention.
 
-Optionally log each `admission: blocked` poll for grep-ability during a run:
+Optionally log each `admission: blocked` call for grep-ability during a run:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup: merge-queue poll blocked behind {blocking_plan_id} (waiting_count={waiting_count}), re-polling within budget"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup: merge-queue admission blocked behind {blocking_plan_id} ({blocked_reason}, waiting_count={waiting_count}) after {waited}s of {wait_budget}s, re-issuing acquire within budget"
 ```
 
 ###### Budget-exhaustion escalation (last resort)
@@ -641,7 +641,7 @@ AskUserQuestion:
       multiSelect: false
 ```
 
-On **Wait and retry**, reset the wall-clock start time and re-enter the **FIFO poll/backoff loop** above (a fresh `{wait_budget}` window; the plan kept its FIFO position throughout). On **Skip merge**, set `{merge_consent} = deferred` and follow the same skip path as the interactive "No, skip merge" branch.
+On **Wait and retry**, reset `{waited}` to `0` and re-enter the **FIFO poll/backoff loop** above (a fresh `{wait_budget}` window; the plan kept its FIFO position throughout). On **Skip merge**, set `{merge_consent} = deferred` and follow the same skip path as the interactive "No, skip merge" branch.
 
 Once `admission: admitted` is reached, proceed directly to **Merge PR (if not yet merged)** below. The `{merge_consent} = explicit_yes` flag is set so the merge action routed by `use_merge_queue` (see the authoritative **Merge routing (`use_merge_queue`)** section under **Merge PR**) is authorized: the `pr safe-merge` poll-then-merge path (including its GitHub-only stuck-state admin fallback when `admin_merge_on_stuck_state` is enabled) when `use_merge_queue == false`, or the `ci pr merge-queue` enqueue (no `--delete-branch`, no direct-merge/admin fallback) when `use_merge_queue == true`.
 

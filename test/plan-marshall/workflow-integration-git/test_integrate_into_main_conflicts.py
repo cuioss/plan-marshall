@@ -282,7 +282,7 @@ class TestIntegrateWhenMergeLockAlreadySelfHeld:
         real_merge_lock = self._install_real_merge_lock(env, monkeypatch)
 
         # branch-cleanup acquired the merge lock under this plan-id first.
-        pre = real_merge_lock.run_acquire(Namespace(plan_id=env['plan_id'], timeout=5.0, set_title_token=False))
+        pre = real_merge_lock.run_acquire(Namespace(plan_id=env['plan_id'], set_title_token=False))
         assert pre['status'] == 'success'
         assert pre['action'] == 'acquired'
 
@@ -313,7 +313,7 @@ class TestIntegrateWhenMergeLockAlreadySelfHeld:
         lock_path = real_merge_lock._resolve_main_lock_path()
 
         # branch-cleanup holds the lock; the lock file records this plan-id.
-        real_merge_lock.run_acquire(Namespace(plan_id=env['plan_id'], timeout=5.0, set_title_token=False))
+        real_merge_lock.run_acquire(Namespace(plan_id=env['plan_id'], set_title_token=False))
         assert lock_path.read_text(encoding='utf-8').strip() == env['plan_id']
 
         integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
@@ -321,7 +321,7 @@ class TestIntegrateWhenMergeLockAlreadySelfHeld:
         # integrate released the single underlying lock — the file is gone.
         assert not lock_path.exists()
         # The lock is genuinely free: a foreign plan can now acquire it.
-        other = real_merge_lock.run_acquire(Namespace(plan_id='other-plan', timeout=5.0, set_title_token=False))
+        other = real_merge_lock.run_acquire(Namespace(plan_id='other-plan', set_title_token=False))
         assert other['status'] == 'success'
         assert other['action'] == 'acquired'
 

@@ -30,8 +30,10 @@ Two primitives live here:
   re-poll, managed through the same `_locks_core.rmw_json` the build queue uses),
   admits ONLY the FIFO-front plan, and on a successful `O_EXCL` create returns
   `admission: admitted`; a non-front or lock-contended plan returns
-  `admission: blocked` — a structured re-poll signal, NOT an internal wait (the
-  consumer's poll/backoff loop owns the wait). `O_EXCL` atomicity guarantees
+  `admission: blocked` — a structured re-poll signal. By default `acquire` is one
+  non-waiting attempt; `acquire --wait-seconds` repeats whole non-waiting attempts
+  within one bounded call, pacing between them and holding no guard while it waits,
+  and the consumer re-issues that call under its total budget. `O_EXCL` atomicity guarantees
   exactly one holder; plan-liveness reclamation (across main + worktree) frees a
   crashed holder's lock AND prunes a crashed waiter's FIFO entry — but a
   live-worktree guard refuses the automatic reclaim on a mid-recovery holder
@@ -46,8 +48,9 @@ Two primitives live here:
   hand. The same entry point also carries the **rate-window claim** (`rate-window claim` / `check` / `wait` / `release`) — a cross-plan claim on ONE
   review bot's rate window that shares the merge-lock STORE but never the merge
   MUTEX (see below) — and the **`poll-delay`** computation, a bounded random
-  delay in seconds. `rate-window wait`
-  is the one verb of this script that waits: a bounded, read-only poll of the
+  delay in seconds. Two verbs of this script wait, both between complete
+  operations and never inside the guard: `acquire --wait-seconds` (between whole
+  admission attempts) and `rate-window wait`, a bounded, read-only poll of the
   claim's expiry that writes nothing and takes no guard between reads. `poll-delay`
   shares neither the store nor the mutex: it is a pure computation that touches no
   state and never sleeps.
@@ -379,15 +382,45 @@ xref this section by name instead of restating the command inline. See
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock acquire \
-  --plan-id PLAN_ID [--timeout TIMEOUT] [--no-title-token]
+  --plan-id PLAN_ID [--wait-seconds WAIT_SECONDS] \
+  [--interval-seconds INTERVAL_SECONDS] [--no-title-token]
 ```
 
 `acquire` FIFO-enqueues `--plan-id` into `merge-queue.json` (idempotently — a
-re-poll preserves the plan's FIFO position), admits ONLY the FIFO-front plan, and
-is **non-blocking for the queue case** — re-polling is the consumer's job (the
-Pre-Merge Gate's poll/backoff loop). The `--timeout` flag is retained for
-call-site compatibility but no longer drives an internal wait. Output carries an
-`admission` discriminator:
+re-poll preserves the plan's FIFO position) and admits ONLY the FIFO-front plan.
+
+**Non-blocking by default; bounded waiting with `--wait-seconds`.** With the default
+`--wait-seconds 0` the call is ONE non-waiting attempt and a blocked result returns
+at once. With `--wait-seconds S` (`S > 0`) it repeats the WHOLE non-waiting attempt —
+FIFO enqueue, front check and `O_EXCL` create, each re-decided on a fresh guarded
+read — every `--interval-seconds` (default `15`) until it is admitted, it returns
+`status: error`, or the per-call bound lapses. The bound is `S` clamped to 480
+seconds so the call returns before the host's per-call ceiling (see
+[`plan-marshall/standards/waiting.md`](../plan-marshall/standards/waiting.md) § "The
+inner ceiling must margin-clear the outer one"). The pause runs only between
+attempts, after each attempt has released the guard, so the wait never holds the
+store's critical section. A reentrant self-holder acquire returns
+`action: already_held` on the first attempt with no wait.
+
+**Re-issue until the budget is spent.** A consumer holding an admission budget longer
+than one call (the Pre-Merge Gate's `merge_queue_wait_budget_seconds`) re-issues
+`acquire --wait-seconds {per_call}` — `{per_call}` being the remaining budget capped
+at the per-call bound — subtracting each call's `waited_seconds`, until
+`admission: admitted` or the budget is spent. Each call is one bounded tool call; the
+consumer never sleeps between calls.
+
+A non-finite or negative `--wait-seconds`, or a non-finite or non-positive
+`--interval-seconds`, is refused (`status: error`, `error_code: INVALID_INPUT`)
+before the store is touched.
+
+Every payload past that refusal carries the last attempt's fields plus:
+
+| Field | Meaning |
+|-------|---------|
+| `waited_seconds` | Whole seconds this call spent waiting (`0` for a single attempt); a caller holding a total budget subtracts it |
+| `timed_out` | `true` when the per-call bound lapsed while the plan was still blocked — a bound, not a verdict, so the caller re-issues the call. `false` on an admitted or error result |
+
+Output carries an `admission` discriminator:
 
 - **`status: success`, `admission: admitted`** — this plan is the FIFO front and
   holds the `O_EXCL` lock (`action: acquired`, or `action: already_held` on a
@@ -396,9 +429,9 @@ call-site compatibility but no longer drives an internal wait. Output carries an
 - **`status: blocked`, `admission: blocked`** — this plan is NOT the FIFO front,
   or is the front but a FOREIGN live holder holds the lock. A structured re-poll
   signal (NOT a hard error). Fields: `blocked_reason`, `blocking_plan_id`,
-  `lock_path`, `waiting_count`. The consumer re-polls (preserving FIFO position)
-  until `admission: admitted` or its wait budget is exhausted, then fires the
-  last-resort `AskUserQuestion`.
+  `lock_path`, `waiting_count`. The consumer re-issues `acquire --wait-seconds`
+  (preserving FIFO position) until `admission: admitted` or its wait budget is
+  exhausted, then fires the last-resort `AskUserQuestion`.
   - **`blocked_reason`** names WHICH of the two causes produced the block, and is
     present on every blocked payload. Two causes hid behind the one `blocked`
     label, and only one of them has a blocking plan to name:
@@ -656,8 +689,8 @@ while the call sleeps moves the wake instant with it, and each sleep is cut to t
 wake instant so the call returns as the window elapses.
 
 **It writes nothing and decides nothing.** The verb mutates no key of the store,
-emits no `[LOCK]` event, and takes no guard between reads — it is the one verb of
-this script that sleeps, and it does so holding nothing. Its return is a wake signal
+emits no `[LOCK]` event, and takes no guard between reads — it sleeps holding
+nothing. Its return is a wake signal
 only. Another plan can claim the window between this call reporting the wake and the
 caller acting on it, so whoever acts re-reads the claim itself, and every claim or
 release still goes through the guarded read-modify-write core: the decision is made
@@ -716,12 +749,14 @@ Returns ONE uniformly-drawn delay in seconds, bounded by `--min-seconds` (defaul
   mistake survives as a wrong-but-believable number instead of surfacing as an error
   it can act on. Every refusal echoes `min_seconds` and `max_seconds`.
 
-**It computes; it does not wait.** The verb returns the number and exits. No verb that
-writes the store sleeps, and none sleeps while holding the guard, because a wait
-embedded in a claim or a release would hold a process open inside a critical section
-every concurrently-finalizing plan contends on. `rate-window wait` is the one verb
-that waits, and it is read-only and guard-free; its `--grace-seconds` flag is where a
-caller would pass a drawn delay. No workflow in this bundle calls `poll-delay`.
+**It computes; it does not wait.** The verb returns the number and exits. No verb
+sleeps while holding the guard, and no claim, release or single admission attempt
+embeds a wait, because a wait inside one would hold a process open inside a critical
+section every concurrently-finalizing plan contends on. Two verbs wait, both between
+complete operations: `acquire --wait-seconds`, which pauses only between whole
+admission attempts, and `rate-window wait`, which is read-only and guard-free; the
+latter's `--grace-seconds` flag is where a caller would pass a drawn delay. No
+workflow in this bundle calls `poll-delay`.
 
 **It shares neither the store nor the mutex — it touches no state at all.** Unlike
 the `rate-window` verbs, which at least co-tenant `merge-queue.json`, `poll-delay`
@@ -792,7 +827,7 @@ script.
 | Producer / Consumer | Direction | Notation |
 |---------------------|-----------|----------|
 | `workflow-integration-git:integrate_into_main` | consumes | `merge_lock acquire`/`release` around the move-back |
-| `phase-6-finalize/standards/branch-cleanup.md` Pre-Merge Gate | consumes | `merge_lock acquire` (FIFO poll/backoff loop on `admission: blocked`)/`check`/`release` |
+| `phase-6-finalize/standards/branch-cleanup.md` Pre-Merge Gate | consumes | `merge_lock acquire --wait-seconds` (re-issued under the admission budget on `admission: blocked`)/`check`/`release` |
 | build wrappers (`_build_execute_factory`, `_pyproject_execute`) | consume | `build_queue acquire`/`release` around `execute_direct` — the in-process fallback path (unregistered / daemon-down) |
 | `manage-build-server:_marshalld_scheduler` (via the D5 routing seam) | consumes | the same machine-global `build-queue.json` — the registered path (daemon-served builds) |
 | `automatic-review/SKILL.md` rate-limit recovery sequence | consumes | `merge_lock rate-window claim`/`check`/`release` |
