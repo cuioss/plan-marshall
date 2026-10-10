@@ -87,6 +87,20 @@ VERIFY_REFUSAL_ERRORS = frozenset(
 # the other.
 _COMPLETION_GUARD_PHASES: frozenset[str] = frozenset({'6-finalize'})
 
+#: ``archive --reason`` values that ASSERT the plan completed. An archive carrying one
+#: of these takes the same gated path as an archive with no reason at all — the
+#: ``phases_unexaminable`` refusal and the finalize blocking-findings assertion —
+#: because a reason that claims completion is exactly the close that gate guards.
+#: The reason vocabulary itself stays open: every value NOT in this set is a
+#: deliberate non-completion close (abandonment, low confidence, cleanup) and keeps
+#: the exemption, reported through :func:`_exempt_archive_findings_report`.
+_COMPLETION_ASSERTING_ARCHIVE_REASONS: frozenset[str] = frozenset({'normal_completion'})
+
+#: The literal ``pending_actionable_count`` carries when the pending-findings query was
+#: unevaluable. Deliberately a string, never ``0``: an unevaluable count published as
+#: zero would be byte-identical to a store that was read and found clean.
+PENDING_COUNT_UNEVALUABLE = 'unevaluable'
+
 #: The stable anchor key this site publishes for the phase-transition mailbox
 #: check-point. It is the same token the ``## Mailbox check-point roster`` in
 #: ``ref-workflow-architecture/standards/phase-lifecycle.md`` carries as that
@@ -627,6 +641,41 @@ def _finalize_findings_refusal(plan_id: str, status: dict[str, Any]) -> dict[str
     return None
 
 
+def _exempt_archive_findings_report(plan_id: str, status: dict[str, Any], reason: str) -> dict[str, Any]:
+    """Evaluate the findings state for a reason-exempted archive and report it.
+
+    A reason outside :data:`_COMPLETION_ASSERTING_ARCHIVE_REASONS` exempts the
+    archive from the blocking-findings REFUSAL, never from the findings EVALUATION:
+    the pending actionable count is still read through
+    :func:`assert_finalize_findings_clean`, so an exempt close can never be silent
+    about what it left pending.
+
+    Emits exactly ONE WARNING decision-log line — unconditionally, a clean store
+    (count ``0``) included — naming the reason and the pending count, or the
+    :data:`PENDING_COUNT_UNEVALUABLE` marker when the query could not be evaluated.
+    Must be called while the live plan path still resolves (before the archive
+    move), because the decision log lives in the plan directory.
+
+    Returns the result fields the archive payload carries: ``findings_gate``
+    (always ``exempted_by_reason``) and ``pending_actionable_count``.
+    """
+    metadata = normalize_metadata(status)
+    try:
+        count: int | None = assert_finalize_findings_clean(plan_id, metadata)
+    except BlockingFindingsPresent as exc:
+        count = exc.blocking_count
+    pending: int | str = PENDING_COUNT_UNEVALUABLE if count is None else count
+    log_entry(
+        'decision',
+        plan_id,
+        'WARNING',
+        f'(plan-marshall:manage-status) Archive exempted from the blocking-findings gate by '
+        f'reason {reason!r}: pending_actionable_count={pending} — the plan is archived without '
+        'asserting that no actionable finding is pending',
+    )
+    return {'findings_gate': 'exempted_by_reason', 'pending_actionable_count': pending}
+
+
 def cmd_create(args: argparse.Namespace) -> dict[str, Any]:
     """Create status.json for a new plan.
 
@@ -902,12 +951,20 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     A record whose ``phases`` could not be read in full is handled separately in both
     directions, because an unknown open-phase set is not an empty one:
 
-    - a NO-REASON archive is REFUSED (``error: phases_unexaminable``) — the gate below
-      cannot establish that ``6-finalize`` is closed, and a guard whose job is to
-      refuse must fail closed rather than fall through;
-    - a DELIBERATE ``--reason`` archive still proceeds, but PRESERVES the existing
-      ``current_phase`` instead of writing ``complete``, and reports
+    - a COMPLETION archive — no ``--reason``, or a reason in
+      :data:`_COMPLETION_ASSERTING_ARCHIVE_REASONS` — is REFUSED
+      (``error: phases_unexaminable``): the gate below cannot establish that
+      ``6-finalize`` is closed, and a guard whose job is to refuse must fail closed
+      rather than fall through;
+    - a DELIBERATE non-completion ``--reason`` archive still proceeds, but PRESERVES
+      the existing ``current_phase`` instead of writing ``complete``, and reports
       ``phase_closure: partial`` with the reason.
+
+    A non-completion ``--reason`` archive is exempt from the blocking-findings refusal
+    but not from its evaluation: its result carries ``findings_gate:
+    exempted_by_reason`` and ``pending_actionable_count`` (an integer, or
+    :data:`PENDING_COUNT_UNEVALUABLE`), and it emits exactly one WARNING decision-log
+    line naming the reason and that count.
 
     This is deliberately NOT identical to ``cmd_transition``: that verb advances one
     phase at a time through a plan that is still running, whereas archive closes out
@@ -952,10 +1009,16 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     # blocking-findings STATE, the same call → state conversion cmd_transition
     # applies. ``archive-plan`` (the production terminal step) calls
     # ``manage-status archive`` with NO --reason while the plan is still in
-    # ``6-finalize``, so that genuine-completion path is gated. Two exemptions:
-    #  - A DELIBERATE archive carrying --reason (an abandonment / low-confidence
-    #    close): the operator chose to close the plan regardless of pending
-    #    findings, and blocking that would strand it.
+    # ``6-finalize``, so that genuine-completion path is gated — and so is an
+    # archive whose --reason ASSERTS completion
+    # (:data:`_COMPLETION_ASSERTING_ARCHIVE_REASONS`), because a reason claiming
+    # the plan completed is exactly the close the gate guards. Two exemptions:
+    #  - A DELIBERATE archive carrying any OTHER --reason (an abandonment /
+    #    low-confidence close): the operator chose to close the plan regardless of
+    #    pending findings, and blocking that would strand it. The exemption covers
+    #    the refusal only — the findings state is still evaluated and reported
+    #    (``findings_gate: exempted_by_reason`` plus ``pending_actionable_count``,
+    #    and one WARNING decision-log line), so an exempt close is never silent.
     #  - An already-``complete`` plan being garbage-collected by the cleanup pass
     #    (``planning.md`` § cleanup archives ``current_phase == 'complete'`` plans
     #    with no --reason): the completion decision was already made and gated at
@@ -972,13 +1035,15 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     # with actionable findings still pending. Finalize being OPEN is the condition the
     # gate is about; which phase is nominally current is not.
     open_scan = in_progress_phases(status)
-    if getattr(args, 'reason', None) is None:
+    reason = getattr(args, 'reason', None)
+    exemption_report: dict[str, Any] | None = None
+    if reason is None or reason in _COMPLETION_ASSERTING_ARCHIVE_REASONS:
         # Fail CLOSED on an unexaminable record. This guard's job is to refuse, and a
         # scan that could not read the phase structure cannot establish that
         # ``6-finalize`` is closed — falling through would let the archive proceed on
         # the strength of a question nobody answered. The remedy is in the message: a
-        # deliberate ``--reason`` archive is the sanctioned way to close a structurally
-        # broken plan, and it takes the operator's decision on the record.
+        # deliberate non-completion ``--reason`` archive is the sanctioned way to close
+        # a structurally broken plan, and it takes the operator's decision on the record.
         if not open_scan.examinable:
             return {
                 'status': 'error',
@@ -986,16 +1051,19 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
                 'error': 'phases_unexaminable',
                 'unexaminable': list(open_scan.unexaminable),
                 'message': (
-                    f'Refusing a no-reason archive of {args.plan_id!r}: its phases could not be '
+                    f'Refusing a completion archive of {args.plan_id!r}: its phases could not be '
                     f'read in full ({"; ".join(open_scan.unexaminable)}), so whether 6-finalize is '
                     'still open — and therefore whether the blocking-findings gate applies — could '
-                    'not be established. Repair the phases, or archive deliberately with --reason.'
+                    'not be established. Repair the phases, or archive deliberately with a '
+                    'non-completion --reason.'
                 ),
             }
         if any(phase.get('name') in _COMPLETION_GUARD_PHASES for phase in open_scan.phases):
             findings_refusal = _finalize_findings_refusal(args.plan_id, status)
             if findings_refusal is not None:
                 return findings_refusal
+    else:
+        exemption_report = _exempt_archive_findings_report(args.plan_id, status, reason)
 
     # Close EVERY open phase, not the first one found. The retired form took the first
     # phase whose status was merely ``!= done`` and closed that one alone, which failed
@@ -1080,7 +1148,6 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     # write_status so the archived status.json carries the structured reason.
     # Absent --reason leaves the field unset (no schema migration). Mirrors the
     # additive-metadata contract used elsewhere in this module.
-    reason = getattr(args, 'reason', None)
     if reason is not None:
         metadata = status.setdefault('metadata', {})
         metadata['archived_reason'] = reason
@@ -1127,6 +1194,8 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
             f'unknown and the existing current_phase was preserved rather than written complete: '
             f'{"; ".join(closure_scan.unexaminable)}'
         )
+    if exemption_report is not None:
+        result.update(exemption_report)
     return result
 
 

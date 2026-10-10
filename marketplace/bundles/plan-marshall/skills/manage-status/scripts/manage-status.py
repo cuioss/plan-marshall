@@ -373,12 +373,18 @@ def main() -> int:
         default=None,
         help=(
             'Optional structured reason string recorded alongside the archive '
-            '(e.g., low_confidence, dangling_worktree, orphan_directory, '
-            'normal_completion). Persisted to status.metadata.archived_reason '
-            'before the plan directory is moved into the archive. Referenced by '
-            'plan-doctor Rule stuck-low-confidence-archive as the canonical '
-            'remediation flag. When omitted, the archived status.json simply '
-            'lacks the archived_reason field — no schema migration is required.'
+            '(e.g., low_confidence, dangling_worktree, orphan_directory). '
+            'Persisted to status.metadata.archived_reason before the plan '
+            'directory is moved into the archive. A reason that asserts the plan '
+            'completed is gated exactly like an absent one: the archive is '
+            'refused while 6-finalize is open with an actionable finding pending. '
+            'Every other reason is exempt from that refusal but still reported: '
+            'the result carries findings_gate: exempted_by_reason and '
+            'pending_actionable_count, and one WARNING decision-log line is '
+            'written. Referenced by plan-doctor Rule stuck-low-confidence-archive '
+            'as the canonical remediation flag. When omitted, the archived '
+            'status.json simply lacks the archived_reason field — no schema '
+            'migration is required.'
         ),
     )
     archive_parser.set_defaults(func=cmd_archive)
