@@ -35,6 +35,10 @@ a|
 | `test/finalize-step-sync-plugin-cache/test_sync_plugin_cache_step.py`
 | `.claude/skills/finalize-step-sync-plugin-cache/SKILL.md`
 | The project-local finalize step file has no test tree of its own module, so its contract test lives under `test/` in the default module.
+
+| `test/pm-plugin-development/finalize-step-plugin-doctor/test_finalize_step_plugin_doctor.py`
+| `.claude/skills/finalize-step-plugin-doctor/SKILL.md`
+| The project-local finalize step file has no test tree of its own module, so its contract test lives under `test/pm-plugin-development/`, beside the tests of the plugin-doctor gate the step runs.
 |===
 
 == Related
