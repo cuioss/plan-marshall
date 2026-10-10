@@ -101,7 +101,8 @@ TEMPLATE_SHA256 = '{{TEMPLATE_SHA256}}'
 #      executor file sits in.
 #
 # Both steps are pure stdlib and never raise. A directory neither step finds is
-# recorded in _BOOTSTRAP_UNRESOLVED, and the import guard below names it.
+# recorded in _BOOTSTRAP_UNRESOLVED, and the bootstrap import block below names it
+# when one of its imports fails.
 _BOOTSTRAP_SKILL_DIRS = [
 {{SHARED_MODULE_DIRS}}
 ]
@@ -189,7 +190,7 @@ def _checkout_source_scripts_dir(skill: str) -> str | None:
 
 
 # Every bootstrap directory neither the fast path nor a recovery step could supply,
-# as (skill, pinned_dir) pairs. Read by the import guard below.
+# as (skill, pinned_dir) pairs. Read by the handler of the bootstrap import block below.
 _BOOTSTRAP_UNRESOLVED: list[tuple[str, str]] = []
 
 
@@ -212,38 +213,30 @@ def _bootstrap_sys_path_insert(skill: str, pinned_dir: str) -> None:
         _BOOTSTRAP_UNRESOLVED.append((skill, pinned_dir))
 
 
-def _require_bootstrap_modules() -> None:
-    """Stop with one message when an unresolved bootstrap directory breaks the imports below.
+def _exit_on_unresolved_bootstrap(error: ImportError) -> None:
+    """Stop with one message when a bootstrap import failed and a directory is unresolved.
 
-    Does nothing when every bootstrap directory resolved, which is the fast path: the
-    imports that follow run exactly as they would without this guard. Otherwise the
-    modules those imports need are imported here first. When that fails, the unresolved
-    directory is the cause: one message names every such directory and the command that
-    regenerates this executor, and the process exits non-zero with no traceback. When it
-    succeeds — the modules are reachable some other way — the bootstrap continues.
+    Called from the handler of the bootstrap import block below, with the
+    ``ImportError`` one of those imports raised. Returns without doing anything when
+    every bootstrap directory resolved: the failure then has another cause, and the
+    caller re-raises it unchanged. Otherwise the unresolved directory is the cause: one
+    message names every such directory and the command that regenerates this executor,
+    and the process exits non-zero with no traceback.
     """
     if not _BOOTSTRAP_UNRESOLVED:
         return
-    try:
-        # The same modules, in the same order, as the imports that follow this guard.
-        import plan_logging  # type: ignore[import-not-found]  # noqa: F401, I001
-        import toon_parser  # type: ignore[import-not-found]  # noqa: F401
-        import _ledger_core  # type: ignore[import-not-found]  # noqa: F401
-        import marketplace_paths  # type: ignore[import-not-found]  # noqa: F401
-        import worktree_sha  # type: ignore[import-not-found]  # noqa: F401
-    except ImportError as error:
-        missing = '; '.join(
-            f'{pinned_dir or "(no directory recorded)"} (skill {skill})' for skill, pinned_dir in _BOOTSTRAP_UNRESOLVED
-        )
-        print(
-            f'execute-script.py cannot start: {error}. Missing script directory: {missing}. '
-            f'No copy was found in the plugin cache or in the marketplace/bundles tree of this checkout. '
-            f'Regenerate the executor with /marshall-steward, or from a checkout that carries the sources with: '
-            f'python3 marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py '
-            f'bootstrap --marketplace --marketplace-root .',
-            file=sys.stderr,
-        )
-        sys.exit(1)
+    missing = '; '.join(
+        f'{pinned_dir or "(no directory recorded)"} (skill {skill})' for skill, pinned_dir in _BOOTSTRAP_UNRESOLVED
+    )
+    print(
+        f'execute-script.py cannot start: {error}. Missing script directory: {missing}. '
+        f'No copy was found in the plugin cache or in the marketplace/bundles tree of this checkout. '
+        f'Regenerate the executor with /marshall-steward, or from a checkout that carries the sources with: '
+        f'python3 marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py '
+        f'bootstrap --marketplace --marketplace-root .',
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
 
 # Fast path first (shared dirs in emission order), then the logging dir LAST so it lands
@@ -251,37 +244,45 @@ def _require_bootstrap_modules() -> None:
 for _bootstrap_skill, _bootstrap_dir in _BOOTSTRAP_SKILL_DIRS:
     _bootstrap_sys_path_insert(_bootstrap_skill, _bootstrap_dir)
 _bootstrap_sys_path_insert(*_BOOTSTRAP_LOGGING_DIR)
-_require_bootstrap_modules()
 
-# Import plan logging module from marketplace (named plan_logging to avoid conflict with stdlib)
-from plan_logging import (  # type: ignore[import-not-found]
-    cleanup_old_script_logs,
-    extract_plan_id,
-    get_log_path,
-    log_entry,
-    log_script_execution,
-)
+# The bootstrap imports: every module this executor takes from a bootstrap directory.
+# The block is the import guard. An import placed inside it is covered by the
+# unresolved-directory message; there is no second list of module names to keep in
+# step. An import that succeeds costs nothing extra, and an ImportError raised while
+# every directory resolved propagates unchanged.
+try:
+    # Import plan logging module from marketplace (named plan_logging to avoid conflict with stdlib)
+    from plan_logging import (  # type: ignore[import-not-found]
+        cleanup_old_script_logs,
+        extract_plan_id,
+        get_log_path,
+        log_entry,
+        log_script_execution,
+    )
 
-# Import the shared TOON parser so the dispatch-failure boundary can surface a
-# script's stdout-reported `status: error` message in work.log. The
-# ref-toon-format/scripts directory is placed on sys.path by the shared-module
-# block injected above.
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+    # Import the shared TOON parser so the dispatch-failure boundary can surface a
+    # script's stdout-reported `status: error` message in work.log. The
+    # ref-toon-format/scripts directory is placed on sys.path by the shared-module
+    # block injected above.
+    from toon_parser import parse_toon  # type: ignore[import-not-found]
 
-# Import the change-ledger primitives the build-class dispatch boundary needs to
-# append a `kind=build` entry after every build-class invocation. The shared
-# helper `compute_worktree_sha` lives once in script-shared; the ledger core
-# (`build_record` constructor + `append_entry` writer) lives in
-# manage-change-ledger. Both directories are placed on sys.path by the
-# shared-module block injected above — the writer re-uses these primitives
-# rather than re-implementing the hash or the append.
-from _ledger_core import (  # type: ignore[import-not-found]
-    WRAPPER_CLAIMABLE_BUILD_STATUSES,
-    append_entry,
-    build_record,
-)
-from marketplace_paths import NO_PLAN_SENTINEL  # type: ignore[import-not-found]
-from worktree_sha import compute_worktree_sha  # type: ignore[import-not-found]
+    # Import the change-ledger primitives the build-class dispatch boundary needs to
+    # append a `kind=build` entry after every build-class invocation. The shared
+    # helper `compute_worktree_sha` lives once in script-shared; the ledger core
+    # (`build_record` constructor + `append_entry` writer) lives in
+    # manage-change-ledger. Both directories are placed on sys.path by the
+    # shared-module block injected above — the writer re-uses these primitives
+    # rather than re-implementing the hash or the append.
+    from _ledger_core import (  # type: ignore[import-not-found]
+        WRAPPER_CLAIMABLE_BUILD_STATUSES,
+        append_entry,
+        build_record,
+    )
+    from marketplace_paths import NO_PLAN_SENTINEL  # type: ignore[import-not-found]
+    from worktree_sha import compute_worktree_sha  # type: ignore[import-not-found]
+except ImportError as _bootstrap_import_error:
+    _exit_on_unresolved_bootstrap(_bootstrap_import_error)
+    raise
 
 # ============================================================================
 # EMBEDDED SCRIPT MAPPINGS (Generated by plan-marshall)

@@ -440,6 +440,75 @@ class TestTemplateBootstrapSelfHeal:
 
 
 # =============================================================================
+# The unresolved-directory message covers every bootstrap import
+# =============================================================================
+#
+# The message is produced where the bootstrap imports themselves run, so it does
+# not depend on which import fails or on how it fails. The pair below makes the
+# import of ``_ledger_core`` fail AFTER module lookup: a ``_ledger_core`` without
+# the names the executor imports from it is importable as a module, and only the
+# ``from _ledger_core import …`` statement raises.
+
+#: The skill whose scripts dir holds ``_ledger_core``.
+_LEDGER_SKILL = 'manage-change-ledger'
+_SKILLS_WITHOUT_LEDGER = tuple(
+    skill for skill in (*_BOOTSTRAP_SHARED_SKILLS, _BOOTSTRAP_LOGGING_SKILL) if skill != _LEDGER_SKILL
+)
+
+_REGENERATE_COMMAND = 'generate_executor.py bootstrap --marketplace --marketplace-root .'
+
+
+def test_a_failing_name_import_reports_the_unresolved_directory(tmp_path: Path) -> None:
+    """One directory is unresolved and a later import fails on a name: one message, no traceback.
+
+    The ``manage-change-ledger`` scripts dir is found nowhere. An empty
+    ``_ledger_core.py`` beside the executor keeps the module itself importable, so
+    the failure is the missing names and it is raised by the third of the five
+    bootstrap imports.
+    """
+    pruned_base = tmp_path / 'pruned-cache'
+    home = tmp_path / 'fakehome'
+    executor = tmp_path / 'execute-script.py'
+    executor.write_text(_render_executor(pruned_base, home), encoding='utf-8')
+    _stand_up_fake_cache(home, _SKILLS_WITHOUT_LEDGER)
+    (tmp_path / '_ledger_core.py').write_text('', encoding='utf-8')
+
+    result = _run_executor(executor, home)
+
+    assert result.returncode == 1
+    assert 'execute-script.py cannot start' in result.stderr
+    assert str(pruned_base / 'skills' / _LEDGER_SKILL / 'scripts') in result.stderr
+    assert f'(skill {_LEDGER_SKILL})' in result.stderr
+    assert _REGENERATE_COMMAND in result.stderr
+    assert 'Traceback' not in result.stderr
+
+
+def test_a_failing_name_import_propagates_when_every_directory_resolved(tmp_path: Path) -> None:
+    """Matched control: the same failing import with nothing unresolved is not rewritten.
+
+    Here the cache does supply a ``manage-change-ledger`` scripts dir, holding the
+    same empty ``_ledger_core.py``. No directory is unresolved, so the message
+    would name a cause that does not exist and the ``ImportError`` is left as it is.
+    """
+    pruned_base = tmp_path / 'pruned-cache'
+    home = tmp_path / 'fakehome'
+    executor = tmp_path / 'execute-script.py'
+    executor.write_text(_render_executor(pruned_base, home), encoding='utf-8')
+    _stand_up_fake_cache(home, _SKILLS_WITHOUT_LEDGER)
+    ledger_scripts = _cache_version_skills_dir(home, '9.9.9999') / _LEDGER_SKILL / 'scripts'
+    ledger_scripts.mkdir(parents=True)
+    (ledger_scripts / '_ledger_core.py').write_text('', encoding='utf-8')
+
+    result = _run_executor(executor, home)
+
+    assert result.returncode != 0
+    assert 'ImportError' in result.stderr
+    assert '_ledger_core' in result.stderr
+    assert 'execute-script.py cannot start' not in result.stderr
+    assert _REGENERATE_COMMAND not in result.stderr
+
+
+# =============================================================================
 # Bootstrap recovery from the checkout's own sources
 # =============================================================================
 #

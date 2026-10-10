@@ -968,14 +968,17 @@ def test_template_build_ledger_uses_shared_primitives():
     point for the derived-only statuses: the boundary compares a wrapper's
     stdout claim against the claimable half alone, so importing the wider set
     here would let a wrapper mint ``killed`` or ``unknown`` for itself.
+
+    The statement is compared with every line's indentation removed: the pin is
+    the imported names, and the block the import sits in is not part of it.
     """
-    source = TEMPLATE_PATH.read_text(encoding='utf-8')
+    source = '\n'.join(line.strip() for line in TEMPLATE_PATH.read_text(encoding='utf-8').splitlines())
 
     expected_import = (
         'from _ledger_core import (  # type: ignore[import-not-found]\n'
-        '    WRAPPER_CLAIMABLE_BUILD_STATUSES,\n'
-        '    append_entry,\n'
-        '    build_record,\n'
+        'WRAPPER_CLAIMABLE_BUILD_STATUSES,\n'
+        'append_entry,\n'
+        'build_record,\n'
         ')'
     )
     assert expected_import in source, (
