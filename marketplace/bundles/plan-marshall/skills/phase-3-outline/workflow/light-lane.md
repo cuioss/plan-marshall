@@ -119,11 +119,16 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
   write --plan-id {plan_id}
 ```
 
-Persist the (possibly refined) scope/track to references.json so phase-4-plan reads a consistent value:
+Persist the (possibly refined) `scope_estimate` and the `track` to references.json so phase-4-plan reads a consistent value. `track` is always `simple` on this lane — the light lane reuses Simple-Track deliverable authoring by construction, the same lane-derived rule phase-2-refine Step 13 applies on the deep lane — and this envelope is its only light-lane producer (see the capture-source matrix in [`plan-marshall/workflow/planning.md`](../../plan-marshall/workflow/planning.md) § "Light-lane branch"):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-references:manage-references \
   set --plan-id {plan_id} --field scope_estimate --value {scope_estimate}
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references \
+  set --plan-id {plan_id} --field track --value simple
 ```
 
 The orchestrator persisted a commit-style `pr_title` before dispatching this envelope (see [`plan-marshall/workflow/planning.md`](../../plan-marshall/workflow/planning.md) § "Light-lane branch" step 2), authored from the request alone. The envelope MAY refine it now that the bounded read has shown what the change actually touches, with the same metadata call and the same shape rules (at most 72 characters, imperative mood, `type(scope): summary`):
