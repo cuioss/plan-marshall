@@ -345,19 +345,29 @@ message: "worktree_metadata_drift: metadata.use_worktree is set but worktree_pat
 
 ### `pr_title_missing` capture-time error
 
-The `pr_title_present` invariant guards that a commit-style PR title was authored at phase-2-refine Step 13 and persisted to `status.metadata.pr_title`, so phase-6-finalize `create-pr.md` has a deterministic `--title` source. At `1-init` the capture returns `None` (the title does not yet exist — refine authors it), so the column stays empty pre-refine. From `2-refine` onward, when `metadata.pr_title` is empty/missing/whitespace-only the capture raises `PrTitleMissing` and `cmd_capture` returns a structured error payload **without writing a row**:
+The `pr_title_present` invariant guards that a commit-style PR title was authored by the lane's producer and persisted to `status.metadata.pr_title`, so phase-6-finalize `create-pr.md` has a deterministic `--title` source. The two lanes author it in different places: the deep lane at phase-2-refine Step 13, the light lane — which never runs phase-2-refine — in the [`planning.md`](../workflow/planning.md) light-lane branch, before the `2-refine` capture. At `1-init` the capture returns `None` (the title does not yet exist), so the column stays empty pre-refine. From `2-refine` onward, when `metadata.pr_title` is empty/missing/whitespace-only the capture raises `PrTitleMissing` and `cmd_capture` returns a structured error payload **without writing a row**. On a light-lane plan:
 
 ```toon
 status: error
 error: pr_title_missing
 plan_id: X
 phase: 2-refine
-message: "pr_title_present failed for phase '2-refine': metadata.pr_title is absent or empty — phase-2-refine Step 13 must author and persist a commit-style PR title via `manage-status metadata --set --field pr_title`"
+producer: "plan-marshall/workflow/planning.md light-lane branch, before the 2-refine capture"
+remedy_command: "python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata --plan-id X --set --field pr_title --value \"<type(scope): summary>\""
+message: "pr_title_present failed for phase '2-refine': metadata.pr_title is absent or empty — plan-marshall/workflow/planning.md light-lane branch, before the 2-refine capture must author and persist a commit-style PR title via `python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata --plan-id X --set --field pr_title --value \"<type(scope): summary>\"`"
 ```
 
-**Trigger condition:** the active phase is `2-refine` or later AND `metadata.pr_title` is absent, empty, or whitespace-only (phase-2-refine skipped its Step 13 title-authoring obligation, or the field was clobbered downstream).
+The refusal is **lane-aware**, keyed on `status.metadata.planning_lane`:
 
-**Resolution:** re-run phase-2-refine Step 13 title authoring so a non-empty `pr_title` is persisted via `manage-status metadata --set --field pr_title`, then re-enter the phase. A present-sentinel hash (`_hash_dict({'present': True})`) encodes only the PRESENCE of the title, so a legitimate title edit between boundaries does NOT trip drift detection.
+- `producer` names the light-lane producer (`plan-marshall/workflow/planning.md light-lane branch, before the 2-refine capture`) when `planning_lane` is `light`, and `phase-2-refine Step 13` otherwise — on the deep lane and when the plan records no lane at all.
+- `remedy_command` is the exact `manage-status metadata --plan-id {plan_id} --set --field pr_title --value ...` command that persists the title for this plan, with only the title itself left to author.
+- `message` names both.
+
+`cmd_capture` and `cmd_verify` render the refusal through one shared payload helper, so the two verbs return the identical key set (`status`, `error`, `plan_id`, `phase`, `producer`, `remedy_command`, `message`) for the same state.
+
+**Trigger condition:** the active phase is `2-refine` or later AND `metadata.pr_title` is absent, empty, or whitespace-only (the lane's producer skipped its title-authoring obligation, or the field was clobbered downstream).
+
+**Resolution:** run the step `producer` names — on the light lane the light-lane producer step in `planning.md`, on the deep lane a re-run of phase-2-refine Step 13 title authoring — so a non-empty `pr_title` is persisted via `remedy_command`, then re-enter the phase. A present-sentinel hash (`_hash_dict({'present': True})`) encodes only the PRESENCE of the title, so a legitimate title edit between boundaries does NOT trip drift detection.
 
 ## Integration with phase lifecycle
 

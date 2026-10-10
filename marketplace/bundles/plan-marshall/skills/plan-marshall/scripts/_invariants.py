@@ -312,26 +312,60 @@ class TaskGraphInvalid(Exception):
         super().__init__('task_graph_valid failed: ' + ', '.join(parts))
 
 
+#: The light-lane producer of ``metadata.pr_title`` — the light lane never runs
+#: phase-2-refine, so the orchestrator authors the title in its light-lane
+#: branch before the ``2-refine`` capture (see the capture-source matrix there).
+PR_TITLE_LIGHT_LANE_PRODUCER = 'plan-marshall/workflow/planning.md light-lane branch, before the 2-refine capture'
+
+#: The deep-lane producer of ``metadata.pr_title``; also named when the plan
+#: records no ``planning_lane`` at all, because deep is the lane-less default.
+PR_TITLE_DEEP_LANE_PRODUCER = 'phase-2-refine Step 13'
+
+
+def pr_title_producer(planning_lane: Any) -> str:
+    """Name the step that authors ``metadata.pr_title`` on ``planning_lane``.
+
+    ``light`` names the light-lane producer; every other value — ``deep``, an
+    absent lane, or one this module does not recognise — names phase-2-refine
+    Step 13, matching how the planning workflow routes an unresolved lane.
+    """
+    if isinstance(planning_lane, str) and planning_lane.strip().lower() == 'light':
+        return PR_TITLE_LIGHT_LANE_PRODUCER
+    return PR_TITLE_DEEP_LANE_PRODUCER
+
+
 class PrTitleMissing(Exception):
     """Raised by the ``pr_title_present`` invariant capture when the invariant
     applies (phase ``2-refine`` onward) but ``status.metadata.pr_title`` is
     absent or empty/whitespace-only.
 
     Shaped like :class:`PhaseStepsIncomplete` / :class:`TaskGraphInvalid`: the
-    constructor formats a descriptive message and keeps the structured ``phase``
-    field as an attribute so ``cmd_capture`` can surface a structured error
-    payload (``error: pr_title_missing``) and refuse to persist the handshake
-    row — thereby blocking the phase transition until phase-2-refine Step 13
-    authors and persists the PR title.
+    constructor formats a descriptive message and keeps the structured fields
+    as attributes so ``cmd_capture`` and ``cmd_verify`` can surface one
+    structured error payload (``error: pr_title_missing``) and refuse to
+    persist the handshake row — thereby blocking the phase transition until the
+    PR title is authored and persisted.
+
+    The refusal is lane-aware, because the two lanes author the title in
+    different places: ``producer`` names the light-lane producer
+    (:data:`PR_TITLE_LIGHT_LANE_PRODUCER`) when ``planning_lane`` is ``light``
+    and phase-2-refine Step 13 (:data:`PR_TITLE_DEEP_LANE_PRODUCER`) otherwise.
+    ``remedy_command`` is the exact ``manage-status metadata`` call that
+    persists the title for this plan. The message names both.
     """
 
-    def __init__(self, phase: str):
+    def __init__(self, phase: str, plan_id: str, planning_lane: Any = None):
         self.phase = phase
+        self.plan_id = plan_id
+        self.producer = pr_title_producer(planning_lane)
+        self.remedy_command = (
+            'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata '
+            f'--plan-id {plan_id} --set --field pr_title --value "<type(scope): summary>"'
+        )
         super().__init__(
             f'pr_title_present failed for phase {phase!r}: '
-            'metadata.pr_title is absent or empty — phase-2-refine Step 13 must '
-            'author and persist a commit-style PR title via '
-            '`manage-status metadata --set --field pr_title`'
+            f'metadata.pr_title is absent or empty — {self.producer} must '
+            f'author and persist a commit-style PR title via `{self.remedy_command}`'
         )
 
 
@@ -1683,11 +1717,12 @@ def _capture_phase_steps_complete(
     return _hash_dict(sorted(required))
 
 
-def _capture_pr_title_present(_plan_id: str, metadata: dict[str, Any], phase: str) -> Any:
+def _capture_pr_title_present(plan_id: str, metadata: dict[str, Any], phase: str) -> Any:
     """Verify that a commit-style PR title has been authored and persisted.
 
-    phase-2-refine Step 13 authors a commit-style PR title from the clarified
-    request and persists it to ``status.metadata.pr_title``; phase-6-finalize
+    The lane's producer — phase-2-refine Step 13 on the deep lane, the
+    planning workflow's light-lane branch on the light lane — authors a
+    commit-style PR title and persists it to ``status.metadata.pr_title``; phase-6-finalize
     ``create-pr.md`` reads it as the deterministic ``--title`` source. This
     invariant guards that the title survives every boundary from refine onward.
 
@@ -1704,16 +1739,17 @@ def _capture_pr_title_present(_plan_id: str, metadata: dict[str, Any], phase: st
         hash ``_hash_dict({'present': True})``. The sentinel encodes only the
         PRESENCE of the title, not its content, so a legitimate title edit does
         NOT trip drift detection.
-      - empty / missing / whitespace-only → raise :class:`PrTitleMissing` so
-        ``cmd_capture`` surfaces a structured error and refuses to persist the
-        row, blocking the boundary.
+      - empty / missing / whitespace-only → raise :class:`PrTitleMissing`
+        (carrying ``metadata.planning_lane`` so the refusal names the
+        lane-correct producer) so ``cmd_capture`` surfaces a structured error
+        and refuses to persist the row, blocking the boundary.
     """
     if phase == '1-init':
         return None
     raw = metadata.get('pr_title')
     if raw is not None and str(raw).strip():
         return _hash_dict({'present': True})
-    raise PrTitleMissing(phase)
+    raise PrTitleMissing(phase, plan_id, metadata.get('planning_lane'))
 
 
 # --- registry ------------------------------------------------------------
