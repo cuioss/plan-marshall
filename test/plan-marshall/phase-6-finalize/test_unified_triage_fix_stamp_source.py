@@ -13,11 +13,17 @@ written per deliverable and carries no task id, so a procedure that looks a fix
 task's commit up there by task id matches nothing, stamps nothing, and leaves the
 finding held for good.
 
-Step (0) also writes two stamps that recover a held reply, both with the pushed
-head and both only on ``synced``: it stamps an inline fix an earlier firing left
-unstamped once the finding's file differs from the reviewed commit, and after its
-respond pass it stamps again every finding that pass reported as
-``fix_commit_not_on_pr_head``, then runs the pass once more.
+Step (0) also writes two stamps that recover a held reply. Neither is the pushed
+head: each is the one commit that is shown to carry the change, and both are
+written only on ``synced``. An inline fix a stopped firing left unstamped is
+stamped with the single commit the hook made under its inline message that
+touches the finding's file after the reviewed commit. A finding the respond pass
+reported as ``fix_commit_not_on_pr_head`` is stamped again with the single commit
+on the branch whose patch for the finding's file equals the replaced commit's,
+and the pass then runs once more. No such commit, several, a command that exits
+with a non-zero status and a finding with no file path stamp nothing; the finding
+is logged and stays held. ``test_fix_commit_evidence_git_commands.py`` runs both
+commands against a real repository.
 
 This suite pins the document side of that procedure. Every reader and every
 detector is exercised against synthetic text first — one text that carries the
@@ -60,19 +66,43 @@ _RESTAMP_END = 'A non-zero `count_deferred_until_commit` on the last respond pas
 #: The one respond call of step (0), by its second line.
 _RESPOND_CALL_LINE = 'post_responses --pr-number {pr_number} --plan-id {plan_id}'
 
-#: The comparison that decides whether an unstamped inline fix is stamped.
-_DIFF_CHECK = 'git -C {worktree_path} diff --quiet {reviewed_commit_sha} {pushed_head_sha} -- {file_path}'
+#: The message the hook commits the triage's inline edits with at (4a).
+_INLINE_MESSAGE = 'fix(review): apply inline review dispositions'
 
-#: What the comparison does not show, stated in the hook and in the respond step.
-_INLINE_COST = (
-    'The check shows that the file changed after the reviewed commit, not that the change is the fix, '
-    'so a reviewer can be told "fixed" for an edit that was lost.'
+#: The search that finds the commit an unstamped inline fix is stamped with.
+_INLINE_SEARCH = (
+    'git -C {worktree_path} log --no-merges --format=%H%x09%s --fixed-strings '
+    '--grep="fix(review): apply inline review dispositions" '
+    '{reviewed_commit_sha}..{pushed_head_sha} -- {file_path}'
 )
 
-#: What stamping the pushed head again does not show, stated in the same two places.
+#: The comparison that finds the commit a replaced stamp is written again with.
+_PATCH_COMPARISON = (
+    'git -C {worktree_path} log --cherry-mark --right-only --no-merges --format=%m%H '
+    '{stamped_commit_sha}...{pushed_head_sha} ^{stamped_commit_sha}^ ^origin/{base_branch} -- {file_path}'
+)
+
+#: The placeholder of a commit one of the two commands found, and of the pushed head.
+_EVIDENCE_COMMIT = '{evidence_commit_sha}'
+_PUSHED_HEAD = '{pushed_head_sha}'
+
+#: What the inline commit does not show, as the hook states it.
+_INLINE_LIMIT = (
+    "The commit shows that this hook committed inline dispositions to the finding's file after the review. "
+    'It does not show which of several edits in that commit belongs to this finding, '
+    'nor that a later commit kept the edit.'
+)
+
+#: The part of that statement the respond step repeats word for word.
+_INLINE_UNSHOWN = (
+    'It does not show which of several edits in that commit belongs to this finding, '
+    'nor that a later commit kept the edit.'
+)
+
+#: What an equal patch for one file does not show, stated in the hook and in the respond step.
 _RESTAMP_LIMIT = (
-    'The pushed head contains whatever the branch holds, so when the rewrite that replaced the stamped '
-    'commit also dropped the fix, the reviewer is told "fixed" for a change that is not on the pull request.'
+    "An equal patch for one file shows that this file's change is in a commit on the branch. "
+    'It does not show that a later commit did not undo it, and it says nothing about other files the fix touched.'
 )
 
 #: The block of item 7c that commits and stamps the triage's inline edits.
@@ -92,6 +122,9 @@ _STAMP_FLAGS = frozenset({'--plan-id', '--commit-sha', '--task-number', '--hash-
 _LEDGER_LOOKUP = re.compile(r'manage-change-ledger|kind=change|\bledger\b|\btask_id\b', re.IGNORECASE)
 
 _FLAG = re.compile(r'--[a-z][a-z-]*')
+
+#: The quoted value of a ``--grep`` option.
+_GREP_VALUE = re.compile(r'--grep="([^"]*)"')
 
 
 def _between(text: str, start: str, end: str) -> str:
@@ -142,13 +175,22 @@ def _stamp_calls(text: str) -> list[str]:
     return [command for command in _commands(text) if ' stamp-fix-commit ' in f'{command} ']
 
 
-def _pushed_head_stamps_by_finding(text: str) -> list[str]:
-    """The ``stamp-fix-commit`` calls in ``text`` that stamp ONE finding with the pushed head."""
+def _stamps_by_finding(text: str, commit: str) -> list[str]:
+    """The ``stamp-fix-commit`` calls in ``text`` that stamp ONE finding with ``commit``.
+
+    ``commit`` is the placeholder the call carries after ``--commit-sha``, so the
+    same reader answers for the pushed head and for an evidence commit.
+    """
     return [
         call
         for call in _stamp_calls(text)
-        if '--commit-sha {pushed_head_sha}' in call and '--hash-id {hash_id}' in call and '--task-number' not in call
+        if f'--commit-sha {commit} ' in f'{call} ' and '--hash-id {hash_id}' in call and '--task-number' not in call
     ]
+
+
+def _grep_values(command: str) -> list[str]:
+    """The quoted ``--grep`` values of ``command``."""
+    return _GREP_VALUE.findall(command)
 
 
 def _table_row(text: str, key: str) -> list[str]:
@@ -254,16 +296,50 @@ _SYNTHETIC_HEAD_BRANCH = """\
 """
 
 
-#: A recovery that stamps one finding with the pushed head and tabulates what
-#: each reason and each exit status leads to.
-_SYNTHETIC_RECOVERY = """\
+#: A recovery that stamps one finding with an evidence commit: both commands as
+#: single shell lines, one row per reason, and the stamp call.
+_SYNTHETIC_RECOVERY = (
+    """\
   | Row `reason` | What this step does |
   |--------------|---------------------|
-  | `fix_commit_not_on_pr_head` | Stamps the finding again with `{pushed_head_sha}`. |
+  | `fix_commit_not_on_pr_head` | Stamps the finding again with the one commit that carries an equal patch. |
   | `pr_head_unreadable` | Stamps nothing. |
 
   ```bash
-  git -C {worktree_path} diff --quiet {reviewed_commit_sha} {pushed_head_sha} -- {file_path}
+  """
+    + _PATCH_COMPARISON
+    + """
+  ```
+
+  ```bash
+  """
+    + _INLINE_SEARCH
+    + """
+  ```
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings stamp-fix-commit \\
+    --plan-id {plan_id} --commit-sha {evidence_commit_sha} --hash-id {hash_id}
+  ```
+
+  An equal patch for one file shows that this file's change
+  is in a commit on the branch.
+"""
+)
+
+#: The shapes the evidence detectors must NOT report: a row that names the reason
+#: twice, a comparison with no path restriction, a search for another message, a
+#: stamp of the pushed head, and a sentence that lacks the clause on the file.
+_SYNTHETIC_NO_RECOVERY = """\
+  | `pr_head_unreadable` | Stamps nothing. |
+  | `pr_head_unreadable` | Stamps the finding again. |
+
+  ```bash
+  git -C {worktree_path} log --cherry-mark --right-only {stamped_commit_sha}...{pushed_head_sha}
+  ```
+
+  ```bash
+  git -C {worktree_path} log --grep="chore: other" {reviewed_commit_sha}..{pushed_head_sha} -- {file_path}
   ```
 
   ```bash
@@ -271,26 +347,7 @@ _SYNTHETIC_RECOVERY = """\
     --plan-id {plan_id} --commit-sha {pushed_head_sha} --hash-id {hash_id}
   ```
 
-  The check shows that the file changed after the reviewed commit,
-  not that the change is the fix.
-"""
-
-#: The shapes the recovery detectors must NOT report: a row that names the reason
-#: twice, a stamp with another commit, and a comparison of other operands.
-_SYNTHETIC_NO_RECOVERY = """\
-  | `pr_head_unreadable` | Stamps nothing. |
-  | `pr_head_unreadable` | Stamps the finding again. |
-
-  ```bash
-  git -C {worktree_path} diff --quiet HEAD -- {file_path}
-  ```
-
-  ```bash
-  python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings stamp-fix-commit \\
-    --plan-id {plan_id} --commit-sha {inline_commit_sha} --hash-id {hash_id}
-  ```
-
-  The check shows that the file changed.
+  An equal patch shows that the change is on the branch.
 """
 
 
@@ -351,18 +408,28 @@ def test_stamp_call_reader_tells_the_two_sources_apart():
     assert '--commit-sha {pushed_head_sha}' in from_head[0]
 
 
-def test_pushed_head_stamp_reader_finds_a_stamp_of_one_finding_only():
-    """Positive control, then three negatives: by task, with another commit, and prose."""
-    assert len(_pushed_head_stamps_by_finding(_SYNTHETIC_RECOVERY)) == 1
-    assert _pushed_head_stamps_by_finding(_SYNTHETIC_HEAD_BRANCH) == []
-    assert _pushed_head_stamps_by_finding(_SYNTHETIC_NO_RECOVERY) == []
-    assert _pushed_head_stamps_by_finding('Stamp the finding with `{pushed_head_sha}` by `--hash-id`.') == []
+def test_by_finding_stamp_reader_tells_an_evidence_commit_from_the_pushed_head():
+    """Each commit placeholder has a positive control and a negative one, in both directions."""
+    assert len(_stamps_by_finding(_SYNTHETIC_RECOVERY, _EVIDENCE_COMMIT)) == 1
+    assert _stamps_by_finding(_SYNTHETIC_RECOVERY, _PUSHED_HEAD) == []
+    # A by-finding stamp of the pushed head IS seen, so a zero count over the real step means something.
+    assert len(_stamps_by_finding(_SYNTHETIC_NO_RECOVERY, _PUSHED_HEAD)) == 1
+    assert _stamps_by_finding(_SYNTHETIC_NO_RECOVERY, _EVIDENCE_COMMIT) == []
+    # A stamp by fix task is not a stamp of one finding, and prose is not a call.
+    assert _stamps_by_finding(_SYNTHETIC_HEAD_BRANCH, _PUSHED_HEAD) == []
+    assert _stamps_by_finding('Stamp the finding with `{evidence_commit_sha}` by `--hash-id`.', _EVIDENCE_COMMIT) == []
+
+
+def test_grep_value_reader_returns_the_quoted_message_only():
+    assert _grep_values(_INLINE_SEARCH) == [_INLINE_MESSAGE]
+    assert _grep_values(_PATCH_COMPARISON) == []
+    assert _grep_values('git log --grep=unquoted') == []
 
 
 def test_table_row_reader_returns_one_row_and_nothing_for_an_absent_or_repeated_one():
     assert _table_row(_SYNTHETIC_RECOVERY, '`fix_commit_not_on_pr_head`') == [
         '`fix_commit_not_on_pr_head`',
-        'Stamps the finding again with `{pushed_head_sha}`.',
+        'Stamps the finding again with the one commit that carries an equal patch.',
     ]
     assert _table_row(_SYNTHETIC_RECOVERY, '`pr_head_unreadable`') == ['`pr_head_unreadable`', 'Stamps nothing.']
     assert _table_row(_SYNTHETIC_RECOVERY, '`fix_commit_ancestry_unreadable`') == []
@@ -370,14 +437,18 @@ def test_table_row_reader_returns_one_row_and_nothing_for_an_absent_or_repeated_
     assert _table_row('`pr_head_unreadable` stamps nothing.', '`pr_head_unreadable`') == []
 
 
-def test_shell_line_reader_takes_the_exact_comparison_only():
-    assert _shell_lines(_SYNTHETIC_RECOVERY, _DIFF_CHECK) == [_DIFF_CHECK]
-    assert _shell_lines(_SYNTHETIC_NO_RECOVERY, _DIFF_CHECK) == []
-    assert _shell_lines(f'Run `{_DIFF_CHECK}` and read its exit status.', _DIFF_CHECK) == []
+def test_shell_line_reader_takes_each_exact_command_only():
+    """Both commands are found as whole lines; a shortened one and one quoted in prose are not."""
+    assert _shell_lines(_SYNTHETIC_RECOVERY, _PATCH_COMPARISON) == [_PATCH_COMPARISON]
+    assert _shell_lines(_SYNTHETIC_RECOVERY, _INLINE_SEARCH) == [_INLINE_SEARCH]
+    assert _shell_lines(_SYNTHETIC_NO_RECOVERY, _PATCH_COMPARISON) == []
+    assert _shell_lines(_SYNTHETIC_NO_RECOVERY, _INLINE_SEARCH) == []
+    assert _shell_lines(f'Run `{_PATCH_COMPARISON}` and read its exit status.', _PATCH_COMPARISON) == []
+    assert _shell_lines(f'Run `{_INLINE_SEARCH}` and count its lines.', _INLINE_SEARCH) == []
 
 
 def test_sentence_reader_reads_across_a_line_break_and_not_across_a_missing_clause():
-    sentence = 'The check shows that the file changed after the reviewed commit, not that the change is the fix.'
+    sentence = "An equal patch for one file shows that this file's change is in a commit on the branch."
 
     assert _states(_SYNTHETIC_RECOVERY, sentence) is True
     assert _states(_SYNTHETIC_NO_RECOVERY, sentence) is False
@@ -430,7 +501,9 @@ def test_every_stamp_call_of_the_hook_uses_declared_flags_only():
         assert set(_FLAG.findall(call)) <= _STAMP_FLAGS, call
     # Step (0) holds three of them; one is by fix task and two are by finding.
     assert len(_stamp_calls(_step_0())) == 3
-    assert len(_pushed_head_stamps_by_finding(_step_0())) == 2
+    # The two by finding carry an evidence commit; no finding is stamped with the pushed head.
+    assert len(_stamps_by_finding(_step_0(), _EVIDENCE_COMMIT)) == 2
+    assert _stamps_by_finding(_step_0(), _PUSHED_HEAD) == []
 
 
 def test_the_pushed_head_is_read_after_the_task_is_done_and_before_the_stamp():
@@ -484,8 +557,22 @@ def test_an_inline_fix_is_still_stamped_with_the_commit_that_holds_its_edit():
     assert '--commit-sha {inline_commit_sha}' in calls[0]
     assert '--hash-id {hash_id}' in calls[0]
     assert '--task-number' not in calls[0]
-    assert _pushed_head_stamps_by_finding(block) == []
+    assert _stamps_by_finding(block, _PUSHED_HEAD) == []
+    assert _stamps_by_finding(block, _EVIDENCE_COMMIT) == []
     assert 'except the ones (0) left unstamped and logged in this same firing' in block
+    # The exclusion names what (0) stamped such a finding with: its evidence commit.
+    assert 'An inline fix (0) stamped with its evidence commit carries a `fix_commit_sha`' in block
+    assert 'stamped with the pushed head' not in block
+
+
+def test_the_search_looks_for_the_message_the_hook_commits_inline_edits_with():
+    """One literal in two places: the commit message of (4a) and the ``--grep`` value of (0)."""
+    block = _between(_item_7c(), _INLINE_BLOCK_START, _INLINE_BLOCK_END)
+    searches = _shell_lines(_inline_fix_branch(), _INLINE_SEARCH)
+
+    assert f'and the message `{_INLINE_MESSAGE}`' in block
+    assert len(searches) == 1, searches
+    assert _grep_values(searches[0]) == [_INLINE_MESSAGE]
 
 
 # ---------------------------------------------------------------------------
@@ -493,32 +580,38 @@ def test_an_inline_fix_is_still_stamped_with_the_commit_that_holds_its_edit():
 # ---------------------------------------------------------------------------
 
 
-def test_an_unstamped_inline_fix_is_stamped_with_the_pushed_head_by_finding():
-    """One stamp call in the branch, by finding, and only under three stated conditions."""
+def test_an_unstamped_inline_fix_is_stamped_with_its_evidence_commit_by_finding():
+    """One stamp call in the branch, by finding, with the commit the search found — never the pushed head."""
     branch = _inline_fix_branch()
     calls = _stamp_calls(branch)
 
     assert len(calls) == 1, calls
-    assert _pushed_head_stamps_by_finding(branch) == calls
-    assert 'only when all three of these hold' in branch
+    assert _stamps_by_finding(branch, _EVIDENCE_COMMIT) == calls
+    assert _stamps_by_finding(branch, _PUSHED_HEAD) == []
+    assert 'issued only when both of these hold' in branch
     assert 'the `branch-sync-state` read of this firing reports `state: synced`' in branch
     assert 'the finding carries a `file_path` and a `reviewed_commit_sha`' in branch
-    assert 'the file differs between the reviewed commit and the pushed head' in branch
+    assert 'A changed file alone is not evidence, and the pushed head is never stamped here.' in branch
     assert 'no inline fix is stamped here' in branch
+    # The file-differs check is gone from the whole step, not only from this branch.
+    assert 'diff --quiet' not in _step_0()
 
 
-def test_the_comparison_is_one_command_read_by_its_exit_status():
-    """The exact command, and one row per outcome: 1 stamps, 0 and any other do not."""
+def test_the_search_is_one_command_and_only_exactly_one_counted_line_stamps():
+    """The exact command, the counting rule, and one row per outcome."""
     branch = _inline_fix_branch()
 
-    assert _shell_lines(branch, _DIFF_CHECK) == [_DIFF_CHECK]
-    assert branch.index(_DIFF_CHECK) < branch.index('manage-findings:manage-findings stamp-fix-commit')
-    assert _table_row(branch, '`1`')[1:] == ['The file differs between the two commits.', 'Is stamped.']
-    assert _table_row(branch, '`0`')[1:] == ['The file is unchanged.', 'Is not stamped.']
-    other = _table_row(branch, 'any other')
-    assert len(other) == 3, other
-    assert other[1].startswith('The comparison could not be made')
-    assert other[2] == 'Is not stamped.'
+    assert _shell_lines(branch, _INLINE_SEARCH) == [_INLINE_SEARCH]
+    assert branch.index(_INLINE_SEARCH) < branch.index('manage-findings:manage-findings stamp-fix-commit')
+    assert f'a line is counted only when the text after the tab equals `{_INLINE_MESSAGE}` exactly' in branch
+    one = _table_row(branch, 'Exit status 0 and exactly one counted line')
+    assert len(one) == 2, one
+    assert one[1].startswith('Is stamped with that commit, `{evidence_commit_sha}`')
+    assert _table_row(branch, 'Exit status 0 and no counted line')[1:] == ['Is not stamped.']
+    assert _table_row(branch, 'Exit status 0 and more than one counted line')[1:] == ['Is not stamped.']
+    other = _table_row(branch, 'Any other exit status')
+    assert len(other) == 2, other
+    assert other[1].startswith('Is not stamped. The search could not be made')
 
 
 def test_a_finding_without_a_file_path_or_a_reviewed_commit_is_not_stamped():
@@ -527,14 +620,24 @@ def test_a_finding_without_a_file_path_or_a_reviewed_commit_is_not_stamped():
     assert _states(
         branch,
         'A finding with no `file_path` (a `review_body` or `issue_comment` finding) or with no '
-        '`reviewed_commit_sha` is not compared and is not stamped.',
+        '`reviewed_commit_sha` is not searched for and is not stamped.',
     )
-    assert 'is logged at WARNING, naming its `hash_id` and the ground' in branch
+    assert 'is logged at WARNING, naming its `hash_id` and the reason' in branch
+    assert 'the search exited with a non-zero status' in branch
     assert 'and stays held' in branch
 
 
-def test_the_hook_says_what_the_comparison_does_not_show():
-    assert _states(_inline_fix_branch(), _INLINE_COST)
+def test_the_hook_says_what_the_inline_commit_does_not_show():
+    assert _states(_inline_fix_branch(), _INLINE_LIMIT)
+
+
+def test_an_uncommitted_inline_edit_is_stamped_two_firings_later():
+    """The next firing commits it at (4a) and leaves it out; the one after finds the commit."""
+    branch = _inline_fix_branch()
+
+    assert 'An edit a stopped firing left uncommitted in the worktree has no such commit yet.' in branch
+    assert '(4a) of the next firing commits it under the same message' in branch
+    assert '(0) of the firing after that finds the commit and stamps it' in branch
 
 
 def test_the_inline_stamps_are_written_before_the_respond_pass():
@@ -550,22 +653,74 @@ def test_the_inline_stamps_are_written_before_the_respond_pass():
 # ---------------------------------------------------------------------------
 
 
-def test_a_stamp_that_misses_the_head_is_stamped_again_by_finding_and_only_on_synced():
-    """One stamp call, by finding, with the pushed head, after the respond pass."""
+def test_a_stamp_that_misses_the_head_is_stamped_again_with_its_evidence_commit_and_only_on_synced():
+    """One stamp call, by finding, with the commit the comparison found, after the respond pass."""
     part = _restamp_part()
     calls = _stamp_calls(part)
     step_0 = _step_0()
 
     assert len(calls) == 1, calls
-    assert _pushed_head_stamps_by_finding(part) == calls
+    assert _stamps_by_finding(part, _EVIDENCE_COMMIT) == calls
+    assert _stamps_by_finding(part, _PUSHED_HEAD) == []
     assert step_0.index(_RESPOND_CALL_LINE) < step_0.index(_RESTAMP_START)
     row = _table_row(part, '`fix_commit_not_on_pr_head`')
     assert len(row) == 2, row
-    assert row[1].startswith('Stamps the finding again with `{pushed_head_sha}`')
+    assert row[1].startswith(
+        "Looks for the commit on the branch whose patch for the finding's file equals the replaced commit's"
+    )
+    assert 'stamps the finding again with that commit when exactly one is found' in row[1]
     assert 'only when the `branch-sync-state` read of this firing reports `state: synced`' in row[1]
     assert 'On any state other than `synced`' in part
     assert 'nothing is stamped again' in part
     assert 'for a task fix and for an inline fix alike' in part
+    assert 'It does not show that the rewrite kept the fix, so the pushed head is not stamped.' in part
+
+
+def test_the_patch_comparison_is_one_command_and_only_exactly_one_equal_line_stamps():
+    """The exact command, read after the finding and before the stamp, and one row per outcome."""
+    part = _restamp_part()
+
+    assert _shell_lines(part, _PATCH_COMPARISON) == [_PATCH_COMPARISON]
+    assert (
+        part.index('manage-findings:manage-findings get')
+        < part.index(_PATCH_COMPARISON)
+        < part.index('manage-findings:manage-findings stamp-fix-commit')
+    )
+    assert 'The comparison is one command, with no pipe' in part
+    one = _table_row(part, 'Exit status 0 and exactly one line that starts with `=`')
+    assert len(one) == 2, one
+    assert one[1].startswith('Is stamped again with that commit, `{evidence_commit_sha}`')
+    assert _table_row(part, 'Exit status 0 and no line that starts with `=`')[1:] == ['Is not stamped again.']
+    assert _table_row(part, 'Exit status 0 and more than one line that starts with `=`')[1:] == [
+        'Is not stamped again.'
+    ]
+    other = _table_row(part, 'Any other exit status')
+    assert len(other) == 2, other
+    assert other[1].startswith('Is not stamped again. The comparison could not be made')
+
+
+def test_the_hook_says_where_it_reads_the_base_branch_from():
+    """The comparison names ``{base_branch}``, and item 7c reads it nowhere else."""
+    part = _restamp_part()
+    reads = [command for command in _commands(part) if 'manage-references:manage-references get' in command]
+
+    assert len(reads) == 1, reads
+    assert reads[0].endswith('--plan-id {plan_id} --field base_branch')
+    assert 'Item 7c has no other read of it' in part
+    assert part.index('manage-references:manage-references get') < part.index(_PATCH_COMPARISON)
+
+
+def test_a_finding_without_a_file_path_or_a_readable_stamp_is_not_stamped_again():
+    part = _restamp_part()
+
+    assert _states(
+        part,
+        'A finding with no `file_path` (a `review_body` or `issue_comment` finding), and a finding whose '
+        '`fix_commit_sha` cannot be read, is not compared and is not stamped again.',
+    )
+    assert 'is logged at WARNING, naming its `hash_id` and the reason' in part
+    assert 'the comparison exited with a non-zero status' in part
+    assert 'and stays held' in part
 
 
 def test_an_unreadable_reason_stamps_nothing():
@@ -591,15 +746,22 @@ def test_the_respond_pass_runs_once_more_only_after_a_stamp_was_written_again():
     assert _github_respond_calls(part) == []
 
 
-def test_the_hook_says_what_stamping_the_pushed_head_again_does_not_show():
-    assert _states(_restamp_part(), _RESTAMP_LIMIT)
+def test_the_hook_says_what_an_equal_patch_does_not_show():
+    part = _restamp_part()
+
+    assert _states(part, _RESTAMP_LIMIT)
+    assert 'it stays held until it is re-resolved or stamped by hand' in part
 
 
 def test_the_task_fix_branch_names_this_step_as_the_one_that_stamps_again():
     branch = _task_fix_branch()
 
     assert 'the finding is held with `fix_commit_not_on_pr_head` until it is stamped again' in branch
-    assert 'This step is the one that stamps it again, after its respond pass below' in branch
+    assert (
+        'This step stamps it again after its respond pass below, and only with a commit on the branch '
+        "that carries the same change to the finding's file as the replaced commit did"
+    ) in branch
+    assert 'a finding for which no such commit is found stays held' in branch
 
 
 # ---------------------------------------------------------------------------
@@ -620,22 +782,43 @@ def test_the_respond_step_names_the_stamp_source_and_its_consequence():
 def test_the_respond_step_states_both_recoveries_and_what_each_does_not_show():
     step_8 = _step_8()
 
-    assert _states(step_8, _INLINE_COST)
+    assert _states(step_8, _INLINE_UNSHOWN)
+    assert 'The commit shows that the hook committed inline dispositions to that file after the review.' in step_8
     assert _states(step_8, _RESTAMP_LIMIT)
-    assert '`reason: fix_commit_not_on_pr_head` is stamped again with the pushed head' in step_8
-    assert f'`{_DIFF_CHECK}` exits with status 1' in step_8
-    assert 'Exit status 0 (the file is unchanged), any other exit status (the comparison could not be made)' in step_8
-    assert 'a finding with no `file_path` and a finding with no `reviewed_commit_sha` stamp nothing' in step_8
+    assert 'The hook stamps an evidence commit in two further cases' in step_8
     assert 'each only while `branch-sync-state` reports `synced`' in step_8
+    assert 'In neither does it stamp the pushed head' in step_8
+    assert (
+        "is stamped again with the one commit on the branch whose patch for the finding's file "
+        "equals the replaced commit's"
+    ) in step_8
+    assert 'it stamps on exit status 0 with exactly one line marked `=`' in step_8
+    assert 'a finding with no `file_path` and a finding with no readable `fix_commit_sha` stamp nothing' in step_8
+    assert f'whose subject is exactly `{_INLINE_MESSAGE}`' in step_8
+    assert 'a finding with no `file_path` and a finding with no `reviewed_commit_sha` stamp nothing' in step_8
+    assert 'it stays held until it is re-resolved or stamped by hand' in step_8
+    # The three stamping points name the evidence, not the pushed head, for the two recoveries.
+    assert "for which it finds the one commit that holds inline edits to the finding's file" in step_8
+    assert "for which it finds the one commit that carries the replaced commit's change to the finding's file" in step_8
+    assert 'diff --quiet' not in step_8
+    assert 'stamped again with the pushed head' not in step_8
 
 
 def test_the_respond_step_says_which_held_state_the_hook_ends():
     """One row per state; the reader returns nothing for a state named twice."""
     step_8 = _step_8()
+    inline = _table_row(step_8, '`no_fix_commit`, inline fix')
+    rewritten = _table_row(step_8, '`fix_commit_not_on_pr_head`')
 
     assert _table_row(step_8, '`no_fix_commit`, task fix')[1].startswith('Ends it')
-    assert _table_row(step_8, '`no_fix_commit`, inline fix')[1].startswith('Ends it when')
-    assert _table_row(step_8, '`fix_commit_not_on_pr_head`')[1].startswith('Ends it')
+    assert len(inline) == 2, inline
+    assert inline[1].startswith("Ends it when exactly one commit with the hook's inline message touches")
+    assert 'Does not end it when there is no such commit or more than one' in inline[1]
+    assert len(rewritten) == 2, rewritten
+    assert rewritten[1].startswith('Ends it when exactly one commit on a `synced` branch carries')
+    assert 'Does not end it when there is no such commit or more than one' in rewritten[1]
+    assert 'the pushed head' not in inline[1]
+    assert 'the pushed head' not in rewritten[1]
     assert _table_row(step_8, '`fix_commit_ancestry_unreadable`')[1].startswith('Does not end it')
 
 
@@ -644,10 +827,13 @@ def test_the_respond_step_says_when_a_discarded_inline_edit_is_answered():
     rows = [line for line in step_8.splitlines() if line.strip().startswith('| The inline edit is discarded')]
 
     assert len(rows) == 1, rows
-    assert 'stamps the pushed head once the branch is `synced`' in rows[0]
-    assert "the finding's file differs from the reviewed commit, and the reply is sent" in rows[0]
-    assert 'Otherwise' in rows[0]
-    assert 'No reply. The thread stays open.' in rows[0]
+    assert (
+        "A reply is sent only when exactly one commit with the hook's inline message touches the finding's file "
+        'after the reviewed commit'
+    ) in rows[0]
+    assert 'A discarded edit has no such commit: No reply. The thread stays open.' in rows[0]
+    assert 'stamps the pushed head' not in rows[0]
+    assert "is committed by the hook's next firing under that message" in rows[0]
 
 
 # ---------------------------------------------------------------------------
@@ -750,9 +936,23 @@ def test_the_github_verb_document_names_both_recoveries_and_their_limit():
     row = _table_row(text, '`fix_commit_not_on_pr_head`')
 
     assert len(row) == 2, row
-    assert 'The phase-6-finalize hook stamps the finding again with the pushed head of the branch' in row[1]
+    assert (
+        'The phase-6-finalize hook stamps the finding again only with the one commit on the branch '
+        "whose patch for the finding's file equals the replaced commit's"
+    ) in row[1]
     assert 'once `branch-sync-state` reports `synced`' in row[1]
-    assert 'A finding this verb reports with `fix_commit_not_on_pr_head` is stamped again' in text
-    assert 'its file differs between the reviewed commit and the pushed head' in text
-    assert '`Fix commit:` can therefore name a commit that does not contain the fix' in text
+    assert 'When it finds no such commit, or more than one, the finding stays held.' in row[1]
+    assert 'with the pushed head' not in row[1]
+    assert 'The hook stamps an evidence commit in two further cases' in text
+    assert 'in neither does it stamp the pushed head' in text
+    assert 'A finding this verb reports with `fix_commit_not_on_pr_head` is stamped again only with' in text
+    assert (
+        'is stamped only with the one commit the hook made for inline dispositions '
+        "that touches the finding's file after the reviewed commit"
+    ) in text
+    assert "For these two recoveries `Fix commit:` names a commit that carries a change to the finding's file" in text
+    assert 'The line does not show that a later commit kept that change' in text
+    assert '`Fix commit:` can therefore name a commit that does not contain the fix' not in text
+    assert 'its file differs between the reviewed commit and the pushed head' not in text
     assert '**A held `fixed` finding that no caller stamps is never answered.**' in text
+    assert 'which includes every `review_body` finding' in text

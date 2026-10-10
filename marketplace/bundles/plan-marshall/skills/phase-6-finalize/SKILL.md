@@ -1740,39 +1740,43 @@ FOR each step_id in manifest.phase_6.steps:
 
             ⚠ **The stamped commit is the pushed head at the time of stamping, which may be later than the commit that made the fix.** It contains the fix. It is a different commit from the one that changed the lines whenever anything was committed on top of that one before this firing — another fix task's commit, or a finalize step's. The `Fix commit:` line of the reply therefore names a commit as of which the fix is on the pull request, and a reviewer who opens it may see a change that is not the fix.
 
-            A pushed head passes the respond pass's check by construction: `post_responses` releases a `fixed` finding when GitHub reports the stamped commit as the pull request head or as an ancestor of it, and at stamping time it is the head. When the head moves again before a respond pass reads the stamp — further commits pushed on top — the stamped commit is an ancestor of the new head and still passes. Only a rewritten branch fails the check: after a rebase or a force-push that replaces the stamped commit the finding is held with `fix_commit_not_on_pr_head` until it is stamped again. This step is the one that stamps it again, after its respond pass below.
+            A pushed head passes the respond pass's check by construction: `post_responses` releases a `fixed` finding when GitHub reports the stamped commit as the pull request head or as an ancestor of it, and at stamping time it is the head. When the head moves again before a respond pass reads the stamp — further commits pushed on top — the stamped commit is an ancestor of the new head and still passes. Only a rewritten branch fails the check: after a rebase or a force-push that replaces the stamped commit the finding is held with `fix_commit_not_on_pr_head` until it is stamped again. This step stamps it again after its respond pass below, and only with a commit on the branch that carries the same change to the finding's file as the replaced commit did; a finding for which no such commit is found stays held.
 
             A task that is not `done` is not stamped, and no task is stamped while the branch is not `synced`. Their findings stay held, and the respond pass below reports them as `deferred_until_commit`; the next firing reads the task and the push parity again.
-          - **A finding with no `fix_task_number`** (an inline fix). An inline fix is stamped at (4a) below, in the firing that commits its edit, with the commit that holds the edit. Every firing runs (4a) on every return of the triage, before it evaluates any gate, so a halt at item 7b leaves no inline fix behind. One still unstamped here therefore belongs to a firing that ended before (4a) wrote its stamp — the commit or the push failed, or the session ended in between. This firing cannot tell which commit holds that edit, so it stamps the pushed head instead, and only when all three of these hold:
+          - **A finding with no `fix_task_number`** (an inline fix). An inline fix is stamped at (4a) below, in the firing that commits its edit, with the commit that holds the edit. Every firing runs (4a) on every return of the triage, before it evaluates any gate, so a halt at item 7b leaves no inline fix behind. One still unstamped here therefore belongs to a firing that ended before (4a) wrote its stamp — the commit or the push failed, or the session ended in between. This firing stamps it only with a commit that is shown to hold inline edits to the finding's file: a commit this hook made at (4a) under its fixed message `fix(review): apply inline review dispositions`, after the reviewed commit, on the pushed head, touching the finding's file. A changed file alone is not evidence, and the pushed head is never stamped here. The search for that commit is issued only when both of these hold:
 
             - the `branch-sync-state` read of this firing reports `state: synced` — the same call as in the task-fix branch above, issued here when this firing has not issued it yet. Its `head_sha` is `{pushed_head_sha}`;
-            - the finding carries a `file_path` and a `reviewed_commit_sha`;
-            - the file differs between the reviewed commit and the pushed head.
+            - the finding carries a `file_path` and a `reviewed_commit_sha`.
 
-            The third condition is one command, and the hook branches on its exit status:
+            The search is one command:
 
             ```bash
-            git -C {worktree_path} diff --quiet {reviewed_commit_sha} {pushed_head_sha} -- {file_path}
+            git -C {worktree_path} log --no-merges --format=%H%x09%s --fixed-strings --grep="fix(review): apply inline review dispositions" {reviewed_commit_sha}..{pushed_head_sha} -- {file_path}
             ```
 
-            | Exit status | What it shows | The finding |
-            |-------------|---------------|-------------|
-            | `1` | The file differs between the two commits. | Is stamped. |
-            | `0` | The file is unchanged. | Is not stamped. |
-            | any other | The comparison could not be made — for example a reviewed commit the clone does not know. | Is not stamped. |
+            Each output line is a commit id, a tab and the subject of that commit. `--grep` matches any line of a commit message, so a line is counted only when the text after the tab equals `fix(review): apply inline review dispositions` exactly. The hook branches on the exit status and on the number of counted lines:
 
-            A finding with no `file_path` (a `review_body` or `issue_comment` finding) or with no `reviewed_commit_sha` is not compared and is not stamped. On any state other than `synced`, and on a `status: error` return of the parity read, no inline fix is stamped here.
+            | What the search returns | The finding |
+            |-------------------------|-------------|
+            | Exit status 0 and exactly one counted line | Is stamped with that commit, `{evidence_commit_sha}` — the 40 characters before the tab. |
+            | Exit status 0 and no counted line | Is not stamped. |
+            | Exit status 0 and more than one counted line | Is not stamped. |
+            | Any other exit status | Is not stamped. The search could not be made — for example a reviewed commit the clone does not know. |
 
-            One call per finding that met all three conditions:
+            A finding with no `file_path` (a `review_body` or `issue_comment` finding) or with no `reviewed_commit_sha` is not searched for and is not stamped. On any state other than `synced`, and on a `status: error` return of the parity read, no inline fix is stamped here.
+
+            One call per finding with exactly one counted line:
 
             ```bash
             python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings stamp-fix-commit \
-              --plan-id {plan_id} --commit-sha {pushed_head_sha} --hash-id {hash_id}
+              --plan-id {plan_id} --commit-sha {evidence_commit_sha} --hash-id {hash_id}
             ```
 
-            ⚠ **The check shows that the file changed after the reviewed commit, not that the change is the fix, so a reviewer can be told "fixed" for an edit that was lost.** That is the accepted cost of answering the finding at all: an edit that was discarded, in a file another commit changed after the review, meets all three conditions.
+            ⚠ **The commit shows that this hook committed inline dispositions to the finding's file after the review. It does not show which of several edits in that commit belongs to this finding, nor that a later commit kept the edit.** A second inline edit to the same file in the same commit, and a commit that reverts the edit afterwards, each leave exactly one counted line.
 
-            Every inline fix left unstamped here is logged at WARNING, naming its `hash_id` and the ground — the branch is not `synced`, the file is unchanged, the comparison could not be made, or the finding carries no `file_path` or no `reviewed_commit_sha` — and stays held.
+            Every inline fix left unstamped here is logged at WARNING, naming its `hash_id` and the reason — the branch is not `synced`, no commit with the hook's message touches the file, more than one does, the search exited with a non-zero status, or the finding carries no `file_path` or no `reviewed_commit_sha` — and stays held.
+
+            An edit a stopped firing left uncommitted in the worktree has no such commit yet. (4a) of the next firing commits it under the same message and leaves the finding out of its own stamps, because (0) logged it in that firing; (0) of the firing after that finds the commit and stamps it.
 
           These stamps are written before the respond pass, so that pass sends their replies. Run the respond pass once, whether or not anything was stamped in this firing — a finding that already carries a stamp may still be waiting for its commit to reach the pull request:
 
@@ -1783,24 +1787,55 @@ FOR each step_id in manifest.phase_6.steps:
 
           Read `status`, `count_untransmitted`, `count_deferred_until_commit` and the `deferred_until_commit` rows from the return, and log the three values.
 
-          **Stamp again a stamp that does not reach the pull request head.** A `deferred_until_commit` row whose `reason` is `fix_commit_not_on_pr_head` names a finding whose stamped commit GitHub does not report on the pull request head: a rebase or a force-push replaced it. The row shows that a stamp was written, so the fix was committed and pushed once — for a task fix and for an inline fix alike — and the pushed head is the commit as of which the branch content is on the pull request. Branch on the row's `reason`:
+          **Stamp again a stamp that does not reach the pull request head.** A `deferred_until_commit` row whose `reason` is `fix_commit_not_on_pr_head` names a finding whose stamped commit GitHub does not report on the pull request head: a rebase or a force-push replaced it. The row shows that a stamp was written, so the fix was committed and pushed once — for a task fix and for an inline fix alike. It does not show that the rewrite kept the fix, so the pushed head is not stamped. The finding is stamped again only with the one commit on the branch whose change to the finding's file equals the replaced commit's. Branch on the row's `reason`:
 
           | Row `reason` | What this step does |
           |--------------|---------------------|
-          | `fix_commit_not_on_pr_head` | Stamps the finding again with `{pushed_head_sha}`, and only when the `branch-sync-state` read of this firing reports `state: synced` — the same call again, issued here when this firing has not issued it yet. |
+          | `fix_commit_not_on_pr_head` | Looks for the commit on the branch whose patch for the finding's file equals the replaced commit's, as stated below, and stamps the finding again with that commit when exactly one is found. It does so only when the `branch-sync-state` read of this firing reports `state: synced` — the same call again, issued here when this firing has not issued it yet. |
           | `pr_head_unreadable` | Stamps nothing. A failed read does not show that the stamped commit was replaced. |
           | `fix_commit_ancestry_unreadable` | Stamps nothing, on the same ground. |
 
-          On any state other than `synced`, and on a `status: error` return of the parity read, nothing is stamped again. One call per finding that is stamped again:
+          On any state other than `synced`, and on a `status: error` return of the parity read, nothing is stamped again. On `synced`, read each such finding for its `file_path` and its current `fix_commit_sha`, here `{stamped_commit_sha}`:
+
+          ```bash
+          python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings get \
+            --plan-id {plan_id} --hash-id {hash_id}
+          ```
+
+          `{base_branch}` is the plan's base branch. Item 7c has no other read of it, so the hook reads it once per firing, before the first comparison:
+
+          ```bash
+          python3 .plan/execute-script.py plan-marshall:manage-references:manage-references get \
+            --plan-id {plan_id} --field base_branch
+          ```
+
+          The comparison is one command, with no pipe:
+
+          ```bash
+          git -C {worktree_path} log --cherry-mark --right-only --no-merges --format=%m%H {stamped_commit_sha}...{pushed_head_sha} ^{stamped_commit_sha}^ ^origin/{base_branch} -- {file_path}
+          ```
+
+          `^{stamped_commit_sha}^` leaves the stamped commit as the only commit on the left side. The right side is the commits of the pushed head that are reachable neither from the stamped commit nor from the base branch, limited to those that touch `{file_path}`. `--cherry-mark` compares patches restricted to that path: it prints `=` in front of a right-side commit whose patch for the file equals the stamped commit's, and `>` in front of every other. The hook branches on the exit status and on the lines that start with `=`:
+
+          | What the comparison returns | The finding |
+          |-----------------------------|-------------|
+          | Exit status 0 and exactly one line that starts with `=` | Is stamped again with that commit, `{evidence_commit_sha}` — the 40 characters after the `=`. |
+          | Exit status 0 and no line that starts with `=` | Is not stamped again. |
+          | Exit status 0 and more than one line that starts with `=` | Is not stamped again. |
+          | Any other exit status | Is not stamped again. The comparison could not be made — the stamped commit is not in the local repository, it has no parent, or the base ref is unknown. |
+
+          A finding with no `file_path` (a `review_body` or `issue_comment` finding), and a finding whose `fix_commit_sha` cannot be read, is not compared and is not stamped again. One call per finding with exactly one `=` line:
 
           ```bash
           python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings stamp-fix-commit \
-            --plan-id {plan_id} --commit-sha {pushed_head_sha} --hash-id {hash_id}
+            --plan-id {plan_id} --commit-sha {evidence_commit_sha} --hash-id {hash_id}
           ```
+
+          Every finding left unstamped here is logged at WARNING, naming its `hash_id` and the reason — the branch is not `synced`, no commit carries an equal patch for the file, more than one does, the comparison exited with a non-zero status, or the finding carries no `file_path` or no readable `fix_commit_sha` — and stays held.
 
           When at least one finding was stamped again, run the respond pass once more, with the same `github_pr post_responses` call as above and no added flag. When none was, the respond pass is not repeated.
 
-          ⚠ **The pushed head contains whatever the branch holds, so when the rewrite that replaced the stamped commit also dropped the fix, the reviewer is told "fixed" for a change that is not on the pull request.** This step does not compare the content of the replaced commit with the pushed head.
+          ⚠ **An equal patch for one file shows that this file's change is in a commit on the branch. It does not show that a later commit did not undo it, and it says nothing about other files the fix touched.** A `review_body` finding has no file path, so after a rewrite it stays held until it is re-resolved or stamped by hand.
 
           A non-zero `count_deferred_until_commit` on the last respond pass of (0) is not a failure of this hook; it names fixes that are still on their way, or that never arrived. On a GitLab project skip (0) entirely: the GitLab verb reads no stamp and has already transmitted every `fixed` reply.
 
@@ -1840,7 +1875,7 @@ FOR each step_id in manifest.phase_6.steps:
 
           - Check the worktree and, when it is dirty, commit exactly as item 5f (a)-(b) does for a mutating step — `git -C {worktree_path} status --porcelain`, then `Skill: plan-marshall:workflow-integration-git` with `push: false` and the message `fix(review): apply inline review dispositions` — and resolve the new HEAD as `{inline_commit_sha}` with `git -C {worktree_path} rev-parse HEAD`. Emit the item 5f (d) freshness reconciliation record for it. A clean worktree means the triage edited nothing: skip the rest of (4a) and go to (4b).
           - Re-invoke the `push` step, as item 5f § "Post-PR re-push" does, so the commit is on the pull request.
-          - Stamp each inline fix this firing resolved: every `fixed` `pr-comment` finding with no `fix_task_number` and no `fix_commit_sha`, except the ones (0) left unstamped and logged in this same firing — which commit holds their edit is not known to this firing. An inline fix (0) stamped with the pushed head carries a `fix_commit_sha` and is not selected here:
+          - Stamp each inline fix this firing resolved: every `fixed` `pr-comment` finding with no `fix_task_number` and no `fix_commit_sha`, except the ones (0) left unstamped and logged in this same firing — which commit holds their edit is not known to this firing. An inline fix (0) stamped with its evidence commit carries a `fix_commit_sha` and is not selected here:
 
             ```bash
             python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings stamp-fix-commit \
