@@ -959,7 +959,8 @@ def stamp_fix_commit(
     A selector that matches no ``fixed`` finding is reported, not hidden: the
     by-task form returns ``stamped_count: 0`` over a store that was read, and the
     by-finding form returns ``error: finding_not_fixed`` for a finding whose
-    resolution is something else.
+    resolution is something else. A by-task query the store refuses is returned
+    as that refusal, with nothing stamped.
     """
     normalized = _normalize_commit_sha(commit_sha)
     if normalized is None:
@@ -998,9 +999,14 @@ def stamp_fix_commit(
             }
         targets = [hash_id]
     else:
+        # A refusal payload carries no ``findings`` key, so the query status is read
+        # before the list is: the refusal is returned unchanged and nothing is stamped.
+        queried = query_findings(plan_id)
+        if queried.get('status') != 'success':
+            return queried
         targets = [
             str(record['hash_id'])
-            for record in query_findings(plan_id)['findings']
+            for record in queried['findings']
             if record.get('resolution') == FIXED_RESOLUTION and record.get(FIX_TASK_FIELD) == fix_task_number
         ]
 

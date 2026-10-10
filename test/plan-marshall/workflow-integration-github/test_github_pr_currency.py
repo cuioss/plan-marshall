@@ -2132,3 +2132,44 @@ def test_the_disclosure_leaves_out_a_bot_that_edits_one_review_in_place(bot_kind
     monkeypatch.setattr(github_pr.bot_registry, 'participation_requires_update', lambda _bot: True)
 
     assert github_pr._reviews_at_another_commit([review], [bot_kind], _HEAD_B) == []
+
+
+@pytest.mark.parametrize(
+    'malformed',
+    ['9999-not-a-timestamp', '2999-01-01T00:00:00+02:00', '2999-01-01T00:00:00.000Z', '2999-01-01'],
+    ids=['free-text', 'utc-offset', 'fractional-seconds', 'bare-date'],
+)
+def test_a_malformed_timestamp_does_not_displace_the_newest_well_formed_review(malformed):
+    """Only an ISO-UTC timestamp takes part in picking the most recently written review.
+
+    Each malformed value sorts lexicographically ABOVE every well-formed timestamp
+    used here, so a bare string max would name the malformed review. The review with
+    the newest well-formed timestamp is named instead, whichever position the
+    malformed one holds in the list.
+    """
+    bot_kind = _DISCLOSABLE_BOTS[0]
+    assert malformed > _at(9), 'the malformed value must outrank the well-formed one as a string'
+    assert not github_pr._ISO_UTC_TIMESTAMP.match(malformed)
+    older = _review_at(bot_kind, 'review-older', _HEAD_A, created_at=_at(1))
+    newest = _review_at(bot_kind, 'review-newest', _HEAD_B, created_at=_at(9))
+    odd = _review_at(bot_kind, 'review-malformed', _HEAD_A, created_at=malformed)
+    named = [{'bot_kind': bot_kind, 'review_id': 'review-newest', 'review_commit_sha': _HEAD_B}]
+
+    assert github_pr._reviews_at_another_commit([odd, older, newest], [bot_kind], _HEAD_C) == named
+    assert github_pr._reviews_at_another_commit([older, newest, odd], [bot_kind], _HEAD_C) == named
+
+
+def test_a_well_formed_newer_timestamp_does_displace_an_older_review():
+    """⛔ MATCHED CONTROL — the same three reviews with the odd one well-formed and newest.
+
+    The review the malformed case leaves out is named here, so that case passes
+    because of the timestamp's shape and not because the review can never be named.
+    """
+    bot_kind = _DISCLOSABLE_BOTS[0]
+    older = _review_at(bot_kind, 'review-older', _HEAD_A, created_at=_at(1))
+    newest = _review_at(bot_kind, 'review-newest', _HEAD_B, created_at=_at(5))
+    later = _review_at(bot_kind, 'review-malformed', _HEAD_A, created_at=_at(9))
+
+    assert github_pr._reviews_at_another_commit([later, older, newest], [bot_kind], _HEAD_C) == [
+        {'bot_kind': bot_kind, 'review_id': 'review-malformed', 'review_commit_sha': _HEAD_A}
+    ]

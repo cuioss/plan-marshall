@@ -720,6 +720,41 @@ def test_stamp_by_fix_task_reports_an_empty_selection_as_zero_over_a_read_store(
     assert result['findings_store_state'] == 'present'
 
 
+def test_stamp_by_fix_task_returns_a_refused_query_unchanged_and_stamps_nothing(plan_context, monkeypatch):
+    """A query the store refuses carries no ``findings`` key; the by-task arm returns it as it is.
+
+    The finding is owned by the task and fixed, so the only thing keeping it
+    unstamped is the refused query. The same call with the query answering is the
+    matched control: it stamps that one finding.
+    """
+    plan_id = 'fix-stamp-by-task-refused-query'
+    plan_context.plan_dir_for(plan_id)
+    owned = _add_bug(plan_id, 'Owned by the task')
+    _findings_core.resolve_finding(plan_id, owned, 'fixed', fix_task_number=7)
+    refusal = {
+        'status': 'error',
+        'error': FINDINGS_STORE_UNRESOLVED,
+        'plan_id': plan_id,
+        'message': 'the findings store was never reached',
+        'findings_store_state': 'plan_absent',
+        'unresolved_store': True,
+    }
+    assert 'findings' not in refusal
+
+    with monkeypatch.context() as patched:
+        patched.setattr(_findings_core, 'query_findings', lambda _plan_id: refusal)
+        result = _findings_core.stamp_fix_commit(plan_id, _FIX_COMMIT, fix_task_number=7)
+
+    assert result is refusal
+    assert _stored(plan_id, owned).get('fix_commit_sha') is None
+
+    control = _findings_core.stamp_fix_commit(plan_id, _FIX_COMMIT, fix_task_number=7)
+
+    assert control['status'] == 'success'
+    assert control['hash_ids'] == [owned]
+    assert _stored(plan_id, owned)['fix_commit_sha'] == _FIX_COMMIT
+
+
 def test_stamp_by_finding_is_the_form_an_inline_fix_uses(plan_context):
     plan_id = 'fix-stamp-by-finding'
     plan_context.plan_dir_for(plan_id)

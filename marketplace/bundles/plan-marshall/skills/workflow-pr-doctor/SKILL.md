@@ -61,7 +61,7 @@ pr_number: {pr_number}            # required; auto-detect via `ci pr view` when 
 caller_phase: phase-6-finalize
 ```
 
-The dispatched envelope runs `verification-feedback.md` Step 1 (`producer=pr-state` branch) inline and continues into the triage core. Its Step 8 respond pass is the only one this run has: on GitHub it calls `post_responses` with `--send-unstamped-fixed`, so every reply — a `fixed` one included — is sent in that same pass.
+The dispatched envelope runs `verification-feedback.md` Step 1 (`producer=pr-state` branch) inline and continues into the triage core. Its Step 8 respond pass is the only one this run has: on GitHub it calls `post_responses` with `--send-unstamped-fixed`, so the reply of a `fixed` finding with no stamped fix commit is sent in that same pass, together with the replies of the other dispositions. A `fixed` finding that carries a stamped fix commit is still held until that commit is on the pull request head.
 
 ## Output
 

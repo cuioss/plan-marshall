@@ -1362,6 +1362,23 @@ def _stored_zero_state(
     return ZERO_STATE_NO_COVERAGE
 
 
+def _review_instant(review: dict) -> str:
+    """Return the instant ``review`` was last written, or ``''`` when none is comparable.
+
+    The later of ``updated_at`` / ``created_at``, taken over the values that match
+    :data:`_ISO_UTC_TIMESTAMP` only. A value of any other shape does not sort against
+    that shape, so it is left out of the comparison instead of being allowed to outrank
+    a well-formed one. ``''`` sorts below every well-formed timestamp, so a review with
+    no comparable timestamp never displaces one that has one.
+    """
+    stamps = [
+        stamp
+        for stamp in (str(review.get('updated_at') or ''), str(review.get('created_at') or ''))
+        if _ISO_UTC_TIMESTAMP.match(stamp)
+    ]
+    return max(stamps) if stamps else ''
+
+
 def _reviews_at_another_commit(
     raw_comments: list[dict], credited_bots: list[str], merge_candidate_sha: str
 ) -> list[dict[str, str]]:
@@ -1384,7 +1401,9 @@ def _reviews_at_another_commit(
     - none of those commits is the merge candidate.
 
     Each record is ``{bot_kind, review_id, review_commit_sha}`` and names the bot's
-    most recently written such review.
+    most recently written such review. "Most recently written" is decided by
+    :func:`_review_instant`, which compares well-formed ISO-UTC timestamps only; among
+    reviews none of which carries one, the first in provider order is named.
 
     Nothing is named when ``merge_candidate_sha`` is empty: with no merge candidate
     to compare against, no review can be placed at another commit. A review whose
@@ -1412,10 +1431,7 @@ def _reviews_at_another_commit(
             continue
         if any(str(review['commit_id']).strip().lower() == candidate for review in reviews):
             continue
-        newest = max(
-            reviews,
-            key=lambda review: max(str(review.get('updated_at') or ''), str(review.get('created_at') or '')),
-        )
+        newest = max(reviews, key=_review_instant)
         disclosed.append(
             {
                 'bot_kind': bot,
