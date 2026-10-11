@@ -48,7 +48,7 @@ The plan-marshall findings pipeline routes every quality signal — PR review co
 │                          │   blocking_count             │                   │
 │                          │                              │                   │
 │                          │  Guarded boundaries:         │                   │
-│                          │   pre-merge findings-check   │                   │
+│                          │   pre_merge_gate merge       │                   │
 │                          │   + completion state assert  │                   │
 │                          │   (branch-cleanup merge;     │                   │
 │                          │    transition / archive      │                   │
@@ -116,7 +116,7 @@ The **`pr-comment-overflow` finding** files when the consumer's 900 s triage bud
 
 The pipeline is structurally enforced: producers can never bypass the store (no inline-JSON batch surfaces remain in LLM-callable scope), consumers can never bypass the per-domain decision-grounding knowledge (every triage decision loads `ext-triage-{domain}`), and boundaries can never be crossed with unresolved blocking findings (the invariant raises `BlockingFindingsPresent`).
 
-The pipeline is the canonical finding store for all plan-marshall phases. The finalize blocking-finding gate is wired at two sites — the pre-merge `phase_handshake findings-check --phase 6-finalize` in `branch-cleanup`, and the completion-boundary `assert_finalize_findings_clean` state assertion in the lifecycle verbs (see the § "Guarded boundaries" table below and the diagram above); qgate aggregation is the other boundary area a fresh installation checks.
+The pipeline is the canonical finding store for all plan-marshall phases. The finalize blocking-finding gate is wired at two sites — the pre-merge entry point `pre_merge_gate merge` in `branch-cleanup` (it runs the `findings-check` verdict for `6-finalize` and owns the merge dispatch), and the completion-boundary `assert_finalize_findings_clean` state assertion in the lifecycle verbs (see the § "Guarded boundaries" table below and the diagram above); qgate aggregation is the other boundary area a fresh installation checks.
 
 ## Producers
 
@@ -246,12 +246,12 @@ This is **not** a naive "any pending finding blocks" rule: knowledge types are e
 
 | Boundary | How the gate fires |
 |---|---|
-| finalize merge (pre-merge) | `phase-6-finalize/standards/branch-cleanup.md` § "Pre-merge blocking-findings store gate" issues `phase_handshake findings-check --phase 6-finalize` before the merge. A pending actionable finding returns `blocking_findings_present` and the merge is blocked (fail-closed on `query_failed`). |
-| finalize completion | `manage-status transition --completed 6-finalize` and a normal-completion `manage-status archive` call `_invariants.assert_finalize_findings_clean` — a STATE assertion, armed by reaching the completion boundary — which refuses to mark the plan complete while an actionable finding is pending. |
+| finalize merge (pre-merge) | `pre_merge_gate merge` (`plan-marshall:phase-6-finalize:pre_merge_gate`), the only merge-shaped dispatch `branch-cleanup` issues, runs the `findings-check` verdict for `6-finalize` in-process and issues the routed merge verb only on a clean store. A pending actionable finding (`blocking_findings_present`) or an unevaluable count (`query_failed`) returns `dispatched: false` and no merge verb is issued. See [`phase-6-finalize/standards/branch-cleanup.md`](../../phase-6-finalize/standards/branch-cleanup.md) § "Pre-merge blocking-findings store gate". |
+| finalize completion | `manage-status transition --completed 6-finalize` and a completion `manage-status archive` (no `--reason`, or `--reason normal_completion`, the one completion-asserting reason) call `_invariants.assert_finalize_findings_clean` — a STATE assertion, armed by reaching the completion boundary — which refuses to mark the plan complete while an actionable finding is pending. |
 
 Every other phase capture reads the `pending_findings_blocking_count` row passively (so retrospective analysis sees the queue at every boundary) but does NOT raise.
 
-**The gate is armed by a state, not a call.** The raise fires only on a `capture` / `findings-check` carrying `--phase 6-finalize`. No orchestration step ever issued one — the `phase_handshake capture --phase 6-finalize` this table once attributed to the Phase Entry Protocol was never emitted, and the intra-finalize re-issues attributed to `automatic-review` / `sonar-roundtrip` were never wired — so the finalize gate was inert fleet-wide: a plan could complete or merge with actionable findings still `pending`. The two firing sites above (a fixed pre-merge `findings-check` call, and an unconditional completion-boundary state assertion) close that gap. The `5-execute → 6-finalize` transition is **not** a firing site — it inlines `phase_handshake verify --phase 5-execute --strict`, which detects drift on the captured row but does not raise `blocking_findings_present` (that raise fires only at `phase == '6-finalize'`, and the self-review findings the gate catches are filed *during* finalize, after this boundary).
+**The gate is armed by a state, not a call.** The raise fires only on a `capture` / `findings-check` carrying `--phase 6-finalize`. No orchestration step ever issued one — the `phase_handshake capture --phase 6-finalize` this table once attributed to the Phase Entry Protocol was never emitted, and the intra-finalize re-issues attributed to `automatic-review` / `sonar-roundtrip` were never wired — so the finalize gate was inert fleet-wide: a plan could complete or merge with actionable findings still `pending`. The two firing sites above close that gap, each armed without depending on an optional call: the pre-merge site is armed by the merge dispatch itself — `pre_merge_gate merge` is the only route to the merge verb, so a merge cannot happen without the check having run and passed — and the completion boundary is an unconditional state assertion. The `5-execute → 6-finalize` transition is **not** a firing site — it inlines `phase_handshake verify --phase 5-execute --strict`, which detects drift on the captured row but does not raise `blocking_findings_present` (that raise fires only at `phase == '6-finalize'`, and the self-review findings the gate catches are filed *during* finalize, after this boundary).
 
 ### qgate aggregation contract
 

@@ -260,6 +260,8 @@ Record clarifications via the three-step path-allocate flow — **mandatory when
 
 ### Step 13: Persist and Return Results
 
+The light lane never runs this step; the light-lane producer of each value persisted below is named in the capture-source matrix in [`plan-marshall/workflow/planning.md`](../plan-marshall/workflow/planning.md) § "Light-lane branch".
+
 When confidence reaches threshold:
 
 1. **Persist module mapping** to `work/module_mapping.toon`

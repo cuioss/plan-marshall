@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 
+from _manage_status_main_dispatch_fixtures import _parse, _run
 from _manage_status_manage_status_transition_archive_fixtures import (
     Namespace,
     _seed_finalize_phase_plan,
@@ -45,3 +46,23 @@ def test_archive_refuses_when_actionable_finding_pending(plan_context, monkeypat
     # The plan directory survives — no move happened.
     assert plan_context.plan_dir_for(plan_id).exists()
     assert 'archived_to' not in result
+
+
+def test_archive_cli_refusal_is_a_status_error_with_exit_zero(plan_context, monkeypatch, capsys):
+    """CLI surface: the refusal the archive-plan step must parse reaches stdout as
+    ``status: error`` / ``error: blocking_findings_present`` while the process
+    exits ``0`` — so the exit code alone can never tell the step the archive was
+    refused, and the plan directory is left where it was."""
+    _stub_finding_queries(monkeypatch, {'sonar-issue': 1})
+    plan_id = 'finalize-block-archive-cli'
+    _seed_finalize_phase_plan(plan_id)
+
+    code, out, _err = _run(monkeypatch, capsys, ['archive', '--plan-id', plan_id])
+
+    payload = _parse(out)
+    assert code == 0
+    assert payload['status'] == 'error'
+    assert payload['error'] == 'blocking_findings_present'
+    assert payload['blocking_count'] == 1
+    assert 'archived_to' not in payload
+    assert plan_context.plan_dir_for(plan_id).exists()

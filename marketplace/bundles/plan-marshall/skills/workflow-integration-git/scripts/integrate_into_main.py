@@ -11,17 +11,34 @@ finalize integration step of the move-based, cwd-pinned hermetic worktree model
 cleanup removes the worktree AFTER this script returns. In one call it:
 
   1. **ACQUIRES** the cooperative merge lock (delegating to the unified
-     ``plan-marshall:manage-locks:merge_lock`` script — atomic ``O_EXCL`` create,
-     holder = this ``plan_id``, simple-backoff retry, plan-liveness stale
-     reclamation). The merge lock is the SINGLE deliberate main-anchored
+     ``plan-marshall:manage-locks:merge_lock`` script — FIFO-front-only
+     admission, atomic ``O_EXCL`` create, holder = this ``plan_id``, a bounded
+     wait of :data:`_MOVE_BACK_ACQUIRE_WAIT_SECONDS`, plan-liveness stale
+     reclamation). When the acquire takes no lock — admission still blocked
+     once the bound lapses, or an attempt that errored — the plan is DEQUEUED
+     from the FIFO admission queue before the acquire payload is surfaced, so a
+     plan that gave up or failed never wedges the plans queued behind it. That
+     cleanup is dequeue-only (``merge_lock.run_dequeue``): it never touches
+     ``merge.lock``, so a lock a concurrent call for the same plan created after
+     the refused attempt is never removed.
+     The merge lock is the SINGLE deliberate main-anchored
      exception to cwd-relative resolution (ADR-002).
   2. **FOLDS** the plan's OWN global logs (only logs generated for this plan,
      currently resident in the worktree's ``.plan/local/logs/``) into the plan
      directory (``.plan/local/plans/{plan_id}/logs/``) BEFORE move-back so the
      retrospective can read them after the plan dir lands on main.
   3. **MOVES** the plan directory back from the worktree to the main checkout.
-  4. **RELEASES** the merge lock — on EVERY exit path, including the rollback
-     path, so a crashed-and-retried finalize never wedges the lock.
+  4. **RELEASES** the merge lock it took — once a non-reentrant acquire
+     succeeded, the lock is released on every exit path: the success path, the
+     rollback path, a log-fold failure, an unexpected exception from any of the
+     work after the acquire, and an interrupt (``KeyboardInterrupt``,
+     ``SystemExit``), which is re-raised after the release, so a live plan never
+     strands the lock. The
+     release outcome is checked: a release that errors, raises, or does not
+     report ``action: released`` turns the payload into an error carrying
+     ``lock_released: false``, never a plain success. A lock already held by the
+     same plan (reentrant acquire, ``action: already_held``) is left to its
+     holder.
 
 The on-main executor is NOT regenerated here. Regeneration is a project-level,
 meta-project-only finalize step (``finalize-step-sync-plugin-cache``, run after
@@ -53,7 +70,7 @@ not treated as a completed integration.
 
 Atomic-with-rollback (solution_outline.md §5): a partial move-back failure rolls
 the plan dir BACK into the worktree so the authoritative copy is never split, and
-the merge lock is released on the rollback path too. Idempotent: an
+a lock this call took is released on the rollback path too. Idempotent: an
 already-moved-back plan (real plan dir already resident on main, none in the
 worktree) is a no-op success.
 
@@ -99,6 +116,17 @@ from triage_helpers import (
 
 _THIS_DIR = Path(__file__).resolve().parent
 _MERGE_LOCK_PATH = _THIS_DIR.parent.parent / 'manage-locks' / 'scripts' / 'merge_lock.py'
+
+# The bound, in seconds, the move-back acquire waits for admission when no outer
+# holder of the same plan already holds the merge lock. ``merge_lock`` clamps it
+# to its own per-call ceiling (``_ACQUIRE_WAIT_CEILING_SECONDS``); this value sits
+# well below that ceiling AND below the host's default per-call Bash timeout, so a
+# finalize call site that invokes ``integrate`` without an explicit timeout is
+# never auto-backgrounded mid-wait. No finalize call site retries the integrate
+# result, so this one bounded wait is the whole admission budget of the call; on
+# expiry, or on an acquire error, the plan is dequeued (see
+# :func:`run_integrate_into_main`).
+_MOVE_BACK_ACQUIRE_WAIT_SECONDS = 90.0
 
 
 def _load_module_by_path(name: str, path: Path) -> Any:
@@ -370,10 +398,16 @@ def _fold_global_logs(wt_global_logs: Path, plan_logs_dst: Path) -> list[str]:
     dir BEFORE move-back makes them resident on main alongside the plan after
     integration, so the retrospective LOG step reads them from the plan dir.
 
-    Best-effort and non-fatal: a missing/empty global-logs dir is a no-op. Each
-    log file is COPIED (not moved) into ``<plan_dir>/logs/`` so the worktree's
-    own copy is left intact for the worktree-removal step. Returns the list of
-    folded-in log filenames (for the status payload).
+    A missing/empty global-logs dir is a no-op, and a single un-copyable log file
+    is skipped. Each log file is COPIED (not moved) into ``<plan_dir>/logs/`` so
+    the worktree's own copy is left intact for the worktree-removal step. Returns
+    the list of folded-in log filenames (for the status payload).
+
+    Raises:
+        OSError: when the destination ``logs/`` dir cannot be created or the
+            global-logs dir cannot be listed. The caller runs this under the
+            merge lock and converts the raise into an error payload after
+            releasing the lock.
     """
     folded: list[str] = []
     if not wt_global_logs.is_dir():
@@ -392,6 +426,138 @@ def _fold_global_logs(wt_global_logs: Path, plan_logs_dst: Path) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Refused-admission cleanup
+# ---------------------------------------------------------------------------
+
+
+def _dequeue_after_refused_acquire(merge_lock: Any, plan_id: str) -> bool:
+    """Dequeue ``plan_id`` from the merge FIFO queue after an acquire that took no lock.
+
+    Runs on every non-success acquire result — ``status: blocked`` and
+    ``status: error`` alike — and on every raise escaping the acquire, including a
+    ``KeyboardInterrupt`` or ``SystemExit`` the caller re-raises afterwards.
+    Within one bounded wait an earlier attempt may have
+    FIFO-enqueued the plan before a later attempt was blocked or failed, so
+    neither status proves the queue holds no entry for it; dequeuing an absent
+    entry is a no-op, so the dequeue is issued unconditionally.
+
+    The cleanup is DEQUEUE-ONLY (``merge_lock.run_dequeue``) and never touches
+    ``merge.lock``. A release would be wrong here: it removes the lock file
+    whenever the recorded holder equals the caller's ``plan_id``, and the
+    reentrant self-holder check only holds at attempt time. Between this call's
+    last attempt and the cleanup, a concurrent call for the SAME ``plan_id``
+    (sharing the one FIFO entry) can be admitted and create the lock; a release
+    would then delete that call's lock mid-integration and let a foreign plan in.
+    Dequeue-only strands nothing for an error payload or an ``Exception``: every
+    one of those happens before this call created a lock, so there is no lock of
+    its own to free. An interrupt is asynchronous and can land after the
+    ``O_EXCL`` create but before the acquire returned; that lock is left in
+    place, because the cleanup cannot tell it apart from a concurrent same-plan
+    call's lock.
+
+    Returns ``True`` when the dequeue reported ``status: success`` (no entry
+    remains), ``False`` when it reported anything else or raised, so the caller
+    can say the abandoned entry may still be queued instead of implying it was
+    cleaned up.
+    """
+    try:
+        result = merge_lock.run_dequeue(plan_id)
+    except Exception:  # the dequeue must never mask the blocked result
+        return False
+    return isinstance(result, dict) and result.get('status') == 'success'
+
+
+# ---------------------------------------------------------------------------
+# Work under the lock + checked release
+# ---------------------------------------------------------------------------
+
+
+def _fold_and_move_back(plan_id: str, wt_global_logs: Path, wt_plan_dir: Path, main_plan_dir: Path) -> dict[str, Any]:
+    """Fold the plan's global logs, move the plan dir to main, build the payload.
+
+    Runs while the merge lock is held. A move-back failure of any type rolls the
+    plan dir back into the worktree (so the authoritative copy is never split)
+    and returns an error payload. A log-fold failure (``OSError`` from creating
+    the destination or listing the source) propagates; the caller converts it,
+    and any other exception escaping this function, into an error payload after
+    releasing the lock.
+    """
+    # Folded BEFORE move-back so they travel with the plan dir to main. Folds
+    # into the WORKTREE-resident plan dir's logs/ (the dir about to move).
+    folded_logs = _fold_global_logs(wt_global_logs, wt_plan_dir / 'logs')
+
+    try:
+        _move_back_dir(wt_plan_dir, main_plan_dir)
+    except Exception as exc:  # any move-back failure rolls back, whatever its type
+        _restore_to_worktree(wt_plan_dir, main_plan_dir)
+        return make_error(
+            f'move-back failed for {wt_plan_dir} -> {main_plan_dir}: {exc}; rolled back to worktree',
+            code=ErrorCode.INVALID_INPUT,
+            plan_id=plan_id,
+        )
+
+    # The on-main executor is NOT regenerated here — that is the project-level
+    # finalize-step-sync-plugin-cache step's responsibility (meta-project-only),
+    # run after the cache sync.
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'action': 'integrated',
+        'plan_dir': str(main_plan_dir),
+        'folded_logs': folded_logs,
+    }
+
+
+def _release_taken_lock(merge_lock: Any, plan_id: str) -> tuple[str | None, Any]:
+    """Release the lock this call took and judge the outcome.
+
+    Returns ``(None, result)`` when the release reported ``status: success`` with
+    ``action: released`` — the lock this call took is gone. Otherwise returns
+    ``(failure, result)``: ``failure`` names what went wrong (an error payload, a
+    non-``released`` action such as ``noop``, or a raise) and ``result`` is the
+    release payload, or ``None`` when the release raised.
+    """
+    try:
+        # set_title_token=False mirrors the acquire — the move-back lock never
+        # set a title token, so there is nothing to clear.
+        result = merge_lock.run_release(Namespace(plan_id=plan_id, set_title_token=False))
+    except Exception as exc:  # surfaced, never swallowed
+        return f'merge_lock release raised: {type(exc).__name__}: {exc}', None
+    if not isinstance(result, dict):
+        return f'merge_lock release returned a non-mapping result: {result!r}', result
+    if result.get('status') == 'success' and result.get('action') == 'released':
+        return None, result
+    detail = result.get('error') or result.get('message') or f'action {result.get("action")!r}'
+    return f'merge_lock release returned status {result.get("status")!r}: {detail}', result
+
+
+def _with_release_failure(payload: dict[str, Any], failure: str, release_result: Any, plan_id: str) -> dict[str, Any]:
+    """Fold a failed release into ``payload`` without masking the original outcome.
+
+    A success payload is replaced by an error payload: the integration ran, but
+    the lock may still be held, so the caller must not read plain success. An
+    error payload keeps its own ``error`` text (the original failure) and gains
+    the release outcome alongside it.
+    """
+    if payload.get('status') == 'success':
+        result = make_error(
+            f'{payload.get("action", "integration")} completed but the merge lock this call took '
+            f'may still be held: {failure}',
+            plan_id=plan_id,
+            integration_action=payload.get('action'),
+            plan_dir=payload.get('plan_dir'),
+            folded_logs=payload.get('folded_logs'),
+        )
+    else:
+        result = dict(payload)
+    result['lock_released'] = False
+    result['release_failure'] = failure
+    if isinstance(release_result, dict):
+        result['release_result'] = release_result
+    return result
+
+
+# ---------------------------------------------------------------------------
 # main action
 # ---------------------------------------------------------------------------
 
@@ -400,8 +566,34 @@ def run_integrate_into_main(args: Namespace) -> dict[str, Any]:
     """Acquire lock → fold logs → move-back → release (one action).
 
     Returns a TOON-shaped payload carrying ``status``. Never changes the caller's
-    cwd; never removes the worktree; never regenerates the executor. The merge
-    lock is released on EVERY exit path, including rollback.
+    cwd; never removes the worktree; never regenerates the executor.
+
+    Once a non-reentrant acquire succeeded, the lock this call took is released
+    on every exit path after it — success, move-back rollback, a log-fold
+    ``OSError``, and any unexpected exception from the work under the lock, which
+    becomes an error payload after the release. A ``BaseException`` that is not
+    an ``Exception`` (``KeyboardInterrupt``, ``SystemExit``) is not converted to
+    a payload: the lock is released and the exception re-raised. The release
+    outcome is checked:
+    when it errors, raises, or reports anything but ``action: released``, the
+    payload is an error carrying ``lock_released: false`` and
+    ``release_failure`` — a success payload is downgraded, an error payload keeps
+    its original ``error`` text. A lock the same plan already held (reentrant
+    ``already_held``) is left to its holder.
+
+    The acquire waits up to :data:`_MOVE_BACK_ACQUIRE_WAIT_SECONDS` for admission
+    (a reentrant ``already_held`` grant still returns at once). Every acquire
+    that takes no lock — ``status: blocked`` once the bound lapses while another
+    plan holds the lock or is ahead in the FIFO queue, ``status: error`` from any
+    attempt (including one that failed after an earlier attempt of the same wait
+    had enqueued the plan), and a raise escaping the acquire — is followed by a
+    dequeue-only cleanup through ``merge_lock.run_dequeue``, which never touches
+    ``merge.lock``. The acquire payload is then surfaced with ``dequeued``
+    reporting whether that dequeue landed. A ``KeyboardInterrupt`` or
+    ``SystemExit`` escaping the acquire is dequeued the same way and then
+    re-raised rather than converted to a payload. Without it an abandoned FIFO entry
+    would stay queued, and a live worktree would wedge every plan queued behind
+    it.
     """
     plan_id: str = args.plan_id
 
@@ -474,59 +666,80 @@ def run_integrate_into_main(args: Namespace) -> dict[str, Any]:
     # surface (⏳/🔒): the move-back lock is a brief, finalize-internal mutex, so
     # flashing a lock glyph into the title is spurious noise the user never needs
     # to see. The token is a display affordance, not a correctness primitive.
+    # The bounded wait repeats whole non-waiting admission attempts inside
+    # merge_lock; a reentrant ``already_held`` grant still answers the first one.
     merge_lock = _load_merge_lock()
-    acquire_result = merge_lock.run_acquire(Namespace(plan_id=plan_id, timeout=None, set_title_token=False))
-    if acquire_result.get('status') != 'success':
-        # Could not acquire (timeout / resolution failure) — surface verbatim.
-        # No lock was acquired, so there is nothing to release.
-        return _assert_cwd_unchanged({**acquire_result, 'plan_id': plan_id})
-
-    def _release_and(payload: dict[str, Any]) -> dict[str, Any]:
-        """Release the lock (idempotent) and return ``payload`` unchanged."""
-        try:
-            # set_title_token=False mirrors the acquire above — the move-back
-            # lock never set a title token, so there is nothing to clear.
-            merge_lock.run_release(Namespace(plan_id=plan_id, set_title_token=False))
-        except Exception:  # release must never mask the real result
-            # Release failure is logged via the lock's own contract on the next
-            # acquire's stale-reclamation path; never let it overwrite the
-            # operation's real status.
-            pass
-        return _assert_cwd_unchanged(payload)
-
-    # --- Step 2: fold the plan's own global logs into the plan dir ---------
-    # Folded BEFORE move-back so they travel with the plan dir to main. Folds
-    # into the WORKTREE-resident plan dir's logs/ (the dir we are about to move).
-    folded_logs = _fold_global_logs(wt_global_logs, wt_plan_dir / 'logs')
-
-    # --- Step 3: move the plan directory back to main (atomic w/ rollback) --
     try:
-        _move_back_dir(wt_plan_dir, main_plan_dir)
-    except (OSError, FileExistsError) as exc:
-        # Roll the plan dir back into the worktree so the authoritative copy is
-        # never split, then release the lock.
-        _restore_to_worktree(wt_plan_dir, main_plan_dir)
-        return _release_and(
-            make_error(
-                f'move-back failed for {wt_plan_dir} -> {main_plan_dir}: {exc}; rolled back to worktree',
-                code=ErrorCode.INVALID_INPUT,
-                plan_id=plan_id,
-            )
+        acquire_result = merge_lock.run_acquire(
+            Namespace(plan_id=plan_id, set_title_token=False, wait_seconds=_MOVE_BACK_ACQUIRE_WAIT_SECONDS)
+        )
+    except Exception as exc:  # a fault escaping the acquire must not strand a FIFO entry
+        # An attempt may have enqueued the plan before the fault escaped (the lock
+        # file create runs after the enqueue), so dequeue exactly as for an error
+        # payload and surface the fault as one.
+        return _assert_cwd_unchanged(
+            {
+                **make_error(
+                    f'merge_lock acquire raised: {type(exc).__name__}: {exc}',
+                    plan_id=plan_id,
+                ),
+                'dequeued': _dequeue_after_refused_acquire(merge_lock, plan_id),
+            }
+        )
+    except BaseException:
+        # A KeyboardInterrupt or SystemExit during the bounded wait is not converted
+        # to a payload: it propagates. An attempt may still have enqueued the plan,
+        # so the same dequeue-only cleanup runs first. The helper swallows its own
+        # Exception, so a failed dequeue never replaces the propagating interrupt.
+        _dequeue_after_refused_acquire(merge_lock, plan_id)
+        raise
+    if acquire_result.get('status') != 'success':
+        # No lock was acquired — admission still blocked once the bound lapsed, or
+        # an attempt errored (a resolution failure, or a queue read-modify-write
+        # that raised). Either way an attempt of this bounded wait may already
+        # have FIFO-enqueued the plan, and the acquire never removes it — so undo
+        # that enqueue rather than leave an abandoned entry wedging the plans
+        # queued behind it. The cleanup is dequeue-only: it never touches
+        # merge.lock, so a same-plan lock created after the refused attempt
+        # survives it.
+        return _assert_cwd_unchanged(
+            {**acquire_result, 'plan_id': plan_id, 'dequeued': _dequeue_after_refused_acquire(merge_lock, plan_id)}
         )
 
-    # --- Step 4: release the lock and return success ------------------------
-    # The on-main executor is NOT regenerated here — that is the project-level
-    # finalize-step-sync-plugin-cache step's responsibility (meta-project-only),
-    # run after the cache sync.
-    return _release_and(
-        {
-            'status': 'success',
-            'plan_id': plan_id,
-            'action': 'integrated',
-            'plan_dir': str(main_plan_dir),
-            'folded_logs': folded_logs,
-        }
-    )
+    # Ownership of the release: this call releases the lock only when it TOOK
+    # it. A reentrant acquire (``action: already_held``) means the same plan
+    # already holds the lock — typically the branch-cleanup merge window that
+    # wraps this call — so the outer holder keeps it and does the one release.
+    # Releasing here would drop the lock out from under that holder mid-merge.
+    took_lock = acquire_result.get('action') != 'already_held'
+
+    # --- Steps 2-3: fold logs + move back, under the lock -------------------
+    # Every exception from the work under the lock becomes an error payload, so
+    # control always reaches the release below — a live holder that exits
+    # without releasing is never reclaimed as stale and wedges every other plan.
+    # A BaseException that is not an Exception (KeyboardInterrupt, SystemExit)
+    # is not converted: it propagates, but only after the lock this call took is
+    # released, so an interrupted integration strands no lock either.
+    try:
+        payload = _fold_and_move_back(plan_id, wt_global_logs, wt_plan_dir, main_plan_dir)
+    except Exception as exc:
+        payload = make_error(
+            f'integration failed under the merge lock: {type(exc).__name__}: {exc}',
+            plan_id=plan_id,
+        )
+    except BaseException:
+        if took_lock:
+            # _release_taken_lock converts its own Exception into a failure
+            # string, so the release can never replace the propagating interrupt.
+            _release_taken_lock(merge_lock, plan_id)
+        raise
+
+    # --- Step 4: release the lock this call took, checking the outcome ------
+    if took_lock:
+        failure, release_result = _release_taken_lock(merge_lock, plan_id)
+        if failure is not None:
+            payload = _with_release_failure(payload, failure, release_result, plan_id)
+    return _assert_cwd_unchanged(payload)
 
 
 # ---------------------------------------------------------------------------

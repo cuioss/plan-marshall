@@ -32,7 +32,7 @@ from _manage_locks_merge_lock_fixtures import (
 
 class TestAcquire:
     def test_acquire_creates_lock_and_records_holder(self, isolated_base: dict) -> None:
-        result = merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-a'))
 
         assert result['status'] == 'success', result
         assert result['action'] == 'acquired'
@@ -50,7 +50,7 @@ class TestAcquire:
         holder blocks a second atomic create (the primitive returns False)."""
         lock_path = isolated_base['lock_path']
         # First acquire wins and creates the file.
-        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
         _make_live_plan(isolated_base['base'], 'plan-a')
         # The low-level atomic create against the existing file must fail.
         assert merge_lock._try_atomic_create(lock_path, 'plan-b') is False
@@ -58,7 +58,7 @@ class TestAcquire:
     def test_lone_acquirer_is_the_fifo_front(self, isolated_base: dict) -> None:
         """A lone acquirer is trivially the FIFO front and is admitted; the queue
         records it as the single waiting entry while it holds the lock."""
-        result = merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-a'))
         assert result['admission'] == 'admitted'
         assert result['waiting_count'] == 1
         # The acquiring plan is enqueued (front) for the duration of its hold.
@@ -89,7 +89,7 @@ class TestSiblingKeyPreservation:
             encoding='utf-8',
         )
 
-        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
 
         store = _read_queue(isolated_base['queue_path'])
         assert store['rate_windows'] == {'coderabbit': {'holder': 'plan-x'}}
@@ -100,7 +100,7 @@ class TestSiblingKeyPreservation:
             json.dumps({'waiting': [], 'rate_windows': {'coderabbit': {'holder': 'plan-x'}}}),
             encoding='utf-8',
         )
-        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
 
         merge_lock.run_release(Namespace(plan_id='plan-a'))
 
@@ -114,7 +114,7 @@ class TestSiblingKeyPreservation:
         co_tenant = {'coderabbit': {'holder': 'plan-x', 'pr_number': 7, 'expires_at': 1.0, 'attempts': 2}}
         isolated_base['queue_path'].write_text(json.dumps({'waiting': [], 'rate_windows': co_tenant}), encoding='utf-8')
 
-        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
         merge_lock.run_release(Namespace(plan_id='plan-a'))
 
         assert _read_queue(isolated_base['queue_path'])['rate_windows'] == co_tenant
@@ -157,7 +157,7 @@ class TestFifoAdmission:
 
         # 'behind' polls: it is NOT the FIFO front, so it blocks WITHOUT creating
         # the lock — the lock file stays absent.
-        result = merge_lock.run_acquire(Namespace(plan_id='behind', timeout=5.0))
+        result = merge_lock.run_acquire(Namespace(plan_id='behind'))
         assert result['status'] == 'blocked'
         assert result['admission'] == 'blocked'
         # No foreign holder yet — the lock is unheld, the block is FIFO-only.
@@ -184,13 +184,13 @@ class TestFifoAdmission:
         )
 
         # The front polls and is admitted (creates the lock).
-        front = merge_lock.run_acquire(Namespace(plan_id='front', timeout=5.0))
+        front = merge_lock.run_acquire(Namespace(plan_id='front'))
         assert front['admission'] == 'admitted'
         assert front['holder'] == 'front'
         assert isolated_base['lock_path'].read_text(encoding='utf-8').strip() == 'front'
 
         # The waiter behind it polls and is blocked by the now-live front holder.
-        behind = merge_lock.run_acquire(Namespace(plan_id='behind', timeout=5.0))
+        behind = merge_lock.run_acquire(Namespace(plan_id='behind'))
         assert behind['admission'] == 'blocked'
         assert behind['blocking_plan_id'] == 'front'
 
@@ -202,11 +202,11 @@ class TestFifoAdmission:
         for name in ('a', 'b', 'c'):
             _make_live_plan(base, name)
 
-        a = merge_lock.run_acquire(Namespace(plan_id='a', timeout=5.0))
+        a = merge_lock.run_acquire(Namespace(plan_id='a'))
         assert a['admission'] == 'admitted'
-        b = merge_lock.run_acquire(Namespace(plan_id='b', timeout=5.0))
+        b = merge_lock.run_acquire(Namespace(plan_id='b'))
         assert b['admission'] == 'blocked'
-        c = merge_lock.run_acquire(Namespace(plan_id='c', timeout=5.0))
+        c = merge_lock.run_acquire(Namespace(plan_id='c'))
         assert c['admission'] == 'blocked'
 
         # The FIFO queue records all three in arrival order, front first.
@@ -218,12 +218,13 @@ class TestFifoAdmission:
     def test_blocked_payload_carries_waiting_count_not_poll_window(self, isolated_base: dict) -> None:
         """The blocked admission payload carries ``waiting_count`` (the queue depth)
         and ``blocking_plan_id`` — and crucially NOT the retired internal-wait
-        ``poll_window_seconds`` field (acquire no longer waits internally)."""
+        ``poll_window_seconds`` field (a waiting acquire reports ``waited_seconds``
+        instead)."""
         for name in ('plan-a', 'plan-b'):
             _make_live_plan(isolated_base['base'], name)
-        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
 
-        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=5.0))
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b'))
         assert result['status'] == 'blocked'
         assert result['blocking_plan_id'] == 'plan-a'
         # waiting_count is the queue depth (front 'plan-a' + waiter 'plan-b').
@@ -264,12 +265,12 @@ class TestFifoAdmission:
 
         # 'first' is the list-position front → admitted. A min-ts selector would
         # have elected 'second' and wrongly blocked 'first' here.
-        first = merge_lock.run_acquire(Namespace(plan_id='first', timeout=5.0))
+        first = merge_lock.run_acquire(Namespace(plan_id='first'))
         assert first['admission'] == 'admitted', first
         assert first['holder'] == 'first'
 
         # 'second' (later in arrival order despite the smaller ts) is blocked
         # behind the now-live front.
-        second = merge_lock.run_acquire(Namespace(plan_id='second', timeout=5.0))
+        second = merge_lock.run_acquire(Namespace(plan_id='second'))
         assert second['admission'] == 'blocked', second
         assert second['blocking_plan_id'] == 'first'

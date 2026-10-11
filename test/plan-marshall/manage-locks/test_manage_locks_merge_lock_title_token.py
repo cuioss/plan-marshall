@@ -94,7 +94,7 @@ class TestTitleTokenSurface:
     def test_acquire_surfaces_lock_owned_on_fresh_acquire(
         self, isolated_base: dict, _stub_title_tokens: _TokenRecorder
     ) -> None:
-        result = merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-a'))
         assert result['status'] == 'success'
         # `lock-owned` state set (bare state name, no glyph) + 🔒 pushed.
         assert _stub_title_tokens.set_states == ['lock-owned']
@@ -106,12 +106,12 @@ class TestTitleTokenSurface:
         self, isolated_base: dict, _stub_title_tokens: _TokenRecorder
     ) -> None:
         """A reclaim of a dead holder's lock also surfaces `lock-owned` (🔒)."""
-        merge_lock.run_acquire(Namespace(plan_id='plan-dead', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-dead'))
         merge_lock._dequeue_fifo('plan-dead')
         _stub_title_tokens.set_states.clear()
         _stub_title_tokens.pushed_icons.clear()
 
-        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=5.0))
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b'))
         assert result['reclaimed'] is True
         assert _stub_title_tokens.set_states == ['lock-owned']
         assert _stub_title_tokens.pushed_icons == [merge_lock._ICON_LOCK_OWNED]
@@ -120,15 +120,15 @@ class TestTitleTokenSurface:
         self, isolated_base: dict, _stub_title_tokens: _TokenRecorder
     ) -> None:
         """A blocked admission against a live holder surfaces `lock-waiting` (⏳),
-        never `lock-owned`. The token fires on the blocked return path — acquire no
-        longer sleeps internally, so the surface is gated on the blocked outcome,
-        not on a backoff poll."""
-        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        never `lock-owned`. The token fires on the blocked attempt's return path,
+        so the surface is gated on the blocked outcome, not on any pause between
+        attempts."""
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
         _make_live_plan(isolated_base['base'], 'plan-a')
         _stub_title_tokens.set_states.clear()
         _stub_title_tokens.pushed_icons.clear()
 
-        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=0.6))
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b'))
         assert result['status'] == 'blocked'
         assert _stub_title_tokens.set_states == ['lock-waiting']
         assert _stub_title_tokens.pushed_icons == [merge_lock._ICON_LOCK_WAITING]
@@ -219,7 +219,7 @@ class TestTitleTokenSuppression:
     ) -> None:
         """A fresh acquire with ``set_title_token=False`` surfaces NO token — the
         🔒 ``lock-owned`` glyph never reaches the title even though the lock is held."""
-        result = merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0, set_title_token=False))
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-a', set_title_token=False))
         assert result['status'] == 'success'
         assert result['action'] == 'acquired'
         # No state set, no icon pushed — the title surface is fully suppressed.
@@ -231,12 +231,12 @@ class TestTitleTokenSuppression:
     ) -> None:
         """The reclaim path also honors suppression — a reclaimed acquire with
         ``set_title_token=False`` surfaces no 🔒 token."""
-        merge_lock.run_acquire(Namespace(plan_id='plan-dead', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-dead'))
         merge_lock._dequeue_fifo('plan-dead')
         _stub_title_tokens.set_states.clear()
         _stub_title_tokens.pushed_icons.clear()
 
-        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=5.0, set_title_token=False))
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', set_title_token=False))
         assert result['reclaimed'] is True
         assert _stub_title_tokens.set_states == []
         assert _stub_title_tokens.pushed_icons == []
@@ -246,12 +246,12 @@ class TestTitleTokenSuppression:
     ) -> None:
         """A blocked acquire against a live holder with ``set_title_token=False``
         surfaces no ⏳ ``lock-waiting`` token."""
-        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
         _make_live_plan(isolated_base['base'], 'plan-a')
         _stub_title_tokens.set_states.clear()
         _stub_title_tokens.pushed_icons.clear()
 
-        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=0.6, set_title_token=False))
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', set_title_token=False))
         assert result['status'] == 'blocked'
         assert _stub_title_tokens.set_states == []
         assert _stub_title_tokens.pushed_icons == []
@@ -261,7 +261,7 @@ class TestTitleTokenSuppression:
     ) -> None:
         """A release with ``set_title_token=False`` clears NO token — there was never
         a token set by the suppressed acquire, so there is nothing to clear."""
-        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0, set_title_token=False))
+        merge_lock.run_acquire(Namespace(plan_id='plan-a', set_title_token=False))
         _stub_title_tokens.cleared.clear()
 
         result = merge_lock.run_release(Namespace(plan_id='plan-a', set_title_token=False))
@@ -282,7 +282,7 @@ class TestTitleTokenSuppression:
     ) -> None:
         """The default (``set_title_token`` absent → True) preserves the full surface —
         a default acquire still surfaces the 🔒 ``lock-owned`` token."""
-        result = merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-a'))
         assert result['status'] == 'success'
         assert _stub_title_tokens.set_states == ['lock-owned']
         assert _stub_title_tokens.pushed_icons == [merge_lock._ICON_LOCK_OWNED]
@@ -290,7 +290,7 @@ class TestTitleTokenSuppression:
     def test_release_default_still_clears_token(self, isolated_base: dict, _stub_title_tokens: _TokenRecorder) -> None:
         """The default (``set_title_token`` absent → True) preserves the release
         clear — a default release still clears the title token."""
-        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
         _stub_title_tokens.cleared.clear()
 
         result = merge_lock.run_release(Namespace(plan_id='plan-a'))

@@ -215,14 +215,14 @@ pushed: true
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `acquire` | `--plan-id [--timeout]` | Atomically acquire the single main-anchored merge lock (`.plan/local/merge.lock` on the MAIN checkout, recording the holder `plan-id`). Uses an `O_EXCL` create so concurrent acquirers serialize — exactly one wins, losers retry with simple backoff until the lock frees or `--timeout` (default 30s) elapses. A lock whose recorded holder no longer corresponds to a live plan is reclaimed (re-verified atomically). See ADR-002. |
-| `release` | `--plan-id` | Remove the merge lock when this caller is the recorded holder. Idempotent: releasing a lock that is already free, or held by a foreign holder, is a no-op success. |
+| `acquire` | `--plan-id [--wait-seconds] [--interval-seconds] [--no-title-token]` | Acquire the single main-anchored merge lock (`.plan/local/merge.lock` on the MAIN checkout, recording the holder `plan-id`) through a FIFO admission queue: only the FIFO-front plan attempts the `O_EXCL` create, so exactly one holder wins. By default the call is one non-waiting attempt that returns `admission: blocked` for the consumer to re-poll; `--wait-seconds` repeats whole non-waiting attempts within one bounded call (clamped below the host's per-call ceiling) and adds `waited_seconds` / `timed_out`. A lock whose recorded holder no longer corresponds to a live plan is reclaimed (re-verified atomically). See `plan-marshall:manage-locks` Canonical invocations → `merge_lock — acquire` and ADR-002. |
+| `release` | `--plan-id` | Remove the merge lock when this caller is the recorded holder, and dequeue `--plan-id` from the FIFO admission queue in every case. Idempotent: releasing a lock that is already free, or held by a foreign holder, leaves the lock file intact and is a no-op success. |
 
 **Script**: `plan-marshall:workflow-integration-git:integrate_into_main`
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `integrate` | `--plan-id` | Atomic finalize move-back: in ONE call it ACQUIRES the cooperative merge lock (delegating to `merge_lock`), FOLDS the plan's own global logs into the plan dir, MOVES the plan directory back from the worktree to main, and RELEASES the lock on every exit path. Does NOT regenerate the executor — on-main executor regeneration is the project-level `finalize-step-sync-plugin-cache` step's responsibility (meta-project-only), run after the cache sync. Runs while the worktree is STILL PRESENT (branch cleanup removes the worktree AFTER this returns). Atomic-with-rollback (a partial move-back rolls the plan dir back into the worktree, lock released), idempotent (already-integrated → no-op success). Does NOT change the caller's cwd and does NOT remove the worktree — the finalize orchestrator returns its own cwd to main after the call. See ADR-002. |
+| `integrate` | `--plan-id` | Atomic finalize move-back: in ONE call it ACQUIRES the cooperative merge lock (delegating to `merge_lock`, with a bounded admission wait), FOLDS the plan's own global logs into the plan dir, MOVES the plan directory back from the worktree to main, and RELEASES the lock it took. An acquire that takes no lock (blocked on expiry, an error, or a raise) is followed by a dequeue-only cleanup that removes the plan's FIFO entry and never touches `merge.lock`, so a lock a concurrent same-plan call created after the refused attempt survives; `dequeued` reports whether the cleanup landed. Once a non-reentrant acquire succeeded, the lock is released on every exit path after it — success, move-back rollback, a log-fold failure, and an unexpected exception, which becomes an error payload after the release. The release outcome is checked: a release that errors, raises, or does not report `action: released` yields an error payload with `lock_released: false` and `release_failure`, never plain success. A lock the same plan already held (reentrant acquire, `action: already_held`) is left to its holder. Does NOT regenerate the executor — on-main executor regeneration is the project-level `finalize-step-sync-plugin-cache` step's responsibility (meta-project-only), run after the cache sync. Runs while the worktree is STILL PRESENT (branch cleanup removes the worktree AFTER this returns). Atomic-with-rollback (a partial move-back rolls the plan dir back into the worktree and releases the lock only when this call took it), idempotent (already-integrated → no-op success). Does NOT change the caller's cwd and does NOT remove the worktree — the finalize orchestrator returns its own cwd to main after the call. See ADR-002. |
 
 The `worktree-*` subcommands implement the §9 two-state contract: `--plan-id` is mandatory (these verbs operate on a worktree), and path resolution flows through `manage-status get-worktree-path` so a single plan-id is sufficient — no `--project-dir`, no filesystem layout re-derivation. `worktree-create` is the only verb that materializes a path on disk; it computes `get_worktree_root() / <plan-id>`, runs `git worktree add`, and writes the resolved path back to status metadata so subsequent verbs resolve through the canonical channel. The worktree root also holds the reserved `_orchestrator` shared ledger worktree, which is not a plan worktree: no `worktree-*` verb creates, lists, or removes it — `worktree-create` and `worktree-remove` each refuse the reserved key with `error: reserved_worktree_name` before any path resolution or git call (see `standards/worktree-handling.md`).
 
@@ -712,20 +712,21 @@ Cooperative merge lock (notation `plan-marshall:manage-locks:merge_lock`) — th
 
 **Main-anchored resolution — the single deliberate exception (ADR-002).** This script — and ONLY this script — always resolves its lock file against the MAIN checkout regardless of the caller's cwd, because cross-session coordination is inherently main-scoped (phase-5+ callers run with cwd pinned to their own worktree, yet must all contend for one shared lock). It MUST remain the only main-anchored resolver so the codebase cannot regrow a pervasive git-common-dir-style hack. See ADR-002 and `tools-script-executor/standards/cwd-policy.md` (D6).
 
-**Concurrency correctness.** `acquire` collapses the does-the-lock-exist → create-it check-then-act into a single atomic `os.open(..., O_CREAT | O_EXCL | O_WRONLY)`: two sessions racing to create the path — exactly one wins, the loser gets `EEXIST` and retries with simple backoff. Stale reclamation (a holder whose plan directory no longer exists) is itself a check-then-act and re-verifies atomically: the stale file is removed and the `O_EXCL` create immediately re-attempted, so a third session winning the race in between makes the reclaimer lose cleanly and retry. No fair queue, no elaborate data structure — the lock contents are a single line recording the holder. See the TOCTOU mitigation menu in `ref-code-quality/standards/code-organization.md#toctou--check-then-act-hazards`.
+**Admission and concurrency correctness.** `acquire` FIFO-enqueues the plan into the main-anchored `merge-queue.json` (idempotently, preserving its position on re-poll) and admits ONLY the FIFO-front plan, which then collapses the does-the-lock-exist → create-it check-then-act into a single atomic `os.open(..., O_CREAT | O_EXCL | O_WRONLY)`: exactly one racing creator wins. A non-front plan, or a front plan that loses to a live holder, gets `status: blocked` / `admission: blocked` — a structured re-poll signal, not an error. By default the call is ONE non-waiting attempt and the consumer re-polls; `--wait-seconds` repeats whole non-waiting attempts inside one bounded call (clamped below the host's per-call ceiling), re-deciding admission from a fresh guarded read each time and pausing only between attempts, and adds `waited_seconds` / `timed_out` to the last attempt's payload. Stale reclamation (a holder whose plan is no longer live) is itself a check-then-act and re-verifies atomically against the specific observed lock file, so a concurrent session winning the race in between makes the reclaimer lose cleanly. The full contract is `plan-marshall:manage-locks` Canonical invocations → `merge_lock — acquire`. See the TOCTOU mitigation menu in `ref-code-quality/standards/code-organization.md#toctou--check-then-act-hazards`.
 
-`integrate_into_main` (D5) acquires before move-back/merge and releases after, on every exit path.
+`integrate_into_main` (D5) acquires before move-back/merge and releases after — a lock it took on every exit path; a lock the same plan already held is left to its holder.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock acquire \
-  --plan-id PLAN_ID [--timeout 30]
+  --plan-id PLAN_ID [--wait-seconds WAIT_SECONDS] [--interval-seconds INTERVAL_SECONDS]
 python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock release \
   --plan-id PLAN_ID
 ```
 
 **Parameters**:
 - `acquire --plan-id` (required): holder source — the `plan-id` acquiring the lock.
-- `acquire --timeout`: max seconds to wait for a held lock to free before returning `TIMEOUT` (default 30).
+- `acquire --wait-seconds`: per-call bound for repeating whole non-waiting attempts until admitted (default `0` — a single attempt; clamped to the verb's per-call ceiling).
+- `acquire --interval-seconds`: seconds between two attempts under `--wait-seconds` (default `15`).
 - `release --plan-id` (required): holder source — removes the lock only when this caller is the recorded holder.
 
 **Output** (TOON, acquire success):
@@ -733,9 +734,13 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock release \
 status: success
 plan_id: EXAMPLE-PLAN
 action: acquired
+admission: admitted
 lock_path: /repo/.plan/local/merge.lock
 holder: EXAMPLE-PLAN
 reclaimed: false
+waiting_count: 1
+timed_out: false
+waited_seconds: 0
 ```
 
 **Output** (TOON, release):
@@ -751,14 +756,15 @@ lock_path: /repo/.plan/local/merge.lock
 | `error_code` | Cause |
 |-------------|-------|
 | `NOT_FOUND` | The main checkout (and thus the lock path) could not be resolved (not a git repo) |
-| `TIMEOUT` | The lock was held by a live holder for the entire `--timeout` budget |
-| `INVALID_INPUT` | `release` failed to remove the lock file (filesystem error) |
+| `INVALID_INPUT` | `acquire` received a non-finite or negative `--wait-seconds` or a non-finite or non-positive `--interval-seconds` (refused before the store is touched), or `release` failed to remove the lock file (filesystem error) |
+
+A lock still held when the wait ends is not an error: it is the `status: blocked` / `admission: blocked` re-poll signal, with `timed_out: true` once a `--wait-seconds` bound lapsed.
 
 ### integrate_into_main — integrate
 
-Atomic finalize move-back (notation `plan-marshall:workflow-integration-git:integrate_into_main`) — the inverse of `prepare_execute`. In ONE atomic call it ACQUIRES the cooperative merge lock (delegating to `merge_lock`), FOLDS the plan's own global logs into the plan dir's `logs/`, MOVES the plan directory back from the worktree to the main checkout, and RELEASES the lock. It does NOT regenerate the executor.
+Atomic finalize move-back (notation `plan-marshall:workflow-integration-git:integrate_into_main`) — the inverse of `prepare_execute`. In ONE atomic call it ACQUIRES the cooperative merge lock (delegating to `merge_lock`), FOLDS the plan's own global logs into the plan dir's `logs/`, MOVES the plan directory back from the worktree to the main checkout, and RELEASES the lock it took (an `already_held` grant is left to its holder). It does NOT regenerate the executor.
 
-**Runs while the worktree is STILL PRESENT** — branch cleanup removes the worktree AFTER this script returns. **The script does NOT change the caller's cwd** (a subprocess cannot mutate its parent's cwd) and **does NOT remove the worktree**. It RETURNS a status TOON; the finalize orchestrator returns ITS OWN cwd to main after the call so the uniform cwd rule resumes main resolution for retrospective + archive. The move-back is atomic-with-rollback (a partial move-back rolls the plan dir back into the worktree, leaving the authoritative copy whole, and releases the lock) and idempotent (an already-integrated plan is a no-op success that never acquires the lock). The merge lock is released on EVERY exit path, including rollback. See ADR-002 and the TOCTOU mitigation menu in `ref-code-quality/standards/code-organization.md#toctou--check-then-act-hazards`.
+**Runs while the worktree is STILL PRESENT** — branch cleanup removes the worktree AFTER this script returns. **The script does NOT change the caller's cwd** (a subprocess cannot mutate its parent's cwd) and **does NOT remove the worktree**. It RETURNS a status TOON; the finalize orchestrator returns ITS OWN cwd to main after the call so the uniform cwd rule resumes main resolution for retrospective + archive. The move-back is atomic-with-rollback (a partial move-back rolls the plan dir back into the worktree, leaving the authoritative copy whole, and releases the lock when this call took it) and idempotent (an already-integrated plan is a no-op success that never acquires the lock). A lock this call took is released on every exit path, including rollback; a lock the same plan already held is left to its holder, so exactly one release — the outer holder's — removes it. See ADR-002 and the TOCTOU mitigation menu in `ref-code-quality/standards/code-organization.md#toctou--check-then-act-hazards`.
 
 **Executor regeneration ownership.** `integrate_into_main` does NOT regenerate the executor. On-main executor regeneration (when a plan changes the marketplace script SET — newly added notations must resolve post-merge) is a project-level, meta-project-only finalize step (`finalize-step-sync-plugin-cache`, run after the cache sync), NOT this script's responsibility. The executor is per-tree DERIVED state (ADR-002): main keeps its copy present throughout phase-5+, each worktree generates its own at move-in, and the on-main copy is refreshed by the cache-sync step. This script only moves the plan dir back under the merge lock.
 
@@ -793,8 +799,18 @@ message: "plan state already integrated into main"
 | `error_code` | Cause |
 |-------------|-------|
 | `NOT_FOUND` | Worktree root unresolvable, or the worktree-resident plan directory is absent (and not already on main) |
-| `TIMEOUT` | The merge lock was held by a live holder for the entire wait budget (surfaced verbatim from `merge_lock acquire`) |
-| `INVALID_INPUT` | A move-back step failed (rolled back to the worktree, lock released) |
+| `INVALID_INPUT` | A move-back step failed (rolled back to the worktree; a lock this call took is released, an `already_held` grant is left to its holder) |
+| (none) | The merge-lock acquire raised: `error` names the exception and the payload carries `dequeued` (see the refused-acquire paragraph below) |
+| (none) | The release of a lock this call took failed, raised, or did not report `action: released`: `lock_released: false`, `release_failure` and, when the release answered, `release_result`. A move-back that otherwise succeeded is reported as this error (carrying `integration_action`, `plan_dir`, `folded_logs`), because the lock may still be held; an error payload keeps its own `error` and gains the release fields |
+
+The move-back acquire is a **bounded wait**, not a single attempt: it passes `wait_seconds` (the module constant `_MOVE_BACK_ACQUIRE_WAIT_SECONDS`, below both the `merge_lock` per-call ceiling and the host's default per-call Bash timeout) so admission is re-tried inside the one call. A reentrant `already_held` grant still returns at once. No finalize call site retries the integrate result, so this bound is the call's whole admission budget.
+
+When the acquire takes no lock, the `merge_lock acquire` payload is surfaced and the plan is **dequeued** from the FIFO admission queue first, through the in-process dequeue-only `merge_lock.run_dequeue` — NOT through `merge_lock release`. The dequeue never touches `merge.lock`: `release` unlinks the lock whenever its recorded holder equals the plan id, so routing the cleanup through it would delete a lock a concurrent call for the same plan created after the refused attempt. Dequeuing a plan with no entry is a no-op. Two acquire results take no lock, and both are dequeued:
+
+- `status: blocked` / `admission: blocked` with `timed_out: true` — the bound lapsed while another plan holds the lock or is ahead in the FIFO queue.
+- `status: error` — an attempt failed, for example a queue read-modify-write that raised. An attempt of the bounded wait can fail after a preceding attempt of the same wait already enqueued the plan, so an error is no proof that the queue holds no entry for it. A fault that escapes the acquire as an exception (the lock-file create runs after the enqueue) is reported the same way: `status: error` naming the exception, and dequeued.
+
+The payload adds `dequeued: true` when that dequeue landed and `dequeued: false` when it did not, in which case the plan's entry may still be queued. Without the dequeue, an enqueue from any attempt would outlive the call and wedge every plan queued behind it. Nothing was acquired, so no lock is released. A reentrant `already_held` grant is a success, not a refusal: it is never dequeued, and its lock is left to its holder.
 
 ## Canonical invocations
 
@@ -982,7 +998,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:prepare_e
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock acquire \
-  --plan-id PLAN_ID [--timeout SECONDS]
+  --plan-id PLAN_ID [--wait-seconds WAIT_SECONDS] [--interval-seconds INTERVAL_SECONDS]
 python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock release \
   --plan-id PLAN_ID
 ```

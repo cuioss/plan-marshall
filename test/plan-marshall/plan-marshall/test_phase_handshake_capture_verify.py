@@ -606,3 +606,99 @@ def test_cmd_verify_pr_title_missing_returns_structured_error(
     assert result['plan_id'] == 'prt-verify-missing'
     assert result['phase'] == '2-refine'
     assert 'pr_title' in result['message']
+
+
+# =============================================================================
+# pr_title_missing refusal names the lane-correct producer
+# =============================================================================
+
+#: The key set both verbs publish for a ``pr_title_missing`` refusal.
+_PR_TITLE_MISSING_KEYS = {'status', 'error', 'plan_id', 'phase', 'producer', 'remedy_command', 'message'}
+
+#: The light-lane producer, spelled as the refusal publishes it.
+_LIGHT_PRODUCER = 'plan-marshall/workflow/planning.md light-lane branch, before the 2-refine capture'
+
+#: The deep-lane producer, spelled as the refusal publishes it.
+_DEEP_PRODUCER = 'phase-2-refine Step 13'
+
+
+def _refusal_payloads(stub_metadata: dict, plan_id: str, planning_lane: str) -> tuple[dict, dict]:
+    """Drive one ``cmd_capture`` and one ``cmd_verify`` refusal for ``planning_lane``.
+
+    The capture refusal runs against a plan whose title was never persisted.
+    The verify refusal needs a captured row first, so it captures with a title
+    present under a sibling plan id, then removes the title before verifying.
+    """
+    stub_metadata['planning_lane'] = planning_lane
+    capture = cmds.cmd_capture(_ns(plan_id=plan_id, phase='2-refine'))
+
+    verify_plan_id = f'{plan_id}-verify'
+    stub_metadata['pr_title'] = 'fix(handshake): title present at capture time'
+    captured = cmds.cmd_capture(_ns(plan_id=verify_plan_id, phase='2-refine'))
+    assert captured['status'] == 'success', captured
+    del stub_metadata['pr_title']
+    verify = cmds.cmd_verify(_ns(plan_id=verify_plan_id, phase='2-refine'))
+    return capture, verify
+
+
+def _assert_lane_refusal(payload: dict, plan_id: str, producer: str, other_producer: str) -> None:
+    """One refusal names ``producer``, never ``other_producer``, and its remedy."""
+    assert payload['status'] == 'error', payload
+    assert payload['error'] == 'pr_title_missing', payload
+    assert payload['plan_id'] == plan_id
+    assert payload['producer'] == producer
+    assert other_producer not in payload['message'], payload['message']
+    remedy = payload['remedy_command']
+    assert 'plan-marshall:manage-status:manage-status metadata' in remedy
+    assert f'--plan-id {plan_id}' in remedy
+    assert '--set --field pr_title --value' in remedy
+    assert producer in payload['message']
+    assert remedy in payload['message']
+
+
+def test_pr_title_missing_light_lane_names_light_producer(plan_context, only_pr_title_invariant, stub_metadata) -> None:
+    """A light-lane plan's refusal names the planning.md light-lane producer.
+
+    The light lane never runs phase-2-refine, so pointing it at Step 13 sends
+    the operator to a step that does not exist on that lane.
+    """
+    capture, verify = _refusal_payloads(stub_metadata, 'prt-lane-light', 'light')
+
+    _assert_lane_refusal(capture, 'prt-lane-light', _LIGHT_PRODUCER, _DEEP_PRODUCER)
+    _assert_lane_refusal(verify, 'prt-lane-light-verify', _LIGHT_PRODUCER, _DEEP_PRODUCER)
+    assert set(capture) == set(verify) == _PR_TITLE_MISSING_KEYS
+
+
+def test_pr_title_missing_deep_lane_names_refine_step_13(plan_context, only_pr_title_invariant, stub_metadata) -> None:
+    """A deep-lane plan's refusal names phase-2-refine Step 13 as the producer."""
+    capture, verify = _refusal_payloads(stub_metadata, 'prt-lane-deep', 'deep')
+
+    _assert_lane_refusal(capture, 'prt-lane-deep', _DEEP_PRODUCER, _LIGHT_PRODUCER)
+    _assert_lane_refusal(verify, 'prt-lane-deep-verify', _DEEP_PRODUCER, _LIGHT_PRODUCER)
+    assert set(capture) == set(verify) == _PR_TITLE_MISSING_KEYS
+
+
+def test_phase_handshake_doc_names_pr_title_missing_producer_and_remedy() -> None:
+    """The ``pr_title_missing`` section documents the lane-aware refusal shape.
+
+    The section must name the ``producer`` and ``remedy_command`` keys and both
+    producers, so an operator reading the reference finds the same contract the
+    refusal payload carries.
+    """
+    doc = SCRIPTS_DIR.parent / 'references' / 'phase-handshake.md'
+    text = doc.read_text(encoding='utf-8')
+    heading = '### `pr_title_missing` capture-time error'
+    assert heading in text, f'{doc.name} must keep the {heading!r} section'
+    section = text.split(heading, 1)[1]
+    following = [marker for marker in ('\n## ', '\n### ') if marker in section]
+    if following:
+        section = section[: min(section.index(marker) for marker in following)]
+
+    assert 'producer' in section
+    assert 'remedy_command' in section
+    assert 'planning.md' in section and 'light-lane branch' in section, (
+        'the section must name the light-lane producer in planning.md'
+    )
+    assert _DEEP_PRODUCER in section, 'the section must name phase-2-refine Step 13 as the deep-lane producer'
+    assert inv.PR_TITLE_LIGHT_LANE_PRODUCER == _LIGHT_PRODUCER
+    assert inv.PR_TITLE_DEEP_LANE_PRODUCER == _DEEP_PRODUCER

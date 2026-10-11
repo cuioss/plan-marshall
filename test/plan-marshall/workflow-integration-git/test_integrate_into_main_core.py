@@ -418,3 +418,81 @@ class TestIntegrateRollback:
 
         # The lock was released even on the rollback path.
         assert env['fake_lock'].released == 1
+
+
+# =============================================================================
+# Release ownership — a lock the same plan already held stays held
+# =============================================================================
+
+
+class _AlreadyHeldMergeLock(_FakeMergeLock):
+    """Stub whose acquire reports the reentrant ``already_held`` grant."""
+
+    def run_acquire(self, args: Namespace) -> dict:
+        self.acquired += 1
+        self.acquire_set_title_tokens.append(getattr(args, 'set_title_token', 'absent'))
+        return {'status': 'success', 'plan_id': args.plan_id, 'action': 'already_held'}
+
+
+class TestIntegrateLeavesSelfHeldLockWithItsHolder:
+    """integrate releases only a lock it took itself.
+
+    branch-cleanup holds the merge lock under the plan id across the merge window
+    and calls integrate inside it. integrate's acquire is then a reentrant
+    ``already_held`` grant, and releasing on that grant would drop the lock out
+    from under its holder mid-window.
+    """
+
+    def test_lock_held_by_the_same_plan_is_still_held_after_integrate(
+        self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Real merge_lock: a lock pre-acquired by the plan survives integrate."""
+        env = isolated_env
+        real_merge_lock = integrate_into_main._load_module_by_path(
+            'merge_lock_real_under_integrate_core', integrate_into_main._MERGE_LOCK_PATH
+        )
+        monkeypatch.setattr(integrate_into_main, '_load_merge_lock', lambda: real_merge_lock)
+        # A live holder: the holder's plan dir exists on main, so the reentrant
+        # grant — not a stale reclaim — is what answers integrate's acquire.
+        (env['main'] / '.plan' / 'local' / 'plans' / env['plan_id']).mkdir(parents=True, exist_ok=True)
+        lock_path = real_merge_lock._resolve_main_lock_path()
+
+        held = real_merge_lock.run_acquire(Namespace(plan_id=env['plan_id'], set_title_token=False))
+        assert held['action'] == 'acquired', held
+
+        result = integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
+
+        assert result['status'] == 'success', result
+        assert result['action'] == 'integrated', result
+        assert lock_path.is_file(), 'integrate released a lock it did not take'
+        assert lock_path.read_text(encoding='utf-8').strip() == env['plan_id']
+
+    def test_already_held_grant_issues_no_release(self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+        """On the success path an ``already_held`` grant releases nothing."""
+        env = isolated_env
+        held_lock = _AlreadyHeldMergeLock()
+        monkeypatch.setattr(integrate_into_main, '_load_merge_lock', lambda: held_lock)
+
+        result = integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
+
+        assert result['status'] == 'success', result
+        assert held_lock.acquired == 1
+        assert held_lock.released == 0
+
+    def test_already_held_grant_issues_no_release_on_rollback(
+        self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """On the rollback path an ``already_held`` grant releases nothing either."""
+        env = isolated_env
+        held_lock = _AlreadyHeldMergeLock()
+        monkeypatch.setattr(integrate_into_main, '_load_merge_lock', lambda: held_lock)
+
+        def boom(src: Path, dst: Path) -> None:
+            raise OSError('simulated move-back failure')
+
+        monkeypatch.setattr(integrate_into_main, '_move_back_dir', boom)
+
+        result = integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
+
+        assert result['status'] == 'error', result
+        assert held_lock.released == 0
