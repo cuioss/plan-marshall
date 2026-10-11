@@ -245,7 +245,7 @@ def _snapshot_step_params(
 #: pre-push gate that is only meaningful when a downstream push exists.
 _COMMIT_PUSH_DROP_REASON = 'commit_and_push is disabled — no downstream push exists'
 _COMMIT_PUSH_DROP_STEPS = frozenset(
-    {'push', 'pre-push-quality-gate', 'pre-submission-self-review', 'functional-review'}
+    {'push', 'pre-push-quality-gate', 'pre-submission-self-review', 'functional-review', 'code-review'}
 )
 
 
@@ -256,7 +256,7 @@ def _apply_commit_push_disabled(
 
     Subtracts every member of :data:`_COMMIT_PUSH_DROP_STEPS` — ``push`` plus the
     pre-push gates (``pre-push-quality-gate``, ``pre-submission-self-review``,
-    ``functional-review``) — when ``commit_and_push is False``: each gate goes
+    ``functional-review``, ``code-review``) — when ``commit_and_push is False``: each gate goes
     because it is only meaningful when a downstream push exists.
 
     Reporting follows the shared ``{step, reason}`` subtraction-record convention
@@ -445,6 +445,7 @@ _SCOPE_GATED_SURGICAL_DROP = frozenset(
         'plan-marshall:plan-retrospective',
         'pre-submission-self-review',
         'functional-review',
+        'code-review',
         'finalize-step-plugin-doctor',
         'project:finalize-step-plugin-doctor',
     }
@@ -468,6 +469,7 @@ _SIMPLIFY_OWNER_STEP = 'default:finalize-step-simplify'
 _SECURITY_AUDIT_OWNER_STEP = 'default:finalize-step-security-audit'
 _PRE_SUBMISSION_SELF_REVIEW_STEP = 'default:pre-submission-self-review'
 _FUNCTIONAL_REVIEW_OWNER_STEP = 'default:functional-review'
+_CODE_REVIEW_OWNER_STEP = 'default:code-review'
 
 
 def _read_step_owned_knob(owner_step_id: str, knob: str, plan_id: str) -> object | None:
@@ -560,7 +562,7 @@ def _apply_scope_gated_finalize(
     Subtractions:
 
     - ``scope_estimate == 'surgical'`` → drop ``plan-marshall:plan-retrospective``,
-      ``pre-submission-self-review``, ``functional-review`` and
+      ``pre-submission-self-review``, ``functional-review``, ``code-review`` and
       ``finalize-step-plugin-doctor`` (every bare and prefixed form — including
       the generic ``default:`` / meta-project ``project:`` variants).
     - ``scope_estimate == 'single_module'`` → drop only
@@ -640,6 +642,15 @@ _CEREMONY_FINALIZE_STEP_MAP: dict[str, tuple[frozenset[str], str]] = {
         ),
         'functional-review',
     ),
+    'code_review': (
+        frozenset(
+            {
+                'code-review',
+                'default:code-review',
+            }
+        ),
+        'code-review',
+    ),
     'qgate': (
         frozenset({'pre-push-quality-gate'}),
         'pre-push-quality-gate',
@@ -655,7 +666,14 @@ _CEREMONY_FINALIZE_STEP_MAP: dict[str, tuple[frozenset[str], str]] = {
 }
 
 # The finalize ceremony gates, in canonical order.
-_CEREMONY_FINALIZE_GATES = ('self_review', 'functional_review', 'qgate', 'simplify', 'security_audit')
+_CEREMONY_FINALIZE_GATES = (
+    'self_review',
+    'functional_review',
+    'code_review',
+    'qgate',
+    'simplify',
+    'security_audit',
+)
 
 # Canonical default for every finalize gate when marshal.json omits the block.
 _CEREMONY_FINALIZE_DEFAULT = 'auto'
@@ -668,6 +686,7 @@ _CEREMONY_GATE_OWNER_STEP: dict[str, str] = {
     'qgate': _QGATE_OWNER_STEP,
     'self_review': _PRE_SUBMISSION_SELF_REVIEW_STEP,
     'functional_review': _FUNCTIONAL_REVIEW_OWNER_STEP,
+    'code_review': _CODE_REVIEW_OWNER_STEP,
     'simplify': _SIMPLIFY_OWNER_STEP,
     'security_audit': _SECURITY_AUDIT_OWNER_STEP,
 }
@@ -697,6 +716,8 @@ def _read_finalize_gates(plan_id: str) -> dict[str, str]:
     - ``self_review`` → ``default:pre-submission-self-review``
     - ``functional_review`` → ``default:functional-review`` — the review's own
       setting, so its lane decides this gate independently of any other review
+    - ``code_review`` → ``default:code-review`` — likewise the code review's own
+      setting, independent of the functional review's
     - ``simplify`` → ``default:finalize-step-simplify``
     - ``security_audit`` → ``default:finalize-step-security-audit``
 

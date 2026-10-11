@@ -118,10 +118,10 @@ def test_surgical_enhancement_with_code_candidates_falls_to_default(plan_context
     # Default keeps the phase_6 candidate list — enhancement is a member of
     # the code-touching activation set {feature, bug_fix, tech_debt, enhancement}
     # that simplify_inactive gates on, and with affected_files_count > 0 the
-    # security_class_inactive gate keeps its step too, so both survive. The one
-    # subtraction is the scope gate's: a surgical scope drops functional-review,
+    # security_class_inactive gate keeps its step too, so both survive. The only
+    # subtractions are the scope gate's: a surgical scope drops both reviews,
     # which no declared lane makes immune on the CSV-fallback path.
-    expected = [step for step in DEFAULT_PHASE_6_STEPS if step != 'functional-review']
+    expected = [step for step in DEFAULT_PHASE_6_STEPS if step not in ('functional-review', 'code-review')]
     assert manifest['phase_6']['steps'] == expected
 
 

@@ -33,6 +33,7 @@ otherwise a manifest pruning would deadlock the phase transition.
 - finalize-step-simplify
 - finalize-step-security-audit
 - functional-review
+- code-review
 - push
 - finalize-step-preference-emitter
 - create-pr
@@ -60,7 +61,8 @@ documented in
 
 - **`orchestrator-owned`** steps sub-dispatch (they issue their own `Task:`
   dispatches — e.g. `finalize-step-plugin-doctor`,
-  `default:pre-submission-self-review`, `default:functional-review`, `automatic-review`,
+  `default:pre-submission-self-review`, `default:functional-review`,
+  `default:code-review`, `automatic-review`,
   `finalize-step-simplify`). A dispatched `execution-context` leaf has no Task
   tool and CANNOT run them; the main-context orchestrator MUST own them.
 - **`leaf-dispatchable`** steps are self-contained scripts or inline workflows

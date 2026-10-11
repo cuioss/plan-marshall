@@ -118,6 +118,7 @@ def test_commit_and_push_false_decision_log_message_matches_contract(plan_contex
         assert msg.split(' from phase_6.steps: ', 1)[1]
 
 
+@pytest.mark.parametrize('review', ['functional-review', 'code-review'])
 @pytest.mark.parametrize(
     'commit_and_push,expect_kept',
     [
@@ -125,14 +126,14 @@ def test_commit_and_push_false_decision_log_message_matches_contract(plan_contex
         ('true', True),
     ],
 )
-def test_functional_review_follows_commit_and_push(plan_context, commit_and_push, expect_kept):
-    """The functional review is a pre-push gate: dropped with the push, kept with it.
+def test_review_follows_commit_and_push(plan_context, review, commit_and_push, expect_kept):
+    """Each review is a pre-push gate: dropped with the push, kept with it.
 
     The matched pair is what makes the drop attributable to ``commit_and_push``
     rather than to some other gate: the same candidates keep the review when a
     push will occur.
     """
-    plan_id = f'matrix-cap-functional-{commit_and_push}'
+    plan_id = f'matrix-cap-{review}-{commit_and_push}'
     result = cmd_compose(
         _compose_ns(
             plan_id=plan_id,
@@ -148,11 +149,36 @@ def test_functional_review_follows_commit_and_push(plan_context, commit_and_push
     manifest = read_manifest(plan_id)
     assert manifest is not None
     if expect_kept:
-        assert 'functional-review' not in dropped
-        assert 'functional-review' in manifest['phase_6']['steps']
+        assert review not in dropped
+        assert review in manifest['phase_6']['steps']
     else:
-        assert dropped.get('functional-review'), 'the drop must carry its own reason'
-        assert 'functional-review' not in manifest['phase_6']['steps']
+        assert dropped.get(review), 'the drop must carry its own reason'
+        assert review not in manifest['phase_6']['steps']
+
+
+def test_composed_manifest_orders_both_reviews_before_architecture_refresh(plan_context):
+    """A pushing compose lists functional-review, then code-review, then the refresh.
+
+    The candidate list is scrambled so the order is the composer's frontmatter
+    sort, not the order the candidates arrived in.
+    """
+    candidates = ['architecture-refresh', 'code-review', 'push', 'functional-review', 'archive-plan']
+    result = cmd_compose(
+        _compose_ns(
+            plan_id='matrix-cap-review-order',
+            change_type='feature',
+            scope_estimate='multi_module',
+            affected_files_count=4,
+            commit_and_push='true',
+            phase_6_steps=','.join(candidates),
+        )
+    )
+    assert result is not None and result['status'] == 'success'
+    manifest = read_manifest('matrix-cap-review-order')
+    assert manifest is not None
+    steps = manifest['phase_6']['steps']
+    assert {'functional-review', 'code-review', 'architecture-refresh'} <= set(steps), steps
+    assert steps.index('functional-review') < steps.index('code-review') < steps.index('architecture-refresh')
 
 
 def test_commit_and_push_default_does_not_emit_omission_log(plan_context):
@@ -230,6 +256,7 @@ def test_commit_and_push_false_with_prefixed_input_drops_commit_push_and_pre_pus
     """
     prefixed = [
         'default:functional-review',
+        'default:code-review',
         'default:pre-push-quality-gate',
         'default:push',
         'default:create-pr',
@@ -256,6 +283,7 @@ def test_commit_and_push_false_with_prefixed_input_drops_commit_push_and_pre_pus
         'push',
         'pre-push-quality-gate',
         'functional-review',
+        'code-review',
     }
 
     manifest = read_manifest('cap-false-prefixed')
@@ -268,6 +296,7 @@ def test_commit_and_push_false_with_prefixed_input_drops_commit_push_and_pre_pus
     assert 'push' not in steps
     assert 'pre-push-quality-gate' not in steps
     assert 'functional-review' not in steps
+    assert 'code-review' not in steps
 
     # Output is bare — no `default:` prefix anywhere.
     assert not any(s.startswith('default:') for s in steps), f'phase_6 leaked `default:`-prefixed entry: {steps!r}'

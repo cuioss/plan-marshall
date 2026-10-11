@@ -32,6 +32,7 @@ class TestCeremonyFinalizeAuto:
         assert gates == {
             'self_review': 'auto',
             'functional_review': 'auto',
+            'code_review': 'auto',
             'qgate': 'auto',
             'simplify': 'auto',
             'security_audit': 'auto',

@@ -24,6 +24,7 @@ Deliverables ({N_done}/{N_total})
 
 Finalize steps ({N_done}/{N_total} done)
   [OK]  functional-review                 functional review clean: {N} deliverables, {A} advisory
+  [OK]  code-review                       code review clean: {F} files, {A} advisory
   [OK]  push                              pushed {branch} basis=ledger-verified
   [OK]  create-pr                         #{pr_number}
   [OK]  automatic-review                  {N} comment(s) resolved (no loop-back)
@@ -412,6 +413,9 @@ Each row ILLUSTRATES the contract its own step doc declares; that doc, not this 
 | `functional-review` | Round closed by the verifier | `functional review clean: 4 deliverables, 1 advisory` |
 | `functional-review` | Blocking findings, loop-back | `functional review found 2 blocking over 4 deliverables, 1 advisory` |
 | `functional-review` | Not run — an input could not be read, loop-back | `functional review not run: footprint_unresolved` |
+| `code-review` | Round closed by the verifier | `code review clean: 12 files, 2 advisory` |
+| `code-review` | Blocking findings, loop-back | `code review found 1 blocking over 12 files, 2 advisory` |
+| `code-review` | Not run — the rulebook could not be resolved, loop-back | `code review not run: rulebook_unresolved` |
 | `create-pr` | New PR created | `#212` |
 | `create-pr` | Existing PR re-used | `existing PR #212` |
 | `create-pr` | Skipped — local-only run | `skipped: local-only run, no PR opened` |
