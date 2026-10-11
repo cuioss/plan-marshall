@@ -1,6 +1,6 @@
 ---
 name: ref-documentation
-description: Content quality, tone analysis, organization standards, and review orchestration for technical documentation
+description: Content quality, tone analysis, organization standards, and review orchestration for technical documentation, plus the documentation-content review rules a code review cites
 user-invocable: false
 mode: workflow
 ---
@@ -478,6 +478,17 @@ All documentation must pass:
 - Consistent terminology
 - Documents only existing features
 - All links valid (via ref-asciidoc)
+
+## Review Rules
+
+The review rules of the documentation domain for content — what a code review looks for in changed technical documentation. AsciiDoc formatting rules live in `pm-documents:ref-asciidoc`. The block follows the harvestable block contract — see [`review-rubric.md` § 10 "Harvestable review-rule blocks"](../../../plan-marshall/skills/phase-6-finalize/standards/review-rubric.md) for its rules, which are not restated here.
+
+- A document that describes a feature, option, command or behaviour the code does not have — removed, renamed or never built — so a reader who follows it gets an error or a silent no-op.
+- A code or configuration example whose API, flags or keys no longer match the current code, so a reader who copies it gets a failure the document does not mention.
+- A changelog, dated update section or account of superseded behaviour inside documentation of the current state, so a reader cannot tell which statements still hold.
+- A factual claim (a performance figure, a conformance statement, a standard or RFC citation) with no source or verifiable reference, so the reader acts on a statement nobody checked.
+- A `TODO`, placeholder or empty section in published documentation, so the reader reaches a gap exactly where the needed instruction should be.
+- One term used for two different concepts, or two terms used for one concept, across a document set, so a reader conflates the concepts or searches for the wrong name.
 
 ## Canonical invocations
 
