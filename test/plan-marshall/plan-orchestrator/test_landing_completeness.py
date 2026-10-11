@@ -35,6 +35,9 @@ Covered:
 - The functional review's four verdict facts read back from a landing as
   ``step.functional-review.*`` optional facts, and a landing without them is still
   complete.
+- The code review's three counts read back from a landing as
+  ``step.code-review.*`` optional facts, and a landing without them is still
+  complete.
 """
 
 from __future__ import annotations
@@ -1081,6 +1084,62 @@ class TestFunctionalVerdictFacts:
         section = section[: section.index('\n## ', 1)]
 
         for key in _FUNCTIONAL_VERDICT_FACTS:
+            assert f'`{key}`' in section, key
+
+
+# =============================================================================
+# The code-review counts ride the optional per-step channel
+# =============================================================================
+
+#: The three code-review counts, with the values a sample review recorded.
+_CODE_REVIEW_COUNTS: dict[str, str] = {
+    'step.code-review.blocking_count': '1',
+    'step.code-review.advisory_count': '3',
+    'step.code-review.rules_cited': '4',
+}
+
+
+class TestCodeReviewCounts:
+    """An epic reads how the code review judged the change without parsing prose."""
+
+    def test_the_three_counts_read_back_from_a_landing(self):
+        facts = parse_landing_facts(_facts_landing(**_CODE_REVIEW_COUNTS))
+
+        assert facts is not None
+        assert {key: facts.get(key) for key in _CODE_REVIEW_COUNTS} == _CODE_REVIEW_COUNTS
+
+    def test_both_reviews_facts_read_back_side_by_side(self):
+        """The two reviews' facts share the channel without colliding."""
+        facts = parse_landing_facts(_facts_landing(**_FUNCTIONAL_VERDICT_FACTS, **_CODE_REVIEW_COUNTS))
+
+        assert facts is not None
+        expected = {**_FUNCTIONAL_VERDICT_FACTS, **_CODE_REVIEW_COUNTS}
+        assert {key: facts.get(key) for key in expected} == expected
+
+    def test_a_landing_carrying_them_is_complete(self):
+        complete, missing = check_landing_completeness(_facts_landing(**_CODE_REVIEW_COUNTS))
+
+        assert complete is True
+        assert missing == []
+
+    def test_a_landing_without_them_is_still_complete(self):
+        """The three keys are optional: a plan whose code review never ran still drains complete."""
+        landing = _facts_landing()
+        facts = parse_landing_facts(landing)
+
+        assert facts is not None
+        assert not any(key in facts for key in _CODE_REVIEW_COUNTS)
+        assert check_landing_completeness(landing) == (True, [])
+
+    def test_the_required_key_set_is_unchanged(self):
+        assert not set(_CODE_REVIEW_COUNTS) & set(LANDING_REQUIRED_KEYS)
+
+    def test_the_spec_names_the_three_counts(self):
+        text = _PAYLOAD_SPEC.read_text(encoding='utf-8')
+        section = text[text.index('## Code-review counts') :]
+        section = section[: section.index('\n## ', 1)]
+
+        for key in _CODE_REVIEW_COUNTS:
             assert f'`{key}`' in section, key
 
 

@@ -119,7 +119,13 @@ _RECIPE_PROVENANCE_CASES = [
 #: candidates. ``DEFAULT_PHASE_6_STEPS`` carries only some of them, which is
 #: exactly how the old aggregate reporting looked adequate: the common fixture
 #: drops few steps, and one step is all an aggregate line can name.
-_COMMIT_PUSH_DROP_SET = {'push', 'pre-push-quality-gate', 'pre-submission-self-review', 'functional-review'}
+_COMMIT_PUSH_DROP_SET = {
+    'push',
+    'pre-push-quality-gate',
+    'pre-submission-self-review',
+    'functional-review',
+    'code-review',
+}
 
 
 # =============================================================================

@@ -308,27 +308,32 @@ def test_finalize_step_wrappers_mark_step_done_calls_present() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 6: functional-review is pinned across every roster surface
+# Test 6: the two review steps are pinned across every roster surface
 # ---------------------------------------------------------------------------
 
 _PHASE_6_DIR = get_skill_dir('plan-marshall', 'phase-6-finalize')
-_FUNCTIONAL_REVIEW_WORKFLOW = _PHASE_6_DIR / 'workflow' / 'functional-review.md'
+
+#: The two finalize reviews, by their bare step id. Each lives in
+#: ``workflow/{bare}.md`` and records under ``default:{bare}``.
+_REVIEW_STEPS = ('functional-review', 'code-review')
 
 
-def test_functional_review_records_under_its_canonical_step_id() -> None:
-    """Every terminal record the step body writes names ``default:functional-review``.
+@pytest.mark.parametrize('bare', _REVIEW_STEPS)
+def test_review_step_records_under_its_canonical_step_id(bare: str) -> None:
+    """Every terminal record the step body writes names ``default:{bare}``.
 
     A mark-step-done call under any other spelling would record a key the
     manifest does not carry, and the handshake would count the step missing.
     """
-    content = _FUNCTIONAL_REVIEW_WORKFLOW.read_text(encoding='utf-8')
+    content = (_PHASE_6_DIR / 'workflow' / f'{bare}.md').read_text(encoding='utf-8')
     calls = [line for line in content.splitlines() if '--step ' in line and '--outcome' in line]
     assert calls, 'control: the workflow must carry terminal mark-step-done calls'
     named = {line.split('--step ', 1)[1].split()[0] for line in calls}
-    assert named == {'default:functional-review'}, f'terminal records name other step ids: {sorted(named)}'
+    assert named == {f'default:{bare}'}, f'terminal records name other step ids: {sorted(named)}'
 
 
-def test_functional_review_is_on_every_roster_surface() -> None:
+@pytest.mark.parametrize('bare', _REVIEW_STEPS)
+def test_review_step_is_on_every_roster_surface(bare: str) -> None:
     """The step is declared on each surface that enumerates finalize steps.
 
     Each surface is a different reader's view of the roster: the handshake reads
@@ -338,38 +343,40 @@ def test_functional_review_is_on_every_roster_surface() -> None:
     another.
     """
     required = inv._parse_required_steps(_PHASE_6_DIR / 'standards' / 'required-steps.md')
-    assert 'functional-review' in required
+    assert bare in required
     assert 'push' in required, 'control: the parser must read the real required-steps list'
 
     skill = (_PHASE_6_DIR / 'SKILL.md').read_text(encoding='utf-8')
-    assert '| `default:functional-review` | `workflow/functional-review.md` |' in skill
+    assert f'| `default:{bare}` | `workflow/{bare}.md` |' in skill
 
     split = (_PHASE_6_DIR / 'standards' / 'dispatch-inline-split.md').read_text(encoding='utf-8')
-    assert '- `default:functional-review` — ' in split
+    assert f'- `default:{bare}` — ' in split
 
     template = (_PHASE_6_DIR / 'standards' / 'output-template.md').read_text(encoding='utf-8')
-    assert '| `functional-review` |' in template
+    assert f'| `{bare}` |' in template
 
 
-def test_phase_steps_complete_accepts_the_canonical_functional_review_record(
+@pytest.mark.parametrize('bare', _REVIEW_STEPS)
+def test_phase_steps_complete_accepts_the_canonical_review_record(
+    bare: str,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     """A bare required bullet matches the bare key ``mark-step-done`` records.
 
     ``mark-step-done`` strips the ``default:`` prefix before recording, so the
-    required-steps bullet and the recorded key are both ``functional-review``.
+    required-steps bullet and the recorded key are both the bare id.
     The negative half — the step required but unrecorded — proves the check reads
     the key rather than passing every metadata.
     """
     required = tmp_path / 'required-steps.md'
-    required.write_text('- functional-review\n', encoding='utf-8')
+    required.write_text(f'- {bare}\n', encoding='utf-8')
     monkeypatch.setattr(inv, '_resolve_required_steps_path', lambda _p: required)
 
     recorded = {
         'phase_steps': {
             '6-finalize': {
-                'functional-review': {'outcome': 'done', 'display_detail': 'functional review clean: 4 deliverables'},
+                bare: {'outcome': 'done', 'display_detail': f'{bare} clean'},
             }
         }
     }
@@ -377,4 +384,4 @@ def test_phase_steps_complete_accepts_the_canonical_functional_review_record(
 
     with pytest.raises(inv.PhaseStepsIncomplete) as excinfo:
         inv._capture_phase_steps_complete('pid', {'phase_steps': {'6-finalize': {}}}, '6-finalize')
-    assert excinfo.value.missing == ['functional-review']
+    assert excinfo.value.missing == [bare]

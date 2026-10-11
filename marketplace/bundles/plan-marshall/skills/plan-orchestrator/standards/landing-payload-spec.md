@@ -100,8 +100,8 @@ the drain consumes. These keys are **required** — a landing missing any of the
 
 Optional keys a landing MAY carry (not required, so their absence is not incompleteness): `epic`,
 `total_wall_seconds`, and any per-step typed fact transcribed as `step.{name}.{fact_key}={value}`. The
-functional review's verdict facts are the named instance of the last kind — see § "Functional verdict
-facts" below.
+functional review's verdict facts and the code review's counts are the named instances of the last
+kind — see § "Functional verdict facts" and § "Code-review counts" below.
 
 **A degraded value is not a fact.** A degraded value comes in TWO classes, and they are rejected on
 different terms because they assert different things.
@@ -159,6 +159,26 @@ never produced a verdict — is still COMPLETE. A consumer that finds none of th
 verdict was recorded", never "every deliverable was met"; and a `deliverables_met` count carries its
 meaning only beside `deliverables_total` from the required set, against which a reader can see how many
 deliverables the review graded at all.
+
+## Code-review counts
+
+How the code review judged the change rides the landing as three typed facts on the same optional
+per-step channel. Each is the integer the `code-review` finalize step recorded on its step record and
+`emit-landing.md` transcribed verbatim:
+
+| Optional key | Value |
+|--------------|-------|
+| `step.code-review.blocking_count` | How many substantiated findings the code review graded `blocking` |
+| `step.code-review.advisory_count` | How many it graded `advisory` |
+| `step.code-review.rules_cited` | How many distinct rules its findings cited |
+
+The grading and the citation forms are defined by
+[`../../phase-6-finalize/standards/review-rubric.md`](../../phase-6-finalize/standards/review-rubric.md)
+§ 3 and § 5; this table names only how the counts ride the landing. The three keys are OPTIONAL: the
+required key set above is unchanged, so a landing without them — a plan whose manifest dropped the
+review, or whose review never produced findings — is still COMPLETE. A consumer that finds none of the
+three reads "no code-review result was recorded", never "the review found nothing"; a recorded
+`blocking_count` of `0` is the clean answer, and only a recorded one.
 
 ## The narrative residue section
 

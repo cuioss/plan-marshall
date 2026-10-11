@@ -48,28 +48,41 @@ class TestScopeGatedFinalizeDeclaredLaneImmunity:
         assert set(dropped) == {_RETROSPECTIVE, 'project:finalize-step-plugin-doctor'}
         assert 'push' in kept
 
-    def test_surgical_drops_functional_review_without_declaration(self):
-        candidates = ['functional-review', 'push']
+    @pytest.mark.parametrize('review', ['functional-review', 'code-review'])
+    def test_surgical_drops_review_without_declaration(self, review):
+        candidates = [review, 'push']
         kept, dropped, immune = _apply_scope_gated_finalize(candidates, 'surgical', None)
-        assert dropped == ['functional-review']
+        assert dropped == [review]
         assert kept == ['push']
         assert immune == []
 
-    def test_surgical_keeps_functional_review_with_declared_lane(self):
-        candidates = ['functional-review', 'push']
+    @pytest.mark.parametrize('review', ['functional-review', 'code-review'])
+    def test_surgical_keeps_review_with_declared_lane(self, review):
+        candidates = [review, 'push']
         kept, dropped, immune = _apply_scope_gated_finalize(
-            candidates, 'surgical', _lane_map('default:functional-review', 'minimal')
+            candidates, 'surgical', _lane_map(f'default:{review}', 'minimal')
         )
-        assert kept == ['functional-review', 'push']
+        assert kept == [review, 'push']
         assert dropped == []
-        assert immune == ['functional-review']
+        assert immune == [review]
 
-    def test_single_module_keeps_functional_review(self):
-        # The review is in the surgical drop set only; a single-module plan keeps it.
-        candidates = ['functional-review', 'push']
+    @pytest.mark.parametrize('review', ['functional-review', 'code-review'])
+    def test_single_module_keeps_review(self, review):
+        # Each review is in the surgical drop set only; a single-module plan keeps it.
+        candidates = [review, 'push']
         kept, dropped, _immune = _apply_scope_gated_finalize(candidates, 'single_module', None)
         assert kept == candidates
         assert dropped == []
+
+    def test_one_reviews_declared_lane_does_not_immunize_the_other(self):
+        """Immunity is per step: a lane on the code review leaves the functional review gated."""
+        candidates = ['functional-review', 'code-review', 'push']
+        kept, dropped, immune = _apply_scope_gated_finalize(
+            candidates, 'surgical', _lane_map('default:code-review', 'minimal')
+        )
+        assert dropped == ['functional-review']
+        assert immune == ['code-review']
+        assert kept == ['code-review', 'push']
 
     def test_auto_declaration_does_not_confer_immunity(self):
         # ``auto`` is the defer value, so the implicit gate still drops.

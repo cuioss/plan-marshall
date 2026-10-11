@@ -109,6 +109,7 @@ class TestPreSubmissionSelfReviewSurvivesCompose:
             'pre-push-quality-gate',
             'pre-submission-self-review',
             'functional-review',
+            'code-review',
         }
         assert all(record['reason'] for record in dropped)
 

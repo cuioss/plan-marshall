@@ -201,6 +201,8 @@ import re
 from pathlib import Path
 from typing import NamedTuple
 
+import pytest
+
 from _dispatch_roster import parse_roster, parse_roster_rows, section_lines
 from conftest import MARKETPLACE_ROOT, PROJECT_ROOT
 from extension_discovery import find_implementors
@@ -977,14 +979,14 @@ def test_both_rosters_are_non_empty():
     assert _roster(_INLINE_HEADING)
 
 
-def test_functional_review_is_registered_and_classified_dispatched():
-    """The functional review is a registered step and sits on the dispatched roster.
+@pytest.mark.parametrize('step', ['default:functional-review', 'default:code-review'])
+def test_review_step_is_registered_and_classified_dispatched(step):
+    """Each review is a registered step and sits on the dispatched roster.
 
     Its body dispatches an author and a verifier of its own, so an inline
     classification would hide two dispatches from every reader of the roster.
     Pinned by name because closure alone cannot say WHICH roster a step belongs to.
     """
-    step = 'default:functional-review'
     assert step in _registered_steps(), f'{step} is not in the marshal.json finalize registry'
     assert step in _roster(_DISPATCHED_HEADING)
     assert step not in _roster(_INLINE_HEADING)

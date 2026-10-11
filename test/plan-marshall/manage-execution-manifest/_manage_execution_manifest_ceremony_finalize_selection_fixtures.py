@@ -111,12 +111,15 @@ _GATE_OWNER_STEP = {
     'security_audit': 'default:finalize-step-security-audit',
     'self_review': 'default:pre-submission-self-review',
     'functional_review': 'default:functional-review',
+    'code_review': 'default:code-review',
 }
 
 # The ceremony gates whose value is written as the owning step's ``lane``
 # override (``off``/``minimal``/``standard``). Any other step-folded knob a caller
 # passes is written under its own param key verbatim.
-_CEREMONY_LANE_GATES = frozenset({'qgate', 'self_review', 'functional_review', 'simplify', 'security_audit'})
+_CEREMONY_LANE_GATES = frozenset(
+    {'qgate', 'self_review', 'functional_review', 'code_review', 'simplify', 'security_audit'}
+)
 
 
 _FOOTPRINT = ['marketplace/bundles/x/skills/y/foo.py']
