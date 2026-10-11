@@ -1526,13 +1526,19 @@ def cmd_fetch_findings(args):
        the comment's ``updated_at``, or a body digest when the provider supplied none,
        so an unchanged re-fetch dedupes while an in-place-edited comment presents as
        NEW INFORMATION. A comment whose ``(bot_kind, comment_id)`` is stored under a
-       different edit term UPDATES that finding in place (``update_finding_text``):
-       latest body under ``raw_input.body``, the new edit term, the current
-       ``reviewed_commit_sha``, and the resolution exactly as stored — an edit never
-       reopens a resolved finding. Counted in ``count_updated_edited`` (with the
-       rewritten ``updated_edited_hash_ids``), never in ``count_stored``, and
-       subtracted from ``expected_stored``. A finding stored before the term existed
-       carries none, and dedupes on the two-term key against any edit term.
+       different edit term UPDATES that finding in place (``update_finding_text``),
+       never files a second one. A pending finding takes the latest body under
+       ``raw_input.body``, the new edit term and the current ``reviewed_commit_sha``.
+       A resolved finding whose body CHANGED takes the same and is reopened to
+       pending (disposition, fix stamp and ``responded`` marker cleared), so the new
+       content is triaged. A resolved finding whose body is IDENTICAL records only
+       the new edit term and keeps its resolution, its text and its
+       ``reviewed_commit_sha`` — the anchor phase-6-finalize 7c searches after for a
+       ``fixed`` finding's inline-fix commit. Counted in ``count_updated_edited``
+       (with the rewritten ``updated_edited_hash_ids``; a reopen is also named in
+       ``reopened_edited_hash_ids``), never in ``count_stored``, and subtracted from
+       ``expected_stored``. A finding stored before the term existed carries none,
+       and dedupes on the two-term key against any edit term.
 
     ``self_response_loop_detected``: true when a single fetch observed
     ``count_self_response_current_cycle >= _SELF_RESPONSE_LOOP_BOUND``. Every turn
@@ -2081,6 +2087,8 @@ def cmd_fetch_findings(args):
     stored_hashes: list[str] = []
     # The stored findings an in-place edit of their comment rewrote (pre-filter 6).
     updated_edited_hashes: list[str] = []
+    # The subset of those whose finding was resolved and reopened because the body moved.
+    reopened_edited_hashes: list[str] = []
     skipped_noise = 0
     skipped_duplicate = 0
     skipped_refusal = 0
@@ -2322,15 +2330,23 @@ def cmd_fetch_findings(args):
         # still dedupes, because an unchanged comment carries an unchanged term.
         #
         # AN EDIT UPDATES the stored finding rather than filing a second one beside it:
-        # the comment is the same, so the finding is the same. Its text — the latest body
-        # under ``raw_input.body``, the new edit term, the current ``reviewed_commit_sha``
-        # — is rewritten in place through ``update_finding_text``, and its resolution is
-        # left exactly as stored. A resolved finding stays resolved with its disposition,
-        # so an edit never reopens it; a pending finding stays pending and carries the new
-        # text into triage. Filing a new finding per edit put every edit of a bot's
-        # persistent summary back in front of the merge gate as a fresh pending finding.
-        # The update is counted in ``count_updated_edited``, never in ``count_stored``,
-        # and drops out of ``expected_stored`` beside the other non-stores.
+        # the comment is the same, so the finding is the same. ``update_finding_text``
+        # rewrites it in place, and whether the edit reopens it is decided by whether the
+        # BODY moved. A pending finding takes the latest body, the new edit term and the
+        # current ``reviewed_commit_sha``, and carries the new text into triage. A
+        # resolved finding whose body CHANGED takes the same three and is reset to
+        # pending — its disposition answered text the bot has since replaced, so the new
+        # content is triaged as content no disposition covered. A resolved finding whose
+        # body is IDENTICAL (a re-post, or an edit that moved only the edit term) keeps
+        # its resolution, its stored text and its ``reviewed_commit_sha``, and records
+        # only the new edit term. The anchor stays with a kept disposition because
+        # phase-6-finalize 7c searches the commits after it for a ``fixed`` finding's
+        # inline-fix commit. Filing a new finding per edit put every edit of a bot's
+        # persistent summary back in front of the merge gate as a fresh pending finding,
+        # identical body or not. The update is counted in ``count_updated_edited``
+        # (a reopen is also named in ``reopened_edited_hash_ids``), never in
+        # ``count_stored``, and drops out of ``expected_stored`` beside the other
+        # non-stores.
         #
         # A PRE-UPGRADE row carries no edit term at all, so it can match no three-term
         # key. It dedupes on the two-term key against ANY edit term instead — otherwise
@@ -2372,7 +2388,8 @@ def cmd_fetch_findings(args):
         detail = '\n'.join(detail_lines)
 
         # The same comment, edited in place since its finding was stored: rewrite that
-        # finding's text, keep its resolution. See the edit-term note above.
+        # finding's text, reopening it when a resolved finding's body changed. See the
+        # edit-term note above.
         if edited_hash:
             update_result = update_finding_text(
                 plan_id,
@@ -2383,6 +2400,8 @@ def cmd_fetch_findings(args):
             )
             if update_result.get('status') == 'success':
                 updated_edited_hashes.append(edited_hash)
+                if update_result.get('outcome') == 'reopened':
+                    reopened_edited_hashes.append(edited_hash)
             else:
                 store_failures.append(comment_id)
             continue
@@ -2617,9 +2636,11 @@ def cmd_fetch_findings(args):
         'count_skipped_noise': skipped_noise,
         'count_skipped_duplicate': skipped_duplicate,
         # Stored findings whose comment was edited in place since it was filed: their
-        # text was rewritten and their resolution kept. Not counted in count_stored.
+        # text was rewritten, and a resolved one whose body changed was reopened (also
+        # named in reopened_edited_hash_ids). Not counted in count_stored.
         'count_updated_edited': count_updated_edited,
         'updated_edited_hash_ids': updated_edited_hashes,
+        'reopened_edited_hash_ids': reopened_edited_hashes,
         'count_skipped_refusal': skipped_refusal,
         'count_skipped_self_response': skipped_self_response,
         'count_skipped_emitter_bypass': skipped_emitter_bypass,

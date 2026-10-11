@@ -1321,12 +1321,14 @@ def test_an_unchanged_comment_still_dedupes_under_the_widened_key(bot_kind, plan
 # ---------------------------------------------------------------------------
 
 
-def _file_then_edit(monkeypatch, bot_kind, plan_id, resolve=None):
+def _file_then_edit(monkeypatch, bot_kind, plan_id, resolve=None, edited_body=_GUIDE_FINDING_BODY):
     """File the bot's persistent comment, optionally resolve its finding, then re-fetch it edited.
 
-    The first fetch reviews ``_HEAD_A``; the edit is fetched at ``_HEAD_B`` so the
-    rewritten ``reviewed_commit_sha`` is observable. ``resolve`` is called with the
-    stored hash between the two fetches. Returns ``(stored_hash, second_result)``.
+    The first fetch reviews ``_HEAD_A``; the edit is fetched at ``_HEAD_B`` so whether
+    ``reviewed_commit_sha`` moved is observable. ``resolve`` is called with the stored
+    hash between the two fetches. The edit always moves ``updated_at``; ``edited_body``
+    defaults to a changed body and is passed as ``_GUIDE_CLEAN_BODY`` for an edit that
+    moved the term only. Returns ``(stored_hash, second_result)``.
     """
     _patch_provider(monkeypatch, [_edit_term_comment(bot_kind, body=_GUIDE_CLEAN_BODY)], head_sha=_HEAD_A)
     first = _run_fetch(192, plan_id)
@@ -1335,14 +1337,21 @@ def _file_then_edit(monkeypatch, bot_kind, plan_id, resolve=None):
     if resolve is not None:
         resolve(plan_id, stored_hash)
 
-    edited = _edit_term_comment(bot_kind, body=_GUIDE_FINDING_BODY, updated_at=_at(9))
+    edited = _edit_term_comment(bot_kind, body=edited_body, updated_at=_at(9))
     _patch_provider(monkeypatch, [edited], head_sha=_HEAD_B)
     return stored_hash, _run_fetch(192, plan_id)
 
 
-def _resolve_accepted(plan_id, hash_id):
+def _only_finding(plan_id):
+    [finding] = query_findings(plan_id, finding_type='pr-comment')['findings']
+    return finding
+
+
+def _resolve_accepted_and_responded(plan_id, hash_id):
     result = _findings_core.resolve_finding(plan_id, hash_id, 'accepted', detail='Accepted: the guide is advisory.')
     assert result['status'] == 'success', result
+    responded = _findings_core.mark_finding_responded(plan_id, hash_id)
+    assert responded['status'] == 'success', responded
 
 
 def _resolve_fixed_and_stamped(plan_id, hash_id):
@@ -1353,66 +1362,92 @@ def _resolve_fixed_and_stamped(plan_id, hash_id):
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
-def test_an_edited_comment_whose_finding_is_resolved_leaves_one_resolved_finding_with_the_latest_body(
-    bot_kind, plan_context, monkeypatch
-):
-    """An edit never reopens a resolved finding: the disposition stays, the text moves."""
+def test_a_changed_body_reopens_a_resolved_finding_with_the_latest_body(bot_kind, plan_context, monkeypatch):
+    """A resolved finding whose comment body changed is reopened: one finding, pending, latest body.
+
+    The disposition answered text the bot has since replaced, so it is cleared with the
+    ``responded`` marker, and the anchor moves to the head the new text was fetched at.
+    """
     plan_id = f'gh-pr-edit-update-resolved-{bot_kind}'
 
-    stored_hash, second = _file_then_edit(monkeypatch, bot_kind, plan_id, resolve=_resolve_accepted)
+    stored_hash, second = _file_then_edit(monkeypatch, bot_kind, plan_id, resolve=_resolve_accepted_and_responded)
 
     assert second['status'] == 'success', second
-    assert second['count_stored'] == 0, second
-    assert second['count_skipped_duplicate'] == 0, second
-    assert second['count_updated_edited'] == 1, second
+    assert (second['count_stored'], second['count_skipped_duplicate'], second['count_updated_edited']) == (0, 0, 1)
     assert second['updated_edited_hash_ids'] == [stored_hash], second
+    assert second['reopened_edited_hash_ids'] == [stored_hash], second
     assert second['producer_mismatch_hash_id'] is None, second
-    [finding] = query_findings(plan_id, finding_type='pr-comment')['findings']
+    finding = _only_finding(plan_id)
     assert finding['hash_id'] == stored_hash
-    assert finding['resolution'] == 'accepted'
-    assert finding['resolution_detail'] == 'Accepted: the guide is advisory.'
+    assert (finding['resolution'], finding['resolution_detail']) == ('pending', None)
+    assert finding['responded'] is False
     assert finding['raw_input']['body'] == _GUIDE_FINDING_BODY
     assert github_pr._detail_field(finding['detail'], github_pr._EDIT_TERM_DETAIL) == _at(9)
     assert finding['reviewed_commit_sha'] == _HEAD_B
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_a_changed_body_reopens_a_fixed_finding_and_clears_its_fix_stamp(bot_kind, plan_context, monkeypatch):
+    """A reopened fixed finding drops its fix commit: that stamp belonged to the replaced text."""
+    plan_id = f'gh-pr-edit-update-fixed-{bot_kind}'
+
+    stored_hash, second = _file_then_edit(monkeypatch, bot_kind, plan_id, resolve=_resolve_fixed_and_stamped)
+
+    assert second['reopened_edited_hash_ids'] == [stored_hash], second
+    finding = _only_finding(plan_id)
+    assert finding['resolution'] == 'pending'
+    assert finding[_live_findings_core().FIX_COMMIT_FIELD] is None
+    assert finding['raw_input']['body'] == _GUIDE_FINDING_BODY
+    assert finding['reviewed_commit_sha'] == _HEAD_B
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_an_identical_body_keeps_a_fixed_finding_resolved_with_its_anchor(bot_kind, plan_context, monkeypatch):
+    """⛔ MATCHED CONTROL — a re-post with an unchanged body keeps the disposition and its anchor.
+
+    Only the edit term is recorded. ``reviewed_commit_sha`` stays at the head the fix
+    was decided against, because phase-6-finalize searches the commits AFTER it for the
+    inline-fix commit; moving it to the edit's head would strand that fix's reply.
+    """
+    plan_id = f'gh-pr-edit-update-identical-{bot_kind}'
+
+    stored_hash, second = _file_then_edit(
+        monkeypatch, bot_kind, plan_id, resolve=_resolve_fixed_and_stamped, edited_body=_GUIDE_CLEAN_BODY
+    )
+
+    assert second['updated_edited_hash_ids'] == [stored_hash], second
+    assert second['reopened_edited_hash_ids'] == [], second
+    finding = _only_finding(plan_id)
+    assert (finding['resolution'], finding['resolution_detail']) == ('fixed', 'Fixed the retry bound.')
+    assert finding[_live_findings_core().FIX_COMMIT_FIELD] == _HEAD_A
+    assert finding['raw_input']['body'] == _GUIDE_CLEAN_BODY
+    assert github_pr._detail_field(finding['detail'], github_pr._EDIT_TERM_DETAIL) == _at(9)
+    assert finding['reviewed_commit_sha'] == _HEAD_A
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_an_edited_comment_whose_finding_is_pending_leaves_one_pending_finding_with_the_latest_body(
     bot_kind, plan_context, monkeypatch
 ):
-    """A pending finding stays pending and simply carries the new text into triage."""
+    """A pending finding stays pending, carries the new text into triage, and re-anchors to the edit's head."""
     plan_id = f'gh-pr-edit-update-pending-{bot_kind}'
 
     stored_hash, second = _file_then_edit(monkeypatch, bot_kind, plan_id)
 
-    assert second['count_updated_edited'] == 1, second
-    assert second['count_stored'] == 0, second
-    [finding] = query_findings(plan_id, finding_type='pr-comment')['findings']
+    assert (second['count_updated_edited'], second['count_stored']) == (1, 0), second
+    assert second['reopened_edited_hash_ids'] == [], second
+    finding = _only_finding(plan_id)
     assert finding['hash_id'] == stored_hash
     assert finding['resolution'] == 'pending'
     assert finding['raw_input']['body'] == _GUIDE_FINDING_BODY
-
-
-@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
-def test_an_edit_keeps_the_fix_stamp_of_a_fixed_finding(bot_kind, plan_context, monkeypatch):
-    """The update writes text only: a fixed finding keeps its disposition and its fix commit."""
-    plan_id = f'gh-pr-edit-update-fixed-{bot_kind}'
-
-    _stored_hash, second = _file_then_edit(monkeypatch, bot_kind, plan_id, resolve=_resolve_fixed_and_stamped)
-
-    assert second['count_updated_edited'] == 1, second
-    [finding] = query_findings(plan_id, finding_type='pr-comment')['findings']
-    assert finding['resolution'] == 'fixed'
-    assert finding['resolution_detail'] == 'Fixed the retry bound.'
-    assert finding[_live_findings_core().FIX_COMMIT_FIELD] == _HEAD_A
-    assert finding['raw_input']['body'] == _GUIDE_FINDING_BODY
+    assert finding['reviewed_commit_sha'] == _HEAD_B
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
 def test_an_unchanged_re_fetch_after_the_update_still_dedupes(bot_kind, plan_context, monkeypatch):
     """⛔ MATCHED CONTROL — the rewritten edit term is the one the next re-fetch matches."""
     plan_id = f'gh-pr-edit-update-dedupes-{bot_kind}'
-    _file_then_edit(monkeypatch, bot_kind, plan_id, resolve=_resolve_accepted)
+    _file_then_edit(monkeypatch, bot_kind, plan_id, resolve=_resolve_accepted_and_responded)
 
     third = _run_fetch(192, plan_id)
 
