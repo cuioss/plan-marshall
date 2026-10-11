@@ -164,9 +164,11 @@ class TestIsObviousNoise:
 
 
 _ACKNOWLEDGMENT_PARAMS = [pytest.param(body, id=case_id) for case_id, body, _provenance in CODERABBIT_ACKNOWLEDGMENTS]
+assert _ACKNOWLEDGMENT_PARAMS, 'the declared acknowledgment population is empty'
 _FULL_REVIEW_ACKNOWLEDGMENT_PARAMS = [
     pytest.param(body, id=case_id) for case_id, body, _provenance in CODERABBIT_FULL_REVIEW_ACKNOWLEDGMENTS
 ]
+assert _FULL_REVIEW_ACKNOWLEDGMENT_PARAMS, 'the full-review acknowledgment population is empty'
 
 
 def _fetch_without_provider_reads(comments, args):

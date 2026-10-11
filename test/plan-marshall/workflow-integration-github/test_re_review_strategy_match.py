@@ -1676,6 +1676,7 @@ def test_read_bot_in_progress_makes_no_read_for_a_bot_without_a_completion_check
 _IN_PROGRESS_BASE_SHA = _OTHER_SHA
 _IN_PROGRESS_SUMMARIES = coderabbit_in_progress_summaries(_IN_PROGRESS_BASE_SHA, _HEAD_SHA)
 _IN_PROGRESS_PARAMS = [pytest.param(body, id=case_id) for case_id, body, _provenance in _IN_PROGRESS_SUMMARIES]
+assert _IN_PROGRESS_PARAMS, 'the in-progress summary population is empty'
 _FINISHED_REVIEW = coderabbit_finished_review(_IN_PROGRESS_BASE_SHA, _HEAD_SHA)
 
 #: Every bot that publishes an ``issue_comment`` it declares NO verdict marker for —
