@@ -806,7 +806,7 @@ The move-back acquire is a **bounded wait**, not a single attempt: it passes `wa
 When the acquire takes no lock, the `merge_lock acquire` payload is surfaced and the plan is **dequeued** from the FIFO admission queue first, through `merge_lock release` (for a caller that does not hold the lock, release leaves the lock file intact and only dequeues; dequeuing a plan with no entry is a no-op). Two acquire results take no lock, and both are dequeued:
 
 - `status: blocked` / `admission: blocked` with `timed_out: true` — the bound lapsed while another plan holds the lock or is ahead in the FIFO queue.
-- `status: error` — an attempt failed, for example a queue read-modify-write that raised. An attempt of the bounded wait can fail after a preceding attempt of the same wait already enqueued the plan, so an error is no proof that the queue holds no entry for it.
+- `status: error` — an attempt failed, for example a queue read-modify-write that raised. An attempt of the bounded wait can fail after a preceding attempt of the same wait already enqueued the plan, so an error is no proof that the queue holds no entry for it. A fault that escapes the acquire as an exception (the lock-file create runs after the enqueue) is reported the same way: `status: error` naming the exception, and dequeued.
 
 The payload adds `dequeued: true` when that dequeue landed and `dequeued: false` when it did not, in which case the plan's entry may still be queued. Without the dequeue, an enqueue from any attempt would outlive the call and wedge every plan queued behind it. Nothing was acquired, so no lock is released. A reentrant `already_held` grant is a success, not a refusal: it is never dequeued, and its lock is left to its holder.
 

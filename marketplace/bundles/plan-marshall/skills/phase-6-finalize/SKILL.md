@@ -2271,7 +2271,8 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:pre_merge_gate me
 
 `--strategy` is required on the `safe-merge` route; `--strategy`, `--delete-branch`
 and `--admin-merge-on-stuck-state` are refused on the `merge-queue` route. The
-command always exits `0`: branch on `dispatched` first — `false` carries the
+command exits `0` on every gate outcome (a malformed call is rejected by argparse
+with exit `2` and no TOON — a STOP, see `branch-cleanup.md`): branch on `dispatched` first — `false` carries the
 findings refusal (`blocking_findings_present`, `query_failed`, …) and nothing was
 merged; `true` carries the routed verb's payload verbatim plus `findings_gate: clean`.
 `--plan-id` scopes the findings check only and is never forwarded to the CI router.

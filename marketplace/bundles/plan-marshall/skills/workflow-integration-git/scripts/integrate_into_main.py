@@ -540,9 +540,23 @@ def run_integrate_into_main(args: Namespace) -> dict[str, Any]:
     # The bounded wait repeats whole non-waiting admission attempts inside
     # merge_lock; a reentrant ``already_held`` grant still answers the first one.
     merge_lock = _load_merge_lock()
-    acquire_result = merge_lock.run_acquire(
-        Namespace(plan_id=plan_id, set_title_token=False, wait_seconds=_MOVE_BACK_ACQUIRE_WAIT_SECONDS)
-    )
+    try:
+        acquire_result = merge_lock.run_acquire(
+            Namespace(plan_id=plan_id, set_title_token=False, wait_seconds=_MOVE_BACK_ACQUIRE_WAIT_SECONDS)
+        )
+    except Exception as exc:  # a fault escaping the acquire must not strand a FIFO entry
+        # An attempt may have enqueued the plan before the fault escaped (the lock
+        # file create runs after the enqueue), so dequeue exactly as for an error
+        # payload and surface the fault as one.
+        return _assert_cwd_unchanged(
+            {
+                **make_error(
+                    f'merge_lock acquire raised: {type(exc).__name__}: {exc}',
+                    plan_id=plan_id,
+                ),
+                'dequeued': _dequeue_after_refused_acquire(merge_lock, plan_id),
+            }
+        )
     if acquire_result.get('status') != 'success':
         # No lock was acquired — admission still blocked once the bound lapsed, or
         # an attempt errored (a resolution failure, or a queue read-modify-write

@@ -247,7 +247,7 @@ This is **not** a naive "any pending finding blocks" rule: knowledge types are e
 | Boundary | How the gate fires |
 |---|---|
 | finalize merge (pre-merge) | `pre_merge_gate merge` (`plan-marshall:phase-6-finalize:pre_merge_gate`), the only merge-shaped dispatch `branch-cleanup` issues, runs the `findings-check` verdict for `6-finalize` in-process and issues the routed merge verb only on a clean store. A pending actionable finding (`blocking_findings_present`) or an unevaluable count (`query_failed`) returns `dispatched: false` and no merge verb is issued. See [`phase-6-finalize/standards/branch-cleanup.md`](../../phase-6-finalize/standards/branch-cleanup.md) § "Pre-merge blocking-findings store gate". |
-| finalize completion | `manage-status transition --completed 6-finalize` and a completion `manage-status archive` (no `--reason`, or a completion-asserting one) call `_invariants.assert_finalize_findings_clean` — a STATE assertion, armed by reaching the completion boundary — which refuses to mark the plan complete while an actionable finding is pending. |
+| finalize completion | `manage-status transition --completed 6-finalize` and a completion `manage-status archive` (no `--reason`, or `--reason normal_completion`, the one completion-asserting reason) call `_invariants.assert_finalize_findings_clean` — a STATE assertion, armed by reaching the completion boundary — which refuses to mark the plan complete while an actionable finding is pending. |
 
 Every other phase capture reads the `pending_findings_blocking_count` row passively (so retrospective analysis sees the queue at every boundary) but does NOT raise.
 

@@ -58,8 +58,10 @@ class _ScriptedMergeLock:
         *,
         release_result: dict[str, Any] | None = None,
         release_raises: bool = False,
+        acquire_raises: bool = False,
     ) -> None:
         self.acquire_result = acquire_result or {'status': 'success', 'action': 'acquired'}
+        self.acquire_raises = acquire_raises
         self.release_result = release_result or {'status': 'success', 'action': 'noop'}
         self.release_raises = release_raises
         self.acquired = 0
@@ -69,6 +71,8 @@ class _ScriptedMergeLock:
     def run_acquire(self, args: Namespace) -> dict:
         self.acquired += 1
         self.acquire_wait_seconds.append(getattr(args, 'wait_seconds', 'absent'))
+        if self.acquire_raises:
+            raise OSError('simulated lock-file create failure')
         return {**self.acquire_result, 'plan_id': args.plan_id}
 
     def run_release(self, args: Namespace) -> dict:
@@ -284,6 +288,23 @@ class TestRefusedAcquireReportsTheDequeue:
         assert result['dequeued'] is False, result
         assert result.get('error') == acquire_result.get('error'), result
         assert lock.released == 1
+
+    def test_acquire_that_raises_is_surfaced_as_error_and_dequeued(
+        self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A fault escaping the acquire (the lock-file create runs after the enqueue)
+        is surfaced as ``status: error`` and still dequeues, so no FIFO entry is
+        stranded; the plan dir never leaves the worktree."""
+        lock = _use_lock(monkeypatch, _ScriptedMergeLock(acquire_raises=True))
+
+        result = integrate_into_main.run_integrate_into_main(Namespace(plan_id=_PLAN_ID))
+
+        assert result['status'] == 'error', result
+        assert 'OSError' in result['error'], result
+        assert result['dequeued'] is True, result
+        assert lock.released == 1
+        assert (isolated_env['wt_plan_dir'] / 'status.json').is_file()
+        assert not isolated_env['main_plan_dir'].exists()
 
     def test_already_held_grant_is_never_dequeued(self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch) -> None:
         """A reentrant ``already_held`` grant is a success: no dequeue, no release."""
