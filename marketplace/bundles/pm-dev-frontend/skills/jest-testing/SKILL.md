@@ -1,6 +1,6 @@
 ---
 name: jest-testing
-description: JavaScript unit testing standards covering Jest framework, DOM and web component testing, mocking patterns, async testing, and coverage configuration
+description: JavaScript unit testing standards covering Jest framework, DOM and web component testing, mocking patterns, async testing, and coverage configuration, plus the JavaScript test-code review rules a code review cites
 user-invocable: false
 mode: knowledge
 ---
@@ -53,3 +53,12 @@ Use when: Mocking modules or APIs, working with fetch mocks, testing async/await
 - `plan-marshall:persona-module-tester` — Language-agnostic testing methodology (AAA, coverage, reliability)
 - `pm-dev-frontend:javascript` — Core JavaScript development standards
 - `pm-dev-frontend:lint-config` — ESLint configuration including Jest plugin
+
+## Review Rules
+
+The review rules of the javascript domain for test code — what a code review looks for in a changed Jest test. The block follows the harvestable block contract — see [`review-rubric.md` § 10 "Harvestable review-rule blocks"](../../../plan-marshall/skills/phase-6-finalize/standards/review-rubric.md) for its rules, which are not restated here.
+
+- An async test that neither awaits nor returns the promise under test, including an un-awaited `expect(...).resolves` or `.rejects`, so the test finishes before the assertion runs and passes whatever the result.
+- A test whose assertions sit inside a callback or a `catch` with no `expect.assertions(n)`, so the test passes when the callback never runs or nothing is thrown.
+- A module mock, `jest.spyOn` or fake-timer switch with no restore in `afterEach` (`restoreAllMocks`, `useRealTimers`), so the mock leaks into later tests and they pass or fail by execution order.
+- A test that waits with a fixed `setTimeout` instead of fake timers or `waitFor`, so it fails intermittently whenever the awaited update arrives later than the fixed delay.

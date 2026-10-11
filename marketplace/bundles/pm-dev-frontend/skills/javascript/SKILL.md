@@ -1,6 +1,6 @@
 ---
 name: javascript
-description: Core JavaScript development standards covering ES modules, modern patterns, web component patterns (Lit), DOM trust boundaries / XSS prevention, code quality, async programming, JSDoc documentation, and tooling
+description: Core JavaScript development standards covering ES modules, modern patterns, web component patterns (Lit), DOM trust boundaries / XSS prevention, code quality, async programming, JSDoc documentation, and tooling, plus the JavaScript production-code review rules a code review cites
 user-invocable: false
 mode: knowledge
 ---
@@ -140,3 +140,14 @@ python3 .plan/execute-script.py pm-dev-frontend:javascript:jsdoc analyze \
 - `pm-dev-frontend:css` - CSS standards
 - `pm-dev-frontend:lint-config` - ESLint, Prettier, Stylelint configuration
 - Anthropic `frontend-design` skill - Visual-aesthetic guidance (distinctive, production-grade UI; avoiding generic "AI slop" design). Complementary to this skill: `javascript` governs code standards, `frontend-design` governs visual aesthetics. Pointer only — no content duplicated here.
+
+## Review Rules
+
+The review rules of the javascript domain for production code — what a code review looks for in changed JavaScript. DOM trust-boundary rules belong to `pm-dev-frontend:javascript-security`. The block follows the harvestable block contract — see [`review-rubric.md` § 10 "Harvestable review-rule blocks"](../../../plan-marshall/skills/phase-6-finalize/standards/review-rubric.md) for its rules, which are not restated here.
+
+- A promise that is neither awaited, returned nor given a `.catch`, so a rejection surfaces as an unhandled rejection and the caller carries on before the work has finished.
+- An `await` inside an `Array.prototype.forEach` callback, so the loop does not wait for the iterations and the code after it runs before they complete.
+- A loose `==` or `!=` comparison between values of different types, so type coercion (`0 == ''`, `null == undefined`) selects the wrong branch.
+- A `||` default applied to a value that can legitimately be `0`, `''` or `false`, so the valid falsy value is replaced by the default where `??` keeps it.
+- An event listener, timer or observer a web component registers in `connectedCallback` with no matching removal in `disconnectedCallback`, so a detached component keeps running its handlers and is never released.
+- A function that mutates an array or object it received (`sort`, `splice`, property assignment) while the caller still holds it, so the caller's data changes behind its back.
