@@ -154,10 +154,14 @@ _RUN_AT_ALL_TO_LANE: dict[str, str] = {'never': 'off', 'always': 'minimal'}
 # Owning finalize step id (marshal.json keyed form, ``default:``-prefixed) for
 # each ceremony gate's ``lane`` override. Mirrors
 # ``_manifest_rules._CEREMONY_GATE_OWNER_STEP`` — the manifest ceremony transform
-# reads the same owning-step lane overrides this migration writes.
+# reads the same owning-step lane overrides this migration writes. A gate that
+# never carried a legacy run_at_all value (``functional_review``) is listed here
+# for the one-gate-one-owner mirror but is absent from
+# :data:`_STEP_OWNED_CEREMONY_GATES`, so the migration never reads a legacy key for it.
 _CEREMONY_GATE_OWNER_STEP: dict[str, str] = {
     'qgate': 'default:pre-push-quality-gate',
     'self_review': 'default:pre-submission-self-review',
+    'functional_review': 'default:functional-review',
     'simplify': 'default:finalize-step-simplify',
     'security_audit': 'default:finalize-step-security-audit',
 }

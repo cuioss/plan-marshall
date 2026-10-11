@@ -165,8 +165,8 @@ below.
    Read `metadata.phase_steps["6-finalize"]` — a dict of `{step_name: {outcome, display_detail, facts}}`.
    The `facts` sub-dict is the typed per-step facts each step recorded via `mark-step-done --fact`
    (`branch-cleanup`'s `merge_mechanism` / `action`, `record-metrics`'s `total_tokens` /
-   `total_wall_seconds`, `sonar-roundtrip`'s scan facts, and so on). These are transcribed into the
-   payload as-is — do NOT re-narrate them into prose.
+   `total_wall_seconds`, `sonar-roundtrip`'s scan facts, `functional-review`'s verdict facts, and so
+   on). These are transcribed into the payload as-is — do NOT re-narrate them into prose.
 
 2. **Composed step order** — the order the manifest declares, so the landing carries the composed order
    rather than a re-narrated one:
@@ -247,6 +247,17 @@ total_tokens={tokens}
 total_wall_seconds={seconds}
 steps={step1}:{outcome1},{step2}:{outcome2},...
 ```
+
+**The functional verdict facts.** When `functional-review` recorded its step, transcribe its four
+verdict facts as optional per-step keys after the required ones —
+`step.functional-review.deliverables_met`, `step.functional-review.deliverables_met_with_residuals`,
+`step.functional-review.deliverables_not_met` and `step.functional-review.criteria_unevidenced` — each
+carrying the integer the step recorded. They are how an epic learns whether its plan delivered what it
+was asked to deliver without parsing a `display_detail` string. A step record that carries none of
+them (the review was not in the manifest, or never produced a verdict) contributes no such key; the four are optional, so
+their absence leaves the landing complete. Their meaning is specified in
+[`landing-payload-spec.md`](../../plan-orchestrator/standards/landing-payload-spec.md) § "Functional
+verdict facts".
 
 3. **An optional `## Residue` section** — narrative-only items the epic should track that no step recorded as a fact (a contradicted merge claim, a review-bot withdrawal, a producer-gap the run could not mechanise). Omit the section when there is none.
 

@@ -48,6 +48,29 @@ class TestScopeGatedFinalizeDeclaredLaneImmunity:
         assert set(dropped) == {_RETROSPECTIVE, 'project:finalize-step-plugin-doctor'}
         assert 'push' in kept
 
+    def test_surgical_drops_functional_review_without_declaration(self):
+        candidates = ['functional-review', 'push']
+        kept, dropped, immune = _apply_scope_gated_finalize(candidates, 'surgical', None)
+        assert dropped == ['functional-review']
+        assert kept == ['push']
+        assert immune == []
+
+    def test_surgical_keeps_functional_review_with_declared_lane(self):
+        candidates = ['functional-review', 'push']
+        kept, dropped, immune = _apply_scope_gated_finalize(
+            candidates, 'surgical', _lane_map('default:functional-review', 'minimal')
+        )
+        assert kept == ['functional-review', 'push']
+        assert dropped == []
+        assert immune == ['functional-review']
+
+    def test_single_module_keeps_functional_review(self):
+        # The review is in the surgical drop set only; a single-module plan keeps it.
+        candidates = ['functional-review', 'push']
+        kept, dropped, _immune = _apply_scope_gated_finalize(candidates, 'single_module', None)
+        assert kept == candidates
+        assert dropped == []
+
     def test_auto_declaration_does_not_confer_immunity(self):
         # ``auto`` is the defer value, so the implicit gate still drops.
         candidates = [_RETROSPECTIVE, 'push']

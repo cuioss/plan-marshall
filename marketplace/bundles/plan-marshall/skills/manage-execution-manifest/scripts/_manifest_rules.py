@@ -241,20 +241,23 @@ def _snapshot_step_params(
 
 
 #: The steps `commit_push_disabled` subtracts, and the single drop reason each
-#: carries. ``push`` is the directly-disabled step; the two gates are only
-#: meaningful when a downstream push exists.
+#: carries. ``push`` is the directly-disabled step; every other member is a
+#: pre-push gate that is only meaningful when a downstream push exists.
 _COMMIT_PUSH_DROP_REASON = 'commit_and_push is disabled — no downstream push exists'
-_COMMIT_PUSH_DROP_STEPS = frozenset({'push', 'pre-push-quality-gate', 'pre-submission-self-review'})
+_COMMIT_PUSH_DROP_STEPS = frozenset(
+    {'push', 'pre-push-quality-gate', 'pre-submission-self-review', 'functional-review'}
+)
 
 
 def _apply_commit_push_disabled(
     phase_6_candidates: list[str], commit_and_push: bool
 ) -> tuple[list[str], list[dict[str, str]]]:
-    """Pre-filter: drop ``push`` and its two push-only gates when pushing is disabled.
+    """Pre-filter: drop ``push`` and its push-only gates when pushing is disabled.
 
-    Subtracts ``push``, ``pre-push-quality-gate``, and
-    ``pre-submission-self-review`` when ``commit_and_push is False`` — the two
-    gates go because both are only meaningful when a downstream push exists.
+    Subtracts every member of :data:`_COMMIT_PUSH_DROP_STEPS` — ``push`` plus the
+    pre-push gates (``pre-push-quality-gate``, ``pre-submission-self-review``,
+    ``functional-review``) — when ``commit_and_push is False``: each gate goes
+    because it is only meaningful when a downstream push exists.
 
     Reporting follows the shared ``{step, reason}`` subtraction-record convention
     (the shape :func:`_apply_security_class_inactive` established), so EVERY
@@ -441,6 +444,7 @@ _SCOPE_GATED_SURGICAL_DROP = frozenset(
         'plan-retrospective',
         'plan-marshall:plan-retrospective',
         'pre-submission-self-review',
+        'functional-review',
         'finalize-step-plugin-doctor',
         'project:finalize-step-plugin-doctor',
     }
@@ -453,7 +457,7 @@ _SCOPE_GATED_SINGLE_MODULE_DROP = frozenset(
 )
 
 
-# Owning finalize step ids for the four ceremony gates. Each ceremony gate is
+# Owning finalize step ids for the ceremony gates. Each ceremony gate is
 # governed by its owning step's per-element ``lane`` override
 # (``off``/``minimal``/``standard``) stored nested under the owning step's param object
 # in marshal.json's ``phase-6-finalize.steps`` keyed map. There is no flat
@@ -463,6 +467,7 @@ _QGATE_OWNER_STEP = 'default:pre-push-quality-gate'
 _SIMPLIFY_OWNER_STEP = 'default:finalize-step-simplify'
 _SECURITY_AUDIT_OWNER_STEP = 'default:finalize-step-security-audit'
 _PRE_SUBMISSION_SELF_REVIEW_STEP = 'default:pre-submission-self-review'
+_FUNCTIONAL_REVIEW_OWNER_STEP = 'default:functional-review'
 
 
 def _read_step_owned_knob(owner_step_id: str, knob: str, plan_id: str) -> object | None:
@@ -555,9 +560,9 @@ def _apply_scope_gated_finalize(
     Subtractions:
 
     - ``scope_estimate == 'surgical'`` → drop ``plan-marshall:plan-retrospective``,
-      ``pre-submission-self-review``, and ``finalize-step-plugin-doctor`` (every
-      bare and prefixed form — including the generic ``default:`` /
-      meta-project ``project:`` variants).
+      ``pre-submission-self-review``, ``functional-review`` and
+      ``finalize-step-plugin-doctor`` (every bare and prefixed form — including
+      the generic ``default:`` / meta-project ``project:`` variants).
     - ``scope_estimate == 'single_module'`` → drop only
       ``plan-marshall:plan-retrospective``.
     - Any other scope value → no implicit subtraction.
@@ -572,8 +577,8 @@ def _apply_scope_gated_finalize(
     while a ``lane`` override is the operator stating what they do want. An
     implicit inference must not silently override an explicit declaration. The
     rule matters because this pre-filter runs at the candidate-narrowing stage,
-    BEFORE ceremony selection and BEFORE lane resolution: only the four
-    ``_CEREMONY_FINALIZE_GATES`` can be re-added downstream, so for any other step
+    BEFORE ceremony selection and BEFORE lane resolution: only the steps owning a
+    ``_CEREMONY_FINALIZE_GATES`` gate can be re-added downstream, so for any other step
     a drop here makes its declared lane structurally unreachable rather than
     merely outvoted.
 
@@ -626,6 +631,15 @@ _CEREMONY_FINALIZE_STEP_MAP: dict[str, tuple[frozenset[str], str]] = {
         ),
         'pre-submission-self-review',
     ),
+    'functional_review': (
+        frozenset(
+            {
+                'functional-review',
+                'default:functional-review',
+            }
+        ),
+        'functional-review',
+    ),
     'qgate': (
         frozenset({'pre-push-quality-gate'}),
         'pre-push-quality-gate',
@@ -640,8 +654,8 @@ _CEREMONY_FINALIZE_STEP_MAP: dict[str, tuple[frozenset[str], str]] = {
     ),
 }
 
-# The four finalize ceremony gates, in canonical order.
-_CEREMONY_FINALIZE_GATES = ('self_review', 'qgate', 'simplify', 'security_audit')
+# The finalize ceremony gates, in canonical order.
+_CEREMONY_FINALIZE_GATES = ('self_review', 'functional_review', 'qgate', 'simplify', 'security_audit')
 
 # Canonical default for every finalize gate when marshal.json omits the block.
 _CEREMONY_FINALIZE_DEFAULT = 'auto'
@@ -653,6 +667,7 @@ _CEREMONY_FINALIZE_DEFAULT = 'auto'
 _CEREMONY_GATE_OWNER_STEP: dict[str, str] = {
     'qgate': _QGATE_OWNER_STEP,
     'self_review': _PRE_SUBMISSION_SELF_REVIEW_STEP,
+    'functional_review': _FUNCTIONAL_REVIEW_OWNER_STEP,
     'simplify': _SIMPLIFY_OWNER_STEP,
     'security_audit': _SECURITY_AUDIT_OWNER_STEP,
 }
@@ -668,10 +683,10 @@ _LANE_TO_CEREMONY_VALUE: dict[str, str] = {
 
 
 def _read_finalize_gates(plan_id: str) -> dict[str, str]:
-    """Resolve the four finalize ceremony gate values from the ``lane`` channel.
+    """Resolve the finalize ceremony gate values from the ``lane`` channel.
 
-    Each of the four ceremony gates (``qgate`` / ``self_review`` / ``simplify`` /
-    ``security_audit``) is governed by its owning finalize step's per-element
+    Each ceremony gate in :data:`_CEREMONY_FINALIZE_GATES` is governed by its
+    owning finalize step's per-element
     ``lane`` override (``steps[<owner>].lane``), read via
     :func:`_read_step_owned_knob` from the merged plan-local-over-marshal step map.
     ``plan_id`` is forwarded so a plan-local declaration governs the ceremony gate
@@ -680,6 +695,8 @@ def _read_finalize_gates(plan_id: str) -> dict[str, str]:
 
     - ``qgate`` → ``default:pre-push-quality-gate``
     - ``self_review`` → ``default:pre-submission-self-review``
+    - ``functional_review`` → ``default:functional-review`` — the review's own
+      setting, so its lane decides this gate independently of any other review
     - ``simplify`` → ``default:finalize-step-simplify``
     - ``security_audit`` → ``default:finalize-step-security-audit``
 
@@ -692,7 +709,7 @@ def _read_finalize_gates(plan_id: str) -> dict[str, str]:
         plan_id: Plan identifier whose plan-local declarations overlay marshal.
 
     Returns:
-        A ``{gate: value}`` dict for the four finalize gates; values are one of
+        A ``{gate: value}`` dict for every finalize ceremony gate; values are one of
         ``always`` / ``never`` / ``auto``. The caller treats any value other than
         ``always`` / ``never`` as defer.
     """
@@ -734,7 +751,7 @@ def _apply_ceremony_finalize_selection(
 ) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
     """Force ceremony finalize gates in (``always``) / out (``never``) in-place.
 
-    For each of the three finalize gates:
+    For each finalize ceremony gate in :data:`_CEREMONY_FINALIZE_GATES`:
 
     - ``never`` → drop every match-set form of the gate's step from
       ``phase_6_steps`` (a no-op when already absent).
@@ -743,7 +760,7 @@ def _apply_ceremony_finalize_selection(
       is already present).
     - any other value (``auto`` / malformed) → defer (no-op).
 
-    ``automatic-review`` is NEVER touched — the gate map contains only the three
+    ``automatic-review`` is NEVER touched — the gate map contains only the
     ceremony finalize steps, so the bot-review invariant is structurally
     preserved.
 

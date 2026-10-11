@@ -23,6 +23,7 @@ Deliverables ({N_done}/{N_total})
   [OK]  2. {deliverable 2 title}
 
 Finalize steps ({N_done}/{N_total} done)
+  [OK]  functional-review                 functional review clean: {N} deliverables, {A} advisory
   [OK]  push                              pushed {branch} basis=ledger-verified
   [OK]  create-pr                         #{pr_number}
   [OK]  automatic-review                  {N} comment(s) resolved (no loop-back)
@@ -408,6 +409,9 @@ Each row ILLUSTRATES the contract its own step doc declares; that doc, not this 
 | `push` | Branch pushed, freshness `fresh` on a multi-row basis | `pushed feature/jwt-auth basis=ledger-verified rows=3` |
 | `push` | Branch pushed, freshness `exempt` | `pushed feature/jwt-auth basis=exempt-unscanned reason={reason}` |
 | `finalize-step-simplify` | Edits applied | `Simplify: 2 edits, 0 findings` |
+| `functional-review` | Round closed by the verifier | `functional review clean: 4 deliverables, 1 advisory` |
+| `functional-review` | Blocking findings, loop-back | `functional review found 2 blocking over 4 deliverables, 1 advisory` |
+| `functional-review` | Not run — an input could not be read, loop-back | `functional review not run: footprint_unresolved` |
 | `create-pr` | New PR created | `#212` |
 | `create-pr` | Existing PR re-used | `existing PR #212` |
 | `create-pr` | Skipped — local-only run | `skipped: local-only run, no PR opened` |

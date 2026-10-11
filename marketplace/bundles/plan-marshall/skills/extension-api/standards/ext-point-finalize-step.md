@@ -1,6 +1,6 @@
 # Extension Point: Finalize Step
 
-> **Type**: Phase-6 Step Doc Extension | **Hook Method**: `implements:` frontmatter on each step doc | **Implementations**: 25 | **Status**: Active
+> **Type**: Phase-6 Step Doc Extension | **Hook Method**: `implements:` frontmatter on each step doc | **Implementations**: 26 | **Status**: Active
 
 ## Exit-code convention for every script call
 
@@ -319,6 +319,7 @@ Every step doc that declares the finalize-step interface. Built-in steps live un
 | `default:finalize-step-simplify` | built-in | 3 | true | `[full]` |
 | `project:finalize-step-plugin-doctor` | project | 4 | false | `[]` |
 | `default:finalize-step-security-audit` | built-in | 5 | true | `[]` |
+| `default:functional-review` | built-in | 6 | true | `[]` |
 | `default:pre-submission-self-review` | built-in | 8 | true | `[]` |
 | `default:architecture-refresh` | built-in | 9 | true | `[]` |
 | `default:pre-push-quality-gate` | built-in | 10 | true | `[full]` |

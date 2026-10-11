@@ -97,6 +97,7 @@ from _manifest_rules import (
     _CEREMONY_FINALIZE_GATES,  # noqa: F401
     _CEREMONY_FINALIZE_STEP_MAP,  # noqa: F401
     _FOOTPRINT_GATED_CANONICAL_ROLES,
+    _FUNCTIONAL_REVIEW_OWNER_STEP,  # noqa: F401
     _PRE_SUBMISSION_SELF_REVIEW_STEP,  # noqa: F401
     _SCOPE_GATED_SINGLE_MODULE_DROP,  # noqa: F401
     _SCOPE_GATED_SURGICAL_DROP,  # noqa: F401
@@ -542,9 +543,9 @@ def _log_dropped_records(
 def _log_commit_push_omitted(plan_id: str, step: str, reason: str) -> None:
     """Emit ONE decision-log entry per ``commit_push_disabled`` subtraction.
 
-    Per-step rather than per-pre-filter: the gate drops three steps (``push`` plus
-    the two push-only gates), and the former single aggregate line named only
-    ``push`` — so the two gates vanished unnamed. The caller loops the pre-filter's
+    Per-step rather than per-pre-filter: the gate drops ``push`` plus every
+    push-only gate, and the former single aggregate line named only ``push`` — so
+    the gates vanished unnamed. The caller loops the pre-filter's
     ``{step, reason}`` records through here; this in turn delegates to
     :func:`_log_dropped_records`, reusing the shared subtraction-record emission
     rather than composing the same message shape a second time.
@@ -999,25 +1000,26 @@ def _log_scope_gated_finalize_subtraction(plan_id: str, scope_estimate: str, dro
 # plan.phase-6-finalize ceremony-gate selection (post-matrix transform)
 # =============================================================================
 #
-# The four finalize ceremony gates drive a post-matrix transform that forces each
+# The finalize ceremony gates drive a post-matrix transform that forces each
 # gate's finalize step in (`always`), out (`never`), or defers to the existing
 # decision machinery (`auto`, the default no-op). Each gate's effective decision
 # is derived from its owning step's per-element `lane` override
 # (`steps[<owner>].lane` — `off`→`never`, `minimal`→`always`, `standard`/absent→`auto`),
 # NOT from a flat run-at-all sibling. Each gate maps to exactly one finalize step:
 #
-#   self_review    → default:pre-submission-self-review
-#   qgate          → pre-push-quality-gate (the finalize blocking-findings re-capture)
-#   simplify       → finalize-step-simplify (holistic post-implementation sweep)
-#   security_audit → finalize-step-security-audit (proactive security sweep)
+#   self_review       → default:pre-submission-self-review
+#   functional_review → default:functional-review (did the plan deliver what it was asked)
+#   qgate             → pre-push-quality-gate (the finalize blocking-findings re-capture)
+#   simplify          → finalize-step-simplify (holistic post-implementation sweep)
+#   security_audit    → finalize-step-security-audit (proactive security sweep)
 #
 # `simplify` and `security_audit` are symmetric peers of the other gates: `auto`
 # defers to the matching `*_inactive` pre-filter that already decided the step at
 # matrix time, `always` re-adds it even when that pre-filter dropped it, and
 # `never` forces it out.
 #
-# The transform NEVER touches `automatic-review`: the four ceremony gates are the
-# only finalize steps this transform may add or drop. The `lane` override is
+# The transform NEVER touches `automatic-review`: the ceremony gates' owning steps
+# are the only finalize steps this transform may add or drop. The `lane` override is
 # validated at set time by `manage-config`'s `validate_lane_override`, and
 # `_read_finalize_gates` maps it to the ceremony decision; the composer
 # defensively treats any non-`{always,never}` value (including `auto` and a
@@ -1028,7 +1030,7 @@ def _log_scope_gated_finalize_subtraction(plan_id: str, scope_estimate: str, dro
 # at intake (`canonicalize_step_key`), but `project:` / `bundle:skill` prefixes
 # are preserved verbatim, so the match-sets below list every form. The `always`
 # re-insertion uses the canonical BARE form for every gate (including
-# pre-submission-self-review), matching the bare id the normal intake path emits,
+# pre-submission-self-review and functional-review), matching the bare id the normal intake path emits,
 # so a force-add never re-introduces a non-canonical `default:`-prefixed id that
 # the compose-time canonical-step-key gate would reject.
 
@@ -1752,6 +1754,7 @@ _PLAN_INPUT_DEPENDENT_PHASE_6_STEPS = frozenset(
         'push',
         'pre-push-quality-gate',
         'pre-submission-self-review',
+        'functional-review',
         'finalize-step-simplify',
         'finalize-step-security-audit',
         'plan-retrospective',
@@ -2072,8 +2075,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # row matrix's change-type / scope / recipe inputs and operate on the
     # candidate list. The order is fixed and documented in
     # standards/decision-rules.md:
-    #   1. commit_push_disabled — drop push (and pre-push-quality-gate
-    #      and pre-submission-self-review) when no push will occur.
+    #   1. commit_push_disabled — drop push (and pre-push-quality-gate,
+    #      pre-submission-self-review and functional-review) when no push will occur.
     #   2. pre_push_quality_gate_inactive — drop pre-push-quality-gate ONLY on a
     #      positive ``not_necessary`` build verdict. An ``unknown`` verdict (the
     #      footprint is unresolvable) KEEPS the gate and emits a [STATUS] line.
@@ -2149,15 +2152,15 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     )
 
     # Pre-filter 5 (scope_gated_finalize) drops heavyweight phase-6 review/audit
-    # steps by scope: surgical drops the three review/audit steps, single_module
-    # drops only plan-retrospective. It runs after the other pre-filters and
+    # steps by scope: surgical drops every review/audit step of the surgical drop
+    # set, single_module drops only plan-retrospective. It runs after the other pre-filters and
     # before the six-row matrix, so it only ever narrows the candidate list.
     #
     # Declared-lane immunity: a step carrying an explicitly declared, non-standard
     # per-element `lane` override is never dropped here. This gate is IMPLICIT
     # (it infers intent from the scope estimate) and it runs BEFORE ceremony
-    # selection and lane resolution, where only the four ceremony gates can be
-    # re-added — so for any other step a drop here makes the operator's declared
+    # selection and lane resolution, where only the ceremony gates' owning steps can
+    # be re-added — so for any other step a drop here makes the operator's declared
     # lane structurally unreachable rather than merely outvoted. The marshal
     # phase-6 map is passed in as the declaration source. See
     # standards/decision-rules.md § Pre-Filter: scope_gated_finalize.
@@ -2335,8 +2338,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     _log_step_execution_tier_stamping(plan_id, step_execution_tier)
 
     # plan.phase-6-finalize ceremony-gate selection runs AFTER the six-row
-    # matrix (and execution_tier routing). It forces each of the four finalize
-    # ceremony gates' steps in (`always`) or out (`never`) on the matrix-produced
+    # matrix (and execution_tier routing). It forces each finalize ceremony
+    # gate's step in (`always`) or out (`never`) on the matrix-produced
     # `phase_6.steps`, deferring to the existing machinery on `auto` (the
     # default). `always` is the only path that can re-add a step the
     # scope_gated_finalize pre-filter dropped — which is the point: the
@@ -3571,8 +3574,8 @@ def _build_parser() -> argparse.ArgumentParser:
         '--commit-and-push',
         default=None,
         help='Resolved commit_and_push from phase-5-execute config (true|false). '
-        'When omitted defaults to true. When false, push (and pre-push-quality-gate '
-        'and pre-submission-self-review) is omitted from phase_6.steps.',
+        'When omitted defaults to true. When false, push (and pre-push-quality-gate, '
+        'pre-submission-self-review and functional-review) is omitted from phase_6.steps.',
     )
 
     read_parser = subparsers.add_parser('read', help='Read execution.toon as TOON', allow_abbrev=False)
