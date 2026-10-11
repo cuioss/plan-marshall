@@ -120,8 +120,9 @@ co-tenants the same store, and the storeless ``poll-delay`` computation:
     recovery events per bot per PR, returning an explicit ``exhausted`` verdict on
     the attempt past the cap; ``check`` is a pure read that reports the SAME per-PR
     budget ``claim`` would apply; ``wait`` is the bounded read-only poll of that
-    same read, returning once the window plus a caller-supplied grace period has
-    elapsed or its per-call bound lapses; ``release`` drops the holder while
+    same read, returning once the window plus a wake margin has elapsed — the margin
+    defaults to :data:`_RATE_WINDOW_WAKE_MARGIN_SECONDS` and ``--grace-seconds``
+    replaces it — or its per-call bound lapses; ``release`` drops the holder while
     RETAINING the attempt counter so the cap survives the release between attempts.
   * ``poll-delay`` — a bounded random delay, in seconds. It COMPUTES and RETURNS
     the number; it never sleeps. See "No mutating verb sleeps" below.
@@ -2322,6 +2323,15 @@ def _run_rate_window_release(args: Namespace) -> dict[str, Any]:
     }
 
 
+#: The default wake margin of ``rate-window wait``: seconds past the claim's
+#: ``expires_at`` before the wait reports the window elapsed. With no margin the
+#: wake instant IS the expiry, so the re-dispatch it triggers races the claim's own
+#: expiry — and a bot's real window is an estimate that does not reopen on the
+#: second it was stated to. An explicit ``--grace-seconds`` (``0`` included)
+#: replaces it.
+_RATE_WINDOW_WAKE_MARGIN_SECONDS = 60.0
+
+
 def _run_rate_window_wait(
     args: Namespace,
     *,
@@ -2333,8 +2343,10 @@ def _run_rate_window_wait(
 
     Re-reads the claim's own expiry (:func:`_rate_window_state`, the read ``check``
     performs) until the WAKE INSTANT — the stored ``expires_at`` plus
-    ``--grace-seconds`` — has passed, or until the per-call bound ``--wait-seconds``
-    lapses first. Returns the ``check`` fields of the last read plus:
+    ``--grace-seconds``, which defaults to :data:`_RATE_WINDOW_WAKE_MARGIN_SECONDS`
+    so the wake lands after the expiry rather than on it — has passed, or until the
+    per-call bound ``--wait-seconds`` lapses first. Returns the ``check`` fields of
+    the last read plus:
 
       * ``timed_out`` — ``True`` when the per-call bound lapsed before the wake
         instant. A bound, not a verdict: the caller re-issues the call. ``False``
@@ -2344,6 +2356,10 @@ def _run_rate_window_wait(
       * ``wake_at`` — the wake instant in epoch seconds, or ``None`` when no window
         is recorded (never claimed, or released), in which case there is nothing to
         wait for and the call returns at once.
+      * ``grace_seconds`` — the margin this call applied past ``expires_at``: the
+        default, or the explicit value the caller passed. A caller holding a total
+        budget accounts it outside that budget, since it is waited past the window
+        rather than inside it.
 
     The expiry is RE-READ on every iteration rather than captured once, so a
     release, a renewal, or a takeover by another plan while this call sleeps moves
@@ -2412,6 +2428,7 @@ def _run_rate_window_wait(
             result['timed_out'] = until_wake > 0
             result['waited_seconds'] = int(waited)
             result['wake_at'] = wake_at
+            result['grace_seconds'] = grace_seconds
             return result
         sleep(min(interval_seconds, until_wake, remaining))
 
@@ -2553,7 +2570,7 @@ Examples:
   merge_lock.py budget-reclaim --plan-id WAITER-PLAN --hold-start 1699999999.0 --hold-budget-seconds 3600
   merge_lock.py rate-window claim --plan-id EXAMPLE-PLAN --bot-kind coderabbit --pr-number 42 [--window-seconds 3600] [--attempt-cap 6]
   merge_lock.py rate-window check --plan-id EXAMPLE-PLAN --bot-kind coderabbit --pr-number 42
-  merge_lock.py rate-window wait --plan-id EXAMPLE-PLAN --bot-kind coderabbit --pr-number 42 [--grace-seconds 0] [--wait-seconds 480] [--interval-seconds 15]
+  merge_lock.py rate-window wait --plan-id EXAMPLE-PLAN --bot-kind coderabbit --pr-number 42 [--grace-seconds 60] [--wait-seconds 480] [--interval-seconds 15]
   merge_lock.py rate-window release --plan-id EXAMPLE-PLAN --bot-kind coderabbit
   merge_lock.py poll-delay [--min-seconds 300] [--max-seconds 1200]
   merge_lock.py queue-list
@@ -2725,8 +2742,12 @@ Examples:
                         'flags': ['--grace-seconds'],
                         'dest': 'grace_seconds',
                         'type': float,
-                        'default': 0.0,
-                        'help': 'wait only: seconds added to the window expiry to form the wake instant (default: 0)',
+                        'default': _RATE_WINDOW_WAKE_MARGIN_SECONDS,
+                        'help': (
+                            'wait only: seconds added to the window expiry to form the wake instant, so the wake '
+                            'lands after the expiry rather than on it; an explicit 0 wakes at the expiry '
+                            f'(default: {_RATE_WINDOW_WAKE_MARGIN_SECONDS})'
+                        ),
                     },
                     {
                         'flags': ['--wait-seconds'],

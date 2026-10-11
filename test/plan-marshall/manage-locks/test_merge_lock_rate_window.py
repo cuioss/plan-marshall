@@ -558,6 +558,109 @@ class TestRateWindowWait:
         assert result['expired'] is True, result
         assert result['wake_at'] == _EXPIRES_AT + 1200.0, result
 
+    @pytest.mark.parametrize('grace_seconds', [0.0, 120.0])
+    def test_the_result_publishes_the_margin_it_applied(self, isolated_base: dict, grace_seconds: float) -> None:
+        """``grace_seconds`` rides the result beside ``wake_at``, so a caller can account it."""
+        _store_window(isolated_base['queue_path'])
+        fake = _FakeTime(_EXPIRES_AT + 1.0)
+
+        result = _wait(fake, grace_seconds=grace_seconds)
+
+        assert result['grace_seconds'] == grace_seconds, result
+        assert result['wake_at'] == _EXPIRES_AT + grace_seconds, result
+
+    def test_the_default_margin_wakes_after_the_expiry_not_on_it(self, isolated_base: dict) -> None:
+        """With the shipped margin the window has elapsed while the wake instant has not.
+
+        The same store and clock wake at once with a zero margin (the first case of
+        this class), so the wait observed here is the margin's.
+        """
+        margin = merge_lock._RATE_WINDOW_WAKE_MARGIN_SECONDS
+        _store_window(isolated_base['queue_path'])
+        fake = _FakeTime(_EXPIRES_AT + 1.0)
+
+        result = _wait(fake, grace_seconds=margin)
+
+        assert result['wake_at'] > _EXPIRES_AT, result
+        assert result['wake_at'] == _EXPIRES_AT + margin, result
+        assert sum(fake.sleeps) == margin - 1.0, fake.sleeps
+        assert result['timed_out'] is False, result
+        assert result['expired'] is True, result
+
+
+class TestRateWindowWaitDefaultMargin:
+    """The margin a caller gets when it omits ``--grace-seconds`` is decided by the parser.
+
+    Every case of :class:`TestRateWindowWait` hands its own ``grace_seconds`` to the
+    handler, so all of them agree with any shipped default. Only the real entry point
+    shows the default, and only a test naming the number fails when it is wrong.
+    """
+
+    def test_the_shipped_margin_is_sixty_seconds(self) -> None:
+        assert merge_lock._RATE_WINDOW_WAKE_MARGIN_SECONDS == 60.0
+
+    def test_an_omitted_flag_wakes_later_than_expires_at_by_the_default_margin(self, isolated_base: dict) -> None:
+        """Through the shipped CLI: the wake instant is ``expires_at`` plus the margin.
+
+        The window is stored as having expired an hour ago, so the wake instant is
+        past as well and the call returns at once — the margin is read off the
+        result rather than waited out in real time.
+        """
+        expires_at = float(int(time.time()) - 3600)
+        _store_window(isolated_base['queue_path'], expires_at=expires_at)
+
+        result = run_script(
+            SCRIPT_PATH,
+            'rate-window',
+            'wait',
+            '--plan-id',
+            'plan-a',
+            '--bot-kind',
+            'coderabbit',
+            '--pr-number',
+            str(_WAIT_PR),
+            env_overrides={'PLAN_BASE_DIR': str(isolated_base['base'])},
+        )
+
+        assert result.returncode == 0, result.stderr
+        parsed = parse_toon(result.stdout)
+        assert parsed['timed_out'] is False, parsed
+        assert float(parsed['grace_seconds']) == merge_lock._RATE_WINDOW_WAKE_MARGIN_SECONDS, parsed
+        assert float(parsed['wake_at']) == expires_at + merge_lock._RATE_WINDOW_WAKE_MARGIN_SECONDS, parsed
+        assert float(parsed['wake_at']) > float(parsed['expires_at']), parsed
+
+    def test_an_explicit_zero_margin_still_wakes_at_expires_at(self, isolated_base: dict) -> None:
+        """⛔ MATCHED CONTROL — the same store through the same CLI, with ``--grace-seconds 0``."""
+        expires_at = float(int(time.time()) - 3600)
+        _store_window(isolated_base['queue_path'], expires_at=expires_at)
+
+        result = run_script(
+            SCRIPT_PATH,
+            'rate-window',
+            'wait',
+            '--plan-id',
+            'plan-a',
+            '--bot-kind',
+            'coderabbit',
+            '--pr-number',
+            str(_WAIT_PR),
+            '--grace-seconds',
+            '0',
+            env_overrides={'PLAN_BASE_DIR': str(isolated_base['base'])},
+        )
+
+        assert result.returncode == 0, result.stderr
+        parsed = parse_toon(result.stdout)
+        assert float(parsed['grace_seconds']) == 0.0, parsed
+        assert float(parsed['wake_at']) == expires_at, parsed
+
+    def test_help_advertises_the_margin_default(self) -> None:
+        result = run_script(SCRIPT_PATH, 'rate-window', '--help')
+
+        assert result.returncode == 0, result.stderr
+        advertised = ' '.join(result.stdout.split())
+        assert f'(default: {merge_lock._RATE_WINDOW_WAKE_MARGIN_SECONDS})' in advertised, advertised
+
     @pytest.mark.parametrize(
         ('wall_start', 'wait_seconds'),
         [

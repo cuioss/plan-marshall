@@ -3,13 +3,19 @@
 """A budgeted caller of ``rate-window wait`` ends, on the expiry or on its budget.
 
 The consumer of ``rate-window wait`` holds a total budget in whole seconds and
-re-issues the bounded call until the window has expired or the budget is spent.
-Its budget defaults to the same length as the window a claim gets when the bot's
-notice stated no reset time. These tests drive the verb the way that consumer
-does, with injected clocks, and pin three things:
+re-issues the bounded call until the wake instant — the window's expiry plus the
+verb's default wake margin — has passed or the budget is spent. The margin is
+accounted OUTSIDE that budget: when the budget is spent with the window already
+expired, only the margin is left, and the consumer issues one more call bounded by
+the margin the verb published. Its budget defaults to the same length as the window
+a claim gets when the bot's notice stated no reset time. These tests drive the verb
+the way that consumer does, with injected clocks, and pin four things:
 
-* a claim on the default window expires inside the default budget;
-* a window longer than the budget spends the budget with the window still open;
+* a claim on the default window expires inside the default budget, and is never
+  reported as a timeout although its wake instant lies past the budget;
+* a window that fits the budget is never reported as a timeout, whatever its length;
+* a window longer than the budget spends the budget with the window still open,
+  and is already longer than the budget on the read the consumer compares first;
 * a call that reports ``timed_out`` reports a ``waited_seconds`` no smaller than
   the bound it ran under, which is what makes every re-issue lower the budget.
 """
@@ -20,6 +26,7 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
+import pytest
 from _merge_lock_rate_window_fixtures import (
     _DEFAULT_ATTEMPT_CAP,
     isolated_base,
@@ -82,7 +89,11 @@ def _store_window(queue_path: Path, window_seconds: float) -> float:
 
 
 def _wait(fake: _FakeTime, wait_seconds: float) -> dict:
-    """Issue one bounded wait with no grace period, as the consumer does."""
+    """Issue one bounded wait with the shipped wake margin, as the consumer does.
+
+    The consumer passes no ``--grace-seconds``, so the margin it gets is the
+    parser's default — the module constant that default is declared from.
+    """
     result: dict = merge_lock._run_rate_window_wait(
         Namespace(
             action='wait',
@@ -90,7 +101,7 @@ def _wait(fake: _FakeTime, wait_seconds: float) -> dict:
             bot_kind='coderabbit',
             pr_number=_PR,
             attempt_cap=_DEFAULT_ATTEMPT_CAP,
-            grace_seconds=0.0,
+            grace_seconds=merge_lock._RATE_WINDOW_WAKE_MARGIN_SECONDS,
             wait_seconds=wait_seconds,
             interval_seconds=15.0,
         ),
@@ -102,11 +113,14 @@ def _wait(fake: _FakeTime, wait_seconds: float) -> dict:
 
 
 def _spend(fake: _FakeTime, budget_seconds: int) -> tuple[dict, int, list[tuple[float, int]]]:
-    """Re-issue the bounded wait until the window has expired or the budget is spent.
+    """Re-issue the bounded wait until the wake instant has passed or the budget is spent.
 
-    Returns the last return, the budget left, and the ``(bound, waited_seconds)`` pair
-    of every call that reported ``timed_out``. The bound is the smaller of the
-    requested seconds and the verb's per-call ceiling.
+    A budget spent with the window already expired leaves only the margin, which is
+    outside the budget: one more call bounded by the published ``grace_seconds``
+    reaches the wake instant. Returns the last return, the budget left, and the
+    ``(bound, waited_seconds)`` pair of every budgeted call that reported
+    ``timed_out``. The bound is the smaller of the requested seconds and the verb's
+    per-call ceiling.
     """
     remaining = budget_seconds
     timed_out_calls: list[tuple[float, int]] = []
@@ -118,23 +132,57 @@ def _spend(fake: _FakeTime, budget_seconds: int) -> tuple[dict, int, list[tuple[
         timed_out_calls.append((bound, result['waited_seconds']))
         remaining -= result['waited_seconds']
         if remaining <= 0:
+            if result['expired']:
+                return _wait(fake, float(result['grace_seconds'])), remaining, timed_out_calls
             return result, remaining, timed_out_calls
 
 
 def test_the_default_window_expires_inside_the_default_budget(isolated_base: dict) -> None:
-    """The literals are the assertion: both defaults are one hour."""
+    """The literals are the assertion: both defaults are one hour.
+
+    The wake instant lies past the budget by the margin less the hand-back, so the
+    budget runs out with the window already expired. That is the margin's time, not
+    the window's, and the wait still ends on the wake rather than as a timeout.
+    """
     assert merge_lock._DEFAULT_WINDOW_SECONDS == _DEFAULT_BUDGET_SECONDS
 
     expires_at = _store_window(isolated_base['queue_path'], merge_lock._DEFAULT_WINDOW_SECONDS)
     fake = _FakeTime(_CLAIMED_AT + _HAND_BACK_SECONDS)
 
-    result, remaining, _timed_out_calls = _spend(fake, _DEFAULT_BUDGET_SECONDS)
+    result, _remaining, _timed_out_calls = _spend(fake, _DEFAULT_BUDGET_SECONDS)
 
     assert result['timed_out'] is False, result
     assert result['expired'] is True, result
-    assert remaining > 0, remaining
-    assert fake.wall_clock() >= expires_at
-    assert fake.elapsed <= _DEFAULT_BUDGET_SECONDS, fake.elapsed
+    assert result['wake_at'] == expires_at + merge_lock._RATE_WINDOW_WAKE_MARGIN_SECONDS, result
+    assert fake.wall_clock() >= result['wake_at']
+    assert fake.elapsed <= _DEFAULT_BUDGET_SECONDS + merge_lock._RATE_WINDOW_WAKE_MARGIN_SECONDS, fake.elapsed
+
+
+@pytest.mark.parametrize(
+    'window_seconds',
+    [
+        60.0,
+        _DEFAULT_BUDGET_SECONDS / 2,
+        _DEFAULT_BUDGET_SECONDS + _HAND_BACK_SECONDS - merge_lock._RATE_WINDOW_WAKE_MARGIN_SECONDS,
+        _DEFAULT_BUDGET_SECONDS + _HAND_BACK_SECONDS,
+    ],
+    ids=['minute', 'half-budget', 'wake-on-budget', 'expiry-on-budget'],
+)
+def test_a_window_that_fits_the_budget_is_never_reported_as_a_timeout(
+    isolated_base: dict, window_seconds: float
+) -> None:
+    """Swept up to the window whose expiry falls exactly on the end of the budget.
+
+    The last case expires on the budget's final second, so its whole margin lies
+    outside the budget; it still ends on the wake.
+    """
+    _store_window(isolated_base['queue_path'], window_seconds)
+    fake = _FakeTime(_CLAIMED_AT + _HAND_BACK_SECONDS)
+
+    result, _remaining, _timed_out_calls = _spend(fake, _DEFAULT_BUDGET_SECONDS)
+
+    assert result['timed_out'] is False, result
+    assert result['expired'] is True, result
 
 
 def test_a_window_longer_than_the_budget_spends_it_with_the_window_open(isolated_base: dict) -> None:
@@ -147,6 +195,32 @@ def test_a_window_longer_than_the_budget_spends_it_with_the_window_open(isolated
     assert result['timed_out'] is True, result
     assert result['expired'] is False, result
     assert remaining <= 0, remaining
+
+
+@pytest.mark.parametrize(
+    ('window_seconds', 'over_budget'),
+    [
+        (_LONG_WINDOW_SECONDS, True),
+        (float(_DEFAULT_BUDGET_SECONDS), False),
+    ],
+    ids=['longer-than-budget', 'default-window'],
+)
+def test_the_read_before_the_first_wait_shows_a_window_longer_than_the_budget(
+    isolated_base: dict, window_seconds: float, over_budget: bool
+) -> None:
+    """The consumer compares ``seconds_remaining`` with its budget before waiting at all.
+
+    A zero-bound call returns the ``check`` fields without waiting: for a window
+    longer than the budget they already exceed it, so the consumer escalates
+    without spending the budget; the default window does not, and is waited.
+    """
+    _store_window(isolated_base['queue_path'], window_seconds)
+    fake = _FakeTime(_CLAIMED_AT + _HAND_BACK_SECONDS)
+
+    result = _wait(fake, 0.0)
+
+    assert fake.elapsed == 0.0
+    assert (result['seconds_remaining'] > _DEFAULT_BUDGET_SECONDS) is over_budget, result
 
 
 def test_every_timed_out_call_reports_at_least_the_bound_it_ran_under(isolated_base: dict) -> None:

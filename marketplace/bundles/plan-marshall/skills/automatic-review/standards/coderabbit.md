@@ -336,7 +336,9 @@ every bot's refusal is waitable. For this bot the recovery claims the window and
 `automatic-review` step returns the wait to the main context instead of holding it. The main context
 (`phase-6-finalize` Step 3 item 7a) waits on the claim's own expiry, under that budget — one bounded
 `merge_lock rate-window wait` call at a time, asking the operator nothing — and dispatches the step
-again as soon as the claim has expired. Only that second pass RE-DELIVERS the request by closing and re-opening the
+again once the claim has expired plus the wake margin that wait applies, so the re-dispatch does not
+race the claim's own expiry. A claimed window already longer than the budget is escalated before any
+wait rather than waited out. Only that second pass RE-DELIVERS the request by closing and re-opening the
 PR — the elapsed claim resolves through this record's `trigger_semantics` above, and this bot asks
 for an explicit trigger, so a rebase-push or a trigger comment is not what fires. See `../SKILL.md`
 § "Rate-limit refusal recovery (opt-in)" for the branch this lands on, and
