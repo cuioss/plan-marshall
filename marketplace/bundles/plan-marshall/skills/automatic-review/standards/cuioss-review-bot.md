@@ -216,6 +216,27 @@ Do not attempt to match these keys against comment text. There is nothing in the
   This matters here: `/review` is also this bot's `trigger_comment`, so the D2 re-review path
   works on a skip-labelled PR by design.
 
+## Published artifact sets
+
+The reviewer's instruction packs are generated in this repository by the `cuioss-review-bot`
+target (`marketplace/targets/cuioss_review_bot/target.py`) and published into
+`cuioss/cuioss-review-bot` by `.github/workflows/cuioss-review-bot-packs-publish.yml`. A run emits
+two artifact sets side by side, flat under `packs/`:
+
+| Set | Files | Source |
+|-----|-------|--------|
+| Security | `spine.md`, `{domain}.md` | Domains derived from the `*-security`, `arch-gate-*` and `ext-triage-*` standards skills. A domain's rules are the `## Enforcement` prohibited-action and constraint bullets of its `*-security` skill; the spine carries the generator's security-weighted review categories, the foundation topics of `plan-marshall:persona-security-expert`'s standards, and the four charter clauses. |
+| Code review | `code-review-spine.md`, `code-review-{domain}.md` | Domains are the domain keys the bundles declare through `get_skill_domains()`, except `general-dev`, which feeds the spine. A domain's rules are the `## Review Rules` bullets of the default skills its `core`, `implementation`, `module_testing` and `quality` profiles name, restricted to skills of the declaring bundle, with every `*-security` skill and `persona-security-expert` excluded. The spine carries `plan-marshall:ref-code-quality`'s `## Review Categories` and `## Review Rules`, and the same four charter clauses. |
+
+Both sets follow one contract. Each domain artifact carries its domain's part alone and the charter
+appears once, in that set's spine; a repository applies a set's spine alongside whichever of its
+domain artifacts it selects. Each domain artifact carries one category bullet and at most the
+generator's per-domain rule budget. A domain that stops deriving disappears from the emitted set.
+The code-review artifacts carry a `code-review-` name prefix rather than a sub-directory because the
+publish workflow copies `packs/*.md` flat. The harvestable block contract the code-review set reads
+is [`review-rubric.md` § 10](../../phase-6-finalize/standards/review-rubric.md), and the charter
+clauses are stated in its § 9, byte-identical to the generator's.
+
 ## Why its own identity
 
 Run with the default `GITHUB_TOKEN` the reviewer would post as `github-actions[bot]`, which is
