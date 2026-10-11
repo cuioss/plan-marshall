@@ -32,13 +32,19 @@ import json
 import re
 from pathlib import Path
 
-import _cmd_skill_resolution
 import _review_support_validate as _val
 import extension_discovery
 import pytest
 import review_support
 from _manifest_lanes import _read_frontmatter_lane
 from extension_discovery import find_implementors
+
+from conftest import load_script_module
+
+#: The real ``get-skills-by-profile`` handler, loaded without a ``sys.modules``
+#: registration: the manage-config tests publish ``_cmd_skill_resolution`` under
+#: its stem, and this module only needs the returned object.
+_cmd_skill_resolution = load_script_module('plan-marshall', 'manage-config', '_cmd_skill_resolution.py', register=False)
 
 _EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
 _STEP = 'default:code-review'
