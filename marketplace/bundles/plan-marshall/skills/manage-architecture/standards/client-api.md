@@ -620,6 +620,7 @@ A narrow unit `resolve` cannot honour is refused with `status: error`, the `erro
 
 | `error` | Cause | Additional fields |
 |---------|-------|-------------------|
+| `empty_narrow_unit` | `--narrow-unit` was supplied with a blank or whitespace-only value. A blank unit is refused rather than answered with the module-wide run; a caller with no unit to narrow to omits the flag. | — |
 | `narrow_unit_unsupported_command` | The resolved command is not `module-tests`, or its executable is not a build executable carrying a module test target of its own. | `command`, `module` |
 | `invalid_narrow_unit` | The unit is not a plain `/`-separated path of at least two segments built from letters, digits, `_`, `.` and `-`, or one of its segments is exactly `.` or `..`. A segment that merely contains a dot (`test_x.py`, `a.b`) is accepted. | — |
 | `narrow_unit_outside_module` | The unit does not start with the named module's test target followed by `/`. | `module`, `test_target` |

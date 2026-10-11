@@ -416,6 +416,7 @@ The argument is accepted for `--command module-tests` only, and a resolve it can
 
 | `error` | When |
 |---------|------|
+| `empty_narrow_unit` | The flag was supplied with a blank or whitespace-only value. It is refused rather than answered with the module-wide run; omit the flag when there is no unit to narrow to. |
 | `narrow_unit_unsupported_command` | The command is not `module-tests`, or the module has no test target of its own to check the unit against. |
 | `invalid_narrow_unit` | The unit is not a plain `/`-separated path below a test target — it carries whitespace or shell syntax, or a segment that is exactly `.` or `..`. |
 | `narrow_unit_outside_module` | The unit does not start with the module's own test target; the payload names the expected `test_target`. |

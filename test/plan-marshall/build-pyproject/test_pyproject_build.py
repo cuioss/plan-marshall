@@ -715,6 +715,60 @@ def test_resolve_test_scope_still_resolves_a_real_plan_footprint(capsys):
     assert out['recommended_target'] == 'plan-marshall'
 
 
+@pytest.mark.parametrize('changed_paths', ['', ' ', ' , ', ',,'], ids=['empty', 'blank', 'comma-only', 'bare-commas'])
+def test_resolve_test_scope_refuses_a_changed_paths_value_that_names_no_file(capsys, changed_paths):
+    """A supplied-but-blank ``--changed-paths`` is refused, never read as "nothing changed".
+
+    The value is parsed through the script's OWN argparse surface first, so the
+    case covers what a caller actually hands the handler: the executor keeps an
+    empty option value, and the parser must deliver it as a string, not ``None``.
+    The refusal shares the ``footprint_source_required`` exit code, carries no
+    resolution field, and never consults the whole-plan footprint - a real plan
+    id is supplied precisely so that a silent fallback to it would be visible.
+    """
+    parsed = parse_ns(
+        'plan-marshall',
+        'build-pyproject',
+        'pyproject_build.py',
+        'resolve-test-scope',
+        '--changed-paths',
+        changed_paths,
+        register=False,
+    )
+    assert parsed.changed_paths == changed_paths
+    args = _resolve_scope_args(changed_paths=parsed.changed_paths, plan_id='a-real-plan')
+
+    with (
+        patch('extension_base._read_build_map_globs', return_value=_SCOPE_BUILD_MAP_GLOBS),
+        patch('extension_base._resolve_plan_footprint') as mock_plan_footprint,
+    ):
+        rc = pyproject_build.cmd_resolve_test_scope(args)
+
+    assert rc == 2
+    out = parse_toon(capsys.readouterr().out)
+    assert out['status'] == 'error'
+    assert out['error'] == 'empty_changed_paths'
+    assert '--plan-id' in out['message']
+    assert 'divergence_possible' not in out
+    mock_plan_footprint.assert_not_called()
+
+
+def test_resolve_test_scope_ignores_blank_entries_beside_a_real_path(capsys):
+    """Matched control: blanks around one real path resolve exactly as the clean list.
+
+    The refusal fires on a list with NO path in it, not on a list that merely
+    carries blank entries - the clean single-path resolution is the baseline.
+    """
+    clean = _run_resolve_scope(capsys, changed_paths=_SINGLE_MODULE_PATH)
+
+    padded = _run_resolve_scope(capsys, changed_paths=f' , {_SINGLE_MODULE_PATH} , ')
+
+    assert padded == clean
+    assert padded['status'] == 'success'
+    assert padded['recommended_target'] == 'plan-marshall'
+    assert padded['divergence_possible'] is False
+
+
 # Registered-module enumeration: the third argument the handler threads into the
 # pure ``resolve_test_scope`` helper, plus its fail-closed counterpart.
 
