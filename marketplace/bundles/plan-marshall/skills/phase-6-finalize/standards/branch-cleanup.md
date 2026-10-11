@@ -607,7 +607,14 @@ Parse the TOON output and branch on the `admission` discriminator:
   - **Elapsed since `{admission_wait_start}` ≥ `merge_hold_budget_seconds`** → run the waiter-side `budget-reclaim` (§ "Merge-Mutex Hold Window" invariant 2); on `action: released` re-issue `acquire`, otherwise fall through to the `{wait_budget}` checks below.
   - **`{waited}` < `{wait_budget}`** → re-issue the single `merge_lock acquire --plan-id {plan_id} --wait-seconds {per_call}` Bash call above with the recomputed `{per_call}`. The FIFO position is preserved across calls, so re-issuing never loses the plan's place in line.
   - **`{waited}` ≥ `{wait_budget}`** → the budget is exhausted; the loop ends and the last-resort `AskUserQuestion` escalation below fires.
-- **`status: error`** (a resolution failure, distinct from `admission: blocked`) → STOP and surface the stderr verbatim per the **Exit-code convention** at the top of this document. Do NOT route a hard error to the escalation prompt — a broken lock primitive is a different signal than queue contention.
+- **`status: error`** (a resolution failure or a queue read-modify-write that raised, distinct from `admission: blocked`) → dequeue, then STOP. A preceding `acquire` of this loop — or a preceding attempt inside the same `--wait-seconds` call — may already have FIFO-enqueued the plan, and an error is no proof that it did not; only a release dequeues, so stopping without one leaves an abandoned entry queued ahead of every plan behind it. Issue the release first — it always dequeues the caller, removes the lock file only when this plan is its recorded holder (§ "Merge-Mutex Hold Window" invariant 4), and is a no-op for a plan with no entry:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock release \
+    --plan-id {plan_id}
+  ```
+
+  Then STOP and surface the acquire's stderr verbatim per the **Exit-code convention** at the top of this document, whatever the release returned — a failed release is reported alongside the acquire error, never in place of it. Do NOT route a hard error to the escalation prompt — a broken lock primitive is a different signal than queue contention.
 
 Optionally log each `admission: blocked` call for grep-ability during a run:
 
@@ -1456,7 +1463,8 @@ Both routes below return the entry point's TOON, and it exits 0 on every outcome
   ```
 
   Then return control to the finalize dispatcher.
-- **`dispatched: false` with any other error** — `error: query_failed` (the pending count could not be evaluated: executor unreachable / partial query failure), or any other refusal the gate returns → the store gate **fails closed**: take § "UNKNOWN disposition — blocked, and never authorizable" above, exactly as written there. A merge NEVER proceeds on an unevaluable store gate, and no `merge-authorization` grant covers this gap.
+- **`dispatched: false` with an invocation refusal** — `error: unknown_route`, `error: strategy_required`, or `error: flag_not_applicable_to_route` → the gate refused the call's construction before it read the findings store, so no store verdict exists to act on. This is a caller-construction error in this step body, not a store state: release the merge mutex if held (§ "Merge-Mutex Hold Window" invariant 4), then STOP and surface the payload verbatim per the **Exit-code convention** at the top of this document. Do NOT record a loop-back — re-triaging findings cannot repair a malformed call, so a loop-back would re-enter the same refusal — and do NOT take the UNKNOWN disposition, which describes a store that could not be evaluated rather than a call that was never valid. The same STOP applies when the call is rejected by argparse (exit code 2 with usage text on stderr and no TOON payload): no gate ran, so there is no `dispatched` to branch on.
+- **`dispatched: false` with any other error** — `error: query_failed` (the pending count could not be evaluated: executor unreachable / partial query failure), `error: findings_verdict_unrecognised` (the verdict source answered `status: success` without a measured `blocking_count: 0`), or any other store-verdict refusal the gate passes through → the store gate **fails closed**: take § "UNKNOWN disposition — blocked, and never authorizable" above, exactly as written there. A merge NEVER proceeds on an unevaluable store gate, and no `merge-authorization` grant covers this gap.
 - **`dispatched: true`** → the store was proven clean (`findings_gate: clean`) and the gate issued the routed verb. The rest of the payload IS that verb's payload, verbatim, so the existing route-specific branches below apply to it unchanged.
 
 The routing itself:

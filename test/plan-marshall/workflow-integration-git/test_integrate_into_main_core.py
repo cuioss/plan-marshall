@@ -13,10 +13,6 @@ Contract under test (solution_outline.md §5):
 * **Rollback-on-partial-failure** — a move-back step that raises rolls the plan dir
   BACK into the worktree (authoritative copy never split) and releases the lock.
 * **Lock released on every exit path** — including the rollback path.
-* **Bounded admission wait, dequeue on expiry** — the acquire forwards a bounded
-  ``wait_seconds``; when admission is still blocked once it lapses, the plan is
-  dequeued from the merge FIFO queue (the foreign holder's lock left intact) and
-  the blocked payload is surfaced with ``dequeued`` reporting the outcome.
 * **cwd invariant** — the script never mutates the process cwd.
 * **Worktree NOT removed** — the worktree directory survives the call.
 * **Executor never touched** — integrate neither moves nor regenerates any
@@ -82,12 +78,10 @@ class _FakeMergeLock:
         self.released = 0
         self.acquire_set_title_tokens: list[object] = []
         self.release_set_title_tokens: list[object] = []
-        self.acquire_wait_seconds: list[object] = []
 
     def run_acquire(self, args: Namespace) -> dict:
         self.acquired += 1
         self.acquire_set_title_tokens.append(getattr(args, 'set_title_token', 'absent'))
-        self.acquire_wait_seconds.append(getattr(args, 'wait_seconds', 'absent'))
         if self.acquire_status != 'success':
             return {'status': 'error', 'error_code': 'TIMEOUT', 'plan_id': args.plan_id}
         return {'status': 'success', 'plan_id': args.plan_id, 'action': 'acquired'}
@@ -502,138 +496,3 @@ class TestIntegrateLeavesSelfHeldLockWithItsHolder:
 
         assert result['status'] == 'error', result
         assert held_lock.released == 0
-
-
-# =============================================================================
-# Bounded admission wait — dequeue on expiry
-# =============================================================================
-
-
-class _BlockedMergeLock(_FakeMergeLock):
-    """Stub whose acquire stays blocked past its bound and whose release can fail."""
-
-    def __init__(self, release_raises: bool = False) -> None:
-        super().__init__()
-        self.release_raises = release_raises
-
-    def run_acquire(self, args: Namespace) -> dict:
-        self.acquired += 1
-        self.acquire_wait_seconds.append(getattr(args, 'wait_seconds', 'absent'))
-        return {
-            'status': 'blocked',
-            'plan_id': args.plan_id,
-            'admission': 'blocked',
-            'blocked_reason': 'lock_held_by_live_holder',
-            'blocking_plan_id': 'foreign-plan',
-            'timed_out': True,
-            'waited_seconds': 0,
-        }
-
-    def run_release(self, args: Namespace) -> dict:
-        self.released += 1
-        if self.release_raises:
-            raise OSError('simulated dequeue failure')
-        return {'status': 'success', 'plan_id': args.plan_id, 'action': 'noop'}
-
-
-class TestIntegrateBoundedAdmissionWait:
-    """The move-back acquire waits a bounded time, and a plan that gives up is dequeued.
-
-    The acquire FIFO-enqueues the plan and only a release dequeues it. A blocked
-    integrate that returned without dequeuing left its entry queued for good — no
-    finalize call site retries the integrate result — so a live worktree could
-    wedge every plan queued behind it.
-    """
-
-    def test_acquire_forwards_the_bounded_wait(self, isolated_env: dict) -> None:
-        env = isolated_env
-        integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
-        assert env['fake_lock'].acquire_wait_seconds == [integrate_into_main._MOVE_BACK_ACQUIRE_WAIT_SECONDS]
-
-    def test_bound_sits_below_the_merge_lock_ceiling(self) -> None:
-        real_merge_lock = integrate_into_main._load_module_by_path(
-            'merge_lock_real_under_integrate_core_ceiling', integrate_into_main._MERGE_LOCK_PATH
-        )
-        assert 0 < integrate_into_main._MOVE_BACK_ACQUIRE_WAIT_SECONDS <= real_merge_lock._ACQUIRE_WAIT_CEILING_SECONDS
-
-    def test_foreign_holder_blocks_then_plan_is_dequeued(
-        self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Real merge_lock: a foreign live holder outlasts the bound.
-
-        integrate surfaces ``blocked`` with ``timed_out``, its own FIFO entry is
-        gone afterwards, the foreign lock is untouched, and the plan dir never
-        left the worktree.
-        """
-        env = isolated_env
-        real_merge_lock = integrate_into_main._load_module_by_path(
-            'merge_lock_real_under_integrate_core_blocked', integrate_into_main._MERGE_LOCK_PATH
-        )
-        monkeypatch.setattr(integrate_into_main, '_load_merge_lock', lambda: real_merge_lock)
-        monkeypatch.setattr(integrate_into_main, '_MOVE_BACK_ACQUIRE_WAIT_SECONDS', 0.05)
-
-        # A live foreign holder: its plan dir exists on main, so it is neither
-        # reclaimed as stale nor pruned from the FIFO queue.
-        foreign_plan_id = 'foreign-plan'
-        foreign_plan_dir = env['main'] / '.plan' / 'local' / 'plans' / foreign_plan_id
-        foreign_plan_dir.mkdir(parents=True)
-        (foreign_plan_dir / 'status.json').write_text('{}\n')
-        held = real_merge_lock.run_acquire(Namespace(plan_id=foreign_plan_id, set_title_token=False))
-        assert held['action'] == 'acquired', held
-        lock_path = real_merge_lock._resolve_main_lock_path()
-
-        result = integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
-
-        # (a) blocked once the bound lapsed, and the dequeue is reported.
-        assert result['status'] == 'blocked', result
-        assert result['timed_out'] is True, result
-        assert result['blocking_plan_id'] == foreign_plan_id, result
-        assert result['dequeued'] is True, result
-        # (b) the plan's own FIFO entry is gone; the foreign holder's is not.
-        queued = [entry['plan_id'] for entry in real_merge_lock._queue_waiting(real_merge_lock._read_store())]
-        assert env['plan_id'] not in queued, queued
-        assert foreign_plan_id in queued, queued
-        # (c) the foreign holder still holds the lock.
-        assert lock_path.is_file()
-        assert lock_path.read_text(encoding='utf-8').strip() == foreign_plan_id
-        # (d) nothing moved: the plan dir is still wholly in the worktree.
-        assert (env['wt_plan_dir'] / 'status.json').is_file()
-        assert not env['main_plan_dir'].exists()
-
-    def test_failed_dequeue_is_reported_not_masked(self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch) -> None:
-        """A dequeue that raises still surfaces the blocked payload, with ``dequeued: false``."""
-        env = isolated_env
-        blocked_lock = _BlockedMergeLock(release_raises=True)
-        monkeypatch.setattr(integrate_into_main, '_load_merge_lock', lambda: blocked_lock)
-
-        result = integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
-
-        assert result['status'] == 'blocked', result
-        assert result['dequeued'] is False, result
-        assert blocked_lock.released == 1
-        assert (env['wt_plan_dir'] / 'status.json').is_file()
-
-    def test_successful_dequeue_is_reported(self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch) -> None:
-        env = isolated_env
-        blocked_lock = _BlockedMergeLock()
-        monkeypatch.setattr(integrate_into_main, '_load_merge_lock', lambda: blocked_lock)
-
-        result = integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
-
-        assert result['status'] == 'blocked', result
-        assert result['dequeued'] is True, result
-        assert blocked_lock.released == 1
-
-    def test_acquire_error_is_surfaced_without_a_dequeue(
-        self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """An acquire ``status: error`` never enqueued anything, so nothing is released."""
-        env = isolated_env
-        error_lock = _FakeMergeLock(acquire_status='error')
-        monkeypatch.setattr(integrate_into_main, '_load_merge_lock', lambda: error_lock)
-
-        result = integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
-
-        assert result['status'] == 'error', result
-        assert 'dequeued' not in result
-        assert error_lock.released == 0

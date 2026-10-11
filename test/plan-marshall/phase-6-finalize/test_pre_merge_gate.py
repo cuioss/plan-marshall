@@ -11,6 +11,8 @@ with the positive control that a clean store reaches it exactly once, with the
 routed verb's arguments unchanged, on both routes.
 """
 
+import subprocess
+import sys
 from argparse import Namespace
 
 import pytest
@@ -169,6 +171,88 @@ def test_clean_store_dispatches_merge_queue_once_with_the_pr_number_alone():
     assert runner.calls == [['--project-dir', _PROJECT_DIR, 'pr', 'merge-queue', '--pr-number', '42']]
     assert result['enqueued'] is True
     assert result['findings_gate'] == 'clean'
+    assert result['dispatched'] is True
+
+
+# --------------------------------------------------------------------------- #
+# The production merge runner — the argv reaching subprocess.run
+# --------------------------------------------------------------------------- #
+
+
+def _patch_subprocess(monkeypatch, tmp_path, *, stdout, stderr='', returncode=0):
+    """Pin the executor path and replace ``subprocess.run``; return ``(executor, calls)``."""
+    executor = tmp_path / 'execute-script.py'
+    calls: list[tuple[list[str], dict]] = []
+
+    def fake_run(argv, **kwargs):
+        calls.append((list(argv), kwargs))
+        return subprocess.CompletedProcess(argv, returncode, stdout=stdout, stderr=stderr)
+
+    monkeypatch.setattr(gate, 'get_executor_path', lambda: executor)
+    monkeypatch.setattr(gate.subprocess, 'run', fake_run)
+    return executor, calls
+
+
+@pytest.mark.parametrize(
+    ('route', 'flags', 'verb_args'),
+    [
+        ('safe-merge', {'strategy': 'rebase'}, ['--pr-number', '42', '--strategy', 'rebase']),
+        ('merge-queue', {}, ['--pr-number', '42']),
+    ],
+    ids=['safe-merge', 'merge-queue'],
+)
+def test_production_runner_invokes_the_ci_router_through_the_executor(monkeypatch, tmp_path, route, flags, verb_args):
+    """On a clean store the default runner runs ``ci`` through the executor with the
+    router-level ``--project-dir`` ahead of the ``pr`` verb, and parses its TOON."""
+    executor, calls = _patch_subprocess(monkeypatch, tmp_path, stdout='status: success\nmerged: true\n')
+
+    result = gate.merge(
+        _PLAN_ID,
+        route=route,
+        pr_number=42,
+        project_dir=_PROJECT_DIR,
+        findings_check=lambda _plan_id: dict(_CLEAN_VERDICT),
+        **flags,
+    )
+
+    assert calls == [
+        (
+            [
+                sys.executable,
+                str(executor),
+                'plan-marshall:tools-integration-ci:ci',
+                '--project-dir',
+                _PROJECT_DIR,
+                'pr',
+                route,
+                *verb_args,
+            ],
+            {'capture_output': True, 'text': True, 'check': False},
+        )
+    ]
+    assert result['status'] == 'success'
+    assert result['findings_gate'] == 'clean'
+    assert result['dispatched'] is True
+
+
+@pytest.mark.parametrize('stdout', ['', '  \n'], ids=['empty', 'whitespace-only'])
+def test_production_runner_reports_a_silent_verb_as_merge_verb_no_output(monkeypatch, tmp_path, stdout):
+    """A verb that printed nothing is an error payload naming its exit code and
+    stderr — never parsed as a merge outcome."""
+    _patch_subprocess(monkeypatch, tmp_path, stdout=stdout, stderr='router crashed\n', returncode=1)
+
+    result = gate.merge(
+        _PLAN_ID,
+        route='merge-queue',
+        pr_number=42,
+        project_dir=_PROJECT_DIR,
+        findings_check=lambda _plan_id: dict(_CLEAN_VERDICT),
+    )
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'merge_verb_no_output'
+    assert 'exit_code=1' in result['message']
+    assert 'router crashed' in result['message']
     assert result['dispatched'] is True
 
 

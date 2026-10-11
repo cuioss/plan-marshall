@@ -212,9 +212,11 @@ def _stage_worktree_at_canonical_root(tmp_path: Path, monkeypatch: pytest.Monkey
 
 
 class TestIntegrateLockFailure:
-    def test_acquire_failure_surfaces_and_never_moves_or_releases(
+    def test_acquire_failure_surfaces_never_moves_and_only_dequeues(
         self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """A failed acquire moves nothing; its one release call is the FIFO dequeue
+        an earlier attempt's enqueue may need, reported as ``dequeued``."""
         env = isolated_env
         failing_lock = _FakeMergeLock(acquire_status='error')
         monkeypatch.setattr(integrate_into_main, '_load_merge_lock', lambda: failing_lock)
@@ -222,11 +224,12 @@ class TestIntegrateLockFailure:
         result = integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
 
         assert result['status'] == 'error'
-        # No move happened (plan dir still in worktree); no release (nothing held).
+        assert result['dequeued'] is True
+        # No move happened: the plan dir is still in the worktree.
         assert env['wt_plan_dir'].is_dir()
         assert not env['main_plan_dir'].exists()
         assert failing_lock.acquired == 1
-        assert failing_lock.released == 0
+        assert failing_lock.released == 1
 
 
 # =============================================================================

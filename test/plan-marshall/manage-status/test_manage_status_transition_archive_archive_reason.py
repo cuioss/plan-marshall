@@ -152,6 +152,22 @@ def test_archive_with_reason_bypasses_findings_gate(plan_context, monkeypatch, _
     assert 'pending_actionable_count=3' in warnings[0][3]
 
 
+def test_exemption_warning_states_intent_not_a_completed_archive(plan_context, monkeypatch, _captured_log_entries):
+    """The exemption WARNING is written before the archive move, so it states the
+    intent ("archiving ...") and never claims the plan IS archived — a move that
+    fails after the line is written must not leave a false record behind."""
+    _stub_finding_queries(monkeypatch, {'build-error': 1})
+    plan_id = 'finalize-abandon-archive-wording'
+    _seed_finalize_phase_plan(plan_id)
+
+    cmd_archive(Namespace(plan_id=plan_id, dry_run=False, reason='low_confidence'))
+
+    warnings = _exemption_warnings(_captured_log_entries)
+    assert len(warnings) == 1, f'expected exactly one exemption WARNING, got: {_captured_log_entries!r}'
+    assert 'archiving without asserting' in warnings[0][3]
+    assert 'is archived' not in warnings[0][3]
+
+
 def test_archive_with_normal_completion_reason_takes_the_gated_path(plan_context, monkeypatch):
     """A reason that ASSERTS completion is gated exactly like an absent reason: a
     plan open in 6-finalize with a pending actionable finding is REFUSED and its

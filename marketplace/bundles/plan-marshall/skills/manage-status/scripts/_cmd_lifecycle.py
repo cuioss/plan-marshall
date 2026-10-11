@@ -695,7 +695,7 @@ def _exempt_archive_findings_report(plan_id: str, status: dict[str, Any], reason
         plan_id,
         'WARNING',
         f'(plan-marshall:manage-status) Archive exempted from the blocking-findings gate by '
-        f'reason {reason!r}: pending_actionable_count={pending} — the plan is archived without '
+        f'reason {reason!r}: pending_actionable_count={pending} — archiving without '
         'asserting that no actionable finding is pending',
     )
     return {'findings_gate': 'exempted_by_reason', 'pending_actionable_count': pending}

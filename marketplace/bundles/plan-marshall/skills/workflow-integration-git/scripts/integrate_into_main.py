@@ -14,9 +14,10 @@ cleanup removes the worktree AFTER this script returns. In one call it:
      ``plan-marshall:manage-locks:merge_lock`` script — FIFO-front-only
      admission, atomic ``O_EXCL`` create, holder = this ``plan_id``, a bounded
      wait of :data:`_MOVE_BACK_ACQUIRE_WAIT_SECONDS`, plan-liveness stale
-     reclamation). When the bound lapses while admission is still blocked, the
-     plan is DEQUEUED from the FIFO admission queue before the blocked payload is
-     surfaced, so a plan that gave up never wedges the plans queued behind it.
+     reclamation). When the acquire takes no lock — admission still blocked
+     once the bound lapses, or an attempt that errored — the plan is DEQUEUED
+     from the FIFO admission queue before the acquire payload is surfaced, so a
+     plan that gave up or failed never wedges the plans queued behind it.
      The merge lock is the SINGLE deliberate main-anchored
      exception to cwd-relative resolution (ADR-002).
   2. **FOLDS** the plan's OWN global logs (only logs generated for this plan,
@@ -113,7 +114,8 @@ _MERGE_LOCK_PATH = _THIS_DIR.parent.parent / 'manage-locks' / 'scripts' / 'merge
 # finalize call site that invokes ``integrate`` without an explicit timeout is
 # never auto-backgrounded mid-wait. No finalize call site retries the integrate
 # result, so this one bounded wait is the whole admission budget of the call; on
-# expiry the plan is dequeued (see :func:`run_integrate_into_main`).
+# expiry, or on an acquire error, the plan is dequeued (see
+# :func:`run_integrate_into_main`).
 _MOVE_BACK_ACQUIRE_WAIT_SECONDS = 90.0
 
 
@@ -408,19 +410,27 @@ def _fold_global_logs(wt_global_logs: Path, plan_logs_dst: Path) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Blocked-admission cleanup
+# Refused-admission cleanup
 # ---------------------------------------------------------------------------
 
 
-def _dequeue_after_blocked(merge_lock: Any, plan_id: str) -> bool:
-    """Dequeue ``plan_id`` from the merge FIFO queue after a blocked admission.
+def _dequeue_after_refused_acquire(merge_lock: Any, plan_id: str) -> bool:
+    """Dequeue ``plan_id`` from the merge FIFO queue after an acquire that took no lock.
+
+    Runs on every non-success acquire result — ``status: blocked`` and
+    ``status: error`` alike. Within one bounded wait an earlier attempt may have
+    FIFO-enqueued the plan before a later attempt was blocked or failed, so
+    neither status proves the queue holds no entry for it; dequeuing an absent
+    entry is a no-op, so the dequeue is issued unconditionally.
 
     ``merge_lock.run_release`` always dequeues the caller and removes the lock
-    file only when the caller is its recorded holder — a blocked acquirer is
-    not, so the foreign holder's lock is left intact. Returns ``True`` when the
-    release reported ``status: success`` (the entry is gone), ``False`` when it
-    reported anything else or raised, so the caller can say the abandoned entry
-    may still be queued instead of implying it was cleaned up.
+    file only when the caller is its recorded holder. A refused acquirer is not
+    the holder: every attempt checks the reentrant self-holder grant before it
+    enqueues, so a blocked or failed attempt never belongs to a plan that held
+    the lock, and a foreign holder's lock is left intact. Returns ``True`` when
+    the release reported ``status: success`` (no entry remains), ``False`` when
+    it reported anything else or raised, so the caller can say the abandoned
+    entry may still be queued instead of implying it was cleaned up.
     """
     try:
         # set_title_token=False mirrors the suppressed acquire — the move-back
@@ -445,14 +455,16 @@ def run_integrate_into_main(args: Namespace) -> dict[str, Any]:
     the same plan already held is left to its holder.
 
     The acquire waits up to :data:`_MOVE_BACK_ACQUIRE_WAIT_SECONDS` for admission
-    (a reentrant ``already_held`` grant still returns at once). When the bound
-    lapses while another plan holds the lock or is ahead in the FIFO queue, the
-    acquire's own enqueue is undone through ``merge_lock.run_release`` — which,
-    for a caller that does not hold the lock, leaves the lock file intact and
-    only dequeues — and the ``status: blocked`` payload is surfaced with
-    ``dequeued`` reporting whether that dequeue landed. Without it the abandoned
-    FIFO entry would stay queued, and a live worktree would wedge every plan
-    queued behind it.
+    (a reentrant ``already_held`` grant still returns at once). Every acquire
+    that takes no lock — ``status: blocked`` once the bound lapses while another
+    plan holds the lock or is ahead in the FIFO queue, and ``status: error`` from
+    any attempt, including one that failed after an earlier attempt of the same
+    wait had enqueued the plan — is followed by a dequeue through
+    ``merge_lock.run_release``, which, for a caller that does not hold the lock,
+    leaves the lock file intact and only dequeues. The acquire payload is then
+    surfaced with ``dequeued`` reporting whether that dequeue landed. Without it
+    an abandoned FIFO entry would stay queued, and a live worktree would wedge
+    every plan queued behind it.
     """
     plan_id: str = args.plan_id
 
@@ -531,18 +543,17 @@ def run_integrate_into_main(args: Namespace) -> dict[str, Any]:
     acquire_result = merge_lock.run_acquire(
         Namespace(plan_id=plan_id, set_title_token=False, wait_seconds=_MOVE_BACK_ACQUIRE_WAIT_SECONDS)
     )
-    if acquire_result.get('status') == 'blocked':
-        # Admission still blocked once the bound lapsed. No lock was acquired, but
-        # the acquire FIFO-enqueued this plan, and only a release dequeues it — so
-        # undo that enqueue rather than leave an abandoned entry wedging the plans
-        # queued behind it. For a non-holder, run_release leaves the lock intact.
-        return _assert_cwd_unchanged(
-            {**acquire_result, 'plan_id': plan_id, 'dequeued': _dequeue_after_blocked(merge_lock, plan_id)}
-        )
     if acquire_result.get('status') != 'success':
-        # Could not acquire (resolution failure) — surface verbatim. No lock was
-        # acquired, so there is nothing to release.
-        return _assert_cwd_unchanged({**acquire_result, 'plan_id': plan_id})
+        # No lock was acquired — admission still blocked once the bound lapsed, or
+        # an attempt errored (a resolution failure, or a queue read-modify-write
+        # that raised). Either way an attempt of this bounded wait may already
+        # have FIFO-enqueued the plan, and only a release dequeues it — so undo
+        # that enqueue rather than leave an abandoned entry wedging the plans
+        # queued behind it. Dequeuing an absent entry is a no-op, and for a
+        # non-holder run_release leaves the lock intact.
+        return _assert_cwd_unchanged(
+            {**acquire_result, 'plan_id': plan_id, 'dequeued': _dequeue_after_refused_acquire(merge_lock, plan_id)}
+        )
 
     # Ownership of the release: this call releases the lock only when it TOOK
     # it. A reentrant acquire (``action: already_held``) means the same plan
