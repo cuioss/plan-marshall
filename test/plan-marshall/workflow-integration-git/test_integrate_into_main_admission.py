@@ -217,7 +217,8 @@ class TestRefusedAcquireDequeuesTheRealQueue:
             if not queued_when_attempt_2_failed and plan_id in _queued(real_merge_lock):
                 queued_when_attempt_2_failed.append(_queued(real_merge_lock))
                 raise TimeoutError('simulated merge-queue guard timeout')
-            return real_enqueue(plan_id, ts)
+            enqueued: dict[str, Any] = real_enqueue(plan_id, ts)
+            return enqueued
 
         monkeypatch.setattr(real_merge_lock, '_enqueue_fifo', enqueue_then_fail)
 

@@ -294,9 +294,16 @@ def test_exempt_archive_reports_an_unevaluable_count_as_unevaluable(plan_context
 
 def test_archive_help_no_longer_offers_normal_completion(plan_context):
     """``archive --help`` must not offer ``normal_completion`` as an example reason:
-    following the help used to disarm the gate on exactly the completion it guards."""
+    following the help used to disarm the gate on exactly the completion it guards.
+    It must instead name it as the one gated reason, so a caller cannot read an
+    unnamed "completion-asserting" class as gating a reason the code exempts."""
     result = run_script(SCRIPT_PATH, 'archive', '--help')
 
     assert result.returncode == 0, f'archive --help failed: {result.stderr!r}'
-    assert '--reason' in result.stdout
-    assert 'normal_completion' not in result.stdout
+    help_text = ' '.join(result.stdout.split())
+    assert '--reason' in help_text
+    examples = help_text.split('(e.g.,', 1)[1].split(')', 1)[0]
+    assert 'normal_completion' not in examples, f'normal_completion is offered as an example: {examples!r}'
+    assert 'the literal normal_completion' in help_text
+    assert 'is gated exactly like an absent one' in help_text
+    assert 'No other reason is gated' in help_text
