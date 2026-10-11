@@ -1,6 +1,6 @@
 ---
 name: oci-standards
-description: "Use when writing, reviewing, or debugging Dockerfiles and Containerfiles — covers base image selection, multi-stage builds, version pinning, .dockerignore (including excluding secrets from the build context), multi-platform builds, OCI labels, certificate management, secrets management (never embedding secrets in image layers, BuildKit build-time secrets, runtime secret injection), and Quarkus distroless health probes. Activate for any container image building or build-context hardening task."
+description: "Use when writing, reviewing, or debugging Dockerfiles and Containerfiles — covers base image selection, multi-stage builds, version pinning, .dockerignore (including excluding secrets from the build context), multi-platform builds, OCI labels, certificate management, secrets management (never embedding secrets in image layers, BuildKit build-time secrets, runtime secret injection), and Quarkus distroless health probes. Activate for any container image building or build-context hardening task. Carries the image-build review rules a code review cites."
 user-invocable: false
 mode: knowledge
 ---
@@ -125,3 +125,15 @@ Read standards/certificate-management.md
 - OCI labels (`org.opencontainers.image.*`) present
 - Hadolint passes without errors
 - Quarkus health probe strategy for distroless (management interface or orchestrator-native probes)
+
+## Review Rules
+
+The review rules of the oci-containers domain for image builds — what a code review looks for in a changed Dockerfile, Containerfile or build context. Security rules for images belong to `pm-dev-oci:oci-security`. The block follows the harvestable block contract — see [`review-rubric.md` § 10 "Harvestable review-rule blocks"](../../../plan-marshall/skills/phase-6-finalize/standards/review-rubric.md) for its rules, which are not restated here.
+
+- A `COPY --from=<stage>` whose source path the named build stage no longer produces (a renamed artifact, a moved build output directory), so the image build fails or copies the wrong file into the runtime stage.
+- An `ADD` used to copy a local file, so an archive is unpacked into the image instead of copied as the file the next instruction expects.
+- An `apt-get update` (or the equivalent package-index refresh) in a different `RUN` layer than the install that depends on it, so a cached, stale index layer makes the install fail or pull outdated packages.
+- A `HEALTHCHECK` that runs `curl`, `wget` or a shell in a distroless or scratch image, so the command does not exist and the container is reported unhealthy however the application behaves.
+- A Quarkus management-interface property (`quarkus.management.*`) set only at runtime when it is fixed at build time, so the native image has no management endpoint and every health probe against it fails.
+- A `.dockerignore` that does not exclude local build output (`target/`, `node_modules/`, `dist/`), so a stale local artifact is copied into the image in place of the freshly built one.
+- A multi-platform build whose `RUN` step downloads or copies a binary for a single architecture, so the image for the other platform carries a binary it cannot execute.
