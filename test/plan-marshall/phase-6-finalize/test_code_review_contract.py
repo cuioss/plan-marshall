@@ -383,7 +383,7 @@ def _resolved_profiles(monkeypatch: pytest.MonkeyPatch, domain: str, bundle: str
     monkeypatch.setattr(_cmd_skill_resolution, 'load_config', lambda: {'skill_domains': {domain: {'bundle': bundle}}})
     result = _cmd_skill_resolution.cmd_get_skills_by_profile(type('Args', (), {'domain': domain})())
     assert result.get('status') == 'success', f'{domain}: the resolver failed: {result}'
-    profiles = result['skills_by_profile']
+    profiles: dict[str, list[str]] = result['skills_by_profile']
     assert profiles, f'control: {domain} must resolve at least one profile'
     return profiles
 
