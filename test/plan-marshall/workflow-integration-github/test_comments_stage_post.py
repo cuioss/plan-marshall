@@ -42,6 +42,10 @@ cmd_post_responses = github_pr.cmd_post_responses
 #: reply: the read succeeded and the conclusion is ``success``.
 _HEAD_CI_GREEN = (True, 'success')
 
+#: The real overall-CI read, captured at import — before the autouse fixture below
+#: stubs it — so a test can drive the hold through ``gh pr checks`` rows instead.
+_REAL_FETCH_PR_OVERALL_CI_STATUS = github_pr._github._fetch_pr_overall_ci_status
+
 
 def _head_ci_reports(ok, overall=''):
     """Make the overall CI read of the pull request head answer ``(ok, overall)``.
@@ -1265,6 +1269,81 @@ class TestFixedReplyHeldUntilHeadCiPassed:
         assert result['responded'] == []
         assert result['deferred_until_commit'] == [
             {'hash_id': hash_id, 'reason': 'pr_head_ci_failed', 'fix_commit_sha': _FIX_COMMIT, 'fix_task_number': ''}
+        ]
+
+    def _post_over_check_rows(self, args, rows):
+        """Run one respond pass with the head's CI read through ``gh pr checks`` rows.
+
+        The real ``_fetch_pr_overall_ci_status`` replaces the autouse green stub, so
+        the hold classifies the rows itself — including setting a registered
+        review-bot status aside. Every other ``run_gh`` call is the compare read,
+        answered ``ahead``. Returns ``(result, graphql_calls, checks_calls)``.
+        """
+        import json as _json
+
+        calls = []
+        checks_calls = []
+
+        def _fake_graphql(mutation, variables):
+            calls.append((mutation, variables))
+            return 0, {}, ''
+
+        def _fake_run_gh(gh_args, capture_json=False, timeout=60):
+            if gh_args[:2] == ['pr', 'checks']:
+                checks_calls.append(list(gh_args))
+                return 0, _json.dumps(rows), ''
+            return 0, 'ahead\n', ''
+
+        with (
+            patch('github_pr._github.run_graphql', side_effect=_fake_graphql),
+            patch('github_pr._github.run_gh', side_effect=_fake_run_gh),
+            patch('github_pr._github._fetch_pr_overall_ci_status', new=_REAL_FETCH_PR_OVERALL_CI_STATUS),
+        ):
+            result = cmd_post_responses(args)
+        return result, calls, checks_calls
+
+    @staticmethod
+    def _row(name, state, bucket):
+        return {
+            'name': name,
+            'state': state,
+            'bucket': bucket,
+            'link': '',
+            'startedAt': '',
+            'completedAt': '',
+            'workflow': 'CI',
+        }
+
+    def test_a_pending_review_bot_status_does_not_hold_a_reply_on_a_green_head(self, plan_context):
+        """Every CI check green, only the registered bot's status pending → the reply is released."""
+        bot_names = sorted(github_pr._github._review_bot_check_names())
+        assert bot_names, 'the bot registry declares no completion_check_name — nothing to set aside'
+        plan_id = 'gh-ci-bot-status-pending-released'
+        plan_context.plan_dir_for(plan_id)
+        hash_id = self._stamped_fixed_finding(plan_id)
+        rows = [self._row('build', 'SUCCESS', 'pass'), self._row(bot_names[0], 'PENDING', 'pending')]
+
+        result, calls, checks_calls = self._post_over_check_rows(_stage_make_args(300, plan_id), rows)
+
+        assert [call[2] for call in checks_calls] == ['300']
+        assert result['deferred_until_commit'] == []
+        assert [row['hash_id'] for row in result['responded']] == [hash_id]
+        assert calls[0][1] == {'threadId': 'PRRT_ci', 'body': f'Fixed the guard.\n\nFix commit: {_FIX_COMMIT_SHORT}'}
+
+    def test_a_pending_non_bot_check_still_holds_the_reply(self, plan_context):
+        """⛔ MATCHED CONTROL: the same head with a pending CI check is held as ``pr_head_ci_pending``."""
+        plan_id = 'gh-ci-non-bot-pending-held'
+        plan_context.plan_dir_for(plan_id)
+        hash_id = self._stamped_fixed_finding(plan_id)
+        rows = [self._row('build', 'SUCCESS', 'pass'), self._row('deploy', 'PENDING', 'pending')]
+
+        result, calls, checks_calls = self._post_over_check_rows(_stage_make_args(300, plan_id), rows)
+
+        assert len(checks_calls) == 1
+        assert calls == []
+        assert result['responded'] == []
+        assert result['deferred_until_commit'] == [
+            {'hash_id': hash_id, 'reason': 'pr_head_ci_pending', 'fix_commit_sha': _FIX_COMMIT, 'fix_task_number': ''}
         ]
 
 

@@ -253,7 +253,7 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
 
    - the finding carries a `fix_commit_sha` stamp (written by `manage-findings stamp-fix-commit` — see [`manage-findings` SKILL.md](../manage-findings/SKILL.md) § "The fix stamp");
    - the provider reports that commit as an ancestor of the pull request head, or as the head itself. This is one `compare` read per distinct fix commit, asked of GitHub and not of the local clone, so a commit that was never pushed does not pass;
-   - the overall CI conclusion of the pull request head is `success`. "Fixed" points the reviewer at that head, so the head has to be shown to work first. This is one read per call — the shared overall-CI read `ci wait-for-status-flip` also uses — made only when at least one stamped `fixed` reply passed the ancestry check.
+   - the overall CI conclusion of the pull request head is `success`. "Fixed" points the reviewer at that head, so the head has to be shown to work first. This is one read per call — the shared overall-CI read `ci wait-for-status-flip` also uses — made only when at least one stamped `fixed` reply passed the ancestry check. The conclusion counts CI checks only: a registered review bot's own status is the review gate's concern, so a pending bot status does not hold the reply (see Canonical invocations → `github_ops checks status`).
 
    Until then the finding is listed in `deferred_until_commit[]` and nothing is sent for it:
 
@@ -905,12 +905,39 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
   (--pr-number N | --head BRANCH)
 ```
 
+**A review bot's status is the review gate's concern, not CI's.** A registered review bot that
+publishes a commit status — CodeRabbit's `CodeRabbit` — reports it on the same `gh pr checks`
+surface as the CI checks. Counted as CI, a bot that is rate-limited or slow kept the wait partition
+open until the deadline and was reported as a CI timeout. Every read of that surface therefore sets
+the rows named by a registered bot's `completion_check_name` aside before it classifies:
+
+- `checks status` computes `overall_status` over the CI rows only and reports the set-aside rows in
+  `review_bot_checks[]` (`{name, conclusion, url}`, `conclusion` `PENDING` while the bot has none);
+  `checks[]` and `check_count` still list every row.
+- `checks wait` computes `final_status` and every wait partition — the snapshot after the first
+  sleep, the poll-fallback completion test and the partition after the watch tail — over the CI rows
+  only, and reports `review_bot_checks[]` on both the success and the `deadline_exceeded` envelope.
+  A pending bot status neither holds the wait open nor appears in `failing_checks[]`.
+- `checks wait-for-status-flip` and the `fixed`-reply hold of `github_pr post_responses` read the
+  same CI-only conclusion through `_fetch_pr_overall_ci_status`, whose `(ok, status)` result carries
+  no rows, so they count no bot status and report none.
+
+The set-aside rows are reported, never dropped. Whether the bot's review finished is read by the
+review gate from the bot's check-run (`bot_completion`), not from this surface. The exclusion set is
+derived from the registry — every registered bot's non-empty `completion_check_name` — so a bot that
+declares none sets nothing aside. The provider-neutral contract is in
+[`tools-integration-ci/standards/api-contract.md`](../tools-integration-ci/standards/api-contract.md)
+§ "checks status".
+
 ### github_ops checks wait
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops checks wait \
   --pr-number N [--timeout SECS] [--interval SECS]
 ```
+
+The wait counts CI rows only; a registered review bot's status is reported in
+`review_bot_checks[]` — see § "`github_ops checks status`" above.
 
 ### github_ops checks wait-for-status-flip
 
@@ -919,6 +946,9 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
   --pr-number N [--timeout SECS] [--interval SECS] \
   [--expected {success|failure|any}]
 ```
+
+The polled status is the CI-only conclusion; a registered review bot's status does not hold it at
+`pending` — see § "`github_ops checks status`" above.
 
 ### github_ops checks pull-request-runs
 

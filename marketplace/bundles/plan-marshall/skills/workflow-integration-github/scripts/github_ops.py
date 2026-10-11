@@ -81,8 +81,9 @@ Output: TOON format
 Module layout: this entry file defines the gh/GraphQL primitives and the
 monkeypatch-sensitive data helpers (``run_gh``, ``run_graphql``, ``check_auth``,
 ``get_repo_info``, ``view_pr_data``, ``fetch_pr_comments_data``,
-``format_checks_toon``, ``_fetch_pr_overall_ci_status``,
-``_fetch_issue_state_and_labels``, ``_fetch_failed_run_log``,
+``format_checks_toon``, ``_review_bot_check_names``,
+``_fetch_pr_overall_ci_status``, ``_fetch_issue_state_and_labels``,
+``_fetch_failed_run_log``,
 ``_safe_merge_stuck_state_gate``/``_safe_merge_behind_by_zero``), plus the
 shared ``_resolve_pr_identifier`` and the ``main`` dispatch. The ``cmd_*``
 handler bodies live in the co-located ``_github_pr`` / ``_github_ci`` /
@@ -104,12 +105,14 @@ from functools import partial
 from typing import Any
 from urllib.parse import quote
 
+import bot_registry
 from _github_checks import (  # noqa: F401 — re-exported for callers and tests
     _BUCKET_TO_CONCLUSION,
     _CONCLUSION_FAILING,
     _CONCLUSION_NON_FAILING,
     _CONCLUSION_WAIT,
     _build_failing_check_entry,
+    _build_review_bot_check_entry,
     _classify_check_buckets,
     _derive_overall_status,
     _extract_job_id_from_link,
@@ -120,6 +123,7 @@ from _github_checks import (  # noqa: F401 — re-exported for callers and tests
     _normalize_conclusion,
     _pull_request_event_runs_for_pr,
     _run_names_a_different_pr,
+    _split_review_bot_rows,
 )
 from ci_base import (
     DEFAULT_CI_INTERVAL,
@@ -1114,6 +1118,22 @@ def _fetch_failed_run_log(run_id: str, job_id: str = '') -> str | None:
     return stdout
 
 
+def _review_bot_check_names() -> frozenset[str]:
+    """Return the check names of every registered review bot's commit status.
+
+    The exclusion set the ``gh pr checks`` partition sets aside before it
+    classifies CI rows: a review bot's status is the review gate's concern, not
+    CI's (see ``_github_checks._split_review_bot_rows``). Derived from the bot
+    registry — the ``completion_check_name`` of every registered bot, stripped,
+    with empty names dropped, since a bot that publishes no status declares none.
+
+    Reached by handlers via ``github_ops._review_bot_check_names`` attribute
+    access, so a test's ``monkeypatch.setattr(github_ops, ...)`` is honoured.
+    """
+    names = (bot_registry.completion_check_name(bot_kind).strip() for bot_kind in bot_registry.bot_kinds())
+    return frozenset(name for name in names if name)
+
+
 def _fetch_pr_overall_ci_status(pr_number: int) -> tuple[bool, Any]:
     """Fetch the overall CI status for a PR's head commit.
 
@@ -1121,6 +1141,13 @@ def _fetch_pr_overall_ci_status(pr_number: int) -> tuple[bool, Any]:
     ``pending|success|failure|none``. On failure returns
     ``(False, {'error': ..., 'context': ...})`` so callers can propagate the
     error dict through ``poll_until`` in the same shape used by ``cmd_ci_wait``.
+
+    The status is derived over the CI rows only: the rows named by
+    :func:`_review_bot_check_names` are set aside first, so a pending review-bot
+    status keeps neither ``ci wait-for-status-flip`` nor the fixed-reply hold of
+    ``github_pr.post_responses`` at ``pending``. The return shape carries a status
+    and no rows, so the set-aside rows are not reported here — ``ci status`` and
+    ``ci wait`` report them in ``review_bot_checks[]``.
     """
     returncode, stdout, stderr = run_gh(
         ['pr', 'checks', str(pr_number), '--json', 'name,state,bucket,link,startedAt,completedAt,workflow']
@@ -1135,7 +1162,8 @@ def _fetch_pr_overall_ci_status(pr_number: int) -> tuple[bool, Any]:
     except json.JSONDecodeError:
         return False, {'error': 'Failed to parse gh output', 'context': stdout[:100]}
 
-    overall, _failing_rows, _wait_rows = _derive_overall_status(checks)
+    ci_rows, _review_bot_rows = _split_review_bot_rows(checks, _review_bot_check_names())
+    overall, _failing_rows, _wait_rows = _derive_overall_status(ci_rows)
 
     return True, overall
 
