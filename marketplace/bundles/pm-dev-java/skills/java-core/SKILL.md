@@ -1,6 +1,6 @@
 ---
 name: java-core
-description: Core Java development standards for patterns, modern features, and performance optimization. Inbound input validation at trust boundaries is owned by pm-dev-java:java-security
+description: Core Java development standards for patterns, modern features, and performance optimization, plus the Java production-code review rules a code review cites. Inbound input validation at trust boundaries is owned by pm-dev-java:java-security
 user-invocable: false
 mode: knowledge
 ---
@@ -86,3 +86,13 @@ The Java security surface — inbound input validation (`java-input-validation.m
 - `pm-dev-java:java-lombok` - Lombok patterns
 - `pm-dev-java:junit-core` - JUnit 5 testing patterns
 - `pm-dev-java:javadoc` - JavaDoc documentation standards
+
+## Review Rules
+
+The review rules of the java domain for production code — what a code review looks for in a changed Java class. The block follows the harvestable block contract — see [`review-rubric.md` § 10 "Harvestable review-rule blocks"](../../../plan-marshall/skills/phase-6-finalize/standards/review-rubric.md) for its rules, which are not restated here.
+
+- An `Optional.get()` (or `orElseThrow()` with no message) reached on a path where the value can be absent, so an ordinary empty result throws `NoSuchElementException` instead of taking the absent branch.
+- A class that overrides `equals` without `hashCode`, or computes them over different fields, so two equal instances land in different hash buckets and a `HashMap` or `HashSet` lookup misses the entry.
+- A stream, reader, channel or connection opened outside try-with-resources, so an exception before the close leaks the resource.
+- A `catch` block that is empty, or logs and continues with a `null` or default value, so the caller receives that value as if the operation had succeeded.
+- A check-then-act on shared state (`containsKey` then `put`, a null check then lazy assignment) with no lock and no atomic method such as `computeIfAbsent`, so two threads both pass the check and one write is lost.

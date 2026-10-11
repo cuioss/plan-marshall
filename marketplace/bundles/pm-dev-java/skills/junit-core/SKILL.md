@@ -1,6 +1,6 @@
 ---
 name: junit-core
-description: JUnit 5 core testing patterns with AAA structure, test organization, and coverage standards
+description: JUnit 5 core testing patterns with AAA structure, test organization, and coverage standards, plus the Java test-code review rules a code review cites
 user-invocable: false
 mode: knowledge
 ---
@@ -137,3 +137,12 @@ Replace `${PACKAGE}`, `${CLASS_UNDER_TEST}`, `${METHOD_1}`, and placeholder comm
 | testing-async-patterns.md | Awaitility patterns (never Thread.sleep), the wall-clock exception, deadlines for signal-based waits, transient-state observation, failure-path back-off |
 | coverage-analysis-pattern.md | Coverage analysis, gap improvement, before/after comparison and what it cannot show |
 | test-fork-policy.md | Surefire fork groups by JUnit tag, isolation criteria, the partition guard |
+
+## Review Rules
+
+The review rules of the java domain for test code — what a code review looks for in a changed JUnit test. The block follows the harvestable block contract — see [`review-rubric.md` § 10 "Harvestable review-rule blocks"](../../../plan-marshall/skills/phase-6-finalize/standards/review-rubric.md) for its rules, which are not restated here.
+
+- A test of an exception path written as `try` / `catch` with no `fail()` after the call under test, so the test passes when no exception is thrown at all.
+- A `@Test` method that calls the code under test and asserts nothing about its result, so it passes whatever the code returns.
+- A test that depends on state another test left behind (a static field, a shared file, a declared method order), so it passes or fails by execution order instead of by the behaviour under test.
+- A test that waits with `Thread.sleep` for an asynchronous result instead of an Awaitility condition, so it fails intermittently whenever the result arrives later than the fixed sleep.
