@@ -36,7 +36,7 @@ def _stored(*, fixed: bool = False) -> str:
         reviewed_commit_sha=_HEAD_A,
         raw_input={'body': _OLD_BODY},
     )
-    hash_id = added['hash_id']
+    hash_id: str = added['hash_id']
     if fixed:
         resolved = _findings_core.resolve_finding(PLAN_ID, hash_id, 'fixed', detail='Fixed.', fix_task_number=3)
         assert resolved['status'] == 'success', resolved
@@ -47,13 +47,15 @@ def _stored(*, fixed: bool = False) -> str:
 
 def _update(hash_id: str, body: str | None, **kwargs) -> dict:
     raw_input = {} if body is None else {'body': body}
-    return _findings_core.update_finding_text(
+    result: dict = _findings_core.update_finding_text(
         PLAN_ID, hash_id, detail=_NEW_DETAIL, raw_input=raw_input, reviewed_commit_sha=_HEAD_B, **kwargs
     )
+    return result
 
 
 def _record(hash_id: str) -> dict:
-    return _findings_core.get_finding(PLAN_ID, hash_id)
+    record: dict = _findings_core.get_finding(PLAN_ID, hash_id)
+    return record
 
 
 def test_a_pending_finding_takes_the_new_text_and_the_new_anchor(plan_context):
