@@ -547,8 +547,8 @@ def test_list_finalize_steps_starts_with_built_ins(tmp_path):
     """The discovered list is sorted by order; the lowest-order step is a built-in.
 
     find_implementors sorts all implementors by ``(order, name)``. The repo's
-    lowest-order finalize steps are built-in ``default:`` steps (pre-push-quality-gate
-    at order 5 is the head), so the first entry is a built-in.
+    lowest-order finalize steps are built-in ``default:`` steps (finalize-step-sync-baseline
+    at order 1 is the head), so the first entry is a built-in.
     """
     steps = _run_discovery_in_cwd(tmp_path)
 
@@ -586,7 +586,7 @@ def test_list_finalize_steps_ordered_ascending_by_order(tmp_path):
     project) merged and sorted by ``(order, name)``. The ordering invariant is the
     global ascending order, NOT a "built-ins before project steps" partition —
     project steps interleave by their declared order (e.g. plugin-doctor at order
-    6 precedes default:push at order 11).
+    4 precedes default:push at order 11).
     """
     steps = _run_discovery_in_cwd(tmp_path)
 
@@ -662,12 +662,12 @@ def test_list_finalize_steps_project_skill_order_from_frontmatter(tmp_path):
     """Project finalize-step-* skills expose the `order` declared in their SKILL.md.
 
     Discovery is repo-anchored, so this asserts against a real shipped project
-    step: ``project:finalize-step-plugin-doctor`` declares ``order: 6``.
+    step: ``project:finalize-step-plugin-doctor`` declares ``order: 4``.
     """
     steps = _run_discovery_in_cwd(tmp_path)
 
     doctor = next(s for s in steps if s['name'] == 'project:finalize-step-plugin-doctor')
-    assert doctor['order'] == 6
+    assert doctor['order'] == 4
 
 
 def test_list_finalize_steps_project_skill_order_defaults_to_zero_when_absent():

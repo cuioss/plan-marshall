@@ -11,7 +11,7 @@ bundle script, the embedded map no longer describes the tree — and nothing
 regenerated it. Every subsequent dispatch in that worktree resolves notations
 against a stale map, so a notation introduced upstream cannot be resolved at
 all. EVERY finalize rebase routes through this one verb — callers today include
-``finalize-step-sync-baseline`` (``order: 3``), ``automatic-review``
+``finalize-step-sync-baseline`` (``order: 1``), ``automatic-review``
 (``order: 30``, refusal-recovery path) and ``branch-cleanup`` (``order: 70``) —
 so the refresh belongs here rather than in any caller, and a new caller inherits
 it without having to know it exists.

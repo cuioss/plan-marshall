@@ -314,11 +314,11 @@ Every step doc that declares the finalize-step interface. Built-in steps live un
 
 | Name | Source | Order | default_on | presets |
 |------|--------|-------|:----------:|---------|
-| `default:finalize-step-sync-baseline` | built-in | 3 | true | `[full]` |
-| `project:finalize-step-lessons-housekeeping` | project | 4 | false | `[]` |
-| `default:finalize-step-simplify` | built-in | 5 | true | `[full]` |
-| `project:finalize-step-plugin-doctor` | project | 6 | false | `[]` |
-| `default:finalize-step-security-audit` | built-in | 7 | true | `[]` |
+| `default:finalize-step-sync-baseline` | built-in | 1 | true | `[full]` |
+| `project:finalize-step-lessons-housekeeping` | project | 2 | false | `[]` |
+| `default:finalize-step-simplify` | built-in | 3 | true | `[full]` |
+| `project:finalize-step-plugin-doctor` | project | 4 | false | `[]` |
+| `default:finalize-step-security-audit` | built-in | 5 | true | `[]` |
 | `default:pre-submission-self-review` | built-in | 8 | true | `[]` |
 | `default:architecture-refresh` | built-in | 9 | true | `[]` |
 | `default:pre-push-quality-gate` | built-in | 10 | true | `[full]` |
