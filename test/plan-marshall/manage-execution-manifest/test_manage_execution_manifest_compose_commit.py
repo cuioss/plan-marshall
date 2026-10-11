@@ -55,7 +55,7 @@ def test_commit_and_push_false_emits_one_decision_log_call_per_dropped_step(plan
     """The emitter fires ONCE PER dropped step, not once per fired pre-filter.
 
     Per-step rather than per-pre-filter is the whole correction: the gate drops
-    three steps, and a single aggregate call could only ever name one of them.
+    several steps, and a single aggregate call could only ever name one of them.
     """
     captured: list[tuple[str, str, str]] = []
     original_helper = _mem._log_commit_push_omitted
@@ -108,7 +108,7 @@ def test_commit_and_push_false_decision_log_message_matches_contract(plan_contex
 
     prefix = '(plan-marshall:manage-execution-manifest:compose) [STATUS] commit_push_disabled — dropped '
     omission_entries = [(pid, msg) for pid, msg in captured if msg.startswith(prefix)]
-    # One line per dropped step — three, not one aggregate.
+    # One line per dropped step, not one aggregate.
     assert len(omission_entries) == len(_COMMIT_PUSH_DROP_SET), f'expected one line per dropped step, got {captured!r}'
     assert {pid for pid, _msg in omission_entries} == {'matrix-cap-msg'}
     named_steps = {msg[len(prefix) :].split(' from phase_6.steps: ')[0] for _pid, msg in omission_entries}
@@ -116,6 +116,43 @@ def test_commit_and_push_false_decision_log_message_matches_contract(plan_contex
     # Each line carries a non-empty reason after the separator.
     for _pid, msg in omission_entries:
         assert msg.split(' from phase_6.steps: ', 1)[1]
+
+
+@pytest.mark.parametrize(
+    'commit_and_push,expect_kept',
+    [
+        ('false', False),
+        ('true', True),
+    ],
+)
+def test_functional_review_follows_commit_and_push(plan_context, commit_and_push, expect_kept):
+    """The functional review is a pre-push gate: dropped with the push, kept with it.
+
+    The matched pair is what makes the drop attributable to ``commit_and_push``
+    rather than to some other gate: the same candidates keep the review when a
+    push will occur.
+    """
+    plan_id = f'matrix-cap-functional-{commit_and_push}'
+    result = cmd_compose(
+        _compose_ns(
+            plan_id=plan_id,
+            change_type='feature',
+            scope_estimate='multi_module',
+            affected_files_count=4,
+            commit_and_push=commit_and_push,
+            phase_6_steps=_phase_6_with_every_commit_push_gate(),
+        )
+    )
+    assert result is not None and result['status'] == 'success'
+    dropped = {record['step']: record['reason'] for record in result['commit_push_dropped']}
+    manifest = read_manifest(plan_id)
+    assert manifest is not None
+    if expect_kept:
+        assert 'functional-review' not in dropped
+        assert 'functional-review' in manifest['phase_6']['steps']
+    else:
+        assert dropped.get('functional-review'), 'the drop must carry its own reason'
+        assert 'functional-review' not in manifest['phase_6']['steps']
 
 
 def test_commit_and_push_default_does_not_emit_omission_log(plan_context):
@@ -178,8 +215,8 @@ def test_commit_and_push_false_with_recipe_still_drops_commit_push(plan_context)
 def test_commit_and_push_false_with_prefixed_input_drops_commit_push_and_pre_push(plan_context):
     """Regression — _apply_commit_push_disabled drops both gates with prefixed input.
 
-    ``_apply_commit_push_disabled`` compares candidate entries against the
-    bare-name set ``{push, pre-push-quality-gate, pre-submission-self-review}``.
+    ``_apply_commit_push_disabled`` compares candidate entries against its
+    bare-name drop set (``push`` plus the pre-push gates).
     Without boundary normalization, a ``marshal.json`` that emits prefixed
     candidates (e.g. ``default:push``) would fail that comparison silently and
     leave the gate steps in the manifest despite ``commit_and_push=false``.
@@ -192,6 +229,7 @@ def test_commit_and_push_false_with_prefixed_input_drops_commit_push_and_pre_pus
     are dropped and the manifest output is bare.
     """
     prefixed = [
+        'default:functional-review',
         'default:pre-push-quality-gate',
         'default:push',
         'default:create-pr',
@@ -217,6 +255,7 @@ def test_commit_and_push_false_with_prefixed_input_drops_commit_push_and_pre_pus
     assert {record['step'] for record in result['commit_push_dropped']} == {
         'push',
         'pre-push-quality-gate',
+        'functional-review',
     }
 
     manifest = read_manifest('cap-false-prefixed')
@@ -228,6 +267,7 @@ def test_commit_and_push_false_with_prefixed_input_drops_commit_push_and_pre_pus
     # before the boundary normalization landed).
     assert 'push' not in steps
     assert 'pre-push-quality-gate' not in steps
+    assert 'functional-review' not in steps
 
     # Output is bare — no `default:` prefix anywhere.
     assert not any(s.startswith('default:') for s in steps), f'phase_6 leaked `default:`-prefixed entry: {steps!r}'

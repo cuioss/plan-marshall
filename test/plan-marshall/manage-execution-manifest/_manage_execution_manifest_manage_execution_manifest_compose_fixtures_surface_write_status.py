@@ -4,10 +4,10 @@ from _manage_execution_manifest_manage_execution_manifest_compose_fixtures impor
 
 
 def _phase_6_with_every_commit_push_gate() -> str:
-    """Candidate CSV carrying all three steps ``commit_push_disabled`` can drop."""
+    """Candidate CSV carrying every step ``commit_push_disabled`` can drop."""
     steps = list(DEFAULT_PHASE_6_STEPS)
     insert_at = steps.index('push')
-    for extra in ('pre-push-quality-gate', 'pre-submission-self-review'):
+    for extra in ('pre-push-quality-gate', 'pre-submission-self-review', 'functional-review'):
         if extra not in steps:
             steps.insert(insert_at, extra)
     return ','.join(steps)

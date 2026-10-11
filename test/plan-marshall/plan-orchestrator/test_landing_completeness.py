@@ -32,6 +32,9 @@ Covered:
   ``complete: true``.
 - The payload-spec doc (D3) derives the delta and classifies the seven control
   findings, keeping the false-merge report NARRATIVE-ONLY.
+- The functional review's four verdict facts read back from a landing as
+  ``step.functional-review.*`` optional facts, and a landing without them is still
+  complete.
 """
 
 from __future__ import annotations
@@ -1030,6 +1033,55 @@ class TestLandingCheckCli:
         result = _landing_check(plan_context, f'{SENDER}-404.md')
 
         assert 'error: file_not_found' in result.stdout
+
+
+# =============================================================================
+# The functional verdict facts ride the optional per-step channel
+# =============================================================================
+
+#: The four functional verdict facts, with the values a sample review recorded.
+_FUNCTIONAL_VERDICT_FACTS: dict[str, str] = {
+    'step.functional-review.deliverables_met': '4',
+    'step.functional-review.deliverables_met_with_residuals': '1',
+    'step.functional-review.deliverables_not_met': '0',
+    'step.functional-review.criteria_unevidenced': '2',
+}
+
+
+class TestFunctionalVerdictFacts:
+    """An epic reads whether its plan delivered what it asked for without parsing prose."""
+
+    def test_the_four_facts_read_back_from_a_landing(self):
+        facts = parse_landing_facts(_facts_landing(**_FUNCTIONAL_VERDICT_FACTS))
+
+        assert facts is not None
+        assert {key: facts.get(key) for key in _FUNCTIONAL_VERDICT_FACTS} == _FUNCTIONAL_VERDICT_FACTS
+
+    def test_a_landing_carrying_them_is_complete(self):
+        complete, missing = check_landing_completeness(_facts_landing(**_FUNCTIONAL_VERDICT_FACTS))
+
+        assert complete is True
+        assert missing == []
+
+    def test_a_landing_without_them_is_still_complete(self):
+        """The four keys are optional: a plan whose review never ran still drains complete."""
+        landing = _facts_landing()
+        facts = parse_landing_facts(landing)
+
+        assert facts is not None
+        assert not any(key in facts for key in _FUNCTIONAL_VERDICT_FACTS)
+        assert check_landing_completeness(landing) == (True, [])
+
+    def test_the_required_key_set_is_unchanged(self):
+        assert not set(_FUNCTIONAL_VERDICT_FACTS) & set(LANDING_REQUIRED_KEYS)
+
+    def test_the_spec_names_the_four_facts(self):
+        text = _PAYLOAD_SPEC.read_text(encoding='utf-8')
+        section = text[text.index('## Functional verdict facts') :]
+        section = section[: section.index('\n## ', 1)]
+
+        for key in _FUNCTIONAL_VERDICT_FACTS:
+            assert f'`{key}`' in section, key
 
 
 # =============================================================================

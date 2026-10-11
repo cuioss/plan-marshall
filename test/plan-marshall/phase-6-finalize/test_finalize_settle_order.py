@@ -68,6 +68,13 @@ _MUTATORS = (
     'default:finalize-step-security-audit',
 )
 
+#: The functional review — it grades the settled tree, so it must follow the
+#: mutators and precede the derived-state refresh, the gate and the barrier.
+_FUNCTIONAL_REVIEW = 'default:functional-review'
+
+#: The derived-state refresh that must run after every review of the settled tree.
+_ARCHITECTURE_REFRESH = 'default:architecture-refresh'
+
 
 def _records() -> list[dict]:
     return list(find_implementors(_EXT_POINT))
@@ -186,6 +193,54 @@ def test_self_review_sorts_after_the_code_mutators():
         f'These code-mutating settle steps sort at or after {_SELF_REVIEW} '
         f'(order {review_order}), so the review examines a tree they later '
         f'rewrite: {offenders}'
+    )
+
+
+def test_functional_review_sorts_after_the_mutators_and_before_refresh_gate_and_push():
+    """GATE: the functional review grades the settled tree before anything certifies it.
+
+    Ordered before a code-mutating settle step, the review would grade a diff
+    that step later rewrites; ordered after the derived-state refresh, the quality
+    gate or the push barrier, a blocking finding would surface after the tree it
+    blocks was already refreshed, certified or shipped. Both directions are read
+    off discovery, never a literal order.
+    """
+    review_order = _order_of(_FUNCTIONAL_REVIEW)
+    early = [f'{name} (order {_order_of(name)})' for name in _MUTATORS if _order_of(name) >= review_order]
+    assert not early, (
+        f'These code-mutating settle steps sort at or after {_FUNCTIONAL_REVIEW} '
+        f'(order {review_order}), so the review grades a tree they later rewrite: {early}'
+    )
+    late = [
+        f'{name} (order {_order_of(name)})'
+        for name in (_ARCHITECTURE_REFRESH, _GATE, _PUSH)
+        if _order_of(name) <= review_order
+    ]
+    assert not late, (
+        f'{_FUNCTIONAL_REVIEW} (order {review_order}) must sort strictly before these '
+        f'steps, which act on the tree it grades: {late}'
+    )
+
+
+def test_functional_review_is_head_dependent_and_read_only():
+    """The review's verdict is a function of HEAD, and the review writes no source.
+
+    ``head_dependent: true`` makes a later commit re-fire the review instead of
+    leaving a stale verdict standing; ``mutates_source`` must stay false, or the
+    dispatcher would commit after it and the review would grade a tree it then
+    advanced past. A control on a known source-mutating step proves the reader
+    distinguishes the two answers.
+    """
+    doc_path = _doc_path(_FUNCTIONAL_REVIEW)
+    assert _declares_true(doc_path, 'head_dependent'), (
+        f'{_FUNCTIONAL_REVIEW} must declare head_dependent: true — a review verdict is computed against a HEAD.'
+    )
+    assert not _declares_true(doc_path, 'mutates_source'), (
+        f'{_FUNCTIONAL_REVIEW} must not declare mutates_source: true — the review edits no tracked source.'
+    )
+    assert _declares_true(_doc_path(_GATE), 'mutates_source'), (
+        'control: the reader must report mutates_source: true for the quality gate, '
+        'or the negative assertion above proves nothing'
     )
 
 

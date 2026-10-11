@@ -109,17 +109,17 @@ _RECIPE_PROVENANCE_CASES = [
 # =============================================================================
 
 
-#: The three steps ``commit_push_disabled`` subtracts. ``push`` is directly
-#: disabled; the two gates go because both are only meaningful when a downstream
-#: push exists. All three must be NAMED when present — the former aggregate
-#: reporting named only ``push``, so the two gates vanished unrecorded.
+#: The steps ``commit_push_disabled`` subtracts. ``push`` is directly disabled;
+#: every other member is a pre-push gate that is only meaningful when a
+#: downstream push exists. Every one must be NAMED when present — the former
+#: aggregate reporting named only ``push``, so the gates vanished unrecorded.
 #:
 #: The gate removes the INTERSECTION of this set with the candidate list, so a
-#: test that wants to observe all three drops must put all three in the
-#: candidates. ``DEFAULT_PHASE_6_STEPS`` carries only ``push``, which is exactly
-#: how the old aggregate reporting looked adequate: the common fixture drops one
-#: step, and one step is all an aggregate line can name.
-_COMMIT_PUSH_DROP_SET = {'push', 'pre-push-quality-gate', 'pre-submission-self-review'}
+#: test that wants to observe every drop must put every member in the
+#: candidates. ``DEFAULT_PHASE_6_STEPS`` carries only some of them, which is
+#: exactly how the old aggregate reporting looked adequate: the common fixture
+#: drops few steps, and one step is all an aggregate line can name.
+_COMMIT_PUSH_DROP_SET = {'push', 'pre-push-quality-gate', 'pre-submission-self-review', 'functional-review'}
 
 
 # =============================================================================
