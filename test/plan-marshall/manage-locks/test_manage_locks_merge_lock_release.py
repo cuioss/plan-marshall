@@ -10,6 +10,7 @@ Its sections, in order:
 * Idempotent re-poll — a blocked plan re-polling KEEPS its FIFO position
 * Release advances the FIFO front
 * Release
+* Dequeue-only — ``run_dequeue`` removes the FIFO entry and never touches the lock
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from __future__ import annotations
 import json
 from argparse import Namespace
 
+import pytest
 from _manage_locks_merge_lock_fixtures import (
     _make_live_plan,
     _stub_title_tokens,
@@ -47,15 +49,15 @@ class TestIdempotentRepoll:
         for name in ('front', 'w1', 'w2'):
             _make_live_plan(base, name)
         # front acquires (becomes the live holder); w1 then w2 queue behind it.
-        merge_lock.run_acquire(Namespace(plan_id='front', timeout=5.0))
-        w1 = merge_lock.run_acquire(Namespace(plan_id='w1', timeout=5.0))
-        w2 = merge_lock.run_acquire(Namespace(plan_id='w2', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='front'))
+        w1 = merge_lock.run_acquire(Namespace(plan_id='w1'))
+        w2 = merge_lock.run_acquire(Namespace(plan_id='w2'))
         assert w1['admission'] == 'blocked'
         assert w2['admission'] == 'blocked'
         assert _waiting_plan_ids(isolated_base['queue_path']) == ['front', 'w1', 'w2']
 
         # w1 re-polls while still blocked — it must NOT move behind w2.
-        re_w1 = merge_lock.run_acquire(Namespace(plan_id='w1', timeout=5.0))
+        re_w1 = merge_lock.run_acquire(Namespace(plan_id='w1'))
         assert re_w1['admission'] == 'blocked'
         # The FIFO order is unchanged: w1 still ahead of w2.
         assert _waiting_plan_ids(isolated_base['queue_path']) == ['front', 'w1', 'w2']
@@ -65,12 +67,12 @@ class TestIdempotentRepoll:
         ``waiting`` depth does not grow, the plan appears exactly once."""
         for name in ('front', 'waiter'):
             _make_live_plan(isolated_base['base'], name)
-        merge_lock.run_acquire(Namespace(plan_id='front', timeout=5.0))
-        merge_lock.run_acquire(Namespace(plan_id='waiter', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='front'))
+        merge_lock.run_acquire(Namespace(plan_id='waiter'))
 
         # Re-poll the waiter several times.
         for _ in range(3):
-            res = merge_lock.run_acquire(Namespace(plan_id='waiter', timeout=5.0))
+            res = merge_lock.run_acquire(Namespace(plan_id='waiter'))
             assert res['admission'] == 'blocked'
 
         waiting = _waiting_plan_ids(isolated_base['queue_path'])
@@ -87,7 +89,7 @@ class TestIdempotentRepoll:
         _make_live_plan(base, 'front')
         # 'holder' holds the lock but is NOT in the FIFO queue; 'front' is the
         # queue front behind a foreign live holder.
-        merge_lock.run_acquire(Namespace(plan_id='holder', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='holder'))
         # Drop holder from the queue so 'front' is the genuine FIFO front while
         # 'holder' still holds the lock file.
         merge_lock._dequeue_fifo('holder')
@@ -95,11 +97,11 @@ class TestIdempotentRepoll:
             json.dumps({'waiting': [{'plan_id': 'front', 'ts': 1.0}]}), encoding='utf-8'
         )
 
-        first = merge_lock.run_acquire(Namespace(plan_id='front', timeout=5.0))
+        first = merge_lock.run_acquire(Namespace(plan_id='front'))
         assert first['admission'] == 'blocked'
         assert first['blocking_plan_id'] == 'holder'
         # Re-poll: front stays the front, still blocked by the live foreign holder.
-        again = merge_lock.run_acquire(Namespace(plan_id='front', timeout=5.0))
+        again = merge_lock.run_acquire(Namespace(plan_id='front'))
         assert again['admission'] == 'blocked'
         assert _waiting_plan_ids(isolated_base['queue_path']) == ['front']
 
@@ -118,9 +120,9 @@ class TestReleaseAdvancesFront:
         base = isolated_base['base']
         for name in ('front', 'w1', 'w2'):
             _make_live_plan(base, name)
-        merge_lock.run_acquire(Namespace(plan_id='front', timeout=5.0))
-        merge_lock.run_acquire(Namespace(plan_id='w1', timeout=5.0))
-        merge_lock.run_acquire(Namespace(plan_id='w2', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='front'))
+        merge_lock.run_acquire(Namespace(plan_id='w1'))
+        merge_lock.run_acquire(Namespace(plan_id='w2'))
         assert _waiting_plan_ids(isolated_base['queue_path']) == ['front', 'w1', 'w2']
 
         # The holder releases — it is dequeued, advancing w1 to the front.
@@ -130,10 +132,10 @@ class TestReleaseAdvancesFront:
         assert _waiting_plan_ids(isolated_base['queue_path']) == ['w1', 'w2']
 
         # w1 (now the front) re-polls and is admitted; w2 stays blocked behind it.
-        re_w1 = merge_lock.run_acquire(Namespace(plan_id='w1', timeout=5.0))
+        re_w1 = merge_lock.run_acquire(Namespace(plan_id='w1'))
         assert re_w1['admission'] == 'admitted'
         assert re_w1['holder'] == 'w1'
-        re_w2 = merge_lock.run_acquire(Namespace(plan_id='w2', timeout=5.0))
+        re_w2 = merge_lock.run_acquire(Namespace(plan_id='w2'))
         assert re_w2['admission'] == 'blocked'
         assert re_w2['blocking_plan_id'] == 'w1'
 
@@ -144,16 +146,16 @@ class TestReleaseAdvancesFront:
         base = isolated_base['base']
         for name in ('front', 'w1', 'w2'):
             _make_live_plan(base, name)
-        merge_lock.run_acquire(Namespace(plan_id='front', timeout=5.0))
-        merge_lock.run_acquire(Namespace(plan_id='w1', timeout=5.0))
-        merge_lock.run_acquire(Namespace(plan_id='w2', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='front'))
+        merge_lock.run_acquire(Namespace(plan_id='w1'))
+        merge_lock.run_acquire(Namespace(plan_id='w2'))
 
         # Holder releases → w1 advances to front. The lock file is now free.
         merge_lock.run_release(Namespace(plan_id='front'))
         assert not isolated_base['lock_path'].exists()
 
         # w2 (non-front) re-polls: the lock is free, but w2 is behind w1 → blocked.
-        re_w2 = merge_lock.run_acquire(Namespace(plan_id='w2', timeout=5.0))
+        re_w2 = merge_lock.run_acquire(Namespace(plan_id='w2'))
         assert re_w2['admission'] == 'blocked'
         # w2 stays behind w1 — the front did not change.
         assert _waiting_plan_ids(isolated_base['queue_path']) == ['w1', 'w2']
@@ -165,20 +167,20 @@ class TestReleaseAdvancesFront:
         for name in ('a', 'b', 'c'):
             _make_live_plan(base, name)
         # Enqueue in arrival order: a is admitted, b and c queue behind.
-        merge_lock.run_acquire(Namespace(plan_id='a', timeout=5.0))
-        merge_lock.run_acquire(Namespace(plan_id='b', timeout=5.0))
-        merge_lock.run_acquire(Namespace(plan_id='c', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='a'))
+        merge_lock.run_acquire(Namespace(plan_id='b'))
+        merge_lock.run_acquire(Namespace(plan_id='c'))
 
         served: list[str] = ['a']  # 'a' was admitted first.
 
         # Drain b then c in FIFO order.
         merge_lock.run_release(Namespace(plan_id='a'))
-        b = merge_lock.run_acquire(Namespace(plan_id='b', timeout=5.0))
+        b = merge_lock.run_acquire(Namespace(plan_id='b'))
         assert b['admission'] == 'admitted'
         served.append('b')
 
         merge_lock.run_release(Namespace(plan_id='b'))
-        c = merge_lock.run_acquire(Namespace(plan_id='c', timeout=5.0))
+        c = merge_lock.run_acquire(Namespace(plan_id='c'))
         assert c['admission'] == 'admitted'
         served.append('c')
 
@@ -194,8 +196,8 @@ class TestReleaseAdvancesFront:
         base = isolated_base['base']
         for name in ('front', 'w1'):
             _make_live_plan(base, name)
-        merge_lock.run_acquire(Namespace(plan_id='front', timeout=5.0))
-        merge_lock.run_acquire(Namespace(plan_id='w1', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='front'))
+        merge_lock.run_acquire(Namespace(plan_id='w1'))
 
         rel = merge_lock.run_release(Namespace(plan_id='front'))
         assert rel['action'] == 'released'
@@ -210,7 +212,7 @@ class TestReleaseAdvancesFront:
 
 class TestRelease:
     def test_release_removes_lock(self, isolated_base: dict) -> None:
-        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
         assert isolated_base['lock_path'].is_file()
 
         result = merge_lock.run_release(Namespace(plan_id='plan-a'))
@@ -226,7 +228,7 @@ class TestRelease:
     def test_release_twice_is_idempotent_noop(self, isolated_base: dict) -> None:
         """A second release (after the lock is already freed) is a no-op success —
         a crashed-and-retried finalize must not error on the second release."""
-        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
         first = merge_lock.run_release(Namespace(plan_id='plan-a'))
         assert first['action'] == 'released'
 
@@ -236,7 +238,7 @@ class TestRelease:
 
     def test_release_foreign_holder_is_noop_and_leaves_lock_intact(self, isolated_base: dict) -> None:
         """A caller that is not the recorded holder must not remove the lock."""
-        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
 
         result = merge_lock.run_release(Namespace(plan_id='plan-b'))
         assert result['status'] == 'success'
@@ -254,8 +256,8 @@ class TestRelease:
         base = isolated_base['base']
         for name in ('front', 'waiter'):
             _make_live_plan(base, name)
-        merge_lock.run_acquire(Namespace(plan_id='front', timeout=5.0))
-        merge_lock.run_acquire(Namespace(plan_id='waiter', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='front'))
+        merge_lock.run_acquire(Namespace(plan_id='waiter'))
         assert _waiting_plan_ids(isolated_base['queue_path']) == ['front', 'waiter']
 
         # The waiter gives up: it releases though it never held the lock.
@@ -264,3 +266,86 @@ class TestRelease:
         # The front holder's lock is intact, but the waiter is gone from the queue.
         assert isolated_base['lock_path'].read_text(encoding='utf-8').strip() == 'front'
         assert _waiting_plan_ids(isolated_base['queue_path']) == ['front']
+
+
+# =============================================================================
+# Dequeue-only
+# =============================================================================
+
+
+class TestDequeueOnly:
+    """``run_dequeue`` is the refused-acquire cleanup: it removes the plan's FIFO
+    entry and leaves ``merge.lock`` and the co-tenant ``rate_windows`` key alone —
+    even when the lock's recorded holder is the very plan being dequeued."""
+
+    def test_removes_the_entry_and_reports_the_remaining_depth(self, isolated_base: dict) -> None:
+        base = isolated_base['base']
+        for name in ('front', 'waiter'):
+            _make_live_plan(base, name)
+        merge_lock.run_acquire(Namespace(plan_id='front'))
+        merge_lock.run_acquire(Namespace(plan_id='waiter'))
+
+        result = merge_lock.run_dequeue('waiter')
+
+        assert result['status'] == 'success', result
+        assert result['action'] == 'dequeued', result
+        assert result['waiting_count'] == 1, result
+        assert _waiting_plan_ids(isolated_base['queue_path']) == ['front']
+        assert isolated_base['lock_path'].read_text(encoding='utf-8').strip() == 'front'
+
+    def test_never_removes_a_lock_held_by_the_dequeued_plan(self, isolated_base: dict) -> None:
+        """The contrast with ``run_release``: the holder IS the dequeued plan, and the
+        lock file still survives, because a dequeue never touches the lock."""
+        _make_live_plan(isolated_base['base'], 'plan-a')
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
+
+        result = merge_lock.run_dequeue('plan-a')
+
+        assert result['status'] == 'success', result
+        assert isolated_base['lock_path'].read_text(encoding='utf-8').strip() == 'plan-a'
+        assert _waiting_plan_ids(isolated_base['queue_path']) == []
+
+    def test_preserves_the_rate_windows_key(self, isolated_base: dict) -> None:
+        windows = {'coderabbit': {'holder': 'plan-a', 'pr_number': 7, 'expires_at': 1.0, 'attempts': 1}}
+        isolated_base['queue_path'].write_text(
+            json.dumps({'waiting': [{'plan_id': 'plan-a', 'ts': 1.0}], 'rate_windows': windows}), encoding='utf-8'
+        )
+        _make_live_plan(isolated_base['base'], 'plan-a')
+
+        merge_lock.run_dequeue('plan-a')
+
+        stored = json.loads(isolated_base['queue_path'].read_text(encoding='utf-8'))
+        assert stored['rate_windows'] == windows
+        assert stored['waiting'] == []
+
+    def test_absent_entry_is_an_idempotent_noop_success(self, isolated_base: dict) -> None:
+        first = merge_lock.run_dequeue('never-queued')
+        second = merge_lock.run_dequeue('never-queued')
+
+        assert first['status'] == 'success', first
+        assert first['action'] == 'noop', first
+        assert second['status'] == 'success', second
+        assert second['action'] == 'noop', second
+        assert second['waiting_count'] == 0, second
+        assert not isolated_base['lock_path'].exists()
+
+    def test_second_dequeue_of_a_removed_entry_is_a_noop(self, isolated_base: dict) -> None:
+        _make_live_plan(isolated_base['base'], 'plan-a')
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
+
+        first = merge_lock.run_dequeue('plan-a')
+        second = merge_lock.run_dequeue('plan-a')
+
+        assert first['action'] == 'dequeued', first
+        assert second['action'] == 'noop', second
+
+    def test_queue_failure_is_an_error_payload(self, isolated_base: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+        def guard_timeout(plan_id: str) -> tuple[int, bool]:
+            raise TimeoutError('simulated merge-queue guard timeout')
+
+        monkeypatch.setattr(merge_lock, '_dequeue_fifo_reporting', guard_timeout)
+
+        result = merge_lock.run_dequeue('plan-a')
+
+        assert result['status'] == 'error', result
+        assert 'simulated merge-queue guard timeout' in result['error'], result

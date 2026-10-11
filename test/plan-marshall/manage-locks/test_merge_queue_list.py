@@ -95,7 +95,7 @@ def _queue_list() -> dict:
 
 def _acquire(plan_id: str) -> dict:
     """Drive ``acquire`` with the title-token surface suppressed (no subprocess)."""
-    result: dict = merge_lock.run_acquire(Namespace(plan_id=plan_id, timeout=0.0, set_title_token=False))
+    result: dict = merge_lock.run_acquire(Namespace(plan_id=plan_id, set_title_token=False))
     return result
 
 

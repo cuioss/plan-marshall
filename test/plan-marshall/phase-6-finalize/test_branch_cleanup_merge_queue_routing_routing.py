@@ -134,6 +134,7 @@ Two defects the mutation run exposed in the fix itself, both now locked by
 
 from __future__ import annotations
 
+import argparse
 import ast
 import re
 import sys
@@ -144,7 +145,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import MARKETPLACE_ROOT, PROJECT_ROOT
+from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, load_script_module
 from _merge_shaped_roster import (
     QUEUE_VOCAB_RE,
     ProviderSources,
@@ -343,6 +344,54 @@ def _dispatched_merge_verbs(doc: Path) -> set[str]:
             continue
         verbs.update(_PR_VERB_RE.findall(block))
     return verbs
+
+
+#: The entry point that owns the merge dispatch. The step body reaches a merge verb
+#: ONLY through it, so its executable invocations — not bare ``ci pr`` calls — are
+#: the dispatch population the closure is asserted over.
+_GATE_NOTATION = 'phase-6-finalize:pre_merge_gate'
+
+#: The routed verb inside one ``pre_merge_gate merge`` invocation.
+_GATE_ROUTE_RE = re.compile(r'--route\s+([a-z-]+)')
+
+
+def _gate_dispatches(doc: Path) -> list[str]:
+    """Every fenced block in ``doc`` that EXECUTES ``pre_merge_gate merge``.
+
+    Invocation shape, as for :func:`_dispatched_merge_verbs`: the block must run
+    the executor against the entry point's notation with its ``merge`` verb. The
+    canonical-invocation reference and prose naming the entry point are excluded.
+    """
+    return [
+        block
+        for block in _fenced_blocks(_read(doc))
+        if _EXECUTOR_MARKER in block and _GATE_NOTATION in block and re.search(r'\bmerge\b', block)
+    ]
+
+
+def _gate_routed_verbs(doc: Path) -> set[str]:
+    """The ``--route`` values ``doc``'s ``pre_merge_gate merge`` dispatches select."""
+    routes: set[str] = set()
+    for block in _gate_dispatches(doc):
+        routes.update(_GATE_ROUTE_RE.findall(block))
+    return routes
+
+
+def _entry_point_route_choices() -> frozenset[str]:
+    """The ``--route`` choices the entry point's OWN parser declares.
+
+    Read from the executable argparse surface rather than from prose, so the
+    routed set the document dispatches is cross-checked against the set the
+    script can actually reach.
+    """
+    module = load_script_module(
+        'plan-marshall', 'phase-6-finalize', 'pre_merge_gate.py', 'pre_merge_gate_routing_guard'
+    )
+    parser = module.build_parser()
+    subparsers = next(action for action in parser._actions if isinstance(action, argparse._SubParsersAction))
+    merge_parser = subparsers.choices['merge']
+    route_action = next(action for action in merge_parser._actions if action.dest == 'route')
+    return frozenset(route_action.choices)
 
 
 _OUTCOME_ARM_RE = re.compile(r'^[ \t]*-[ \t]+\*\*(?P<antecedent>[^*]+)\*\*', re.MULTILINE)
@@ -750,18 +799,134 @@ def test_the_decline_routing_predicate_rejects_each_defect_shape():
 
 
 @pytest.mark.parametrize('doc', _DOCUMENT_SET, ids=lambda d: d.name)
-def test_no_member_dispatches_an_unreachable_merge_verb(doc):
-    """No individual member issues ``pr merge`` / ``pr auto-merge``.
+def test_no_member_dispatches_a_bare_merge_verb(doc):
+    """No individual member issues ANY ``ci pr`` merge verb directly.
 
-    The union assertion above proves the SET is closed; this proves it per
-    member, so a document that gained a forbidden dispatch is named directly
-    rather than reported as a set difference.
+    Every merge verb — the two reachable ones included — is reached only through
+    ``pre_merge_gate merge``, because a bare ``ci pr safe-merge`` / ``ci pr
+    merge-queue`` would merge without the findings gate having run. The union
+    assertion below proves the routed SET is closed; this proves, per member, that
+    nothing bypasses the entry point, so a document that regained a bare merge
+    dispatch is named directly.
     """
-    forbidden = _dispatched_merge_verbs(doc) - _EXPECTED_DISPATCH_SET
-    assert not forbidden, (
-        f'{doc.name} dispatches {sorted(forbidden)}, which the closed dispatch set forbids. '
-        'See branch-cleanup.md § "Merge routing (`use_merge_queue`)" → "The dispatch set is '
+    bare = _dispatched_merge_verbs(doc)
+    assert not bare, (
+        f'{doc.name} dispatches the merge verb(s) {sorted(bare)} directly. Every merge-shaped '
+        'dispatch must go through `pre_merge_gate merge`, which issues the routed verb only on a '
+        'clean findings store. See branch-cleanup.md § "Merge routing (`use_merge_queue`)" → '
+        '"The dispatch set is CLOSED".'
+    )
+
+
+def test_dispatch_set_over_the_derived_document_set_is_closed():
+    """(1) Over the UNION of the derived document set, the routed set is exactly two.
+
+    The dispatch population is the ``pre_merge_gate merge`` invocations the step
+    body executes; the routed set is the union of their ``--route`` values. Three
+    independently derived sides must agree: the routes the documents dispatch, the
+    ``--route`` choices the entry point's own parser declares, and the reachability
+    the owning section's table declares. The assertion is bound to the derived
+    document set rather than to a filename, so relocating a merge dispatch into a
+    sibling the step body loads still lands inside it.
+    """
+    per_doc = {doc.name: sorted(_gate_routed_verbs(doc)) for doc in _DOCUMENT_SET}
+    gate_blocks = {doc.name: len(_gate_dispatches(doc)) for doc in _DOCUMENT_SET}
+    union: set[str] = set()
+    for routes in per_doc.values():
+        union.update(routes)
+
+    assert union, (
+        f'ZERO `pre_merge_gate merge` routes were derived across the {len(_DOCUMENT_SET)} '
+        f'document(s) {list(per_doc)} (gate dispatch blocks per document: {gate_blocks}). The '
+        'step body demonstrably merges, and only through the entry point, so an empty '
+        'derivation means the invocation-shape predicate stopped matching — and every closure '
+        'assertion below would pass vacuously.'
+    )
+    assert union == set(_EXPECTED_DISPATCH_SET), (
+        f'The derived routed set is {sorted(union)}, not {sorted(_EXPECTED_DISPATCH_SET)}. Per '
+        f'document: {per_doc}. `ci pr safe-merge` and `ci pr merge-queue` are the ONLY merge '
+        'verbs this step may reach; `ci pr merge` and `ci pr auto-merge` are not reachable from '
+        'it under any condition, and neither is a fallback for the other.'
+    )
+
+    choices = _entry_point_route_choices()
+    assert choices == union, (
+        f'pre_merge_gate declares --route choices {sorted(choices)}, but the step body routes '
+        f'{sorted(union)}. The entry point is what makes the set closed; a choice the body never '
+        'dispatches, or a dispatched route the parser does not declare, means the two moved apart.'
+    )
+
+    # Second, independent side: what the owning section DECLARES as reachable.
+    rows = _DISPATCH_TABLE_ROW_RE.findall(_read(_BRANCH_CLEANUP))
+    assert rows, (
+        'branch-cleanup.md declares no closed-dispatch-set table. The closure must be '
+        'STATED at the owning section — a reader of the step body cannot otherwise tell '
+        'that `ci pr merge` and `ci pr auto-merge` are unreachable rather than merely '
+        'unused today. See § "Merge routing (`use_merge_queue`)" → "The dispatch set is '
         'CLOSED".'
+    )
+    declared_reachable = {verb for verb, mark in rows if mark == 'yes'}
+    declared_unreachable = {verb for verb, mark in rows if mark != 'yes'}
+
+    assert declared_unreachable, (
+        f'The declared dispatch table marks nothing unreachable ({rows}). A table listing '
+        'only the permitted verbs states no closure at all — the whole point is naming the '
+        'verbs that must NOT be reachable.'
+    )
+    assert declared_reachable == union, (
+        f'The section DECLARES {sorted(declared_reachable)} reachable but the derived routed '
+        f'set is {sorted(union)}. The declaration and the executable body must agree; a '
+        'divergence means one of the two silently moved.'
+    )
+    assert not (declared_unreachable & choices), (
+        f'{sorted(declared_unreachable & choices)} is declared unreachable yet is a --route '
+        'choice the entry point accepts.'
+    )
+
+
+def test_merge_routing_decision_precedes_the_dispatch_it_selects():
+    """(4c) The routing line is emitted BEFORE the dispatch, not after it.
+
+    An observability line written after the dispatch records what happened but
+    cannot be read as the reason it happened — and on an aborted run it is never
+    written at all, which is exactly the run whose routing a reader most needs.
+    The dispatch it must precede is the section's first ``pre_merge_gate merge``
+    invocation, the only merge-shaped dispatch the section issues.
+    """
+    text = _read(_BRANCH_CLEANUP)
+    heading = '#### Merge routing (`use_merge_queue`)'
+    start = text.find(heading)
+    assert start != -1, f'{_BRANCH_CLEANUP.name} carries no {heading!r} section.'
+    # Bound the slice at the next heading of the same or higher level: a
+    # later merge dispatch outside this section must not satisfy the search.
+    rest = text[start + len(heading) :]
+    following = re.search(r'\n#{1,4} ', rest)
+    section = text[start : start + len(heading) + following.start()] if following else text[start:]
+
+    log_at = section.find('Branch cleanup merge routing: use_merge_queue=')
+    assert log_at != -1, (
+        'The merge-routing section emits no decision-log line naming the bound '
+        '`use_merge_queue` value and the verb about to be dispatched.'
+    )
+    assert 'pre_merge_gate merge' in section[log_at : section.find('\n', log_at)], (
+        'The merge-routing decision-log line does not name the `pre_merge_gate merge` entry '
+        'point it dispatches through.'
+    )
+
+    dispatch_at = -1
+    for block in _fenced_blocks(section):
+        if _EXECUTOR_MARKER in block and _GATE_NOTATION in block and _GATE_ROUTE_RE.search(block):
+            dispatch_at = section.find(block)
+            break
+    assert dispatch_at != -1, (
+        'The merge-routing section issues no `pre_merge_gate merge` dispatch, so the ordering '
+        'this test asserts has nothing to order against — the section moved and this guard is '
+        'now anchored to the wrong place.'
+    )
+    assert log_at < dispatch_at, (
+        f'The merge-routing decision-log line appears at {log_at}, AFTER the dispatch it '
+        f'selects at {dispatch_at}. Bypass-before-dispatch ordering requires the routing '
+        'decision be recorded before the verb it chooses is issued.'
     )
 
 

@@ -403,6 +403,30 @@ def _task_graph_invalid_payload(
     }
 
 
+def _pr_title_missing_payload(
+    exc: PrTitleMissing,
+    plan_id: str,
+    phase: str,
+) -> dict[str, Any]:
+    """Structured refusal payload for a boundary reached without a PR title.
+
+    Shared by ``cmd_capture`` and ``cmd_verify`` so the two envelopes carry the
+    identical key set — the operator sees one shape whichever verb hit the
+    state. ``producer`` names the lane-correct step that authors the title
+    (the light-lane planning branch on a light-lane plan, phase-2-refine Step
+    13 otherwise) and ``remedy_command`` is the exact call that persists it.
+    """
+    return {
+        'status': 'error',
+        'error': 'pr_title_missing',
+        'plan_id': plan_id,
+        'phase': phase,
+        'producer': exc.producer,
+        'remedy_command': exc.remedy_command,
+        'message': str(exc),
+    }
+
+
 def _row_for_capture(
     _plan_id: str,
     phase: str,
@@ -465,13 +489,7 @@ def cmd_capture(args: Any) -> dict[str, Any]:
             'message': str(exc),
         }
     except PrTitleMissing as exc:
-        return {
-            'status': 'error',
-            'error': 'pr_title_missing',
-            'plan_id': plan_id,
-            'phase': phase,
-            'message': str(exc),
-        }
+        return _pr_title_missing_payload(exc, plan_id, phase)
     except MainCaptureReadTheWorktree as exc:
         return _main_capture_read_the_worktree_payload(exc, plan_id, phase)
     except TaskGraphInvalid as exc:
@@ -603,15 +621,9 @@ def cmd_verify(args: Any) -> dict[str, Any]:
         # renders it as ``error: internal_error`` — the boundary still fails
         # closed, but ``main()`` emits no structured TOON and no stderr
         # verdict mirror, so the operator sees an internal error instead of
-        # the missing title. Same shape as ``cmd_capture`` so the two verbs
-        # cannot drift apart on this state.
-        return {
-            'status': 'error',
-            'error': 'pr_title_missing',
-            'plan_id': plan_id,
-            'phase': phase,
-            'message': str(exc),
-        }
+        # the missing title. Rendered through the payload helper ``cmd_capture``
+        # uses so the two verbs cannot drift apart on this state.
+        return _pr_title_missing_payload(exc, plan_id, phase)
     except TaskGraphInvalid as exc:
         # An invalid task graph is a boundary REFUSAL, not drift. Unlike
         # ``PhaseStepsIncomplete`` / ``BlockingFindingsPresent`` below — whose

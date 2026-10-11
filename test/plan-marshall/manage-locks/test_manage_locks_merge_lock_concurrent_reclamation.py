@@ -82,8 +82,6 @@ class TestConcurrentReclamation:
                 'acquire',
                 '--plan-id',
                 f'reclaim-{i}',
-                '--timeout',
-                '30',
                 env_overrides=env_overrides,
                 timeout=90,
             )
@@ -122,7 +120,7 @@ class TestConcurrentReclamation:
 
         # A LIVE holder owns the lock (its plan dir exists → NOT reclaimable). It is
         # dequeued from the FIFO queue so the racing contenders form the queue.
-        merge_lock.run_acquire(Namespace(plan_id='live-holder', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='live-holder'))
         _make_live_plan(base, 'live-holder')
         merge_lock._dequeue_fifo('live-holder')
 
@@ -138,8 +136,6 @@ class TestConcurrentReclamation:
                 'acquire',
                 '--plan-id',
                 f'contender-{i}',
-                '--timeout',
-                '30',
                 env_overrides=env_overrides,
                 timeout=90,
             )
@@ -179,8 +175,8 @@ class TestConcurrentReclamation:
         ``n-1`` block — turning the stochastic single-shot check into a
         deterministic-under-repetition regression guard. It runs under
         ``PLAN_BASE_DIR`` isolation and is stable under ``pytest-xdist`` ``-n auto``
-        with widened load-sensitive margins (``--timeout 30`` legacy compat flag,
-        ``timeout=90`` outer subprocess kill budget).
+        with a widened load-sensitive margin (``timeout=90`` outer subprocess kill
+        budget).
         """
         base = isolated_base['base']
         lock_path = isolated_base['lock_path']
@@ -200,8 +196,6 @@ class TestConcurrentReclamation:
                 'acquire',
                 '--plan-id',
                 f'reclaim-{i}',
-                '--timeout',
-                '30',
                 env_overrides=env_overrides,
                 timeout=90,
             )
@@ -293,7 +287,7 @@ class TestMainAnchoredResolution:
         (worktree / '.plan' / 'local').mkdir(parents=True)
         monkeypatch.chdir(worktree)
 
-        result = merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-a'))
         assert result['status'] == 'success'
         # The lock AND the queue landed under MAIN's base, not the worktree.
         assert (main_base / 'merge.lock').is_file()

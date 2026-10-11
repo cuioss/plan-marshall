@@ -135,7 +135,7 @@ class TestStoreIsolationFromTheMergeMutex:
         """The converse of the sibling-key-preservation regression: a rate-window
         claim must not create, read, reclaim, or release ``merge.lock``, and must
         not mutate the ``waiting`` FIFO list."""
-        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
         _make_live_plan(isolated_base['base'], 'plan-a')
         waiting_before = _read_store(isolated_base['queue_path'])['waiting']
         lock_before = isolated_base['lock_path'].read_text(encoding='utf-8')
@@ -152,7 +152,7 @@ class TestStoreIsolationFromTheMergeMutex:
     def test_claim_does_not_block_on_a_foreign_merge_lock_holder(self, isolated_base: dict) -> None:
         """A bot cooldown can never stall behind the merge serializer, and vice
         versa: plan-b claims a window while plan-a holds the merge mutex."""
-        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
         _make_live_plan(isolated_base['base'], 'plan-a')
 
         result = _claim('plan-b')
@@ -204,7 +204,7 @@ class TestDegradedState:
             json.dumps({'waiting': 'junk', 'rate_windows': 'junk'}), encoding='utf-8'
         )
 
-        result = merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-a'))
 
         assert result['status'] == 'success', result
         assert result['admission'] == 'admitted'
