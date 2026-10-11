@@ -6,13 +6,28 @@ reviewer (PR-Agent, running under the cuioss-review-bot identity) reads from the
 settings repository ``cuioss/cuioss-review-bot``.
 
 Reads the same source of truth as every other target (``marketplace/bundles/``)
-and emits a REVIEWER ARTIFACT SET rather than an assistant bundle tree: one
-Markdown artifact per derived domain, plus one spine artifact, written under
-``{output_dir}/packs/``. ``emits_bundle_tree`` is therefore ``False``, so the
-CLI skips its generic bundle-tree post-emit steps (version stamping and the
-dist-manifest) for this target.
+and emits a REVIEWER ARTIFACT SET rather than an assistant bundle tree, written
+flat under ``{output_dir}/packs/``. ``emits_bundle_tree`` is therefore ``False``,
+so the CLI skips its generic bundle-tree post-emit steps (version stamping and
+the dist-manifest) for this target.
 
-Three properties of the emission are load-bearing:
+The set is TWO derivations through one machinery:
+
+* **The security set** — ``spine.md`` plus one ``{domain}.md`` per domain derived
+  from the ``*-security`` / ``arch-gate-*`` / ``ext-triage-*`` standards skills.
+* **The code-review set** — ``code-review-spine.md`` plus one
+  ``code-review-{domain}.md`` per domain key the bundles declare through
+  ``get_skill_domains()``. A domain's rules are the ``## Review Rules`` bullets of
+  the default skills its ``core``, ``implementation``, ``module_testing`` and
+  ``quality`` profiles name, restricted to skills of the declaring bundle; the
+  spine carries ``ref-code-quality``'s ``## Review Categories`` and
+  ``## Review Rules``. ``*-security`` skills and ``persona-security-expert`` are
+  excluded by construction, so no security rule reaches a code-review artifact.
+
+The code-review artifacts carry a name prefix rather than living in a
+sub-directory because the publish workflow copies ``packs/*.md`` flat.
+
+Three properties of the emission are load-bearing, for both sets alike:
 
 * **The domain set is DERIVED, never hand-transcribed.** ``discover_domains``
   scans ``marketplace_dir`` for the per-domain standards skills — ``*-security``,
@@ -33,8 +48,8 @@ Three properties of the emission are load-bearing:
   output. The spine is emitted unconditionally and is not selectable: a spine a
   consumer could omit is a charter a consumer could drop.
 
-The substantiation clause and the anti-fabrication clause are carried VERBATIM
-into the spine artifact, and appear in no domain artifact.
+The four charter clauses are carried VERBATIM into each set's spine artifact, and
+appear in no domain artifact of either set.
 
 **The category ceiling is a two-part BUDGET, not a grouping.** The ceiling is an
 observed organisation rule quoted in the ``cuioss/cuioss-review-bot`` settings
@@ -57,6 +72,7 @@ classifier and are not a precedent a new file may follow.
 
 from __future__ import annotations
 
+import ast
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -117,6 +133,35 @@ _WITHHOLDING_PHRASES = (
 )
 
 # ---------------------------------------------------------------------------
+# Derivation rules — the code-review set
+# ---------------------------------------------------------------------------
+
+#: Where a bundle declares its skill domains. The file is READ as source, never
+#: imported: executing it would run bundle code inside the generator and pull in
+#: the extension runtime the publish workflow does not install.
+_EXTENSION_RELPATH = Path('skills') / 'plan-marshall-plugin' / 'extension.py'
+
+#: The class and method whose return value is the domain declaration.
+_EXTENSION_CLASS = 'Extension'
+_DOMAINS_METHOD = 'get_skill_domains'
+
+#: The profiles whose DEFAULT skills feed a domain's code-review rules, in harvest
+#: order. ``core`` is included because several domains state their own standards
+#: only there; ``security`` is absent because the security set owns it.
+_CODE_REVIEW_PROFILES = ('core', 'implementation', 'module_testing', 'quality')
+
+#: Skill inside :data:`SPINE_BUNDLE` whose review blocks are the code-review spine.
+CODE_REVIEW_SPINE_SKILL = 'ref-code-quality'
+
+#: The harvestable block headings of the code-review rulebook.
+_REVIEW_CATEGORIES_HEADING = '## Review Categories'
+_REVIEW_RULES_HEADING = '## Review Rules'
+
+#: Name prefix every code-review artifact carries. A prefix, not a sub-directory:
+#: the publish workflow copies ``packs/*.md`` flat.
+_CODE_REVIEW_PREFIX = 'code-review-'
+
+# ---------------------------------------------------------------------------
 # Composition limits and emission layout
 # ---------------------------------------------------------------------------
 
@@ -164,8 +209,12 @@ _GENERATED_HEADER_MARKER = '<!-- GENERATED ARTIFACT — do not edit by hand.'
 _REGENERATE_COMMAND = './pw generate --target cuioss-review-bot --output target/cuioss-review-bot'
 
 # ---------------------------------------------------------------------------
-# Charter text carried verbatim into the spine artifact
+# Charter text carried verbatim into both spine artifacts
 # ---------------------------------------------------------------------------
+#
+# The same four clauses are stated in the code-review rubric
+# (phase-6-finalize/standards/review-rubric.md § 9), so the in-run code review and
+# the bot work to one charter; a test pins the two byte-identical.
 
 #: The substantiation bar. Carried byte-identical from the org charter; the
 #: generated spine artifact contains it. Kept on ONE line so the clause is a
@@ -532,6 +581,42 @@ def render_pack_artifact(name: str, body: str) -> str:
             f'spine artifact ({_SPINE_ARTIFACT_NAME}.md) and appears in no domain artifact, so this file on its\n'
             'own carries none of it. Apply the spine artifact alongside this one.'
         )
+    return _render_artifact(role, body)
+
+
+def render_code_review_artifact(name: str, body: str) -> str:
+    """Render one code-review artifact: the same do-not-edit header, a code-review role.
+
+    The role text mirrors :func:`render_pack_artifact`'s for the security set, and
+    carries the same caution: pairing a domain artifact with the code-review spine
+    is a request to the reader, not a guarantee this generator enforces.
+
+    Args:
+        name: :data:`_SPINE_ARTIFACT_NAME` for the code-review spine, otherwise a
+            derived code-review domain. The file stem is this name behind
+            :data:`_CODE_REVIEW_PREFIX`.
+        body: The composed body, from :func:`compose_code_review_domain_pack` or
+            :func:`compose_code_review_spine`.
+    """
+    spine_file = f'{_CODE_REVIEW_PREFIX}{_SPINE_ARTIFACT_NAME}.md'
+    if name == _SPINE_ARTIFACT_NAME:
+        role = (
+            'This is the code-review spine artifact. It carries the code-review charter, categories\n'
+            'and cross-cutting rules exactly once. The generator emits it on every run, and it is meant\n'
+            'to apply to every code review whichever code-review domain artifacts a repository selects.'
+        )
+    else:
+        role = (
+            f'This artifact carries the {name} code-review rules alone. The code-review charter lives in\n'
+            f'the code-review spine artifact ({spine_file}) and appears in no code-review domain\n'
+            'artifact, so this file on its own carries none of it. Apply the code-review spine artifact\n'
+            'alongside this one.'
+        )
+    return _render_artifact(role, body)
+
+
+def _render_artifact(role: str, body: str) -> str:
+    """The shared header-plus-body rendering both artifact sets go through."""
     return (
         f'{_GENERATED_HEADER_MARKER}\n'
         f'Derived from the {_SOURCE_REPOSITORY} marketplace (marketplace/bundles/**).\n'
@@ -558,6 +643,323 @@ def compose_packs(marketplace_dir: Path) -> dict[str, str]:
     """
     return {
         domain: compose_domain_pack(contribution) for domain, contribution in discover_domains(marketplace_dir).items()
+    }
+
+
+# ---------------------------------------------------------------------------
+# Code-review derivation — the second artifact set
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CodeReviewDomain:
+    """One derived code-review domain and the rule sources that compose its pack.
+
+    Attributes:
+        domain: The domain key a bundle declares through ``get_skill_domains()``.
+        bundles: Bundles declaring this key, sorted.
+        skills: The ``bundle:skill`` notations the rules were harvested from, in
+            harvest order.
+        rules: The ``## Review Rules`` bullets of those skills, withholding
+            language dropped, deduped, and capped at :data:`MAX_DOMAIN_RULES`.
+    """
+
+    domain: str
+    bundles: tuple[str, ...]
+    skills: tuple[str, ...]
+    rules: tuple[str, ...]
+
+
+def _is_security_skill(skill: str) -> bool:
+    """Whether ``skill`` belongs to the security set and is excluded from code review."""
+    return skill.endswith(_SECURITY_SUFFIX) or skill == SPINE_SKILL
+
+
+def _evaluate_declaration(
+    node: ast.expr, methods: dict[str, ast.FunctionDef], source: Path, resolving: frozenset[str]
+) -> object:
+    """Evaluate one declaration expression without executing the extension.
+
+    A literal evaluates as itself. Two non-literal shapes the bundles use are
+    resolved structurally: a list whose elements need evaluating, and a zero-
+    argument ``self._helper()`` call naming a sibling method that returns a
+    literal. Anything else is refused — a declaration this reader cannot evaluate
+    would otherwise vanish from the derived set without a trace.
+
+    Raises:
+        ValueError: The expression is not a literal and not one of the two shapes.
+    """
+    if isinstance(node, ast.List):
+        return [_evaluate_declaration(element, methods, source, resolving) for element in node.elts]
+    if (
+        isinstance(node, ast.Call)
+        and not node.args
+        and not node.keywords
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == 'self'
+    ):
+        return _method_return_value(node.func.attr, methods, source, resolving)
+    try:
+        return ast.literal_eval(node)
+    except (ValueError, TypeError, SyntaxError) as exc:
+        raise ValueError(
+            f'{source}: {_DOMAINS_METHOD} returns a value this generator cannot read statically '
+            f'(line {node.lineno}); declare the domains as a literal'
+        ) from exc
+
+
+def _method_return_value(
+    name: str, methods: dict[str, ast.FunctionDef], source: Path, resolving: frozenset[str]
+) -> object:
+    """Evaluate the single ``return`` of method ``name`` on the extension class."""
+    if name in resolving:
+        raise ValueError(f'{source}: {name} calls itself while declaring its domains')
+    method = methods.get(name)
+    if method is None:
+        raise ValueError(f'{source}: {_EXTENSION_CLASS}.{name} is called but not defined')
+    returns = [statement for statement in method.body if isinstance(statement, ast.Return)]
+    if len(returns) != 1 or returns[0].value is None:
+        raise ValueError(f'{source}: {_EXTENSION_CLASS}.{name} must end in exactly one return of its value')
+    return _evaluate_declaration(returns[0].value, methods, source, resolving | {name})
+
+
+def _read_declared_domains(extension_py: Path) -> list[dict]:
+    """Read a bundle's ``get_skill_domains()`` declaration out of its source.
+
+    Returns:
+        The declared domain list; empty when the class defines no
+        ``get_skill_domains`` (the inherited default declares no domain).
+
+    Raises:
+        ValueError: The file cannot be read or parsed, defines no extension class,
+            or declares its domains in a shape that is not a list.
+    """
+    try:
+        tree = ast.parse(extension_py.read_text(encoding='utf-8'), filename=str(extension_py))
+    except (OSError, SyntaxError) as exc:
+        raise ValueError(f'cannot read the skill-domain declaration of {extension_py}: {exc}') from exc
+    classes = [node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == _EXTENSION_CLASS]
+    if len(classes) != 1:
+        raise ValueError(f'{extension_py}: expected exactly one class {_EXTENSION_CLASS}, found {len(classes)}')
+    methods = {node.name: node for node in classes[0].body if isinstance(node, ast.FunctionDef)}
+    if _DOMAINS_METHOD not in methods:
+        return []
+    declared = _method_return_value(_DOMAINS_METHOD, methods, extension_py, frozenset())
+    if not isinstance(declared, list) or not all(isinstance(item, dict) for item in declared):
+        raise ValueError(f'{extension_py}: {_DOMAINS_METHOD} must return a list of domain mappings')
+    return declared
+
+
+def _domain_key(declaration: dict, source: Path) -> str:
+    """The non-empty domain key of one declaration."""
+    domain = declaration.get('domain')
+    key = domain.get('key') if isinstance(domain, dict) else None
+    if not isinstance(key, str) or not key:
+        raise ValueError(f'{source}: a declared domain carries no domain.key')
+    return key
+
+
+def _default_skill_notations(declaration: dict, source: Path) -> list[str]:
+    """The ``bundle:skill`` notations the code-review profiles name as defaults, in order.
+
+    A profile entry is either the notation itself or a mapping carrying it under
+    ``skill`` — the bundles use both forms.
+    """
+    profiles = declaration.get('profiles')
+    if not isinstance(profiles, dict):
+        return []
+    notations: list[str] = []
+    for profile in _CODE_REVIEW_PROFILES:
+        spec = profiles.get(profile)
+        defaults = spec.get('defaults') if isinstance(spec, dict) else None
+        for entry in defaults or []:
+            notation = entry.get('skill') if isinstance(entry, dict) else entry
+            if not isinstance(notation, str) or notation.count(':') != 1:
+                raise ValueError(f'{source}: profile {profile!r} names a default skill that is not bundle:skill')
+            if notation not in notations:
+                notations.append(notation)
+    return notations
+
+
+def _harvest_section_bullets(skill_md: Path, heading: str) -> list[str]:
+    """The top-level bullets of one ``##`` section of ``skill_md``.
+
+    A bullet's indented continuation lines join it, so a wrapped rule is one rule.
+    Fenced code is skipped. A skill without the section contributes nothing.
+
+    Raises:
+        ValueError: The file cannot be read — a rule source that could not be read
+            must stop the run, never yield a thinner pack that looks complete.
+    """
+    try:
+        text = skill_md.read_text(encoding='utf-8')
+    except OSError as exc:
+        raise ValueError(f'cannot read the review-rule source {skill_md}: {exc}') from exc
+
+    bullets: list[str] = []
+    in_section = False
+    in_fence = False
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if line.startswith('```'):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if raw_line.startswith('#'):
+            in_section = raw_line.rstrip() == heading
+            continue
+        if not in_section:
+            continue
+        if raw_line.startswith('- '):
+            bullets.append(line[2:].strip())
+        elif bullets and line and raw_line[:1].isspace():
+            bullets[-1] = f'{bullets[-1]} {line}'
+    return [bullet for bullet in bullets if bullet and not _is_withholding(bullet)]
+
+
+def discover_code_review_domains(marketplace_dir: Path) -> dict[str, CodeReviewDomain]:
+    """Derive the code-review domain set from the bundles' domain declarations.
+
+    Every domain key a bundle declares through ``get_skill_domains()`` is a
+    code-review domain, except those the spine bundle declares: its domain feeds
+    the code-review spine, not a pack. A domain's rules come from the default
+    skills its :data:`_CODE_REVIEW_PROFILES` name, restricted to skills of the
+    declaring bundle — a shared skill another bundle owns feeds the spine instead —
+    with every security skill excluded by construction.
+
+    Like :func:`discover_domains`, this takes no bundle allow-list.
+
+    Args:
+        marketplace_dir: Path to ``marketplace/bundles/``.
+
+    Returns:
+        Domain key -> :class:`CodeReviewDomain`, ordered by domain key.
+
+    Raises:
+        ValueError: A declaration or a rule source cannot be read.
+    """
+    # domain -> (declaring bundles, harvested skill notations)
+    collected: dict[str, tuple[set[str], list[str]]] = {}
+    for bundle_dir in sorted(p for p in marketplace_dir.glob('*') if p.is_dir()):
+        bundle = bundle_dir.name
+        extension_py = bundle_dir / _EXTENSION_RELPATH
+        if bundle == SPINE_BUNDLE or not extension_py.is_file():
+            continue
+        for declaration in _read_declared_domains(extension_py):
+            key = _domain_key(declaration, extension_py)
+            bundles, skills = collected.setdefault(key, (set(), []))
+            bundles.add(bundle)
+            for notation in _default_skill_notations(declaration, extension_py):
+                skill_bundle, skill = notation.split(':')
+                if skill_bundle != bundle or _is_security_skill(skill) or notation in skills:
+                    continue
+                skills.append(notation)
+
+    derived: dict[str, CodeReviewDomain] = {}
+    for key in sorted(collected):
+        bundles, skills = collected[key]
+        rules: list[str] = []
+        for notation in skills:
+            skill_bundle, skill = notation.split(':')
+            skill_md = marketplace_dir / skill_bundle / 'skills' / skill / 'SKILL.md'
+            for rule in _harvest_section_bullets(skill_md, _REVIEW_RULES_HEADING):
+                if rule not in rules:
+                    rules.append(rule)
+        derived[key] = CodeReviewDomain(
+            domain=key,
+            bundles=tuple(sorted(bundles)),
+            skills=tuple(skills),
+            rules=tuple(rules[:MAX_DOMAIN_RULES]),
+        )
+    return derived
+
+
+def discover_code_review_spine(marketplace_dir: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Harvest the code-review spine's categories and rules from :data:`CODE_REVIEW_SPINE_SKILL`.
+
+    Returns:
+        ``(categories, rules)`` — both empty when the spine skill is absent (a
+        partial/fixture marketplace).
+
+    Raises:
+        ValueError: The skill declares more categories than the spine's half of
+            the category budget holds. Over the ceiling the remedy is a second
+            focused pass, so the run stops rather than silently dropping one.
+    """
+    skill_md = marketplace_dir / SPINE_BUNDLE / 'skills' / CODE_REVIEW_SPINE_SKILL / 'SKILL.md'
+    if not skill_md.is_file():
+        return (), ()
+    categories = _harvest_section_bullets(skill_md, _REVIEW_CATEGORIES_HEADING)
+    if len(categories) > MAX_CATEGORY_BULLETS - 1:
+        raise ValueError(
+            f'{skill_md} declares {len(categories)} review categories; the code-review spine '
+            f'holds at most {MAX_CATEGORY_BULLETS - 1} (one slot is reserved for the domain bullet)'
+        )
+    return tuple(categories), tuple(_harvest_section_bullets(skill_md, _REVIEW_RULES_HEADING))
+
+
+def compose_code_review_spine(categories: Sequence[str], rules: Sequence[str]) -> str:
+    """Compose the code-review spine body — its charter, rendered exactly once.
+
+    The harvested categories, the harvested cross-cutting rules, and the four
+    charter clauses verbatim. The clauses are unconditional, so a marketplace
+    without the spine skill still yields a spine carrying the charter.
+    """
+    lines: list[str] = ['Report every issue you can substantiate, in these categories:']
+    lines.extend(f'- {category}' for category in categories)
+    if rules:
+        lines.append('')
+        lines.append(
+            "Cross-cutting review rules — this organisation's own rules for every change, whatever its "
+            'language. A diff that breaks one of these is a finding, and the rule already names the mechanism:'
+        )
+        lines.extend(f'- {rule}' for rule in rules)
+    for clause in (SUBSTANTIATION_CLAUSE, INTENT_CLAUSE, SEVERITY_CLAUSE, ANTI_FABRICATION_CLAUSE):
+        lines.append('')
+        lines.append(clause)
+    return '\n'.join(lines) + '\n'
+
+
+def compose_code_review_domain_pack(domain: CodeReviewDomain) -> str:
+    """Compose ONE code-review domain's body — the domain part alone, charter-free.
+
+    The scope line, exactly one category bullet (the domain half of the category
+    budget), and the harvested "Domain rules" block when the domain is
+    rule-bearing.
+    """
+    name = domain.domain
+    if domain.rules:
+        bullet = (
+            f'Defects specific to {name}: the code-review rules this organisation states for {name} code '
+            f'are listed under "Domain rules" below.'
+        )
+    else:
+        bullet = (
+            f'Defects specific to {name}: this organisation states no {name} review rules — apply every '
+            f'code-review spine category to {name} sources and idioms.'
+        )
+    lines: list[str] = [f'This pack is scoped to the {name} domain of a code review.', '', f'- {bullet}']
+    if domain.rules:
+        lines.append('')
+        lines.append(
+            f"Domain rules — this organisation's own code-review standards for {name} code. A diff that "
+            f'breaks one of these is a finding, and the rule already names the mechanism:'
+        )
+        lines.extend(f'- {rule}' for rule in domain.rules)
+    return '\n'.join(lines) + '\n'
+
+
+def compose_code_review_packs(marketplace_dir: Path) -> dict[str, str]:
+    """Compose the charter-free body for every derived code-review domain.
+
+    The code-review spine is not a member — it is emitted separately by
+    :func:`compose_code_review_spine`.
+    """
+    return {
+        key: compose_code_review_domain_pack(domain)
+        for key, domain in discover_code_review_domains(marketplace_dir).items()
     }
 
 
@@ -691,13 +1093,39 @@ class CuiossReviewBotTarget(TargetBase):
                 f'it, or reserve the name in _classify_skill.'
             )
         bodies[_SPINE_ARTIFACT_NAME] = compose_spine(discover_spine_topics(marketplace_dir))
+        artifacts = {name: render_pack_artifact(name, body) for name, body in bodies.items()}
 
+        code_review_bodies = compose_code_review_packs(marketplace_dir)
+        if _SPINE_ARTIFACT_NAME in code_review_bodies:
+            # The same fail-closed collision as above, for the code-review set: a
+            # declared domain key `spine` would be replaced by the code-review spine.
+            raise ValueError(
+                f'declared code-review domain {_SPINE_ARTIFACT_NAME!r} collides with the code-review '
+                f'spine artifact name: one would silently replace the other. Rename the domain key.'
+            )
+        code_review_bodies[_SPINE_ARTIFACT_NAME] = compose_code_review_spine(
+            *discover_code_review_spine(marketplace_dir)
+        )
+        for name, body in code_review_bodies.items():
+            stem = f'{_CODE_REVIEW_PREFIX}{name}'
+            if stem in artifacts:
+                # Both sets share one flat directory, so a security domain whose
+                # name carries the code-review prefix would overwrite (or be
+                # overwritten by) a code-review artifact. Refuse before writing.
+                raise ValueError(
+                    f'artifact {stem!r} is produced by both the security and the code-review set: '
+                    f'one would silently replace the other. Rename the domain that derives it.'
+                )
+            artifacts[stem] = render_code_review_artifact(name, body)
+
+        # Every artifact is composed before the first write, so a compose that
+        # raises leaves the previous set intact.
         packs_dir = output_dir / _PACKS_DIRNAME
         packs_dir.mkdir(parents=True, exist_ok=True)
         written: list[Path] = []
-        for artifact_name, body in bodies.items():
-            path = packs_dir / f'{artifact_name}.md'
-            path.write_text(render_pack_artifact(artifact_name, body), encoding='utf-8')
+        for stem, text in artifacts.items():
+            path = packs_dir / f'{stem}.md'
+            path.write_text(text, encoding='utf-8')
             written.append(path)
         _prune_stale_artifacts(packs_dir, keep=set(written))
         return sorted(written)
@@ -705,6 +1133,8 @@ class CuiossReviewBotTarget(TargetBase):
 
 __all__ = [
     'ANTI_FABRICATION_CLAUSE',
+    'CODE_REVIEW_SPINE_SKILL',
+    'CodeReviewDomain',
     'DomainContribution',
     'INTENT_CLAUSE',
     'MAX_CATEGORY_BULLETS',
@@ -713,10 +1143,16 @@ __all__ = [
     'SEVERITY_CLAUSE',
     'SPINE_CATEGORIES',
     'SUBSTANTIATION_CLAUSE',
+    'compose_code_review_domain_pack',
+    'compose_code_review_packs',
+    'compose_code_review_spine',
     'compose_domain_pack',
     'compose_packs',
     'compose_spine',
+    'discover_code_review_domains',
+    'discover_code_review_spine',
     'discover_domains',
     'discover_spine_topics',
+    'render_code_review_artifact',
     'render_pack_artifact',
 ]

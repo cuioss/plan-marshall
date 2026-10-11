@@ -7,6 +7,10 @@ a run emits an ORTHOGONAL artifact set — one spine-free body per derived domai
 plus the spine carrying the charter exactly once — and the target declares itself
 not-a-bundle-tree so the CLI's generic post-emit steps stay off its output.
 
+This module covers the security set. The code-review set emitted beside it is
+covered by ``test_code_review_packs.py``; here it appears only as the
+``code-review-spine`` artifact every run emits.
+
 Every test builds its own fixture marketplace, so the assertions do not depend on
 which bundles the real marketplace happens to ship today.
 """
@@ -44,6 +48,10 @@ WITHHOLDING_DENY_LIST = (
 #: The stem of the one artifact carrying the charter. Declared locally so the
 #: emission assertions do not share a pivot with the emitter's own constant.
 SPINE_STEM = 'spine'
+
+#: The code-review set's spine. These fixtures declare no skill domains, so the
+#: code-review set they emit is this one artifact, beside the unchanged security set.
+CODE_REVIEW_SPINE_STEM = 'code-review-spine'
 
 
 def _write_skill(
@@ -366,8 +374,13 @@ class TestEmission:
 
         written = CuiossReviewBotTarget().generate(bundles, out)
 
-        assert written == [out / 'packs' / 'java.md', out / 'packs' / 'ruby.md', out / 'packs' / 'spine.md']
-        assert _emitted_stems(out) == ['java', 'ruby', SPINE_STEM]
+        assert written == [
+            out / 'packs' / 'code-review-spine.md',
+            out / 'packs' / 'java.md',
+            out / 'packs' / 'ruby.md',
+            out / 'packs' / 'spine.md',
+        ]
+        assert _emitted_stems(out) == [CODE_REVIEW_SPINE_STEM, 'java', 'ruby', SPINE_STEM]
 
     def test_emitted_set_widens_with_the_derived_set(self, tmp_path):
         """CONTROL for the set identity: the emitted set is derived, not fixed."""
@@ -379,8 +392,8 @@ class TestEmission:
         _write_skill(bundles, 'pm-fixture-ruby', 'ruby-security', prohibited=('Do not eval untrusted input',))
         CuiossReviewBotTarget().generate(bundles, out)
 
-        assert before == ['java', SPINE_STEM]
-        assert _emitted_stems(out) == ['java', 'ruby', SPINE_STEM]
+        assert before == [CODE_REVIEW_SPINE_STEM, 'java', SPINE_STEM]
+        assert _emitted_stems(out) == [CODE_REVIEW_SPINE_STEM, 'java', 'ruby', SPINE_STEM]
 
     def test_emitted_set_narrows_with_the_derived_set(self, tmp_path):
         """The mirror of the widening control: a de-derived domain is PRUNED.
@@ -401,8 +414,8 @@ class TestEmission:
         shutil.rmtree(bundles / 'pm-fixture-ruby')
         written = CuiossReviewBotTarget().generate(bundles, out)
 
-        assert before == ['java', 'ruby', SPINE_STEM]
-        assert _emitted_stems(out) == ['java', SPINE_STEM]
+        assert before == [CODE_REVIEW_SPINE_STEM, 'java', 'ruby', SPINE_STEM]
+        assert _emitted_stems(out) == [CODE_REVIEW_SPINE_STEM, 'java', SPINE_STEM]
         assert not (out / 'packs' / 'ruby.md').exists()
         # the emitted set and the returned set agree — the prune does not strand
         # a path the caller was told was written
