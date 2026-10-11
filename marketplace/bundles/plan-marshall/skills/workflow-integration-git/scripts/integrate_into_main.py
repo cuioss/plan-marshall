@@ -30,8 +30,10 @@ cleanup removes the worktree AFTER this script returns. In one call it:
   3. **MOVES** the plan directory back from the worktree to the main checkout.
   4. **RELEASES** the merge lock it took — once a non-reentrant acquire
      succeeded, the lock is released on every exit path: the success path, the
-     rollback path, a log-fold failure, and an unexpected exception from any of
-     the work after the acquire, so a live plan never strands the lock. The
+     rollback path, a log-fold failure, an unexpected exception from any of the
+     work after the acquire, and an interrupt (``KeyboardInterrupt``,
+     ``SystemExit``), which is re-raised after the release, so a live plan never
+     strands the lock. The
      release outcome is checked: a release that errors, raises, or does not
      report ``action: released`` turns the payload into an error carrying
      ``lock_released: false``, never a plain success. A lock already held by the
@@ -564,7 +566,10 @@ def run_integrate_into_main(args: Namespace) -> dict[str, Any]:
     Once a non-reentrant acquire succeeded, the lock this call took is released
     on every exit path after it — success, move-back rollback, a log-fold
     ``OSError``, and any unexpected exception from the work under the lock, which
-    becomes an error payload after the release. The release outcome is checked:
+    becomes an error payload after the release. A ``BaseException`` that is not
+    an ``Exception`` (``KeyboardInterrupt``, ``SystemExit``) is not converted to
+    a payload: the lock is released and the exception re-raised. The release
+    outcome is checked:
     when it errors, raises, or reports anything but ``action: released``, the
     payload is an error carrying ``lock_released: false`` and
     ``release_failure`` — a success payload is downgraded, an error payload keeps
@@ -678,7 +683,7 @@ def run_integrate_into_main(args: Namespace) -> dict[str, Any]:
         # No lock was acquired — admission still blocked once the bound lapsed, or
         # an attempt errored (a resolution failure, or a queue read-modify-write
         # that raised). Either way an attempt of this bounded wait may already
-        # have FIFO-enqueued the plan, and only a release dequeues it — so undo
+        # have FIFO-enqueued the plan, and the acquire never removes it — so undo
         # that enqueue rather than leave an abandoned entry wedging the plans
         # queued behind it. The cleanup is dequeue-only: it never touches
         # merge.lock, so a same-plan lock created after the refused attempt
@@ -698,6 +703,9 @@ def run_integrate_into_main(args: Namespace) -> dict[str, Any]:
     # Every exception from the work under the lock becomes an error payload, so
     # control always reaches the release below — a live holder that exits
     # without releasing is never reclaimed as stale and wedges every other plan.
+    # A BaseException that is not an Exception (KeyboardInterrupt, SystemExit)
+    # is not converted: it propagates, but only after the lock this call took is
+    # released, so an interrupted integration strands no lock either.
     try:
         payload = _fold_and_move_back(plan_id, wt_global_logs, wt_plan_dir, main_plan_dir)
     except Exception as exc:
@@ -705,6 +713,12 @@ def run_integrate_into_main(args: Namespace) -> dict[str, Any]:
             f'integration failed under the merge lock: {type(exc).__name__}: {exc}',
             plan_id=plan_id,
         )
+    except BaseException:
+        if took_lock:
+            # _release_taken_lock converts its own Exception into a failure
+            # string, so the release can never replace the propagating interrupt.
+            _release_taken_lock(merge_lock, plan_id)
+        raise
 
     # --- Step 4: release the lock this call took, checking the outcome ------
     if took_lock:

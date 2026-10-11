@@ -318,20 +318,32 @@ class TestDequeueOnly:
         assert stored['rate_windows'] == windows
         assert stored['waiting'] == []
 
-    def test_absent_entry_is_an_idempotent_success(self, isolated_base: dict) -> None:
+    def test_absent_entry_is_an_idempotent_noop_success(self, isolated_base: dict) -> None:
         first = merge_lock.run_dequeue('never-queued')
         second = merge_lock.run_dequeue('never-queued')
 
         assert first['status'] == 'success', first
+        assert first['action'] == 'noop', first
         assert second['status'] == 'success', second
+        assert second['action'] == 'noop', second
         assert second['waiting_count'] == 0, second
         assert not isolated_base['lock_path'].exists()
 
+    def test_second_dequeue_of_a_removed_entry_is_a_noop(self, isolated_base: dict) -> None:
+        _make_live_plan(isolated_base['base'], 'plan-a')
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
+
+        first = merge_lock.run_dequeue('plan-a')
+        second = merge_lock.run_dequeue('plan-a')
+
+        assert first['action'] == 'dequeued', first
+        assert second['action'] == 'noop', second
+
     def test_queue_failure_is_an_error_payload(self, isolated_base: dict, monkeypatch: pytest.MonkeyPatch) -> None:
-        def guard_timeout(plan_id: str) -> int:
+        def guard_timeout(plan_id: str) -> tuple[int, bool]:
             raise TimeoutError('simulated merge-queue guard timeout')
 
-        monkeypatch.setattr(merge_lock, '_dequeue_fifo', guard_timeout)
+        monkeypatch.setattr(merge_lock, '_dequeue_fifo_reporting', guard_timeout)
 
         result = merge_lock.run_dequeue('plan-a')
 

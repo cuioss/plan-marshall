@@ -45,7 +45,8 @@ Two primitives live here:
   last-resort orchestrator escalation. **`queue-list`** is the read-only inspection
   of that FIFO queue — ordered entries with each holder's liveness, mutating
   nothing — so diagnosing a `blocked` never requires opening `merge-queue.json` by
-  hand. The same entry point also carries the **rate-window claim** (`rate-window claim` / `check` / `wait` / `release`) — a cross-plan claim on ONE
+  hand. **`dequeue`** removes one plan's FIFO entry without touching the lock — the
+  cleanup for an acquire that took no lock. The same entry point also carries the **rate-window claim** (`rate-window claim` / `check` / `wait` / `release`) — a cross-plan claim on ONE
   review bot's rate window that shares the merge-lock STORE but never the merge
   MUTEX (see below) — and the **`poll-delay`** computation, a bounded random
   delay in seconds. Two verbs of this script wait, both between complete
@@ -119,7 +120,7 @@ cwd. The build-queue file is machine-global — it lives under the home root
 single queue file:
 
 - `waiting` — the FIFO admission queue in FRONT of the `k=1` `merge.lock` mutex.
-  Owned exclusively by `acquire` / `release`.
+  Owned exclusively by `acquire` / `release` / `dequeue`.
 - `rate_windows` — the per-`bot_kind` rate-window claims. Owned exclusively by the
   `rate-window` verbs.
 
@@ -542,6 +543,31 @@ on a `fresh` or `unknown` verdict, so a holder live in a sibling worktree is nev
 token, so there is nothing to clear. Otherwise the release path issues an
 owner-scoped `merge-lock` clear and settles the state for the next render event.
 
+### merge_lock — dequeue
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock dequeue \
+  --plan-id PLAN_ID
+```
+
+Removes `--plan-id`'s entry from the FIFO admission queue and touches nothing
+else: it never reads, creates, or removes `merge.lock`, and never touches the
+`rate_windows` key. It is the cleanup for an `acquire` that took no lock — a
+`status: error` result, or a blocked admission the caller abandons — which must
+undo the FIFO enqueue an attempt may already have made.
+
+⛔ `release` is the wrong verb for that cleanup. `release` unlinks `merge.lock`
+whenever the recorded holder equals `--plan-id`, and a concurrent session for the
+SAME plan shares that one FIFO entry: if it was admitted and created the lock after
+the refused attempt, a `release` deletes its live lock mid-merge and breaks the
+`k=1` mutex. `dequeue` leaves that lock to its holder.
+
+Idempotent. Output: `status: success` with `action: dequeued` (an entry was
+removed) or `action: noop` (none was queued), plus `plan_id` and the post-removal
+`waiting_count`. A queue that cannot be resolved or whose guarded
+read-modify-write fails returns `status: error`. `integrate_into_main` runs the
+same dequeue in-process (`merge_lock.run_dequeue`) for its own refused acquire.
+
 ### merge_lock — budget-reclaim
 
 ```bash
@@ -826,8 +852,8 @@ script.
 
 | Producer / Consumer | Direction | Notation |
 |---------------------|-----------|----------|
-| `workflow-integration-git:integrate_into_main` | consumes | `merge_lock acquire`/`release` around the move-back |
-| `phase-6-finalize/standards/branch-cleanup.md` Pre-Merge Gate | consumes | `merge_lock acquire --wait-seconds` (re-issued under the admission budget on `admission: blocked`)/`check`/`release` |
+| `workflow-integration-git:integrate_into_main` | consumes | `merge_lock acquire`/`release` around the move-back; in-process `run_dequeue` after an acquire that took no lock |
+| `phase-6-finalize/standards/branch-cleanup.md` Pre-Merge Gate | consumes | `merge_lock acquire --wait-seconds` (re-issued under the admission budget on `admission: blocked`)/`check`/`release`; `dequeue` on an acquire `status: error` |
 | build wrappers (`_build_execute_factory`, `_pyproject_execute`) | consume | `build_queue acquire`/`release` around `execute_direct` — the in-process fallback path (unregistered / daemon-down) |
 | `manage-build-server:_marshalld_scheduler` (via the D5 routing seam) | consumes | the same machine-global `build-queue.json` — the registered path (daemon-served builds) |
 | `automatic-review/SKILL.md` rate-limit recovery sequence | consumes | `merge_lock rate-window claim`/`check`/`release` |

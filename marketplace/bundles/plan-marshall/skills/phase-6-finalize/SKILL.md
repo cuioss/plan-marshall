@@ -2270,11 +2270,17 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:pre_merge_gate me
 ```
 
 `--strategy` is required on the `safe-merge` route; `--strategy`, `--delete-branch`
-and `--admin-merge-on-stuck-state` are refused on the `merge-queue` route. The
-command exits `0` on every gate outcome (a malformed call is rejected by argparse
-with exit `2` and no TOON — a STOP, see `branch-cleanup.md`): branch on `dispatched` first — `false` carries the
-findings refusal (`blocking_findings_present`, `query_failed`, …) and nothing was
-merged; `true` carries the routed verb's payload verbatim plus `findings_gate: clean`.
+and `--admin-merge-on-stuck-state` are refused on the `merge-queue` route. Both
+rules are enforced by the gate itself, not by argparse: a call that breaks one
+returns exit `0` with an invocation refusal. Only a call argparse cannot parse
+(a missing required flag, a value outside a `choices` set) exits `2` with no TOON —
+a STOP, see `branch-cleanup.md`. Branch on `dispatched` first, then on
+`refusal_category`. `dispatched: false` with `refusal_category: invocation` is a
+malformed call (`strategy_required`, `flag_not_applicable_to_route`, `unknown_route`):
+nothing was evaluated or merged, and re-issuing the same call refuses again, so
+STOP. `dispatched: false` without that field carries the findings refusal
+(`blocking_findings_present`, `query_failed`, …) and nothing was merged. `true`
+carries the routed verb's payload verbatim plus `findings_gate: clean`.
 `--plan-id` scopes the findings check only and is never forwarded to the CI router.
 
 ### verdict_currency — classify

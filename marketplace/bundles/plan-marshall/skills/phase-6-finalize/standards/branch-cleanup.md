@@ -370,7 +370,7 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock acquire \
   --plan-id {plan_id} --wait-seconds {per_call}
 ```
 
-Follow the **FIFO poll/backoff loop** and **Budget-exhaustion escalation** procedure (see the Pre-Merge Gate section below for the canonical admission-loop body — re-issue `acquire --wait-seconds {per_call}` while it returns `admission: blocked` within budget, evaluate the `admission` discriminator after each call, fall back to the last-resort `AskUserQuestion` on budget exhaustion). On `admission: admitted`, **bind `{hold_start}` immediately with a single standalone `date +%s` Bash call** — its integer POSIX-epoch-seconds output is the value (§ "Merge-Mutex Hold Window" invariant 2 owns this binding) — so the `merge_hold_budget_seconds` bound (see § "Merge-Mutex Hold Window") can be tracked across the held window, then continue to **Rebase Branch onto Base** below. The lock is now held; every operator-wait and abort path from here on obeys the release invariants in § "Merge-Mutex Hold Window".
+Follow the **FIFO poll/backoff loop** and **Budget-exhaustion escalation** procedure (see the Pre-Merge Gate section below for the canonical admission-loop body — re-issue `acquire --wait-seconds {per_call}` while it returns `admission: blocked` within budget, evaluate the `admission` discriminator after each call, fall back to the last-resort `AskUserQuestion` on budget exhaustion, and on an acquire `status: error` run the dequeue-only `merge_lock dequeue` cleanup — never `release`, which would delete a lock a same-plan session created after the refused attempt — before stopping). On `admission: admitted`, **bind `{hold_start}` immediately with a single standalone `date +%s` Bash call** — its integer POSIX-epoch-seconds output is the value (§ "Merge-Mutex Hold Window" invariant 2 owns this binding) — so the `merge_hold_budget_seconds` bound (see § "Merge-Mutex Hold Window") can be tracked across the held window, then continue to **Rebase Branch onto Base** below. The lock is now held; every operator-wait and abort path from here on obeys the release invariants in § "Merge-Mutex Hold Window".
 
 ### Rebase Branch onto Base
 
@@ -607,14 +607,16 @@ Parse the TOON output and branch on the `admission` discriminator:
   - **Elapsed since `{admission_wait_start}` ≥ `merge_hold_budget_seconds`** → run the waiter-side `budget-reclaim` (§ "Merge-Mutex Hold Window" invariant 2); on `action: released` re-issue `acquire`, otherwise fall through to the `{wait_budget}` checks below.
   - **`{waited}` < `{wait_budget}`** → re-issue the single `merge_lock acquire --plan-id {plan_id} --wait-seconds {per_call}` Bash call above with the recomputed `{per_call}`. The FIFO position is preserved across calls, so re-issuing never loses the plan's place in line.
   - **`{waited}` ≥ `{wait_budget}`** → the budget is exhausted; the loop ends and the last-resort `AskUserQuestion` escalation below fires.
-- **`status: error`** (a resolution failure or a queue read-modify-write that raised, distinct from `admission: blocked`) → dequeue, then STOP. A preceding `acquire` of this loop — or a preceding attempt inside the same `--wait-seconds` call — may already have FIFO-enqueued the plan, and an error is no proof that it did not; only a release dequeues, so stopping without one leaves an abandoned entry queued ahead of every plan behind it. Issue the release first — it always dequeues the caller, removes the lock file only when this plan is its recorded holder (§ "Merge-Mutex Hold Window" invariant 4), and is a no-op for a plan with no entry:
+- **`status: error`** (a resolution failure or a queue read-modify-write that raised, distinct from `admission: blocked`) → dequeue, then STOP. A preceding `acquire` of this loop — or a preceding attempt inside the same `--wait-seconds` call — may already have FIFO-enqueued the plan, and an error is no proof that it did not, so stopping without a dequeue leaves an abandoned entry queued ahead of every plan behind it. Issue the dequeue-only verb (see `plan-marshall:manage-locks` Canonical invocations → `merge_lock dequeue`) — it removes this plan's FIFO entry, never reads, creates or removes `merge.lock`, and is a no-op (`action: noop`) for a plan with no entry:
 
   ```bash
-  python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock release \
+  python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock dequeue \
     --plan-id {plan_id}
   ```
 
-  Then STOP and surface the acquire's stderr verbatim per the **Exit-code convention** at the top of this document, whatever the release returned — a failed release is reported alongside the acquire error, never in place of it. Do NOT route a hard error to the escalation prompt — a broken lock primitive is a different signal than queue contention.
+  Do NOT use `merge_lock release` here. An acquire that errored took no lock, and `release` unlinks `merge.lock` whenever the recorded holder equals `{plan_id}`: a concurrent finalize session for the SAME plan shares the one FIFO entry, and if it was admitted after this refused attempt, a `release` deletes its live lock mid-merge and breaks the `k=1` merge mutex. `dequeue` leaves that lock to its holder.
+
+  Then STOP and surface the acquire's stderr verbatim per the **Exit-code convention** at the top of this document, whatever the dequeue returned — a failed dequeue is reported alongside the acquire error, never in place of it. Do NOT route a hard error to the escalation prompt — a broken lock primitive is a different signal than queue contention.
 
 Optionally log each `admission: blocked` call for grep-ability during a run:
 

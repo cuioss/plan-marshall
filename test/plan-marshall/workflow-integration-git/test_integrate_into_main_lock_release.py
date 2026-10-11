@@ -9,6 +9,9 @@ Contract under test:
   an unexpected exception from the move-back, and an unexpected exception from any
   other work under the lock all release the lock this call took and return a
   non-success payload. A live plan therefore never strands the lock.
+* **An interrupt propagates after the release** — a ``KeyboardInterrupt`` or
+  ``SystemExit`` from the work under the lock is re-raised, never converted, and
+  the lock this call took is released first; a reentrant grant is left alone.
 * **A failed release is reported, never folded into success** — a release that
   answers ``status: error``, raises, or reports an action other than ``released``
   turns a success payload into an error carrying ``lock_released: false`` and
@@ -189,6 +192,59 @@ class TestLockTakenIsReleasedOnEveryExitPath:
         assert result['status'] == 'error', result
         assert 'ValueError' in result['error'], result
         assert not lock_path.exists()
+
+
+# =============================================================================
+# An interrupt under the lock propagates after the release
+# =============================================================================
+
+
+_INTERRUPTS = [
+    pytest.param(KeyboardInterrupt, id='keyboard-interrupt'),
+    pytest.param(SystemExit, id='system-exit'),
+]
+
+
+class TestInterruptUnderTheLock:
+    @pytest.mark.parametrize('interrupt', _INTERRUPTS)
+    def test_interrupt_from_the_move_back_releases_then_propagates(
+        self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch, interrupt: type[BaseException]
+    ) -> None:
+        """A BaseException that is not an Exception is never turned into a payload,
+        yet the lock this call took is released before it leaves the call."""
+        lock_path = _use_real_lock(monkeypatch, f'merge_lock_real_release_{interrupt.__name__}')
+
+        def interrupted(src: Path, dst: Path) -> None:
+            assert lock_path.is_file(), 'the move-back must run under the lock'
+            raise interrupt()
+
+        monkeypatch.setattr(integrate_into_main, '_move_back_dir', interrupted)
+
+        with pytest.raises(interrupt):
+            integrate_into_main.run_integrate_into_main(Namespace(plan_id=_PLAN_ID))
+
+        assert not lock_path.exists(), 'an interrupt under the lock stranded the lock this call took'
+
+    def test_interrupt_leaves_a_reentrant_lock_to_its_holder(
+        self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An ``already_held`` grant belongs to the outer holder, so an interrupt
+        propagates without a release from this call."""
+        lock = _ReleaseScriptedLock()
+        monkeypatch.setattr(
+            lock, 'run_acquire', lambda args: {'status': 'success', 'action': 'already_held', 'plan_id': args.plan_id}
+        )
+        _use_stub(monkeypatch, lock)
+
+        def interrupted(src: Path, dst: Path) -> None:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(integrate_into_main, '_move_back_dir', interrupted)
+
+        with pytest.raises(KeyboardInterrupt):
+            integrate_into_main.run_integrate_into_main(Namespace(plan_id=_PLAN_ID))
+
+        assert lock.released == 0
 
 
 # =============================================================================

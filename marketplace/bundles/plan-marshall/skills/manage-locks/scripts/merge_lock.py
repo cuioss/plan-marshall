@@ -39,8 +39,8 @@ is held while it waits. The consumer re-issues the call until admitted or its
 budget is spent. The ``O_EXCL`` mutex stays the final ``k=1`` grant — the FIFO
 layer decides WHO may attempt it, the kernel race decides the single winner.
 
-It exposes seven actions — the three merge-mutex actions, the budget-aware
-``budget-reclaim`` recovery verb, the read-only
+It exposes eight actions — the three merge-mutex actions, the dequeue-only
+``dequeue`` cleanup, the budget-aware ``budget-reclaim`` recovery verb, the read-only
 ``queue-list`` inspection of the FIFO queue, the ``rate-window`` claim that
 co-tenants the same store, and the storeless ``poll-delay`` computation:
 
@@ -94,6 +94,14 @@ co-tenants the same store, and the storeless ``poll-delay`` computation:
     a blind unlink) and REFUSING (``status: refused``,
     ``reason: holder_not_provably_dead``) on a ``fresh`` or ``unknown`` verdict, so
     a holder live in a sibling worktree is never force-released.
+  * ``dequeue`` — remove ``--plan-id`` from ``merge-queue.json`` and nothing else:
+    it never reads, creates, or removes ``merge.lock`` and never touches the
+    ``rate_windows`` key. It is the cleanup for an acquire that took no lock. A
+    ``release`` there would be wrong: it unlinks ``merge.lock`` whenever the
+    recorded holder equals ``--plan-id``, so a concurrent call for the SAME plan
+    admitted after the refused attempt would lose its live lock. Returns
+    ``action: dequeued`` when an entry was removed, ``action: noop`` when none was
+    queued.
   * ``budget-reclaim`` — the waiter-side reclaim for the orchestrator-layer
     ``merge_hold_budget_seconds`` bound: given the recorded ``--hold-start``
     instant and ``--hold-budget-seconds``, a hold still blocked at/past budget
@@ -571,17 +579,34 @@ def _dequeue_fifo(plan_id: str) -> int:
     into the state it was handed rather than replacing it, so the co-tenant
     ``rate_windows`` key survives a merge release.
     """
+    waiting_count, _removed = _dequeue_fifo_reporting(plan_id)
+    return waiting_count
+
+
+def _dequeue_fifo_reporting(plan_id: str) -> tuple[int, bool]:
+    """:func:`_dequeue_fifo` that also reports whether an entry was removed.
+
+    Returns ``(waiting_count, removed)``: the post-removal ``waiting`` depth and
+    ``True`` when the guarded read-modify-write found and dropped an entry for
+    ``plan_id``. ``removed`` is decided inside the same :func:`_locks_core.rmw_json`
+    critical section as the removal, so it describes exactly the state the
+    mutation acted on. An entry the dead-waiter prune dropped in the same pass
+    counts as not removed — it was not this plan's live slot.
+    """
     queue_path = _resolve_merge_queue_path()
     waiting_count = 0
+    removed = False
 
     def _mutate(state: dict[str, Any]) -> dict[str, Any]:
-        nonlocal waiting_count
-        waiting = [e for e in _prune_dead_waiting(_queue_waiting(state)) if e['plan_id'] != plan_id]
+        nonlocal waiting_count, removed
+        pruned = _prune_dead_waiting(_queue_waiting(state))
+        waiting = [e for e in pruned if e['plan_id'] != plan_id]
+        removed = len(waiting) != len(pruned)
         waiting_count = len(waiting)
         return {**state, 'waiting': waiting}
 
     rmw_json(queue_path, _mutate)
-    return waiting_count
+    return waiting_count, removed
 
 
 # ---------------------------------------------------------------------------
@@ -1948,24 +1973,32 @@ def run_dequeue(plan_id: str) -> dict[str, Any]:
     creates, or removes the lock file, and never touches the co-tenant
     ``rate_windows`` key; it runs only the :func:`_dequeue_fifo` read-modify-write.
 
-    Idempotent: dequeuing an absent entry is a no-op success. In-process only — it
-    is not a CLI verb, because the one caller (``integrate_into_main``'s
-    refused-acquire cleanup) loads this module by path.
+    Idempotent: dequeuing an absent entry is a no-op success. Two callers share it:
+    ``integrate_into_main``'s refused-acquire cleanup loads this module by path and
+    calls it in-process, and the ``dequeue`` CLI verb (:func:`run_dequeue_cli`)
+    serves the ``branch-cleanup.md`` admission-loop error arm, which must undo its
+    FIFO enqueue without the same-plan lock hazard ``release`` carries.
 
-    Returns ``status: success`` with ``action: dequeued`` and the post-removal
-    ``waiting_count``, or a ``make_error`` payload when the queue path cannot be
-    resolved or its guarded read-modify-write fails.
+    Returns ``status: success`` with ``action: dequeued`` (an entry for
+    ``plan_id`` was removed) or ``action: noop`` (no entry was queued) plus the
+    post-removal ``waiting_count``, or a ``make_error`` payload when the queue path
+    cannot be resolved or its guarded read-modify-write fails.
     """
     try:
-        waiting_count = _dequeue_fifo(plan_id)
+        waiting_count, removed = _dequeue_fifo_reporting(plan_id)
     except (RuntimeError, TimeoutError, OSError) as exc:
         return make_error(f'merge-queue dequeue failed: {exc}', code=ErrorCode.NOT_FOUND, plan_id=plan_id)
     return {
         'status': 'success',
         'plan_id': plan_id,
-        'action': 'dequeued',
+        'action': 'dequeued' if removed else 'noop',
         'waiting_count': waiting_count,
     }
+
+
+def run_dequeue_cli(args: Namespace) -> dict[str, Any]:
+    """``dequeue`` — the CLI face of :func:`run_dequeue` (FIFO entry only, never the lock)."""
+    return run_dequeue(args.plan_id)
 
 
 def run_budget_reclaim(args: Namespace) -> dict[str, Any]:
@@ -2507,7 +2540,7 @@ def run_rate_window(args: Namespace) -> dict[str, Any]:
 
 
 def main() -> int:
-    """Entry point — ``acquire`` / ``check`` / ``release`` / ``budget-reclaim`` / ``rate-window`` / ``poll-delay``."""
+    """Entry point — the merge-lock, FIFO-queue, rate-window and poll-delay verbs."""
     parser = create_workflow_cli(
         description='Unified merge lock: the single main-anchored merge-to-main serializer with a FIFO admission queue',
         epilog="""
@@ -2516,6 +2549,7 @@ Examples:
   merge_lock.py acquire --plan-id EXAMPLE-PLAN --wait-seconds 480 [--interval-seconds 15]
   merge_lock.py check --plan-id EXAMPLE-PLAN
   merge_lock.py release --plan-id EXAMPLE-PLAN
+  merge_lock.py dequeue --plan-id EXAMPLE-PLAN
   merge_lock.py budget-reclaim --plan-id WAITER-PLAN --hold-start 1699999999.0 --hold-budget-seconds 3600
   merge_lock.py rate-window claim --plan-id EXAMPLE-PLAN --bot-kind coderabbit --pr-number 42 [--window-seconds 3600] [--attempt-cap 6]
   merge_lock.py rate-window check --plan-id EXAMPLE-PLAN --bot-kind coderabbit --pr-number 42
@@ -2609,6 +2643,22 @@ Examples:
                         'dest': 'set_title_token',
                         'action': 'store_false',
                         'help': 'Suppress the terminal-title glyph clear (matches a --no-title-token acquire)',
+                    },
+                ],
+            },
+            {
+                'name': 'dequeue',
+                'help': (
+                    'Remove --plan-id from the FIFO admission queue only — never reads, creates or removes '
+                    'merge.lock (the refused-acquire cleanup; release would delete a same-plan lock)'
+                ),
+                'handler': run_dequeue_cli,
+                'args': [
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'required': True,
+                        'help': 'The plan_id whose FIFO entry is removed (mandatory)',
                     },
                 ],
             },
