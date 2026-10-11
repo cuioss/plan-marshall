@@ -68,7 +68,7 @@ configure · verify · maintain
 | determine_mode | `plan-marshall:marshall-steward:determine_mode` | Determine wizard vs menu mode; also exposes `check-harness` (active harness verification), `check-working-prefixes` (project.working_prefixes presence/drift), and `check-staleness` (health-menu executor/config staleness preflight) |
 | configure_harness | `plan-marshall:marshall-steward:configure_harness` | Deterministic script-only local harness configuration (`.plan/local/harness/{harness}.json`) |
 | gitignore_setup | `plan-marshall:marshall-steward:gitignore_setup` | Configure .gitignore for .plan/ |
-| upgrade | `plan-marshall:marshall-steward:upgrade` | Emit the four-stage `upgrade` verb plan (pure function of `(integrate, project_kind)`); also exposes `migrate-bot-lists`, the idempotent one-shot auto-map of the retired `enabled_bots` knob onto `required_bots` / `optional_bots` driven as the Stage-2 `migrate-bot-lists` sub-step, and `validate-bot-lists`, the read-only report of configured reviewer tokens matching no registered bot kind driven as the Stage-2 `validate-bot-lists` sub-step. The plan's last Stage-2 sub-step, `migrate-architecture-descriptors`, has no subcommand here — it is driven through the `manage-architecture` verbs (see `references/upgrade-flow.md`) |
+| upgrade | `plan-marshall:marshall-steward:upgrade` | Emit the four-stage `upgrade` verb plan (pure function of `(integrate, project_kind)`); also exposes `migrate-review-steps`, the idempotent replacement of the retired `default:pre-submission-self-review` finalize step by `default:functional-review` and `default:code-review` (its `lane`, or a legacy `self_review` run-at-all value, carried to both) driven as the FIRST Stage-2 sub-step, before the defaults merge; `migrate-bot-lists`, the idempotent one-shot auto-map of the retired `enabled_bots` knob onto `required_bots` / `optional_bots` driven as the Stage-2 `migrate-bot-lists` sub-step, and `validate-bot-lists`, the read-only report of configured reviewer tokens matching no registered bot kind driven as the Stage-2 `validate-bot-lists` sub-step. The plan's last Stage-2 sub-step, `migrate-architecture-descriptors`, has no subcommand here — it is driven through the `manage-architecture` verbs (see `references/upgrade-flow.md`) |
 | cache_freshness | `plan-marshall:marshall-steward:cache_freshness` | Fail-closed three-valued plugin-cache freshness verdict (`fresh\|stale\|unknown`) driving the consumer Stage-1 `cache-freshness-check` sub-step |
 | cache_retention | `plan-marshall:marshall-steward:cache_retention` | Union-keep plugin-cache retention sweep (dry run unless `--apply`) driving the Stage-1 `cache-retention-sweep` sub-step behind the `cache-retention-prune` nested gate |
 | bootstrap_plugin | _(direct Python call)_ | Detect plugin root, cache in `.plan/local/marshall-state.toon` |
@@ -996,6 +996,26 @@ python3 .plan/execute-script.py plan-marshall:marshall-steward:gitignore_setup [
 ```bash
 python3 .plan/execute-script.py plan-marshall:marshall-steward:upgrade plan [--integrate {true|false}] [--project-kind {auto|meta|consumer}]
 ```
+
+### upgrade — migrate-review-steps
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:upgrade migrate-review-steps
+```
+
+Takes no arguments and operates on the live `marshal.json`. Driven as the FIRST
+sub-step of upgrade Stage 2, before the defaults merge. It replaces the retired
+`default:pre-submission-self-review` finalize step (or its bare form) in
+`plan.phase-6-finalize.steps` by `default:functional-review` followed by
+`default:code-review`, carrying the retired entry's `lane` to both and mapping a
+legacy `self_review` run-at-all value onto both lanes (`never` → `off`,
+`always` → `minimal`, `auto` → no lane); every other param, the retired
+`drop_review_on_scope_gate` among them, is dropped. A successor the operator
+already configured wins, and a retired id in `removed_steps` is replaced by both
+new ids. Emits `state` (`migrated` | `noop`) and, on `migrated`, `replaced`,
+`added`, `kept`, `carried`, `dropped_params` and `removed_steps_rewritten`.
+Idempotent and self-disarming: a re-run after the retired id is gone is a no-op
+success.
 
 ### upgrade — migrate-bot-lists
 

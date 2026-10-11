@@ -101,6 +101,19 @@ def test_stage2_prose_names_every_sub_step_the_planner_emits():
     )
 
 
+def test_stage2_runs_migrate_review_steps_before_the_defaults_merge():
+    # The review-step migration leads Stage 2 in the prose as in the planner: it is
+    # invoked before `sync-defaults`, so the merge finds both new review ids present
+    # rather than holding them at its ask-before-add gate.
+    block = _stage2_block()
+
+    migrate = block.index('plan-marshall:marshall-steward:upgrade migrate-review-steps')
+    sync_defaults = _invocation_index(block, 'sync-defaults')
+
+    assert migrate < sync_defaults
+    assert _stage2_emitted_sub_steps()[0] == 'migrate-review-steps'
+
+
 def test_stage2_runs_migrate_bot_lists_after_the_reconcile_verbs():
     # Order within the emitted set: the migration follows the three reconcile
     # verbs and precedes the build-map drift gate, matching the emitted order.
