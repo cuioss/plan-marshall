@@ -44,6 +44,12 @@ And of the **CodeRabbit "nothing new to review" replies**
 (:data:`CODERABBIT_NO_UNREVIEWED_COMMIT_REPLIES`) — the refusals whose condition is
 ``no_unreviewed_commit`` — each carrying the provenance of its wording, beside the
 matched command reply that is a rate limit (:data:`CODERABBIT_RATE_LIMITED_COMMAND_REPLY`).
+
+And of the **CodeRabbit verdict marker** (:data:`CODERABBIT_VERDICT_MARKER`, read from the
+registry) with its wrapper :func:`coderabbit_verdict`, the **in-progress summary bodies**
+(:func:`coderabbit_in_progress_summaries`) that carry no marker yet name the head, and the
+**finished review** that replaces them (:func:`coderabbit_finished_review`) — each with the
+provenance of its wording.
 """
 
 from __future__ import annotations
@@ -301,3 +307,89 @@ CODERABBIT_NO_UNREVIEWED_COMMIT_REPLY_COUNT: int = len(CODERABBIT_NO_UNREVIEWED_
 #: The matched body: a declined command reply from the same bot, in the same disclosure,
 #: that IS a limit. Its condition is ``rate_limited``.
 CODERABBIT_RATE_LIMITED_COMMAND_REPLY = _declined_command_reply('Review rate limited.')
+
+#: The bot the verdict-marker bodies below belong to.
+VERDICT_MARKER_BOT_KIND = 'coderabbit'
+
+#: The literal CodeRabbit's finished review carries in its ``issue_comment`` — read from
+#: the registry, never restated, so a changed marker moves every fixture built on it.
+#: A comment of this bot in that shape is a re-review answer only when it carries it.
+CODERABBIT_VERDICT_MARKER: str = bot_registry.participation_evidence_marker(VERDICT_MARKER_BOT_KIND, 'issue_comment')
+if not CODERABBIT_VERDICT_MARKER:
+    raise VacuousPopulationError(
+        'CODERABBIT_VERDICT_MARKER is blank — the registry declares no issue_comment marker for '
+        'coderabbit, so every marker-gate case built on it would test an ungated bot.'
+    )
+
+
+def coderabbit_verdict(body: str) -> str:
+    """Wrap ``body`` in CodeRabbit's verdict marker, as its finished review is published."""
+    return f'{CODERABBIT_VERDICT_MARKER}\n{body}'
+
+
+#: Provenance of an in-progress summary body. Neither was read off a live comment in
+#: full: CodeRabbit edits its summary comment in place, so the in-progress state on
+#: ``cuioss/plan-marshall#1742`` was overwritten by the finished review before its full
+#: body could be captured. Each body is RECONSTRUCTED around the wording that was
+#: recorded from that comment — "Currently processing new changes ... between 8fc4ed52
+#: and c6571e10", and a "review in progress" summary over the head's files — with the
+#: base and head commits parametrised so a case can make the body name the awaited head.
+IN_PROGRESS_RECONSTRUCTED = 'reconstructed'
+
+
+def coderabbit_in_progress_summaries(base_sha: str, head_sha: str) -> tuple[tuple[str, str, str], ...]:
+    """Return ``(case id, body, provenance)`` for CodeRabbit's summary in its in-progress state.
+
+    Both bodies name ``head_sha`` as the end of the range under review and carry no
+    verdict marker — the shape that ended a re-review wait as a verified answer while
+    the review was still running. See :data:`IN_PROGRESS_RECONSTRUCTED` for what was
+    observed and what was rebuilt.
+    """
+    range_line = f'Reviewing files that changed from the base of the PR and between {base_sha} and {head_sha}.'
+    return guard_non_empty(
+        (
+            (
+                'currently-processing',
+                '<!-- This is an auto-generated comment: summarize by coderabbit.ai -->\n'
+                '> [!NOTE]\n'
+                '> ## Currently processing new changes in this PR. This may take a few minutes, please wait...\n'
+                '>\n'
+                '> <details>\n'
+                '> <summary>📥 Commits</summary>\n'
+                '>\n'
+                f'> {range_line}\n'
+                '>\n'
+                '> </details>',
+                IN_PROGRESS_RECONSTRUCTED,
+            ),
+            (
+                'review-in-progress',
+                '<!-- This is an auto-generated comment: summarize by coderabbit.ai -->\n'
+                '## Walkthrough\n\n'
+                'The review is in progress over the files changed by the head commit.\n\n'
+                '<details>\n'
+                '<summary>📒 Files selected for processing (2)</summary>\n\n'
+                '* `src/idx.py` (1 hunks)\n'
+                '* `src/retry.py` (2 hunks)\n\n'
+                '</details>\n\n'
+                f'{range_line}',
+                IN_PROGRESS_RECONSTRUCTED,
+            ),
+        ),
+        'coderabbit_in_progress_summaries',
+        'the literal in-progress summary bodies declared in _github_pr_fixtures',
+    )
+
+
+def coderabbit_finished_review(base_sha: str, head_sha: str) -> str:
+    """Return the finished review that replaces the in-progress summary — the matched control.
+
+    The same range line, now inside the verdict marker the finished review carries.
+    Reconstructed like the in-progress bodies; what makes it the answer is the marker,
+    not its wording.
+    """
+    return coderabbit_verdict(
+        'Actionable comments posted: 1. The retry loop at `src/retry.py:12` can spin forever when '
+        'the backoff cap is zero — guard the cap before entering the loop.\n\n'
+        f'Reviewing files that changed from the base of the PR and between {base_sha} and {head_sha}.'
+    )

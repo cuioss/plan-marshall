@@ -23,10 +23,13 @@ never on an internal call.
 2. **A marker-bearing clean review resolves ``participated_but_empty`` and renders
    ``empty``.** Every comment of a clean review is dropped as noise, so the credit is
    the only thing between it and ``absent``.
-3. **A republished comment naming the awaited HEAD does not resolve ``declined``.**
-   Before the comment arm read its body, every comment match published
-   ``head_sha_verified: false`` and the step recorded a decline the bot never made —
-   the blocking member whose remedy is to accept it rather than re-trigger.
+3. **A republished summary is no re-review answer.** It carries no verdict marker, so
+   the matcher's marker gate leaves the wait unmatched, no decline is recorded, and the
+   bot stays ``absent``.
+4. **A verdict naming the awaited HEAD does not resolve ``declined``; one naming
+   another commit does.** Before the comment arm read its body, every comment match
+   published ``head_sha_verified: false`` and the step recorded a decline the bot never
+   made — the blocking member whose remedy is to accept it rather than re-trigger.
 """
 
 from __future__ import annotations
@@ -49,6 +52,9 @@ _PR_NUMBER = 1500
 #: The merge candidate, a real 40-hex SHA so the body-derived verdict can extract it.
 _HEAD_SHA = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
 _HEAD_SHA_URL = f'https://github.com/cuioss/plan-marshall/commit/{_HEAD_SHA}'
+
+#: A different full commit — the reference a verdict for some other commit carries.
+_OTHER_SHA = '0f1e2d3c4b5a69788796a5b4c3d2e1f098765432'
 
 #: The re-review trigger time; every comment below is edited in place after it.
 _TRIGGER = '2026-01-01T00:02:00Z'
@@ -89,7 +95,13 @@ def _comment(comment_id, body):
 
 
 def _stub_provider(monkeypatch, comments):
-    """Stub the GitHub provider surface the producer AND the re-review await reach."""
+    """Stub the GitHub provider surface the producer AND the re-review await reach.
+
+    The await consults the bot's completion check-run whenever a poll would end on a
+    match; that read is held at NOT OBSERVED RUNNING, so no scenario reaches ``gh``
+    and none depends on whether a real PR's check happens to be running.
+    """
+    monkeypatch.setattr(github_re_review, 'read_bot_in_progress', lambda _pr_number, _bot_kind: False)
     for module in (github_pr, github_re_review):
         monkeypatch.setattr(module._github, 'check_auth', lambda: (True, ''))
         monkeypatch.setattr(module._github, 'fetch_pr_head_sha', lambda pr_number: _HEAD_SHA)
@@ -181,8 +193,8 @@ def test_a_marker_bearing_clean_review_resolves_empty(plan_context, monkeypatch)
 def _re_review():
     """The re-review await for the merge candidate.
 
-    Every scenario's comment post-dates the trigger, so the first poll completes and
-    the real poll loop never sleeps.
+    Every scenario's comment post-dates the trigger, so a matching poll completes at
+    once; an unmatched await is bounded by its one-second budget.
     """
     strategy = github_re_review.resolve_strategy(_BOT)
     envelope = strategy.await_fresh_review(_PR_NUMBER, _HEAD_SHA, _TRIGGER, bot_kind=_BOT, timeout=1, interval=0)
@@ -195,28 +207,75 @@ def _declined_after_re_review(envelope):
     return [_BOT] if envelope['matched'] and not envelope['head_sha_verified'] else []
 
 
-def test_a_republished_comment_naming_the_head_is_not_a_decline(plan_context, monkeypatch):
-    """Scenario 3 — the bot named the commit it reviewed, so the step records no decline.
+def test_a_republished_summary_is_no_answer_and_records_no_decline(plan_context, monkeypatch):
+    """Scenario 3 — a summary naming the head is no re-review answer, so nothing is declined.
 
-    Fails when the body-derived verdict is reverted: the comment arm then publishes
-    ``head_sha_verified: false`` for this comment, the step forwards CodeRabbit in
-    ``--declined-bots``, and the bot resolves ``declined`` — whose remedy is to accept
-    the decline rather than re-trigger a reviewer that did review this HEAD.
+    The comment is a republished SUMMARY: it carries no verdict marker, so the producer
+    credits nothing for it, and the re-review matcher — which applies the same marker
+    gate — does not take it as the answer either. The await ends unmatched, the step
+    forwards no decline, and the bot stays ``absent``: still awaiting its verdict, and
+    still re-triggerable.
 
-    The comment is a republished SUMMARY, so it carries no verdict marker and the
-    producer credits nothing for it; the bot therefore stays ``absent`` — still
-    awaiting its verdict, and still re-triggerable — rather than ``declined``.
+    Fails when the matcher's marker gate is reverted: the summary then ends the wait
+    as a match, the step reads a verdict off a review that never finished, and a body
+    naming no commit would be forwarded as a decline the bot never made.
     """
-    plan_id = 'crr-republished-names-head'
+    plan_id = 'crr-republished-summary'
     _stub_provider(monkeypatch, [_comment('cr-summary', _REPUBLISHED_SUMMARY)])
 
     envelope = _re_review()
     result = _classify(plan_id, _find(plan_context, plan_id), declined_bots=_declined_after_re_review(envelope))
 
-    assert envelope['matched'] is True
-    assert _state_of(result, _BOT) != rc.STATE_DECLINED
+    assert envelope['matched'] is False
+    assert envelope['refusal_detected'] is False
+    assert _declined_after_re_review(envelope) == []
     assert _state_of(result, _BOT) == rc.STATE_ABSENT
     assert result['review_state_summary'] == '1 absent'
+
+
+def _verdict_naming(reference):
+    """A marker-bearing CodeRabbit verdict, republished in place, naming ``reference``."""
+    return f'{_CLEAN_VERDICT} (Review updated until commit {reference})' if reference else _CLEAN_VERDICT
+
+
+def test_a_verdict_naming_the_head_is_not_a_decline(plan_context, monkeypatch):
+    """Scenario 3b — the verdict named the commit it reviewed, so the step records no decline.
+
+    Fails when the body-derived verdict is reverted: the comment arm then publishes
+    ``head_sha_verified: false`` for this comment, the step forwards CodeRabbit in
+    ``--declined-bots``, and the bot resolves ``declined`` — whose remedy is to accept
+    the decline rather than re-trigger a reviewer that did review this HEAD.
+    """
+    plan_id = 'crr-verdict-names-head'
+    _stub_provider(monkeypatch, [_comment('cr-verdict', _verdict_naming(f'[{_HEAD_SHA[:7]}]({_HEAD_SHA_URL})'))])
+
+    envelope = _re_review()
+    result = _classify(plan_id, _find(plan_context, plan_id), declined_bots=_declined_after_re_review(envelope))
+
+    assert envelope['matched'] is True
+    assert envelope['head_sha_verified'] is True
+    assert _state_of(result, _BOT) != rc.STATE_DECLINED
+
+
+def test_a_verdict_naming_another_commit_is_still_a_decline(plan_context, monkeypatch):
+    """⛔ MATCHED NEGATIVE CONTROL for scenario 3b — the same verdict naming another commit declines.
+
+    Same builder, same timestamps, same producer run; only the commit the body names
+    differs. The bot answered with a finished verdict for a commit that is not the
+    merge candidate, so the step records the decline, the producer credits nothing for
+    this HEAD, and the bot resolves ``declined``. Without this control, scenario 3b
+    would pass just as well against a verdict that never declines anything.
+    """
+    plan_id = 'crr-verdict-other-commit'
+    _stub_provider(monkeypatch, [_comment('cr-verdict', _verdict_naming(_OTHER_SHA))])
+
+    envelope = _re_review()
+    result = _classify(plan_id, _find(plan_context, plan_id), declined_bots=_declined_after_re_review(envelope))
+
+    assert envelope['matched'] is True
+    assert envelope['head_sha_verified'] is False
+    assert _state_of(result, _BOT) == rc.STATE_DECLINED
+    assert result['participation_complete'] is False
 
 
 @pytest.mark.parametrize(
@@ -226,21 +285,24 @@ def test_a_republished_comment_naming_the_head_is_not_a_decline(plan_context, mo
         pytest.param(f'[{_HEAD_SHA[:7]}]', id='names-only-an-abbreviation'),
     ],
 )
-def test_a_republished_comment_not_naming_the_head_is_still_a_decline(plan_context, monkeypatch, reference):
-    """⛔ MATCHED NEGATIVE CONTROL for scenario 3 — the same comment without the HEAD declines.
+def test_a_verdict_naming_no_head_is_recorded_as_a_decline(plan_context, monkeypatch, reference):
+    """The step forwards a decline for a finished verdict that names no full HEAD.
 
-    Same builder, same timestamps, same producer run; only the body's reference to the
-    merge candidate is gone. The bot answered without naming this HEAD, so the step
-    records the decline and the bot resolves ``declined``. Without this control,
-    scenario 3 would pass just as well against a verdict that never declines anything.
+    The matcher's verdict is what the step reads, so the decline is recorded here
+    whatever the producer concluded. The classifier then ranks the producer's own
+    credit above it: a verdict naming no commit is credited on its first observation at
+    a resolvable merge candidate, and proven participation outranks a decline by design
+    (``review_completeness.classify_bot``), so the bot resolves as reviewed-and-clean
+    rather than ``declined``.
     """
-    plan_id = f'crr-republished-{"abbrev" if reference else "no-commit"}'
-    body = f'{_WALKTHROUGH} (Review updated until commit {reference})' if reference else _WALKTHROUGH
-    _stub_provider(monkeypatch, [_comment('cr-summary', body)])
+    plan_id = f'crr-verdict-{"abbrev" if reference else "no-commit"}'
+    _stub_provider(monkeypatch, [_comment('cr-verdict', _verdict_naming(reference))])
 
     envelope = _re_review()
-    result = _classify(plan_id, _find(plan_context, plan_id), declined_bots=_declined_after_re_review(envelope))
+    declined = _declined_after_re_review(envelope)
+    result = _classify(plan_id, _find(plan_context, plan_id), declined_bots=declined)
 
     assert envelope['matched'] is True
-    assert _state_of(result, _BOT) == rc.STATE_DECLINED
-    assert result['participation_complete'] is False
+    assert envelope['head_sha_verified'] is False
+    assert declined == [_BOT]
+    assert _state_of(result, _BOT) == rc.STATE_PARTICIPATED_BUT_EMPTY

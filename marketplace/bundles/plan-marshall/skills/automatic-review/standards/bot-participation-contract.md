@@ -270,7 +270,10 @@ that: a map from a declared publish shape to the literal a comment in that shape
 A comment in a gated shape without the literal is **not evidence** — it is neither credited nor
 reported as a stale publish, because it is not a review artifact at all. The producer applies the gate
 before the currency test (`github_pr._is_participation_evidence`, read through
-`bot_registry.participation_evidence_marker`), so no bot name enters the code.
+`bot_registry.participation_evidence_marker`), so no bot name enters the code. The re-review matcher
+reads the same `issue_comment` entry: a comment in that shape without the literal is no answer to a
+re-review request either, so the wait does not end on a review that has only started
+(`github_re_review._ReReviewStrategy._match_bot_comment`).
 
 **The gate is FAIL-OPEN on an absent declaration.** A shape with no entry — and every shape of a bot
 that declares no map — credits on the shape alone, exactly as it did before the field existed. That

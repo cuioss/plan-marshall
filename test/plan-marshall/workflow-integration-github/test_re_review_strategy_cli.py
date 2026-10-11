@@ -72,6 +72,7 @@ import bot_registry
 import ci_base
 import github_re_review
 import pytest
+from _github_pr_fixtures import coderabbit_verdict
 
 _NO_RECORD_WINDOW = {'status': 'free', 'expired': True, 'holder': '', 'seconds_remaining': 0.0}
 
@@ -113,8 +114,8 @@ def _neutralize_rate_window(monkeypatch):
 def _neutralize_in_progress_read(monkeypatch):
     """Hold the completion read at NOT OBSERVED RUNNING for every test here.
 
-    A poll that would end on a comment naming no commit consults
-    ``read_bot_in_progress``, which reads the awaited bot's check-run through ``gh``.
+    A poll that would end on a match consults ``read_bot_in_progress``, which reads
+    the awaited bot's check-run through ``gh``.
     Default-on, so no case in this module shells out or depends on a real PR's check.
     The matched pair proving this fixture lives in ``test_re_review_strategy_match.py``.
     """
@@ -257,7 +258,7 @@ _CODERABBIT_COMMAND_REPLY_REFUSAL = (
     'already reviewed commits. This command is applicable only when automatic '
     'reviews are paused. </details>'
 )
-_CODERABBIT_GENUINE_COMMENT = (
+_CODERABBIT_GENUINE_COMMENT = coderabbit_verdict(
     'Actionable comments posted: 1. The retry loop can spin forever when the backoff '
     'cap is zero — guard the cap before entering the loop.'
 )

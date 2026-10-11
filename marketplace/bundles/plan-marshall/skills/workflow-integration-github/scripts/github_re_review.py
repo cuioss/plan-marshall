@@ -35,7 +35,9 @@ two completion signals, checked in that order of strength:
    recognised only the bare shape, dropped a URL-shaped review onto signal 2, and
    published ``head_sha_verified: false`` for a HEAD the bot HAD reviewed.
 2. An **issue comment** authored by the awaited ``bot_kind`` whose later of
-   ``updated_at`` / ``created_at`` post-dates ``trigger_time``. Reported as
+   ``updated_at`` / ``created_at`` post-dates ``trigger_time`` and which, for a
+   bot declaring an ``issue_comment`` verdict marker, carries that marker (see
+   "A comment without the bot's verdict marker is not an answer" below). Reported as
    ``matched_signal: issue_comment``, with ``head_sha_verified`` decided by the
    SAME :func:`_references_head_sha` predicate the review path uses, run over the
    comment BODY.
@@ -132,16 +134,34 @@ a bot that never responded at all. A refusal the stack can READ still outranks
 it; the class displaces only the enumerative arm, which would otherwise read the
 short anchor-less acknowledgment as a refusal nobody could read.
 
-**A non-verifying answer is WITHHELD while the bot's review is still running.**
-When the matched comment does not reference the awaited HEAD and the bot's
-completion check-run is positively observed in progress
-(:func:`read_bot_in_progress`), the await does not complete on it and the
-envelope does not report it as the match — it sets
+**A comment without the bot's verdict marker is not an answer.** A bot that
+declares an ``issue_comment`` marker in its registry
+``participation_evidence_markers`` publishes its finished review inside that
+marker — CodeRabbit wraps its verdict in ``<!-- recent_review_start -->``. The
+same comment without the marker is a review that has not finished: the
+walkthrough, or the summary CodeRabbit edits to its in-progress state while a
+review runs. That in-progress summary names the head SHA as the end of the range
+under review, so before the gate it was eligible, verified the head, and ended
+the wait as ``head_sha_verified: true`` on a review still running.
+:meth:`_ReReviewStrategy._match_bot_comment` therefore admits a comment of such a
+bot only when its body carries the marker. The gate runs after the refusal stack
+and the acknowledgment test, so a marker-less refusal is still recorded; a
+marker-less comment neither of them classified is skipped without a record. This
+is the gate the producer
+already applies to participation credit (``bot_registry.participation_evidence_marker``),
+now applied to the re-review answer too. A bot declaring no marker for the shape
+is unaffected.
+
+**An answer is WITHHELD while the bot's review is still running.** When a poll
+would complete on a match and the bot's completion check-run is positively
+observed in progress (:func:`read_bot_in_progress`), the await does not complete
+on it and the envelope does not report it as the match — it sets
 ``answer_withheld_in_progress`` instead. A review that is still running has not
-answered yet, so a comment naming no commit is not its decline. Only a positive
-``in_progress`` observation withholds: a concluded check, a check never posted,
-a bot declaring no ``completion_check_name``, and a failed read all leave the
-match exactly as it stands.
+answered yet, so neither a comment naming no commit (not its decline) nor one
+naming the head (not its verdict) is reported. Only a positive ``in_progress``
+observation withholds: a concluded check, a check never posted, a bot declaring
+no ``completion_check_name``, and a failed read all leave the match exactly as it
+stands.
 
 The second signal exists because a bot that posts its review as one persistent
 issue comment and submits no review object could otherwise only ever time out.
@@ -570,7 +590,7 @@ def read_rate_window(plan_id: str, bot_kind: str, pr_number: int | str) -> dict[
 
 
 # ---------------------------------------------------------------------------
-# The completion read the non-verifying-answer hold consults
+# The completion read the in-progress answer hold consults
 # ---------------------------------------------------------------------------
 
 
@@ -1099,21 +1119,30 @@ class _ReReviewStrategy:
         ``matched_signal`` (``review`` | ``issue_comment`` | empty when
         unmatched), the matched record, and ``head_sha_verified``.
 
-        Two observations keep the comment signal from completing the await on
-        something that is not the bot's answer, and both are reported:
+        Three observations keep the await from completing on something that is not
+        the bot's finished answer. Two are reported on the envelope:
 
         - ``acknowledged`` / ``acknowledgments`` — the bot confirmed the command
           (:func:`is_acknowledgment_comment`). Never the match; the poll continues.
-        - ``answer_withheld_in_progress`` — a comment matched without referencing
-          ``head_sha`` while the bot's review was positively observed still
-          running. The await does not complete on it and it is not reported as
-          the match, so it can never be consumed as a decline.
+        - ``answer_withheld_in_progress`` — a record matched while the bot's
+          review was positively observed still running. The await does not
+          complete on it and it is not reported as the match, so it can be
+          consumed neither as a decline nor as a verified review. A record that
+          names ``head_sha`` is withheld too: CodeRabbit's in-progress summary
+          names the head as the end of the range it is reviewing, so naming the
+          head is no evidence the review finished.
 
-        ``in_progress_reader`` is the injection seam for the second: any
+        The third leaves no trace by design: a comment of a bot that declares an
+        ``issue_comment`` verdict marker is no answer unless it carries the marker
+        (see :meth:`_match_bot_comment`), so the walkthrough and the in-progress
+        summary are skipped before they could match.
+
+        ``in_progress_reader`` is the injection seam for the hold: any
         ``(pr_number, bot_kind) -> bool`` callable, defaulting to
         :func:`read_bot_in_progress`. It is consulted at most once per poll, and
-        only when the poll's outcome would otherwise be a comment match that does
-        not verify — every other poll costs no completion read.
+        only when the poll's outcome would otherwise be a match — every other poll
+        costs no completion read. Only a positive ``in_progress`` observation
+        withholds; every other answer of the reader leaves the match as it stands.
 
         ``head_sha_verified`` is decided on BOTH paths by the same
         :func:`_references_head_sha` predicate, run over whichever field the matched
@@ -1160,9 +1189,6 @@ class _ReReviewStrategy:
                 return 'issue_comment', comment, refusals, acknowledgments
             return '', None, refusals, acknowledgments
 
-        def _is_non_verifying_comment(matched_signal: str, record: dict | None) -> bool:
-            return matched_signal == 'issue_comment' and not _verifies_head_sha(matched_signal, record, head_sha)
-
         def _check() -> tuple[bool, dict]:
             envelope = _github.fetch_pr_reviews_with_commits(pr_number)
             if envelope.get('status') != 'success':
@@ -1175,24 +1201,24 @@ class _ReReviewStrategy:
             data = {**envelope, 'comments': comments}
             # The completion read rides the poll's own data, so the verdict below is
             # a pure function of what THIS poll fetched. It is taken only when the
-            # poll would otherwise end on a comment that does not verify — the one
-            # outcome the observation can change.
-            matched_signal, record, _refusals, _acknowledgments = _match(data)
-            data['bot_in_progress'] = bool(
-                bot_kind and _is_non_verifying_comment(matched_signal, record) and reader(pr_number, bot_kind)
-            )
+            # poll would otherwise end on a match — the one outcome the observation
+            # can change.
+            _matched_signal, record, _refusals, _acknowledgments = _match(data)
+            data['bot_in_progress'] = bool(bot_kind and record is not None and reader(pr_number, bot_kind))
             return True, data
 
         def _resolve(data: dict) -> tuple[str, dict | None, list[dict], list[dict], bool]:
             """Return ``(matched_signal, record, refusals, acknowledgments, withheld)``.
 
-            ``withheld`` is True when a comment matched without referencing the
-            awaited HEAD while the bot's review was observed still running. That
-            comment is then NOT the match: a running review has not answered, so
-            reporting the comment would publish a decline the bot never made.
+            ``withheld`` is True when a record matched while the bot's review was
+            observed still running. That record is then NOT the match: a running
+            review has not answered yet, whatever the record names. One that names
+            the awaited HEAD is withheld too — an in-progress summary names the head
+            as the end of the range under review, so naming it proves nothing about
+            a review that has not finished.
             """
             matched_signal, record, refusals, acknowledgments = _match(data)
-            if data.get('bot_in_progress') and _is_non_verifying_comment(matched_signal, record):
+            if data.get('bot_in_progress') and record is not None:
                 return '', None, refusals, acknowledgments, True
             return matched_signal, record, refusals, acknowledgments, False
 
@@ -1238,9 +1264,10 @@ class _ReReviewStrategy:
             # request, which a bare timeout cannot.
             'acknowledged': bool(acknowledgments),
             'acknowledgments': acknowledgments,
-            # A comment matched without referencing the awaited HEAD while the bot's
-            # review was observed still running, so it was not reported as the match.
-            # `matched: false` beside this flag is "still reviewing", never a decline.
+            # A record matched while the bot's review was observed still running —
+            # whether or not it named the awaited HEAD — so it was not reported as the
+            # match. `matched: false` beside this flag is "still reviewing", never a
+            # decline and never a verified review.
             'answer_withheld_in_progress': withheld,
             'refusal_detected': bool(refusals),
             # The recovery strategy the refusal arms, from the bot's registry
@@ -1484,6 +1511,17 @@ class _ReReviewStrategy:
           ``trigger_dt``. Taking the later of the two is what makes an EDITED
           persistent comment count: such a bot updates one comment in place, so
           ``created_at`` stops advancing after the first review;
+        - when the bot declares an ``issue_comment`` marker in its registry
+          ``participation_evidence_markers``
+          (:func:`bot_registry.participation_evidence_marker`), the body carries
+          that marker. Such a bot publishes its finished review inside the marker,
+          and the same comment without it is a review that has not finished —
+          CodeRabbit's walkthrough, or its summary edited to the in-progress state,
+          which names the head SHA as the end of the range under review. A
+          marker-less comment the refusal stack and the acknowledgment test left
+          unclassified is skipped without a record, so it never ends the wait. A
+          bot declaring no marker for the shape is unaffected — every comment of it
+          stays eligible on the other gates alone;
         - it is not a refusal notice (:meth:`_refusal_record`) — a "the bot could
           not review" comment is the bot talking about itself, not a completed
           review.
@@ -1499,6 +1537,14 @@ class _ReReviewStrategy:
         so the two arms guard it alike. The preference decides only WHICH eligible
         comment is returned: every eligibility gate above is unchanged, and a
         refusal is still never selected.
+
+        The gates run in a fixed order. A refusal the stack can READ is classified
+        first, an acknowledgment second, the enumerative refusal arm third, and the
+        marker gate last. The acknowledgment test runs ahead of the enumerative arm
+        because that arm reads a short anchor-less body as a refusal nobody could
+        read, which is what an acknowledgment looks like. The marker gate runs after
+        the whole refusal stack, so a marker-less refusal is still recorded; it only
+        decides whether a comment no arm classified is the bot's answer.
 
         Fail-closed on every missing input: no ``bot_kind``, no ``trigger_dt``,
         or an unparseable timestamp yields no match. An empty or absent
@@ -1532,6 +1578,7 @@ class _ReReviewStrategy:
         """
         if not bot_kind or trigger_dt is None:
             return None
+        answer_marker = bot_registry.participation_evidence_marker(bot_kind, 'issue_comment')
         eligible: list[dict] = []
         for comment in comments:
             if bot_kind_for_author(comment.get('author')) != bot_kind:
@@ -1568,6 +1615,15 @@ class _ReReviewStrategy:
             if refusal is not None:
                 if written_after_trigger:
                     refusals.append(refusal)
+                continue
+            # A bot that declares an `issue_comment` verdict marker publishes its
+            # answer only inside that marker, so a comment without it — the
+            # walkthrough, or the summary edited to its in-progress state — is not
+            # the answer. It is skipped without a record: every refusal arm has
+            # already declined it and it is no acknowledgment, so there is nothing
+            # to report about it. Running the gate after the refusal stack keeps a
+            # marker-less refusal recorded rather than silently skipped.
+            if answer_marker and answer_marker not in body:
                 continue
             if written_after_trigger:
                 eligible.append(comment)

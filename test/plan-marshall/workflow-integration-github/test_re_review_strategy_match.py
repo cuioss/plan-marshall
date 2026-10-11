@@ -70,8 +70,8 @@ over the same claimed window) lives in ``test_re_review_strategy_await.py``;
 this module relies on the same autouse fixture without re-proving it.
 
 Tests never reach the provider's check-runs either. A poll that would end on a
-comment naming no commit consults ``read_bot_in_progress``, which reads the awaited
-bot's completion check-run through ``gh``. The autouse
+match consults ``read_bot_in_progress``, which reads the awaited bot's completion
+check-run through ``gh``. The autouse
 ``_neutralize_in_progress_read`` fixture below holds that seam at NOT OBSERVED
 RUNNING for every test here; a test that needs the other side injects its own
 ``in_progress_reader``. ``test_the_neutralized_in_progress_read_leaves_the_answer_matched``
@@ -96,7 +96,14 @@ from _github_pr_fixtures import (
     CODERABBIT_ACKNOWLEDGMENT_COUNT,
     CODERABBIT_ACKNOWLEDGMENTS,
     CODERABBIT_GENUINE_SHORT_REVIEW_COMMENT,
+    CODERABBIT_VERDICT_MARKER,
     HUMAN_COMMENT_QUOTING_AN_ACKNOWLEDGMENT,
+    IN_PROGRESS_RECONSTRUCTED,
+    UNGATED_EVIDENCE,
+    VERDICT_MARKER_BOT_KIND,
+    coderabbit_finished_review,
+    coderabbit_in_progress_summaries,
+    coderabbit_verdict,
 )
 
 _LIVE_IN_PROGRESS_READER = github_re_review.read_bot_in_progress
@@ -156,8 +163,7 @@ def _neutralize_in_progress_read(monkeypatch):
     """Hold the completion read at NOT OBSERVED RUNNING for every test here.
 
     ``await_fresh_review`` consults ``read_bot_in_progress`` whenever a poll would end
-    on a comment that names no commit, and that function reads the awaited bot's
-    check-run through ``gh``. Left alone, every such case in this module would shell
+    on a match, and that function reads the awaited bot's check-run through ``gh``. Left alone, every such case in this module would shell
     out, and its verdict would depend on whether some real PR's check happened to be
     running.
 
@@ -350,9 +356,10 @@ def _republished_comment(reference, *, created_at='2026-01-01T00:00:00Z', update
 
     The timestamps are overridable so the selection cases can build TWO eligible
     comments from this one builder — keeping the only difference between them the
-    reference their bodies carry, plus the order they arrive in.
+    reference their bodies carry, plus the order they arrive in. The body carries the
+    bot's verdict marker, as every CodeRabbit answer must to be eligible.
     """
-    body = f'Review updated until commit {reference}. No actionable comments were generated.'
+    body = coderabbit_verdict(f'Review updated until commit {reference}. No actionable comments were generated.')
     return _comment(_CODERABBIT_LOGIN, created_at=created_at, updated_at=updated_at, body=body)
 
 
@@ -383,10 +390,13 @@ _CODERABBIT_COMMAND_REPLY_REFUSAL = (
     'already reviewed commits. This command is applicable only when automatic '
     'reviews are paused. </details>'
 )
-_CODERABBIT_GENUINE_COMMENT = (
+_CODERABBIT_GENUINE_COMMENT = coderabbit_verdict(
     'Actionable comments posted: 1. The retry loop can spin forever when the backoff '
     'cap is zero — guard the cap before entering the loop.'
 )
+#: A genuine short CodeRabbit answer: the short review comment, inside the verdict
+#: marker every CodeRabbit answer carries.
+_CODERABBIT_SHORT_ANSWER = coderabbit_verdict(CODERABBIT_GENUINE_SHORT_REVIEW_COMMENT)
 _CODERABBIT_REFUSAL_WITH_ETA = (
     '> [!WARNING] > ## Review limit reached > Please wait 12 minutes and 30 seconds before requesting another review.'
 )
@@ -1005,7 +1015,9 @@ def test_the_enumerative_arm_still_records_a_short_body_that_is_no_acknowledgmen
     """MATCHED CONTROL for the case above: the arm is live for the same bot.
 
     Without it the case above would pass just as happily with the enumerative arm
-    disabled for this bot altogether.
+    disabled for this bot altogether. The body carries no verdict marker, so this case
+    also pins the gate ORDER: the marker gate runs after the refusal stack, so a
+    marker-less refusal is recorded rather than skipped as "no answer".
     """
     _arm_enumerative(monkeypatch)
 
@@ -1025,19 +1037,20 @@ def test_the_enumerative_arm_still_records_a_short_body_that_is_no_acknowledgmen
 def test_a_genuine_short_comment_from_the_acknowledging_bot_is_still_matched(monkeypatch):
     """⛔ NEGATIVE CONTROL: a short review comment from the same bot completes the await.
 
-    Same bot, same timestamps, same length class as an acknowledgment. Asserting only
-    that acknowledgments are skipped would pass on a change that skipped every short
+    Same bot, same timestamps, and a review statement as short as an acknowledgment,
+    inside the verdict marker this bot's answers carry. Asserting only that
+    acknowledgments are skipped would pass on a change that skipped every short
     comment from this bot, turning the false decline into a permanent false timeout.
     """
     result = _await_with_comments(
         monkeypatch,
-        [_acknowledgment_comment(CODERABBIT_GENUINE_SHORT_REVIEW_COMMENT)],
+        [_acknowledgment_comment(_CODERABBIT_SHORT_ANSWER)],
         bot_kind=ACKNOWLEDGMENT_BOT_KIND,
     )
 
     assert result['matched'] is True
     assert result['matched_signal'] == 'issue_comment'
-    assert result['matched_comment']['body'] == CODERABBIT_GENUINE_SHORT_REVIEW_COMMENT
+    assert result['matched_comment']['body'] == _CODERABBIT_SHORT_ANSWER
     assert result['acknowledged'] is False
     assert result['acknowledgments'] == []
     assert result['refusal_detected'] is False
@@ -1050,7 +1063,7 @@ def test_the_answer_beside_an_acknowledgment_is_the_match(monkeypatch, body):
     The acknowledgment is listed FIRST, so a matcher that returned the first eligible
     comment would return it.
     """
-    answer = _acknowledgment_comment(CODERABBIT_GENUINE_SHORT_REVIEW_COMMENT, created_at='2026-01-01T00:06:00Z')
+    answer = _acknowledgment_comment(_CODERABBIT_SHORT_ANSWER, created_at='2026-01-01T00:06:00Z')
 
     result = _await_with_comments(
         monkeypatch,
@@ -1059,7 +1072,7 @@ def test_the_answer_beside_an_acknowledgment_is_the_match(monkeypatch, body):
     )
 
     assert result['matched'] is True
-    assert result['matched_comment']['body'] == CODERABBIT_GENUINE_SHORT_REVIEW_COMMENT
+    assert result['matched_comment']['body'] == _CODERABBIT_SHORT_ANSWER
     assert result['acknowledged'] is True
 
 
@@ -1211,7 +1224,7 @@ def test_a_padded_registry_entry_is_normalised_before_it_is_compared(monkeypatch
 
 
 # =============================================================================
-# A non-verifying answer is withheld while the review is still running
+# Any answer is withheld while the review is still running
 # =============================================================================
 
 
@@ -1260,26 +1273,25 @@ def test_the_same_answer_is_matched_once_the_review_is_not_running(monkeypatch):
     assert result['answer_withheld_in_progress'] is False
 
 
-def test_a_verifying_answer_is_matched_without_consulting_the_completion_read(monkeypatch):
-    """A comment that names the awaited HEAD is the answer however the check stands."""
+def test_a_poll_with_no_match_never_consults_the_completion_read(monkeypatch):
+    """The read is taken only when a poll would end on a match — a poll with none costs no read."""
     calls: list = []
 
     result = _await_with_comments(
         monkeypatch,
-        [_republished_comment(_VERIFYING_REFERENCE)],
+        [],
         bot_kind='coderabbit',
-        head_sha=_HEAD_SHA,
         in_progress_reader=_recording_reader(True, calls),
     )
 
-    assert result['matched'] is True
-    assert result['head_sha_verified'] is True
+    assert result['matched'] is False
+    assert result['timed_out'] is True
     assert result['answer_withheld_in_progress'] is False
     assert calls == []
 
 
-def test_a_matched_review_never_consults_the_completion_read(monkeypatch):
-    """The read is taken only for a comment that does not verify — a review costs none."""
+def test_a_matched_review_is_withheld_while_the_review_is_running(monkeypatch):
+    """The hold covers the review signal too: a running review has not answered on either signal."""
     calls: list = []
 
     result = _await_with_comments(
@@ -1290,10 +1302,31 @@ def test_a_matched_review_never_consults_the_completion_read(monkeypatch):
         in_progress_reader=_recording_reader(True, calls),
     )
 
+    assert calls, 'the completion read was never consulted'
+    assert result['matched'] is False
+    assert result['matched_signal'] == ''
+    assert result['matched_review'] == {}
+    assert result['head_sha_verified'] is False
+    assert result['answer_withheld_in_progress'] is True
+
+
+def test_the_same_review_is_matched_once_the_review_is_not_running(monkeypatch):
+    """MATCHED CONTROL: same review, same reader seam — only the observation differs."""
+    calls: list = []
+
+    result = _await_with_comments(
+        monkeypatch,
+        [],
+        reviews=[_review('headsha', '2026-01-01T00:05:00Z', body=_GENUINE_REVIEW_BODY)],
+        bot_kind='coderabbit',
+        in_progress_reader=_recording_reader(False, calls),
+    )
+
+    assert calls, 'the completion read was never consulted'
     assert result['matched'] is True
     assert result['matched_signal'] == 'review'
+    assert result['head_sha_verified'] is True
     assert result['answer_withheld_in_progress'] is False
-    assert calls == []
 
 
 def test_the_neutralized_in_progress_read_leaves_the_answer_matched(monkeypatch):
@@ -1377,3 +1410,137 @@ def test_read_bot_in_progress_makes_no_read_for_a_bot_without_a_completion_check
 
     assert _LIVE_IN_PROGRESS_READER(42, 'coderabbit') is False
     assert calls == []
+
+
+# =============================================================================
+# A comment without the bot's verdict marker is not an answer
+# =============================================================================
+
+_IN_PROGRESS_BASE_SHA = _OTHER_SHA
+_IN_PROGRESS_SUMMARIES = coderabbit_in_progress_summaries(_IN_PROGRESS_BASE_SHA, _HEAD_SHA)
+_IN_PROGRESS_PARAMS = [pytest.param(body, id=case_id) for case_id, body, _provenance in _IN_PROGRESS_SUMMARIES]
+_FINISHED_REVIEW = coderabbit_finished_review(_IN_PROGRESS_BASE_SHA, _HEAD_SHA)
+
+#: Every bot that publishes an ``issue_comment`` it declares NO verdict marker for —
+#: the population the marker gate must leave untouched. Derived from the fixtures'
+#: registry partition, never hand-listed.
+_UNMARKED_COMMENT_BOTS: list[str] = sorted({bot for bot, shape in UNGATED_EVIDENCE if shape == 'issue_comment'})
+_LOGIN_FOR_BOT_KIND: dict[str, str] = {kind: login for login, kind in bot_registry.login_to_bot_kind().items()}
+
+
+def _in_progress_comment(body):
+    """The CodeRabbit summary, edited after the trigger into ``body``."""
+    return _comment(_CODERABBIT_LOGIN, created_at='2026-01-01T00:00:00Z', updated_at='2026-01-01T00:05:00Z', body=body)
+
+
+def test_the_marker_gate_populations_are_not_vacuous():
+    """Non-vacuity: every case below runs over real bodies and a real population.
+
+    The in-progress bodies must carry no verdict marker AND name the awaited head —
+    the exact shape of the defect. A body missing the head would pass the cases below
+    against a matcher with no marker gate at all, because nothing in it verifies.
+    """
+    assert VERDICT_MARKER_BOT_KIND == 'coderabbit'
+    assert CODERABBIT_VERDICT_MARKER
+    assert len(_IN_PROGRESS_PARAMS) == len(_IN_PROGRESS_SUMMARIES) == 2
+    for _case_id, body, provenance in _IN_PROGRESS_SUMMARIES:
+        assert provenance == IN_PROGRESS_RECONSTRUCTED
+        assert CODERABBIT_VERDICT_MARKER not in body
+        assert github_re_review._references_head_sha(body, _HEAD_SHA)
+    assert CODERABBIT_VERDICT_MARKER in _FINISHED_REVIEW
+    assert _UNMARKED_COMMENT_BOTS, 'no bot publishes an ungated issue_comment — the unaffected-bot control is vacuous'
+    assert all(bot in _LOGIN_FOR_BOT_KIND for bot in _UNMARKED_COMMENT_BOTS)
+
+
+@pytest.mark.parametrize('body', _IN_PROGRESS_PARAMS)
+def test_an_in_progress_summary_is_no_answer(monkeypatch, body):
+    """⛔ The verified answer this deliverable closes, pinned directly.
+
+    The summary is the awaited bot's, edited after the trigger, and names the awaited
+    head as the end of the range under review — so before the marker gate the wait
+    ended on it as ``matched: true`` / ``head_sha_verified: true`` while the review
+    was still running. It is no answer at all: not a match, not a refusal, not an
+    acknowledgment.
+    """
+    result = _await_with_comments(
+        monkeypatch, [_in_progress_comment(body)], bot_kind=VERDICT_MARKER_BOT_KIND, head_sha=_HEAD_SHA
+    )
+
+    assert result['matched'] is False
+    assert result['matched_signal'] == ''
+    assert result['matched_comment'] == {}
+    assert result['head_sha_verified'] is False
+    assert result['timed_out'] is True
+    assert result['refusal_detected'] is False
+    assert result['refusals'] == []
+    assert result['acknowledged'] is False
+    assert result['answer_withheld_in_progress'] is False
+
+
+def test_the_finished_review_that_follows_is_the_answer(monkeypatch):
+    """MATCHED CONTROL: the same comment, edited into the finished review, ends the wait verified."""
+    result = _await_with_comments(
+        monkeypatch, [_in_progress_comment(_FINISHED_REVIEW)], bot_kind=VERDICT_MARKER_BOT_KIND, head_sha=_HEAD_SHA
+    )
+
+    assert result['matched'] is True
+    assert result['matched_signal'] == 'issue_comment'
+    assert result['matched_comment']['body'] == _FINISHED_REVIEW
+    assert result['head_sha_verified'] is True
+    assert result['timed_out'] is False
+
+
+@pytest.mark.parametrize('body', _IN_PROGRESS_PARAMS)
+def test_an_in_progress_summary_does_not_hide_the_finished_review(monkeypatch, body):
+    """The summary is skipped, not the poll: a finished review beside it is the match.
+
+    The summary is listed FIRST and names the head, so a matcher that admitted it
+    would prefer it as the verifying comment.
+    """
+    finished = _comment(_CODERABBIT_LOGIN, created_at='2026-01-01T00:06:00Z', body=_FINISHED_REVIEW)
+
+    result = _await_with_comments(
+        monkeypatch,
+        [_in_progress_comment(body), finished],
+        bot_kind=VERDICT_MARKER_BOT_KIND,
+        head_sha=_HEAD_SHA,
+    )
+
+    assert result['matched'] is True
+    assert result['matched_comment']['body'] == _FINISHED_REVIEW
+    assert result['head_sha_verified'] is True
+
+
+@pytest.mark.parametrize('body', _IN_PROGRESS_PARAMS)
+def test_match_bot_comment_skips_an_in_progress_summary_without_a_record(body):
+    """The matcher itself returns nothing and appends nothing for a marker-less summary."""
+    refusals: list = []
+    acknowledgments: list = []
+
+    matched = _match_bot_comment(
+        [_in_progress_comment(body)], _HEAD_SHA, VERDICT_MARKER_BOT_KIND, _parse(_TRIGGER), refusals, acknowledgments
+    )
+
+    assert matched is None
+    assert refusals == []
+    assert acknowledgments == []
+
+
+@pytest.mark.parametrize('bot_kind', _UNMARKED_COMMENT_BOTS)
+def test_a_bot_without_a_declared_marker_still_matches_an_unmarked_comment(monkeypatch, bot_kind):
+    """⛔ NEGATIVE CONTROL: the gate reaches only a bot that declares a marker.
+
+    The same unmarked body that CodeRabbit may not answer with ends the wait for a bot
+    declaring no ``issue_comment`` marker. Without this control the cases above would
+    pass just as happily against a matcher that rejected every unmarked comment of
+    every bot — a permanent timeout for each bot whose answer carries no marker.
+    """
+    body = 'Overall comments: consider extracting the retry helper at `src/retry.py:12`.'
+    comment = _comment(_LOGIN_FOR_BOT_KIND[bot_kind], created_at='2026-01-01T00:05:00Z', body=body)
+
+    result = _await_with_comments(monkeypatch, [comment], bot_kind=bot_kind)
+
+    assert bot_registry.participation_evidence_marker(bot_kind, 'issue_comment') == ''
+    assert result['matched'] is True
+    assert result['matched_signal'] == 'issue_comment'
+    assert result['matched_comment']['body'] == body

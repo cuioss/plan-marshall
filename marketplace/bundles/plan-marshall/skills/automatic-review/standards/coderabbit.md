@@ -277,6 +277,24 @@ field's reach, and why an absent declaration is fail-open, are stated once in
 [`bot-participation-contract.md`](bot-participation-contract.md) § "A shape may be gated on a content
 marker".
 
+**The same marker gate decides the re-review answer.** `github_re_review` reads this record's
+`issue_comment` marker when it awaits a fresh CodeRabbit review, and admits a CodeRabbit comment as
+the answer only when its body carries the marker. A marker-less comment that is neither a refusal nor
+an acknowledgment is skipped without a record, so the wait continues; a marker-less refusal is still
+recorded as one. On top of the gate, any answer
+is withheld while the `completion_check_name` check-run above is observed in progress. See
+`workflow-integration-github/SKILL.md` § "Completion signals (`await_fresh_review`)".
+
+The shape the gate exists for is the **in-progress summary**. While a review runs, CodeRabbit edits
+its summary comment into an in-progress state: a "Currently processing new changes in this PR" notice
+naming the range under review as `between {base} and {head}`, and a "review in progress" summary over
+the head's files. It carries no `<!-- recent_review_start -->` marker, yet it names the head SHA as
+the end of that range, so before the gate it ended the wait as `head_sha_verified: true` while the
+review was still running. The finished review that replaces it carries the marker. Provenance: the
+in-progress wording was read off the summary comment on `cuioss/plan-marshall#1742`, between
+`8fc4ed52` and `c6571e10`. CodeRabbit edited that comment in place afterwards, so the full in-progress
+body was not preserved; the gate keys on the marker, not on the in-progress wording.
+
 **A clean review's credit rides the marker-bearing `issue_comment`.** When CodeRabbit finds nothing,
 it publishes no `review_body` and no `inline` comment: its whole output is the review-verdict
 `issue_comment` — the marker above followed by `No actionable comments were generated in the recent
