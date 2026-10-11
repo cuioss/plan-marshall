@@ -1,6 +1,6 @@
 ---
 name: cui-logging
-description: CUI logging standards with CuiLogger, LogRecord patterns, and DSL-style LogMessages classes
+description: CUI logging standards with CuiLogger, LogRecord patterns, and DSL-style LogMessages classes, plus the logging review rules a code review cites
 user-invocable: false
 mode: knowledge
 ---
@@ -113,3 +113,13 @@ LOGGER.error(ERROR.OPERATION_FAILED, exception);
 | dsl-constants.md | DSL-style constant organization |
 | logmessages-documentation.md | AsciiDoc documentation patterns |
 | logging-maintenance-reference.md | Migration and maintenance |
+
+## Review Rules
+
+The review rules of the java-cui domain — what a code review looks for in changed code that logs through the CUI logging framework. The block follows the harvestable block contract — see [`review-rubric.md` § 10 "Harvestable review-rule blocks"](../../../plan-marshall/skills/phase-6-finalize/standards/review-rubric.md) for its rules, which are not restated here.
+
+- A logging call that passes the exception after the message or `LogRecord` instead of first, so the exception is consumed as a format argument and its stack trace is never logged.
+- An INFO, WARN, ERROR or FATAL call that logs a string literal instead of a `LogRecord` from a LogMessages class, so the message carries no identifier and cannot be asserted in a test or looked up in the documentation.
+- A `CuiLogger` message that uses an SLF4J-style `{}` placeholder instead of `%s`, so the argument is never substituted and the logged line shows the literal braces.
+- Two `LogRecord` constants in one LogMessages class that share an identifier number, so the identifier no longer names exactly one message and a log search returns both.
+- A `LogRecord` the change adds or edits with no `LogAsserts` check in a test, so a changed message text, level or identifier ships without any test turning red.
