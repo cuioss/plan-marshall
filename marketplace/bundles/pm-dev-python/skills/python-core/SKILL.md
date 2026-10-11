@@ -1,6 +1,6 @@
 ---
 name: python-core
-description: "Use when writing, reviewing, or refactoring Python 3.10+ code — covers type annotations, data structures, error handling, resource management, async patterns, naming conventions, and imports. Activate for any Python production code task. Also use when working with pathlib, dataclass, pydantic, match statements, or structural pattern matching, or when hardening untrusted input (secure subprocess, deserialization, eval, and SQL injection sinks)."
+description: "Use when writing, reviewing, or refactoring Python 3.10+ code — covers type annotations, data structures, error handling, resource management, async patterns, naming conventions, and imports. Activate for any Python production code task. Also use when working with pathlib, dataclass, pydantic, match statements, or structural pattern matching, or when hardening untrusted input (secure subprocess, deserialization, eval, and SQL injection sinks). Carries the Python production-code review rules a code review cites."
 user-invocable: false
 mode: knowledge
 ---
@@ -82,3 +82,15 @@ Read standards/python-core.md
 
 - `pm-dev-python:pytest-testing` - Testing standards with pytest
 - `pm-plugin-development:plugin-script-architecture` - Standards for marketplace plugin scripts
+
+## Review Rules
+
+The review rules of the python domain for production code — what a code review looks for in a changed Python module. The block follows the harvestable block contract — see [`review-rubric.md` § 10 "Harvestable review-rule blocks"](../../../plan-marshall/skills/phase-6-finalize/standards/review-rubric.md) for its rules, which are not restated here.
+
+- A local assignment, loop variable, or `with … as` / `except … as` target that rebinds a name the module imports at top level, so later code in the same scope that expects the imported object reads the rebound value instead.
+- A function whose default argument is a mutable object (a list, dict or set) that the body mutates, so state written on one call is visible to every later call.
+- A bare `except:` or an `except Exception:` that neither re-raises nor narrows to the failure it handles, so an unexpected error — a programming bug included — is swallowed and the function carries on with partial state.
+- A value that can be `None` (an `X | None` annotation, a `dict.get`, a `re.match` result) dereferenced without a `None` check, so an absent entry raises `AttributeError` or `TypeError` on an ordinary input.
+- A file, socket or process opened outside a `with` block or `try`/`finally`, so an exception before the close leaks the handle or leaves a partially written file behind.
+- A `match` statement over a closed set of variants with no `case _` arm, so a value outside the handled cases falls through and the function returns `None` as if it had handled it.
+- An `asyncio.create_task` result that is neither awaited nor kept, so the task can be garbage-collected mid-run and its exception is never observed.

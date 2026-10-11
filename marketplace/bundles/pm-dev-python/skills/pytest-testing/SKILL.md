@@ -1,6 +1,6 @@
 ---
 name: pytest-testing
-description: "Use when writing, reviewing, or debugging Python tests — covers pytest framework, AAA pattern, fixtures, parametrization, isolation, mocking, assertions, coverage configuration, and property-based / adversarial testing (Hypothesis). Activate for any Python testing task."
+description: "Use when writing, reviewing, or debugging Python tests — covers pytest framework, AAA pattern, fixtures, parametrization, isolation, mocking, assertions, coverage configuration, and property-based / adversarial testing (Hypothesis). Activate for any Python testing task. Carries the Python test-code review rules a code review cites."
 user-invocable: false
 mode: knowledge
 ---
@@ -110,3 +110,13 @@ python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build ru
 
 - `pm-dev-python:python-core` - Core Python development patterns
 - `plan-marshall:persona-module-tester` - Language-agnostic testing methodology
+
+## Review Rules
+
+The review rules of the python domain for test code — what a code review looks for in a changed pytest module. The block follows the harvestable block contract — see [`review-rubric.md` § 10 "Harvestable review-rule blocks"](../../../plan-marshall/skills/phase-6-finalize/standards/review-rubric.md) for its rules, which are not restated here.
+
+- A test that changes the working directory, an environment variable, a module attribute or other process-global state by direct assignment instead of through `monkeypatch`, so the change leaks into later tests in the same worker and they pass or fail by collection order.
+- A test that reads or writes a real path outside `tmp_path`, so parallel workers or a second run collide on the same file and the result depends on whatever is already on disk.
+- A test for a guard, refusal or classifier that supplies the triggering input but no matched negative control — the same input with only the triggering condition removed — so a guard that fires on every input still passes.
+- A `conftest.py` placed below the test root, so tests that `import conftest` for the shared helpers resolve the nearer file instead, or collection fails on a second module named `conftest`.
+- A test that builds command arguments as a hand-written `argparse.Namespace` instead of through the real parser, so a parser default or a renamed flag the production call depends on is never exercised.
