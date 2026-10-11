@@ -38,20 +38,47 @@ cmd_fetch_findings = github_pr.cmd_fetch_findings
 cmd_post_responses = github_pr.cmd_post_responses
 
 
+#: The overall CI read of the pull request head that releases a stamped ``fixed``
+#: reply: the read succeeded and the conclusion is ``success``.
+_HEAD_CI_GREEN = (True, 'success')
+
+
+def _head_ci_reports(ok, overall=''):
+    """Make the overall CI read of the pull request head answer ``(ok, overall)``.
+
+    This is the seam the CI half of the hold reads: once a stamped ``fixed`` reply
+    has passed the ancestry check, ``post_responses`` asks
+    ``github_ops._fetch_pr_overall_ci_status`` for the head's conclusion, once per
+    call. Patching it here takes precedence over the green default of the autouse
+    fixture.
+    """
+    return patch('github_pr._github._fetch_pr_overall_ci_status', return_value=(ok, overall))
+
+
 @pytest.fixture(autouse=True)
 def _stub_provider_calls():
-    """Stub the auth check and PR HEAD-SHA fetch so fetch_findings tests never hit ``gh``.
+    """Stub the auth check, PR HEAD-SHA fetch and head CI read so no test hits ``gh``.
 
     ``cmd_fetch_findings`` fails loud when GitHub is unauthenticated, so it calls
     ``github_ops.check_auth`` first; the default stub returns authenticated so the
     happy-path tests proceed. It also resolves the PR HEAD SHA (for
     ``reviewed_commit_sha``) via ``github_ops.fetch_pr_head_sha`` once per batch.
-    Tests that need a specific value (an unauthenticated provider, a specific SHA)
-    re-patch the same target inside a ``with`` block, which takes precedence.
+
+    The head's CI is green by default: ``post_responses`` releases a stamped
+    ``fixed`` reply only once that head's overall CI conclusion is ``success``, so
+    every release case in this module rests on the green answer stubbed here at
+    ``github_ops._fetch_pr_overall_ci_status``. Without it the read would go to
+    ``run_gh``, which ``_compare_reports`` answers with a compare state, and every
+    stamped reply would be held as ``pr_head_ci_unreadable``.
+
+    Tests that need a specific value (an unauthenticated provider, a specific SHA,
+    a head whose CI has not passed) re-patch the same target inside a ``with``
+    block, which takes precedence.
     """
     with (
         patch('github_pr._github.check_auth', return_value=(True, '')),
         patch('github_pr._github.fetch_pr_head_sha', return_value='stub-head-sha'),
+        patch('github_pr._github._fetch_pr_overall_ci_status', return_value=_HEAD_CI_GREEN),
     ):
         yield
 
@@ -626,7 +653,9 @@ class TestFixedReplyHeldUntilCommit:
 
     Triage records ``fixed`` before the fix is a commit. ``post_responses`` sends
     nothing for such a finding until it carries a ``fix_commit_sha`` and the provider
-    reports that commit as reaching the pull request head.
+    reports that commit as reaching the pull request head. The head's CI is green
+    throughout this class (the autouse default); the CI half of the hold is
+    ``TestFixedReplyHeldUntilHeadCiPassed``.
     """
 
     def _post(self, plan_id, *, compare='ahead', compare_returncode=0):
@@ -1045,6 +1074,198 @@ class TestSendUnstampedFixed:
         assert len(posted) == 1
         assert 'Fixed the guard.' in posted[0]
         assert 'Fix commit:' not in posted[0]
+
+
+class TestFixedReplyHeldUntilHeadCiPassed:
+    """A stamped ``fixed`` reply on the head is held until that head's CI has passed.
+
+    "Fixed" points the reviewer at the pull request head, so the head has to be shown
+    to work first. Once the stamped commit passes the ancestry check,
+    ``post_responses`` reads the head's overall CI conclusion once per call: only
+    ``success`` releases the reply; ``pending`` and ``none`` hold it as
+    ``pr_head_ci_pending``, ``failure`` as ``pr_head_ci_failed``, and a failed read or
+    any other conclusion as ``pr_head_ci_unreadable``.
+    """
+
+    def _stamped_fixed_finding(self, plan_id, thread_id='PRRT_ci'):
+        """Stage one inline finding, resolve it ``fixed`` and stamp its fix commit."""
+        from _findings_core import resolve_finding
+
+        (hash_id,) = _stage_comments(plan_id, [_inline_comment('C1', thread_id, 'Guard the null case.')])
+        resolve_finding(plan_id, hash_id, 'fixed', detail='Fixed the guard.')
+        _stamp_fix_commit(plan_id, hash_id)
+        return hash_id
+
+    def _post(self, args, *, ci_ok, ci_overall, compare='ahead'):
+        """Run one respond pass; return ``(result, graphql_calls, ci_mock)``."""
+        calls = []
+
+        def _fake_graphql(mutation, variables):
+            calls.append((mutation, variables))
+            return 0, {}, ''
+
+        with (
+            patch('github_pr._github.run_graphql', side_effect=_fake_graphql),
+            _compare_reports(compare),
+            _head_ci_reports(ci_ok, ci_overall) as ci_mock,
+        ):
+            result = cmd_post_responses(args)
+        return result, calls, ci_mock
+
+    @pytest.mark.parametrize(
+        ('ci_ok', 'ci_overall', 'reason'),
+        [
+            pytest.param(True, 'pending', 'pr_head_ci_pending', id='pending'),
+            pytest.param(True, 'none', 'pr_head_ci_pending', id='no-check-registered'),
+            pytest.param(True, 'failure', 'pr_head_ci_failed', id='failed'),
+            pytest.param(False, '', 'pr_head_ci_unreadable', id='read-failed'),
+            pytest.param(True, 'surprise', 'pr_head_ci_unreadable', id='unknown-conclusion'),
+        ],
+    )
+    def test_a_stamp_on_the_head_is_held_while_the_heads_ci_has_not_passed(
+        self, ci_ok, ci_overall, reason, plan_context
+    ):
+        """No reply, no resolve call, no marker; one deferred row naming the CI state."""
+        from _findings_core import query_findings
+
+        plan_id = f'gh-ci-held-{reason.replace("_", "-")}-{ci_overall or "unread"}'
+        plan_context.plan_dir_for(plan_id)
+        hash_id = self._stamped_fixed_finding(plan_id)
+
+        result, calls, ci_mock = self._post(_stage_make_args(300, plan_id), ci_ok=ci_ok, ci_overall=ci_overall)
+
+        assert calls == []
+        ci_mock.assert_called_once_with(300)
+        assert result['status'] == 'success'
+        assert result['count_responded'] == 0
+        assert result['count_untransmitted'] == 0
+        assert result['count_deferred_until_commit'] == 1
+        assert result['deferred_until_commit'] == [
+            {'hash_id': hash_id, 'reason': reason, 'fix_commit_sha': _FIX_COMMIT, 'fix_task_number': ''}
+        ]
+        stored = query_findings(plan_id, finding_type='pr-comment')['findings'][0]
+        assert not stored.get('responded')
+
+    def test_the_same_stamp_is_released_once_the_heads_ci_has_passed(self, plan_context):
+        """⛔ MATCHED CONTROL for the rows above — same finding, a ``success`` conclusion."""
+        plan_id = 'gh-ci-released-success'
+        plan_context.plan_dir_for(plan_id)
+        hash_id = self._stamped_fixed_finding(plan_id)
+
+        result, calls, ci_mock = self._post(_stage_make_args(300, plan_id), ci_ok=True, ci_overall='success')
+
+        ci_mock.assert_called_once_with(300)
+        assert result['deferred_until_commit'] == []
+        assert result['responded'] == [
+            {'hash_id': hash_id, 'thread_id': 'PRRT_ci', 'transmit_mode': 'thread_reply', 'resolved_on_provider': True}
+        ]
+        assert len(calls) == 2
+        assert calls[0][1] == {'threadId': 'PRRT_ci', 'body': f'Fixed the guard.\n\nFix commit: {_FIX_COMMIT_SHORT}'}
+        assert calls[1][1] == {'threadId': 'PRRT_ci'}
+
+    def test_held_while_pending_then_released_by_the_next_pass_once_green(self, plan_context):
+        """No new stamp is needed: the next respond pass after the CI passes sends the reply."""
+        plan_id = 'gh-ci-held-then-released'
+        plan_context.plan_dir_for(plan_id)
+        hash_id = self._stamped_fixed_finding(plan_id)
+        args = _stage_make_args(300, plan_id)
+
+        first, first_calls, _ = self._post(args, ci_ok=True, ci_overall='pending')
+        second, second_calls, _ = self._post(args, ci_ok=True, ci_overall='success')
+
+        assert first_calls == []
+        assert [row['reason'] for row in first['deferred_until_commit']] == ['pr_head_ci_pending']
+        assert second['deferred_until_commit'] == []
+        assert [row['hash_id'] for row in second['responded']] == [hash_id]
+        assert second_calls[0][1]['body'] == f'Fixed the guard.\n\nFix commit: {_FIX_COMMIT_SHORT}'
+
+    def test_the_heads_ci_is_read_once_per_call_for_several_stamped_replies(self, plan_context):
+        """Two stamped replies on the same head share one CI read, and both are held by it."""
+        from _findings_core import resolve_finding
+
+        plan_id = 'gh-ci-read-once'
+        plan_context.plan_dir_for(plan_id)
+        first_hash, second_hash = _stage_comments(
+            plan_id,
+            [
+                _inline_comment('C1', 'PRRT_one', 'Guard the null case.'),
+                _inline_comment('C2', 'PRRT_two', 'Close the stream on the error path.'),
+            ],
+        )
+        for hash_id in (first_hash, second_hash):
+            resolve_finding(plan_id, hash_id, 'fixed', detail='Fixed it.')
+            _stamp_fix_commit(plan_id, hash_id)
+
+        result, calls, ci_mock = self._post(_stage_make_args(300, plan_id), ci_ok=True, ci_overall='failure')
+
+        assert ci_mock.call_count == 1
+        assert calls == []
+        assert sorted((row['hash_id'], row['reason']) for row in result['deferred_until_commit']) == sorted(
+            [(first_hash, 'pr_head_ci_failed'), (second_hash, 'pr_head_ci_failed')]
+        )
+
+    @pytest.mark.parametrize(
+        ('stamped', 'compare', 'reason'),
+        [
+            pytest.param(False, 'ahead', 'no_fix_commit', id='unstamped'),
+            pytest.param(True, 'diverged', 'fix_commit_not_on_pr_head', id='not-on-head'),
+        ],
+    )
+    def test_the_heads_ci_is_not_read_when_no_stamp_passed_the_ancestry_check(
+        self, stamped, compare, reason, plan_context
+    ):
+        """The CI read follows the ancestry check: a reply held before it never asks for CI."""
+        from _findings_core import resolve_finding
+
+        plan_id = f'gh-ci-not-read-{reason.replace("_", "-")}'
+        plan_context.plan_dir_for(plan_id)
+        (hash_id,) = _stage_comments(plan_id, [_inline_comment('C1', 'PRRT_ci', 'Guard the null case.')])
+        resolve_finding(plan_id, hash_id, 'fixed', detail='Fixed the guard.')
+        if stamped:
+            _stamp_fix_commit(plan_id, hash_id)
+
+        result, calls, ci_mock = self._post(
+            _stage_make_args(300, plan_id), ci_ok=True, ci_overall='failure', compare=compare
+        )
+
+        ci_mock.assert_not_called()
+        assert calls == []
+        assert [row['reason'] for row in result['deferred_until_commit']] == [reason]
+
+    def test_the_escape_flag_still_sends_an_unstamped_reply_whatever_the_heads_ci(self, plan_context):
+        """⛔ CONTROL: ``--send-unstamped-fixed`` is the only bypass, and the CI check does not reach it.
+
+        An unstamped ``fixed`` finding under the flag is transmitted in this pass with
+        its stored reply, while the head's CI has failed, and the CI is not read.
+        """
+        from _findings_core import resolve_finding
+
+        plan_id = 'gh-ci-escape-flag-sends'
+        plan_context.plan_dir_for(plan_id)
+        (hash_id,) = _stage_comments(plan_id, [_inline_comment('C1', 'PRRT_ci', 'Guard the null case.')])
+        resolve_finding(plan_id, hash_id, 'fixed', detail='Will be addressed by TASK-7.', fix_task_number=7)
+
+        result, calls, ci_mock = self._post(_send_unstamped_args(300, plan_id), ci_ok=True, ci_overall='failure')
+
+        ci_mock.assert_not_called()
+        assert result['deferred_until_commit'] == []
+        assert [row['hash_id'] for row in result['responded']] == [hash_id]
+        assert calls[0][1] == {'threadId': 'PRRT_ci', 'body': 'Will be addressed by TASK-7.'}
+
+    def test_the_escape_flag_does_not_release_a_stamped_reply_on_a_failed_head(self, plan_context):
+        """The flag reaches the unstamped finding only: a stamped one still waits for the CI."""
+        plan_id = 'gh-ci-escape-flag-stamped'
+        plan_context.plan_dir_for(plan_id)
+        hash_id = self._stamped_fixed_finding(plan_id)
+
+        result, calls, ci_mock = self._post(_send_unstamped_args(300, plan_id), ci_ok=True, ci_overall='failure')
+
+        ci_mock.assert_called_once_with(300)
+        assert calls == []
+        assert result['responded'] == []
+        assert result['deferred_until_commit'] == [
+            {'hash_id': hash_id, 'reason': 'pr_head_ci_failed', 'fix_commit_sha': _FIX_COMMIT, 'fix_task_number': ''}
+        ]
 
 
 def test_post_responses_against_a_resolved_empty_store_is_a_genuine_success(plan_context):

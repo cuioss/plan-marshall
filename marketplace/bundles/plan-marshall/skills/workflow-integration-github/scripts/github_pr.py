@@ -40,10 +40,11 @@ lives here:
   could not be delivered lands in ``untransmitted`` and drives ``status:
   partial``. It reads only findings the triage pass already resolved. A ``fixed``
   disposition is held, and listed in ``deferred_until_commit``, until the finding
-  carries a fix commit that the provider reports on the pull request head. With
-  ``--send-unstamped-fixed`` a ``fixed`` finding that carries no fix commit is
-  transmitted in the same pass instead; one that carries a fix commit is held or
-  released by that commit either way.
+  carries a fix commit that the provider reports on the pull request head AND the
+  CI of that head has passed. With ``--send-unstamped-fixed`` a ``fixed`` finding
+  that carries no fix commit is transmitted in the same pass instead; one that
+  carries a fix commit is held or released by that commit and the head's CI either
+  way.
 
 Beside the findings contract sits one auxiliary provider read:
 
@@ -2966,6 +2967,20 @@ DEFERRED_NO_FIX_COMMIT = 'no_fix_commit'
 DEFERRED_PR_HEAD_UNREADABLE = 'pr_head_unreadable'
 DEFERRED_NOT_ON_PR_HEAD = 'fix_commit_not_on_pr_head'
 DEFERRED_ANCESTRY_UNREADABLE = 'fix_commit_ancestry_unreadable'
+# The fix commit is on the pull request head, but the head's CI has not passed. A
+# reviewer told "fixed" is pointed at the head, so the reply waits until that head is
+# shown to work: no conclusion yet (``pending``, or ``none`` when no check has
+# registered at the head), a failed conclusion, or a conclusion that could not be read.
+DEFERRED_PR_HEAD_CI_PENDING = 'pr_head_ci_pending'
+DEFERRED_PR_HEAD_CI_FAILED = 'pr_head_ci_failed'
+DEFERRED_PR_HEAD_CI_UNREADABLE = 'pr_head_ci_unreadable'
+
+# The overall CI conclusions ``github_ops._fetch_pr_overall_ci_status`` reports that
+# release a reply, and those that hold it as not yet concluded. ``none`` is no check
+# registered at the head yet — no verdict, so it waits like ``pending``.
+_PR_HEAD_CI_PASSED = 'success'
+_PR_HEAD_CI_FAILED = 'failure'
+_PR_HEAD_CI_NOT_CONCLUDED = frozenset({'pending', 'none'})
 
 # The compare states that say the first commit is reachable from the second: the
 # second is ahead of it, or the two are the same commit.
@@ -3005,12 +3020,13 @@ def _fix_commit_reaches_pr_head(commit_sha: str, pr_head_sha: str) -> bool | Non
 
 
 def _fix_commit_hold_reason(fix_commit_sha: str, pr_head_sha: str, reachable: dict[str, bool | None]) -> str:
-    """Return why a ``fixed`` reply is held, or ``''`` when it may be sent.
+    """Return why a ``fixed`` reply is held on its fix commit, or ``''`` when the commit check passes.
 
-    The reply may be sent only when the finding carries a fix commit AND that commit
-    reaches the pull request head. Every other state holds it, and each has its own
-    reason so the row says which fact is missing. ``reachable`` caches the provider
-    read per commit for the duration of one call.
+    The commit check passes only when the finding carries a fix commit AND that
+    commit reaches the pull request head. Every other state holds the reply, and each
+    has its own reason so the row says which fact is missing. ``reachable`` caches the
+    provider read per commit for the duration of one call. A reply that passes this
+    check is still held on the head's CI (:func:`_pr_head_ci_hold_reason`).
     """
     if not fix_commit_sha:
         return DEFERRED_NO_FIX_COMMIT
@@ -3022,6 +3038,33 @@ def _fix_commit_hold_reason(fix_commit_sha: str, pr_head_sha: str, reachable: di
     if verdict is None:
         return DEFERRED_ANCESTRY_UNREADABLE
     return '' if verdict else DEFERRED_NOT_ON_PR_HEAD
+
+
+def _pr_head_ci_hold_reason(pr_number: int) -> str:
+    """Return why the pull request head's CI holds a ``fixed`` reply, or ``''`` when it passed.
+
+    Asked once per ``post_responses`` call, and only after a stamped ``fixed`` reply
+    has passed the ancestry check: the fix is on the head, and the remaining question
+    is whether that head works. The read is the shared overall-CI read
+    (``github_ops._fetch_pr_overall_ci_status``), reached by attribute access so a
+    test's patch of ``github_ops`` is honoured.
+
+    Only ``success`` releases the reply. ``pending`` and ``none`` (no check has
+    registered at the head yet) hold it as :data:`DEFERRED_PR_HEAD_CI_PENDING`,
+    ``failure`` as :data:`DEFERRED_PR_HEAD_CI_FAILED`. A read that failed — and any
+    conclusion outside those four — holds it as :data:`DEFERRED_PR_HEAD_CI_UNREADABLE`:
+    a conclusion nobody could read is not a pass.
+    """
+    ok, overall = _github._fetch_pr_overall_ci_status(pr_number)
+    if not ok:
+        return DEFERRED_PR_HEAD_CI_UNREADABLE
+    if overall == _PR_HEAD_CI_PASSED:
+        return ''
+    if overall == _PR_HEAD_CI_FAILED:
+        return DEFERRED_PR_HEAD_CI_FAILED
+    if overall in _PR_HEAD_CI_NOT_CONCLUDED:
+        return DEFERRED_PR_HEAD_CI_PENDING
+    return DEFERRED_PR_HEAD_CI_UNREADABLE
 
 
 def _reply_with_fix_commit(reply_body: str, fix_commit_sha: str) -> str:
@@ -3080,30 +3123,36 @@ def cmd_post_responses(args):
     unconditional ``success``.
 
     **A ``fixed`` disposition is held until its fix commit is on the pull
-    request.** Triage records ``fixed`` when the fix is decided, before it is a
-    commit. Such a finding is transmitted only when it carries a ``fix_commit_sha``
-    stamp (``manage-findings stamp-fix-commit``) AND the provider reports that
-    commit as an ancestor of, or identical to, the pull request head. Until then it
-    is listed in ``deferred_until_commit`` with the reason — ``no_fix_commit``,
-    ``pr_head_unreadable``, ``fix_commit_not_on_pr_head`` or
-    ``fix_commit_ancestry_unreadable`` — and gets no reply, no resolve call and no
-    ``responded`` marker, so every later pass looks at it again. A held finding is
-    not a failure: it does not count as untransmitted and does not make the run
-    ``partial``. Once released, the transmitted reply is the stored
+    request and the head's CI has passed.** Triage records ``fixed`` when the fix is
+    decided, before it is a commit. Such a finding is transmitted only when it
+    carries a ``fix_commit_sha`` stamp (``manage-findings stamp-fix-commit``), the
+    provider reports that commit as an ancestor of, or identical to, the pull
+    request head, AND the overall CI conclusion of that head is ``success``. The CI
+    conclusion is read once per call (``github_ops._fetch_pr_overall_ci_status``),
+    and only when at least one stamped ``fixed`` reply passed the ancestry check.
+    Until all three hold the finding is listed in ``deferred_until_commit`` with the
+    reason — ``no_fix_commit``, ``pr_head_unreadable``,
+    ``fix_commit_not_on_pr_head``, ``fix_commit_ancestry_unreadable``,
+    ``pr_head_ci_pending`` (no conclusion yet, or no check registered at the head),
+    ``pr_head_ci_failed`` or ``pr_head_ci_unreadable`` — and gets no reply, no
+    resolve call and no ``responded`` marker, so every later pass looks at it again.
+    A held finding is not a failure: it does not count as untransmitted and does not
+    make the run ``partial``. Once released, the transmitted reply is the stored
     ``resolution_detail`` with the short commit id added, and a thread-bearing
     finding's thread is resolved in the same call. The predicate reads the stamp
     alone, so a fix a task produced and an inline fix are held and released the same
     way. The other four dispositions are transmitted at once.
 
-    **``--send-unstamped-fixed`` lifts the hold for a finding with no stamp.** The
-    hold is the default. A caller that runs no later respond pass passes the flag
-    (``args.send_unstamped_fixed``); a ``fixed`` finding that carries no
-    ``fix_commit_sha`` is then transmitted in this pass like the other four
-    dispositions, with the stored ``resolution_detail`` unchanged and no
+    **``--send-unstamped-fixed`` lifts the hold for a finding with no stamp, and is
+    the only bypass.** The hold is the default. A caller that runs no later respond
+    pass passes the flag (``args.send_unstamped_fixed``); a ``fixed`` finding that
+    carries no ``fix_commit_sha`` is then transmitted in this pass like the other
+    four dispositions, with the stored ``resolution_detail`` unchanged and no
     ``Fix commit:`` line, instead of being listed with ``no_fix_commit``. The flag
     changes nothing for a finding that does carry a stamp: its commit is still
-    checked against the pull request head, it is still held on the other three
-    reasons, and its reply still carries the commit id when it is released.
+    checked against the pull request head, the head's CI is still read, it is still
+    held on every other reason, and its reply still carries the commit id when it is
+    released.
 
     **Idempotent across rounds, keyed on (finding, disposition).** The findings
     store is plan-scoped and persists between passes, and terminality
@@ -3165,6 +3214,10 @@ def cmd_post_responses(args):
     pr_head_sha: str | None = None
     # One provider read per distinct fix commit.
     reachable: dict[str, bool | None] = {}
+    # Why the pull request head's CI holds a reply, read at most once and only when a
+    # stamped ``fixed`` reply has passed the ancestry check; ``None`` means not read
+    # yet, ``''`` means the head's CI passed.
+    pr_head_ci_hold: str | None = None
 
     for finding in findings:
         hash_id = finding.get('hash_id', '')
@@ -3228,12 +3281,20 @@ def cmd_post_responses(args):
         # block and is routed below with its stored reply unchanged — there is no
         # commit to name. A finding that DOES carry a stamp takes the block whatever
         # the flag says: its commit is still checked against the pull request head.
+        #
+        # A stamped reply that passed the ancestry check is held once more until the
+        # head's CI has passed: "fixed" points the reviewer at the head, so the head
+        # has to be shown to work first. The CI conclusion is read once per call.
         if finding.get('resolution') == FIXED_RESOLUTION:
             fix_commit_sha = str(finding.get(FIX_COMMIT_FIELD) or '').strip().lower()
             if fix_commit_sha or not send_unstamped_fixed:
                 if fix_commit_sha and pr_head_sha is None:
                     pr_head_sha = str(_github.fetch_pr_head_sha(pr_number) or '').strip().lower()
                 hold_reason = _fix_commit_hold_reason(fix_commit_sha, pr_head_sha or '', reachable)
+                if not hold_reason:
+                    if pr_head_ci_hold is None:
+                        pr_head_ci_hold = _pr_head_ci_hold_reason(pr_number)
+                    hold_reason = pr_head_ci_hold
                 if hold_reason:
                     fix_task_number = finding.get(FIX_TASK_FIELD)
                     deferred.append(
@@ -3481,7 +3542,7 @@ Examples:
                             'verification-feedback producer except finalize-feedback, whose held replies '
                             'the phase-6-finalize hook transmits after it stamps the fix commit. A finding '
                             'that does carry a stamp is unaffected: its commit is still checked against '
-                            'the pull request head.'
+                            "the pull request head, and its reply still waits for that head's CI to pass."
                         ),
                     },
                 ],

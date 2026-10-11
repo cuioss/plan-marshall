@@ -400,12 +400,13 @@ def _with_fix_commit_stamp(finding):
     """Return ``finding`` carrying the fix-commit stamp a released ``fixed`` row has.
 
     ``post_responses`` holds a ``fixed`` row until it carries a fix commit that the
-    provider reports on the pull request head. These rows are hand-built and handed
+    provider reports on the pull request head, and that head's CI has passed. These
+    rows are hand-built and handed
     to the verb through a patched ``query_findings``; they are in no store, so the
     store's ``stamp_fix_commit`` writer has nothing to write to. The stamp is set
     here under the writer's own field name (``FIX_COMMIT_FIELD``), which is the one
-    thing the verb reads. The other half of the release — the provider's answer —
-    is supplied by ``_patch_respond_surface``.
+    thing the verb reads. The rest of the release — the provider's answers on the
+    commit's ancestry and on the head's CI — is supplied by ``_patch_respond_surface``.
     """
     return {**finding, _live_findings_core().FIX_COMMIT_FIELD: _RESPOND_FIX_COMMIT}
 
@@ -418,13 +419,16 @@ def _patch_respond_surface(monkeypatch, findings, posted, replied):
     ``sys.modules`` entry at call time — the same reason ``_live_findings_core``
     exists above. Patching that attribute is what the SUT actually reads.
 
-    The provider's compare read answers ``ahead`` and the head read answers a fixed
-    SHA, so a stamped ``fixed`` row is released. This is the same seam
-    ``test_comments_stage_post.py`` drives.
+    The provider's compare read answers ``ahead``, the head read answers a fixed
+    SHA, and the head's overall CI read answers ``(True, 'success')`` — the head's CI
+    is green — so a stamped ``fixed`` row is released. Left to ``run_gh``, the CI read
+    would parse ``ahead`` as an unreadable conclusion and hold every stamped row.
+    These are the same seams ``test_comments_stage_post.py`` drives.
     """
     monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
     monkeypatch.setattr(github_pr._github, 'fetch_pr_head_sha', lambda pr_number: _HEAD_B)
     monkeypatch.setattr(github_pr._github, 'run_gh', lambda *_a, **_k: (0, 'ahead\n', ''))
+    monkeypatch.setattr(github_pr._github, '_fetch_pr_overall_ci_status', lambda pr_number: (True, 'success'))
     monkeypatch.setattr(
         _live_findings_core(),
         'query_findings',
