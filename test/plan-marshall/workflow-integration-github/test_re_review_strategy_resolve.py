@@ -1067,6 +1067,153 @@ def test_a_stale_notice_does_not_displace_the_cause_or_the_class():
         assert verdict['action'] == github_re_review.RECOVERY_ACTION_ESCALATE_NOT_AWAITABLE, bot
 
 
+# ---------------------------------------------------------------------------
+# A stale notice meeting a required bot with no review on record
+# ---------------------------------------------------------------------------
+
+#: The first-pass observation of a bot no plan holds a claim on: the window reads
+#: expired and the default budget is untouched.
+_FIRST_PASS_BUDGET = 6
+
+
+def test_recovery_action_triggers_once_for_a_stale_notice_with_no_review_on_record(monkeypatch, capsys):
+    """Through the CLI: a required bot that never reviewed is asked, not settled.
+
+    Settling here let every later pass meet the same notice and settle it again,
+    so a bot that never reviewed was never asked.
+    """
+    verdict = _run_recovery_action(
+        monkeypatch,
+        capsys,
+        '--bot-kind',
+        _awaitable_bot(),
+        '--cause',
+        'quota',
+        '--window-expired',
+        'true',
+        '--attempts-remaining',
+        str(_FIRST_PASS_BUDGET),
+        '--notice-stale',
+        'true',
+        '--review-on-record',
+        'absent',
+    )
+
+    assert verdict['action'] == github_re_review.RECOVERY_ACTION_TRIGGER_STALE_NOTICE
+    assert verdict['reason'] == 'stale_notice_no_review_on_record'
+    assert verdict['notice_stale'] is True
+    assert verdict['review_on_record'] == github_re_review.REVIEW_ON_RECORD_ABSENT
+    assert github_re_review.RECOVERY_ACTION_TRIGGER_STALE_NOTICE in verdict['recovery_actions']
+
+
+@pytest.mark.parametrize('attempt_held', [False, True], ids=['held-omitted', 'held'])
+def test_the_pass_after_the_trigger_meets_its_own_open_claim_and_never_triggers_again(attempt_held):
+    """Exactly one trigger across the two passes: the claim made after it is what stops a second.
+
+    The first pass triggers and claims; the second reads the same stale notice, the
+    same absent review, and this plan's own unexpired claim with one attempt spent.
+    """
+    bot = _awaitable_bot()
+    observations = {
+        'cause': _github_pr.REFUSAL_CAUSE_QUOTA,
+        'notice_stale': True,
+        'review_on_record': github_re_review.REVIEW_ON_RECORD_ABSENT,
+    }
+
+    first = github_re_review.resolve_recovery_action(
+        bot, window_expired=True, attempts_remaining=_FIRST_PASS_BUDGET, **observations
+    )
+    second = github_re_review.resolve_recovery_action(
+        bot,
+        window_expired=False,
+        attempts_remaining=_FIRST_PASS_BUDGET - 1,
+        attempt_held=attempt_held,
+        **observations,
+    )
+
+    assert first['action'] == github_re_review.RECOVERY_ACTION_TRIGGER_STALE_NOTICE
+    assert second['action'] == github_re_review.RECOVERY_ACTION_AWAIT_WINDOW
+    assert second['reason'] == 'claim_window_open'
+    triggers = [v for v in (first, second) if v['action'] == github_re_review.RECOVERY_ACTION_TRIGGER_STALE_NOTICE]
+    assert len(triggers) == 1
+
+
+def test_a_spent_budget_escalates_a_stale_notice_with_no_review_on_record():
+    """The trigger is capped by the rate-window attempt counter: none is left, none is posted."""
+    verdict = github_re_review.resolve_recovery_action(
+        _awaitable_bot(),
+        cause=_github_pr.REFUSAL_CAUSE_QUOTA,
+        window_expired=True,
+        attempts_remaining=0,
+        notice_stale=True,
+        review_on_record=github_re_review.REVIEW_ON_RECORD_ABSENT,
+    )
+
+    assert verdict['action'] == github_re_review.RECOVERY_ACTION_ESCALATE_EXHAUSTED
+    assert verdict['reason'] == 'attempt_cap_exhausted'
+
+
+@pytest.mark.parametrize(
+    'review_on_record',
+    [
+        pytest.param(github_re_review.REVIEW_ON_RECORD_CREDITED, id='credited'),
+        pytest.param(github_re_review.REVIEW_ON_RECORD_STALE, id='stale'),
+        pytest.param(github_re_review.REVIEW_ON_RECORD_UNDECIDABLE, id='undecidable'),
+        pytest.param('', id='unobserved'),
+    ],
+)
+def test_a_stale_notice_still_settles_for_a_bot_whose_review_is_not_observed_absent(review_on_record):
+    """⛔ MATCHED CONTROL — the same consult, with any review state but an observed absence."""
+    verdict = github_re_review.resolve_recovery_action(
+        _awaitable_bot(),
+        cause=_github_pr.REFUSAL_CAUSE_QUOTA,
+        window_expired=True,
+        attempts_remaining=_FIRST_PASS_BUDGET,
+        notice_stale=True,
+        review_on_record=review_on_record,
+    )
+
+    assert verdict['action'] == github_re_review.RECOVERY_ACTION_SETTLE_STALE_NOTICE
+    assert verdict['reason'] == 'notice_window_elapsed'
+
+
+def test_only_an_absent_review_turns_a_stale_notice_into_a_trigger():
+    """Swept over the whole review-on-record vocabulary, so a state added later is covered."""
+    triggering = {
+        state
+        for state in (*github_re_review.REVIEW_ON_RECORD_STATES, '')
+        if github_re_review.resolve_recovery_action(
+            _awaitable_bot(),
+            cause=_github_pr.REFUSAL_CAUSE_QUOTA,
+            window_expired=True,
+            attempts_remaining=_FIRST_PASS_BUDGET,
+            notice_stale=True,
+            review_on_record=state,
+        )['action']
+        == github_re_review.RECOVERY_ACTION_TRIGGER_STALE_NOTICE
+    }
+
+    assert triggering == {github_re_review.REVIEW_ON_RECORD_ABSENT}
+
+
+def test_a_fresh_notice_with_no_review_on_record_keeps_the_window_derivation():
+    """⛔ MATCHED CONTROL — the review observation moves only the stale arm.
+
+    A notice that is not stale describes an open window, so the same absent review
+    still awaits that window rather than triggering.
+    """
+    verdict = github_re_review.resolve_recovery_action(
+        _awaitable_bot(),
+        cause=_github_pr.REFUSAL_CAUSE_QUOTA,
+        window_expired=False,
+        attempts_remaining=_FIRST_PASS_BUDGET,
+        notice_stale=False,
+        review_on_record=github_re_review.REVIEW_ON_RECORD_ABSENT,
+    )
+
+    assert verdict['action'] == github_re_review.RECOVERY_ACTION_AWAIT_WINDOW
+
+
 def test_recovery_action_rejects_a_review_state_outside_the_vocabulary_at_the_parser(monkeypatch):
     """The CLI accepts exactly the selector's own vocabulary."""
     monkeypatch.setattr(

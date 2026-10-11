@@ -230,9 +230,14 @@ a ``rate_limited_bots[]`` record ``stale`` when the window its notice stated had
 elapsed by the time the notice was read (``_github_pr.notice_is_stale``).
 :func:`resolve_recovery_action` receives that as ``notice_stale`` and resolves
 ``settle_stale_notice`` for it instead of ``await_window``: no window is claimed and
-none is waited for. A caller that already holds a claim made on that notice passes
-``attempt_held`` and is routed to the elapsed arms as before, so the event its
-claim bought is still delivered.
+none is waited for. One observation overrides the settle: when the caller reports
+no review by the bot on record (``review_on_record: absent``), the notice is not
+"nothing to do" — the bot never answered — so it resolves ``trigger_stale_notice``
+within the attempt budget (``escalate_exhausted`` once that is spent), and the
+caller posts the ordinary trigger once and claims the window after it. A caller
+that already holds a claim made on that notice passes ``attempt_held`` and is
+routed to the elapsed arms as before, so the event its claim bought is still
+delivered.
 
 The escalated command passes through the same chokepoint as the ordinary one, so
 the rate-window guard above applies to it unchanged. One further guard applies to
@@ -666,6 +671,10 @@ RECOVERY_ACTION_POST_ESCALATED_COMMAND = 'post_escalated_command'
 #: The notice is stale: the window it stated had already elapsed when it was read, and
 #: this caller holds no claim made on it. Nothing is claimed and nothing is waited for.
 RECOVERY_ACTION_SETTLE_STALE_NOTICE = 'settle_stale_notice'
+#: The notice is stale and no review by the bot is on record for the merge candidate,
+#: with budget left and no open claim. Post the bot's ordinary trigger once, then claim
+#: the window so the attempt counter advances and the next pass meets that claim.
+RECOVERY_ACTION_TRIGGER_STALE_NOTICE = 'trigger_stale_notice'
 #: No verdict was computed, because an input the derivation needs was absent.
 #: Distinct from every arm above: it authorizes nothing.
 RECOVERY_ACTION_UNMEASURED = 'unmeasured'
@@ -685,6 +694,7 @@ RECOVERY_ACTIONS = (
     RECOVERY_ACTION_LEAVE_TO_STALE_REVIEW,
     RECOVERY_ACTION_POST_ESCALATED_COMMAND,
     RECOVERY_ACTION_SETTLE_STALE_NOTICE,
+    RECOVERY_ACTION_TRIGGER_STALE_NOTICE,
     RECOVERY_ACTION_UNMEASURED,
 )
 
@@ -802,13 +812,26 @@ def resolve_recovery_action(
        ``unmeasured``, never an authorizing verdict: acting on an unobserved
        window is the exact move that spent the bot's chat quota.
     5. **A STALE notice resolves ``settle_stale_notice`` — unless the attempt is
-       already HELD.** ``notice_stale`` is the refusal record's ``stale`` field:
-       the window the notice stated had already elapsed when the notice was read.
-       Such a notice describes no open window, so no window is claimed on it and
-       none is waited for, and this arm sits ahead of the budget and window arms
-       so that neither ``escalate_exhausted`` nor ``await_window`` is returned for
-       it. Nothing is triggered on its strength either: the trigger arms below
-       deliver an event a claim already paid for, and a stale notice bought none.
+       already HELD, or no review by the bot is on record.** ``notice_stale`` is
+       the refusal record's ``stale`` field: the window the notice stated had
+       already elapsed when the notice was read. Such a notice describes no open
+       window, so no window is waited for on its strength, and this arm sits ahead
+       of the budget and window arms so that neither ``escalate_exhausted`` nor
+       ``await_window`` is returned for a settled notice.
+
+       **``review_on_record == 'absent'`` does not settle.** Settling there was the
+       defect: a required bot that never reviewed was told "nothing to do", and
+       every later pass met the same notice and settled it again. Such a notice
+       proceeds through the budget and window arms instead — a spent budget
+       (``attempts_remaining <= 0``) resolves ``escalate_exhausted``, a claim still
+       running resolves ``await_window`` — and otherwise resolves
+       ``trigger_stale_notice`` with reason ``stale_notice_no_review_on_record``:
+       the caller posts the bot's ordinary trigger once and then claims the
+       window, so the attempt counter advances and the next pass meets this
+       caller's own unexpired claim (``await_window``) instead of triggering
+       again. Every other review observation — ``credited``, ``stale``,
+       ``undecidable``, or none supplied — still settles: only an observed
+       absence is a reason to ask the bot.
 
        ``attempt_held=True`` skips this arm, for the same reason it skips the
        exhausted one. A caller that claimed a window on this notice and waited it
@@ -930,12 +953,22 @@ def resolve_recovery_action(
         return {**verdict, 'action': RECOVERY_ACTION_UNMEASURED, 'reason': 'no_window_observation'}
     if attempts_remaining is None:
         return {**verdict, 'action': RECOVERY_ACTION_UNMEASURED, 'reason': 'no_attempt_budget_observation'}
-    if notice_stale and not attempt_held:
+    # A stale notice no claim is held on settles, unless the bot has no review on
+    # record at all: only an observed `absent` takes the budget and window arms
+    # below, and then triggers.
+    stale_unheld = notice_stale and not attempt_held
+    if stale_unheld and review_on_record != REVIEW_ON_RECORD_ABSENT:
         return {**verdict, 'action': RECOVERY_ACTION_SETTLE_STALE_NOTICE, 'reason': 'notice_window_elapsed'}
     if attempts_remaining <= 0 and not attempt_held:
         return {**verdict, 'action': RECOVERY_ACTION_ESCALATE_EXHAUSTED, 'reason': 'attempt_cap_exhausted'}
     if not window_expired:
         return {**verdict, 'action': RECOVERY_ACTION_AWAIT_WINDOW, 'reason': 'claim_window_open'}
+    if stale_unheld:
+        return {
+            **verdict,
+            'action': RECOVERY_ACTION_TRIGGER_STALE_NOTICE,
+            'reason': 'stale_notice_no_review_on_record',
+        }
     if semantics == bot_registry.TRIGGER_SEMANTICS_REQUIRES_EXPLICIT_TRIGGER:
         return {**verdict, 'action': RECOVERY_ACTION_CLOSE_AND_REOPEN, 'reason': 'claim_window_elapsed'}
     return {**verdict, 'action': RECOVERY_ACTION_GENERATE_TRIGGER, 'reason': 'claim_window_elapsed'}
@@ -1966,8 +1999,10 @@ def main() -> int:
             "participated_bots), 'stale' (named only in stale_participation_bots), 'undecidable' "
             '(named in undecidable_participation_bots, or in none of the three lists while '
             "fetch_complete is false) or 'absent' (in none of the three lists on a complete "
-            "fetch). 'undecidable' resolves unmeasured and never the posting arm. Read only for "
-            "condition 'no_unreviewed_commit'; OMIT it when unobserved (reads as unmeasured)"
+            "fetch). 'undecidable' resolves unmeasured and never the posting arm. Read for "
+            "condition 'no_unreviewed_commit', and by the stale-notice arm, where 'absent' "
+            'resolves trigger_stale_notice instead of settle_stale_notice; OMIT it when '
+            'unobserved (reads as unmeasured, and a stale notice then settles)'
         ),
     )
     recovery.add_argument(
@@ -2005,8 +2040,9 @@ def main() -> int:
         help=(
             "The refusal record's `stale` field: 'true' when the window the notice stated had "
             'already elapsed when the notice was read. A stale notice resolves settle_stale_notice '
-            'instead of await_window, unless --attempt-held is true. OMIT it when the record '
-            'carries no such field (reads as not stale)'
+            'instead of await_window, unless --attempt-held is true or --review-on-record is '
+            "'absent' (then trigger_stale_notice within the attempt budget). OMIT it when the "
+            'record carries no such field (reads as not stale)'
         ),
     )
     recovery.add_argument('--plan-id', help='Plan identifier (accepted for routing uniformity)')

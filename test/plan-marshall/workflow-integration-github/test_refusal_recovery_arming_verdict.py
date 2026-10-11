@@ -67,6 +67,7 @@ def _verdict(
     window_expired: bool | None = False,
     attempts_remaining: int | None = _ATTEMPTS_REMAINING,
     notice_stale: bool = False,
+    review_on_record: str = '',
 ) -> dict:
     """The SHIPPED selector's verdict for a detected refusal from ``bot_kind``.
 
@@ -80,7 +81,9 @@ def _verdict(
     clock, which is the observation under which the class axis is visible: it is
     the only one where an ``awaitable_window`` bot's answer differs from an
     escalating one. ``notice_stale`` defaults to a fresh notice, which is what
-    every case not about staleness means.
+    every case not about staleness means. ``review_on_record`` defaults to "not
+    observed", under which a stale notice settles; only an observed ``absent``
+    turns it into a trigger.
     """
     return github_re_review.resolve_recovery_action(
         bot_kind,
@@ -88,6 +91,7 @@ def _verdict(
         window_expired=window_expired,
         attempts_remaining=attempts_remaining,
         notice_stale=notice_stale,
+        review_on_record=review_on_record,
     )
 
 
@@ -546,6 +550,18 @@ class TestTheRecoveryActionSelectorDerivesItsVerdict:
                 _verdict(awaitable, notice_stale=True),
                 github_re_review.RECOVERY_ACTION_SETTLE_STALE_NOTICE,
                 'notice_window_elapsed',
+            ),
+            # The same stale notice from a bot with no review on record, its window
+            # read elapsed and budget left: the bot is asked once instead.
+            (
+                _verdict(
+                    awaitable,
+                    window_expired=True,
+                    notice_stale=True,
+                    review_on_record=github_re_review.REVIEW_ON_RECORD_ABSENT,
+                ),
+                github_re_review.RECOVERY_ACTION_TRIGGER_STALE_NOTICE,
+                'stale_notice_no_review_on_record',
             ),
             (
                 _verdict(awaitable, window_expired=True),
