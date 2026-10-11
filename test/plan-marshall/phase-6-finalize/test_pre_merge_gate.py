@@ -19,6 +19,10 @@ from conftest import load_script_module
 
 gate = load_script_module('plan-marshall', 'phase-6-finalize', 'pre_merge_gate.py', 'pre_merge_gate')
 
+# Both route-parametrized refusal tests bind gate.ROUTES; an empty route set would
+# turn every case into a silent skip, so pin it non-empty at collection time.
+assert len(gate.ROUTES) >= 1, 'pre_merge_gate.ROUTES is empty; the route-parametrized refusal tests would vanish'
+
 _PLAN_ID = 'pre-merge-gate-plan'
 _PROJECT_DIR = '/abs/worktree'
 
