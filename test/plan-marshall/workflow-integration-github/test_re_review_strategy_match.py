@@ -11,7 +11,9 @@ Covers the three concerns of the post-merge re-review registry:
          sourcery:   posts ``@sourcery-ai review``.
          cuioss-review-bot:   posts ``/review``.
     3. Two-signal completion matching — ``await_fresh_review`` is satisfied by
-       EITHER ``_match_review`` (a review whose reviewed-commit evidence REFERENCES
+       EITHER ``_match_review`` (a review authored by the awaited bot — its
+       ``user`` login resolves to the awaited ``bot_kind`` — whose reviewed-commit
+       evidence REFERENCES
        the pushed HEAD — recognised as a bare token or embedded in a commit URL, and
        compared for EQUALITY either way, so a differing commit still fails — whose
        ``submitted_at`` post-dates the trigger time, AND whose
@@ -205,13 +207,24 @@ def _noop_sleep(monkeypatch):
     monkeypatch.setattr(time, 'sleep', lambda *_a, **_kw: None)
 
 
-def _review(commit_sha, submitted_at, *, user='coderabbit[bot]', state='COMMENTED', body=''):
+#: CodeRabbit's review-author login as the REST ``/reviews`` payload carries it.
+#: ``bot_kind_for_author`` strips the ``[bot]`` suffix and resolves it to
+#: ``coderabbit``, so a review built with the default ``user`` passes the review
+#: arm's author gate when ``coderabbit`` is the awaited bot.
+_CODERABBIT_REVIEW_LOGIN = 'coderabbitai[bot]'
+
+
+def _review(commit_sha, submitted_at, *, user=_CODERABBIT_REVIEW_LOGIN, state='COMMENTED', body=''):
     """Build a review row in the shape fetch_pr_reviews_with_commits returns.
 
     ``body`` mirrors the widened projection: a review row now carries its body so
     the completion discriminator can tell a genuine review from a refusal notice
     submitted as a review object. It defaults to empty, which no refusal layer
     matches, so a fixture that does not care about the body behaves as before.
+
+    ``user`` is the author login the review arm's author gate reads. It defaults to
+    CodeRabbit's, so a review that should match a wait for another bot names that
+    bot's login explicitly.
     """
     return {
         'user': user,
@@ -580,17 +593,21 @@ def test_await_matches_an_edited_persistent_comment_via_updated_at(monkeypatch):
     assert result['head_sha_verified'] is False
 
 
-def test_await_without_bot_kind_never_matches_a_comment(monkeypatch):
-    """Omitting ``bot_kind`` fails closed to review-only matching.
+def test_await_without_bot_kind_never_matches_a_review_or_a_comment(monkeypatch):
+    """Omitting ``bot_kind`` fails closed on BOTH signals.
 
-    There is no authorship to gate on, so the comment matcher must decline rather
-    than accept any comment — "any comment counts" would be a false-green.
+    There is no authorship to gate on, so neither matcher may accept a record —
+    "any review or comment counts" would be a false-green. The review below would
+    match a wait for its own bot; without a ``bot_kind`` it must not.
     """
     _noop_sleep(monkeypatch)
     monkeypatch.setattr(
         github_re_review._github,
         'fetch_pr_reviews_with_commits',
-        lambda pr_number: {'status': 'success', 'reviews': []},
+        lambda pr_number: {
+            'status': 'success',
+            'reviews': [_review('headsha', '2026-01-01T00:05:00Z', body=_GENUINE_REVIEW_BODY)],
+        },
     )
 
     def exploding_fetch(*_a, **_kw):  # pragma: no cover - must not run
@@ -603,6 +620,8 @@ def test_await_without_bot_kind_never_matches_a_comment(monkeypatch):
 
     assert result['matched'] is False
     assert result['matched_signal'] == ''
+    assert result['matched_review'] == {}
+    assert result['head_sha_verified'] is False
 
 
 def test_match_bot_comment_fail_closed_on_unparseable_timestamps():
@@ -929,26 +948,197 @@ def test_a_genuine_short_review_with_a_code_anchor_still_matches(monkeypatch):
     assert result['refusals'] == []
 
 
-def test_match_review_without_bot_kind_applies_only_the_structural_layer():
-    """With no ``bot_kind`` only the structural arm can fire — the review still matches.
+def test_match_review_without_bot_kind_matches_nothing():
+    """With no ``bot_kind`` there is no authorship to gate on, so no review matches.
 
-    Pins the bot-scoping of the registry arm: Sourcery's refusal marker must not
-    leak into a review being matched for an unknown/unregistered bot. The
-    enumerative arm is likewise unable to fire without a resolved bot, so the
-    structural test is the only one that applies here — and it does not recognize
-    this phrasing.
+    Fail-closed exactly as the comment arm is. The same review matches once its own
+    bot is the awaited one — the matched control that shows the decline comes from
+    the missing ``bot_kind``, not from the record.
     """
     trigger_dt = _parse('2026-01-01T00:00:00Z')
-
     genuine = [_review('headsha', '2026-01-01T00:05:00Z', body=_GENUINE_REVIEW_BODY)]
-    assert _match_review(genuine, 'headsha', trigger_dt, None) is not None
+    refusals: list = []
 
-    # The Sourcery marker is bot-scoped data: with bot_kind None it cannot fire,
-    # and the structural layer does not match this phrasing, so the review matches.
-    marker_bearing = [_review('headsha', '2026-01-01T00:05:00Z', body=_SOURCERY_REFUSAL)]
-    assert _match_review(marker_bearing, 'headsha', trigger_dt, None) is not None
-    # ...and the SAME body IS rejected once the awaited bot is known.
-    assert _match_review(marker_bearing, 'headsha', trigger_dt, 'sourcery') is None
+    assert _match_review(genuine, 'headsha', trigger_dt, None, refusals) is None
+    assert refusals == []
+    assert _match_review(genuine, 'headsha', trigger_dt, 'coderabbit') is not None
+
+
+def test_the_registry_refusal_arm_is_scoped_to_the_awaited_bot():
+    """Another bot's refusal marker does not reject the awaited bot's own review.
+
+    Pins the bot-scoping of the registry arm: Sourcery's refusal marker is Sourcery's
+    data, so a CodeRabbit review quoting it is matched for CodeRabbit — the structural
+    arm does not recognize this phrasing either. The SAME body in Sourcery's own
+    review is rejected once Sourcery is the awaited bot.
+    """
+    trigger_dt = _parse('2026-01-01T00:00:00Z')
+    coderabbit_review = [_review('headsha', '2026-01-01T00:05:00Z', body=_SOURCERY_REFUSAL)]
+    sourcery_review = [_review('headsha', '2026-01-01T00:05:00Z', user='sourcery-ai[bot]', body=_SOURCERY_REFUSAL)]
+
+    assert _match_review(coderabbit_review, 'headsha', trigger_dt, 'coderabbit') is not None
+    assert _match_review(sourcery_review, 'headsha', trigger_dt, 'sourcery') is None
+
+
+# =============================================================================
+# Only the awaited bot's review is an answer
+# =============================================================================
+
+#: The two bots whose reviews and comments the author-gate cases below mix on one
+#: pull request. Each case runs once per awaited bot, so each run is the other's
+#: control: the same records, and only the awaited bot differs.
+_AUTHOR_GATE_BOTS = {
+    'coderabbit': {'review_login': _CODERABBIT_REVIEW_LOGIN, 'comment_login': 'coderabbitai'},
+    'cuioss-review-bot': {'review_login': 'cuioss-review-bot[bot]', 'comment_login': 'cuioss-review-bot'},
+}
+_AUTHOR_GATE_PARAMS = [pytest.param(kind, id=kind) for kind in _AUTHOR_GATE_BOTS]
+
+
+def _other_bot(bot_kind):
+    """Return the author-gate bot that is NOT ``bot_kind``."""
+    return next(kind for kind in _AUTHOR_GATE_BOTS if kind != bot_kind)
+
+
+def _answer_body(bot_kind, text):
+    """``text`` as ``bot_kind``'s answer comment, carrying its verdict marker when it declares one."""
+    marker = bot_registry.participation_evidence_marker(bot_kind, 'issue_comment')
+    return f'{marker}\n{text}' if marker else text
+
+
+def test_the_author_gate_population_resolves_through_the_registry():
+    """Non-vacuity: every login the cases below use resolves to the bot it stands for.
+
+    A login the registry did not know would be skipped by the gate for every awaited
+    bot alike, and the cases below would pass against a matcher that matched nothing.
+    """
+    for kind, logins in _AUTHOR_GATE_BOTS.items():
+        assert kind in bot_registry.bot_kinds()
+        assert github_re_review.bot_kind_for_author(logins['review_login']) == kind
+        assert github_re_review.bot_kind_for_author(logins['comment_login']) == kind
+
+
+@pytest.mark.parametrize('bot_kind', _AUTHOR_GATE_PARAMS)
+def test_another_bots_review_of_the_head_is_no_answer(monkeypatch, bot_kind):
+    """⛔ The defect this deliverable closes, pinned directly.
+
+    The other bot's review names the awaited head and post-dates the trigger, so
+    before the author gate it ended this bot's wait as ``matched: true`` /
+    ``head_sha_verified: true``. It is no answer from the awaited bot at all.
+    """
+    other = _other_bot(bot_kind)
+    review = _review(
+        'headsha', '2026-01-01T00:05:00Z', user=_AUTHOR_GATE_BOTS[other]['review_login'], body=_GENUINE_REVIEW_BODY
+    )
+
+    result = _await_with_comments(monkeypatch, [], reviews=[review], bot_kind=bot_kind)
+
+    assert result['matched'] is False
+    assert result['matched_signal'] == ''
+    assert result['matched_review'] == {}
+    assert result['head_sha_verified'] is False
+    assert result['timed_out'] is True
+
+
+@pytest.mark.parametrize('bot_kind', _AUTHOR_GATE_PARAMS)
+def test_only_the_awaited_bots_review_and_comment_match(monkeypatch, bot_kind):
+    """Both bots' reviews and comments after the trigger: only the awaited bot's match.
+
+    The other bot's review is listed FIRST, so a matcher without the author gate
+    would return it. The awaited bot's own review is the match, and its comment —
+    not the other bot's — would be the fallback signal.
+    """
+    other = _other_bot(bot_kind)
+    reviews = [
+        _review(
+            'headsha', '2026-01-01T00:05:00Z', user=_AUTHOR_GATE_BOTS[other]['review_login'], body='Other bot review.'
+        ),
+        _review(
+            'headsha', '2026-01-01T00:06:00Z', user=_AUTHOR_GATE_BOTS[bot_kind]['review_login'], body='Awaited review.'
+        ),
+    ]
+    comments = [
+        _comment(
+            _AUTHOR_GATE_BOTS[other]['comment_login'],
+            created_at='2026-01-01T00:05:00Z',
+            body=_answer_body(other, 'Other bot comment.'),
+        ),
+        _comment(
+            _AUTHOR_GATE_BOTS[bot_kind]['comment_login'],
+            created_at='2026-01-01T00:06:00Z',
+            body=_answer_body(bot_kind, 'Awaited bot comment.'),
+        ),
+    ]
+
+    result = _await_with_comments(monkeypatch, comments, reviews=reviews, bot_kind=bot_kind)
+    without_reviews = _await_with_comments(monkeypatch, comments, bot_kind=bot_kind)
+
+    assert result['matched'] is True
+    assert result['matched_signal'] == 'review'
+    assert result['matched_review']['user'] == _AUTHOR_GATE_BOTS[bot_kind]['review_login']
+    assert result['head_sha_verified'] is True
+    assert without_reviews['matched'] is True
+    assert without_reviews['matched_signal'] == 'issue_comment'
+    assert without_reviews['matched_comment']['author'] == _AUTHOR_GATE_BOTS[bot_kind]['comment_login']
+
+
+def test_another_bots_refusal_review_is_not_recorded_for_the_awaited_bot(monkeypatch):
+    """A refusal Sourcery submitted is Sourcery's, never a refusal of the awaited bot.
+
+    The author gate runs ahead of the refusal stack, so the refusal is skipped
+    without a record and the wait ends as a bare timeout — nothing arms a recovery
+    for a bot that never refused.
+    """
+    refusal = _review('headsha', '2026-01-01T00:05:00Z', user='sourcery-ai[bot]', body=_SOURCERY_REFUSAL)
+
+    result = _await_with_comments(monkeypatch, [], reviews=[refusal], bot_kind='coderabbit')
+
+    assert result['matched'] is False
+    assert result['refusal_detected'] is False
+    assert result['refusals'] == []
+    assert result['refusal_class'] == ''
+
+
+def test_the_same_refusal_review_is_recorded_for_its_own_bot(monkeypatch):
+    """MATCHED CONTROL: the same record, awaited for the bot that submitted it, is recorded."""
+    refusal = _review('headsha', '2026-01-01T00:05:00Z', user='sourcery-ai[bot]', body=_SOURCERY_REFUSAL)
+
+    result = _await_with_comments(monkeypatch, [], reviews=[refusal], bot_kind='sourcery')
+
+    assert result['matched'] is False
+    assert result['refusal_detected'] is True
+    assert len(result['refusals']) == 1
+    assert result['refusals'][0]['source'] == 'review'
+    assert result['refusals'][0]['bot_kind'] == 'sourcery'
+
+
+@pytest.mark.parametrize(
+    'user',
+    [
+        pytest.param('', id='empty-login'),
+        pytest.param(None, id='no-login'),
+        pytest.param('unknown', id='producer-fallback-login'),
+        pytest.param('alice', id='human-login'),
+    ],
+)
+def test_a_review_without_a_resolvable_author_fails_the_gate(user):
+    """A record whose login resolves to no ``bot_kind`` never matches (fail-closed).
+
+    ``unknown`` is the value ``fetch_pr_reviews_with_commits`` writes when the payload
+    carries no author, so it is the producer-shaped form of a missing login.
+    """
+    trigger_dt = _parse('2026-01-01T00:00:00Z')
+    review = _review('headsha', '2026-01-01T00:05:00Z', user=user, body=_GENUINE_REVIEW_BODY)
+
+    assert _match_review([review], 'headsha', trigger_dt, 'coderabbit') is None
+
+
+def test_a_review_record_without_a_user_key_fails_the_gate():
+    """A record carrying no author field at all is skipped, never matched."""
+    trigger_dt = _parse('2026-01-01T00:00:00Z')
+    review = _review('headsha', '2026-01-01T00:05:00Z', body=_GENUINE_REVIEW_BODY)
+    del review['user']
+
+    assert _match_review([review], 'headsha', trigger_dt, 'coderabbit') is None
 
 
 # =============================================================================

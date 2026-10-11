@@ -11,7 +11,9 @@ Covers the three concerns of the post-merge re-review registry:
          sourcery:   posts ``@sourcery-ai review``.
          cuioss-review-bot:   posts ``/review``.
     3. Two-signal completion matching — ``await_fresh_review`` is satisfied by
-       EITHER ``_match_review`` (a review whose reviewed-commit evidence REFERENCES
+       EITHER ``_match_review`` (a review authored by the awaited bot — its
+       ``user`` login resolves to the awaited ``bot_kind`` — whose reviewed-commit
+       evidence REFERENCES
        the pushed HEAD — recognised as a bare token or embedded in a commit URL, and
        compared for EQUALITY either way, so a differing commit still fails — whose
        ``submitted_at`` post-dates the trigger time, AND whose
@@ -178,13 +180,28 @@ def _noop_sleep(monkeypatch):
     monkeypatch.setattr(time, 'sleep', lambda *_a, **_kw: None)
 
 
-def _review(commit_sha, submitted_at, *, user='coderabbit[bot]', state='COMMENTED', body=''):
+def _review_login(bot_kind):
+    """Return a review-author login the registry resolves to ``bot_kind``.
+
+    Read from the registry's own login map rather than restated, in the ``[bot]``
+    suffixed form the REST ``/reviews`` payload carries; ``bot_kind_for_author``
+    strips the suffix before resolving it.
+    """
+    login = next(login for login, kind in bot_registry.login_to_bot_kind().items() if kind == bot_kind)
+    return f'{login}[bot]'
+
+
+def _review(commit_sha, submitted_at, *, user, state='COMMENTED', body=''):
     """Build a review row in the shape fetch_pr_reviews_with_commits returns.
 
     ``body`` mirrors the widened projection: a review row now carries its body so
     the completion discriminator can tell a genuine review from a refusal notice
     submitted as a review object. It defaults to empty, which no refusal layer
     matches, so a fixture that does not care about the body behaves as before.
+
+    ``user`` is required: the review arm matches only a review authored by the
+    awaited bot, so every fixture names its author (:func:`_review_login`) and a
+    review's outcome is never decided by an author the fixture left out.
     """
     return {
         'user': user,
@@ -484,7 +501,7 @@ def test_await_prefers_the_review_signal_when_both_are_present(monkeypatch):
     result = _await_with_comments(
         monkeypatch,
         [_comment(_PR_AGENT_LOGIN, created_at='2026-01-01T00:05:00Z')],
-        reviews=[_review('headsha', '2026-01-01T00:06:00Z')],
+        reviews=[_review('headsha', '2026-01-01T00:06:00Z', user=_review_login('cuioss-review-bot'))],
     )
 
     assert result['matched'] is True
@@ -506,7 +523,7 @@ def test_await_records_a_url_embedded_sha_as_a_verified_review(monkeypatch):
     result = _await_with_comments(
         monkeypatch,
         [],
-        reviews=[_review(_HEAD_SHA_URL, '2026-01-01T00:05:00Z')],
+        reviews=[_review(_HEAD_SHA_URL, '2026-01-01T00:05:00Z', user=_review_login('cuioss-review-bot'))],
         head_sha=_HEAD_SHA,
     )
 
@@ -527,7 +544,7 @@ def test_await_does_not_verify_a_review_naming_a_different_commit(monkeypatch):
     result = _await_with_comments(
         monkeypatch,
         [],
-        reviews=[_review(_OTHER_SHA_URL, '2026-01-01T00:05:00Z')],
+        reviews=[_review(_OTHER_SHA_URL, '2026-01-01T00:05:00Z', user=_review_login('cuioss-review-bot'))],
         head_sha=_HEAD_SHA,
     )
 
@@ -817,7 +834,7 @@ def test_await_does_not_credit_the_command_reply_delivered_as_a_review(monkeypat
             _review(
                 'headsha',
                 '2026-01-01T00:05:00Z',
-                user='coderabbitai[bot]',
+                user=_review_login('coderabbit'),
                 body=_CODERABBIT_COMMAND_REPLY_REFUSAL,
             )
         ],
@@ -845,7 +862,10 @@ def test_cmd_re_review_coderabbit_posts_then_awaits(monkeypatch):
     monkeypatch.setattr(
         github_re_review._github,
         'fetch_pr_reviews_with_commits',
-        lambda pr_number: {'status': 'success', 'reviews': [_review('headsha', '2026-01-01T00:05:00Z')]},
+        lambda pr_number: {
+            'status': 'success',
+            'reviews': [_review('headsha', '2026-01-01T00:05:00Z', user=_review_login('coderabbit'))],
+        },
     )
 
     result = github_re_review.cmd_re_review(_re_review_args(bot_kind='coderabbit'))
@@ -871,7 +891,10 @@ def test_cmd_re_review_pr_agent_posts_then_awaits(monkeypatch):
     monkeypatch.setattr(
         github_re_review._github,
         'fetch_pr_reviews_with_commits',
-        lambda pr_number: {'status': 'success', 'reviews': [_review('headsha', '2026-01-01T00:05:00Z')]},
+        lambda pr_number: {
+            'status': 'success',
+            'reviews': [_review('headsha', '2026-01-01T00:05:00Z', user=_review_login('cuioss-review-bot'))],
+        },
     )
 
     result = github_re_review.cmd_re_review(_re_review_args(bot_kind='cuioss-review-bot'))
@@ -922,7 +945,10 @@ def test_cmd_re_review_sourcery_posts_then_awaits(monkeypatch):
     monkeypatch.setattr(
         github_re_review._github,
         'fetch_pr_reviews_with_commits',
-        lambda pr_number: {'status': 'success', 'reviews': [_review('headsha', '2026-01-01T00:05:00Z')]},
+        lambda pr_number: {
+            'status': 'success',
+            'reviews': [_review('headsha', '2026-01-01T00:05:00Z', user=_review_login('sourcery'))],
+        },
     )
 
     result = github_re_review.cmd_re_review(_re_review_args(bot_kind='sourcery'))

@@ -26,8 +26,11 @@ auto-fire at all for some bots.
 ``await_fresh_review`` is identical for every bot and is satisfied by EITHER of
 two completion signals, checked in that order of strength:
 
-1. A **review** whose reviewed-commit evidence REFERENCES ``head_sha`` AND whose
-   ``submittedAt > trigger_time``. Preferred, and reported as
+1. A **review** authored by the awaited ``bot_kind`` whose reviewed-commit
+   evidence REFERENCES ``head_sha`` AND whose ``submittedAt > trigger_time``.
+   The author gate is the one signal 2 applies: every bot reviewing the same head
+   names the same SHA, so the SHA alone never says WHOSE review it is, and another
+   bot's review never ends a wait for this one. Preferred, and reported as
    ``matched_signal: review`` with ``head_sha_verified: true``. The reference is
    recognised wherever the evidence carries the SHA — as a bare token, or embedded
    in a commit URL — and compared for equality either way, so a differing commit
@@ -1163,9 +1166,10 @@ class _ReReviewStrategy:
                 match, and is the value the matched comment's body is checked
                 against on the comment path.
             trigger_time: ISO-8601 lower bound both signals must post-date.
-            bot_kind: The awaited bot. Required for the comment path — without
-                it there is no authorship to gate on, so only the review path
-                can match (fail-closed, never "any comment counts").
+            bot_kind: The awaited bot. Required for BOTH paths — each gates on
+                the record's author resolving to this kind, so without it there
+                is no authorship to gate on and nothing matches (fail-closed,
+                never "any review or comment counts").
             timeout: Poll budget in seconds.
             interval: Seconds between polls.
         """
@@ -1444,9 +1448,10 @@ class _ReReviewStrategy:
         bot_kind: str | None,
         refusals: list[dict],
     ) -> dict | None:
-        """Return the first genuine review matching ``head_sha`` and post-dating ``trigger_dt``.
+        """Return the first genuine ``bot_kind`` review matching ``head_sha`` and post-dating ``trigger_dt``.
 
-        A review matches when its reviewed-commit evidence REFERENCES ``head_sha``
+        A review matches when its author resolves through :func:`bot_kind_for_author`
+        to exactly ``bot_kind``, its reviewed-commit evidence REFERENCES ``head_sha``
         (:func:`_references_head_sha` — the SHA is recognised as a bare token or
         embedded in a commit URL, and is compared for equality either way), its
         ``submitted_at`` is strictly after ``trigger_dt``, AND its body is not a
@@ -1459,16 +1464,29 @@ class _ReReviewStrategy:
         ``submitted_at`` never matches (fail-closed). When ``trigger_dt`` is
         ``None`` (invalid or unparseable trigger time) the comparison is
         fail-closed — no review matches, preventing stale reviews from being
-        incorrectly accepted. There is deliberately NO author gate on this path —
-        the SHA match already establishes provenance.
+        incorrectly accepted.
+
+        **The author gate is what makes the match an answer from THIS bot.** The SHA
+        reference establishes which commit a review covers, never who wrote it:
+        every bot that reviews the same head names the same SHA, so without the gate
+        a re-review awaited for one bot completed on another bot's review. The gate
+        is the one :meth:`_match_bot_comment` applies, over the review record's
+        ``user`` login (the author field ``fetch_pr_reviews_with_commits`` returns),
+        and it runs FIRST — ahead of the SHA, timestamp and refusal tests — so a
+        refusal another bot submitted is not recorded in ``refusals`` as this bot's
+        either. Fail-closed exactly as the comment arm is: with no ``bot_kind`` there
+        is no authorship to gate on and no review matches, and a record whose login
+        is absent, unknown or a human's resolves to no ``bot_kind`` and is skipped.
 
         Every refusal this path skips is APPENDED to ``refusals`` so the caller can
         surface it on the envelope. A skipped refusal is a branchable signal, not a
         silent ``continue`` that degrades into an indistinguishable timeout.
         """
-        if trigger_dt is None:
+        if not bot_kind or trigger_dt is None:
             return None
         for review in reviews:
+            if bot_kind_for_author(review.get('user')) != bot_kind:
+                continue
             if not _references_head_sha(str(review.get('commit_sha') or ''), head_sha):
                 continue
             submitted_dt = _parse_iso(review.get('submitted_at') or '')
