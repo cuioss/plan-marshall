@@ -9,8 +9,8 @@ its spine carries ``ref-code-quality``'s review blocks plus the charter.
 Two halves:
 
 * **The real marketplace** — no security rule and no security category reaches a
-  code-review artifact, every derived domain has a rule-bearing pack, and a run
-  emits both sets.
+  code-review artifact, every derived domain has a rule-bearing pack, no domain
+  of either set loses a rule to the per-domain budget, and a run emits both sets.
 * **Fixture marketplaces** — the selection rules (declaring bundle only, defaults
   only, security skills excluded by construction, the spine bundle feeds the
   spine), the fail-closed reading of declarations and rule sources, and the
@@ -23,13 +23,23 @@ from pathlib import Path
 import pytest
 
 from conftest import PROJECT_ROOT
+from marketplace.targets.cuioss_review_bot import target as target_module
 from marketplace.targets.cuioss_review_bot.target import (
+    MAX_DOMAIN_RULES,
     CuiossReviewBotTarget,
     discover_code_review_domains,
     discover_code_review_spine,
+    discover_domains,
 )
 
 MARKETPLACE_BUNDLES = PROJECT_ROOT / 'marketplace' / 'bundles'
+
+#: The per-domain rule budget, declared HERE rather than read back from the
+#: generator, so a silent change to the constant is a failing test.
+EXPECTED_DOMAIN_RULE_BUDGET = 15
+
+#: A budget no real domain reaches — re-deriving under it yields the uncapped harvest.
+UNCAPPED_RULE_BUDGET = 10_000
 
 CODE_REVIEW_PREFIX = 'code-review-'
 CODE_REVIEW_SPINE_STEM = 'code-review-spine'
@@ -165,6 +175,62 @@ class TestRealMarketplace:
         assert len(bullets) <= 9
 
 
+@pytest.fixture(scope='module')
+def uncapped_domains() -> dict[str, dict]:
+    """Both real derivations re-run under a budget no domain reaches — the full harvest."""
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(target_module, 'MAX_DOMAIN_RULES', UNCAPPED_RULE_BUDGET)
+        return {
+            'code-review': discover_code_review_domains(MARKETPLACE_BUNDLES),
+            'security': discover_domains(MARKETPLACE_BUNDLES),
+        }
+
+
+class TestRuleBudget:
+    """No real domain loses a rule to the shared per-domain budget.
+
+    The cap slices the harvested list with no error, so a domain that outgrows it
+    publishes a pack that reads complete while its trailing rules are gone. Each
+    real domain is therefore compared against its own uncapped re-derivation.
+    """
+
+    def test_the_budget_is_the_declared_value(self):
+        assert MAX_DOMAIN_RULES == EXPECTED_DOMAIN_RULE_BUDGET
+
+    @pytest.mark.parametrize('domain', REAL_DOMAIN_IDS)
+    def test_no_code_review_domain_is_truncated(self, domain, uncapped_domains):
+        uncapped = uncapped_domains['code-review'][domain].rules
+
+        assert len(uncapped) <= EXPECTED_DOMAIN_RULE_BUDGET, f'{domain} harvests {len(uncapped)} rules'
+        assert REAL_DOMAINS[domain].rules == uncapped
+
+    def test_no_security_domain_is_truncated(self, uncapped_domains):
+        capped = discover_domains(MARKETPLACE_BUNDLES)
+        uncapped = uncapped_domains['security']
+
+        assert uncapped, 'control: the security set must derive domains'
+        assert {domain: c.rules for domain, c in capped.items()} == {domain: u.rules for domain, u in uncapped.items()}
+
+    def test_the_java_pack_carries_every_harvested_rule(self, uncapped_domains, code_review_artifacts):
+        harvested = uncapped_domains['code-review']['java'].rules
+        artifact = code_review_artifacts[f'{CODE_REVIEW_PREFIX}java']
+
+        assert harvested, 'control: the java domain must harvest review rules'
+        assert [rule for rule in harvested if f'- {rule}' not in artifact] == []
+
+    def test_the_truncation_guard_bites(self, uncapped_domains):
+        """Under a budget one below a real domain's harvest, the comparison fails."""
+        domain = max(REAL_DOMAIN_IDS, key=lambda key: len(uncapped_domains['code-review'][key].rules))
+        uncapped = uncapped_domains['code-review'][domain].rules
+
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(target_module, 'MAX_DOMAIN_RULES', len(uncapped) - 1)
+            capped = discover_code_review_domains(MARKETPLACE_BUNDLES)[domain].rules
+
+        assert capped != uncapped
+        assert capped == uncapped[:-1]
+
+
 # ---------------------------------------------------------------------------
 # Fixture marketplaces
 # ---------------------------------------------------------------------------
@@ -276,13 +342,13 @@ class TestSelection:
     def test_the_rule_budget_and_the_withholding_filter_apply(self, bundles):
         rules = (
             'Do not duplicate what the linter reports.',
-            *(f'Rule number {n} names a mechanism.' for n in range(15)),
+            *(f'Rule number {n} names a mechanism.' for n in range(EXPECTED_DOMAIN_RULE_BUDGET + 3)),
         )
         _write_skill(bundles, 'pm-fx-go', 'go-core', rules)
 
         harvested = discover_code_review_domains(bundles)['go'].rules
 
-        assert len(harvested) == 12
+        assert len(harvested) == EXPECTED_DOMAIN_RULE_BUDGET
         assert harvested[0] == 'Rule number 0 names a mechanism.'
 
     def test_a_wrapped_bullet_is_one_rule(self, bundles):

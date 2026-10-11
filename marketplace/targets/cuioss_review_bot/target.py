@@ -176,8 +176,12 @@ MAX_CATEGORY_BULLETS = 10
 #: without bound as standards are added. Each domain artifact carries up to this
 #: many rules, and a repository selecting several domains reads several
 #: artifacts — dropping a second domain's rules to hit a single total is exactly
-#: the silent under-review this target exists to fix.
-MAX_DOMAIN_RULES = 12
+#: the silent under-review this target exists to fix. The same holds within one
+#: domain: a cap the real marketplace exceeds drops that domain's trailing rules
+#: with no error, so the value sits at or above every real domain's harvested
+#: count in both sets, and ``test_code_review_packs.py`` § ``TestRuleBudget`` fails
+#: when a domain outgrows it.
+MAX_DOMAIN_RULES = 15
 
 #: Directory, under the target's output root, holding the emitted artifact set.
 _PACKS_DIRNAME = 'packs'
