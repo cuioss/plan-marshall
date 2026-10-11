@@ -853,7 +853,7 @@ script.
 | Producer / Consumer | Direction | Notation |
 |---------------------|-----------|----------|
 | `workflow-integration-git:integrate_into_main` | consumes | `merge_lock acquire`/`release` around the move-back; in-process `run_dequeue` after an acquire that took no lock |
-| `phase-6-finalize/standards/branch-cleanup.md` Pre-Merge Gate | consumes | `merge_lock acquire --wait-seconds` (re-issued under the admission budget on `admission: blocked`)/`check`/`release`; `dequeue` on an acquire `status: error` |
+| `phase-6-finalize/standards/branch-cleanup.md` Pre-Merge Gate | consumes | `merge_lock acquire --wait-seconds` (re-issued under the admission budget on `admission: blocked`)/`check`/`release`; `dequeue` on an acquire `status: error` and on every exit that gives up the admission without holding the lock, including the budget-exhaustion "Skip merge" |
 | build wrappers (`_build_execute_factory`, `_pyproject_execute`) | consume | `build_queue acquire`/`release` around `execute_direct` — the in-process fallback path (unregistered / daemon-down) |
 | `manage-build-server:_marshalld_scheduler` (via the D5 routing seam) | consumes | the same machine-global `build-queue.json` — the registered path (daemon-served builds) |
 | `automatic-review/SKILL.md` rate-limit recovery sequence | consumes | `merge_lock rate-window claim`/`check`/`release` |

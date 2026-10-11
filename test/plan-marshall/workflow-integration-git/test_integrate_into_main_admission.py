@@ -8,7 +8,8 @@ Contract under test:
   ``wait_seconds`` that sits below the merge lock's own per-call ceiling.
 * **Dequeue-only cleanup on every refused acquire** — an acquire that takes no
   lock, whether it returns ``status: blocked`` once the bound lapses, returns
-  ``status: error`` from any attempt, or raises, is followed by a dequeue from the
+  ``status: error`` from any attempt, or raises (an interrupt included, which is
+  re-raised after the cleanup), is followed by a dequeue from the
   merge FIFO queue through ``merge_lock.run_dequeue``. The cleanup never calls
   ``run_release`` and never touches ``merge.lock``: a lock a concurrent call for
   the SAME plan created after the refused attempt survives it. The surfaced
@@ -61,7 +62,7 @@ class _ScriptedMergeLock:
         *,
         dequeue_result: dict[str, Any] | None = None,
         dequeue_raises: bool = False,
-        acquire_raises: bool = False,
+        acquire_raises: type[BaseException] | None = None,
     ) -> None:
         self.acquire_result = acquire_result or {'status': 'success', 'action': 'acquired'}
         self.acquire_raises = acquire_raises
@@ -75,8 +76,8 @@ class _ScriptedMergeLock:
     def run_acquire(self, args: Namespace) -> dict:
         self.acquired += 1
         self.acquire_wait_seconds.append(getattr(args, 'wait_seconds', 'absent'))
-        if self.acquire_raises:
-            raise OSError('simulated lock-file create failure')
+        if self.acquire_raises is not None:
+            raise self.acquire_raises('simulated fault inside the bounded wait')
         return {**self.acquire_result, 'plan_id': args.plan_id}
 
     def run_release(self, args: Namespace) -> dict:
@@ -343,7 +344,7 @@ class TestRefusedAcquireReportsTheDequeue:
         """A fault escaping the acquire (the lock-file create runs after the enqueue)
         is surfaced as ``status: error`` and still dequeues, so no FIFO entry is
         stranded; the plan dir never leaves the worktree."""
-        lock = _use_lock(monkeypatch, _ScriptedMergeLock(acquire_raises=True))
+        lock = _use_lock(monkeypatch, _ScriptedMergeLock(acquire_raises=OSError))
 
         result = integrate_into_main.run_integrate_into_main(Namespace(plan_id=_PLAN_ID))
 
@@ -354,6 +355,23 @@ class TestRefusedAcquireReportsTheDequeue:
         assert lock.released == 0
         assert (isolated_env['wt_plan_dir'] / 'status.json').is_file()
         assert not isolated_env['main_plan_dir'].exists()
+
+    @pytest.mark.parametrize('interrupt', [KeyboardInterrupt, SystemExit], ids=['keyboard-interrupt', 'system-exit'])
+    @pytest.mark.parametrize('dequeue_raises', [False, True], ids=['dequeue-ok', 'dequeue-raises'])
+    def test_interrupt_escaping_the_acquire_is_dequeued_and_propagates(
+        self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch, interrupt: type[BaseException], dequeue_raises: bool
+    ) -> None:
+        """An interrupt escaping the bounded wait dequeues the plan's FIFO entry and
+        then propagates unchanged; a dequeue that itself fails never replaces the
+        interrupt, and nothing is released."""
+        lock = _use_lock(monkeypatch, _ScriptedMergeLock(acquire_raises=interrupt, dequeue_raises=dequeue_raises))
+
+        with pytest.raises(interrupt):
+            integrate_into_main.run_integrate_into_main(Namespace(plan_id=_PLAN_ID))
+
+        assert lock.dequeued == 1
+        assert lock.released == 0
+        assert (isolated_env['wt_plan_dir'] / 'status.json').is_file()
 
     def test_already_held_grant_is_never_dequeued(self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch) -> None:
         """A reentrant ``already_held`` grant is a success: no dequeue, no release."""

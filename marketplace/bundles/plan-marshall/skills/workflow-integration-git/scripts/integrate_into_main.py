@@ -434,7 +434,9 @@ def _dequeue_after_refused_acquire(merge_lock: Any, plan_id: str) -> bool:
     """Dequeue ``plan_id`` from the merge FIFO queue after an acquire that took no lock.
 
     Runs on every non-success acquire result — ``status: blocked`` and
-    ``status: error`` alike. Within one bounded wait an earlier attempt may have
+    ``status: error`` alike — and on every raise escaping the acquire, including a
+    ``KeyboardInterrupt`` or ``SystemExit`` the caller re-raises afterwards.
+    Within one bounded wait an earlier attempt may have
     FIFO-enqueued the plan before a later attempt was blocked or failed, so
     neither status proves the queue holds no entry for it; dequeuing an absent
     entry is a no-op, so the dequeue is issued unconditionally.
@@ -446,9 +448,12 @@ def _dequeue_after_refused_acquire(merge_lock: Any, plan_id: str) -> bool:
     last attempt and the cleanup, a concurrent call for the SAME ``plan_id``
     (sharing the one FIFO entry) can be admitted and create the lock; a release
     would then delete that call's lock mid-integration and let a foreign plan in.
-    Dequeue-only strands nothing either: every reachable acquire error or raise
-    happens before this call created a lock, so there is no lock of its own to
-    free.
+    Dequeue-only strands nothing for an error payload or an ``Exception``: every
+    one of those happens before this call created a lock, so there is no lock of
+    its own to free. An interrupt is asynchronous and can land after the
+    ``O_EXCL`` create but before the acquire returned; that lock is left in
+    place, because the cleanup cannot tell it apart from a concurrent same-plan
+    call's lock.
 
     Returns ``True`` when the dequeue reported ``status: success`` (no entry
     remains), ``False`` when it reported anything else or raised, so the caller
@@ -584,7 +589,9 @@ def run_integrate_into_main(args: Namespace) -> dict[str, Any]:
     had enqueued the plan), and a raise escaping the acquire — is followed by a
     dequeue-only cleanup through ``merge_lock.run_dequeue``, which never touches
     ``merge.lock``. The acquire payload is then surfaced with ``dequeued``
-    reporting whether that dequeue landed. Without it an abandoned FIFO entry
+    reporting whether that dequeue landed. A ``KeyboardInterrupt`` or
+    ``SystemExit`` escaping the acquire is dequeued the same way and then
+    re-raised rather than converted to a payload. Without it an abandoned FIFO entry
     would stay queued, and a live worktree would wedge every plan queued behind
     it.
     """
@@ -679,6 +686,13 @@ def run_integrate_into_main(args: Namespace) -> dict[str, Any]:
                 'dequeued': _dequeue_after_refused_acquire(merge_lock, plan_id),
             }
         )
+    except BaseException:
+        # A KeyboardInterrupt or SystemExit during the bounded wait is not converted
+        # to a payload: it propagates. An attempt may still have enqueued the plan,
+        # so the same dequeue-only cleanup runs first. The helper swallows its own
+        # Exception, so a failed dequeue never replaces the propagating interrupt.
+        _dequeue_after_refused_acquire(merge_lock, plan_id)
+        raise
     if acquire_result.get('status') != 'success':
         # No lock was acquired — admission still blocked once the bound lapsed, or
         # an attempt errored (a resolution failure, or a queue read-modify-write
