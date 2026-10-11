@@ -1995,7 +1995,7 @@ This step declares the `records_facts` union `action`, `upstream_commit_count`, 
 - **Branch A** — worst case `rebase deferred to queue, queue-merged, corroborated, cleanup complete`, **70 chars**. The two axes are **coupled by `use_merge_queue`**, so the longest rebase clause and the longest merge clause cannot co-occur: `already current with base` (25) requires a rebase to have run, which happens only on `use_merge_queue == false`, where the merge clause is necessarily `merged directly` (15); and `queue-merged, corroborated` (26) requires `use_merge_queue == true`, where the rebase is skipped and the clause is `rebase deferred to queue` (24). Measuring the free cross-product would report an unreachable 71.
 - **Branch E** — worst case `merged under barrier-ask-override, gap recorded`, **47 chars**. `{kind}` does NOT range over the whole `bound_via: grant` set: this site checks with `--gap-class review-barrier-gap`, and `barrier-ask-override` is the only § "Merge-Authorization Roster" row whose `authorizes:` is `review-barrier-gap`, so it is the only value `admissible_kinds` can yield here — and it is also the literal the `ask` path substitutes. The longest grant kind overall is `rereview-timeout-override` (25 chars, which would expand to 52), but it authorizes `rereview-timeout` and can never be admissible at this site.
 
-Branch B carries one placeholder (`{base_branch}`) and is checked the same way. Branches C, D, and F carry none in their display details, so each is its own worst case — C 16, D 26, and F's longest sub-path F1 42 chars, measured — and the longest of those three is Branch F at **42 chars**.
+Branch B carries one placeholder (`{base_branch}`) and is checked the same way. Branches C, D, and F carry none in their display details, so each is its own worst case — C 16, D 26, and F's longest sub-path F2 44 chars, measured — and the longest of those three is Branch F at **44 chars**.
 
 The three `loop_back` call sites in the pre-merge comment barrier are deliberately untouched. The reason is that each hands control back with the cleanup **not attempted** — no branch state was determined, so there is no honest subset to record. It is NOT that `loop_back` exempts a site from the fact obligation: Branch F is a `loop_back` and does carry facts, because it determined the PR's state before deferring.
 
@@ -2109,7 +2109,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --fact merge_state={f2_state} \
   --fact cleanup_owed=true \
   --fact work_performed=true \
-  --display-detail "dequeued without merging, cleanup owed"
+  --display-detail "closed or dequeued, not merged, cleanup owed"
 ```
 
 **F3 — state unobservable** (`status: error` on `pr wait-for-queue-settle`, or an `enqueued: indeterminate` enqueue on which the operator chose "Stop here" at § "Merge routing" → **Unobserved enqueue**). The run could not observe where the PR stands — the gate could not read the PR at all, or the queue read never showed the PR in the queue. It fails CLOSED: it must not claim `open`, which would assert a state nobody observed, and must not loop.
@@ -2125,7 +2125,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --display-detail "merge state unobserved, cleanup owed"
 ```
 
-Every detail above is a fixed literal (F1 42, F2 38, F3 36 chars, measured not transcribed; no placeholders), so each worst case is its literal form.
+Every detail above is a fixed literal (F1 42, F2 44, F3 36 chars, measured not transcribed; no placeholders), so each worst case is its literal form. F2's literal names both of its entries — `settle: closed` and `settle: dequeued` — so it is true on either.
 
 **Why F1 loops back and F2/F3 do not.** F1 ends with work still owed AND a path to discharging it: the queue has the PR, the merge has not landed, and the local branch and worktree still exist. A
 `done` record would suppress the very re-entry that deferral depends on — `default:branch-cleanup`

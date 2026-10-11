@@ -94,7 +94,29 @@ _COMPLETION_GUARD_PHASES: frozenset[str] = frozenset({'6-finalize'})
 #: The reason vocabulary itself stays open: every value NOT in this set is a
 #: deliberate non-completion close (abandonment, low confidence, cleanup) and keeps
 #: the exemption, reported through :func:`_exempt_archive_findings_report`.
+#: Members are stored in canonical form and matched against
+#: :func:`_normalize_archive_reason`, so a spelling variant is gated too.
 _COMPLETION_ASSERTING_ARCHIVE_REASONS: frozenset[str] = frozenset({'normal_completion'})
+
+#: The ``error`` code ``cmd_archive`` returns for a ``--reason`` that is empty or
+#: whitespace-only. Such a value names no reason at all, yet it is not ``None`` —
+#: so before this refusal existed it slipped past the ``reason is None`` gate test
+#: and took the reason-EXEMPT path, disarming the completion gate without stating
+#: any decision.
+ARCHIVE_REASON_EMPTY_ERROR = 'invalid_archive_reason'
+
+
+def _normalize_archive_reason(reason: str) -> str:
+    """Return the canonical comparison form of an archive ``--reason``.
+
+    Strip surrounding whitespace and casefold, so ``' normal_completion'`` and
+    ``'Normal_Completion'`` are recognised as the completion-asserting reason they
+    spell. The membership test against :data:`_COMPLETION_ASSERTING_ARCHIVE_REASONS`
+    reads this form; an exact-match test let every spelling variant of a
+    completion-asserting reason bypass the gate it is meant to take.
+    """
+    return reason.strip().casefold()
+
 
 #: The literal ``pending_actionable_count`` carries when the pending-findings query was
 #: unevaluable. Deliberately a string, never ``0``: an unevaluable count published as
@@ -954,8 +976,8 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     A record whose ``phases`` could not be read in full is handled separately in both
     directions, because an unknown open-phase set is not an empty one:
 
-    - a COMPLETION archive — no ``--reason``, or a reason in
-      :data:`_COMPLETION_ASSERTING_ARCHIVE_REASONS` — is REFUSED
+    - a COMPLETION archive — no ``--reason``, or a reason whose stripped, casefolded
+      form is in :data:`_COMPLETION_ASSERTING_ARCHIVE_REASONS` — is REFUSED
       (``error: phases_unexaminable``): the gate below cannot establish that
       ``6-finalize`` is closed, and a guard whose job is to refuse must fail closed
       rather than fall through;
@@ -981,6 +1003,25 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     ``status-lifecycle.md`` § "Loop-back re-entry marker: two consumption points".
     """
     require_valid_plan_id(args)
+
+    # An empty or whitespace-only --reason names no reason, so it is refused before
+    # anything is read or moved. Accepting it would route a reason-less close through
+    # the exempt path. Every surviving reason is stripped once here: the stripped form
+    # is what is persisted and reported, and its casefolded form is what the
+    # completion-asserting membership test below reads.
+    reason = getattr(args, 'reason', None)
+    if reason is not None:
+        reason = reason.strip()
+        if not reason:
+            return {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': ARCHIVE_REASON_EMPTY_ERROR,
+                'message': (
+                    f'Refusing to archive {args.plan_id!r}: --reason is empty or whitespace-only. '
+                    'Omit --reason for a completion archive, or name the deliberate reason.'
+                ),
+            }
 
     plan_dir = get_plan_dir(args.plan_id)
     if not plan_dir.exists():
@@ -1038,9 +1079,8 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     # with actionable findings still pending. Finalize being OPEN is the condition the
     # gate is about; which phase is nominally current is not.
     open_scan = in_progress_phases(status)
-    reason = getattr(args, 'reason', None)
     exemption_report: dict[str, Any] | None = None
-    if reason is None or reason in _COMPLETION_ASSERTING_ARCHIVE_REASONS:
+    if reason is None or _normalize_archive_reason(reason) in _COMPLETION_ASSERTING_ARCHIVE_REASONS:
         # Fail CLOSED on an unexaminable record. This guard's job is to refuse, and a
         # scan that could not read the phase structure cannot establish that
         # ``6-finalize`` is closed — falling through would let the archive proceed on

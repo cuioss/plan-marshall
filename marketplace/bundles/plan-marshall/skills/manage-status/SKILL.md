@@ -1297,15 +1297,20 @@ rule `stuck-low-confidence-archive` as the canonical remediation flag so a
 retrospective audit can distinguish intentional abandonment from neglect.
 
 **The reason vocabulary is open, and one part of it is gated.** Any non-empty
-string is accepted, and the reason decides which path the archive takes:
+string is accepted; an empty or whitespace-only `--reason` names no reason and is
+refused with `error: invalid_archive_reason` before anything is read or moved.
+Surrounding whitespace is stripped from every accepted reason, and the stripped
+value is what `archived_reason` records. The reason decides which path the
+archive takes:
 
 | Reason | Path |
 |--------|------|
 | absent | **Gated** — the completion archive `archive-plan` issues. |
-| `normal_completion` | **Gated** exactly like an absent reason. A reason that asserts the plan completed is the close the blocking-findings gate exists to guard, so naming it can never disarm that gate. The set of completion-asserting reasons is `_COMPLETION_ASSERTING_ARCHIVE_REASONS` in `scripts/_cmd_lifecycle.py`. |
+| empty or whitespace-only | **Refused** with `error: invalid_archive_reason`; nothing is moved. |
+| `normal_completion` | **Gated** exactly like an absent reason. A reason that asserts the plan completed is the close the blocking-findings gate exists to guard, so naming it can never disarm that gate. The membership test is case-insensitive over the stripped value, so `Normal_Completion` and ` normal_completion` are gated too. The set of completion-asserting reasons is `_COMPLETION_ASSERTING_ARCHIVE_REASONS` in `scripts/_cmd_lifecycle.py`. |
 | any other value (e.g. `low_confidence`, `scope_changed`, `superseded_by_<plan_id>`, `orphan_directory`, `dangling_worktree`) | **Exempt but reported** — a deliberate non-completion close. |
 
-A gated archive is refused with `error: blocking_findings_present` while `6-finalize` is open and an actionable finding is pending, and with `error: phases_unexaminable` when the phases cannot be read (below). Both refusals exit `0` and move nothing.
+A gated archive is refused with `error: blocking_findings_present` while `6-finalize` is open and an actionable finding is pending, and with `error: phases_unexaminable` when the phases cannot be read (below). Both refusals — and the `invalid_archive_reason` refusal above — exit `0` and move nothing.
 
 An exempt archive is never refused by the findings gate, but the findings state is still evaluated, so an exempt close is never silent:
 
@@ -1353,6 +1358,14 @@ per_type:
 message: "pending_findings_blocking_count failed for phase '6-finalize': ..."
 ```
 
+**Output — empty `--reason` refused** (TOON, nothing moved):
+```toon
+status: error
+plan_id: my-feature
+error: invalid_archive_reason
+message: "Refusing to archive 'my-feature': --reason is empty or whitespace-only. ..."
+```
+
 **Output — phases unreadable, archived deliberately with `--reason`** (TOON):
 ```toon
 status: success
@@ -1360,6 +1373,8 @@ plan_id: my-feature
 archived_to: .plan/local/archived-plans/2026-04-02-my-feature
 phase_closure: partial
 phase_closure_reason: "the phases of 'my-feature' could not be read in full, so the open-phase set is unknown and the existing current_phase was preserved rather than written complete: phases[1] is str, not a phase record"
+findings_gate: exempted_by_reason
+pending_actionable_count: 0
 ```
 
 **Output — phases unreadable, gated archive** (TOON, fail-closed, nothing moved):
