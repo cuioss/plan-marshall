@@ -10,6 +10,7 @@ Its sections, in order:
 * Idempotent re-poll — a blocked plan re-polling KEEPS its FIFO position
 * Release advances the FIFO front
 * Release
+* Dequeue-only — ``run_dequeue`` removes the FIFO entry and never touches the lock
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from __future__ import annotations
 import json
 from argparse import Namespace
 
+import pytest
 from _manage_locks_merge_lock_fixtures import (
     _make_live_plan,
     _stub_title_tokens,
@@ -264,3 +266,74 @@ class TestRelease:
         # The front holder's lock is intact, but the waiter is gone from the queue.
         assert isolated_base['lock_path'].read_text(encoding='utf-8').strip() == 'front'
         assert _waiting_plan_ids(isolated_base['queue_path']) == ['front']
+
+
+# =============================================================================
+# Dequeue-only
+# =============================================================================
+
+
+class TestDequeueOnly:
+    """``run_dequeue`` is the refused-acquire cleanup: it removes the plan's FIFO
+    entry and leaves ``merge.lock`` and the co-tenant ``rate_windows`` key alone —
+    even when the lock's recorded holder is the very plan being dequeued."""
+
+    def test_removes_the_entry_and_reports_the_remaining_depth(self, isolated_base: dict) -> None:
+        base = isolated_base['base']
+        for name in ('front', 'waiter'):
+            _make_live_plan(base, name)
+        merge_lock.run_acquire(Namespace(plan_id='front'))
+        merge_lock.run_acquire(Namespace(plan_id='waiter'))
+
+        result = merge_lock.run_dequeue('waiter')
+
+        assert result['status'] == 'success', result
+        assert result['action'] == 'dequeued', result
+        assert result['waiting_count'] == 1, result
+        assert _waiting_plan_ids(isolated_base['queue_path']) == ['front']
+        assert isolated_base['lock_path'].read_text(encoding='utf-8').strip() == 'front'
+
+    def test_never_removes_a_lock_held_by_the_dequeued_plan(self, isolated_base: dict) -> None:
+        """The contrast with ``run_release``: the holder IS the dequeued plan, and the
+        lock file still survives, because a dequeue never touches the lock."""
+        _make_live_plan(isolated_base['base'], 'plan-a')
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
+
+        result = merge_lock.run_dequeue('plan-a')
+
+        assert result['status'] == 'success', result
+        assert isolated_base['lock_path'].read_text(encoding='utf-8').strip() == 'plan-a'
+        assert _waiting_plan_ids(isolated_base['queue_path']) == []
+
+    def test_preserves_the_rate_windows_key(self, isolated_base: dict) -> None:
+        windows = {'coderabbit': {'holder': 'plan-a', 'pr_number': 7, 'expires_at': 1.0, 'attempts': 1}}
+        isolated_base['queue_path'].write_text(
+            json.dumps({'waiting': [{'plan_id': 'plan-a', 'ts': 1.0}], 'rate_windows': windows}), encoding='utf-8'
+        )
+        _make_live_plan(isolated_base['base'], 'plan-a')
+
+        merge_lock.run_dequeue('plan-a')
+
+        stored = json.loads(isolated_base['queue_path'].read_text(encoding='utf-8'))
+        assert stored['rate_windows'] == windows
+        assert stored['waiting'] == []
+
+    def test_absent_entry_is_an_idempotent_success(self, isolated_base: dict) -> None:
+        first = merge_lock.run_dequeue('never-queued')
+        second = merge_lock.run_dequeue('never-queued')
+
+        assert first['status'] == 'success', first
+        assert second['status'] == 'success', second
+        assert second['waiting_count'] == 0, second
+        assert not isolated_base['lock_path'].exists()
+
+    def test_queue_failure_is_an_error_payload(self, isolated_base: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+        def guard_timeout(plan_id: str) -> int:
+            raise TimeoutError('simulated merge-queue guard timeout')
+
+        monkeypatch.setattr(merge_lock, '_dequeue_fifo', guard_timeout)
+
+        result = merge_lock.run_dequeue('plan-a')
+
+        assert result['status'] == 'error', result
+        assert 'simulated merge-queue guard timeout' in result['error'], result

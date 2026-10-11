@@ -76,6 +76,7 @@ class _FakeMergeLock:
         self.acquire_status = acquire_status
         self.acquired = 0
         self.released = 0
+        self.dequeued = 0
         self.acquire_set_title_tokens: list[object] = []
         self.release_set_title_tokens: list[object] = []
 
@@ -90,6 +91,10 @@ class _FakeMergeLock:
         self.released += 1
         self.release_set_title_tokens.append(getattr(args, 'set_title_token', 'absent'))
         return {'status': 'success', 'plan_id': args.plan_id, 'action': 'released'}
+
+    def run_dequeue(self, plan_id: str) -> dict:
+        self.dequeued += 1
+        return {'status': 'success', 'plan_id': plan_id, 'action': 'dequeued', 'waiting_count': 0}
 
 
 @pytest.fixture
@@ -215,8 +220,9 @@ class TestIntegrateLockFailure:
     def test_acquire_failure_surfaces_never_moves_and_only_dequeues(
         self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A failed acquire moves nothing; its one release call is the FIFO dequeue
-        an earlier attempt's enqueue may need, reported as ``dequeued``."""
+        """A failed acquire moves nothing; its one cleanup call is the dequeue-only
+        FIFO removal an earlier attempt's enqueue may need, reported as
+        ``dequeued`` — never a release, which could remove a same-plan lock."""
         env = isolated_env
         failing_lock = _FakeMergeLock(acquire_status='error')
         monkeypatch.setattr(integrate_into_main, '_load_merge_lock', lambda: failing_lock)
@@ -229,7 +235,8 @@ class TestIntegrateLockFailure:
         assert env['wt_plan_dir'].is_dir()
         assert not env['main_plan_dir'].exists()
         assert failing_lock.acquired == 1
-        assert failing_lock.released == 1
+        assert failing_lock.dequeued == 1
+        assert failing_lock.released == 0
 
 
 # =============================================================================

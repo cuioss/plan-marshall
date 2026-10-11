@@ -1935,6 +1935,39 @@ def run_release(args: Namespace) -> dict[str, Any]:
     }
 
 
+def run_dequeue(plan_id: str) -> dict[str, Any]:
+    """Remove ``plan_id`` from the FIFO admission queue WITHOUT touching ``merge.lock``.
+
+    The dequeue-only counterpart of :func:`run_release`, for a caller whose acquire
+    took no lock and that must undo its FIFO enqueue. :func:`run_release` is the
+    wrong tool for that caller: it removes ``merge.lock`` whenever the recorded
+    holder equals the caller's ``plan_id``, and a concurrent call for the SAME
+    ``plan_id`` (which shares the one FIFO entry) may have been admitted and created
+    the lock after the refused attempt — a release would then delete that live
+    lock mid-integration and let a foreign plan in. This helper never reads,
+    creates, or removes the lock file, and never touches the co-tenant
+    ``rate_windows`` key; it runs only the :func:`_dequeue_fifo` read-modify-write.
+
+    Idempotent: dequeuing an absent entry is a no-op success. In-process only — it
+    is not a CLI verb, because the one caller (``integrate_into_main``'s
+    refused-acquire cleanup) loads this module by path.
+
+    Returns ``status: success`` with ``action: dequeued`` and the post-removal
+    ``waiting_count``, or a ``make_error`` payload when the queue path cannot be
+    resolved or its guarded read-modify-write fails.
+    """
+    try:
+        waiting_count = _dequeue_fifo(plan_id)
+    except (RuntimeError, TimeoutError, OSError) as exc:
+        return make_error(f'merge-queue dequeue failed: {exc}', code=ErrorCode.NOT_FOUND, plan_id=plan_id)
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'action': 'dequeued',
+        'waiting_count': waiting_count,
+    }
+
+
 def run_budget_reclaim(args: Namespace) -> dict[str, Any]:
     """Budget-aware reclaim of a dead merge-lock holder past its hold budget.
 

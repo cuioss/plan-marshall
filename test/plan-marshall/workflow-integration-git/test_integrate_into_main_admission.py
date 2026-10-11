@@ -6,20 +6,23 @@ Contract under test:
 
 * **Bounded admission wait** — the move-back acquire forwards a bounded
   ``wait_seconds`` that sits below the merge lock's own per-call ceiling.
-* **Dequeue on every refused acquire** — an acquire that takes no lock, whether it
-  returns ``status: blocked`` once the bound lapses or ``status: error`` from any
-  attempt, is followed by a dequeue from the merge FIFO queue. A foreign holder's
-  lock is left intact, and the surfaced payload carries ``dequeued`` reporting
-  whether the dequeue landed. An error on a later attempt of the same wait can
-  follow an earlier attempt's enqueue, so an error is dequeued exactly like a block.
-* **A failed dequeue is reported, never masked** — a release that raises or that
+* **Dequeue-only cleanup on every refused acquire** — an acquire that takes no
+  lock, whether it returns ``status: blocked`` once the bound lapses, returns
+  ``status: error`` from any attempt, or raises, is followed by a dequeue from the
+  merge FIFO queue through ``merge_lock.run_dequeue``. The cleanup never calls
+  ``run_release`` and never touches ``merge.lock``: a lock a concurrent call for
+  the SAME plan created after the refused attempt survives it. The surfaced
+  payload carries ``dequeued`` reporting whether the dequeue landed. An error on a
+  later attempt of the same wait can follow an earlier attempt's enqueue, so an
+  error is dequeued exactly like a block.
+* **A failed dequeue is reported, never masked** — a dequeue that raises or that
   answers anything but ``status: success`` yields ``dequeued: false`` beside the
   acquire payload.
 
 Isolation: every test runs against an isolated main + worktree tree staged under
 ``tmp_path``. Stub merge locks stand in for the primitive where only the routing
-is under test; the real ``merge_lock`` runs where the queue state itself is the
-claim, against the staged main through ``PLAN_BASE_DIR``.
+is under test; the real ``merge_lock`` runs where the queue or lock-file state
+itself is the claim, against the staged main through ``PLAN_BASE_DIR``.
 """
 
 from __future__ import annotations
@@ -46,26 +49,27 @@ _FOREIGN_PLAN_ID = 'foreign-plan'
 
 
 class _ScriptedMergeLock:
-    """Stub merge_lock whose acquire and release answer canned payloads.
+    """Stub merge_lock whose acquire, release and dequeue answer canned payloads.
 
-    ``release_result`` is returned by ``run_release`` unless ``release_raises`` is
-    set, in which case the release raises instead. Every call is counted.
+    ``dequeue_result`` is returned by ``run_dequeue`` unless ``dequeue_raises`` is
+    set, in which case the dequeue raises instead. Every call is counted.
     """
 
     def __init__(
         self,
         acquire_result: dict[str, Any] | None = None,
         *,
-        release_result: dict[str, Any] | None = None,
-        release_raises: bool = False,
+        dequeue_result: dict[str, Any] | None = None,
+        dequeue_raises: bool = False,
         acquire_raises: bool = False,
     ) -> None:
         self.acquire_result = acquire_result or {'status': 'success', 'action': 'acquired'}
         self.acquire_raises = acquire_raises
-        self.release_result = release_result or {'status': 'success', 'action': 'noop'}
-        self.release_raises = release_raises
+        self.dequeue_result = dequeue_result or {'status': 'success', 'action': 'dequeued', 'waiting_count': 0}
+        self.dequeue_raises = dequeue_raises
         self.acquired = 0
         self.released = 0
+        self.dequeued = 0
         self.acquire_wait_seconds: list[object] = []
 
     def run_acquire(self, args: Namespace) -> dict:
@@ -77,9 +81,13 @@ class _ScriptedMergeLock:
 
     def run_release(self, args: Namespace) -> dict:
         self.released += 1
-        if self.release_raises:
+        return {'status': 'success', 'action': 'released', 'plan_id': args.plan_id}
+
+    def run_dequeue(self, plan_id: str) -> dict:
+        self.dequeued += 1
+        if self.dequeue_raises:
             raise OSError('simulated dequeue failure')
-        return {**self.release_result, 'plan_id': args.plan_id}
+        return {**self.dequeue_result, 'plan_id': plan_id}
 
 
 _BLOCKED = {
@@ -132,13 +140,17 @@ def _use_lock(monkeypatch: pytest.MonkeyPatch, lock: Any) -> Any:
     return lock
 
 
+def _real_merge_lock(name: str) -> Any:
+    return integrate_into_main._load_module_by_path(name, integrate_into_main._MERGE_LOCK_PATH)
+
+
 def _real_merge_lock_with_foreign_holder(env: dict, name: str) -> tuple[Any, Path]:
     """Load the real merge_lock and have a live foreign plan hold the lock.
 
     The foreign plan's dir exists on main, so it is neither reclaimed as stale nor
     pruned from the FIFO queue — it stays the front and the holder.
     """
-    real_merge_lock = integrate_into_main._load_module_by_path(name, integrate_into_main._MERGE_LOCK_PATH)
+    real_merge_lock = _real_merge_lock(name)
     foreign_plan_dir = env['main'] / '.plan' / 'local' / 'plans' / _FOREIGN_PLAN_ID
     foreign_plan_dir.mkdir(parents=True)
     (foreign_plan_dir / 'status.json').write_text('{}\n')
@@ -165,9 +177,7 @@ class TestBoundedAdmissionWait:
         assert lock.acquire_wait_seconds == [integrate_into_main._MOVE_BACK_ACQUIRE_WAIT_SECONDS]
 
     def test_bound_sits_below_the_merge_lock_ceiling(self) -> None:
-        real_merge_lock = integrate_into_main._load_module_by_path(
-            'merge_lock_real_under_integrate_admission_ceiling', integrate_into_main._MERGE_LOCK_PATH
-        )
+        real_merge_lock = _real_merge_lock('merge_lock_real_under_integrate_admission_ceiling')
         assert 0 < integrate_into_main._MOVE_BACK_ACQUIRE_WAIT_SECONDS <= real_merge_lock._ACQUIRE_WAIT_CEILING_SECONDS
 
 
@@ -242,6 +252,41 @@ class TestRefusedAcquireDequeuesTheRealQueue:
 
 
 # =============================================================================
+# Same-plan race — the refused cleanup never removes merge.lock
+# =============================================================================
+
+
+class TestRefusedCleanupLeavesASamePlanLock:
+    def test_same_plan_lock_created_after_the_refused_attempt_survives(
+        self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Between this call's last (refused) attempt and its cleanup, a concurrent
+        call for the SAME plan_id is admitted and creates merge.lock. The cleanup
+        dequeues the shared FIFO entry and leaves that lock — a release would have
+        unlinked it, because its recorded holder equals the caller's plan_id."""
+        env = isolated_env
+        real_merge_lock = _real_merge_lock('merge_lock_real_admission_same_plan_race')
+        _use_lock(monkeypatch, real_merge_lock)
+        lock_path = real_merge_lock._resolve_main_lock_path()
+
+        def refused_while_a_sibling_call_takes_the_lock(args: Namespace) -> dict[str, Any]:
+            real_merge_lock._enqueue_fifo(args.plan_id, 0.0)
+            assert real_merge_lock._try_atomic_create(lock_path, args.plan_id)
+            return {**_BLOCKED, 'plan_id': args.plan_id}
+
+        monkeypatch.setattr(real_merge_lock, 'run_acquire', refused_while_a_sibling_call_takes_the_lock)
+
+        result = integrate_into_main.run_integrate_into_main(Namespace(plan_id=_PLAN_ID))
+
+        assert result['status'] == 'blocked', result
+        assert result['dequeued'] is True, result
+        assert lock_path.is_file(), 'the refused cleanup removed a same-plan lock it never took'
+        assert lock_path.read_text(encoding='utf-8').strip() == _PLAN_ID
+        assert _PLAN_ID not in _queued(real_merge_lock)
+        assert (env['wt_plan_dir'] / 'status.json').is_file()
+
+
+# =============================================================================
 # Dequeue on a refused acquire — the reported outcome
 # =============================================================================
 
@@ -257,37 +302,40 @@ class TestRefusedAcquireReportsTheDequeue:
 
         assert result['status'] == acquire_result['status'], result
         assert result['dequeued'] is True, result
-        assert lock.released == 1
+        assert lock.dequeued == 1
+        assert lock.released == 0
         assert (isolated_env['wt_plan_dir'] / 'status.json').is_file()
 
     @pytest.mark.parametrize('acquire_result', [_BLOCKED, _ERROR], ids=['blocked', 'error'])
     def test_dequeue_that_raises_is_reported_not_masked(
         self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch, acquire_result: dict
     ) -> None:
-        lock = _use_lock(monkeypatch, _ScriptedMergeLock(acquire_result, release_raises=True))
+        lock = _use_lock(monkeypatch, _ScriptedMergeLock(acquire_result, dequeue_raises=True))
 
         result = integrate_into_main.run_integrate_into_main(Namespace(plan_id=_PLAN_ID))
 
         assert result['status'] == acquire_result['status'], result
         assert result['dequeued'] is False, result
-        assert lock.released == 1
+        assert lock.dequeued == 1
+        assert lock.released == 0
 
     @pytest.mark.parametrize('acquire_result', [_BLOCKED, _ERROR], ids=['blocked', 'error'])
     def test_dequeue_answering_non_success_is_reported_as_not_dequeued(
         self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch, acquire_result: dict
     ) -> None:
-        """A release that returns without raising but answers ``status: error`` did
+        """A dequeue that returns without raising but answers ``status: error`` did
         not prove the entry gone, so ``dequeued`` is false and the acquire payload —
-        not the release's — is what is surfaced."""
-        release_error = {'status': 'error', 'error': 'simulated dequeue refusal'}
-        lock = _use_lock(monkeypatch, _ScriptedMergeLock(acquire_result, release_result=release_error))
+        not the dequeue's — is what is surfaced."""
+        dequeue_error = {'status': 'error', 'error': 'simulated dequeue refusal'}
+        lock = _use_lock(monkeypatch, _ScriptedMergeLock(acquire_result, dequeue_result=dequeue_error))
 
         result = integrate_into_main.run_integrate_into_main(Namespace(plan_id=_PLAN_ID))
 
         assert result['status'] == acquire_result['status'], result
         assert result['dequeued'] is False, result
         assert result.get('error') == acquire_result.get('error'), result
-        assert lock.released == 1
+        assert lock.dequeued == 1
+        assert lock.released == 0
 
     def test_acquire_that_raises_is_surfaced_as_error_and_dequeued(
         self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch
@@ -302,7 +350,8 @@ class TestRefusedAcquireReportsTheDequeue:
         assert result['status'] == 'error', result
         assert 'OSError' in result['error'], result
         assert result['dequeued'] is True, result
-        assert lock.released == 1
+        assert lock.dequeued == 1
+        assert lock.released == 0
         assert (isolated_env['wt_plan_dir'] / 'status.json').is_file()
         assert not isolated_env['main_plan_dir'].exists()
 
@@ -314,4 +363,5 @@ class TestRefusedAcquireReportsTheDequeue:
 
         assert result['status'] == 'success', result
         assert 'dequeued' not in result
+        assert lock.dequeued == 0
         assert lock.released == 0
