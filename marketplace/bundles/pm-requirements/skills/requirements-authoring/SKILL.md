@@ -1,6 +1,6 @@
 ---
 name: requirements-authoring
-description: Comprehensive standards for creating and maintaining requirements and specification documents with SMART principles, proper structure, integrity, and traceability
+description: Comprehensive standards for creating and maintaining requirements and specification documents with SMART principles, proper structure, integrity, and traceability, plus the requirements review rules a code review cites
 user-invocable: false
 mode: knowledge
 ---
@@ -206,3 +206,14 @@ Before completing requirements/specification work:
 - pm-documents:ref-asciidoc - AsciiDoc formatting
 - pm-dev-java:javadoc - JavaDoc requirement references (Java projects)
 - plan-marshall:workflow-integration-git - Committing requirement changes
+
+## Review Rules
+
+The review rules of the requirements domain — what a code review looks for in changed requirements and specification documents. The block follows the harvestable block contract — see [`review-rubric.md` § 10 "Harvestable review-rule blocks"](../../../plan-marshall/skills/phase-6-finalize/standards/review-rubric.md) for its rules, which are not restated here.
+
+- A requirement ID reused for a new requirement, or an existing requirement renumbered, so every specification, code comment and test that cites the ID now points at a different requirement.
+- A requirement without a measurable acceptance criterion ("fast", "scalable", "user-friendly"), so no test can decide whether it is met.
+- A specification section with no backtracking link to the requirement it implements, or a link whose anchor does not exist, so the requirement cannot be traced to its specification.
+- A specification status (PLANNED, IN PROGRESS, IMPLEMENTED) that disagrees with the code — IMPLEMENTED with no implementation, or PLANNED for behaviour that ships — so a reader plans against the wrong state.
+- A requirement removed or rewritten while specifications, code comments or tests still cite its ID, so those citations rest on a statement the requirement no longer makes.
+- A requirement that prescribes an implementation (a class, library or data structure) instead of the required behaviour, so a valid alternative implementation is judged non-compliant.
