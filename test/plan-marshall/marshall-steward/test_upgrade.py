@@ -53,6 +53,7 @@ _STAGE_ROW_KEYS = {'order', 'key', 'name', 'mutating', 'top_level_gate', 'nested
 # the consumer-only cache-freshness gate as Stage 1's FIRST sub-step; BOTH kinds
 # end Stage 1 with the cache-retention sweep. Stages 2 and 4 are kind-invariant.
 _EXPECTED_STAGE_2_SUB_STEPS = [
+    'migrate-review-steps',
     'reconcile-marshal-json',
     'review-held-defaults',
     'migrate-bot-lists',
@@ -217,6 +218,38 @@ def test_review_held_defaults_follows_reconcile_marshal_json(project_kind: str, 
     stage_2 = by_key['reconcile-config']
     assert stage_2.index('review-held-defaults') == stage_2.index('reconcile-marshal-json') + 1
     assert stage_2.count('review-held-defaults') == 1
+
+
+@pytest.mark.parametrize('project_kind', ['meta', 'consumer'])
+@pytest.mark.parametrize('integrate', [True, False])
+def test_migrate_review_steps_runs_first_before_the_defaults_merge(project_kind: str, integrate: bool):
+    """The review-step migration leads Stage 2, ahead of the defaults merge, for both kinds.
+
+    Run after ``reconcile-marshal-json``, the merge would meet the two new review
+    ids as absent and hold them at its ask-before-add gate; run first, it finds
+    them already configured.
+    """
+    by_key = {s['key']: s['sub_steps'] for s in upgrade.build_plan(integrate, project_kind)['stages']}
+
+    stage_2 = by_key['reconcile-config']
+    assert stage_2[0] == 'migrate-review-steps'
+    assert stage_2.count('migrate-review-steps') == 1
+    assert stage_2.index('migrate-review-steps') < stage_2.index('reconcile-marshal-json')
+
+
+def test_migrate_review_steps_is_a_registered_subcommand(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+):
+    """The verb parses through the CLI entry point; a no-op config proves it without writing."""
+    import _config_core
+
+    monkeypatch.setattr(_config_core, 'MARSHAL_PATH', tmp_path / '.plan' / 'marshal.json')
+
+    exit_code, parsed = _run(['migrate-review-steps'], capsys, monkeypatch)
+
+    assert exit_code == 0
+    assert parsed['operation'] == 'migrate-review-steps'
+    assert parsed['state'] == 'noop'
 
 
 def test_build_plan_consumer_excludes_meta_only_sub_steps():
