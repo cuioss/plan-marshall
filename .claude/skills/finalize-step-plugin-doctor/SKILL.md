@@ -7,7 +7,7 @@ description: Finalize-phase wrapper that runs the plugin-doctor quality-gate —
 user-invocable: false
 mode: script-executor
 allowed-tools: Bash
-order: 6
+order: 4
 head_dependent: true
 reads:
   - worktree
@@ -24,7 +24,7 @@ Run the plugin-doctor `quality-gate` invariant rule set — argparse safety, arg
 
 The wrapper runs in one of three mutually-exclusive modes, selected deterministically (see Step 2.5 for the precedence and for the trigger patterns): it runs **whole-tree** (no `--paths`) when a union entry matches a whole-tree trigger pattern — either any file of the plugin-doctor or plan-doctor skill, because a rule change re-classifies skills the diff never touched (the **F1 trigger**), or one of the listed files outside every skill directory whose content the gate's verdict reads, because its finding lands where a scoped run filters it out and where a skip never looks (the **verdict-input trigger**: a target package's `__init__.py`, a bundle's `plugin.json`, a bundle agent or command, a `CLAUDE.md` / `AGENTS.md`); it runs **whole-tree** when either scope read is indeterminate (broken, not empty); and otherwise it **scopes** the gate to the skill directories the union names (the common case). In scoped mode the wrapper additionally emits a loud **cross-skill divergence WARNING**, because a scoped `--paths` run structurally cannot evaluate plugin-doctor's cross-skill rules — those whose verdict spans more than the touched skill and whose finding anchors to a counterpart file OUTSIDE the touched paths (the PR #915 scoped-green / whole-tree-red class). The warning keeps the common-case scoped run for skill-local rules unchanged while surfacing, at finalize, that the cross-skill rule class was not gated — rather than silently passing as if it had been.
 
-Ordered at `order: 6` so it slots between `default:finalize-step-simplify` (order 5) and `default:finalize-step-security-audit` (order 7) — structural lint gates before the commit is pushed, not after CI.
+Ordered at `order: 4` so it slots between `default:finalize-step-simplify` (order 3) and `default:finalize-step-security-audit` (order 5) — structural lint gates before the commit is pushed, not after CI.
 
 When the plan runs in an isolated worktree, the gate first regenerates the worktree's executor so the `manage-invocation-invalid` rule probes each script's `--help` against the worktree's TRUE argparse surface. The worktree's `.plan/execute-script.py` is a generated file bound to the worktree: it is written when the worktree is created and again after a rebase that changes the script set, it is never shared with the main checkout, and the notation mappings and script surfaces it embeds are the ones read at its last generation. Without this step, a script the plan has added or changed since that generation is gated against the earlier state — making a newly added subcommand read as a false-positive "unregistered" and a newly required flag read as a false-negative that masks the real CI finding.
 

@@ -23,9 +23,9 @@ _PHASE6_STANDARDS: Path = get_skill_dir('plan-marshall', 'phase-6-finalize') / '
 _SYNC_BASELINE_DOC = _PHASE6_STANDARDS / 'finalize-step-sync-baseline.md'
 _PRE_PUSH_QUALITY_GATE_DOC = _PHASE6_STANDARDS / 'pre-push-quality-gate.md'
 
-# The step's canonical order — order 3 places it before pre-push-quality-gate
-# (order 5) so the early rebase happens before any downstream local quality gate.
-_EXPECTED_ORDER = 3
+# The step's canonical order — order 1 places it before pre-push-quality-gate
+# (order 10) so the early rebase happens before any downstream local quality gate.
+_EXPECTED_ORDER = 1
 _FINALIZE_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
 
 
@@ -125,7 +125,7 @@ class TestSyncBaselineFrontmatterContract:
             f'expected name=default:finalize-step-sync-baseline, got {name!r}'
         )
 
-    def test_order_is_3(self):
+    def test_order_is_1(self):
         assert _read_frontmatter_order(_SYNC_BASELINE_DOC) == _EXPECTED_ORDER
 
     def test_mutates_source_is_true(self):
@@ -173,7 +173,7 @@ class TestSyncBaselineFrontmatterContract:
 
 
 class TestSyncBaselineOrderingInvariant:
-    """sync-baseline (order 3) must precede pre-push-quality-gate (order 5)."""
+    """sync-baseline (order 1) must precede pre-push-quality-gate (order 10)."""
 
     def test_order_strictly_precedes_pre_push_quality_gate(self):
         sync_order = _read_frontmatter_order(_SYNC_BASELINE_DOC)
@@ -186,7 +186,7 @@ class TestSyncBaselineOrderingInvariant:
 
 
 # ---------------------------------------------------------------------------
-# Body contract — reuses existing verbs, no force-push / no ci wait at order 3
+# Body contract — reuses existing verbs, no force-push / no ci wait at order 1
 # ---------------------------------------------------------------------------
 
 
@@ -214,7 +214,7 @@ class TestSyncBaselineBodyContract:
             line for line in body.splitlines() if 'force-push-with-lease' in line and 'git-workflow' in line
         ]
         assert not invocation_lines, (
-            'at order 3 the branch is not yet pushed — sync-baseline must NOT '
+            'at order 1 the branch is not yet pushed — sync-baseline must NOT '
             f'invoke force-push-with-lease, found: {invocation_lines}'
         )
 
@@ -224,7 +224,7 @@ class TestSyncBaselineBodyContract:
         body = _doc_body(_SYNC_BASELINE_DOC)
         invocation_lines = [line for line in body.splitlines() if 'checks wait' in line and ':ci ' in line]
         assert not invocation_lines, (
-            f'at order 3 no PR exists — sync-baseline must NOT invoke a CI wait, found: {invocation_lines}'
+            f'at order 1 no PR exists — sync-baseline must NOT invoke a CI wait, found: {invocation_lines}'
         )
 
     def test_body_documents_executor_refresh_as_non_fatal(self):

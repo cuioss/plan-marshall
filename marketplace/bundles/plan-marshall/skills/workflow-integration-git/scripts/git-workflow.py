@@ -930,7 +930,7 @@ def _executor_path() -> Path | None:
 # The refresh lives here rather than in any caller because EVERY finalize rebase
 # routes through ``worktree-rebase-to`` — this verb is the single seam, and it
 # already knows whether the rebase actually replayed anything. Callers today
-# include ``finalize-step-sync-baseline`` (``order: 3``), ``automatic-review``
+# include ``finalize-step-sync-baseline`` (``order: 1``), ``automatic-review``
 # (``order: 30``, refusal-recovery path) and ``branch-cleanup`` (``order: 70``);
 # that roster is illustrative, not a closed set, and the placement is chosen so a
 # NEW caller inherits the refresh without having to know it exists.
