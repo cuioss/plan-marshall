@@ -35,9 +35,14 @@ Return shape (CLI emits TOON; programmatic callers consume the dict directly):
   ``findings_gate: clean`` and ``dispatched: true``. Branch on the verb's own
   ``status`` from here, exactly as on a direct verb call.
 
-A malformed invocation (a ``safe-merge`` route without ``--strategy``, or a
-safe-merge-only flag on the ``merge-queue`` route) is refused before the findings
-check runs, also with ``dispatched: false``.
+A malformed invocation (an unknown ``--route``, a ``safe-merge`` route without
+``--strategy``, or a safe-merge-only flag on the ``merge-queue`` route) is refused
+before the findings check runs, also with ``dispatched: false``. Every such
+refusal carries ``refusal_category: invocation`` (:data:`REFUSAL_CATEGORY_FIELD` /
+:data:`INVOCATION_REFUSAL`), whatever its ``error`` code, so a caller tells an
+invocation refusal (the findings store was never read) from a store-verdict
+refusal by that one field instead of by enumerating error codes. A store-verdict
+refusal and a dispatched payload never carry the field.
 
 Exit code is ``0`` on every outcome above; the verdict travels in the TOON.
 
@@ -74,6 +79,13 @@ ROUTES: tuple[str, ...] = ('safe-merge', 'merge-queue')
 
 #: The ``--strategy`` values ``ci pr safe-merge`` accepts.
 STRATEGIES: tuple[str, ...] = ('squash', 'merge', 'rebase')
+
+#: The payload field that marks a refusal by its category rather than its code.
+REFUSAL_CATEGORY_FIELD = 'refusal_category'
+
+#: The :data:`REFUSAL_CATEGORY_FIELD` value every invocation refusal carries — the
+#: invocation was malformed and was refused before the findings store was read.
+INVOCATION_REFUSAL = 'invocation'
 
 _CI_NOTATION = 'plan-marshall:tools-integration-ci:ci'
 
@@ -168,38 +180,38 @@ def _invocation_refusal(
     delete_branch: bool,
     admin_merge_on_stuck_state: bool,
 ) -> dict[str, Any] | None:
-    """Refuse an invocation whose flags do not fit its route, before any check runs."""
+    """Refuse an invocation whose flags do not fit its route, before any check runs.
+
+    Every refusal is built by one constructor that stamps
+    ``refusal_category: invocation``, so any refusal code this function gains
+    carries the category without its consumers having to name the new code.
+    """
+
+    def _refuse(error: str, message: str) -> dict[str, Any]:
+        return {
+            'status': 'error',
+            'error': error,
+            REFUSAL_CATEGORY_FIELD: INVOCATION_REFUSAL,
+            'plan_id': plan_id,
+            'route': route,
+            'dispatched': False,
+            'message': message,
+        }
+
     if route not in ROUTES:
-        return {
-            'status': 'error',
-            'error': 'unknown_route',
-            'plan_id': plan_id,
-            'route': route,
-            'dispatched': False,
-            'message': f'--route must be one of {list(ROUTES)}, got {route!r}',
-        }
+        return _refuse('unknown_route', f'--route must be one of {list(ROUTES)}, got {route!r}')
     if route == 'safe-merge' and not strategy:
-        return {
-            'status': 'error',
-            'error': 'strategy_required',
-            'plan_id': plan_id,
-            'route': route,
-            'dispatched': False,
-            'message': 'the safe-merge route requires --strategy; nothing was checked and nothing was merged',
-        }
+        return _refuse(
+            'strategy_required',
+            'the safe-merge route requires --strategy; nothing was checked and nothing was merged',
+        )
     if route == 'merge-queue' and (strategy or delete_branch or admin_merge_on_stuck_state):
-        return {
-            'status': 'error',
-            'error': 'flag_not_applicable_to_route',
-            'plan_id': plan_id,
-            'route': route,
-            'dispatched': False,
-            'message': (
-                '--strategy, --delete-branch and --admin-merge-on-stuck-state apply to the safe-merge '
-                'route only; the merge-queue enqueue takes the PR number alone and the platform owns '
-                'the merge method and the head-branch deletion. Nothing was checked and nothing was merged'
-            ),
-        }
+        return _refuse(
+            'flag_not_applicable_to_route',
+            '--strategy, --delete-branch and --admin-merge-on-stuck-state apply to the safe-merge '
+            'route only; the merge-queue enqueue takes the PR number alone and the platform owns '
+            'the merge method and the head-branch deletion. Nothing was checked and nothing was merged',
+        )
     return None
 
 
@@ -254,7 +266,9 @@ def merge(
     if verdict.get('status') != 'success':
         # blocking_findings_present, query_failed, or any other refusal the
         # verdict source returns: the payload travels verbatim, nothing merges.
-        return {**verdict, 'dispatched': False}
+        # The invocation category is never forwarded — the store WAS read here.
+        store_refusal = {k: v for k, v in verdict.items() if k != REFUSAL_CATEGORY_FIELD}
+        return {**store_refusal, 'dispatched': False}
     if verdict.get('blocking_count') != 0:
         # A success envelope that does not carry a measured zero is not a clean
         # store. Fail closed rather than read an absent count as zero.
@@ -367,6 +381,8 @@ if __name__ == '__main__':
 
 __all__ = [
     'FINDINGS_PHASE',
+    'INVOCATION_REFUSAL',
+    'REFUSAL_CATEGORY_FIELD',
     'ROUTES',
     'STRATEGIES',
     'build_merge_args',
