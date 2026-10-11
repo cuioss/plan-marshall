@@ -1144,6 +1144,49 @@ def mark_finding_responded(
     return _not_found(plan_id, store, hash_id, 'Finding')
 
 
+def update_finding_text(
+    plan_id: str,
+    hash_id: str,
+    *,
+    detail: str,
+    raw_input: dict[str, Any],
+    reviewed_commit_sha: str | None = None,
+    raw_input_max_bytes: int = DEFAULT_RAW_INPUT_MAX_BYTES,
+) -> dict[str, Any]:
+    """Rewrite a finding's TEXT in place, leaving its resolution exactly as stored.
+
+    The update path for a source the producer re-reads with new content under the
+    same identity — a bot comment edited in place. It replaces ``detail``, the
+    quarantined ``raw_input`` sub-object (re-quarantined under the same per-field
+    byte cap ``add_finding`` applies), and, when given, ``reviewed_commit_sha``.
+
+    It never writes ``resolution``, ``resolution_detail``, the ``responded``
+    marker or the fix-stamp fields: a resolved finding stays resolved with its
+    disposition, so an edit never reopens it, and a pending finding stays pending
+    and simply carries the new text. The new ``raw_input`` is promoted to the top
+    level by the next ``ingest`` pass, which validates every pending finding's
+    quarantined text before any of it is promoted; a resolved finding is not
+    re-ingested, so its top-level fields keep the text it was triaged on.
+
+    Scoped to the PLAN-FINDINGS file set like the other write verbs, so a Q-Gate or
+    assessment hash is identified and refused rather than rewritten.
+    """
+    store = resolve_findings_store(plan_id)
+    if store_unreached(store):
+        return unresolved_store_error(plan_id, store)
+
+    updates: dict[str, Any] = {'detail': detail}
+    quarantined = _quarantine_raw_input(raw_input, raw_input_max_bytes)
+    if quarantined:
+        updates['raw_input'] = quarantined
+    if reviewed_commit_sha:
+        updates['reviewed_commit_sha'] = reviewed_commit_sha
+
+    if _update_in_finding_files(store, hash_id, updates):
+        return {'status': 'success', 'hash_id': hash_id, **store_state_fields(store)}
+    return _not_found(plan_id, store, hash_id, 'Finding')
+
+
 # --- Q-Gate Findings ---
 
 

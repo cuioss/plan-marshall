@@ -961,6 +961,32 @@ def _existing_pr_comment_keys(
     return keys, legacy_keys
 
 
+def _stored_pr_comment_hashes(findings: list[dict]) -> dict[tuple[str, str], str]:
+    """Return ``(bot_kind, comment_id) -> hash_id`` of the finding an in-place edit updates.
+
+    The companion of :func:`_existing_pr_comment_keys` for the update path: a comment
+    whose two-term identity is already stored but whose edit term is new is the same
+    COMMENT carrying new INFORMATION, so its stored finding is rewritten rather than a
+    second finding filed beside it. Only rows that carry an edit term are mapped — a
+    pre-upgrade row dedupes on the two-term key before this map is consulted.
+
+    When the store holds several findings for one comment — the shape an edited comment
+    left behind before edits updated in place — the LAST one in store order wins: it is
+    the most recently filed, so it carries the text the next edit replaces.
+
+    A PURE projection over an already-read finding list, like its companion.
+    """
+    hashes: dict[tuple[str, str], str] = {}
+    for finding in findings:
+        detail = finding.get('detail')
+        comment_id = _detail_field(detail, _COMMENT_ID_DETAIL)
+        hash_id = str(finding.get('hash_id') or '')
+        if not comment_id or not hash_id or not _detail_field(detail, _EDIT_TERM_DETAIL):
+            continue
+        hashes[(finding.get('bot_kind') or '', comment_id)] = hash_id
+    return hashes
+
+
 # The plan-scoped CURRENCY LEDGER: per ``participation_requires_update`` comment the
 # plan has credited, the ``(bot_kind, comment_id)`` key with the merge-candidate SHA
 # AND the comment's ``updated_at`` at the fetch that last credited it. It is the SOLE
@@ -1498,8 +1524,14 @@ def cmd_fetch_findings(args):
     6. Cross-iteration duplicate — a ``(bot_kind, comment_id, edit_term)`` key already
        present in the store, counted in ``count_skipped_duplicate``. The EDIT TERM is
        the comment's ``updated_at``, or a body digest when the provider supplied none,
-       so an in-place-edited review presents as NEW INFORMATION and is filed while an
-       unchanged re-fetch still dedupes. A finding stored before the term existed
+       so an unchanged re-fetch dedupes while an in-place-edited comment presents as
+       NEW INFORMATION. A comment whose ``(bot_kind, comment_id)`` is stored under a
+       different edit term UPDATES that finding in place (``update_finding_text``):
+       latest body under ``raw_input.body``, the new edit term, the current
+       ``reviewed_commit_sha``, and the resolution exactly as stored — an edit never
+       reopens a resolved finding. Counted in ``count_updated_edited`` (with the
+       rewritten ``updated_edited_hash_ids``), never in ``count_stored``, and
+       subtracted from ``expected_stored``. A finding stored before the term existed
        carries none, and dedupes on the two-term key against any edit term.
 
     ``self_response_loop_detected``: true when a single fetch observed
@@ -1770,6 +1802,7 @@ def cmd_fetch_findings(args):
         add_finding,
         add_qgate_finding_checked,
         query_findings,
+        update_finding_text,
     )
 
     pr_number: int = args.pr_number
@@ -1831,6 +1864,7 @@ def cmd_fetch_findings(args):
     if findings_payload.get('status') == 'error':
         return findings_payload
     existing_comment_keys, legacy_comment_keys = _existing_pr_comment_keys(findings_payload.get('findings') or [])
+    stored_comment_hashes = _stored_pr_comment_hashes(findings_payload.get('findings') or [])
 
     # The MERGE CANDIDATE SHA — the current PR HEAD — is fetched up front (before the
     # participation loop, not only for the ingestion stamp below) because the currency
@@ -2045,6 +2079,8 @@ def cmd_fetch_findings(args):
     )
 
     stored_hashes: list[str] = []
+    # The stored findings an in-place edit of their comment rewrote (pre-filter 6).
+    updated_edited_hashes: list[str] = []
     skipped_noise = 0
     skipped_duplicate = 0
     skipped_refusal = 0
@@ -2282,9 +2318,19 @@ def cmd_fetch_findings(args):
         # same ``comment_id`` forever: under the two-term key, an edit that replaced a
         # clean Guide with a real finding was dropped as a duplicate while the currency
         # test credited the bot as participating — so the reviewer read present and
-        # clean, and its actual feedback never became a finding. Widening the key by the
-        # edit term files the edited review and still dedupes an unchanged re-fetch,
-        # because an unchanged comment carries an unchanged term.
+        # clean, and its actual feedback never became a finding. An unchanged re-fetch
+        # still dedupes, because an unchanged comment carries an unchanged term.
+        #
+        # AN EDIT UPDATES the stored finding rather than filing a second one beside it:
+        # the comment is the same, so the finding is the same. Its text — the latest body
+        # under ``raw_input.body``, the new edit term, the current ``reviewed_commit_sha``
+        # — is rewritten in place through ``update_finding_text``, and its resolution is
+        # left exactly as stored. A resolved finding stays resolved with its disposition,
+        # so an edit never reopens it; a pending finding stays pending and carries the new
+        # text into triage. Filing a new finding per edit put every edit of a bot's
+        # persistent summary back in front of the merge gate as a fresh pending finding.
+        # The update is counted in ``count_updated_edited``, never in ``count_stored``,
+        # and drops out of ``expected_stored`` beside the other non-stores.
         #
         # A PRE-UPGRADE row carries no edit term at all, so it can match no three-term
         # key. It dedupes on the two-term key against ANY edit term instead — otherwise
@@ -2297,6 +2343,7 @@ def cmd_fetch_findings(args):
         if (bot_kind or '', comment_id, edit_term) in existing_comment_keys:
             skipped_duplicate += 1
             continue
+        edited_hash = stored_comment_hashes.get((bot_kind or '', comment_id))
 
         # Build a stable, deterministic title that disambiguates same-author
         # comments on the same file. Only trusted, producer-built structured
@@ -2323,6 +2370,22 @@ def cmd_fetch_findings(args):
         if line:
             detail_lines.append(f'line: {line}')
         detail = '\n'.join(detail_lines)
+
+        # The same comment, edited in place since its finding was stored: rewrite that
+        # finding's text, keep its resolution. See the edit-term note above.
+        if edited_hash:
+            update_result = update_finding_text(
+                plan_id,
+                edited_hash,
+                detail=detail,
+                raw_input={'body': body},
+                reviewed_commit_sha=reviewed_commit_sha or None,
+            )
+            if update_result.get('status') == 'success':
+                updated_edited_hashes.append(edited_hash)
+            else:
+                store_failures.append(comment_id)
+            continue
 
         # ``line`` may be 0 from the GraphQL fallback for review-body /
         # issue-comment kinds — pass None in that case to keep the finding
@@ -2396,6 +2459,7 @@ def cmd_fetch_findings(args):
             unrecognised_only_bots.add(_credited_bot)
 
     count_stored = len(stored_hashes)
+    count_updated_edited = len(updated_edited_hashes)
     skipped_emitter_bypass = len(emitter_bypass_ids)
     skipped_own_trigger = len(own_trigger_exclusions)
     # The credited set as emitted: bots whose every publish-shape comment was an
@@ -2406,24 +2470,26 @@ def cmd_fetch_findings(args):
     # rejected by the store) means the pass found something, so the verdict is then
     # not applicable rather than a zero.
     stored_zero_state = _stored_zero_state(
-        count_stored + skipped_duplicate + len(store_failures),
+        count_stored + count_updated_edited + skipped_duplicate + len(store_failures),
         fetch_complete=fetch_complete,
         head_resolved=bool(reviewed_commit_sha),
         refusal_count=skipped_refusal,
         credited_count=len(credited_bots),
     )
-    # Duplicates skipped by the cross-iteration guard, refusals surfaced through
-    # ``refused_bots``, self-authored responses, reported emitter bypasses, and
-    # reported own triggers are all legitimate non-stores, so they drop out of
-    # expected_stored alongside the noise skips — otherwise every deduped comment,
-    # every surfaced refusal, and every correctly-excluded workflow comment would
-    # spuriously trip the producer-mismatch Q-Gate. An unclassified bot's comments
-    # are NOT subtracted: under the warn-but-ingest rule they are stored like any
-    # other, so they belong in expected_stored.
+    # Duplicates skipped by the cross-iteration guard, findings an in-place edit
+    # updated, refusals surfaced through ``refused_bots``, self-authored responses,
+    # reported emitter bypasses, and reported own triggers are all legitimate
+    # non-stores, so they drop out of expected_stored alongside the noise skips —
+    # otherwise every deduped comment, every edited one, every surfaced refusal, and
+    # every correctly-excluded workflow comment would spuriously trip the
+    # producer-mismatch Q-Gate. An unclassified bot's comments are NOT subtracted:
+    # under the warn-but-ingest rule they are stored like any other, so they belong
+    # in expected_stored.
     expected_stored = (
         count_fetched
         - skipped_noise
         - skipped_duplicate
+        - count_updated_edited
         - skipped_refusal
         - skipped_self_response
         - skipped_emitter_bypass
@@ -2453,6 +2519,7 @@ def cmd_fetch_findings(args):
             f'count_fetched={count_fetched}, '
             f'count_skipped_noise={skipped_noise}, '
             f'count_skipped_duplicate={skipped_duplicate}, '
+            f'count_updated_edited={count_updated_edited}, '
             f'count_skipped_refusal={skipped_refusal}, '
             f'count_skipped_self_response={skipped_self_response}, '
             f'count_skipped_emitter_bypass={skipped_emitter_bypass}, '
@@ -2549,6 +2616,10 @@ def cmd_fetch_findings(args):
         'count_fetched': count_fetched,
         'count_skipped_noise': skipped_noise,
         'count_skipped_duplicate': skipped_duplicate,
+        # Stored findings whose comment was edited in place since it was filed: their
+        # text was rewritten and their resolution kept. Not counted in count_stored.
+        'count_updated_edited': count_updated_edited,
+        'updated_edited_hash_ids': updated_edited_hashes,
         'count_skipped_refusal': skipped_refusal,
         'count_skipped_self_response': skipped_self_response,
         'count_skipped_emitter_bypass': skipped_emitter_bypass,

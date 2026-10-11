@@ -748,11 +748,13 @@ def test_bot_completion_wait_is_clamped_below_the_outer_ceiling(monkeypatch):
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
-def test_an_edited_comment_is_filed_as_new_information(bot_kind, plan_context, monkeypatch):
-    """A moved ``updated_at`` with a changed body files a NEW finding, never a duplicate.
+def test_an_edited_comment_carries_its_new_information_into_its_finding(bot_kind, plan_context, monkeypatch):
+    """A moved ``updated_at`` with a changed body updates the finding, never a duplicate.
 
     This is the defect in full: the same ``comment_id``, so the two-term key matched and
-    the edited review — carrying a real finding — was dropped as already-seen.
+    the edited review — carrying a real finding — was dropped as already-seen. The edit
+    is now new information for the SAME finding: its text is rewritten in place rather
+    than dropped, and rather than filed as a second finding beside the first.
     """
     plan_id = f'gh-pr-edit-term-files-{bot_kind}'
     clean = _edit_term_comment(bot_kind, body=_GUIDE_CLEAN_BODY)
@@ -766,6 +768,10 @@ def test_an_edited_comment_is_filed_as_new_information(bot_kind, plan_context, m
     second = _run_fetch(190, plan_id)
 
     assert second['status'] == 'success'
-    assert second['count_stored'] == 1
     assert second['count_skipped_duplicate'] == 0
-    assert len(query_findings(plan_id, finding_type='pr-comment')['findings']) == 2
+    assert second['count_stored'] == 0
+    assert second['count_updated_edited'] == 1
+    assert second['producer_mismatch_hash_id'] is None
+    [stored] = query_findings(plan_id, finding_type='pr-comment')['findings']
+    assert stored['raw_input']['body'] == _GUIDE_FINDING_BODY
+    assert second['updated_edited_hash_ids'] == [stored['hash_id']]
