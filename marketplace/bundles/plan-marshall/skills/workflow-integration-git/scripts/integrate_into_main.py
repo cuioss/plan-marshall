@@ -12,9 +12,12 @@ cleanup removes the worktree AFTER this script returns. In one call it:
 
   1. **ACQUIRES** the cooperative merge lock (delegating to the unified
      ``plan-marshall:manage-locks:merge_lock`` script — FIFO-front-only
-     admission, atomic ``O_EXCL`` create, holder = this ``plan_id``, a single
-     non-waiting attempt, plan-liveness stale reclamation). The merge lock is the
-     SINGLE deliberate main-anchored
+     admission, atomic ``O_EXCL`` create, holder = this ``plan_id``, a bounded
+     wait of :data:`_MOVE_BACK_ACQUIRE_WAIT_SECONDS`, plan-liveness stale
+     reclamation). When the bound lapses while admission is still blocked, the
+     plan is DEQUEUED from the FIFO admission queue before the blocked payload is
+     surfaced, so a plan that gave up never wedges the plans queued behind it.
+     The merge lock is the SINGLE deliberate main-anchored
      exception to cwd-relative resolution (ADR-002).
   2. **FOLDS** the plan's OWN global logs (only logs generated for this plan,
      currently resident in the worktree's ``.plan/local/logs/``) into the plan
@@ -102,6 +105,16 @@ from triage_helpers import (
 
 _THIS_DIR = Path(__file__).resolve().parent
 _MERGE_LOCK_PATH = _THIS_DIR.parent.parent / 'manage-locks' / 'scripts' / 'merge_lock.py'
+
+# The bound, in seconds, the move-back acquire waits for admission when no outer
+# holder of the same plan already holds the merge lock. ``merge_lock`` clamps it
+# to its own per-call ceiling (``_ACQUIRE_WAIT_CEILING_SECONDS``); this value sits
+# well below that ceiling AND below the host's default per-call Bash timeout, so a
+# finalize call site that invokes ``integrate`` without an explicit timeout is
+# never auto-backgrounded mid-wait. No finalize call site retries the integrate
+# result, so this one bounded wait is the whole admission budget of the call; on
+# expiry the plan is dequeued (see :func:`run_integrate_into_main`).
+_MOVE_BACK_ACQUIRE_WAIT_SECONDS = 90.0
 
 
 def _load_module_by_path(name: str, path: Path) -> Any:
@@ -395,6 +408,30 @@ def _fold_global_logs(wt_global_logs: Path, plan_logs_dst: Path) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Blocked-admission cleanup
+# ---------------------------------------------------------------------------
+
+
+def _dequeue_after_blocked(merge_lock: Any, plan_id: str) -> bool:
+    """Dequeue ``plan_id`` from the merge FIFO queue after a blocked admission.
+
+    ``merge_lock.run_release`` always dequeues the caller and removes the lock
+    file only when the caller is its recorded holder — a blocked acquirer is
+    not, so the foreign holder's lock is left intact. Returns ``True`` when the
+    release reported ``status: success`` (the entry is gone), ``False`` when it
+    reported anything else or raised, so the caller can say the abandoned entry
+    may still be queued instead of implying it was cleaned up.
+    """
+    try:
+        # set_title_token=False mirrors the suppressed acquire — the move-back
+        # lock never set a title token, so there is nothing to clear.
+        result = merge_lock.run_release(Namespace(plan_id=plan_id, set_title_token=False))
+    except Exception:  # the dequeue must never mask the blocked result
+        return False
+    return isinstance(result, dict) and result.get('status') == 'success'
+
+
+# ---------------------------------------------------------------------------
 # main action
 # ---------------------------------------------------------------------------
 
@@ -406,6 +443,16 @@ def run_integrate_into_main(args: Namespace) -> dict[str, Any]:
     cwd; never removes the worktree; never regenerates the executor. A lock
     this call took is released on every exit path, including rollback; a lock
     the same plan already held is left to its holder.
+
+    The acquire waits up to :data:`_MOVE_BACK_ACQUIRE_WAIT_SECONDS` for admission
+    (a reentrant ``already_held`` grant still returns at once). When the bound
+    lapses while another plan holds the lock or is ahead in the FIFO queue, the
+    acquire's own enqueue is undone through ``merge_lock.run_release`` — which,
+    for a caller that does not hold the lock, leaves the lock file intact and
+    only dequeues — and the ``status: blocked`` payload is surfaced with
+    ``dequeued`` reporting whether that dequeue landed. Without it the abandoned
+    FIFO entry would stay queued, and a live worktree would wedge every plan
+    queued behind it.
     """
     plan_id: str = args.plan_id
 
@@ -478,11 +525,23 @@ def run_integrate_into_main(args: Namespace) -> dict[str, Any]:
     # surface (⏳/🔒): the move-back lock is a brief, finalize-internal mutex, so
     # flashing a lock glyph into the title is spurious noise the user never needs
     # to see. The token is a display affordance, not a correctness primitive.
+    # The bounded wait repeats whole non-waiting admission attempts inside
+    # merge_lock; a reentrant ``already_held`` grant still answers the first one.
     merge_lock = _load_merge_lock()
-    acquire_result = merge_lock.run_acquire(Namespace(plan_id=plan_id, set_title_token=False))
+    acquire_result = merge_lock.run_acquire(
+        Namespace(plan_id=plan_id, set_title_token=False, wait_seconds=_MOVE_BACK_ACQUIRE_WAIT_SECONDS)
+    )
+    if acquire_result.get('status') == 'blocked':
+        # Admission still blocked once the bound lapsed. No lock was acquired, but
+        # the acquire FIFO-enqueued this plan, and only a release dequeues it — so
+        # undo that enqueue rather than leave an abandoned entry wedging the plans
+        # queued behind it. For a non-holder, run_release leaves the lock intact.
+        return _assert_cwd_unchanged(
+            {**acquire_result, 'plan_id': plan_id, 'dequeued': _dequeue_after_blocked(merge_lock, plan_id)}
+        )
     if acquire_result.get('status') != 'success':
-        # Could not acquire (admission blocked / resolution failure) — surface verbatim.
-        # No lock was acquired, so there is nothing to release.
+        # Could not acquire (resolution failure) — surface verbatim. No lock was
+        # acquired, so there is nothing to release.
         return _assert_cwd_unchanged({**acquire_result, 'plan_id': plan_id})
 
     # Ownership of the release: this call releases the lock only when it TOOK
