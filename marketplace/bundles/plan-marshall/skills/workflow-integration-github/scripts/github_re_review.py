@@ -129,8 +129,9 @@ bot and post-dates the trigger, so it satisfied every eligibility gate of the
 comment discriminator while naming no commit, and the await ended on it as
 ``matched: true`` / ``head_sha_verified: false`` — a decline the bot never made.
 :meth:`_ReReviewStrategy._match_bot_comment` therefore classifies a comment
-carrying one of the bot's registry ``acknowledgment_patterns``
-(:func:`is_acknowledgment_comment`) as ``acknowledged``: it is never returned as
+carrying one of the bot's registry ``acknowledgment_patterns`` — compared
+case-insensitively, so "Full review triggered." meets the "Review triggered"
+literal — (:func:`is_acknowledgment_comment`) as ``acknowledged``: it is never returned as
 the match, the poll continues, and the envelope reports it as ``acknowledged`` /
 ``acknowledgments`` so a timeout after an acknowledgment is distinguishable from
 a bot that never responded at all. A refusal the stack can READ still outranks
@@ -1785,24 +1786,35 @@ def _collapse_whitespace(text: str) -> str:
     return ' '.join(text.split())
 
 
+def _normalise_acknowledgment_text(text: str) -> str:
+    """Return ``text`` whitespace-collapsed and case-folded — the one comparison form.
+
+    Both sides of the acknowledgment comparison pass through this function, the
+    registry literals and the comment body alike, so neither line breaks nor letter
+    case can decide the match.
+    """
+    return _collapse_whitespace(text).casefold()
+
+
 def _acknowledgment_patterns(bot_kind: str) -> frozenset[str]:
     """Return ``bot_kind``'s acknowledgment literals, normalised for comparison.
 
-    Every registry-sourced entry is whitespace-collapsed and an entry that is empty
-    afterwards is dropped, so a doc carrying a stray space or a blank item cannot
-    make the empty string — which every body contains — an acknowledgment. Read on
-    each call rather than cached at import: the registry is an in-memory index, and
-    a per-call read keeps this recogniser and the accessor it reads from answering
+    Every registry-sourced entry is whitespace-collapsed and case-folded
+    (:func:`_normalise_acknowledgment_text`), and an entry that is empty afterwards
+    is dropped, so a doc carrying a stray space or a blank item cannot make the
+    empty string — which every body contains — an acknowledgment. Read on each call
+    rather than cached at import: the registry is an in-memory index, and a
+    per-call read keeps this recogniser and the accessor it reads from answering
     alike.
     """
     return frozenset(
-        collapsed
-        for collapsed in (
-            _collapse_whitespace(entry)
+        normalised
+        for normalised in (
+            _normalise_acknowledgment_text(entry)
             for entry in bot_registry.acknowledgment_patterns(bot_kind)
             if isinstance(entry, str)
         )
-        if collapsed
+        if normalised
     )
 
 
@@ -1817,28 +1829,35 @@ def is_acknowledgment_comment(body: str, bot_kind: str | None) -> bool:
     acknowledgment is not an answer".
 
     The test is substring containment of a declared literal, with BOTH sides
-    whitespace-collapsed: the literal arrives inside a disclosure wrapper and beside
-    a trailing note, and how the provider breaks those lines must not decide the
-    match. It is scoped to the bot that declared the literal — the caller passes the
-    ``bot_kind`` the comment's author resolved to — so a human, or another bot,
-    quoting the phrase is never an acknowledgment.
+    whitespace-collapsed and case-folded (:func:`_normalise_acknowledgment_text`).
+    Whitespace, because the literal arrives inside a disclosure wrapper and beside a
+    trailing note, and how the provider breaks those lines must not decide the
+    match. Case, because the bot capitalises the same reply differently by command:
+    CodeRabbit answers ``@coderabbitai full review`` with "Full review triggered." /
+    "Full review finished.", which the declared "Review triggered" / "Review
+    finished" literals missed under a case-sensitive test — so both replies were
+    filed as findings and were eligible answers in the re-review matcher. It is
+    scoped to the bot that declared the literal — the caller passes the ``bot_kind``
+    the comment's author resolved to — so a human, or another bot, quoting the phrase
+    is never an acknowledgment.
 
     ``False`` for an absent ``bot_kind`` and for a bot that declares no
     ``acknowledgment_patterns``: nothing is classified an acknowledgment on the
     strength of a literal nobody declared.
 
     Accepted tradeoff: a genuine comment from the same bot that quotes a declared
-    literal is classified an acknowledgment too. The literals are the bot's own
-    command-reply wording rather than phrasing a review uses, which is what keeps
-    that narrow.
+    literal, in any letter case, is classified an acknowledgment too. The literals
+    are the bot's own command-reply wording rather than phrasing a review uses, and
+    the match stays scoped to that bot's own comments, which is what keeps the
+    tradeoff narrow even with case ignored.
     """
     if not bot_kind:
         return False
     patterns = _acknowledgment_patterns(bot_kind)
     if not patterns:
         return False
-    collapsed = _collapse_whitespace(body)
-    return any(pattern in collapsed for pattern in patterns)
+    normalised = _normalise_acknowledgment_text(body)
+    return any(pattern in normalised for pattern in patterns)
 
 
 # ---------------------------------------------------------------------------

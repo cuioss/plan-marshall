@@ -245,15 +245,27 @@ never a finding:
 that a review ran, and carries no part of it. The review itself is what the participation shapes below
 credit.
 
-The match is a whitespace-normalised substring test against CodeRabbit's own comments only, so the
-wrapper and the trailing note around the line do not matter and a human quoting the phrase is
-unaffected. A reply the recognition stack can READ as a refusal stays a refusal — `Review rate
-limited` arrives in the same wrapper under `⚠️ Action not completed` and contains neither literal.
+The match is a whitespace-normalised, **case-insensitive** substring test against CodeRabbit's own
+comments only, so the wrapper and the trailing note around the line do not matter, neither does the
+letter case of the line, and a human quoting the phrase is unaffected. A reply the recognition stack
+can READ as a refusal stays a refusal — `Review rate limited` arrives in the same wrapper under
+`⚠️ Action not completed` and contains neither literal.
+
+**The full-review replies are covered by the same two literals.** CodeRabbit answers the escalated
+command `@coderabbitai full review` with the same reply, worded `Full review triggered.` while the
+review runs and `Full review finished.` once it has ended. Under a case-sensitive test those missed
+`Review triggered` / `Review finished` on the capital `R`, so both were stored as `pr-comment`
+findings and both were eligible answers in the re-review matcher. Compared case-insensitively, each
+contains its literal, so they are acknowledgments exactly as the ordinary replies are and no third
+literal is declared for them. An edited reply is still one comment: the matcher places it at the later
+of its `updated_at` / `created_at` and classifies it `acknowledged` whichever wording it carries.
 
 Provenance of the two literals: `Review finished.` was read verbatim off the command replies on
 `cuioss/plan-marshall#1654`. Those replies had already been edited to their final wording when they
 were read, so `Review triggered` is declared from the reported wording of the same reply and has not
-been read off a live comment.
+been read off a live comment. The full-review wordings `Full review triggered.` and
+`Full review finished.` were observed as stored findings on `cuioss/plan-marshall#1742` and
+`cuioss/plan-marshall#1745`.
 
 The class itself is cross-bot vocabulary — see
 [`bot-participation-contract.md`](bot-participation-contract.md) § "An acknowledgment is not an

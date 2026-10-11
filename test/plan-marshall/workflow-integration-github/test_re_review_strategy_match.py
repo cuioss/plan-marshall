@@ -97,6 +97,7 @@ from _github_pr_fixtures import (
     ACKNOWLEDGMENT_BOT_LOGIN,
     CODERABBIT_ACKNOWLEDGMENT_COUNT,
     CODERABBIT_ACKNOWLEDGMENTS,
+    CODERABBIT_FULL_REVIEW_ACKNOWLEDGMENTS,
     CODERABBIT_GENUINE_SHORT_REVIEW_COMMENT,
     CODERABBIT_VERDICT_MARKER,
     HUMAN_COMMENT_QUOTING_AN_ACKNOWLEDGMENT,
@@ -285,6 +286,70 @@ def _match_bot_comment(comments, head_sha, bot_kind, trigger_dt, refusals=None, 
     return github_re_review._ReReviewStrategy._match_bot_comment(
         comments, head_sha, bot_kind, trigger_dt, [] if refusals is None else refusals, acknowledgments
     )
+
+
+# =============================================================================
+# The full-review replies — acknowledgments under the case-insensitive match
+# =============================================================================
+#
+# CodeRabbit answers ``@coderabbitai full review`` with "Full review triggered." /
+# "Full review finished.". The declared literals are "Review triggered" / "Review
+# finished", so the replies are acknowledgments only because the comparison folds
+# case on both sides.
+
+_FULL_REVIEW_PARAMS = [
+    pytest.param(body, id=case_id) for case_id, body, _provenance in CODERABBIT_FULL_REVIEW_ACKNOWLEDGMENTS
+]
+_ACK_TRIGGER = '2026-01-01T00:02:00Z'
+
+
+@pytest.mark.parametrize('body', _FULL_REVIEW_PARAMS)
+def test_a_full_review_reply_is_an_acknowledgment_not_an_answer(body):
+    """The reply is recognised, never returned as the match, and recorded as acknowledged."""
+    acknowledgments: list[dict] = []
+    comment = _comment(ACKNOWLEDGMENT_BOT_LOGIN, created_at='2026-01-01T00:03:00Z', body=body)
+
+    match = _match_bot_comment(
+        [comment], 'headsha', ACKNOWLEDGMENT_BOT_KIND, _parse(_ACK_TRIGGER), None, acknowledgments
+    )
+
+    assert github_re_review.is_acknowledgment_comment(body, ACKNOWLEDGMENT_BOT_KIND) is True
+    assert match is None
+    assert [record['bot_kind'] for record in acknowledgments] == [ACKNOWLEDGMENT_BOT_KIND]
+
+
+def test_an_edited_full_review_reply_is_the_same_acknowledgment():
+    """One comment edited from triggered to finished stays an acknowledgment, never an answer.
+
+    The reply was posted before the trigger and edited after it — same id, a later
+    ``updated_at`` — so it is placed at the edit and recorded once as acknowledged.
+    """
+    triggered, finished = (body for _case_id, body, _provenance in CODERABBIT_FULL_REVIEW_ACKNOWLEDGMENTS)
+    before = _comment(ACKNOWLEDGMENT_BOT_LOGIN, created_at='2026-01-01T00:01:00Z', body=triggered)
+    edited = _comment(
+        ACKNOWLEDGMENT_BOT_LOGIN,
+        created_at='2026-01-01T00:01:00Z',
+        updated_at='2026-01-01T00:05:00Z',
+        body=finished,
+    )
+    acknowledgments: list[dict] = []
+
+    match = _match_bot_comment(
+        [edited], 'headsha', ACKNOWLEDGMENT_BOT_KIND, _parse(_ACK_TRIGGER), None, acknowledgments
+    )
+
+    assert edited['id'] == before['id']
+    assert match is None
+    assert len(acknowledgments) == 1
+
+
+def test_the_case_folded_match_stays_scoped_to_the_declaring_bot():
+    """⛔ CONTROL: an upper-cased quotation is no acknowledgment for a human or another bot."""
+    shouted = 'FULL REVIEW FINISHED — but the retry loop at `src/idx.py:12` still spins.'
+
+    assert github_re_review.is_acknowledgment_comment(shouted, None) is False
+    assert github_re_review.is_acknowledgment_comment(shouted, 'cuioss-review-bot') is False
+    assert github_re_review.is_acknowledgment_comment(shouted, ACKNOWLEDGMENT_BOT_KIND) is True
 
 
 _PR_AGENT_LOGIN = 'cuioss-review-bot'
@@ -1146,9 +1211,10 @@ def test_a_review_record_without_a_user_key_fails_the_gate():
 # =============================================================================
 
 
-def test_the_acknowledgment_population_is_the_declared_pair():
-    """Non-vacuity: the acknowledgment cases below run over both declared wordings."""
-    assert CODERABBIT_ACKNOWLEDGMENT_COUNT == len(_ACKNOWLEDGMENT_PARAMS) == 2
+def test_the_acknowledgment_population_is_the_declared_pair_and_the_full_review_replies():
+    """Non-vacuity: the cases below run over both declared wordings and both full-review replies."""
+    assert CODERABBIT_ACKNOWLEDGMENT_COUNT == len(_ACKNOWLEDGMENT_PARAMS) == 4
+    assert len(_FULL_REVIEW_PARAMS) == 2
     assert bot_registry.acknowledgment_patterns(ACKNOWLEDGMENT_BOT_KIND), (
         'the acknowledging bot declares no acknowledgment_patterns — every case below '
         'would assert over a class nothing can be a member of'
@@ -1181,7 +1247,8 @@ def test_an_acknowledgment_after_the_trigger_is_neither_a_match_nor_a_refusal(mo
     record = result['acknowledgments'][0]
     assert record['source'] == 'issue_comment'
     assert record['bot_kind'] == ACKNOWLEDGMENT_BOT_KIND
-    assert 'Review' in record['body']
+    # The full-review replies spell it "review" — the record carries the body as posted.
+    assert 'review' in record['body'].casefold()
 
 
 @pytest.mark.parametrize('body', _ACKNOWLEDGMENT_PARAMS)

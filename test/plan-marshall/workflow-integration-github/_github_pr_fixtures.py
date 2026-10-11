@@ -230,10 +230,19 @@ def _command_reply(statement: str) -> str:
 #: final wording when they were read, so this body has never been seen on a live
 #: comment. A case that passes only on the constructed body proves the declared literal
 #: is honoured, not that CodeRabbit posts it.
+#:
+#: ``Full review triggered.`` and ``Full review finished.`` are OBSERVED: they are the
+#: replies to the escalated command ``@coderabbitai full review``, stored as
+#: ``pr-comment`` findings on ``cuioss/plan-marshall#1742`` and
+#: ``cuioss/plan-marshall#1745`` while the recogniser compared case-sensitively. They
+#: carry the declared ``Review triggered`` / ``Review finished`` literals only with a
+#: lower-case ``r``, so they are acknowledgments only under the case-insensitive match.
 CODERABBIT_ACKNOWLEDGMENTS: tuple[tuple[str, str, str], ...] = guard_non_empty(
     (
         ('review-finished', _command_reply('Review finished.'), ACKNOWLEDGMENT_OBSERVED),
         ('review-triggered', _command_reply('Review triggered.'), ACKNOWLEDGMENT_CONSTRUCTED),
+        ('full-review-triggered', _command_reply('Full review triggered.'), ACKNOWLEDGMENT_OBSERVED),
+        ('full-review-finished', _command_reply('Full review finished.'), ACKNOWLEDGMENT_OBSERVED),
     ),
     'CODERABBIT_ACKNOWLEDGMENTS',
     'the literal acknowledgment bodies declared in _github_pr_fixtures',
@@ -241,6 +250,15 @@ CODERABBIT_ACKNOWLEDGMENTS: tuple[tuple[str, str, str], ...] = guard_non_empty(
 
 #: The published size of the acknowledgment population.
 CODERABBIT_ACKNOWLEDGMENT_COUNT: int = len(CODERABBIT_ACKNOWLEDGMENTS)
+
+#: The full-review replies alone — the subset of :data:`CODERABBIT_ACKNOWLEDGMENTS` whose
+#: wording differs from the declared literals in letter case, selected by case id so it
+#: cannot drift from the population it is drawn from.
+CODERABBIT_FULL_REVIEW_ACKNOWLEDGMENTS: tuple[tuple[str, str, str], ...] = guard_non_empty(
+    tuple(entry for entry in CODERABBIT_ACKNOWLEDGMENTS if entry[0].startswith('full-review-')),
+    'CODERABBIT_FULL_REVIEW_ACKNOWLEDGMENTS',
+    'CODERABBIT_ACKNOWLEDGMENTS filtered by the full-review- case id prefix',
+)
 
 #: NEGATIVE control, same bot: a genuine review comment as short as an acknowledgment.
 #: It carries a code anchor and neither acknowledgment statement, so it is feedback

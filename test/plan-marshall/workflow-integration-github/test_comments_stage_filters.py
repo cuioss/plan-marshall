@@ -24,12 +24,14 @@ import sys
 from contextlib import redirect_stdout
 from unittest.mock import patch
 
+import bot_registry
 import pytest
 from _github_pr_fixtures import (
     ACKNOWLEDGMENT_BOT_KIND,
     ACKNOWLEDGMENT_BOT_LOGIN,
     CODERABBIT_ACKNOWLEDGMENT_COUNT,
     CODERABBIT_ACKNOWLEDGMENTS,
+    CODERABBIT_FULL_REVIEW_ACKNOWLEDGMENTS,
     CODERABBIT_GENUINE_SHORT_REVIEW_COMMENT,
     HUMAN_COMMENT_QUOTING_AN_ACKNOWLEDGMENT,
 )
@@ -162,6 +164,9 @@ class TestIsObviousNoise:
 
 
 _ACKNOWLEDGMENT_PARAMS = [pytest.param(body, id=case_id) for case_id, body, _provenance in CODERABBIT_ACKNOWLEDGMENTS]
+_FULL_REVIEW_ACKNOWLEDGMENT_PARAMS = [
+    pytest.param(body, id=case_id) for case_id, body, _provenance in CODERABBIT_FULL_REVIEW_ACKNOWLEDGMENTS
+]
 
 
 def _fetch_without_provider_reads(comments, args):
@@ -195,13 +200,42 @@ def _bot_comment(comment_id, body, *, kind='issue_comment'):
 class TestAcknowledgmentIsNoise:
     """A bot's confirmation that a command was received files no finding."""
 
-    def test_the_population_is_the_declared_pair(self):
-        """Non-vacuity: the cases below run over both declared wordings."""
-        assert CODERABBIT_ACKNOWLEDGMENT_COUNT == len(_ACKNOWLEDGMENT_PARAMS) == 2
+    def test_the_population_is_the_declared_pair_and_the_full_review_replies(self):
+        """Non-vacuity: the cases below run over both declared wordings and both full-review replies."""
+        assert CODERABBIT_ACKNOWLEDGMENT_COUNT == len(_ACKNOWLEDGMENT_PARAMS) == 4
+        assert len(CODERABBIT_FULL_REVIEW_ACKNOWLEDGMENTS) == 2
 
     @pytest.mark.parametrize('body', _ACKNOWLEDGMENT_PARAMS)
     def test_an_acknowledgment_from_the_declaring_bot_is_noise(self, body):
         assert _is_obvious_noise(body, ACKNOWLEDGMENT_BOT_KIND)
+
+    @pytest.mark.parametrize('body', _FULL_REVIEW_ACKNOWLEDGMENT_PARAMS)
+    def test_a_full_review_reply_is_noise_only_under_the_case_insensitive_match(self, body):
+        """The reply carries the declared literal in other letter case, and is still dropped.
+
+        The body does NOT contain the literal case-sensitively — the premise that made
+        it a stored finding before the match folded case — yet it is noise now.
+        """
+        declared = bot_registry.acknowledgment_patterns(ACKNOWLEDGMENT_BOT_KIND)
+        assert not any(literal in body for literal in declared)
+        assert _is_obvious_noise(body, ACKNOWLEDGMENT_BOT_KIND)
+
+    def test_fetch_findings_drops_the_full_review_replies_and_files_the_genuine_comment(self, plan_context):
+        """Through the verb: both full-review replies are noise, the same bot's genuine comment is filed."""
+        plan_id = 'gh-ack-full-review-noise'
+        plan_context.plan_dir_for(plan_id)
+        replies = [
+            _bot_comment(f'IC-ack-{case_id}', body)
+            for case_id, body, _provenance in CODERABBIT_FULL_REVIEW_ACKNOWLEDGMENTS
+        ]
+        genuine = _bot_comment('IC-genuine-full', CODERABBIT_GENUINE_SHORT_REVIEW_COMMENT)
+
+        result = _fetch_without_provider_reads([*replies, genuine], _StoreArgs(707, plan_id))
+
+        assert result['status'] == 'success'
+        assert result['count_skipped_noise'] == len(CODERABBIT_FULL_REVIEW_ACKNOWLEDGMENTS)
+        assert result['count_stored'] == 1
+        assert result['count_skipped_refusal'] == 0
 
     def test_a_genuine_short_comment_from_the_same_bot_is_not_noise(self):
         """NEGATIVE control: same bot, same length class, but feedback about the code."""

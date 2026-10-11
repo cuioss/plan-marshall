@@ -653,9 +653,11 @@ what credit a review.
 
 Which bodies are acknowledgments is a per-bot registry fact — the `acknowledgment_patterns` list in
 `standards/{bot_kind}.md`, read through `bot_registry.acknowledgment_patterns` and matched as a
-whitespace-normalised substring against that bot's own comments, so no bot name enters the code. A
-bot that declares none has no acknowledgment this pipeline knows of, and nothing is classified one for
-it. The field is separate from `ignore_patterns` and from `refusal_patterns` for the reason those two
+whitespace-normalised, **case-insensitive** substring against that bot's own comments, so no bot name
+enters the code. Both sides of the comparison are normalised alike — the declared literal and the
+comment body — because a bot capitalises the same reply differently by command: a literal declared as
+`Review triggered` also covers `Full review triggered.`, the reply to an escalated command. A bot that
+declares none has no acknowledgment this pipeline knows of, and nothing is classified one for it. The field is separate from `ignore_patterns` and from `refusal_patterns` for the reason those two
 are separate from each other: a section of a successful review, a notice that the bot declined, and a
 confirmation that a command arrived are three different statements.
 
