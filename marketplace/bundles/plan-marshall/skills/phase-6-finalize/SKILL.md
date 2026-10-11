@@ -2238,6 +2238,7 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 | `scripts/ci_complete_precondition.py` | `plan-marshall:phase-6-finalize:ci_complete_precondition` | Resolver for the `requires: [ci-complete]` frontmatter precondition, with a per-HEAD cache and a harness-ceiling clamp |
 | `scripts/derive_gate_bundles.py` | `plan-marshall:phase-6-finalize:derive_gate_bundles` | Derives the unique bundle set the pre-push quality gate runs over, from the live footprint |
 | `scripts/review_commitments.py` | `plan-marshall:phase-6-finalize:review_commitments` | Reconciles a simplify pass's deletions against the review commitments made earlier in the SAME finalize run — reports conflicts, gates nothing |
+| `scripts/review_support.py` | `plan-marshall:phase-6-finalize:review_support` | Deterministic halves of the functional and code reviews — per-deliverable attribution with unrequested-change candidates and delta-round selection (`attribution`), the reviewed domain set with provenance (`domains`), and verdict validation that derives the grading, loop-back target, `may_close` and the recorded facts (`validate`); the blocking line it applies is stated in [`standards/review-rubric.md`](standards/review-rubric.md) |
 | `scripts/pr_intent_section.py` | `plan-marshall:phase-6-finalize:pr_intent_section` | Renders the distilled `## Intent` section into the generated PR body — owns the character budget and its visible truncation, and omits the section entirely (heading included) when the plan has no outline intent |
 | `scripts/post_run_source_guard.py` | `plan-marshall:phase-6-finalize:post_run_source_guard` | Runtime tracked-source guard for the `post_run_review` band (item 5f sub-item 0) — reports dirty TRACKED paths (source, or a tracked `.plan/` config/descriptor) left by a step that declared `mutates_source: false`; the `.plan/` exemption is keyed on git trackedness, not the path prefix; publishes the examined population (`considered_paths` / `exempted_paths` / `offending_paths`); advisory and non-blocking (always exits 0) |
 | `scripts/verdict_currency.py` | `plan-marshall:phase-6-finalize:verdict_currency` | Classifies whether a HEAD advance invalidates a head-dependent step's recorded verdict, by diffing the recorded SHA's tree against the live HEAD over the step's declared `verdict_inputs` surface; fails closed to `invalidated` on every uncertainty (`classify`). Its read-only `changed-paths` verb lists the paths that differ between a step's own recorded `head_at_completion` and the live HEAD, through the same tree-difference derivation |
@@ -2246,7 +2247,7 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 
 ## Canonical invocations
 
-The canonical argparse surface for `ci_complete_precondition.py`, `pr_intent_section.py`, `post_run_source_guard.py`, `pre_merge_gate.py`, `review_commitments.py` and `verdict_currency.py`. The plugin-doctor `missing-canonical-block` rule checks that this section is PRESENT, matching its heading only — the body is never read; `manage-invocation-invalid` derives its accept-set from a live `--help` walk rather than from this section. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+The canonical argparse surface for `ci_complete_precondition.py`, `pr_intent_section.py`, `post_run_source_guard.py`, `pre_merge_gate.py`, `review_commitments.py`, `review_support.py` and `verdict_currency.py`. The plugin-doctor `missing-canonical-block` rule checks that this section is PRESENT, matching its heading only — the body is never read; `manage-invocation-invalid` derives its accept-set from a live `--help` walk rather than from this section. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
 
 ### ci_complete_precondition — resolve
 
@@ -2362,6 +2363,63 @@ carries NO `verdict` field, so a crashed reconciliation reads as UNKNOWN rather 
 as a clear pass. See
 [`standards/finalize-step-simplify.md`](standards/finalize-step-simplify.md)
 § "Reconcile against the run's review commitments".
+
+### review_support — attribution
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:review_support attribution \
+  --plan-id PLAN_ID [--delta-step DELTA_STEP]
+```
+
+Read-only. Per outline deliverable it returns one `deliverables[]` row carrying
+`attribution_source: ledger | declared_only`; a `declared_only` row names its
+`reason` — `no_ledger_rows`, `deliverable_id_absent`, `commit_not_on_branch` (the
+normal case after a rebase rewrote the SHAs) or `branch_unresolved`. `files[]`
+lists each deliverable's code set — its declared write set plus the files the
+change ledger's on-branch `kind=change` rows attribute to it — with each path's
+`origin`. `unrequested_candidates` lists the realized-footprint files no
+deliverable owns; it is ABSENT, never empty, when the footprint could not be
+derived (`footprint_source: unresolved`).
+
+With `--delta-step`, the round is anchored on that step's recorded completion
+(the same tree difference `verdict_currency changed-paths` computes):
+`round_kind: delta` keeps only the deliverables whose code set intersects the
+changed paths, and `round_kind: full` is returned when the outcome is
+`first_firing`, `last_firing_not_done` or `diff_unavailable`. Without the flag the
+round is `full` (`round_reason: no_delta_step`).
+
+### review_support — domains
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:review_support domains \
+  --plan-id PLAN_ID
+```
+
+Read-only. Returns the union of the plan's `references.json` `domains` and every
+configured skill domain whose `file_globs` match the realized footprint, each row
+carrying `provenance: declared | footprint | both`. The footprint is read by the
+script itself, so no path is interpolated into a command line.
+
+### review_support — validate
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:review_support validate \
+  --plan-id PLAN_ID --kind {functional,code} --verdict-file VERDICT_FILE \
+  [--verifier-file VERIFIER_FILE]
+```
+
+Checks the author's JSON verdict against the schema documented in the script's
+module docstring and grades it on the blocking line of
+[`standards/review-rubric.md`](standards/review-rubric.md). A `met` criterion
+without evidence is rewritten to `unevidenced` and listed under `rewrites`; an
+uncited code finding is listed under `rejected_findings`. A verdict with a schema
+error or a rejected finding returns `valid: false` with `may_close: false` and
+carries no `facts`, `findings` or `loop_back_target`. A valid verdict returns the
+graded `findings[]`, `loop_back_target` (`5-execute` when any blocking finding is an
+implementation gap, `6-finalize` when every one is a correction, `none` without a
+blocking finding), `may_close` (no blocking finding AND a verifier answer of
+`accepted`) and the `facts` the step records. An unreadable verdict file or a
+missing outline returns `status: error`. The command exits `0` on every outcome.
 
 ## Related
 
