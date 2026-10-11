@@ -270,6 +270,13 @@ Apply throughout all subsequent steps:
         --changed-paths "{changed_paths}" --plan-id "{plan_id}"
       ```
 
+      ⛔ **An empty change list omits the flag.** When git reports no file this task modified, `{changed_paths}` is empty: omit `--changed-paths` and resolve with `--plan-id` alone, so the plan's live footprint decides the scope. Never pass an empty `--changed-paths` — the resolver refuses it with `empty_changed_paths` rather than reading it as "nothing changed":
+
+      ```bash
+      python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build resolve-test-scope \
+        --plan-id "{plan_id}"
+      ```
+
       Parse `scoped_modules[]`, `recommended_target`, `divergence_possible`, `narrow_units[]`, `narrow_unit_module`, and `narrow_units_unresolved[]` from the TOON.
    3. **Branch on the result in this order** — the order of branches 4, 5 and 6 of [`pre-push-quality-gate.md`](../phase-6-finalize/standards/pre-push-quality-gate.md) § "Whole-tree module-tests divergence gate":
 

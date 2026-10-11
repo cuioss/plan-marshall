@@ -11,7 +11,9 @@ Covers the three concerns of the post-merge re-review registry:
          sourcery:   posts ``@sourcery-ai review``.
          cuioss-review-bot:   posts ``/review``.
     3. Two-signal completion matching — ``await_fresh_review`` is satisfied by
-       EITHER ``_match_review`` (a review whose reviewed-commit evidence REFERENCES
+       EITHER ``_match_review`` (a review authored by the awaited bot — its
+       ``user`` login resolves to the awaited ``bot_kind`` — whose reviewed-commit
+       evidence REFERENCES
        the pushed HEAD — recognised as a bare token or embedded in a commit URL, and
        compared for EQUALITY either way, so a differing commit still fails — whose
        ``submitted_at`` post-dates the trigger time, AND whose
@@ -84,6 +86,7 @@ from _github_pr_fixtures import (
     CODERABBIT_NO_UNREVIEWED_COMMIT_REPLY_COUNT,
     CODERABBIT_RATE_LIMITED_COMMAND_REPLY,
     NO_UNREVIEWED_COMMIT_BOT_KIND,
+    coderabbit_verdict,
 )
 
 _NO_RECORD_WINDOW = {'status': 'free', 'expired': True, 'holder': '', 'seconds_remaining': 0.0}
@@ -139,8 +142,8 @@ def _neutralize_rate_window(monkeypatch):
 def _neutralize_in_progress_read(monkeypatch):
     """Hold the completion read at NOT OBSERVED RUNNING for every test here.
 
-    A poll that would end on a comment naming no commit consults
-    ``read_bot_in_progress``, which reads the awaited bot's check-run through ``gh``.
+    A poll that would end on a match consults ``read_bot_in_progress``, which reads
+    the awaited bot's check-run through ``gh``.
     Default-on, so no case in this module shells out or depends on a real PR's check.
     The matched pair proving this fixture lives in ``test_re_review_strategy_match.py``.
     """
@@ -178,13 +181,28 @@ def _noop_sleep(monkeypatch):
     monkeypatch.setattr(time, 'sleep', lambda *_a, **_kw: None)
 
 
-def _review(commit_sha, submitted_at, *, user='coderabbit[bot]', state='COMMENTED', body=''):
+def _review_login(bot_kind):
+    """Return a review-author login the registry resolves to ``bot_kind``.
+
+    Read from the registry's own login map rather than restated, in the ``[bot]``
+    suffixed form the REST ``/reviews`` payload carries; ``bot_kind_for_author``
+    strips the suffix before resolving it.
+    """
+    login = next(login for login, kind in bot_registry.login_to_bot_kind().items() if kind == bot_kind)
+    return f'{login}[bot]'
+
+
+def _review(commit_sha, submitted_at, *, user, state='COMMENTED', body=''):
     """Build a review row in the shape fetch_pr_reviews_with_commits returns.
 
     ``body`` mirrors the widened projection: a review row now carries its body so
     the completion discriminator can tell a genuine review from a refusal notice
     submitted as a review object. It defaults to empty, which no refusal layer
     matches, so a fixture that does not care about the body behaves as before.
+
+    ``user`` is required: the review arm matches only a review authored by the
+    awaited bot, so every fixture names its author (:func:`_review_login`) and a
+    review's outcome is never decided by an author the fixture left out.
     """
     return {
         'user': user,
@@ -269,7 +287,7 @@ _CODERABBIT_COMMAND_REPLY_REFUSAL = (
     'already reviewed commits. This command is applicable only when automatic '
     'reviews are paused. </details>'
 )
-_CODERABBIT_GENUINE_COMMENT = (
+_CODERABBIT_GENUINE_COMMENT = coderabbit_verdict(
     'Actionable comments posted: 1. The retry loop can spin forever when the backoff '
     'cap is zero — guard the cap before entering the loop.'
 )
@@ -614,7 +632,10 @@ def test_main_re_review_wires_args_and_prints_toon(monkeypatch, capsys):
     monkeypatch.setattr(
         github_re_review._github,
         'fetch_pr_reviews_with_commits',
-        lambda pr_number: {'status': 'success', 'reviews': [_review('headsha', '2026-01-01T00:05:00Z')]},
+        lambda pr_number: {
+            'status': 'success',
+            'reviews': [_review('headsha', '2026-01-01T00:05:00Z', user=_review_login('coderabbit'))],
+        },
     )
     monkeypatch.setattr(
         sys,
@@ -1044,6 +1065,153 @@ def test_a_stale_notice_does_not_displace_the_cause_or_the_class():
             notice_stale=True,
         )
         assert verdict['action'] == github_re_review.RECOVERY_ACTION_ESCALATE_NOT_AWAITABLE, bot
+
+
+# ---------------------------------------------------------------------------
+# A stale notice meeting a required bot with no review on record
+# ---------------------------------------------------------------------------
+
+#: The first-pass observation of a bot no plan holds a claim on: the window reads
+#: expired and the default budget is untouched.
+_FIRST_PASS_BUDGET = 6
+
+
+def test_recovery_action_triggers_once_for_a_stale_notice_with_no_review_on_record(monkeypatch, capsys):
+    """Through the CLI: a required bot that never reviewed is asked, not settled.
+
+    Settling here let every later pass meet the same notice and settle it again,
+    so a bot that never reviewed was never asked.
+    """
+    verdict = _run_recovery_action(
+        monkeypatch,
+        capsys,
+        '--bot-kind',
+        _awaitable_bot(),
+        '--cause',
+        'quota',
+        '--window-expired',
+        'true',
+        '--attempts-remaining',
+        str(_FIRST_PASS_BUDGET),
+        '--notice-stale',
+        'true',
+        '--review-on-record',
+        'absent',
+    )
+
+    assert verdict['action'] == github_re_review.RECOVERY_ACTION_TRIGGER_STALE_NOTICE
+    assert verdict['reason'] == 'stale_notice_no_review_on_record'
+    assert verdict['notice_stale'] is True
+    assert verdict['review_on_record'] == github_re_review.REVIEW_ON_RECORD_ABSENT
+    assert github_re_review.RECOVERY_ACTION_TRIGGER_STALE_NOTICE in verdict['recovery_actions']
+
+
+@pytest.mark.parametrize('attempt_held', [False, True], ids=['held-omitted', 'held'])
+def test_the_pass_after_the_trigger_meets_its_own_open_claim_and_never_triggers_again(attempt_held):
+    """Exactly one trigger across the two passes: the claim made after it is what stops a second.
+
+    The first pass triggers and claims; the second reads the same stale notice, the
+    same absent review, and this plan's own unexpired claim with one attempt spent.
+    """
+    bot = _awaitable_bot()
+    observations = {
+        'cause': _github_pr.REFUSAL_CAUSE_QUOTA,
+        'notice_stale': True,
+        'review_on_record': github_re_review.REVIEW_ON_RECORD_ABSENT,
+    }
+
+    first = github_re_review.resolve_recovery_action(
+        bot, window_expired=True, attempts_remaining=_FIRST_PASS_BUDGET, **observations
+    )
+    second = github_re_review.resolve_recovery_action(
+        bot,
+        window_expired=False,
+        attempts_remaining=_FIRST_PASS_BUDGET - 1,
+        attempt_held=attempt_held,
+        **observations,
+    )
+
+    assert first['action'] == github_re_review.RECOVERY_ACTION_TRIGGER_STALE_NOTICE
+    assert second['action'] == github_re_review.RECOVERY_ACTION_AWAIT_WINDOW
+    assert second['reason'] == 'claim_window_open'
+    triggers = [v for v in (first, second) if v['action'] == github_re_review.RECOVERY_ACTION_TRIGGER_STALE_NOTICE]
+    assert len(triggers) == 1
+
+
+def test_a_spent_budget_escalates_a_stale_notice_with_no_review_on_record():
+    """The trigger is capped by the rate-window attempt counter: none is left, none is posted."""
+    verdict = github_re_review.resolve_recovery_action(
+        _awaitable_bot(),
+        cause=_github_pr.REFUSAL_CAUSE_QUOTA,
+        window_expired=True,
+        attempts_remaining=0,
+        notice_stale=True,
+        review_on_record=github_re_review.REVIEW_ON_RECORD_ABSENT,
+    )
+
+    assert verdict['action'] == github_re_review.RECOVERY_ACTION_ESCALATE_EXHAUSTED
+    assert verdict['reason'] == 'attempt_cap_exhausted'
+
+
+@pytest.mark.parametrize(
+    'review_on_record',
+    [
+        pytest.param(github_re_review.REVIEW_ON_RECORD_CREDITED, id='credited'),
+        pytest.param(github_re_review.REVIEW_ON_RECORD_STALE, id='stale'),
+        pytest.param(github_re_review.REVIEW_ON_RECORD_UNDECIDABLE, id='undecidable'),
+        pytest.param('', id='unobserved'),
+    ],
+)
+def test_a_stale_notice_still_settles_for_a_bot_whose_review_is_not_observed_absent(review_on_record):
+    """⛔ MATCHED CONTROL — the same consult, with any review state but an observed absence."""
+    verdict = github_re_review.resolve_recovery_action(
+        _awaitable_bot(),
+        cause=_github_pr.REFUSAL_CAUSE_QUOTA,
+        window_expired=True,
+        attempts_remaining=_FIRST_PASS_BUDGET,
+        notice_stale=True,
+        review_on_record=review_on_record,
+    )
+
+    assert verdict['action'] == github_re_review.RECOVERY_ACTION_SETTLE_STALE_NOTICE
+    assert verdict['reason'] == 'notice_window_elapsed'
+
+
+def test_only_an_absent_review_turns_a_stale_notice_into_a_trigger():
+    """Swept over the whole review-on-record vocabulary, so a state added later is covered."""
+    triggering = {
+        state
+        for state in (*github_re_review.REVIEW_ON_RECORD_STATES, '')
+        if github_re_review.resolve_recovery_action(
+            _awaitable_bot(),
+            cause=_github_pr.REFUSAL_CAUSE_QUOTA,
+            window_expired=True,
+            attempts_remaining=_FIRST_PASS_BUDGET,
+            notice_stale=True,
+            review_on_record=state,
+        )['action']
+        == github_re_review.RECOVERY_ACTION_TRIGGER_STALE_NOTICE
+    }
+
+    assert triggering == {github_re_review.REVIEW_ON_RECORD_ABSENT}
+
+
+def test_a_fresh_notice_with_no_review_on_record_keeps_the_window_derivation():
+    """⛔ MATCHED CONTROL — the review observation moves only the stale arm.
+
+    A notice that is not stale describes an open window, so the same absent review
+    still awaits that window rather than triggering.
+    """
+    verdict = github_re_review.resolve_recovery_action(
+        _awaitable_bot(),
+        cause=_github_pr.REFUSAL_CAUSE_QUOTA,
+        window_expired=False,
+        attempts_remaining=_FIRST_PASS_BUDGET,
+        notice_stale=False,
+        review_on_record=github_re_review.REVIEW_ON_RECORD_ABSENT,
+    )
+
+    assert verdict['action'] == github_re_review.RECOVERY_ACTION_AWAIT_WINDOW
 
 
 def test_recovery_action_rejects_a_review_state_outside_the_vocabulary_at_the_parser(monkeypatch):

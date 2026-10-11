@@ -2,9 +2,13 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Where the unified-triage hook takes a task fix's commit from.
 
-A ``fixed`` review finding is answered only once a commit is stamped on it and
-that commit is on the pull request. ``phase-6-finalize`` item 7c step (0) writes
-the stamp for a fix a task produced.
+A ``fixed`` review finding is answered only once a commit is stamped on it, that
+commit is on the pull request head, and that head's CI has passed.
+``phase-6-finalize`` item 7c step (0) writes the stamp for a fix a task produced.
+A stamp on the head never needs writing again because the head's CI has not
+passed: the reply is held as ``pr_head_ci_pending``, ``pr_head_ci_failed`` or
+``pr_head_ci_unreadable`` and released by the next respond pass once that CI has
+passed.
 
 The stamp source is the pushed head of the branch: once the fix task is ``done``
 and ``branch-sync-state`` reports ``synced``, the hook stamps the payload's
@@ -114,6 +118,10 @@ _ITEM_5F_START = '  5f. Commit instrumentation'
 _ITEM_5F_END = '  6. Capture archive result'
 
 _STEP_8_HEADING = '## Step 8: Respond loop'
+
+#: The reasons ``post_responses`` holds a stamped ``fixed`` reply on when the stamped
+#: commit is on the pull request head but that head's CI has not passed.
+_CI_HOLD_REASONS = ('pr_head_ci_pending', 'pr_head_ci_failed', 'pr_head_ci_unreadable')
 
 #: The flags ``manage-findings stamp-fix-commit`` declares.
 _STAMP_FLAGS = frozenset({'--plan-id', '--commit-sha', '--task-number', '--hash-id'})
@@ -547,6 +555,22 @@ def test_the_hook_says_a_pushed_head_passes_the_ancestor_check_and_keeps_passing
     assert '`fix_commit_not_on_pr_head`' in branch
 
 
+def test_the_hook_says_a_pushed_head_passes_only_once_the_heads_ci_has_passed():
+    """The pass is ancestry AND a green head: only the ancestry half holds by construction."""
+    branch = _task_fix_branch()
+
+    assert "A pushed head passes the respond pass's check once the head's CI has passed" in branch
+    assert (
+        'as the pull request head or as an ancestor of it AND the overall CI conclusion of that head is `success`'
+    ) in branch
+    assert 'so the ancestry half holds by construction; the CI half does not' in branch
+    for reason in _CI_HOLD_REASONS:
+        assert f'`{reason}`' in branch, reason
+    assert 'until a respond pass runs after that CI has passed' in branch
+    # The retired claim that a pushed head passes the whole check by construction.
+    assert "passes the respond pass's check by construction" not in branch
+
+
 def test_an_inline_fix_is_still_stamped_with_the_commit_that_holds_its_edit():
     """Matched control: the reader sees the other stamp call, with the other source."""
     block = _between(_item_7c(), _INLINE_BLOCK_START, _INLINE_BLOCK_END)
@@ -737,6 +761,20 @@ def test_an_unreadable_reason_stamps_nothing():
     ]
 
 
+def test_a_ci_hold_reason_stamps_nothing():
+    """The stamped commit is on the head already, so a CI hold is never stamped again."""
+    part = _restamp_part()
+    first, *rest = _CI_HOLD_REASONS
+
+    assert _table_row(part, f'`{first}`') == [
+        f'`{first}`',
+        "Stamps nothing. The stamped commit is on the pull request head; the reply waits for that head's CI, "
+        'and a later respond pass releases it once the CI has passed.',
+    ]
+    for reason in rest:
+        assert _table_row(part, f'`{reason}`') == [f'`{reason}`', 'Stamps nothing, on the same ground.']
+
+
 def test_the_respond_pass_runs_once_more_only_after_a_stamp_was_written_again():
     part = _restamp_part()
 
@@ -820,6 +858,28 @@ def test_the_respond_step_says_which_held_state_the_hook_ends():
     assert 'the pushed head' not in inline[1]
     assert 'the pushed head' not in rewritten[1]
     assert _table_row(step_8, '`fix_commit_ancestry_unreadable`')[1].startswith('Does not end it')
+
+
+def test_the_respond_step_says_a_stamp_ends_the_hold_only_with_a_passing_head():
+    """A stamp is followed by the CI condition; a CI hold is released by the next pass, unstamped."""
+    step_8 = _step_8()
+    task_fix = _table_row(step_8, '`no_fix_commit`, task fix')
+    inline = _table_row(step_8, '`no_fix_commit`, inline fix')
+
+    assert len(task_fix) == 2, task_fix
+    assert task_fix[1].startswith('Ends it')
+    assert task_fix[1].endswith("The reply is then released once the head's CI has passed.")
+    assert len(inline) == 2, inline
+    assert "it stamps that commit, and the reply is then released once the head's CI has passed" in inline[1]
+    for reason in _CI_HOLD_REASONS:
+        row = _table_row(step_8, f'`{reason}`')
+        assert len(row) == 2, (reason, row)
+        assert row[1].startswith('Does not end it, and stamps nothing'), row
+        assert "The reply is released by the next respond pass once the head's CI passes" in row[1], row
+    assert (
+        "the stamped commit is on the pull request head, but that head's CI has not passed "
+        '(`reason: pr_head_ci_pending`, `pr_head_ci_failed` or `pr_head_ci_unreadable`)'
+    ) in step_8
 
 
 def test_the_respond_step_says_when_a_discarded_inline_edit_is_answered():
@@ -956,3 +1016,41 @@ def test_the_github_verb_document_names_both_recoveries_and_their_limit():
     assert 'its file differs between the reviewed commit and the pushed head' not in text
     assert '**A held `fixed` finding that no caller stamps is never answered.**' in text
     assert 'which includes every `review_body` finding' in text
+
+
+def test_the_github_verb_document_names_the_ci_hold_reasons_beside_the_ancestry_ones():
+    """Three conditions release a reply, and each CI reason has its own row after the ancestry rows."""
+    text = _GITHUB_SKILL.read_text(encoding='utf-8')
+    expected = {
+        'pr_head_ci_pending': "The stamped commit is on the pull request head, but the head's CI has not concluded",
+        'pr_head_ci_failed': (
+            "The stamped commit is on the pull request head, but the head's CI concluded with a failure."
+        ),
+        'pr_head_ci_unreadable': (
+            "The stamped commit is on the pull request head, but the head's CI conclusion could not be read. "
+            'An unread conclusion is not a pass.'
+        ),
+    }
+
+    assert tuple(expected) == _CI_HOLD_REASONS
+    for reason, cell in expected.items():
+        row = _table_row(text, f'`{reason}`')
+        assert len(row) == 2, (reason, row)
+        assert row[1].startswith(cell), row
+        assert text.index('| `fix_commit_ancestry_unreadable` |') < text.index(f'| `{reason}` |')
+    assert '`post_responses` therefore transmits a `fixed` finding only when all three of these hold' in text
+    assert 'the overall CI conclusion of the pull request head is `success`' in text
+    assert '`--send-unstamped-fixed` lifts the hold for a finding with no stamp, and is the only bypass.' in text
+    # The ancestry row is unchanged by the CI condition.
+    assert _table_row(text, '`fix_commit_not_on_pr_head`')[1].startswith(
+        'The provider reports the stamped commit as behind the head or diverged from it'
+    )
+
+
+def test_the_github_verb_declares_the_ci_hold_reasons_the_documents_name():
+    """The documented reason strings are the values the verb writes into its rows."""
+    source = _GITHUB_SCRIPT.read_text(encoding='utf-8')
+
+    for reason in _CI_HOLD_REASONS:
+        constant = f'DEFERRED_{reason.upper()}'
+        assert f"{constant} = '{reason}'" in source, constant

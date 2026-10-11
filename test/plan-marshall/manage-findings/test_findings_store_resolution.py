@@ -133,6 +133,9 @@ _SHAPE_A_INVOCATIONS = {
     'stamp_fix_commit': lambda core, pid: core.stamp_fix_commit(pid, _FIX_COMMIT, hash_id=_ABSENT_HASH),
     'promote_finding': lambda core, pid: core.promote_finding(pid, _ABSENT_HASH, 'architecture'),
     'mark_finding_responded': lambda core, pid: core.mark_finding_responded(pid, _ABSENT_HASH),
+    'update_finding_text': lambda core, pid: core.update_finding_text(
+        pid, _ABSENT_HASH, detail='Detail', raw_input={'body': 'Edited body'}
+    ),
     'query_qgate_findings': lambda core, pid: core.query_qgate_findings(pid, '5-execute'),
     'resolve_qgate_finding': lambda core, pid: core.resolve_qgate_finding(pid, '5-execute', _ABSENT_HASH, 'fixed'),
     'resolve_qgate_findings_by_evidence': lambda core, pid: core.resolve_qgate_findings_by_evidence(
@@ -176,8 +179,8 @@ def test_the_roster_is_non_empty():
     assert len(_operation_roster()) > 0, 'the derivation found no operation surfaces at all'
 
 
-def test_the_roster_partitions_exhaustively_and_disjointly_into_17_plus_4():
-    """Shape A (17) and Shape C (4) cover the derived roster with no overlap.
+def test_the_roster_partitions_exhaustively_and_disjointly_into_18_plus_4():
+    """Shape A (18) and Shape C (4) cover the derived roster with no overlap.
 
     The two counts are asserted alongside the exhaustiveness so a function added
     to either surface module later fails HERE — landing in neither bucket, or
@@ -191,9 +194,9 @@ def test_the_roster_partitions_exhaustively_and_disjointly_into_17_plus_4():
     assert shape_a | shape_c == set(roster), (
         f'buckets do not cover the roster; unbucketed: {sorted(set(roster) - shape_a - shape_c)}'
     )
-    assert len(shape_a) == 17, f'expected 17 Shape-A surfaces, got {sorted(shape_a)}'
+    assert len(shape_a) == 18, f'expected 18 Shape-A surfaces, got {sorted(shape_a)}'
     assert len(shape_c) == 4, f'expected 4 Shape-C surfaces, got {sorted(shape_c)}'
-    assert len(roster) == 21
+    assert len(roster) == 22
 
 
 def test_the_roster_spans_every_surface_module():

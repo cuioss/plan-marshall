@@ -308,6 +308,46 @@ def test_a_malformed_narrow_unit_is_refused(isolated_run_config, narrow_unit):
 @pytest.mark.parametrize(
     'narrow_unit',
     [
+        pytest.param('', id='empty'),
+        pytest.param('   ', id='whitespace_only'),
+    ],
+)
+def test_a_blank_narrow_unit_is_refused_instead_of_resolving_the_module(isolated_run_config, narrow_unit):
+    """A supplied-but-blank ``--narrow-unit`` is ``empty_narrow_unit``, never the module-wide run.
+
+    Matched control in the same seeded project: the absent flag still resolves
+    the module-wide command without ``bound_source``, and a real unit still
+    resolves narrowed with ``bound_source`` - so the refusal is keyed on the
+    blank value alone, not on the module or the run-config state.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_module(tmpdir)
+        blank_args = _resolve_args(tmpdir, '--narrow-unit', narrow_unit)
+        blank_result = cmd_resolve(blank_args)
+        absent_result = cmd_resolve(_resolve_args(tmpdir))
+        unit_result = cmd_resolve(_resolve_args(tmpdir, '--narrow-unit', _NARROW_UNIT))
+
+    # The parser delivers the blank value as a string, so the handler sees
+    # "flag supplied", not "flag absent".
+    assert blank_args.narrow_unit == narrow_unit
+    assert blank_result['status'] == 'error'
+    assert blank_result['error'] == 'empty_narrow_unit'
+    assert blank_result['narrow_unit'] == narrow_unit
+    assert 'executable' not in blank_result
+    assert 'bound_source' not in blank_result
+
+    assert absent_result['status'] == 'success'
+    assert absent_result['executable'] == _PARENT_EXECUTABLE
+    assert 'bound_source' not in absent_result
+
+    assert unit_result['status'] == 'success'
+    assert unit_result['executable'] == _NARROW_EXECUTABLE
+    assert 'bound_source' in unit_result
+
+
+@pytest.mark.parametrize(
+    'narrow_unit',
+    [
         pytest.param('plan-marshall/a.b', id='directory_name_with_a_dot'),
         pytest.param('plan-marshall/build-server/test_x.py', id='file_name_with_a_dot'),
         pytest.param('plan-marshall/.hidden', id='segment_starting_with_a_dot'),

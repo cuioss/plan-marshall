@@ -79,6 +79,20 @@ def test_step_8_states_that_a_fixed_reply_waits_for_its_stamped_commit():
     assert 'does not make the run `partial`' in step_8
 
 
+def test_step_8_releases_a_fixed_reply_only_on_the_head_once_its_ci_has_passed():
+    """The release condition is the stamp on the head AND that head's CI having passed."""
+    step_8 = _section(_read_doc(), _STEP_8_HEADING)
+
+    assert 'a `fixed` reply waits for its fix commit and a passing head' in step_8
+    assert (
+        "The reply is released when that stamped commit is on the pull request head AND the head's CI has passed"
+    ) in step_8
+    assert '"fixed" points the reviewer at the head, so the head has to be shown to work first' in step_8
+    # The escape flag stays the only bypass, and does not reach a stamped finding.
+    assert 'The flag reaches a finding with no stamp only, and is the only bypass' in step_8
+    assert 'is checked against the pull request head and that head\'s CI as in "Ordering" below' in step_8
+
+
 def test_step_8_holds_a_task_fix_and_an_inline_fix_alike():
     step_8 = _section(_read_doc(), _STEP_8_HEADING)
 
