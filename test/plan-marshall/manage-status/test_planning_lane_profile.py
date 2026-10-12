@@ -163,7 +163,7 @@ def test_profile_non_narrow_concrete_change_does_not_project_minimal(scope_estim
     This is the security-gate half of the defect. ``_NARROW_SCOPE_ESTIMATES`` is
     shared verbatim with ``evaluate_signals_pure``, so before the narrowing a
     ``single_module`` band collapsed the posture to ``minimal`` — which drops the
-    security audit, the sonar round-trip and the self-review — purely on the
+    security audit, the sonar round-trip and the two pre-push reviews — purely on the
     strength of a catch-all band. Asserting the lane alone would have left this
     path live, so the posture is pinned independently here.
     """

@@ -60,7 +60,9 @@ class TestCeremonyFinalizeAdrPropose:
     def test_adr_propose_not_force_dropped_when_gates_set_to_never(self, plan_context):
         """Setting every ceremony gate to ``never`` drops only the ceremony
         steps — adr-propose is not a ceremony gate, so it survives."""
-        _seed_marshal(finalize_gates={'self_review': 'off', 'qgate': 'off', 'simplify': 'off'})
+        _seed_marshal(
+            finalize_gates={'functional_review': 'off', 'code_review': 'off', 'qgate': 'off', 'simplify': 'off'}
+        )
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(_compose_ns(plan_id='ceremony-adr-never'))

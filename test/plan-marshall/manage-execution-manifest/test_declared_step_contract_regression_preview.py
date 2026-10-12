@@ -98,10 +98,12 @@ class TestPreviewAgreesWithCompose:
     def test_plan_input_dependent_member_is_named(self, plan_context):
         """A member the preview cannot decide for is named rather than silently shown."""
         seed = dict(self._CONFIG_DECIDED_SEED)
-        seed['default:pre-submission-self-review'] = None
+        seed['default:functional-review'] = None
+        seed['default:code-review'] = None
         _seed_marshal(seed)
 
         preview = cmd_lanes_preview(Namespace(plan_id='dsc-advisory-named', phase_6_steps=None))
 
         assert preview is not None
-        assert 'pre-submission-self-review' in preview['plan_input_dependent_steps']
+        assert 'functional-review' in preview['plan_input_dependent_steps']
+        assert 'code-review' in preview['plan_input_dependent_steps']

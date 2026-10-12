@@ -30,7 +30,7 @@ Usage:
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization check --plan-id EXAMPLE-PLAN --head 76c7200b6 --gap-class review-barrier-gap
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-back admit --plan-id EXAMPLE-PLAN --source automatic-review --ceiling 3
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-back grant --plan-id EXAMPLE-PLAN --source automatic-review --rounds 1 --reason "one more review round for the last fix"
-    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-back close --plan-id EXAMPLE-PLAN --step pre-submission-self-review --head 76c7200b6f1d2c3a4b5e6f708192a3b4c5d6e7f8 --rationale "operator accepted the two residual findings" --accept a3f2c1 --accept b4e3d2 --waive-refire pre-push-quality-gate
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-back close --plan-id EXAMPLE-PLAN --step code-review --head 76c7200b6f1d2c3a4b5e6f708192a3b4c5d6e7f8 --rationale "operator accepted the two residual findings" --accept a3f2c1 --accept b4e3d2 --waive-refire pre-push-quality-gate
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status sibling-collision-check --plan-id EXAMPLE-PLAN
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create --store orchestrator --plan-id example-epic --title "Epic"
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update-field --plan-id example-epic --field resume_anchor --value "next action"

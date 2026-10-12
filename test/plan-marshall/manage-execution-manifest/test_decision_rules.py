@@ -9,63 +9,50 @@ from _manage_execution_manifest_decision_rules_fixtures import (
     _stub_footprint,
     cmd_compose,
     extension_base,
+    pytest,
     result_phase_6_steps,
 )
 
+_REVIEW_STEPS = ('functional-review', 'code-review')
 
-class TestPreSubmissionSelfReviewSurvivesCompose:
-    """No footprint gate subtracts this step; only ``commit_push_disabled`` does.
 
-    The ``pre_submission_self_review_inactive`` pre-filter was VACUOUS — it
-    structurally returned ``(candidates, False)`` for every input, so no footprint
-    state could ever drop the step — and has been removed outright along with its
-    unreachable emitter and its always-``False`` compose-result key. These cases
-    pin the surviving behaviour across all three footprint states, so a future
-    re-introduction of a footprint gate here fails rather than silently dropping a
-    review step the operator never opted out of.
+class TestReviewStepsSurviveCompose:
+    """No footprint gate subtracts either review step; only ``commit_push_disabled`` does.
+
+    Neither review carries a footprint-gated pre-filter. These cases pin that
+    behaviour across all three footprint states, so a future introduction of a
+    footprint gate here fails rather than silently dropping a review step the
+    operator never opted out of.
     """
 
-    def test_keeps_step_when_footprint_unresolvable(self, plan_context):
-        """Early compose (no worktree yet) is no evidence — the step survives."""
+    @pytest.mark.parametrize(
+        ('footprint', 'plan_id'),
+        [
+            (None, 'qg-review-unresolvable'),
+            ([], 'qg-review-empty'),
+            (['marketplace/bundles/x/skills/y/SKILL.md'], 'qg-review-active'),
+        ],
+        ids=['footprint-unresolvable', 'footprint-resolvable-and-empty', 'footprint-non-empty'],
+    )
+    def test_keeps_both_reviews_in_every_footprint_state(self, plan_context, footprint, plan_id):
+        """An unresolvable, an empty and a non-empty footprint all keep both reviews."""
         _seed_marshal(ci_provider=None)
-        _stub_footprint(None)
+        _stub_footprint(footprint)
 
-        ns = _compose_ns(plan_id='qg-self-review-unresolvable')
-        result = cmd_compose(ns)
+        result = cmd_compose(_compose_ns(plan_id=plan_id))
 
         assert result is not None
         assert result['status'] == 'success'
-        assert 'pre-submission-self-review' in result_phase_6_steps(result)
+        steps = result_phase_6_steps(result)
+        for review in _REVIEW_STEPS:
+            assert review in steps
 
-    def test_keeps_step_when_footprint_resolvable_and_empty(self, plan_context):
-        """A resolvable-but-empty footprint does not drop the step either."""
-        _seed_marshal(ci_provider=None)
-        _stub_footprint([])
-
-        ns = _compose_ns(plan_id='qg-self-review-empty')
-        result = cmd_compose(ns)
-
-        assert result is not None
-        assert result['status'] == 'success'
-        assert 'pre-submission-self-review' in result_phase_6_steps(result)
-
-    def test_keeps_step_when_footprint_non_empty(self, plan_context):
-        _seed_marshal(ci_provider=None)
-        _stub_footprint(['marketplace/bundles/x/skills/y/SKILL.md'])
-
-        ns = _compose_ns(plan_id='qg-self-review-active')
-        result = cmd_compose(ns)
-
-        assert result is not None
-        assert result['status'] == 'success'
-        assert 'pre-submission-self-review' in result_phase_6_steps(result)
-
-    def test_commit_and_push_false_strips_self_review(self, plan_context):
-        """``commit_push_disabled`` is the ONE gate that still removes the step."""
+    def test_commit_and_push_false_strips_both_reviews(self, plan_context):
+        """``commit_push_disabled`` is the ONE gate that still removes the reviews."""
         _seed_marshal(ci_provider=None)
         _stub_footprint(['some/file.py'])
 
-        ns = _compose_ns(plan_id='qg-self-review-no-push', commit_and_push='false')
+        ns = _compose_ns(plan_id='qg-review-no-push', commit_and_push='false')
         result = cmd_compose(ns)
 
         assert result is not None
@@ -73,7 +60,8 @@ class TestPreSubmissionSelfReviewSurvivesCompose:
         steps = result_phase_6_steps(result)
         assert 'push' not in steps
         assert 'pre-push-quality-gate' not in steps
-        assert 'pre-submission-self-review' not in steps
+        for review in _REVIEW_STEPS:
+            assert review not in steps
 
     def test_commit_push_drop_is_reported_per_step(self, plan_context):
         """Every dropped step is named, not just ``push``.
@@ -91,12 +79,12 @@ class TestPreSubmissionSelfReviewSurvivesCompose:
         _stub_footprint(['some/file.py'])
 
         candidates = list(DEFAULT_PHASE_6_STEPS)
-        for extra in ('pre-push-quality-gate', 'pre-submission-self-review', 'functional-review', 'code-review'):
+        for extra in ('pre-push-quality-gate', 'functional-review', 'code-review'):
             if extra not in candidates:
                 candidates.insert(candidates.index('push'), extra)
 
         ns = _compose_ns(
-            plan_id='qg-self-review-records',
+            plan_id='qg-review-records',
             commit_and_push='false',
             phase_6_steps=','.join(candidates),
         )
@@ -107,7 +95,6 @@ class TestPreSubmissionSelfReviewSurvivesCompose:
         assert {record['step'] for record in dropped} == {
             'push',
             'pre-push-quality-gate',
-            'pre-submission-self-review',
             'functional-review',
             'code-review',
         }
@@ -118,7 +105,7 @@ class TestPreSubmissionSelfReviewSurvivesCompose:
         _seed_marshal(ci_provider=None)
         _stub_footprint(['some/file.py'])
 
-        ns = _compose_ns(plan_id='qg-self-review-pushing', commit_and_push='true')
+        ns = _compose_ns(plan_id='qg-review-pushing', commit_and_push='true')
         result = cmd_compose(ns)
 
         assert result is not None

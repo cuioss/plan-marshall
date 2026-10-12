@@ -38,7 +38,7 @@ read_status = _status_core.read_status
 # back here is the one the handler wrote to.
 read_decision_log = sys.modules[_loop_back.log_decision.__module__].read_decision_log
 
-_SELF_REVIEW = 'default:pre-submission-self-review'
+_FUNCTIONAL_REVIEW = 'default:functional-review'
 _AUTOMATIC_REVIEW = 'plan-marshall:automatic-review'
 _MAX_ITERATIONS = 3
 _REASON = 'one more review round for the last fix'
@@ -90,12 +90,12 @@ def test_a_grant_admits_the_refused_source_and_leaves_its_record(plan_context):
     """Refused at the ceiling, granted one round with a reason, admitted on the next call."""
     plan_id = 'loop-back-grant-admits'
     _make_plan(plan_id)
-    _drive_to_ceiling(plan_id, _SELF_REVIEW)
+    _drive_to_ceiling(plan_id, _FUNCTIONAL_REVIEW)
 
-    granted = _grant(plan_id, _SELF_REVIEW)
+    granted = _grant(plan_id, _FUNCTIONAL_REVIEW)
 
     assert granted['status'] == 'success'
-    assert granted['source'] == _SELF_REVIEW
+    assert granted['source'] == _FUNCTIONAL_REVIEW
     assert granted['rounds'] == 1
     assert granted['granted'] == 1
     assert granted['spent'] == _MAX_ITERATIONS
@@ -104,7 +104,7 @@ def test_a_grant_admits_the_refused_source_and_leaves_its_record(plan_context):
     assert granted['grant_count'] == 1
 
     # The grant record is in the status file, with every field it promises.
-    budget = _budget(plan_id, _SELF_REVIEW)
+    budget = _budget(plan_id, _FUNCTIONAL_REVIEW)
     assert budget['spent'] == _MAX_ITERATIONS
     assert budget['granted'] == 1
     assert budget['grants'] == [
@@ -119,12 +119,12 @@ def test_a_grant_admits_the_refused_source_and_leaves_its_record(plan_context):
     assert granted['granted_at']
 
     # The grant itself admits nothing; the next admission does.
-    admitted = _admit(plan_id, _SELF_REVIEW)
+    admitted = _admit(plan_id, _FUNCTIONAL_REVIEW)
     assert admitted['admitted'] is True
     assert admitted['iteration'] == _MAX_ITERATIONS + 1
     assert admitted['effective_ceiling'] == _MAX_ITERATIONS + 1
     # One granted round buys exactly one admission.
-    assert _admit(plan_id, _SELF_REVIEW)['admitted'] is False
+    assert _admit(plan_id, _FUNCTIONAL_REVIEW)['admitted'] is False
 
 
 @pytest.mark.parametrize('blank', ['', '   ', '\t\n'])
@@ -132,17 +132,17 @@ def test_a_blank_reason_is_refused_and_writes_nothing(plan_context, blank):
     """A grant must state why; an empty or whitespace-only reason changes nothing."""
     plan_id = f'loop-back-grant-blank-reason-{len(blank)}'
     _make_plan(plan_id)
-    _drive_to_ceiling(plan_id, _SELF_REVIEW)
+    _drive_to_ceiling(plan_id, _FUNCTIONAL_REVIEW)
     before = read_status(plan_id)
 
-    result = _grant(plan_id, _SELF_REVIEW, reason=blank)
+    result = _grant(plan_id, _FUNCTIONAL_REVIEW, reason=blank)
 
     assert result['status'] == 'error'
     assert result['error'] == 'blank_reason'
-    assert result['source'] == _SELF_REVIEW
+    assert result['source'] == _FUNCTIONAL_REVIEW
     assert read_status(plan_id) == before
     # The source is still refused: the refused grant bought no round.
-    assert _admit(plan_id, _SELF_REVIEW)['admitted'] is False
+    assert _admit(plan_id, _FUNCTIONAL_REVIEW)['admitted'] is False
 
 
 @pytest.mark.parametrize('rounds', [0, -1])
@@ -150,10 +150,10 @@ def test_fewer_than_one_round_is_refused_and_writes_nothing(plan_context, rounds
     """A grant of zero or negative rounds is not a grant."""
     plan_id = f'loop-back-grant-invalid-rounds-{abs(rounds)}'
     _make_plan(plan_id)
-    _drive_to_ceiling(plan_id, _SELF_REVIEW)
+    _drive_to_ceiling(plan_id, _FUNCTIONAL_REVIEW)
     before = read_status(plan_id)
 
-    result = _grant(plan_id, _SELF_REVIEW, rounds=rounds)
+    result = _grant(plan_id, _FUNCTIONAL_REVIEW, rounds=rounds)
 
     assert result['status'] == 'error'
     assert result['error'] == 'invalid_rounds'
@@ -164,10 +164,10 @@ def test_a_grant_to_one_source_does_not_admit_another(plan_context):
     """Rounds are granted to the named source only."""
     plan_id = 'loop-back-grant-other-source'
     _make_plan(plan_id)
-    _drive_to_ceiling(plan_id, _SELF_REVIEW)
+    _drive_to_ceiling(plan_id, _FUNCTIONAL_REVIEW)
     _drive_to_ceiling(plan_id, _AUTOMATIC_REVIEW)
 
-    _grant(plan_id, _SELF_REVIEW)
+    _grant(plan_id, _FUNCTIONAL_REVIEW)
 
     other = _admit(plan_id, _AUTOMATIC_REVIEW)
     assert other['admitted'] is False
@@ -175,23 +175,23 @@ def test_a_grant_to_one_source_does_not_admit_another(plan_context):
     assert other['effective_ceiling'] == _MAX_ITERATIONS
     assert 'grants' not in _budget(plan_id, _AUTOMATIC_REVIEW)
     # The granted source itself is admitted, so the grant did land somewhere.
-    assert _admit(plan_id, _SELF_REVIEW)['admitted'] is True
+    assert _admit(plan_id, _FUNCTIONAL_REVIEW)['admitted'] is True
 
 
 def test_grants_accumulate_and_survive_a_later_admission(plan_context):
     """Two grants are two records, oldest first, and an admission keeps both."""
     plan_id = 'loop-back-grant-accumulates'
     _make_plan(plan_id)
-    _drive_to_ceiling(plan_id, _SELF_REVIEW)
+    _drive_to_ceiling(plan_id, _FUNCTIONAL_REVIEW)
 
-    first = _grant(plan_id, _SELF_REVIEW, reason='first extension', rounds=2)
-    assert _admit(plan_id, _SELF_REVIEW)['admitted'] is True
-    second = _grant(plan_id, _SELF_REVIEW, reason='second extension', granted_by='release-manager')
+    first = _grant(plan_id, _FUNCTIONAL_REVIEW, reason='first extension', rounds=2)
+    assert _admit(plan_id, _FUNCTIONAL_REVIEW)['admitted'] is True
+    second = _grant(plan_id, _FUNCTIONAL_REVIEW, reason='second extension', granted_by='release-manager')
 
     assert first['granted'] == 2
     assert second['granted'] == 3
     assert second['grant_count'] == 2
-    budget = _budget(plan_id, _SELF_REVIEW)
+    budget = _budget(plan_id, _FUNCTIONAL_REVIEW)
     assert budget['spent'] == _MAX_ITERATIONS + 1
     assert budget['granted'] == 3
     assert [(g['rounds'], g['reason'], g['granted_by'], g['spent_at_grant']) for g in budget['grants']] == [
@@ -207,14 +207,14 @@ def test_a_grant_before_any_admission_creates_the_record(plan_context):
     plan_id = 'loop-back-grant-fresh-source'
     _make_plan(plan_id)
 
-    result = _grant(plan_id, _SELF_REVIEW)
+    result = _grant(plan_id, _FUNCTIONAL_REVIEW)
 
     assert result['spent'] == 0
-    budget = _budget(plan_id, _SELF_REVIEW)
+    budget = _budget(plan_id, _FUNCTIONAL_REVIEW)
     assert budget['spent'] == 0
     assert budget['granted'] == 1
     assert budget['grants'][0]['spent_at_grant'] == 0
-    assert _admit(plan_id, _SELF_REVIEW)['effective_ceiling'] == _MAX_ITERATIONS + 1
+    assert _admit(plan_id, _FUNCTIONAL_REVIEW)['effective_ceiling'] == _MAX_ITERATIONS + 1
 
 
 # =============================================================================
@@ -234,7 +234,9 @@ def test_a_grant_writes_one_decision_line_naming_source_rounds_reason_and_grante
     plan_id = 'loop-back-grant-decision-line'
     _make_plan(plan_id)
 
-    result = _grant(plan_id, _SELF_REVIEW, reason='the last fix needs a look', rounds=2, granted_by='release-manager')
+    result = _grant(
+        plan_id, _FUNCTIONAL_REVIEW, reason='the last fix needs a look', rounds=2, granted_by='release-manager'
+    )
 
     assert result['status'] == 'success'
     assert result['decision_logged'] is True
@@ -242,7 +244,7 @@ def test_a_grant_writes_one_decision_line_naming_source_rounds_reason_and_grante
     lines = _grant_lines(plan_id)
     assert len(lines) == 1, lines
     line = lines[0]
-    assert _SELF_REVIEW in line
+    assert _FUNCTIONAL_REVIEW in line
     assert 'Granted 2 loop-back round(s)' in line
     assert 'the last fix needs a look' in line
     assert 'granted_by=release-manager' in line
@@ -253,12 +255,12 @@ def test_each_grant_writes_its_own_decision_line(plan_context):
     plan_id = 'loop-back-grant-two-lines'
     _make_plan(plan_id)
 
-    _grant(plan_id, _SELF_REVIEW, reason='first extension')
+    _grant(plan_id, _FUNCTIONAL_REVIEW, reason='first extension')
     _grant(plan_id, _AUTOMATIC_REVIEW, reason='second extension')
 
     lines = _grant_lines(plan_id)
     assert len(lines) == 2, lines
-    assert _SELF_REVIEW in lines[0] and 'first extension' in lines[0]
+    assert _FUNCTIONAL_REVIEW in lines[0] and 'first extension' in lines[0]
     assert _AUTOMATIC_REVIEW in lines[1] and 'second extension' in lines[1]
 
 
@@ -267,7 +269,7 @@ def test_a_refused_grant_writes_no_decision_line(plan_context):
     plan_id = 'loop-back-grant-refused-no-line'
     _make_plan(plan_id)
 
-    result = _grant(plan_id, _SELF_REVIEW, reason='   ')
+    result = _grant(plan_id, _FUNCTIONAL_REVIEW, reason='   ')
 
     assert result['status'] == 'error'
     assert 'decision_logged' not in result
@@ -278,24 +280,24 @@ def test_a_log_write_that_raises_leaves_the_grant_in_place_and_is_reported(plan_
     """The grant is persisted before the line is written, and survives its failure."""
     plan_id = 'loop-back-grant-log-raises'
     _make_plan(plan_id)
-    _drive_to_ceiling(plan_id, _SELF_REVIEW)
+    _drive_to_ceiling(plan_id, _FUNCTIONAL_REVIEW)
 
     def _raise(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
         raise OSError('decision log is not writable')
 
     monkeypatch.setattr(_loop_back, 'log_decision', _raise)
 
-    result = _grant(plan_id, _SELF_REVIEW)
+    result = _grant(plan_id, _FUNCTIONAL_REVIEW)
 
     assert result['status'] == 'success'
     assert result['granted'] == 1
     assert result['decision_logged'] is False
     assert 'decision log is not writable' in result['decision_log_error']
-    budget = _budget(plan_id, _SELF_REVIEW)
+    budget = _budget(plan_id, _FUNCTIONAL_REVIEW)
     assert budget['granted'] == 1
     assert len(budget['grants']) == 1
     # The round the grant bought is still spendable.
-    assert _admit(plan_id, _SELF_REVIEW)['admitted'] is True
+    assert _admit(plan_id, _FUNCTIONAL_REVIEW)['admitted'] is True
 
 
 def test_a_log_write_that_reports_an_error_leaves_the_grant_in_place_and_is_reported(plan_context, monkeypatch):
@@ -308,9 +310,9 @@ def test_a_log_write_that_reports_an_error_leaves_the_grant_in_place_and_is_repo
         lambda *_args, **_kwargs: {'status': 'error', 'error': 'write_failed', 'message': 'disk full'},
     )
 
-    result = _grant(plan_id, _SELF_REVIEW)
+    result = _grant(plan_id, _FUNCTIONAL_REVIEW)
 
     assert result['status'] == 'success'
     assert result['decision_logged'] is False
     assert result['decision_log_error'] == 'disk full'
-    assert _budget(plan_id, _SELF_REVIEW)['granted'] == 1
+    assert _budget(plan_id, _FUNCTIONAL_REVIEW)['granted'] == 1

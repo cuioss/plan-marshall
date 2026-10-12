@@ -39,12 +39,12 @@ class TestScopeGatedFinalizeDeclaredLaneImmunity:
         assert immune == [_RETROSPECTIVE]
 
     def test_surgical_keeps_every_declared_step_and_drops_the_rest(self):
-        candidates = [_RETROSPECTIVE, 'pre-submission-self-review', 'project:finalize-step-plugin-doctor', 'push']
+        candidates = [_RETROSPECTIVE, 'functional-review', 'project:finalize-step-plugin-doctor', 'push']
         kept, dropped, immune = _apply_scope_gated_finalize(
-            candidates, 'surgical', _lane_map('pre-submission-self-review', 'minimal')
+            candidates, 'surgical', _lane_map('functional-review', 'minimal')
         )
-        assert 'pre-submission-self-review' in kept
-        assert immune == ['pre-submission-self-review']
+        assert 'functional-review' in kept
+        assert immune == ['functional-review']
         assert set(dropped) == {_RETROSPECTIVE, 'project:finalize-step-plugin-doctor'}
         assert 'push' in kept
 

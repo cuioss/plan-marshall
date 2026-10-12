@@ -30,7 +30,7 @@ cmd_loop_back_admit = _loop_back.cmd_loop_back_admit
 read_status = _status_core.read_status
 write_status = _status_core.write_status
 
-_SELF_REVIEW = 'default:pre-submission-self-review'
+_FUNCTIONAL_REVIEW = 'default:functional-review'
 _AUTOMATIC_REVIEW = 'plan-marshall:automatic-review'
 _MAX_ITERATIONS = 3
 
@@ -70,17 +70,17 @@ def test_a_source_is_admitted_for_every_round_up_to_its_ceiling(plan_context):
     _make_plan(plan_id)
 
     for expected_round in range(1, _MAX_ITERATIONS + 1):
-        result = _admit(plan_id, _SELF_REVIEW)
+        result = _admit(plan_id, _FUNCTIONAL_REVIEW)
 
         assert result['status'] == 'success'
         assert result['admitted'] is True
-        assert result['source'] == _SELF_REVIEW
+        assert result['source'] == _FUNCTIONAL_REVIEW
         assert result['iteration'] == expected_round
         assert result['effective_ceiling'] == _MAX_ITERATIONS
         assert result['ceiling'] == _MAX_ITERATIONS
         assert result['granted'] == 0
         # The increment is persisted by the admitting call itself.
-        assert read_status(plan_id)['metadata']['loop_back_budgets'][_SELF_REVIEW] == {
+        assert read_status(plan_id)['metadata']['loop_back_budgets'][_FUNCTIONAL_REVIEW] == {
             'spent': expected_round,
             'granted': 0,
         }
@@ -90,14 +90,14 @@ def test_a_further_round_is_refused_and_leaves_the_store_unchanged(plan_context)
     """Past the ceiling the verb refuses, reports the same fields, and writes nothing."""
     plan_id = 'loop-back-admit-refusal'
     _make_plan(plan_id)
-    _spend_all_rounds(plan_id, _SELF_REVIEW)
+    _spend_all_rounds(plan_id, _FUNCTIONAL_REVIEW)
     before = read_status(plan_id)
 
-    result = _admit(plan_id, _SELF_REVIEW)
+    result = _admit(plan_id, _FUNCTIONAL_REVIEW)
 
     assert result['status'] == 'success'
     assert result['admitted'] is False
-    assert result['source'] == _SELF_REVIEW
+    assert result['source'] == _FUNCTIONAL_REVIEW
     # The round that was requested and not given.
     assert result['iteration'] == _MAX_ITERATIONS + 1
     assert result['effective_ceiling'] == _MAX_ITERATIONS
@@ -111,8 +111,8 @@ def test_one_source_spending_its_rounds_does_not_starve_another(plan_context):
     """A different source is admitted at round 1 after the first is exhausted."""
     plan_id = 'loop-back-admit-two-sources'
     _make_plan(plan_id)
-    _spend_all_rounds(plan_id, _SELF_REVIEW)
-    assert _admit(plan_id, _SELF_REVIEW)['admitted'] is False
+    _spend_all_rounds(plan_id, _FUNCTIONAL_REVIEW)
+    assert _admit(plan_id, _FUNCTIONAL_REVIEW)['admitted'] is False
 
     result = _admit(plan_id, _AUTOMATIC_REVIEW)
 
@@ -121,7 +121,7 @@ def test_one_source_spending_its_rounds_does_not_starve_another(plan_context):
     assert result['iteration'] == 1
     budgets = read_status(plan_id)['metadata']['loop_back_budgets']
     assert budgets == {
-        _SELF_REVIEW: {'spent': _MAX_ITERATIONS, 'granted': 0},
+        _FUNCTIONAL_REVIEW: {'spent': _MAX_ITERATIONS, 'granted': 0},
         _AUTOMATIC_REVIEW: {'spent': 1, 'granted': 0},
     }
 
@@ -133,7 +133,7 @@ def test_a_legacy_scalar_count_is_attributed_to_no_source(plan_context):
     # A scalar already at the ceiling: read as a shared count it would refuse everyone.
     _seed_metadata(plan_id, loop_back_iteration=_MAX_ITERATIONS)
 
-    for source in (_SELF_REVIEW, _AUTOMATIC_REVIEW):
+    for source in (_FUNCTIONAL_REVIEW, _AUTOMATIC_REVIEW):
         result = _admit(plan_id, source)
 
         assert result['admitted'] is True
@@ -141,7 +141,7 @@ def test_a_legacy_scalar_count_is_attributed_to_no_source(plan_context):
 
     metadata = read_status(plan_id)['metadata']
     assert metadata['loop_back_budgets'] == {
-        _SELF_REVIEW: {'spent': 1, 'granted': 0},
+        _FUNCTIONAL_REVIEW: {'spent': 1, 'granted': 0},
         _AUTOMATIC_REVIEW: {'spent': 1, 'granted': 0},
     }
     # The scalar is neither read nor rewritten.
@@ -152,10 +152,10 @@ def test_granted_rounds_raise_the_effective_ceiling(plan_context):
     """``granted`` on a source's record extends that source's ceiling."""
     plan_id = 'loop-back-admit-granted'
     _make_plan(plan_id)
-    _seed_metadata(plan_id, loop_back_budgets={_SELF_REVIEW: {'spent': _MAX_ITERATIONS, 'granted': 1}})
+    _seed_metadata(plan_id, loop_back_budgets={_FUNCTIONAL_REVIEW: {'spent': _MAX_ITERATIONS, 'granted': 1}})
 
-    admitted = _admit(plan_id, _SELF_REVIEW)
-    refused = _admit(plan_id, _SELF_REVIEW)
+    admitted = _admit(plan_id, _FUNCTIONAL_REVIEW)
+    refused = _admit(plan_id, _FUNCTIONAL_REVIEW)
 
     assert admitted['admitted'] is True
     assert admitted['iteration'] == _MAX_ITERATIONS + 1
@@ -164,7 +164,7 @@ def test_granted_rounds_raise_the_effective_ceiling(plan_context):
     assert refused['admitted'] is False
     assert refused['iteration'] == _MAX_ITERATIONS + 2
     # The admission keeps the granted count it found.
-    assert read_status(plan_id)['metadata']['loop_back_budgets'][_SELF_REVIEW] == {
+    assert read_status(plan_id)['metadata']['loop_back_budgets'][_FUNCTIONAL_REVIEW] == {
         'spent': _MAX_ITERATIONS + 1,
         'granted': 1,
     }
@@ -174,14 +174,14 @@ def test_an_uninterpretable_store_is_an_error_not_an_empty_budget(plan_context):
     """A malformed record is reported and left alone rather than read as zero spent."""
     plan_id = 'loop-back-admit-malformed'
     _make_plan(plan_id)
-    _seed_metadata(plan_id, loop_back_budgets={_SELF_REVIEW: {'spent': 'three', 'granted': 0}})
+    _seed_metadata(plan_id, loop_back_budgets={_FUNCTIONAL_REVIEW: {'spent': 'three', 'granted': 0}})
     before = read_status(plan_id)
 
-    result = _admit(plan_id, _SELF_REVIEW)
+    result = _admit(plan_id, _FUNCTIONAL_REVIEW)
 
     assert result['status'] == 'error'
     assert result['error'] == 'invalid_budget_store'
-    assert result['source'] == _SELF_REVIEW
+    assert result['source'] == _FUNCTIONAL_REVIEW
     assert 'admitted' not in result
     assert read_status(plan_id) == before
 
@@ -192,7 +192,7 @@ def test_a_negative_ceiling_is_rejected_before_any_write(plan_context):
     _make_plan(plan_id)
     before = read_status(plan_id)
 
-    result = _admit(plan_id, _SELF_REVIEW, ceiling=-1)
+    result = _admit(plan_id, _FUNCTIONAL_REVIEW, ceiling=-1)
 
     assert result['status'] == 'error'
     assert result['error'] == 'invalid_argument'

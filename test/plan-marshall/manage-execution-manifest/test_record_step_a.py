@@ -50,15 +50,15 @@ def test_a_productive_loop_back_is_recordable_as_itself(plan_context):
     """⛔ A findings-bearing return is a loop-back, not an error.
 
     Before the partition it was recorded as `error`, so every archive-wide
-    analysis that counts errors mis-graded a multi-round self-review as a
-    defect — the more thoroughly a gate worked, the worse its plan looked.
+    analysis that counts errors mis-graded a multi-round review as a defect —
+    the more thoroughly a gate worked, the worse its plan looked.
     """
     _compose('rec-loop-back')
 
     result = cmd_record_step(
         _record_ns(
             plan_id='rec-loop-back',
-            step_id='pre-submission-self-review',
+            step_id='functional-review',
             phase='6-finalize',
             outcome='loop_back',
         )

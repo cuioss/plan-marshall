@@ -11,8 +11,9 @@ the named rule key, and reaches nothing else — not a finding with another rule
 not a finding with no rule, and not a finding filed after the call returned.
 
 The fixture shape mirrors the producer the resolver exists for: one finding per
-non-closing self-review state, all filed under one fixed rule key and none
-naming a file, beside one ordinary structural finding that carries no rule.
+non-closing functional-review state, all filed under the step's fixed
+``{step}-state`` rule key and none naming a file, beside one ordinary finding
+that carries no rule.
 """
 
 from __future__ import annotations
@@ -54,8 +55,8 @@ PLAN_IDS = (
 _ABSENT_PLAN_ID = 'rule-resolve-plan-absent'
 
 _PHASE = '6-finalize'
-_RULE = 'pre-submission-self-review-state'
-_STATES = ('verdict_refused', 'further_round_owed', 'verifier_unavailable')
+_RULE = 'functional-review-state'
+_STATES = ('verdict_refused', 'verifier_unavailable', 'not_run')
 _STORE_STATE_KEYS = frozenset({'store_resolution', 'store_path', 'findings_store_state', 'unresolved_store'})
 
 # Distinct sys.modules name so this in-process load never clobbers the module a
@@ -64,7 +65,7 @@ _cli = load_script_module('plan-marshall', 'manage-findings', 'manage-findings.p
 
 
 def _file_state_findings(plan_id: str) -> dict[str, str]:
-    """File one finding per self-review state under the rule key.
+    """File one finding per functional-review state under the rule key.
 
     Returns ``{state: hash_id}``. No finding names a file — that absence is what
     puts these findings out of the evidence resolver's reach.
@@ -76,7 +77,7 @@ def _file_state_findings(plan_id: str) -> dict[str, str]:
             _PHASE,
             'qgate',
             'bug',
-            f'{state} at pre-submission-self-review',
+            f'{state} at functional-review',
             f'rationale for {state}',
             severity='warning',
             rule=_RULE,
@@ -110,7 +111,7 @@ def _pending_hashes(plan_id: str, phase: str = _PHASE) -> set[str]:
 def _resolve(plan_id: str) -> dict[str, Any]:
     """Resolve the rule key on ``plan_id`` the way the closing round does."""
     result: dict[str, Any] = resolve_qgate_findings_by_rule(
-        plan_id, _PHASE, _RULE, 'taken_into_account', 'self-review closed at abc123'
+        plan_id, _PHASE, _RULE, 'taken_into_account', 'functional review closed at abc123'
     )
     return result
 
@@ -183,8 +184,8 @@ def test_a_state_finding_filed_after_the_resolution_stays_pending(plan_context):
         _PHASE,
         'qgate',
         'bug',
-        'further_round_owed at pre-submission-self-review',
-        'a later round was refused for a new reason',
+        'not_run at functional-review',
+        'a later round could not read its inputs',
         rule=_RULE,
     )
 
@@ -203,7 +204,7 @@ def test_a_state_finding_refiled_identically_after_the_resolution_is_reopened(pl
         _PHASE,
         'qgate',
         'bug',
-        'verdict_refused at pre-submission-self-review',
+        'verdict_refused at functional-review',
         'rationale for verdict_refused',
         severity='warning',
         rule=_RULE,
@@ -223,7 +224,7 @@ def test_the_resolution_and_detail_are_written_to_each_matched_record(plan_conte
     records = {f['hash_id']: f for f in query_qgate_findings(plan_id, _PHASE)['findings']}
     for hash_id in state_hashes.values():
         assert records[hash_id]['resolution'] == 'taken_into_account'
-        assert records[hash_id]['resolution_detail'] == 'self-review closed at abc123'
+        assert records[hash_id]['resolution_detail'] == 'functional review closed at abc123'
         assert records[hash_id]['resolution_timestamp']
 
 
@@ -347,7 +348,7 @@ def test_the_cli_verb_resolves_the_state_findings_and_reports_both_lists(plan_co
             '--resolution',
             'taken_into_account',
             '--detail',
-            'self-review closed at abc123',
+            'functional review closed at abc123',
         ],
     )
 
@@ -371,7 +372,7 @@ def test_the_cli_verb_requires_rule_resolution_and_detail(plan_context, monkeypa
     flags = {
         '--rule': _RULE,
         '--resolution': 'taken_into_account',
-        '--detail': 'self-review closed at abc123',
+        '--detail': 'functional review closed at abc123',
     }
     argv = ['qgate', 'resolve-by-rule', '--plan-id', plan_id, '--phase', _PHASE]
     for flag, value in flags.items():

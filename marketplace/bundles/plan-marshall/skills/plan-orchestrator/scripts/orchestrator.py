@@ -1097,9 +1097,8 @@ _BULLET_RE = re.compile(r'^(?P<indent>[ \t]*)-[ \t]+(?P<text>.*)$')
 #:
 #: Every line-wise markdown scan below runs against the mask this builds,
 #: because a ``# comment`` inside a fence is not a heading and a ``- item``
-#: inside one is not a bullet. This mirrors the fence suppression the sibling
-#: detector in ``pm-plugin-development:ext-self-review-plan-marshall`` already
-#: applies for the same reason.
+#: inside one is not a bullet. Any line-wise markdown detector owes the same
+#: fence suppression for the same reason.
 _FENCE_DELIMITER_RE = re.compile(r'^ {0,3}(?P<fence>`{3,}|~{3,})(?P<info>.*)$')
 
 #: The backtick fence character, bound once so :func:`_fenced_mask` can name the

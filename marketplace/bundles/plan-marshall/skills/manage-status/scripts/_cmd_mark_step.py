@@ -51,8 +51,8 @@ outcome+display_detail but a
 different head_at_completion is a "changed" overwrite without requiring
 ``--force``.
 
-The SHA is also the DELTA ANCHOR a later review round scopes itself against
-(``self_review surface --since-ref``), so on a ``done`` outcome its absence is
+The SHA is also the DELTA ANCHOR a later review round scopes its delta against
+(the diff from the prior round's HEAD), so on a ``done`` outcome its absence is
 refused rather than tolerated: when the step's authoritative doc declares
 ``head_dependent: true`` and no ``--head-at-completion`` was supplied, the
 handler returns ``error: missing_head_at_completion`` and writes NOTHING. The
@@ -537,7 +537,7 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
         }
 
     # Head-anchor validation: a head-dependent step's terminal ``done`` record is
-    # what the NEXT round scopes its delta against (self_review --since-ref), and
+    # what the NEXT round scopes its delta against (its delta anchor), and
     # what the dispatcher's re-entry check compares the live HEAD to. A ``done``
     # with no SHA therefore records a verdict nobody can locate in history — it
     # reads as green for a diff it may never have examined. The absence is refused

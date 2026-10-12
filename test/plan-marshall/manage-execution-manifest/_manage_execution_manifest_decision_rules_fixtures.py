@@ -10,11 +10,9 @@ Covers:
   ``build`` and ``unknown`` both KEEP it. The decision logic itself is
   exhaustively covered in ``manage-config/test_build_decision.py``; here we
   assert the consumer-site wiring (verdict → keep/drop).
-- ``pre-submission-self-review``'s survival through compose. There is no
-  footprint-gated pre-filter for this step: the vacuous
-  ``pre_submission_self_review_inactive`` predicate (which structurally never
-  fired) has been removed outright, so the step is subtracted only by
-  ``commit_push_disabled`` when no push will occur.
+- The two review steps' (``functional-review`` / ``code-review``) survival
+  through compose. There is no footprint-gated pre-filter for either review, so
+  each is subtracted only by ``commit_push_disabled`` when no push will occur.
 - The six-row decision matrix's SUBTRACTION RECORDS: every narrowing row returns
   one ``{step, reason}`` record per candidate it removed, so a row can no longer
   narrow the candidate list silently.
@@ -54,8 +52,7 @@ _decide = _mem._decide
 # Each assignment below MUST name an emitter that still exists. ``setattr`` on a
 # module succeeds for a name that was never defined, so a stale entry here does
 # not fail loudly — it silently resurrects a dead attribute and leaves a live
-# reference to a removed function in the tree. ``TestNoRemovedSelfReviewSymbols``
-# asserts the absence explicitly rather than relying on these patches to fail.
+# reference to a removed function in the tree.
 _mem._log_decision = lambda *a, **kw: None
 _mem._log_commit_push_omitted = lambda *a, **kw: None
 _mem._log_pre_push_quality_gate_omitted = lambda *a, **kw: None
@@ -67,10 +64,9 @@ _mem._emit_decision_log = lambda *a, **kw: None
 # =============================================================================
 
 
-def _phase_6_with_self_review() -> str:
-    """Return the comma-separated default phase-6-finalize steps with pre-submission-self-review added."""
-    steps = list(DEFAULT_PHASE_6_STEPS) + ['pre-submission-self-review']
-    return ','.join(steps)
+def _phase_6_default_candidates() -> str:
+    """Return the comma-separated default phase-6-finalize steps (both reviews included)."""
+    return ','.join(DEFAULT_PHASE_6_STEPS)
 
 
 def _compose_ns(
@@ -92,7 +88,7 @@ def _compose_ns(
         recipe_key=recipe_key,
         affected_files_count=affected_files_count,
         phase_5_steps=phase_5_steps,
-        phase_6_steps=phase_6_steps if phase_6_steps is not None else _phase_6_with_self_review(),
+        phase_6_steps=phase_6_steps if phase_6_steps is not None else _phase_6_default_candidates(),
         commit_and_push=commit_and_push,
     )
 
@@ -135,11 +131,6 @@ def _stub_footprint(footprint: list[str] | None) -> None:
     ``_restore_footprint_resolver`` fixture restores the original after each test.
     """
     _mem._resolve_footprint = lambda plan_id: None if footprint is None else list(footprint)
-
-
-# =============================================================================
-# Test: pre-submission-self-review survival (the removed vacuous pre-filter)
-# =============================================================================
 
 
 @pytest.fixture(autouse=True)
@@ -254,7 +245,7 @@ def _override_map(ar_lane: str | None = None, sr_lane: str | None = None) -> dic
 # The implicit scope gate must never silently override an explicit per-element
 # ``lane`` declaration. The rule is load-bearing because the pre-filter runs at
 # the candidate-narrowing stage — before ceremony selection and before lane
-# resolution — and the ceremony ``always`` re-add path covers only the four
+# resolution — and the ceremony ``always`` re-add path covers only the five
 # ceremony gates. For any other step (canonically
 # ``plan-marshall:plan-retrospective``) a drop here makes the declared lane
 # structurally UNREACHABLE, not merely outvoted. See standards/decision-rules.md

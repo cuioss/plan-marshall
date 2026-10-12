@@ -182,7 +182,7 @@ def test_rejected_qgate_finding_is_non_pending_in_unified_read(plan_context):
 
 
 # =============================================================================
-# Test: resolve_qgate_findings_by_evidence (D3 — self-review loop-back resolution)
+# Test: resolve_qgate_findings_by_evidence (review loop-back resolution)
 #
 # A loop-back that lands a fix transitions the corresponding finding; a finding
 # with no evidenced fix is left alone. Both directions are asserted — the second

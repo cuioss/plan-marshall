@@ -201,7 +201,7 @@ class SiteRun:
 
 
 def _run_commit_push_disabled(monkeypatch) -> SiteRun:
-    before = ['push', 'pre-push-quality-gate', 'pre-submission-self-review', 'archive-plan']
+    before = ['push', 'pre-push-quality-gate', 'functional-review', 'code-review', 'archive-plan']
     kept, records = _mem._apply_commit_push_disabled(list(before), False)
     return SiteRun(before, kept, 'records', records)
 
@@ -239,11 +239,17 @@ def _run_unresolved_ask_provider_drop(monkeypatch) -> SiteRun:
 
 
 def _run_ceremony_finalize_selection(monkeypatch) -> SiteRun:
-    before = ['pre-submission-self-review', 'archive-plan']
+    before = ['functional-review', 'code-review', 'archive-plan']
     steps = list(before)
     _forced_in, forced_out = _mem._apply_ceremony_finalize_selection(
         steps,
-        {'self_review': 'never', 'qgate': 'auto', 'simplify': 'auto', 'security_audit': 'auto'},
+        {
+            'functional_review': 'never',
+            'code_review': 'auto',
+            'qgate': 'auto',
+            'simplify': 'auto',
+            'security_audit': 'auto',
+        },
     )
     return SiteRun(before, steps, 'gate_records', forced_out)
 

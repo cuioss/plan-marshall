@@ -1528,10 +1528,10 @@ def resolve_qgate_findings_by_evidence(
 ) -> dict[str, Any]:
     """Resolve pending Q-Gate findings whose file a landed fix actually touched.
 
-    Evidence-gated self-review loop-back resolution (D3). The self-review step
-    files a Q-Gate finding per structural defect but never resolves its own
-    findings, so a plan whose fixes genuinely landed could still merge with the
-    finding RECORDS stuck at ``pending``. This transitions a pending Q-Gate
+    Evidence-gated review loop-back resolution (D3). The ``functional-review`` and
+    ``code-review`` steps file a Q-Gate finding per blocking defect but never
+    resolve their own findings, so a plan whose fixes genuinely landed could
+    still merge with the finding RECORDS stuck at ``pending``. This transitions a pending Q-Gate
     finding to ``fixed`` ONLY when its ``file_path`` is in ``changed_paths`` — the
     set of files a landed fix (a commit that advanced HEAD) actually touched.
 
@@ -1543,7 +1543,7 @@ def resolve_qgate_findings_by_evidence(
     ``changed_paths`` is the evidence the CALLER computes and passes in (e.g.
     ``git diff --name-only {prior_anchor}..HEAD`` — the loop-back fix's own edits).
     A premature resolution — the fix touched the file but did not remove the defect
-    — is self-correcting: the next self-review round re-surfaces the defect and
+    — is self-correcting: the next review round re-surfaces the defect and
     :func:`add_qgate_finding` REOPENS the resolved record back to ``pending``.
 
     Returns ``{status, plan_id, phase, resolved[], left_pending[]}`` where each

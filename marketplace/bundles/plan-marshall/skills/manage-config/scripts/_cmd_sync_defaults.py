@@ -145,7 +145,7 @@ def _migrate_retired_step_keys(live: dict, renamed: list[str]) -> dict:
     return live
 
 
-# Legacy run_at_all → lane migration (D7). Maps each of the four finalize
+# Legacy run_at_all → lane migration (D7). Maps each of the three legacy finalize
 # ceremony gates' retired run_at_all values onto the per-element ``lane`` override
 # channel: ``never→off``, ``always→minimal``, and ``auto→`` omit (``standard`` is
 # the lane default — an absent override resolves to ``standard``, so no key is
@@ -155,15 +155,15 @@ def _migrate_retired_step_keys(live: dict, renamed: list[str]) -> dict:
 # a re-run is a no-op.
 # SHIM(A): retired run_at_all ceremony-gate values (mapped onto the per-element lane channel and dropped).
 # shim-owner: manage-config
-# shim-floor: the D7 run_at_all->lane migration that moved the four finalize ceremony gates onto the per-element `lane` override channel
+# shim-floor: the D7 run_at_all->lane migration that moved the legacy finalize ceremony gates onto the per-element `lane` override channel
 # shim-remove-when: no live marshal.json carries a run_at_all/qgate ceremony-gate key
 _RUN_AT_ALL_TO_LANE: dict[str, str] = {'never': 'off', 'always': 'minimal'}
 
-# The three ceremony gates whose legacy run_at_all value lived as a step-owned
+# The two ceremony gates whose legacy run_at_all value lived as a step-owned
 # param (keyed by the gate name) under the owning step's nested param object in
 # ``plan.phase-6-finalize.steps[<owner>]``. ``qgate`` is the flat phase-level
 # sibling handled separately.
-_STEP_OWNED_CEREMONY_GATES: tuple[str, ...] = ('self_review', 'simplify', 'security_audit')
+_STEP_OWNED_CEREMONY_GATES: tuple[str, ...] = ('simplify', 'security_audit')
 
 
 def _find_step_key(steps_map: dict, owner: str) -> str | None:
@@ -201,7 +201,7 @@ def _set_step_lane(phase6: dict, owner: str, lane_value: str) -> None:
 
 
 def _migrate_run_at_all_to_lane(live: dict, migrated: list[str]) -> dict:
-    """Migrate the four finalize ceremony gates off run_at_all onto the lane channel.
+    """Migrate the three legacy finalize ceremony gates off run_at_all onto the lane channel.
 
     Reads each gate's retired run_at_all value from its legacy location, maps it
     (:data:`_RUN_AT_ALL_TO_LANE`), writes the owning step's ``lane`` override
@@ -221,7 +221,7 @@ def _migrate_run_at_all_to_lane(live: dict, migrated: list[str]) -> dict:
     Legacy locations:
 
     - ``qgate`` — flat ``plan.phase-6-finalize.qgate``.
-    - ``self_review`` / ``simplify`` / ``security_audit`` — a step-owned param
+    - ``simplify`` / ``security_audit`` — a step-owned param
       (keyed by the gate name) under the owning step's nested param object in
       ``plan.phase-6-finalize.steps[<owner>]``.
 
@@ -261,7 +261,7 @@ def _migrate_run_at_all_to_lane(live: dict, migrated: list[str]) -> dict:
             else:
                 migrated.append(f'plan.phase-6-finalize.qgate={legacy} -> (auto: omitted)')
 
-    # self_review / simplify / security_audit — step-owned params.
+    # simplify / security_audit — step-owned params.
     steps_map = phase6.get('steps')
     if isinstance(steps_map, dict):
         for gate in _STEP_OWNED_CEREMONY_GATES:
@@ -509,8 +509,8 @@ def cmd_sync_defaults(args) -> dict:
     insertion order, and is idempotent (a re-run reports no renames).
 
     A second migration pass (:func:`_migrate_run_at_all_to_lane`) runs alongside
-    the retired-key migration (also BEFORE the deep-merge): it moves the four
-    finalize ceremony gates (``qgate`` / ``self_review`` / ``simplify`` /
+    the retired-key migration (also BEFORE the deep-merge): it moves the three
+    legacy finalize ceremony gates (``qgate`` / ``simplify`` /
     ``security_audit``) off their retired run_at_all locations onto the owning
     step's per-element ``lane`` override (``never→off`` / ``always→minimal`` /
     ``auto→`` omit) and removes the legacy key, so the deep-merge back-fills the

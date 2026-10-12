@@ -5,8 +5,8 @@
 
 """Tests for the ``ceremony_finalize_selection`` post-matrix transform.
 
-The transform applies the four finalize ceremony gates (``self_review`` /
-``qgate`` / ``simplify`` / ``security_audit``) to the matrix-produced
+The transform applies the five finalize ceremony gates (``functional_review`` /
+``code_review`` / ``qgate`` / ``simplify`` / ``security_audit``) to the matrix-produced
 ``phase_6.steps``. Each gate is governed by its owning finalize step's
 per-element ``lane`` override (``steps[<owner>].lane`` ∈ ``off``/``minimal``/
 ``auto``), which ``_read_finalize_gates`` maps to the run-at-all decision the
@@ -23,8 +23,8 @@ orthogonal and preserved.
 
 Every ceremony gate's ``lane`` override folds under its owning finalize step's
 nested param object in ``phase-6-finalize.steps``: ``qgate`` →
-``default:pre-push-quality-gate``; ``self_review`` →
-``default:pre-submission-self-review``; ``simplify`` →
+``default:pre-push-quality-gate``; ``functional_review`` →
+``default:functional-review``; ``code_review`` → ``default:code-review``; ``simplify`` →
 ``default:finalize-step-simplify``; ``security_audit`` →
 ``default:finalize-step-security-audit``. There is no flat phase-level ``qgate``
 sibling. The internal transform name retains the ``ceremony_finalize`` prefix for
@@ -43,7 +43,7 @@ identically, which is the assertion that fails if the two readers ever diverge
 again.
 
 ``always`` is the only path that RE-ADDS a step a pre-filter already dropped, and
-it covers only these four gates. It is not the only way an operator declaration
+it covers only these five gates. It is not the only way an operator declaration
 survives an implicit gate: ``scope_gated_finalize``'s declared-lane immunity keeps
 a step carrying an explicit non-``standard`` ``lane`` from being dropped at all. That
 mechanism (prevent the drop) is distinct from this one (undo the drop), and it is
@@ -93,12 +93,11 @@ _mem._log_execution_tier_routing = lambda *a, **kw: None
 # Helpers
 # =============================================================================
 
-# The full candidate set including the ceremony-gated finalize steps in
-# their canonical (project-prefixed / bare) form. The composer strips the
-# `default:` prefix at intake but preserves `project:` prefixes verbatim.
+# The ceremony-gated finalize steps the default phase-6 candidates do not already
+# carry. ``functional-review`` and ``code-review`` are members of
+# ``DEFAULT_PHASE_6_STEPS`` themselves, so only the quality gate is appended here.
 _CEREMONY_FINALIZE_STEPS = [
     'pre-push-quality-gate',
-    'default:pre-submission-self-review',
 ]
 
 
@@ -109,7 +108,6 @@ _GATE_OWNER_STEP = {
     'qgate': 'default:pre-push-quality-gate',
     'simplify': 'default:finalize-step-simplify',
     'security_audit': 'default:finalize-step-security-audit',
-    'self_review': 'default:pre-submission-self-review',
     'functional_review': 'default:functional-review',
     'code_review': 'default:code-review',
 }
@@ -117,9 +115,7 @@ _GATE_OWNER_STEP = {
 # The ceremony gates whose value is written as the owning step's ``lane``
 # override (``off``/``minimal``/``standard``). Any other step-folded knob a caller
 # passes is written under its own param key verbatim.
-_CEREMONY_LANE_GATES = frozenset(
-    {'qgate', 'self_review', 'functional_review', 'code_review', 'simplify', 'security_audit'}
-)
+_CEREMONY_LANE_GATES = frozenset({'qgate', 'functional_review', 'code_review', 'simplify', 'security_audit'})
 
 
 _FOOTPRINT = ['marketplace/bundles/x/skills/y/foo.py']

@@ -351,7 +351,7 @@ VALID_RECORD_PHASES = ('5-execute', '6-finalize')
 # ⚠ `loop_back` and `failed` both used to be recorded as `error`, which made the
 # ledger say that the more thoroughly a gate worked, the worse its plan looked:
 # any archive-wide analysis counting `error` mis-graded every multi-round
-# self-review as a defect. The corruption was silent, cumulative, and lived in
+# review as a defect. The corruption was silent, cumulative, and lived in
 # the archive — so the fix is a vocabulary that a reader can partition, not a
 # convention a reader has to know. `manifest-schema.md` § "execution_log[]"
 # states the same partition for a reader who has only the file.
@@ -554,7 +554,6 @@ DEFAULT_STEP_OWNER = 'leaf-dispatchable'
 ORCHESTRATOR_OWNED_STEPS: frozenset[str] = frozenset(
     {
         'finalize-step-plugin-doctor',
-        'pre-submission-self-review',
         'functional-review',
         'code-review',
         'automatic-review',

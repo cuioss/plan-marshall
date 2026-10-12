@@ -99,7 +99,6 @@ from _manifest_rules import (
     _CODE_REVIEW_OWNER_STEP,  # noqa: F401
     _FOOTPRINT_GATED_CANONICAL_ROLES,
     _FUNCTIONAL_REVIEW_OWNER_STEP,  # noqa: F401
-    _PRE_SUBMISSION_SELF_REVIEW_STEP,  # noqa: F401
     _SCOPE_GATED_SINGLE_MODULE_DROP,  # noqa: F401
     _SCOPE_GATED_SURGICAL_DROP,  # noqa: F401
     _SECURITY_AUDIT_OWNER_STEP,  # noqa: F401
@@ -1008,7 +1007,6 @@ def _log_scope_gated_finalize_subtraction(plan_id: str, scope_estimate: str, dro
 # (`steps[<owner>].lane` — `off`→`never`, `minimal`→`always`, `standard`/absent→`auto`),
 # NOT from a flat run-at-all sibling. Each gate maps to exactly one finalize step:
 #
-#   self_review       → default:pre-submission-self-review
 #   functional_review → default:functional-review (did the plan deliver what it was asked)
 #   code_review       → default:code-review (is the change well made)
 #   qgate            → pre-push-quality-gate (the finalize blocking-findings re-capture)
@@ -1031,8 +1029,8 @@ def _log_scope_gated_finalize_subtraction(plan_id: str, scope_estimate: str, dro
 # candidate list may carry. Candidate lists are `default:`-namespace-normalized
 # at intake (`canonicalize_step_key`), but `project:` / `bundle:skill` prefixes
 # are preserved verbatim, so the match-sets below list every form. The `always`
-# re-insertion uses the canonical BARE form for every gate (including
-# pre-submission-self-review and the two reviews), matching the bare id the normal intake path emits,
+# re-insertion uses the canonical BARE form for every gate (including the two
+# reviews), matching the bare id the normal intake path emits,
 # so a force-add never re-introduces a non-canonical `default:`-prefixed id that
 # the compose-time canonical-step-key gate would reject.
 
@@ -1755,7 +1753,6 @@ _PLAN_INPUT_DEPENDENT_PHASE_6_STEPS = frozenset(
     {
         'push',
         'pre-push-quality-gate',
-        'pre-submission-self-review',
         'functional-review',
         'code-review',
         'finalize-step-simplify',
@@ -2079,8 +2076,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # candidate list. The order is fixed and documented in
     # standards/decision-rules.md:
     #   1. commit_push_disabled — drop push (and pre-push-quality-gate,
-    #      pre-submission-self-review, functional-review and code-review) when no
-    #      push will occur.
+    #      functional-review and code-review) when no push will occur.
     #   2. pre_push_quality_gate_inactive — drop pre-push-quality-gate ONLY on a
     #      positive ``not_necessary`` build verdict. An ``unknown`` verdict (the
     #      footprint is unresolvable) KEEPS the gate and emits a [STATUS] line.
@@ -2962,7 +2958,7 @@ def summarize_refires(
     productive non-completion (the step filed findings and handed control back),
     ``failures`` is a step that ran cleanly and self-assessed not-clean, and
     ``errors`` is a dispatch that raised. Summing them into one column is what
-    made a thorough gate read as a defective one: the more rounds a self-review
+    made a thorough gate read as a defective one: the more rounds a review
     filed findings for, the worse any ``error``-counting analysis graded its
     plan. Each has its own column so a reader never has to infer which happened.
 
@@ -3015,7 +3011,7 @@ def summarize_refires(
         elif outcome == 'loop_back':
             # A PRODUCTIVE non-completion, counted in its own column. Folding it
             # into `errors` is what made a thorough gate's plan look defective —
-            # the more rounds a self-review filed findings for, the worse the
+            # the more rounds a review filed findings for, the worse the
             # archive graded it.
             entry['loop_backs'] += 1
         elif outcome == 'failed':
@@ -3579,7 +3575,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help='Resolved commit_and_push from phase-5-execute config (true|false). '
         'When omitted defaults to true. When false, push (and pre-push-quality-gate, '
-        'pre-submission-self-review, functional-review and code-review) is omitted from phase_6.steps.',
+        'functional-review and code-review) is omitted from phase_6.steps.',
     )
 
     read_parser = subparsers.add_parser('read', help='Read execution.toon as TOON', allow_abbrev=False)

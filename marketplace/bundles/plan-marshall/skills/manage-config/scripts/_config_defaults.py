@@ -451,8 +451,9 @@ DEFAULT_FINDING_RAW_INPUT_MAX_BYTES = 65536
 # Gate-mode enum. Governs ONLY the three planning gates `deep_lane` /
 # `escalation` (phase-1-init) and `revalidation` (phase-2-refine): `auto` (the
 # default) defers to the owning phase's decision machinery; `always` forces the
-# gate's decision in; `never` forces it out. The four finalize ceremony gates
-# (`qgate`, `self_review`, `simplify`, `security_audit`) do NOT ride this enum —
+# gate's decision in; `never` forces it out. The five finalize ceremony gates
+# (`qgate`, `functional_review`, `code_review`, `simplify`, `security_audit`) do
+# NOT ride this enum —
 # each is governed by its owning step's `steps.<step>.lane` override
 # (`off`/`minimal`/`standard`). Planning-time q-gate validation is governed by the
 # distinct `q_gate_validation` knob (see :data:`VALID_Q_GATE_VALIDATION` below).
@@ -949,8 +950,8 @@ DEFAULT_PLAN_EXECUTE = {
     # When true (the default), the execute loop commits per-deliverable on the
     # feature branch and phase-6-finalize pushes + opens a PR. When false, the
     # run is local-only: per-deliverable commits are still made, but the
-    # phase-6 push, pre-push-quality-gate, and pre-submission-self-review steps
-    # are stripped by the manage-execution-manifest commit_push_disabled
+    # phase-6 push, pre-push-quality-gate, functional-review and code-review
+    # steps are stripped by the manage-execution-manifest commit_push_disabled
     # pre-filter.
     'commit_and_push': True,
     'max_iterations': 5,
@@ -1091,15 +1092,16 @@ def validate_sonar_touched_file_cleanup(value: str) -> None:
 #                                      `steps.<step>.lane` override)
 #   - default:finalize-step-preference-emitter → preference_min_recurrence
 #                                      (per-plan disposition recurrence threshold)
-#   - default:pre-submission-self-review → (config-less; the `self_review`
-#                                      ceremony gate rides the step's
+#   - default:functional-review / default:code-review → (config-less; the
+#                                      `functional_review` and `code_review`
+#                                      ceremony gates each ride their own step's
 #                                      `steps.<step>.lane` override, and the
 #                                      composer's scope_gated_finalize
 #                                      pre-filter is governed by declared-lane
 #                                      immunity, not a step-owned knob)
-# The four finalize ceremony gates (qgate, self_review, simplify, security_audit)
-# no longer ride a run-at-all param: each is governed by its owning step's
-# `steps.<step>.lane` override (`off`/`minimal`/`standard`). Phase-level knobs with no
+# The five finalize ceremony gates (qgate, functional_review, code_review,
+# simplify, security_audit) no longer ride a run-at-all param: each is governed
+# by its owning step's `steps.<step>.lane` override (`off`/`minimal`/`standard`). Phase-level knobs with no
 # single owning step (checks_wait_timeout_seconds, max_iterations,
 # finalize_without_asking, loop_back_without_asking, effort, …) stay flat siblings
 # of `steps`.
@@ -1179,8 +1181,8 @@ DEFAULT_PLAN_FINALIZE = {
     'loop_back_without_asking': True,
     # The finalize `qgate` gate no longer lives here as a flat run-at-all sibling.
     # Finalize-qgate now rides `steps['default:pre-push-quality-gate'].lane` — the same
-    # per-element `lane` override channel the other three ceremony gates
-    # (`self_review`, `simplify`, `security_audit`) use — resolved by the
+    # per-element `lane` override channel the other four ceremony gates
+    # (`functional_review`, `code_review`, `simplify`, `security_audit`) use — resolved by the
     # manifest ceremony transform (`off→never`, `minimal→always`, `standard/absent→auto`).
     # Default timeout (seconds) for the CI-completion polling commands consumed
     # by tools-integration-ci/scripts/ci_base.py (`ci checks wait`,
@@ -1205,11 +1207,12 @@ DEFAULT_PLAN_FINALIZE = {
     # under `default:branch-cleanup`) live in the owning step's nested param
     # object. Each step's params are declared self-describingly in the step's
     # body-doc `configurable:` frontmatter and read by `configurable_contract.py`.
-    # The four finalize ceremony gates (`qgate`, `self_review`, `simplify`,
-    # `security_audit`) no longer ride a run-at-all param — each is governed by
-    # its owning step's `steps.<step>.lane` override. `default:finalize-step-simplify`,
-    # `default:finalize-step-security-audit` and `default:pre-submission-self-review`
-    # are now config-less. ALL finalize-step implementors are
+    # The five finalize ceremony gates (`qgate`, `functional_review`,
+    # `code_review`, `simplify`, `security_audit`) no longer ride a run-at-all
+    # param — each is governed by its owning step's `steps.<step>.lane` override.
+    # `default:finalize-step-simplify`, `default:finalize-step-security-audit`,
+    # `default:functional-review` and `default:code-review` are config-less.
+    # ALL finalize-step implementors are
     # materialized into this map (exclusion is a `lane: off` override, never
     # absence); the two adversarial infra elements
     # (`plan-marshall:automatic-review`, `default:sonar-roundtrip`) seed a
