@@ -681,8 +681,10 @@ def migrate_review_steps(section: dict) -> dict:
     Returns:
         A report dict: ``state`` (``migrated`` or ``noop``), and on ``migrated``
         the ``replaced`` legacy keys, the ``added`` successors, the successors
-        ``kept`` as the operator configured them, the ``carried`` params, the
-        ``dropped_params`` and whether ``removed_steps_rewritten``.
+        ``kept`` as the operator configured them, and whether
+        ``removed_steps_rewritten``. The ``carried`` params and the
+        ``dropped_params`` are present only when a retired step entry was
+        replaced, not when only ``removed_steps`` named a retired id.
     """
     from _config_defaults import OPERATOR_REMOVED_STEPS_KEY
 

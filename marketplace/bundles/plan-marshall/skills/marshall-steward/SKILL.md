@@ -1015,7 +1015,9 @@ present their settings are merged — a `lane: off` on either wins, and a losing
 lane is reported in `dropped_params`. A successor the operator
 already configured wins, and a retired id in `removed_steps` is replaced by both
 new ids. Emits `state` (`migrated` | `noop`) and, on `migrated`, `replaced`,
-`added`, `kept`, `carried`, `dropped_params` and `removed_steps_rewritten`.
+`added`, `kept` and `removed_steps_rewritten`; `carried` and
+`dropped_params` are emitted only when a retired step entry was replaced,
+not when only `removed_steps` named a retired id.
 Idempotent and self-disarming: a re-run after the retired id is gone is a no-op
 success.
 
