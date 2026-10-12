@@ -91,7 +91,7 @@ class TestPreSubmissionSelfReviewSurvivesCompose:
         _stub_footprint(['some/file.py'])
 
         candidates = list(DEFAULT_PHASE_6_STEPS)
-        for extra in ('pre-push-quality-gate', 'pre-submission-self-review'):
+        for extra in ('pre-push-quality-gate', 'pre-submission-self-review', 'functional-review', 'code-review'):
             if extra not in candidates:
                 candidates.insert(candidates.index('push'), extra)
 
