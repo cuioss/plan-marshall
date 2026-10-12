@@ -786,11 +786,19 @@ def _default_skill_notations(declaration: dict, source: Path) -> list[str]:
     return notations
 
 
+def _heading_level(heading_line: str) -> int:
+    """The number of leading ``#`` characters of a Markdown heading line."""
+    return len(heading_line) - len(heading_line.lstrip('#'))
+
+
 def _harvest_section_bullets(skill_md: Path, heading: str) -> list[str]:
     """The top-level bullets of one ``##`` section of ``skill_md``.
 
     A bullet's indented continuation lines join it, so a wrapped rule is one rule.
-    Fenced code is skipped. A skill without the section contributes nothing.
+    Fenced code is skipped. A skill without the section contributes nothing. The
+    section ends at the next heading of the same or a higher level; a deeper
+    subheading inside it keeps the section open, so the bullets under it are
+    harvested rather than silently dropped.
 
     Raises:
         ValueError: The file cannot be read — a rule source that could not be read
@@ -801,6 +809,7 @@ def _harvest_section_bullets(skill_md: Path, heading: str) -> list[str]:
     except OSError as exc:
         raise ValueError(f'cannot read the review-rule source {skill_md}: {exc}') from exc
 
+    heading_level = _heading_level(heading)
     bullets: list[str] = []
     in_section = False
     in_fence = False
@@ -812,7 +821,10 @@ def _harvest_section_bullets(skill_md: Path, heading: str) -> list[str]:
         if in_fence:
             continue
         if raw_line.startswith('#'):
-            in_section = raw_line.rstrip() == heading
+            if raw_line.rstrip() == heading:
+                in_section = True
+            elif _heading_level(raw_line) <= heading_level:
+                in_section = False
             continue
         if not in_section:
             continue

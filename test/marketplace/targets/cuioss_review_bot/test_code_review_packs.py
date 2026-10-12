@@ -26,6 +26,7 @@ from conftest import PROJECT_ROOT
 from marketplace.targets.cuioss_review_bot import target as target_module
 from marketplace.targets.cuioss_review_bot.target import (
     MAX_DOMAIN_RULES,
+    SPINE_BUNDLE,
     CuiossReviewBotTarget,
     discover_code_review_domains,
     discover_code_review_spine,
@@ -78,6 +79,15 @@ def _security_skill_bullets(bundles: Path) -> set[str]:
             if line.startswith('- ') and len(line) > 30:
                 bullets.add(line[2:].strip())
     return bullets
+
+
+def _spine_bundle_domain_keys(bundles: Path) -> list[str]:
+    """The domain keys the spine bundle declares — read from its declaration, never copied."""
+    extension_py = bundles / SPINE_BUNDLE / target_module._EXTENSION_RELPATH
+    return [
+        target_module._domain_key(declaration, extension_py)
+        for declaration in target_module._read_declared_domains(extension_py)
+    ]
 
 
 def _pack_bullets(artifact: str) -> list[str]:
@@ -148,7 +158,10 @@ class TestRealMarketplace:
         assert not offenders
 
     def test_the_spine_bundle_contributes_no_pack(self):
-        assert 'general-dev' not in REAL_DOMAINS
+        spine_keys = _spine_bundle_domain_keys(MARKETPLACE_BUNDLES)
+
+        assert spine_keys, 'control: the spine bundle must declare a domain'
+        assert set(spine_keys).isdisjoint(REAL_DOMAINS)
 
     def test_no_security_rule_reaches_a_code_review_artifact(self, code_review_artifacts):
         security_bullets = _security_skill_bullets(MARKETPLACE_BUNDLES)
@@ -358,6 +371,20 @@ class TestSelection:
         )
 
         assert discover_code_review_domains(bundles)['go'].rules[-1] == 'A wrapped rule.'
+
+    def test_a_subheading_inside_the_section_keeps_its_bullets(self, bundles):
+        skill_md = bundles / 'pm-fx-go' / 'skills' / 'go-testing' / 'SKILL.md'
+        skill_md.write_text(
+            skill_md.read_text(encoding='utf-8').replace(
+                f'- {GO_TEST_RULE}', f'- {GO_TEST_RULE}\n\n### Fixtures\n\n- A rule under a subheading.'
+            ),
+            encoding='utf-8',
+        )
+
+        rules = discover_code_review_domains(bundles)['go'].rules
+
+        assert rules[-2:] == (GO_TEST_RULE, 'A rule under a subheading.')
+        assert 'not a review rule' not in rules
 
 
 class TestSpine:
