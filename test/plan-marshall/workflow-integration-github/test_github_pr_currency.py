@@ -1333,3 +1333,843 @@ def test_an_append_per_review_bot_stays_credited_after_a_head_advance(bot_kind, 
     assert subject_at_b['stale_participation_bots'] == [
         {'bot_kind': subject_bot, 'evidence_kind': subject_comment['kind']}
     ]
+
+
+# ---------------------------------------------------------------------------
+# The reply-covered credit: a stale review the bot itself says is current.
+# ---------------------------------------------------------------------------
+
+#: The bots the credit can reach: currency-tested (only those can be stale) AND
+#: declaring a "nothing new to review" reply. Derived from the registry and guarded
+#: non-empty, so a bot that newly declares the overlay inherits every case below.
+_REPLY_COVERABLE_BOTS: tuple[str, ...] = guard_non_empty(
+    tuple(bot for bot in CURRENCY_SUBJECT_BOTS if bot_registry.no_unreviewed_commit_patterns(bot)),
+    '_REPLY_COVERABLE_BOTS',
+    'CURRENCY_SUBJECT_BOTS filtered by bot_registry.no_unreviewed_commit_patterns',
+)
+# The non-vacuity claim stated at the binding site, where a reader of the cases below
+# looks for it. ``guard_non_empty`` raises first and names the derivation.
+assert _REPLY_COVERABLE_BOTS, 'no currency-tested bot declares a "nothing new to review" reply'
+_REVIEW_AT = _at(1)
+_COMMIT_B_AT = _at(10)
+_REPLY_BEFORE_COMMIT_B = _at(5)
+_REPLY_AFTER_COMMIT_B = _at(20)
+
+
+def _nothing_new_reply(bot_kind, *, created_at, updated_at=None, body=None, comment_id='reply-1'):
+    """``bot_kind``'s own "nothing new to review" reply, built from its declared wording."""
+    return {
+        'id': comment_id,
+        'author': _BOT_KIND_TO_LOGIN[bot_kind],
+        'thread_id': '',
+        'kind': 'issue_comment',
+        'body': body or f'<details> {bot_registry.no_unreviewed_commit_patterns(bot_kind)[0]}. </details>',
+        'resolved': False,
+        'created_at': created_at,
+        'updated_at': created_at if updated_at is None else updated_at,
+    }
+
+
+def _fetch_after_a_new_commit(monkeypatch, plan_id, bot_kind, extra_comments, *, head_sha=_HEAD_B, committed_at=None):
+    """Credit a review at HEAD_A, then fetch again at a later head with ``extra_comments`` added.
+
+    Returns the SECOND fetch's result. The review comment does not move between the
+    two fetches, so on the commit check alone the bot is stale at the later head —
+    every case below starts from that state and varies only what the reply is.
+    """
+    review = _publish_comment(bot_kind, 'review-1', created_at=_REVIEW_AT)
+    _patch_provider(monkeypatch, [review], head_sha=_HEAD_A)
+    first = _run_fetch(220, plan_id)
+    assert first['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': review['kind']}]
+
+    _patch_provider(
+        monkeypatch,
+        [review, *extra_comments],
+        head_sha=head_sha,
+        head_committed_at=_COMMIT_B_AT if committed_at is None else committed_at,
+    )
+    return _run_fetch(220, plan_id), review
+
+
+@pytest.mark.parametrize('bot_kind', _REPLY_COVERABLE_BOTS)
+def test_a_stale_review_is_credited_when_the_bots_reply_is_newer_than_the_head_commit(
+    bot_kind, plan_context, monkeypatch
+):
+    """POSITIVE — the bot said nothing is unreviewed, after the merge candidate existed."""
+    reply = _nothing_new_reply(bot_kind, created_at=_REPLY_AFTER_COMMIT_B)
+
+    result, review = _fetch_after_a_new_commit(monkeypatch, f'gh-pr-reply-covered-{bot_kind}', bot_kind, [reply])
+
+    assert result['status'] == 'success'
+    assert result['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': review['kind']}]
+    assert result['stale_participation_bots'] == []
+    assert result['reply_covered_participation_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': review['kind'], 'reply_comment_id': 'reply-1'}
+    ]
+    # The reply is still accounted for as a refusal, and it files no finding.
+    assert result['refused_bots'] == [bot_kind]
+    assert result['count_skipped_refusal'] == 1
+
+
+@pytest.mark.parametrize('bot_kind', _REPLY_COVERABLE_BOTS)
+def test_a_head_commit_newer_than_the_reply_leaves_the_bot_stale(bot_kind, plan_context, monkeypatch):
+    """⛔ NEGATIVE — a commit made after the reply is one the bot said nothing about.
+
+    The matched control for the case above: same review, same reply body, same head.
+    Only the order of the reply and the commit differs.
+    """
+    reply = _nothing_new_reply(bot_kind, created_at=_REPLY_BEFORE_COMMIT_B)
+
+    result, review = _fetch_after_a_new_commit(monkeypatch, f'gh-pr-reply-too-old-{bot_kind}', bot_kind, [reply])
+
+    assert result['participated_bots'] == []
+    assert result['stale_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': review['kind']}]
+    assert result['reply_covered_participation_bots'] == []
+
+
+@pytest.mark.parametrize('bot_kind', _REPLY_COVERABLE_BOTS)
+def test_a_reply_written_at_the_same_instant_as_the_head_commit_does_not_cover_it(bot_kind, plan_context, monkeypatch):
+    """The comparison is strict: an equal instant is not "newer"."""
+    reply = _nothing_new_reply(bot_kind, created_at=_COMMIT_B_AT)
+
+    result, review = _fetch_after_a_new_commit(monkeypatch, f'gh-pr-reply-same-instant-{bot_kind}', bot_kind, [reply])
+
+    assert result['participated_bots'] == []
+    assert result['stale_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': review['kind']}]
+
+
+@pytest.mark.parametrize('bot_kind', _REPLY_COVERABLE_BOTS)
+@pytest.mark.parametrize(
+    ('created_at', 'updated_at'),
+    [
+        pytest.param('', '', id='no-timestamp'),
+        pytest.param('2026-07-29T12:20:00+02:00', '', id='offset-stamped'),
+        pytest.param(_REPLY_AFTER_COMMIT_B, 'yesterday', id='one-of-two-unreadable'),
+    ],
+)
+def test_an_unreadable_reply_instant_yields_no_credit(bot_kind, created_at, updated_at, plan_context, monkeypatch):
+    """⛔ NEGATIVE, fail closed — a reply whose time cannot be read covers nothing.
+
+    ``offset-stamped`` names the same moment as the crediting case in another shape;
+    it must not be compared as text. ``one-of-two-unreadable`` carries a readable
+    ``created_at`` newer than the commit and still yields no credit, because the
+    later of the two stamps cannot be chosen when one of them is unreadable.
+    """
+    reply = _nothing_new_reply(bot_kind, created_at=created_at, updated_at=updated_at)
+    plan_id = f'gh-pr-reply-unreadable-{bot_kind}-{len(created_at)}-{len(updated_at)}'
+
+    result, review = _fetch_after_a_new_commit(monkeypatch, plan_id, bot_kind, [reply])
+
+    assert result['participated_bots'] == []
+    assert result['stale_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': review['kind']}]
+    assert result['reply_covered_participation_bots'] == []
+
+
+@pytest.mark.parametrize('bot_kind', _REPLY_COVERABLE_BOTS)
+@pytest.mark.parametrize('committed_at', ['', '2026-07-29T12:10:00+02:00', 'unknown'], ids=['empty', 'offset', 'text'])
+def test_an_unreadable_head_commit_instant_yields_no_credit(bot_kind, committed_at, plan_context, monkeypatch):
+    """⛔ NEGATIVE, fail closed — the other side of the comparison.
+
+    The reply is newer than every plausible commit time, so only the unreadable
+    commit instant can be what withholds the credit.
+    """
+    reply = _nothing_new_reply(bot_kind, created_at=_REPLY_AFTER_COMMIT_B)
+    plan_id = f'gh-pr-reply-head-unreadable-{bot_kind}-{len(committed_at)}'
+
+    result, review = _fetch_after_a_new_commit(monkeypatch, plan_id, bot_kind, [reply], committed_at=committed_at)
+
+    assert result['participated_bots'] == []
+    assert result['stale_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': review['kind']}]
+    assert result['reply_covered_participation_bots'] == []
+
+
+@pytest.mark.parametrize('bot_kind', _REPLY_COVERABLE_BOTS)
+def test_an_unresolved_merge_candidate_is_undecidable_whatever_the_reply_says(bot_kind, plan_context, monkeypatch):
+    """With no readable head there is no commit for the reply to cover."""
+    reply = _nothing_new_reply(bot_kind, created_at=_REPLY_AFTER_COMMIT_B)
+
+    result, review = _fetch_after_a_new_commit(
+        monkeypatch, f'gh-pr-reply-head-unresolved-{bot_kind}', bot_kind, [reply], head_sha=''
+    )
+
+    assert result['merge_candidate_sha_resolved'] is False
+    assert result['participated_bots'] == []
+    assert result['undecidable_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': review['kind']}]
+    assert result['reply_covered_participation_bots'] == []
+
+
+@pytest.mark.parametrize('bot_kind', _REPLY_COVERABLE_BOTS)
+def test_a_rate_limit_notice_newer_than_the_head_commit_covers_nothing(bot_kind, plan_context, monkeypatch):
+    """Only the no-unreviewed-commit condition covers — another refusal does not.
+
+    Same author, same instant as the crediting case. The body is a refusal the
+    registry reads, with the other condition.
+    """
+    limited = next(
+        pattern
+        for pattern in bot_registry.refusal_patterns(bot_kind)
+        if pattern not in bot_registry.no_unreviewed_commit_patterns(bot_kind)
+    )
+    reply = _nothing_new_reply(bot_kind, created_at=_REPLY_AFTER_COMMIT_B, body=f'<details> {limited}. </details>')
+    assert _github_pr.refusal_condition(reply['body'], bot_kind) == _github_pr.REFUSAL_CONDITION_RATE_LIMITED
+
+    result, review = _fetch_after_a_new_commit(monkeypatch, f'gh-pr-reply-rate-limited-{bot_kind}', bot_kind, [reply])
+
+    assert result['participated_bots'] == []
+    assert result['stale_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': review['kind']}]
+    assert result['refused_bots'] == [bot_kind]
+
+
+@pytest.mark.parametrize('bot_kind', _REPLY_COVERABLE_BOTS)
+def test_a_human_quoting_the_reply_covers_nothing(bot_kind, plan_context, monkeypatch):
+    """The statement counts only when the bot itself made it."""
+    quoted = {**_nothing_new_reply(bot_kind, created_at=_REPLY_AFTER_COMMIT_B), 'author': 'alice'}
+
+    result, review = _fetch_after_a_new_commit(monkeypatch, f'gh-pr-reply-quoted-{bot_kind}', bot_kind, [quoted])
+
+    assert result['participated_bots'] == []
+    assert result['stale_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': review['kind']}]
+
+
+@pytest.mark.parametrize('bot_kind', _REPLY_COVERABLE_BOTS)
+def test_the_reply_alone_never_stands_in_for_a_review(bot_kind, plan_context, monkeypatch):
+    """A bot with no review on the PR is not credited by its reply.
+
+    The credit lifts a bot out of the stale set; a bot that was never in it — it
+    published no admissible review at all — stays unproven.
+    """
+    plan_id = f'gh-pr-reply-without-review-{bot_kind}'
+    reply = _nothing_new_reply(bot_kind, created_at=_REPLY_AFTER_COMMIT_B)
+    _patch_provider(monkeypatch, [reply], head_sha=_HEAD_B, head_committed_at=_COMMIT_B_AT)
+
+    result = _run_fetch(222, plan_id)
+
+    assert result['participated_bots'] == []
+    assert result['stale_participation_bots'] == []
+    assert result['reply_covered_participation_bots'] == []
+    assert result['refused_bots'] == [bot_kind]
+
+
+@pytest.mark.parametrize('bot_kind', _REPLY_COVERABLE_BOTS)
+def test_the_reply_covered_credit_stages_no_ledger_row_and_lapses_on_the_next_commit(
+    bot_kind, plan_context, monkeypatch
+):
+    """The credit is derived from the reply each time, so a later commit ends it.
+
+    After the crediting fetch the ledger still anchors the review at HEAD_A. A third
+    fetch at HEAD_C, committed after the reply, therefore finds the bot stale again
+    by the same comparison — a commit pushed after the reply is never covered.
+    """
+    plan_id = f'gh-pr-reply-covered-lapses-{bot_kind}'
+    reply = _nothing_new_reply(bot_kind, created_at=_REPLY_AFTER_COMMIT_B)
+
+    covered, review = _fetch_after_a_new_commit(monkeypatch, plan_id, bot_kind, [reply])
+    assert [row['bot_kind'] for row in covered['reply_covered_participation_bots']] == [bot_kind]
+    assert github_pr._recorded_currency_records(plan_id) == {(bot_kind, 'review-1'): (_HEAD_A, review['updated_at'])}
+
+    # The same fetch again reaches the same answer.
+    _patch_provider(monkeypatch, [review, reply], head_sha=_HEAD_B, head_committed_at=_COMMIT_B_AT)
+    assert _run_fetch(220, plan_id)['participated_bots'] == covered['participated_bots']
+
+    # A commit made after the reply.
+    _patch_provider(monkeypatch, [review, reply], head_sha=_HEAD_C, head_committed_at=_at(30))
+    at_c = _run_fetch(220, plan_id)
+
+    assert at_c['participated_bots'] == []
+    assert at_c['stale_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': review['kind']}]
+    assert at_c['reply_covered_participation_bots'] == []
+
+
+@pytest.mark.parametrize('bot_kind', _REPLY_COVERABLE_BOTS)
+def test_the_newest_covering_reply_is_the_one_disclosed(bot_kind, plan_context, monkeypatch):
+    """With several covering replies the disclosed id does not depend on list order."""
+    older = _nothing_new_reply(bot_kind, created_at=_at(15), comment_id='reply-older')
+    newer = _nothing_new_reply(bot_kind, created_at=_at(25), comment_id='reply-newer')
+
+    result, _review = _fetch_after_a_new_commit(monkeypatch, f'gh-pr-reply-newest-{bot_kind}', bot_kind, [newer, older])
+
+    assert [row['reply_comment_id'] for row in result['reply_covered_participation_bots']] == ['reply-newer']
+
+
+def test_the_covering_helper_reads_the_later_of_the_two_reply_stamps():
+    """A reply created before the commit and EDITED after it is read at its edit time.
+
+    CodeRabbit edits its command reply in place, so the edit time is when the reply
+    last said what it now says.
+    """
+    bot_kind = _REPLY_COVERABLE_BOTS[0]
+    edited = _nothing_new_reply(bot_kind, created_at=_REPLY_BEFORE_COMMIT_B, updated_at=_REPLY_AFTER_COMMIT_B)
+    unedited = _nothing_new_reply(bot_kind, created_at=_REPLY_BEFORE_COMMIT_B)
+
+    assert github_pr._stale_review_covered_by_reply([edited], bot_kind, _COMMIT_B_AT) == 'reply-1'
+    assert github_pr._stale_review_covered_by_reply([unedited], bot_kind, _COMMIT_B_AT) == ''
+    # Another bot's stale review is not covered by this bot's reply.
+    for other in bot_registry.bot_kinds():
+        if other != bot_kind:
+            assert github_pr._stale_review_covered_by_reply([edited], other, _COMMIT_B_AT) == ''
+
+
+# ---------------------------------------------------------------------------
+# The named-commit arm: a comment that names a commit is decided by that commit.
+# ---------------------------------------------------------------------------
+
+
+def _review_naming(commit_sha):
+    """A substantive review body that names ``commit_sha`` the way the in-house reviewer does."""
+    return f'{_GUIDE_FINDING_BODY}\n\nReviewed commit: https://github.com/o/r/commit/{commit_sha}'
+
+
+def _credit_then_fetch_an_edited_comment(monkeypatch, plan_id, bot_kind, edited_body, *, head_sha=_HEAD_B):
+    """Credit a comment naming HEAD_A at HEAD_A, then fetch it EDITED at a later head.
+
+    Returns the second fetch's result and the edited comment. The edit moves
+    ``updated_at`` past the value recorded at the credit, which is the ledger's
+    strongest signal: on the ledger arms alone the edited comment is credited at the
+    later head whatever its body says. Every case below starts from that state and
+    varies only what the edited body names.
+    """
+    original = _publish_comment(bot_kind, 'guide-1', created_at=_at(1), body=_review_naming(_HEAD_A))
+    _patch_provider(monkeypatch, [original], head_sha=_HEAD_A)
+    first = _run_fetch(230, plan_id)
+    assert first['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': original['kind']}]
+
+    edited = _publish_comment(bot_kind, 'guide-1', created_at=_at(1), updated_at=_at(9), body=edited_body)
+    _patch_provider(monkeypatch, [edited], head_sha=head_sha)
+    return _run_fetch(230, plan_id), edited
+
+
+def test_the_contract_states_the_named_commit_arm_and_where_currency_is_decided():
+    """Both halves of the rule are written down: the arm, and the surface that carries no verdict.
+
+    The second heading is the recorded outcome of a decision — review currency is
+    decided at the participation gate and the CI status surface reads check rows only.
+    Left unwritten, a reader would infer the CI status from the participation rule.
+    """
+    assert '#### The named-commit arm — a comment that names a commit is decided by that commit' in _CONTRACT_TEXT
+    assert '#### The checks surface carries no currency verdict' in _CONTRACT_TEXT
+    assert '`stale_participation_bots[]`' in _CONTRACT_TEXT
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_an_edited_comment_that_still_names_the_previous_head_is_stale(bot_kind, plan_context, monkeypatch):
+    """The comment moved since its last credit, and its own text says it reviewed HEAD_A.
+
+    The defect this arm closes: the fresh-edit arm reads the moved ``updated_at`` as a
+    re-review and credits the bot at HEAD_B. The comment names the previous HEAD, so
+    nothing has reviewed the merge candidate and the bot must be re-triggered.
+    """
+    result, edited = _credit_then_fetch_an_edited_comment(
+        monkeypatch, f'gh-pr-named-previous-head-{bot_kind}', bot_kind, _review_naming(_HEAD_A)
+    )
+
+    assert result['status'] == 'success'
+    assert result['participated_bots'] == []
+    assert result['stale_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': edited['kind']}]
+    assert result['undecidable_participation_bots'] == []
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_the_same_edit_naming_the_merge_candidate_is_credited(bot_kind, plan_context, monkeypatch):
+    """⛔ MATCHED CONTROL — same comment, same edit, same heads; only the named commit differs."""
+    result, edited = _credit_then_fetch_an_edited_comment(
+        monkeypatch, f'gh-pr-named-merge-candidate-{bot_kind}', bot_kind, _review_naming(_HEAD_B)
+    )
+
+    assert result['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': edited['kind']}]
+    assert result['stale_participation_bots'] == []
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_the_same_edit_naming_no_commit_is_decided_by_the_ledger(bot_kind, plan_context, monkeypatch):
+    """A comment naming no commit keeps the ledger rules: the fresh edit credits it.
+
+    The third outcome of the arm. A long number and an abbreviated id are both
+    commit-shaped and neither names a commit, so the arm gives no verdict and the
+    stale case above cannot be the arm reporting every edited comment stale.
+    """
+    body = f'{_GUIDE_FINDING_BODY}\n\nRun 12345678 compared {_HEAD_A[:7]} against the base.'
+
+    result, edited = _credit_then_fetch_an_edited_comment(monkeypatch, f'gh-pr-named-none-{bot_kind}', bot_kind, body)
+
+    assert result['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': edited['kind']}]
+    assert result['stale_participation_bots'] == []
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_an_edit_naming_several_commits_is_current_when_one_is_the_merge_candidate(bot_kind, plan_context, monkeypatch):
+    """A review that quotes its base beside its head is still a review of the head."""
+    body = f'{_review_naming(_HEAD_B)}\nCompared against {_HEAD_A}.'
+
+    result, edited = _credit_then_fetch_an_edited_comment(
+        monkeypatch, f'gh-pr-named-several-{bot_kind}', bot_kind, body
+    )
+
+    assert result['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': edited['kind']}]
+    assert result['stale_participation_bots'] == []
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_a_comment_naming_the_merge_candidate_is_credited_on_first_sight(bot_kind, plan_context, monkeypatch):
+    """No ledger row, one fetch: the comment names the merge candidate and is credited.
+
+    The comment's timestamps are OLDER than the commit's, which is the one condition
+    under which the ledger's first-observation arm withholds the credit (see
+    ``test_a_comment_predating_the_merge_candidate_is_stale_on_first_observation``,
+    the same fixture with a body naming no commit). The named commit decides ahead of
+    it, so this case cannot pass on the ledger arm alone.
+    """
+    plan_id = f'gh-pr-named-first-sight-{bot_kind}'
+    comment = _publish_comment(bot_kind, 'guide-1', created_at=_at(1), body=_review_naming(_HEAD_A))
+    _patch_provider(monkeypatch, [comment], head_sha=_HEAD_A, head_committed_at=_at(30))
+
+    result = _run_fetch(231, plan_id)
+
+    assert result['status'] == 'success'
+    assert result['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': comment['kind']}]
+    assert result['stale_participation_bots'] == []
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_a_comment_naming_another_commit_is_stale_on_first_sight(bot_kind, plan_context, monkeypatch):
+    """⛔ MATCHED CONTROL for first sight — no ledger row, and the comment names HEAD_A at HEAD_B.
+
+    With nothing recorded the ledger's first-observation arm credits an unseen comment
+    at any readable head. The comment says which commit it reviewed, and it is not this one.
+    """
+    plan_id = f'gh-pr-named-first-sight-other-{bot_kind}'
+    comment = _publish_comment(bot_kind, 'guide-1', created_at=_at(1), body=_review_naming(_HEAD_A))
+    _patch_provider(monkeypatch, [comment], head_sha=_HEAD_B)
+
+    result = _run_fetch(232, plan_id)
+
+    assert result['participated_bots'] == []
+    assert result['stale_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': comment['kind']}]
+    # A withheld credit stages no anchor, so the next fetch does not read it as current.
+    assert github_pr._recorded_currency_records(plan_id) == {}
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_a_comment_naming_another_commit_is_undecidable_when_the_head_cannot_be_read(
+    bot_kind, plan_context, monkeypatch
+):
+    """With no readable merge candidate the arm has nothing to compare against.
+
+    The bot is reported undecidable, exactly as a comment naming no commit is — never
+    stale, because a re-review cannot repair a head that could not be read.
+    """
+    result, edited = _credit_then_fetch_an_edited_comment(
+        monkeypatch, f'gh-pr-named-head-unread-{bot_kind}', bot_kind, _review_naming(_HEAD_A), head_sha=''
+    )
+
+    assert result['merge_candidate_sha_resolved'] is False
+    assert result['participated_bots'] == []
+    assert result['stale_participation_bots'] == []
+    assert result['undecidable_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': edited['kind']}]
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_BLIND_BOTS)
+def test_the_named_commit_arm_does_not_reach_an_append_per_review_bot(bot_kind, plan_context, monkeypatch):
+    """The arm's reach is the currency rule's reach: a bot outside it stays credited.
+
+    Same fixture as the first-sight control above, which reports a currency-tested bot
+    stale. A bot that posts a new comment per review is not currency-tested at all, so
+    a comment of its naming another commit changes nothing here.
+    """
+    plan_id = f'gh-pr-named-currency-blind-{bot_kind}'
+    comment = _publish_comment(bot_kind, 'guide-1', created_at=_at(1), body=_review_naming(_HEAD_A))
+    _patch_provider(monkeypatch, [comment], head_sha=_HEAD_B)
+
+    result = _run_fetch(233, plan_id)
+
+    assert result['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': comment['kind']}]
+    assert result['stale_participation_bots'] == []
+
+
+def _fetch_a_review_naming_the_previous_head(
+    monkeypatch, plan_id, bot_kind, extra_comments, *, committed_at=_COMMIT_B_AT
+):
+    """Credit a review naming HEAD_A at HEAD_A, then fetch it at HEAD_B with ``extra_comments``.
+
+    Returns the SECOND fetch's result and the review. The review does not move between
+    the two fetches and its own text names HEAD_A, so at HEAD_B the named-commit arm
+    reads it stale — every case below starts from that state and varies only the reply.
+    """
+    review = _publish_comment(bot_kind, 'review-1', created_at=_REVIEW_AT, body=_review_naming(_HEAD_A))
+    _patch_provider(monkeypatch, [review], head_sha=_HEAD_A)
+    credited = _run_fetch(234, plan_id)
+    assert credited['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': review['kind']}]
+
+    _patch_provider(monkeypatch, [review, *extra_comments], head_sha=_HEAD_B, head_committed_at=committed_at)
+    return _run_fetch(234, plan_id), review
+
+
+@pytest.mark.parametrize('bot_kind', _REPLY_COVERABLE_BOTS)
+def test_a_reply_newer_than_the_head_commit_credits_a_bot_whose_comment_names_another_commit(
+    bot_kind, plan_context, monkeypatch
+):
+    """POSITIVE — the named-commit arm marks the comment stale; the bot's newer reply credits the bot.
+
+    The review names HEAD_A and the merge candidate is HEAD_B. The bot's own
+    "nothing new to review" reply was written after HEAD_B was committed, so the
+    bot is credited, the credit names that reply, and no ledger row is staged for it.
+    """
+    plan_id = f'gh-pr-named-reply-covered-{bot_kind}'
+    reply = _nothing_new_reply(bot_kind, created_at=_REPLY_AFTER_COMMIT_B)
+
+    result, review = _fetch_a_review_naming_the_previous_head(monkeypatch, plan_id, bot_kind, [reply])
+
+    assert result['status'] == 'success'
+    assert result['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': review['kind']}]
+    assert result['stale_participation_bots'] == []
+    assert result['reply_covered_participation_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': review['kind'], 'reply_comment_id': 'reply-1'}
+    ]
+    # The ledger still anchors the review at HEAD_A: the credit is derived from the reply.
+    assert github_pr._recorded_currency_records(plan_id) == {(bot_kind, 'review-1'): (_HEAD_A, review['updated_at'])}
+
+
+@pytest.mark.parametrize('bot_kind', _REPLY_COVERABLE_BOTS)
+@pytest.mark.parametrize(
+    ('case', 'reply_stamps', 'committed_at'),
+    [
+        pytest.param('no-reply', None, _COMMIT_B_AT, id='no-reply'),
+        pytest.param('older', (_REPLY_BEFORE_COMMIT_B, None), _COMMIT_B_AT, id='reply-older-than-the-head-commit'),
+        pytest.param('equal', (_COMMIT_B_AT, None), _COMMIT_B_AT, id='reply-at-the-head-commit-instant'),
+        pytest.param('unstamped', ('', ''), _COMMIT_B_AT, id='reply-without-a-timestamp'),
+        pytest.param('offset', ('2026-07-29T12:20:00+02:00', ''), _COMMIT_B_AT, id='reply-offset-stamped'),
+        pytest.param('half', (_REPLY_AFTER_COMMIT_B, 'yesterday'), _COMMIT_B_AT, id='reply-one-of-two-unreadable'),
+        pytest.param('head-empty', (_REPLY_AFTER_COMMIT_B, None), '', id='head-commit-instant-empty'),
+        pytest.param(
+            'head-offset', (_REPLY_AFTER_COMMIT_B, None), '2026-07-29T12:10:00+02:00', id='head-commit-instant-offset'
+        ),
+    ],
+)
+def test_a_bot_whose_comment_names_another_commit_stays_stale_without_a_covering_reply(
+    bot_kind, case, reply_stamps, committed_at, plan_context, monkeypatch
+):
+    """⛔ NEGATIVE — same review, same heads as the crediting case; only the reply's cover differs.
+
+    ``no-reply`` is the named-commit arm alone. Every other row adds a reply that
+    does not cover the merge candidate: not strictly newer than its commit, or with
+    an instant on either side that cannot be read. Each leaves the bot stale.
+    """
+    plan_id = f'gh-pr-named-reply-uncovered-{case}-{bot_kind}'
+    replies = (
+        []
+        if reply_stamps is None
+        else [_nothing_new_reply(bot_kind, created_at=reply_stamps[0], updated_at=reply_stamps[1])]
+    )
+
+    result, review = _fetch_a_review_naming_the_previous_head(
+        monkeypatch, plan_id, bot_kind, replies, committed_at=committed_at
+    )
+
+    assert result['participated_bots'] == []
+    assert result['stale_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': review['kind']}]
+    assert result['reply_covered_participation_bots'] == []
+
+
+# ---------------------------------------------------------------------------
+# The disclosure for append-per-review bots: a credited review of another commit.
+# ---------------------------------------------------------------------------
+
+_REVIEW_BODY = 'review_body'
+
+#: The bots the disclosure can name: append-per-review bots (not currency-tested) that
+#: publish a ``review_body``, the one shape whose record carries a review commit.
+#: Derived from the registry and guarded non-empty, so a bot that newly declares that
+#: shape inherits every case below.
+_DISCLOSABLE_BOTS: tuple[str, ...] = guard_non_empty(
+    tuple(bot for bot in CURRENCY_BLIND_BOTS if _REVIEW_BODY in bot_registry.participation_evidence(bot)),
+    '_DISCLOSABLE_BOTS',
+    'CURRENCY_BLIND_BOTS filtered by review_body in bot_registry.participation_evidence',
+)
+# The non-vacuity claim stated at the binding site, where a reader of the cases below
+# looks for it. ``guard_non_empty`` raises first and names the derivation.
+assert _DISCLOSABLE_BOTS, 'no append-per-review bot publishes a review_body'
+
+#: The fields a verdict is read from. The disclosure must leave every one of them as it
+#: was, so each case compares them against the matched fetch that discloses nothing.
+_VERDICT_FIELDS: tuple[str, ...] = (
+    'participated_bots',
+    'stale_participation_bots',
+    'undecidable_participation_bots',
+    'reply_covered_participation_bots',
+    'refused_bots',
+    'count_stored',
+    'stored_zero_state',
+)
+
+
+def _review_at(bot_kind, review_id, commit_id, *, created_at):
+    """A ``review_body`` of ``bot_kind`` submitted against ``commit_id``.
+
+    The body carries the bot's declared content marker for the shape where it
+    declares one, so the comment is admissible evidence for every bot in the
+    population. ``commit_id=None`` builds the record without the key at all.
+    """
+    marker = bot_registry.participation_evidence_marker(bot_kind, _REVIEW_BODY)
+    body = f'{marker}\n{_GUIDE_FINDING_BODY}' if marker else _GUIDE_FINDING_BODY
+    extra = {'created_at': created_at, 'updated_at': created_at}
+    if commit_id is not None:
+        extra['commit_id'] = commit_id
+    return _evidence_comment(bot_kind, _REVIEW_BODY, review_id, body, **extra)
+
+
+def _fetch_reviews(monkeypatch, plan_id, reviews, *, head_sha=_HEAD_B):
+    """One fetch of ``reviews`` at ``head_sha``."""
+    _patch_provider(monkeypatch, reviews, head_sha=head_sha)
+    return _run_fetch(240, plan_id)
+
+
+def test_the_bots_the_disclosure_can_name_are_derived_from_the_registry():
+    """The affected set is read from the registry and printed, never listed here.
+
+    Every member is an append-per-review bot that publishes a ``review_body``; every
+    other registered bot is outside the set for one of those two reasons. The named
+    case this deliverable was written for is a member of the derived set.
+    """
+    print(f'bots the disclosure can name ({len(_DISCLOSABLE_BOTS)}): {", ".join(_DISCLOSABLE_BOTS)}')
+
+    for bot in bot_registry.bot_kinds():
+        per_review = not bot_registry.participation_requires_update(bot)
+        publishes_review_body = _REVIEW_BODY in bot_registry.participation_evidence(bot)
+        assert (bot in _DISCLOSABLE_BOTS) == (per_review and publishes_review_body)
+    assert 'sourcery' in _DISCLOSABLE_BOTS
+
+
+def test_the_contract_says_what_is_disclosed_and_what_is_still_not_tested():
+    """The rewritten section states the disclosure, that it is not enforced, and its limits."""
+    assert '**What is disclosed.**' in _CONTRACT_TEXT
+    assert '**The disclosure is not enforced.**' in _CONTRACT_TEXT
+    assert '**What is still not tested.**' in _CONTRACT_TEXT
+    assert '`reviewed_other_commit_bots[]`' in _CONTRACT_TEXT
+
+
+def test_a_review_body_record_carries_the_commit_the_review_was_submitted_against(monkeypatch):
+    """The provider fetch asks for the review commit and puts it on the record.
+
+    The query text is asserted because a stubbed transport returns the field whatever
+    the query selected. The record half covers the three shapes: a reported commit
+    (lower-cased), a review whose commit the provider reports as null, and a comment
+    kind that has no review commit.
+    """
+    github_ops = github_pr._github
+    for query in (github_ops.REVIEW_THREADS_QUERY, github_ops.REVIEWS_PAGE_QUERY):
+        assert 'commit { oid }' in query
+
+    login = _LOGIN_FOR_KIND[_DISCLOSABLE_BOTS[0]]
+    payload = {
+        'repository': {
+            'pullRequest': {
+                'reviewThreads': {'nodes': []},
+                'reviews': {
+                    'nodes': [
+                        {
+                            'id': 'PRR_at_commit',
+                            'body': 'a review',
+                            'author': {'login': login},
+                            'submittedAt': _at(1),
+                            'commit': {'oid': _HEAD_A.upper()},
+                        },
+                        {
+                            'id': 'PRR_no_commit',
+                            'body': 'another review',
+                            'author': {'login': login},
+                            'submittedAt': _at(2),
+                            'commit': None,
+                        },
+                    ]
+                },
+                'comments': {
+                    'nodes': [{'id': 'IC_note', 'body': 'a note', 'author': {'login': 'alice'}, 'createdAt': _at(3)}]
+                },
+            }
+        }
+    }
+    monkeypatch.setattr(github_ops, 'check_auth', lambda: (True, ''))
+    monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('o', 'r'))
+    monkeypatch.setattr(github_ops, 'run_graphql', lambda query, variables: (0, payload, ''))
+
+    result = github_ops.fetch_pr_comments_data(1)
+
+    assert result['status'] == 'success'
+    assert {comment['id']: comment['commit_id'] for comment in result['comments']} == {
+        'PRR_at_commit': _HEAD_A,
+        'PRR_no_commit': '',
+        'IC_note': '',
+    }
+
+
+@pytest.mark.parametrize('bot_kind', _DISCLOSABLE_BOTS)
+def test_a_review_of_the_previous_head_is_disclosed_and_the_verdict_is_unchanged(bot_kind, plan_context, monkeypatch):
+    """The bot is named, and it is still credited exactly as it was.
+
+    The review was submitted against HEAD_A and the merge candidate is HEAD_B. The
+    bot is named with that review and that commit. Every verdict field equals the
+    one from the matched fetch whose review was submitted against HEAD_B, so the
+    disclosure moved no bot and changed no verdict.
+    """
+    result = _fetch_reviews(
+        monkeypatch,
+        f'gh-pr-other-commit-{bot_kind}',
+        [_review_at(bot_kind, 'review-1', _HEAD_A, created_at=_at(1))],
+    )
+
+    assert result['status'] == 'success'
+    assert result['reviewed_other_commit_bots'] == [
+        {'bot_kind': bot_kind, 'review_id': 'review-1', 'review_commit_sha': _HEAD_A}
+    ]
+    assert result['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': _REVIEW_BODY}]
+    assert result['stale_participation_bots'] == []
+
+    current = _fetch_reviews(
+        monkeypatch,
+        f'gh-pr-other-commit-verdict-{bot_kind}',
+        [_review_at(bot_kind, 'review-1', _HEAD_B, created_at=_at(1))],
+    )
+    for field in _VERDICT_FIELDS:
+        assert result[field] == current[field], field
+
+
+@pytest.mark.parametrize('bot_kind', _DISCLOSABLE_BOTS)
+def test_a_review_of_the_merge_candidate_is_not_disclosed(bot_kind, plan_context, monkeypatch):
+    """⛔ MATCHED CONTROL — same review, same head; only the commit it was submitted against differs."""
+    result = _fetch_reviews(
+        monkeypatch,
+        f'gh-pr-other-commit-control-{bot_kind}',
+        [_review_at(bot_kind, 'review-1', _HEAD_B, created_at=_at(1))],
+    )
+
+    assert result['reviewed_other_commit_bots'] == []
+    assert result['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': _REVIEW_BODY}]
+
+
+@pytest.mark.parametrize('bot_kind', _DISCLOSABLE_BOTS)
+def test_an_older_review_beside_one_of_the_merge_candidate_is_not_disclosed(bot_kind, plan_context, monkeypatch):
+    """A bot is named only when NONE of its reviews covers the merge candidate.
+
+    The older review is listed first, which is the one the bot is credited on. A
+    disclosure keyed on the crediting comment alone would name the bot here.
+    """
+    result = _fetch_reviews(
+        monkeypatch,
+        f'gh-pr-other-commit-both-{bot_kind}',
+        [
+            _review_at(bot_kind, 'review-old', _HEAD_A, created_at=_at(1)),
+            _review_at(bot_kind, 'review-new', _HEAD_B, created_at=_at(9)),
+        ],
+    )
+
+    assert result['reviewed_other_commit_bots'] == []
+
+
+@pytest.mark.parametrize('bot_kind', _DISCLOSABLE_BOTS)
+def test_the_most_recently_written_review_is_the_one_disclosed(bot_kind, plan_context, monkeypatch):
+    """With several reviews of other commits the named one does not depend on list order."""
+    result = _fetch_reviews(
+        monkeypatch,
+        f'gh-pr-other-commit-newest-{bot_kind}',
+        [
+            _review_at(bot_kind, 'review-newer', _HEAD_B, created_at=_at(9)),
+            _review_at(bot_kind, 'review-older', _HEAD_A, created_at=_at(1)),
+        ],
+        head_sha=_HEAD_C,
+    )
+
+    assert result['reviewed_other_commit_bots'] == [
+        {'bot_kind': bot_kind, 'review_id': 'review-newer', 'review_commit_sha': _HEAD_B}
+    ]
+
+
+@pytest.mark.parametrize('bot_kind', _DISCLOSABLE_BOTS)
+@pytest.mark.parametrize('commit_id', [None, ''], ids=['key-absent', 'empty'])
+def test_a_review_whose_commit_was_not_reported_is_not_disclosed(bot_kind, commit_id, plan_context, monkeypatch):
+    """No reported commit is not evidence of another commit. The bot stays credited."""
+    plan_id = f'gh-pr-other-commit-unreported-{bot_kind}-{"absent" if commit_id is None else "empty"}'
+
+    result = _fetch_reviews(monkeypatch, plan_id, [_review_at(bot_kind, 'review-1', commit_id, created_at=_at(1))])
+
+    assert result['reviewed_other_commit_bots'] == []
+    assert result['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': _REVIEW_BODY}]
+
+
+@pytest.mark.parametrize('bot_kind', _DISCLOSABLE_BOTS)
+def test_nothing_is_disclosed_when_the_merge_candidate_cannot_be_read(bot_kind, plan_context, monkeypatch):
+    """With no merge candidate there is nothing to place the review against.
+
+    The empty list here is not a statement that the review is current, which is why
+    the result also says the head was not read.
+    """
+    result = _fetch_reviews(
+        monkeypatch,
+        f'gh-pr-other-commit-head-unread-{bot_kind}',
+        [_review_at(bot_kind, 'review-1', _HEAD_A, created_at=_at(1))],
+        head_sha='',
+    )
+
+    assert result['merge_candidate_sha_resolved'] is False
+    assert result['reviewed_other_commit_bots'] == []
+
+
+@pytest.mark.parametrize('bot_kind', _DISCLOSABLE_BOTS)
+def test_the_disclosure_leaves_out_a_bot_that_edits_one_review_in_place(bot_kind, monkeypatch):
+    """Same review, same credited bot; only the registry flag differs.
+
+    The exclusion rests on an assumption that was not observed: that an in-place
+    re-reviewer's review keeps the commit it was first submitted against however
+    often it is edited, so naming it would misreport a re-review. Its currency is
+    decided by the currency test instead. This case pins the exclusion, not the
+    assumption behind it.
+    """
+    review = _review_at(bot_kind, 'review-1', _HEAD_A, created_at=_at(1))
+    named = [{'bot_kind': bot_kind, 'review_id': 'review-1', 'review_commit_sha': _HEAD_A}]
+
+    assert github_pr._reviews_at_another_commit([review], [bot_kind], _HEAD_B) == named
+    # A bot that is not credited is never named, whatever its reviews say.
+    assert github_pr._reviews_at_another_commit([review], [], _HEAD_B) == []
+
+    monkeypatch.setattr(github_pr.bot_registry, 'participation_requires_update', lambda _bot: True)
+
+    assert github_pr._reviews_at_another_commit([review], [bot_kind], _HEAD_B) == []
+
+
+@pytest.mark.parametrize(
+    'malformed',
+    ['9999-not-a-timestamp', '2999-01-01T00:00:00+02:00', '2999-01-01T00:00:00.000Z', '2999-01-01'],
+    ids=['free-text', 'utc-offset', 'fractional-seconds', 'bare-date'],
+)
+def test_a_malformed_timestamp_does_not_displace_the_newest_well_formed_review(malformed):
+    """Only an ISO-UTC timestamp takes part in picking the most recently written review.
+
+    Each malformed value sorts lexicographically ABOVE every well-formed timestamp
+    used here, so a bare string max would name the malformed review. The review with
+    the newest well-formed timestamp is named instead, whichever position the
+    malformed one holds in the list.
+    """
+    bot_kind = _DISCLOSABLE_BOTS[0]
+    assert malformed > _at(9), 'the malformed value must outrank the well-formed one as a string'
+    assert not github_pr._ISO_UTC_TIMESTAMP.match(malformed)
+    older = _review_at(bot_kind, 'review-older', _HEAD_A, created_at=_at(1))
+    newest = _review_at(bot_kind, 'review-newest', _HEAD_B, created_at=_at(9))
+    odd = _review_at(bot_kind, 'review-malformed', _HEAD_A, created_at=malformed)
+    named = [{'bot_kind': bot_kind, 'review_id': 'review-newest', 'review_commit_sha': _HEAD_B}]
+
+    assert github_pr._reviews_at_another_commit([odd, older, newest], [bot_kind], _HEAD_C) == named
+    assert github_pr._reviews_at_another_commit([older, newest, odd], [bot_kind], _HEAD_C) == named
+
+
+def test_a_well_formed_newer_timestamp_does_displace_an_older_review():
+    """⛔ MATCHED CONTROL — the same three reviews with the odd one well-formed and newest.
+
+    The review the malformed case leaves out is named here, so that case passes
+    because of the timestamp's shape and not because the review can never be named.
+    """
+    bot_kind = _DISCLOSABLE_BOTS[0]
+    older = _review_at(bot_kind, 'review-older', _HEAD_A, created_at=_at(1))
+    newest = _review_at(bot_kind, 'review-newest', _HEAD_B, created_at=_at(5))
+    later = _review_at(bot_kind, 'review-malformed', _HEAD_A, created_at=_at(9))
+
+    assert github_pr._reviews_at_another_commit([later, older, newest], [bot_kind], _HEAD_C) == [
+        {'bot_kind': bot_kind, 'review_id': 'review-malformed', 'review_commit_sha': _HEAD_A}
+    ]

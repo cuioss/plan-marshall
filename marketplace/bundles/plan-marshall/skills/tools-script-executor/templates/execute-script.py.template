@@ -49,10 +49,10 @@ Examples:
     python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory --audit-plan-id EXAMPLE-PLAN --include-descriptions
 """
 
-# TEMPLATE_FORMAT_VERSION: 4
+# TEMPLATE_FORMAT_VERSION: 5
 # Deterministic decoupling contract between this template's placeholder shapes
-# (the double-brace-wrapped `SHARED_MODULE_DIRS`, `CACHE_RECOVERY_ROOTS`,
-# `SCRIPT_MAPPINGS` and `SCRIPT_SURFACES` tokens) and
+# (the double-brace-wrapped `SHARED_MODULE_DIRS`, `BOOTSTRAP_BUNDLE`,
+# `CACHE_RECOVERY_ROOTS`, `SCRIPT_MAPPINGS` and `SCRIPT_SURFACES` tokens) and
 # generate_executor.py's substitution logic. The token names are spelled here
 # WITHOUT their surrounding double braces on purpose: a literal double-brace token
 # in this comment would be matched by the global str.replace substitutions in both
@@ -90,17 +90,29 @@ TEMPLATE_SHA256 = '{{TEMPLATE_SHA256}}'
 # Add shared module directories to sys.path so executor-level imports can find them
 # (e.g., plan_logging imports input_validation at module level).
 #
-# Each entry is a (skill, pinned_dir) pair. The version-pinned plugin-cache path
-# baked in at generation time is the FAST PATH; when that directory is absent — its
-# embedded MARSHALL_VERSION cache dir was GC-pruned — the bootstrap re-resolves the
-# skill's scripts dir against the NEWEST surviving version dir under the injected
-# cache-recovery roots (the same numeric-version-tuple max() walk the target-aware
-# resolver uses), so a pruned pinned version can no longer break the executor's own
-# bootstrap imports. Same defect class as the Path(__file__) cache-resolver bugs.
-# Pure stdlib and fully defensive — a resolution failure never raises.
+# Each entry is a (skill, pinned_dir) pair. The path baked in at generation time is
+# the FAST PATH and is used verbatim while it exists. When that directory is absent
+# — a GC-pruned plugin-cache version, or a checkout that has since been removed —
+# the bootstrap recovers in two steps, in this order:
+#
+#   1. the skill's scripts dir under the injected deployed-bundle cache roots: the
+#      NEWEST surviving version in a nested, versioned plugin cache (the same
+#      numeric-version-tuple max() the target-aware resolver uses), else the
+#      flat, unversioned ``{bundle}-{skill}`` copy in a flat target's skill root;
+#   2. the skill's scripts dir in the marketplace/bundles tree of the checkout this
+#      executor file sits in.
+#
+# Both steps are pure stdlib and never raise. A directory neither step finds is
+# recorded in _BOOTSTRAP_UNRESOLVED, and the bootstrap import block below names it
+# when one of its imports fails.
 _BOOTSTRAP_SKILL_DIRS = [
 {{SHARED_MODULE_DIRS}}
 ]
+
+# The bundle every bootstrap skill belongs to. The recovery needs it to map a skill
+# name back to a directory: the plugin cache and the marketplace tree both file a
+# skill under its bundle, and a pinned path alone does not say which bundle that is.
+_BOOTSTRAP_BUNDLE = '{{BOOTSTRAP_BUNDLE}}'
 
 # The deployed-bundle cache roots the bootstrap re-resolves against when a
 # baked-in version-pinned bin dir was GC-pruned. Resolved at generation time
@@ -109,9 +121,11 @@ _BOOTSTRAP_SKILL_DIRS = [
 # injected per target: the executor cannot import the shared resolver before
 # its own bootstrap has placed the shared modules on sys.path, so the recovery
 # roots travel with the generated file instead of being re-resolved at import.
-# A target without a versioned plugin cache (OpenCode) contributes no plumbable
-# root — the tuple is empty and the recovery finds nothing, which is the
-# honest shape for a target whose deployed skills are resolved directly.
+# Every target contributes its root here, and the roots do not share one layout:
+# Claude contributes its versioned plugin cache (the NESTED layout), while the
+# flat targets (OpenCode, Antigravity) contribute their user-global skill root
+# (the FLAT layout, unversioned). _newest_cache_scripts_dir probes both. The
+# tuple is empty only when the target resolves no root at all.
 _CACHE_RECOVERY_ROOTS = (
 {{CACHE_RECOVERY_ROOTS}}
 )
@@ -121,14 +135,24 @@ _BOOTSTRAP_LOGGING_DIR = ('manage-logging', '{{LOGGING_DIR}}')
 
 
 def _newest_cache_scripts_dir(skill: str) -> str | None:
-    """Re-resolve ``{skill}/scripts`` against the newest surviving plugin-cache version dir.
+    """Re-resolve ``{skill}/scripts`` against the injected deployed-bundle cache roots.
 
-    Fires only when a baked-in version-pinned bootstrap dir is absent (its embedded
-    MARSHALL_VERSION cache path was GC-pruned). Walks each injected cache root's
-    ``*/skills/{skill}/scripts`` in root order — the first root that carries the skill
-    wins — collecting every version dir, and returns the NEWEST by numeric version-tuple,
-    the same newest-only selection the target-aware resolver uses. Pure stdlib and
-    defensive: any failure (including a missing HOME) returns ``None`` rather than raising.
+    Fires only when a baked-in bootstrap dir is absent. Two deployed layouts are
+    probed, and the nested one is tried across EVERY root before the flat one:
+
+    1. **Nested, versioned** — the Claude plugin cache,
+       ``{cache_root}/{bundle}/{version}/skills/{skill}/scripts``. Under each root,
+       the bootstrap bundle's directory, then every version dir inside it. Roots are
+       tried in order and the first one that carries the skill wins; within it the
+       NEWEST version by numeric version-tuple is returned, the same newest-only
+       selection the target-aware resolver uses.
+    2. **Flat, unversioned** — the OpenCode and Antigravity skill roots,
+       ``{skill_root}/{bundle}-{skill}/scripts``. A root may BE the skill root, or
+       CONTAIN it as ``skills/`` or ``skill/``; the three forms are probed in that
+       order, root by root, and the first existing directory wins.
+
+    Pure stdlib and defensive: any failure (including a missing HOME) returns
+    ``None`` rather than raising.
     """
     import re as _re
 
@@ -137,11 +161,11 @@ def _newest_cache_scripts_dir(skill: str) -> str | None:
 
     try:
         for root in _CACHE_RECOVERY_ROOTS:
-            cache_root = Path(root).expanduser()
-            if not cache_root.is_dir():
+            bundle_dir = Path(root).expanduser() / _BOOTSTRAP_BUNDLE
+            if not bundle_dir.is_dir():
                 continue
             candidates = []
-            for version_dir in cache_root.iterdir():
+            for version_dir in bundle_dir.iterdir():
                 if not version_dir.is_dir() or version_dir.name.startswith('.'):
                     continue
                 scripts_dir = version_dir / 'skills' / skill / 'scripts'
@@ -150,25 +174,95 @@ def _newest_cache_scripts_dir(skill: str) -> str | None:
             if candidates:
                 _name, newest = max(candidates, key=lambda pair: _vkey(pair[0]))
                 return str(newest.resolve())
+        # The flat probe mirrors script-shared's deployed_layout: the
+        # ``{bundle}-{skill}`` join (flat_skill_dir_name, FLAT_DIR_SEPARATOR) and the
+        # skill-root names in SKILL_ROOT_NAMES order, plural ``skills`` before
+        # singular ``skill`` (skill_roots). It is spelled inline because this
+        # bootstrap runs before script-shared is on sys.path, so deployed_layout
+        # cannot be imported here.
+        flat_skill_dir = f'{_BOOTSTRAP_BUNDLE}-{skill}'
+        for root in _CACHE_RECOVERY_ROOTS:
+            base = Path(root).expanduser()
+            for skill_root in (base, base / 'skills', base / 'skill'):
+                scripts_dir = skill_root / flat_skill_dir / 'scripts'
+                if scripts_dir.is_dir():
+                    return str(scripts_dir.resolve())
     except (OSError, ValueError, RuntimeError):
         pass
     return None
 
 
-def _bootstrap_sys_path_insert(skill: str, pinned_dir: str) -> None:
-    """Insert ``pinned_dir`` on ``sys.path`` (fast path); self-heal to the newest cache dir when pruned.
+def _checkout_source_scripts_dir(skill: str) -> str | None:
+    """Find ``{skill}/scripts`` in the marketplace tree of the checkout this file sits in.
 
-    The version-pinned dir is used verbatim when it still exists on disk — the common,
-    byte-stable case. When it is absent (GC-pruned), :func:`_newest_cache_scripts_dir`
-    re-resolves the newest surviving cache version dir for ``skill`` and inserts that
-    instead. Defensive: a missing pinned dir with no surviving cache dir inserts nothing.
+    The second recovery step, tried only after the plugin cache yielded nothing. An
+    executor lives at ``<checkout>/.plan/execute-script.py``, so its checkout is the
+    directory two levels up, and the directory looked for is that checkout's
+    ``marketplace/bundles/{bundle}/skills/{skill}/scripts``.
+
+    Only that one checkout is consulted. A worktree sits below the main checkout's
+    ``.plan/local/worktrees/``, so walking further up from a worktree's executor would
+    reach the main checkout's sources and run one checkout's executor on another's
+    modules. Pure stdlib and defensive: any failure returns ``None``.
+    """
+    try:
+        checkout = Path(__file__).resolve().parent.parent
+        candidate = checkout / 'marketplace' / 'bundles' / _BOOTSTRAP_BUNDLE / 'skills' / skill / 'scripts'
+        if candidate.is_dir():
+            return str(candidate.resolve())
+    except (OSError, ValueError, NameError, RuntimeError):
+        pass
+    return None
+
+
+# Every bootstrap directory neither the fast path nor a recovery step could supply,
+# as (skill, pinned_dir) pairs. Read by the handler of the bootstrap import block below.
+_BOOTSTRAP_UNRESOLVED: list[tuple[str, str]] = []
+
+
+def _bootstrap_sys_path_insert(skill: str, pinned_dir: str) -> None:
+    """Insert ``pinned_dir`` on ``sys.path`` (fast path), or the directory a recovery step finds.
+
+    The pinned dir is used verbatim when it still exists on disk — the common,
+    byte-stable case, which runs no recovery at all. When it is absent the plugin cache
+    is tried first (:func:`_newest_cache_scripts_dir`), then the checkout's own sources
+    (:func:`_checkout_source_scripts_dir`). When neither finds the directory, nothing is
+    inserted and the pair is recorded in ``_BOOTSTRAP_UNRESOLVED``.
     """
     if pinned_dir and Path(pinned_dir).is_dir():
         sys.path.insert(0, pinned_dir)
         return
-    healed = _newest_cache_scripts_dir(skill)
-    if healed:
-        sys.path.insert(0, healed)
+    recovered = _newest_cache_scripts_dir(skill) or _checkout_source_scripts_dir(skill)
+    if recovered:
+        sys.path.insert(0, recovered)
+    else:
+        _BOOTSTRAP_UNRESOLVED.append((skill, pinned_dir))
+
+
+def _exit_on_unresolved_bootstrap(error: ImportError) -> None:
+    """Stop with one message when a bootstrap import failed and a directory is unresolved.
+
+    Called from the handler of the bootstrap import block below, with the
+    ``ImportError`` one of those imports raised. Returns without doing anything when
+    every bootstrap directory resolved: the failure then has another cause, and the
+    caller re-raises it unchanged. Otherwise the unresolved directory is the cause: one
+    message names every such directory and the command that regenerates this executor,
+    and the process exits non-zero with no traceback.
+    """
+    if not _BOOTSTRAP_UNRESOLVED:
+        return
+    missing = '; '.join(
+        f'{pinned_dir or "(no directory recorded)"} (skill {skill})' for skill, pinned_dir in _BOOTSTRAP_UNRESOLVED
+    )
+    print(
+        f'execute-script.py cannot start: {error}. Missing script directory: {missing}. '
+        f'No copy was found in the plugin cache or in the marketplace/bundles tree of this checkout. '
+        f'Regenerate the executor with /marshall-steward, or from a checkout that carries the sources with: '
+        f'python3 marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py '
+        f'bootstrap --marketplace --marketplace-root .',
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
 
 # Fast path first (shared dirs in emission order), then the logging dir LAST so it lands
@@ -177,35 +271,44 @@ for _bootstrap_skill, _bootstrap_dir in _BOOTSTRAP_SKILL_DIRS:
     _bootstrap_sys_path_insert(_bootstrap_skill, _bootstrap_dir)
 _bootstrap_sys_path_insert(*_BOOTSTRAP_LOGGING_DIR)
 
-# Import plan logging module from marketplace (named plan_logging to avoid conflict with stdlib)
-from plan_logging import (  # type: ignore[import-not-found]
-    cleanup_old_script_logs,
-    extract_plan_id,
-    get_log_path,
-    log_entry,
-    log_script_execution,
-)
+# The bootstrap imports: every module this executor takes from a bootstrap directory.
+# The block is the import guard. An import placed inside it is covered by the
+# unresolved-directory message; there is no second list of module names to keep in
+# step. An import that succeeds costs nothing extra, and an ImportError raised while
+# every directory resolved propagates unchanged.
+try:
+    # Import plan logging module from marketplace (named plan_logging to avoid conflict with stdlib)
+    from plan_logging import (  # type: ignore[import-not-found]
+        cleanup_old_script_logs,
+        extract_plan_id,
+        get_log_path,
+        log_entry,
+        log_script_execution,
+    )
 
-# Import the shared TOON parser so the dispatch-failure boundary can surface a
-# script's stdout-reported `status: error` message in work.log. The
-# ref-toon-format/scripts directory is placed on sys.path by the shared-module
-# block injected above.
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+    # Import the shared TOON parser so the dispatch-failure boundary can surface a
+    # script's stdout-reported `status: error` message in work.log. The
+    # ref-toon-format/scripts directory is placed on sys.path by the shared-module
+    # block injected above.
+    from toon_parser import parse_toon  # type: ignore[import-not-found]
 
-# Import the change-ledger primitives the build-class dispatch boundary needs to
-# append a `kind=build` entry after every build-class invocation. The shared
-# helper `compute_worktree_sha` lives once in script-shared; the ledger core
-# (`build_record` constructor + `append_entry` writer) lives in
-# manage-change-ledger. Both directories are placed on sys.path by the
-# shared-module block injected above — the writer re-uses these primitives
-# rather than re-implementing the hash or the append.
-from _ledger_core import (  # type: ignore[import-not-found]
-    WRAPPER_CLAIMABLE_BUILD_STATUSES,
-    append_entry,
-    build_record,
-)
-from marketplace_paths import NO_PLAN_SENTINEL  # type: ignore[import-not-found]
-from worktree_sha import compute_worktree_sha  # type: ignore[import-not-found]
+    # Import the change-ledger primitives the build-class dispatch boundary needs to
+    # append a `kind=build` entry after every build-class invocation. The shared
+    # helper `compute_worktree_sha` lives once in script-shared; the ledger core
+    # (`build_record` constructor + `append_entry` writer) lives in
+    # manage-change-ledger. Both directories are placed on sys.path by the
+    # shared-module block injected above — the writer re-uses these primitives
+    # rather than re-implementing the hash or the append.
+    from _ledger_core import (  # type: ignore[import-not-found]
+        WRAPPER_CLAIMABLE_BUILD_STATUSES,
+        append_entry,
+        build_record,
+    )
+    from marketplace_paths import NO_PLAN_SENTINEL  # type: ignore[import-not-found]
+    from worktree_sha import compute_worktree_sha  # type: ignore[import-not-found]
+except ImportError as _bootstrap_import_error:
+    _exit_on_unresolved_bootstrap(_bootstrap_import_error)
+    raise
 
 # ============================================================================
 # EMBEDDED SCRIPT MAPPINGS (Generated by plan-marshall)
@@ -1537,6 +1640,39 @@ def handle_invalid_notation(notation: str, remaining_args: list[str]) -> None:
     sys.exit(1)
 
 
+def _drop_stray_empty_args(args: list[str]) -> list[str]:
+    """Return ``args`` without the empty strings that are not an option's value.
+
+    One rule decides each empty string: it is KEPT when the argument directly
+    before it is an option token (starts with ``-``), and DROPPED in every other
+    position.
+
+    Kept: ``--values ""`` reaches the script as ``['--values', '']``. The empty
+    string is the value the caller wrote, and an option that requires a value is
+    rejected by argparse (exit 2) when it arrives without one.
+
+    Kept as well, and this is the filter's remaining limit: an empty string
+    after a flag that takes NO value (``verb --force ""``). The executor cannot
+    tell a value-taking option from a value-less flag, so the rule keys on the
+    token's shape alone and the script receives that empty string as a
+    positional.
+
+    Still dropped: an empty string that follows a positional or another value,
+    and an empty string in first position. This is the unset shell variable
+    passed as a bare positional (``verb "$UNSET"``), which a script would
+    otherwise read as a real, empty positional argument. Of two consecutive
+    empty strings after one option, the first is kept as the value and the
+    second is dropped.
+    """
+    kept: list[str] = []
+    previous = ''
+    for arg in args:
+        if arg or previous.startswith('-'):
+            kept.append(arg)
+        previous = arg
+    return kept
+
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: execute-script.py <notation> [subcommand] [args...]", file=sys.stderr)
@@ -1559,8 +1695,9 @@ def main():
     # Extract --audit-plan-id (audit logging only, stripped before passing to script)
     audit_plan_id, script_args = extract_audit_plan_id(remaining_args)
 
-    # Strip empty string args (defensive: agents may pass empty args from shell variable expansion)
-    script_args = [a for a in script_args if a]
+    # Drop an empty-string argument unless it is the value of the option before it
+    # (see _drop_stray_empty_args for the rule and what is still dropped).
+    script_args = _drop_stray_empty_args(script_args)
 
     # Subcommand is first arg after stripping audit-plan-id
     subcommand = script_args[0] if script_args else ''

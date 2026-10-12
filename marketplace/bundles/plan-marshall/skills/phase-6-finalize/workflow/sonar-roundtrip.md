@@ -205,7 +205,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --head-at-completion {sha}
 ```
 
-There is no `loop_back` branch — this FIND-only step never emits a loop-back outcome. A unified-triage FIX disposition advances HEAD via its own fix commit; the dispatcher's HEAD-dependent resumability check (below) then re-fires this FIND step against the new tree as a fresh dispatch, so no `--outcome loop_back` record is written here.
+There is no `loop_back` branch — this FIND-only step never emits a loop-back outcome. A fix the unified triage decides advances HEAD when it is committed — by phase-5-execute for a fix task, by the dispatcher's item 7c hook for an inline edit — and the triage itself commits nothing; the dispatcher's HEAD-dependent resumability check (below) then re-fires this FIND step against the new tree as a fresh dispatch, so no `--outcome loop_back` record is written here.
 
 Note: there is no "config disabled" branch — when the manifest excludes `sonar-roundtrip`, the dispatcher does not run this document at all, so no step record is written.
 

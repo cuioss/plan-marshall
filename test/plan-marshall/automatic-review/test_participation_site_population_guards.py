@@ -264,7 +264,7 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
     ),
     f'{_SKILLS}/workflow-integration-github/scripts/github_pr.py': SiteExpectation(
         'currency_ledger',
-        'commit_sha',
+        'both',
         'yes',
         'The producer. Evaluates the currency test for a participation_requires_update bot '
         'against the merge-candidate SHA, reading the durable currency ledger it writes on '
@@ -272,7 +272,11 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
         'participated_bots[], a test failed against an earlier commit in '
         'stale_participation_bots[], and one failed because the merge candidate itself '
         'could not be read in undecidable_participation_bots[] (with the read disclosed '
-        'as merge_candidate_sha_resolved).',
+        'as merge_candidate_sha_resolved). One further arm is TIMESTAMP-anchored: a bot left '
+        'stale is credited when its own no-unreviewed-commit reply is strictly newer than the '
+        'merge-candidate commit, disclosed in reply_covered_participation_bots[]. That arm '
+        'writes no ledger row and is a pure comparison over the fetched comments, so the '
+        'verdict stays idempotent.',
     ),
     f'{_SKILLS}/workflow-integration-github/scripts/github_re_review.py': SiteExpectation(
         'live_comment_scan',

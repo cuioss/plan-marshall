@@ -29,14 +29,18 @@ entry in serialized arrival order — list position, not admit-``ts``, see
 ``_fifo_front``); when eligible it attempts the existing ``O_EXCL`` create and on success returns
 ``admission: admitted``. A non-front plan, or a front plan that loses the
 ``O_EXCL`` create, returns ``admission: blocked`` — a structured re-poll signal,
-NOT an error and NOT an internal wait. Re-polling is the CONSUMER's job (the
-Pre-Merge Gate's poll/backoff loop, bounded by ``merge_queue_wait_budget_seconds``);
-this script no longer sleeps internally for the queue case. The ``O_EXCL`` mutex
-stays the final ``k=1`` grant — the FIFO layer decides WHO may attempt it, the
-kernel race decides the single winner.
+NOT an error. By default ``acquire`` is a single non-waiting attempt and re-polling
+is the CONSUMER's job (the Pre-Merge Gate's admission loops, bounded by
+``merge_queue_wait_budget_seconds``). ``acquire --wait-seconds S`` moves that
+re-poll into one bounded call: it repeats the WHOLE non-waiting attempt — FIFO
+enqueue, front check and ``O_EXCL`` create, each re-decided on a fresh guarded
+read — and paces BETWEEN attempts, never inside the ``rmw_json`` guard, so no guard
+is held while it waits. The consumer re-issues the call until admitted or its
+budget is spent. The ``O_EXCL`` mutex stays the final ``k=1`` grant — the FIFO
+layer decides WHO may attempt it, the kernel race decides the single winner.
 
-It exposes seven actions — the three merge-mutex actions, the budget-aware
-``budget-reclaim`` recovery verb, the read-only
+It exposes eight actions — the three merge-mutex actions, the dequeue-only
+``dequeue`` cleanup, the budget-aware ``budget-reclaim`` recovery verb, the read-only
 ``queue-list`` inspection of the FIFO queue, the ``rate-window`` claim that
 co-tenants the same store, and the storeless ``poll-delay`` computation:
 
@@ -57,8 +61,10 @@ co-tenants the same store, and the storeless ``poll-delay`` computation:
     A non-front plan, or a front plan that loses the ``O_EXCL`` race against a
     FOREIGN live holder, returns ``status: blocked`` with ``admission: blocked``
     (carrying ``blocked_reason`` + ``blocking_plan_id`` + ``waiting_count``) — NOT a
-    hard error — so the consumer's poll/backoff loop re-polls (preserving FIFO
-    position) until admitted or its budget is exhausted, then the Pre-Merge Gate's
+    hard error — so the consumer re-polls (preserving FIFO position), by re-issuing
+    ``acquire --wait-seconds`` (which repeats whole non-waiting attempts within a
+    bounded call and adds ``waited_seconds`` + ``timed_out``), until admitted or its
+    budget is exhausted, then the Pre-Merge Gate's
     ``AskUserQuestion`` last-resort escape hatch fires. ``blocked_reason`` (one of
     :data:`BLOCKED_REASONS`) is what separates the two causes the single ``blocked``
     label used to collapse: only the lock-contended one has a blocking plan to name,
@@ -88,6 +94,14 @@ co-tenants the same store, and the storeless ``poll-delay`` computation:
     a blind unlink) and REFUSING (``status: refused``,
     ``reason: holder_not_provably_dead``) on a ``fresh`` or ``unknown`` verdict, so
     a holder live in a sibling worktree is never force-released.
+  * ``dequeue`` — remove ``--plan-id`` from ``merge-queue.json`` and nothing else:
+    it never reads, creates, or removes ``merge.lock`` and never touches the
+    ``rate_windows`` key. It is the cleanup for an acquire that took no lock. A
+    ``release`` there would be wrong: it unlinks ``merge.lock`` whenever the
+    recorded holder equals ``--plan-id``, so a concurrent call for the SAME plan
+    admitted after the refused attempt would lose its live lock. Returns
+    ``action: dequeued`` when an entry was removed, ``action: noop`` when none was
+    queued.
   * ``budget-reclaim`` — the waiter-side reclaim for the orchestrator-layer
     ``merge_hold_budget_seconds`` bound: given the recorded ``--hold-start``
     instant and ``--hold-budget-seconds``, a hold still blocked at/past budget
@@ -95,7 +109,7 @@ co-tenants the same store, and the storeless ``poll-delay`` computation:
     eviction arbitration (and dequeues it from the FIFO front); a ``fresh`` or
     ``unknown`` holder is refused, and a hold inside budget reports
     ``not_due``. A live-but-slow holder is never force-released here.
-  * ``rate-window {claim,check,release}`` — the cross-plan claim on ONE review
+  * ``rate-window {claim,check,wait,release}`` — the cross-plan claim on ONE review
     bot's rate window, used by the automatic-review recovery sequence to stop two
     concurrently-finalizing plans from both re-triggering a rate-limited bot. State
     lives under a ``rate_windows`` top-level key inside the SAME main-anchored
@@ -105,22 +119,38 @@ co-tenants the same store, and the storeless ``poll-delay`` computation:
     ``--attempt-cap``, defaulting to :data:`_DEFAULT_RECOVERY_ATTEMPT_CAP` — of
     recovery events per bot per PR, returning an explicit ``exhausted`` verdict on
     the attempt past the cap; ``check`` is a pure read that reports the SAME per-PR
-    budget ``claim`` would apply; ``release`` drops the holder while RETAINING the
-    attempt counter so the cap survives the release between attempts.
-  * ``poll-delay`` — a bounded jittered delay, in seconds, for a caller about to
-    wake from an elapsed rate window. It COMPUTES and RETURNS the number; it never
-    sleeps. See "``poll-delay`` computes, the caller waits" below.
+    budget ``claim`` would apply; ``wait`` is the bounded read-only poll of that
+    same read, returning once the window plus a wake margin has elapsed — the margin
+    defaults to :data:`_RATE_WINDOW_WAKE_MARGIN_SECONDS` and ``--grace-seconds``
+    replaces it — or its per-call bound lapses; ``release`` drops the holder while
+    RETAINING the attempt counter so the cap survives the release between attempts.
+  * ``poll-delay`` — a bounded random delay, in seconds. It COMPUTES and RETURNS
+    the number; it never sleeps. See "No mutating verb sleeps" below.
 
-**``poll-delay`` computes, the caller waits.** This module has no ``time.sleep``
-and must keep none. ``_claim_rate_window`` / ``_release_rate_window`` are
-non-waiting by design — an atomic claim or release, with the caller re-polling —
-so a wait embedded here would hold a process open inside a primitive every
-concurrently-finalizing plan contends on. ``poll-delay`` keeps that split: the
-jitter COMPUTATION is the script seam, and the WAIT stays at the workflow layer
-where it already lives (``automatic-review``'s paced, tool-call-driven poll loop).
-It also touches NO state — no ``--plan-id``, no store read, and no write to
-``merge.lock``, ``merge-queue.json``, or the ``rate_windows`` key — so it is a pure
-function behind a CLI, safe to call from anywhere without contending for anything.
+**No verb sleeps inside a critical section — two verbs wait, both between whole
+operations.** Nothing in this module sleeps while holding the guard, and no store
+mutation embeds a wait. ``_claim_rate_window`` / ``_release_rate_window`` and the
+single ``acquire`` attempt are non-waiting by design — an atomic claim, release or
+admission attempt — because a wait embedded in one would hold a process open
+inside a critical section every concurrently-finalizing plan contends on. Two verbs
+wait, and both wait only BETWEEN complete operations. ``acquire --wait-seconds``
+paces between whole non-waiting attempts: each attempt runs its own guarded
+read-modify-write to completion and releases the guard before the pause, and the
+next attempt re-decides admission from a fresh read rather than acting on what the
+previous one saw. ``rate-window wait`` is outside the rule's reach by construction:
+it is a read-only poll over the non-mutating
+:func:`_read_store`, it takes no guard between reads, and it writes nothing —
+neither the ``rate_windows`` key nor a ``[LOCK]`` event. Its return is a wake
+signal and decides nothing: whoever acts on an elapsed window re-reads the claim
+and goes through the guarded read-modify-write core, so the decision is made on a
+fresh read under the guard, never on this verb's answer (the check-then-act menu
+is ``ref-code-quality/standards/code-organization.md#toctou--check-then-act-hazards``).
+``check`` and ``poll-delay`` stay single calls that return at once. ``poll-delay``
+is a COMPUTATION only; ``--grace-seconds`` of ``rate-window wait`` is where a
+caller would pass its number. ``poll-delay`` also touches NO state — no
+``--plan-id``, no store read, and no write to ``merge.lock``, ``merge-queue.json``,
+or the ``rate_windows`` key — so it is a pure function behind a CLI, safe to call
+from anywhere without contending for anything.
 
 **The rate window shares the STORE, never the MUTEX.** The rate-window actions
 read and write only the ``rate_windows`` key. They never create, read, reclaim, or
@@ -304,11 +334,6 @@ from triage_helpers import (
 
 logger = logging.getLogger(__name__)
 
-# Backoff parameter retained for the reentrant/timeout legacy semantics of the
-# acquire CLI surface. The queue case no longer waits internally — re-polling is
-# the consumer's job — but `--timeout` is kept (default 0 = non-blocking try) so
-# existing call sites and the `--timeout 0` non-blocking contract are unbroken.
-_DEFAULT_TIMEOUT_SECONDS = 0.0
 _LOCK_FILENAME = 'merge.lock'
 _QUEUE_FILENAME = 'merge-queue.json'
 
@@ -337,17 +362,37 @@ _DEFAULT_WINDOW_SECONDS = 3600.0
 # The range is CORROBORATED, not invented: `.claude/skills/cloud-plan-lane/SKILL.md`
 # § "A `Reopens? yes` refusal is RETRIED, not recorded" instructs a cloud-lane run to
 # "wait the window the notice states, then add jitter — a random 5-20 minutes on top".
-# Matching it keeps one jitter magnitude across both lanes, which is what makes the
-# two decorrelate against EACH OTHER rather than merely each against itself.
-#
-# ⛔ The RANGE transfers; the cloud lane's RATIONALE does not. That lane argues from a
-# shared per-developer allowance several parallel plans draw on, which makes its jitter
-# a thundering-herd remedy. In THIS lane the rate-window claim already serialises every
-# in-repo claimant by construction, so no in-repo herd exists to break up. What survives
-# is stated at the call site — see `automatic-review/standards/coderabbit.md`
-# § "Rate-limit class".
+# Matching it keeps one jitter magnitude across both lanes.
 _DEFAULT_POLL_DELAY_MIN_SECONDS = 300.0
 _DEFAULT_POLL_DELAY_MAX_SECONDS = 1200.0
+
+# Seconds between two reads of the claim under `rate-window wait` when the caller
+# named no interval of its own. The observable is one local file, so the interval
+# only bounds how late a foreign release or re-claim is noticed.
+_DEFAULT_RATE_WINDOW_WAIT_INTERVAL_SECONDS = 15.0
+
+# The longest a single `rate-window wait` call holds its wait, whatever the caller
+# asked for. The call is issued through a host tool call whose ceiling this verb
+# does not control (600 s on the reference target), so the internal deadline sits
+# a margin below it and the verb — not the caller — owns that margin. A rate window
+# runs to an hour, so the caller re-issues the call until the wake is reached
+# (`plan-marshall/standards/waiting.md` § "The inner ceiling must margin-clear the
+# outer one"). The value matches `bot_completion --wait-seconds`, so a caller of
+# either bounded wait reasons about one per-call magnitude.
+_RATE_WINDOW_WAIT_CEILING_SECONDS = 480.0
+
+# The longest a single `acquire --wait-seconds` call holds its wait, whatever the
+# caller asked for. Same reasoning and same magnitude as
+# `_RATE_WINDOW_WAIT_CEILING_SECONDS`: the call is issued through a host tool call
+# whose ceiling this verb does not control, so the internal deadline sits a margin
+# below it, and a caller holding a longer admission budget re-issues the call.
+_ACQUIRE_WAIT_CEILING_SECONDS = 480.0
+
+# Seconds between two whole acquire attempts under `acquire --wait-seconds` when the
+# caller named no interval of its own. Each attempt is a guarded read-modify-write
+# of the shared store, so the interval bounds both how late a release is noticed
+# and how often a waiting plan contends for the guard.
+_DEFAULT_ACQUIRE_WAIT_INTERVAL_SECONDS = 15.0
 
 # Title-token state names persisted via manage-status (the bare state string;
 # manage-terminal-title owns the state → glyph rendering).
@@ -535,17 +580,34 @@ def _dequeue_fifo(plan_id: str) -> int:
     into the state it was handed rather than replacing it, so the co-tenant
     ``rate_windows`` key survives a merge release.
     """
+    waiting_count, _removed = _dequeue_fifo_reporting(plan_id)
+    return waiting_count
+
+
+def _dequeue_fifo_reporting(plan_id: str) -> tuple[int, bool]:
+    """:func:`_dequeue_fifo` that also reports whether an entry was removed.
+
+    Returns ``(waiting_count, removed)``: the post-removal ``waiting`` depth and
+    ``True`` when the guarded read-modify-write found and dropped an entry for
+    ``plan_id``. ``removed`` is decided inside the same :func:`_locks_core.rmw_json`
+    critical section as the removal, so it describes exactly the state the
+    mutation acted on. An entry the dead-waiter prune dropped in the same pass
+    counts as not removed — it was not this plan's live slot.
+    """
     queue_path = _resolve_merge_queue_path()
     waiting_count = 0
+    removed = False
 
     def _mutate(state: dict[str, Any]) -> dict[str, Any]:
-        nonlocal waiting_count
-        waiting = [e for e in _prune_dead_waiting(_queue_waiting(state)) if e['plan_id'] != plan_id]
+        nonlocal waiting_count, removed
+        pruned = _prune_dead_waiting(_queue_waiting(state))
+        waiting = [e for e in pruned if e['plan_id'] != plan_id]
+        removed = len(waiting) != len(pruned)
         waiting_count = len(waiting)
         return {**state, 'waiting': waiting}
 
     rmw_json(queue_path, _mutate)
-    return waiting_count
+    return waiting_count, removed
 
 
 # ---------------------------------------------------------------------------
@@ -1326,42 +1388,102 @@ def _blocked_result(
 # ---------------------------------------------------------------------------
 
 
-def run_acquire(args: Namespace) -> dict[str, Any]:
+def run_acquire(
+    args: Namespace,
+    *,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> dict[str, Any]:
     """Acquire the main-anchored merge lock for ``--plan-id`` via the FIFO queue.
 
-    FIFO-enqueues ``--plan-id`` into ``merge-queue.json`` (idempotently, preserving
-    FIFO position on re-poll), then — only when this plan is the FIFO front —
-    attempts the atomic ``O_EXCL`` create on ``merge.lock``. On a successful create
-    (or stale-reclaim of a dead holder) returns ``status: success`` with
-    ``admission: admitted``. A non-front plan, or a front plan that loses the
-    ``O_EXCL`` race against a FOREIGN live holder, returns ``status: blocked`` with
-    ``admission: blocked`` (carrying ``blocking_plan_id`` + ``waiting_count``) — a
-    structured re-poll signal, NOT a hard error and NOT an internal wait; the
-    consumer re-polls until admitted or its budget is exhausted. A resolution
-    failure stays ``status: error``.
+    Each attempt FIFO-enqueues ``--plan-id`` into ``merge-queue.json``
+    (idempotently, preserving FIFO position on re-poll), then — only when this plan
+    is the FIFO front — attempts the atomic ``O_EXCL`` create on ``merge.lock`` (see
+    :func:`_attempt_acquire`). On a successful create (or stale-reclaim of a dead
+    holder) the attempt returns ``status: success`` with ``admission: admitted``. A
+    non-front plan, or a front plan that loses the ``O_EXCL`` race against a FOREIGN
+    live holder, gets ``status: blocked`` with ``admission: blocked`` (carrying
+    ``blocking_plan_id`` + ``waiting_count``) — a structured re-poll signal, NOT a
+    hard error. A resolution failure stays ``status: error``.
+
+    **Non-waiting by default; bounded waiting with ``--wait-seconds``.** With the
+    default ``--wait-seconds 0`` this is ONE non-waiting attempt, and a blocked
+    result returns at once for the consumer to re-poll. With ``--wait-seconds S``
+    (``S > 0``) the whole attempt is repeated, paced by ``--interval-seconds``,
+    until it is admitted, it errors, or the per-call bound ``min(S,
+    _ACQUIRE_WAIT_CEILING_SECONDS)`` lapses. Every attempt re-decides admission from
+    a fresh guarded read-modify-write — nothing is carried over from a previous
+    attempt — and the pause runs only after an attempt has released the guard, so
+    the wait never holds the store's critical section. The payload is the last
+    attempt's, plus ``waited_seconds`` (whole seconds this call spent) and
+    ``timed_out`` (``True`` when the bound lapsed while the plan was still blocked).
+    A caller holding a longer admission budget re-issues the call. Non-finite or
+    negative ``--wait-seconds`` and a non-positive or non-finite
+    ``--interval-seconds`` are refused before the store is touched.
 
     **Reentrant per plan_id.** When the existing lock is already held by the SAME
-    ``plan_id``, this acquire is reentrant: it returns ``status: success`` with
-    ``action: already_held`` and ``admission: admitted`` immediately — no second
-    ``O_EXCL`` create, no staleness evaluation. This is the self-holder
-    short-circuit that lets the finalize auto-merge path re-enter the merge lock
-    keyed by the same plan_id (``branch-cleanup`` acquires it, then
+    ``plan_id``, this acquire is reentrant: the first attempt returns
+    ``status: success`` with ``action: already_held`` and ``admission: admitted`` —
+    no wait, no second ``O_EXCL`` create, no staleness evaluation. This is the
+    self-holder short-circuit that lets the finalize auto-merge path re-enter the
+    merge lock keyed by the same plan_id (``branch-cleanup`` acquires it, then
     ``integrate_into_main`` re-acquires it under the same ``plan_id``) without
     self-deadlocking. The reentrant grant is NOT an independent second acquisition
     — release is idempotent and holder-scoped, so the single real ``os.unlink``
     happens once when the holder releases (and dequeues the FIFO entry). Cross-plan
     mutual exclusion is unaffected: a FOREIGN live holder still blocks.
 
-    The legacy ``--timeout`` flag is accepted for call-site compatibility but no
-    longer drives an internal wait loop — re-polling is the consumer's job. A
-    non-front / lock-contended acquire returns ``blocked`` immediately so the
-    consumer's poll/backoff loop owns the wait.
+    Args:
+        args: Parsed CLI arguments (``plan_id``, and optionally ``set_title_token``,
+            ``wait_seconds``, ``interval_seconds`` — an in-process caller may omit
+            the last two and gets the single non-waiting attempt).
+        sleep: The pause between two attempts. Injectable so a test waits no real time.
+        clock: The monotonic clock the per-call bound is measured on.
     """
     plan_id: str = args.plan_id
     # Default True preserves the title-token surface; callers (the move-back
     # merge lock) pass set_title_token=False to suppress the spurious glyph.
     set_title_token: bool = getattr(args, 'set_title_token', True)
+    wait_seconds: float = getattr(args, 'wait_seconds', 0.0)
+    interval_seconds: float = getattr(args, 'interval_seconds', _DEFAULT_ACQUIRE_WAIT_INTERVAL_SECONDS)
 
+    # Validate before the store is touched: each value is a number a caller
+    # computed, and a `nan` compares False against every deadline, which would turn
+    # the bounded wait into an unbounded one.
+    if (
+        not math.isfinite(wait_seconds)
+        or wait_seconds < 0
+        or not math.isfinite(interval_seconds)
+        or interval_seconds <= 0
+    ):
+        return make_error(
+            'acquire requires a finite non-negative --wait-seconds and a finite positive --interval-seconds: '
+            f'got wait_seconds={wait_seconds}, interval_seconds={interval_seconds}',
+            code=ErrorCode.INVALID_INPUT,
+            plan_id=plan_id,
+        )
+
+    bound = min(wait_seconds, _ACQUIRE_WAIT_CEILING_SECONDS)
+    started = clock()
+    while True:
+        result = _attempt_acquire(plan_id, set_title_token)
+        waited = clock() - started
+        remaining = bound - waited
+        still_blocked = result.get('status') == 'blocked'
+        if not still_blocked or remaining <= 0:
+            result['timed_out'] = still_blocked
+            result['waited_seconds'] = int(waited)
+            return result
+        sleep(min(interval_seconds, remaining))
+
+
+def _attempt_acquire(plan_id: str, set_title_token: bool) -> dict[str, Any]:
+    """One non-waiting acquire attempt — the unit :func:`run_acquire` repeats.
+
+    Reentrant short-circuit, then FIFO enqueue + front check (one guarded
+    read-modify-write), then the ``O_EXCL`` create / stale reclaim. Returns the
+    admitted, blocked, or error payload of THIS attempt; it never waits.
+    """
     try:
         lock_path = _resolve_main_lock_path()
     except RuntimeError as exc:
@@ -1839,6 +1961,47 @@ def run_release(args: Namespace) -> dict[str, Any]:
     }
 
 
+def run_dequeue(plan_id: str) -> dict[str, Any]:
+    """Remove ``plan_id`` from the FIFO admission queue WITHOUT touching ``merge.lock``.
+
+    The dequeue-only counterpart of :func:`run_release`, for a caller whose acquire
+    took no lock and that must undo its FIFO enqueue. :func:`run_release` is the
+    wrong tool for that caller: it removes ``merge.lock`` whenever the recorded
+    holder equals the caller's ``plan_id``, and a concurrent call for the SAME
+    ``plan_id`` (which shares the one FIFO entry) may have been admitted and created
+    the lock after the refused attempt — a release would then delete that live
+    lock mid-integration and let a foreign plan in. This helper never reads,
+    creates, or removes the lock file, and never touches the co-tenant
+    ``rate_windows`` key; it runs only the :func:`_dequeue_fifo` read-modify-write.
+
+    Idempotent: dequeuing an absent entry is a no-op success. Two callers share it:
+    ``integrate_into_main``'s refused-acquire cleanup loads this module by path and
+    calls it in-process, and the ``dequeue`` CLI verb (:func:`run_dequeue_cli`)
+    serves the ``branch-cleanup.md`` admission-loop error arm, which must undo its
+    FIFO enqueue without the same-plan lock hazard ``release`` carries.
+
+    Returns ``status: success`` with ``action: dequeued`` (an entry for
+    ``plan_id`` was removed) or ``action: noop`` (no entry was queued) plus the
+    post-removal ``waiting_count``, or a ``make_error`` payload when the queue path
+    cannot be resolved or its guarded read-modify-write fails.
+    """
+    try:
+        waiting_count, removed = _dequeue_fifo_reporting(plan_id)
+    except (RuntimeError, TimeoutError, OSError) as exc:
+        return make_error(f'merge-queue dequeue failed: {exc}', code=ErrorCode.NOT_FOUND, plan_id=plan_id)
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'action': 'dequeued' if removed else 'noop',
+        'waiting_count': waiting_count,
+    }
+
+
+def run_dequeue_cli(args: Namespace) -> dict[str, Any]:
+    """``dequeue`` — the CLI face of :func:`run_dequeue` (FIFO entry only, never the lock)."""
+    return run_dequeue(args.plan_id)
+
+
 def run_budget_reclaim(args: Namespace) -> dict[str, Any]:
     """Budget-aware reclaim of a dead merge-lock holder past its hold budget.
 
@@ -2072,11 +2235,21 @@ def _run_rate_window_check(args: Namespace) -> dict[str, Any]:
     if refusal is not None:
         return refusal
 
+    return _rate_window_state(args, time.time())
+
+
+def _rate_window_state(args: Namespace, now: float) -> dict[str, Any]:
+    """Read one bot's rate-window state as of ``now`` — the ``check`` payload.
+
+    The single non-mutating read behind both ``rate-window check``, which performs
+    it once, and ``rate-window wait``, which repeats it. Sharing it is what makes
+    "the wait polls the same read ``check`` performs" a property of the code rather
+    than of two bodies kept in step by hand.
+    """
     plan_id: str = args.plan_id
     bot_kind: str = args.bot_kind
     pr_number: int = args.pr_number
     attempt_cap: int = args.attempt_cap
-    now = time.time()
 
     record = _rate_windows(_read_store()).get(bot_kind)
     attempts_for_pr = _attempts_for_pr(record, pr_number)
@@ -2150,9 +2323,120 @@ def _run_rate_window_release(args: Namespace) -> dict[str, Any]:
     }
 
 
+#: The default wake margin of ``rate-window wait``: seconds past the claim's
+#: ``expires_at`` before the wait reports the window elapsed. With no margin the
+#: wake instant IS the expiry, so the re-dispatch it triggers races the claim's own
+#: expiry — and a bot's real window is an estimate that does not reopen on the
+#: second it was stated to. An explicit ``--grace-seconds`` (``0`` included)
+#: replaces it.
+_RATE_WINDOW_WAKE_MARGIN_SECONDS = 60.0
+
+
+def _run_rate_window_wait(
+    args: Namespace,
+    *,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+    wall_clock: Callable[[], float] = time.time,
+) -> dict[str, Any]:
+    """``rate-window wait`` — bounded read-only wait until one bot's window has elapsed.
+
+    Re-reads the claim's own expiry (:func:`_rate_window_state`, the read ``check``
+    performs) until the WAKE INSTANT — the stored ``expires_at`` plus
+    ``--grace-seconds``, which defaults to :data:`_RATE_WINDOW_WAKE_MARGIN_SECONDS`
+    so the wake lands after the expiry rather than on it — has passed, or until the
+    per-call bound ``--wait-seconds`` lapses first. Returns the ``check`` fields of
+    the last read plus:
+
+      * ``timed_out`` — ``True`` when the per-call bound lapsed before the wake
+        instant. A bound, not a verdict: the caller re-issues the call. ``False``
+        means the wake instant was reached.
+      * ``waited_seconds`` — whole seconds this call spent waiting, which a caller
+        holding a total budget subtracts from it.
+      * ``wake_at`` — the wake instant in epoch seconds, or ``None`` when no window
+        is recorded (never claimed, or released), in which case there is nothing to
+        wait for and the call returns at once.
+      * ``grace_seconds`` — the margin this call applied past ``expires_at``: the
+        default, or the explicit value the caller passed. A caller holding a total
+        budget accounts it outside that budget, since it is waited past the window
+        rather than inside it.
+
+    The expiry is RE-READ on every iteration rather than captured once, so a
+    release, a renewal, or a takeover by another plan while this call sleeps moves
+    the wake instant with it. Each sleep is cut to whichever comes first — the next
+    interval, the wake instant, or the per-call bound — so the call returns as the
+    window elapses rather than up to one interval late.
+
+    **It decides nothing.** The verb writes nothing — no ``rate_windows`` mutation,
+    no ``[LOCK]`` event — and takes no guard between reads. Its return is a wake
+    signal only: another plan can claim between this call reporting the wake and the
+    caller acting on it, so the actor re-reads the claim and every claim or release
+    still goes through the guarded read-modify-write core.
+
+    The per-call bound is clamped to :data:`_RATE_WINDOW_WAIT_CEILING_SECONDS` so the
+    call returns before the host ceiling it is issued through. Non-finite or negative
+    ``--grace-seconds`` / ``--wait-seconds`` and a non-positive or non-finite
+    ``--interval-seconds`` are refused before the store is read: each is a number a
+    caller computed, and a ``nan`` compares False against every deadline, which would
+    turn the bounded wait into an unbounded one.
+
+    Args:
+        args: Parsed CLI arguments (``plan_id``, ``bot_kind``, ``pr_number``,
+            ``attempt_cap``, ``grace_seconds``, ``wait_seconds``, ``interval_seconds``).
+        sleep: The pause between two reads. Injectable so a test waits no real time.
+        clock: The monotonic clock the per-call bound is measured on.
+        wall_clock: The epoch clock the stored ``expires_at`` is compared against.
+    """
+    refusal = _missing_pr_number(args)
+    if refusal is not None:
+        return refusal
+
+    grace_seconds: float = args.grace_seconds
+    wait_seconds: float = args.wait_seconds
+    interval_seconds: float = args.interval_seconds
+    if (
+        not math.isfinite(grace_seconds)
+        or grace_seconds < 0
+        or not math.isfinite(wait_seconds)
+        or wait_seconds < 0
+        or not math.isfinite(interval_seconds)
+        or interval_seconds <= 0
+    ):
+        return make_error(
+            'rate-window wait requires finite non-negative --grace-seconds and --wait-seconds and a finite '
+            f'positive --interval-seconds: got grace_seconds={grace_seconds}, wait_seconds={wait_seconds}, '
+            f'interval_seconds={interval_seconds}',
+            code=ErrorCode.INVALID_INPUT,
+            plan_id=args.plan_id,
+            bot_kind=args.bot_kind,
+            action=args.action,
+        )
+
+    bound = min(wait_seconds, _RATE_WINDOW_WAIT_CEILING_SECONDS)
+    started = clock()
+    while True:
+        now = wall_clock()
+        result = _rate_window_state(args, now)
+        waited = clock() - started
+        expires_at = result['expires_at']
+        # A released record keeps `expires_at: 0.0` and an unclaimed one has none:
+        # either way no window is recorded, so there is no instant to wait for.
+        wake_at = expires_at + grace_seconds if expires_at else None
+        until_wake = 0.0 if wake_at is None else wake_at - now
+        remaining = bound - waited
+        if until_wake <= 0 or remaining <= 0:
+            result['timed_out'] = until_wake > 0
+            result['waited_seconds'] = int(waited)
+            result['wake_at'] = wake_at
+            result['grace_seconds'] = grace_seconds
+            return result
+        sleep(min(interval_seconds, until_wake, remaining))
+
+
 _RATE_WINDOW_ACTIONS = {
     'claim': _run_rate_window_claim,
     'check': _run_rate_window_check,
+    'wait': _run_rate_window_wait,
     'release': _run_rate_window_release,
 }
 
@@ -2189,18 +2473,16 @@ def run_poll_delay(args: Namespace) -> dict[str, Any]:
     """``poll-delay`` — compute a bounded jittered delay; NEVER sleep it.
 
     A pure computation behind a CLI: it reads no store, holds no lock, takes no
-    ``--plan-id``, and writes nothing. The returned ``delay_seconds`` is what the
-    CALLER waits — ``automatic-review`` awaits it once at the Branch 3 →
-    trigger-arm boundary, as a single standalone ``sleep`` Bash call. Keeping the wait out of
-    this module is the point; see the module docstring's "``poll-delay`` computes,
-    the caller waits".
+    ``--plan-id``, and writes nothing. A caller waits the returned
+    ``delay_seconds`` by passing it to ``rate-window wait`` as ``--grace-seconds``.
+    Keeping the draw a pure computation is the point; see the module docstring's
+    "No mutating verb sleeps".
 
     Negative bounds are REFUSED. Both bounds arrive from a CLI flag a human types,
-    and the returned ``delay_seconds`` is interpolated straight into the caller's
-    ``sleep`` command — so a negative bound does not stay inside this function as a
-    merely-odd number. It leaves as a malformed shell command at the one site that
-    consumes it. This is the same already-guarded validation path the inversion
-    check below occupies, one comparison wider.
+    and the returned ``delay_seconds`` is a duration a caller passes on — so a
+    negative bound does not stay inside this function as a merely-odd number. It
+    leaves as a refused call. This is the same already-guarded validation path the
+    inversion check below occupies, one comparison wider.
 
     Inverted bounds are REFUSED rather than silently swapped. A swap would make
     ``--min-seconds 1200 --max-seconds 300`` return a plausible delay drawn from a
@@ -2211,8 +2493,8 @@ def run_poll_delay(args: Namespace) -> dict[str, Any]:
     of them can see one. ``float('nan')`` compares False against every bound — so it
     is neither negative nor inverted — and ``float('inf')`` as the ceiling is a
     well-ordered pair. Both reach :func:`random.uniform`, which returns a non-finite
-    draw, and that draw is interpolated straight into the caller's ``sleep``: a
-    ``sleep nan`` at the one site that consumes this verb. The ordering also decides
+    draw, and a caller passing that draw on hands a ``nan`` duration to whatever
+    waits it. The ordering also decides
     which refusal ``-inf`` gets — the accurate "not finite" one rather than the
     narrower "negative" one it would collect from the check below.
     """
@@ -2255,7 +2537,7 @@ def run_poll_delay(args: Namespace) -> dict[str, Any]:
 
 
 def run_rate_window(args: Namespace) -> dict[str, Any]:
-    """Dispatch the ``rate-window {claim,check,release}`` action.
+    """Dispatch the ``rate-window {claim,check,wait,release}`` action.
 
     The rate-window claim coordinates recovery from a review bot's rate-limit
     refusal across concurrently-finalizing plans. It SHARES the merge-lock store
@@ -2275,17 +2557,20 @@ def run_rate_window(args: Namespace) -> dict[str, Any]:
 
 
 def main() -> int:
-    """Entry point — ``acquire`` / ``check`` / ``release`` / ``budget-reclaim`` / ``rate-window`` / ``poll-delay``."""
+    """Entry point — the merge-lock, FIFO-queue, rate-window and poll-delay verbs."""
     parser = create_workflow_cli(
         description='Unified merge lock: the single main-anchored merge-to-main serializer with a FIFO admission queue',
         epilog="""
 Examples:
-  merge_lock.py acquire --plan-id EXAMPLE-PLAN [--timeout 0]
+  merge_lock.py acquire --plan-id EXAMPLE-PLAN
+  merge_lock.py acquire --plan-id EXAMPLE-PLAN --wait-seconds 480 [--interval-seconds 15]
   merge_lock.py check --plan-id EXAMPLE-PLAN
   merge_lock.py release --plan-id EXAMPLE-PLAN
+  merge_lock.py dequeue --plan-id EXAMPLE-PLAN
   merge_lock.py budget-reclaim --plan-id WAITER-PLAN --hold-start 1699999999.0 --hold-budget-seconds 3600
   merge_lock.py rate-window claim --plan-id EXAMPLE-PLAN --bot-kind coderabbit --pr-number 42 [--window-seconds 3600] [--attempt-cap 6]
   merge_lock.py rate-window check --plan-id EXAMPLE-PLAN --bot-kind coderabbit --pr-number 42
+  merge_lock.py rate-window wait --plan-id EXAMPLE-PLAN --bot-kind coderabbit --pr-number 42 [--grace-seconds 60] [--wait-seconds 480] [--interval-seconds 15]
   merge_lock.py rate-window release --plan-id EXAMPLE-PLAN --bot-kind coderabbit
   merge_lock.py poll-delay [--min-seconds 300] [--max-seconds 1200]
   merge_lock.py queue-list
@@ -2293,7 +2578,10 @@ Examples:
         subcommands=[
             {
                 'name': 'acquire',
-                'help': 'FIFO-enqueue and atomically acquire the main-anchored merge lock (front-only, non-blocking)',
+                'help': (
+                    'FIFO-enqueue and atomically acquire the main-anchored merge lock (front-only; '
+                    'non-blocking by default; --wait-seconds re-attempts within a bounded wait)'
+                ),
                 'handler': run_acquire,
                 'args': [
                     {
@@ -2303,10 +2591,25 @@ Examples:
                         'help': 'Holder source — the plan_id acquiring the lock (mandatory)',
                     },
                     {
-                        'flags': ['--timeout'],
-                        'dest': 'timeout',
+                        'flags': ['--wait-seconds'],
+                        'dest': 'wait_seconds',
                         'type': float,
-                        'help': f'Legacy compatibility flag; acquire no longer waits internally (default: {_DEFAULT_TIMEOUT_SECONDS})',
+                        'default': 0.0,
+                        'help': (
+                            'Per-call bound in seconds for repeating whole non-waiting attempts until admitted. '
+                            f'0 is a single attempt; clamped to {_ACQUIRE_WAIT_CEILING_SECONDS} so the call returns '
+                            'before the host ceiling; re-issue the call while timed_out is true (default: 0)'
+                        ),
+                    },
+                    {
+                        'flags': ['--interval-seconds'],
+                        'dest': 'interval_seconds',
+                        'type': float,
+                        'default': _DEFAULT_ACQUIRE_WAIT_INTERVAL_SECONDS,
+                        'help': (
+                            'Seconds between two attempts under --wait-seconds '
+                            f'(default: {_DEFAULT_ACQUIRE_WAIT_INTERVAL_SECONDS})'
+                        ),
                     },
                     {
                         'flags': ['--no-title-token'],
@@ -2361,6 +2664,22 @@ Examples:
                 ],
             },
             {
+                'name': 'dequeue',
+                'help': (
+                    'Remove --plan-id from the FIFO admission queue only — never reads, creates or removes '
+                    'merge.lock (the refused-acquire cleanup; release would delete a same-plan lock)'
+                ),
+                'handler': run_dequeue_cli,
+                'args': [
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'required': True,
+                        'help': 'The plan_id whose FIFO entry is removed (mandatory)',
+                    },
+                ],
+            },
+            {
                 'name': 'budget-reclaim',
                 'help': 'Waiter-side budget reclaim: past --hold-budget-seconds since --hold-start, evict ONLY a provably stale holder (refuse on fresh/unknown)',
                 'handler': run_budget_reclaim,
@@ -2389,13 +2708,16 @@ Examples:
             },
             {
                 'name': 'rate-window',
-                'help': "Claim / check / release one review bot's rate window (shares the merge-lock STORE, never the merge MUTEX)",
+                'help': "Claim / check / wait on / release one review bot's rate window (shares the merge-lock STORE, never the merge MUTEX)",
                 'handler': run_rate_window,
                 'args': [
                     {
                         'flags': ['action'],
-                        'choices': ['claim', 'check', 'release'],
-                        'help': 'claim (idempotent for the self-holder, capped), check (non-mutating), or release',
+                        'choices': ['claim', 'check', 'wait', 'release'],
+                        'help': (
+                            'claim (idempotent for the self-holder, capped), check (non-mutating), '
+                            'wait (bounded read-only wait until the window has elapsed), or release'
+                        ),
                     },
                     {
                         'flags': ['--plan-id'],
@@ -2414,7 +2736,39 @@ Examples:
                         'dest': 'pr_number',
                         'type': int,
                         'default': None,
-                        'help': 'PR the recovery attempts are counted against (required for claim and check; ignored by release)',
+                        'help': 'PR the recovery attempts are counted against (required for claim, check and wait; ignored by release)',
+                    },
+                    {
+                        'flags': ['--grace-seconds'],
+                        'dest': 'grace_seconds',
+                        'type': float,
+                        'default': _RATE_WINDOW_WAKE_MARGIN_SECONDS,
+                        'help': (
+                            'wait only: seconds added to the window expiry to form the wake instant, so the wake '
+                            'lands after the expiry rather than on it; an explicit 0 wakes at the expiry '
+                            f'(default: {_RATE_WINDOW_WAKE_MARGIN_SECONDS})'
+                        ),
+                    },
+                    {
+                        'flags': ['--wait-seconds'],
+                        'dest': 'wait_seconds',
+                        'type': float,
+                        'default': _RATE_WINDOW_WAIT_CEILING_SECONDS,
+                        'help': (
+                            'wait only: per-call bound in seconds. Clamped to '
+                            f'{_RATE_WINDOW_WAIT_CEILING_SECONDS} so the call returns before the host ceiling; '
+                            f're-issue the call until timed_out is false (default: {_RATE_WINDOW_WAIT_CEILING_SECONDS})'
+                        ),
+                    },
+                    {
+                        'flags': ['--interval-seconds'],
+                        'dest': 'interval_seconds',
+                        'type': float,
+                        'default': _DEFAULT_RATE_WINDOW_WAIT_INTERVAL_SECONDS,
+                        'help': (
+                            'wait only: seconds between two reads of the claim '
+                            f'(default: {_DEFAULT_RATE_WINDOW_WAIT_INTERVAL_SECONDS})'
+                        ),
                     },
                     {
                         'flags': ['--window-seconds'],

@@ -77,8 +77,8 @@ split)?
 rule. It runs in the settle band as a pure source-mutating **apply-style** step
 (`mutates_source: true`); its Step 1 read of the retrospective's
 `quality-verification-report.md` is **best-effort and non-fatal** (the report is
-normally absent at its settle-band order, and it proceeds on `request.md` +
-`modified_files` alone), so it does **not** itself require the post-merge classify
+normally absent at its settle-band order, and it proceeds on the request document
+and the realized footprint alone), so it does **not** itself require the post-merge classify
 half and is correctly a single settle-band step today. A future step that needs that
 post-merge evidence as a **hard** input takes the split above rather than declaring
 both facts on one step.

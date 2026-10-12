@@ -50,6 +50,15 @@ MODE_STRUCTURED = 'structured'
 MODE_ERRORS = 'errors'
 """Only show errors, no warnings."""
 
+# Test-summary population verdicts
+POPULATION_MEASURED = 'measured'
+"""The test counts were derived from summary blocks the parser recognised."""
+
+POPULATION_UNMEASURED = 'unmeasured'
+"""The parser could not tell summary lines from other count lines."""
+
+_POPULATIONS = (POPULATION_MEASURED, POPULATION_UNMEASURED)
+
 
 # =============================================================================
 # ANSI stripping and log reading
@@ -187,6 +196,15 @@ class UnitTestSummary:
             for a run killed by the outer timeout, the tool's own duration
             shows how long the suite actually took before whatever hung
             afterwards.
+        by_runner: Executed count (passed + failed) per test runner that
+            contributed to the summary (e.g. ``{'surefire': 724, 'failsafe': 7}``),
+            or None when the parser does not attribute counts to runners. A
+            runner absent from the log is absent from the dict.
+        population: ``'measured'`` when the counts were derived from summary
+            blocks the parser recognised, ``'unmeasured'`` when the parser could
+            not tell summary lines from other count lines. An unmeasured summary
+            still carries its counts — the failed count stays meaningful for the
+            truthful-status check — but its executed count is not a measurement.
     """
 
     passed: int
@@ -194,6 +212,12 @@ class UnitTestSummary:
     skipped: int
     total: int
     duration_seconds: float | None = None
+    by_runner: dict[str, int] | None = None
+    population: str = POPULATION_MEASURED
+
+    def __post_init__(self) -> None:
+        if self.population not in _POPULATIONS:
+            raise ValueError(f'population must be one of {_POPULATIONS}, got {self.population!r}')
 
     @property
     def executed(self) -> int:
@@ -219,7 +243,10 @@ class UnitTestSummary:
 
         Returns:
             Dict with passed, failed, skipped, and total fields, plus
-            duration_seconds when the tool reported one.
+            duration_seconds when the tool reported one, by_runner when the
+            parser attributed counts to runners, and population only when it is
+            ``unmeasured`` — so a summary that sets neither new field serialises
+            exactly as before.
         """
         result: dict = {
             'passed': self.passed,
@@ -229,6 +256,10 @@ class UnitTestSummary:
         }
         if self.duration_seconds is not None:
             result['duration_seconds'] = self.duration_seconds
+        if self.by_runner is not None:
+            result['by_runner'] = dict(self.by_runner)
+        if self.population == POPULATION_UNMEASURED:
+            result['population'] = self.population
         return result
 
 

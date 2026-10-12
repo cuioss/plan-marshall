@@ -11,7 +11,9 @@ Covers the three concerns of the post-merge re-review registry:
          sourcery:   posts ``@sourcery-ai review``.
          cuioss-review-bot:   posts ``/review``.
     3. Two-signal completion matching — ``await_fresh_review`` is satisfied by
-       EITHER ``_match_review`` (a review whose reviewed-commit evidence REFERENCES
+       EITHER ``_match_review`` (a review authored by the awaited bot — its
+       ``user`` login resolves to the awaited ``bot_kind`` — whose reviewed-commit
+       evidence REFERENCES
        the pushed HEAD — recognised as a bare token or embedded in a commit URL, and
        compared for EQUALITY either way, so a differing commit still fails — whose
        ``submitted_at`` post-dates the trigger time, AND whose
@@ -84,6 +86,7 @@ import bot_registry
 import ci_base
 import github_re_review
 import pytest
+from _github_pr_fixtures import coderabbit_verdict
 
 _NO_RECORD_WINDOW = {'status': 'free', 'expired': True, 'holder': '', 'seconds_remaining': 0.0}
 _OPEN_WINDOW = {
@@ -135,6 +138,18 @@ def _neutralize_rate_window(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _neutralize_in_progress_read(monkeypatch):
+    """Hold the completion read at NOT OBSERVED RUNNING for every test here.
+
+    A poll that would end on a match consults ``read_bot_in_progress``, which reads
+    the awaited bot's check-run through ``gh``.
+    Default-on, so no case in this module shells out or depends on a real PR's check.
+    The matched pair proving this fixture lives in ``test_re_review_strategy_match.py``.
+    """
+    monkeypatch.setattr(github_re_review, 'read_bot_in_progress', lambda _pr_number, _bot_kind: False)
+
+
+@pytest.fixture(autouse=True)
 def _no_provider_comments(monkeypatch):
     """Default every test to an empty provider comment list.
 
@@ -165,13 +180,28 @@ def _noop_sleep(monkeypatch):
     monkeypatch.setattr(time, 'sleep', lambda *_a, **_kw: None)
 
 
-def _review(commit_sha, submitted_at, *, user='coderabbit[bot]', state='COMMENTED', body=''):
+def _review_login(bot_kind):
+    """Return a review-author login the registry resolves to ``bot_kind``.
+
+    Read from the registry's own login map rather than restated, in the ``[bot]``
+    suffixed form the REST ``/reviews`` payload carries; ``bot_kind_for_author``
+    strips the suffix before resolving it.
+    """
+    login = next(login for login, kind in bot_registry.login_to_bot_kind().items() if kind == bot_kind)
+    return f'{login}[bot]'
+
+
+def _review(commit_sha, submitted_at, *, user, state='COMMENTED', body=''):
     """Build a review row in the shape fetch_pr_reviews_with_commits returns.
 
     ``body`` mirrors the widened projection: a review row now carries its body so
     the completion discriminator can tell a genuine review from a refusal notice
     submitted as a review object. It defaults to empty, which no refusal layer
     matches, so a fixture that does not care about the body behaves as before.
+
+    ``user`` is required: the review arm matches only a review authored by the
+    awaited bot, so every fixture names its author (:func:`_review_login`) and a
+    review's outcome is never decided by an author the fixture left out.
     """
     return {
         'user': user,
@@ -252,12 +282,23 @@ _PR_AGENT_LOGIN = 'cuioss-review-bot'
 _TRIGGER = '2026-01-01T00:02:00Z'
 
 
-def _await_with_comments(monkeypatch, comments, *, reviews=None, bot_kind='cuioss-review-bot', head_sha='headsha'):
+def _await_with_comments(
+    monkeypatch,
+    comments,
+    *,
+    reviews=None,
+    bot_kind='cuioss-review-bot',
+    head_sha='headsha',
+    in_progress_reader=None,
+):
     """Run ``await_fresh_review`` over a fixed comment (and review) set.
 
     ``head_sha`` is parametrized for the reviewed-commit-reference cases below, which
     need a real 40-hex SHA to exercise the URL-embedded shape. It defaults to the
     ``'headsha'`` token every other case uses, so those are unaffected.
+
+    ``in_progress_reader`` is forwarded only when a test supplies one; left unset the
+    call takes the default seam, which the autouse fixture neutralises.
     """
     _noop_sleep(monkeypatch)
     monkeypatch.setattr(
@@ -267,7 +308,18 @@ def _await_with_comments(monkeypatch, comments, *, reviews=None, bot_kind='cuios
     )
     _patch_comments(monkeypatch, comments)
     strategy = github_re_review.resolve_strategy(bot_kind)
-    return strategy.await_fresh_review(42, head_sha, _TRIGGER, bot_kind=bot_kind, timeout=1, interval=0)
+    extra = {} if in_progress_reader is None else {'in_progress_reader': in_progress_reader}
+    return strategy.await_fresh_review(42, head_sha, _TRIGGER, bot_kind=bot_kind, timeout=1, interval=0, **extra)
+
+
+def _recording_reader(answer, calls):
+    """Build an ``in_progress_reader`` that records each consult and returns ``answer``."""
+
+    def _read(pr_number, bot_kind):
+        calls.append((pr_number, bot_kind))
+        return answer
+
+    return _read
 
 
 _HEAD_SHA = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
@@ -294,9 +346,10 @@ def _republished_comment(reference, *, created_at='2026-01-01T00:00:00Z', update
 
     The timestamps are overridable so the selection cases can build TWO eligible
     comments from this one builder — keeping the only difference between them the
-    reference their bodies carry, plus the order they arrive in.
+    reference their bodies carry, plus the order they arrive in. The body carries the
+    bot's verdict marker, as every CodeRabbit answer must to be eligible.
     """
-    body = f'Review updated until commit {reference}. No actionable comments were generated.'
+    body = coderabbit_verdict(f'Review updated until commit {reference}. No actionable comments were generated.')
     return _comment(_CODERABBIT_LOGIN, created_at=created_at, updated_at=updated_at, body=body)
 
 
@@ -327,7 +380,7 @@ _CODERABBIT_COMMAND_REPLY_REFUSAL = (
     'already reviewed commits. This command is applicable only when automatic '
     'reviews are paused. </details>'
 )
-_CODERABBIT_GENUINE_COMMENT = (
+_CODERABBIT_GENUINE_COMMENT = coderabbit_verdict(
     'Actionable comments posted: 1. The retry loop can spin forever when the backoff '
     'cap is zero — guard the cap before entering the loop.'
 )
@@ -448,7 +501,7 @@ def test_await_prefers_the_review_signal_when_both_are_present(monkeypatch):
     result = _await_with_comments(
         monkeypatch,
         [_comment(_PR_AGENT_LOGIN, created_at='2026-01-01T00:05:00Z')],
-        reviews=[_review('headsha', '2026-01-01T00:06:00Z')],
+        reviews=[_review('headsha', '2026-01-01T00:06:00Z', user=_review_login('cuioss-review-bot'))],
     )
 
     assert result['matched'] is True
@@ -470,7 +523,7 @@ def test_await_records_a_url_embedded_sha_as_a_verified_review(monkeypatch):
     result = _await_with_comments(
         monkeypatch,
         [],
-        reviews=[_review(_HEAD_SHA_URL, '2026-01-01T00:05:00Z')],
+        reviews=[_review(_HEAD_SHA_URL, '2026-01-01T00:05:00Z', user=_review_login('cuioss-review-bot'))],
         head_sha=_HEAD_SHA,
     )
 
@@ -491,7 +544,7 @@ def test_await_does_not_verify_a_review_naming_a_different_commit(monkeypatch):
     result = _await_with_comments(
         monkeypatch,
         [],
-        reviews=[_review(_OTHER_SHA_URL, '2026-01-01T00:05:00Z')],
+        reviews=[_review(_OTHER_SHA_URL, '2026-01-01T00:05:00Z', user=_review_login('cuioss-review-bot'))],
         head_sha=_HEAD_SHA,
     )
 
@@ -648,6 +701,52 @@ def test_await_selects_the_head_verifying_comment_whatever_the_list_order(verify
     assert result['matched_comment']['body'] == verifying['body']
 
 
+def test_a_verifying_answer_is_withheld_while_the_review_is_running(monkeypatch):
+    """⛔ Naming the head is no evidence the review finished.
+
+    CodeRabbit's in-progress summary names the head as the end of the range under
+    review, so a hold that spared a verifying answer let a running review end the wait
+    as ``head_sha_verified: true``. While the bot's check-run is observed in progress,
+    the verifying comment is withheld like any other answer.
+    """
+    calls: list = []
+
+    result = _await_with_comments(
+        monkeypatch,
+        [_republished_comment(_VERIFYING_REFERENCE)],
+        bot_kind='coderabbit',
+        head_sha=_HEAD_SHA,
+        in_progress_reader=_recording_reader(True, calls),
+    )
+
+    assert calls, 'the completion read was never consulted'
+    assert all(call == (42, 'coderabbit') for call in calls)
+    assert result['matched'] is False
+    assert result['matched_comment'] == {}
+    assert result['head_sha_verified'] is False
+    assert result['answer_withheld_in_progress'] is True
+    assert result['timed_out'] is True
+
+
+def test_the_same_verifying_answer_is_matched_once_the_check_run_concluded(monkeypatch):
+    """MATCHED CONTROL: same comment, same reader seam — only the observation differs."""
+    calls: list = []
+
+    result = _await_with_comments(
+        monkeypatch,
+        [_republished_comment(_VERIFYING_REFERENCE)],
+        bot_kind='coderabbit',
+        head_sha=_HEAD_SHA,
+        in_progress_reader=_recording_reader(False, calls),
+    )
+
+    assert calls, 'the completion read was never consulted'
+    assert result['matched'] is True
+    assert result['matched_signal'] == 'issue_comment'
+    assert result['head_sha_verified'] is True
+    assert result['answer_withheld_in_progress'] is False
+
+
 def test_await_does_not_credit_the_coderabbit_command_reply_as_a_review(monkeypatch):
     """⛔ The reply to OUR OWN trigger is a refusal, not a completion.
 
@@ -735,7 +834,7 @@ def test_await_does_not_credit_the_command_reply_delivered_as_a_review(monkeypat
             _review(
                 'headsha',
                 '2026-01-01T00:05:00Z',
-                user='coderabbitai[bot]',
+                user=_review_login('coderabbit'),
                 body=_CODERABBIT_COMMAND_REPLY_REFUSAL,
             )
         ],
@@ -763,7 +862,10 @@ def test_cmd_re_review_coderabbit_posts_then_awaits(monkeypatch):
     monkeypatch.setattr(
         github_re_review._github,
         'fetch_pr_reviews_with_commits',
-        lambda pr_number: {'status': 'success', 'reviews': [_review('headsha', '2026-01-01T00:05:00Z')]},
+        lambda pr_number: {
+            'status': 'success',
+            'reviews': [_review('headsha', '2026-01-01T00:05:00Z', user=_review_login('coderabbit'))],
+        },
     )
 
     result = github_re_review.cmd_re_review(_re_review_args(bot_kind='coderabbit'))
@@ -789,7 +891,10 @@ def test_cmd_re_review_pr_agent_posts_then_awaits(monkeypatch):
     monkeypatch.setattr(
         github_re_review._github,
         'fetch_pr_reviews_with_commits',
-        lambda pr_number: {'status': 'success', 'reviews': [_review('headsha', '2026-01-01T00:05:00Z')]},
+        lambda pr_number: {
+            'status': 'success',
+            'reviews': [_review('headsha', '2026-01-01T00:05:00Z', user=_review_login('cuioss-review-bot'))],
+        },
     )
 
     result = github_re_review.cmd_re_review(_re_review_args(bot_kind='cuioss-review-bot'))
@@ -840,7 +945,10 @@ def test_cmd_re_review_sourcery_posts_then_awaits(monkeypatch):
     monkeypatch.setattr(
         github_re_review._github,
         'fetch_pr_reviews_with_commits',
-        lambda pr_number: {'status': 'success', 'reviews': [_review('headsha', '2026-01-01T00:05:00Z')]},
+        lambda pr_number: {
+            'status': 'success',
+            'reviews': [_review('headsha', '2026-01-01T00:05:00Z', user=_review_login('sourcery'))],
+        },
     )
 
     result = github_re_review.cmd_re_review(_re_review_args(bot_kind='sourcery'))

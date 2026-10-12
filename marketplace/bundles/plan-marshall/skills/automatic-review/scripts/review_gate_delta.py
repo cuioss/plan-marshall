@@ -28,10 +28,10 @@ as a gate escape would attribute to the gates a miss they were never given the
 chance to make, and would bias the share in an unknown direction.
 
 Within the settle band itself the ordering now closes the old gap: the code-mutating
-settle steps (``finalize-step-simplify`` at ``order: 5``,
-``finalize-step-security-audit`` at ``order: 7``) sort strictly BEFORE both gates,
+settle steps (``finalize-step-simplify`` at ``order: 3``,
+``finalize-step-security-audit`` at ``order: 5``) sort strictly BEFORE both gates,
 and the derived-state refresh (``architecture-refresh`` at ``order: 9``) sorts before
-the quality gate too — so a forward pass runs 5 → 7 → 8 → 9 → 10 → 11 → 20 → 30 and
+the quality gate too — so a forward pass runs 3 → 5 → 8 → 9 → 10 → 11 → 20 → 30 and
 the gates certify the settled tree including the mutators' edits. What remains is
 only the gate's own trailing commit and post-push advances, which the SHA-equality
 inputs below exclude.

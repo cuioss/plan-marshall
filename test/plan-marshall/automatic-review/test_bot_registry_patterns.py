@@ -14,7 +14,7 @@ Coverage:
 
 1. Shipped-standards contract — the real ``standards/*.md`` docs parse into the
    expected bot set, login map, triggers, skip-label flags, ignore patterns,
-   contentless-review / actionable-content markers, per-shape
+   acknowledgment patterns, contentless-review / actionable-content markers, per-shape
    participation-evidence content markers, rate-limit classes, rate-limit ETA
    patterns, and severity maps.
 2. Derived ``BOT_KINDS`` — ``_findings_core.BOT_KINDS`` equals the registry's
@@ -168,6 +168,187 @@ def test_refusal_size_patterns_is_a_subset_of_refusal_patterns_for_every_bot():
     )
 
 
+def test_acknowledgment_patterns_per_bot():
+    """Only CodeRabbit declares acknowledgment replies; the other two read empty.
+
+    The two literals are the wordings of the ONE command reply CodeRabbit posts to
+    ``@coderabbitai review`` and then edits in place. The other bots' records were not
+    edited, so the field reads as its default for them and nothing they post is
+    classified an acknowledgment.
+    """
+    assert bot_registry.acknowledgment_patterns('coderabbit') == ['Review triggered', 'Review finished']
+    assert bot_registry.acknowledgment_patterns('cuioss-review-bot') == []
+    assert bot_registry.acknowledgment_patterns('sourcery') == []
+
+
+def test_acknowledgment_patterns_cover_every_shipped_bot_with_exactly_one_declarer():
+    """The per-bot assertions above account for the WHOLE shipped population.
+
+    Derived from the registry rather than from the three names above, so a bot added
+    later is not silently outside the claim that only one bot declares the field.
+    """
+    kinds = bot_registry.bot_kinds()
+    assert sorted(kinds) == sorted(_SHIPPED_BOTS)
+
+    declarers = [kind for kind in kinds if bot_registry.acknowledgment_patterns(kind)]
+
+    assert declarers == ['coderabbit']
+
+
+def test_acknowledgment_patterns_absent_is_empty(tmp_path):
+    """A record that declares no acknowledgments, and an unknown bot, both read ``[]``."""
+    (tmp_path / 'demo.md').write_text('```yaml\nbot_kind: demo\nauthor_login: demo-bot\n```\n', encoding='utf-8')
+    reg = bot_registry.BotRegistry(standards_dir=tmp_path)
+
+    assert reg.acknowledgment_patterns('demo') == []
+    assert reg.acknowledgment_patterns('nonexistent-bot') == []
+    assert bot_registry.acknowledgment_patterns('nonexistent-bot') == []
+
+
+def test_acknowledgment_patterns_parse_from_a_declared_block(tmp_path):
+    """MATCHED CONTROL for the case above: the same reader returns a declared list."""
+    (tmp_path / 'demo.md').write_text(
+        '```yaml\nbot_kind: demo\nauthor_login: demo-bot\nacknowledgment_patterns:\n'
+        '  - "Command received"   # the reply while the command runs\n'
+        '  - "Command finished"\n```\n',
+        encoding='utf-8',
+    )
+    reg = bot_registry.BotRegistry(standards_dir=tmp_path)
+
+    assert reg.acknowledgment_patterns('demo') == ['Command received', 'Command finished']
+
+
+def test_acknowledgment_patterns_returns_a_copy():
+    """Mutating the returned list must not edit the registry's own record."""
+    first = bot_registry.acknowledgment_patterns('coderabbit')
+    first.append('planted')
+
+    assert 'planted' not in bot_registry.acknowledgment_patterns('coderabbit')
+
+
+def test_an_acknowledgment_literal_is_neither_a_refusal_nor_an_ignore_marker():
+    """The three lists answer different questions, so no literal may sit in two of them.
+
+    An acknowledgment that was also a ``refusal_patterns`` entry would be reported as
+    a decline, and one that was also an ``ignore_patterns`` entry would be a section
+    of a successful review. Swept over the whole live population; the non-vacuity
+    check keeps the sweep from passing over zero literals.
+    """
+    kinds = bot_registry.bot_kinds()
+    assert kinds, 'the registry declares no bots — the sweep would be vacuous'
+
+    total = 0
+    for kind in kinds:
+        acknowledgments = bot_registry.acknowledgment_patterns(kind)
+        total += len(acknowledgments)
+        for literal in acknowledgments:
+            assert isinstance(literal, str) and literal.strip(), f'{kind}: blank acknowledgment literal'
+            assert all(literal not in refusal for refusal in bot_registry.refusal_patterns(kind)), (
+                f'{kind}: acknowledgment literal {literal!r} is contained in a refusal pattern'
+            )
+            assert all(literal not in marker for marker in bot_registry.ignore_patterns(kind)), (
+                f'{kind}: acknowledgment literal {literal!r} is contained in an ignore pattern'
+            )
+
+    assert total > 0, 'no shipped bot declares an acknowledgment literal — the sweep above is vacuous'
+
+
+def test_escalated_trigger_comment_per_bot():
+    """Only CodeRabbit declares a command that re-reviews the whole changeset.
+
+    The inline comment on the declaring line is stripped by the reader, so the value
+    is the command alone — it is posted verbatim.
+    """
+    assert bot_registry.escalated_trigger_comment('coderabbit') == '@coderabbitai full review'
+    assert bot_registry.escalated_trigger_comment('cuioss-review-bot') == ''
+    assert bot_registry.escalated_trigger_comment('sourcery') == ''
+
+
+def test_the_escalated_command_differs_from_the_ordinary_trigger_for_every_declarer():
+    """An escalated command equal to the ordinary trigger would repeat the refused request."""
+    declarers = [kind for kind in bot_registry.bot_kinds() if bot_registry.escalated_trigger_comment(kind)]
+    assert declarers, 'no shipped bot declares an escalated command — the sweep below is vacuous'
+
+    for kind in declarers:
+        assert bot_registry.escalated_trigger_comment(kind).strip() != bot_registry.trigger_comment(kind).strip()
+
+
+def test_no_unreviewed_commit_patterns_per_bot():
+    """CodeRabbit's two "nothing new to review" literals parse; the other two read empty."""
+    assert bot_registry.no_unreviewed_commit_patterns('coderabbit') == [
+        'Already reviewed the last commit',
+        'No new commits to review',
+    ]
+    assert bot_registry.no_unreviewed_commit_patterns('cuioss-review-bot') == []
+    assert bot_registry.no_unreviewed_commit_patterns('sourcery') == []
+
+
+def test_no_unreviewed_commit_patterns_is_a_subset_of_refusal_patterns_for_every_bot():
+    """The condition overlay never names a literal the detection list does not carry.
+
+    Swept over the whole live population; the non-vacuity check keeps the subset
+    assertion from passing over zero literals.
+    """
+    kinds = bot_registry.bot_kinds()
+    assert sorted(kinds) == sorted(_SHIPPED_BOTS)
+
+    total = 0
+    for kind in kinds:
+        overlay = bot_registry.no_unreviewed_commit_patterns(kind)
+        total += len(overlay)
+        assert set(overlay) <= set(bot_registry.refusal_patterns(kind)), kind
+        # A reply cannot be both a diff-size refusal and a "nothing new" reply.
+        assert not set(overlay) & set(bot_registry.refusal_size_patterns(kind)), kind
+
+    assert total > 0, 'no shipped bot declares a no-unreviewed-commit literal — the sweep above is vacuous'
+
+
+def test_the_new_fields_absent_read_as_empty(tmp_path):
+    """A record declaring neither field, and an unknown bot, read ``''`` and ``[]``."""
+    (tmp_path / 'demo.md').write_text('```yaml\nbot_kind: demo\nauthor_login: demo-bot\n```\n', encoding='utf-8')
+    reg = bot_registry.BotRegistry(standards_dir=tmp_path)
+
+    assert reg.escalated_trigger_comment('demo') == ''
+    assert reg.no_unreviewed_commit_patterns('demo') == []
+    assert bot_registry.escalated_trigger_comment('nonexistent-bot') == ''
+    assert bot_registry.no_unreviewed_commit_patterns('nonexistent-bot') == []
+
+
+def test_the_new_fields_parse_from_a_declared_block(tmp_path):
+    """MATCHED CONTROL for the case above: the same reader returns the declared values."""
+    (tmp_path / 'demo.md').write_text(
+        '```yaml\nbot_kind: demo\nauthor_login: demo-bot\n'
+        'trigger_comment: "@demo review"\n'
+        'escalated_trigger_comment: "@demo full review"   # the whole changeset\n'
+        'refusal_patterns:\n'
+        '  - "Quota used up"\n'
+        '  - "Nothing left to look at"\n'
+        'no_unreviewed_commit_patterns:\n'
+        '  - "Nothing left to look at"\n```\n',
+        encoding='utf-8',
+    )
+    reg = bot_registry.BotRegistry(standards_dir=tmp_path)
+
+    assert reg.escalated_trigger_comment('demo') == '@demo full review'
+    assert reg.no_unreviewed_commit_patterns('demo') == ['Nothing left to look at']
+
+
+def test_a_no_unreviewed_commit_literal_outside_refusal_patterns_is_dropped(tmp_path):
+    """The overlay cannot assert its condition on a reply detection never recognises."""
+    (tmp_path / 'demo.md').write_text(
+        '```yaml\nbot_kind: demo\nauthor_login: demo-bot\n'
+        'refusal_patterns:\n'
+        '  - "Nothing left to look at"\n'
+        'no_unreviewed_commit_patterns:\n'
+        '  - "Nothing left to look at"\n'
+        '  - "Declared here and nowhere else"\n```\n',
+        encoding='utf-8',
+    )
+    reg = bot_registry.BotRegistry(standards_dir=tmp_path)
+
+    assert reg.no_unreviewed_commit_patterns('demo') == ['Nothing left to look at']
+
+
 def test_rate_limit_eta_patterns_per_bot():
     """Only a bot whose notice states a reset time declares extraction patterns.
 
@@ -199,6 +380,47 @@ def test_rate_limit_eta_patterns_per_bot():
     assert bot_registry.rate_limit_eta_patterns('cuioss-review-bot') == []
 
 
+@pytest.mark.parametrize(
+    ('notice', 'stated'),
+    [
+        ('Next included review available in 38 minutes.', '38 minutes'),
+        ('Next included review available in 1 minute.', '1 minute'),
+        ('Next included review available in 2 hours.', '2 hours'),
+        ('Next included review available in 12 minutes and 30 seconds.', '12 minutes and 30 seconds'),
+        ('Next included review available in 1 hour and 5 minutes.', '1 hour and 5 minutes'),
+    ],
+)
+def test_coderabbit_declares_the_next_included_review_wording(notice, stated):
+    """The review-summary notice's own reset-time wording is declared, in every form.
+
+    Each declared pattern is parsed out of the registry block and compiled here, and
+    the first one that matches must capture the WHOLE stated time: the compound
+    pattern is declared ahead of the single-unit one, so "12 minutes and 30 seconds"
+    is not cut short to "12 minutes".
+    """
+    patterns = bot_registry.rate_limit_eta_patterns('coderabbit')
+    declared = [pattern for pattern in patterns if pattern.startswith('Next included review available in')]
+    assert len(declared) >= 2, 'the compound and the single-unit form must both be declared'
+
+    captured = [match.group(1) for pattern in patterns if (match := re.compile(pattern).search(notice))]
+
+    assert captured, f'no declared pattern reads {notice!r}'
+    assert captured[0] == stated
+
+
+def test_the_next_included_review_wording_does_not_read_an_unrelated_sentence():
+    """Matched control: the new patterns are anchored on the notice's own wording."""
+    patterns = [
+        pattern
+        for pattern in bot_registry.rate_limit_eta_patterns('coderabbit')
+        if pattern.startswith('Next included review available in')
+    ]
+    assert patterns
+
+    for pattern in patterns:
+        assert re.search(pattern, 'The retry loop sleeps for 38 minutes between attempts.') is None
+
+
 def test_rate_limit_eta_patterns_are_valid_regexes():
     """Every declared ETA pattern compiles — a bad data edit is caught here, not at runtime.
 
@@ -217,8 +439,17 @@ def test_module_functions_match_registry_singleton():
     assert bot_registry.login_to_bot_kind() == bot_registry.REGISTRY.login_to_bot_kind()
     for bot_kind in bot_registry.bot_kinds():
         assert bot_registry.trigger_comment(bot_kind) == bot_registry.REGISTRY.trigger_comment(bot_kind)
+        assert bot_registry.escalated_trigger_comment(bot_kind) == (
+            bot_registry.REGISTRY.escalated_trigger_comment(bot_kind)
+        )
+        assert bot_registry.no_unreviewed_commit_patterns(bot_kind) == (
+            bot_registry.REGISTRY.no_unreviewed_commit_patterns(bot_kind)
+        )
         assert bot_registry.completion_check_name(bot_kind) == bot_registry.REGISTRY.completion_check_name(bot_kind)
         assert bot_registry.ignore_patterns(bot_kind) == bot_registry.REGISTRY.ignore_patterns(bot_kind)
+        assert bot_registry.acknowledgment_patterns(bot_kind) == (
+            bot_registry.REGISTRY.acknowledgment_patterns(bot_kind)
+        )
         assert bot_registry.contentless_review_markers(bot_kind) == (
             bot_registry.REGISTRY.contentless_review_markers(bot_kind)
         )

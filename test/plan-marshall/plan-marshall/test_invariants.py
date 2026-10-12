@@ -1759,6 +1759,53 @@ def test_capture_pr_title_present_raises_when_missing_or_empty(phase: str, metad
     assert excinfo.value.phase == phase, f'exception must carry the phase, got {excinfo.value.phase!r}'
 
 
+@pytest.mark.parametrize(
+    ('metadata', 'expected_producer', 'other_producer'),
+    [
+        pytest.param(
+            {'planning_lane': 'light'},
+            'plan-marshall/workflow/planning.md light-lane branch, before the 2-refine capture',
+            'phase-2-refine Step 13',
+            id='light',
+        ),
+        pytest.param(
+            {'planning_lane': 'deep'},
+            'phase-2-refine Step 13',
+            'planning.md light-lane branch',
+            id='deep',
+        ),
+        pytest.param(
+            {},
+            'phase-2-refine Step 13',
+            'planning.md light-lane branch',
+            id='absent-lane-names-deep-producer',
+        ),
+    ],
+)
+def test_pr_title_missing_message_names_lane_correct_producer(
+    metadata: dict, expected_producer: str, other_producer: str
+) -> None:
+    """The PrTitleMissing message names the lane's producer and the remedy command.
+
+    A plan that records no ``planning_lane`` takes the deep producer, the
+    lane-less default. The other lane's producer must never appear.
+    """
+    with pytest.raises(inv.PrTitleMissing) as excinfo:
+        inv._capture_pr_title_present('plan-lane', metadata, '2-refine')
+
+    err = excinfo.value
+    message = str(err)
+    assert err.producer == expected_producer
+    assert expected_producer in message
+    assert other_producer not in message, message
+    assert err.remedy_command == (
+        'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata '
+        '--plan-id plan-lane --set --field pr_title --value "<type(scope): summary>"'
+    )
+    assert err.remedy_command in message
+    assert "phase '2-refine'" in message
+
+
 def test_pr_title_present_registry_tuple_present() -> None:
     """The registry must wire ``pr_title_present`` to the capture function.
 

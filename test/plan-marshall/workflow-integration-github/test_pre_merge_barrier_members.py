@@ -16,6 +16,14 @@ surface (``check_auth``, ``fetch_pr_comments_data``, ``fetch_pr_head_sha``):
       (``participated_stale`` and ``not_triggered``) gate the merge EXACTLY as
       ``absent`` does, compared against the ``absent`` verdict for the SAME
       scenario with a matched ``participated`` negative control.
+    - the reply-covered credit reaches the barrier through ``participated_bots``:
+      a required bot whose review is at an earlier commit, and whose own
+      "nothing new to review" reply is newer than the merge candidate, no longer
+      blocks; the same scenario with the reply older than the commit still does.
+    - the other-commit disclosure does not reach the barrier: a required
+      append-per-review bot named in ``reviewed_other_commit_bots`` is still a
+      proven participant and the merge is allowed, exactly as in the same scenario
+      with its review submitted against the merge candidate.
 
 The provider response is built from a real fixture shape (mirroring
 ``test_github_pr.py``), so a green fixture cannot diverge from production
@@ -34,6 +42,10 @@ PLAN_IDS: tuple[str, ...] = (
     'barrier-cross-kind',
     'barrier-late-comment',
     'barrier-optional-silence',
+    'barrier-other-commit-control',
+    'barrier-other-commit-disclosed',
+    'barrier-reply-covered',
+    'barrier-reply-not-covered',
     'barrier-self-response-bound',
     'barrier-self-response-terminates',
     'barrier-stale-override',
@@ -377,3 +389,191 @@ def test_widened_member_gates_byte_identically_to_absent(member, observation, pl
 
     assert _state_of(participated_verdict, 'cuioss-review-bot') != review_completeness.STATE_ABSENT
     assert _barrier_projection(participated_verdict, pending) != _barrier_projection(absent_verdict, pending)
+
+
+_EARLIER_HEAD = 'a' * 40
+_MERGE_CANDIDATE = 'b' * 40
+_REVIEWED_AT = '2026-07-29T10:01:00Z'
+_MERGE_CANDIDATE_COMMITTED_AT = '2026-07-29T10:10:00Z'
+_REPLY_AFTER_THE_COMMIT = '2026-07-29T10:20:00Z'
+_REPLY_BEFORE_THE_COMMIT = '2026-07-29T10:05:00Z'
+_CODERABBIT_REVIEW = {
+    'id': 'cr-review',
+    'author': 'coderabbitai',
+    'thread_id': 'PRRT_cr',
+    'kind': 'inline',
+    'body': 'Consider handling the None case here before dereferencing.',
+    'path': 'src/a.py',
+    'line': 10,
+    'resolved': False,
+    'created_at': _REVIEWED_AT,
+    'updated_at': _REVIEWED_AT,
+}
+
+
+def _nothing_new_reply(written_at):
+    """CodeRabbit's "Already reviewed the last commit" reply, written at ``written_at``."""
+    return {
+        'id': 'cr-reply',
+        'author': 'coderabbitai',
+        'thread_id': '',
+        'kind': 'issue_comment',
+        'body': '<details> Already reviewed the last commit. Use @coderabbitai full review to rerun it. </details>',
+        'resolved': False,
+        'created_at': written_at,
+        'updated_at': written_at,
+    }
+
+
+def _fetch_at(monkeypatch, plan_id, comments, head_sha, head_committed_at):
+    """Run the producer with the merge candidate and its commit time pinned."""
+    _patch_provider(monkeypatch, comments)
+    monkeypatch.setattr(github_pr._github, 'fetch_pr_head_sha', lambda pr_number: head_sha)
+    monkeypatch.setattr(github_pr._github, 'fetch_pr_head_committed_at', lambda pr_number: head_committed_at)
+    return _run_fetch(211, plan_id)
+
+
+def _barrier_verdict_after_a_new_commit(monkeypatch, plan_id, reply_written_at):
+    """Review at an earlier head, triage it, then re-run the producer at the merge candidate.
+
+    Returns ``(fetch result, completeness verdict, pending findings)`` for the second
+    fetch — the one the barrier runs immediately before the merge — with every
+    participation list forwarded to the predicate exactly as the producer emitted it.
+    """
+    first = _fetch_at(monkeypatch, plan_id, [_CODERABBIT_REVIEW], _EARLIER_HEAD, '')
+    assert [row['bot_kind'] for row in first['participated_bots']] == ['coderabbit']
+    _resolve_all_pending(plan_id)
+
+    result = _fetch_at(
+        monkeypatch,
+        plan_id,
+        [_CODERABBIT_REVIEW, _nothing_new_reply(reply_written_at)],
+        _MERGE_CANDIDATE,
+        _MERGE_CANDIDATE_COMMITTED_AT,
+    )
+    verdict = _completeness(
+        plan_id,
+        _participation_csv(result),
+        required=['coderabbit'],
+        optional=['cuioss-review-bot', 'sourcery'],
+        stale_participation_bots=[row['bot_kind'] for row in result['stale_participation_bots']],
+        refused_bots=result['refused_bots'],
+    )
+    return result, verdict, _pending(plan_id)
+
+
+def test_a_reply_covered_review_reaches_the_barrier_as_participation(plan_context, monkeypatch):
+    """The credit arrives through ``participated_bots`` — the list the barrier already reads.
+
+    CodeRabbit reviewed an earlier head and every finding is handled. A commit
+    followed, and CodeRabbit then answered that the last commit is already reviewed.
+    The commit check alone would leave it stale and block the merge; the reply covers
+    the merge candidate, so the required bot is proven and nothing is pending.
+    """
+    result, verdict, pending = _barrier_verdict_after_a_new_commit(
+        monkeypatch, 'barrier-reply-covered', _REPLY_AFTER_THE_COMMIT
+    )
+
+    assert result['reply_covered_participation_bots'] == [
+        {'bot_kind': 'coderabbit', 'evidence_kind': 'inline', 'reply_comment_id': 'cr-reply'}
+    ]
+    assert result['stale_participation_bots'] == []
+    # The reply is still a refusal on the record — it is not hidden by the credit.
+    assert result['refused_bots'] == ['coderabbit']
+    assert pending == []
+    assert _state_of(verdict, 'coderabbit') not in review_completeness._UNPROVEN_STATES
+    assert _barrier_projection(verdict, pending)['merge_allowed'] is True
+
+
+def test_a_reply_older_than_the_merge_candidate_still_blocks_at_the_barrier(plan_context, monkeypatch):
+    """⛔ MATCHED NEGATIVE CONTROL — the same scenario with the commit made AFTER the reply.
+
+    Only the reply's time differs. The reply cannot speak for a commit that did not
+    exist when it was written, so the bot stays stale and the barrier refuses.
+    """
+    result, verdict, pending = _barrier_verdict_after_a_new_commit(
+        monkeypatch, 'barrier-reply-not-covered', _REPLY_BEFORE_THE_COMMIT
+    )
+
+    assert result['reply_covered_participation_bots'] == []
+    assert [row['bot_kind'] for row in result['stale_participation_bots']] == ['coderabbit']
+    assert pending == []
+    assert _state_of(verdict, 'coderabbit') in review_completeness._UNPROVEN_STATES
+    assert _barrier_projection(verdict, pending)['merge_allowed'] is False
+
+
+_registry = review_completeness.bot_registry
+#: The append-per-review bots that publish a ``review_body`` — the bots the
+#: other-commit disclosure can name. Read from the registry, never listed here.
+_PER_REVIEW_BOTS: tuple[str, ...] = tuple(
+    bot
+    for bot in _registry.bot_kinds()
+    if not _registry.participation_requires_update(bot) and 'review_body' in _registry.participation_evidence(bot)
+)
+assert _PER_REVIEW_BOTS, 'the registry declares no append-per-review bot publishing a review_body'
+_PER_REVIEW_BOT = _PER_REVIEW_BOTS[0]
+_PER_REVIEW_BOT_LOGIN = {kind: login for login, kind in _registry.login_to_bot_kind().items()}[_PER_REVIEW_BOT]
+
+
+def _barrier_verdict_for_a_review_submitted_against(monkeypatch, plan_id, review_commit):
+    """A required per-review bot's one review, fetched at the merge candidate and triaged.
+
+    Returns ``(fetch result, completeness verdict, pending findings)``. Every
+    participation list the barrier forwards is forwarded as the producer emitted it;
+    ``reviewed_other_commit_bots`` is not among them, because no predicate takes it.
+    """
+    marker = _registry.participation_evidence_marker(_PER_REVIEW_BOT, 'review_body')
+    review = {
+        'id': 'per-review-1',
+        'author': _PER_REVIEW_BOT_LOGIN,
+        'thread_id': '',
+        'kind': 'review_body',
+        'body': f'{marker}\nOverall the change reads well but this helper should be extracted.'.strip(),
+        'resolved': False,
+        'created_at': _REVIEWED_AT,
+        'updated_at': _REVIEWED_AT,
+        'commit_id': review_commit,
+    }
+    result = _fetch_at(monkeypatch, plan_id, [review], _MERGE_CANDIDATE, _MERGE_CANDIDATE_COMMITTED_AT)
+    _resolve_all_pending(plan_id)
+    verdict = _completeness(
+        plan_id,
+        _participation_csv(result),
+        required=[_PER_REVIEW_BOT],
+        optional=[bot for bot in _registry.bot_kinds() if bot != _PER_REVIEW_BOT],
+        stale_participation_bots=[row['bot_kind'] for row in result['stale_participation_bots']],
+        refused_bots=result['refused_bots'],
+    )
+    return result, verdict, _pending(plan_id)
+
+
+def test_a_per_review_bot_named_in_the_disclosure_does_not_block_at_the_barrier(plan_context, monkeypatch):
+    """The disclosure names the bot and the barrier's verdict is the one it had without it.
+
+    The required bot's only review was submitted against an earlier head. It is named
+    in ``reviewed_other_commit_bots`` and it is still a proven participant: nothing is
+    pending and the merge is allowed. The projection equals the one from the same
+    scenario with the review submitted against the merge candidate, where nothing is
+    disclosed — so the disclosure is the only thing that differs between the two.
+    """
+    print(f'bots the disclosure can name ({len(_PER_REVIEW_BOTS)}): {", ".join(_PER_REVIEW_BOTS)}')
+
+    result, verdict, pending = _barrier_verdict_for_a_review_submitted_against(
+        monkeypatch, 'barrier-other-commit-disclosed', _EARLIER_HEAD
+    )
+
+    assert result['reviewed_other_commit_bots'] == [
+        {'bot_kind': _PER_REVIEW_BOT, 'review_id': 'per-review-1', 'review_commit_sha': _EARLIER_HEAD}
+    ]
+    assert result['stale_participation_bots'] == []
+    assert pending == []
+    assert _state_of(verdict, _PER_REVIEW_BOT) not in review_completeness._UNPROVEN_STATES
+    assert _barrier_projection(verdict, pending)['merge_allowed'] is True
+
+    control, control_verdict, control_pending = _barrier_verdict_for_a_review_submitted_against(
+        monkeypatch, 'barrier-other-commit-control', _MERGE_CANDIDATE
+    )
+
+    assert control['reviewed_other_commit_bots'] == []
+    assert _state_of(control_verdict, _PER_REVIEW_BOT) == _state_of(verdict, _PER_REVIEW_BOT)
+    assert _barrier_projection(control_verdict, control_pending) == _barrier_projection(verdict, pending)

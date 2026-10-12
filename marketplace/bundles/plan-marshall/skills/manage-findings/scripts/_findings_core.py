@@ -29,6 +29,7 @@ Stdlib-only - no external dependencies (except shared modules via PYTHONPATH).
 
 import hashlib
 import json
+import re
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -92,6 +93,17 @@ QGATE_PERSIST_OK = frozenset({'success', 'deduplicated', 'reopened'})
 
 # Valid kind discriminator values for pr-comment findings.
 PR_COMMENT_KINDS = ['inline', 'review_body', 'issue_comment']
+
+# The resolution a fix is recorded under, and the two optional record fields that
+# describe that fix. ``fix_commit_sha`` is the commit the fix landed in, written by
+# ``stamp_fix_commit``. ``fix_task_number`` is the fix task that owns the fix,
+# written by ``resolve_finding``; a fixed finding without it is an inline fix. Both
+# are absent (or ``None``) on every finding that is not ``fixed``.
+FIXED_RESOLUTION = 'fixed'
+FIX_COMMIT_FIELD = 'fix_commit_sha'
+FIX_TASK_FIELD = 'fix_task_number'
+
+_COMMIT_SHA_RE = re.compile(r'^[0-9a-f]{7,40}$')
 
 # Valid reviewer-bot identity values for pr-comment findings (derived from author).
 #
@@ -801,13 +813,59 @@ def get_finding(plan_id: str, hash_id: str, any_checkout: bool = False) -> dict[
     return _not_found(plan_id, store, hash_id, 'Finding')
 
 
+def _normalize_commit_sha(commit_sha: str | None) -> str | None:
+    """Return ``commit_sha`` lower-cased, or ``None`` when it is not a commit id.
+
+    A commit id here is 7 to 40 hexadecimal characters: the short form git prints
+    by default up to the full SHA-1. Anything else — empty, a ref name, a
+    leading ``-`` — is not stored.
+    """
+    candidate = (commit_sha or '').strip().lower()
+    return candidate if _COMMIT_SHA_RE.match(candidate) else None
+
+
+def _fix_stamp_reset(parent: dict[str, Any], fix_task_number: int | None) -> dict[str, Any]:
+    """Return the fix-stamp fields a resolution CHANGE writes onto ``parent``.
+
+    The fix commit and the owning fix task describe ONE ``fixed`` disposition. A
+    changed resolution ends that disposition, so both are reset: the commit to
+    ``None`` and the task to the caller's ``fix_task_number`` (``None`` for an
+    inline fix, and for every resolution other than ``fixed``). A record that
+    carries neither field and gets no task number is left without them.
+    """
+    reset: dict[str, Any] = {}
+    if parent.get(FIX_COMMIT_FIELD) is not None:
+        reset[FIX_COMMIT_FIELD] = None
+    if fix_task_number is not None or parent.get(FIX_TASK_FIELD) is not None:
+        reset[FIX_TASK_FIELD] = fix_task_number
+    return reset
+
+
 def resolve_finding(
     plan_id: str,
     hash_id: str,
     resolution: str,
     detail: str | None = None,
+    fix_task_number: int | None = None,
 ) -> dict[str, Any]:
     """Resolve a finding (locates the per-type file by hash_id).
+
+    ``fix_task_number`` names the fix task that owns the fix of a ``fixed``
+    finding; it is stored as ``fix_task_number`` and is what
+    :func:`stamp_fix_commit` selects on. It is refused on every other resolution.
+    A finding that becomes ``fixed`` without it is an inline fix: it has no task.
+
+    Changing a finding's resolution clears its fix-commit stamp and its fix-task
+    number, on the same terms as the ``responded`` marker below: the stamp says
+    which commit carries THIS disposition's fix, so it does not survive a
+    different disposition. A re-resolve to ``fixed`` under a different fix task
+    clears the commit too, because the stamped commit belonged to the other task.
+
+    A re-resolve of a ``fixed`` finding to ``fixed`` that names NO task is an
+    unchanged disposition — a reworded reply — and changes neither field: a
+    task-owned fix stays owned by its task and keeps its commit stamp. The absent
+    argument is read as "no task named", never as "make this an inline fix". A
+    task fix becomes an inline one only through a resolution change in between.
 
     Relational integrity backstop: a ``resolution_detail``
     is only ever written keyed to a ``hash_id`` that resolves to an existing parent
@@ -826,6 +884,16 @@ def resolve_finding(
     if resolution not in RESOLUTIONS:
         return {'status': 'error', 'message': f'Invalid resolution: {resolution}. Must be one of {RESOLUTIONS}'}
 
+    if fix_task_number is not None and resolution != FIXED_RESOLUTION:
+        return {
+            'status': 'error',
+            'error': 'fix_task_number_requires_fixed',
+            'message': (
+                f'A fix-task number is accepted only with resolution {FIXED_RESOLUTION}; '
+                f'got resolution {resolution} with fix task {fix_task_number}'
+            ),
+        }
+
     store = resolve_findings_store(plan_id)
     if store_unreached(store):
         return unresolved_store_error(plan_id, store)
@@ -837,6 +905,10 @@ def resolve_finding(
     updates: dict[str, Any] = {'resolution': resolution}
     if detail:
         updates['resolution_detail'] = detail
+
+    fix_task_changed = fix_task_number is not None and parent.get(FIX_TASK_FIELD) != fix_task_number
+    if parent.get('resolution') != resolution or fix_task_changed:
+        updates.update(_fix_stamp_reset(parent, fix_task_number))
 
     # Invalidate a stale provider-transmission marker. A finding that was already
     # transmitted to its provider carries ``responded`` (see
@@ -856,13 +928,98 @@ def resolve_finding(
             updates['responded_at'] = None
 
     if _update_in_finding_files(store, hash_id, updates):
-        return {
-            'status': 'success',
-            'hash_id': hash_id,
-            'resolution': resolution,
-            **store_state_fields(store),
-        }
+        result: dict[str, Any] = {'status': 'success', 'hash_id': hash_id, 'resolution': resolution}
+        if fix_task_number is not None:
+            result[FIX_TASK_FIELD] = fix_task_number
+        return {**result, **store_state_fields(store)}
     return _not_found(plan_id, store, hash_id, 'Finding')
+
+
+def stamp_fix_commit(
+    plan_id: str,
+    commit_sha: str,
+    fix_task_number: int | None = None,
+    hash_id: str | None = None,
+) -> dict[str, Any]:
+    """Stamp the commit that carries the fix onto ``fixed`` findings.
+
+    Exactly one selector is given:
+
+    - ``fix_task_number`` — every ``fixed`` finding whose ``fix_task_number`` is
+      that task. This is the form for a fix a task produced.
+    - ``hash_id`` — that one finding, which must be ``fixed``. This is the form
+      for an inline fix, which has no task to select on.
+
+    The stamp is the finding's ``fix_commit_sha``. It records which commit the
+    caller says carries the fix and nothing more: whether that commit is on the
+    pull request is decided by the reader, at the time it reads. Stamping again
+    replaces the value, which is what a rewritten history needs — after a rebase
+    the earlier commit id names nothing on the branch.
+
+    A selector that matches no ``fixed`` finding is reported, not hidden: the
+    by-task form returns ``stamped_count: 0`` over a store that was read, and the
+    by-finding form returns ``error: finding_not_fixed`` for a finding whose
+    resolution is something else. A by-task query the store refuses is returned
+    as that refusal, with nothing stamped.
+    """
+    normalized = _normalize_commit_sha(commit_sha)
+    if normalized is None:
+        return {
+            'status': 'error',
+            'error': 'invalid_commit_sha',
+            'message': f'Invalid commit id: {commit_sha!r}. Must be 7 to 40 hexadecimal characters',
+        }
+
+    if (fix_task_number is None) == (hash_id is None):
+        return {
+            'status': 'error',
+            'error': 'fix_stamp_selector_required',
+            'message': 'Give exactly one selector: the fix-task number, or the finding hash id',
+        }
+
+    store = resolve_findings_store(plan_id)
+    if store_unreached(store):
+        return unresolved_store_error(plan_id, store)
+
+    if hash_id is not None:
+        parent = get_finding(plan_id, hash_id)
+        if not parent or parent.get('status') != 'success':
+            return _not_found(plan_id, store, hash_id, 'Finding')
+        if parent.get('resolution') != FIXED_RESOLUTION:
+            return {
+                'status': 'error',
+                'error': 'finding_not_fixed',
+                'hash_id': hash_id,
+                'resolution': parent.get('resolution'),
+                'message': (
+                    f'Finding {hash_id} has resolution {parent.get("resolution")}, not '
+                    f'{FIXED_RESOLUTION}; a fix commit is stamped only on a fixed finding'
+                ),
+                **store_state_fields(store),
+            }
+        targets = [hash_id]
+    else:
+        # A refusal payload carries no ``findings`` key, so the query status is read
+        # before the list is: the refusal is returned unchanged and nothing is stamped.
+        queried = query_findings(plan_id)
+        if queried.get('status') != 'success':
+            return queried
+        targets = [
+            str(record['hash_id'])
+            for record in queried['findings']
+            if record.get('resolution') == FIXED_RESOLUTION and record.get(FIX_TASK_FIELD) == fix_task_number
+        ]
+
+    stamped = [target for target in targets if _update_in_finding_files(store, target, {FIX_COMMIT_FIELD: normalized})]
+
+    return {
+        'status': 'success',
+        'commit_sha': normalized,
+        'selector': 'hash_id' if hash_id is not None else FIX_TASK_FIELD,
+        'stamped_count': len(stamped),
+        'hash_ids': stamped,
+        **store_state_fields(store),
+    }
 
 
 def resolve_findings_by_type(
@@ -907,6 +1064,10 @@ def resolve_findings_by_type(
     for record in matched:
         hash_id = record['hash_id']
         updates = dict(base_updates)
+        # The fix stamp is cleared on the same terms as in ``resolve_finding``. A
+        # bulk resolve names no fix task, so a changed resolution leaves none.
+        if resolution_changed:
+            updates.update(_fix_stamp_reset(record, None))
         if record.get('responded'):
             detail_changed = bool(detail) and record.get('resolution_detail') != detail
             if resolution_changed or detail_changed:
@@ -981,6 +1142,126 @@ def mark_finding_responded(
     if _update_in_finding_files(store, hash_id, updates):
         return {'status': 'success', 'hash_id': hash_id, **store_state_fields(store)}
     return _not_found(plan_id, store, hash_id, 'Finding')
+
+
+def update_finding_text(
+    plan_id: str,
+    hash_id: str,
+    *,
+    detail: str,
+    raw_input: dict[str, Any],
+    reviewed_commit_sha: str | None = None,
+    raw_input_max_bytes: int = DEFAULT_RAW_INPUT_MAX_BYTES,
+) -> dict[str, Any]:
+    """Rewrite a finding's TEXT in place, reopening a resolved one whose text changed.
+
+    The update path for a source the producer re-reads with new content under the
+    same identity — a bot comment edited in place. The source is the same, so the
+    finding is the same: one record is updated, never a second one filed. What the
+    update writes depends on the stored resolution and on whether the quarantined
+    text actually moved (the new ``raw_input`` is re-quarantined under the same
+    per-field byte cap ``add_finding`` applies, then compared with the stored
+    ``raw_input`` — the post-cap forms, so a cap-truncated body compares equal to
+    itself):
+
+    - **pending** (``outcome: updated``) — ``detail``, ``raw_input`` and, when
+      given, ``reviewed_commit_sha`` are replaced; the finding stays pending and
+      carries the new text into the next ``ingest`` pass and triage.
+    - **resolved, text changed** (``outcome: reopened``) — the same three fields
+      are replaced AND the finding is reset to ``pending``: ``resolution_detail``
+      is cleared, the fix stamp is cleared on the terms :func:`resolve_finding`
+      applies to a resolution change, and a ``responded`` marker is cleared, so the
+      new content is ingested, triaged and answered as what it is — content no
+      disposition has covered yet.
+    - **resolved, text identical** (``outcome: kept_resolved``) — a re-post, or an
+      edit that moved only the edit term. Only ``detail`` is replaced (it carries
+      the new edit term, which matches the unchanged text); the resolution, its
+      disposition, the fix stamp, the ``responded`` marker, the stored text and the
+      ``reviewed_commit_sha`` are all left exactly as stored.
+
+    ``reviewed_commit_sha`` IS THE ANCHOR OF THE STORED DISPOSITION, so it moves only
+    together with the disposition it anchors. Phase-6-finalize Step 3 item 7c looks
+    for an unstamped inline fix in the commits AFTER a ``fixed`` finding's
+    ``reviewed_commit_sha``; moving that anchor past the inline-fix commit while the
+    ``fixed`` disposition stayed would strand the fix's reply, held forever. So the
+    anchor is written only where no disposition survives the update — a pending
+    finding (not yet decided) and a reopened one (its disposition was just cleared,
+    so the next fix is made after the new anchor) — and never where the resolution
+    is kept.
+
+    REFUSES text that quarantines to nothing — an absent or empty ``raw_input``, or
+    every field empty or clipped to nothing but the truncation marker (a body
+    wholly over a non-positive cap). Recording the new ``detail`` (and with it the
+    new edit term) over the old text would pair a term naming the new content with
+    a body that still holds the old, and clearing the body instead would erase the
+    only text the finding was triaged on. The refusal is ``error:
+    raw_input_empty`` and leaves the record byte-identical, so the next fetch of the
+    same comment meets the same mismatch rather than a silently stale pairing.
+
+    Scoped to the PLAN-FINDINGS file set like the other write verbs, so a Q-Gate or
+    assessment hash is identified and refused rather than rewritten.
+    """
+    store = resolve_findings_store(plan_id)
+    if store_unreached(store):
+        return unresolved_store_error(plan_id, store)
+
+    parent = get_finding(plan_id, hash_id)
+    if not parent or parent.get('status') != 'success':
+        return _not_found(plan_id, store, hash_id, 'Finding')
+
+    quarantined = _quarantine_raw_input(raw_input, raw_input_max_bytes)
+    if not _carries_text(quarantined):
+        return {
+            'status': 'error',
+            'error': 'raw_input_empty',
+            'hash_id': hash_id,
+            'message': (
+                f'Finding {hash_id} was not updated: the new raw_input quarantines to no text, '
+                'so the stored text and its edit term are kept as they are'
+            ),
+            **store_state_fields(store),
+        }
+
+    resolution = parent.get('resolution')
+    text_changed = quarantined != (parent.get('raw_input') or None)
+    updates: dict[str, Any] = {'detail': detail}
+    if resolution == 'pending':
+        outcome = 'updated'
+    elif text_changed:
+        outcome = 'reopened'
+        updates.update({'resolution': 'pending', 'resolution_detail': None})
+        updates.update(_fix_stamp_reset(parent, None))
+        if parent.get('responded'):
+            updates['responded'] = False
+            updates['responded_at'] = None
+    else:
+        outcome = 'kept_resolved'
+
+    if outcome != 'kept_resolved':
+        updates['raw_input'] = quarantined
+        if reviewed_commit_sha:
+            updates['reviewed_commit_sha'] = reviewed_commit_sha
+
+    if _update_in_finding_files(store, hash_id, updates):
+        return {
+            'status': 'success',
+            'hash_id': hash_id,
+            'outcome': outcome,
+            'resolution': updates.get('resolution', resolution),
+            **store_state_fields(store),
+        }
+    return _not_found(plan_id, store, hash_id, 'Finding')
+
+
+def _carries_text(quarantined: dict[str, str] | None) -> bool:
+    """Return whether any quarantined field kept text beyond the truncation marker.
+
+    A field clipped by a non-positive cap holds the marker alone, which records
+    that something was cut and nothing of what it was.
+    """
+    if not quarantined:
+        return False
+    return any(value and value != RAW_INPUT_TRUNCATION_MARKER for value in quarantined.values())
 
 
 # --- Q-Gate Findings ---

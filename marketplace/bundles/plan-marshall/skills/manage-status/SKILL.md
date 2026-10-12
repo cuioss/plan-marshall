@@ -1295,13 +1295,37 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status archiv
 (omitted when the flag is absent — no schema migration). Used by `plan-doctor`
 rule `stuck-low-confidence-archive` as the canonical remediation flag so a
 retrospective audit can distinguish intentional abandonment from neglect.
-Example values: `low_confidence`, `scope_changed`, `superseded_by_<plan_id>`.
 
-**Phase closure and the unexaminable record.** Archive closes every phase recorded `in_progress`, leaves every `pending` phase alone, and writes `current_phase: complete` once the phase structure was read IN FULL and nothing remains open — see [status-lifecycle.md](standards/status-lifecycle.md) § "Phase-closure post-condition". `phase_closure` publishes which of those two paths ran on **every archive response that performs the move**, in the same shape the `census` cohort row uses for its two enumerated verdicts: `complete`, or `partial` with a `phase_closure_reason` naming the shortfall. A response that moves nothing carries no `phase_closure` field at all — both `--dry-run` (which returns `status: success` with `dry_run: true` and `would_archive_to`) and the no-reason unexaminable refusal below (which returns `status: error`) return before the phase-close write, so neither has a closure to report. A record whose `phases` could not be read in full keeps the `current_phase` it already had rather than being written `complete` — an unknown open-phase set is not an empty one.
+**The reason vocabulary is open, and one part of it is gated.** Any non-empty
+string is accepted; an empty or whitespace-only `--reason` names no reason and is
+refused with `error: invalid_archive_reason` before anything is read or moved.
+Surrounding whitespace is stripped from every accepted reason, and the stripped
+value is what `archived_reason` records. The reason decides which path the
+archive takes:
 
-**A no-reason archive of such a record is REFUSED.** Without `--reason` the archive runs the blocking-findings gate, and that gate cannot establish whether `6-finalize` is still open when the phases will not read; it fails closed with `error: phases_unexaminable` and moves nothing. A deliberate `--reason` archive still proceeds, so an operator is never blocked from closing a structurally broken plan — the decision just goes on the record.
+| Reason | Path |
+|--------|------|
+| absent | **Gated** — the completion archive `archive-plan` issues. |
+| empty or whitespace-only | **Refused** with `error: invalid_archive_reason`; nothing is moved. |
+| `normal_completion` | **Gated** exactly like an absent reason. A reason that asserts the plan completed is the close the blocking-findings gate exists to guard, so naming it can never disarm that gate. The membership test is case-insensitive over the stripped value, so `Normal_Completion` and ` normal_completion` are gated too. The set of completion-asserting reasons is `_COMPLETION_ASSERTING_ARCHIVE_REASONS` in `scripts/_cmd_lifecycle.py`. |
+| any other value (e.g. `low_confidence`, `scope_changed`, `superseded_by_<plan_id>`, `orphan_directory`, `dangling_worktree`) | **Exempt but reported** — a deliberate non-completion close. |
 
-**The findings gate reads the OPEN-PHASE SET, not `current_phase`.** A loop-back from `6-finalize` to `5-execute` leaves both phases `in_progress` while `current_phase` moves to `5-execute`, so a `current_phase` equality test would not fire in exactly the state a loop-back produces — and a no-reason archive could close both phases with actionable findings still pending.
+A gated archive is refused with `error: blocking_findings_present` while `6-finalize` is open and an actionable finding is pending, and with `error: phases_unexaminable` when the phases cannot be read (below). Both refusals — and the `invalid_archive_reason` refusal above — exit `0` and move nothing.
+
+An exempt archive is never refused by the findings gate, but the findings state is still evaluated, so an exempt close is never silent:
+
+| Result field | Meaning |
+|--------------|---------|
+| `findings_gate` | `exempted_by_reason` — present only on a reason-exempted archive. |
+| `pending_actionable_count` | The number of actionable findings still pending, `0` included, or the literal `unevaluable` when the pending query could not be evaluated. An unevaluable count is never reported as `0`. |
+
+Every reason-exempted archive also writes exactly **one** WARNING decision-log line — unconditionally, a clean store included — naming the reason and the pending count (or the `unevaluable` marker).
+
+**Phase closure and the unexaminable record.** Archive closes every phase recorded `in_progress`, leaves every `pending` phase alone, and writes `current_phase: complete` once the phase structure was read IN FULL and nothing remains open — see [status-lifecycle.md](standards/status-lifecycle.md) § "Phase-closure post-condition". `phase_closure` publishes which of those two paths ran on **every archive response that performs the move**, in the same shape the `census` cohort row uses for its two enumerated verdicts: `complete`, or `partial` with a `phase_closure_reason` naming the shortfall. A response that moves nothing carries no `phase_closure` field at all — `--dry-run` (which returns `status: success` with `dry_run: true` and `would_archive_to`) and every refusal (each returns `status: error`: `invalid_archive_reason`, `blocking_findings_present`, and the gated unexaminable refusal below among them) return before the phase-close write, so none has a closure to report. A record whose `phases` could not be read in full keeps the `current_phase` it already had rather than being written `complete` — an unknown open-phase set is not an empty one.
+
+**A gated archive of such a record is REFUSED.** A gated archive runs the blocking-findings gate, and that gate cannot establish whether `6-finalize` is still open when the phases will not read; it fails closed with `error: phases_unexaminable` and moves nothing. A deliberate non-completion `--reason` archive still proceeds, so an operator is never blocked from closing a structurally broken plan — the decision just goes on the record.
+
+**The findings gate reads the OPEN-PHASE SET, not `current_phase`.** A loop-back from `6-finalize` to `5-execute` leaves both phases `in_progress` while `current_phase` moves to `5-execute`, so a `current_phase` equality test would not fire in exactly the state a loop-back produces — and a gated archive could close both phases with actionable findings still pending.
 
 **Output** (TOON):
 ```toon
@@ -1311,6 +1335,37 @@ archived_to: .plan/local/archived-plans/2026-04-02-my-feature
 phase_closure: complete
 ```
 
+**Output — exempt reason, findings still pending** (TOON):
+```toon
+status: success
+plan_id: my-feature
+archived_to: .plan/local/archived-plans/2026-04-02-my-feature
+phase_closure: complete
+findings_gate: exempted_by_reason
+pending_actionable_count: 3
+```
+
+**Output — gated archive refused on a pending finding** (TOON, nothing moved):
+```toon
+status: error
+plan_id: my-feature
+error: blocking_findings_present
+phase: 6-finalize
+blocking_count: 2
+blocking_types[6]: build-error,test-failure,lint-issue,sonar-issue,qgate,pr-comment
+per_type:
+  sonar-issue: 2
+message: "pending_findings_blocking_count failed for phase '6-finalize': ..."
+```
+
+**Output — empty `--reason` refused** (TOON, nothing moved):
+```toon
+status: error
+plan_id: my-feature
+error: invalid_archive_reason
+message: "Refusing to archive 'my-feature': --reason is empty or whitespace-only. ..."
+```
+
 **Output — phases unreadable, archived deliberately with `--reason`** (TOON):
 ```toon
 status: success
@@ -1318,16 +1373,18 @@ plan_id: my-feature
 archived_to: .plan/local/archived-plans/2026-04-02-my-feature
 phase_closure: partial
 phase_closure_reason: "the phases of 'my-feature' could not be read in full, so the open-phase set is unknown and the existing current_phase was preserved rather than written complete: phases[1] is str, not a phase record"
+findings_gate: exempted_by_reason
+pending_actionable_count: 0
 ```
 
-**Output — phases unreadable, no `--reason`** (TOON, fail-closed, nothing moved):
+**Output — phases unreadable, gated archive** (TOON, fail-closed, nothing moved):
 ```toon
 status: error
 plan_id: my-feature
 error: phases_unexaminable
 unexaminable[1]:
   - "phases[1] is str, not a phase record"
-message: "Refusing a no-reason archive of 'my-feature': its phases could not be read in full ..."
+message: "Refusing a completion archive of 'my-feature': its phases could not be read in full ..."
 ```
 
 ### delete-plan

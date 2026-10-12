@@ -3,23 +3,19 @@ sender_type=orchestrator
 sender_id=lessons-routing
 epic=live-blockers
 kind=finding
-created=2026-10-12T13:53:22Z
+created=2026-10-12T13:53:19Z
 
-# Lessons ingest: red CI has no triage route — verification-feedback refuses every producer ci-verify emits
+# Lessons ingest: an Antigravity run records zero tokens as a real number and no plan records its harness
 
-Severity: high (graded at this ingest: the documented red-CI triage path is unreachable; backlog § 1.24 listed it as small). Bundle: `plan-marshall` (`phase-6-finalize/scripts/ci_verify.py`, `plan-marshall/workflow/verification-feedback.md`).
+Severity: **critical** (operator ruling 2026-10-12: Antigravity issues are the highest priority). Bundle: `plan-marshall` (`platform-runtime`, `manage-metrics`, `manage-execution-manifest record-step`, `plan-orchestrator preflight`, `phase-1-init`).
 
-Source: pm-mcp-core epic `pm-mcp-core-m2-m4`, four plans. Full bodies: `lessons-routing/lessons-archive/filed-live-blockers/`.
+Source: pm-mcp-core PLAN-41 (PR #34), Antigravity. Full bodies: `lessons-routing/lessons-archive/filed-live-blockers/`.
 
-| Message | Plan | Statement |
-|---|---|---|
-| `pm-mcp-core-m2-m4-003` | #18 | Red CI (Sonar gate); dispatch refused `unknown_producer`; findings waited for the unified triage. |
-| `pm-mcp-core-m2-m4-024` | #20 | Same refusal for `ci-verify-policy`. |
-| `pm-mcp-core-m2-m4-042` | #25 | Same. |
-| `pm-mcp-core-m2-m4-103` | #29 | Same; dispatcher re-dispatched by hand with `producer=pr-state`. An "Integration Tests" workflow was classed `ci-verify-policy` rather than `ci-verify-build` because its name has no build token. |
+| Message | Statement |
+|---|---|
+| `pm-mcp-core-m2-m4-124` | Every `record-step` reads `unmeasured`; `metrics.md` shows `-` throughout; the landing-facts block carries `total_tokens=0`, which passes `landing-check` as complete. A plan with no measurement is indistinguishable from a free one. |
+| `pm-mcp-core-m2-m4-132` | No archived plan of the epic (11 Claude Code plans and the Antigravity one) has a `client.toon`: nothing on the `/plan-marshall` start path calls `orchestrator preflight`. The only traces of Antigravity were incidental. The orchestrator cannot tell harnesses apart mechanically, so it cannot apply the stricter Antigravity verification. |
 
-Ground truth at `fc0090a24`: `ci_verify.py:121-125` emits `ci-verify-missing/-build/-policy/-timeout/-cancelled`; `verification-feedback.md` § Inputs and Step 1 guard accept only `build-runner, sonar, pr-comment, plugin-doctor, pr-state, finalize-feedback`. **Still present.**
+Asked for: a transcript-less runtime emits `total_tokens=unknown`, not `0`; a `transcripts: none` capability flag in the metrics header; `phase-1-init` runs the preflight hook and stamps `harness` into `status.json` metadata; a `harness=` landing-facts key `landing-check` reports.
 
-Asked for: one shared producer constant for both sides, or a mapping at the ci-verify boundary; a contract test pairing every ci-verify producer with the accept-set; CI-check classification by what the job runs, not by name tokens.
-
-Owner today: PLAN-LB-24 (`review-step`, running) — its declared surface includes `verification-feedback.md` and `test/plan-marshall/plan-marshall/test_verification_feedback_producer_vocab.py`. Check whether it closes this.
+Owner today: none found. Not re-checked at HEAD by the ingest.

@@ -118,7 +118,7 @@ Both branches that advance an unreviewed HEAD — the `proceed` policy branch an
     --granted-over "unreviewed HEAD: {outcome_detail}" --reason "re_review_on_timeout=proceed policy branch (outcome={outcome})"
   ```
 
-- **`defer`** (auto-skip the merge, no prompt): decision-log, then take the SAME skip path as the interactive "No, skip merge" branch in the **Pre-Merge Confirmation Gate** below — set `{merge_consent} = deferred`, skip the **Merge PR**, **Wait for Merge CI**, **Remove Worktree**, and **Switch to Base Branch** sections, emit the `mark-step-done` payload using **Branch C — declined by user**, and return:
+- **`defer`** (auto-skip the merge, no prompt): decision-log, then take the SAME skip path as the interactive "No, skip merge" branch in the **Pre-Merge Confirmation Gate** below — give up the merge admission first (this branch fires no prompt, so under `full_window_release_at_waits` the widened hold is still held here and is released with `merge_lock release`; a run that does not hold the lock withdraws its FIFO entry with `merge_lock dequeue`, never `release` — `branch-cleanup.md` § "Merge-Mutex Hold Window" invariant 4), then set `{merge_consent} = deferred`, skip the **Merge PR**, **Wait for Merge CI**, **Remove Worktree**, and **Switch to Base Branch** sections, emit the `mark-step-done` payload using **Branch C — declined by user**, and return:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -178,7 +178,7 @@ Both branches that advance an unreviewed HEAD — the `proceed` policy branch an
       --granted-over "unreviewed HEAD: {outcome_detail}" --reason "{operator selection: Merge anyway — proceed unreviewed} (outcome={outcome})"
     ```
 
-  - **"Defer merge"** → take the SAME skip path as the `defer` policy above (set `{merge_consent} = deferred`, skip Merge PR / Wait for Merge CI / Remove Worktree / Switch to Base Branch, emit `mark-step-done` Branch C, return). Log the decision:
+  - **"Defer merge"** → take the SAME skip path as the `defer` policy above (give up the merge admission — this run holds no lock at this prompt, because the release-before-wait above released it and under `pre_merge_only` it was never acquired, so this is `merge_lock dequeue`, never `release` — then set `{merge_consent} = deferred`, skip Merge PR / Wait for Merge CI / Remove Worktree / Switch to Base Branch, emit `mark-step-done` Branch C, return). Log the decision:
 
     ```bash
     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \

@@ -130,6 +130,20 @@ class TokenValidatorTest {
 }
 ```
 
+## Removing a Redundant Test
+
+Two tests that prove the same behaviour are one test too many, and removing one is ordinary hygiene. The removal is correct only when the test that stays asserts at least as much as the one that goes.
+
+1. **Name the surviving test.** A test is redundant with respect to one named test, not with respect to "the other tests".
+2. **Compare the assertions, not the names or the lines executed.** The two tests may call the same method and differ in what they check — the whole returned object against one of its fields, an exact message against its presence, a counter against no counter.
+3. **Move what is stricter before deleting.** Every assertion the removed test makes and the surviving test does not is added to the surviving test first.
+4. **Stop when the surviving test cannot be changed.** If it is out of scope for the change, the stricter test stays, and the pair is reported instead of removed.
+5. **Check the inputs.** Tests that look identical can differ in the value they feed — a different key size, realm, or boundary value. Where the difference selects a different path, they are not duplicates.
+
+An unchanged coverage figure does not replace step 2 — see `coverage-analysis-pattern.md`, "What an Unchanged Coverage Figure Does Not Show". A lower test count after the removal is expected; state the count before, the number removed, and the count after.
+
+When the removed test is referenced elsewhere — a threat model, a traceability table, a review report — the reference is re-pointed to the surviving test in the same change. Search for the removed method names as well as the removed class names.
+
 ## Test Types
 
 * Unit test classes named `*Test.java`

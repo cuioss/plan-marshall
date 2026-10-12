@@ -227,7 +227,7 @@ WORKTREE: --plan-id feature-jwt-auth
 
 7. AskUserQuestion (within a batched decision): the LLM can flag M of N findings as `ASK_USER_QUESTION`; the subagent raises the M prompts one by one. Batching the *decision* call does not batch the user UX.
 
-8. **RESPOND (Step 8)**: one `github_pr post_responses` call transmits every terminal-disposition `pr-comment` finding's thread-reply, and one `sonar post_responses` call transmits every terminal `sonar-issue` server-side dismissal — each keyed by `hash_id`, never by positional pairing.
+8. **RESPOND (Step 8)**: one `github_pr post_responses` call transmits the thread-reply of every terminal-disposition `pr-comment` finding that is not held, and one `sonar post_responses` call transmits every terminal `sonar-issue` server-side dismissal — each keyed by `hash_id`, never by positional pairing. The `fixed` findings whose fix commit is not yet stamped — here the ones the two new fix tasks own — are returned as `deferred_until_commit` and get no reply in this call.
 
 **Step 7 (subagent returns):**
 
@@ -245,7 +245,7 @@ fix_task_numbers[2]:
 
 Plus one `<usage>` tag — one envelope cost, not six.
 
-**Step 8 (orchestrator):** item 7c consumes the return exactly as item 7b does — `mark-step-done` is NOT called for item 7c itself (it produces no `phase_steps["6-finalize"]` record of its own; it is not a manifest step). The dispatcher reads `loop_back_target`, applies the symmetric `loop_back_without_asking` knob and the `max_iterations` ceiling, then re-enters per the granularity branch (`5-execute` full-phase rollback / `6-finalize` inline replay). A re-entry re-fires both `plan-marshall:automatic-review` and `sonar-roundtrip` (they are HEAD-dependent — the fix commit advanced HEAD), which re-FIND against the new tree, and item 7c runs the unified triage again.
+**Step 8 (orchestrator):** item 7c consumes the return exactly as item 7b does — `mark-step-done` is NOT called for item 7c itself (it produces no `phase_steps["6-finalize"]` record of its own; it is not a manifest step). The dispatcher reads `loop_back_target`, applies the symmetric `loop_back_without_asking` knob and the `max_iterations` ceiling, then re-enters per the granularity branch (`5-execute` full-phase rollback / `6-finalize` inline replay). A re-entry re-fires both `plan-marshall:automatic-review` and `sonar-roundtrip` (they are HEAD-dependent — the fix commit advanced HEAD), which re-FIND against the new tree, and item 7c runs the unified triage again. That later firing of item 7c starts by closing the held replies: the fix commit is pushed by then, so the hook stamps it on the findings whose fix task is done and runs the respond pass again, which transmits their replies with the commit id and resolves their threads.
 
 ### Key by-reference property
 

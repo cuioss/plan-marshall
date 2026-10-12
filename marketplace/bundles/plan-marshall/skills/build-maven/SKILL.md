@@ -39,7 +39,7 @@ See `build-api-reference.md` for the full subcommand API and availability matrix
 - **run**: `--command-args` takes Maven goals/options, e.g., `"verify -Ppre-commit -pl my-module"`
 - **parse**: Additional `no-openrewrite` mode filters OpenRewrite markers
 - **coverage-report**: Searches `target/site/jacoco/jacoco.xml`, `target/jacoco/report.xml`, `target/site/jacoco-aggregate/jacoco.xml`
-- **discover**: Subprocess-free — parses each `pom.xml` with stdlib XML for coordinates, packaging, and declared profile ids, and walks the filesystem for sources/tests. Resolved coordinates, inherited profiles, and the resolved dependency tree are filled lazily, one module at a time, by `enrich_maven_module` (which runs `dependency:tree`, `help:all-profiles`) only when a consumer — the dependency graph or the resolver's profile-canonical path — needs them.
+- **discover**: Subprocess-free — parses each `pom.xml` with stdlib XML for coordinates, packaging, declared profile ids, and the dependencies declared in the module's own POM, and walks the filesystem for sources/tests. A module whose own POM depends on another module of the same reactor with `<type>test-jar</type>` or a non-empty `<classifier>` records the artifact in `metadata.reactor_test_artifacts` and gets the `package`-phase test ladder (`module-tests` = `package -pl {module} -am`, `test-compile` = the same with `-DskipTests`); see [`standards/maven-impl.md`](standards/maven-impl.md) § "Test ladder for reactor test artifacts". Resolved coordinates, inherited profiles, and the resolved dependency tree are filled lazily, one module at a time, by `enrich_maven_module` (which runs `dependency:tree`, `help:all-profiles`) only when a consumer — the dependency graph or the resolver's profile-canonical path — needs them.
 
 ### Producer-Side Finding Storage (`run --plan-id`)
 
@@ -52,6 +52,11 @@ When `run` is invoked with `--plan-id <P>`, every parsed issue from a failed bui
 | everything else (compilation, dependency, plugin, surefire/failsafe) | `build-error` |
 
 Severity is mapped from `Issue.severity` (`error` → `error`, `warning` → `warning`). The finding's `module` carries `maven`, `rule` carries the parser category.
+
+Two kinds of `[ERROR]` / `[WARNING]` line are not issues, so they never become findings:
+
+- **Maven's failure epilogue** — the fixed advice printed after a failed build (the `-e` / `-X` re-run advice, the "For more information" and `[Help N]` link lines, the resume advice and its `mvn … -rf :module` / `mvn [args] -r` command), Surefire's report pointers (both the `Please refer to …` and the `See …` wording, for test results and for dump files), and Maven 4's `[ERROR]`-level reactor-summary rows and `BUILD FAILURE` banner. Each line is matched in full, so a reworded line is filed again rather than a genuine diagnostic being dropped; `Failed to execute goal …` and compiler `file:[line,col]` messages stay issues on every Maven version.
+- **Passing test-count lines** — a `Tests run:` line (summary or per-class) whose `Failures` and `Errors` are both 0, such as `[WARNING] Tests run: 27, Failures: 0, Errors: 0, Skipped: 1`. A count line with failures or errors is still filed.
 
 > For the producer→store→consumer→gate flow including the producer-mismatch fidelity contract, see [`ref-workflow-architecture/standards/findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md). This SKILL.md owns the per-tool issue→finding-type routing only.
 

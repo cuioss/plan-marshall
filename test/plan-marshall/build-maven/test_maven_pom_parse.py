@@ -4,8 +4,8 @@
 
 ``discover_maven_modules`` no longer shells out to Maven for the cheap module
 shape: ``_parse_pom_xml`` extracts packaging / artifactId / groupId (with
-parent fallback) / declared profile ids / description / parent GAV from the
-``pom.xml`` with stdlib ``xml.etree``. These tests pin that parse against both
+parent fallback) / declared profile ids / description / parent GAV / own
+dependencies from the ``pom.xml`` with stdlib ``xml.etree``. These tests pin that parse against both
 namespaced (the usual ``http://maven.apache.org/POM/4.0.0`` declaration) and
 namespace-less POMs. No Maven binary is required.
 """
@@ -170,3 +170,202 @@ def test_parse_pom_xml_malformed_returns_defaults():
     assert result['packaging'] == 'jar'
     assert result['artifact_id'] is None
     assert result['profile_ids'] == []
+
+
+def test_parse_pom_xml_malformed_exact_shape():
+    """The malformed-POM default carries every key, dependencies as an empty list."""
+    result = _parse_pom_xml(_write_pom('<project><artifactId>broken'))
+    assert result == {
+        'packaging': 'jar',
+        'artifact_id': None,
+        'group_id': None,
+        'profile_ids': [],
+        'description': None,
+        'parent': None,
+        'dependencies': [],
+    }
+
+
+# =============================================================================
+# exact shape
+# =============================================================================
+
+
+def test_parse_pom_xml_exact_shape_namespaced():
+    """The full parse result for a namespaced POM, including the dependencies key."""
+    assert _parse_pom_xml(_write_pom(_NS_POM)) == {
+        'packaging': 'war',
+        'artifact_id': 'my-app',
+        'group_id': 'com.example',
+        'profile_ids': ['coverage', 'integration-tests'],
+        'description': 'My example application',
+        'parent': None,
+        'dependencies': [],
+    }
+
+
+def test_parse_pom_xml_exact_shape_parent_fallback():
+    """The full parse result for a child POM inheriting its groupId."""
+    assert _parse_pom_xml(_write_pom(_PARENT_FALLBACK_POM)) == {
+        'packaging': 'jar',
+        'artifact_id': 'child-mod',
+        'group_id': 'com.parent',
+        'profile_ids': [],
+        'description': None,
+        'parent': 'com.parent:parent-pom',
+        'dependencies': [],
+    }
+
+
+# =============================================================================
+# own dependencies
+# =============================================================================
+
+# Child POM declaring dependencies in its own <dependencies>, in
+# <dependencyManagement>, and inside a profile — only the first are read.
+_DEPENDENCIES_POM = """<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.parent</groupId>
+    <artifactId>parent-pom</artifactId>
+    <version>1.0.0</version>
+  </parent>
+  <groupId>com.child</groupId>
+  <artifactId>client</artifactId>
+  <dependencies>
+    <dependency>
+      <groupId>com.child</groupId>
+      <artifactId>validation</artifactId>
+      <version>1.0.0</version>
+      <classifier>generators</classifier>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.child</groupId>
+      <artifactId>fixtures</artifactId>
+      <version>1.0.0</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>${project.groupId}</groupId>
+      <artifactId>api</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>${project.parent.groupId}</groupId>
+      <artifactId>bom-member</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>${custom.group}</groupId>
+      <artifactId>custom</artifactId>
+    </dependency>
+    <dependency>
+      <artifactId>no-group</artifactId>
+    </dependency>
+  </dependencies>
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>com.managed</groupId>
+        <artifactId>managed-only</artifactId>
+        <classifier>generators</classifier>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+  <profiles>
+    <profile>
+      <id>extra</id>
+      <dependencies>
+        <dependency>
+          <groupId>com.profile</groupId>
+          <artifactId>profile-only</artifactId>
+          <type>test-jar</type>
+        </dependency>
+      </dependencies>
+    </profile>
+  </profiles>
+</project>
+"""
+
+
+def _dependencies_by_artifact() -> dict[str, dict]:
+    """Parse ``_DEPENDENCIES_POM`` and key its dependencies by artifactId."""
+    return {d['artifact_id']: d for d in _parse_pom_xml(_write_pom(_DEPENDENCIES_POM))['dependencies']}
+
+
+def test_parse_pom_xml_dependency_with_classifier():
+    """A classified dependency carries its classifier and keeps the default jar type."""
+    assert _dependencies_by_artifact()['validation'] == {
+        'group_id': 'com.child',
+        'artifact_id': 'validation',
+        'type': 'jar',
+        'classifier': 'generators',
+        'scope': 'test',
+    }
+
+
+def test_parse_pom_xml_dependency_with_test_jar_type():
+    """A test-jar dependency carries its type and no classifier."""
+    assert _dependencies_by_artifact()['fixtures'] == {
+        'group_id': 'com.child',
+        'artifact_id': 'fixtures',
+        'type': 'test-jar',
+        'classifier': None,
+        'scope': 'test',
+    }
+
+
+def test_parse_pom_xml_dependency_defaults_type_and_scope():
+    """An undeclared type and scope take Maven's defaults (jar, compile)."""
+    api = _dependencies_by_artifact()['api']
+    assert api['type'] == 'jar'
+    assert api['scope'] == 'compile'
+    assert api['classifier'] is None
+
+
+def test_parse_pom_xml_dependency_interpolates_project_group_id():
+    """${project.groupId} resolves to the module's own groupId."""
+    assert _dependencies_by_artifact()['api']['group_id'] == 'com.child'
+
+
+def test_parse_pom_xml_dependency_interpolates_project_parent_group_id():
+    """${project.parent.groupId} resolves to the parent's groupId."""
+    assert _dependencies_by_artifact()['bom-member']['group_id'] == 'com.parent'
+
+
+def test_parse_pom_xml_dependency_project_group_id_uses_inherited_group():
+    """A child without its own groupId interpolates ${project.groupId} to the inherited one."""
+    pom = """<project>
+  <parent>
+    <groupId>com.parent</groupId>
+    <artifactId>parent-pom</artifactId>
+  </parent>
+  <artifactId>child</artifactId>
+  <dependencies>
+    <dependency>
+      <groupId>${project.groupId}</groupId>
+      <artifactId>sibling</artifactId>
+      <type>test-jar</type>
+    </dependency>
+  </dependencies>
+</project>
+"""
+    dependencies = _parse_pom_xml(_write_pom(pom))['dependencies']
+    assert [(d['group_id'], d['artifact_id']) for d in dependencies] == [('com.parent', 'sibling')]
+
+
+def test_parse_pom_xml_dependency_other_property_stays_literal():
+    """Any other property is left uninterpolated."""
+    assert _dependencies_by_artifact()['custom']['group_id'] == '${custom.group}'
+
+
+def test_parse_pom_xml_dependency_without_group_id_is_skipped():
+    """A dependency lacking a groupId is not reported."""
+    assert 'no-group' not in _dependencies_by_artifact()
+
+
+def test_parse_pom_xml_dependencies_exclude_management_and_profiles():
+    """Only /project/dependencies is read, in declared order."""
+    artifact_ids = [d['artifact_id'] for d in _parse_pom_xml(_write_pom(_DEPENDENCIES_POM))['dependencies']]
+    assert artifact_ids == ['validation', 'fixtures', 'api', 'bom-member', 'custom']

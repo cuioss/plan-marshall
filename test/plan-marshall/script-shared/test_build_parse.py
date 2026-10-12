@@ -11,6 +11,8 @@ import pytest
 MODE_ACTIONABLE = _build_parse_mod.MODE_ACTIONABLE
 MODE_ERRORS = _build_parse_mod.MODE_ERRORS
 MODE_STRUCTURED = _build_parse_mod.MODE_STRUCTURED
+POPULATION_MEASURED = _build_parse_mod.POPULATION_MEASURED
+POPULATION_UNMEASURED = _build_parse_mod.POPULATION_UNMEASURED
 SEVERITY_ERROR = _build_parse_mod.SEVERITY_ERROR
 SEVERITY_WARNING = _build_parse_mod.SEVERITY_WARNING
 Issue = _build_parse_mod.Issue
@@ -212,6 +214,69 @@ def test_executed_is_not_serialised_by_to_dict():
     summary = UnitTestSummary(passed=10, failed=2, skipped=1, total=13)
 
     assert set(summary.to_dict()) == {'passed', 'failed', 'skipped', 'total'}
+
+
+# =============================================================================
+# UnitTestSummary.by_runner / population — opt-in fields, unchanged wire default
+# =============================================================================
+#
+# A parser that attributes counts to runners, or that could not recognise its
+# summary blocks, says so through these two fields. Every other parser sets
+# neither, so the serialised shape every existing consumer reads must stay
+# exactly what it was.
+
+
+def test_population_constants():
+    """The two population verdicts have their published spellings."""
+    assert POPULATION_MEASURED == 'measured'
+    assert POPULATION_UNMEASURED == 'unmeasured'
+
+
+def test_test_summary_new_fields_default_to_measured_and_unattributed():
+    summary = UnitTestSummary(passed=10, failed=2, skipped=1, total=13)
+
+    assert summary.by_runner is None
+    assert summary.population == POPULATION_MEASURED
+
+
+def test_to_dict_is_unchanged_when_neither_new_field_is_set():
+    """An explicitly measured summary with no runner breakdown serialises as before."""
+    summary = UnitTestSummary(passed=10, failed=2, skipped=1, total=13, population=POPULATION_MEASURED)
+
+    assert summary.to_dict() == {'passed': 10, 'failed': 2, 'skipped': 1, 'total': 13}
+
+
+def test_to_dict_emits_by_runner_when_set():
+    summary = UnitTestSummary(passed=728, failed=0, skipped=3, total=731, by_runner={'surefire': 721, 'failsafe': 7})
+
+    result = summary.to_dict()
+
+    assert result['by_runner'] == {'surefire': 721, 'failsafe': 7}
+    assert 'population' not in result
+
+
+def test_to_dict_emits_population_only_when_unmeasured():
+    summary = UnitTestSummary(passed=339, failed=1, skipped=0, total=340, population=POPULATION_UNMEASURED)
+
+    result = summary.to_dict()
+
+    assert result['population'] == POPULATION_UNMEASURED
+    assert 'by_runner' not in result
+
+
+def test_to_dict_by_runner_is_a_copy():
+    """The emitted breakdown is detached from the summary it was read from."""
+    by_runner = {'surefire': 4}
+    summary = UnitTestSummary(passed=4, failed=0, skipped=0, total=4, by_runner=by_runner)
+
+    summary.to_dict()['by_runner']['surefire'] = 99
+
+    assert summary.by_runner == {'surefire': 4}
+
+
+def test_test_summary_rejects_an_unknown_population():
+    with pytest.raises(ValueError, match='population'):
+        UnitTestSummary(passed=1, failed=0, skipped=0, total=1, population='partial')
 
 
 def _use_plan_base_dir(monkeypatch, tmpdir: str) -> None:

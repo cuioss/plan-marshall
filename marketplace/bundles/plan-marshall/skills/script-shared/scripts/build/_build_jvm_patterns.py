@@ -14,9 +14,13 @@ import re
 
 from _build_parse import CategoryPatterns
 
-# Shared JVM compilation error patterns recognized by both Maven and Gradle.
-# Maven uses substring matching; Gradle uses regex. Each parser adapts
-# these base patterns to its matching mode when merging.
+# Shared JVM issue category patterns recognized by both Maven and Gradle.
+# Both parsers match through `categorize_issue`: a pattern that contains a
+# regex metacharacter — a bracket included — is a case-insensitive regex, and
+# any other pattern is a case-insensitive substring. A bracket in a pattern
+# therefore makes it a regex, so a literal bracket must be escaped
+# (`r'\[deprecation\]'`); unescaped, `[deprecation]` is a character class that
+# matches any single one of its letters.
 JVM_BASE_PATTERNS: CategoryPatterns = {
     'compilation_error': [
         'cannot find symbol',
@@ -51,11 +55,11 @@ JVM_BASE_PATTERNS: CategoryPatterns = {
         'missing @',
     ],
     'deprecation_warning': [
-        '[deprecation]',
+        r'\[deprecation\]',
         'has been deprecated',
     ],
     'unchecked_warning': [
-        '[unchecked]',
+        r'\[unchecked\]',
         'unchecked conversion',
     ],
     'openrewrite_info': [

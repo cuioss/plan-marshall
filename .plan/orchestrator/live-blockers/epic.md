@@ -199,6 +199,125 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
     (`2026-10-08-21-006`), `-012` (`2026-10-08-21-004`).
   - `-002` (the self-review never converged) — not lifted: the run used the self-review
     from before #1726. Kept as the baseline of the Watch on the regraded review.
+- **PLAN-LB-29 shipped on 2026-10-09 (#1724, `35b5589b5`)** — record at `landings/PLAN-LB-29.md`.
+  The sync now reports whether Claude Code's plugin registry matches the version it just
+  installed (`behind` is a partial result, `ahead` is not an error), one reader serves the
+  sync, the pin trap and the restart check, and the OpenCode and Antigravity installs
+  receive every file of a skill directory, `workflow/` included. Eight of the nine spec
+  deliverables landed as specified or with a small deviation; the repin landed in part.
+  The registry is written only on request: `sync.py --repin`, `registry_pin.py --apply`, or
+  at finalize when the machine-local `registry-repin` setting is `enabled` (default
+  `disabled`). The plan grew to fifteen deliverables — two accepted quality-check findings
+  and a symbolic-link hardening class from review — and cost 16.8 million tokens over
+  about 26 hours. It changed the root `opencode.json` into a shape the repository's own
+  code does not read (see Open Defects).
+- **Inbox drain of 2026-10-09 (second), eighteen messages** — fourteen from PLAN-LB-29, four
+  findings from the `lessons-routing` epic, which retired nine lessons from the corpus and
+  handed their subjects to this epic (bodies at
+  `lessons-routing/lessons-archive/filed-live-blockers/`):
+  - `plan-lb-29-harness-sync-014` (landing) — reconciled; complete.
+  - Folded into staged specs, no surface added: `-001` (scope-creep guard, third recurrence)
+    and `lessons-routing-002` (task artifact lines list a sibling task's uncommitted files)
+    into PLAN-LB-27; `-012` (housekeeping's retired-field read, second recurrence) and the
+    generated-commit item of `lessons-routing-001` into PLAN-LB-32; the merge-commit item
+    of `-013` and the bot-in-progress item of `lessons-routing-003` into PLAN-LB-25.
+  - Promoted to the lessons corpus, none with an owning plan here: `-002` as
+    `2026-10-09-15-001` (the test-scope resolver has no target for `marketplace/targets/`
+    and `test/sync-harnesses/`), `-008` as `-15-002` (task planning cannot append tasks for
+    a deliverable added later), `-009` as `-15-003` (a loop-back books finalize time on the
+    execute phase), `-011` as `-15-004` (the transcript reduction counts subagent
+    hand-backs as operator turns), `-013` as `-15-005` (seven finalize steps the dispatcher
+    improvised), `-005` as `-15-006` (triage fixes a reviewer finding at the commented site
+    only; four sites of one class took two extra rounds), `-007` as `-15-007`
+    (`@coderabbitai full review` and the bot's replies to it are stored as findings).
+  - Already shipped, discarded: `-003` (the freshness gate refused the builds the manifest
+    prescribes — the union rule of PLAN-LB-23, #1729, accepts them now) and `-004` (a
+    defect seen outside the review's candidates was dropped — the review shipped as #1726
+    returns it as an advisory observation the verifier may promote).
+  - Covered by PLAN-LB-24, which is running, so recorded here and not in its spec: `-006`
+    (the rate-window wait cannot run in a dispatched step; its deliverable 2 returns the
+    wait to the dispatcher). Read against that spec on 2026-10-09, three things from this
+    drain are NOT in it and are to be checked at its landing: the claim window equals the
+    wait budget (`-006`); `@coderabbitai full review` is not excluded as an own trigger, and
+    "Already reviewed the last commit" is treated as a refusal, not noise (`-007`); a
+    `fixed` reply is held back until the fixing commit is on the branch, but not until
+    verify is green (`lessons-routing-003`).
+  - Duplicate of lesson `2026-10-09-13-005`, discarded: `-010` (all 38 dispatch-boundary
+    rows without a step id).
+  - `lessons-routing-004` (enrol the repositories left unwritten for schema failure) —
+    covered by PLAN-LB-31 deliverable 6; discarded.
+  - `lessons-routing-001` — two of its four items shipped with #1726 (the verifier is
+    dispatched by the dispatcher; a class sweep exists, limited to the surfaced
+    candidates), one went to PLAN-LB-32, one is open (see Open Defects).
+- **PLAN-LB-32 shipped on 2026-10-10 (#1741, `ef7d36617`)** — record at `landings/PLAN-LB-32.md`.
+  All seven deliverables are accounted for, and the objective is not met yet: a re-fire of
+  the two project steps is not cheaper in practice. Plugin-doctor keeps its full re-fire —
+  the narrower skip rule was examined and refuted with a named counter-example, as the spec
+  allowed. Housekeeping gained the delta rule, but it narrows the judging and not the
+  dispatch, runs after every lesson body has been loaded, and never met a real lesson on
+  this run, because the corpus was empty. On its own run the plan fired the two steps 11 and
+  10 times and spent 70 percent of 13.7 million tokens in finalize. What it did deliver for
+  good: both steps read the realized footprint (the retired-field read is gone from
+  housekeeping), one log line per firing, and a verb any step can call to ask what changed
+  since its last firing. See Open Defects and the Watch.
+  - Its self-review closed by the verifier, with no operator close: the first such landing.
+  - Its `sync-plugin-cache` step is recorded failed: the registry pins 0.1.1892, the cache
+    was synced to 0.1.1894, and repinning is disabled on this machine. The remedy is the
+    operator's: `python3 marketplace/targets/claude/registry_pin.py --apply`, then a restart.
+  - PLAN-LB-33 may now do its last deliverable: the plugin-doctor passage it targets is
+    unchanged by this landing (the symlink sentence at lines 29 and 203, the generation call
+    at 206-207). PLAN-LB-25 and PLAN-LB-27 no longer share a file with a running PLAN-LB-32.
+- **Inbox drain of 2026-10-10, seven messages from PLAN-LB-32:**
+  - `-007` (landing) — reconciled; complete.
+  - `-001` (scope-creep guard, fifth plan in a row without a signal) — folded into
+    PLAN-LB-27. No surface added.
+  - Promoted to the lessons corpus: `-002` as `2026-10-10-06-001` (no verb edits a task's
+    verification commands, so moving a test re-creates every task), `-003` as `-06-002`
+    (check for an empty corpus before dispatching housekeeping), `-004` as `-06-003` (an
+    empty-corpus exit should name the non-active records), `-006` as `-06-004` (the
+    automatic-review `display_detail` template is 87 characters with an em dash against an
+    80-character ASCII rule).
+  - `-005` (every dispatch-boundary row without a step id) — third landing in a row;
+    absorbed as an Open Defect.
+  - The question `-004` leaves open — where 18 lessons went between two outline passes — is
+    answered here: the `lessons-routing` ingest runs of 2026-10-09 retired the corpus into
+    `lessons-routing/lessons-archive/`. `manage-lessons list` read `total: 1, filtered: 0`
+    on 2026-10-10 before this drain's promotions.
+- **PLAN-LB-34, 35 and 36, staged on 2026-10-09: self-review surfacers for every domain.**
+  PLAN-LB-34 is the operator's top priority. Measured with `corpus cross-check`: it shares
+  no declared file with PLAN-LB-24 or PLAN-LB-32 (both running), and one with PLAN-LB-26
+  (`pre-submission-self-review.md`) — sequence those two. PLAN-LB-35 and PLAN-LB-36 each
+  share three entries with PLAN-LB-34 (the extension-point standard, the shared module, the
+  plan-marshall surfacer's detector module), which is the dependency: neither starts before
+  PLAN-LB-34 has landed. PLAN-LB-28 lost its self-review half to PLAN-LB-34 and overlaps no
+  live plan.
+- **PLAN-LB-33 leaf-test-scope-and-executor, staged on 2026-10-09 at high priority.** It
+  owns two former Open Defects (per-task test scope; the main executor pointing into a
+  removed worktree) and the executor half of a third (empty-string arguments dropped).
+  Measured with `corpus cross-check`: it shares one conditional entry with PLAN-LB-32
+  (running) — the plugin-doctor step document, touched only by its last deliverable, which
+  waits for that landing — and nothing with PLAN-LB-24 (running), 25, 28 or 31. With
+  PLAN-LB-26 it shares `phase-5-execute/SKILL.md` and `canonical_verify.md`, with
+  PLAN-LB-27 `phase-5-execute/SKILL.md`. It is to be launched ahead of PLAN-LB-25 to 28.
+- **Inbox drain of 2026-10-09 (third), six findings from the `lessons-routing` epic.** Its
+  second ingest retired thirteen more lessons from the corpus, among them lessons this
+  ledger cites by id (`2026-10-08-21-003`, `2026-10-09-13-001`, `-13-004`, `-15-001`,
+  `-15-007`). **A lesson id cited here that the corpus no longer returns is to be read at
+  `lessons-routing/lessons-archive/filed-live-blockers/{id}.md`.**
+  - `-005` — its first item is PLAN-LB-32, which is running; its residual question is
+    answered from that spec: the pre-push gate and ci-verify re-fires are left out there on
+    purpose, with the other six head-dependent steps (see Watches). Its second item is a
+    third baseline for the self-review Watch.
+  - `-006` (scope-creep guard, fourth recurrence: exit 1 with an empty stderr) — folded
+    into PLAN-LB-27. No surface added.
+  - `-007` (five review-step and review-gate defects) — PLAN-LB-24 is running, so nothing
+    is folded into its spec. Added to the checks at its landing; the four it does not
+    appear to own are an Open Defect.
+  - `-008` (per-task tests have no runnable scope) and `-009` (the main executor pointing
+    into a removed worktree) — both already Open Defects here; each asks whether to stage.
+    That is the operator's decision and is put to them.
+  - `-010` (the outline's domain narrowing can empty `references.domains`, and the
+    documented recovery call fails) — absorbed as an Open Defect; not verified at HEAD.
 - **Standalone plan outside the queue, commissioned by the operator on 2026-10-08:** "the
   pre-submission self-review blocks on real defects, not on wording". It has no queue row and
   is not run through plan-marshall; the operator hands it to OpenCode. Brief:
@@ -410,6 +529,110 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
     sit in the two documents it rewrites. PLAN-LB-27's spec says so.
   - Scope-bloat guard: seven deliverables, above six, proceeding unsplit on the operator's
     authorization of up to twelve.
+- 2026-10-09 — **Cleanup run by operator instruction, after the second drain; not landed, on
+  the same instruction.** Re-grounding covered the six staged specs (PLAN-LB-25, 26, 27,
+  28, 31, 32) at `4ed67e228`; PLAN-LB-24 is running and was excluded, and shipped and
+  superseded specs were not re-grounded. 159 verdicts were stamped: 145 corroborated, 5
+  unverifiable, 9 contradicted and re-scoped in place.
+  - PLAN-LB-25 and PLAN-LB-26: nothing contradicted and no deliverable already done.
+    PLAN-LB-23 did not do PLAN-LB-26's bounded-wait deliverable: the daemon route still
+    loops without a bound and the five documents still disagree.
+  - PLAN-LB-27: two hypotheses refuted. A finding of a new type does not reach the Step 11
+    triage, whose read sweeps `test-failure` and `lint-issue` only, so the type choice in
+    its first deliverable must also settle how the finding is read; and the residual is
+    already kept in the result when persisting fails. Its surface gained two conditional
+    entries (`verification-feedback.md`, `_task_artifacts.py`); the first now overlaps
+    PLAN-LB-24.
+  - PLAN-LB-28: its Maven half holds unchanged. In its self-review half three observed
+    claims are no longer true after #1726 and #1718: the verifier no longer refuses a clean
+    full-surface round on structural grounds, an operator close exists, and the verdict set
+    has six members. Its third self-review deliverable shrinks to reporting the files no
+    check covered. One hypothesis was refuted: a Maven parser fix does reach routed builds.
+  - PLAN-LB-31: two claims re-scoped (two pull requests are named in the old ledger after
+    all; the enrolled repositories' pins have moved to v0.40.0 and v0.37.0), and a stale
+    deliverable number corrected. The schema failures that held thirteen repositories back
+    reportedly no longer fail under the released schema.
+  - PLAN-LB-32: all sixteen observed claims hold. One hypothesis refuted — a lesson has no
+    reliable last-changed time, so its second deliverable uses a content hash — and two
+    verify-first clauses now carry what was read: the existing `classify` subcommand
+    returns before the diff for both steps, and the helper it wants to reuse sits in a
+    file a plain import cannot name.
+  - No spec was found already fixed; none lacks an objective, a surface or claim labels.
+    No duplication finding: the cross-check shows no new overlap except the one above.
+    No relocation to `settled.md` was made: the judgement was deferred, because the
+    operator was not asked in this run.
+  - Ledger compaction: both invariants hold; the view was regenerated. The inbox was
+    drained by the analyze verb before this pass; the cleanup's own archive phase refuses
+    by design. Restart verdict `not_ready`: PLAN-LB-24 is running. Registry parity reads
+    `indeterminate` on this machine (the registry pins 0.1.1890, the executor states
+    0.1.1888).
+  - Deviation, recorded, as on 2026-10-08: the six verification agents each wrote one
+    result file under `.plan/temp/`, and the verdicts were stamped from those files by a
+    driver that calls `corpus set-verdict` once per claim. No agent wrote to the ledger.
+- 2026-10-09 — **PLAN-LB-33 staged at high priority by operator instruction** ("stage both.
+  consider into which plan"): the two Open Defects on per-task test scope and on the main
+  executor, as one plan of ten deliverables in WS-02, labelled a weak merge and licensed to
+  split at outline between deliverables 6 and 7.
+  - Folding into an existing plan was considered for each half and not chosen. The test
+    scope is closest to PLAN-LB-26, which works on the same execute loop, but that plan
+    holds eleven deliverables and five more would pass the authorized twelve. PLAN-LB-28
+    was the other candidate; it is already a weak merge of two subjects and shares no file
+    with the resolver. The executor half belongs with the plugin-doctor step document, which
+    PLAN-LB-32 is rewriting and which is running, so nothing can be folded into it; no
+    staged plan declares the executor generator or its template.
+  - The two halves are one plan and not two because of the fixed cost of a landing in this
+    epic: 13 to 17 million tokens each, more than half in finalize.
+  - Read at `fcd54e6ef` before drafting. The resolver's registered targets are bundle
+    names only, while the build wrapper accepts any directory under `test/`; a narrow
+    target has its own duration key, starts unmeasured and is classed orchestrator-tier on
+    first use. For the executor: the generator writes wherever the working directory
+    resolves, two callers pin it and the plugin-doctor step does not; the bootstrap's cache
+    recovery walks one directory level short of the installed layout; and the executor
+    drops empty-string arguments, which is the executor half of the domain-narrowing defect.
+  - Scope-bloat guard: ten deliverables, above six, proceeding unsplit on the operator's
+    authorization of up to twelve.
+- 2026-10-09 — **Self-review surfacers for every domain staged as three plans, by operator
+  instruction** ("I meant the self-review surfacer. This is the most important one. For all
+  domains"). PLAN-LB-34 builds the foundation and the Java surfacer; PLAN-LB-35 adds
+  JavaScript and Python; PLAN-LB-36 adds documents, containers and requirements, settles
+  what happens to a file no domain claims, and ends with a table accounting for every
+  domain key. PLAN-LB-34 is the top priority of the epic; 35 and 36 wait for it and may then
+  run together.
+  - This revives work the retired `truthful-signals` epic had specified and never ran:
+    PLAN-TRUTH-181 (foundation) and PLAN-TRUTH-182 to -185 (Java, Python, JavaScript,
+    documents), requested by the operator on 2026-09-26 and dropped at this epic's cut on
+    2026-10-07, when PLAN-LB-03 kept only the first third of the foundation as a stopgap.
+    The five specs were read from git history at `1e556f15d^`; their designs are carried,
+    re-read against `fcd54e6ef`. Containers and requirements had no earlier spec.
+  - **PLAN-LB-28 was split.** It was a weak merge licensed to split; its self-review half
+    (deliverables 5 to 8, from PLAN-LB-03) moved to PLAN-LB-34 with its ten surface entries.
+    PLAN-LB-28 is the Maven plan only and now shares no file with any live plan.
+  - Why three plans and not one per domain or one for all: six surfacers plus the
+    foundation is far above twelve deliverables; one plan per domain would pay the fixed cost
+    of a landing seven times. The foundation carries Java because Java is where the gap was
+    reported and a real second surfacer is the test that the foundation works. The other
+    five split by kind — programming languages, and document-like domains — and sit in
+    separate bundles, so the two later plans share only the class table of the standard.
+  - What changed since the earlier specs, read at `fcd54e6ef`: since #1726 a round over a
+    diff the one surfacer classes entirely as `other` closes as clean instead of looping, so
+    an unreviewed Java change now passes quietly — read from the verifier rule, not observed
+    on a consumer run. The workflow is wired to the one surfacer by name in five places, and
+    several of its checks are worded for Python. The behavioural check over changed code
+    that #1726 added exists for Python only.
+  - **Three design decisions, taken by the operator on 2026-10-09** and written into the
+    specs: (1) surfacers are routed per domain, through the resolver triage uses, so a
+    repository runs only the surfacers of the domains it enabled; (2) the `-cui` bundles
+    contribute no detectors and are covered by their base domain's surfacer; (3) no
+    last-resort surfacer for files no domain claims — "not for now, we start with the
+    others" — so such files stay reported as not covered, PLAN-LB-36 lists the deliberately
+    uncovered types and counts them, and the last-resort surfacer is deferred, not rejected.
+  - Scope-bloat guard: 11, 8 and 9 deliverables, each above six, proceeding unsplit on the
+    operator's authorization of up to twelve.
+- 2026-10-09 — **parallelization_scope raised from 2 to 4 by operator instruction** ("set
+  the parallelism to 4"). Four plans were already running on per-launch overrides
+  (PLAN-LB-24, 32, 33 and 34); the knob now matches what the operator runs. The limit on
+  real parallelism is unchanged: plans that share `phase-6-finalize/SKILL.md`,
+  `execution.md` or the self-review workflow still run in sequence.
 
 ## Open Defects
 
@@ -478,6 +701,95 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   `2026-10-09-13-004` carries the proposal. — source: inbox messages
   `lb-23-verify-builds-009.md` and `-014.md`, 2026-10-09; reported by the plan's
   orchestrator, not reproduced here.
+- **The root `opencode.json` is in a shape nothing in this repository reads.** PLAN-LB-29's
+  merge commit rewrote it: `permission.bash`, a map of command pattern to
+  `allow`/`ask`/`deny`, became a `permissions` array of `{action, resource, effect}`
+  objects, `agent` became `agents`, `skills.paths` became a bare list, and the file grew
+  from about 650 to about 2730 lines. `opencode_runtime.py` still reads `permission` and
+  the OpenCode emitter still writes `agent`. No deliverable asked for it and the diff holds
+  no producer for it. If OpenCode ignores the new keys, the deny rules for `gh`, `rm`,
+  `git restore`, `git stash` and the rest do not apply in an OpenCode session of this
+  repository. OpenCode's own schema was not checked here. Not owned by any staged plan.
+  Next step: compare the file with the OpenCode configuration schema, and regenerate it
+  from the emitter if the old shape is the valid one. — source: `git show 35b5589b5 --
+  opencode.json`, read 2026-10-09; read-only review of the commit.
+- **`sync.py --repin` can repin bundles the run did not sync.** It passes the one synced
+  version as the target for every registry bundle, so `--bundles X --repin` also moves any
+  other bundle that has a directory of that version. — source: read-only review of
+  `35b5589b5`, `marketplace/targets/sync.py:855-861`; not reproduced.
+- **Symbolic-link handling in the sync has three known gaps**, named by PLAN-LB-29 and
+  confirmed in the code: a window between the link check and the write in
+  `registry_pin.py`, `sync.py` and `cache_sync.py` (no no-follow open); the two
+  `variant_emitter.py` files write with a bare `write_text` when called directly; a version
+  string containing a slash is checked for containment but not for an intermediate link.
+  Not owned by any staged plan. — source: inbox message `plan-lb-29-harness-sync-014.md`;
+  read-only review of `35b5589b5`.
+- **Four review-gate defects have no owner.** Handed over from retired lessons, seen in
+  consumer repositories, none re-checked in code: (1) `github_re_review re-review
+  --bot-kind cuioss-review-bot` reported a match on a CodeRabbit review, so a re-review
+  awaited for one bot is satisfied by another's (`2026-10-05-17-001`); (2) a bot that edits
+  its summary comment in place gets a second pending finding on every pre-merge re-fetch,
+  which blocks the merge until resolved by hand (`2026-10-05-14-006`); (3) the `CodeRabbit`
+  commit status is in the CI-complete check set, so a slow or rate-limited bot is reported
+  as a CI timeout (`2026-10-05-14-007`); (4) nothing compares the planned footprint with a
+  required bot's size cap before the pull request is created (`2026-10-04-09-001`).
+  PLAN-LB-24 (running) owns the review step; read against its objective and first four
+  deliverables only, none of the four was found there. Decide at its landing whether they
+  go to PLAN-LB-25, a follow-up plan or the backlog. — source: inbox message
+  `lessons-routing-007.md`, 2026-10-09.
+- **The outline's domain narrowing can leave a plan with no domain, and the documented
+  recovery fails.** On a consumer-repository plan every deliverable declared
+  `domain: documentation`, the phase-3 narrowing dropped all detected domains, and
+  `references.domains` was `[]`, so no domain skill resolved in any later phase until the
+  list was restored by hand. The documented recovery, `manage-references set-list --values
+  ""`, exits 2 because the executor strips empty-string arguments; `--values=` works. Seen
+  once. Graded high by the operator in the `lessons-routing` session. Not verified at HEAD
+  and not owned by any staged plan. — source: inbox message `lessons-routing-010.md`
+  (retired lesson `2026-10-05-17-002`), 2026-10-09.
+- **The housekeeping delta rule PLAN-LB-32 shipped has three gaps.** (1) It decides "edited
+  since the last firing" by file modification time
+  (`.claude/skills/finalize-step-lessons-housekeeping/scripts/affected_lessons.py`, lines
+  245 and 339). `restore-from-plan` moves a lesson file and keeps its old modification time,
+  so a lesson restored after the last firing is carried over without ever being judged; the
+  spec required a content hash for this reason. (2) The rule applies after the corpus has
+  been enumerated with every lesson body, and the empty-corpus exit records no firing time,
+  so the firing after an empty one is a full run. (3) Unconfirmed: the imported helper finds
+  the bundles root by walking up from the working directory, so a firing whose script runs
+  from the main checkout while given the worktree path would fall back to a full run every
+  time; the tests pin the root and cannot see it. Also left: one document still names the
+  retired `modified_files` field (`.claude/skills/recipe-plan-review/SKILL.md`, lines 70 and
+  86). Not owned by any staged plan. — source: read-only review of `ef7d36617`, 2026-10-10.
+- **Dispatch-boundary rows carry no step id, on three landings in a row.** PLAN-LB-23 (30 of
+  34 rows), PLAN-LB-29 (38 of 38) and PLAN-LB-32 (54 of 54) recorded their dispatch
+  boundaries without a step key and with all four context-load figures unmeasured. The
+  effect is that no landing can say what a finalize step cost: the figures this ledger
+  quotes for housekeeping and plugin-doctor re-fires are estimates from row shape. The flag
+  is optional, so the omission is silent. Not owned by any staged plan; it is what every
+  cost decision in this epic is measured with. — source: inbox messages
+  `lb-23-verify-builds-013.md`, `plan-lb-29-harness-sync-010.md`,
+  `lb-32-head-dependent-step-refire-005.md`.
+- **The self-review has no outcome for "could not establish coverage".** A round that cannot
+  read everything it is asked to judge still returns an ordinary verdict: the figures
+  `contract_sources_read` and `contract_sources_listed` are reported and nothing branches on
+  them, a missing verifier records a loop-back, and no outcome is exempt from the round
+  ceiling. So a round that fails for lack of a tool spends a round, and one that reads only
+  part of its surface can close. Reported fixture: seven firings, five of five loop-backs,
+  263 candidates, closed by operator override. Not owned by any staged plan; PLAN-LB-28
+  edits the same workflow and is the place to fold it if it recurs after #1726. — source:
+  inbox message `lessons-routing-001.md` (the PLAN-09 row), 2026-10-09; the absence was read
+  in `pre-submission-self-review.md` at `4ed67e228`.
+- **Staged as PLAN-LB-33 on 2026-10-09; remove the next entry and the executor entry below
+  when that plan lands.**
+- **Per-task tests have no runnable scope on two landings in a row.** `resolve-test-scope`
+  maps only paths under `marketplace/bundles/` and test directories named after a bundle;
+  everything else returns no target and falls back to a whole-tree run that is too long for
+  a dispatched step. On PLAN-LB-29, 11 of 17 execute dispatches stopped to hand that run
+  over, at 3.9 million tokens; on PLAN-LB-23, 5 of 7, and three test failures surfaced only
+  at batch runs. Lessons `2026-10-09-13-001` and `2026-10-09-15-001` carry the two halves of
+  the remedy. Not owned by any staged plan; the cost is of the size that got PLAN-LB-32
+  staged. — source: inbox messages `lb-23-verify-builds-004.md` and
+  `plan-lb-29-harness-sync-002.md`; the mapping was read at
+  `script-shared/scripts/build/_test_scope_divergence.py` § `_module_for_path`, `4ed67e228`.
 
 ## Watches
 
@@ -494,6 +806,25 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
     leader and left a build that ignores SIGTERM alive; a `PermissionError` recorded a
     timed-out job as `failure`). A regraded review that stops earlier must still reach
     defects of that kind. — source: inbox message `lb-23-verify-builds-002.md`.
+  - Second baseline, from PLAN-LB-29: six rounds, 29 findings, nearly all over-wide prose
+    claims, closed by the operator at the round limit; 3,220,593 tokens in author and
+    verifier dispatches. In its last round the reviewer saw a real defect outside its
+    candidates (the install sync writing through a destination symlink) and did not file
+    it; CodeRabbit filed it one round later as Major. The review shipped as #1726 returns
+    such an observation as advisory and lets the verifier promote it. Check on the next
+    landings whether a real code defect seen that way was promoted, or again left as text.
+    — source: inbox message `plan-lb-29-harness-sync-004.md`.
+  - Third baseline, from a consumer repository before #1726 (cui-http PLAN-13, PR #262, a
+    documentation-claims plan): about seven rounds, each reworded claim producing new
+    findings, the ceiling exceeded twice on operator authorisation. — source: inbox message
+    `lessons-routing-005.md` (retired lesson `2026-10-05-17-003`).
+  - **First landing on the regraded review: PLAN-LB-32 closed by verifier**
+    (`acceptance=accepted`, `may_close=yes`, 0 blocking, 12 advisory notes left open; no
+    operator close). One of the two landings this Watch asks for. Its round count and the
+    review's token cost are not in the landing facts, and whether any of the 12 advisory
+    notes was a real defect was not checked; three of them named the same out-of-scope
+    observation in three rounds. — source: inbox message
+    `lb-32-head-dependent-step-refire-007.md`.
 
 - **A landing from the Antigravity harness reported `total_tokens=0`** (PLAN-LB-30) and still
   passed the completeness check, which accepts any value that is not `n/a` or `unknown`.
@@ -507,9 +838,23 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   and plugin-doctor fired seven times each with identical results. Lesson
   `2026-10-08-21-003` carries the proposal. — trigger: stage it as a plan if the next two
   landings report the same cost.
-  - **Staged on 2026-10-09 as PLAN-LB-32, at high priority, by operator instruction.**
-    Retire this Watch when PLAN-LB-32 lands and one later landing reports the two steps'
-    re-fires as carried over or skipped.
+  - **Staged on 2026-10-09 as PLAN-LB-32, at high priority, by operator instruction; running
+    since the same day.** Retire this Watch when PLAN-LB-32 lands and one later landing
+    reports the two steps' re-fires as carried over or skipped.
+  - **What PLAN-LB-32 leaves open, on purpose:** the other eight head-dependent steps still
+    re-fire in full on every fix commit — among them the pre-push gate and ci-verify, which
+    the retired lesson names. After PLAN-LB-32 lands, read the next landing's finalize cost
+    by step before deciding whether any of them needs the same treatment. — source: inbox
+    message `lessons-routing-005.md`, 2026-10-09.
+  - **PLAN-LB-32 landed on 2026-10-10 and this Watch stays open.** The cost it was staged
+    against is the dispatch of each re-fire, about 100,000 to 125,000 tokens for
+    housekeeping, and nothing it shipped avoids a dispatch: plugin-doctor's skip was refuted,
+    and housekeeping's delta rule and its empty-corpus exit both run inside the dispatched
+    step. Its own run: 11 and 10 firings. Only a decision the dispatcher can take from a
+    script before dispatching saves that cost — for housekeeping, "no active lesson" and
+    "nothing a lesson depends on changed"; lesson `2026-10-10-06-002` carries the first. The
+    standard rules out a derived verdict surface, so this needs a design decision, not only
+    a fix. Retire when a landing reports the two steps' re-fires as not dispatched.
   - **Trigger met on 2026-10-09.** Of the two landings
     since, PLAN-LB-30 had no fix commit and so no re-fire; PLAN-LB-23 had both steps fire
     eight times with identical verdicts ("0 rm, 0 promo, 0 adapt, 64 keep"; plugin-doctor
@@ -518,9 +863,6 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
     cost (PLAN-LB-14 five firings, PLAN-LB-22 seven, PLAN-LB-23 eight). The message adds
     two proposals to the lesson's: a delta prefilter for housekeeping, and one aggregate
     log line per firing. — source: inbox message `lb-23-verify-builds-003.md`.
-- **PLAN-LB-29 must rebase onto PLAN-LB-14's landing** in `orchestrator.py` and
-  `plan-orchestrator/SKILL.md`. — trigger: when PLAN-LB-29 reaches its pre-merge rebase or
-  reports a conflict; retire when it lands.
 - **The archived-epic tree left `main`** (#1717, `1e556f15d`: archived plans and orchestrator
   records moved to plan-marshall-telemetry). Claims in the live specs that cite a file under
   `.plan/archived-orchestrators/` were corroborated before that move and can no longer be read
@@ -532,10 +874,14 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   orchestrated source spec. — trigger: the first `next` run on the new gate; retire when it
   reports the comparison determinate.
 
-- **Harness installs lag the source after every landing** until PLAN-LB-15 ships: the plugin
-  registry pin is behind the executor. A session may run stale skill text. — trigger: before
-  trusting a skill's behaviour right after a landing, compare the registry pin with
-  `MARSHALL_VERSION`; retire when PLAN-LB-15 lands.
+- **Harness installs still lag the source after a landing unless the repin is applied.**
+  PLAN-LB-29 shipped the report and the repin, but the repin is off by default
+  (`registry-repin` is `disabled` on the machines seen so far), so finalize reports
+  `behind` and a session keeps running the older skill text until someone runs
+  `sync.py --repin` and restarts. PLAN-LB-23's orchestrator followed a stale cached
+  workflow document for exactly this reason. — trigger: before trusting a skill's
+  behaviour right after a landing, read the sync's `registry_parity` block; retire when
+  the operator has decided the setting for each machine.
 - **`plan-pr-078-review-bot-fleet-opt-in` is still listed as in progress at finalize** with a
   dead worktree pointer and its archive step never run; four consumer checkouts are still on
   its merged branch. — trigger: clean up by hand or when the worktree-pointer fix

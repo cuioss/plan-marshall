@@ -227,7 +227,7 @@ Layer D operates at **per-phase-boundary** granularity rather than per-tool-call
 - **Recovery is identical either way** — the operator must inspect each leaked path's diff and give an explicit disposition for it (revert that one path, or move the change into the worktree branch) before the boundary advances. Per-tool-call detection would surface the leak earlier but would not change the recovery steps.
 - **Filesystem-based detection works across hosts**, while a tool-call hook would not. Granularity is the cost; portability is the benefit.
 
-Plans that need finer-grained enforcement can run `phase_handshake capture` / `verify --strict` at intra-phase checkpoints, but the core contract remains per-phase. (The finalize blocking-findings gate is a *separate* mechanism — `phase_handshake findings-check --phase 6-finalize` in `branch-cleanup` — that gates pending findings, not the main-checkout drift this layer-D contract covers; it is not a `capture`/`verify --strict` checkpoint.)
+Plans that need finer-grained enforcement can run `phase_handshake capture` / `verify --strict` at intra-phase checkpoints, but the core contract remains per-phase. (The finalize blocking-findings gate is a *separate* mechanism — `pre_merge_gate merge` in `branch-cleanup`, which runs the `findings-check` verdict for `6-finalize` and owns the merge dispatch — that gates pending findings, not the main-checkout drift this layer-D contract covers; it is not a `capture`/`verify --strict` checkpoint.)
 
 ### Recovery Loop
 
@@ -473,7 +473,7 @@ message: {human-readable summary}
 
 The per-tree executor (`.plan/execute-script.py`) is **derived state**: it embeds a notation→path map generated from the bundle tree as it stood when the worktree was materialized. A rebase replays the branch onto a newly-fetched `origin/{base}`, so when those upstream commits added, removed, or renamed a bundle script the embedded map stops describing the tree — and every later dispatch in that worktree resolves against a stale map, leaving a notation introduced upstream unresolvable.
 
-`worktree-rebase-to` therefore refreshes the worktree executor as part of a successful rebase. The refresh lives in this verb rather than in any caller because **every** finalize rebase routes through it — this verb is the single seam, and it already knows whether the rebase replayed anything. Callers today include `finalize-step-sync-baseline` (`order: 3`), `automatic-review` (`order: 30`, refusal-recovery path), and `branch-cleanup` (`order: 70`); that roster is illustrative rather than closed, and the placement is chosen precisely so a **new** caller inherits the refresh without having to know it exists.
+`worktree-rebase-to` therefore refreshes the worktree executor as part of a successful rebase. The refresh lives in this verb rather than in any caller because **every** finalize rebase routes through it — this verb is the single seam, and it already knows whether the rebase replayed anything. Callers today include `finalize-step-sync-baseline` (`order: 1`), `automatic-review` (`order: 30`, refusal-recovery path), and `branch-cleanup` (`order: 70`); that roster is illustrative rather than closed, and the placement is chosen precisely so a **new** caller inherits the refresh without having to know it exists.
 
 Three conditions bound it, each observable on the payload:
 

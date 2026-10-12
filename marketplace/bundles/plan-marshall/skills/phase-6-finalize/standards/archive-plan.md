@@ -59,6 +59,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --display-detail "-> {archive_path}"
 ```
 
+**The `done` record is provisional until the archive call below succeeds.** `manage-status archive` can refuse — and a refused archive moves nothing, so the live plan path still resolves. On a refusal the "Archive" section below replaces this `done` record with `failed` on that still-live plan; `done → failed` is a transition `mark-step-done` accepts without `--force`. Only a `status: success` archive leaves the `done` record standing.
+
 ## Archive
 
 ```bash
@@ -66,15 +68,30 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status archiv
   --plan-id {plan_id}
 ```
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Plan archived: {plan_id}"
-```
+Parse the returned TOON `status` **before anything is logged**. A refusal exits `0` by the exit-code convention above, so the exit code is not the verdict — the `status` field is. The archive succeeded ONLY on `status: success`; every other outcome STOPS the step:
+
+- **`status: error`** — the archive was refused and the plan directory did NOT move. This covers `error: blocking_findings_present` (at least one actionable finding is still pending), `error: phases_unexaminable` (the plan's phase record could not be examined, so completion cannot be asserted), and **every other `error` value** — no error is treated as a successful archive. **STOP.** Re-record the step as `failed` on the still-live plan, replacing the provisional `done` record from "Mark Step Complete":
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+    --plan-id {plan_id} --phase 6-finalize --step archive-plan --outcome failed \
+    --display-detail "archive refused: {error}"
+  ```
+
+  Do NOT emit the archive log line below and do NOT run "Sweep the session-binding store" — the plan was not archived, so neither statement is true. Return an error TOON to the orchestrator carrying the archive call's refusal payload verbatim: its `error`, its `message`, and whichever of `blocking_count`, `blocking_types`, `per_type`, or `unexaminable` the payload carries. The condition is **blocking**, not advisory: the plan cannot be archived until every pending actionable finding is resolved (or the phase record is repaired), after which the step is re-run.
+
+- **`status: success`** — the plan directory was moved to `{archive_path}`. Emit the archive log line, then run "Sweep the session-binding store" below:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Plan archived: {plan_id}"
+  ```
 
 ## Sweep the session-binding store
 
 This section runs **after** the archive above — deliberately, and it is the only
-part of this document that does. By this point the plan whose finalize is
+part of this document that does. It runs ONLY on the archive's `status: success`
+branch; a refused archive STOPS before reaching it. By this point the plan whose finalize is
 executing has already left `.plan/local/plans/`, so its own now-stale
 `active-plan` slot is collected by the same sweep that collects every other
 archived plan's residue. Running the sweep before the archive would leave this
@@ -96,9 +113,10 @@ The sweep is **best-effort**: it MUST NOT fail the finalize. A non-zero exit or 
 unparseable TOON is logged and stepped over, never escalated — the plan is already
 archived and the pipeline is complete.
 
-This section carries **no `mark-step-done` call of its own** — the step's single
+This section carries **no `mark-step-done` call of its own** — the step's
 terminal record was already landed in "Mark Step Complete" above, before the
-archive moved `status.json` out of reach.
+archive moved `status.json` out of reach, and the successful archive is what
+made that provisional `done` record final.
 
 1. Run the GC:
 

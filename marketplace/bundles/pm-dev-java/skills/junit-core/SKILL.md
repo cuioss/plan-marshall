@@ -1,6 +1,6 @@
 ---
 name: junit-core
-description: JUnit 5 core testing patterns with AAA structure, test organization, and coverage standards
+description: JUnit 5 core testing patterns with AAA structure, test organization, and coverage standards, plus the Java test-code review rules a code review cites
 user-invocable: false
 mode: knowledge
 ---
@@ -33,6 +33,7 @@ This provides foundational rules for:
 - @Nested for grouping (3+ related tests)
 - Corner case testing
 - Coverage requirements (80% line/branch minimum)
+- Removing a redundant test (compare assertions before deleting, re-point references)
 
 ### Step 2: Load Additional Standards (As Needed)
 
@@ -48,14 +49,21 @@ Use when: Writing or reviewing integration tests (`*IT.java`). Covers naming, se
 Read: standards/testing-async-patterns.md
 ```
 
-Use when: Testing asynchronous behavior. Covers Awaitility patterns (never Thread.sleep).
+Use when: Testing asynchronous behavior, or shortening a test that waits. Covers Awaitility patterns (never Thread.sleep), waits that are the subject of the test, deadlines for signal-based waits, observing a transient state deterministically, and failure-path tests that would otherwise pay production back-off.
 
 **Coverage Analysis** (load for coverage work):
 ```text
 Read: standards/coverage-analysis-pattern.md
 ```
 
-Use when: Analyzing test coverage or improving coverage metrics.
+Use when: Analyzing test coverage or improving coverage metrics, or comparing coverage before and after a change.
+
+**Test Fork Policy** (load when the unit suite is slow or order-dependent):
+```text
+Read: standards/test-fork-policy.md
+```
+
+Use when: Deciding how many JVMs a unit suite starts — reusing one JVM for most classes, declaring isolation by JUnit tag, and guarding the split with a contract test.
 
 ## Key Rules Summary
 
@@ -124,7 +132,17 @@ Replace `${PACKAGE}`, `${CLASS_UNDER_TEST}`, `${METHOD_1}`, and placeholder comm
 
 | Standard | Purpose |
 |----------|---------|
-| testing-junit-core.md | Test structure, AAA pattern, assertions, nesting |
+| testing-junit-core.md | Test structure, AAA pattern, assertions, nesting, removing a redundant test |
 | testing-integration.md | Integration test naming, separation, lifecycle |
-| testing-async-patterns.md | Awaitility patterns (never Thread.sleep) |
-| coverage-analysis-pattern.md | Coverage analysis and gap improvement |
+| testing-async-patterns.md | Awaitility patterns (never Thread.sleep), the wall-clock exception, deadlines for signal-based waits, transient-state observation, failure-path back-off |
+| coverage-analysis-pattern.md | Coverage analysis, gap improvement, before/after comparison and what it cannot show |
+| test-fork-policy.md | Surefire fork groups by JUnit tag, isolation criteria, the partition guard |
+
+## Review Rules
+
+The review rules of the java domain for test code — what a code review looks for in a changed JUnit test. The block follows the harvestable block contract — see [`review-rubric.md` § 10 "Harvestable review-rule blocks"](../../../plan-marshall/skills/phase-6-finalize/standards/review-rubric.md) for its rules, which are not restated here.
+
+- A test of an exception path written as `try` / `catch` with no `fail()` after the call under test, so the test passes when no exception is thrown at all.
+- A `@Test` method that calls the code under test and asserts nothing about its result, so it passes whatever the code returns.
+- A test that depends on state another test left behind (a static field, a shared file, a declared method order), so it passes or fails by execution order instead of by the behaviour under test.
+- A test that waits with `Thread.sleep` for an asynchronous result instead of an Awaitility condition, so it fails intermittently whenever the result arrives later than the fixed sleep.

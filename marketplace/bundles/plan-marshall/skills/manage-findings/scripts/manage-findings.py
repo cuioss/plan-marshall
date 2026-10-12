@@ -8,6 +8,7 @@ Usage:
     python3 manage-findings.py list --plan-id <plan_id> [--any-checkout] [options]
     python3 manage-findings.py get --plan-id <plan_id> --hash-id <hash_id> [--any-checkout]
     python3 manage-findings.py resolve --plan-id <plan_id> --hash-id <hash_id> --resolution <resolution> [options]
+    python3 manage-findings.py stamp-fix-commit --plan-id <plan_id> --commit-sha <sha> (--task-number <n> | --hash-id <hash_id>)
     python3 manage-findings.py promote --plan-id <plan_id> --hash-id <hash_id> --promoted-to <promoted_to>
     python3 manage-findings.py ingest --plan-id <plan_id>
 
@@ -74,6 +75,7 @@ from _findings_core import (
     resolve_qgate_finding,
     resolve_qgate_findings_by_evidence,
     resolve_qgate_findings_by_rule,
+    stamp_fix_commit,
 )
 from _findings_ingest import ingest_findings
 from file_ops import output_toon, safe_main
@@ -83,6 +85,7 @@ from input_validation import (
     add_module_arg,
     add_phase_arg,
     add_plan_id_arg,
+    add_task_number_arg,
     parse_args_with_toon_errors,
 )
 
@@ -219,6 +222,17 @@ def cmd_resolve(args: argparse.Namespace) -> dict:
         hash_id=args.hash_id,
         resolution=args.resolution,
         detail=args.detail,
+        fix_task_number=getattr(args, 'task_number', None),
+    )
+
+
+def cmd_stamp_fix_commit(args: argparse.Namespace) -> dict:
+    """Handle: stamp-fix-commit"""
+    return stamp_fix_commit(
+        plan_id=args.plan_id,
+        commit_sha=args.commit_sha,
+        fix_task_number=args.task_number,
+        hash_id=args.hash_id,
     )
 
 
@@ -440,7 +454,30 @@ def main() -> int:
         '--resolution', required=True, choices=RESOLUTIONS, dest='resolution', help='Resolution status'
     )
     resolve_parser.add_argument('--detail', help='Resolution detail')
+    # The fix task that owns the fix. Accepted with ``--resolution fixed`` only; a
+    # fixed finding resolved without it is an inline fix, which has no task.
+    add_task_number_arg(resolve_parser, required=False)
     resolve_parser.set_defaults(func=cmd_resolve)
+
+    # stamp-fix-commit — record the commit a fix landed in on the fixed findings it
+    # belongs to. Exactly one selector is required: a fix task selects every fixed
+    # finding it owns, a hash id selects one finding (the form an inline fix uses,
+    # since it has no task). Both are declared optional and the writer refuses
+    # none-or-both with ``error: fix_stamp_selector_required``: an argparse
+    # mutually-exclusive group would report the clash as ``argument --hash-id: …``,
+    # which the TOON error translation reads as an invalid hash id.
+    stamp_parser = subparsers.add_parser(
+        'stamp-fix-commit',
+        help='Stamp the commit that carries the fix onto fixed findings (by fix task, or by finding)',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(stamp_parser)
+    stamp_parser.add_argument(
+        '--commit-sha', required=True, dest='commit_sha', help='Commit that carries the fix (7 to 40 hex characters)'
+    )
+    add_task_number_arg(stamp_parser, required=False)
+    add_hash_id_arg(stamp_parser, required=False)
+    stamp_parser.set_defaults(func=cmd_stamp_fix_commit)
 
     # promote
     promote_parser = subparsers.add_parser('promote', help='Promote a finding', allow_abbrev=False)

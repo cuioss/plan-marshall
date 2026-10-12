@@ -131,7 +131,7 @@ See [standards/jsonl-format.md](standards/jsonl-format.md) for the complete type
 
 ## CLI Commands
 
-**Parser architecture**: This script uses a two-level subparser pattern. Top-level subcommands (`add`, `list`, `get`, `resolve`, `promote`) handle plan-scoped findings directly. The `qgate` subcommand introduces a second parser level with its own subcommands (`qgate add`, `qgate list`, `qgate resolve`, `qgate resolve-evidenced`, `qgate resolve-by-rule`, `qgate clear`). The `assessment` subcommand introduces a third command group (`assessment add`, `assessment list`, `assessment get`, `assessment clear`). This mirrors the three storage scopes in the CLI surface.
+**Parser architecture**: This script uses a two-level subparser pattern. Top-level subcommands (`add`, `list`, `get`, `resolve`, `stamp-fix-commit`, `promote`, `ingest`) handle plan-scoped findings directly. The `qgate` subcommand introduces a second parser level with its own subcommands (`qgate add`, `qgate list`, `qgate resolve`, `qgate resolve-evidenced`, `qgate resolve-by-rule`, `qgate clear`). The `assessment` subcommand introduces a third command group (`assessment add`, `assessment list`, `assessment get`, `assessment clear`). This mirrors the three storage scopes in the CLI surface.
 
 ### Plan-Scoped Finding Commands
 
@@ -157,7 +157,13 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 # Use --resolution rejected when the validity-verification (ext-point-verify) stage
 # refutes the finding as a false positive (non-pending; never reaches triage).
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
-  resolve --plan-id {plan_id} --hash-id {hash_id} --resolution {resolution} [--detail DETAIL]
+  resolve --plan-id {plan_id} --hash-id {hash_id} --resolution {resolution} [--detail DETAIL] \
+  [--task-number N]
+
+# Stamp the commit that carries the fix onto fixed findings: every fixed finding
+# a fix task owns (--task-number), or one finding (--hash-id, the inline-fix form)
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  stamp-fix-commit --plan-id {plan_id} --commit-sha {commit_sha} --task-number {task_number}
 
 # Promote finding
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
@@ -167,6 +173,25 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   ingest --plan-id {plan_id}
 ```
+
+#### The fix stamp (`resolve --task-number`, `stamp-fix-commit`)
+
+A `fixed` finding carries two optional fields that describe its fix:
+
+| Field | Written by | Meaning |
+|-------|------------|---------|
+| `fix_task_number` | `resolve --resolution fixed --task-number N` | The fix task that owns the fix. Absent on an inline fix, which has no task. |
+| `fix_commit_sha` | `stamp-fix-commit` | The commit the fix landed in, lower-cased. Absent until it is stamped. |
+
+`resolve` accepts `--task-number` with `--resolution fixed` only; on any other resolution it returns `error: fix_task_number_requires_fixed` and writes nothing.
+
+`stamp-fix-commit` takes exactly one selector. `--task-number N` stamps every `fixed` finding whose `fix_task_number` is `N`. `--hash-id H` stamps that one finding, and is the form an inline fix uses. With neither selector, or with both, it returns `error: fix_stamp_selector_required`. `--commit-sha` must be 7 to 40 hexadecimal characters (`error: invalid_commit_sha` otherwise). The by-finding form returns `error: finding_not_fixed` for a finding whose resolution is not `fixed`. The by-task form returns `stamped_count: 0` when no `fixed` finding carries that task number.
+
+The stamp records which commit the caller says carries the fix. It does not check that the commit is on the pull request; the reader checks that when it reads (see [`workflow-integration-github` SKILL.md](../workflow-integration-github/SKILL.md) § "The `fixed` reply is held until the fix commit is on the pull request"). Stamping again replaces the value, which is the remedy after a rebase has rewritten the commit.
+
+**Changing a finding's resolution clears both fields**, in `resolve` and in the typed bulk resolve alike, on the same terms as the `responded` marker: the stamp belongs to one `fixed` disposition and does not survive another. Re-resolving a finding `fixed` under a different fix task clears the commit and stores the new task number. Re-resolving a `fixed` finding `fixed` with no `--task-number` changes neither field: it is an unchanged disposition, such as a reworded reply, so a task-owned fix keeps its task number and its commit. The absent flag makes a finding an inline fix only when the finding becomes `fixed` in that call.
+
+Both fields are provider-neutral. The GitHub `post_responses` verb reads `fix_commit_sha`; the GitLab verb does not read either field.
 
 #### Batched `raw_input` ingestion (`ingest`)
 
@@ -441,7 +466,44 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings ge
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
   --plan-id PLAN_ID --hash-id HASH_ID --resolution RESOLUTION \
-  [--detail TEXT]
+  [--detail TEXT] [--task-number N]
+```
+
+`--task-number` names the fix task that owns the fix and is accepted with
+`--resolution fixed` only. A finding that becomes `fixed` in a call without it is an
+inline fix. A finding that is already `fixed` and is resolved `fixed` again without it
+keeps the task number and the commit it carries — see § "The fix stamp".
+
+### stamp-fix-commit
+
+Exactly one of `--task-number` and `--hash-id` is required.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings stamp-fix-commit \
+  --plan-id PLAN_ID --commit-sha COMMIT_SHA --task-number N
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings stamp-fix-commit \
+  --plan-id PLAN_ID --commit-sha COMMIT_SHA --hash-id HASH_ID
+```
+
+Return shape — `selector` is `fix_task_number` or `hash_id`, and `hash_ids` lists
+the findings that were stamped:
+
+```toon
+status: success
+commit_sha: 4d6738e2d96150706cda6b682109336c5c0c383b
+selector: fix_task_number
+stamped_count: 2
+store_resolution: cwd_relative
+store_path: /repo/.plan/local/plans/EXAMPLE-PLAN/artifacts/findings
+findings_store_state: present
+unresolved_store: false
+
+hash_ids[2]:
+  - a3f2c1
+  - b4e3d2
 ```
 
 ### promote
@@ -587,6 +649,10 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings as
 | `invalid_type` | Type not in the finding types table |
 | `invalid_resolution` | Resolution not in the valid values |
 | `invalid_phase` | Phase not in 2-refine through 6-finalize |
+| `fix_task_number_requires_fixed` | `resolve` was given `--task-number` with a resolution other than `fixed`. Nothing is written. |
+| `invalid_commit_sha` | `stamp-fix-commit` was given a `--commit-sha` that is not 7 to 40 hexadecimal characters. |
+| `fix_stamp_selector_required` | `stamp-fix-commit` was given neither `--task-number` nor `--hash-id`, or both. |
+| `finding_not_fixed` | `stamp-fix-commit --hash-id` named a finding whose resolution is not `fixed`. The payload carries its `resolution`. |
 | `findings_store_unresolved` | `plans/{plan_id}/` is absent under the resolved root (`findings_store_state: plan_absent`), or no runtime-state root resolved at all (`unknown`). Returned by every surface — read, write and `add` — instead of a clean zero or a manufactured store. |
 | `finding_in_other_store` | The `hash_id` is absent from the plan-findings file set but present in a sibling store. The payload names the store (`found_in`) and the verb that owns it (`use_verb`); the sibling record is left byte-identical. |
 

@@ -24,7 +24,17 @@ import sys
 from contextlib import redirect_stdout
 from unittest.mock import patch
 
+import bot_registry
 import pytest
+from _github_pr_fixtures import (
+    ACKNOWLEDGMENT_BOT_KIND,
+    ACKNOWLEDGMENT_BOT_LOGIN,
+    CODERABBIT_ACKNOWLEDGMENT_COUNT,
+    CODERABBIT_ACKNOWLEDGMENTS,
+    CODERABBIT_FULL_REVIEW_ACKNOWLEDGMENTS,
+    CODERABBIT_GENUINE_SHORT_REVIEW_COMMENT,
+    HUMAN_COMMENT_QUOTING_AN_ACKNOWLEDGMENT,
+)
 from _resolve_project_dir_fixtures import worktree_query_result
 
 from conftest import get_script_path, load_script_module, run_script
@@ -151,6 +161,129 @@ class TestIsObviousNoise:
         body = 'This needs to be fixed because of a security issue with input validation.'
 
         assert not _is_obvious_noise(body)
+
+
+_ACKNOWLEDGMENT_PARAMS = [pytest.param(body, id=case_id) for case_id, body, _provenance in CODERABBIT_ACKNOWLEDGMENTS]
+assert _ACKNOWLEDGMENT_PARAMS, 'the declared acknowledgment population is empty'
+_FULL_REVIEW_ACKNOWLEDGMENT_PARAMS = [
+    pytest.param(body, id=case_id) for case_id, body, _provenance in CODERABBIT_FULL_REVIEW_ACKNOWLEDGMENTS
+]
+assert _FULL_REVIEW_ACKNOWLEDGMENT_PARAMS, 'the full-review acknowledgment population is empty'
+
+
+def _fetch_without_provider_reads(comments, args):
+    """Run ``_fetch_over`` with the two provider reads a non-empty fetch also makes stubbed.
+
+    The autouse stub covers the auth check and the HEAD SHA. A fetch that carries
+    comments additionally reads the merge candidate's commit time and may measure the
+    diff through the raw ``gh`` seam; both are held here so no case shells out.
+    """
+    with (
+        patch.object(github_pr._github, 'fetch_pr_head_committed_at', return_value=''),
+        patch.object(github_pr._github, 'run_gh', return_value=(0, '{"additions": 9, "deletions": 3}', '')),
+    ):
+        return _fetch_over(comments, args)
+
+
+def _bot_comment(comment_id, body, *, kind='issue_comment'):
+    """A comment from the acknowledging bot, in the shape the provider fetch returns."""
+    return {
+        'id': comment_id,
+        'kind': kind,
+        'author': ACKNOWLEDGMENT_BOT_LOGIN,
+        'body': body,
+        'path': '',
+        'line': 0,
+        'thread_id': '',
+        'resolved': False,
+    }
+
+
+class TestAcknowledgmentIsNoise:
+    """A bot's confirmation that a command was received files no finding."""
+
+    def test_the_population_is_the_declared_pair_and_the_full_review_replies(self):
+        """Non-vacuity: the cases below run over both declared wordings and both full-review replies."""
+        assert CODERABBIT_ACKNOWLEDGMENT_COUNT == len(_ACKNOWLEDGMENT_PARAMS) == 4
+        assert len(CODERABBIT_FULL_REVIEW_ACKNOWLEDGMENTS) == 2
+
+    @pytest.mark.parametrize('body', _ACKNOWLEDGMENT_PARAMS)
+    def test_an_acknowledgment_from_the_declaring_bot_is_noise(self, body):
+        assert _is_obvious_noise(body, ACKNOWLEDGMENT_BOT_KIND)
+
+    @pytest.mark.parametrize('body', _FULL_REVIEW_ACKNOWLEDGMENT_PARAMS)
+    def test_a_full_review_reply_is_noise_only_under_the_case_insensitive_match(self, body):
+        """The reply carries the declared literal in other letter case, and is still dropped.
+
+        The body does NOT contain the literal case-sensitively — the premise that made
+        it a stored finding before the match folded case — yet it is noise now.
+        """
+        declared = bot_registry.acknowledgment_patterns(ACKNOWLEDGMENT_BOT_KIND)
+        assert not any(literal in body for literal in declared)
+        assert _is_obvious_noise(body, ACKNOWLEDGMENT_BOT_KIND)
+
+    def test_fetch_findings_drops_the_full_review_replies_and_files_the_genuine_comment(self, plan_context):
+        """Through the verb: both full-review replies are noise, the same bot's genuine comment is filed."""
+        plan_id = 'gh-ack-full-review-noise'
+        plan_context.plan_dir_for(plan_id)
+        replies = [
+            _bot_comment(f'IC-ack-{case_id}', body)
+            for case_id, body, _provenance in CODERABBIT_FULL_REVIEW_ACKNOWLEDGMENTS
+        ]
+        genuine = _bot_comment('IC-genuine-full', CODERABBIT_GENUINE_SHORT_REVIEW_COMMENT)
+
+        result = _fetch_without_provider_reads([*replies, genuine], _StoreArgs(707, plan_id))
+
+        assert result['status'] == 'success'
+        assert result['count_skipped_noise'] == len(CODERABBIT_FULL_REVIEW_ACKNOWLEDGMENTS)
+        assert result['count_stored'] == 1
+        assert result['count_skipped_refusal'] == 0
+
+    def test_a_genuine_short_comment_from_the_same_bot_is_not_noise(self):
+        """NEGATIVE control: same bot, same length class, but feedback about the code."""
+        assert not _is_obvious_noise(CODERABBIT_GENUINE_SHORT_REVIEW_COMMENT, ACKNOWLEDGMENT_BOT_KIND)
+
+    def test_a_human_quoting_an_acknowledgment_is_not_noise(self):
+        """NEGATIVE control: the class is scoped to the bot that declared the literal."""
+        assert not _is_obvious_noise(HUMAN_COMMENT_QUOTING_AN_ACKNOWLEDGMENT)
+
+    def test_fetch_findings_skips_both_acknowledgments_and_files_the_genuine_comment(self, plan_context):
+        """Through the verb: two acknowledgments are dropped as noise, one comment is filed.
+
+        The genuine comment rides the SAME fetch from the SAME bot, so a filter that
+        dropped every short comment from this bot would fail here on ``count_stored``.
+        """
+        plan_id = 'gh-ack-noise-filed'
+        plan_context.plan_dir_for(plan_id)
+        acknowledgments = [
+            _bot_comment(f'IC-ack-{case_id}', body) for case_id, body, _provenance in CODERABBIT_ACKNOWLEDGMENTS
+        ]
+        genuine = _bot_comment('IC-genuine-1', CODERABBIT_GENUINE_SHORT_REVIEW_COMMENT)
+
+        result = _fetch_without_provider_reads([*acknowledgments, genuine], _StoreArgs(706, plan_id))
+
+        assert result['status'] == 'success'
+        assert result['count_fetched'] == CODERABBIT_ACKNOWLEDGMENT_COUNT + 1
+        assert result['count_skipped_noise'] == CODERABBIT_ACKNOWLEDGMENT_COUNT
+        assert result['count_stored'] == 1
+        # Not a refusal: an acknowledgment arms no recovery and names no refusing bot.
+        assert result['count_skipped_refusal'] == 0
+        assert not result.get('unrecognised_refusal')
+
+    def test_fetch_findings_files_nothing_for_acknowledgments_alone(self, plan_context):
+        """MATCHED CONTROL: the same fetch without the genuine comment stores nothing."""
+        plan_id = 'gh-ack-noise-only'
+        plan_context.plan_dir_for(plan_id)
+        acknowledgments = [
+            _bot_comment(f'IC-ack-{case_id}', body) for case_id, body, _provenance in CODERABBIT_ACKNOWLEDGMENTS
+        ]
+
+        result = _fetch_without_provider_reads(acknowledgments, _StoreArgs(706, plan_id))
+
+        assert result['status'] == 'success'
+        assert result['count_skipped_noise'] == CODERABBIT_ACKNOWLEDGMENT_COUNT
+        assert result['count_stored'] == 0
+        assert result['count_skipped_refusal'] == 0
 
 
 class TestPRMain:

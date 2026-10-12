@@ -1,11 +1,22 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Verdict-currency classifier for the phase-6-finalize re-entry check.
+"""Verdict-currency seam for the phase-6-finalize re-entry check.
 
-Answers ONE question for ONE head-dependent step: *does this HEAD advance
-INVALIDATE the verdict the step already recorded, or merely supersede the SHA
-it was anchored to?*
+Two read-only verbs over ONE tree-difference derivation
+(:func:`resolve_changed_paths`):
+
+* ``classify`` — the classifier. Answers ONE question for ONE head-dependent
+  step: *does this HEAD advance INVALIDATE the verdict the step already
+  recorded, or merely supersede the SHA it was anchored to?*
+* ``changed-paths`` — the change list. Reads the step's own ``6-finalize``
+  record from the plan's status and reports which paths differ between the SHA
+  that record is anchored to and the live HEAD, so a re-fired step can examine
+  the difference instead of the whole footprint. See § "The change-list verb"
+  below.
+
+The classifier
+==============
 
 The dispatcher's re-entry check (``phase-6-finalize/SKILL.md`` § "Special case
 — HEAD-dependent steps") historically re-fired a head-dependent step on a bare
@@ -27,7 +38,8 @@ content that did not change, so a re-run would re-compute the same answer by
 construction. That advance is ``preserved``. Any other outcome is
 ``invalidated``.
 
-The comparison is a **tree diff** (``git diff --name-only {recorded} {live}``),
+The comparison is a **tree diff**
+(``git diff --name-only --no-renames -z {recorded} {live}``),
 not a walk of the commits in between, which makes it correct under all three
 supersession mechanisms the dispatcher must handle — a loop-back commit, a
 force-push, and a rebase — because none of them changes what the two trees
@@ -87,6 +99,40 @@ full repo-relative path, which is the SAME convention ``build.map`` routes and
 because ``fnmatch``'s ``*`` spans ``/``. So ``marketplace/*`` covers every path
 under ``marketplace/``, and ``*.py`` covers every Python file at any depth.
 
+The change-list verb
+====================
+
+``changed-paths`` answers a narrower question than ``classify`` and renders no
+verdict: *which paths differ between the tree this step last completed against
+and the live HEAD?* It reads the step's record for phase ``6-finalize`` through
+the ``manage-status`` readers (``read_status`` and ``find_step_record``), so the
+anchor is the one ``mark-step-done`` persisted, never one the caller supplies.
+
+Return shape::
+
+    status: success
+    step: <canonical step key>
+    outcome: computed | first_firing | last_firing_not_done | diff_unavailable
+    recorded_head: <sha echo, or none>
+    live_head: <sha echo, or none>
+    recorded_facts: <the record's facts map, echoed when present>
+    changed_paths[M]: [<tree-diff paths>]      # ``computed`` ONLY
+
+``changed_paths`` is present on ``computed`` alone, where an empty list means the
+two trees really are equal on every path. The three other outcomes carry NO
+``changed_paths`` key: nothing was compared, and an empty list there would be
+indistinguishable from a measured "nothing changed". Read ``outcome`` first.
+
+* ``first_firing`` — the plan's status holds no record for the step.
+* ``last_firing_not_done`` — a record exists but its outcome is not ``done``, or
+  it carries no ``head_at_completion``; either way there is no completed verdict
+  anchored to a tree to diff against.
+* ``diff_unavailable`` — the live HEAD could not be resolved, the recorded commit
+  is unreachable, or git failed.
+
+An unreadable status or an unknown plan is ``status: error`` with a named
+``error`` — that is "could not look at the record", which is not an outcome.
+
 The script is registered through ``generate_executor.py`` and consumed via the
 executor proxy::
 
@@ -95,8 +141,13 @@ executor proxy::
       --step pre-push-quality-gate --worktree-path PATH \\
       --head-at-completion SHA [--live-head SHA]
 
-The executor injects ``PYTHONPATH`` for ``toon_parser`` and the extension-api /
-script-shared helpers, so no in-script ``sys.path`` manipulation is required.
+    python3 .plan/execute-script.py \\
+      plan-marshall:phase-6-finalize:verdict_currency changed-paths \\
+      --plan-id PLAN_ID --step STEP [--worktree-path PATH]
+
+The executor injects ``PYTHONPATH`` for ``toon_parser``, the ``manage-status``
+readers and the extension-api / script-shared helpers, so no in-script
+``sys.path`` manipulation is required.
 """
 
 from __future__ import annotations
@@ -108,6 +159,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from input_validation import require_valid_plan_id
 from toon_parser import serialize_toon
 
 # ---------------------------------------------------------------------------
@@ -168,6 +220,24 @@ _REASON_DETAIL: dict[str, str] = {
     REASON_NO_RECORDED_HEAD: ('the record carries no head_at_completion, so there is no anchor to diff against'),
     REASON_DIFF_UNAVAILABLE: ('the tree diff between the recorded SHA and the live HEAD could not be computed'),
 }
+
+#: The phase whose step records the ``changed-paths`` verb reads.
+FINALIZE_PHASE = '6-finalize'
+
+# ``changed-paths`` outcome tokens. Only OUTCOME_COMPUTED carries a
+# ``changed_paths`` key; the other three compared nothing.
+OUTCOME_COMPUTED = 'computed'
+OUTCOME_FIRST_FIRING = 'first_firing'
+OUTCOME_LAST_FIRING_NOT_DONE = 'last_firing_not_done'
+OUTCOME_DIFF_UNAVAILABLE = 'diff_unavailable'
+
+#: Echoed for a SHA that does not exist (no record, no anchor, unresolvable HEAD).
+NO_HEAD = 'none'
+
+# ``changed-paths`` error tokens — the record could not be looked at.
+ERROR_STATUS_READER_UNAVAILABLE = 'status_reader_unavailable'
+ERROR_STATUS_UNREADABLE = 'status_unreadable'
+ERROR_PLAN_NOT_FOUND = 'plan_not_found'
 
 
 # ---------------------------------------------------------------------------
@@ -299,10 +369,21 @@ def resolve_changed_paths(
 ) -> tuple[list[str], bool]:
     """Return the repo-relative tree difference between two commits.
 
-    Uses ``git diff --name-only {recorded} {live}`` — a two-tree comparison, not
-    a commit walk — so the answer is identical whether the SHAs are related by a
-    fast-forward, a rebase, or a force-push, and so a change plus its revert
-    cancels out instead of counting as a difference.
+    Uses ``git diff --name-only --no-renames -z {recorded} {live}`` — a two-tree
+    comparison, not a commit walk — so the answer is identical whether the SHAs
+    are related by a fast-forward, a rebase, or a force-push, and so a change
+    plus its revert cancels out instead of counting as a difference.
+
+    ``-z`` is load-bearing too: without it git C-quotes any path holding a
+    non-ASCII byte, a double quote, a backslash or a control character, and
+    the quoted string — surrounding quotes included — is not the path. NUL
+    separation returns every path verbatim.
+
+    ``--no-renames`` is load-bearing: with rename detection on (git's default),
+    a renamed file is listed under its destination path only, so the path that
+    ceased to exist would be missing from a list every caller reads as "every
+    path that differs". Without detection a rename is reported as the deletion
+    of the old path plus the addition of the new one, and both are listed.
 
     Args:
         worktree_path: Directory to run git in (``git -C``).
@@ -322,11 +403,16 @@ def resolve_changed_paths(
                 worktree_path or '.',
                 'diff',
                 '--name-only',
+                '--no-renames',
+                '-z',
                 recorded_head,
                 live_head,
             ],
             capture_output=True,
-            text=True,
+            # Paths are bytes to git. Decoding them as UTF-8 regardless of the
+            # ambient locale keeps a non-ASCII name from raising under ``C``.
+            encoding='utf-8',
+            errors='surrogateescape',
             timeout=60,
             check=False,
         )
@@ -336,7 +422,7 @@ def resolve_changed_paths(
     if completed.returncode != 0:
         return [], False
 
-    paths = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+    paths = [path for path in completed.stdout.split('\0') if path]
     return paths, True
 
 
@@ -501,15 +587,132 @@ def cmd_classify(args: argparse.Namespace) -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------
+# Change list (the ``changed-paths`` verb)
+# ---------------------------------------------------------------------------
+
+
+def _changed_paths_error(plan_id: str, step: str, error: str, message: str) -> dict[str, Any]:
+    """Assemble the ``changed-paths`` refusal for a record that could not be read."""
+    return {
+        'status': 'error',
+        'plan_id': plan_id,
+        'step': step,
+        'error': error,
+        'message': message,
+    }
+
+
+def changed_paths_for_step(plan_id: str, step: str, worktree_path: str) -> dict[str, Any]:
+    """Report the paths differing between a step's recorded SHA and the live HEAD.
+
+    Reads the step's ``6-finalize`` record through the ``manage-status`` readers
+    and computes the difference with :func:`resolve_changed_paths` — the same
+    derivation ``classify`` uses, so the two verbs cannot disagree about what
+    changed.
+
+    Args:
+        plan_id: The plan whose status holds the step record.
+        step: The finalize step key; the bare or ``default:``-prefixed form.
+        worktree_path: Directory the git calls run in (``git -C``).
+
+    Returns:
+        The verb's payload. ``changed_paths`` is present only when ``outcome``
+        is :data:`OUTCOME_COMPUTED`. A status that could not be read, or a plan
+        with no status, is a ``status: error`` payload naming the cause.
+    """
+    try:
+        from _cmd_mark_step import find_step_record
+        from _status_core import read_status
+        from _step_key_canonical import canonicalize_step_key
+    except ImportError as exc:
+        return _changed_paths_error(
+            plan_id,
+            step,
+            ERROR_STATUS_READER_UNAVAILABLE,
+            f'the manage-status readers are not importable ({exc}), so the step record could not be read',
+        )
+
+    canonical_step = canonicalize_step_key(step)
+    try:
+        status = read_status(plan_id)
+    except Exception as exc:  # an unreadable status is reported, never read as "no record"
+        return _changed_paths_error(
+            plan_id,
+            canonical_step,
+            ERROR_STATUS_UNREADABLE,
+            f'status.json for plan {plan_id!r} could not be read ({exc})',
+        )
+    if not isinstance(status, dict) or not status:
+        return _changed_paths_error(
+            plan_id,
+            canonical_step,
+            ERROR_PLAN_NOT_FOUND,
+            f'no status.json is visible for plan {plan_id!r} from this checkout',
+        )
+
+    record = find_step_record(status, FINALIZE_PHASE, canonical_step)
+    live_head = resolve_live_head(worktree_path)
+    recorded = record.get('head_at_completion') if isinstance(record, dict) else None
+    recorded_head = str(recorded) if recorded else ''
+
+    payload: dict[str, Any] = {
+        'status': 'success',
+        'step': canonical_step,
+        'outcome': OUTCOME_DIFF_UNAVAILABLE,
+        'recorded_head': recorded_head or NO_HEAD,
+        'live_head': live_head or NO_HEAD,
+    }
+    facts = record.get('facts') if isinstance(record, dict) else None
+    if facts:
+        payload['recorded_facts'] = facts
+
+    if record is None:
+        payload['outcome'] = OUTCOME_FIRST_FIRING
+        return payload
+    # A record that is not a mapping carries no anchor, so it lands here too.
+    if not isinstance(record, dict) or record.get('outcome') != 'done' or not recorded_head:
+        payload['outcome'] = OUTCOME_LAST_FIRING_NOT_DONE
+        return payload
+    if not live_head:
+        return payload
+
+    changed, ok = resolve_changed_paths(worktree_path, recorded_head, live_head)
+    if not ok:
+        return payload
+
+    payload['outcome'] = OUTCOME_COMPUTED
+    payload['changed_paths'] = changed
+    return payload
+
+
+def cmd_changed_paths(args: argparse.Namespace) -> int:
+    """CLI wrapper around :func:`changed_paths_for_step` — emits TOON, returns 0.
+
+    Exit code 0 on every outcome, matching ``classify``: the caller branches on
+    ``status`` and then ``outcome``, never on the exit code.
+    """
+    require_valid_plan_id(args)
+    payload = changed_paths_for_step(
+        plan_id=args.plan_id,
+        step=args.step,
+        worktree_path=args.worktree_path,
+    )
+    print(serialize_toon(payload))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
-    """Build the argparse parser with a single ``classify`` subcommand."""
+    """Build the argparse parser with the ``classify`` and ``changed-paths`` subcommands."""
     parser = argparse.ArgumentParser(
         description=(
-            'Classify whether a HEAD advance invalidates a head-dependent '
-            "finalize step's recorded verdict, by comparing the tree difference "
-            "between the recorded SHA and the live HEAD against the step's "
-            'declared verdict_inputs surface. Fails closed: every uncertainty '
-            'returns verdict: invalidated.'
+            'Read-only verdict-currency queries for a head-dependent finalize '
+            'step, both over the tree difference between a recorded SHA and the '
+            'live HEAD. classify: decide whether the advance invalidates the '
+            "step's recorded verdict against its declared verdict_inputs surface "
+            '(fails closed: every uncertainty returns verdict: invalidated). '
+            "changed-paths: list the paths that differ since the step's own "
+            'recorded completion.'
         ),
         allow_abbrev=False,
     )
@@ -545,6 +748,30 @@ def build_parser() -> argparse.ArgumentParser:
     )
     classify_parser.set_defaults(func=cmd_classify)
 
+    changed_parser = sub.add_parser(
+        'changed-paths',
+        help="List the paths differing between a step's recorded SHA and the live HEAD",
+        allow_abbrev=False,
+    )
+    changed_parser.add_argument(
+        '--plan-id',
+        required=True,
+        dest='plan_id',
+        help='Plan whose status holds the step record.',
+    )
+    changed_parser.add_argument(
+        '--step',
+        required=True,
+        help='Canonical finalize step key whose 6-finalize record anchors the difference.',
+    )
+    changed_parser.add_argument(
+        '--worktree-path',
+        default='.',
+        dest='worktree_path',
+        help='Worktree root the git calls run in (git -C). Defaults to the current directory.',
+    )
+    changed_parser.set_defaults(func=cmd_changed_paths)
+
     return parser
 
 
@@ -560,10 +787,16 @@ if __name__ == '__main__':
 
 
 __all__ = [
+    'OUTCOME_COMPUTED',
+    'OUTCOME_DIFF_UNAVAILABLE',
+    'OUTCOME_FIRST_FIRING',
+    'OUTCOME_LAST_FIRING_NOT_DONE',
     'VERDICT_INVALIDATED',
     'VERDICT_PRESERVED',
+    'changed_paths_for_step',
     'classify_advance',
     'classify_step',
     'resolve_changed_paths',
+    'resolve_live_head',
     'resolve_verdict_inputs',
 ]

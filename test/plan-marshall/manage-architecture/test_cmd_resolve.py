@@ -279,6 +279,38 @@ def test_cmd_resolve_bucket_b_short_learned_value_is_raised_by_the_engine_floor(
     assert result['hint'] == _per_task_hint(360)
 
 
+def test_cmd_resolve_without_a_narrow_unit_returns_exactly_the_fields_it_always_did(isolated_run_config):
+    """A module resolve that omits ``--narrow-unit`` is unchanged by the argument.
+
+    The whole result is compared, keys included, for a measured module command:
+    the resolved executable and the four tier fields carry the values they
+    carried before, and nothing was added beside them — in particular no
+    ``bound_source``, which belongs to a narrow resolve only. The namespace comes
+    from ``architecture.py``'s own parser, so the argument's parser default is
+    what the handler sees.
+    """
+    _set_persisted_timeout(isolated_run_config, 'python:verify_plan_marshall', 200)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_single_module(tmpdir, 'verify', _PYPROJECT_VERIFY_EXECUTABLE)
+
+        args = _variant(_RESOLVE_ARGS, project_dir=tmpdir)
+        assert args.narrow_unit is None
+        result = cmd_resolve(args)
+
+    assert result == {
+        'status': 'success',
+        'module': 'root',
+        'command': 'verify',
+        'executable': _PYPROJECT_VERIFY_EXECUTABLE,
+        'resolution_level': 'module',
+        'bash_timeout_seconds': 360,
+        'exceeds_bash_ceiling': False,
+        'execution_tier': 'per_task',
+        'hint': _per_task_hint(360),
+    }
+
+
 # =============================================================================
 # Case (b): Bucket B notation, long duration -> orchestrator tier
 # =============================================================================
@@ -856,3 +888,87 @@ def test_resolve_plain_verbs_trigger_zero_enrich(monkeypatch, verb):
 
     assert metadata_calls == [], 'plain build verbs must not call _get_maven_metadata'
     assert enrich_calls == [], 'plain build verbs must not call enrich_maven_module'
+
+
+# =============================================================================
+# Case (j): the profile-enrich overlay keeps the package-phase test ladder of a
+#           module whose persisted metadata names a reactor test artifact.
+# =============================================================================
+
+_MAVEN_RUN = 'python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args'
+
+
+def _discovered_maven_derived(module_name: str, reactor_test_artifacts: list[str] | None) -> dict[str, Any]:
+    """A derived Maven module whose cheap command map is the one discovery emits.
+
+    ``reactor_test_artifacts`` lands in ``metadata`` exactly as discovery
+    persists it — present only when the module consumes a reactor test artifact.
+    """
+    metadata: dict[str, Any] = {'artifact_id': module_name, 'group_id': 'probe', 'packaging': 'jar'}
+    if reactor_test_artifacts:
+        metadata['reactor_test_artifacts'] = reactor_test_artifacts
+    commands = _maven_cmd_discover._build_commands(
+        module_name=module_name,
+        packaging='jar',
+        has_sources=True,
+        has_tests=True,
+        profiles=[],
+        relative_path=module_name,
+        consumes_reactor_test_artifact=bool(reactor_test_artifacts),
+    )
+    return {
+        'name': module_name,
+        'build_systems': ['maven'],
+        'paths': {'module': module_name},
+        'metadata': metadata,
+        'stats': {'source_files': 2, 'test_files': 1},
+        'commands': commands,
+    }
+
+
+def _enrich_overlay(monkeypatch, derived: dict[str, Any]) -> dict[str, Any]:
+    """Run the profile-enrich overlay for ``derived`` with Maven-resolved profiles present."""
+
+    def _spy_enrich(module_path, project_root):
+        return {
+            'artifact_id': derived['name'],
+            'group_id': 'probe',
+            'packaging': 'jar',
+            'profiles': [{'id': 'jacoco', 'canonical': 'coverage'}],
+            'dependencies': [],
+        }
+
+    monkeypatch.setattr(_registered_maven_cmd_discover(), 'enrich_maven_module', _spy_enrich)
+    # The overlay lives in the query submodule the facade loaded; reach it through
+    # sys.modules so the call shares the facade's _ENRICH_CACHE.
+    enrich_module_commands = sys.modules['_cmd_client_query']._enrich_module_commands
+    _cmd_client._ENRICH_CACHE.clear()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        try:
+            merged: dict[str, Any] = enrich_module_commands(derived['name'], derived, tmpdir)
+        finally:
+            _cmd_client._ENRICH_CACHE.clear()
+    return merged
+
+
+def test_enrich_overlay_keeps_package_ladder_for_reactor_test_artifact_consumer(monkeypatch):
+    """The rebuilt map keeps package-phase module-tests / test-compile for a consumer."""
+    derived = _discovered_maven_derived('consumer', ['probe:producer:generators'])
+
+    merged = _enrich_overlay(monkeypatch, derived)
+
+    assert merged['module-tests'] == f'{_MAVEN_RUN} "package -pl consumer -am"'
+    assert merged['test-compile'] == f'{_MAVEN_RUN} "package -pl consumer -am -DskipTests"'
+    # The overlay still contributes the Maven-resolved profile canonical.
+    assert '-Pjacoco' in merged['coverage']
+
+
+def test_enrich_overlay_keeps_test_ladder_without_reactor_test_artifact(monkeypatch):
+    """The rebuilt map keeps the test-phase ladder for a module with no reactor test artifact."""
+    derived = _discovered_maven_derived('producer', None)
+
+    merged = _enrich_overlay(monkeypatch, derived)
+
+    assert merged['module-tests'] == f'{_MAVEN_RUN} "test -pl producer -am"'
+    assert merged['test-compile'] == f'{_MAVEN_RUN} "test-compile -pl producer -am"'
+    assert '-Pjacoco' in merged['coverage']

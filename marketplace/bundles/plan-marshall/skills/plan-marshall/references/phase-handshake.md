@@ -85,7 +85,9 @@ Scope limits:
 
 ### `findings-check`
 
-Read-only single-invariant gate. Evaluates ONLY the `pending_findings_blocking_count` invariant (via [resolution rule](#pending_findings_blocking_count-resolution)) for `phase` and writes **no** handshake row. Unlike `capture` it never runs `capture_all`, so `phase_steps_complete` is never evaluated — the verb cannot short-circuit on `phase_steps_incomplete`. It exists for the pre-merge finalize gate (`branch-cleanup` § "Pre-merge blocking-findings store gate"), where the downstream finalize steps (`record-metrics`, `archive-plan`) have not run yet so the composite `capture` gate would always fail on `phase_steps_incomplete` before ever evaluating the blocking-findings invariant.
+Read-only single-invariant gate. Evaluates ONLY the `pending_findings_blocking_count` invariant (via [resolution rule](#pending_findings_blocking_count-resolution)) for `phase` and writes **no** handshake row. Unlike `capture` it never runs `capture_all`, so `phase_steps_complete` is never evaluated — the verb cannot short-circuit on `phase_steps_incomplete`. It is the verdict source of the pre-merge finalize gate, where the downstream finalize steps (`record-metrics`, `archive-plan`) have not run yet so the composite `capture` gate would always fail on `phase_steps_incomplete` before ever evaluating the blocking-findings invariant.
+
+`findings-check` itself stays a **read-only verb**: it reports a verdict and dispatches nothing. The enforcing entry point at the pre-merge site is `pre_merge_gate merge` (`plan-marshall:phase-6-finalize:pre_merge_gate`), which calls this verb's handler in-process and owns the merge dispatch — it issues the routed merge verb only on a clean verdict, so the merge cannot be reached without the check having run and passed. The gate's dispositions are owned by [`phase-6-finalize/standards/branch-cleanup.md`](../../phase-6-finalize/standards/branch-cleanup.md) § "Pre-merge blocking-findings store gate" and not restated here.
 
 On a clean count:
 
@@ -98,7 +100,7 @@ blocking_count: 0
 
 On a pending blocking-type finding the verb returns the **same** structured error payload `capture` emits for `blocking_findings_present` (`blocking_count`, `blocking_types`, `per_type`, `message`), so the pre-merge `findings-check` caller and the composite `capture` gate present an interchangeable envelope. There is no `--strict` flag — the verdict is carried entirely in the TOON `status` field, and a `status: error` payload still exits 0 (mirroring the `capture` exit convention the callers already handle).
 
-**Fails closed on an unevaluable invariant.** When the underlying blocking-count query cannot run (executor unreachable / partial query failure, surfaced as a `None` count), the verb returns `status: error, error: query_failed` rather than `status: success`. As a gate verb its sole output is the go/no-go verdict, so it cannot fail open: an unevaluable invariant must halt the merge, not silently proceed past the pre-merge gate in `branch-cleanup`. (The composite `capture` records the same `None` as an empty column for retrospective analysis — acceptable there because `capture`'s gate is the `BlockingFindingsPresent` raise, not the return value.) The caller treats `query_failed` as a halt-and-retry environmental failure (no findings to triage, no loop-back).
+**Fails closed on an unevaluable invariant.** When the underlying blocking-count query cannot run (executor unreachable / partial query failure, surfaced as a `None` count), the verb returns `status: error, error: query_failed` rather than `status: success`. As a gate verb its sole output is the go/no-go verdict, so it cannot fail open: an unevaluable invariant must halt the merge, not silently proceed past the pre-merge gate. (The composite `capture` records the same `None` as an empty column for retrospective analysis — acceptable there because `capture`'s gate is the `BlockingFindingsPresent` raise, not the return value.) `pre_merge_gate merge` returns `query_failed` with `dispatched: false`, and `branch-cleanup` treats it as an unevaluable verdict — there are no findings to triage — taking its UNKNOWN disposition.
 
 ### `list` / `clear`
 
@@ -249,12 +251,12 @@ message: "pending_findings_blocking_count failed for phase '6-finalize': ..."
 
 | Boundary | Where the blocking-findings check fires |
 |---|---|
-| finalize merge (pre-merge) | `phase-6-finalize/standards/branch-cleanup.md` § "Pre-merge blocking-findings store gate" issues `phase_handshake findings-check --phase 6-finalize` before the merge. A pending actionable finding returns `blocking_findings_present` (`status: error`, exit 0 — parse the TOON status), and the merge is blocked; `query_failed` blocks fail-closed. |
-| finalize completion | `manage-status transition --completed 6-finalize` and a normal-completion `manage-status archive` call `_invariants.assert_finalize_findings_clean`, which evaluates this same invariant at `6-finalize` and refuses to mark the plan complete while an actionable finding is pending. |
+| finalize merge (pre-merge) | `pre_merge_gate merge` (`plan-marshall:phase-6-finalize:pre_merge_gate`) — the only merge-shaped dispatch `phase-6-finalize/standards/branch-cleanup.md` issues — calls the `findings-check` handler for `6-finalize` in-process and owns the merge dispatch. A pending actionable finding returns `blocking_findings_present` and an unevaluable count returns `query_failed`, both with `dispatched: false`: no merge verb is issued. See `branch-cleanup.md` § "Pre-merge blocking-findings store gate". |
+| finalize completion | `manage-status transition --completed 6-finalize` and a completion `manage-status archive` (no `--reason`, or `--reason normal_completion`, the one completion-asserting reason) call `_invariants.assert_finalize_findings_clean`, which evaluates this same invariant at `6-finalize` and refuses to mark the plan complete while an actionable finding is pending. |
 
-Both firing sites evaluate the **single** blocking-findings invariant (via `findings-check` or `assert_finalize_findings_clean`) rather than the composite `capture`: mid-finalize the downstream steps have not all run, so a composite `capture` would short-circuit on `phase_steps_incomplete` before it ever reached the blocking-findings invariant — leaving the gate inoperative. The single-invariant path evaluates only `pending_findings_blocking_count`, so it cannot short-circuit.
+Both firing sites evaluate the **single** blocking-findings invariant (via the `findings-check` handler or `assert_finalize_findings_clean`) rather than the composite `capture`: mid-finalize the downstream steps have not all run, so a composite `capture` would short-circuit on `phase_steps_incomplete` before it ever reached the blocking-findings invariant — leaving the gate inoperative. The single-invariant path evaluates only `pending_findings_blocking_count`, so it cannot short-circuit.
 
-**The arming condition is a state, not a call.** The blocking-findings raise fires ONLY on a `capture`/`findings-check` carrying `--phase 6-finalize`. Historically no orchestration step issued one — a `phase_handshake capture --phase 6-finalize` was never emitted, and the intra-finalize `findings-check` re-issue this table once claimed was never wired — so the finalize-phase gate was inert fleet-wide: a plan could complete or merge with actionable findings still `pending`, and *"the gate never ran"* was indistinguishable from *"the gate passed"*. The two firing sites above close that: the pre-merge `findings-check` is a call issued at a fixed point in `branch-cleanup`, and the completion boundary asserts the clean STATE unconditionally (armed by *reaching* the boundary), so a missing call is no longer a silent pass.
+**The arming condition is a state, not a call.** The blocking-findings raise fires ONLY on a `capture`/`findings-check` carrying `--phase 6-finalize`. Historically no orchestration step issued one — a `phase_handshake capture --phase 6-finalize` was never emitted, and the intra-finalize `findings-check` re-issue this table once claimed was never wired — so the finalize-phase gate was inert fleet-wide: a plan could complete or merge with actionable findings still `pending`, and *"the gate never ran"* was indistinguishable from *"the gate passed"*. The two firing sites above close that: the pre-merge site is armed by the merge dispatch itself — `pre_merge_gate merge` is the only route to the merge verb, so a merge cannot happen without the check — and the completion boundary asserts the clean STATE unconditionally (armed by *reaching* the boundary), so a missing call is no longer a silent pass.
 
 **The `5-execute → 6-finalize` transition is NOT a blocking-findings firing site.** `manage-status transition --completed 5-execute` inlines `phase_handshake verify --phase 5-execute --strict`, which detects *drift* on the captured `5-execute` row (including drift on the `pending_findings_blocking_count` column) and refuses to advance on drift. It does **not** raise `blocking_findings_present`: that raise fires only at `phase == '6-finalize'`, and the self-review findings the finalize gate exists to catch are filed *during* finalize, after this boundary. The blocking-findings gate therefore lives at the two finalize sites above, not at finalize entry.
 
@@ -343,19 +345,29 @@ message: "worktree_metadata_drift: metadata.use_worktree is set but worktree_pat
 
 ### `pr_title_missing` capture-time error
 
-The `pr_title_present` invariant guards that a commit-style PR title was authored at phase-2-refine Step 13 and persisted to `status.metadata.pr_title`, so phase-6-finalize `create-pr.md` has a deterministic `--title` source. At `1-init` the capture returns `None` (the title does not yet exist — refine authors it), so the column stays empty pre-refine. From `2-refine` onward, when `metadata.pr_title` is empty/missing/whitespace-only the capture raises `PrTitleMissing` and `cmd_capture` returns a structured error payload **without writing a row**:
+The `pr_title_present` invariant guards that a commit-style PR title was authored by the lane's producer and persisted to `status.metadata.pr_title`, so phase-6-finalize `create-pr.md` has a deterministic `--title` source. The two lanes author it in different places: the deep lane at phase-2-refine Step 13, the light lane — which never runs phase-2-refine — in the [`planning.md`](../workflow/planning.md) light-lane branch, before the `2-refine` capture. At `1-init` the capture returns `None` (the title does not yet exist), so the column stays empty pre-refine. From `2-refine` onward, when `metadata.pr_title` is empty/missing/whitespace-only the capture raises `PrTitleMissing` and `cmd_capture` returns a structured error payload **without writing a row**. On a light-lane plan:
 
 ```toon
 status: error
 error: pr_title_missing
 plan_id: X
 phase: 2-refine
-message: "pr_title_present failed for phase '2-refine': metadata.pr_title is absent or empty — phase-2-refine Step 13 must author and persist a commit-style PR title via `manage-status metadata --set --field pr_title`"
+producer: "plan-marshall/workflow/planning.md light-lane branch, before the 2-refine capture"
+remedy_command: "python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata --plan-id X --set --field pr_title --value \"<type(scope): summary>\""
+message: "pr_title_present failed for phase '2-refine': metadata.pr_title is absent or empty — plan-marshall/workflow/planning.md light-lane branch, before the 2-refine capture must author and persist a commit-style PR title via `python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata --plan-id X --set --field pr_title --value \"<type(scope): summary>\"`"
 ```
 
-**Trigger condition:** the active phase is `2-refine` or later AND `metadata.pr_title` is absent, empty, or whitespace-only (phase-2-refine skipped its Step 13 title-authoring obligation, or the field was clobbered downstream).
+The refusal is **lane-aware**, keyed on `status.metadata.planning_lane`:
 
-**Resolution:** re-run phase-2-refine Step 13 title authoring so a non-empty `pr_title` is persisted via `manage-status metadata --set --field pr_title`, then re-enter the phase. A present-sentinel hash (`_hash_dict({'present': True})`) encodes only the PRESENCE of the title, so a legitimate title edit between boundaries does NOT trip drift detection.
+- `producer` names the light-lane producer (`plan-marshall/workflow/planning.md light-lane branch, before the 2-refine capture`) when `planning_lane` is `light`, and `phase-2-refine Step 13` otherwise — on the deep lane and when the plan records no lane at all.
+- `remedy_command` is the exact `manage-status metadata --plan-id {plan_id} --set --field pr_title --value ...` command that persists the title for this plan, with only the title itself left to author.
+- `message` names both.
+
+`cmd_capture` and `cmd_verify` render the refusal through one shared payload helper, so the two verbs return the identical key set (`status`, `error`, `plan_id`, `phase`, `producer`, `remedy_command`, `message`) for the same state.
+
+**Trigger condition:** the active phase is `2-refine` or later AND `metadata.pr_title` is absent, empty, or whitespace-only (the lane's producer skipped its title-authoring obligation, or the field was clobbered downstream).
+
+**Resolution:** run the step `producer` names — on the light lane the light-lane producer step in `planning.md`, on the deep lane a re-run of phase-2-refine Step 13 title authoring — so a non-empty `pr_title` is persisted via `remedy_command`, then re-enter the phase. A present-sentinel hash (`_hash_dict({'present': True})`) encodes only the PRESENCE of the title, so a legitimate title edit between boundaries does NOT trip drift detection.
 
 ## Integration with phase lifecycle
 

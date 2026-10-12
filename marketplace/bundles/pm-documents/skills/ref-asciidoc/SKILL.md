@@ -1,6 +1,6 @@
 ---
 name: ref-asciidoc
-description: AsciiDoc formatting, validation, link verification, and template creation workflows
+description: AsciiDoc formatting, validation, link verification, and template creation workflows, plus the AsciiDoc review rules a code review cites
 user-invocable: false
 mode: workflow
 ---
@@ -497,6 +497,16 @@ python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc format -t all
 # Verify links
 python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc verify-links --directory /path/to/docs
 ```
+
+## Review Rules
+
+The review rules of the documentation domain for AsciiDoc formatting and cross-references — what a code review looks for in a changed `.adoc` file. The block follows the harvestable block contract — see [`review-rubric.md` § 10 "Harvestable review-rule blocks"](../../../plan-marshall/skills/phase-6-finalize/standards/review-rubric.md) for its rules, which are not restated here.
+
+- A list with no blank line before it, so AsciiDoc renders the items as a continuation of the preceding paragraph instead of a list.
+- A link to another document written as a Markdown link (`[text](file.adoc)`) instead of an `xref:`, so AsciiDoc renders the literal brackets and no link.
+- An `xref:` whose target file or anchor does not exist after the change, so the rendered link leads nowhere.
+- A delimited block (`----`, `====`, `|===`) whose closing delimiter is missing or does not match the opening one, so the rest of the document renders inside the block.
+- A section heading that skips a level (`==` followed directly by `====`), so the renderer warns and the table of contents places the section under the wrong parent.
 
 ## Canonical invocations
 

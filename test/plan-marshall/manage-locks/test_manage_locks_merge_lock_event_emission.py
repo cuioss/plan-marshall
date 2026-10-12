@@ -51,7 +51,7 @@ class TestLockEventEmission:
     dir."""
 
     def test_acquire_emits_lock_acquired(self, isolated_base: dict) -> None:
-        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
 
         content = _read_lock_log()
         # lock_id is the holder plan_id; the family is `merge`.
@@ -62,10 +62,10 @@ class TestLockEventEmission:
         reclaimed-from holder for correlation."""
         # plan-dead acquires but never gets a plan dir → dead → reclaimable. It is
         # dequeued so plan-b becomes the FIFO front and reclaims.
-        merge_lock.run_acquire(Namespace(plan_id='plan-dead', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-dead'))
         merge_lock._dequeue_fifo('plan-dead')
 
-        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=5.0))
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b'))
         assert result['reclaimed'] is True
 
         content = _read_lock_log()
@@ -76,10 +76,10 @@ class TestLockEventEmission:
     def test_blocked_acquire_emits_lock_blocked_with_holder_and_waiter(self, isolated_base: dict) -> None:
         """A blocked admission against a LIVE holder emits ``blocked`` carrying the
         blocking holder and the waiter."""
-        merge_lock.run_acquire(Namespace(plan_id='plan-live', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-live'))
         _make_live_plan(isolated_base['base'], 'plan-live')
 
-        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=0.3))
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b'))
         assert result['status'] == 'blocked'
 
         content = _read_lock_log()
@@ -88,7 +88,7 @@ class TestLockEventEmission:
         assert 'waiter: plan-b' in content
 
     def test_release_emits_lock_released(self, isolated_base: dict) -> None:
-        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
         result = merge_lock.run_release(Namespace(plan_id='plan-a'))
         assert result['action'] == 'released'
 
@@ -113,7 +113,7 @@ class TestLockEventEmission:
     def test_foreign_holder_release_emits_no_lock_event(self, isolated_base: dict) -> None:
         """A foreign-holder release noop leaves the lock intact and changes no
         ownership — it emits no ``released`` event."""
-        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
 
         result = merge_lock.run_release(Namespace(plan_id='plan-b'))
         assert result['action'] == 'noop'
@@ -137,7 +137,7 @@ class TestLockEventEmission:
         (worktree / '.plan' / 'local').mkdir(parents=True)
         monkeypatch.chdir(worktree)
 
-        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
 
         content = _read_lock_log()
         assert '[LOCK] (merge:acquired) plan-a' in content
@@ -159,7 +159,7 @@ class TestLockEventEmission:
 
         monkeypatch.setattr(_locks_core, '_resolve_lock_log_path', _raising_resolver)
 
-        result = merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-a'))
 
         assert result['status'] == 'success'
         assert result['action'] == 'acquired'
@@ -169,7 +169,7 @@ class TestLockEventEmission:
         """Symmetric on the RELEASE side: a [LOCK]-emission failure (the real
         helper's internal resolver raising, swallowed by its own try/except)
         NEVER aborts the lock release — the lock file is still removed."""
-        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
         assert isolated_base['lock_path'].is_file()
 
         def _raising_resolver() -> object:

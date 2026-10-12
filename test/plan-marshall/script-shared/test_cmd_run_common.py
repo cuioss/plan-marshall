@@ -5,13 +5,16 @@ Tests the centralized cmd_run routing that replaces duplicated code
 across Maven, Gradle, npm, and Python build skills.
 """
 
+import json
 from unittest.mock import patch
 
 import _build_parse as _build_parse_mod
 import _build_shared as _build_shared_mod
 import pytest
+from toon_parser import parse_toon
 
 Issue = _build_parse_mod.Issue
+POPULATION_UNMEASURED = _build_parse_mod.POPULATION_UNMEASURED
 UnitTestSummary = _build_parse_mod.UnitTestSummary
 cmd_run_common = _build_shared_mod.cmd_run_common
 
@@ -339,3 +342,104 @@ class TestCmdRunCommonPublishesItsPopulation:
 
         assert 'analyses examined: compile' in stderr
         assert 'no pending finding cleared' not in stderr
+
+
+# =============================================================================
+# A summary the parser declared unmeasured publishes no measured count
+# =============================================================================
+#
+# A parser that cannot tell summary lines from other count lines (a quiet Maven
+# log) still returns its counts — the failed count must keep driving the
+# truthful-status check — but declares them ``unmeasured``. Neither the published
+# ``tests_run`` nor the ``measured_tests_run`` handed back to the routing seam may
+# then carry the executed count, on either the green or the failing path. Each
+# path pairs the unmeasured case with a measured control, so the absence is shown
+# to follow the declaration rather than the path.
+
+
+def _summary_parser(summary):
+    """A parser stub returning ``summary`` over a log with no issues."""
+
+    def _parser(log_file):
+        return [], summary, 'SUCCESS'
+
+    return _parser
+
+
+_GREEN_MEASURED = UnitTestSummary(passed=5, failed=0, skipped=0, total=5)
+_GREEN_UNMEASURED = UnitTestSummary(passed=5, failed=0, skipped=0, total=5, population=POPULATION_UNMEASURED)
+_RED_MEASURED = UnitTestSummary(passed=339, failed=1, skipped=0, total=340)
+_RED_UNMEASURED = UnitTestSummary(passed=339, failed=1, skipped=0, total=340, population=POPULATION_UNMEASURED)
+
+
+class TestCmdRunCommonUnmeasuredSummary:
+    def test_green_run_with_an_unmeasured_summary_publishes_no_count(self, capsys):
+        result = _make_result(status='success', command='./mvnw verify')
+
+        cmd_run_common(result, _summary_parser(_GREEN_UNMEASURED), 'maven', command_args='module-tests')
+
+        stdout = capsys.readouterr().out
+        assert 'tests_population: unmeasured' in stdout, stdout
+        assert 'tests_run' not in stdout, stdout
+        assert 'measured_tests_run' not in result
+
+    def test_control_green_run_with_a_measured_summary_publishes_its_count(self, capsys):
+        result = _make_result(status='success', command='./mvnw verify')
+
+        cmd_run_common(result, _summary_parser(_GREEN_MEASURED), 'maven', command_args='module-tests')
+
+        stdout = capsys.readouterr().out
+        assert 'tests_population: measured' in stdout, stdout
+        assert 'tests_run: 5' in stdout, stdout
+        assert result['measured_tests_run'] == 5
+
+    #: The two ways a run reaches the failing path: a non-zero exit, and a zero
+    #: exit the truthful-status check downgrades because a test failed.
+    @pytest.mark.parametrize(
+        'result',
+        [_BUILD_FAILED_RESULT, _SUCCESS_RESULT],
+        ids=['non-zero-exit', 'exit-0-with-a-failed-test'],
+    )
+    def test_failing_run_with_an_unmeasured_summary_hands_back_no_count(self, capsys, result):
+        result = dict(result)
+
+        cmd_run_common(result, _summary_parser(_RED_UNMEASURED), 'maven', output_format='json')
+
+        emitted = json.loads(capsys.readouterr().out)
+        assert emitted['status'] == 'error'
+        assert emitted['tests']['failed'] == 1
+        assert emitted['tests']['population'] == POPULATION_UNMEASURED
+        assert 'measured_tests_run' not in result
+
+    @pytest.mark.parametrize(
+        'result',
+        [_BUILD_FAILED_RESULT, _SUCCESS_RESULT],
+        ids=['non-zero-exit', 'exit-0-with-a-failed-test'],
+    )
+    def test_control_failing_run_with_a_measured_summary_hands_back_its_count(self, capsys, result):
+        result = dict(result)
+
+        cmd_run_common(result, _summary_parser(_RED_MEASURED), 'maven', output_format='json')
+
+        emitted = json.loads(capsys.readouterr().out)
+        assert emitted['status'] == 'error'
+        assert 'population' not in emitted['tests']
+        assert result['measured_tests_run'] == _RED_MEASURED.executed
+
+    #: ``(summary, the population the default TOON tests block must carry —
+    #: ``None`` meaning the key must be absent)``. The measured row is the control:
+    #: the key follows the parser's declaration, not the failing path.
+    @pytest.mark.parametrize(
+        'summary,population',
+        [(_RED_UNMEASURED, POPULATION_UNMEASURED), (_RED_MEASURED, None)],
+        ids=['unmeasured-summary', 'control-measured-summary'],
+    )
+    def test_failing_run_default_toon_output_carries_the_declared_population(self, capsys, summary, population):
+        result = dict(_BUILD_FAILED_RESULT)
+
+        cmd_run_common(result, _summary_parser(summary), 'maven')
+
+        emitted = parse_toon(capsys.readouterr().out)
+        assert emitted['status'] == 'error'
+        assert emitted['tests']['failed'] == 1
+        assert emitted['tests'].get('population') == population

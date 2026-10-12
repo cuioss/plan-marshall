@@ -41,6 +41,13 @@ PLAN_IDS = (
     'mf-cli-qgclear',
     'mf-cli-qgres',
     'mf-cli-resolve',
+    'mf-cli-stamp-finding',
+    'mf-cli-stamp-selector',
+    'mf-cli-stamp-sha',
+    'mf-cli-stamp-task',
+    'mf-cli-taskflag',
+    'mf-cli-taskflag-bad',
+    'mf-cli-taskflag-refused',
 )
 
 # Distinct sys.modules name so this in-process load never clobbers the
@@ -196,7 +203,7 @@ def test_the_write_verbs_are_the_complement_and_the_complement_is_not_empty(monk
     complement = all_paths - _ANY_CHECKOUT_READ_VERBS
 
     assert complement, 'every walked verb declares --any-checkout; the complement claim is vacuous'
-    assert {'add', 'resolve', 'promote', 'qgate add', 'assessment add'} <= complement
+    assert {'add', 'resolve', 'stamp-fix-commit', 'promote', 'qgate add', 'assessment add'} <= complement
 
 
 # =============================================================================
@@ -337,6 +344,216 @@ def test_main_promote_finding(plan_context, monkeypatch, capsys):
     data = parse_toon(out)
     assert data['status'] == 'success'
     assert data['promoted_to'] == 'architecture'
+
+
+# =============================================================================
+# The fix stamp: ``resolve --task-number`` and ``stamp-fix-commit``
+# =============================================================================
+
+_FIX_COMMIT = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
+
+
+def _seed_finding(plan_id, title):
+    """File one plan finding through the handler and return its hash id as a string."""
+    seed = _mod.cmd_add(
+        Namespace(
+            plan_id=plan_id,
+            type='bug',
+            title=title,
+            detail='d',
+            file_path=None,
+            line=None,
+            component=None,
+            module=None,
+            rule=None,
+            severity=None,
+            author=None,
+            kind=None,
+            reviewed_commit_sha=None,
+            bot_kind=None,
+        )
+    )
+    return str(seed['hash_id'])
+
+
+def _stored_finding(plan_id, hash_id):
+    """Read one finding back through the handler, so the hash id stays a string."""
+    return _mod.cmd_get(Namespace(plan_id=plan_id, hash_id=hash_id))
+
+
+def test_main_resolve_with_task_number_records_the_fix_task(plan_context, monkeypatch, capsys):
+    """``resolve --resolution fixed --task-number N`` stores the owning fix task."""
+    hid = _seed_finding('mf-cli-taskflag', 'Owned by a task')
+
+    code, out = _run_main(
+        monkeypatch,
+        capsys,
+        ['resolve', '--plan-id', 'mf-cli-taskflag', '--hash-id', hid, '--resolution', 'fixed', '--task-number', '7'],
+    )
+
+    assert code == 0
+    data = parse_toon(out)
+    assert data['status'] == 'success'
+    assert data['fix_task_number'] == 7
+    assert _stored_finding('mf-cli-taskflag', hid)['fix_task_number'] == 7
+
+
+def test_main_resolve_refuses_a_task_number_on_another_resolution(plan_context, monkeypatch, capsys):
+    """The flag is for ``fixed`` only; any other resolution is refused and nothing is written."""
+    hid = _seed_finding('mf-cli-taskflag-refused', 'Not a fix')
+
+    code, out = _run_main(
+        monkeypatch,
+        capsys,
+        [
+            'resolve',
+            '--plan-id',
+            'mf-cli-taskflag-refused',
+            '--hash-id',
+            hid,
+            '--resolution',
+            'accepted',
+            '--task-number',
+            '7',
+        ],
+    )
+
+    assert code == 0
+    data = parse_toon(out)
+    assert data['status'] == 'error'
+    assert data['error'] == 'fix_task_number_requires_fixed'
+    assert _stored_finding('mf-cli-taskflag-refused', hid)['resolution'] == 'pending'
+
+
+def test_main_resolve_reports_a_malformed_task_number_as_a_toon_error(plan_context, monkeypatch, capsys):
+    """A non-numeric ``--task-number`` is refused at the argparse boundary, as TOON."""
+    hid = _seed_finding('mf-cli-taskflag-bad', 'Malformed flag')
+
+    code, out = _run_main(
+        monkeypatch,
+        capsys,
+        [
+            'resolve',
+            '--plan-id',
+            'mf-cli-taskflag-bad',
+            '--hash-id',
+            hid,
+            '--resolution',
+            'fixed',
+            '--task-number',
+            'seven',
+        ],
+    )
+
+    assert code == 0
+    data = parse_toon(out)
+    assert data['status'] == 'error'
+    assert data['error'] == 'invalid_task_number'
+    assert _stored_finding('mf-cli-taskflag-bad', hid)['resolution'] == 'pending'
+
+
+def test_main_stamp_fix_commit_by_task_number(plan_context, monkeypatch, capsys):
+    """The by-task form stamps every fixed finding the task owns, in one call."""
+    plan_id = 'mf-cli-stamp-task'
+    owned = [_seed_finding(plan_id, 'Owned A'), _seed_finding(plan_id, 'Owned B')]
+    other = _seed_finding(plan_id, 'Another task')
+    for hid in owned:
+        _run_main(
+            monkeypatch,
+            capsys,
+            ['resolve', '--plan-id', plan_id, '--hash-id', hid, '--resolution', 'fixed', '--task-number', '7'],
+        )
+    _run_main(
+        monkeypatch,
+        capsys,
+        ['resolve', '--plan-id', plan_id, '--hash-id', other, '--resolution', 'fixed', '--task-number', '8'],
+    )
+
+    code, out = _run_main(
+        monkeypatch,
+        capsys,
+        ['stamp-fix-commit', '--plan-id', plan_id, '--commit-sha', _FIX_COMMIT, '--task-number', '7'],
+    )
+
+    assert code == 0
+    data = parse_toon(out)
+    assert data['status'] == 'success'
+    assert data['selector'] == 'fix_task_number'
+    assert data['stamped_count'] == 2
+    for hid in owned:
+        assert _stored_finding(plan_id, hid)['fix_commit_sha'] == _FIX_COMMIT
+    assert _stored_finding(plan_id, other).get('fix_commit_sha') is None
+
+
+def test_main_stamp_fix_commit_by_hash_id(plan_context, monkeypatch, capsys):
+    """The by-finding form stamps the one finding named — the inline-fix form."""
+    plan_id = 'mf-cli-stamp-finding'
+    inline = _seed_finding(plan_id, 'Inline fix')
+    neighbour = _seed_finding(plan_id, 'Neighbour')
+    for hid in (inline, neighbour):
+        _run_main(monkeypatch, capsys, ['resolve', '--plan-id', plan_id, '--hash-id', hid, '--resolution', 'fixed'])
+
+    code, out = _run_main(
+        monkeypatch,
+        capsys,
+        ['stamp-fix-commit', '--plan-id', plan_id, '--commit-sha', _FIX_COMMIT, '--hash-id', inline],
+    )
+
+    assert code == 0
+    data = parse_toon(out)
+    assert data['status'] == 'success'
+    assert data['selector'] == 'hash_id'
+    assert data['stamped_count'] == 1
+    assert _stored_finding(plan_id, inline)['fix_commit_sha'] == _FIX_COMMIT
+    assert _stored_finding(plan_id, neighbour).get('fix_commit_sha') is None
+
+
+@pytest.mark.parametrize(
+    'selector_args',
+    [
+        pytest.param([], id='neither'),
+        pytest.param(['--task-number', '7', '--hash-id', 'abc123'], id='both'),
+    ],
+)
+def test_main_stamp_fix_commit_requires_exactly_one_selector(plan_context, monkeypatch, capsys, selector_args):
+    """None or both is an operation refusal reported as TOON, not an argparse exit."""
+    code, out = _run_main(
+        monkeypatch,
+        capsys,
+        ['stamp-fix-commit', '--plan-id', 'mf-cli-stamp-selector', '--commit-sha', _FIX_COMMIT, *selector_args],
+    )
+
+    assert code == 0
+    data = parse_toon(out)
+    assert data['status'] == 'error'
+    assert data['error'] == 'fix_stamp_selector_required'
+
+
+def test_main_stamp_fix_commit_refuses_a_value_that_is_not_a_commit_id(plan_context, monkeypatch, capsys):
+    hid = _seed_finding('mf-cli-stamp-sha', 'Fixed')
+    _run_main(
+        monkeypatch, capsys, ['resolve', '--plan-id', 'mf-cli-stamp-sha', '--hash-id', hid, '--resolution', 'fixed']
+    )
+
+    code, out = _run_main(
+        monkeypatch,
+        capsys,
+        ['stamp-fix-commit', '--plan-id', 'mf-cli-stamp-sha', '--commit-sha', 'HEAD', '--hash-id', hid],
+    )
+
+    assert code == 0
+    data = parse_toon(out)
+    assert data['status'] == 'error'
+    assert data['error'] == 'invalid_commit_sha'
+    assert _stored_finding('mf-cli-stamp-sha', hid).get('fix_commit_sha') is None
+
+
+def test_main_stamp_fix_commit_without_a_commit_exits_2(plan_context, monkeypatch, capsys):
+    """``--commit-sha`` is required by argparse."""
+    code, _ = _run_main(
+        monkeypatch, capsys, ['stamp-fix-commit', '--plan-id', 'mf-cli-stamp-selector', '--task-number', '7']
+    )
+    assert code == 2
 
 
 # =============================================================================

@@ -3,24 +3,31 @@ sender_type=orchestrator
 sender_id=lessons-routing
 epic=live-blockers
 kind=finding
-created=2026-10-12T13:53:24Z
+created=2026-10-12T13:53:21Z
 
-# Lessons ingest: Java skill profiles attach Quarkus, CDI and Weld skills to modules that cannot use them, and miss cui-testing
+# Lessons ingest: a deliverable in a sibling repository has no lifecycle — no worktree, no push/PR step, no footprint, and the foreign-PR gate both blocks and misses
 
-Severity: medium. Bundle: **domain content** — `pm-dev-java` (`skills/plan-marshall-plugin/extension.py` profile metadata) and `pm-dev-java-cui` (`plan-marshall-plugin`), with the `plan-marshall` `phase-4-plan` persona union as the consumer. Filed under RULING 2026-10-09 (b): domain-bundle content at any severity.
+Severity: **critical** for the Antigravity instance (operator ruling 2026-10-12), high otherwise (operator decision at this ingest, 2026-10-12). Bundle: `plan-marshall` (`phase-3-outline`, `phase-4-plan`, `phase-6-finalize` incl. `scripts/foreign_pr_gate.py`, `manage-references` footprint, `plan-retrospective`, `tools-integration-ci`, `execution-context` content-search contract).
 
-Source: pm-mcp-core epic `pm-mcp-core-m2-m4`, five plans; pm-mcp-core's enforcer bans Quarkus/CDI in every module. Full bodies: `lessons-routing/lessons-archive/filed-live-blockers/`.
+Source: pm-mcp-core epic `pm-mcp-core-m2-m4`; every plan that changes a specification must also change `plan-marshall-documentation`, so this recurs on every plan. Full bodies: `lessons-routing/lessons-archive/filed-live-blockers/`.
 
-| Message | Plan | Statement |
-|---|---|---|
-| `pm-mcp-core-m2-m4-010` | #18 | `java-quarkus`, `java-cdi` attached to `pm-core` tasks; task text had to say "ignore any loaded framework skill". |
-| `pm-mcp-core-m2-m4-076` | #27 | Same. |
-| `pm-mcp-core-m2-m4-088` | #31 | Also `junit-weld-testing`; and `pm-dev-java-cui:cui-testing` NOT attached although the project's test rules require it. |
-| `pm-mcp-core-m2-m4-114` | #29 | Every Java task; token cost and pull toward forbidden patterns. |
-| `pm-mcp-core-m2-m4-118` | #32 | Orchestrator pruned by hand, incl. `junit-integration` for a module with no ITs. |
+**Gate defects (still present at `fc0090a24`):**
 
-Ground truth at `fc0090a24`: `pm-dev-java/skills/plan-marshall-plugin/extension.py` declares `java-quarkus` (architecture, implementation, module_testing), `java-cdi` and `junit-weld-testing` as optionals; only `java-cdi` and `java-lombok` are dependency-gated (`:173-184`, on `jakarta.enterprise` / `lombok`). `java-quarkus`, `junit-weld-testing` and `junit-integration` have no dependency gate, and a dep-absent CDI is demoted to optional rather than dropped. **Still present.**
+| Message | Statement |
+|---|---|
+| `pm-mcp-core-m2-m4-129` | PLAN-41 (#34), Antigravity: the documentation deliverable vanished — no PR in `plan-marshall-documentation`, the landing does not mention it, the foreign-PR archive gate did not object. |
+| `pm-mcp-core-m2-m4-082` | PLAN-07 (#27): the foreign-PR gate assumes the foreign branch is `feature/{plan_id}`; the outline used `docs/…`; the gate failed closed (`foreign_landing_indeterminate`) on a merged foreign PR; archive needed operator authorisation. Verified: `foreign_pr_gate.py:170-171` returns `f'feature/{plan_id}'`. |
 
-Asked for: gate `java-quarkus` on `io.quarkus`, `junit-weld-testing` on Weld/CDI, `junit-integration` on an IT profile or IT sources, and drop (not merely demote) a skill whose dependency is absent; have `pm-dev-java-cui` attach `cui-testing` when the module's test scope uses `cui-test-generator` / `cui-test-juli-logger`; check whether the phase-4 persona union promotes optionals unconditionally.
+**Lifecycle gaps:**
+
+| Messages | Gap |
+|---|---|
+| `-009`, `-052`, `-073`, `-112` | No finalize step pushes the sibling branch or opens its PR (ci has no repository target); docs branches were left unpushed or opened by hand / raw `gh`. |
+| `-055` | No phase provisions a plan-owned sibling worktree; execute blocked on a checkout on another plan's branch. |
+| `-048`, `-090`, `-100` | `../sibling` paths break inside the plan worktree; a tool that defaults its root from cwd checks the wrong tree and passes vacuously. |
+| `-015`, `-045`, `-078`, `-096`, `-122` | The footprint resolver reads only the plan's repository, so shipped sibling files grade as unrealised (recall, M6, outline-vs-shipped, request alignment). |
+| `-093` | Leaves have no sanctioned content search outside the inventory and fell back to `git grep`. |
+
+Asked for: a first-class companion-repository declaration (repo, branch, worktree) recorded in plan metadata; provisioning and cleanup of that worktree; a finalize step that pushes it and opens/links its PR after `create-pr`; the foreign-PR gate takes the branch or PR from that declaration and fails closed when a declared sibling deliverable has no recorded PR; the footprint treats out-of-repo paths as their own population.
 
 Owner today: none found.

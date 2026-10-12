@@ -1,0 +1,27 @@
+[ERROR] Tests run: 14, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.318 s <<< FAILURE! -- in de.cuioss.sample.core.OrderServiceTest
+[ERROR] de.cuioss.sample.core.OrderServiceTest.shouldRejectNegativeQuantity -- Time elapsed: 0.021 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: Expected java.lang.IllegalArgumentException to be thrown, but nothing was thrown.
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:152)
+	at org.junit.jupiter.api.AssertThrows.assertThrows(AssertThrows.java:73)
+	at org.junit.jupiter.api.Assertions.assertThrows(Assertions.java:3115)
+	at de.cuioss.sample.core.OrderServiceTest.shouldRejectNegativeQuantity(OrderServiceTest.java:87)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+[ERROR] Failures:
+[ERROR]   OrderServiceTest.shouldRejectNegativeQuantity:87 Expected java.lang.IllegalArgumentException to be thrown, but nothing was thrown.
+[ERROR] Tests run: 340, Failures: 1, Errors: 0, Skipped: 0
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.2:test (default-test) on project sample-core: There are test failures.
+[ERROR]
+[ERROR] Please refer to /home/dev/git/sample/sample-core/target/surefire-reports for the individual test results.
+[ERROR] Please refer to dump files (if any exist) [date].dump, [date]-jvmRun[N].dump and [date].dumpstream.
+[ERROR] -> [Help 1]
+[ERROR]
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR]
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException
+[ERROR]
+[ERROR] After correcting the problems, you can resume the build with the command
+[ERROR]   mvn <args> -rf :sample-core

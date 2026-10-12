@@ -5,7 +5,7 @@ lane:
   cost_size: M
 name: default:finalize-step-simplify
 description: Domain-agnostic phase-6 cognitive simplification pass — reviews the plan's changeset against the minimum-viable-code anti-patterns and deletes surplus structure directly in the worktree
-order: 5
+order: 3
 mutates_source: true
 head_dependent: true
 default_on: true
@@ -82,7 +82,7 @@ Any tracked file can therefore be in the reviewed set, and a static glob that co
 
 ## Settle-band position — edits are reviewed and gated in the same pass
 
-This step sorts FIRST among the code-mutating settle steps (`order: 5`), ahead of `finalize-step-security-audit` (7), `pre-submission-self-review` (8), `architecture-refresh` (9), and `pre-push-quality-gate` (10). That position means its edits are examined by the self-review, captured by the descriptor refresh, and certified by the quality gate within the same pass — no HEAD it produces is shipped without passing every downstream settle check. Security hardening stays after simplification deliberately: a guard the audit adds is a decision, not surplus structure, and must not be offered back to the simplifier in the same pass (the Step 3b reconciliation enforces the same direction for review commitments).
+This step sorts FIRST among the code-mutating settle steps (`order: 3`), ahead of `finalize-step-security-audit` (5), `pre-submission-self-review` (8), `architecture-refresh` (9), and `pre-push-quality-gate` (10). That position means its edits are examined by the self-review, captured by the descriptor refresh, and certified by the quality gate within the same pass — no HEAD it produces is shipped without passing every downstream settle check. Security hardening stays after simplification deliberately: a guard the audit adds is a decision, not surplus structure, and must not be offered back to the simplifier in the same pass (the Step 3b reconciliation enforces the same direction for review commitments).
 
 ## Workflow
 

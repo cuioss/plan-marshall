@@ -3,9 +3,11 @@
 
 ``cmd_pr_wait_for_comments`` (in ``_github_pr.py``, dispatched via ``github_ops``)
 surfaces a ``rate_limited_bots[]`` field: after the poll settles it inspects EVERY
-REGISTERED bot's newest comment for a rate-limit status notice and returns one
-``{bot_kind, rate_limit_class, eta, cause, cap, layer, body}`` record per detected
-bot. A boolean cannot carry that answer: it collapses a three-bot pipeline into one
+REGISTERED bot's most recently written comment for a refusal notice and returns one
+``{bot_kind, rate_limit_class, condition, eta, eta_seconds, eta_extracted, written_at,
+stale, cause, cap, layer, body}`` record per detected bot. ``condition`` says what the notice reports:
+``rate_limited`` for a limit, ``no_unreviewed_commit`` for a reply saying nothing new
+is left to review. A boolean cannot carry that answer: it collapses a three-bot pipeline into one
 CodeRabbit-shaped verdict, leaving a rate-limited Sourcery or PR-Agent invisible.
 
 The generalization is registry-driven end to end and carries NO bot-name literal
@@ -16,7 +18,12 @@ in the detection path:
 - ``rate_limit_class`` is registry data (``awaitable_window`` / ``hard_quota``),
   fail-closed to ``unknown`` for a bot that declares none (ADR-009);
 - ``eta`` is extracted with that bot's registry ``rate_limit_eta_patterns``, and is
-  ``''`` when the bot declares none or its notice states none;
+  ``''`` when the bot declares none or its notice states none; ``eta_seconds`` is
+  that time as whole seconds (``None`` when none was read) and ``eta_extracted``
+  states which of the two it is;
+- ``written_at`` is the instant the notice was last written — the later of the
+  comment's ``updated_at`` and ``created_at`` — and ``stale`` is ``True`` when the
+  window the notice stated had already elapsed when the notice was read;
 - ``cause`` / ``cap`` are the orthogonal SIZE-vs-QUOTA axis, derived from that bot's
   ``refusal_size_patterns`` / ``refusal_size_cap_patterns``. They are INDEPENDENT of
   ``rate_limit_class``: one bot can refuse for both causes at one class, so the
@@ -24,8 +31,8 @@ in the detection path:
   empty ``cap`` reads as UNKNOWN rather than as a figure;
 - ``layer`` / ``body`` are the OBSERVATION behind the refusal — the recognition arm
   that read the notice (the first of ``_github_pr.refusal_layers`` in consult
-  order) and the notice's truncated excerpt — carried so this record has the SAME
-  shape as ``github_re_review``'s ``refusals[]`` record;
+  order) and the notice's truncated excerpt — the observation fields this record
+  shares with ``github_re_review``'s ``refusals[]`` record;
 - body CLASSIFICATION stays the shared bot-agnostic ``_is_rate_limit_notice``,
   which requires BOTH a limit-exceeded statement AND a notice shape.
 
@@ -34,8 +41,12 @@ Scope (AAA against fixture comment payloads):
     - a bot whose registry record declares no class fails closed to ``unknown``
     - CodeRabbit's notice yields its registry-extracted ``eta``
     - several bots rate-limited at once each yield their own record
-    - per-bot newest-by-``created_at`` selection: a newer genuine review from the
-      SAME bot supersedes that bot's older notice, without hiding another bot
+    - per-bot selection of the comment written last: a newer genuine review from
+      the SAME bot supersedes that bot's older notice, without hiding another bot,
+      and an older-created comment EDITED into a refusal after a newer one was
+      posted is the one sampled
+    - a notice whose stated window elapsed before it was read reports ``stale``,
+      and one read inside its window, or stating no reset time, does not
     - a genuine review merely mentioning a rate limit in prose is NOT a notice
     - human comments never contribute a record
     - a registry-declared refusal reports the registry ``layer`` even when the
@@ -57,6 +68,7 @@ runs deterministically in constant time.
 import argparse
 import importlib
 import re
+from datetime import UTC, datetime
 
 import github_ops
 
@@ -171,7 +183,17 @@ def test_bot_without_declared_class_fails_closed_to_unknown(monkeypatch):
         {
             'bot_kind': 'cuioss-review-bot',
             'rate_limit_class': 'unknown',
+            # A limit notice. PR-Agent declares no no-unreviewed-commit wording, so
+            # nothing it posts can carry the other condition.
+            'condition': _github_pr.REFUSAL_CONDITION_RATE_LIMITED,
             'eta': '',
+            # PR-Agent declares no reset-time patterns, so none can be read.
+            'eta_seconds': None,
+            'eta_extracted': False,
+            # The fixture carries no ``updated_at``, so the last write is its creation.
+            'written_at': _PR_AGENT_NOTICE['created_at'],
+            # No reset time was read, so nothing says the window is over.
+            'stale': False,
             'cause': 'quota',
             'cap': '',
             # PR-Agent declares no refusal_patterns, so only the notice SHAPE can
@@ -194,7 +216,17 @@ def test_coderabbit_notice_yields_registry_extracted_eta(monkeypatch):
         {
             'bot_kind': 'coderabbit',
             'rate_limit_class': 'awaitable_window',
+            'condition': _github_pr.REFUSAL_CONDITION_RATE_LIMITED,
             'eta': '12 minutes and 30 seconds',
+            # The stated duration converted to seconds: 12 * 60 + 30.
+            'eta_seconds': 750,
+            'eta_extracted': True,
+            'written_at': _CODERABBIT_NOTICE['created_at'],
+            # The handler judges the window against the real clock. The fixture's
+            # write instant is a fixed past date and the window it states is 750
+            # seconds, so that window is over on any run. The stale cases below
+            # pass the read instant explicitly instead of relying on the clock.
+            'stale': True,
             'cause': 'quota',
             'cap': '',
             # The "## Rate limit exceeded" phrasing is not among CodeRabbit's
@@ -269,10 +301,10 @@ def test_empty_comment_list_yields_empty_list(monkeypatch):
 
 
 def test_newer_review_supersedes_that_bots_older_notice_only(monkeypatch):
-    # Selection is newest-by-created_at PER BOT, not globally. CodeRabbit's older
+    # Selection is the comment written last PER BOT, not globally. CodeRabbit's older
     # notice is superseded by its own newer genuine review, while Sourcery — whose
-    # newest comment is still a notice — remains detected. A global "newest
-    # comment" pick would have hidden Sourcery behind CodeRabbit's recovery.
+    # last-written comment is still a notice — remains detected. A global pick of
+    # the last comment would have hidden Sourcery behind CodeRabbit's recovery.
     older_coderabbit_notice = dict(_CODERABBIT_NOTICE, created_at='2026-01-01T00:00:00Z')
     newer_coderabbit_review = dict(_CODERABBIT_GENUINE_REVIEW, created_at='2026-01-03T00:00:00Z')
     newest_human = dict(_HUMAN_COMMENT, created_at='2026-01-09T00:00:00Z')
@@ -308,6 +340,151 @@ def test_newer_review_supersedes_that_bots_older_notice_only(monkeypatch):
     # timeout, not an unanswerable detector.
     assert result['detector_answerable'] is True
     assert result['unanswerable_reason'] == ''
+
+
+def test_an_older_comment_edited_into_a_refusal_after_a_newer_one_reports_the_bot(monkeypatch):
+    # The bot posted a summary first and a genuine review after it, then rewrote the
+    # SUMMARY into a refusal. The refusal is the older-created comment, so sampling
+    # by ``created_at`` reads the review and reports nothing.
+    summary_turned_refusal = dict(
+        _CODERABBIT_REVIEW_LIMIT_REACHED,
+        created_at='2026-01-01T00:00:00Z',
+        updated_at='2026-01-03T00:00:00Z',
+    )
+    newer_review = dict(
+        _CODERABBIT_GENUINE_REVIEW,
+        created_at='2026-01-02T00:00:00Z',
+        updated_at='2026-01-02T00:00:00Z',
+    )
+    _wire(monkeypatch, post_comments=[summary_turned_refusal, newer_review])
+
+    result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
+
+    [record] = result['rate_limited_bots']
+    assert record['bot_kind'] == 'coderabbit'
+    assert record['body'] == _CODERABBIT_REVIEW_LIMIT_REACHED['body']
+    # The instant reported is the edit, not the creation.
+    assert record['written_at'] == '2026-01-03T00:00:00Z'
+
+
+def test_the_same_two_comments_without_the_edit_report_no_bot(monkeypatch):
+    # MATCHED CONTROL for the case above: the same bodies and creation times, with
+    # the older comment never edited. The review is then the comment written last,
+    # so the bot is not reported — the edit alone is what moved the verdict.
+    unedited_older_refusal = dict(
+        _CODERABBIT_REVIEW_LIMIT_REACHED,
+        created_at='2026-01-01T00:00:00Z',
+        updated_at='2026-01-01T00:00:00Z',
+    )
+    newer_review = dict(
+        _CODERABBIT_GENUINE_REVIEW,
+        created_at='2026-01-02T00:00:00Z',
+        updated_at='2026-01-02T00:00:00Z',
+    )
+    _wire(monkeypatch, post_comments=[unedited_older_refusal, newer_review])
+
+    result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
+
+    assert result['rate_limited_bots'] == []
+
+
+_TWELVE_MINUTE_NOTICE_BODY = (
+    '> [!WARNING] > ## Rate limit exceeded > '
+    '@octocat has exceeded the limit for the number of commits or files '
+    'that can be reviewed per hour. Please wait 12 minutes '
+    'before requesting another review.'
+)
+_NOTICE_UPDATED_AT = '2026-01-02T12:00:00Z'
+
+
+def _twelve_minute_notice(**overrides):
+    """A CodeRabbit notice stating a 12-minute window, last written at ``_NOTICE_UPDATED_AT``."""
+    notice = {
+        'author': 'coderabbitai[bot]',
+        'body': _TWELVE_MINUTE_NOTICE_BODY,
+        'created_at': '2026-01-02T10:00:00Z',
+        'updated_at': _NOTICE_UPDATED_AT,
+    }
+    notice.update(overrides)
+    return notice
+
+
+def test_a_notice_stating_twelve_minutes_read_two_hours_after_its_last_write_is_stale():
+    # The notice states a 12-minute window and was last written at 12:00. Read at
+    # 14:00, that window closed 108 minutes ago: there is nothing left to wait for.
+    read_at = datetime(2026, 1, 2, 14, 0, 0, tzinfo=UTC)
+
+    [record] = _github_pr._detect_rate_limited_bots([_twelve_minute_notice()], now=read_at)
+
+    assert record['eta'] == '12 minutes'
+    assert record['eta_seconds'] == 720
+    assert record['written_at'] == _NOTICE_UPDATED_AT
+    assert record['stale'] is True
+
+
+def test_the_same_notice_read_inside_its_window_is_not_stale():
+    # MATCHED CONTROL: the same notice, read five minutes after its last write. Its
+    # window is still open, so the record must not be called stale — a detector
+    # that marked every notice with a reset time stale would fail here.
+    read_at = datetime(2026, 1, 2, 12, 5, 0, tzinfo=UTC)
+
+    [record] = _github_pr._detect_rate_limited_bots([_twelve_minute_notice()], now=read_at)
+
+    assert record['eta_seconds'] == 720
+    assert record['stale'] is False
+
+
+def test_the_window_is_over_at_the_instant_it_ends():
+    # The boundary: written at 12:00 with a 720-second window, read at 12:12:00
+    # exactly. The stated time has fully passed, so the record is stale; one second
+    # earlier it is not.
+    at_the_end = datetime(2026, 1, 2, 12, 12, 0, tzinfo=UTC)
+    one_second_before = datetime(2026, 1, 2, 12, 11, 59, tzinfo=UTC)
+
+    [ended] = _github_pr._detect_rate_limited_bots([_twelve_minute_notice()], now=at_the_end)
+    [open_still] = _github_pr._detect_rate_limited_bots([_twelve_minute_notice()], now=one_second_before)
+
+    assert ended['stale'] is True
+    assert open_still['stale'] is False
+
+
+def test_staleness_counts_from_the_last_write_not_from_the_creation():
+    # Created at 10:00 and rewritten at 12:00. Read at 12:05 the comment is more
+    # than two hours old by creation, but the text stating the window is five
+    # minutes old, and that is the window that counts.
+    read_at = datetime(2026, 1, 2, 12, 5, 0, tzinfo=UTC)
+    notice = _twelve_minute_notice(created_at='2026-01-02T10:00:00Z', updated_at=_NOTICE_UPDATED_AT)
+
+    [record] = _github_pr._detect_rate_limited_bots([notice], now=read_at)
+
+    assert record['written_at'] == _NOTICE_UPDATED_AT
+    assert record['stale'] is False
+
+
+def test_a_notice_stating_no_reset_time_is_never_stale():
+    # No window was stated, so there is none to have elapsed, however old the
+    # notice is. Stale is asserted only on a figure that was read.
+    read_at = datetime(2026, 6, 1, 0, 0, 0, tzinfo=UTC)
+
+    [record] = _github_pr._detect_rate_limited_bots([_CODERABBIT_REVIEW_LIMIT_REACHED], now=read_at)
+
+    assert record['eta_extracted'] is False
+    assert record['written_at'] == _CODERABBIT_REVIEW_LIMIT_REACHED['created_at']
+    assert record['stale'] is False
+
+
+def test_a_notice_with_no_readable_write_instant_is_not_stale():
+    # Neither stamp parses, so when the notice was written is unknown. The record
+    # says so with an empty ``written_at`` and does not call the notice stale,
+    # although it states a reset time.
+    read_at = datetime(2026, 6, 1, 0, 0, 0, tzinfo=UTC)
+    notice = _twelve_minute_notice(created_at='not-a-timestamp', updated_at='')
+
+    [record] = _github_pr._detect_rate_limited_bots([notice], now=read_at)
+
+    assert record['eta_seconds'] == 720
+    assert record['written_at'] == ''
+    assert record['stale'] is False
 
 
 def test_bot_body_sentence_without_notice_shape_is_not_a_notice(monkeypatch):

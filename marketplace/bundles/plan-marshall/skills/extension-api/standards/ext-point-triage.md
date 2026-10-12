@@ -79,6 +79,10 @@ class Extension(ExtensionBase):
 4. ONE RESPOND LOOP: post_responses(triaged) → provider (pr thread-reply / resolve-thread /
    sonar dismiss), keyed by hash_id — the provider acknowledgment is collected here, AFTER triage,
    not interleaved per finding.
+   In a finalize run on GitHub a `fixed` reply is not sent in this pass. It is held until the fix
+   commit is stamped on the finding and is on the pull request head, and a second respond pass
+   sends it after the push. Every other caller passes `--send-unstamped-fixed` and sends it in this
+   pass. GitLab sends every disposition, `fixed` included, in this pass.
 ```
 
 See [`findings-pipeline.md` § Consumer Dispatch](../../ref-workflow-architecture/standards/findings-pipeline.md#consumer-dispatch) for the full FIND → INGEST → one-TRIAGE → one-RESPOND flow.

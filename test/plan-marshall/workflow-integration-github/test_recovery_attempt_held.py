@@ -10,8 +10,10 @@ cap-final claim — the one the primitive deliberately admitted — therefore re
 ``attempts_remaining: 0`` at the instant it succeeds.
 
 The recovery sequence consults the selector TWICE: once before claiming, and once
-at the jittered wake boundary after the claim's window elapsed. Feeding the second
-consult that post-claim zero routed it to ``escalate_exhausted``, and the workflow
+on re-entry — the step claims the window and hands the wait to the main context,
+and the step dispatched after that wait reads its own elapsed claim and consults
+again. Feeding the second consult that post-claim zero routed it to
+``escalate_exhausted``, and the workflow
 released the claim without ever generating the event — so an ``attempt_cap`` of 1
 delivered ZERO recovery events and the default cap of 6 delivered five. The bug is
 silent by construction: every observable says the budget is spent, and the missing
@@ -220,7 +222,7 @@ class TestAHeldAttemptAuthorizesNothingElse:
         """A held attempt is not a substitute for having READ the budget.
 
         The flag says how to interpret the number; it does not supply one. Reading
-        it as an implicit budget would let a caller that never polled the ledger
+        it as an implicit budget would let a caller that never read the ledger
         trigger anyway.
         """
         verdict = _verdict(bot_kind, attempts_remaining=None, attempt_held=True)

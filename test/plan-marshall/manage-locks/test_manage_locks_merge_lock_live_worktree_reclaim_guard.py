@@ -46,7 +46,7 @@ class TestLiveWorktreeReclaimGuard:
         """Stage a lock held by a plan-dir-dead ``holder`` and dequeue it so the
         next acquirer is the FIFO front. The caller stages the holder's worktree
         shape (orphaned shell vs genuine marker) before the reclaiming acquire."""
-        merge_lock.run_acquire(Namespace(plan_id=holder, timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id=holder))
         merge_lock._dequeue_fifo(holder)
 
     def test_vanished_plan_orphaned_shell_is_auto_reclaimed(self, isolated_base: dict) -> None:
@@ -61,7 +61,7 @@ class TestLiveWorktreeReclaimGuard:
         # git-worktree marker nor a live plan dir.
         (base / 'worktrees' / 'vanished').mkdir(parents=True, exist_ok=True)
 
-        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=5.0))
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b'))
         assert result['status'] == 'success', result
         assert result['action'] == 'acquired'
         assert result['reclaimed'] is True
@@ -78,7 +78,7 @@ class TestLiveWorktreeReclaimGuard:
         shell = base / 'worktrees' / 'stranded'
         (shell / 'leftover' / 'residue').mkdir(parents=True, exist_ok=True)
 
-        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=5.0))
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b'))
         assert result['status'] == 'success', result
         assert result['action'] == 'acquired'
         assert result['reclaimed'] is True
@@ -88,10 +88,10 @@ class TestLiveWorktreeReclaimGuard:
         # A genuinely-live holder (its plan dir exists) is NEVER reclaimed — the
         # acquirer serializes (blocks) with no false reclaim. This negative guards
         # against the strengthened predicate over-reclaiming a live holder.
-        merge_lock.run_acquire(Namespace(plan_id='live-holder', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='live-holder'))
         _make_live_plan(isolated_base['base'], 'live-holder')
 
-        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=0.3))
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b'))
         assert result['status'] == 'blocked'
         assert result['admission'] == 'blocked'
         assert result['blocking_plan_id'] == 'live-holder'
@@ -114,7 +114,7 @@ class TestLiveWorktreeReclaimGuard:
         worktree.mkdir(parents=True, exist_ok=True)
         (worktree / '.git').write_text('gitdir: /main/.git/worktrees/mid-rec\n', encoding='utf-8')
 
-        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=5.0))
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b'))
         assert result['status'] == 'blocked', result
         assert result['admission'] == 'blocked'
         assert result['stale_holder_live_worktree'] is True
@@ -145,7 +145,7 @@ class TestLiveWorktreeReclaimGuard:
         _stub_title_tokens.set_states.clear()
         _stub_title_tokens.pushed_icons.clear()
 
-        result = merge_lock.run_acquire(Namespace(plan_id='behind', timeout=5.0))
+        result = merge_lock.run_acquire(Namespace(plan_id='behind'))
         assert result['status'] == 'blocked'
         assert _stub_title_tokens.set_states == ['lock-waiting']
         assert _stub_title_tokens.pushed_icons == [merge_lock._ICON_LOCK_WAITING]
@@ -158,14 +158,14 @@ class TestLiveWorktreeReclaimGuard:
         calls `release` has its token CLEARED. The lock stays held by the foreign
         holder (release is scoped to the caller), but the blocked waiter's own
         stale `lock-waiting` token is cleared via the foreign-holder noop branch."""
-        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
         _make_live_plan(isolated_base['base'], 'plan-a')
         # Drop plan-a's own acquire surface so the assertions below see only the
         # blocked waiter's tokens (mirrors `test_blocked_acquire_surfaces_lock_waiting`).
         _stub_title_tokens.set_states.clear()
         _stub_title_tokens.pushed_icons.clear()
         # plan-b blocks behind the live holder, surfacing `lock-waiting` (⏳).
-        blocked = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=0.6))
+        blocked = merge_lock.run_acquire(Namespace(plan_id='plan-b'))
         assert blocked['status'] == 'blocked'
         assert _stub_title_tokens.pushed_icons == [merge_lock._ICON_LOCK_WAITING]
         _stub_title_tokens.cleared.clear()
@@ -199,7 +199,7 @@ class TestLiveWorktreeReclaimGuard:
             encoding='utf-8',
         )
         # `behind` blocks as a non-front waiter, surfacing `lock-waiting` (⏳).
-        blocked = merge_lock.run_acquire(Namespace(plan_id='behind', timeout=5.0))
+        blocked = merge_lock.run_acquire(Namespace(plan_id='behind'))
         assert blocked['status'] == 'blocked'
         assert _stub_title_tokens.pushed_icons == [merge_lock._ICON_LOCK_WAITING]
         _stub_title_tokens.cleared.clear()
@@ -214,7 +214,7 @@ class TestLiveWorktreeReclaimGuard:
     def test_release_clears_token_on_released_path(
         self, isolated_base: dict, _stub_title_tokens: _TokenRecorder
     ) -> None:
-        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
         _stub_title_tokens.cleared.clear()
         _stub_title_tokens.pushed_icons.clear()
 
@@ -239,7 +239,7 @@ class TestLiveWorktreeReclaimGuard:
     def test_release_clears_token_on_foreign_holder_noop(
         self, isolated_base: dict, _stub_title_tokens: _TokenRecorder
     ) -> None:
-        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
         _stub_title_tokens.cleared.clear()
 
         result = merge_lock.run_release(Namespace(plan_id='plan-b'))
@@ -265,7 +265,7 @@ class TestLiveWorktreeReclaimGuard:
         mp = _pytest.MonkeyPatch()
         mp.setattr(merge_lock, '_run_executor', _raising_run_executor)
         try:
-            result = merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+            result = merge_lock.run_acquire(Namespace(plan_id='plan-a'))
         finally:
             mp.undo()
 
@@ -285,7 +285,7 @@ class TestLiveWorktreeReclaimGuard:
         def _raising_run_executor(*_a: object, **_k: object) -> dict:
             raise OSError('tty gone')
 
-        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
         assert isolated_base['lock_path'].is_file()
 
         # Patch the low-level executor seam (NOT the higher-level token seams), so
@@ -326,7 +326,7 @@ class TestLiveWorktreeReclaimGuard:
         monkeypatch.setattr(merge_lock, '_set_title_token', lambda _p, state: events.append(f'set:{state}'))
         monkeypatch.setattr(merge_lock, '_push_title_token', lambda _p, icon: events.append('push'))
 
-        result = merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-a'))
         assert result['status'] == 'success'
 
         # The successful atomic create MUST be recorded before the first lock-owned

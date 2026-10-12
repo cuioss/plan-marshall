@@ -240,19 +240,31 @@ Extract `value` (`light` or `deep`). When the field is absent or unresolved, tre
      --message "(plan-marshall:planning) planning-lane=light — dispatching ONE collapsed light-lane envelope (refine+outline+derive), skipping the deep refine-loop and Complex-Track outline"
    ```
 
-2. **Close `2-refine` before the envelope is dispatched.** All three calls below are orchestrator-side and pre-dispatch, and they are deliberately kept on one side of the dispatch boundary. Two structural facts decide that placement:
+2. **Close `2-refine` before the envelope is dispatched.** The `pr_title` persist and all three calls below are orchestrator-side and pre-dispatch, and they are deliberately kept on one side of the dispatch boundary. Two structural facts decide that placement:
 
    - `manage-metrics enrich` attributes a dispatch's transcript to whichever phase window contains its **spawn timestamp**. Stamping the boundary only after the envelope returns leaves the collapsed envelope's entire spend inside an open `2-refine` window, so `2-refine` is billed for `3-outline`'s work. The boundary stamp must therefore precede the dispatch.
    - The light-lane envelope runs the phase-3-outline Phase Entry Protocol, which calls `phase_handshake verify --phase 2-refine`. That verify needs the captured `2-refine` row to already exist, so the capture must precede the dispatch as well — a capture placed inside the envelope would have the leaf capture the very row it then verifies. The transition stays on this same side because it must not be separated from its paired capture.
 
    The light lane never dispatches `phase-2-refine`, so the phase body that issues `manage-status transition --completed 2-refine` on the deep lane never runs. That transition has **no orchestrator-side deep-lane counterpart to mirror** — it lives inside `phase-2-refine`'s own body — so the call in (a) is written from the verb's own contract rather than copied from a deep-lane seam.
 
-   a. Transition `2-refine`:
+   **First, before (a) — author and persist the PR title.** The `2-refine` capture in (c) refuses with `pr_title_missing` when `status.metadata.pr_title` is absent, and on the deep lane the title is authored by phase-2-refine Step 13. The light lane runs no phase-2-refine, and the envelope that could otherwise author the title is dispatched only AFTER the capture, so the producer has to sit here, on the orchestrator side of the boundary. Author a commit-style PR title from the request under the same shape rules as phase-2-refine Step 13 — at most 72 characters, imperative mood, `type(scope): summary` — and persist it:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+     --plan-id {plan_id} --set --field pr_title --value "{authored_title}"
+   ```
+
+   `pr_title` is distinct from the plan's descriptive `title`: `title` is the human label authored at init, while `pr_title` is the commit-style title phase-6-finalize `create-pr` consumes as its `--title` source. The envelope MAY refine it after its bounded read (see `phase-3-outline/workflow/light-lane.md` Step 5); a title persisted here is what lets the capture in (c) succeed without `--override`.
+
+   a. Transition `2-refine`. The light lane produces neither of the artifacts the `2-refine` completion gate looks for — no `## Clarified Request` section in `request.md` and no `metadata.confidence` — because the collapsed envelope owns refine, so a plain transition refuses with `refine_bare_transition`. Record the sanctioned, logged exemption for an artifact-free phase instead:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \
-     --plan-id {plan_id} --completed 2-refine
+     --plan-id {plan_id} --completed 2-refine --allow-bare-transition \
+     --bare-reason "light lane: phase-2-refine does not run; the collapsed envelope owns refine"
    ```
+
+   The exemption is persisted to `status.metadata.phase_exemptions` and decision-logged by the verb, so the bare close stays auditable.
 
    **On any non-`success` result, STOP** per the [refused-transition halt rule](../../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule): `2-refine` did NOT close, so emit the `[ERROR]` work-log line carrying the refusal payload verbatim and surface it to the operator — do NOT run (b) or (c) below and do NOT dispatch the light-lane envelope.
 
@@ -308,6 +320,16 @@ Extract `value` (`light` or `deep`). When the field is absent or unresolved, tre
      ```
 
    - **`status: success`** (deliverables derived, no escalation): the light lane has already written `solution_outline.md`, derived the deliverables, and transitioned `3-outline`. When the return carries `domain_narrow_report`, print it to the operator verbatim as one line of plain output before continuing (the same rule as `planning-outline.md` § "Post-return `domain_narrow_report`"); when the field is absent, print nothing. Record ONLY the `3-outline → 4-plan` boundary from the returned `<usage>` — the `2-refine → 3-outline` half was already stamped pre-dispatch at step 2 and MUST NOT be recorded again here. Then proceed to **Action: outline** Step 4-plan (task derivation) — the light lane self-derived the outline, so the Complex-Track + q-gate-validation sibling dispatch is skipped (see `planning-outline.md` § lane branch).
+
+**Light-lane capture-source matrix.** On the deep lane, phase-2-refine Step 13 produces the values later phases read at and after the `2-refine` boundary; the light lane never runs that step, so each value needs a producer of its own. The matrix names one per product — one row per Step 13 persist item, plus the artifact the `2-refine` transition gate checks. A product added to Step 13 needs a light-lane row here in the same change.
+
+| Product | Deep-lane producer | Light-lane producer | Without it on the light lane |
+|---------|--------------------|---------------------|------------------------------|
+| module mapping (`work/module_mapping.toon`) | phase-2-refine Step 13 item 1 | None | Not a boundary stop: no `2-refine` invariant reads it, the light-lane envelope derives its deliverables from its own bounded read set rather than from the mapping, and phase-4-plan does not read it |
+| `scope_estimate` (`references.json`) | phase-2-refine Step 13 item 2 | phase-1-init Step 8a.5 pre-route band, overwritten by `phase-3-outline/workflow/light-lane.md` Step 5 | The pre-route band stands if the envelope never re-persists it |
+| `track` (`references.json`) | phase-2-refine Step 13 item 3 (`complex` on the deep lane) | `phase-3-outline/workflow/light-lane.md` Step 5, `--value simple` | phase-4-plan's `manage-references get --field track` finds nothing |
+| `pr_title` (`status.metadata`) | phase-2-refine Step 13 item 4 | This branch, step 2, before (a); the envelope MAY refine it in `light-lane.md` Step 5 | The `2-refine` capture in step 2 (c) refuses with `pr_title_missing` |
+| `2-refine` transition artifact (`## Clarified Request` in `request.md`, or `metadata.confidence`) | phase-2-refine Steps 10 and 12-13 | None produced — step 2 (a) records the `--allow-bare-transition` exemption in its place | The transition in step 2 (a) refuses with `refine_bare_transition` |
 
 **Deep-lane branch** — when `planning_lane == deep` (or the light-lane envelope returned `escalate_to_deep`): run the full phases-2-4 pipeline documented below without modification (the standard refine→outline→plan dispatch chain).
 

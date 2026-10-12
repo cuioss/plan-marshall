@@ -4,13 +4,15 @@
 
 Pure, side-effect-free helpers extracted from ``github_ops.py``: the canonical
 conclusion partition tables, the ``gh pr checks`` conclusion normaliser, the
-check-link segment extractors, the failing-check entry builder, the bucket
-classifier, and the overall-status derivation. None of these touch the network
-or any monkeypatched module global, so they are safe to live outside the entry
-module and are re-exported from ``github_ops`` for callers and tests.
+review-bot row split, the check-link segment extractors, the failing-check entry
+builder, the bucket classifier, and the overall-status derivation. None of these
+touch the network or any monkeypatched module global, so they are safe to live
+outside the entry module and are re-exported from ``github_ops`` for callers and
+tests.
 """
 
 import re
+from collections.abc import Iterable
 from typing import Any
 
 # GitHub check ``conclusion`` (raw ``state`` from ``gh pr checks --json state``)
@@ -18,8 +20,12 @@ from typing import Any
 # ``SUCCESS | SKIPPED | NEUTRAL | FAILURE | TIMED_OUT | CANCELLED |
 # ACTION_REQUIRED | STALE | STARTUP_FAILURE | IN_PROGRESS | QUEUED | PENDING |
 # null``. The three partitions below carry the canonical conclusion → outcome
-# mapping for ``cmd_ci_status``, ``cmd_ci_wait``, and
-# ``_fetch_pr_overall_ci_status``.
+# mapping for the four read paths of the ``gh pr checks`` partition:
+# ``cmd_ci_status``, ``cmd_ci_wait``, ``github_ops._fetch_pr_overall_ci_status``
+# (and through it ``cmd_ci_wait_for_status_flip``), and the fixed-reply hold of
+# ``github_pr.post_responses``, which reads the same helper. Every one of the four
+# first sets the registered review-bot rows aside with
+# ``_split_review_bot_rows`` and classifies the CI rows only.
 _CONCLUSION_NON_FAILING: frozenset[str] = frozenset({'SUCCESS', 'SKIPPED', 'NEUTRAL'})
 _CONCLUSION_FAILING: frozenset[str] = frozenset(
     {'FAILURE', 'TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED', 'STALE', 'STARTUP_FAILURE'}
@@ -116,6 +122,57 @@ def _build_failing_check_entry(check: dict) -> dict:
         'run_url': link,
     }
     return entry
+
+
+def _build_review_bot_check_entry(check: dict) -> dict:
+    """Build the ``review_bot_checks[]`` entry for one set-aside review-bot row.
+
+    Reports what the provider said about the bot's status — its name, its
+    canonical conclusion (``PENDING`` while it has none) and its link — without
+    any CI verdict: the row is reported, not counted.
+    """
+
+    return {
+        'name': check.get('name', 'unknown'),
+        'conclusion': _normalize_conclusion(check) or 'PENDING',
+        'url': check.get('link') or '',
+    }
+
+
+def _split_review_bot_rows(
+    checks: list[dict],
+    review_bot_check_names: Iterable[str],
+) -> tuple[list[dict], list[dict]]:
+    """Split ``gh pr checks`` rows into ``(ci_rows, review_bot_rows)``.
+
+    A review bot that publishes a commit status (CodeRabbit's ``CodeRabbit``)
+    reports it on the same ``gh pr checks`` surface as the CI checks, but it is
+    the review gate's concern, not CI's: counted as CI, a bot that is
+    rate-limited or slow keeps the CI wait partition open until its deadline and
+    reports a CI timeout for a review that has not finished. The row whose name
+    is in ``review_bot_check_names`` is therefore set aside BEFORE
+    ``_classify_check_buckets`` / ``_derive_overall_status`` classify the CI rows.
+
+    The set-aside rows are RETURNED, never discarded, so a caller reports them
+    rather than dropping them silently (ADR-014). Row order is preserved on both
+    sides.
+
+    Both sides of the name comparison are whitespace-stripped and blank names
+    are ignored, so a stray space in a registry value cannot silently miss its
+    row and an empty name cannot claim every unnamed row. An empty name set sets
+    nothing aside.
+    """
+
+    names = frozenset(name.strip() for name in review_bot_check_names if isinstance(name, str) and name.strip())
+    ci_rows: list[dict] = []
+    review_bot_rows: list[dict] = []
+    for check in checks:
+        name = check.get('name')
+        if isinstance(name, str) and name.strip() in names:
+            review_bot_rows.append(check)
+        else:
+            ci_rows.append(check)
+    return ci_rows, review_bot_rows
 
 
 def _classify_check_buckets(
@@ -260,9 +317,7 @@ def _pull_request_event_runs_for_pr(runs: Any, pr_number: Any) -> list:
     return [run for run in runs if _is_pull_request_event_run(run) and not _run_names_a_different_pr(run, pr_number)]
 
 
-def _derive_overall_status(
-    checks: list[dict], *, currency_current: bool | None = None
-) -> tuple[str, list[dict], list[dict]]:
+def _derive_overall_status(checks: list[dict]) -> tuple[str, list[dict], list[dict]]:
     """Derive ``overall | final_status`` plus failing-checks transport.
 
     Returns ``(status, failing_check_rows, wait_check_rows)`` where ``status``
@@ -270,61 +325,18 @@ def _derive_overall_status(
     is intentionally absent — every input resolves to one of the four
     canonical states.
 
-    PLAN-03 currency overlay: when ``currency_current`` carries the explicit
-    verdict of the SHA-compared currency guard
-    (``_github_pr.bot_claimed_sha_matches_head``), a stale verdict forces the
-    published check state to ``failure`` so a review credited stale on the
-    findings path cannot read as current on checks. ``None`` means no
-    currency information is available and preserves the pre-currency
-    behaviour; ``True`` leaves the derived status untouched. This overlay is
-    deliberately separate from the issue-comment HEAD-verified read in the
-    re-review await flow: that read belongs to the comment-body path, while
-    this overlay belongs to the checks publication flow consumed by
-    ``cmd_ci_status`` / ``cmd_ci_wait`` via this derivation.
+    The status is a function of the check rows alone. Whether a review bot's
+    review still covers the merge candidate is NOT an input: review currency is
+    decided at the participation gate (see ``automatic-review``'s
+    ``standards/bot-participation-contract.md`` § "The currency rule"), and
+    this surface carries no currency verdict.
     """
 
     if not checks:
-        base: str = 'none'
-        failing: list[dict] = []
-        wait: list[dict] = []
-    else:
-        failing, wait, _non_failing = _classify_check_buckets(checks)
-        if wait:
-            base = 'pending'
-            failing = []
-        elif failing:
-            base = 'failure'
-            wait = []
-        else:
-            base = 'success'
-            failing = []
-            wait = []
-    if currency_current is None:
-        if base == 'none':
-            return 'none', [], []
-        if base == 'pending':
-            return 'pending', [], wait
-        if base == 'failure':
-            return 'failure', failing, []
-        return 'success', [], []
-    check_state = carry_currency_verdict_to_check_state(bool(currency_current))
-    if check_state == 'STALE' and base in ('success', 'none'):
-        return 'failure', failing, []
-    if base == 'none':
         return 'none', [], []
-    if base == 'pending':
+    failing, wait, _non_failing = _classify_check_buckets(checks)
+    if wait:
         return 'pending', [], wait
-    if base == 'failure':
+    if failing:
         return 'failure', failing, []
     return 'success', [], []
-
-
-def carry_currency_verdict_to_check_state(currency_current: bool) -> str:
-    """Map the SHA-compared currency verdict onto the check-run review state.
-
-    PLAN-03: the stale verdict surfaces consistently on the checks surface so a
-    review credited stale on the findings path cannot read as current on checks.
-    A current review maps to ``SUCCESS``; a stale one maps to ``STALE``, which
-    the failing partition already treats as a failure rather than a pass.
-    """
-    return 'SUCCESS' if currency_current else 'STALE'

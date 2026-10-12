@@ -44,7 +44,7 @@ class TestCheck:
         assert not isolated_base['lock_path'].exists()
 
     def test_check_held_reports_holder(self, isolated_base: dict) -> None:
-        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
 
         result = merge_lock.run_check(Namespace(plan_id='plan-b'))
         assert result['status'] == 'held'
@@ -52,14 +52,14 @@ class TestCheck:
 
     def test_check_reports_self_held(self, isolated_base: dict) -> None:
         """check reports the global lock state, including a self-held lock."""
-        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
 
         result = merge_lock.run_check(Namespace(plan_id='plan-a'))
         assert result['status'] == 'held'
         assert result['holder_plan_id'] == 'plan-a'
 
     def test_check_does_not_mutate_lock(self, isolated_base: dict) -> None:
-        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
         before = isolated_base['lock_path'].read_text(encoding='utf-8')
 
         merge_lock.run_check(Namespace(plan_id='plan-b'))
@@ -75,7 +75,7 @@ class TestCheck:
         assert not isolated_base['queue_path'].exists()
 
         # With a held lock, check by a third plan must not enqueue that plan.
-        merge_lock.run_acquire(Namespace(plan_id='holder', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='holder'))
         before = _waiting_plan_ids(isolated_base['queue_path'])
         merge_lock.run_check(Namespace(plan_id='observer'))
         assert _waiting_plan_ids(isolated_base['queue_path']) == before
@@ -92,12 +92,12 @@ class TestStaleReclamation:
         """A lock whose holder has no live plan dir is reclaimable by the front."""
         # plan-dead acquires but its plan dir is NEVER created → dead holder. It
         # is dequeued so the next acquirer becomes the FIFO front.
-        merge_lock.run_acquire(Namespace(plan_id='plan-dead', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-dead'))
         merge_lock._dequeue_fifo('plan-dead')
 
         # plan-b acquires: it is the front, observes the held lock, finds the
         # holder dead, reclaims.
-        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=5.0))
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b'))
         assert result['status'] == 'success'
         assert result['action'] == 'acquired'
         assert result['holder'] == 'plan-b'
@@ -106,10 +106,10 @@ class TestStaleReclamation:
 
     def test_live_holder_lock_is_not_reclaimed(self, isolated_base: dict) -> None:
         """A lock whose holder IS live is NOT reclaimable (serializes/blocks)."""
-        merge_lock.run_acquire(Namespace(plan_id='plan-live', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-live'))
         _make_live_plan(isolated_base['base'], 'plan-live')
 
-        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=0.3))
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b'))
         assert result['status'] == 'blocked'
         assert result['blocking_plan_id'] == 'plan-live'
 
@@ -118,9 +118,9 @@ class TestStaleReclamation:
         observable acquire behaviour. A ghost holder (no plan dir) is dead
         (reclaimable) once it is dequeued so the next plan is the front."""
         # A holder whose plan dir is missing is dead → reclaimable.
-        merge_lock.run_acquire(Namespace(plan_id='ghost', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='ghost'))
         merge_lock._dequeue_fifo('ghost')
-        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=5.0))
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b'))
         assert result['action'] == 'acquired'
         assert result['reclaimed'] is True
 
@@ -146,7 +146,7 @@ class TestStaleReclamation:
 
         # 'live' polls: the dead 'crashed' front entry is pruned, promoting 'live'
         # to the front → admitted.
-        result = merge_lock.run_acquire(Namespace(plan_id='live', timeout=5.0))
+        result = merge_lock.run_acquire(Namespace(plan_id='live'))
         assert result['admission'] == 'admitted'
         assert result['holder'] == 'live'
         # The dead waiter is gone from the queue.
@@ -159,20 +159,20 @@ class TestStaleReclamation:
         actively-finalizing session and break serialization."""
         base = isolated_base['base']
         # plan-wt holds the lock and its plan dir lives ONLY in the worktree.
-        merge_lock.run_acquire(Namespace(plan_id='plan-wt', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='plan-wt'))
         (base / 'worktrees' / 'plan-wt' / '.plan' / 'local' / 'plans' / 'plan-wt').mkdir(parents=True)
         # A concurrent acquirer must serialize (block), NOT reclaim.
-        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=0.3))
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b'))
         assert result['status'] == 'blocked'
         assert result['blocking_plan_id'] == 'plan-wt'
 
-    def test_timeout_zero_is_non_blocking(self, isolated_base: dict) -> None:
-        """``--timeout 0`` is a valid non-blocking try: against a live holder it
-        blocks IMMEDIATELY (acquire never waits internally for the queue case)."""
-        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+    def test_default_acquire_is_non_blocking(self, isolated_base: dict) -> None:
+        """Without ``--wait-seconds`` acquire is a single non-waiting attempt:
+        against a live holder it blocks IMMEDIATELY."""
+        merge_lock.run_acquire(Namespace(plan_id='plan-a'))
         _make_live_plan(isolated_base['base'], 'plan-a')
         start = time.monotonic()
-        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=0))
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b'))
         elapsed = time.monotonic() - start
         assert result['status'] == 'blocked'
         assert result['blocking_plan_id'] == 'plan-a'

@@ -15,6 +15,7 @@ STRUCTURED_FIELDS = _build_format_mod.STRUCTURED_FIELDS
 format_json = _build_format_mod.format_json
 format_toon = _build_format_mod.format_toon
 
+POPULATION_UNMEASURED = _build_parse_mod.POPULATION_UNMEASURED
 SEVERITY_ERROR = _build_parse_mod.SEVERITY_ERROR
 SEVERITY_WARNING = _build_parse_mod.SEVERITY_WARNING
 Issue = _build_parse_mod.Issue
@@ -302,6 +303,67 @@ def test_format_toon_omits_an_empty_section(section: dict, absent: str):
     output = format_toon(_success_result(**section))
 
     assert absent not in output, output
+
+
+#: ``(summary, the tests block a TOON consumer must read back)``. Each row sets
+#: one optional summary field the JSON path has always carried; the TOON block
+#: must carry it too, or the default output withholds what the parser computed.
+_OPTIONAL_TESTS_FIELD_CASES = [
+    (
+        UnitTestSummary(passed=724, failed=1, skipped=2, total=727, by_runner={'surefire': 718, 'failsafe': 7}),
+        {'passed': 724, 'failed': 1, 'skipped': 2, 'by_runner': {'surefire': 718, 'failsafe': 7}},
+    ),
+    (
+        UnitTestSummary(passed=339, failed=1, skipped=0, total=340, population=POPULATION_UNMEASURED),
+        {'passed': 339, 'failed': 1, 'skipped': 0, 'population': POPULATION_UNMEASURED},
+    ),
+]
+
+_OPTIONAL_TESTS_FIELD_IDS = ['by-runner-breakdown', 'unmeasured-population']
+
+
+@pytest.mark.parametrize('summary,expected', _OPTIONAL_TESTS_FIELD_CASES, ids=_OPTIONAL_TESTS_FIELD_IDS)
+def test_optional_tests_fields_survive_toon_and_agree_with_json(summary, expected):
+    """An optional summary field reaches a TOON consumer with the JSON path's value."""
+    result = _result(error='build_failed', tests=summary)
+
+    from_toon = parse_toon(format_toon(result))['tests']
+    from_json = json.loads(format_json(result))['tests']
+
+    assert from_toon == expected
+    for field, value in expected.items():
+        assert from_json[field] == value
+
+
+#: ``(summary, the exact trailing tests block)``. Summaries that set neither
+#: ``by_runner`` nor ``population`` — every Gradle, npm and pytest summary, and a
+#: measured Maven one — must render exactly the block they rendered before those
+#: fields existed. An empty ``by_runner`` attributes nothing and is not rendered.
+_UNCHANGED_TESTS_BLOCK_CASES = [
+    (
+        UnitTestSummary(passed=10, failed=2, skipped=1, total=13),
+        'tests:\n  passed: 10\n  failed: 2\n  skipped: 1',
+    ),
+    (
+        UnitTestSummary(passed=10, failed=0, skipped=4, total=14, duration_seconds=412.87),
+        'tests:\n  passed: 10\n  failed: 0\n  skipped: 4\n  duration_seconds: 412.87',
+    ),
+    (
+        UnitTestSummary(passed=10, failed=2, skipped=1, total=13, by_runner={}),
+        'tests:\n  passed: 10\n  failed: 2\n  skipped: 1',
+    ),
+]
+
+_UNCHANGED_TESTS_BLOCK_IDS = ['three-count-summary', 'summary-with-a-tool-duration', 'empty-by-runner']
+
+
+@pytest.mark.parametrize('summary,block', _UNCHANGED_TESTS_BLOCK_CASES, ids=_UNCHANGED_TESTS_BLOCK_IDS)
+def test_control_summary_without_optional_fields_renders_unchanged(summary, block):
+    output = format_toon(_result(error='build_failed', tests=summary))
+
+    assert output.endswith(f'\n{block}'), output
+    assert 'by_runner' not in output
+    assert 'population' not in output
 
 
 def test_format_json_success_basic():

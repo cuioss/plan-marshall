@@ -35,6 +35,27 @@ USER 1001
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]
 ```
 
+### Test-Fixture Images
+
+The multi-stage form above is for an image that has to be reproducible from its sources alone. An image that exists only as a fixture of a test lane — an echo service, a stub backend — and whose sources are a module of the same build is a different case. A build stage inside its Dockerfile runs a full build tool on every lane run: it resolves dependencies outside the host's cache and compiles a module the surrounding build has already compiled or could compile in the same reactor.
+
+Build the fixture's artifact in the surrounding build and reduce the Dockerfile to a single stage that copies it:
+
+```dockerfile
+FROM eclipse-temurin:21.0.2_13-jre-alpine
+COPY target/quarkus-app/ /app/
+USER 1001
+ENTRYPOINT ["java", "-jar", "/app/quarkus-run.jar"]
+```
+
+Three consequences have to be handled, or the change trades a slow lane for a wrong one:
+
+* **The artifact must exist before the image build.** Every lane that builds the image — including one no CI workflow runs, such as an on-demand comparison or benchmark lane — needs the packaging step in front of it. A lane that built from sources before and is not updated now fails on a missing directory, or copies a stale one.
+* **A stale local image is reused silently.** With the build stage gone, nothing in the Dockerfile changes when the fixture's sources change, and a compose stack that finds an image under the expected name starts it. Force the rebuild where the lane starts the stack (`docker compose build`, or `up --build`), and treat "the test ran against an old fixture" as the first suspect when a fixture change shows no effect locally.
+* **The build context must contain the artifact.** A `.dockerignore` that excludes `target/` or `build/` — as recommended below for ordinary images — hides exactly the directory this Dockerfile copies. Give the fixture its own context or its own ignore file.
+
+This applies to fixtures only. A deliverable image keeps the form that makes it reproducible.
+
 ## Pin Image Versions
 
 Always pin to a specific digest or version tag. Never use `latest` in production.

@@ -13,6 +13,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+from _executor_template_render import TEMPLATE_PATH, render_executor_template
 
 from conftest import _MARKETPLACE_SCRIPT_DIRS, MARKETPLACE_ROOT, PROJECT_ROOT, get_scripts_dir
 
@@ -774,39 +775,21 @@ def test_pm_marketplace_root_env_var_anchors_discovery(tmp_path, monkeypatch):
 # of the removed binder — is preserved. Mirrors the "removed" precedent in
 # test/plan-marshall/manage-status/test_merge_lock_removed.py.
 
-TEMPLATE_PATH = (
-    PROJECT_ROOT / 'marketplace/bundles/plan-marshall/skills/tools-script-executor/templates/execute-script.py.template'
-)
-
 
 def _load_template_module():
     """Load the executor template as a Python module with stub placeholders.
 
     The template contains ``{{...}}`` substitution tokens that are filled in by
     generate_executor.py at generation time. For unit testing helper functions
-    we replace those tokens with inert stand-ins and exec the resulting source
-    as a fresh module — no subprocess, no real PYTHONPATH writes.
+    the directory's shared renderer replaces every one with an inert stand-in
+    (empty mappings, no shared dirs, the real logging scripts so
+    ``from plan_logging import ...`` succeeds at module load) and the resulting
+    source is exec'd as a fresh module — no subprocess, no real PYTHONPATH
+    writes.
     """
     import types
 
-    source = TEMPLATE_PATH.read_text(encoding='utf-8')
-    # Inert substitutions: empty mappings, no shared dirs, a temp logging
-    # placeholder pointing at the real logging scripts so `from plan_logging
-    # import ...` succeeds at module load.
-    logging_dir = str(PROJECT_ROOT / 'marketplace/bundles/plan-marshall/skills/manage-logging/scripts')
-    source = source.replace('{{SCRIPT_MAPPINGS}}', '')
-    source = source.replace('{{SCRIPT_SURFACES}}', '')
-    source = source.replace('{{SUBCOMMAND_MAPPINGS}}', '')
-    source = source.replace('{{LOGGING_DIR}}', logging_dir)
-    source = source.replace('{{SHARED_MODULE_DIRS}}', '# (none)')
-    source = source.replace('{{CACHE_RECOVERY_ROOTS}}', '# (none)')
-    source = source.replace('{{EXTRA_SCRIPT_DIRS}}', '')
-    source = source.replace('{{PLAN_DIR_NAME}}', '.plan')
-    source = source.replace('{{EXECUTOR_TARGET}}', 'claude')
-    source = source.replace(
-        '{{TARGET_AWARE_RESOLVER}}',
-        'def _resolve_notation_by_target(notation):\n    return None\n',
-    )
+    source = render_executor_template()
 
     # ``plan_logging``'s transitive imports resolve for the exec'd template
     # without a bootstrap: the root conftest already put every entry of
@@ -968,14 +951,17 @@ def test_template_build_ledger_uses_shared_primitives():
     point for the derived-only statuses: the boundary compares a wrapper's
     stdout claim against the claimable half alone, so importing the wider set
     here would let a wrapper mint ``killed`` or ``unknown`` for itself.
+
+    The statement is compared with every line's indentation removed: the pin is
+    the imported names, and the block the import sits in is not part of it.
     """
-    source = TEMPLATE_PATH.read_text(encoding='utf-8')
+    source = '\n'.join(line.strip() for line in TEMPLATE_PATH.read_text(encoding='utf-8').splitlines())
 
     expected_import = (
         'from _ledger_core import (  # type: ignore[import-not-found]\n'
-        '    WRAPPER_CLAIMABLE_BUILD_STATUSES,\n'
-        '    append_entry,\n'
-        '    build_record,\n'
+        'WRAPPER_CLAIMABLE_BUILD_STATUSES,\n'
+        'append_entry,\n'
+        'build_record,\n'
         ')'
     )
     assert expected_import in source, (

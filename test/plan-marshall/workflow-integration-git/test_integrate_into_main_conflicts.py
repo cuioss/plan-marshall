@@ -76,6 +76,7 @@ class _FakeMergeLock:
         self.acquire_status = acquire_status
         self.acquired = 0
         self.released = 0
+        self.dequeued = 0
         self.acquire_set_title_tokens: list[object] = []
         self.release_set_title_tokens: list[object] = []
 
@@ -90,6 +91,10 @@ class _FakeMergeLock:
         self.released += 1
         self.release_set_title_tokens.append(getattr(args, 'set_title_token', 'absent'))
         return {'status': 'success', 'plan_id': args.plan_id, 'action': 'released'}
+
+    def run_dequeue(self, plan_id: str) -> dict:
+        self.dequeued += 1
+        return {'status': 'success', 'plan_id': plan_id, 'action': 'dequeued', 'waiting_count': 0}
 
 
 @pytest.fixture
@@ -212,9 +217,12 @@ def _stage_worktree_at_canonical_root(tmp_path: Path, monkeypatch: pytest.Monkey
 
 
 class TestIntegrateLockFailure:
-    def test_acquire_failure_surfaces_and_never_moves_or_releases(
+    def test_acquire_failure_surfaces_never_moves_and_only_dequeues(
         self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """A failed acquire moves nothing; its one cleanup call is the dequeue-only
+        FIFO removal an earlier attempt's enqueue may need, reported as
+        ``dequeued`` — never a release, which could remove a same-plan lock."""
         env = isolated_env
         failing_lock = _FakeMergeLock(acquire_status='error')
         monkeypatch.setattr(integrate_into_main, '_load_merge_lock', lambda: failing_lock)
@@ -222,10 +230,12 @@ class TestIntegrateLockFailure:
         result = integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
 
         assert result['status'] == 'error'
-        # No move happened (plan dir still in worktree); no release (nothing held).
+        assert result['dequeued'] is True
+        # No move happened: the plan dir is still in the worktree.
         assert env['wt_plan_dir'].is_dir()
         assert not env['main_plan_dir'].exists()
         assert failing_lock.acquired == 1
+        assert failing_lock.dequeued == 1
         assert failing_lock.released == 0
 
 
@@ -282,7 +292,7 @@ class TestIntegrateWhenMergeLockAlreadySelfHeld:
         real_merge_lock = self._install_real_merge_lock(env, monkeypatch)
 
         # branch-cleanup acquired the merge lock under this plan-id first.
-        pre = real_merge_lock.run_acquire(Namespace(plan_id=env['plan_id'], timeout=5.0, set_title_token=False))
+        pre = real_merge_lock.run_acquire(Namespace(plan_id=env['plan_id'], set_title_token=False))
         assert pre['status'] == 'success'
         assert pre['action'] == 'acquired'
 
@@ -297,14 +307,16 @@ class TestIntegrateWhenMergeLockAlreadySelfHeld:
         assert (env['main_plan_dir'] / 'status.json').is_file()
         assert not env['wt_plan_dir'].exists()
 
-    def test_integrate_release_frees_the_single_underlying_lock(
+    def test_outer_holder_release_frees_the_single_underlying_lock(
         self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A single net release: the reentrant grant is NOT an independent second
-        acquisition, so integrate's release removes the one underlying lock file.
-        After integrate, the merge lock is genuinely free — a foreign plan can
-        acquire it (proving integrate's release actually freed it, not left it held
-        by a phantom second acquisition)."""
+        """Exactly one release — the outer holder's — removes the lock.
+
+        The reentrant grant is NOT an independent second acquisition, and the
+        call that did not take the lock does not release it: after integrate the
+        lock is still held by the plan, so the merge window branch-cleanup opened
+        stays closed to other plans. The outer holder's own release then removes
+        the one underlying lock file, and a foreign plan can acquire it."""
         env = isolated_env
         real_merge_lock = self._install_real_merge_lock(env, monkeypatch)
         # Resolve the authoritative lock path through the real module's own
@@ -313,15 +325,18 @@ class TestIntegrateWhenMergeLockAlreadySelfHeld:
         lock_path = real_merge_lock._resolve_main_lock_path()
 
         # branch-cleanup holds the lock; the lock file records this plan-id.
-        real_merge_lock.run_acquire(Namespace(plan_id=env['plan_id'], timeout=5.0, set_title_token=False))
+        real_merge_lock.run_acquire(Namespace(plan_id=env['plan_id'], set_title_token=False))
         assert lock_path.read_text(encoding='utf-8').strip() == env['plan_id']
 
         integrate_into_main.run_integrate_into_main(Namespace(plan_id=env['plan_id']))
 
-        # integrate released the single underlying lock — the file is gone.
+        # integrate did not take the lock, so it left it with its holder.
+        assert lock_path.read_text(encoding='utf-8').strip() == env['plan_id']
+
+        # The outer holder's single release frees the one underlying lock.
+        real_merge_lock.run_release(Namespace(plan_id=env['plan_id'], set_title_token=False))
         assert not lock_path.exists()
-        # The lock is genuinely free: a foreign plan can now acquire it.
-        other = real_merge_lock.run_acquire(Namespace(plan_id='other-plan', timeout=5.0, set_title_token=False))
+        other = real_merge_lock.run_acquire(Namespace(plan_id='other-plan', set_title_token=False))
         assert other['status'] == 'success'
         assert other['action'] == 'acquired'
 

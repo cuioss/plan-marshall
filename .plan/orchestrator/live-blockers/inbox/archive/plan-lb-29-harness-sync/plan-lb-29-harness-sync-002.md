@@ -1,0 +1,34 @@
+envelope_version=1
+sender_type=plan
+sender_id=plan-lb-29-harness-sync
+epic=live-blockers
+kind=candidate-lesson
+created=2026-10-09T14:12:26Z
+
+component=plan-marshall:build-pyproject
+category=improvement
+created=2026-10-09
+
+# Resolve a scoped test target for marketplace/targets and test/sync-harnesses
+
+## Context
+
+In plan `plan-lb-29-harness-sync` most changed paths sat under `marketplace/targets/`, `test/marketplace/targets/` and `test/sync-harnesses/`. For these paths `resolve-test-scope` returned no scoped target (`scoped_modules: []`, `recommended_target: null`, `divergence_possible: true`), so every test gate fell back to a whole-tree `module-tests` run. That run resolved to the orchestrator tier (640 to 1245 seconds, above the command time limit of a dispatched step), so the executing step had to stop and hand the run to the main session each time. 11 of the 17 execute dispatches ended this way, and those 11 dispatches cost 3,937,800 tokens, each one reloading its context.
+
+In the later fix rounds the same test files were run with narrow commands that worked and finished quickly: `module-tests marketplace --filter test_fs_safety`, `module-tests marketplace --filter emitter`, `module-tests sync-harnesses`, `module-tests sync-harnesses --filter registry`, `module-tests finalize-step-sync-plugin-cache`.
+
+## Root cause
+
+The scope resolver has no mapping from these source and test paths to the test directories that cover them, although the build wrapper accepts those directories as targets. The scoped target exists; the resolver does not offer it.
+
+## Proposed action
+
+- Teach `resolve-test-scope` to map `marketplace/targets/**` to the `marketplace` test target and `test/sync-harnesses/**`, `test/finalize-step-sync-plugin-cache/**` to their own targets, and to return them as `recommended_target` with a filter where one changed test module is enough.
+- Keep the whole-tree run as the end-of-phase gate only.
+- Add a test with one path from each of these trees asserting a non-null scoped target.
+
+## Evidence
+
+- aspect: logging_gap_analysis — 5-execute dispatch terminations: 11 voluntary_checkpoint of 17 (64.7 percent, threshold 50 percent).
+- aspect: plan_efficiency — 15.1M tokens against a 2.5M error anchor; 3,937,800 tokens on the 11 checkpointed dispatches.
+- aspect: chat_history_analysis — executing steps quoted `resolve-test-scope` returning no target for every path under these trees; fix-round steps ran the scoped commands listed above green (22, 32, 40, 154, 178, 228, 63 tests).

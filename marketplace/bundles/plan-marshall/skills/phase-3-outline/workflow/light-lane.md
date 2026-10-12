@@ -119,14 +119,28 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
   write --plan-id {plan_id}
 ```
 
-Persist the (possibly refined) scope/track to references.json so phase-4-plan reads a consistent value:
+Persist the (possibly refined) `scope_estimate` and the `track` to references.json so phase-4-plan reads a consistent value. `track` is always `simple` on this lane — the light lane reuses Simple-Track deliverable authoring by construction, the same lane-derived rule phase-2-refine Step 13 applies on the deep lane — and this envelope is its only light-lane producer (see the capture-source matrix in [`plan-marshall/workflow/planning.md`](../../plan-marshall/workflow/planning.md) § "Light-lane branch"):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-references:manage-references \
   set --plan-id {plan_id} --field scope_estimate --value {scope_estimate}
 ```
 
-Then re-run the deterministic classification-validation gate, because this persist overwrites the pre-route band that phase-1-init's Step 8a.5 heuristic wrote:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references \
+  set --plan-id {plan_id} --field track --value simple
+```
+
+The orchestrator persisted a commit-style `pr_title` before dispatching this envelope (see [`plan-marshall/workflow/planning.md`](../../plan-marshall/workflow/planning.md) § "Light-lane branch" step 2), authored from the request alone. The envelope MAY refine it now that the bounded read has shown what the change actually touches, with the same metadata call and the same shape rules (at most 72 characters, imperative mood, `type(scope): summary`):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {plan_id} --set --field pr_title --value "{refined_title}"
+```
+
+Refining is optional: the orchestrator's title already satisfies the `2-refine` capture, and phase-6-finalize `create-pr`'s staleness check re-derives the title against the executed scope either way.
+
+Then re-run the deterministic classification-validation gate, because the `scope_estimate` persist above overwrites the pre-route band that phase-1-init's Step 8a.5 heuristic wrote:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status classification-validate \
@@ -265,7 +279,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transi
 
 **On any non-`success` result**, the outline phase did NOT advance: apply the [refused-transition halt rule](../../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule) — emit the `[ERROR]` work-log line carrying the refusal payload verbatim and return it as this envelope's `status: error` return instead of the success shape in § Output.
 
-**`3-outline` is the only phase this envelope transitions.** The `2-refine` transition is owned by the **orchestrator**, which issues it — together with the paired `phase_handshake capture --phase 2-refine` and the `2-refine → 3-outline` boundary stamp — *before* this envelope is dispatched; **this envelope does not own it and must not issue it.** The split is not arbitrary: the boundary stamp has to precede the dispatch or `manage-metrics enrich` attributes this envelope's whole spend to a still-open `2-refine` window, and the capture has to precede it or the Phase Entry Protocol's `phase_handshake verify --phase 2-refine` at this envelope's own entry would be verifying a row that does not yet exist. See [`plan-marshall/workflow/planning.md`](../../plan-marshall/workflow/planning.md) § "Light-lane branch" step 2 for the three calls and the evidence behind the placement.
+**`3-outline` is the only phase this envelope transitions.** The `2-refine` transition is owned by the **orchestrator**, which issues it — together with the paired `phase_handshake capture --phase 2-refine` and the `2-refine → 3-outline` boundary stamp — *before* this envelope is dispatched; **this envelope does not own it and must not issue it.** The split is not arbitrary: the boundary stamp has to precede the dispatch or `manage-metrics enrich` attributes this envelope's whole spend to a still-open `2-refine` window, and the capture has to precede it or the Phase Entry Protocol's `phase_handshake verify --phase 2-refine` at this envelope's own entry would be verifying a row that does not yet exist. See [`plan-marshall/workflow/planning.md`](../../plan-marshall/workflow/planning.md) § "Light-lane branch" step 2 for the three calls, the `pr_title` persist that precedes them, and the evidence behind the placement.
 
 ## Output
 

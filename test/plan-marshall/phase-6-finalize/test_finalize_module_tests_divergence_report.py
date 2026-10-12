@@ -393,7 +393,9 @@ def _module_tests_degradation_payloads() -> list[str]:
 def test_isolated_module_stays_scoped_and_both_green_not_divergent():
     """A single isolated module runs scoped (no whole-tree cost) and is not divergent."""
     # Arrange
-    resolution = resolve_test_scope(_ISOLATED_FOOTPRINT, _GLOBS, _REGISTERED_MODULES)
+    resolution = resolve_test_scope(
+        _ISOLATED_FOOTPRINT, _GLOBS, _REGISTERED_MODULES, bundle_modules=_REGISTERED_MODULES
+    )
     runner = _InjectedRunner({'pm-dev-python': 'success'})
 
     # Act
@@ -421,7 +423,7 @@ def test_unmapped_footprint_fails_closed_to_the_whole_tree_route():
     footprint = ['doc/developer/build.adoc', '.github/workflows/python-verify.yml']
 
     # Act
-    resolution = resolve_test_scope(footprint, _GLOBS, _REGISTERED_MODULES)
+    resolution = resolve_test_scope(footprint, _GLOBS, _REGISTERED_MODULES, bundle_modules=_REGISTERED_MODULES)
     route, target = _gate_route(resolution, whole_tree_available=True)
 
     # Assert

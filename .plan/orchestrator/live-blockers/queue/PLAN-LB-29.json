@@ -2,9 +2,9 @@
   "id": "PLAN-LB-29",
   "slug": "harness-sync",
   "workstream": "WS-04",
-  "status": "running",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "plan_marshall_plan_id": "plan-lb-29-harness-sync",
+  "pr": "1724",
+  "landing": "landings/PLAN-LB-29.md",
   "seq": 29
 }
