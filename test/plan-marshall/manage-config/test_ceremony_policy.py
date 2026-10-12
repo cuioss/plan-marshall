@@ -12,10 +12,11 @@ governs:
 - ``revalidation``                   → ``plan.phase-2-refine``
 - the three auto-continuation knobs  → ``plan.phase-6-finalize``
 
-The four finalize ceremony gates (``qgate`` / ``self_review`` / ``simplify`` /
-``security_audit``) have since been migrated OFF the run-at-all channel onto the
-per-element ``steps.<step>.lane`` override — none of them survives as a flat
-phase-level sibling nor as a step-owned run-at-all param.
+The five finalize ceremony gates (``qgate`` / ``functional_review`` /
+``code_review`` / ``simplify`` / ``security_audit``) ride the per-element
+``steps.<step>.lane`` override of their owning step — none of them survives as a
+flat phase-level sibling nor as a step-owned run-at-all param, and each review
+gate is owned by its own review step.
 
 This module pins the post-dissolution contract:
 
@@ -47,6 +48,9 @@ _cmd_quality_phases_mod = load_script_module(
 )
 _cmd_init_mod = load_script_module(
     'plan-marshall', 'manage-config', '_cmd_init.py', module_name='_cmd_init_for_dissolution_test'
+)
+_cmd_sync_defaults_mod = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_sync_defaults.py', module_name='_cmd_sync_defaults_for_dissolution_test'
 )
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH).
@@ -85,11 +89,10 @@ _DISTRIBUTED_GATES = (
 # defaults are materialized in
 # get_default_config()['plan']['phase-6-finalize']['steps'].
 #
-# The ceremony run-at-all params (`simplify`, `self_review`) were removed in the
-# run-at-all → lane migration, and `drop_review_on_scope_gate` was removed from
-# `default:pre-submission-self-review` in favour of declared-lane immunity in the
-# manifest composer's scope_gated_finalize pre-filter — none of the three is a
-# folded knob any more, so none is exercised here.
+# The ceremony gates ride their owning step's `lane` override rather than a
+# folded run-at-all param, and declared-lane immunity in the manifest composer's
+# scope_gated_finalize pre-filter replaces any scope-gate escape hatch — so no
+# ceremony gate is a folded knob, and none is exercised here.
 _SEEDED_FOLDED_KNOBS = (
     ('default:branch-cleanup', 'final_merge_without_asking', True),
     ('default:branch-cleanup', 'pr_merge_strategy', 'squash'),
@@ -154,10 +157,37 @@ def test_distributed_gate_reads_via_phase_get(phase, gate, plan_context):
 def test_distributed_gates_not_in_other_phases():
     """A finalize gate must NOT leak into the planning phases and vice versa."""
     config = _config_defaults_mod.get_default_config()
-    # self_review is a finalize-only gate; it must not appear in phase-1-init.
-    assert 'self_review' not in config['plan']['phase-1-init']
+    # the review gates are finalize-only gates; neither may appear in phase-1-init.
+    assert 'functional_review' not in config['plan']['phase-1-init']
+    assert 'code_review' not in config['plan']['phase-1-init']
     # deep_lane is a phase-1-init gate; it must not appear in phase-6-finalize.
     assert 'deep_lane' not in config['plan']['phase-6-finalize']
+
+
+@pytest.mark.parametrize(
+    'gate,owner_step',
+    [
+        ('functional_review', 'default:functional-review'),
+        ('code_review', 'default:code-review'),
+    ],
+)
+def test_review_gate_is_owned_by_its_own_review_step(gate, owner_step):
+    """Each review gate is owned by its own review step, never by a shared one.
+
+    The gate's on/off is that step's ``lane`` override, so the two review settings
+    switch independently. The owning step is a seeded built-in finalize step that
+    carries no folded run-at-all param named after the gate.
+    """
+    owners = _cmd_sync_defaults_mod._CEREMONY_GATE_OWNER_STEP
+    assert owners[gate] == owner_step
+    assert list(owners.values()).count(owner_step) == 1, f'{owner_step} must own exactly one ceremony gate'
+
+    config = _config_defaults_mod.get_default_config()
+    finalize = config['plan']['phase-6-finalize']
+    assert gate not in finalize, f'{gate} must NOT be a flat phase-6-finalize field'
+    steps = finalize['steps']
+    assert owner_step in _step_ids(steps), f'{owner_step} must be a seeded built-in finalize step'
+    assert gate not in _params_for(steps, owner_step)
 
 
 @pytest.mark.parametrize('owner_step,knob,default', _SEEDED_FOLDED_KNOBS)

@@ -96,8 +96,8 @@ def state_rule_key(step: str) -> str:
     A step's state findings describe the step's situation rather than a defect
     in a file, so they are filed under one fixed rule key and resolved by it.
     The key is derived from the step name, so ``close`` needs no per-step table
-    to find them: the findings of ``pre-submission-self-review`` carry
-    ``pre-submission-self-review-state``.
+    to find them: the findings of ``code-review`` carry
+    ``code-review-state``.
     """
     return f'{step}-state'
 

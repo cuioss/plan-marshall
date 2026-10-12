@@ -455,11 +455,10 @@ def test_convert_extension_accepts_distinct_domain_verbs():
 def test_set_extensions_rejects_self_review_type(plan_context):
     """argparse rejects `set-extensions --type self-review`.
 
-    The self-review surfacer is no longer resolved through a
-    workflow_skill_extensions registration — the consumer dispatch calls the
-    implementor's fixed notation directly — so `self-review` is no longer an
-    accepted `--type` choice. argparse must reject it (exit 2) before the
-    handler runs.
+    No finalize step resolves a per-domain review skill through a
+    workflow_skill_extensions registration — the pre-push reviews read the
+    domain standards skills directly — so `self-review` is not an accepted
+    `--type` choice. argparse must reject it (exit 2) before the handler runs.
     """
     create_marshal_json(plan_context.fixture_dir)
 

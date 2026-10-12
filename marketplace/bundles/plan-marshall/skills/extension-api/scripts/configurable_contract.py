@@ -119,7 +119,7 @@ def resolve_step_doc_path(step_id: str) -> Path:
 
     Args:
         step_id: The step identifier (``default:branch-cleanup``,
-            ``default:pre-submission-self-review``, …).
+            ``default:automatic-review``, …).
 
     Returns:
         The resolved body-doc path (may not exist on disk).
@@ -391,7 +391,7 @@ def resolve_step_defaults(step_id: str) -> dict[str, Any]:
 
     Args:
         step_id: The step identifier (``default:sonar-roundtrip``,
-            ``default:pre-submission-self-review``, …).
+            ``default:automatic-review``, …).
 
     Returns:
         A mapping ``{param_key: <default value>}`` for every declared param.

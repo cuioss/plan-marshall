@@ -49,7 +49,7 @@ class value is a contract change to this document, not a per-element choice.
 |---------|----------------|-----------|---------|----------|
 | **derived-state** | `minimal` | no — a weakening `off` is **immune** (ignored; the element stays at its class-default tier) | correctness-required derived output; dropping it ships a broken artifact | finalize-step-deploy-target, finalize-step-sync-plugin-cache |
 | **core** | `minimal` | no — a weakening `off` is **immune** (ignored; the element stays at its class-default tier) | always-on plan machinery; the leanest floor | push, create-pr, ci-verify, branch-cleanup, record-metrics, archive |
-| **adversarial** | `standard` | no | a validator that finds real defects; never predicate-pruned by the lane | outline scope-validator (1st pass), automatic-review, sonar-roundtrip, self-review, security-audit-as-finder |
+| **adversarial** | `standard` | no | a validator that finds real defects; never predicate-pruned by the lane | outline scope-validator (1st pass), automatic-review, sonar-roundtrip, functional-review, code-review, security-audit-as-finder |
 | **prunable** | `standard` | yes — via `prunable_when` | conditional overhead that a firm-signal predicate can skip | lessons-housekeeping, refine, 4-plan decomposition |
 
 ## The resolution lattice
@@ -135,7 +135,7 @@ channels carry only the project / plan overrides.
 merged once, per step key, and per knob (shallow) — so a plan-local `lane` overrides the marshal
 `lane` for that step without erasing a marshal-side sibling param on the same step. The merged map
 is the single source every per-element reader consults: the same merged value drives the
-execution-profile lane resolution, the scope gate's declared-lane immunity, and the four finalize
+execution-profile lane resolution, the scope gate's declared-lane immunity, and the five finalize
 ceremony gates' run-at-all decision. Consumers MUST NOT resolve a per-step lane from either channel
 alone — two readers disagreeing about one field is exactly the defect the single merged source
 removes.
@@ -196,7 +196,7 @@ changed) is a standalone improvement, not part of this contract; the lane only *
 | lessons-capture | prunable | standard |
 | lessons-housekeeping | prunable | **minimal** |
 | refine · 4-plan task-decomposition · simplify | prunable | standard |
-| outline/plan q-gate · self-review · automatic-review · sonar-roundtrip · plugin-doctor *(meta)* | adversarial | standard |
+| outline/plan q-gate · functional-review · code-review · automatic-review · sonar-roundtrip · plugin-doctor *(meta)* | adversarial | standard |
 | review-retrospective *(meta)* | prunable | standard |
 | security-audit | adversarial | **full** |
 | plan-retrospective *(meta)* | prunable | **full** |
@@ -221,7 +221,7 @@ predicted calibration loop that tunes the task table also tunes the lane preview
 | **XS** | ~5K | deterministic ≈0-token bookkeeping (push, ci-verify, branch-cleanup, archive, record-metrics, finalize-step-deploy-target, finalize-step-sync-plugin-cache) |
 | **S** | 25K | small agent steps (plugin-doctor) |
 | **M** | 60K | medium (init, refine, create-pr, simplify, lessons-capture, review-retrospective) |
-| **L** | 130K | heavy single steps (sonar, self-review, security-audit, automated-review, lessons-housekeeping, plan-retrospective, q-gate) |
+| **L** | 130K | heavy single steps (sonar, functional-review, code-review, security-audit, automated-review, lessons-housekeeping, plan-retrospective, q-gate) |
 | **XL** | 260K | the planning phases (outline incl. 1st q-gate, plan) |
 | **XXL** | 520K+ | the largest elements — `execute` on a substantial plan; any element exceeding XL |
 

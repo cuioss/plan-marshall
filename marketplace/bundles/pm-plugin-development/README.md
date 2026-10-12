@@ -27,14 +27,13 @@ This bundle defines no canonical agents of its own. Plugin-development workflows
 | `plugin-doctor` | Diagnose and fix quality issues with automated safe fixes and prompted risky fixes |
 | `plugin-maintain` | Update components, manage knowledge, maintain READMEs, restructure, and apply orchestration compliance |
 
-### Skills - Context-Loaded (13)
+### Skills - Context-Loaded (12)
 
 These skills are not directly invocable. They are loaded automatically by other components via `Skill:` directives.
 
 | Skill | Description |
 |-------|-------------|
 | `ext-outline-workflow` | Shared workflow steps for plugin development outline, loaded by `phase-3-outline` |
-| `ext-self-review-plan-marshall` | Plan-marshall-domain implementor of the `ext-self-review-{domain}` extension point — surfaces deterministic structural self-review candidates before submission |
 | `ext-triage-plugin` | Triage extension for marketplace plugin findings during plan-finalize phase |
 | `plugin-architecture` | Architecture principles, skill patterns, and design guidance for marketplace components |
 | `plugin-plan-implement` | Implement plugin tasks from plan with step iteration and progress tracking |

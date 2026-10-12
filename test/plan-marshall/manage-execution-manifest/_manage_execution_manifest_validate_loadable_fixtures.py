@@ -59,8 +59,8 @@ def _validate_loadable_ns(
 # token-consuming finalize steps are the ones whose bodies dispatch a subagent
 # or run a token-spending sweep before record-metrics closes the ledger:
 # finalize-step-deploy-target, finalize-step-sync-plugin-cache,
-# finalize-step-lessons-housekeeping, finalize-step-plugin-doctor, and
-# pre-submission-self-review. This regression would fail if record-metrics'
+# finalize-step-lessons-housekeeping, finalize-step-plugin-doctor,
+# functional-review and code-review. This regression would fail if record-metrics'
 # order were reverted below any of them (the defect this plan corrected).
 
 
@@ -72,7 +72,8 @@ _TOKEN_CONSUMING_FINALIZE_STEPS: list[str] = [
     'project:finalize-step-sync-plugin-cache',
     'project:finalize-step-lessons-housekeeping',
     'project:finalize-step-plugin-doctor',
-    'default:pre-submission-self-review',
+    'default:functional-review',
+    'default:code-review',
 ]
 
 

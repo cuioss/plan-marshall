@@ -30,7 +30,6 @@ class TestCeremonyFinalizeAuto:
         assert result['status'] == 'success'
         gates = result['ceremony_finalize_gates']
         assert gates == {
-            'self_review': 'auto',
             'functional_review': 'auto',
             'code_review': 'auto',
             'qgate': 'auto',
@@ -43,7 +42,8 @@ class TestCeremonyFinalizeAuto:
     def test_explicit_auto_gates_are_no_op(self, plan_context):
         _seed_marshal(
             finalize_gates={
-                'self_review': 'auto',
+                'functional_review': 'auto',
+                'code_review': 'auto',
                 'qgate': 'auto',
                 'simplify': 'auto',
                 'security_audit': 'auto',
@@ -58,9 +58,8 @@ class TestCeremonyFinalizeAuto:
         assert result['ceremony_finalize_forced_in'] == []
         assert result['ceremony_finalize_forced_out'] == []
         # On a multi_module feature plan (Row 7 default, no scope gate), the
-        # ceremony steps survive the matrix untouched. The default:-prefixed
-        # candidate survives and is normalized to its bare
-        # pre-submission-self-review form.
+        # ceremony steps survive the matrix untouched.
         bare = _bare(_manifest_phase_6_steps(result))
-        assert 'pre-submission-self-review' in bare
+        assert 'functional-review' in bare
+        assert 'code-review' in bare
         assert 'pre-push-quality-gate' in bare

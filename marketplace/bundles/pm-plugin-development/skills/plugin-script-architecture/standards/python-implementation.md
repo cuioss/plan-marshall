@@ -199,9 +199,9 @@ A "new element beside established siblings" is any of: a new branch in a multi-b
 
 - **module-tests** exercise the happy path of each element independently; they do not assert that two sibling branches return the same field set or apply the same guard.
 - **ruff + mypy and plugin-doctor** certify structure and types — that the code parses, is typed, and is structurally well-formed — not that one branch's contract matches its sibling's.
-- **the pre-submission self-review surfacer** surfaces deterministic candidates within an element; an asymmetry that is individually well-formed on both sides raises no candidate.
+- **the finalize functional and code reviews** judge the change against the request and the rulebook; neither is required to read every established sibling of a new element, so an asymmetry that is individually well-formed on both sides can pass them.
 
-So a divergence between a new element and its sibling passes every local gate clean and surfaces only under adversarial diff review (the PR review bot, or a careful human reviewer reading the diff against the established sibling). The defensive move is twofold: (1) perform the sibling-inheritance audit before you write the element, and (2) add a **cross-element contract test** — one that asserts the new element and its sibling agree on the shared invariant — not merely a happy-path test of the new element in isolation.
+So a divergence between a new element and its sibling can pass every local gate clean and surface only under adversarial diff review (the PR review bot, or a careful human reviewer reading the diff against the established sibling). The defensive move is twofold: (1) perform the sibling-inheritance audit before you write the element, and (2) add a **cross-element contract test** — one that asserts the new element and its sibling agree on the shared invariant — not merely a happy-path test of the new element in isolation.
 
 ### The six invariant facets
 
@@ -311,7 +311,7 @@ if target_path == '/safe' or target_path.startswith('/safe/'):
     allow()
 ```
 
-Apply the cheap self-review heuristic before shipping the matcher: *"what near-miss spelling of the input slips past this exact comparison?"*
+Apply the cheap author-side heuristic before shipping the matcher: *"what near-miss spelling of the input slips past this exact comparison?"*
 
 #### (f) Input-parsing contract
 

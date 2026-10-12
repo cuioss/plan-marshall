@@ -166,7 +166,7 @@ After saving:
 * The phase-3-outline quality check runs on `execution-context-level-3` via the phase-3 `default` slot. The phase-4 quality check runs on `execution-context-level-3` via the bare-string at `phase-4-plan.effort`.
 * `--phase phase-5-execute --role verification-feedback` runs on `execution-context-level-3`.
 * `--phase phase-6-finalize --role verification-feedback` runs on `execution-context-level-3`.
-* The rest of phase-6-finalize (create-pr, pre-submission-self-review, post-run-review) runs on `execution-context-level-2` via the phase-6 `default` slot.
+* The rest of phase-6-finalize (create-pr, functional-review, code-review, post-run-review) runs on `execution-context-level-2` via the phase-6 `default` slot.
 * Everything else (phase-2-refine, phase-5-execute body) runs on `execution-context-level-2` via the plan-wide fallback.
 
 [#troubleshooting]

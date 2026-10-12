@@ -18,8 +18,8 @@ def _seed_marshal(
 ) -> Path:
     """Write a marshal.json carrying the phase-6-finalize gates at their homes.
 
-    Every ceremony gate (``qgate`` / ``self_review`` / ``simplify`` /
-    ``security_audit``) is written as its owning finalize step's ``lane`` override
+    Every ceremony gate (``qgate`` / ``functional_review`` / ``code_review`` /
+    ``simplify`` / ``security_audit``) is written as its owning finalize step's ``lane`` override
     (``off``/``minimal``/``standard``) nested under the step's param object in
     ``plan.phase-6-finalize.steps`` (the id-keyed map the reader consumes via
     ``_read_step_owned_knob``); any other step-folded knob writes under its own

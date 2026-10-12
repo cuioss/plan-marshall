@@ -194,7 +194,7 @@ def test_non_narrow_concrete_change_never_projects_minimal(scope_estimate, chang
     """(ii') The posture axis of the mirrored case, across every change_type.
 
     ``minimal`` is the posture that drops the security audit, the sonar round-trip
-    and the pre-submission self-review. It must be reachable only for genuinely
+    and the two pre-push reviews. It must be reachable only for genuinely
     bounded work, whatever the change_type reads.
     """
     posture = project_profile_pure(

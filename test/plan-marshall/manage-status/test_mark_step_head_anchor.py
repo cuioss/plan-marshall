@@ -13,9 +13,10 @@ and nothing would notice. Two independent consumers break silently when it does:
   SHA. With no SHA there is nothing to compare, so the record stands as green
   for a diff no check ever ran against.
 * A step that re-fires across loop-back rounds scopes each round against the
-  previous round's recorded SHA (``default:pre-submission-self-review`` passes it
-  to its surfacer as ``--since-ref``). With no anchor the next round cannot
-  define its delta and silently degrades to a full re-sweep.
+  previous round's recorded SHA (``default:functional-review`` reads its own
+  record through ``review_support attribution --delta-step`` to pick a delta
+  round). With no anchor the next round cannot define its delta and silently
+  degrades to a full round.
 
 These tests pin the refusal and its matched controls:
 

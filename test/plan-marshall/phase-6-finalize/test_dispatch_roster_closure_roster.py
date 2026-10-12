@@ -80,9 +80,10 @@ The (e) population is the whole skill directory
 -----------------------------------------------
 The seam sweep used to read ONE file — ``SKILL.md`` — and blank every line outside
 one section of it. The detector itself was alive (mutating an in-section line did
-redden it), but two real dispatch branches sat OUTSIDE that file entirely, in
-``standards/finalize-step-simplify.md`` and ``workflow/pre-submission-self-review.md``,
-and no shape they could take was visible to it. The population is now every
+redden it), but real dispatch branches sit OUTSIDE that file entirely — in
+``standards/finalize-step-simplify.md`` and in the two review workflows
+``workflow/functional-review.md`` and ``workflow/code-review.md`` — and no shape
+they could take was visible to it. The population is now every
 ``*.md`` under the skill directory, discovered by walk.
 
 The **per-file section scoping is kept**, and it is now per-file rather than global:
@@ -389,7 +390,7 @@ _TERMINATION_CAUSES = (
 
 #: The routing each cause's detection rule MUST state — the deliverable this
 #: contract locks. ``returned_with_findings`` exists precisely so a findings-bearing
-#: ``loop_back`` is NOT stamped ``error``; before it, a multi-round self-review was
+#: ``loop_back`` is NOT stamped ``error``; before it, a multi-round review was
 #: graded a defect, so the more thoroughly a gate worked the worse its plan looked.
 #: Editing the table back to that routing is the silent revert (g) exists to catch.
 _TERMINATION_CAUSE_ROUTING = {

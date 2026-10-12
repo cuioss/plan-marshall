@@ -120,7 +120,7 @@ renamed[1]:
   - plan.phase-6-finalize.steps.default:automated-review -> plan-marshall:automatic-review
 renamed_count: 1
 migrated[1]:
-  - plan.phase-6-finalize.steps[default:pre-submission-self-review].self_review=never -> .lane=off
+  - plan.phase-6-finalize.steps[default:finalize-step-simplify].simplify=never -> .lane=off
 migrated_count: 1
 materialized[2]:
   - plan.phase-6-finalize.steps.default:push -> lane=minimal
@@ -350,7 +350,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 Coverage is a two-dial contract — `thoroughness` (T1–T5) × `scope` (change-set…overall) — orthogonal to the `effort` model-tier dial. A per-phase override lives under the phase entry's `coverage` key; the plan-wide fallback is `plan.coverage` (seeded `inherit/inherit`). The `read`/`resolve` verbs mirror the `effort` resolver's lookup shape, resolving each field independently from `marshal.json` only (the project-DEFAULT tier — no per-plan tier), and enforcing the scope↔thoroughness coupling constraint (`reject thoroughness ≥ T4 ∧ scope < component`) at lookup time. See [`persona-plan-marshall-agent/standards/thoroughness.md`](../persona-plan-marshall-agent/standards/thoroughness.md) § Coupling Constraint.
 
-`coverage`'s consumers are the broad-pass components that implement the [coverage-gathering contract](../persona-plan-marshall-agent/standards/coverage-gathering-contract.md) — wide audits, compliance sweeps, simplification/refactor campaigns, pre-submission review. Each gathers a `(thoroughness, scope)` cell from the user at invocation, expands it via `coverage expand`, persists the identifier + expanded instruction in `status.json` metadata, and consumes the expanded instruction to govern its breadth/depth. `coverage resolve` is the project-default tier consulted when no per-invocation cell was gathered.
+`coverage`'s consumers are the broad-pass components that implement the [coverage-gathering contract](../persona-plan-marshall-agent/standards/coverage-gathering-contract.md) — wide audits, compliance sweeps, simplification/refactor campaigns. Each gathers a `(thoroughness, scope)` cell from the user at invocation, expands it via `coverage expand`, persists the identifier + expanded instruction in `status.json` metadata, and consumes the expanded instruction to govern its breadth/depth. `coverage resolve` is the project-default tier consulted when no per-invocation cell was gathered.
 
 ```bash
 # Resolve the coverage cell for a phase (project default)
@@ -398,7 +398,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 **Pattern**: Read-Process
 
-The three surviving lifecycle gates ride the `gate_mode` enum (`auto|always|never`, validated at set-time by `validate_gate_mode`) as flat knobs under their owning phase — read/written through the standard `plan <phase> get/set --field <knob>` verb. The automation knobs are boolean. The four finalize ceremony gates (`qgate` / `self_review` / `simplify` / `security_audit`) no longer ride a run-at-all knob — each is governed by its owning finalize step's per-element `steps.<step>.lane` override (`off`/`minimal`/`standard`), set via `step set --step-id <owning-step> --param lane --value <value>`. Distribution:
+The three surviving lifecycle gates ride the `gate_mode` enum (`auto|always|never`, validated at set-time by `validate_gate_mode`) as flat knobs under their owning phase — read/written through the standard `plan <phase> get/set --field <knob>` verb. The automation knobs are boolean. The five finalize ceremony gates (`qgate` / `functional_review` / `code_review` / `simplify` / `security_audit`) no longer ride a run-at-all knob — each is governed by its owning finalize step's per-element `steps.<step>.lane` override (`off`/`minimal`/`standard`), set via `step set --step-id <owning-step> --param lane --value <value>`. Distribution:
 
 | Knob | Location | Read via |
 |------|----------|----------|
@@ -411,7 +411,8 @@ The three surviving lifecycle gates ride the `gate_mode` enum (`auto|always|neve
 | `loop_back_without_asking` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field loop_back_without_asking` |
 | `final_merge_without_asking` | `plan.phase-6-finalize.steps['default:branch-cleanup']` (step-owned param) | `plan phase-6-finalize step get --step-id default:branch-cleanup` (read `final_merge_without_asking` off `params`) |
 | `qgate` (ceremony, lane) | `plan.phase-6-finalize.steps['default:pre-push-quality-gate'].lane` | `plan phase-6-finalize step get --step-id default:pre-push-quality-gate` (read `lane` off `params`) |
-| `self_review` (ceremony, lane) | `plan.phase-6-finalize.steps['default:pre-submission-self-review'].lane` | `plan phase-6-finalize step get --step-id default:pre-submission-self-review` (read `lane` off `params`) |
+| `functional_review` (ceremony, lane) | `plan.phase-6-finalize.steps['default:functional-review'].lane` | `plan phase-6-finalize step get --step-id default:functional-review` (read `lane` off `params`) |
+| `code_review` (ceremony, lane) | `plan.phase-6-finalize.steps['default:code-review'].lane` | `plan phase-6-finalize step get --step-id default:code-review` (read `lane` off `params`) |
 | `simplify` (ceremony, lane) | `plan.phase-6-finalize.steps['default:finalize-step-simplify'].lane` | `plan phase-6-finalize step get --step-id default:finalize-step-simplify` (read `lane` off `params`) |
 | `security_audit` (ceremony, lane) | `plan.phase-6-finalize.steps['default:finalize-step-security-audit'].lane` | `plan phase-6-finalize step get --step-id default:finalize-step-security-audit` (read `lane` off `params`) |
 
@@ -438,7 +439,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-1-init get --field deep_lane
 ```
 
-The `get` verb is read-only — it never mutates `marshal.json`. An unresolvable field returns `error_type: field_not_found`. To read a finalize ceremony gate (`qgate` / `self_review` / `simplify` / `security_audit`), read the `lane` param off its owning step via `plan phase-6-finalize step get --step-id <owning-step>`.
+The `get` verb is read-only — it never mutates `marshal.json`. An unresolvable field returns `error_type: field_not_found`. To read a finalize ceremony gate (`qgate` / `functional_review` / `code_review` / `simplify` / `security_audit`), read the `lane` param off its owning step via `plan phase-6-finalize step get --step-id <owning-step>`.
 
 ---
 
@@ -745,7 +746,7 @@ The three surviving lifecycle gates ride the `gate_mode` enum as flat phase-loca
 | `escalation` | `phase-1-init` | Whether the hard-escalation safety ratchet (explosion / build-break / premise) stays live. `auto` keeps it live; `never` is the explicit full-speed-full-risk opt-in. |
 | `revalidation` | `phase-2-refine` | Whether the premise / narrative-vs-code safety check runs (light lane + deep refine). |
 
-**Finalize ceremony gates (per-element `lane` override, not run-at-all):** the four finalize ceremony gates — `qgate`, `self_review`, `simplify`, `security_audit` — are each governed by their owning step's `steps.<step>.lane` override, resolved by the manifest ceremony transform: `off` → `never`, `minimal` → `always`, and every other accepted lane value (`standard`, `full`, `ask`, or an absent override) → `auto`. Set via `plan phase-6-finalize step set --step-id <owning-step> --param lane --value <value>`. The owning steps are `default:pre-push-quality-gate` (qgate), `default:pre-submission-self-review` (self_review), `default:finalize-step-simplify` (simplify), `default:finalize-step-security-audit` (security_audit).
+**Finalize ceremony gates (per-element `lane` override, not run-at-all):** the five finalize ceremony gates — `qgate`, `functional_review`, `code_review`, `simplify`, `security_audit` — are each governed by their owning step's `steps.<step>.lane` override, resolved by the manifest ceremony transform: `off` → `never`, `minimal` → `always`, and every other accepted lane value (`standard`, `full`, `ask`, or an absent override) → `auto`. Set via `plan phase-6-finalize step set --step-id <owning-step> --param lane --value <value>`. The owning steps are `default:pre-push-quality-gate` (qgate), `default:functional-review` (functional_review), `default:code-review` (code_review), `default:finalize-step-simplify` (simplify), `default:finalize-step-security-audit` (security_audit).
 
 **Flat phase-1-init recipe-match knobs (under `phase-1-init`):**
 

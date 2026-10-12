@@ -19,7 +19,14 @@ class TestCeremonyFinalizeDeterminism:
     """Re-composing with identical inputs yields an identical ceremony selection."""
 
     def test_repeated_compose_is_deterministic(self, plan_context):
-        _seed_marshal(finalize_gates={'self_review': 'minimal', 'qgate': 'off', 'simplify': 'standard'})
+        _seed_marshal(
+            finalize_gates={
+                'functional_review': 'minimal',
+                'code_review': 'off',
+                'qgate': 'off',
+                'simplify': 'standard',
+            }
+        )
         _stub_footprint(_FOOTPRINT)
 
         ns1 = _compose_ns(plan_id='ceremony-determinism', scope_estimate='surgical', change_type='bug_fix')

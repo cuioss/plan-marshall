@@ -13,33 +13,32 @@ from _manage_execution_manifest_ceremony_finalize_selection_fixtures import (
 )
 
 # =============================================================================
-# Test: generic consuming-project self_review form (default:pre-submission-self-review)
+# Test: generic consuming-project review form (default:functional-review)
 # =============================================================================
 
 
-class TestCeremonyFinalizeGenericSelfReviewForm:
-    """A consuming project lists the GENERIC ``default:pre-submission-self-review``
-    step (not the meta-project ``project:``-prefixed wrapper). The composer
-    `canonicalize_step_key`-normalizes it to bare ``pre-submission-self-review``
-    at intake, so the ``self_review`` gate's match-set MUST recognize that bare
-    form — otherwise ``never`` cannot drop it and ``always`` re-inserts a
-    duplicate. Regression for the match-set that omitted the normalized form
-    after the canonical insertion form was generalized to ``default:``.
+class TestCeremonyFinalizeGenericReviewForm:
+    """A consuming project lists the GENERIC ``default:functional-review`` step
+    rather than the bare id. The composer `canonicalize_step_key`-normalizes it
+    to bare ``functional-review`` at intake, so the ``functional_review`` gate's
+    match-set MUST recognize that bare form — otherwise ``never`` cannot drop it
+    and ``always`` re-inserts a duplicate.
     """
 
     def _generic_candidates(self) -> list[str]:
-        # The generic consuming-project self-review form. The ``self_review`` gate
-        # value is read from the ``default:pre-submission-self-review`` owner —
-        # which IS this generic form — so listing it once serves as both the
-        # candidate and the knob owner in the seeded steps map.
-        return list(DEFAULT_PHASE_6_STEPS) + [
+        # The generic consuming-project form replaces the bare default candidate.
+        # The ``functional_review`` gate value is read from the
+        # ``default:functional-review`` owner — which IS this generic form — so
+        # listing it once serves as both the candidate and the knob owner in the
+        # seeded steps map.
+        return [s for s in DEFAULT_PHASE_6_STEPS if s != 'functional-review'] + [
             'pre-push-quality-gate',
-            'default:pre-submission-self-review',
+            'default:functional-review',
         ]
 
     def test_never_drops_generic_default_form(self, plan_context):
         candidates = self._generic_candidates()
-        _seed_marshal(finalize_gates={'self_review': 'off'}, candidates=candidates)
+        _seed_marshal(finalize_gates={'functional_review': 'off'}, candidates=candidates)
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
@@ -52,11 +51,11 @@ class TestCeremonyFinalizeGenericSelfReviewForm:
         assert result is not None
         assert result['status'] == 'success'
         # The normalized bare form must be dropped by `never`.
-        assert 'pre-submission-self-review' not in _bare(_manifest_phase_6_steps(result))
+        assert 'functional-review' not in _bare(_manifest_phase_6_steps(result))
 
     def test_always_does_not_duplicate_generic_default_form(self, plan_context):
         candidates = self._generic_candidates()
-        _seed_marshal(finalize_gates={'self_review': 'minimal'}, candidates=candidates)
+        _seed_marshal(finalize_gates={'functional_review': 'minimal'}, candidates=candidates)
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
@@ -71,9 +70,9 @@ class TestCeremonyFinalizeGenericSelfReviewForm:
         # `always` must see the already-present normalized form and NOT re-insert
         # a duplicate. Count raw occurrences (a set would mask the duplicate).
         steps = _manifest_phase_6_steps(result)
-        occurrences = sum(1 for s in steps if next(iter(_bare([s]))) == 'pre-submission-self-review')
+        occurrences = sum(1 for s in steps if next(iter(_bare([s]))) == 'functional-review')
         assert occurrences == 1
-        assert 'pre-submission-self-review' not in result['ceremony_finalize_forced_in']
+        assert 'functional-review' not in result['ceremony_finalize_forced_in']
 
 
 # =============================================================================
@@ -85,15 +84,14 @@ class TestCeremonyFinalizeFunctionalReviewGate:
     """``functional_review`` is decided by ``default:functional-review``'s own ``lane``.
 
     ``off`` drops the step and ``minimal`` keeps it — even on a surgical scope,
-    where the scope gate would otherwise drop it. The gate is independent of the
-    structural self-review's ``self_review`` gate in both directions: switching one
-    off leaves the other review selected.
+    where the scope gate would otherwise drop it. Its independence from the code
+    review's ``code_review`` gate is asserted in both directions by
+    ``TestCeremonyFinalizeCodeReviewGate`` below.
     """
 
     def _candidates(self) -> list[str]:
-        # DEFAULT_PHASE_6_STEPS carries the bare functional-review; the generic
-        # self-review form rides along so the two gates can be told apart.
-        return list(DEFAULT_PHASE_6_STEPS) + ['pre-push-quality-gate', 'default:pre-submission-self-review']
+        # DEFAULT_PHASE_6_STEPS carries the bare functional-review and code-review.
+        return list(DEFAULT_PHASE_6_STEPS) + ['pre-push-quality-gate']
 
     def _compose(self, plan_id: str, gates: dict[str, object], scope_estimate: str = 'multi_module') -> set[str]:
         candidates = self._candidates()
@@ -110,8 +108,6 @@ class TestCeremonyFinalizeFunctionalReviewGate:
     def test_off_drops_functional_review(self, plan_context):
         steps = self._compose('ceremony-functional-off', {'functional_review': 'off'})
         assert 'functional-review' not in steps
-        # The structural self-review is governed by its own gate and stays selected.
-        assert 'pre-submission-self-review' in steps
 
     def test_minimal_keeps_functional_review(self, plan_context):
         steps = self._compose('ceremony-functional-minimal', {'functional_review': 'minimal'})
@@ -125,11 +121,6 @@ class TestCeremonyFinalizeFunctionalReviewGate:
         """Control for the test above: without the declaration the scope gate does drop it."""
         steps = self._compose('ceremony-functional-surgical-auto', {'functional_review': 'standard'}, 'surgical')
         assert 'functional-review' not in steps
-
-    def test_self_review_off_leaves_functional_review_selected(self, plan_context):
-        steps = self._compose('ceremony-self-review-off', {'self_review': 'off'})
-        assert 'pre-submission-self-review' not in steps
-        assert 'functional-review' in steps
 
 
 # =============================================================================

@@ -118,7 +118,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 - `--affected-files-count` (optional, default 0): Count of affected files surfaced by the outline; used by the `early_terminate` rule
 - `--phase-5-steps` (optional): Comma-separated candidate Phase 5 verification step IDs. The composer prefers `marshal.json::plan.phase-5-execute.verification_steps` (the phase-aware list-field — phase-5 reads `verification_steps`, every other phase reads `steps`; see [decision-rules.md](standards/decision-rules.md) § "Phase-aware step source"), falling back to this CSV only when no marshal.json is present. The IDs may be the legacy bare role-file forms (`default:quality_check`, …) or the parameterized canonical-verify form `default:verify:{canonical}` (e.g. `default:verify:quality-gate`, `default:verify:module-tests`, `default:verify:coverage`), whose matrix role is derived from the trailing canonical segment (see [decision-rules.md](standards/decision-rules.md) § "Role derivation for canonical-verify steps"). The decision matrix selects a subset, then the generic footprint pre-filter (§ "Generic footprint pre-filter") drops any footprint-gated whole-tree canonical (`integration` / `e2e`) that the live footprint does not exercise.
 - `--phase-6-steps` (optional): Comma-separated candidate Phase 6 finalize step IDs (e.g., `push,create-pr,automated-review,sonar-roundtrip,lessons-capture,adr-propose,branch-cleanup,archive-plan`). Same fallback-only contract as `--phase-5-steps`: the composer prefers `marshal.json::plan.phase-6-finalize.steps`, consulting this CSV only when no marshal.json is present — so in an inited project the CSV cannot inject a plan-scoped candidate. The decision matrix selects a subset. If both marshal.json and the CSV are absent, defaults to the full canonical set.
-- `--commit-and-push` (optional, default `true`): `true|false` — the resolved `commit_and_push` boolean from phase-5-execute config. When `false`, `push`, `pre-push-quality-gate`, and `pre-submission-self-review` are all removed from the candidate set by the `commit_push_disabled` pre-filter before the matrix runs (a local-only run).
+- `--commit-and-push` (optional, default `true`): `true|false` — the resolved `commit_and_push` boolean from phase-5-execute config. When `false`, `push`, `pre-push-quality-gate`, `functional-review`, and `code-review` are all removed from the candidate set by the `commit_push_disabled` pre-filter before the matrix runs (a local-only run).
 - `--envelope-count` (optional, default `1`): Number of phase-5 `execution-context` envelopes the orchestrator should plan for. Persisted into the manifest's `phase_5.envelope_count`. When omitted, defaults to `1` (a single budget-bounded envelope greedily drives the task loop until the queue is empty or a TASK-boundary re-dispatch point fires). A non-positive value is clamped to `1`. The field is written under every decision-matrix rule (including `early_terminate`), so the `phase_5` block always carries it.
 
 **Output** (TOON):
@@ -155,7 +155,8 @@ scope_gated_finalize_immune[0]:
 unresolved_ask_provider_dropped[0]:
 terminal_emission_dropped[0]:
 ceremony_finalize_gates:
-  self_review: auto
+  functional_review: auto
+  code_review: auto
   qgate: auto
   simplify: auto
   security_audit: auto
@@ -276,7 +277,7 @@ lane_report[14]{step,declared,effective,binds,reason}:
   create-pr,-,minimal,false,
   ... (11 more rows omitted for brevity — one per remaining candidate)
 lane_report_count: 14
-plan_input_dependent_steps[2]: [ pre-submission-self-review, finalize-step-simplify ]
+plan_input_dependent_steps[2]: [ code-review, finalize-step-simplify ]
 ```
 
 `plan_id` is echoed only when one was supplied. `binds` is `true` only when a declaration was made AND nothing neutralized it — so a step with no declaration at all reads `declared: -` with `binds: false`, which is the accurate statement that no stored setting is in force for it, not a claim that one was ignored. The `reason` column is what separates the two `false` cases: populated means a declaration was neutralized, empty means there was none to begin with.
@@ -360,7 +361,7 @@ plan_id: EXAMPLE-PLAN
 phase: 6-finalize
 execution_log_rows: <len(execution_log), UNFILTERED by --phase — not derivable from the rows below>
 steps[2]{step_id,firings,refires,skipped,loop_backs,failures,errors,total_tokens,tool_uses,duration_ms,unmeasured_columns,unrecognised_columns}:
-  pre-submission-self-review,7,6,0,6,0,0,412000,58,930000,0,0
+  code-review,7,6,0,6,0,0,412000,58,930000,0,0
   push,1,0,3,0,0,0,0,0,0,3,0
 totals: { steps: 2, firings: 8, refires: 6, skipped: 3, loop_backs: 6, failures: 0, errors: 0, unmeasured_columns: 3, ... }
 token_population: record-step rows only; ...
@@ -434,7 +435,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 |---|---|---|
 | Six-row decision matrix | `change_type`, `track`, `scope_estimate`, `recipe_key`, `affected_files_count` | Deliberately never re-run — re-running it is re-resolving the selection, which is the coupling the write-time snapshot exists to break. |
 | `scope_gated_finalize` | `scope_estimate` (references.json) | Not read by this verb. |
-| `ceremony_finalize_selection` | the four gates, from the merged phase-6 step map | Not read by this verb. |
+| `ceremony_finalize_selection` | the five gates, from the merged phase-6 step map | Not read by this verb. |
 | `lane_resolution` | `status.metadata.execution_profile` | Not read by this verb. |
 | `simplify_inactive` / `security_class_inactive` | settled change type / plan metadata | Not read by this verb. |
 | `canonical_verify_inactive`, `execution_tier` routing + stamping | live footprint, per-command tier | Phase-5 transforms; `reconcile` amends `phase_6.steps` only, so they are out of scope rather than merely unavailable. |
@@ -728,11 +729,11 @@ For each rule fired, `compose` emits one `decision.log` entry — written in-pro
 
 Before the six-row matrix, the composer applies a scope-gated pre-filter that drops heavyweight phase-6 review/audit steps based on `scope_estimate`:
 
-- **`surgical`** — drops `plan-marshall:plan-retrospective`, pre-submission-self-review, and `project:finalize-step-plugin-doctor`. Every bare and prefixed form is matched: for pre-submission-self-review this covers the built-in `default:pre-submission-self-review` (normalized to bare `pre-submission-self-review` at intake). The candidate list is `default:`-namespace-normalized at intake, but `project:` / `bundle:skill` prefixes are preserved verbatim — so `plan-marshall:plan-retrospective` and `project:finalize-step-plugin-doctor` are matched by their full prefixed form, not a bare normalization.
+- **`surgical`** — drops `plan-marshall:plan-retrospective`, functional-review, code-review, and `project:finalize-step-plugin-doctor`. Every bare and prefixed form is matched: for the two reviews this covers the built-in `default:functional-review` and `default:code-review` (normalized to bare `functional-review` / `code-review` at intake). The candidate list is `default:`-namespace-normalized at intake, but `project:` / `bundle:skill` prefixes are preserved verbatim — so `plan-marshall:plan-retrospective` and `project:finalize-step-plugin-doctor` are matched by their full prefixed form, not a bare normalization.
 - **`single_module`** — drops only `plan-marshall:plan-retrospective`.
 - **`multi_module` / `broad` / `none`** — no implicit subtraction; the full candidate set is retained.
 
-**Declared-lane immunity** — membership in a drop set is not sufficient to drop. A step declaring an explicit non-`standard` per-element `lane` override is immune and is kept whatever the `scope_estimate` says. The declaration is resolved from the MERGED source `_read_merged_phase_6_step_map(plan_id)`, which overlays the plan-local `status.metadata.finalize_step_overrides` map onto the project-wide `marshal.json::plan.phase-6-finalize.steps` map — plan-local wins per step key, merged per knob — so an operator's answer captured for one plan grants immunity exactly as a project-wide declaration does. Both channels, their shared shape and enum, and the full precedence ordering are the contract-of-record in [`extension-api/standards/ext-point-lane-element.md`](../extension-api/standards/ext-point-lane-element.md) § "Per-element override knob"; the enum is not restated here. The same merged map feeds the peer reader behind the four ceremony gates, so the two readers of this one field can never disagree. This gate is IMPLICIT (it infers intent from the scope estimate) while a `lane` override is the operator stating what they want, and an implicit inference must not silently override an explicit declaration. The immunity is load-bearing because the pre-filter runs BEFORE ceremony selection and lane resolution, and the ceremony `always` re-add path covers only the four ceremony gates — so for any other step (canonically `plan-marshall:plan-retrospective`) a drop here makes the declared lane structurally unreachable rather than merely outvoted. `automatic-review` therefore needs no carve-out of its own: the general rule already keeps it governed purely by its configured `lane` and lane tier.
+**Declared-lane immunity** — membership in a drop set is not sufficient to drop. A step declaring an explicit non-`standard` per-element `lane` override is immune and is kept whatever the `scope_estimate` says. The declaration is resolved from the MERGED source `_read_merged_phase_6_step_map(plan_id)`, which overlays the plan-local `status.metadata.finalize_step_overrides` map onto the project-wide `marshal.json::plan.phase-6-finalize.steps` map — plan-local wins per step key, merged per knob — so an operator's answer captured for one plan grants immunity exactly as a project-wide declaration does. Both channels, their shared shape and enum, and the full precedence ordering are the contract-of-record in [`extension-api/standards/ext-point-lane-element.md`](../extension-api/standards/ext-point-lane-element.md) § "Per-element override knob"; the enum is not restated here. The same merged map feeds the peer reader behind the five ceremony gates, so the two readers of this one field can never disagree. This gate is IMPLICIT (it infers intent from the scope estimate) while a `lane` override is the operator stating what they want, and an implicit inference must not silently override an explicit declaration. The immunity is load-bearing because the pre-filter runs BEFORE ceremony selection and lane resolution, and the ceremony `always` re-add path covers only the five ceremony gates — so for any other step (canonically `plan-marshall:plan-retrospective`) a drop here makes the declared lane structurally unreachable rather than merely outvoted. `automatic-review` therefore needs no carve-out of its own: the general rule already keeps it governed purely by its configured `lane` and lane tier.
 
 The composer emits one `decision.log` line per scope-gated subtraction (canonical prefix `(plan-marshall:manage-execution-manifest:compose) scope_gated_finalize subtraction`) and one per immunity retention (`… scope_gated_finalize immunity`), and surfaces `scope_gated_finalize_dropped` and `scope_gated_finalize_immune` in the `compose` result for observability — a retention is made as visible as a subtraction, since a step surviving a gate that names it is otherwise indistinguishable from a gate that never ran.
 
@@ -761,16 +762,17 @@ The leaf-no-background-build invariant itself is unchanged — `phase-5-execute`
 
 ### phase-6-finalize ceremony-gate selection (`ceremony_finalize_selection`)
 
-After the six-row matrix produces the final `phase_6.steps` (and after `execution_tier` routing), and before the execution-profile lane resolution, the composer applies the four `plan.phase-6-finalize` ceremony gates to force their finalize steps in or out. Each gate's run decision is derived from its owning finalize step's per-element `lane` override (`off→never`, `minimal→always`, `standard`/absent→`auto`):
+After the six-row matrix produces the final `phase_6.steps` (and after `execution_tier` routing), and before the execution-profile lane resolution, the composer applies the five `plan.phase-6-finalize` ceremony gates to force their finalize steps in or out. Each gate's run decision is derived from its owning finalize step's per-element `lane` override (`off→never`, `minimal→always`, `standard`/absent→`auto`):
 
 | Gate | Owning step (its `lane` override) | `never` → drop · `always` → force-include · `auto` → defer |
 |------|-----------------------------------|------------------------------------------------------------|
-| `self_review` | `default:pre-submission-self-review` | force the pre-submission structural + cognitive self-review |
+| `functional_review` | `default:functional-review` | force the functional review (did the plan deliver what it was asked) |
+| `code_review` | `default:code-review` | force the code review (is the change well made) |
 | `qgate` | `default:pre-push-quality-gate` | force the finalize blocking-findings re-capture |
 | `simplify` | `default:finalize-step-simplify` | force the holistic post-implementation simplification sweep |
 | `security_audit` | `default:finalize-step-security-audit` | force the proactive security sweep |
 
-`always` is the only path that re-adds a step the relevant pre-filter dropped — an operator-set `always` (via `lane: minimal`) overrides the implicit gate. All four gates now ride the same per-element `lane` override channel: each gate's decision is derived from `steps[<owner>].lane` (via `_read_finalize_gates`), with no flat phase-level `qgate` sibling and no step-owned run-at-all param. The transform NEVER touches `automatic-review` — its gate map contains only the four ceremony steps, so `automatic-review` remains governed purely by its own `lane` through the execution-profile lane-resolution pass, with no separate force-add guard.
+`always` is the only path that re-adds a step the relevant pre-filter dropped — an operator-set `always` (via `lane: minimal`) overrides the implicit gate. All five gates now ride the same per-element `lane` override channel: each gate's decision is derived from `steps[<owner>].lane` (via `_read_finalize_gates`), with no flat phase-level `qgate` sibling and no step-owned run-at-all param. The transform NEVER touches `automatic-review` — its gate map contains only the five ceremony steps, so `automatic-review` remains governed purely by its own `lane` through the execution-profile lane-resolution pass, with no separate force-add guard.
 
 The composer emits one `decision.log` line per forced change (canonical prefix `(plan-marshall:manage-execution-manifest:compose) ceremony_finalize selection`) and surfaces `ceremony_finalize_gates`, `ceremony_finalize_forced_in`, and `ceremony_finalize_forced_out` in the `compose` result for observability. The full rule (gate→step map, `automatic-review` carve-out, post-matrix-transform rationale) is documented in [standards/decision-rules.md](standards/decision-rules.md) § "plan.phase-6-finalize Selection". The per-element `lane` override schema is owned by [`manage-config/standards/data-model.md`](../manage-config/standards/data-model.md) § phase-6-finalize and [`extension-api/standards/ext-point-lane-element.md`](../extension-api/standards/ext-point-lane-element.md).
 

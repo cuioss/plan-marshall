@@ -358,18 +358,20 @@ python3 .plan/execute-script.py plan-marshall:automatic-review:review_gate_delta
   --partitions "{partitions}"
 ```
 
-Pass `--gates-green` only when `pre-push-quality-gate` and `pre-submission-self-review`
-both recorded `done`; pass `--gates-red` when either failed. **Omitting both is not a
-shortcut** — it leaves the gate state unsubstantiated and excludes the PR.
+Pass `--gates-green` only when `pre-push-quality-gate`, `functional-review` and
+`code-review` all recorded `done`; pass `--gates-red` when any of them failed.
+**Omitting both is not a shortcut** — it leaves the gate state unsubstantiated and
+excludes the PR.
 
-The two SHAs must be supplied and must MATCH. They routinely will not: two
-`mutates_source` steps — `finalize-step-simplify` (8) and
-`finalize-step-security-audit` (9) — run between the gates and review on an ordinary
-forward pass, so the reviewer sees lines the gates never did and the PR is correctly
-excluded as `gates_did_not_cover_reviewed_tree`. That exclusion is the honest
-outcome, not a failure of this step: the unblocking condition is for the gate to
-re-fire after those steps, which is a change to the finalize step ordering and is
-not made here. Record the exclusion rather than working around it.
+The two SHAs must be supplied and must MATCH. The code-mutating settle steps —
+`finalize-step-simplify` (3) and `finalize-step-security-audit` (5) — sort before
+`functional-review` (6), `code-review` (7) and `pre-push-quality-gate` (10), so on an
+ordinary forward pass the gates certify the settled tree. The SHAs still differ
+whenever HEAD advances after the gate: the gate's own auto-fix commit, or a
+post-push loop-back fix. Then the reviewer sees lines the gates never did and the PR
+is correctly excluded as `gates_did_not_cover_reviewed_tree`. That exclusion is the
+honest outcome, not a failure of this step. Record the exclusion rather than working
+around it.
 
 Read `verdict`, `escapes_total`, `by_partition`, `structural_share`,
 `share_withheld`, `reviewer_coverage`, `gate_head_sha`, `reviewed_head_sha`, and

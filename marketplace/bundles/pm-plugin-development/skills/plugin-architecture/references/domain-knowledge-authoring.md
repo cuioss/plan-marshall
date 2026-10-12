@@ -26,7 +26,7 @@ A domain-claim correction is a **contract change**. Every doc that restates the 
 
 ## Why no in-house gate
 
-In-house gates — Q-Gate, plugin-doctor, pre-submission self-review — verify **structure and internal consistency**, not **domain correctness**. A claim can be structurally perfect, internally consistent, and still be a plausible-but-imprecise domain error.
+In-house gates — Q-Gate, plugin-doctor, the finalize functional and code reviews — verify **structure, internal consistency, and conformance to the request and the rulebook**, not **domain correctness**. A claim can be structurally perfect, internally consistent, and still be a plausible-but-imprecise domain error.
 
 Only **external domain-expert review** separates a correct claim from a plausible-but-wrong one. An in-house "domain-accuracy self-check" would be the authoring model re-grading its own claim — a strictly weaker duplicate of external review, and itself a fresh instance of the very anti-pattern these reflexes guard against.
 

@@ -271,8 +271,8 @@ def test_get_default_config_round_trips_branch_cleanup_param(param, expected):
 def test_default_plan_finalize_simplify_is_config_less_after_ceremony_lane_migration():
     """`default:finalize-step-simplify` is config-less — the `simplify` run-at-all param is gone.
 
-    The four finalize ceremony gates (qgate / self_review / simplify /
-    security_audit) moved off the run-at-all channel onto the per-element
+    The five finalize ceremony gates (qgate / functional_review / code_review /
+    simplify / security_audit) ride the per-element
     `steps.<step>.lane` override. The simplify step no longer declares a
     `simplify` param, so its seeded nested param object is the empty `{}`
     (default_on:true, non-infra → no `lane` override seeded).
@@ -303,14 +303,14 @@ def test_get_default_config_finalize_simplify_carries_no_run_at_all_param():
 
 
 def test_default_plan_finalize_ceremony_gates_have_no_run_at_all_params():
-    """None of the four finalize ceremony gates survives as a run-at-all knob.
+    """None of the five finalize ceremony gates survives as a run-at-all knob.
 
-    After the ceremony run-at-all → lane migration: `qgate` is no longer a flat
-    phase-level sibling; `simplify` / `self_review` / `security_audit` are no
-    longer step-owned params. Each gate's on/off is governed by its owning step's
-    `steps.<step>.lane` override. The pre-submission-self-review step is now
-    config-less too: its `drop_review_on_scope_gate` escape hatch was removed in
-    favour of declared-lane immunity in the composer's scope_gated_finalize gate.
+    `qgate` is no longer a flat phase-level sibling; `simplify` / `security_audit`
+    are no longer step-owned params; `functional_review` / `code_review` never
+    were. Each gate's on/off is governed by its owning step's `steps.<step>.lane`
+    override. Both review steps are config-less: neither declares a
+    `configurable:` key, and declared-lane immunity in the composer's
+    scope_gated_finalize gate replaces any scope-gate escape hatch.
     """
     finalize = _config_defaults_mod.DEFAULT_PLAN_FINALIZE
 
@@ -327,12 +327,15 @@ def test_default_plan_finalize_ceremony_gates_have_no_run_at_all_params():
     assert _params_for(seeded_steps, 'default:finalize-step-simplify') == {}
     assert _params_for(seeded_steps, 'default:finalize-step-security-audit') == {}
 
-    # self_review run-at-all param is gone, and so is the drop_review_on_scope_gate
-    # escape hatch — the step declares no `configurable:` keys, so it is config-less.
-    self_review_params = _params_for(seeded_steps, 'default:pre-submission-self-review')
-    assert 'self_review' not in self_review_params
-    assert 'drop_review_on_scope_gate' not in self_review_params
-    assert self_review_params == {}
+    # Both review steps declare no `configurable:` keys, so each is config-less —
+    # neither carries its gate name as a run-at-all param.
+    for review_step, gate in (
+        ('default:functional-review', 'functional_review'),
+        ('default:code-review', 'code_review'),
+    ):
+        review_params = _params_for(seeded_steps, review_step)
+        assert gate not in review_params
+        assert review_params == {}
 
 
 # ---------------------------------------------------------------------------
@@ -1332,18 +1335,17 @@ def test_built_in_finalize_steps_places_simplify_before_push():
     functional-review (index 3, order 6 — the functional review that runs after the
     mutators so it examines the settled tree), code-review (index 4, order 7 — the
     code review, directly after the functional review for the same reason),
-    pre-submission-self-review (index 5, order 8 — the structural self-review,
-    ordered after the mutators for the same reason), architecture-refresh (index 6,
-    order 9 — the derived-state refresh that captures the code-mutating settle
-    edits), pre-push-quality-gate (index 7, order 10 — sorts LAST in the settle band
-    so its head_at_completion anchors the exact tree the push ships), then
-    default:push (index 8, order 11) — matching the plain `order:` values. The seed
-    is discovered via find_implementors, not a constant.
+    architecture-refresh (index 5, order 9 — the derived-state refresh that
+    captures the code-mutating settle edits; settle slot 8 is free),
+    pre-push-quality-gate (index 6, order 10 — sorts LAST in the settle band so its
+    head_at_completion anchors the exact tree the push ships), then default:push
+    (index 7, order 11) — matching the plain `order:` values. The seed is
+    discovered via find_implementors, not a constant.
     """
     steps = _discovered_seed_step_ids()
 
     # presence and relative head order (security-audit (5) and simplify (3) run
-    # before the three reviews (6, 7, 8); the derived-state refresh (9) and the
+    # before the two reviews (6, 7); the derived-state refresh (9) and the
     # quality gate (10, last in the settle band) sit between the reviews and push (11))
     assert 'default:finalize-step-simplify' in steps, (
         'default:finalize-step-simplify must be discovered into the default-on seed'
@@ -1353,10 +1355,9 @@ def test_built_in_finalize_steps_places_simplify_before_push():
     assert steps[2] == 'default:finalize-step-security-audit'
     assert steps[3] == 'default:functional-review'
     assert steps[4] == 'default:code-review'
-    assert steps[5] == 'default:pre-submission-self-review'
-    assert steps[6] == 'default:architecture-refresh'
-    assert steps[7] == 'default:pre-push-quality-gate'
-    assert steps[8] == 'default:push'
+    assert steps[5] == 'default:architecture-refresh'
+    assert steps[6] == 'default:pre-push-quality-gate'
+    assert steps[7] == 'default:push'
     # The settle-before-push invariant: the quality gate (order 10, last in
     # the settle band after the mutating steps) sits ahead of the push barrier.
     assert steps.index('default:pre-push-quality-gate') < steps.index('default:push')
@@ -1515,11 +1516,9 @@ def test_default_plan_finalize_config_less_steps_map_to_empty_dict():
     # default_on:false built-in steps carry a `lane: off` override (materialize-all:
     # exclusion is `lane: off`, never absence) — non-empty but not param-owning.
     # default:finalize-step-simplify and default:finalize-step-security-audit are
-    # now config-less (their ceremony run-at-all params were removed), and so is
-    # default:pre-submission-self-review (its `self_review` run-at-all param was
-    # removed in the lane migration, and its `drop_review_on_scope_gate` escape
-    # hatch was removed in favour of declared-lane immunity) — all three fall to
-    # the config-less `{}` branch below.
+    # config-less (their ceremony run-at-all params were removed), and so are
+    # default:functional-review and default:code-review (neither declares a
+    # `configurable:` key) — all four fall to the config-less `{}` branch below.
     lane_off_steps = set(_discovered_default_off_built_in_step_ids())
     for step_id, params in steps.items():
         assert isinstance(params, dict), f'every step value must be a dict; got {params!r}'
@@ -1553,9 +1552,9 @@ def test_default_plan_finalize_drops_flat_step_owned_knobs():
     ):
         assert knob not in finalize, f'flat step-owned knob {knob!r} must not survive'
 
-    # the three step-folded run-at-all / escape-hatch knobs are gone from the
-    # flat section too (they fold under their owning finalize step)
-    for knob in ('simplify', 'self_review', 'drop_review_on_scope_gate'):
+    # no ceremony gate name and no retired scope-gate escape hatch survives as a
+    # flat knob either (each gate rides its owning step's lane override)
+    for knob in ('simplify', 'functional_review', 'code_review', 'drop_review_on_scope_gate'):
         assert knob not in finalize, f'flat step-owned knob {knob!r} must not survive'
 
     # phase-level knobs stay flat
@@ -2997,8 +2996,8 @@ def test_project_pr_decision_rejects_corrupt_pr_compact_max_changed_files(plan_c
 # =============================================================================
 # D7 — sync-defaults run_at_all → lane migration
 #
-# `_migrate_run_at_all_to_lane` moves the four finalize ceremony gates off their
-# retired run_at_all locations onto the owning step's per-element `lane` override
+# `_migrate_run_at_all_to_lane` moves the three legacy finalize ceremony gates
+# (qgate / simplify / security_audit) off their retired run_at_all locations onto the owning step's per-element `lane` override
 # (`never→off` / `always→minimal` / `auto→` omit), removing the legacy key so the
 # deep-merge back-fills the newly-materialized lane steps. The three planning
 # gates (deep_lane / escalation / revalidation) — which live under
@@ -3113,18 +3112,14 @@ def test_migrate_step_owned_simplify_always_to_lane_minimal():
     assert 'simplify' not in params
 
 
-def test_migrate_all_four_gates_preserve_values():
-    """All four ceremony gates migrate together with values preserved."""
+def test_migrate_all_three_legacy_gates_preserve_values():
+    """All three legacy ceremony gates migrate together with values preserved."""
     live = {
         'plan': {
             'phase-6-finalize': {
                 'qgate': 'never',
                 'steps': {
-                    'default:pre-submission-self-review': {
-                        'self_review': 'always',
-                        'drop_review_on_scope_gate': False,
-                    },
-                    'default:finalize-step-simplify': {'simplify': 'auto'},
+                    'default:finalize-step-simplify': {'simplify': 'auto', 'keep_me': True},
                     'default:finalize-step-security-audit': {'security_audit': 'never'},
                 },
             }
@@ -3139,15 +3134,11 @@ def test_migrate_all_four_gates_preserve_values():
     # materializing the missing owner.
     assert live['plan']['phase-6-finalize']['qgate'] == 'never'
     assert 'default:pre-push-quality-gate' not in steps
-    # self_review always → minimal, sibling escape hatch preserved, legacy removed.
-    self_review = steps['default:pre-submission-self-review']
-    assert self_review['lane'] == 'minimal'
-    assert self_review['drop_review_on_scope_gate'] is False
-    assert 'self_review' not in self_review
-    # simplify auto → legacy removed, no lane written.
+    # simplify auto → legacy removed, no lane written, sibling param preserved.
     simplify = steps['default:finalize-step-simplify']
     assert 'lane' not in simplify
     assert 'simplify' not in simplify
+    assert simplify['keep_me'] is True
     # security_audit never → off, legacy removed.
     security = steps['default:finalize-step-security-audit']
     assert security['lane'] == 'off'

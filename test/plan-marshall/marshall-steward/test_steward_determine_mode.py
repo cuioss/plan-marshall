@@ -244,7 +244,7 @@ def test_dropped_project_step_is_reported(tmp_path: Path):
     _ship_project_finalize_skills(project_root, _PROJECT_STEPS)
     # Drop plugin-doctor + deploy-target from the configured steps.
     steps = [
-        'default:pre-submission-self-review',
+        'default:functional-review',
         'project:finalize-step-sync-plugin-cache',
         'default:push',
     ]

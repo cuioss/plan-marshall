@@ -4,12 +4,12 @@ from _manage_execution_manifest_refire_report_fixtures import _row, summarize_re
 
 
 def test_rows_are_ordered_worst_offender_first():
-    rows = [_row('push')] + [_row('pre-submission-self-review')] * 7 + [_row('finalize-step-plugin-doctor')] * 3
+    rows = [_row('push')] + [_row('functional-review')] * 7 + [_row('finalize-step-plugin-doctor')] * 3
 
     steps, _totals = summarize_refires(rows)
 
     assert [s['step_id'] for s in steps] == [
-        'pre-submission-self-review',
+        'functional-review',
         'finalize-step-plugin-doctor',
         'push',
     ]

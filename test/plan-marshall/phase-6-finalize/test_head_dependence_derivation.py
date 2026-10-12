@@ -9,7 +9,7 @@ three separate sites. Because membership was hand-listed rather than derived, a
 step that IS head-dependent by the governing discriminator — *"would this verdict
 change if HEAD changed?"* — but was never added to the list kept a stale ``done``
 record across a loop-back commit, standing as green for a diff it never examined.
-``default:pre-submission-self-review`` is the clearest instance: it reviews the
+``project:finalize-step-plugin-doctor`` is such an instance: its verdict reads the
 plan's diff, yet it was absent from every copy of the set.
 
 Membership is now a **derived frontmatter fact**: each step doc declares
@@ -22,8 +22,7 @@ pin that derivation:
     on its own.
 (b) It contains the two long-known members ``default:pre-push-quality-gate`` and
     ``default:ci-verify``.
-(c) It contains the members the hand-maintained literal omitted —
-    ``default:pre-submission-self-review`` and
+(c) It contains the member the hand-maintained literal omitted —
     ``project:finalize-step-plugin-doctor``.
 (d) It contains the project-tier members declared for the first time by the
     project-local sweep — ``project:finalize-step-lessons-housekeeping`` and
@@ -31,13 +30,16 @@ pin that derivation:
     bound from (c): they were never members of the retired hand-maintained
     literal, so they are not instances of the omission defect (c) records —
     they are steps the sweep newly brought into the derived population.
-(e) Every member declares the ``--head-at-completion`` persistence obligation in
+(e) It contains the two review steps — ``default:functional-review`` and
+    ``default:code-review``. Each grades the plan's diff, so each declares the
+    fact from its first version; neither ever existed beside the retired literal.
+(f) Every member declares the ``--head-at-completion`` persistence obligation in
     its own doc body. Declaring the fact without persisting the SHA would leave
     the dispatcher's re-entry check nothing to compare against, so the
     declaration and the obligation are checked together.
 
 Plus the per-member mutation guard: the required-member lower bound spanning
-(b), (c) and (d) is verified to fail for **each** required member independently,
+(b) to (e) is verified to fail for **each** required member independently,
 so a guard that passes on one omission while missing another cannot read as
 green. Without it, a single assertion over the whole set could be satisfied by an
 accident of ordering and still hide a second omission — the exact shape of the
@@ -78,9 +80,14 @@ _KNOWN_MEMBERS = (
 
 #: Members the hand-maintained literal OMITTED — each a live instance of the
 #: defect this derivation fixes. Each is asserted independently below.
-_PREVIOUSLY_OMITTED_MEMBERS = (
-    'default:pre-submission-self-review',
-    'project:finalize-step-plugin-doctor',
+_PREVIOUSLY_OMITTED_MEMBERS = ('project:finalize-step-plugin-doctor',)
+
+#: The two review steps. Each grades the plan's diff, so each is head-dependent
+#: from its first version — neither is an instance of the omission defect, and
+#: neither was newly brought in by the project-local sweep.
+_REVIEW_MEMBERS = (
+    'default:functional-review',
+    'default:code-review',
 )
 
 #: Project-tier steps the project-local sweep declares for the FIRST time. They
@@ -95,7 +102,7 @@ _NEWLY_DECLARED_MEMBERS = (
 
 #: The lower bound the derived set must cover. NOT an enumeration of the set —
 #: the set is derived and may legitimately be larger.
-_REQUIRED_MEMBERS = _KNOWN_MEMBERS + _PREVIOUSLY_OMITTED_MEMBERS + _NEWLY_DECLARED_MEMBERS
+_REQUIRED_MEMBERS = _KNOWN_MEMBERS + _PREVIOUSLY_OMITTED_MEMBERS + _NEWLY_DECLARED_MEMBERS + _REVIEW_MEMBERS
 
 #: The persistence obligation every head-dependent step's doc body must carry.
 _HEAD_AT_COMPLETION_FLAG = '--head-at-completion'
@@ -194,6 +201,21 @@ def test_derived_set_contains_newly_declared_member(member):
     )
 
 
+@pytest.mark.parametrize('member', _REVIEW_MEMBERS)
+def test_derived_set_contains_review_member(member):
+    """(e) Each review step is derived — a review verdict is computed against a HEAD.
+
+    Parametrized per member so a regression that drops one review's declaration
+    fails as one identifiable test.
+    """
+    derived = _head_dependent_names()
+
+    assert member in derived, (
+        f'{member} grades the plan diff, so its step doc must declare {_FACT_KEY}: true '
+        f'in frontmatter. Derived set: {sorted(derived)}'
+    )
+
+
 @pytest.mark.parametrize('omitted', _REQUIRED_MEMBERS)
 def test_each_required_member_is_independently_load_bearing(omitted):
     """Mutation guard: dropping any ONE required member is detected on its own.
@@ -222,7 +244,7 @@ def test_each_required_member_is_independently_load_bearing(omitted):
 
 
 def test_every_member_declares_the_head_at_completion_obligation():
-    """(e) Every derived member's doc body carries the SHA-persistence obligation.
+    """(f) Every derived member's doc body carries the SHA-persistence obligation.
 
     The frontmatter fact arms the dispatcher's re-entry check, but the check has
     nothing to compare against unless the step actually persists the SHA it

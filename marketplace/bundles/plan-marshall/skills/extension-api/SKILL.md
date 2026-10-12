@@ -81,7 +81,6 @@ extension-api/
     ├── ext-point-provider.md       # Credential extension point contract
     ├── ext-point-recipe.md         # Recipe extension point contract
     ├── ext-point-retrospective.md  # Retrospective check contract
-    ├── ext-point-self-review-surfacing.md # Pre-submission self-review surfacing contract
     ├── ext-point-triage.md         # Triage extension point contract — PR review comments + Sonar issues
     ├── ext-point-verify.md         # Verify extension point contract — finding validity-verification before triage
     ├── dispatch-granularity.md     # Dispatch granularity guidance
@@ -125,7 +124,7 @@ cross-reference instead of a fourth enumeration of the same set.
 
 ## Extension Points
 
-Each extension point has a dedicated contract document with formal parameters, pre-conditions, and post-conditions. All 17 contracts:
+Each extension point has a dedicated contract document with formal parameters, pre-conditions, and post-conditions. All 16 contracts:
 
 | Extension Point | Declared Via | Contract |
 |-----------------|--------------|----------|
@@ -143,7 +142,6 @@ Each extension point has a dedicated contract document with formal parameters, p
 | Provider | `*_provider.py` | [ext-point-provider.md](standards/ext-point-provider.md) |
 | Recipe | `provides_recipes()` / frontmatter `implements:` | [ext-point-recipe.md](standards/ext-point-recipe.md) |
 | Retrospective | frontmatter `implements:` on check skills | [ext-point-retrospective.md](standards/ext-point-retrospective.md) |
-| Self-Review Surfacing | frontmatter `implements:` | [ext-point-self-review-surfacing.md](standards/ext-point-self-review-surfacing.md) |
 | Triage (PR comments + Sonar issues) | `provides_triage()` | [ext-point-triage.md](standards/ext-point-triage.md) |
 | Verify (finding validity-verification) | producer `verification_profile` | [ext-point-verify.md](standards/ext-point-verify.md) |
 
@@ -203,7 +201,7 @@ For understanding the complete system architecture, reference these documents:
 | Document | Purpose | When to Read |
 |----------|---------|--------------|
 | [extension-contract.md](standards/extension-contract.md) | Core extension API contract (ExtensionBase, get_skill_domains, examples) | Creating or modifying an extension |
-| [ext-point-*.md](standards/) | Individual extension point contracts (17 documents) | Implementing a specific extension point |
+| [ext-point-*.md](standards/) | Individual extension point contracts (16 documents) | Implementing a specific extension point |
 | [marshal-json-reference.md](standards/marshal-json-reference.md) | Central marshal.json config path reference | Understanding where extension config is stored |
 | [module-discovery.md](standards/module-discovery.md) | Module discovery + output specification | Implementing `discover_modules()` |
 | [canonical-commands.md](standards/canonical-commands.md) | Command vocabulary and resolution | Implementing `discover_modules()` commands |

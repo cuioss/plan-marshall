@@ -1084,12 +1084,11 @@ def test_finalize_step_set_absent_step_id_errors(plan_context):
 # =============================================================================
 # Finalize ceremony gates ride the per-element `steps.<step>.lane` override.
 #
-# D1 folded the four ceremony gates (qgate / self_review / simplify /
-# security_audit) off their run-at-all locations onto each owning step's
-# per-element `lane` override. The former flat `qgate` sibling and the
-# step-owned `simplify` / `self_review` / `security_audit` run-at-all params are
-# gone; `drop_review_on_scope_gate` remains a step-owned param of the
-# self-review step.
+# The five ceremony gates (qgate / functional_review / code_review / simplify /
+# security_audit) are each governed by their owning step's per-element `lane`
+# override. The former flat `qgate` sibling and the step-owned `simplify` /
+# `security_audit` run-at-all params are gone, and neither review gate ever had
+# one.
 # =============================================================================
 
 
@@ -1118,7 +1117,7 @@ def _marshal_without_finalize_section() -> dict:
 def test_finalize_step_get_simplify_reads_lane_override_not_run_at_all_param(plan_context):
     """`default:finalize-step-simplify` is governed by its `steps.<step>.lane` override.
 
-    D1 folded the four ceremony gates onto the per-element lane channel, so the
+    The ceremony gates ride the per-element lane channel, so the
     simplify step no longer declares a `simplify` run-at-all param — its on/off is
     read from `steps['default:finalize-step-simplify'].lane`, not a removed flat
     param map. The default seed carries no `simplify` param.
@@ -1171,11 +1170,11 @@ def test_finalize_step_set_lane_round_trips_under_owning_step(plan_context):
 def test_finalize_get_no_longer_surfaces_folded_knobs_as_flat_siblings(plan_context):
     """`phase-6-finalize get` carries none of the retired ceremony gates as flat fields.
 
-    The four ceremony gates (`qgate` / `self_review` / `simplify` /
-    `security_audit`) moved onto their owning step's per-element `lane` override,
-    so the flat `get` payload surfaces none of them — including `qgate`, which is
-    no longer a flat phase-level sibling. `drop_review_on_scope_gate` also stays a
-    step-owned param, never a flat field.
+    The five ceremony gates (`qgate` / `functional_review` / `code_review` /
+    `simplify` / `security_audit`) ride their owning step's per-element `lane`
+    override, so the flat `get` payload surfaces none of them — including `qgate`,
+    which is no longer a flat phase-level sibling. The retired
+    `drop_review_on_scope_gate` hatch is never a flat field either.
     """
     create_marshal_json(plan_context.fixture_dir, _marshal_without_finalize_section())
 
@@ -1183,7 +1182,8 @@ def test_finalize_get_no_longer_surfaces_folded_knobs_as_flat_siblings(plan_cont
 
     assert result['status'] == 'success'
     assert 'simplify' not in result
-    assert 'self_review' not in result
+    assert 'functional_review' not in result
+    assert 'code_review' not in result
     assert 'security_audit' not in result
     assert 'drop_review_on_scope_gate' not in result
     # qgate is no longer a flat phase-level sibling — it rides the lane channel.
@@ -1502,8 +1502,9 @@ def test_cli_remove_step_order_override_no_longer_registered(plan_context):
 
 _GUARD_PHASE = 'phase-6-finalize'
 
-#: A field name the section does not carry. The getter has always rejected it.
-_UNREADABLE_FIELD = 'self_review'
+#: A field name the section does not carry — a ceremony gate rides its owning
+#: step's ``lane`` override, never a flat field. The getter rejects it.
+_UNREADABLE_FIELD = 'functional_review'
 
 #: A real field of the SAME section, written through the SAME call shape with a
 #: value of its own type — the positive half of the pair. Green before the guard
@@ -1527,7 +1528,8 @@ def test_write_path_rejects_the_unreadable_field_the_read_path_rejects(plan_cont
     """NEGATIVE control: an unreadable field name is refused by BOTH paths.
 
     RED before the write-path guard — the setter returned success and persisted
-    `self_review` into the section. Green after, with the getter's own message.
+    the unreadable name into the section. Green after, with the getter's own
+    message.
     """
     create_marshal_json(plan_context.fixture_dir)
     accepted = _accepted_fields(_GUARD_PHASE)

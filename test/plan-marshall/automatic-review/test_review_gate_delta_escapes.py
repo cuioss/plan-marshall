@@ -4,7 +4,8 @@
 
 *"What did review catch that the in-house gates did not"* is the only direct read
 on gate/review parity available, and it arrives free on every PR: the gates run
-before review (self-review at order 8, `pre-push-quality-gate` at 10, against
+before review (`functional-review` at order 6, `code-review` at 7,
+`pre-push-quality-gate` at 10, against
 `automatic-review` at 30), so a finding filed against a tree the gates already
 passed IS a gate escape. No per-finding gate attribution is needed.
 
@@ -111,14 +112,14 @@ def test_an_unsubstantiated_gate_state_fails_closed_to_excluded():
 
 
 def test_a_tree_the_gates_never_saw_is_excluded():
-    """Source-mutating finalize steps run BETWEEN gate certification and review.
+    """A tree can still move BETWEEN gate certification and review.
 
-    `pre-push-quality-gate` is order 5 and self-review 7, but `finalize-step-simplify`
-    (8) and `finalize-step-security-audit` (9) are `mutates_source: true` and run
-    after them — as is the gate itself, whose item-5f commit lands after the tree it
-    certified; the dispatcher's re-entry check only re-fires a step the loop
-    REACHES, and a forward pass never returns to order 5. So a line those steps
-    introduced reaches the reviewer at order 30 having never been gated.
+    `pre-push-quality-gate` (order 10) is itself `mutates_source: true`: its item-5f
+    commit lands after the tree it certified, and post-push advances such as
+    loop-back fixes land later still. The dispatcher's re-entry check only re-fires
+    a step the loop REACHES, and a forward pass never returns to order 10. So a line
+    such a commit introduced reaches the reviewer at order 30 having never been
+    gated.
 
     Counting a finding on such a line as a "gate escape" attributes to the gates a
     miss they were never given the chance to make. The gate-certified tree and the

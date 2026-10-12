@@ -39,8 +39,8 @@
   <text x="36" y="153" class="item">via build-{maven,gradle,</text>
   <text x="36" y="169" class="item">     npm,python}</text>
 
-  <text x="36" y="206" class="item-bold">phase-6 pre-submission</text>
-  <text x="36" y="224" class="item">via tools-self-review</text>
+  <text x="36" y="206" class="item-bold">phase-6 functional-review</text>
+  <text x="36" y="224" class="item">     + code-review</text>
 
   <text x="36" y="261" class="item-bold">phase-6 ci-verify</text>
   <text x="36" y="279" class="item">via tools-integration-ci</text>

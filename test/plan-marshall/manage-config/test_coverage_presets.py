@@ -138,7 +138,7 @@ class TestLockStepWithContract:
         ('T2', 'component'),
         ('T3', 'component'),
         ('T4', 'component'),
-        # pre-submission-self-review / finalize-step-simplify
+        # finalize-step-simplify
         ('T3', 'component'),
     ]
 

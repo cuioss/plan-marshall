@@ -113,8 +113,9 @@ class BlockingFindingsPresent(Exception):
     The ``5-execute → 6-finalize`` transition is **not** a firing site: it
     inlines ``phase_handshake verify --phase 5-execute --strict``, which detects
     drift on the captured ``5-execute`` row but does not raise this exception —
-    the raise is gated on ``phase == '6-finalize'``, and the self-review findings
-    the gate catches are filed *during* finalize, after that boundary. A composite
+    the raise is gated on ``phase == '6-finalize'``, and the functional-review and
+    code-review findings the gate catches are filed *during* finalize, after that
+    boundary. A composite
     ``capture --phase 6-finalize`` would raise, but no orchestration step issues
     one; the two firing sites above are the actual arming, a state rather than a
     never-emitted call.
