@@ -69,3 +69,74 @@ lessons, so there is no file per row. Full text and fixtures are in that message
 | 4 | Excluded-versus-declared outline paths; declared lists reconciled after execute | medium | same subject as `2026-09-29-17-002` |
 | 5 | A landing's merge-commit fact comes from the PR merge record, not local HEAD | low | backlog § 1.24 |
 | 6 | A reserved never-removed resource has a dedicated refusal on every destructive path | low | backlog § 3.3 |
+
+## Sweep 2026-10-12 — 133 inbox messages from `pm-mcp-core-m2-m4`
+
+Input was the epic's own inbox, not the lessons corpus (corpus: 0). All 133 were sent by the
+pm-mcp-core epic orchestrator (123 `candidate-lesson`, 10 `finding` from PLAN-41, the first plan run
+under Antigravity). Files are named by inbox message, `pm-mcp-core-m2-m4-NNN.md`; the source lesson id,
+where one exists, is in each body's `Origin` line. Operator rulings this run: Antigravity findings are
+**critical** (they prevent Antigravity from working); cross-repo deliverables, assessment-coverage Q-Gate
+and the 4-plan Q-Gate hash skip are **high**. Every filed and stale item was checked at `fc0090a24`
+where the message names a code location; medium and low grades rest on the message text and `backlog.md`.
+
+### `filed-live-blockers/` (65 messages, 15 filings)
+
+| Filing | Level | Messages (`-NNN`) | Subject | Owner today |
+|---|---|---|---|---|
+| `lessons-routing-005` | critical | 133, 125 | Antigravity: no sub-agent dispatch, inline execution, no execute trail | none |
+| `lessons-routing-006` | critical | 131 | Antigravity: `CLAUDE.md` never loaded; quality gate dropped from tasks | partly PLAN-LB-29 |
+| `lessons-routing-007` | critical | 124, 132 | Antigravity: tokens recorded as `0`; harness never recorded (`client.toon`) | none |
+| `lessons-routing-008` | critical | 126 | `maven run` executes any plugin goal (Spotless from Central) — verified, no guard | none |
+| `lessons-routing-009` | critical | 130 | Incomplete package reported complete; existing tests weakened | none |
+| `lessons-routing-010` | critical/high | 127, 012, 056 | Pushed/merged head lacks the plan's mandated gates | near PLAN-LB-32 |
+| `lessons-routing-011` | critical/high | 128, 005, 041, 053, 034, 061 | Required review bot stale after fix; re-review not re-armed (backlog § 4.4) | PLAN-LB-24 |
+| `lessons-routing-012` | critical/high | 129, 082, 009, 015, 045, 048, 052, 055, 073, 078, 090, 093, 096, 100, 112, 122 | Sibling-repo deliverable lifecycle; foreign-PR gate assumes `feature/{plan_id}` (verified) | none |
+| `lessons-routing-013` | high | 003, 024, 042, 103 | Red-CI triage unreachable: ci-verify producers outside the accept-set (verified) | PLAN-LB-24 |
+| `lessons-routing-014` | high | 025, 054, 062, 087, 113, 117, 006 | Fix tasks under deliverable 0 rejected by commit-add (verified; backlog § 1.6) | PLAN-LB-26 |
+| `lessons-routing-015` | high | 081, 094, 120 | Workflow notation resolves only `marketplace/bundles/` in consumer repos (verified) | none |
+| `lessons-routing-016` | high | 001, 040, 050, 057, 074, 091, 097, 123 | Deep-lane outline writes no assessments; Q-Gate 2.2 fails every deliverable | none |
+| `lessons-routing-017` | high | 067, 080, 110, 121 | 4-plan Q-Gate skips validators on the 3-outline hash, reports a pass | none |
+| `lessons-routing-018` | medium, domain | 010, 076, 088, 114, 118 | `pm-dev-java` profiles attach Quarkus/Weld/IT skills ungated; `cui-testing` missing (verified) | none |
+| `lessons-routing-019` | low, domain | 058, 059 | `cui-http-testing`: single-use responses, loopback address family (verified gap) | none |
+
+### `stale/` (6)
+
+| Messages | Reason |
+|---|---|
+| 028, 060, 065, 083, 101 | `scope_creep_check` finding type and diff base fixed by #1745 (`370f42379`, 2026-10-10T18:39Z): type `triage`, merge-base baseline. Later reports came from consumers on an unsynced plugin. |
+| 085 | Reactor test count summed by #1750 (`2fd164ec9`). |
+
+### `medium/` (39)
+
+| Messages | Subject | Backlog |
+|---|---|---|
+| 008, 037, 043, 044, 068, 104, 119 | Pre-push gate is marketplace-shaped in Maven repos (zero bundles, module-tests DEGRADED, drift probe no verdict); compose keeps it on an unknown verdict | — |
+| 018, 026, 051, 066, 089, 106 | Phase leaves self-transition before the orchestrator's gate; half-stamped metrics boundary; handshake drift on re-entry | §§ 1.16, 1.17 |
+| 007, 019, 063 | Unmeasured build commands resolve to orchestrator tier and cost one execute yield per module | § 1.20 |
+| 077, 107 | Orchestrator ends its turn after a non-terminal hand-back / `budget_yield` | — |
+| 038, 070 | Manifest step-param snapshot goes stale against `marshal.json` | — |
+| 033 | Executor drops an empty-string `--value ""` argument | — |
+| 002, 027, 039, 049, 071, 098, 099, 035, 111 | Outline authoring checks (dependency edges, grounding, closed write-sets, cross-spec contradictions); init scope counts every path; `affected_files` add-only | § 1.19 |
+| 030, 105 | Sonar identity includes the line number; fetch without `--pr` fills the plan store | — |
+| 016, 084, 115 | Approval-only and gate-status comments filed as findings; Sourcery budget refusal unrecognised | § 4.4 |
+| 029, 069, 036, 086 | Commit predicate on the chain tail; automatic-review doc vs `trigger-bot` flags; shared `module_mapping` temp file; fix-round builds filed under `NO_PLAN` | § 2.9 |
+
+### `low/` (23)
+
+| Messages | Subject |
+|---|---|
+| 031, 046, 109 | Disabled build server logs a WARNING on every build |
+| 011, 013, 021, 032, 047, 064, 075 | Dispatch-boundary and metrics recording gaps (double count, keyless rows, re-fires unrecorded, checkpoint reclassified as error) |
+| 014, 079, 092, 108 | Retrospective measurement (ledger gone with the worktree, read-intent files graded unrealised, hand-backs counted as operator turns) |
+| 004, 017, 020, 022, 023, 072, 116, 102, 095 | Sonar only in CI; triage decline reversed; review-round cost; phase-complete count line; project-specific recipe premise; verb and flag paraphrases; re-review timeout clamp |
+
+### Late arrivals 2026-10-12 — 10 messages (`-134`..`-143`, PLAN-11 #30, Claude Code)
+
+Arrived at 13:52Z while the sweep ran; graded in the same run. None filed.
+
+| Messages | Level | Subject |
+|---|---|---|
+| 141 | stale | `scope_creep_check` — fixed by #1745; the consumer ran an unsynced plugin |
+| 135, 136, 138, 139, 140, 143 | medium | `trigger-bot --required-bots` (= 069); `resolve --task-number`; executor stale mid-session (`pre_merge_gate` unknown at merge); transient GraphQL read in `wait-for-queue-settle`; leaf self-transition; phase-4-plan Step 8 `qgate add --type warning` |
+| 134, 137, 142 | low | Nine review rounds (widened fix rounds); `--wait-seconds` paraphrase; dispatch-boundary rows |

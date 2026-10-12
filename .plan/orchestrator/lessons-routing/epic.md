@@ -221,6 +221,34 @@ its grade was used wherever it lists the subject. Every high lesson turned out t
 for a residual rather than to open new work. Only the filed and stale lessons were checked against code
 or ledger at this run; the medium and low grades rest on the lesson text and the backlog.
 
+### 2026-10-12 — second `ingest` run (inbox, 143 messages)
+
+Corpus at start: 0. The input was this epic's own inbox: 133 messages from the `pm-mcp-core-m2-m4`
+orchestrator (123 `candidate-lesson`, 10 `finding` from PLAN-41, its first plan under Antigravity), all
+about the `plan-marshall` bundle except two domain-bundle subjects. The ingest grading of RULING
+2026-10-09 was applied to the messages in place of a corpus scan; each message was archived through
+`inbox archive` after its filing or archive copy existed. Per-message dispositions and clusters:
+`lessons-archive/INDEX.md` § Sweep 2026-10-12. Decision log: the 20 lines of 2026-10-12T13:53–13:54Z.
+
+Operator rulings this run: **Antigravity findings are the highest priority** (graded critical — they
+prevent Antigravity from working); cross-repo deliverables, the assessment-coverage Q-Gate and the 4-plan
+Q-Gate hash skip were put to the operator as borderline and graded **high**.
+
+| Disposition | Messages | Where |
+|---|---|---|
+| critical / high, filed to `live-blockers` | 58 in 13 filings (`lessons-routing-005`..`-017`) | `live-blockers/inbox/`; bodies in `lessons-archive/filed-live-blockers/` |
+| domain content, filed to `live-blockers` | 7 in 2 filings (`-018` medium `pm-dev-java`, `-019` low `pm-dev-java-cui`) | same |
+| stale, archived | 6 (scope-creep fixed by #1745, Maven test count by #1750) | `lessons-archive/stale/` |
+| medium, archived | 39 | `lessons-archive/medium/` |
+| low, archived | 23 | `lessons-archive/low/` |
+| late arrivals `-134`..`-143` (PLAN-11), archived | 10: 1 stale, 6 medium, 3 low | same directories |
+
+Checked at `fc0090a24`: still present — ci-verify producers outside the verification-feedback
+accept-set, `deliverable: 0` rejected by `commit-add`, execution-context Step 4 mapping only
+`marketplace/bundles/`, no goal guard in `maven run`, `foreign_pr_gate.py` assuming `feature/{plan_id}`,
+ungated Quarkus/Weld skills in `pm-dev-java`, no single-use/loopback rule in `cui-http-testing`. The
+Antigravity findings rest on the sender's verification against the archived PLAN-41.
+
 ## START HERE
 
 ### Annotations
