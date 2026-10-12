@@ -507,7 +507,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --head-at-completion {sha}
 ```
 
-Every `{…}` count is the value of the same-named key in the Step 5 validator `facts`.
+Every `{…}` count is the value of the same-named key in the Step 5 validator `facts`. The `--fact override_closed_heads` line is conditional: include it only when `{override_heads}` is non-empty, and drop it otherwise.
 
 ### Branch B — the round loops back
 
@@ -592,6 +592,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --fact override_closed_heads={override_heads} \
   --head-at-completion {sha}
 ```
+
+The `--fact override_closed_heads` line is conditional here as well: include it only when `{override_heads}` is non-empty.
 
 `{verdict}` is `code review found {blocking_count} blocking over {files_read} files, {advisory_count} advisory` when the round has a blocking finding, and `code review not closed: verifier {verifier}` when it has none.
 
