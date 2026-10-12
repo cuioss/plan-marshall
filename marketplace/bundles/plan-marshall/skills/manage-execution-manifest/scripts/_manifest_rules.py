@@ -655,14 +655,9 @@ _CEREMONY_FINALIZE_STEP_MAP: dict[str, tuple[frozenset[str], str]] = {
     ),
 }
 
-# The finalize ceremony gates, in canonical order.
-_CEREMONY_FINALIZE_GATES = (
-    'functional_review',
-    'code_review',
-    'qgate',
-    'simplify',
-    'security_audit',
-)
+# The finalize ceremony gates, in canonical order — derived from the step map above,
+# so a gate added there is iterated without a second list to keep in step.
+_CEREMONY_FINALIZE_GATES: tuple[str, ...] = tuple(_CEREMONY_FINALIZE_STEP_MAP)
 
 # Canonical default for every finalize gate when marshal.json omits the block.
 _CEREMONY_FINALIZE_DEFAULT = 'auto'

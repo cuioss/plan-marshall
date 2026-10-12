@@ -122,6 +122,7 @@ _RECIPE_PROVENANCE_CASES = [
 _COMMIT_PUSH_DROP_SET = {
     'push',
     'pre-push-quality-gate',
+    'pre-submission-self-review',
     'functional-review',
     'code-review',
 }

@@ -1,11 +1,14 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Behavior-cluster tests carved from test_ceremony_finalize_selection.py: ceremony finalize auto."""
 
+import sys
+
 from _manage_execution_manifest_ceremony_finalize_selection_fixtures import (
     _FOOTPRINT,
     _bare,
     _compose_ns,
     _manifest_phase_6_steps,
+    _mem,
     _restore_footprint_resolver,
     _seed_marshal,
     _stub_footprint,
@@ -63,3 +66,15 @@ class TestCeremonyFinalizeAuto:
         assert 'functional-review' in bare
         assert 'code-review' in bare
         assert 'pre-push-quality-gate' in bare
+
+
+class TestCeremonyGateRoster:
+    """The gate roster, the step map and the owner map name one gate set."""
+
+    def test_the_roster_is_the_step_map_and_the_owner_map_covers_it(self):
+        rules = sys.modules[_mem._apply_ceremony_finalize_selection.__module__]
+        roster = rules._CEREMONY_FINALIZE_GATES
+
+        assert roster, 'control: the ceremony gate roster must not be empty'
+        assert roster == tuple(rules._CEREMONY_FINALIZE_STEP_MAP)
+        assert set(rules._CEREMONY_GATE_OWNER_STEP) == set(roster)
