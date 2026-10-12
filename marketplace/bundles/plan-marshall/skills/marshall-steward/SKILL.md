@@ -1012,9 +1012,10 @@ legacy `self_review` run-at-all value onto both lanes (`never` → `off`,
 `always` → `minimal`, `auto` → no lane); every other param, the retired
 `drop_review_on_scope_gate` among them, is dropped. Within one entry and across
 both spellings alike, a `lane: off` wins over any other setting, and every
-losing setting is reported in `dropped_params`. A successor the operator
-already configured wins, and a retired id in `removed_steps` is replaced by both
-new ids. Emits `state` (`migrated` | `noop`) and, on `migrated`, `replaced`,
+losing setting is reported in `dropped_params`, as is a setting the migration
+cannot map. A successor the operator already configured wins — with both
+configured, the retired setting is reported as dropped — and a retired id in
+`removed_steps` is replaced by both new ids. Emits `state` (`migrated` | `noop`) and, on `migrated`, `replaced`,
 `added`, `kept` and `removed_steps_rewritten`; `carried` and
 `dropped_params` are emitted only when a retired step entry was replaced,
 not when only `removed_steps` named a retired id.

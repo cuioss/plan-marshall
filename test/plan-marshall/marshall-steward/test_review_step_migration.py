@@ -260,7 +260,7 @@ def test_operator_configured_successor_wins():
 
 
 def test_both_successors_configured_only_removes_the_retired_entry():
-    """With both successors present nothing is inserted and nothing is reported as carried."""
+    """With both successors present nothing is inserted; the retired lane is reported as dropped, not lost."""
     section = _section({_FUNCTIONAL: {'lane': 'standard'}, _CODE: {'lane': 'standard'}, _LEGACY: {'lane': 'off'}})
 
     report = upgrade.migrate_review_steps(section)
@@ -269,7 +269,46 @@ def test_both_successors_configured_only_removes_the_retired_entry():
     assert report['added'] == []
     assert report['kept'] == [_FUNCTIONAL, _CODE]
     assert report['carried'] == []
+    assert report['dropped_params'] == ['lane="off"']
     assert section['steps'] == {_FUNCTIONAL: {'lane': 'standard'}, _CODE: {'lane': 'standard'}}
+
+
+def test_one_successor_configured_carries_and_drops_nothing_extra():
+    """Control for the test above: with a successor inserted the lane is carried, not reported as dropped."""
+    section = _section({_FUNCTIONAL: {'lane': 'standard'}, _LEGACY: {'lane': 'off'}})
+
+    report = upgrade.migrate_review_steps(section)
+
+    assert report['added'] == [_CODE]
+    assert report['carried'] == ['lane=off']
+    assert report['dropped_params'] == []
+
+
+@pytest.mark.parametrize(
+    ('params', 'expected_dropped'),
+    [
+        ({'self_review': 'off', 'lane': 'standard'}, ['self_review="off"']),
+        ({'lane': 3}, ['lane=3']),
+        ({'lane': ''}, ['lane=""']),
+    ],
+    ids=['unknown-self-review-value', 'non-string-lane', 'empty-lane'],
+)
+def test_unusable_lane_or_self_review_values_are_reported_as_dropped(params, expected_dropped):
+    """A setting the migration cannot map is reported, never discarded silently."""
+    section = _section({_LEGACY: params})
+
+    report = upgrade.migrate_review_steps(section)
+
+    assert report['dropped_params'] == expected_dropped
+
+
+def test_legacy_self_review_auto_is_not_reported_as_dropped():
+    """Control for the test above: ``auto`` is a recognised value that maps to no lane."""
+    section = _section({_LEGACY: {'self_review': 'auto'}})
+
+    report = upgrade.migrate_review_steps(section)
+
+    assert report['dropped_params'] == []
 
 
 def test_retired_id_in_removed_steps_is_replaced_by_both_new_ids():

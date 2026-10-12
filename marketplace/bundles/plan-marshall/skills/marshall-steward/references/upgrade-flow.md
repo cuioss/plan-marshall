@@ -366,7 +366,11 @@ form) is replaced in place by `default:functional-review` followed by
   `dropped_params`.
 
 A new entry the operator already configured WINS: it is left untouched and
-reported in `kept`, and only the missing successor is inserted. In the
+reported in `kept`, and only the missing successor is inserted; when both
+successors are already configured, the retired entry's setting reaches neither
+and is reported in `dropped_params`. A `lane` that is not a non-empty string and
+a `self_review` value other than `never`, `always` or `auto` are reported there
+too. In the
 `removed_steps` list, a retired id is replaced by both new ids, so a review the
 operator removed stays removed under its new names.
 

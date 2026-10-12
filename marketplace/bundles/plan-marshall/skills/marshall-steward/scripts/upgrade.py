@@ -594,6 +594,7 @@ _LEGACY_SELF_REVIEW_KEY = 'self_review'
 #: A legacy step-owned self_review run-at-all value onto a successor lane; ``auto``
 #: maps to no lane, which leaves the carried lane in force.
 _LEGACY_SELF_REVIEW_TO_LANE = {'never': 'off', 'always': 'minimal'}
+_LEGACY_SELF_REVIEW_AUTO = 'auto'
 
 
 def _bare_step_id(step_id: str) -> str:
@@ -605,12 +606,13 @@ def _carried_review_params(legacy: object) -> tuple[dict, list[str]]:
 
     The entry's ``lane`` is carried. A legacy ``self_review`` run-at-all value is
     the same setting in its retired spelling, so ``never`` / ``always`` map to
-    ``off`` / ``minimal``; ``auto`` (or anything else) adds no lane. When the two
-    disagree, the rule :func:`_merged_review_params` applies across entries holds
-    inside one entry too: ``off`` wins, otherwise the mapped ``self_review`` value
-    wins, and the losing setting is reported as dropped. Every other param —
-    ``drop_review_on_scope_gate`` among them — has no successor and is reported
-    as dropped, ``key=value``.
+    ``off`` / ``minimal``; ``auto`` adds no lane. When the two disagree, the rule
+    :func:`_merged_review_params` applies across entries holds inside one entry
+    too: ``off`` wins, otherwise the mapped ``self_review`` value wins, and the
+    losing setting is reported as dropped. A ``lane`` that is not a non-empty
+    string, a ``self_review`` value other than ``never`` / ``always`` / ``auto``,
+    and every other param — ``drop_review_on_scope_gate`` among them — have no
+    successor and are reported as dropped, ``key=value``.
     """
     params = legacy if isinstance(legacy, dict) else {}
     carried: dict = {}
@@ -618,8 +620,12 @@ def _carried_review_params(legacy: object) -> tuple[dict, list[str]]:
     lane = params.get(_LANE_KEY)
     if isinstance(lane, str) and lane:
         carried[_LANE_KEY] = lane
+    elif _LANE_KEY in params:
+        dropped.append(f'{_LANE_KEY}={json.dumps(lane)}')
     legacy_gate = params.get(_LEGACY_SELF_REVIEW_KEY)
     mapped = _LEGACY_SELF_REVIEW_TO_LANE.get(legacy_gate) if isinstance(legacy_gate, str) else None
+    if mapped is None and _LEGACY_SELF_REVIEW_KEY in params and legacy_gate != _LEGACY_SELF_REVIEW_AUTO:
+        dropped.append(f'{_LEGACY_SELF_REVIEW_KEY}={json.dumps(legacy_gate)}')
     if mapped is not None:
         current = carried.get(_LANE_KEY)
         if current is None or current == mapped:
@@ -724,8 +730,11 @@ def migrate_review_steps(section: dict) -> dict:
                 continue
             rebuilt[key] = value
         report['kept'] = [s for s in _REVIEW_SUCCESSOR_STEP_IDS if s not in report['added']]
-        # Only an inserted successor inherits anything; a kept one keeps its own params.
+        # Only an inserted successor inherits anything; a kept one keeps its own params,
+        # so with no successor inserted the retired entry's carried settings are dropped.
         report['carried'] = [f'{key}={value}' for key, value in carried.items()] if report['added'] else []
+        if not report['added']:
+            dropped.extend(f'{key}={json.dumps(value)}' for key, value in carried.items())
         report['dropped_params'] = dropped
         section['steps'] = rebuilt
 
