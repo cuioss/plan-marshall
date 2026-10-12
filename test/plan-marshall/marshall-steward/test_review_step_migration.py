@@ -117,7 +117,50 @@ def test_legacy_self_review_never_turns_both_settings_off():
     assert report['state'] == 'migrated'
     assert section['steps'] == {_FUNCTIONAL: {'lane': 'off'}, _CODE: {'lane': 'off'}}
     assert {gate: _resolved_setting(section, gate) for gate in _SETTINGS} == dict.fromkeys(_SETTINGS, 'never')
-    assert report['dropped_params'] == [], 'self_review is mapped, never reported as dropped'
+    assert report['dropped_params'] == ['lane="standard"'], 'the overridden lane is reported, never lost silently'
+
+
+def test_legacy_self_review_agreeing_with_the_lane_reports_nothing():
+    """Control for the test above: a self_review value mapping to the entry's own lane drops nothing."""
+    section = _section({_LEGACY: {'self_review': 'never', 'lane': 'off'}})
+
+    report = upgrade.migrate_review_steps(section)
+
+    assert section['steps'] == {_FUNCTIONAL: {'lane': 'off'}, _CODE: {'lane': 'off'}}
+    assert report['dropped_params'] == []
+
+
+def test_lane_off_wins_over_a_legacy_self_review_always_in_one_entry():
+    """``off`` wins inside one entry as it does across entries; the losing self_review is reported."""
+    section = _section({_LEGACY: {'lane': 'off', 'self_review': 'always'}})
+
+    report = upgrade.migrate_review_steps(section)
+
+    assert section['steps'] == {_FUNCTIONAL: {'lane': 'off'}, _CODE: {'lane': 'off'}}
+    assert {gate: _resolved_setting(section, gate) for gate in _SETTINGS} == dict.fromkeys(_SETTINGS, 'never')
+    assert report['dropped_params'] == ['self_review="always"']
+
+
+def test_lane_off_in_one_spelling_survives_a_legacy_always_beside_it():
+    """The reported failure shape: an entry's off lane must not lose to its own self_review: always."""
+    section = _section(
+        {_LEGACY: {'lane': 'off', 'self_review': 'always'}, _LEGACY_BARE: {'lane': 'standard'}},
+    )
+
+    report = upgrade.migrate_review_steps(section)
+
+    assert section['steps'] == {_FUNCTIONAL: {'lane': 'off'}, _CODE: {'lane': 'off'}}
+    assert sorted(report['dropped_params']) == ['lane="standard"', 'self_review="always"']
+
+
+def test_legacy_self_review_always_replaces_a_non_off_lane_and_reports_it():
+    """Away from ``off`` the mapped self_review value wins, and the lane it replaced is reported."""
+    section = _section({_LEGACY: {'lane': 'standard', 'self_review': 'always'}})
+
+    report = upgrade.migrate_review_steps(section)
+
+    assert section['steps'] == {_FUNCTIONAL: {'lane': 'minimal'}, _CODE: {'lane': 'minimal'}}
+    assert report['dropped_params'] == ['lane="standard"']
 
 
 def test_legacy_self_review_auto_leaves_the_carried_lane_in_force():

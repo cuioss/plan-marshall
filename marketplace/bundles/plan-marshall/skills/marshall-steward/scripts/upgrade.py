@@ -604,23 +604,34 @@ def _carried_review_params(legacy: object) -> tuple[dict, list[str]]:
     """Split the retired entry's params into what both successors inherit and what is dropped.
 
     The entry's ``lane`` is carried. A legacy ``self_review`` run-at-all value is
-    the same setting in its retired spelling, so ``never`` / ``always`` replace the
-    carried lane with ``off`` / ``minimal``; ``auto`` (or anything else) adds no
-    lane. Every other param — ``drop_review_on_scope_gate`` among them — has no
-    successor and is reported as dropped, ``key=value``.
+    the same setting in its retired spelling, so ``never`` / ``always`` map to
+    ``off`` / ``minimal``; ``auto`` (or anything else) adds no lane. When the two
+    disagree, the rule :func:`_merged_review_params` applies across entries holds
+    inside one entry too: ``off`` wins, otherwise the mapped ``self_review`` value
+    wins, and the losing setting is reported as dropped. Every other param —
+    ``drop_review_on_scope_gate`` among them — has no successor and is reported
+    as dropped, ``key=value``.
     """
     params = legacy if isinstance(legacy, dict) else {}
     carried: dict = {}
+    dropped: list[str] = []
     lane = params.get(_LANE_KEY)
     if isinstance(lane, str) and lane:
         carried[_LANE_KEY] = lane
     legacy_gate = params.get(_LEGACY_SELF_REVIEW_KEY)
     mapped = _LEGACY_SELF_REVIEW_TO_LANE.get(legacy_gate) if isinstance(legacy_gate, str) else None
     if mapped is not None:
-        carried[_LANE_KEY] = mapped
-    dropped = [
+        current = carried.get(_LANE_KEY)
+        if current is None or current == mapped:
+            carried[_LANE_KEY] = mapped
+        elif current == _LANE_OFF:
+            dropped.append(f'{_LEGACY_SELF_REVIEW_KEY}={json.dumps(legacy_gate)}')
+        else:
+            carried[_LANE_KEY] = mapped
+            dropped.append(f'{_LANE_KEY}={json.dumps(current)}')
+    dropped.extend(
         f'{key}={json.dumps(value)}' for key, value in params.items() if key not in (_LANE_KEY, _LEGACY_SELF_REVIEW_KEY)
-    ]
+    )
     return carried, dropped
 
 

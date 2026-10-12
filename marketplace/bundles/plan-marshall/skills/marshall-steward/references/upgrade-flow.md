@@ -354,7 +354,9 @@ form) is replaced in place by `default:functional-review` followed by
 - its `lane` is carried to both new entries;
 - a legacy step-owned `self_review` run-at-all value still on the entry is
   mapped onto both new entries' `lane` — `never` → `off`, `always` → `minimal`,
-  `auto` → no lane;
+  `auto` → no lane; when it disagrees with the entry's own `lane`, `off` wins,
+  otherwise the mapped value wins, and the losing setting is reported in
+  `dropped_params`;
 - every other param — the retired `drop_review_on_scope_gate` among them — has no
   successor, is dropped, and is reported in `dropped_params`;
 - when the map names the retired step in BOTH spellings, the settings of both
