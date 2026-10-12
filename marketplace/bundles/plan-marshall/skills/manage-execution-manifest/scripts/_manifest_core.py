@@ -433,6 +433,8 @@ DEFAULT_PHASE_5_STEPS = ('verify:quality-gate', 'verify:module-tests')
 DEFAULT_PHASE_6_STEPS = (
     'finalize-step-simplify',
     'finalize-step-security-audit',
+    'functional-review',
+    'code-review',
     'push',
     'create-pr',
     'ci-verify',
@@ -553,6 +555,8 @@ ORCHESTRATOR_OWNED_STEPS: frozenset[str] = frozenset(
     {
         'finalize-step-plugin-doctor',
         'pre-submission-self-review',
+        'functional-review',
+        'code-review',
         'automatic-review',
         'finalize-step-simplify',
     }

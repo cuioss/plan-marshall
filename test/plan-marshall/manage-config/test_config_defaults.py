@@ -1329,30 +1329,34 @@ def test_built_in_finalize_steps_places_simplify_before_push():
     The settle head order is sync-baseline (index 0, order 1 — the early baseline
     rebase), finalize-step-simplify (index 1, order 3 — the first code-mutating
     settle step), finalize-step-security-audit (index 2, order 5, mutates source),
-    pre-submission-self-review (index 3, order 8 — the structural self-review that
-    runs after the mutators so it examines the settled tree),
-    architecture-refresh (index 4, order 9 — the derived-state refresh that captures
-    the code-mutating settle edits), pre-push-quality-gate (index 5, order 10 —
-    sorts LAST in the settle band so its head_at_completion anchors the exact tree
-    the push ships), then default:push (index 6, order 11) — matching the plain
-    `order:` values. The seed is discovered via find_implementors, not a
-    constant.
+    functional-review (index 3, order 6 — the functional review that runs after the
+    mutators so it examines the settled tree), code-review (index 4, order 7 — the
+    code review, directly after the functional review for the same reason),
+    pre-submission-self-review (index 5, order 8 — the structural self-review,
+    ordered after the mutators for the same reason), architecture-refresh (index 6,
+    order 9 — the derived-state refresh that captures the code-mutating settle
+    edits), pre-push-quality-gate (index 7, order 10 — sorts LAST in the settle band
+    so its head_at_completion anchors the exact tree the push ships), then
+    default:push (index 8, order 11) — matching the plain `order:` values. The seed
+    is discovered via find_implementors, not a constant.
     """
     steps = _discovered_seed_step_ids()
 
     # presence and relative head order (security-audit (5) and simplify (3) run
-    # before the self-review (8); the derived-state refresh (9) and the quality
-    # gate (10, last in the settle band) sit between the review and push (11))
+    # before the three reviews (6, 7, 8); the derived-state refresh (9) and the
+    # quality gate (10, last in the settle band) sit between the reviews and push (11))
     assert 'default:finalize-step-simplify' in steps, (
         'default:finalize-step-simplify must be discovered into the default-on seed'
     )
     assert steps[0] == 'default:finalize-step-sync-baseline'
     assert steps[1] == 'default:finalize-step-simplify'
     assert steps[2] == 'default:finalize-step-security-audit'
-    assert steps[3] == 'default:pre-submission-self-review'
-    assert steps[4] == 'default:architecture-refresh'
-    assert steps[5] == 'default:pre-push-quality-gate'
-    assert steps[6] == 'default:push'
+    assert steps[3] == 'default:functional-review'
+    assert steps[4] == 'default:code-review'
+    assert steps[5] == 'default:pre-submission-self-review'
+    assert steps[6] == 'default:architecture-refresh'
+    assert steps[7] == 'default:pre-push-quality-gate'
+    assert steps[8] == 'default:push'
     # The settle-before-push invariant: the quality gate (order 10, last in
     # the settle band after the mutating steps) sits ahead of the push barrier.
     assert steps.index('default:pre-push-quality-gate') < steps.index('default:push')

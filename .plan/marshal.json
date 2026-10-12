@@ -94,6 +94,12 @@
         "default:finalize-step-security-audit": {
           "lane": "full"
         },
+        "default:functional-review": {
+          "lane": "standard"
+        },
+        "default:code-review": {
+          "lane": "standard"
+        },
         "default:pre-submission-self-review": {
           "drop_review_on_scope_gate": false,
           "lane": "standard"

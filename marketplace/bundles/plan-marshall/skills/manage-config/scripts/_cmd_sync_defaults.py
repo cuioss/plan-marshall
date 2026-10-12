@@ -24,6 +24,14 @@ from _config_defaults import (
     stamp_provisioning_fields,
 )
 from _manifest_lanes import _IMMUNE_TO_OFF_CLASSES, LANE_TIERS, _effective_lane_tier
+
+# Owning finalize step id (marshal.json keyed form, ``default:``-prefixed) for each
+# ceremony gate's ``lane`` override. Imported from the manifest rules, which read
+# the same owning-step lane overrides this migration writes, so the two cannot
+# name different owners. A gate that never carried a legacy run_at_all value
+# (``functional_review``, ``code_review``) is absent from
+# :data:`_STEP_OWNED_CEREMONY_GATES`, so the migration never reads a legacy key for it.
+from _manifest_rules import _CEREMONY_GATE_OWNER_STEP
 from command_forms import STEWARD_COMMAND
 
 # Retired step keys and their canonical replacements. Each entry maps a step id
@@ -150,17 +158,6 @@ def _migrate_retired_step_keys(live: dict, renamed: list[str]) -> dict:
 # shim-floor: the D7 run_at_all->lane migration that moved the four finalize ceremony gates onto the per-element `lane` override channel
 # shim-remove-when: no live marshal.json carries a run_at_all/qgate ceremony-gate key
 _RUN_AT_ALL_TO_LANE: dict[str, str] = {'never': 'off', 'always': 'minimal'}
-
-# Owning finalize step id (marshal.json keyed form, ``default:``-prefixed) for
-# each ceremony gate's ``lane`` override. Mirrors
-# ``_manifest_rules._CEREMONY_GATE_OWNER_STEP`` — the manifest ceremony transform
-# reads the same owning-step lane overrides this migration writes.
-_CEREMONY_GATE_OWNER_STEP: dict[str, str] = {
-    'qgate': 'default:pre-push-quality-gate',
-    'self_review': 'default:pre-submission-self-review',
-    'simplify': 'default:finalize-step-simplify',
-    'security_audit': 'default:finalize-step-security-audit',
-}
 
 # The three ceremony gates whose legacy run_at_all value lived as a step-owned
 # param (keyed by the gate name) under the owning step's nested param object in

@@ -78,20 +78,20 @@ class TestPreSubmissionSelfReviewSurvivesCompose:
     def test_commit_push_drop_is_reported_per_step(self, plan_context):
         """Every dropped step is named, not just ``push``.
 
-        The former aggregate reporting named only ``push``, so the two push-only
-        gates vanished unnamed. Each drop now carries its own ``{step, reason}``
-        record with a non-empty reason.
+        The former aggregate reporting named only ``push``, so the push-only gates
+        vanished unnamed. Each drop now carries its own ``{step, reason}`` record
+        with a non-empty reason.
 
-        The candidate CSV is built explicitly to carry all three droppable steps:
-        the gate removes the INTERSECTION of its drop set with the candidates, and
-        the default candidate list happens to contain only ``push`` — which is
-        precisely why an aggregate line looked sufficient for so long.
+        The candidate CSV is built explicitly to carry every droppable step: the
+        gate removes the INTERSECTION of its drop set with the candidates, and the
+        default candidate list carries only some of them — which is precisely why
+        an aggregate line looked sufficient for so long.
         """
         _seed_marshal(ci_provider=None)
         _stub_footprint(['some/file.py'])
 
         candidates = list(DEFAULT_PHASE_6_STEPS)
-        for extra in ('pre-push-quality-gate', 'pre-submission-self-review'):
+        for extra in ('pre-push-quality-gate', 'pre-submission-self-review', 'functional-review', 'code-review'):
             if extra not in candidates:
                 candidates.insert(candidates.index('push'), extra)
 
@@ -108,6 +108,8 @@ class TestPreSubmissionSelfReviewSurvivesCompose:
             'push',
             'pre-push-quality-gate',
             'pre-submission-self-review',
+            'functional-review',
+            'code-review',
         }
         assert all(record['reason'] for record in dropped)
 

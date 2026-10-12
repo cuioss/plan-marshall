@@ -60,7 +60,7 @@ A **sixth role group — `orchestrator`** — sits OUTSIDE `plan`: it is rooted 
 
 | Sub-key | LLM-judgement workflow | Where it fires |
 |---------|------------------------|----------------|
-| `default` | The phase's primary workflow body (or any sub-workflow without its own sub-key — see "Workflow → resolver-key mapping" below). Also covers research dispatched from inside the phase, q-gate-validation, manage-architecture-enrich-module, create-pr, pre-submission-self-review, etc. | Every dispatch under that phase that does NOT pass `--role <subkey>`. |
+| `default` | The phase's primary workflow body (or any sub-workflow without its own sub-key — see "Workflow → resolver-key mapping" below). Also covers research dispatched from inside the phase, q-gate-validation, manage-architecture-enrich-module, create-pr, pre-submission-self-review, functional-review, code-review, etc. | Every dispatch under that phase that does NOT pass `--role <subkey>`. |
 | `verification-feedback` | Per-finding FIX / SUPPRESS / ACCEPT / AskUserQuestion triage with smart grouping. Producer-mode runtime input branches the data source: `build-runner`, `sonar`, `pr-comment`, `plugin-doctor`, `pr-state`. | phase-5-execute Step 11 + Step 11b (producer=build-runner); phase-6-finalize sonar-roundtrip (sonar), automated-review (pr-comment), `project:finalize-step-plugin-doctor` (plugin-doctor), `/workflow-pr-doctor` slash command (pr-state). |
 | `post-run-review` | Retrospective (eight analytical aspects) plus lessons extraction — both look back at the full plan history and ride the same level. | Opt-in `default:retrospective` / `default:lessons-capture` finalize steps AND the user-invokable `/plan-retrospective` slash command. |
 
@@ -103,6 +103,8 @@ Every dispatch site computes the level via `manage-config effort read --phase <c
 | manage-architecture-enrich-module | phase-6-finalize | `plan.phase-6-finalize.effort.default` *(no sub-key)* |
 | create-pr | phase-6-finalize | `plan.phase-6-finalize.effort.default` *(no sub-key)* |
 | pre-submission-self-review | phase-6-finalize | `plan.phase-6-finalize.effort.default` *(no sub-key)* |
+| functional-review (author and verifier dispatches) | phase-6-finalize | `plan.phase-6-finalize.effort.default` *(no sub-key)* |
+| code-review (author and verifier dispatches) | phase-6-finalize | `plan.phase-6-finalize.effort.default` *(no sub-key)* |
 | research (in-phase) | any phase | calling phase's `default` *(no sub-key)* |
 | research (`/research` standalone) | none | `--default` (zero-role fallback) |
 | verification-feedback (`producer=build-runner`) | phase-5-execute | `plan.phase-5-execute.effort.verification-feedback` → `plan.phase-5-execute.effort.default` → `plan.effort` |

@@ -99,7 +99,9 @@ the drain consumes. These keys are **required** — a landing missing any of the
 | `steps` | Comma-joined `{step}:{outcome}` for every finalize step in composed order. **A consumer splits each element on its LAST colon**, never its first: a namespaced step id contains a colon itself (`project:finalize-step-plugin-doctor:done`, `plan-marshall:plan-retrospective:done`), so a first-colon split yields the bare namespace as the step and the rest as the outcome. The split is APPLIED by the one consumer of this key, [`../workflow/analyze.md`](../workflow/analyze.md) § Step 4, which carries the worked example — this row states the rule, that step is its mechanism | `manage-status read` phase_steps |
 
 Optional keys a landing MAY carry (not required, so their absence is not incompleteness): `epic`,
-`total_wall_seconds`, and any per-step typed fact transcribed as `step.{name}.{fact_key}={value}`.
+`total_wall_seconds`, and any per-step typed fact transcribed as `step.{name}.{fact_key}={value}`. The
+functional review's verdict facts and the code review's counts are the named instances of the last
+kind — see § "Functional verdict facts" and § "Code-review counts" below.
 
 **A degraded value is not a fact.** A degraded value comes in TWO classes, and they are rejected on
 different terms because they assert different things.
@@ -134,6 +136,49 @@ nobody managed to read would drain as a settled "no PR exists".
 The block is **schema-versioned and fail-closed**: a block whose `schema` is not `landing-facts/1` is
 treated as INCOMPLETE, mirroring the envelope's `unknown_envelope_version` posture — a forward-compatible
 reader never best-effort-accepts an unrecognised payload version.
+
+## Functional verdict facts
+
+Whether the plan delivered what it was asked to deliver is the one outcome an epic most needs from a
+landing, and it is carried as four typed facts on the optional per-step channel — so an epic reads it
+without parsing a string. Each is the integer the `functional-review` finalize step recorded on its step
+record and `emit-landing.md` transcribed verbatim:
+
+| Optional key | Value |
+|--------------|-------|
+| `step.functional-review.deliverables_met` | How many outline deliverables the functional review graded `met` |
+| `step.functional-review.deliverables_met_with_residuals` | How many it graded `met_with_residuals` — delivered, with named residuals |
+| `step.functional-review.deliverables_not_met` | How many it graded `not_met` |
+| `step.functional-review.criteria_unevidenced` | How many success criteria carried no evidence |
+
+The grades themselves are defined by
+[`../../phase-6-finalize/standards/review-rubric.md`](../../phase-6-finalize/standards/review-rubric.md)
+§ 2; this table names only how they ride the landing. The four keys are OPTIONAL: the required key set
+above is unchanged, so a landing without them — a plan whose manifest dropped the review, or whose review
+never produced a verdict — is still COMPLETE. A consumer that finds none of the four reads "no functional
+verdict was recorded", never "every deliverable was met"; and a `deliverables_met` count carries its
+meaning only beside `deliverables_total` from the required set, against which a reader can see how many
+deliverables the review graded at all.
+
+## Code-review counts
+
+How the code review judged the change rides the landing as three typed facts on the same optional
+per-step channel. Each is the integer the `code-review` finalize step recorded on its step record and
+`emit-landing.md` transcribed verbatim:
+
+| Optional key | Value |
+|--------------|-------|
+| `step.code-review.blocking_count` | How many substantiated findings the code review graded `blocking` |
+| `step.code-review.advisory_count` | How many it graded `advisory` |
+| `step.code-review.rules_cited` | How many distinct rules its findings cited |
+
+The grading and the citation forms are defined by
+[`../../phase-6-finalize/standards/review-rubric.md`](../../phase-6-finalize/standards/review-rubric.md)
+§ 3 and § 5; this table names only how the counts ride the landing. The three keys are OPTIONAL: the
+required key set above is unchanged, so a landing without them — a plan whose manifest dropped the
+review, or whose review never produced findings — is still COMPLETE. A consumer that finds none of the
+three reads "no code-review result was recorded", never "the review found nothing"; a recorded
+`blocking_count` of `0` is the clean answer, and only a recorded one.
 
 ## The narrative residue section
 

@@ -2,23 +2,29 @@
 """Drift and orthogonality guards over the artifact set the cuioss-review-bot target emits.
 
 The subject is the EMITTED ARTIFACT SET, generated once from the real
-marketplace at collection time: one spine-free body per derived review domain,
-plus the spine artifact carrying the cross-cutting charter. Two guards protect
-it, and each answers a question the previous whole-pack population could not
-even express:
+marketplace at collection time. It holds two sets side by side: the security set
+(one spine-free body per derived review domain plus the spine artifact carrying
+the cross-cutting charter) and the code-review set (the ``code-review-`` prefixed
+artifacts). Two guards protect it, and each answers a question the previous
+whole-pack population could not even express:
 
 **Guard A — set identity.** The stems under ``packs/`` equal the derived domain
-set plus the spine. Both sides are population-derived but they are NOT the same
-population: the expected side comes from ``compose_packs``, the observed side
-from the filesystem, and the two are produced by different code paths. A domain
-that stops being emitted, or one emitted without being derived, fails here.
+sets of both derivations plus their two spines. Both sides are population-derived
+but they are NOT the same population: the expected side comes from the
+composers, the observed side from the filesystem, and the two are produced by
+different code paths. A domain that stops being emitted, or one emitted without
+being derived, fails here.
 
 **Guard B — orthogonality.** Each charter clause and each spine category is
-present in the spine artifact AND absent from every domain artifact. This is the
-assertion the purposive emission model requires: the charter must be neither
-lost nor duplicated, and a rendering change that silently re-folded spine text
-back into the domain artifacts would restore exactly the cross-repository
-duplication the published artifact set removes.
+present in the security spine artifact AND absent from every security domain
+artifact; each charter clause is likewise present in the code-review spine and
+absent from every code-review domain artifact. This is the assertion the
+purposive emission model requires: the charter must be neither lost nor
+duplicated, and a rendering change that silently re-folded spine text back into
+the domain artifacts would restore exactly the cross-repository duplication the
+published artifact set removes. The code-review charter is additionally pinned
+byte-identical to the shared review rubric, so the in-run code review and the bot
+work to one charter.
 
 **Check topology.** The population is DERIVED; the expectations it is measured
 against are NOT. Every expected value below is a literal declared in this module
@@ -56,13 +62,25 @@ from pathlib import Path
 import pytest
 
 from conftest import PROJECT_ROOT
-from marketplace.targets.cuioss_review_bot.target import CuiossReviewBotTarget, compose_packs
+from marketplace.targets.cuioss_review_bot import target as review_bot_target
+from marketplace.targets.cuioss_review_bot.target import (
+    CuiossReviewBotTarget,
+    compose_code_review_packs,
+    compose_packs,
+)
 
 MARKETPLACE_BUNDLES = PROJECT_ROOT / 'marketplace' / 'bundles'
+
+#: The shared grading contract whose § 9 states the code-review charter.
+REVIEW_RUBRIC = MARKETPLACE_BUNDLES / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / 'review-rubric.md'
 
 #: The stem of the artifact carrying the charter. Declared here as a literal so
 #: the set-identity comparison does not read the emitter's own constant.
 SPINE_STEM = 'spine'
+
+#: The name prefix of every code-review artifact, and the code-review spine's stem.
+CODE_REVIEW_PREFIX = 'code-review-'
+CODE_REVIEW_SPINE_STEM = 'code-review-spine'
 
 # ---------------------------------------------------------------------------
 # Population — generated ONCE, from the REAL marketplace, at collection time
@@ -81,19 +99,28 @@ PACKS_DIR = _OUTPUT_ROOT / 'packs'
 ARTIFACTS: dict[str, str] = {path.stem: path.read_text(encoding='utf-8') for path in sorted(PACKS_DIR.glob('*.md'))}
 ARTIFACT_IDS: list[str] = sorted(ARTIFACTS)
 
-#: The population partitioned. The spine is looked up with a default rather than
-#: subscripted so a run that emitted no spine FAILS its own population test
-#: instead of erroring during collection.
+#: The population partitioned into the two sets. A spine is looked up with a
+#: default rather than subscripted so a run that emitted no spine FAILS its own
+#: population test instead of erroring during collection.
 SPINE_ARTIFACT: str = ARTIFACTS.get(SPINE_STEM, '')
-DOMAIN_ARTIFACTS: dict[str, str] = {stem: body for stem, body in ARTIFACTS.items() if stem != SPINE_STEM}
+DOMAIN_ARTIFACTS: dict[str, str] = {
+    stem: body for stem, body in ARTIFACTS.items() if stem != SPINE_STEM and not stem.startswith(CODE_REVIEW_PREFIX)
+}
 DOMAIN_ARTIFACT_IDS: list[str] = sorted(DOMAIN_ARTIFACTS)
+CODE_REVIEW_SPINE_ARTIFACT: str = ARTIFACTS.get(CODE_REVIEW_SPINE_STEM, '')
+CODE_REVIEW_DOMAIN_ARTIFACTS: dict[str, str] = {
+    stem: body
+    for stem, body in ARTIFACTS.items()
+    if stem.startswith(CODE_REVIEW_PREFIX) and stem != CODE_REVIEW_SPINE_STEM
+}
 
-# ⛔ Vacuity guard — both populations are derived, so an empty one collects zero
-# cases at the parametrize below and still reports green. The whole set and the
-# domain partition are asserted separately because each is parametrized over on
-# its own, and a guard on one says nothing about the other.
+# ⛔ Vacuity guard — every population is derived, so an empty one collects zero
+# cases at the parametrize below and still reports green. Each partition is
+# asserted separately because each is measured on its own, and a guard on one
+# says nothing about the others.
 assert ARTIFACT_IDS, 'ARTIFACTS is empty'
 assert DOMAIN_ARTIFACT_IDS, 'DOMAIN_ARTIFACTS is empty'
+assert CODE_REVIEW_DOMAIN_ARTIFACTS, 'CODE_REVIEW_DOMAIN_ARTIFACTS is empty'
 
 # ---------------------------------------------------------------------------
 # Expectations — literals, copied from the org charter. Never imported.
@@ -135,6 +162,16 @@ CHARTER_CLAUSES = (
     INTENT_CLAUSE,
     SEVERITY_CLAUSE,
     ANTI_FABRICATION_CLAUSE,
+)
+CHARTER_CLAUSE_IDS = ['substantiation', 'intent', 'severity', 'anti-fabrication']
+
+#: Each charter literal beside the generator constant that must equal it. The
+#: literal is the expectation; the constant is what the rubric pin is measured on.
+CHARTER_CLAUSE_PAIRS = (
+    (SUBSTANTIATION_CLAUSE, review_bot_target.SUBSTANTIATION_CLAUSE),
+    (INTENT_CLAUSE, review_bot_target.INTENT_CLAUSE),
+    (SEVERITY_CLAUSE, review_bot_target.SEVERITY_CLAUSE),
+    (ANTI_FABRICATION_CLAUSE, review_bot_target.ANTI_FABRICATION_CLAUSE),
 )
 
 #: The cross-cutting review categories, copied from the org charter. They belong
@@ -238,8 +275,9 @@ def _emitted_stems() -> set[str]:
 
 
 def _derived_stems() -> set[str]:
-    """The stems the derivation says should exist: every domain, plus the spine."""
-    return set(compose_packs(MARKETPLACE_BUNDLES)) | {SPINE_STEM}
+    """The stems the derivations say should exist: every domain of both sets, plus both spines."""
+    code_review = {f'{CODE_REVIEW_PREFIX}{domain}' for domain in compose_code_review_packs(MARKETPLACE_BUNDLES)}
+    return set(compose_packs(MARKETPLACE_BUNDLES)) | {SPINE_STEM} | code_review | {CODE_REVIEW_SPINE_STEM}
 
 
 class TestPopulation:
@@ -344,6 +382,30 @@ class TestOrthogonalityCoverage:
         assert DOMAIN_ARTIFACTS, (
             "no domain artifact was emitted; Guard B's absence half would pass over an empty population"
         )
+
+
+@pytest.mark.parametrize(('clause', 'constant'), CHARTER_CLAUSE_PAIRS, ids=CHARTER_CLAUSE_IDS)
+class TestCodeReviewCharter:
+    """Guard B for the code-review set, and the one charter shared with the review rubric."""
+
+    def test_present_in_the_code_review_spine(self, clause, constant):
+        assert spine_carries(clause, CODE_REVIEW_SPINE_ARTIFACT), f'the code-review spine lost: {clause[:60]!r}'
+
+    def test_absent_from_every_code_review_domain_artifact(self, clause, constant):
+        offenders = domain_artifacts_carrying(clause, CODE_REVIEW_DOMAIN_ARTIFACTS)
+        assert not offenders, f'charter text re-appeared in code-review domain artifact(s) {offenders}'
+
+    def test_the_rubric_carries_it_byte_identical_to_the_generator(self, clause, constant):
+        """The rubric states the clause as a whole line equal to the generator's constant.
+
+        A whole-line match, not a substring: a rubric line that extended or
+        truncated the clause would still contain a substring of it.
+        """
+        rubric_lines = REVIEW_RUBRIC.read_text(encoding='utf-8').splitlines()
+
+        assert constant == clause, 'the generator constant drifted from the charter literal'
+        assert constant in rubric_lines, f'review-rubric.md does not state the clause verbatim: {clause[:60]!r}'
+        assert constant[:-1] not in rubric_lines, 'control: a truncated clause must not match a rubric line'
 
 
 class TestCategoryBudget:

@@ -74,3 +74,122 @@ class TestCeremonyFinalizeGenericSelfReviewForm:
         occurrences = sum(1 for s in steps if next(iter(_bare([s]))) == 'pre-submission-self-review')
         assert occurrences == 1
         assert 'pre-submission-self-review' not in result['ceremony_finalize_forced_in']
+
+
+# =============================================================================
+# Test: the functional_review gate — the functional review's own setting
+# =============================================================================
+
+
+class TestCeremonyFinalizeFunctionalReviewGate:
+    """``functional_review`` is decided by ``default:functional-review``'s own ``lane``.
+
+    ``off`` drops the step and ``minimal`` keeps it — even on a surgical scope,
+    where the scope gate would otherwise drop it. The gate is independent of the
+    structural self-review's ``self_review`` gate in both directions: switching one
+    off leaves the other review selected.
+    """
+
+    def _candidates(self) -> list[str]:
+        # DEFAULT_PHASE_6_STEPS carries the bare functional-review; the generic
+        # self-review form rides along so the two gates can be told apart.
+        return list(DEFAULT_PHASE_6_STEPS) + ['pre-push-quality-gate', 'default:pre-submission-self-review']
+
+    def _compose(self, plan_id: str, gates: dict[str, object], scope_estimate: str = 'multi_module') -> set[str]:
+        candidates = self._candidates()
+        _seed_marshal(finalize_gates=gates, candidates=candidates)
+        _stub_footprint(_FOOTPRINT)
+        result = cmd_compose(
+            _compose_ns(plan_id=plan_id, scope_estimate=scope_estimate, phase_6_steps=','.join(candidates))
+        )
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['ceremony_finalize_gates']['functional_review'] in ('never', 'always', 'auto')
+        return set(_bare(_manifest_phase_6_steps(result)))
+
+    def test_off_drops_functional_review(self, plan_context):
+        steps = self._compose('ceremony-functional-off', {'functional_review': 'off'})
+        assert 'functional-review' not in steps
+        # The structural self-review is governed by its own gate and stays selected.
+        assert 'pre-submission-self-review' in steps
+
+    def test_minimal_keeps_functional_review(self, plan_context):
+        steps = self._compose('ceremony-functional-minimal', {'functional_review': 'minimal'})
+        assert 'functional-review' in steps
+
+    def test_minimal_keeps_functional_review_past_the_surgical_scope_gate(self, plan_context):
+        steps = self._compose('ceremony-functional-surgical', {'functional_review': 'minimal'}, 'surgical')
+        assert 'functional-review' in steps
+
+    def test_surgical_scope_drops_functional_review_without_a_declared_lane(self, plan_context):
+        """Control for the test above: without the declaration the scope gate does drop it."""
+        steps = self._compose('ceremony-functional-surgical-auto', {'functional_review': 'standard'}, 'surgical')
+        assert 'functional-review' not in steps
+
+    def test_self_review_off_leaves_functional_review_selected(self, plan_context):
+        steps = self._compose('ceremony-self-review-off', {'self_review': 'off'})
+        assert 'pre-submission-self-review' not in steps
+        assert 'functional-review' in steps
+
+
+# =============================================================================
+# Test: the code_review gate — the code review's own setting
+# =============================================================================
+
+
+class TestCeremonyFinalizeCodeReviewGate:
+    """``code_review`` is decided by ``default:code-review``'s own ``lane``.
+
+    ``off`` drops the step and ``minimal`` keeps it — even on a surgical scope,
+    where the scope gate would otherwise drop it. The two review settings are
+    independent in both directions: switching ``code_review`` off leaves the
+    functional review selected, and switching ``functional_review`` off leaves the
+    code review selected.
+    """
+
+    def _candidates(self) -> list[str]:
+        # DEFAULT_PHASE_6_STEPS carries the bare functional-review and code-review.
+        return list(DEFAULT_PHASE_6_STEPS) + ['pre-push-quality-gate']
+
+    def _compose(self, plan_id: str, gates: dict[str, object], scope_estimate: str = 'multi_module') -> set[str]:
+        candidates = self._candidates()
+        _seed_marshal(finalize_gates=gates, candidates=candidates)
+        _stub_footprint(_FOOTPRINT)
+        result = cmd_compose(
+            _compose_ns(plan_id=plan_id, scope_estimate=scope_estimate, phase_6_steps=','.join(candidates))
+        )
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['ceremony_finalize_gates']['code_review'] in ('never', 'always', 'auto')
+        return set(_bare(_manifest_phase_6_steps(result)))
+
+    def test_both_reviews_are_default_candidates(self):
+        """Control: both reviews reach the composer without any gate declaration."""
+        assert {'functional-review', 'code-review'} <= set(DEFAULT_PHASE_6_STEPS)
+
+    def test_off_drops_code_review(self, plan_context):
+        steps = self._compose('ceremony-code-off', {'code_review': 'off'})
+        assert 'code-review' not in steps
+
+    def test_minimal_keeps_code_review(self, plan_context):
+        steps = self._compose('ceremony-code-minimal', {'code_review': 'minimal'})
+        assert 'code-review' in steps
+
+    def test_minimal_keeps_code_review_past_the_surgical_scope_gate(self, plan_context):
+        steps = self._compose('ceremony-code-surgical', {'code_review': 'minimal'}, 'surgical')
+        assert 'code-review' in steps
+
+    def test_surgical_scope_drops_code_review_without_a_declared_lane(self, plan_context):
+        """Control for the test above: without the declaration the scope gate does drop it."""
+        steps = self._compose('ceremony-code-surgical-auto', {'code_review': 'standard'}, 'surgical')
+        assert 'code-review' not in steps
+
+    def test_code_review_off_leaves_functional_review_selected(self, plan_context):
+        steps = self._compose('ceremony-code-off-functional-kept', {'code_review': 'off'})
+        assert 'code-review' not in steps
+        assert 'functional-review' in steps
+
+    def test_functional_review_off_leaves_code_review_selected(self, plan_context):
+        steps = self._compose('ceremony-functional-off-code-kept', {'functional_review': 'off'})
+        assert 'functional-review' not in steps
+        assert 'code-review' in steps

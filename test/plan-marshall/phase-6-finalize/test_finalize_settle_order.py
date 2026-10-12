@@ -35,6 +35,10 @@ a re-introduction of the defect goes red:
   push reconciliation record and the SHA-equality checks already govern).
 * The self-review sorts strictly after both code-mutating settle steps, so it
   reviews the final tree rather than a pre-simplification diff.
+* The functional and the code review each sort after the code-mutating settle
+  steps and before the refresh, the gate and the barrier; the code review sorts
+  directly after the functional review, and both are head-dependent and
+  read-only.
 * The anchor step itself is both head-dependent and source-mutating: it records
   ``head_at_completion`` on its terminal ``done`` (the anchor) and its builds
   write the ``kind=build`` ledger rows the push freshness gate reads.
@@ -48,6 +52,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import extension_discovery
+import pytest
 from extension_discovery import find_implementors
 
 #: The canonical ext-point whose implementors are the finalize steps.
@@ -67,6 +72,20 @@ _MUTATORS = (
     'default:finalize-step-simplify',
     'default:finalize-step-security-audit',
 )
+
+#: The functional review — it grades the settled tree, so it must follow the
+#: mutators and precede the derived-state refresh, the gate and the barrier.
+_FUNCTIONAL_REVIEW = 'default:functional-review'
+
+#: The code review — it judges the same settled tree, directly after the
+#: functional review and under the same ordering constraints.
+_CODE_REVIEW = 'default:code-review'
+
+#: Both reviews of the settled tree.
+_REVIEWS = (_FUNCTIONAL_REVIEW, _CODE_REVIEW)
+
+#: The derived-state refresh that must run after every review of the settled tree.
+_ARCHITECTURE_REFRESH = 'default:architecture-refresh'
 
 
 def _records() -> list[dict]:
@@ -186,6 +205,74 @@ def test_self_review_sorts_after_the_code_mutators():
         f'These code-mutating settle steps sort at or after {_SELF_REVIEW} '
         f'(order {review_order}), so the review examines a tree they later '
         f'rewrite: {offenders}'
+    )
+
+
+@pytest.mark.parametrize('review', _REVIEWS)
+def test_review_sorts_after_the_mutators_and_before_refresh_gate_and_push(review):
+    """GATE: each review grades the settled tree before anything certifies it.
+
+    Ordered before a code-mutating settle step, the review would grade a diff
+    that step later rewrites; ordered after the derived-state refresh, the quality
+    gate or the push barrier, a blocking finding would surface after the tree it
+    blocks was already refreshed, certified or shipped. Both directions are read
+    off discovery, never a literal order.
+    """
+    review_order = _order_of(review)
+    early = [f'{name} (order {_order_of(name)})' for name in _MUTATORS if _order_of(name) >= review_order]
+    assert not early, (
+        f'These code-mutating settle steps sort at or after {review} '
+        f'(order {review_order}), so the review grades a tree they later rewrite: {early}'
+    )
+    late = [
+        f'{name} (order {_order_of(name)})'
+        for name in (_ARCHITECTURE_REFRESH, _GATE, _PUSH)
+        if _order_of(name) <= review_order
+    ]
+    assert not late, (
+        f'{review} (order {review_order}) must sort strictly before these steps, which act on the tree it grades: {late}'
+    )
+
+
+def test_code_review_sorts_directly_after_the_functional_review():
+    """The two reviews are adjacent: nothing discovered sorts between them.
+
+    A step between the two would act on the tree after one review graded it and
+    before the other judged it, so the two would not read the same tree.
+    """
+    functional_order = _order_of(_FUNCTIONAL_REVIEW)
+    code_order = _order_of(_CODE_REVIEW)
+    assert functional_order < code_order, (
+        f'{_CODE_REVIEW} (order {code_order}) must sort after {_FUNCTIONAL_REVIEW} (order {functional_order}).'
+    )
+    between = [
+        f'{record.get("name")} (order {record.get("order")})'
+        for record in _records()
+        if isinstance(record.get('order'), int) and functional_order < record['order'] < code_order
+    ]
+    assert not between, f'These steps sort between the two reviews: {between}'
+
+
+@pytest.mark.parametrize('review', _REVIEWS)
+def test_review_is_head_dependent_and_read_only(review):
+    """Each review's verdict is a function of HEAD, and the review writes no source.
+
+    ``head_dependent: true`` makes a later commit re-fire the review instead of
+    leaving a stale verdict standing; ``mutates_source`` must stay false, or the
+    dispatcher would commit after it and the review would grade a tree it then
+    advanced past. A control on a known source-mutating step proves the reader
+    distinguishes the two answers.
+    """
+    doc_path = _doc_path(review)
+    assert _declares_true(doc_path, 'head_dependent'), (
+        f'{review} must declare head_dependent: true — a review verdict is computed against a HEAD.'
+    )
+    assert not _declares_true(doc_path, 'mutates_source'), (
+        f'{review} must not declare mutates_source: true — the review edits no tracked source.'
+    )
+    assert _declares_true(_doc_path(_GATE), 'mutates_source'), (
+        'control: the reader must report mutates_source: true for the quality gate, '
+        'or the negative assertion above proves nothing'
     )
 
 

@@ -305,3 +305,83 @@ def test_finalize_step_wrappers_mark_step_done_calls_present() -> None:
             f'recorded key would drift to bare form, re-introducing lesson '
             f'2026-05-20-08-005 (manifest ID vs phase_steps key divergence)'
         )
+
+
+# ---------------------------------------------------------------------------
+# Test 6: the two review steps are pinned across every roster surface
+# ---------------------------------------------------------------------------
+
+_PHASE_6_DIR = get_skill_dir('plan-marshall', 'phase-6-finalize')
+
+#: The two finalize reviews, by their bare step id. Each lives in
+#: ``workflow/{bare}.md`` and records under ``default:{bare}``.
+_REVIEW_STEPS = ('functional-review', 'code-review')
+
+
+@pytest.mark.parametrize('bare', _REVIEW_STEPS)
+def test_review_step_records_under_its_canonical_step_id(bare: str) -> None:
+    """Every terminal record the step body writes names ``default:{bare}``.
+
+    A mark-step-done call under any other spelling would record a key the
+    manifest does not carry, and the handshake would count the step missing.
+    """
+    content = (_PHASE_6_DIR / 'workflow' / f'{bare}.md').read_text(encoding='utf-8')
+    calls = [line for line in content.splitlines() if '--step ' in line and '--outcome' in line]
+    assert calls, 'control: the workflow must carry terminal mark-step-done calls'
+    named = {line.split('--step ', 1)[1].split()[0] for line in calls}
+    assert named == {f'default:{bare}'}, f'terminal records name other step ids: {sorted(named)}'
+
+
+@pytest.mark.parametrize('bare', _REVIEW_STEPS)
+def test_review_step_is_on_every_roster_surface(bare: str) -> None:
+    """The step is declared on each surface that enumerates finalize steps.
+
+    Each surface is a different reader's view of the roster: the handshake reads
+    ``required-steps.md``, the dispatcher reads the SKILL.md dispatch table and the
+    dispatched/inline split, and the renderer's reader the output template. A step
+    present on some and absent from others is routed by one reader and invisible to
+    another.
+    """
+    required = inv._parse_required_steps(_PHASE_6_DIR / 'standards' / 'required-steps.md')
+    assert bare in required
+    assert 'push' in required, 'control: the parser must read the real required-steps list'
+
+    skill = (_PHASE_6_DIR / 'SKILL.md').read_text(encoding='utf-8')
+    assert f'| `default:{bare}` | `workflow/{bare}.md` |' in skill
+
+    split = (_PHASE_6_DIR / 'standards' / 'dispatch-inline-split.md').read_text(encoding='utf-8')
+    assert f'- `default:{bare}` — ' in split
+
+    template = (_PHASE_6_DIR / 'standards' / 'output-template.md').read_text(encoding='utf-8')
+    assert f'| `{bare}` |' in template
+
+
+@pytest.mark.parametrize('bare', _REVIEW_STEPS)
+def test_phase_steps_complete_accepts_the_canonical_review_record(
+    bare: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A bare required bullet matches the bare key ``mark-step-done`` records.
+
+    ``mark-step-done`` strips the ``default:`` prefix before recording, so the
+    required-steps bullet and the recorded key are both the bare id.
+    The negative half — the step required but unrecorded — proves the check reads
+    the key rather than passing every metadata.
+    """
+    required = tmp_path / 'required-steps.md'
+    required.write_text(f'- {bare}\n', encoding='utf-8')
+    monkeypatch.setattr(inv, '_resolve_required_steps_path', lambda _p: required)
+
+    recorded = {
+        'phase_steps': {
+            '6-finalize': {
+                bare: {'outcome': 'done', 'display_detail': f'{bare} clean'},
+            }
+        }
+    }
+    assert len(inv._capture_phase_steps_complete('pid', recorded, '6-finalize')) == 16
+
+    with pytest.raises(inv.PhaseStepsIncomplete) as excinfo:
+        inv._capture_phase_steps_complete('pid', {'phase_steps': {'6-finalize': {}}}, '6-finalize')
+    assert excinfo.value.missing == [bare]
