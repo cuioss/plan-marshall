@@ -79,7 +79,7 @@ class TestReviewStepsSurviveCompose:
         _stub_footprint(['some/file.py'])
 
         candidates = list(DEFAULT_PHASE_6_STEPS)
-        for extra in ('pre-push-quality-gate', 'functional-review', 'code-review'):
+        for extra in ('pre-push-quality-gate', 'pre-submission-self-review', 'functional-review', 'code-review'):
             if extra not in candidates:
                 candidates.insert(candidates.index('push'), extra)
 
@@ -95,6 +95,7 @@ class TestReviewStepsSurviveCompose:
         assert {record['step'] for record in dropped} == {
             'push',
             'pre-push-quality-gate',
+            'pre-submission-self-review',
             'functional-review',
             'code-review',
         }

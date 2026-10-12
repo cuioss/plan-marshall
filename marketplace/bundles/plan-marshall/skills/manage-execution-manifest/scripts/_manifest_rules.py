@@ -244,7 +244,9 @@ def _snapshot_step_params(
 #: carries. ``push`` is the directly-disabled step; every other member is a
 #: pre-push gate that is only meaningful when a downstream push exists.
 _COMMIT_PUSH_DROP_REASON = 'commit_and_push is disabled — no downstream push exists'
-_COMMIT_PUSH_DROP_STEPS = frozenset({'push', 'pre-push-quality-gate', 'functional-review', 'code-review'})
+_COMMIT_PUSH_DROP_STEPS = frozenset(
+    {'push', 'pre-push-quality-gate', 'pre-submission-self-review', 'functional-review', 'code-review'}
+)
 
 
 def _apply_commit_push_disabled(
@@ -253,8 +255,8 @@ def _apply_commit_push_disabled(
     """Pre-filter: drop ``push`` and its push-only gates when pushing is disabled.
 
     Subtracts every member of :data:`_COMMIT_PUSH_DROP_STEPS` — ``push`` plus the
-    pre-push gates (``pre-push-quality-gate``, ``functional-review``,
-    ``code-review``) — when ``commit_and_push is False``: each gate goes
+    pre-push gates (``pre-push-quality-gate``, ``pre-submission-self-review``,
+    ``functional-review``, ``code-review``) — when ``commit_and_push is False``: each gate goes
     because it is only meaningful when a downstream push exists.
 
     Reporting follows the shared ``{step, reason}`` subtraction-record convention
@@ -441,6 +443,7 @@ _SCOPE_GATED_SURGICAL_DROP = frozenset(
     {
         'plan-retrospective',
         'plan-marshall:plan-retrospective',
+        'pre-submission-self-review',
         'functional-review',
         'code-review',
         'finalize-step-plugin-doctor',
@@ -558,7 +561,7 @@ def _apply_scope_gated_finalize(
     Subtractions:
 
     - ``scope_estimate == 'surgical'`` → drop ``plan-marshall:plan-retrospective``,
-      ``functional-review``, ``code-review`` and
+      ``pre-submission-self-review``, ``functional-review``, ``code-review`` and
       ``finalize-step-plugin-doctor`` (every bare and prefixed form — including
       the generic ``default:`` / meta-project ``project:`` variants).
     - ``scope_estimate == 'single_module'`` → drop only

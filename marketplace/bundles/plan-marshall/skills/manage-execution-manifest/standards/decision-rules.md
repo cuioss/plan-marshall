@@ -152,11 +152,11 @@ The `security_class_inactive` gate below is the reference implementation of this
 
 The pre-filters run in this order:
 
-1. **`commit_push_disabled`** — drops `push`, `pre-push-quality-gate`, `functional-review` AND `code-review` when no push will occur, reporting one record per dropped step.
+1. **`commit_push_disabled`** — drops `push`, `pre-push-quality-gate`, `pre-submission-self-review`, `functional-review` AND `code-review` when no push will occur, reporting one record per dropped step.
 2. **`pre_push_quality_gate_inactive`** — drops `pre-push-quality-gate` ONLY on a positive `not_necessary` build verdict. An `unknown` verdict keeps the step.
 3. **`simplify_inactive`** — drops `finalize-step-simplify` when `change_type ∉ {feature, bug_fix, tech_debt, enhancement}` OR `affected_files_count == 0`.
 3b. **`security_class_inactive`** — drops a **security-class** step (any candidate whose source doc declares `persona: persona-security-expert`) only when `affected_files_count == 0` **AND** the live footprint is resolvable-and-empty. It shares no helper and no gate with `simplify_inactive`: there is no `change_type` leg, so the gate fails toward inclusion. An UNRESOLVABLE footprint is no evidence and keeps the step.
-4. **`scope_gated_finalize`** — drops heavyweight phase-6 review/audit steps by `scope_estimate`: `surgical` drops `plan-retrospective`, `functional-review`, `code-review` and `plugin-doctor`; `single_module` drops only `plan-retrospective`. A step declaring an explicit non-`standard` per-element `lane` override — in EITHER declaration channel — is immune and is never dropped here.
+4. **`scope_gated_finalize`** — drops heavyweight phase-6 review/audit steps by `scope_estimate`: `surgical` drops `plan-retrospective`, `pre-submission-self-review`, `functional-review`, `code-review` and `plugin-doctor`; `single_module` drops only `plan-retrospective`. A step declaring an explicit non-`standard` per-element `lane` override — in EITHER declaration channel — is immune and is never dropped here.
 5. **`unresolved_ask_provider_drop`** — drops an UNRESOLVED `lane: ask` infra element (`plan-marshall:automatic-review` / `default:sonar-roundtrip`) when its corresponding provider is genuinely absent (no CI provider for `automatic-review`; no Sonar provider for `sonar-roundtrip`). A resolved ask (`off`/`standard`/`full`) and a provider-configured ask both survive. Documented in its own subsection below.
 
 Each row that emits a Phase 6 list (whether by intersection, subtraction, or pass-through) operates on the already-filtered candidate list, so the resulting `phase_6.steps` will never contain a step removed by any pre-filter that ran before the row matrix.
@@ -173,7 +173,7 @@ The sort is asserted by the [`phase_6_order_violation`](#post-compose-assertion-
 
 **Condition**: `commit_and_push == false`.
 
-**Effect**: `push`, `pre-push-quality-gate`, `functional-review` AND `code-review` are all removed from `phase_6_candidates` before the rows are evaluated. The pre-filter removes the pre-push gating steps because they are meaningless without a downstream push — they exist solely to gate code that will be sent to remote CI.
+**Effect**: `push`, `pre-push-quality-gate`, `pre-submission-self-review`, `functional-review` AND `code-review` are all removed from `phase_6_candidates` before the rows are evaluated. The pre-filter removes the pre-push gating steps because they are meaningless without a downstream push — they exist solely to gate code that will be sent to remote CI.
 
 **Why a pre-filter (not an eighth row)**: `commit_and_push` is configuration known at outline time and is orthogonal to the row matrix's change-type / scope / recipe inputs. A row would have to either short-circuit (and re-implement the six rows' Phase 5 logic) or duplicate the filter into every row. Modeling it as a pre-filter keeps the six-row matrix unchanged and lets the composer emit one extra `decision.log` entry naming the omission.
 
@@ -284,7 +284,7 @@ When the plan has any change surface, the pre-filter is a no-op and emits no log
 
 **Effect**: heavyweight phase-6 review/audit steps are removed from `phase_6_candidates` by scope before the rows are evaluated:
 
-- **`scope_estimate == 'surgical'`** — drops `plan-marshall:plan-retrospective`, functional-review, code-review, and `project:finalize-step-plugin-doctor`. Every bare and prefixed form is matched: for the two built-in reviews this covers `default:functional-review` and `default:code-review` (normalized to their bare forms at intake). The candidate list is `default:`-namespace-normalized at intake, but `project:` / `bundle:skill` prefixes are preserved verbatim.
+- **`scope_estimate == 'surgical'`** — drops `plan-marshall:plan-retrospective`, pre-submission-self-review, functional-review, code-review, and `project:finalize-step-plugin-doctor`. Every bare and prefixed form is matched: for the three built-in reviews this covers `default:pre-submission-self-review`, `default:functional-review` and `default:code-review` (normalized to their bare forms at intake). The candidate list is `default:`-namespace-normalized at intake, but `project:` / `bundle:skill` prefixes are preserved verbatim.
 - **`scope_estimate == 'single_module'`** — drops only `plan-marshall:plan-retrospective`.
 - **`scope_estimate ∈ {none, multi_module, broad}`** — no implicit subtraction; the full candidate set survives into the matrix.
 
@@ -530,7 +530,7 @@ The `order`-resolution verdicts backing the gate live in `_manifest_validation._
 
 **What the preview cannot apply**: the remaining pre-filters, the six-row matrix, and `ceremony_finalize_selection` all read PLAN inputs (`change_type` / `scope_estimate` / `track` / `affected_files_count` / `commit_and_push` / the live footprint) that do not exist at preview time — the preview runs at the init dialogue, before those values are settled.
 
-**How it refuses diagnosably**: rather than silently rendering a membership `compose` may not reach, the preview returns `plan_input_dependent_steps[]` — the emitted steps still subject to a plan-input-dependent decision (the `push` / `pre-push-quality-gate` / `functional-review` / `code-review` / `finalize-step-simplify` / `finalize-step-security-audit` / `plan-retrospective` / `plugin-doctor` family). A security-class step stays in this family under `security_class_inactive`: the gate no longer reads `change_type`, but `affected_files_count` and the live footprint are equally unavailable at preview time. An empty list means preview and compose agree on membership outright. A named step means "the preview shows this, and a plan input may still remove it" — an explicit statement of uncertainty rather than a false claim of agreement.
+**How it refuses diagnosably**: rather than silently rendering a membership `compose` may not reach, the preview returns `plan_input_dependent_steps[]` — the emitted steps still subject to a plan-input-dependent decision (the `push` / `pre-push-quality-gate` / `pre-submission-self-review` / `functional-review` / `code-review` / `finalize-step-simplify` / `finalize-step-security-audit` / `plan-retrospective` / `plugin-doctor` family). A security-class step stays in this family under `security_class_inactive`: the gate no longer reads `change_type`, but `affected_files_count` and the live footprint are equally unavailable at preview time. An empty list means preview and compose agree on membership outright. A named step means "the preview shows this, and a plan input may still remove it" — an explicit statement of uncertainty rather than a false claim of agreement.
 
 ## execution_tier Routing
 
