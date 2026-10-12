@@ -148,8 +148,8 @@ def _seed_keyed_map_marshal(fixture_dir: Path) -> None:
 # the earliest finalize step to the archive-plan barrier. Every entry resolves to
 # a non-None frontmatter order, so all participate in the ascending assertion.
 _ORDER_RESOLVABLE_CANDIDATES = [
-    'finalize-step-sync-baseline',  # order 3
-    'architecture-refresh',  # order 10
+    'finalize-step-sync-baseline',  # order 1
+    'architecture-refresh',  # order 9
     'push',  # order 11
     'ci-verify',  # order 22
     'branch-cleanup',  # order 70
@@ -185,8 +185,8 @@ _SHUFFLED_SEED_ORDERINGS = [
         'branch-cleanup',  # 70
         'ci-verify',  # 22
         'push',  # 11
-        'architecture-refresh',  # 10
-        'finalize-step-sync-baseline',  # 3
+        'architecture-refresh',  # 9
+        'finalize-step-sync-baseline',  # 1
     ],
     # High/low interleave: archive-plan mid-list, high-order steps scattered
     # among low-order ones.

@@ -214,7 +214,7 @@ In both cases the step body can access the plan's context via manage-* scripts (
 
 The finalize pipeline is a **mutation-settling stage**: every LOCAL, HEAD-changing step settles BEFORE the single push, and the wait region runs AFTER it off one settled HEAD. The stages, by `order:`:
 
-- **SETTLE (local HEAD-changing, `order < 11`)** — `finalize-step-sync-baseline` (3, rebase→HEAD), `finalize-step-simplify` (5, edits→HEAD) / `project:finalize-step-plugin-doctor` (6, lint gate) / `finalize-step-security-audit` (7, hardening→HEAD), `pre-submission-self-review` (8, review of the settled tree — ordered after the mutating steps so it examines the tree the push ships rather than a pre-simplification diff), `architecture-refresh` (9, derived-state — refreshes the descriptors after the code-mutating settle edits, including security-audit's hardening, so the descriptors describe the settled tree), and `pre-push-quality-gate` (10, gate — sorts LAST in the settle band so its `head_at_completion` anchors the exact tree the push barrier ships; every `mutates_source: true` step ordered below it commits before the ledger row its builds write, so those commits are covered by it and produce no re-stale). Each mutating step's edits are committed on the feature branch by the dispatcher's commit instrumentation (Step 3 item 5f) before the barrier runs.
+- **SETTLE (local HEAD-changing, `order < 11`)** — `finalize-step-sync-baseline` (1, rebase→HEAD), `finalize-step-simplify` (3, edits→HEAD) / `project:finalize-step-plugin-doctor` (4, lint gate) / `finalize-step-security-audit` (5, hardening→HEAD), `pre-submission-self-review` (8, review of the settled tree — ordered after the mutating steps so it examines the tree the push ships rather than a pre-simplification diff), `architecture-refresh` (9, derived-state — refreshes the descriptors after the code-mutating settle edits, including security-audit's hardening, so the descriptors describe the settled tree), and `pre-push-quality-gate` (10, gate — sorts LAST in the settle band so its `head_at_completion` anchors the exact tree the push barrier ships; every `mutates_source: true` step ordered below it commits before the ledger row its builds write, so those commits are covered by it and produce no re-stale). Each mutating step's edits are committed on the feature branch by the dispatcher's commit instrumentation (Step 3 item 5f) before the barrier runs.
 - **PUSH (`order: 11`)** — the single `default:push` barrier ships the fully-settled HEAD. There is exactly ONE push.
 - **WAIT (post-push, `order > 11`)** — `create-pr`, `ci-verify`, `automatic-review`, `sonar-roundtrip` are the D4 **concurrent WAIT barrier** off that one settled HEAD (see § the wait-region narrative for the barrier mechanics — this section does not restate it). Post-push HEAD mutations that structurally REQUIRE the remote PR (sonar/review fix application) are NOT pulled before the push — they are absorbed by the D4 bounded re-settle mutation-fixpoint. `adr-propose` (62) then runs before `branch-cleanup` (70) merges.
 - **POST-RUN REVIEW (post-merge, `order > 70`)** — every step declaring `post_run_review: true` runs after the merge gate, because at least one input it reads is only determined at or after that gate (the merge outcome, the post-merge base-branch state, or the re-review barrier's bot comments and triage dispositions). Membership is the declared fact, never a list here — see [`../extension-api/standards/ext-point-finalize-step.md`](../extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter" for the P1 ∧ P2 discriminator. Such a step writes no tracked source (`mutates_source: false` is mandatory for it, and the mutual exclusion falls out of P2), so the post-merge band mutates nothing and needs no push.
@@ -554,7 +554,7 @@ The precondition resolver is dispatcher-internal — it produces no `phase_steps
 
 **Commit instrumentation contract**: the dispatcher owns every commit a finalize step's edits produce. A step states whether it mutates source via the `mutates_source: true|false` frontmatter fact on its authoritative doc (the `standards/{name}.md` or `workflow/{name}.md` that declares the step's `order:`). After a `mutates_source: true` step records its terminal `done`/`skipped` outcome, the dispatcher runs `git -C {worktree_path} status --porcelain`; if non-empty, it commits the changes on the feature branch via `Skill: workflow-integration-git` Commit Changes (`push: false`), using the step's returned `commit_message` field, falling back to `chore(finalize): apply {step_id} changes`. Read-only (`mutates_source: false`) steps are never instrumented. The per-step instrumentation runs at item 5f of the FOR loop (see below). Every mutating step's output is committed before the dispatcher advances, so a mutating step can never leave uncommitted edits that a later step silently drops; the correct ordering — push only once the mutating quality steps have converged — falls out of plain `order:` values with no special placement invariant.
 
-**Post-rebase step-doc re-resolution contract**: a step states whether a successful run advances `main` via the `advances_main_via_rebase: true|false` frontmatter fact on its authoritative doc (a sibling of `mutates_source`, declared by `finalize-step-sync-baseline` at `order: 3` and `branch-cleanup` at `order: 70` — the two steps that rebase the feature branch onto the freshly-fetched `origin/{base_branch}` tip). After a step whose authoritative doc declares `advances_main_via_rebase: true` records a terminal outcome AND actually advanced `main` (a **non-noop rebase** — the step's own return distinguishes a real replay from an `action: noop`; a noop advanced nothing and arms nothing), the dispatcher MUST, for every **subsequent** step in the FOR loop, re-read that step's authoritative `standards/{name}.md` / `workflow/{name}.md` doc **from the just-rebased `{worktree_path}` at the point of dispatch** rather than trusting the copy loaded into context at session start. The session-start context copy predates the rebase; the worktree now holds the post-rebase tree, and the two can disagree.
+**Post-rebase step-doc re-resolution contract**: a step states whether a successful run advances `main` via the `advances_main_via_rebase: true|false` frontmatter fact on its authoritative doc (a sibling of `mutates_source`, declared by `finalize-step-sync-baseline` at `order: 1` and `branch-cleanup` at `order: 70` — the two steps that rebase the feature branch onto the freshly-fetched `origin/{base_branch}` tip). After a step whose authoritative doc declares `advances_main_via_rebase: true` records a terminal outcome AND actually advanced `main` (a **non-noop rebase** — the step's own return distinguishes a real replay from an `action: noop`; a noop advanced nothing and arms nothing), the dispatcher MUST, for every **subsequent** step in the FOR loop, re-read that step's authoritative `standards/{name}.md` / `workflow/{name}.md` doc **from the just-rebased `{worktree_path}` at the point of dispatch** rather than trusting the copy loaded into context at session start. The session-start context copy predates the rebase; the worktree now holds the post-rebase tree, and the two can disagree.
 
 The dispatcher MUST additionally treat a subsequent `workflow_not_found` (or a missing dispatch target / unresolved standards path) as the **FIRST-hypothesis signal of post-rebase version skew**, not as proof the doc is genuinely absent: before concluding the step is unrunnable, re-resolve the target from the just-rebased `{worktree_path}` (re-read the standards/workflow doc at its worktree path, re-derive the dispatch target) and only surface a genuine "missing" error when the worktree copy is also absent.
 
@@ -2238,6 +2238,7 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 | `scripts/ci_complete_precondition.py` | `plan-marshall:phase-6-finalize:ci_complete_precondition` | Resolver for the `requires: [ci-complete]` frontmatter precondition, with a per-HEAD cache and a harness-ceiling clamp |
 | `scripts/derive_gate_bundles.py` | `plan-marshall:phase-6-finalize:derive_gate_bundles` | Derives the unique bundle set the pre-push quality gate runs over, from the live footprint |
 | `scripts/review_commitments.py` | `plan-marshall:phase-6-finalize:review_commitments` | Reconciles a simplify pass's deletions against the review commitments made earlier in the SAME finalize run — reports conflicts, gates nothing |
+| `scripts/review_support.py` | `plan-marshall:phase-6-finalize:review_support` | Deterministic halves of the functional and code reviews — per-deliverable attribution with unrequested-change candidates and delta-round selection (`attribution`), the reviewed domain set with provenance (`domains`), and verdict validation that derives the grading, loop-back target, `may_close` and the recorded facts (`validate`); the blocking line it applies is stated in [`standards/review-rubric.md`](standards/review-rubric.md) |
 | `scripts/pr_intent_section.py` | `plan-marshall:phase-6-finalize:pr_intent_section` | Renders the distilled `## Intent` section into the generated PR body — owns the character budget and its visible truncation, and omits the section entirely (heading included) when the plan has no outline intent |
 | `scripts/post_run_source_guard.py` | `plan-marshall:phase-6-finalize:post_run_source_guard` | Runtime tracked-source guard for the `post_run_review` band (item 5f sub-item 0) — reports dirty TRACKED paths (source, or a tracked `.plan/` config/descriptor) left by a step that declared `mutates_source: false`; the `.plan/` exemption is keyed on git trackedness, not the path prefix; publishes the examined population (`considered_paths` / `exempted_paths` / `offending_paths`); advisory and non-blocking (always exits 0) |
 | `scripts/verdict_currency.py` | `plan-marshall:phase-6-finalize:verdict_currency` | Classifies whether a HEAD advance invalidates a head-dependent step's recorded verdict, by diffing the recorded SHA's tree against the live HEAD over the step's declared `verdict_inputs` surface; fails closed to `invalidated` on every uncertainty (`classify`). Its read-only `changed-paths` verb lists the paths that differ between a step's own recorded `head_at_completion` and the live HEAD, through the same tree-difference derivation |
@@ -2246,7 +2247,7 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 
 ## Canonical invocations
 
-The canonical argparse surface for `ci_complete_precondition.py`, `pr_intent_section.py`, `post_run_source_guard.py`, `pre_merge_gate.py`, `review_commitments.py` and `verdict_currency.py`. The plugin-doctor `missing-canonical-block` rule checks that this section is PRESENT, matching its heading only — the body is never read; `manage-invocation-invalid` derives its accept-set from a live `--help` walk rather than from this section. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+The canonical argparse surface for `ci_complete_precondition.py`, `pr_intent_section.py`, `post_run_source_guard.py`, `pre_merge_gate.py`, `review_commitments.py`, `review_support.py` and `verdict_currency.py`. The plugin-doctor `missing-canonical-block` rule checks that this section is PRESENT, matching its heading only — the body is never read; `manage-invocation-invalid` derives its accept-set from a live `--help` walk rather than from this section. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
 
 ### ci_complete_precondition — resolve
 
@@ -2362,6 +2363,63 @@ carries NO `verdict` field, so a crashed reconciliation reads as UNKNOWN rather 
 as a clear pass. See
 [`standards/finalize-step-simplify.md`](standards/finalize-step-simplify.md)
 § "Reconcile against the run's review commitments".
+
+### review_support — attribution
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:review_support attribution \
+  --plan-id PLAN_ID [--delta-step DELTA_STEP]
+```
+
+Read-only. Per outline deliverable it returns one `deliverables[]` row carrying
+`attribution_source: ledger | declared_only`; a `declared_only` row names its
+`reason` — `no_ledger_rows`, `deliverable_id_absent`, `commit_not_on_branch` (the
+normal case after a rebase rewrote the SHAs) or `branch_unresolved`. `files[]`
+lists each deliverable's code set — its declared write set plus the files the
+change ledger's on-branch `kind=change` rows attribute to it — with each path's
+`origin`. `unrequested_candidates` lists the realized-footprint files no
+deliverable owns; it is ABSENT, never empty, when the footprint could not be
+derived (`footprint_source: unresolved`).
+
+With `--delta-step`, the round is anchored on that step's recorded completion
+(the same tree difference `verdict_currency changed-paths` computes):
+`round_kind: delta` keeps only the deliverables whose code set intersects the
+changed paths, and `round_kind: full` is returned when the outcome is
+`first_firing`, `last_firing_not_done` or `diff_unavailable`. Without the flag the
+round is `full` (`round_reason: no_delta_step`).
+
+### review_support — domains
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:review_support domains \
+  --plan-id PLAN_ID
+```
+
+Read-only. Returns the union of the plan's `references.json` `domains` and every
+configured skill domain whose `file_globs` match the realized footprint, each row
+carrying `provenance: declared | footprint | both`. The footprint is read by the
+script itself, so no path is interpolated into a command line.
+
+### review_support — validate
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:review_support validate \
+  --plan-id PLAN_ID --kind {functional,code} --verdict-file VERDICT_FILE \
+  [--verifier-file VERIFIER_FILE]
+```
+
+Checks the author's JSON verdict against the schema documented in the script's
+module docstring and grades it on the blocking line of
+[`standards/review-rubric.md`](standards/review-rubric.md). A `met` criterion
+without evidence is rewritten to `unevidenced` and listed under `rewrites`; an
+uncited code finding is listed under `rejected_findings`. A verdict with a schema
+error or a rejected finding returns `valid: false` with `may_close: false` and
+carries no `facts`, `findings` or `loop_back_target`. A valid verdict returns the
+graded `findings[]`, `loop_back_target` (`5-execute` when any blocking finding is an
+implementation gap, `6-finalize` when every one is a correction, `none` without a
+blocking finding), `may_close` (no blocking finding AND a verifier answer of
+`accepted`) and the `facts` the step records. An unreadable verdict file or a
+missing outline returns `status: error`. The command exits `0` on every outcome.
 
 ## Related
 

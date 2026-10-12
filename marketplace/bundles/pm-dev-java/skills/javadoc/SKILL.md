@@ -1,6 +1,6 @@
 ---
 name: javadoc
-description: JavaDoc documentation standards including class, method, and code example patterns
+description: JavaDoc documentation standards including class, method, and code example patterns, plus the documentation-accuracy review rules a code review cites
 user-invocable: false
 mode: knowledge
 ---
@@ -141,3 +141,12 @@ Contains both class-level and method-level JavaDoc patterns with all standard ta
 | javadoc-method-documentation.md | Method-level documentation |
 | javadoc-code-examples.md | @snippet and @code patterns |
 | javadoc-error-reference.md | Error troubleshooting |
+
+## Review Rules
+
+The review rules of the java domain for documentation accuracy — what a code review looks for in changed JavaDoc. The block follows the harvestable block contract — see [`review-rubric.md` § 10 "Harvestable review-rule blocks"](../../../plan-marshall/skills/phase-6-finalize/standards/review-rubric.md) for its rules, which are not restated here.
+
+- A `@param` tag whose name no longer matches a parameter of the method, or a parameter the change added with no `@param`, so the documented contract describes an argument the method does not take.
+- A `@throws` tag for an exception the method no longer throws, or a newly thrown checked or documented exception with no `@throws`, so a caller handles the wrong failure.
+- A JavaDoc nullness or return claim ("never returns null", "returns an empty list when …") that the implementation contradicts, so a caller omits the check the actual return value needs.
+- A `{@link}` or `@see` reference to a class or member the change renamed or removed, so the reference points nowhere and the JavaDoc build fails under doclint.

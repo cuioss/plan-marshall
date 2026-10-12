@@ -1326,9 +1326,9 @@ def test_plan_phase_2_refine_get_simplicity_returns_lean_default(plan_context):
 def test_built_in_finalize_steps_places_simplify_before_push():
     """default:finalize-step-simplify sits BEFORE default:push in the discovered seed.
 
-    The settle head order is sync-baseline (index 0, order 3 — the early baseline
-    rebase), finalize-step-simplify (index 1, order 5 — the first code-mutating
-    settle step), finalize-step-security-audit (index 2, order 7, mutates source),
+    The settle head order is sync-baseline (index 0, order 1 — the early baseline
+    rebase), finalize-step-simplify (index 1, order 3 — the first code-mutating
+    settle step), finalize-step-security-audit (index 2, order 5, mutates source),
     pre-submission-self-review (index 3, order 8 — the structural self-review that
     runs after the mutators so it examines the settled tree),
     architecture-refresh (index 4, order 9 — the derived-state refresh that captures
@@ -1340,7 +1340,7 @@ def test_built_in_finalize_steps_places_simplify_before_push():
     """
     steps = _discovered_seed_step_ids()
 
-    # presence and relative head order (simplify (5) and security-audit (7) run
+    # presence and relative head order (security-audit (5) and simplify (3) run
     # before the self-review (8); the derived-state refresh (9) and the quality
     # gate (10, last in the settle band) sit between the review and push (11))
     assert 'default:finalize-step-simplify' in steps, (
@@ -1376,7 +1376,7 @@ def test_built_in_finalize_step_descriptions_includes_finalize_step_simplify():
 def test_built_in_finalize_steps_orders_simplify_then_push():
     """Canonical order: simplify before push.
 
-    simplify is a mutates_source step (order 5) and push is the pure barrier
+    simplify is a mutates_source step (order 3) and push is the pure barrier
     (order 11), so the canonical chain is simplify < push.
     """
     steps = _discovered_seed_step_ids()

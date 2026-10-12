@@ -4,15 +4,16 @@
 
 *"What did review catch that the in-house gates did not"* is the only direct read
 on gate/review parity available, and it arrives free on every PR: the gates run
-before review (`pre-push-quality-gate` at order 5, self-review at 7, against
+before review (self-review at order 8, `pre-push-quality-gate` at 10, against
 `automatic-review` at 30), so a finding filed against a tree the gates already
 passed IS a gate escape. No per-finding gate attribution is needed.
 
-**But "the gates passed" is not "the gates saw this tree".** Source-mutating steps
-run between certification and review — `finalize-step-simplify` (8) and
-`finalize-step-security-audit` (9), and the gate itself (5), whose own item-5f
-commit lands after the tree it just certified — and a forward pass never returns to
-order 5 to re-gate their edits, so the escape claim rests on the gate-certified tree
+**But "the gates passed" is not "the gates saw this tree".** The code-mutating
+settle steps — `finalize-step-simplify` (3) and `finalize-step-security-audit` (5)
+— sort before both gates, so their edits are certified; what still lands after
+certification is the gate's own item-5f commit (10), committed after the tree it
+just certified, and post-push advances such as loop-back fixes. A forward pass never
+returns to order 10 to re-gate those, so the escape claim rests on the gate-certified tree
 and the reviewed tree being the SAME tree, proven by SHA rather than assumed. No
 count is pinned here: membership is whatever each step's declared `mutates_source`
 makes it, so a step that declares the fact later is covered by its own declaration.

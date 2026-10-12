@@ -9,7 +9,7 @@ description: Finalize-phase wrapper that reconciles the just-finished plan's out
 user-invocable: false
 mode: workflow
 allowed-tools: Bash, Read, Edit
-order: 4
+order: 2
 mutates_source: true
 head_dependent: true
 records_facts:
@@ -48,7 +48,7 @@ Accepts the standard finalize-step arguments:
 
 This step edits tracked source (its Step 4b promotions write governing-skill docs), so it declares `mutates_source: true` and MUST run in the **pre-merge settle band** (`order < 11`):
 
-- **before `default:pre-push-quality-gate` (5)** — so its promotion edits are linted in the same finalize run that wrote them, rather than surfacing as a lint failure on a later plan.
+- **before `default:pre-push-quality-gate` (10)** — so its promotion edits are linted in the same finalize run that wrote them, rather than surfacing as a lint failure on a later plan.
 - **before `default:push` (11) and `default:branch-cleanup` (70)** — so those edits are pushable onto the still-open feature branch and covered by the PR's CI run and review.
 
 This settle-band constraint **supersedes** the former requirement to run after `plan-marshall:plan-retrospective` (order 995): pushability of source edits outranks reading a retrospective artifact that this step already treats as best-effort. See [marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/source-edit-pushability.md](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/source-edit-pushability.md) for the governing contract.
@@ -93,10 +93,10 @@ The exception is deliberately narrow:
 The canonical phase-6-finalize chain (resolved by each step's `order:` frontmatter):
 
 ```text
-default:finalize-step-sync-baseline             (3)
-project:finalize-step-lessons-housekeeping      (4)    <-- this step
-default:pre-push-quality-gate                   (5)
+default:finalize-step-sync-baseline             (1)
+project:finalize-step-lessons-housekeeping      (2)    <-- this step
 ...                                             (settle band, order < 11)
+default:pre-push-quality-gate                   (10)
 default:push                                    (11)
 ```
 
