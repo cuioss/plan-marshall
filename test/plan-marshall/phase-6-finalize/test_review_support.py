@@ -52,11 +52,11 @@ SKILL_DOMAINS = {
 }
 
 
-def _outline(files: dict[int, list[tuple[str, str]]]) -> str:
+def _outline(files: dict[int, list[tuple[str, str]]], criteria_by_number: dict[int, list[str]] = CRITERIA) -> str:
     blocks = []
     for number, entries in files.items():
         affected = '\n'.join(f'- `{path}` ({intent})' for path, intent in entries)
-        criteria = '\n'.join(f'- {text}' for text in CRITERIA[number])
+        criteria = '\n'.join(f'- {text}' for text in criteria_by_number[number])
         blocks.append(
             f'### {number}. {TITLES[number]}\n\n**Affected files:**\n{affected}\n\n**Success Criteria:**\n{criteria}\n'
         )
@@ -78,9 +78,15 @@ class Env:
         monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: self.worktree)
         monkeypatch.setattr(_attr, 'load_config', lambda *_a, **_k: {'skill_domains': SKILL_DOMAINS})
 
-    def plan(self, files: dict[int, list[tuple[str, str]]] = PY_FILES, plan_id: str = PLAN_ID, **refs: Any) -> None:
+    def plan(
+        self,
+        files: dict[int, list[tuple[str, str]]] = PY_FILES,
+        plan_id: str = PLAN_ID,
+        criteria: dict[int, list[str]] = CRITERIA,
+        **refs: Any,
+    ) -> None:
         plan_dir = self.plan_context.plan_dir_for(plan_id)
-        (plan_dir / _attr.SOLUTION_FILE).write_text(_outline(files), encoding='utf-8')
+        (plan_dir / _attr.SOLUTION_FILE).write_text(_outline(files, criteria), encoding='utf-8')
         (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main', **refs}), encoding='utf-8')
 
     def repo(self, name: str = 'repo') -> str:
@@ -193,6 +199,39 @@ def test_evidenced_criteria_produce_no_rewrite_and_no_finding(env: Env) -> None:
     assert payload['rewrites'] == []
     assert payload['findings'] == []
     assert payload['facts']['criteria_unevidenced'] == 0
+    assert payload['facts']['criteria_checked'] == 3
+
+
+@pytest.mark.parametrize('verdict', ['met', 'met_with_residuals'])
+def test_delivered_verdict_without_any_criterion_row_is_invalid_when_the_outline_has_none(
+    env: Env, verdict: str
+) -> None:
+    """With no parsed outline criterion the row-count check is vacuous, so an empty list must not pass."""
+    env.plan(criteria={1: CRITERIA[1], 2: []})
+    row: dict[str, Any] = {'number': 2, 'verdict': verdict, 'criteria': []}
+    if verdict == 'met_with_residuals':
+        row['residuals'] = [{'description': 'example missing', 'consequential': False}]
+    verdict_doc = _functional()
+    verdict_doc['deliverables'][1] = row
+
+    payload = _validate(env, verdict_doc)
+
+    assert payload['valid'] is False
+    assert f'deliverable 2: a {verdict} deliverable evaluates no success criterion' in payload['errors']
+    assert not {'findings', 'facts', 'loop_back_target'} & set(payload)
+
+
+def test_evidenced_criterion_row_satisfies_a_criteria_less_deliverable(env: Env) -> None:
+    env.plan(criteria={1: CRITERIA[1], 2: []})
+    verdict_doc = _functional()
+    verdict_doc['deliverables'][1]['criteria'] = [
+        {'criterion': 'usage documented', 'status': 'met', 'evidence': ['doc/parser.md:1']}
+    ]
+
+    payload = _validate(env, verdict_doc)
+
+    assert payload['valid'] is True
+    assert payload['errors'] == []
     assert payload['facts']['criteria_checked'] == 3
 
 
@@ -454,6 +493,19 @@ def test_domains_unite_declared_and_footprint_matched_with_provenance(env: Env) 
         {'domain': 'python', 'provenance': _attr.PROVENANCE_BOTH},
     ]
     assert payload['domain_count'] == 3
+
+
+def test_domains_match_the_captured_footprint_when_the_worktree_is_gone(env: Env, outside_repo_dir: Path) -> None:
+    env.plan(domains=['oci'], realized_footprint=['src/parser.py'])
+    env.worktree = outside_repo_dir
+
+    payload = _attr.compute_domains(PLAN_ID)
+
+    assert payload['footprint_source'] == _attr.FOOTPRINT_CAPTURED
+    assert payload['domains'] == [
+        {'domain': 'oci', 'provenance': _attr.PROVENANCE_DECLARED},
+        {'domain': 'python', 'provenance': _attr.PROVENANCE_FOOTPRINT},
+    ]
 
 
 # --- request D1: the output shape does not depend on the language --------------------------

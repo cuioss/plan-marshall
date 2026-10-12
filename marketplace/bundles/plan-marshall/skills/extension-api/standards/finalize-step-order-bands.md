@@ -34,7 +34,7 @@ boundaries below track it.
 
 | Band | Range | Owner of the range | Meaning |
 |------|-------|--------------------|---------|
-| **Settle — pre-push** | 1–11 | Shared bundle + project-local / third-party, densely packed | Steps that prepare, gate quality, review and mutate source before the single `push` barrier at 11. **There is NO guaranteed insertion room in this sub-region** — every integer from 1 to 11 is occupied by eleven steps (slots 6 and 7 hold the two review steps), and the one slot the cluster frees is 8, once `pre-submission-self-review` is retired. A new pre-push step's sanctioned remedy is a deliberate re-space of the sub-cluster (see the alternative named below), not a slot in the post-push gaps, which are all numbered above `push` and so cannot hold a pre-push step. |
+| **Settle — pre-push** | 1–11 | Shared bundle + project-local / third-party, densely packed | Steps that prepare, gate quality, review and mutate source before the single `push` barrier at 11. **There is NO guaranteed insertion room in this sub-region** — nine steps occupy 1–5 and 8–11, and slots 6 and 7 are reserved for the two review steps (`functional-review`, `code-review`), so they are not open to any other step. A new pre-push step's sanctioned remedy is a deliberate re-space of the sub-cluster (see the alternative named below), not a slot in the post-push gaps, which are all numbered above `push` and so cannot hold a pre-push step. |
 | **Settle — post-push** | 12–69 | The majors anchor on a coarse grid (`create-pr` 20, `ci-verify` 22, `automatic-review` 30, `sonar-roundtrip` 40, `adr-propose` 62); project-local / third-party insert in the interior gaps | Steps that open the PR, run CI, review and re-settle after the push — everything between the push barrier and the merge gate. The interior gaps (12–19, 21, 23–29, 31–39, 41–61, 63–69) are the band's guaranteed insertion room. |
 | **Merge gate** | 70 | Shared bundle (fixed) | `default:branch-cleanup` — the partition. Not a member of any insertable band. |
 | **Post-merge operational** | 71–899 | project-local / third-party | Post-merge steps that **act** (deploy, cache-sync) but are not backward-looking reports. They fail the post-run band's P1 predicate, so they are ordered here rather than in the post-run band. The `mutates_source` obligation for a step at or after the merge gate is owned by [`ext-point-finalize-step.md`](ext-point-finalize-step.md) § "Implementor Frontmatter" — read it there. |
@@ -47,11 +47,11 @@ numbers and leaves the interior free, so a third-party or project-local step alw
 without renumbering a neighbour:
 
 - **Settle — pre-push (1–11)** — **no guaranteed insertion room.** Every integer from 1 to 11 is
-  occupied (`finalize-step-sync-baseline` 1, `finalize-step-lessons-housekeeping` 2,
-  `finalize-step-simplify` 3, `finalize-step-plugin-doctor` 4,
-  `finalize-step-security-audit` 5, `functional-review` 6, `code-review` 7,
-  `pre-submission-self-review` 8, `architecture-refresh` 9, `pre-push-quality-gate` 10, `push` 11);
-  slot 8 is the one slot the cluster frees, once `pre-submission-self-review` is retired. The post-push gaps below CANNOT absorb a pre-push step:
+  either occupied (`finalize-step-sync-baseline` 1, `finalize-step-lessons-housekeeping` 2,
+  `finalize-step-simplify` 3, `finalize-step-plugin-doctor` 4, `finalize-step-security-audit` 5,
+  `pre-submission-self-review` 8, `architecture-refresh` 9, `pre-push-quality-gate` 10, `push` 11)
+  or reserved (`functional-review` 6, `code-review` 7 — the two review steps, which no other step may
+  claim). The post-push gaps below CANNOT absorb a pre-push step:
   every one of them is numbered above `push`, so a step placed there runs after the branch has already
   shipped. The sanctioned remedy for a new pre-push step is therefore a **deliberate re-space of the
   sub-cluster** — renumbering the existing members to open a slot — which is a change to this contract,
@@ -134,8 +134,8 @@ insertion room and was therefore re-spaced deliberately as this contract's sanct
 The settle re-space was applied once, to open room for the two review steps: the five-step sub-cluster
 ahead of them — `finalize-step-sync-baseline`, `finalize-step-lessons-housekeeping`,
 `finalize-step-simplify`, `finalize-step-plugin-doctor` and `finalize-step-security-audit` — moved down
-by two, into slots 1–5, so slots 6 and 7 hold `functional-review` and `code-review`. Everything from
-`pre-submission-self-review` (8) upward kept its order: `push` stays at 11 and the post-push band
-(12–69) is untouched. Slot 8 is free once `pre-submission-self-review` is retired. A future step
+by two, into slots 1–5, so slots 6 and 7 are reserved for `functional-review` and `code-review`.
+Everything from `pre-submission-self-review` (8) upward kept its order: `push` stays at 11 and the
+post-push band (12–69) is untouched. A future step
 that must land in a band with no interior gap is renumbered into the reserved
 room this contract guarantees, never by pushing a neighbour.

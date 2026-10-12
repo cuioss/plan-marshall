@@ -22,6 +22,8 @@ KIND_FUNCTIONAL = 'functional'
 KIND_CODE = 'code'
 
 FUNCTIONAL_VERDICTS = ('met', 'met_with_residuals', 'not_met', 'superseded')
+#: The verdicts that claim the deliverable's value is delivered, so must evidence a criterion.
+DELIVERED_VERDICTS = ('met', 'met_with_residuals')
 CRITERION_STATUSES = ('met', 'unevidenced', 'not_met')
 FIX_KIND_IMPLEMENTATION = 'implementation'
 FIX_KIND_CORRECTION = 'correction'
@@ -161,6 +163,10 @@ def _grade_criteria(grading: Grading, row: dict[str, Any], expected: dict[str, A
     wanted = len(expected.get('success_criteria', []))
     if wanted and len(criteria) != wanted:
         grading.errors.append(f'{where}: {len(criteria)} criteria rows for {wanted} success criteria')
+    if not criteria and verdict in DELIVERED_VERDICTS:
+        # Without a parsed outline criterion the count check above is vacuous, so an
+        # empty list would let a delivered verdict through with no evidence at all.
+        grading.errors.append(f'{where}: a {verdict} deliverable evaluates no success criterion')
     for index, criterion in enumerate(criteria, start=1):
         status = criterion.get('status') if isinstance(criterion, dict) else None
         if status not in CRITERION_STATUSES:
@@ -289,6 +295,7 @@ __all__ = [
     'CITATION_FORMS',
     'CODE_FACT_KEYS',
     'CRITERION_STATUSES',
+    'DELIVERED_VERDICTS',
     'FAILURE_CLASSES',
     'FIX_KINDS',
     'FIX_KIND_CORRECTION',
