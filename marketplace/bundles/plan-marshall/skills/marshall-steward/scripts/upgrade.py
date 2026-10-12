@@ -584,6 +584,7 @@ _CODE_REVIEW_STEP_ID = 'default:code-review'
 #: The successors, in the order they replace the retired entry.
 _REVIEW_SUCCESSOR_STEP_IDS = (_FUNCTIONAL_REVIEW_STEP_ID, _CODE_REVIEW_STEP_ID)
 _LANE_KEY = 'lane'
+_LANE_OFF = 'off'
 # SHIM(A): the retired structural self-review step and its settings (replaced by the functional and the code review).
 # shim-owner: marshall-steward
 # shim-floor: the split of the pre-submission self-review into default:functional-review and default:code-review, each switched by its own lane
@@ -623,6 +624,40 @@ def _carried_review_params(legacy: object) -> tuple[dict, list[str]]:
     return carried, dropped
 
 
+def _merged_review_params(entries: list[object]) -> tuple[dict, list[str]]:
+    """Merge the carried and dropped params of every retired entry, in key order.
+
+    A config may name the retired step in both spellings; no entry's setting is
+    discarded silently. Each entry's params are derived by
+    :func:`_carried_review_params` and their dropped params united, each listed
+    once. When the entries carry different lanes, ``off`` wins — an operator who
+    switched the review off in either spelling keeps it off — and otherwise the
+    first entry's lane wins; every losing lane is reported in ``dropped_params``.
+    """
+    carried: dict = {}
+    dropped: list[str] = []
+
+    def _drop(item: str) -> None:
+        if item not in dropped:
+            dropped.append(item)
+
+    for entry in entries:
+        params, entry_dropped = _carried_review_params(entry)
+        for item in entry_dropped:
+            _drop(item)
+        lane = params.get(_LANE_KEY)
+        current = carried.get(_LANE_KEY)
+        if lane is None or lane == current:
+            continue
+        if current is None:
+            carried[_LANE_KEY] = lane
+            continue
+        winner, loser = (lane, current) if lane == _LANE_OFF else (current, lane)
+        carried[_LANE_KEY] = winner
+        _drop(f'{_LANE_KEY}={json.dumps(loser)}')
+    return carried, dropped
+
+
 def migrate_review_steps(section: dict) -> dict:
     """Replace the retired self-review step by the functional and the code review.
 
@@ -632,7 +667,8 @@ def migrate_review_steps(section: dict) -> dict:
     In the ``steps`` map, every key naming the retired step (its ``default:`` or
     bare form) is removed, and the two successors are inserted at the position of
     the first one, functional review first. Both inherit the params
-    :func:`_carried_review_params` derives. A successor the operator already
+    :func:`_merged_review_params` derives from every retired entry — both
+    spellings, when both are present. A successor the operator already
     configured is not inserted again: ITS ENTRY WINS, untouched, wherever it sits.
 
     In the operator ``removed_steps`` list, a retired id is replaced by both
@@ -661,7 +697,7 @@ def migrate_review_steps(section: dict) -> dict:
 
     report: dict = {'state': 'migrated', 'replaced': legacy_keys, 'added': [], 'kept': []}
     if legacy_keys:
-        carried, dropped = _carried_review_params(steps[legacy_keys[0]])
+        carried, dropped = _merged_review_params([steps[key] for key in legacy_keys])
         present = {_bare_step_id(key) for key in steps}
         rebuilt: dict = {}
         for key, value in steps.items():

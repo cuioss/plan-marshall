@@ -10,8 +10,9 @@ here is a migration INPUT, never a live step id or a live gate key.
 
 The fixtures are exhaustive over the input shapes the request names: the retired
 entry with a lane and a retired param, with ``lane: minimal``, with ``lane: off``,
-with a legacy ``self_review`` run-at-all value, absent, already migrated, beside a
-successor the operator already configured, and named only in ``removed_steps``.
+with a legacy ``self_review`` run-at-all value, in both spellings at once, absent,
+already migrated, beside a successor the operator already configured, and named
+only in ``removed_steps``.
 Exactly two of them — the absent and the already-migrated configuration — are
 no-ops; every other one reports a migration.
 
@@ -67,7 +68,7 @@ def test_the_two_settings_are_owned_by_the_two_successors():
 
 
 # =============================================================================
-# The eight input shapes
+# The input shapes
 # =============================================================================
 
 
@@ -137,6 +138,36 @@ def test_retired_entry_with_lane_off_turns_both_settings_off():
     assert report['replaced'] == [_LEGACY_BARE]
     assert section['steps'] == {_FUNCTIONAL: {'lane': 'off'}, _CODE: {'lane': 'off'}}
     assert {gate: _resolved_setting(section, gate) for gate in _SETTINGS} == dict.fromkeys(_SETTINGS, 'never')
+
+
+@pytest.mark.parametrize(
+    'steps',
+    [
+        {_LEGACY: {'lane': 'standard', 'drop_review_on_scope_gate': True}, _LEGACY_BARE: {'lane': 'off'}},
+        {_LEGACY_BARE: {'lane': 'off'}, _LEGACY: {'lane': 'standard', 'drop_review_on_scope_gate': True}},
+    ],
+    ids=['off-on-second-key', 'off-on-first-key'],
+)
+def test_both_retired_spellings_merge_and_an_off_lane_on_either_wins(steps):
+    """No retired entry's setting is lost: ``off`` wins, the losing lane and every other param are reported."""
+    section = _section(steps)
+
+    report = upgrade.migrate_review_steps(section)
+
+    assert section['steps'] == {_FUNCTIONAL: {'lane': 'off'}, _CODE: {'lane': 'off'}}
+    assert {gate: _resolved_setting(section, gate) for gate in _SETTINGS} == dict.fromkeys(_SETTINGS, 'never')
+    assert sorted(report['replaced']) == sorted([_LEGACY, _LEGACY_BARE])
+    assert sorted(report['dropped_params']) == ['drop_review_on_scope_gate=true', 'lane="standard"']
+
+
+def test_both_retired_spellings_without_a_conflict_carry_the_shared_lane():
+    """Control for the test above: equal lanes are carried once and nothing is reported as dropped."""
+    section = _section({_LEGACY: {'lane': 'minimal'}, _LEGACY_BARE: {'lane': 'minimal'}})
+
+    report = upgrade.migrate_review_steps(section)
+
+    assert section['steps'] == {_FUNCTIONAL: {'lane': 'minimal'}, _CODE: {'lane': 'minimal'}}
+    assert report['dropped_params'] == []
 
 
 def test_absent_retired_entry_is_a_noop():

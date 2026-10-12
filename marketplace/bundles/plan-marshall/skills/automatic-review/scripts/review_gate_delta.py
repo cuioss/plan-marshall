@@ -30,7 +30,7 @@ chance to make, and would bias the share in an unknown direction.
 
 Within the settle band itself the ordering now closes the old gap: the code-mutating
 settle steps (``finalize-step-simplify`` at ``order: 3``,
-``finalize-step-security-audit`` at ``order: 5``) sort strictly BEFORE both gates,
+``finalize-step-security-audit`` at ``order: 5``) sort strictly BEFORE all three gates,
 and the derived-state refresh (``architecture-refresh`` at ``order: 9``) sorts before
 the quality gate too — so a forward pass runs 3 → 5 → 6 → 7 → 9 → 10 → 11 → 20 → 30 and
 the gates certify the settled tree including the mutators' edits. What remains is

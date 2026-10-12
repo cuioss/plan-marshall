@@ -1528,10 +1528,10 @@ def resolve_qgate_findings_by_evidence(
 ) -> dict[str, Any]:
     """Resolve pending Q-Gate findings whose file a landed fix actually touched.
 
-    Evidence-gated review loop-back resolution (D3). The ``functional-review`` and
-    ``code-review`` steps file a Q-Gate finding per blocking defect but never
-    resolve their own findings, so a plan whose fixes genuinely landed could
-    still merge with the finding RECORDS stuck at ``pending``. This transitions a pending Q-Gate
+    Evidence-gated batch resolution for Q-Gate findings that carry a
+    ``file_path``. The ``functional-review`` and ``code-review`` steps do not use
+    it: they file their findings without a ``file_path`` and resolve them by rule
+    key through :func:`resolve_qgate_findings_by_rule`. This transitions a pending Q-Gate
     finding to ``fixed`` ONLY when its ``file_path`` is in ``changed_paths`` — the
     set of files a landed fix (a commit that advanced HEAD) actually touched.
 

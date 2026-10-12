@@ -13,7 +13,8 @@ Both read the realized footprint through the one derivation
 ``manage-references compute-footprint`` uses, so no path is ever interpolated
 into a command line. A footprint that could not be derived is reported as
 ``footprint_source: unresolved`` and the values computed from it are omitted —
-never answered as an empty set.
+never answered as an empty set; ``compute_domains``, whose whole answer depends
+on it, fails closed with ``error: footprint_unresolved``.
 
 Imported as ``from _review_support_attribution import ...`` by ``review_support.py``.
 """
@@ -262,6 +263,10 @@ def compute_domains(plan_id: str) -> dict[str, Any]:
     The footprint leg is the same ``file_globs`` match ``manage-config``'s domain
     detector applies (``_glob_matched_domains``); the synthetic ``system`` domain
     is excluded as it is there.
+
+    A footprint that could not be derived fails closed with
+    ``error: footprint_unresolved``: answering with the declared domains alone
+    would hand the review a rulebook missing every footprint-matched domain.
     """
     if not get_plan_dir(plan_id).is_dir():
         return error_payload(plan_id, 'plan_not_found', f'no plan directory for {plan_id!r}')
@@ -276,6 +281,15 @@ def compute_domains(plan_id: str) -> dict[str, Any]:
     declared = {str(domain).strip() for domain in refs.get('domains') or [] if str(domain).strip()}
     worktree = resolve_live_worktree(plan_id) or Path.cwd()
     footprint, footprint_source, _ = realized_footprint(refs, worktree)
+    if footprint is None:
+        return {
+            **error_payload(
+                plan_id,
+                'footprint_unresolved',
+                'the realized footprint could not be derived from the worktree or the captured references',
+            ),
+            'footprint_source': footprint_source,
+        }
     matched = _glob_matched_domains(configured, set(footprint)) if footprint else set()
 
     rows = []
