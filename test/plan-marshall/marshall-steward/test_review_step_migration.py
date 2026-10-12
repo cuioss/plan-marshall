@@ -302,6 +302,34 @@ def test_unusable_lane_or_self_review_values_are_reported_as_dropped(params, exp
     assert report['dropped_params'] == expected_dropped
 
 
+def test_the_carried_lane_is_never_also_reported_as_dropped():
+    """A lane one entry lost but another carried to the win is carried, not reported as dropped."""
+    section = _section(
+        {_LEGACY: {'lane': 'standard'}, _LEGACY_BARE: {'lane': 'standard', 'self_review': 'always'}},
+    )
+
+    report = upgrade.migrate_review_steps(section)
+
+    assert section['steps'] == {_FUNCTIONAL: {'lane': 'standard'}, _CODE: {'lane': 'standard'}}
+    assert report['dropped_params'] == ['lane="minimal"']
+
+
+def test_both_successors_configured_reports_each_dropped_setting_once():
+    """With both successors configured the carried lane is reported as dropped exactly once."""
+    section = _section(
+        {
+            _FUNCTIONAL: {'lane': 'full'},
+            _CODE: {'lane': 'full'},
+            _LEGACY: {'lane': 'standard'},
+            _LEGACY_BARE: {'lane': 'standard', 'self_review': 'always'},
+        }
+    )
+
+    report = upgrade.migrate_review_steps(section)
+
+    assert sorted(report['dropped_params']) == ['lane="minimal"', 'lane="standard"']
+
+
 def test_legacy_self_review_auto_is_not_reported_as_dropped():
     """Control for the test above: ``auto`` is a recognised value that maps to no lane."""
     section = _section({_LEGACY: {'self_review': 'auto'}})

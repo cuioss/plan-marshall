@@ -672,6 +672,11 @@ def _merged_review_params(entries: list[object]) -> tuple[dict, list[str]]:
         winner, loser = (lane, current) if lane == _LANE_OFF else (current, lane)
         carried[_LANE_KEY] = winner
         _drop(f'{_LANE_KEY}={json.dumps(loser)}')
+    # A lane one entry lost may be the lane another entry carried to the win; the
+    # winning value is carried, so it is never also reported as dropped.
+    if _LANE_KEY in carried:
+        kept = f'{_LANE_KEY}={json.dumps(carried[_LANE_KEY])}'
+        dropped = [item for item in dropped if item != kept]
     return carried, dropped
 
 
@@ -734,7 +739,9 @@ def migrate_review_steps(section: dict) -> dict:
         # so with no successor inserted the retired entry's carried settings are dropped.
         report['carried'] = [f'{key}={value}' for key, value in carried.items()] if report['added'] else []
         if not report['added']:
-            dropped.extend(f'{key}={json.dumps(value)}' for key, value in carried.items())
+            for item in (f'{key}={json.dumps(value)}' for key, value in carried.items()):
+                if item not in dropped:
+                    dropped.append(item)
         report['dropped_params'] = dropped
         section['steps'] = rebuilt
 
