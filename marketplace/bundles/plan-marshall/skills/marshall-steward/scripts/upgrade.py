@@ -46,8 +46,9 @@ Per-stage ``sub_steps`` (the meta/consumer matrix):
                                            cache-retention-sweep]
                                 consumer: [cache-freshness-check, regenerate-executor,
                                            cache-retention-sweep]
-    Stage 2 reconcile-config    both:     [reconcile-marshal-json, review-held-defaults, migrate-bot-lists,
-                                           validate-bot-lists, migrate-architecture-descriptors]
+    Stage 2 reconcile-config    both:     [migrate-review-steps, reconcile-marshal-json, review-held-defaults,
+                                           migrate-bot-lists, validate-bot-lists,
+                                           migrate-architecture-descriptors]
     Stage 3 verify              meta:     [executor-preflight, content-drift-report]
                                 consumer: [executor-preflight]
     Stage 4 land                both:     [run-landing-cycle]
@@ -85,6 +86,12 @@ Subcommands:
     plan               Emit the stage plan. ``--integrate {true|false}`` (default
                        ``false``) and ``--project-kind {auto|meta|consumer}``
                        (default ``auto``).
+    migrate-review-steps
+                       Replace the retired structural self-review finalize step
+                       by ``default:functional-review`` and ``default:code-review``,
+                       carrying its setting to both. Driven as the FIRST
+                       sub_step of Stage 2 (``reconcile-config``), before the
+                       defaults merge.
     migrate-bot-lists  One-shot legacy auto-map of the retired ``enabled_bots``
                        knob onto ``required_bots`` / ``optional_bots``. Driven as
                        the ``migrate-bot-lists`` sub_step of Stage 2
@@ -101,6 +108,7 @@ Usage:
     python3 upgrade.py plan
     python3 upgrade.py plan --integrate true
     python3 upgrade.py plan --project-kind consumer
+    python3 upgrade.py migrate-review-steps
     python3 upgrade.py migrate-bot-lists
     python3 upgrade.py validate-bot-lists
 
@@ -126,6 +134,7 @@ reported as ``error_type: concurrent_modification`` at exit 0.
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 # Cross-skill imports resolve through the PYTHONPATH the executor injects. This
@@ -163,6 +172,7 @@ _STAGE_SPECS: list[dict] = [
         'mutating': True,
         'nested_gates': ['build-map-reseed'],
         'sub_steps': [
+            'migrate-review-steps',
             'reconcile-marshal-json',
             'review-held-defaults',
             'migrate-bot-lists',
@@ -555,6 +565,180 @@ def cmd_validate_bot_lists(_args: argparse.Namespace) -> dict:
     return {'status': 'success', 'operation': 'validate-bot-lists', **validate_bot_lists(params)}
 
 
+# ---------------------------------------------------------------------------
+# migrate-review-steps — the retired structural self-review onto the two reviews
+# ---------------------------------------------------------------------------
+#
+# The single structural self-review step was split into the functional review
+# and the code review, each switched by its own setting. A configured repository
+# still names the retired step in its finalize step map, so this migration
+# replaces it IN PLACE by the two successors and carries its setting to both.
+#
+# It runs before Stage 2's defaults merge, so the merge already sees the two new
+# ids as present instead of holding them at its ask-before-add gate. It is
+# idempotent and SELF-DISARMING: once the retired id is gone, a re-run is a
+# no-op success.
+
+_FUNCTIONAL_REVIEW_STEP_ID = 'default:functional-review'
+_CODE_REVIEW_STEP_ID = 'default:code-review'
+#: The successors, in the order they replace the retired entry.
+_REVIEW_SUCCESSOR_STEP_IDS = (_FUNCTIONAL_REVIEW_STEP_ID, _CODE_REVIEW_STEP_ID)
+_LANE_KEY = 'lane'
+# SHIM(A): the retired structural self-review step and its settings (replaced by the functional and the code review).
+# shim-owner: marshall-steward
+# shim-floor: the split of the pre-submission self-review into default:functional-review and default:code-review, each switched by its own lane
+# shim-remove-when: no live marshal.json names pre-submission-self-review in its finalize steps or removed_steps (idempotent)
+_LEGACY_REVIEW_STEP_IDS = ('default:pre-submission-self-review', 'pre-submission-self-review')
+_LEGACY_SELF_REVIEW_KEY = 'self_review'
+#: A legacy step-owned self_review run-at-all value onto a successor lane; ``auto``
+#: maps to no lane, which leaves the carried lane in force.
+_LEGACY_SELF_REVIEW_TO_LANE = {'never': 'off', 'always': 'minimal'}
+
+
+def _bare_step_id(step_id: str) -> str:
+    return step_id[len('default:') :] if step_id.startswith('default:') else step_id
+
+
+def _carried_review_params(legacy: object) -> tuple[dict, list[str]]:
+    """Split the retired entry's params into what both successors inherit and what is dropped.
+
+    The entry's ``lane`` is carried. A legacy ``self_review`` run-at-all value is
+    the same setting in its retired spelling, so ``never`` / ``always`` replace the
+    carried lane with ``off`` / ``minimal``; ``auto`` (or anything else) adds no
+    lane. Every other param — ``drop_review_on_scope_gate`` among them — has no
+    successor and is reported as dropped, ``key=value``.
+    """
+    params = legacy if isinstance(legacy, dict) else {}
+    carried: dict = {}
+    lane = params.get(_LANE_KEY)
+    if isinstance(lane, str) and lane:
+        carried[_LANE_KEY] = lane
+    legacy_gate = params.get(_LEGACY_SELF_REVIEW_KEY)
+    mapped = _LEGACY_SELF_REVIEW_TO_LANE.get(legacy_gate) if isinstance(legacy_gate, str) else None
+    if mapped is not None:
+        carried[_LANE_KEY] = mapped
+    dropped = [
+        f'{key}={json.dumps(value)}' for key, value in params.items() if key not in (_LANE_KEY, _LEGACY_SELF_REVIEW_KEY)
+    ]
+    return carried, dropped
+
+
+def migrate_review_steps(section: dict) -> dict:
+    """Replace the retired self-review step by the functional and the code review.
+
+    Pure function over the ``plan.phase-6-finalize`` section. It mutates
+    ``section`` in place and returns a report.
+
+    In the ``steps`` map, every key naming the retired step (its ``default:`` or
+    bare form) is removed, and the two successors are inserted at the position of
+    the first one, functional review first. Both inherit the params
+    :func:`_carried_review_params` derives. A successor the operator already
+    configured is not inserted again: ITS ENTRY WINS, untouched, wherever it sits.
+
+    In the operator ``removed_steps`` list, a retired id is replaced by both
+    successor ids, so a review the operator removed stays removed under its new
+    names.
+
+    Args:
+        section: The ``plan.phase-6-finalize`` section of marshal.json.
+
+    Returns:
+        A report dict: ``state`` (``migrated`` or ``noop``), and on ``migrated``
+        the ``replaced`` legacy keys, the ``added`` successors, the successors
+        ``kept`` as the operator configured them, the ``carried`` params, the
+        ``dropped_params`` and whether ``removed_steps_rewritten``.
+    """
+    from _config_defaults import OPERATOR_REMOVED_STEPS_KEY
+
+    steps = section.get('steps')
+    steps = steps if isinstance(steps, dict) else {}
+    legacy_keys = [key for key in steps if key in _LEGACY_REVIEW_STEP_IDS]
+    removed = section.get(OPERATOR_REMOVED_STEPS_KEY)
+    removed = removed if isinstance(removed, list) else []
+    removed_hits = [entry for entry in removed if entry in _LEGACY_REVIEW_STEP_IDS]
+    if not legacy_keys and not removed_hits:
+        return {'state': 'noop'}
+
+    report: dict = {'state': 'migrated', 'replaced': legacy_keys, 'added': [], 'kept': []}
+    if legacy_keys:
+        carried, dropped = _carried_review_params(steps[legacy_keys[0]])
+        present = {_bare_step_id(key) for key in steps}
+        rebuilt: dict = {}
+        for key, value in steps.items():
+            if key in _LEGACY_REVIEW_STEP_IDS:
+                if key == legacy_keys[0]:
+                    for successor in _REVIEW_SUCCESSOR_STEP_IDS:
+                        if _bare_step_id(successor) in present:
+                            continue
+                        rebuilt[successor] = dict(carried)
+                        report['added'].append(successor)
+                continue
+            rebuilt[key] = value
+        report['kept'] = [s for s in _REVIEW_SUCCESSOR_STEP_IDS if s not in report['added']]
+        # Only an inserted successor inherits anything; a kept one keeps its own params.
+        report['carried'] = [f'{key}={value}' for key, value in carried.items()] if report['added'] else []
+        report['dropped_params'] = dropped
+        section['steps'] = rebuilt
+
+    report['removed_steps_rewritten'] = bool(removed_hits)
+    if removed_hits:
+        rewritten: list[str] = []
+        for entry in removed:
+            replacements = list(_REVIEW_SUCCESSOR_STEP_IDS) if entry in _LEGACY_REVIEW_STEP_IDS else [entry]
+            rewritten.extend(item for item in replacements if item not in rewritten)
+        section[OPERATOR_REMOVED_STEPS_KEY] = rewritten
+    return report
+
+
+def cmd_migrate_review_steps(_args: argparse.Namespace) -> dict:
+    """Handle the ``migrate-review-steps`` subcommand against the live marshal.json.
+
+    Loads marshal.json, applies :func:`migrate_review_steps` to the
+    ``plan.phase-6-finalize`` section, and writes the config back only when the
+    migration changed something. An un-initialized project and a config without a
+    finalize section are no-op successes, and a concurrent writer is reported as
+    ``error_type: concurrent_modification`` at exit 0 — the same boundaries
+    :func:`cmd_migrate_bot_lists` treats that way.
+    """
+    from _config_core import (
+        ConcurrentConfigModificationError,
+        is_initialized,
+        load_config,
+        save_config,
+    )
+
+    if not is_initialized():
+        return {
+            'status': 'success',
+            'operation': 'migrate-review-steps',
+            'state': 'noop',
+            'detail': 'no marshal.json — project not initialized, nothing to migrate',
+        }
+
+    config = load_config()
+    section = (config.get('plan') or {}).get('phase-6-finalize')
+    if not isinstance(section, dict):
+        return {
+            'status': 'success',
+            'operation': 'migrate-review-steps',
+            'state': 'noop',
+            'detail': 'no plan.phase-6-finalize section configured',
+        }
+
+    report = migrate_review_steps(section)
+    if report['state'] != 'noop':
+        try:
+            save_config(config)
+        except ConcurrentConfigModificationError as exc:
+            return {
+                'status': 'error',
+                'operation': 'migrate-review-steps',
+                'error': str(exc),
+                'error_type': 'concurrent_modification',
+            }
+    return {'status': 'success', 'operation': 'migrate-review-steps', **report}
+
+
 def cmd_plan(args: argparse.Namespace) -> dict:
     """Handle the ``plan`` subcommand.
 
@@ -602,6 +786,15 @@ def main() -> int:
     )
 
     subparsers.add_parser(
+        'migrate-review-steps',
+        help=(
+            'Replace the retired structural self-review finalize step by the functional '
+            'and the code review, carrying its setting to both. Idempotent and self-disarming.'
+        ),
+        allow_abbrev=False,
+    )
+
+    subparsers.add_parser(
         'migrate-bot-lists',
         help=(
             'One-shot legacy auto-map of the retired enabled_bots knob onto '
@@ -624,6 +817,8 @@ def main() -> int:
 
     if args.command == 'plan':
         result = cmd_plan(args)
+    elif args.command == 'migrate-review-steps':
+        result = cmd_migrate_review_steps(args)
     elif args.command == 'migrate-bot-lists':
         result = cmd_migrate_bot_lists(args)
     elif args.command == 'validate-bot-lists':

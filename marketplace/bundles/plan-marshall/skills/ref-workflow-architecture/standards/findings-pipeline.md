@@ -70,8 +70,8 @@ ci-complete
    ▼
 FIND LOOP      all providers: fetch_findings → ledger, untrusted free-text
    │           quarantined under raw_input.{field}. build/lint/test self-file
-   │           during the build run; generators (security-audit, self-review) file
-   │           find-only (defer triage).
+   │           during the build run; generators (security-audit, functional-review,
+   │           code-review) file find-only (defer triage).
    ▼
 INGEST PASS    one batched validate_struct over every raw_input.{field}
    │           → promote clamped values to the clean TOP-LEVEL fields;
@@ -251,7 +251,7 @@ This is **not** a naive "any pending finding blocks" rule: knowledge types are e
 
 Every other phase capture reads the `pending_findings_blocking_count` row passively (so retrospective analysis sees the queue at every boundary) but does NOT raise.
 
-**The gate is armed by a state, not a call.** The raise fires only on a `capture` / `findings-check` carrying `--phase 6-finalize`. No orchestration step ever issued one — the `phase_handshake capture --phase 6-finalize` this table once attributed to the Phase Entry Protocol was never emitted, and the intra-finalize re-issues attributed to `automatic-review` / `sonar-roundtrip` were never wired — so the finalize gate was inert fleet-wide: a plan could complete or merge with actionable findings still `pending`. The two firing sites above close that gap, each armed without depending on an optional call: the pre-merge site is armed by the merge dispatch itself — `pre_merge_gate merge` is the only route to the merge verb, so a merge cannot happen without the check having run and passed — and the completion boundary is an unconditional state assertion. The `5-execute → 6-finalize` transition is **not** a firing site — it inlines `phase_handshake verify --phase 5-execute --strict`, which detects drift on the captured row but does not raise `blocking_findings_present` (that raise fires only at `phase == '6-finalize'`, and the self-review findings the gate catches are filed *during* finalize, after this boundary).
+**The gate is armed by a state, not a call.** The raise fires only on a `capture` / `findings-check` carrying `--phase 6-finalize`. No orchestration step ever issued one — the `phase_handshake capture --phase 6-finalize` this table once attributed to the Phase Entry Protocol was never emitted, and the intra-finalize re-issues attributed to `automatic-review` / `sonar-roundtrip` were never wired — so the finalize gate was inert fleet-wide: a plan could complete or merge with actionable findings still `pending`. The two firing sites above close that gap, each armed without depending on an optional call: the pre-merge site is armed by the merge dispatch itself — `pre_merge_gate merge` is the only route to the merge verb, so a merge cannot happen without the check having run and passed — and the completion boundary is an unconditional state assertion. The `5-execute → 6-finalize` transition is **not** a firing site — it inlines `phase_handshake verify --phase 5-execute --strict`, which detects drift on the captured row but does not raise `blocking_findings_present` (that raise fires only at `phase == '6-finalize'`, and the functional-review and code-review findings the gate catches are filed *during* finalize, after this boundary).
 
 ### qgate aggregation contract
 

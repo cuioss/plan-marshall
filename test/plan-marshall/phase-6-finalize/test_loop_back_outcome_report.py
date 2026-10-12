@@ -21,16 +21,16 @@ These tests pin four invariants:
    mismatched HEAD), and membership in that comparison is read from the
    **derived** ``head_dependent`` frontmatter fact rather than the removed
    ``HEAD_DEPENDENT_STEPS`` literal.
-5. A loop-back commit that advances HEAD past a recorded ``done`` on
-   ``pre-submission-self-review`` re-fires the step instead of skipping it.
-   That step reviews the plan's DIFF, so a ``done`` carried across a
-   loop-back would stand as green for a diff no check ever ran against —
-   the defect that motivated deriving membership in the first place.
-6. A self-review round the VERIFIER declined to close records ``loop_back``
-   with ``loop_back_target: 6-finalize`` — never ``done`` and never
-   ``failed``. The close decision belongs to the party that did not write
-   the verdict, so this pins the other side of that decision: ``done``
-   there would close a review a second party declined to close, and
+5. A loop-back commit that advances HEAD past a recorded ``done`` on either
+   review step (``functional-review`` / ``code-review``) re-fires the step
+   instead of skipping it. Each review reads the plan's DIFF, so a ``done``
+   carried across a loop-back would stand as green for a diff no check ever
+   ran against — the defect that motivated deriving membership in the first
+   place.
+6. A review round the VERIFIER did not accept records ``loop_back`` — never
+   ``done`` and never ``failed``. The close decision belongs to the party that
+   did not write the verdict, so this pins the other side of that decision:
+   ``done`` there would close a review a second party declined to close, and
    ``failed`` would grade a working independence check as a broken step.
 
 The tests use unique ``plan_id`` values per test to avoid cross-test
@@ -40,6 +40,8 @@ contamination (per MEMORY.md "Test Isolation Pattern").
 import re
 from argparse import Namespace
 from pathlib import Path
+
+import pytest
 
 from conftest import get_skill_dir, load_script_module
 
@@ -63,42 +65,25 @@ read_status = _status_core.read_status
 _PHASE_6_DIR = get_skill_dir('plan-marshall', 'phase-6-finalize')
 _PHASE_6_SKILL_MD = _PHASE_6_DIR / 'SKILL.md'
 _AUTOMATED_REVIEW_MD = get_skill_dir('plan-marshall', 'automatic-review') / 'SKILL.md'
-_PRE_SUBMISSION_SELF_REVIEW_MD = _PHASE_6_DIR / 'workflow' / 'pre-submission-self-review.md'
+#: The two review step docs, keyed by step name.
+_REVIEW_MDS = {
+    'functional-review': _PHASE_6_DIR / 'workflow' / 'functional-review.md',
+    'code-review': _PHASE_6_DIR / 'workflow' / 'code-review.md',
+}
 
 #: The removed hand-maintained literal. Its ABSENCE from SKILL.md is what makes
 #: membership derived rather than listed, so it is asserted absent by name.
 _RETIRED_LITERAL = 'HEAD_DEPENDENT_STEPS'
 
-#: The self-review section where the verifier's two answers are collected and
-#: routed. Test 6 reads it for the states that do NOT close the round.
-_VERIFIER_STEP_HEADING = '### Step 3b: Independent verification (dispatch)'
+#: The review section that records a round the verifier did not close. Test 6
+#: reads it for the states that do NOT close the round.
+_LOOP_BACK_BRANCH_HEADING = '### Branch B — the round loops back'
 
-#: The state names the verifier's non-closing outcomes are filed under. A
-#: population FLOOR, not the sweep's population: the assertion below derives
-#: the actual per-state routing from the section's own state-to-outcome table,
-#: and only checks that these three still appear among the derived rows — so a
-#: state that loses its row loses its documented routing, and this floor
-#: notices the loss even if the whole table were somehow removed.
-_NON_CLOSE_STATES = ('verdict_refused', 'further_round_owed', 'verifier_unavailable')
+#: The state names a round the verifier did not accept is filed under.
+_NON_CLOSE_STATES = ('verdict_refused', 'verifier_unavailable')
 
-#: One row of the section's `` | `{state}` | ... | `{outcome}` | `` state-to-outcome
-#: table. Captures the state token and its recorded outcome; the middle
-#: "Verifier situation" column is read and discarded.
-_STATE_OUTCOME_ROW = re.compile(r'^\|\s*`([a-z_]+)`\s*\|.*\|\s*`([a-z_]+)`\s*\|\s*$', re.MULTILINE)
-
-
-def _non_close_state_outcome_rows(section: str) -> list[tuple[str, str]]:
-    """Return every ``(state, recorded_outcome)`` row from the section's own table.
-
-    Every parsed row, not a deduped ``{state: outcome}`` view: collapsing into
-    a dict keeps only the LAST row per state, so a duplicate row for the same
-    state would be silently discarded before any routing assertion saw it. A
-    row whose state token is not a real state name (e.g. the header's
-    ``{state}`` placeholder) never matches ``[a-z_]+`` against a literal `{`,
-    so the header and separator rows are excluded by construction rather than
-    by position.
-    """
-    return _STATE_OUTCOME_ROW.findall(section)
+#: Every ``--outcome {value}`` a recording call in a section carries.
+_RECORDED_OUTCOME = re.compile(r'--outcome\s+([a-z_]+)')
 
 
 def _section_after(text: str, heading: str) -> str:
@@ -280,59 +265,36 @@ def test_pre_push_quality_gate_head_compare_unchanged():
     )
 
 
-def test_verifier_non_close_states_route_to_the_loop_back_branch():
+@pytest.mark.parametrize('step', sorted(_REVIEW_MDS))
+def test_verifier_non_close_states_route_to_the_loop_back_branch(step):
     """Every documented non-close state lands on loop_back, not done or failed.
 
-    Both populations are derived from the section's own state-to-outcome table
-    rather than pinned as a sentence, so rewording the routing prose does not
-    break the test while changing a state's recorded outcome does. The routing
-    assertion below runs over EVERY parsed row — a state whose table carries
-    two AGREEING rows is asserted on both, so a pair that both record `done`
-    or `failed` fails on its own row rather than being silently discarded by
-    a dict collapse that keeps only the last row per state. A pair recording
-    DIFFERING outcomes is caught earlier, by the conflicting-outcomes guard
-    below, which reports the contradiction once rather than as a routing
-    failure on one arbitrary row.
+    The loop-back branch of each review is where a round the verifier did not
+    accept is recorded. Its recorded outcomes are derived from the section's own
+    recording calls rather than pinned as a sentence, so rewording the prose does
+    not break the test while changing the recorded outcome does.
     """
-    doc = _PRE_SUBMISSION_SELF_REVIEW_MD.read_text(encoding='utf-8')
-    section = _section_after(doc, _VERIFIER_STEP_HEADING)
+    doc = _REVIEW_MDS[step].read_text(encoding='utf-8')
+    section = _section_after(doc, _LOOP_BACK_BRANCH_HEADING)
 
     assert section.strip(), (
-        f'{_VERIFIER_STEP_HEADING!r} is absent from the self-review workflow, so '
-        f'the verifier that takes the close decision is undocumented and every '
-        f'assertion below would sweep nothing.'
+        f'{_LOOP_BACK_BRANCH_HEADING!r} is absent from the {step} workflow, so the '
+        f'branch that records a round the verifier did not close is undocumented and '
+        f'every assertion below would sweep nothing.'
     )
 
-    rows = _non_close_state_outcome_rows(section)
-
-    assert rows, (
-        'The verifier section carries no state-to-outcome table row of the form '
-        '`| `{state}` | ... | `{outcome}` |`, so this sweep would cover nothing.'
-    )
-
-    states = {state for state, _ in rows}
-    missing = [state for state in _NON_CLOSE_STATES if state not in states]
+    missing = [state for state in _NON_CLOSE_STATES if state not in section]
     assert not missing, (
-        f'The verifier section table no longer names these non-close state(s): '
-        f'{missing}. A state that loses its row loses its documented routing with '
+        f'The {step} loop-back branch no longer names these non-close state(s): '
+        f'{missing}. A state that loses its mention loses its documented routing with '
         f'it, and nothing then says where a round in that state lands.'
     )
 
-    outcomes_by_state: dict[str, set[str]] = {}
-    for state, outcome in rows:
-        outcomes_by_state.setdefault(state, set()).add(outcome)
-
-    conflicting = {state: sorted(outs) for state, outs in outcomes_by_state.items() if len(outs) > 1}
-    assert not conflicting, (
-        f'These state(s) carry rows with CONFLICTING recorded outcomes: {conflicting}. '
-        f'A contradictory table is a documentation defect in its own right, reported '
-        f'here rather than as a routing failure on one arbitrary row.'
+    outcomes = _RECORDED_OUTCOME.findall(section)
+    assert outcomes, f'The {step} loop-back branch records no outcome, so this sweep would cover nothing.'
+    assert set(outcomes) == {'loop_back'}, (
+        f'The {step} loop-back branch records {sorted(set(outcomes))}, not only '
+        f'`loop_back`. A round the verifier did not close must not record `done` '
+        f'(closing a review a second party declined to close) or `failed` '
+        f'(grading a working independence check as a broken step).'
     )
-
-    for state, outcome in rows:
-        assert outcome == 'loop_back', (
-            f'State `{state}` records `{outcome}` in the verifier section table, not '
-            f'`loop_back`. A round the verifier did not close must not record `done` '
-            f'(closing a review a second party declined to close) or `failed` '
-            f'(grading a working independence check as a broken step).'
-        )

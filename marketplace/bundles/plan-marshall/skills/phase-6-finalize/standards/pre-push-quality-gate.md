@@ -152,10 +152,8 @@ deliberate and worth naming, because it bounds the guarantee: an analysis that i
 registered is invisible to both halves. Registering every analysis the build performs is therefore
 the precondition for the gap lines meaning what they say.
 
-This is the build-gate arm of a rule that binds every in-house gate. Its self-review counterpart is
-[`../workflow/pre-submission-self-review.md`](../workflow/pre-submission-self-review.md) § "A clean
-verdict carries the structural limit of the analysis"; the participation guard's counterpart is the
-`proves: participation_only` field that
+This is the build-gate arm of a rule that binds every in-house gate. The participation guard's
+counterpart is the `proves: participation_only` field that
 [`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md)
 § "Participation is not review quality" already requires. **A gate whose green is scope-limited says
 so in its verdict** — read each gate's own limit there rather than from a copy here.
@@ -179,7 +177,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 - `unknown` — the footprint is unresolvable (the normal state at `phase-4-plan` compose, before `phase-5-execute` Step 2.5 materialises the worktree), so there is no evidence either way and the gate is **kept**, with a `[STATUS]` decision-log line naming the verdict's reason.
 - `build` — the gate is **kept**.
 
-Failing toward inclusion on `unknown` is required, not cautious: ADR-009 forbids reading an unsubstantiated verdict as a positive one, and ADR-004 forbids the pre-filter from re-deriving build necessity from any other signal to fill the gap. A consumer project without a ceremony `always` pin on this gate therefore keeps its pre-push build gate on every compose. When the dispatcher runs this step the executor always runs to completion: a clean run records `outcome=done`; a failed bundle invocation records `outcome=failed` and halts the phase. The `commit_and_push == false` case is also filtered at composition time (the `commit_push_disabled` pre-filter strips `push`, `pre-push-quality-gate`, AND `pre-submission-self-review`), so this step is never dispatched without a downstream push.
+Failing toward inclusion on `unknown` is required, not cautious: ADR-009 forbids reading an unsubstantiated verdict as a positive one, and ADR-004 forbids the pre-filter from re-deriving build necessity from any other signal to fill the gap. A consumer project without a ceremony `always` pin on this gate therefore keeps its pre-push build gate on every compose. When the dispatcher runs this step the executor always runs to completion: a clean run records `outcome=done`; a failed bundle invocation records `outcome=failed` and halts the phase. The `commit_and_push == false` case is also filtered at composition time (the `commit_push_disabled` pre-filter strips `push`, `pre-push-quality-gate`, `functional-review`, AND `code-review`), so this step is never dispatched without a downstream push.
 
 ## Inputs
 

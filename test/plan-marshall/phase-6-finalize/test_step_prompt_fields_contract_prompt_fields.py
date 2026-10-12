@@ -7,8 +7,9 @@ A finalize step is dispatched with a prompt body that carries a **generic**
 five-field contract — ``name``, ``plan_id``, ``skills[]``, one of
 ``workflow``/``instructions``, ``WORKTREE``. Some steps need MORE: a
 workflow-specific runtime input their body reads as a ``{placeholder}`` token.
-``default:pre-submission-self-review`` is the motivating instance — it declares
-its ``candidates`` field **Required** and carries it in its own dispatch body.
+``default:functional-review`` is the anchor instance — it declares its
+``attribution`` and ``verdict_file`` fields **Required** and carries both in its
+own author dispatch body.
 
 The defect this pins is a **producerless contract row**: the declaration (a
 step marks a field Required) and the carriage (that field in the step's dispatch
@@ -30,8 +31,8 @@ module pins that declaration against every surface that can carry or state it:
 (1) The derived declaring population is **non-empty** — checked first and alone,
     because every ∃-direction assertion would pass vacuously against an empty
     derivation.
-(2) It covers the known instance, ``default:pre-submission-self-review``, and its
-    declaration names ``candidates``.
+(2) It covers the anchor instance, ``default:functional-review``, and its
+    declaration names ``attribution`` and ``verdict_file``.
 (3) **No orphan declaration** (∃-direction, over declaring steps that HAVE their
     own ``prompt:`` block): every declared field appears in that block. The
     direction is CONDITIONAL on the step having such a block, because a step
@@ -127,9 +128,11 @@ _DISPATCHER_SUPPLIED_FIELDS = frozenset({'caller_phase', 'iteration', 'producer'
 #: the guard and the workflow contract disagree about ``caller_phase``.
 _EXEMPT_FIELDS = _CONTRACT_FIELDS | _DISPATCHER_SUPPLIED_FIELDS
 
-#: The known step whose candidates field is the motivating instance (n=1 today).
-_KNOWN_STEP = 'default:pre-submission-self-review'
-_KNOWN_FIELD = 'candidates'
+#: The anchor step whose step-specific fields the assertions read off a real doc.
+#: It is ONE member of the declaring population, not its definition — the
+#: population is derived from discovery.
+_KNOWN_STEP = 'default:functional-review'
+_KNOWN_FIELDS = frozenset({'attribution', 'verdict_file'})
 
 #: The control step — carries `instructions` (a contract field), so it has a
 #: non-trivial dispatch block but NO step-specific field. Kept distinct from the
@@ -459,10 +462,10 @@ _SYNTH_INSTRUCTIONS = (
 _SYNTH_CANDIDATES = (
     'Task: plan-marshall:{target}\n'
     '  prompt: |\n'
-    '    name: pre-submission-self-review\n'
+    '    name: some-review\n'
     '    plan_id: {plan_id}\n'
     '    skills: []\n'
-    '    workflow: plan-marshall:phase-6-finalize/workflow/pre-submission-self-review.md\n'
+    '    workflow: plan-marshall:phase-6-finalize/workflow/some-review.md\n'
     '\n'
     '    candidates: |\n'
     '      {candidates_toon}\n'
@@ -493,21 +496,20 @@ def test_declared_population_is_non_empty():
 
 
 def test_population_contains_the_known_instance():
-    """(2) The motivating case — candidates on pre-submission-self-review."""
+    """(2) The anchor case — attribution and verdict_file on the functional review."""
     declaring = _declaring_names()
 
     assert _KNOWN_STEP in declaring, (
-        f'{_KNOWN_STEP} declares {_KNOWN_FIELD} Required in its input table and '
-        f'carries it in its own dispatch body, but it declares no {_FIELD_KEY} '
+        f'{_KNOWN_STEP} declares {sorted(_KNOWN_FIELDS)} Required in its input table '
+        f'and carries them in its own dispatch body, but it declares no {_FIELD_KEY} '
         f'obligation — so the declaration↔carriage link is unenforced for the '
-        f'exact instance this contract exists to close. Declaring steps: '
-        f'{sorted(declaring)}'
+        f'anchor instance. Declaring steps: {sorted(declaring)}'
     )
 
     record = next(r for r in _declaring_records() if r['name'] == _KNOWN_STEP)
-    assert _KNOWN_FIELD in record['prompt_fields'], (
-        f'{_KNOWN_STEP} declares {_FIELD_KEY} but it does not list '
-        f'{_KNOWN_FIELD!r}. Declared: {record["prompt_fields"]}'
+    assert set(record['prompt_fields']) == _KNOWN_FIELDS, (
+        f'{_KNOWN_STEP} declares {_FIELD_KEY} but not exactly '
+        f'{sorted(_KNOWN_FIELDS)}. Declared: {record["prompt_fields"]}'
     )
 
 
@@ -691,15 +693,19 @@ def test_contract_only_dispatch_is_not_flagged():
     )
 
 
-def test_parser_reads_the_real_candidates_field():
-    """The parser extracts exactly ``candidates`` from the REAL dispatch block —
-    so (2)/(3) assert over a truly-carried field, not a mis-parse."""
+def test_parser_reads_the_real_step_specific_fields():
+    """The parser extracts exactly the anchor's step-specific fields from its REAL
+    dispatch blocks — so (2)/(3) assert over truly-carried fields, not a mis-parse.
+
+    The anchor doc carries two dispatch blocks — the author's and the verifier's —
+    so this also shows the verifier's ``instructions`` block contributes nothing.
+    """
     record = _record_for(_KNOWN_STEP)
     carried = _step_specific_fields(Path(record['path']))
 
-    assert carried == {_KNOWN_FIELD}, (
-        f'Expected the real {_KNOWN_STEP} dispatch body to carry exactly '
-        f'{{{_KNOWN_FIELD!r}}} beyond the generic contract; parsed {sorted(carried)}. '
+    assert carried == _KNOWN_FIELDS, (
+        f'Expected the real {_KNOWN_STEP} dispatch bodies to carry exactly '
+        f'{sorted(_KNOWN_FIELDS)} beyond the generic contract; parsed {sorted(carried)}. '
         f'A mis-parse here would make (2)/(3) vacuous or wrong.'
     )
 

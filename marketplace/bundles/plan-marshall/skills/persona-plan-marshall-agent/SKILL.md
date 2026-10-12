@@ -59,7 +59,7 @@ Covers the orthogonality of effort and thoroughness, the thoroughness ladder (T1
 
 ### Step 5: Load the Coverage-Gathering Contract (As Needed)
 
-**Coverage-gathering contract** (load when building or modifying a broad-pass component — a wide audit, compliance sweep, simplification/refactor campaign, or pre-submission review — that gathers a coverage cell from the user and consumes it to govern its breadth/depth):
+**Coverage-gathering contract** (load when building or modifying a broad-pass component — a wide audit, compliance sweep, or simplification/refactor campaign — that gathers a coverage cell from the user and consumes it to govern its breadth/depth):
 ```text
 Read: standards/coverage-gathering-contract.md
 ```

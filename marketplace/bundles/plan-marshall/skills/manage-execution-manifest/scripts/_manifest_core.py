@@ -554,7 +554,6 @@ DEFAULT_STEP_OWNER = 'leaf-dispatchable'
 ORCHESTRATOR_OWNED_STEPS: frozenset[str] = frozenset(
     {
         'finalize-step-plugin-doctor',
-        'pre-submission-self-review',
         'functional-review',
         'code-review',
         'automatic-review',
