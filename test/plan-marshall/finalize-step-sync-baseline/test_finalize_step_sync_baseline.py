@@ -67,8 +67,7 @@ def _doc_body(doc: Path) -> str:
 # column zero makes an indented heading invisible, which does not fail loudly —
 # _markdown_sections silently omits it and _section_containing then returns the
 # enclosing LARGER section, re-admitting the document-wide looseness the
-# section-binding exists to remove. The identical widening was applied to
-# _ATX_HEADING in ext-self-review-plan-marshall/test_self_review_check_coverage.py.
+# section-binding exists to remove.
 _HEADING_RE = re.compile(r'^ {0,3}(#{1,6})\s+(.*)$')
 
 

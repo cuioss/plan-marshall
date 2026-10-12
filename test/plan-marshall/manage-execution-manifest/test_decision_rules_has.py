@@ -44,8 +44,8 @@ class TestHasDeclaredLaneOverride:
         # the lookup strips ``default:`` from the KEY before comparing.
         assert (
             _has_declared_lane_override(
-                'pre-submission-self-review',
-                _lane_map('default:pre-submission-self-review', 'minimal'),
+                'functional-review',
+                _lane_map('default:functional-review', 'minimal'),
             )
             is True
         )

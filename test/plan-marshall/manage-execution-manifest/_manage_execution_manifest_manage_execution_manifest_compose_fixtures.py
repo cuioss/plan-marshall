@@ -132,16 +132,15 @@ _COMMIT_PUSH_DROP_SET = {
 # scope_gated_finalize pre-filter tests
 #
 # The composer drops heavyweight phase-6 review/audit steps by
-# scope. surgical drops the three review/audit steps (plan-retrospective,
-# pre-submission-self-review, plugin-doctor) but RETAINS automatic-review by
-# default (the implicit scope gate never drops it — its presence is governed by
-# its configured lane); drop_review_on_scope_gate=true additionally drops
-# automatic-review; single_module drops only plan-retrospective.
+# scope. surgical drops the four review/audit steps (plan-retrospective,
+# functional-review, code-review, plugin-doctor) but RETAINS automatic-review —
+# the implicit scope gate never drops it; its presence is governed by its
+# configured lane. single_module drops only plan-retrospective.
 # multi_module/broad retain the full set. One decision-log line per subtraction.
 # =============================================================================
 
 
-# Candidate set covering the three scope-gated steps in their canonical
+# Candidate set covering the four scope-gated steps in their canonical
 # prefixed forms plus the review gates and a few baseline steps. The composer
 # boundary-normalizes only the `default:` namespace, so `project:` /
 # `plan-marshall:` prefixes survive intake and the scope gate matches them
@@ -151,7 +150,8 @@ _SCOPE_GATE_PHASE_6 = (
     'create-pr',
     'automatic-review',
     'sonar-roundtrip',
-    'default:pre-submission-self-review',
+    'default:functional-review',
+    'default:code-review',
     'project:finalize-step-plugin-doctor',
     'lessons-capture',
     'plan-marshall:plan-retrospective',

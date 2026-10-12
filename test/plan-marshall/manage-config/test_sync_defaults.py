@@ -409,11 +409,10 @@ def test_sync_defaults_materializes_all_finalize_steps_as_keyed_map_form(plan_co
     implementor (no `default_on` filter): exclusion is expressed as a `lane: off`
     override, never absence, and the two adversarial infra elements
     (`default:sonar-roundtrip` / `plan-marshall:automatic-review`) seed a
-    `lane: ask` override. The four ceremony gates (qgate / self_review / simplify /
-    security_audit) no longer ride a run-at-all param — `finalize-step-simplify`,
-    `finalize-step-security-audit` and `pre-submission-self-review` are all
-    config-less (the last one also lost its `drop_review_on_scope_gate` escape
-    hatch to declared-lane immunity).
+    `lane: ask` override. The five ceremony gates (qgate / functional_review /
+    code_review / simplify / security_audit) ride no run-at-all param —
+    `finalize-step-simplify`, `finalize-step-security-audit`, `functional-review`
+    and `code-review` are all config-less.
     """
     from extension_discovery import find_implementors
 
@@ -457,13 +456,13 @@ def test_sync_defaults_materializes_all_finalize_steps_as_keyed_map_form(plan_co
             f'default_on:false step {name!r} must seed lane:off, got {steps[name]!r}'
         )
 
-    # The retired ceremony run-at-all params are gone from their owning steps;
-    # simplify / security-audit / self-review are all config-less (self-review's
-    # drop_review_on_scope_gate escape hatch went with declared-lane immunity).
+    # The retired ceremony run-at-all params are gone from their owning steps, and
+    # neither review step carries its gate name as a param — each carries at most
+    # the materialized `lane` override.
     assert 'simplify' not in steps.get('default:finalize-step-simplify', {})
     assert 'security_audit' not in steps.get('default:finalize-step-security-audit', {})
-    assert 'self_review' not in steps.get('default:pre-submission-self-review', {})
-    assert 'drop_review_on_scope_gate' not in steps.get('default:pre-submission-self-review', {})
+    assert set(steps['default:functional-review']) <= {'lane'}
+    assert set(steps['default:code-review']) <= {'lane'}
 
 
 def test_sync_defaults_preserves_present_steps_map_untouched(plan_context):
@@ -839,10 +838,10 @@ def test_sync_defaults_no_renames_reported_for_clean_config(plan_context):
 
 # Frontmatter-class anchors (pinned to the real phase-6-finalize step docs):
 #   default:push                        → class core       → effective minimal (IMMUNE)
-#   default:pre-submission-self-review  → class adversarial → effective standard (not immune)
+#   default:functional-review           → class adversarial → effective standard (not immune)
 #   default:archive-plan                → class core       → effective minimal (IMMUNE)
 _CORE_STEP = 'default:push'
-_ADVERSARIAL_STEP = 'default:pre-submission-self-review'
+_ADVERSARIAL_STEP = 'default:functional-review'
 
 _lanes_mod = load_script_module(
     'plan-marshall', 'manage-execution-manifest', '_manifest_lanes.py', module_name='_manifest_lanes_for_sync'
@@ -877,7 +876,7 @@ def test_sync_defaults_materializes_preexisting_steps_to_effective_lane(plan_con
     """A pre-existing lane-less core / adversarial step gets its frontmatter-class effective lane.
 
     `default:push` (class core) materializes to `minimal`; the pre-existing
-    `default:pre-submission-self-review` (class adversarial) materializes to
+    `default:functional-review` (class adversarial) materializes to
     `standard`. Both are pre-existing (present in the input, not freshly merged), so
     the fill surfaces the composer's own default — a semantic no-op — never `off`.
     Both are reported in `materialized`.
@@ -906,7 +905,7 @@ def test_sync_defaults_materializes_freshly_merged_default_step_to_off(plan_cont
     """A present map is NOT expanded, so there is no freshly-merged row to materialize.
 
     Atomic-once-present (D1) supersedes the former opt-in fill for this shape:
-    `default:pre-submission-self-review` is absent from the sparse input config,
+    `default:functional-review` is absent from the sparse input config,
     so the deep-merge HOLDS it for ask (its dotted path lands in `held_for_ask`,
     never in `added`) and the materializer never sees it. Only the pre-existing
     core step materializes — to its effective lane, never `off`.
@@ -1341,7 +1340,7 @@ def test_sync_defaults_remove_then_sync_keeps_finalize_step_absent(plan_context)
                 'phase-6-finalize': {
                     'steps': {
                         'default:push': {},
-                        'default:pre-submission-self-review': {},
+                        'default:code-review': {},
                         'default:archive-plan': {},
                     },
                 }
@@ -1353,7 +1352,7 @@ def test_sync_defaults_remove_then_sync_keeps_finalize_step_absent(plan_context)
         Namespace(
             sub_noun='phase-6-finalize',
             verb='remove-step',
-            step='default:pre-submission-self-review',
+            step='default:code-review',
         )
     )
     assert removed['status'] == 'success'
@@ -1363,9 +1362,9 @@ def test_sync_defaults_remove_then_sync_keeps_finalize_step_absent(plan_context)
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
     steps = config['plan']['phase-6-finalize']['steps']
-    assert 'default:pre-submission-self-review' not in steps
+    assert 'default:code-review' not in steps
     assert 'default:push' in steps
-    expected = 'plan.phase-6-finalize.steps.default:pre-submission-self-review (crosses operator removal)'
+    expected = 'plan.phase-6-finalize.steps.default:code-review (crosses operator removal)'
     assert expected in result['re_added']
 
 

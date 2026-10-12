@@ -22,7 +22,7 @@ _loop_back = load_script_module('plan-marshall', 'manage-status', '_cmd_loop_bac
 _status_core = load_script_module('plan-marshall', 'manage-status', '_status_core.py', '_close_timeout_status_core')
 
 _PHASE = '6-finalize'
-_STEP = 'pre-submission-self-review'
+_STEP = 'code-review'
 _WAIVED_STEPS = ['pre-push-quality-gate', 'push']
 _TIMEOUT_TEXT = 'could not acquire coordination guard status.json.lock within 30.0s'
 

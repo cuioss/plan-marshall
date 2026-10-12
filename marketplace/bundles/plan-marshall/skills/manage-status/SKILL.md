@@ -440,7 +440,7 @@ A step whose authoritative doc declares `head_dependent: true` MUST supply `--he
 
 A SUPPLIED anchor is resolved against the local object store before anything is persisted: when `--head-at-completion` resolves to no commit (`git rev-parse --verify {sha}^{commit}` fails — a fabricated string, a non-commit object, or a leading-`-` option-injection shape), the command returns `status: error`, `error: unknown_head_at_completion` and **writes nothing**. The check is object presence, not ref reachability: a commit object present in the local store passes even when no branch or tag reaches it — reachability from a ref is neither required nor checked. The persisted value is the resolved full-hex commit ID, never the supplied spelling: a symbolic anchor (`HEAD`, a branch name, `HEAD~1`) would otherwise move under the record and break every later delta the record scopes. Presence without resolvability is a fabricated anchor, and a fabricated anchor records a verdict nobody can locate in history — so it is refused rather than persisted, on every `done` outcome, whether the step declares `head_dependent: true`.
 
-The refusal exists because the recorded SHA carries two independent loads, and a missing anchor breaks both silently — the dispatcher's re-entry check has no SHA to compare the live HEAD against, and a step that re-fires across loop-back rounds has no anchor to scope its next round's delta against (`default:pre-submission-self-review` passes it to its surfacer as `--since-ref`). The obligation is declared by [ext-point-finalize-step.md](../extension-api/standards/ext-point-finalize-step.md) § "The fail-closed anchor obligation"; this command is its enforcement point.
+The refusal exists because the recorded SHA carries two independent loads, and a missing anchor breaks both silently — the dispatcher's re-entry check has no SHA to compare the live HEAD against, and a step that re-fires across loop-back rounds has no anchor to scope its next round's delta against (`default:functional-review` and `default:code-review` review the delta since that SHA on a delta round). The obligation is declared by [ext-point-finalize-step.md](../extension-api/standards/ext-point-finalize-step.md) § "The fail-closed anchor obligation"; this command is its enforcement point.
 
 **How head-dependence is derived**: through the finalize-step registry's OWN discovery path — `find_implementors()` for the population and `extension_discovery._read_frontmatter_fields` for the fact — so no second frontmatter parser exists to drift from the one the dispatcher and the derivation guard already read. Both the discovered step name and the supplied `--step` are canonicalized before comparison, because discovery names a built-in step `default:{bare}` while callers write the bare canonical key.
 
@@ -560,8 +560,8 @@ status: error
 plan_id: my-feature
 error: missing_head_at_completion
 phase: 6-finalize
-step: pre-submission-self-review
-message: Step 'pre-submission-self-review' declares head_dependent: true, so --head-at-completion is required when --outcome=done. Nothing was written.
+step: code-review
+message: Step 'code-review' declares head_dependent: true, so --head-at-completion is required when --outcome=done. Nothing was written.
 ```
 
 **Output — unresolved head-dependence derivation** (TOON, record written with a warning):
@@ -967,7 +967,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-b
 
 1. The step is recorded `done` through the same write `mark-step-done` performs, with `--head` as its `head_at_completion`, the display detail `operator close: {N} finding(s) accepted`, and the facts `may_close=operator_override`, `acceptance=operator_override`, `work_performed=true`. No `--force` is applied: a step whose stored outcome is `skipped` is refused by the transition table, and the refusal is returned as `step_not_recorded` with nothing written.
 2. Exactly the named findings are resolved `accepted`, each with the rationale as its resolution detail. No other finding is touched.
-3. The step's own pending **state findings** are resolved `accepted`, citing the closing HEAD. They are selected by rule key through `manage-findings qgate resolve-by-rule`, and the key is derived from the step name as `{step}-state` — the state findings of `pre-submission-self-review` carry `pre-submission-self-review-state`. A step that files no state findings has none under that key, and the resolution reaches nothing.
+3. The step's own pending **state findings** are resolved `accepted`, citing the closing HEAD. They are selected by rule key through `manage-findings qgate resolve-by-rule`, and the key is derived from the step name as `{step}-state` — the state findings of `code-review` carry `code-review-state`. A step that files no state findings has none under that key, and the resolution reaches nothing.
 4. Each `--waive-refire` step's `done` record gains `refire_waiver = {head, basis}` — see "Re-fire waiver (`refire_waiver`)" under [mark-step-done](#mark-step-done).
 
 **Return fields**:
@@ -988,7 +988,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-b
 ```toon
 status: success
 plan_id: my-feature
-step: pre-submission-self-review
+step: code-review
 outcome: done
 head: 76c7200b6f1d2c3a4b5e6f708192a3b4c5d6e7f8
 may_close: operator_override
@@ -998,7 +998,7 @@ accepted_count: 2
 accepted[2]:
   - a3f2c1
   - b4e3d2
-state_rule: pre-submission-self-review-state
+state_rule: code-review-state
 state_findings_resolved: 1
 waived_steps[1]:
   - pre-push-quality-gate
@@ -1009,7 +1009,7 @@ waived_steps[1]:
 status: error
 plan_id: my-feature
 error: finding_not_pending
-step: pre-submission-self-review
+step: code-review
 message: "Each --accept hash id must name a pending finding of the 6-finalize Q-Gate store; these do not: b4e3d2. Nothing was written."
 not_pending[1]:
   - b4e3d2

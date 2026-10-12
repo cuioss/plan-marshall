@@ -4,7 +4,8 @@
 
 *"What did review catch that the in-house gates did not"* is the only direct read
 on gate/review parity available, and it arrives free on every PR: the gates run
-before review (self-review at order 8, `pre-push-quality-gate` at 10, against
+before review (`functional-review` at order 6, `code-review` at 7,
+`pre-push-quality-gate` at 10, against
 `automatic-review` at 30), so a finding filed against a tree the gates already
 passed IS a gate escape. No per-finding gate attribution is needed.
 

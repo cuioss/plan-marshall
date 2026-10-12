@@ -46,9 +46,9 @@ cmd_mark_step_done = _loop_back.cmd_mark_step_done
 read_status = _status_core.read_status
 
 _PHASE = '6-finalize'
-_STEP = 'pre-submission-self-review'
+_STEP = 'functional-review'
 _WAIVED_STEP = 'pre-push-quality-gate'
-_STATE_RULE = 'pre-submission-self-review-state'
+_STATE_RULE = 'functional-review-state'
 #: A budget source another writer spends from while a close is in flight.
 _OTHER_SOURCE = 'wait-region-unified-triage'
 _RATIONALE = 'the two residual findings are wording nits the operator accepts'
@@ -175,7 +175,7 @@ def test_a_close_records_done_over_a_live_loop_back_with_the_override_facts(plan
         _STEP,
         'loop_back',
         head,
-        'self-review found 2 blocking in 1 classes, 0 advisory',
+        'functional review found 2 blocking over 3 deliverables, 0 advisory',
         loop_back_target=_PHASE,
     )
     first = _file_finding(plan_id, 'ambiguous_wording at doc/a.md:12')
@@ -246,7 +246,7 @@ def test_a_pending_state_finding_is_resolved_by_the_close(plan_context):
     plan_id = 'loop-back-close-state-finding'
     _make_plan(plan_id)
     head = _real_head()
-    state = _file_finding(plan_id, 'further_round_owed at pre-submission-self-review', rule=_STATE_RULE)
+    state = _file_finding(plan_id, 'verifier_unavailable at functional-review', rule=_STATE_RULE)
     other_rule = _file_finding(plan_id, 'missing-yield at some-other-step', rule='missing-yield')
 
     result = _close(plan_id, head)
@@ -277,11 +277,11 @@ def test_an_unknown_hash_id_refuses_the_whole_close_and_writes_nothing(plan_cont
         _STEP,
         'loop_back',
         head,
-        'self-review found 1 blocking in 1 classes, 0 advisory',
+        'functional review found 1 blocking over 3 deliverables, 0 advisory',
         loop_back_target=_PHASE,
     )
     real = _file_finding(plan_id, 'ambiguous_wording at doc/a.md:12')
-    state = _file_finding(plan_id, 'verdict_refused at pre-submission-self-review', rule=_STATE_RULE)
+    state = _file_finding(plan_id, 'verdict_refused at functional-review', rule=_STATE_RULE)
     before = read_status(plan_id)
 
     result = _close(plan_id, head, accept=[real, 'no-such-hash'])

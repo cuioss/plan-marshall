@@ -108,7 +108,6 @@ _PINNED_POPULATION_MEMBERS: frozenset[str] = frozenset(
         'plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py',
         'plan-marshall/skills/workflow-integration-git/scripts/integrate_into_main.py',
         'pm-dev-java/skills/manage-maven-profiles/scripts/profiles.py',
-        'pm-plugin-development/skills/ext-self-review-plan-marshall/scripts/self_review.py',
     }
 )
 

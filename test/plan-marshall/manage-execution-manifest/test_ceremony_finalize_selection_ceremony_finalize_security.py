@@ -12,15 +12,15 @@ from _manage_execution_manifest_ceremony_finalize_selection_fixtures import (
 )
 
 # =============================================================================
-# Test: security_audit gate — symmetric peer of the other three finalize gates
+# Test: security_audit gate — symmetric peer of the other four finalize gates
 # =============================================================================
 
 
 class TestCeremonyFinalizeSecurityAudit:
     """The ``security_audit`` gate forces ``finalize-step-security-audit`` in/out,
     with ``auto`` deferring to the matrix-time ``security_class_inactive``
-    pre-filter. The CEREMONY gate is still the symmetric peer of the other three
-    (self_review / qgate / simplify); the PRE-FILTER it defers to is not — that one
+    pre-filter. The CEREMONY gate is still the symmetric peer of the other four
+    (functional_review / code_review / qgate / simplify); the PRE-FILTER it defers to is not — that one
     shares no helper with ``simplify_inactive`` and reads no ``change_type``.
 
     ``finalize-step-security-audit`` is a member of ``DEFAULT_PHASE_6_STEPS`` and of

@@ -17,7 +17,7 @@ from _manage_execution_manifest_ceremony_finalize_selection_fixtures import (
 class TestCeremonyFinalizePlanLocalChannel:
     """A plan-local ``lane`` governs the ceremony gate exactly as a marshal one does."""
 
-    _SELF_REVIEW_OWNER = 'default:pre-submission-self-review'
+    _FUNCTIONAL_REVIEW_OWNER = 'default:functional-review'
 
     def _compose_with(self, plan_id: str, candidates: list[str]):
         return cmd_compose(
@@ -41,17 +41,22 @@ class TestCeremonyFinalizePlanLocalChannel:
 
         # Channel A — plan-local only; marshal declares nothing.
         _seed_marshal(candidates=candidates)
-        _write_plan_local_overrides(plan_context, 'ceremony-plan-local-off', {self._SELF_REVIEW_OWNER: {'lane': 'off'}})
+        _write_plan_local_overrides(
+            plan_context, 'ceremony-plan-local-off', {self._FUNCTIONAL_REVIEW_OWNER: {'lane': 'off'}}
+        )
         plan_local = self._compose_with('ceremony-plan-local-off', candidates)
 
         # Channel B — marshal only; the plan declares nothing.
-        _seed_marshal(finalize_gates={'self_review': 'off'}, candidates=candidates)
+        _seed_marshal(finalize_gates={'functional_review': 'off'}, candidates=candidates)
         marshal = self._compose_with('ceremony-marshal-off', candidates)
 
         assert plan_local is not None and marshal is not None
-        assert plan_local['ceremony_finalize_gates']['self_review'] == 'never'
-        assert plan_local['ceremony_finalize_gates']['self_review'] == marshal['ceremony_finalize_gates']['self_review']
-        assert 'pre-submission-self-review' not in _bare(_manifest_phase_6_steps(plan_local))
+        assert plan_local['ceremony_finalize_gates']['functional_review'] == 'never'
+        assert (
+            plan_local['ceremony_finalize_gates']['functional_review']
+            == marshal['ceremony_finalize_gates']['functional_review']
+        )
+        assert 'functional-review' not in _bare(_manifest_phase_6_steps(plan_local))
         assert _bare(_manifest_phase_6_steps(plan_local)) == _bare(_manifest_phase_6_steps(marshal))
 
     def test_plan_local_minimal_forces_the_gate_in_like_a_marshal_minimal(self, plan_context):
@@ -61,16 +66,19 @@ class TestCeremonyFinalizePlanLocalChannel:
 
         _seed_marshal(candidates=candidates)
         _write_plan_local_overrides(
-            plan_context, 'ceremony-plan-local-min', {self._SELF_REVIEW_OWNER: {'lane': 'minimal'}}
+            plan_context, 'ceremony-plan-local-min', {self._FUNCTIONAL_REVIEW_OWNER: {'lane': 'minimal'}}
         )
         plan_local = self._compose_with('ceremony-plan-local-min', candidates)
 
-        _seed_marshal(finalize_gates={'self_review': 'minimal'}, candidates=candidates)
+        _seed_marshal(finalize_gates={'functional_review': 'minimal'}, candidates=candidates)
         marshal = self._compose_with('ceremony-marshal-min', candidates)
 
         assert plan_local is not None and marshal is not None
-        assert plan_local['ceremony_finalize_gates']['self_review'] == 'always'
-        assert plan_local['ceremony_finalize_gates']['self_review'] == marshal['ceremony_finalize_gates']['self_review']
+        assert plan_local['ceremony_finalize_gates']['functional_review'] == 'always'
+        assert (
+            plan_local['ceremony_finalize_gates']['functional_review']
+            == marshal['ceremony_finalize_gates']['functional_review']
+        )
 
     def test_plan_local_declaration_also_grants_scope_gate_immunity(self, plan_context):
         """ONE declaration reaches BOTH readers — the symmetric-pair obligation.
@@ -86,7 +94,7 @@ class TestCeremonyFinalizePlanLocalChannel:
         _seed_marshal(candidates=candidates)
         _stub_footprint(_FOOTPRINT)
         _write_plan_local_overrides(
-            plan_context, 'ceremony-plan-local-immune', {self._SELF_REVIEW_OWNER: {'lane': 'off'}}
+            plan_context, 'ceremony-plan-local-immune', {self._FUNCTIONAL_REVIEW_OWNER: {'lane': 'off'}}
         )
 
         result = cmd_compose(
@@ -101,25 +109,25 @@ class TestCeremonyFinalizePlanLocalChannel:
 
         assert result is not None and result['status'] == 'success'
         # Reader 1 — the scope gate's immunity predicate saw the declaration.
-        assert 'pre-submission-self-review' in result['scope_gated_finalize_immune']
-        assert 'pre-submission-self-review' not in result['scope_gated_finalize_dropped']
+        assert 'functional-review' in result['scope_gated_finalize_immune']
+        assert 'functional-review' not in result['scope_gated_finalize_dropped']
         # Reader 2 — the ceremony gate saw the SAME declaration.
-        assert result['ceremony_finalize_gates']['self_review'] == 'never'
+        assert result['ceremony_finalize_gates']['functional_review'] == 'never'
 
     def test_plan_local_overlays_a_marshal_declaration_on_the_same_step(self, plan_context):
         """Precedence is plan-local ▸ marshal, applied per step key."""
         candidates = _phase_6_with_ceremony_steps().split(',')
-        _seed_marshal(finalize_gates={'self_review': 'minimal'}, candidates=candidates)
+        _seed_marshal(finalize_gates={'functional_review': 'minimal'}, candidates=candidates)
         _stub_footprint(_FOOTPRINT)
         _write_plan_local_overrides(
-            plan_context, 'ceremony-plan-local-wins', {self._SELF_REVIEW_OWNER: {'lane': 'off'}}
+            plan_context, 'ceremony-plan-local-wins', {self._FUNCTIONAL_REVIEW_OWNER: {'lane': 'off'}}
         )
 
         result = self._compose_with('ceremony-plan-local-wins', candidates)
 
         assert result is not None
         # marshal said minimal (always); the plan-local off wins → never.
-        assert result['ceremony_finalize_gates']['self_review'] == 'never'
+        assert result['ceremony_finalize_gates']['functional_review'] == 'never'
 
     def test_absent_plan_local_map_leaves_the_marshal_declaration_intact(self, plan_context):
         """The merge is an OVERLAY, not a replacement — no plan-local map is a no-op.
@@ -129,10 +137,10 @@ class TestCeremonyFinalizePlanLocalChannel:
         of its own, and every positive test above would still pass.
         """
         candidates = _phase_6_with_ceremony_steps().split(',')
-        _seed_marshal(finalize_gates={'self_review': 'off'}, candidates=candidates)
+        _seed_marshal(finalize_gates={'functional_review': 'off'}, candidates=candidates)
         _stub_footprint(_FOOTPRINT)
 
         result = self._compose_with('ceremony-no-plan-local', candidates)
 
         assert result is not None
-        assert result['ceremony_finalize_gates']['self_review'] == 'never'
+        assert result['ceremony_finalize_gates']['functional_review'] == 'never'

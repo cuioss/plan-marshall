@@ -207,7 +207,7 @@ A timeout budget is in the census only when its own exhaustion reaches the opera
 
 The two infra-lane rows are where the two readings diverge most visibly. Their `ask` is the seed `_LANE_ASK_INFRA_STEPS` applies in `manage-config`'s `_config_defaults.py` — not a value either step's own `lane:` frontmatter declares, since both declare `class: adversarial` with no `tier` and would otherwise resolve at that class's `standard` default. `ask` means "`/marshall-steward` asks about this element at setup"; the operator's persisted answer (`off`, `standard`, or `full`) replaces it, so a project that has been through setup never reads `ask` back for either step.
 
-These two are also **not** one of the four optional finalize checks. That set is closed at four — `qgate`, `self_review`, `simplify`, `security_audit` — with four named owning steps, none of them these; see <<run-at-all-gates>>. They share only the `steps.<step-id>.lane` channel, which every lane-participating element uses.
+These two are also **not** one of the five optional finalize checks. That set is closed at five — `qgate`, `functional_review`, `code_review`, `simplify`, `security_audit` — with five named owning steps, none of them these; see <<run-at-all-gates>>. They share only the `steps.<step-id>.lane` channel, which every lane-participating element uses.
 ====
 
 [IMPORTANT]
@@ -277,22 +277,22 @@ The `--plan-id` form exists so an answer you give about one plan does not silent
 | `plan.phase-2-refine.revalidation` | `auto` | Whether the premise / narrative-vs-code safety check runs.
 |===
 
-**The four optional finalize checks are not run-at-all keys.** `qgate`, `self_review`, `simplify` and `security_audit` are each set through their owning step's `lane` override, using `step set --step-id <owning-step> --param lane --value <value>`. The manifest transform that resolves these four maps that lane onto the same tri-state the table above uses: `off` → `never`, `minimal` → `always`, and **every other accepted value — `standard`, `full`, `ask`, or an absent override — → `auto`**. So `minimal` is the value that forces a gate in; `full` does not, despite reading like the strongest setting.
+**The five optional finalize checks are not run-at-all keys.** `qgate`, `functional_review`, `code_review`, `simplify` and `security_audit` are each set through their owning step's `lane` override, using `step set --step-id <owning-step> --param lane --value <value>`. The manifest transform that resolves these five maps that lane onto the same tri-state the table above uses: `off` → `never`, `minimal` → `always`, and **every other accepted value — `standard`, `full`, `ask`, or an absent override — → `auto`**. So `minimal` is the value that forces a gate in; `full` does not, despite reading like the strongest setting.
 
-The owning steps are `default:pre-push-quality-gate` (`qgate`), `default:pre-submission-self-review` (`self_review`), `default:finalize-step-simplify` (`simplify`) and `default:finalize-step-security-audit` (`security_audit`) — the `default:` prefix is part of the key as seeded, and `step set` rejects the bare name with `Step '<name>' not found in phase-6-finalize`. The per-element override row is documented in <<execution-profile-lane-selection>>.
+The owning steps are `default:pre-push-quality-gate` (`qgate`), `default:functional-review` (`functional_review`), `default:code-review` (`code_review`), `default:finalize-step-simplify` (`simplify`) and `default:finalize-step-security-audit` (`security_audit`) — the `default:` prefix is part of the key as seeded, and `step set` rejects the bare name with `Step '<name>' not found in phase-6-finalize`. The per-element override row is documented in <<execution-profile-lane-selection>>.
 
-Switching the finalize self-review off, in full:
+The two reviews are separate settings, so each is switched on its own. Switching the finalize code review off while keeping the functional review, in full:
 
 [source,bash]
 ----
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize step set \
-  --step-id default:pre-submission-self-review --param lane --value off
+  --step-id default:code-review --param lane --value off
 ----
 
-`step set` is named here rather than `set-lane` because it is the only one of the two that reaches `minimal`, the value that forces a gate *in*. For the three values both verbs accept — `off`, `standard`, `full` — they are interchangeable: both write the same `plan.phase-6-finalize.steps.<step-id>.lane` key, so `finalize-steps set-lane --step-id default:pre-submission-self-review --lane off` produces the identical result. They remain interchangeable on `off` specifically because they now **refuse an inert `off` identically**: both run the same class-immunity check before writing, so neither will store an `off` the other would reject, and the result of picking one verb over the other is the same acceptance or the same refusal. They differ only when the step is absent from the phase step map, which `set-lane` materialises and `step set` refuses; all four owning steps above are seeded, so that difference does not arise for one of these four checks.
+`step set` is named here rather than `set-lane` because it is the only one of the two that reaches `minimal`, the value that forces a gate *in*. For the three values both verbs accept — `off`, `standard`, `full` — they are interchangeable: both write the same `plan.phase-6-finalize.steps.<step-id>.lane` key, so `finalize-steps set-lane --step-id default:code-review --lane off` produces the identical result. They remain interchangeable on `off` specifically because they now **refuse an inert `off` identically**: both run the same class-immunity check before writing, so neither will store an `off` the other would reject, and the result of picking one verb over the other is the same acceptance or the same refusal. They differ only when the step is absent from the phase step map, which `set-lane` materialises and `step set` refuses; all five owning steps above are seeded, so that difference does not arise for one of these five checks.
 
-Read or set a run-at-all gate with the standard phase `get`/`set` verb against the owning phase block — all three live on `phase-1-init` / `phase-2-refine`, per the table above; `phase-6-finalize` carries none. Read one of the four optional finalize checks through its owning step instead:
+Read or set a run-at-all gate with the standard phase `get`/`set` verb against the owning phase block — all three live on `phase-1-init` / `phase-2-refine`, per the table above; `phase-6-finalize` carries none. Read one of the five optional finalize checks through its owning step instead:
 
 [source,bash]
 ----
@@ -300,9 +300,9 @@ Read or set a run-at-all gate with the standard phase `get`/`set` verb against t
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-1-init set --field deep_lane --value always
 
-# One of the four optional finalize checks: through its owning step, never a flat --field
+# One of the five optional finalize checks: through its owning step, never a flat --field
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize step get --step-id default:pre-submission-self-review
+  plan phase-6-finalize step get --step-id default:functional-review
 ----
 
 See the canonical per-key reference in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`] for the full per-phase gate catalogue.

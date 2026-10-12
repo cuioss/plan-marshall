@@ -8,8 +8,8 @@ def test_the_three_non_completion_outcomes_are_counted_apart():
 
     Summing loop-backs, negative verdicts and raised dispatches into one number
     is what made a thorough gate read as a defective one: the more rounds a
-    self-review filed findings for, the worse any error-counting analysis
-    graded its plan. One row of each proves the three columns are disjoint.
+    review filed findings for, the worse any error-counting analysis graded
+    its plan. One row of each proves the three columns are disjoint.
     """
     rows = [
         _row('gate', outcome='loop_back'),

@@ -1785,8 +1785,8 @@ python3 .plan/execute-script.py plan-marshall:automatic-review:review_gate_delta
 Measures **what review caught that the in-house gates did not** — a signal about the GATES' reach,
 never about a reviewer and never a merge verdict (`proves: gate_escape_only`, `gates_merge: false`).
 It needs no per-finding gate attribution, because the gates run before review
-(`pre-submission-self-review` at `order: 8`, `pre-push-quality-gate` at `order: 10`, against this step
-at `order: 30`): a finding filed against a tree the gates already passed IS a gate escape. See
+(`functional-review` at `order: 6`, `code-review` at `order: 7`, `pre-push-quality-gate` at
+`order: 10`, against this step at `order: 30`): a finding filed against a tree the gates already passed IS a gate escape. See
 [`standards/bot-participation-contract.md`](standards/bot-participation-contract.md) § "The
 review-versus-gate delta" for the governing contract, and § "The counting rule" for the definitions
 this verb applies.

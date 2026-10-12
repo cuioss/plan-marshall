@@ -12,14 +12,15 @@ from _manage_execution_manifest_ceremony_finalize_selection_fixtures import (
 )
 
 # =============================================================================
-# Test: simplify gate — symmetric peer of the other three finalize gates
+# Test: simplify gate — symmetric peer of the other four finalize gates
 # =============================================================================
 
 
 class TestCeremonyFinalizeSimplify:
     """The ``simplify`` gate forces ``finalize-step-simplify`` in/out, with
     ``auto`` deferring to the matrix-time ``simplify_inactive`` pre-filter. It is
-    the symmetric peer of the other two finalize gates (self_review / qgate).
+    the symmetric peer of the other four finalize gates (functional_review /
+    code_review / qgate / security_audit).
 
     ``finalize-step-simplify`` is a member of ``DEFAULT_PHASE_6_STEPS``; the
     ``simplify_inactive`` pre-filter keeps it only when

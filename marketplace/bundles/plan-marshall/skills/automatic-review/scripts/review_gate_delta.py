@@ -8,7 +8,8 @@ GATES, never a merge verdict and never a statement about a reviewer.
 
 Why the delta needs no per-finding gate attribution
 ---------------------------------------------------
-The in-house gates run BEFORE review: ``pre-submission-self-review`` at ``order: 8`` and
+The in-house gates run BEFORE review: ``functional-review`` at ``order: 6``,
+``code-review`` at ``order: 7``, ``pre-submission-self-review`` at ``order: 8`` and
 ``pre-push-quality-gate`` at ``order: 10``, while ``automatic-review`` is
 ``order: 30``. So a finding review files against a tree the gates already passed is
 something the gates ran over and did not report — a gate escape — with no
@@ -31,7 +32,7 @@ Within the settle band itself the ordering now closes the old gap: the code-muta
 settle steps (``finalize-step-simplify`` at ``order: 3``,
 ``finalize-step-security-audit`` at ``order: 5``) sort strictly BEFORE both gates,
 and the derived-state refresh (``architecture-refresh`` at ``order: 9``) sorts before
-the quality gate too — so a forward pass runs 3 → 5 → 8 → 9 → 10 → 11 → 20 → 30 and
+the quality gate too — so a forward pass runs 3 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 20 → 30 and
 the gates certify the settled tree including the mutators' edits. What remains is
 only the gate's own trailing commit and post-push advances, which the SHA-equality
 inputs below exclude.

@@ -35,8 +35,8 @@ of which fails on its own if the corresponding half of the fix regresses:
    the moment the channels diverge even if each still "works" alone.
 
 The ceremony owner exercised here is ``default:finalize-step-security-audit``,
-deliberately distinct from the ``default:pre-submission-self-review`` owner that
-``test_ceremony_finalize_selection.py`` already covers — one declaration channel
+deliberately distinct from the ``default:functional-review`` owner that
+``test_ceremony_finalize_selection_ceremony_finalize_plan.py`` already covers — one declaration channel
 reaching one owner is not evidence it reaches another.
 """
 

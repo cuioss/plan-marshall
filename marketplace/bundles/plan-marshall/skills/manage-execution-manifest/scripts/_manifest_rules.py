@@ -467,7 +467,6 @@ _SCOPE_GATED_SINGLE_MODULE_DROP = frozenset(
 _QGATE_OWNER_STEP = 'default:pre-push-quality-gate'
 _SIMPLIFY_OWNER_STEP = 'default:finalize-step-simplify'
 _SECURITY_AUDIT_OWNER_STEP = 'default:finalize-step-security-audit'
-_PRE_SUBMISSION_SELF_REVIEW_STEP = 'default:pre-submission-self-review'
 _FUNCTIONAL_REVIEW_OWNER_STEP = 'default:functional-review'
 _CODE_REVIEW_OWNER_STEP = 'default:code-review'
 
@@ -619,20 +618,11 @@ def _apply_scope_gated_finalize(
 # Gate → (match-set, canonical insertion form). The match-set covers every
 # prefixed/bare form a candidate list may carry; the insertion form is the
 # canonical (bare) identifier `always` re-adds when the step is absent. The
-# insertion form is BARE for every gate — matching both the other three gates and
-# the bare form the normal intake path emits (candidates are canonicalized at
+# insertion form is BARE for every gate — matching the bare form the normal
+# intake path emits (candidates are canonicalized at
 # intake), so an ``always`` re-insertion never re-introduces a non-canonical
 # ``default:``-prefixed id that the compose-time canonical-step-key gate rejects.
 _CEREMONY_FINALIZE_STEP_MAP: dict[str, tuple[frozenset[str], str]] = {
-    'self_review': (
-        frozenset(
-            {
-                'pre-submission-self-review',
-                'default:pre-submission-self-review',
-            }
-        ),
-        'pre-submission-self-review',
-    ),
     'functional_review': (
         frozenset(
             {
@@ -665,15 +655,9 @@ _CEREMONY_FINALIZE_STEP_MAP: dict[str, tuple[frozenset[str], str]] = {
     ),
 }
 
-# The finalize ceremony gates, in canonical order.
-_CEREMONY_FINALIZE_GATES = (
-    'self_review',
-    'functional_review',
-    'code_review',
-    'qgate',
-    'simplify',
-    'security_audit',
-)
+# The finalize ceremony gates, in canonical order — derived from the step map above,
+# so a gate added there is iterated without a second list to keep in step.
+_CEREMONY_FINALIZE_GATES: tuple[str, ...] = tuple(_CEREMONY_FINALIZE_STEP_MAP)
 
 # Canonical default for every finalize gate when marshal.json omits the block.
 _CEREMONY_FINALIZE_DEFAULT = 'auto'
@@ -684,7 +668,6 @@ _CEREMONY_FINALIZE_DEFAULT = 'auto'
 # ``qgate`` sibling anymore.
 _CEREMONY_GATE_OWNER_STEP: dict[str, str] = {
     'qgate': _QGATE_OWNER_STEP,
-    'self_review': _PRE_SUBMISSION_SELF_REVIEW_STEP,
     'functional_review': _FUNCTIONAL_REVIEW_OWNER_STEP,
     'code_review': _CODE_REVIEW_OWNER_STEP,
     'simplify': _SIMPLIFY_OWNER_STEP,
@@ -713,9 +696,8 @@ def _read_finalize_gates(plan_id: str) -> dict[str, str]:
     scope-gate immunity. The owning steps are:
 
     - ``qgate`` → ``default:pre-push-quality-gate``
-    - ``self_review`` → ``default:pre-submission-self-review``
     - ``functional_review`` → ``default:functional-review`` — the review's own
-      setting, so its lane decides this gate independently of any other review
+      setting, so its lane decides this gate independently of the code review's
     - ``code_review`` → ``default:code-review`` — likewise the code review's own
       setting, independent of the functional review's
     - ``simplify`` → ``default:finalize-step-simplify``

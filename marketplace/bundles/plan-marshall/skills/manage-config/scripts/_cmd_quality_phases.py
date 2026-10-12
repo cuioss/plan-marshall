@@ -88,7 +88,7 @@ SCALAR_PHASES = {'phase-1-init', 'phase-2-refine', 'phase-3-outline', 'phase-4-p
 # The three planning gates governed by the gate_mode enum (auto|always|never),
 # keyed by their owning phase section. Their set boundary routes the value
 # through validate_gate_mode before persisting — the validation these gates
-# previously lacked. The four finalize ceremony gates are NOT here (they ride the
+# previously lacked. The five finalize ceremony gates are NOT here (they ride the
 # per-element `steps.<step>.lane` override, not gate_mode).
 GATE_MODE_FIELDS = {
     'phase-1-init': {'deep_lane', 'escalation'},
