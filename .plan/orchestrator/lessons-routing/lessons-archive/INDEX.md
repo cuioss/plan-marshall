@@ -162,7 +162,7 @@ where the message names a code location; medium and low grades rest on the messa
 | `lessons-routing-011` | critical | 133, 125 | Antigravity: no sub-agent dispatch, inline execution, no execute trail | none |
 | `lessons-routing-012` | critical | 131 | Antigravity: `CLAUDE.md` never loaded; quality gate dropped from tasks | partly PLAN-LB-29 |
 | `lessons-routing-013` | critical | 124, 132 | Antigravity: tokens recorded as `0`; harness never recorded (`client.toon`) | none |
-| `lessons-routing-014` | critical | 126 | `maven run` executes any plugin goal (Spotless from Central) — verified, no guard | none |
+| `lessons-routing-014` | superseded by `-012` | 126 | `maven run` executes any plugin goal (Spotless from Central). Operator ruling 2026-10-12: not a defect of its own — the wrapper is a deliberate pass-through; the cause is `CLAUDE.md` unread under Antigravity. Folded into `-012` as a symptom, with an "unresolvable plugin prefix means stop" rule | PLAN-LB-29 (via `-012`) |
 | `lessons-routing-015` | critical | 130 | Incomplete package reported complete; existing tests weakened | none |
 | `lessons-routing-016` | critical/high | 127, 012, 056 | Pushed/merged head lacks the plan's mandated gates | near PLAN-LB-32 |
 | `lessons-routing-017` | critical/high | 128, 005, 041, 053, 034, 061 | Required review bot stale after fix; re-review not re-armed (backlog § 4.4) | PLAN-LB-24 |

@@ -4,6 +4,8 @@ sender_id=lessons-routing
 epic=live-blockers
 kind=finding
 created=2026-10-12T13:53:19Z
+lifecycle=superseded
+superseded_by=lessons-routing-012.md
 
 # Lessons ingest: `build-maven maven run` executes any plugin goal, including one fetched from Maven Central
 
