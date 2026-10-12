@@ -356,7 +356,12 @@ form) is replaced in place by `default:functional-review` followed by
   mapped onto both new entries' `lane` — `never` → `off`, `always` → `minimal`,
   `auto` → no lane;
 - every other param — the retired `drop_review_on_scope_gate` among them — has no
-  successor, is dropped, and is reported in `dropped_params`.
+  successor, is dropped, and is reported in `dropped_params`;
+- when the map names the retired step in BOTH spellings, the settings of both
+  entries are merged: their dropped params are united, and when their lanes
+  differ `off` wins (a review switched off in either spelling stays off),
+  otherwise the first entry's lane wins — the losing lane is reported in
+  `dropped_params`.
 
 A new entry the operator already configured WINS: it is left untouched and
 reported in `kept`, and only the missing successor is inserted. In the

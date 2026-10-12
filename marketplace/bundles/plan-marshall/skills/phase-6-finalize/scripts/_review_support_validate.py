@@ -80,19 +80,33 @@ def read_json_object(path: str) -> tuple[dict[str, Any] | None, str]:
     return parsed, ''
 
 
-def verifier_status(path: str | None) -> str:
+def verifier_status(path: str | None, has_blocking: bool) -> str:
     """Return ``absent`` / ``accepted`` / ``declined`` / ``malformed`` for a verifier answer.
 
-    ``accepted`` needs both rubric § 7 answers to be ``true``. A file that cannot
-    be read or does not carry both answers as booleans is ``malformed``, which
-    closes nothing.
+    Acceptance follows the first rubric § 7 answer, ``grading_supported``: a
+    verifier that confirms the grading accepted it. The second answer,
+    ``may_close``, is ``false`` by rule whenever a blocking finding remains, so on
+    a round with a blocking finding it says nothing about acceptance. On a round
+    without one, a supported grading answered ``may_close: false`` is the verifier
+    refusing a closure the grading permits, so it is ``declined`` too. A file that
+    cannot be read or does not carry both answers as booleans is ``malformed``,
+    which closes nothing.
+
+    Args:
+        path: The verifier's JSON answer file, or ``None`` when no answer was written.
+        has_blocking: Whether the graded verdict holds at least one blocking finding.
+
+    Returns:
+        One of the four ``VERIFIER_*`` values.
     """
     if not path:
         return VERIFIER_ABSENT
     data, _ = read_json_object(path)
     if data is None or not all(isinstance(data.get(key), bool) for key in ('grading_supported', 'may_close')):
         return VERIFIER_MALFORMED
-    return VERIFIER_ACCEPTED if data['grading_supported'] and data['may_close'] else VERIFIER_DECLINED
+    if not data['grading_supported']:
+        return VERIFIER_DECLINED
+    return VERIFIER_ACCEPTED if data['may_close'] or has_blocking else VERIFIER_DECLINED
 
 
 class Grading:

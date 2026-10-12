@@ -341,6 +341,26 @@ def test_clean_round_closes_only_with_an_accepting_verifier(env: Env, verifier, 
     assert payload['may_close'] is may_close
 
 
+@pytest.mark.parametrize(
+    ('verifier', 'status'),
+    [
+        ({'grading_supported': True, 'may_close': False, 'reason': 'blocking remains'}, _val.VERIFIER_ACCEPTED),
+        ({'grading_supported': False, 'may_close': False, 'reason': 'D1 is met'}, _val.VERIFIER_DECLINED),
+    ],
+    ids=['grading-confirmed', 'grading-rejected'],
+)
+def test_blocking_round_acceptance_follows_grading_supported_not_may_close(env: Env, verifier, status) -> None:
+    """On a blocking round ``may_close: false`` is the required answer, so it never reads as a refusal."""
+    env.plan()
+    verdict = _functional()
+    verdict['deliverables'][0] = {'number': 1, 'verdict': 'not_met', 'criteria': _criteria(1)}
+
+    payload = _validate(env, verdict, verifier=verifier)
+
+    assert payload['verifier'] == status
+    assert payload['may_close'] is False
+
+
 # --- request D5: a delta round covers only the deliverables its change touches -------------
 
 
@@ -506,6 +526,18 @@ def test_domains_match_the_captured_footprint_when_the_worktree_is_gone(env: Env
         {'domain': 'oci', 'provenance': _attr.PROVENANCE_DECLARED},
         {'domain': 'python', 'provenance': _attr.PROVENANCE_FOOTPRINT},
     ]
+
+
+def test_domains_fail_closed_when_the_footprint_cannot_be_derived(env: Env, outside_repo_dir: Path) -> None:
+    """Without a footprint the verb errors instead of answering with the declared domains alone."""
+    env.plan(domains=['documentation'])
+    env.worktree = outside_repo_dir
+
+    payload = _attr.compute_domains(PLAN_ID)
+
+    assert (payload['status'], payload['error']) == ('error', 'footprint_unresolved')
+    assert payload['footprint_source'] == _attr.FOOTPRINT_UNRESOLVED
+    assert 'domains' not in payload
 
 
 # --- request D1: the output shape does not depend on the language --------------------------

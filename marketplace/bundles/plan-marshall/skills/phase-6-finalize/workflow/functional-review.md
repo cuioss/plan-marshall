@@ -408,7 +408,7 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:review_support va
   --plan-id {plan_id} --kind functional --verdict-file {verdict_file} --verifier-file {verifier_file}
 ```
 
-On a dispatch that wrote nothing, omit `--verifier-file`. Capture `verifier` (`accepted` / `declined` / `absent` / `malformed`), `may_close`, `loop_back_target`, `findings` and `facts` from this return — they are the round's final answer. Log the verifier's answer on the decision log before Step 6 branches:
+On a dispatch that wrote nothing, omit `--verifier-file`. Capture `verifier` (`accepted` / `declined` / `absent` / `malformed`), `may_close`, `loop_back_target`, `findings` and `facts` from this return — they are the round's final answer. `accepted` follows the verifier's first answer: it confirmed the grading. On a round with a blocking finding its `may_close: false` is the answer question (2) requires, so the round still reads `accepted`; `declined` means the verifier rejected the grading, or refused closure on a round without a blocking finding. Log the verifier's answer on the decision log before Step 6 branches:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \

@@ -1010,7 +1010,9 @@ sub-step of upgrade Stage 2, before the defaults merge. It replaces the retired
 `default:code-review`, carrying the retired entry's `lane` to both and mapping a
 legacy `self_review` run-at-all value onto both lanes (`never` → `off`,
 `always` → `minimal`, `auto` → no lane); every other param, the retired
-`drop_review_on_scope_gate` among them, is dropped. A successor the operator
+`drop_review_on_scope_gate` among them, is dropped. When both spellings are
+present their settings are merged — a `lane: off` on either wins, and a losing
+lane is reported in `dropped_params`. A successor the operator
 already configured wins, and a retired id in `removed_steps` is replaced by both
 new ids. Emits `state` (`migrated` | `noop`) and, on `migrated`, `replaced`,
 `added`, `kept`, `carried`, `dropped_params` and `removed_steps_rewritten`.

@@ -14,7 +14,8 @@ instead of re-deriving it in prose:
   only the deliverables a delta round covers (``_review_support_attribution``).
 * ``domains`` — the plan's declared domains united with every configured skill
   domain whose ``file_globs`` match the realized footprint, each with its
-  ``provenance`` (``declared`` / ``footprint`` / ``both``).
+  ``provenance`` (``declared`` / ``footprint`` / ``both``); ``status: error``
+  with ``error: footprint_unresolved`` when the footprint could not be derived.
 * ``validate`` — the author's verdict file checked against the schema below,
   with the grading, the loop-back target, the closure decision and the recorded
   fact set derived from it (grading lives in ``_review_support_validate``).
@@ -63,6 +64,11 @@ Verdict file schemas (JSON — the rows nest criteria and evidence lists)::
 
     verifier:
       {"grading_supported": bool, "may_close": bool, "reason": str}
+
+The verifier is ``accepted`` when it answers ``grading_supported: true`` — on
+a round with a blocking finding its ``may_close: false`` is the expected answer,
+not a refusal. It is ``declined`` when it answers ``grading_supported: false``,
+or ``may_close: false`` on a round without a blocking finding.
 
 ``fix_kind`` is required on every item that grades ``blocking`` except a
 ``not_met`` deliverable and an ``unevidenced`` criterion, which default to
@@ -142,7 +148,8 @@ def run_validate(plan_id: str, kind: str, verdict_file: str, verifier_file: str 
     else:
         facts = validate_code(verdict, grading)
 
-    verifier = verifier_status(verifier_file)
+    blocking_count = sum(1 for finding in grading.findings if finding['severity'] == SEVERITY_BLOCKING)
+    verifier = verifier_status(verifier_file, blocking_count > 0)
     payload: dict[str, Any] = {
         'status': 'success',
         'plan_id': plan_id,
@@ -158,7 +165,6 @@ def run_validate(plan_id: str, kind: str, verdict_file: str, verifier_file: str 
     if not grading.valid:
         return payload
 
-    blocking_count = sum(1 for finding in grading.findings if finding['severity'] == SEVERITY_BLOCKING)
     facts['blocking_count'] = blocking_count
     facts['advisory_count'] = len(grading.findings) - blocking_count
     payload['may_close'] = blocking_count == 0 and verifier == VERIFIER_ACCEPTED
