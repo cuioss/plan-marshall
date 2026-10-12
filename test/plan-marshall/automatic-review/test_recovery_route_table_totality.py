@@ -216,6 +216,25 @@ class TestTheRoutesHandTheWaitBack:
         assert len(targets) == 1, f'expected one structural route, found {len(targets)}'
         assert 're-entry consult' not in targets[0], targets[0]
 
+    def test_the_stale_notice_trigger_route_posts_once_then_claims_and_hands_no_wait_back(self):
+        """A stale notice with no review on record asks the bot once, then records the attempt.
+
+        The trigger is posted BEFORE the window is claimed — the claim is what
+        advances the attempt counter, so the next pass meets it instead of
+        triggering again — and the route holds no wait of its own. Located by the
+        selector's own constant, never by a branch number.
+        """
+        targets = _targets_routing(github_re_review.RECOVERY_ACTION_TRIGGER_STALE_NOTICE)
+
+        assert len(targets) == 1, f'expected one stale-notice trigger route, found {len(targets)}'
+        [target] = targets
+        assert 'post the bot' in target and 'trigger once' in target, target
+        assert 'claim the window after posting' in target, target
+        assert target.index('trigger once') < target.index('claim the window after posting'), target
+        assert 'do not hand the wait back' in target, target
+        # Nothing in the route reads as handing the wait to the main context.
+        assert 'hand the wait back to the main context' not in target, target
+
 
 #: The actions the selector resolves for a ``no_unreviewed_commit`` reply, split by
 #: whether the route posts anything. Named through the selector's own constants, so a

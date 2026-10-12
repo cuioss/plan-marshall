@@ -694,8 +694,15 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-windo
 A bounded, read-only wait until `--bot-kind`'s rate window has elapsed. It re-reads
 the claim's own expiry — the same read `rate-window check` performs — every
 `--interval-seconds` (default `15`) until the **wake instant**, the stored
-`expires_at` plus `--grace-seconds` (default `0`), has passed, or until the per-call
-bound `--wait-seconds` lapses first. `--pr-number` is REQUIRED, as on `check`.
+`expires_at` plus `--grace-seconds`, has passed, or until the per-call bound
+`--wait-seconds` lapses first. `--pr-number` is REQUIRED, as on `check`.
+
+`--grace-seconds` defaults to a stated non-zero wake margin, the script's
+`_RATE_WINDOW_WAKE_MARGIN_SECONDS`; `rate-window --help` prints its value, so this page
+names the constant rather than restating the number. With no margin the wake instant
+IS the expiry, and the re-dispatch it triggers races the claim's own expiry. An
+explicit value replaces the margin, and `--grace-seconds 0` wakes at `expires_at`
+itself.
 
 It returns every `check` field as of its last read, plus:
 
@@ -704,6 +711,7 @@ It returns every `check` field as of its last read, plus:
 | `timed_out` | `true` when the per-call bound lapsed before the wake instant. A bound, not a verdict — the caller re-issues the call. `false` means the wake instant was reached |
 | `waited_seconds` | Whole seconds this call spent waiting; a caller holding a total budget subtracts it |
 | `wake_at` | The wake instant in epoch seconds, or `null` when no window is recorded (never claimed, or released) — there is then nothing to wait for and the call returns at once |
+| `grace_seconds` | The margin this call applied past `expires_at` — the default or the caller's explicit value. A caller holding a total budget accounts it outside that budget: it is waited past the window, not inside it |
 
 The per-call bound is clamped to 480 seconds, whatever value is passed, so the call
 returns before the host's per-call ceiling can cut it off mid-wait (see
@@ -729,8 +737,8 @@ non-positive `--interval-seconds`, is refused (`status: error`,
 `error_code: INVALID_INPUT`) before the store is read.
 
 The consumer is `phase-6-finalize` item 7a, in the main context. It issues this call
-with no `--grace-seconds`, so the wake instant is the claim's `expires_at` itself, and
-re-issues it under its total budget until `timed_out` is `false`. A `status: error`
+with no `--grace-seconds`, so the wake instant is the claim's `expires_at` plus the
+default margin, and re-issues it under its total budget until `timed_out` is `false`. A `status: error`
 return is a failed call, not a spent budget, and the consumer does not treat it as
 one. No dispatched step calls this verb.
 

@@ -407,7 +407,8 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
     one unit of the named module (a test directory or a test file) and bounded
     from what is known: the result then carries a fifth field, ``bound_source``,
     naming where the stamp came from. Without the argument the result is exactly
-    what it was before the argument existed. See :func:`_narrow_resolved`.
+    what it was before the argument existed; with a blank value it is refused
+    with ``empty_narrow_unit``. See :func:`_narrow_resolved`.
 
     When the top-level ``--plan-id`` names a real plan, a build ``executable``
     is returned carrying that plan id (see :func:`_attribute_build_executable`).
@@ -417,7 +418,10 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
     try:
         result = resolve_command(args.resolve_command, args.module, args.project_dir)
         narrow_unit = getattr(args, 'narrow_unit', None)
-        if narrow_unit:
+        # ``None`` is "flag absent"; any string, a blank one included, is "flag
+        # supplied". A blank unit must reach ``_narrow_resolved`` to be refused —
+        # a truthiness test here would silently answer it with the module-wide run.
+        if narrow_unit is not None:
             # A narrow unit replaces the module-wide run with one of its parts
             # and is bounded from what is known about the module. A refusal is a
             # structured error, returned as-is.
@@ -501,8 +505,12 @@ def _narrow_resolved(executable_result: dict[str, Any], narrow_unit: str, projec
     command as the known parent that can bound it (see
     ``_cmd_client_build._compute_narrow_unit_tier_fields``).
 
-    Three refusals, each a structured error and none of them a guess:
+    Four refusals, each a structured error and none of them a guess:
 
+    * ``empty_narrow_unit`` - the flag was supplied with a blank value. A blank
+      unit names no part of the module, so it is refused rather than answered
+      with the module-wide run, which would claim a narrowing that never
+      happened.
     * ``narrow_unit_unsupported_command`` - the resolved command is not
       ``module-tests``, or its executable is not a build executable carrying a
       module test target the unit could be checked against.
@@ -521,6 +529,13 @@ def _narrow_resolved(executable_result: dict[str, Any], narrow_unit: str, projec
         The narrowed result dict (without ``status``), or a refusal dict whose
         ``status`` is ``error``.
     """
+    if not narrow_unit.strip():
+        return _narrow_unit_error(
+            'empty_narrow_unit',
+            narrow_unit,
+            '--narrow-unit was supplied with no unit in it; omit the flag to resolve the module-wide run, '
+            'or name a /-separated path below a test target.',
+        )
     command = executable_result.get('command', '')
     module = executable_result.get('module', '')
     executable = executable_result.get('executable', '')

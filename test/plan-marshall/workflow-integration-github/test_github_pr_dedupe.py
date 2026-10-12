@@ -400,12 +400,13 @@ def _with_fix_commit_stamp(finding):
     """Return ``finding`` carrying the fix-commit stamp a released ``fixed`` row has.
 
     ``post_responses`` holds a ``fixed`` row until it carries a fix commit that the
-    provider reports on the pull request head. These rows are hand-built and handed
+    provider reports on the pull request head, and that head's CI has passed. These
+    rows are hand-built and handed
     to the verb through a patched ``query_findings``; they are in no store, so the
     store's ``stamp_fix_commit`` writer has nothing to write to. The stamp is set
     here under the writer's own field name (``FIX_COMMIT_FIELD``), which is the one
-    thing the verb reads. The other half of the release — the provider's answer —
-    is supplied by ``_patch_respond_surface``.
+    thing the verb reads. The rest of the release — the provider's answers on the
+    commit's ancestry and on the head's CI — is supplied by ``_patch_respond_surface``.
     """
     return {**finding, _live_findings_core().FIX_COMMIT_FIELD: _RESPOND_FIX_COMMIT}
 
@@ -418,13 +419,16 @@ def _patch_respond_surface(monkeypatch, findings, posted, replied):
     ``sys.modules`` entry at call time — the same reason ``_live_findings_core``
     exists above. Patching that attribute is what the SUT actually reads.
 
-    The provider's compare read answers ``ahead`` and the head read answers a fixed
-    SHA, so a stamped ``fixed`` row is released. This is the same seam
-    ``test_comments_stage_post.py`` drives.
+    The provider's compare read answers ``ahead``, the head read answers a fixed
+    SHA, and the head's overall CI read answers ``(True, 'success')`` — the head's CI
+    is green — so a stamped ``fixed`` row is released. Left to ``run_gh``, the CI read
+    would parse ``ahead`` as an unreadable conclusion and hold every stamped row.
+    These are the same seams ``test_comments_stage_post.py`` drives.
     """
     monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
     monkeypatch.setattr(github_pr._github, 'fetch_pr_head_sha', lambda pr_number: _HEAD_B)
     monkeypatch.setattr(github_pr._github, 'run_gh', lambda *_a, **_k: (0, 'ahead\n', ''))
+    monkeypatch.setattr(github_pr._github, '_fetch_pr_overall_ci_status', lambda pr_number: (True, 'success'))
     monkeypatch.setattr(
         _live_findings_core(),
         'query_findings',
@@ -1310,3 +1314,162 @@ def test_an_unchanged_comment_still_dedupes_under_the_widened_key(bot_kind, plan
     # dedup would silently fall back to two terms, which is indistinguishable from the
     # defect while every count above still looks right.
     assert github_pr._detail_field(stored[0].get('detail'), github_pr._EDIT_TERM_DETAIL) == (clean['updated_at'])
+
+
+# ---------------------------------------------------------------------------
+# An edited comment updates its stored finding in place
+# ---------------------------------------------------------------------------
+
+
+def _file_then_edit(monkeypatch, bot_kind, plan_id, resolve=None, edited_body=_GUIDE_FINDING_BODY):
+    """File the bot's persistent comment, optionally resolve its finding, then re-fetch it edited.
+
+    The first fetch reviews ``_HEAD_A``; the edit is fetched at ``_HEAD_B`` so whether
+    ``reviewed_commit_sha`` moved is observable. ``resolve`` is called with the stored
+    hash between the two fetches. The edit always moves ``updated_at``; ``edited_body``
+    defaults to a changed body and is passed as ``_GUIDE_CLEAN_BODY`` for an edit that
+    moved the term only. Returns ``(stored_hash, second_result)``.
+    """
+    _patch_provider(monkeypatch, [_edit_term_comment(bot_kind, body=_GUIDE_CLEAN_BODY)], head_sha=_HEAD_A)
+    first = _run_fetch(192, plan_id)
+    assert first['count_stored'] == 1, first
+    [stored_hash] = first['stored_hash_ids']
+    if resolve is not None:
+        resolve(plan_id, stored_hash)
+
+    edited = _edit_term_comment(bot_kind, body=edited_body, updated_at=_at(9))
+    _patch_provider(monkeypatch, [edited], head_sha=_HEAD_B)
+    return stored_hash, _run_fetch(192, plan_id)
+
+
+def _only_finding(plan_id):
+    [finding] = query_findings(plan_id, finding_type='pr-comment')['findings']
+    return finding
+
+
+def _resolve_accepted_and_responded(plan_id, hash_id):
+    result = _findings_core.resolve_finding(plan_id, hash_id, 'accepted', detail='Accepted: the guide is advisory.')
+    assert result['status'] == 'success', result
+    responded = _findings_core.mark_finding_responded(plan_id, hash_id)
+    assert responded['status'] == 'success', responded
+
+
+def _resolve_fixed_and_stamped(plan_id, hash_id):
+    resolved = _findings_core.resolve_finding(plan_id, hash_id, 'fixed', detail='Fixed the retry bound.')
+    assert resolved['status'] == 'success', resolved
+    stamped = _findings_core.stamp_fix_commit(plan_id, _HEAD_A, hash_id=hash_id)
+    assert stamped['hash_ids'] == [hash_id], stamped
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_a_changed_body_reopens_a_resolved_finding_with_the_latest_body(bot_kind, plan_context, monkeypatch):
+    """A resolved finding whose comment body changed is reopened: one finding, pending, latest body.
+
+    The disposition answered text the bot has since replaced, so it is cleared with the
+    ``responded`` marker, and the anchor moves to the head the new text was fetched at.
+    """
+    plan_id = f'gh-pr-edit-update-resolved-{bot_kind}'
+
+    stored_hash, second = _file_then_edit(monkeypatch, bot_kind, plan_id, resolve=_resolve_accepted_and_responded)
+
+    assert second['status'] == 'success', second
+    assert (second['count_stored'], second['count_skipped_duplicate'], second['count_updated_edited']) == (0, 0, 1)
+    assert second['updated_edited_hash_ids'] == [stored_hash], second
+    assert second['reopened_edited_hash_ids'] == [stored_hash], second
+    assert second['producer_mismatch_hash_id'] is None, second
+    finding = _only_finding(plan_id)
+    assert finding['hash_id'] == stored_hash
+    assert (finding['resolution'], finding['resolution_detail']) == ('pending', None)
+    assert finding['responded'] is False
+    assert finding['raw_input']['body'] == _GUIDE_FINDING_BODY
+    assert github_pr._detail_field(finding['detail'], github_pr._EDIT_TERM_DETAIL) == _at(9)
+    assert finding['reviewed_commit_sha'] == _HEAD_B
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_a_changed_body_reopens_a_fixed_finding_and_clears_its_fix_stamp(bot_kind, plan_context, monkeypatch):
+    """A reopened fixed finding drops its fix commit: that stamp belonged to the replaced text."""
+    plan_id = f'gh-pr-edit-update-fixed-{bot_kind}'
+
+    stored_hash, second = _file_then_edit(monkeypatch, bot_kind, plan_id, resolve=_resolve_fixed_and_stamped)
+
+    assert second['reopened_edited_hash_ids'] == [stored_hash], second
+    finding = _only_finding(plan_id)
+    assert finding['resolution'] == 'pending'
+    assert finding[_live_findings_core().FIX_COMMIT_FIELD] is None
+    assert finding['raw_input']['body'] == _GUIDE_FINDING_BODY
+    assert finding['reviewed_commit_sha'] == _HEAD_B
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_an_identical_body_keeps_a_fixed_finding_resolved_with_its_anchor(bot_kind, plan_context, monkeypatch):
+    """⛔ MATCHED CONTROL — a re-post with an unchanged body keeps the disposition and its anchor.
+
+    Only the edit term is recorded. ``reviewed_commit_sha`` stays at the head the fix
+    was decided against, because phase-6-finalize searches the commits AFTER it for the
+    inline-fix commit; moving it to the edit's head would strand that fix's reply.
+    """
+    plan_id = f'gh-pr-edit-update-identical-{bot_kind}'
+
+    stored_hash, second = _file_then_edit(
+        monkeypatch, bot_kind, plan_id, resolve=_resolve_fixed_and_stamped, edited_body=_GUIDE_CLEAN_BODY
+    )
+
+    assert second['updated_edited_hash_ids'] == [stored_hash], second
+    assert second['reopened_edited_hash_ids'] == [], second
+    finding = _only_finding(plan_id)
+    assert (finding['resolution'], finding['resolution_detail']) == ('fixed', 'Fixed the retry bound.')
+    assert finding[_live_findings_core().FIX_COMMIT_FIELD] == _HEAD_A
+    assert finding['raw_input']['body'] == _GUIDE_CLEAN_BODY
+    assert github_pr._detail_field(finding['detail'], github_pr._EDIT_TERM_DETAIL) == _at(9)
+    assert finding['reviewed_commit_sha'] == _HEAD_A
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_an_edited_comment_whose_finding_is_pending_leaves_one_pending_finding_with_the_latest_body(
+    bot_kind, plan_context, monkeypatch
+):
+    """A pending finding stays pending, carries the new text into triage, and re-anchors to the edit's head."""
+    plan_id = f'gh-pr-edit-update-pending-{bot_kind}'
+
+    stored_hash, second = _file_then_edit(monkeypatch, bot_kind, plan_id)
+
+    assert (second['count_updated_edited'], second['count_stored']) == (1, 0), second
+    assert second['reopened_edited_hash_ids'] == [], second
+    finding = _only_finding(plan_id)
+    assert finding['hash_id'] == stored_hash
+    assert finding['resolution'] == 'pending'
+    assert finding['raw_input']['body'] == _GUIDE_FINDING_BODY
+    assert finding['reviewed_commit_sha'] == _HEAD_B
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_an_unchanged_re_fetch_after_the_update_still_dedupes(bot_kind, plan_context, monkeypatch):
+    """⛔ MATCHED CONTROL — the rewritten edit term is the one the next re-fetch matches."""
+    plan_id = f'gh-pr-edit-update-dedupes-{bot_kind}'
+    _file_then_edit(monkeypatch, bot_kind, plan_id, resolve=_resolve_accepted_and_responded)
+
+    third = _run_fetch(192, plan_id)
+
+    assert third['count_skipped_duplicate'] == 1, third
+    assert third['count_updated_edited'] == 0, third
+    assert third['count_stored'] == 0, third
+    assert len(query_findings(plan_id, finding_type='pr-comment')['findings']) == 1
+
+
+@pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
+def test_a_different_comment_id_files_a_second_finding(bot_kind, plan_context, monkeypatch):
+    """⛔ MATCHED CONTROL — only the SAME comment updates; another comment is filed as its own."""
+    plan_id = f'gh-pr-edit-update-other-id-{bot_kind}'
+    _patch_provider(monkeypatch, [_edit_term_comment(bot_kind, body=_GUIDE_CLEAN_BODY)], head_sha=_HEAD_A)
+    first = _run_fetch(193, plan_id)
+    assert first['count_stored'] == 1, first
+
+    other = _publish_comment(bot_kind, 'guide-another', created_at=_at(3), body=_GUIDE_FINDING_BODY)
+    _patch_provider(monkeypatch, [_edit_term_comment(bot_kind, body=_GUIDE_CLEAN_BODY), other], head_sha=_HEAD_A)
+    second = _run_fetch(193, plan_id)
+
+    assert second['count_stored'] == 1, second
+    assert second['count_updated_edited'] == 0, second
+    assert second['count_skipped_duplicate'] == 1, second
+    assert len(query_findings(plan_id, finding_type='pr-comment')['findings']) == 2

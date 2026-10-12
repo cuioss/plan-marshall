@@ -11,7 +11,9 @@ Covers the three concerns of the post-merge re-review registry:
          sourcery:   posts ``@sourcery-ai review``.
          cuioss-review-bot:   posts ``/review``.
     3. Two-signal completion matching — ``await_fresh_review`` is satisfied by
-       EITHER ``_match_review`` (a review whose reviewed-commit evidence REFERENCES
+       EITHER ``_match_review`` (a review authored by the awaited bot — its
+       ``user`` login resolves to the awaited ``bot_kind`` — whose reviewed-commit
+       evidence REFERENCES
        the pushed HEAD — recognised as a bare token or embedded in a commit URL, and
        compared for EQUALITY either way, so a differing commit still fails — whose
        ``submitted_at`` post-dates the trigger time, AND whose
@@ -79,6 +81,7 @@ import bot_registry
 import ci_base
 import github_re_review
 import pytest
+from _github_pr_fixtures import coderabbit_verdict
 
 _NO_RECORD_WINDOW = {'status': 'free', 'expired': True, 'holder': '', 'seconds_remaining': 0.0}
 _OPEN_WINDOW = {
@@ -133,8 +136,8 @@ def _neutralize_rate_window(monkeypatch):
 def _neutralize_in_progress_read(monkeypatch):
     """Hold the completion read at NOT OBSERVED RUNNING for every test here.
 
-    A poll that would end on a comment naming no commit consults
-    ``read_bot_in_progress``, which reads the awaited bot's check-run through ``gh``.
+    A poll that would end on a match consults ``read_bot_in_progress``, which reads
+    the awaited bot's check-run through ``gh``.
     Default-on, so no case in this module shells out or depends on a real PR's check.
     The matched pair proving this fixture lives in ``test_re_review_strategy_match.py``.
     """
@@ -163,13 +166,27 @@ def _noop_sleep(monkeypatch):
     monkeypatch.setattr(time, 'sleep', lambda *_a, **_kw: None)
 
 
-def _review(commit_sha, submitted_at, *, user='coderabbit[bot]', state='COMMENTED', body=''):
+def _review_login(bot_kind):
+    """Return a review-author login the registry resolves to ``bot_kind``.
+
+    The registry's own login (:func:`_login_of`) in the ``[bot]`` suffixed form the
+    REST ``/reviews`` payload carries; ``bot_kind_for_author`` strips the suffix
+    before resolving it.
+    """
+    return f'{_login_of(bot_kind)}[bot]'
+
+
+def _review(commit_sha, submitted_at, *, user, state='COMMENTED', body=''):
     """Build a review row in the shape fetch_pr_reviews_with_commits returns.
 
     ``body`` mirrors the widened projection: a review row now carries its body so
     the completion discriminator can tell a genuine review from a refusal notice
     submitted as a review object. It defaults to empty, which no refusal layer
     matches, so a fixture that does not care about the body behaves as before.
+
+    ``user`` is required: the review arm matches only a review authored by the
+    awaited bot, so every fixture names its author (:func:`_review_login`) and a
+    review's outcome is never decided by an author the fixture left out.
     """
     return {
         'user': user,
@@ -239,7 +256,7 @@ _CODERABBIT_COMMAND_REPLY_REFUSAL = (
     'already reviewed commits. This command is applicable only when automatic '
     'reviews are paused. </details>'
 )
-_CODERABBIT_GENUINE_COMMENT = (
+_CODERABBIT_GENUINE_COMMENT = coderabbit_verdict(
     'Actionable comments posted: 1. The retry loop can spin forever when the backoff '
     'cap is zero — guard the cap before entering the loop.'
 )
@@ -508,19 +525,22 @@ def test_await_fresh_review_returns_matched_when_review_lands(monkeypatch):
     """await_fresh_review polls until a fresh review for HEAD lands → matched=True."""
     _noop_sleep(monkeypatch)
     call_counts = {'fetch': 0}
+    login = _review_login('coderabbit')
 
     def fake_fetch(pr_number):
         call_counts['fetch'] += 1
         if call_counts['fetch'] == 1:
             # First poll: only a stale pre-trigger review exists.
-            return {'status': 'success', 'reviews': [_review('headsha', '2026-01-01T00:00:00Z')]}
+            return {'status': 'success', 'reviews': [_review('headsha', '2026-01-01T00:00:00Z', user=login)]}
         # Second poll: the fresh review for HEAD has landed.
-        return {'status': 'success', 'reviews': [_review('headsha', '2026-01-01T00:05:00Z')]}
+        return {'status': 'success', 'reviews': [_review('headsha', '2026-01-01T00:05:00Z', user=login)]}
 
     monkeypatch.setattr(github_re_review._github, 'fetch_pr_reviews_with_commits', fake_fetch)
 
     strategy = github_re_review.resolve_strategy('coderabbit')
-    result = strategy.await_fresh_review(42, 'headsha', '2026-01-01T00:02:00Z', timeout=5, interval=0)
+    result = strategy.await_fresh_review(
+        42, 'headsha', '2026-01-01T00:02:00Z', bot_kind='coderabbit', timeout=5, interval=0
+    )
 
     assert result['status'] == 'success'
     assert result['matched'] is True
@@ -534,13 +554,18 @@ def test_await_fresh_review_times_out_when_no_fresh_review_lands(monkeypatch):
     _noop_sleep(monkeypatch)
 
     def fake_fetch(pr_number):
-        # Always the same pre-trigger review — never a fresh one for HEAD.
-        return {'status': 'success', 'reviews': [_review('headsha', '2026-01-01T00:00:00Z')]}
+        # Always the same pre-trigger review by the awaited bot — never a fresh one for HEAD.
+        return {
+            'status': 'success',
+            'reviews': [_review('headsha', '2026-01-01T00:00:00Z', user=_review_login('coderabbit'))],
+        }
 
     monkeypatch.setattr(github_re_review._github, 'fetch_pr_reviews_with_commits', fake_fetch)
 
     strategy = github_re_review.resolve_strategy('coderabbit')
-    result = strategy.await_fresh_review(42, 'headsha', '2026-01-01T00:02:00Z', timeout=1, interval=0)
+    result = strategy.await_fresh_review(
+        42, 'headsha', '2026-01-01T00:02:00Z', bot_kind='coderabbit', timeout=1, interval=0
+    )
 
     assert result['status'] == 'success'
     assert result['matched'] is False
@@ -588,7 +613,10 @@ def test_main_re_review_accepts_sourcery_bot_kind(monkeypatch, capsys):
     monkeypatch.setattr(
         github_re_review._github,
         'fetch_pr_reviews_with_commits',
-        lambda pr_number: {'status': 'success', 'reviews': [_review('headsha', '2026-01-01T00:05:00Z')]},
+        lambda pr_number: {
+            'status': 'success',
+            'reviews': [_review('headsha', '2026-01-01T00:05:00Z', user=_review_login('sourcery'))],
+        },
     )
     monkeypatch.setattr(
         sys,

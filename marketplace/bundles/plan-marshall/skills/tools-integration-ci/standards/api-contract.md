@@ -263,6 +263,29 @@ this one included — equals them, so a handler change fails the build here rath
 silently invalidating a consumer's branch table. Do not edit this list without changing the
 handlers; the guard will reject it.
 
+**Review-bot statuses are reported, not counted.** A registered review bot that publishes a
+commit status on the checks surface (CodeRabbit's `CodeRabbit`) is the review gate's concern,
+not CI's. A provider that knows the registered review-bot status names sets those rows aside
+before it classifies, so `overall_status` is computed over the **CI rows only**, and reports
+the set-aside rows in the optional `review_bot_checks[]` field:
+
+```toon
+review_bot_checks[1]{name,conclusion,url}:
+CodeRabbit	PENDING	https://coderabbit.ai/...
+```
+
+| Field | Meaning |
+|-------|---------|
+| `name` | The status name, a registered bot's `completion_check_name`. |
+| `conclusion` | The canonical upper-case conclusion the provider reported, `PENDING` while it has none. |
+| `url` | The status link, or `""` when the provider reported none. |
+
+`checks[]` and `check_count` keep listing every row, the review-bot rows included, so nothing
+is dropped. On GitHub the field is always present and empty when no registered review-bot
+status is on the ref; a provider with no registered review-bot status omits it (GitLab). A
+caller that needs to know whether the bot's review finished reads the review gate's
+completion signal, never this field.
+
 ---
 
 ### checks wait
@@ -314,6 +337,12 @@ build	completed	success	120	https://github.com/org/repo/actions/runs/111	CI
 test	in_progress	-	300	https://github.com/org/repo/actions/runs/112	CI
 lint	completed	success	30	https://github.com/org/repo/actions/runs/113	Lint
 ```
+
+`final_status` and every wait partition are computed over the **CI rows only**, exactly as
+`overall_status` is for `checks status` (see § "checks status" → "Review-bot statuses are
+reported, not counted"). A registered review bot's status that is still pending therefore
+neither holds the wait open nor produces the timeout envelope, and is reported in the same
+optional `review_bot_checks[]` field on both the success and the timeout output.
 
 ---
 

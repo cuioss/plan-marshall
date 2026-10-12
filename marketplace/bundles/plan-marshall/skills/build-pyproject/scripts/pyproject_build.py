@@ -249,6 +249,12 @@ def cmd_resolve_test_scope(args) -> int:
     live plan footprint. The ``NO_PLAN`` sentinel does not satisfy that
     requirement - it names no plan whose footprint could be resolved, so it is
     refused with the same ``footprint_source_required`` error as an omitted flag.
+    A ``--changed-paths`` value that is supplied but holds no non-blank entry
+    after the comma split (``""``, ``" "``, ``" , "``) is refused with
+    ``empty_changed_paths`` and the same exit code: a blank list names no file,
+    so resolving it as an empty footprint would claim ``divergence_possible:
+    false`` on no evidence. A task whose change set is genuinely empty omits the
+    flag and passes ``--plan-id`` so the live plan footprint decides the scope.
 
     Two inputs can fail to resolve, and both fail toward the whole tree through
     the SAME ``dataclasses.replace`` call rather than through parallel branches:
@@ -294,6 +300,23 @@ def cmd_resolve_test_scope(args) -> int:
     footprint_resolvable = True
     if changed_paths is not None:
         footprint = [p.strip() for p in changed_paths.split(',') if p.strip()]
+        # A supplied-but-blank list names no file, which is a caller error (most
+        # often a git derivation that produced nothing), not evidence that nothing
+        # changed. Resolving it as an empty footprint would report
+        # ``divergence_possible: false`` and run no test at all.
+        if not footprint:
+            print(
+                serialize_toon(
+                    {
+                        'status': 'error',
+                        'error': 'empty_changed_paths',
+                        'message': 'resolve-test-scope received --changed-paths with no path in it; '
+                        'omit --changed-paths and pass --plan-id so the plan live footprint '
+                        'decides the scope',
+                    }
+                )
+            )
+            return 2
     else:
         plan_id: str = getattr(args, 'plan_id', None) or ''
         # The sentinel is refused alongside the falsy cases — it names no plan
@@ -383,7 +406,8 @@ def _register_resolve_test_scope(subparsers) -> None:
         dest='changed_paths',
         default=None,
         help='Comma-separated task-scoped footprint; when set it IS the footprint '
-        '(supersedes the whole-plan live footprint resolved from --plan-id)',
+        '(supersedes the whole-plan live footprint resolved from --plan-id). A value '
+        'holding no path is refused with empty_changed_paths; omit the flag instead',
     )
     scope_parser.set_defaults(func=cmd_resolve_test_scope)
 

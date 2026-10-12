@@ -245,15 +245,27 @@ never a finding:
 that a review ran, and carries no part of it. The review itself is what the participation shapes below
 credit.
 
-The match is a whitespace-normalised substring test against CodeRabbit's own comments only, so the
-wrapper and the trailing note around the line do not matter and a human quoting the phrase is
-unaffected. A reply the recognition stack can READ as a refusal stays a refusal — `Review rate
-limited` arrives in the same wrapper under `⚠️ Action not completed` and contains neither literal.
+The match is a whitespace-normalised, **case-insensitive** substring test against CodeRabbit's own
+comments only, so the wrapper and the trailing note around the line do not matter, neither does the
+letter case of the line, and a human quoting the phrase is unaffected. A reply the recognition stack
+can READ as a refusal stays a refusal — `Review rate limited` arrives in the same wrapper under
+`⚠️ Action not completed` and contains neither literal.
+
+**The full-review replies are covered by the same two literals.** CodeRabbit answers the escalated
+command `@coderabbitai full review` with the same reply, worded `Full review triggered.` while the
+review runs and `Full review finished.` once it has ended. Under a case-sensitive test those missed
+`Review triggered` / `Review finished` on the capital `R`, so both were stored as `pr-comment`
+findings and both were eligible answers in the re-review matcher. Compared case-insensitively, each
+contains its literal, so they are acknowledgments exactly as the ordinary replies are and no third
+literal is declared for them. An edited reply is still one comment: the matcher places it at the later
+of its `updated_at` / `created_at` and classifies it `acknowledged` whichever wording it carries.
 
 Provenance of the two literals: `Review finished.` was read verbatim off the command replies on
 `cuioss/plan-marshall#1654`. Those replies had already been edited to their final wording when they
 were read, so `Review triggered` is declared from the reported wording of the same reply and has not
-been read off a live comment.
+been read off a live comment. The full-review wordings `Full review triggered.` and
+`Full review finished.` were observed as stored findings on `cuioss/plan-marshall#1742` and
+`cuioss/plan-marshall#1745`.
 
 The class itself is cross-bot vocabulary — see
 [`bot-participation-contract.md`](bot-participation-contract.md) § "An acknowledgment is not an
@@ -276,6 +288,24 @@ alone — credits nothing, and is reported neither as participation nor as a sta
 field's reach, and why an absent declaration is fail-open, are stated once in
 [`bot-participation-contract.md`](bot-participation-contract.md) § "A shape may be gated on a content
 marker".
+
+**The same marker gate decides the re-review answer.** `github_re_review` reads this record's
+`issue_comment` marker when it awaits a fresh CodeRabbit review, and admits a CodeRabbit comment as
+the answer only when its body carries the marker. A marker-less comment that is neither a refusal nor
+an acknowledgment is skipped without a record, so the wait continues; a marker-less refusal is still
+recorded as one. On top of the gate, any answer
+is withheld while the `completion_check_name` check-run above is observed in progress. See
+`workflow-integration-github/SKILL.md` § "Completion signals (`await_fresh_review`)".
+
+The shape the gate exists for is the **in-progress summary**. While a review runs, CodeRabbit edits
+its summary comment into an in-progress state: a "Currently processing new changes in this PR" notice
+naming the range under review as `between {base} and {head}`, and a "review in progress" summary over
+the head's files. It carries no `<!-- recent_review_start -->` marker, yet it names the head SHA as
+the end of that range, so before the gate it ended the wait as `head_sha_verified: true` while the
+review was still running. The finished review that replaces it carries the marker. Provenance: the
+in-progress wording was read off the summary comment on `cuioss/plan-marshall#1742`, between
+`8fc4ed52` and `c6571e10`. CodeRabbit edited that comment in place afterwards, so the full in-progress
+body was not preserved; the gate keys on the marker, not on the in-progress wording.
 
 **A clean review's credit rides the marker-bearing `issue_comment`.** When CodeRabbit finds nothing,
 it publishes no `review_body` and no `inline` comment: its whole output is the review-verdict
@@ -318,7 +348,9 @@ every bot's refusal is waitable. For this bot the recovery claims the window and
 `automatic-review` step returns the wait to the main context instead of holding it. The main context
 (`phase-6-finalize` Step 3 item 7a) waits on the claim's own expiry, under that budget — one bounded
 `merge_lock rate-window wait` call at a time, asking the operator nothing — and dispatches the step
-again as soon as the claim has expired. Only that second pass RE-DELIVERS the request by closing and re-opening the
+again once the claim has expired plus the wake margin that wait applies, so the re-dispatch does not
+race the claim's own expiry. A claimed window already longer than the budget is escalated before any
+wait rather than waited out. Only that second pass RE-DELIVERS the request by closing and re-opening the
 PR — the elapsed claim resolves through this record's `trigger_semantics` above, and this bot asks
 for an explicit trigger, so a rebase-push or a trigger comment is not what fires. See `../SKILL.md`
 § "Rate-limit refusal recovery (opt-in)" for the branch this lands on, and

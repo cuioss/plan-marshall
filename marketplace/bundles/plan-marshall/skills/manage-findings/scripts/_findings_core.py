@@ -1144,6 +1144,126 @@ def mark_finding_responded(
     return _not_found(plan_id, store, hash_id, 'Finding')
 
 
+def update_finding_text(
+    plan_id: str,
+    hash_id: str,
+    *,
+    detail: str,
+    raw_input: dict[str, Any],
+    reviewed_commit_sha: str | None = None,
+    raw_input_max_bytes: int = DEFAULT_RAW_INPUT_MAX_BYTES,
+) -> dict[str, Any]:
+    """Rewrite a finding's TEXT in place, reopening a resolved one whose text changed.
+
+    The update path for a source the producer re-reads with new content under the
+    same identity — a bot comment edited in place. The source is the same, so the
+    finding is the same: one record is updated, never a second one filed. What the
+    update writes depends on the stored resolution and on whether the quarantined
+    text actually moved (the new ``raw_input`` is re-quarantined under the same
+    per-field byte cap ``add_finding`` applies, then compared with the stored
+    ``raw_input`` — the post-cap forms, so a cap-truncated body compares equal to
+    itself):
+
+    - **pending** (``outcome: updated``) — ``detail``, ``raw_input`` and, when
+      given, ``reviewed_commit_sha`` are replaced; the finding stays pending and
+      carries the new text into the next ``ingest`` pass and triage.
+    - **resolved, text changed** (``outcome: reopened``) — the same three fields
+      are replaced AND the finding is reset to ``pending``: ``resolution_detail``
+      is cleared, the fix stamp is cleared on the terms :func:`resolve_finding`
+      applies to a resolution change, and a ``responded`` marker is cleared, so the
+      new content is ingested, triaged and answered as what it is — content no
+      disposition has covered yet.
+    - **resolved, text identical** (``outcome: kept_resolved``) — a re-post, or an
+      edit that moved only the edit term. Only ``detail`` is replaced (it carries
+      the new edit term, which matches the unchanged text); the resolution, its
+      disposition, the fix stamp, the ``responded`` marker, the stored text and the
+      ``reviewed_commit_sha`` are all left exactly as stored.
+
+    ``reviewed_commit_sha`` IS THE ANCHOR OF THE STORED DISPOSITION, so it moves only
+    together with the disposition it anchors. Phase-6-finalize Step 3 item 7c looks
+    for an unstamped inline fix in the commits AFTER a ``fixed`` finding's
+    ``reviewed_commit_sha``; moving that anchor past the inline-fix commit while the
+    ``fixed`` disposition stayed would strand the fix's reply, held forever. So the
+    anchor is written only where no disposition survives the update — a pending
+    finding (not yet decided) and a reopened one (its disposition was just cleared,
+    so the next fix is made after the new anchor) — and never where the resolution
+    is kept.
+
+    REFUSES text that quarantines to nothing — an absent or empty ``raw_input``, or
+    every field empty or clipped to nothing but the truncation marker (a body
+    wholly over a non-positive cap). Recording the new ``detail`` (and with it the
+    new edit term) over the old text would pair a term naming the new content with
+    a body that still holds the old, and clearing the body instead would erase the
+    only text the finding was triaged on. The refusal is ``error:
+    raw_input_empty`` and leaves the record byte-identical, so the next fetch of the
+    same comment meets the same mismatch rather than a silently stale pairing.
+
+    Scoped to the PLAN-FINDINGS file set like the other write verbs, so a Q-Gate or
+    assessment hash is identified and refused rather than rewritten.
+    """
+    store = resolve_findings_store(plan_id)
+    if store_unreached(store):
+        return unresolved_store_error(plan_id, store)
+
+    parent = get_finding(plan_id, hash_id)
+    if not parent or parent.get('status') != 'success':
+        return _not_found(plan_id, store, hash_id, 'Finding')
+
+    quarantined = _quarantine_raw_input(raw_input, raw_input_max_bytes)
+    if not _carries_text(quarantined):
+        return {
+            'status': 'error',
+            'error': 'raw_input_empty',
+            'hash_id': hash_id,
+            'message': (
+                f'Finding {hash_id} was not updated: the new raw_input quarantines to no text, '
+                'so the stored text and its edit term are kept as they are'
+            ),
+            **store_state_fields(store),
+        }
+
+    resolution = parent.get('resolution')
+    text_changed = quarantined != (parent.get('raw_input') or None)
+    updates: dict[str, Any] = {'detail': detail}
+    if resolution == 'pending':
+        outcome = 'updated'
+    elif text_changed:
+        outcome = 'reopened'
+        updates.update({'resolution': 'pending', 'resolution_detail': None})
+        updates.update(_fix_stamp_reset(parent, None))
+        if parent.get('responded'):
+            updates['responded'] = False
+            updates['responded_at'] = None
+    else:
+        outcome = 'kept_resolved'
+
+    if outcome != 'kept_resolved':
+        updates['raw_input'] = quarantined
+        if reviewed_commit_sha:
+            updates['reviewed_commit_sha'] = reviewed_commit_sha
+
+    if _update_in_finding_files(store, hash_id, updates):
+        return {
+            'status': 'success',
+            'hash_id': hash_id,
+            'outcome': outcome,
+            'resolution': updates.get('resolution', resolution),
+            **store_state_fields(store),
+        }
+    return _not_found(plan_id, store, hash_id, 'Finding')
+
+
+def _carries_text(quarantined: dict[str, str] | None) -> bool:
+    """Return whether any quarantined field kept text beyond the truncation marker.
+
+    A field clipped by a non-positive cap holds the marker alone, which records
+    that something was cut and nothing of what it was.
+    """
+    if not quarantined:
+        return False
+    return any(value and value != RAW_INPUT_TRUNCATION_MARKER for value in quarantined.values())
+
+
 # --- Q-Gate Findings ---
 
 

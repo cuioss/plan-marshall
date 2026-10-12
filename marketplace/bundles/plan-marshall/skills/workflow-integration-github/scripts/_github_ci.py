@@ -7,11 +7,20 @@ Holds the ``cmd_ci_*`` handler bodies plus the CI-only non-patched helpers
 check-row classification/link helpers are imported from ``_github_checks``;
 every network primitive and monkeypatch-sensitive helper (``run_gh``,
 ``check_auth``, ``poll_until``, ``format_checks_toon``,
-``_fetch_pr_overall_ci_status``, ``_fetch_failed_run_log``, and the shared
+``_fetch_pr_overall_ci_status``, ``_fetch_failed_run_log``, the registry-derived
+``_review_bot_check_names`` exclusion set, and the shared
 ``_resolve_pr_identifier``) lives in the entry module ``github_ops`` and is
 reached via ATTRIBUTE access on the imported ``github_ops`` module at call
 time — never ``from github_ops import <name>``, which would defeat a test's
 ``monkeypatch.setattr(github_ops, '<name>', ...)``.
+
+A registered review bot's commit status (CodeRabbit's ``CodeRabbit``) is the
+review gate's concern, not CI's. ``ci status`` and ``ci wait`` therefore set the
+rows named by ``github_ops._review_bot_check_names()`` aside before classifying:
+``overall_status`` / ``final_status`` and every wait partition — the post-seed
+snapshot, the poll-fallback completion test and the post-tail timeout partition —
+are computed over the CI rows only. The set-aside rows are reported in
+``review_bot_checks[]``, never dropped, and ``checks[]`` keeps listing every row.
 """
 
 import argparse
@@ -22,9 +31,11 @@ from typing import Any
 import github_ops
 from _github_checks import (
     _build_failing_check_entry,
+    _build_review_bot_check_entry,
     _classify_check_buckets,
     _derive_overall_status,
     _extract_run_id_from_link,
+    _split_review_bot_rows,
 )
 from ci_base import (
     CI_LOG_SCOPE_FAILED,
@@ -175,10 +186,12 @@ def cmd_ci_status(args: argparse.Namespace) -> dict:
     except json.JSONDecodeError:
         return make_error('ci_status', 'Failed to parse gh output', stdout[:100])
 
-    # Determine overall status via the canonical conclusion partition.
+    # Determine overall status via the canonical conclusion partition, over the
+    # CI rows only — a registered review bot's status is set aside and reported.
     # ``mixed`` is no longer a possible outcome — every input resolves to
     # ``pending | success | failure | none``.
-    overall, failing_rows, _wait_rows = _derive_overall_status(checks)
+    ci_rows, review_bot_rows = _split_review_bot_rows(checks, github_ops._review_bot_check_names())
+    overall, failing_rows, _wait_rows = _derive_overall_status(ci_rows)
 
     # Format checks table — ci_status has no caller-supplied duration ceiling,
     # so out-of-range aggregates are substituted with 0.
@@ -192,6 +205,7 @@ def cmd_ci_status(args: argparse.Namespace) -> dict:
         'check_count': len(checks),
         'elapsed_sec': total_elapsed,
         'checks': check_dicts,
+        'review_bot_checks': [_build_review_bot_check_entry(c) for c in review_bot_rows],
     }
 
     # On failure, surface the per-check failing-checks table enriched with each
@@ -322,14 +336,21 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
     ``head_sha``, plus the ``deadline_exceeded`` timeout envelope.
 
     The retained ``poll_until`` fallback covers the edge where CI has not yet
-    registered any watchable run (empty checks, or wait-state checks whose links
+    registered any watchable run (no CI row yet, or wait-state CI rows whose links
     carry no resolvable run id) — preserving the pre-change "keep waiting until
     checks appear, then time out" behaviour for repos whose checks lag the wait.
+
+    Every partition above reads the CI rows only: the rows named by
+    ``github_ops._review_bot_check_names()`` are set aside at each snapshot, so a
+    pending review-bot status neither holds the wait open nor surfaces as a CI
+    timeout. Both the success and the timeout envelope report them in
+    ``review_bot_checks[]``.
     """
     is_auth, err = github_ops.check_auth()
     if not is_auth:
         return make_error('ci_wait', err)
 
+    review_bot_names = github_ops._review_bot_check_names()
     start = _monotonic()
     deadline = start + args.timeout
     # Which of the three internal paths actually resolved the wait. Starts at
@@ -352,7 +373,8 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
     #    watchable, delegate the wait to ``gh run watch`` (one blocking call per
     #    run — NOT a hand-rolled sleep loop) and re-snapshot. Otherwise fall back
     #    to the sanctioned ``poll_until`` framework for the remaining budget.
-    _f, wait_rows, _nf = _classify_check_buckets(checks)
+    ci_rows, _review_bot_rows = _split_review_bot_rows(checks, review_bot_names)
+    _f, wait_rows, _nf = _classify_check_buckets(ci_rows)
     resolvable_run_ids = sorted(
         {
             _extract_run_id_from_link(c.get('link') or '')
@@ -371,8 +393,8 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
         if not ok:
             return make_error('ci_wait', data['error'], data.get('context', ''))
         checks = data['checks']
-    elif not checks or wait_rows:
-        # No watchable run yet (checks empty, or wait-state checks with no
+    elif not ci_rows or wait_rows:
+        # No watchable run yet (no CI row, or wait-state CI rows with no
         # resolvable run id). Preserve the pre-change wait-for-checks behaviour
         # via the sanctioned poll_until framework, bounded by the remaining time.
         mechanism = 'poll_fallback'
@@ -381,7 +403,7 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
             return _fetch_pr_checks(args.pr_number)
 
         def _is_complete_fn(inner: dict) -> bool:
-            rows = inner.get('checks', [])
+            rows, _bot_rows = _split_review_bot_rows(inner.get('checks', []), review_bot_names)
             if not rows:
                 return False
             _fail, waiting, _nonfail = _classify_check_buckets(rows)
@@ -400,9 +422,12 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
     check_dicts, total_elapsed = github_ops.format_checks_toon(checks, duration_ceiling=duration_sec)
 
     # A remaining wait partition after the tail is a timeout: enumerate every
-    # still-waiting check as a ``failing_checks`` entry so deliverables 6 and 7
-    # can route the timeout into the ``ci-verify-timeout`` producer.
-    _f2, wait_rows2, _nf2 = _classify_check_buckets(checks)
+    # still-waiting CI check as a ``failing_checks`` entry so deliverables 6 and 7
+    # can route the timeout into the ``ci-verify-timeout`` producer. A review-bot
+    # status still pending is not a CI timeout — it is reported, not counted.
+    ci_rows, review_bot_rows = _split_review_bot_rows(checks, review_bot_names)
+    review_bot_checks = [_build_review_bot_check_entry(c) for c in review_bot_rows]
+    _f2, wait_rows2, _nf2 = _classify_check_buckets(ci_rows)
     if wait_rows2:
         wait_entries = [_build_failing_check_entry(c) for c in wait_rows2]
         run_ids = sorted({e['run_id'] for e in wait_entries if e['run_id']})
@@ -425,6 +450,7 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
             'run_id': run_ids[0] if run_ids else '',
             'head_sha': head_sha,
             'mechanism': mechanism,
+            'review_bot_checks': review_bot_checks,
         }
         if check_dicts:
             error_data['elapsed_sec'] = total_elapsed
@@ -439,9 +465,10 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
         )
         return error_data
 
-    # Natural completion — every check reached a terminal conclusion. Partition
-    # and derive the final status; the ``mixed`` outcome no longer exists.
-    final_status, failing_rows, _wait_rows = _derive_overall_status(checks)
+    # Natural completion — every CI check reached a terminal conclusion. Partition
+    # and derive the final status over the CI rows; the ``mixed`` outcome no
+    # longer exists.
+    final_status, failing_rows, _wait_rows = _derive_overall_status(ci_rows)
     failing_checks_entries = [_build_failing_check_entry(c) for c in failing_rows]
     if final_status == 'failure':
         failing_checks_entries = _enrich_failing_checks(
@@ -454,7 +481,7 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
     run_ids = sorted(
         {
             _extract_run_id_from_link(c.get('link') or '')
-            for c in checks
+            for c in ci_rows
             if _extract_run_id_from_link(c.get('link') or '')
         }
     )
@@ -485,6 +512,7 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
         'run_id': run_ids[0] if run_ids else '',
         'head_sha': head_sha,
         'mechanism': mechanism,
+        'review_bot_checks': review_bot_checks,
     }
 
 
@@ -505,7 +533,9 @@ def cmd_ci_wait_for_status_flip(args: argparse.Namespace) -> dict:
     the standard CI interval and exits as soon as the status differs from the
     baseline and is no longer ``pending`` (optionally constrained via
     ``--expected`` to ``success`` or ``failure``). Reuses the same ``poll_until``
-    helper that powers ``ci wait``.
+    helper that powers ``ci wait``. The status is read through
+    ``github_ops._fetch_pr_overall_ci_status``, which classifies the CI rows only,
+    so a pending review-bot status never holds the baseline at ``pending``.
     """
     is_auth, err = github_ops.check_auth()
     if not is_auth:

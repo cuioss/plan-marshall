@@ -11,7 +11,9 @@ Covers the three concerns of the post-merge re-review registry:
          sourcery:   posts ``@sourcery-ai review``.
          cuioss-review-bot:   posts ``/review``.
     3. Two-signal completion matching — ``await_fresh_review`` is satisfied by
-       EITHER ``_match_review`` (a review whose reviewed-commit evidence REFERENCES
+       EITHER ``_match_review`` (a review authored by the awaited bot — its
+       ``user`` login resolves to the awaited ``bot_kind`` — whose reviewed-commit
+       evidence REFERENCES
        the pushed HEAD — recognised as a bare token or embedded in a commit URL, and
        compared for EQUALITY either way, so a differing commit still fails — whose
        ``submitted_at`` post-dates the trigger time, AND whose
@@ -72,6 +74,7 @@ import bot_registry
 import ci_base
 import github_re_review
 import pytest
+from _github_pr_fixtures import coderabbit_verdict
 
 _NO_RECORD_WINDOW = {'status': 'free', 'expired': True, 'holder': '', 'seconds_remaining': 0.0}
 
@@ -113,8 +116,8 @@ def _neutralize_rate_window(monkeypatch):
 def _neutralize_in_progress_read(monkeypatch):
     """Hold the completion read at NOT OBSERVED RUNNING for every test here.
 
-    A poll that would end on a comment naming no commit consults
-    ``read_bot_in_progress``, which reads the awaited bot's check-run through ``gh``.
+    A poll that would end on a match consults ``read_bot_in_progress``, which reads
+    the awaited bot's check-run through ``gh``.
     Default-on, so no case in this module shells out or depends on a real PR's check.
     The matched pair proving this fixture lives in ``test_re_review_strategy_match.py``.
     """
@@ -152,13 +155,28 @@ def _noop_sleep(monkeypatch):
     monkeypatch.setattr(time, 'sleep', lambda *_a, **_kw: None)
 
 
-def _review(commit_sha, submitted_at, *, user='coderabbit[bot]', state='COMMENTED', body=''):
+def _review_login(bot_kind):
+    """Return a review-author login the registry resolves to ``bot_kind``.
+
+    Read from the registry's own login map rather than restated, in the ``[bot]``
+    suffixed form the REST ``/reviews`` payload carries; ``bot_kind_for_author``
+    strips the suffix before resolving it.
+    """
+    login = next(login for login, kind in bot_registry.login_to_bot_kind().items() if kind == bot_kind)
+    return f'{login}[bot]'
+
+
+def _review(commit_sha, submitted_at, *, user, state='COMMENTED', body=''):
     """Build a review row in the shape fetch_pr_reviews_with_commits returns.
 
     ``body`` mirrors the widened projection: a review row now carries its body so
     the completion discriminator can tell a genuine review from a refusal notice
     submitted as a review object. It defaults to empty, which no refusal layer
     matches, so a fixture that does not care about the body behaves as before.
+
+    ``user`` is required: the review arm matches only a review authored by the
+    awaited bot, so every fixture names its author (:func:`_review_login`) and a
+    review's outcome is never decided by an author the fixture left out.
     """
     return {
         'user': user,
@@ -257,7 +275,7 @@ _CODERABBIT_COMMAND_REPLY_REFUSAL = (
     'already reviewed commits. This command is applicable only when automatic '
     'reviews are paused. </details>'
 )
-_CODERABBIT_GENUINE_COMMENT = (
+_CODERABBIT_GENUINE_COMMENT = coderabbit_verdict(
     'Actionable comments posted: 1. The retry loop can spin forever when the backoff '
     'cap is zero — guard the cap before entering the loop.'
 )
@@ -401,7 +419,7 @@ def test_the_comment_and_review_paths_share_ONE_predicate():
     property that matters is that neither path can drift into its own rule. An
     unmatched signal fails closed — there is no evidence to verify against.
     """
-    review = _review(_HEAD_SHA, '2026-01-01T00:05:00Z')
+    review = _review(_HEAD_SHA, '2026-01-01T00:05:00Z', user=_review_login('cuioss-review-bot'))
     comment = _comment(_PR_AGENT_LOGIN, created_at='2026-01-01T00:05:00Z', body=_guide_body(_HEAD_SHA))
 
     assert github_re_review._verifies_head_sha('review', review, _HEAD_SHA) is True
@@ -691,7 +709,10 @@ def test_cmd_re_review_escalated_posts_the_registry_escalated_command(bot_kind, 
     monkeypatch.setattr(
         github_re_review._github,
         'fetch_pr_reviews_with_commits',
-        lambda pr_number: {'status': 'success', 'reviews': [_review('headsha', '2026-01-01T00:05:00Z')]},
+        lambda pr_number: {
+            'status': 'success',
+            'reviews': [_review('headsha', '2026-01-01T00:05:00Z', user=_review_login(bot_kind))],
+        },
     )
 
     result = github_re_review.cmd_re_review(_re_review_args(bot_kind=bot_kind, escalated=True))
@@ -717,7 +738,10 @@ def test_cmd_re_review_without_escalated_posts_the_ordinary_trigger(bot_kind, es
     monkeypatch.setattr(
         github_re_review._github,
         'fetch_pr_reviews_with_commits',
-        lambda pr_number: {'status': 'success', 'reviews': [_review('headsha', '2026-01-01T00:05:00Z')]},
+        lambda pr_number: {
+            'status': 'success',
+            'reviews': [_review('headsha', '2026-01-01T00:05:00Z', user=_review_login(bot_kind))],
+        },
     )
 
     result = github_re_review.cmd_re_review(_re_review_args(bot_kind=bot_kind, escalated=escalated))

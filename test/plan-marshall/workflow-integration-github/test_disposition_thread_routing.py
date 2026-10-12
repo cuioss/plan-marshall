@@ -55,8 +55,9 @@ class _Args:
 
 
 #: The commit every staged ``fixed`` finding is stamped with. A ``fixed`` reply is
-#: held until its fix commit is stamped and reaches the pull request head, and this
-#: suite is about where a transmitted reply GOES, so every finding is released.
+#: held until its fix commit is stamped and reaches the pull request head and that
+#: head's CI has passed, and this suite is about where a transmitted reply GOES, so
+#: every finding is released.
 _FIX_COMMIT = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
 
 
@@ -65,13 +66,17 @@ def _stub_provider():
     """Keep the producer off the network; tests re-patch inside their own blocks.
 
     ``run_gh`` answers the provider's compare read with ``ahead``: the stamped fix
-    commit reaches the pull request head, so the hold-back releases every reply.
-    It is the same seam ``test_comments_stage_post.py`` drives.
+    commit reaches the pull request head. The head's CI is green:
+    ``_fetch_pr_overall_ci_status`` answers ``(True, 'success')``, so the hold-back
+    releases every reply. Left to ``run_gh``, that CI read would parse ``ahead`` as
+    an unreadable conclusion and hold every reply this suite expects transmitted.
+    Both are the seams ``test_comments_stage_post.py`` drives.
     """
     with (
         patch('github_pr._github.check_auth', return_value=(True, '')),
         patch('github_pr._github.fetch_pr_head_sha', return_value='stub-head-sha'),
         patch('github_pr._github.run_gh', return_value=(0, 'ahead\n', '')),
+        patch('github_pr._github._fetch_pr_overall_ci_status', return_value=(True, 'success')),
     ):
         yield
 

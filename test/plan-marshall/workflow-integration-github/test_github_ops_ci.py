@@ -457,6 +457,150 @@ def test_ci_status_and_ci_wait_agree_on_skipped_bearing_set(monkeypatch):
     )
 
 
+# =============================================================================
+# Registered review-bot statuses — reported, not counted as CI
+# =============================================================================
+#
+# A review bot that publishes a commit status (CodeRabbit's ``CodeRabbit``)
+# reports it on the ``gh pr checks`` surface beside the CI checks. ``ci status``
+# and ``ci wait`` set it aside before classifying: the CI verdict is computed
+# over the CI rows only and the bot row is reported in ``review_bot_checks[]``.
+# The bot status name is read from the live registry seam rather than restated,
+# so the tests follow the registry if the bot renames its status.
+
+
+def _review_bot_check_name() -> str:
+    """One registered review-bot status name, derived from the registry seam."""
+    names = sorted(github_ops._review_bot_check_names())
+    assert names, 'the bot registry declares no completion_check_name — nothing to set aside'
+    return names[0]
+
+
+def _check_row(name: str, state: str, bucket: str, link: str = '') -> dict:
+    return {
+        'name': name,
+        'state': state,
+        'bucket': bucket,
+        'link': link,
+        'startedAt': '',
+        'completedAt': '',
+        'workflow': 'CI',
+    }
+
+
+def _patch_ci_wait(monkeypatch, checks: list[dict]) -> list[int]:
+    """Stub every ``ci wait`` seam to answer ``checks``; return the poll-call log."""
+    import json as _json
+
+    import _github_ci
+
+    payload = _json.dumps(checks)
+
+    def run_gh_stub(args, capture_json=False, timeout=60):
+        if args[:2] == ['pr', 'checks']:
+            return 0, payload, ''
+        if args[:2] == ['pr', 'view']:
+            return 0, '{"headRefOid": "deadbeef"}', ''
+        return 0, '', ''
+
+    polls: list[int] = []
+
+    def poll_until_stub(check_fn, is_complete_fn, **_):
+        polls.append(1)
+        return {'timed_out': True, 'duration_sec': 1, 'polls': 1, 'last_data': {'checks': checks}}
+
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+    monkeypatch.setattr(github_ops, 'poll_until', poll_until_stub)
+    monkeypatch.setattr(_github_ci, '_read_ci_wait_p50_seed', lambda: None)
+    return polls
+
+
+def test_split_review_bot_rows_sets_named_rows_aside_and_keeps_order():
+    """The split returns both sides, in order; a stripped name still matches."""
+    bot = _check_row(' CodeRabbit ', 'PENDING', 'pending')
+    build = _check_row('build', 'SUCCESS', 'pass')
+    lint = _check_row('lint', 'SUCCESS', 'pass')
+
+    ci_rows, bot_rows = github_ops._split_review_bot_rows([build, bot, lint], {'CodeRabbit '})
+
+    assert ci_rows == [build, lint]
+    assert bot_rows == [bot]
+
+
+def test_split_review_bot_rows_blank_name_claims_no_row():
+    """A blank exclusion name sets nothing aside — not even an unnamed row."""
+    unnamed = {'state': 'PENDING', 'bucket': 'pending'}
+    blank = _check_row('', 'PENDING', 'pending')
+
+    ci_rows, bot_rows = github_ops._split_review_bot_rows([unnamed, blank], {'', '   '})
+
+    assert ci_rows == [unnamed, blank]
+    assert bot_rows == []
+
+
+def test_ci_status_reports_ci_complete_with_pending_review_bot_status(monkeypatch):
+    """Every CI check green and the bot status pending → success, bot row reported."""
+    bot_name = _review_bot_check_name()
+    checks = [
+        _check_row('build', 'SUCCESS', 'pass'),
+        _check_row(bot_name, 'PENDING', 'pending', link='https://coderabbit.ai/review'),
+    ]
+    _patch_ci_wait(monkeypatch, checks)
+
+    result = github_ops.cmd_ci_status(argparse.Namespace(pr_number=42, head=None))
+
+    assert result['status'] == 'success', result
+    assert result['overall_status'] == 'success', result
+    assert result['review_bot_checks'] == [
+        {'name': bot_name, 'conclusion': 'PENDING', 'url': 'https://coderabbit.ai/review'}
+    ]
+    # checks[] still lists every row — the bot row is reported, never dropped.
+    assert [row['name'] for row in result['checks']] == ['build', bot_name]
+    assert result['check_count'] == 2
+
+
+def test_ci_wait_completes_when_only_the_review_bot_status_is_pending(monkeypatch):
+    """The pending bot status neither holds the wait open nor becomes a CI timeout."""
+    bot_name = _review_bot_check_name()
+    checks = [
+        _check_row('build', 'SUCCESS', 'pass'),
+        _check_row(bot_name, 'PENDING', 'pending', link='https://coderabbit.ai/review'),
+    ]
+    polls = _patch_ci_wait(monkeypatch, checks)
+
+    result = github_ops.cmd_ci_wait(argparse.Namespace(pr_number=42, timeout=30, interval=5))
+
+    assert result['status'] == 'success', result
+    assert result['wait_outcome'] == 'completed'
+    assert result['final_status'] == 'success'
+    assert result['failing_checks'] == []
+    assert [entry['name'] for entry in result['review_bot_checks']] == [bot_name]
+    # The post-seed snapshot was already CI-complete, so nothing was polled.
+    assert polls == []
+
+
+def test_ci_wait_still_waits_on_a_pending_non_bot_check(monkeypatch):
+    """Control: a pending CI check still waits and times out; the bot row stays reported."""
+    bot_name = _review_bot_check_name()
+    checks = [
+        _check_row('build', 'SUCCESS', 'pass'),
+        _check_row('deploy', 'PENDING', 'pending'),
+        _check_row(bot_name, 'PENDING', 'pending', link='https://coderabbit.ai/review'),
+    ]
+    polls = _patch_ci_wait(monkeypatch, checks)
+
+    result = github_ops.cmd_ci_wait(argparse.Namespace(pr_number=42, timeout=30, interval=5))
+    status_result = github_ops.cmd_ci_status(argparse.Namespace(pr_number=42, head=None))
+
+    assert polls == [1]
+    assert result['status'] == 'error', result
+    assert result['wait_outcome'] == 'deadline_exceeded'
+    assert [entry['name'] for entry in result['failing_checks']] == ['deploy']
+    assert [entry['name'] for entry in result['review_bot_checks']] == [bot_name]
+    assert status_result['overall_status'] == 'pending'
+
+
 def test_cmd_ci_logs_returns_error_context_window_not_head(monkeypatch):
     """cmd_ci_logs must surface the failure tail via the error-context filter.
 

@@ -40,10 +40,11 @@ lives here:
   could not be delivered lands in ``untransmitted`` and drives ``status:
   partial``. It reads only findings the triage pass already resolved. A ``fixed``
   disposition is held, and listed in ``deferred_until_commit``, until the finding
-  carries a fix commit that the provider reports on the pull request head. With
-  ``--send-unstamped-fixed`` a ``fixed`` finding that carries no fix commit is
-  transmitted in the same pass instead; one that carries a fix commit is held or
-  released by that commit either way.
+  carries a fix commit that the provider reports on the pull request head AND the
+  CI of that head has passed. With ``--send-unstamped-fixed`` a ``fixed`` finding
+  that carries no fix commit is transmitted in the same pass instead; one that
+  carries a fix commit is held or released by that commit and the head's CI either
+  way.
 
 Beside the findings contract sits one auxiliary provider read:
 
@@ -960,6 +961,32 @@ def _existing_pr_comment_keys(
     return keys, legacy_keys
 
 
+def _stored_pr_comment_hashes(findings: list[dict]) -> dict[tuple[str, str], str]:
+    """Return ``(bot_kind, comment_id) -> hash_id`` of the finding an in-place edit updates.
+
+    The companion of :func:`_existing_pr_comment_keys` for the update path: a comment
+    whose two-term identity is already stored but whose edit term is new is the same
+    COMMENT carrying new INFORMATION, so its stored finding is rewritten rather than a
+    second finding filed beside it. Only rows that carry an edit term are mapped — a
+    pre-upgrade row dedupes on the two-term key before this map is consulted.
+
+    When the store holds several findings for one comment — the shape an edited comment
+    left behind before edits updated in place — the LAST one in store order wins: it is
+    the most recently filed, so it carries the text the next edit replaces.
+
+    A PURE projection over an already-read finding list, like its companion.
+    """
+    hashes: dict[tuple[str, str], str] = {}
+    for finding in findings:
+        detail = finding.get('detail')
+        comment_id = _detail_field(detail, _COMMENT_ID_DETAIL)
+        hash_id = str(finding.get('hash_id') or '')
+        if not comment_id or not hash_id or not _detail_field(detail, _EDIT_TERM_DETAIL):
+            continue
+        hashes[(finding.get('bot_kind') or '', comment_id)] = hash_id
+    return hashes
+
+
 # The plan-scoped CURRENCY LEDGER: per ``participation_requires_update`` comment the
 # plan has credited, the ``(bot_kind, comment_id)`` key with the merge-candidate SHA
 # AND the comment's ``updated_at`` at the fetch that last credited it. It is the SOLE
@@ -1497,9 +1524,21 @@ def cmd_fetch_findings(args):
     6. Cross-iteration duplicate — a ``(bot_kind, comment_id, edit_term)`` key already
        present in the store, counted in ``count_skipped_duplicate``. The EDIT TERM is
        the comment's ``updated_at``, or a body digest when the provider supplied none,
-       so an in-place-edited review presents as NEW INFORMATION and is filed while an
-       unchanged re-fetch still dedupes. A finding stored before the term existed
-       carries none, and dedupes on the two-term key against any edit term.
+       so an unchanged re-fetch dedupes while an in-place-edited comment presents as
+       NEW INFORMATION. A comment whose ``(bot_kind, comment_id)`` is stored under a
+       different edit term UPDATES that finding in place (``update_finding_text``),
+       never files a second one. A pending finding takes the latest body under
+       ``raw_input.body``, the new edit term and the current ``reviewed_commit_sha``.
+       A resolved finding whose body CHANGED takes the same and is reopened to
+       pending (disposition, fix stamp and ``responded`` marker cleared), so the new
+       content is triaged. A resolved finding whose body is IDENTICAL records only
+       the new edit term and keeps its resolution, its text and its
+       ``reviewed_commit_sha`` — the anchor phase-6-finalize 7c searches after for a
+       ``fixed`` finding's inline-fix commit. Counted in ``count_updated_edited``
+       (with the rewritten ``updated_edited_hash_ids``; a reopen is also named in
+       ``reopened_edited_hash_ids``), never in ``count_stored``, and subtracted from
+       ``expected_stored``. A finding stored before the term existed carries none,
+       and dedupes on the two-term key against any edit term.
 
     ``self_response_loop_detected``: true when a single fetch observed
     ``count_self_response_current_cycle >= _SELF_RESPONSE_LOOP_BOUND``. Every turn
@@ -1769,6 +1808,7 @@ def cmd_fetch_findings(args):
         add_finding,
         add_qgate_finding_checked,
         query_findings,
+        update_finding_text,
     )
 
     pr_number: int = args.pr_number
@@ -1830,6 +1870,7 @@ def cmd_fetch_findings(args):
     if findings_payload.get('status') == 'error':
         return findings_payload
     existing_comment_keys, legacy_comment_keys = _existing_pr_comment_keys(findings_payload.get('findings') or [])
+    stored_comment_hashes = _stored_pr_comment_hashes(findings_payload.get('findings') or [])
 
     # The MERGE CANDIDATE SHA — the current PR HEAD — is fetched up front (before the
     # participation loop, not only for the ingestion stamp below) because the currency
@@ -2044,6 +2085,10 @@ def cmd_fetch_findings(args):
     )
 
     stored_hashes: list[str] = []
+    # The stored findings an in-place edit of their comment rewrote (pre-filter 6).
+    updated_edited_hashes: list[str] = []
+    # The subset of those whose finding was resolved and reopened because the body moved.
+    reopened_edited_hashes: list[str] = []
     skipped_noise = 0
     skipped_duplicate = 0
     skipped_refusal = 0
@@ -2281,9 +2326,27 @@ def cmd_fetch_findings(args):
         # same ``comment_id`` forever: under the two-term key, an edit that replaced a
         # clean Guide with a real finding was dropped as a duplicate while the currency
         # test credited the bot as participating — so the reviewer read present and
-        # clean, and its actual feedback never became a finding. Widening the key by the
-        # edit term files the edited review and still dedupes an unchanged re-fetch,
-        # because an unchanged comment carries an unchanged term.
+        # clean, and its actual feedback never became a finding. An unchanged re-fetch
+        # still dedupes, because an unchanged comment carries an unchanged term.
+        #
+        # AN EDIT UPDATES the stored finding rather than filing a second one beside it:
+        # the comment is the same, so the finding is the same. ``update_finding_text``
+        # rewrites it in place, and whether the edit reopens it is decided by whether the
+        # BODY moved. A pending finding takes the latest body, the new edit term and the
+        # current ``reviewed_commit_sha``, and carries the new text into triage. A
+        # resolved finding whose body CHANGED takes the same three and is reset to
+        # pending — its disposition answered text the bot has since replaced, so the new
+        # content is triaged as content no disposition covered. A resolved finding whose
+        # body is IDENTICAL (a re-post, or an edit that moved only the edit term) keeps
+        # its resolution, its stored text and its ``reviewed_commit_sha``, and records
+        # only the new edit term. The anchor stays with a kept disposition because
+        # phase-6-finalize 7c searches the commits after it for a ``fixed`` finding's
+        # inline-fix commit. Filing a new finding per edit put every edit of a bot's
+        # persistent summary back in front of the merge gate as a fresh pending finding,
+        # identical body or not. The update is counted in ``count_updated_edited``
+        # (a reopen is also named in ``reopened_edited_hash_ids``), never in
+        # ``count_stored``, and drops out of ``expected_stored`` beside the other
+        # non-stores.
         #
         # A PRE-UPGRADE row carries no edit term at all, so it can match no three-term
         # key. It dedupes on the two-term key against ANY edit term instead — otherwise
@@ -2296,6 +2359,7 @@ def cmd_fetch_findings(args):
         if (bot_kind or '', comment_id, edit_term) in existing_comment_keys:
             skipped_duplicate += 1
             continue
+        edited_hash = stored_comment_hashes.get((bot_kind or '', comment_id))
 
         # Build a stable, deterministic title that disambiguates same-author
         # comments on the same file. Only trusted, producer-built structured
@@ -2322,6 +2386,25 @@ def cmd_fetch_findings(args):
         if line:
             detail_lines.append(f'line: {line}')
         detail = '\n'.join(detail_lines)
+
+        # The same comment, edited in place since its finding was stored: rewrite that
+        # finding's text, reopening it when a resolved finding's body changed. See the
+        # edit-term note above.
+        if edited_hash:
+            update_result = update_finding_text(
+                plan_id,
+                edited_hash,
+                detail=detail,
+                raw_input={'body': body},
+                reviewed_commit_sha=reviewed_commit_sha or None,
+            )
+            if update_result.get('status') == 'success':
+                updated_edited_hashes.append(edited_hash)
+                if update_result.get('outcome') == 'reopened':
+                    reopened_edited_hashes.append(edited_hash)
+            else:
+                store_failures.append(comment_id)
+            continue
 
         # ``line`` may be 0 from the GraphQL fallback for review-body /
         # issue-comment kinds — pass None in that case to keep the finding
@@ -2395,6 +2478,7 @@ def cmd_fetch_findings(args):
             unrecognised_only_bots.add(_credited_bot)
 
     count_stored = len(stored_hashes)
+    count_updated_edited = len(updated_edited_hashes)
     skipped_emitter_bypass = len(emitter_bypass_ids)
     skipped_own_trigger = len(own_trigger_exclusions)
     # The credited set as emitted: bots whose every publish-shape comment was an
@@ -2405,24 +2489,26 @@ def cmd_fetch_findings(args):
     # rejected by the store) means the pass found something, so the verdict is then
     # not applicable rather than a zero.
     stored_zero_state = _stored_zero_state(
-        count_stored + skipped_duplicate + len(store_failures),
+        count_stored + count_updated_edited + skipped_duplicate + len(store_failures),
         fetch_complete=fetch_complete,
         head_resolved=bool(reviewed_commit_sha),
         refusal_count=skipped_refusal,
         credited_count=len(credited_bots),
     )
-    # Duplicates skipped by the cross-iteration guard, refusals surfaced through
-    # ``refused_bots``, self-authored responses, reported emitter bypasses, and
-    # reported own triggers are all legitimate non-stores, so they drop out of
-    # expected_stored alongside the noise skips — otherwise every deduped comment,
-    # every surfaced refusal, and every correctly-excluded workflow comment would
-    # spuriously trip the producer-mismatch Q-Gate. An unclassified bot's comments
-    # are NOT subtracted: under the warn-but-ingest rule they are stored like any
-    # other, so they belong in expected_stored.
+    # Duplicates skipped by the cross-iteration guard, findings an in-place edit
+    # updated, refusals surfaced through ``refused_bots``, self-authored responses,
+    # reported emitter bypasses, and reported own triggers are all legitimate
+    # non-stores, so they drop out of expected_stored alongside the noise skips —
+    # otherwise every deduped comment, every edited one, every surfaced refusal, and
+    # every correctly-excluded workflow comment would spuriously trip the
+    # producer-mismatch Q-Gate. An unclassified bot's comments are NOT subtracted:
+    # under the warn-but-ingest rule they are stored like any other, so they belong
+    # in expected_stored.
     expected_stored = (
         count_fetched
         - skipped_noise
         - skipped_duplicate
+        - count_updated_edited
         - skipped_refusal
         - skipped_self_response
         - skipped_emitter_bypass
@@ -2452,6 +2538,7 @@ def cmd_fetch_findings(args):
             f'count_fetched={count_fetched}, '
             f'count_skipped_noise={skipped_noise}, '
             f'count_skipped_duplicate={skipped_duplicate}, '
+            f'count_updated_edited={count_updated_edited}, '
             f'count_skipped_refusal={skipped_refusal}, '
             f'count_skipped_self_response={skipped_self_response}, '
             f'count_skipped_emitter_bypass={skipped_emitter_bypass}, '
@@ -2548,6 +2635,12 @@ def cmd_fetch_findings(args):
         'count_fetched': count_fetched,
         'count_skipped_noise': skipped_noise,
         'count_skipped_duplicate': skipped_duplicate,
+        # Stored findings whose comment was edited in place since it was filed: their
+        # text was rewritten, and a resolved one whose body changed was reopened (also
+        # named in reopened_edited_hash_ids). Not counted in count_stored.
+        'count_updated_edited': count_updated_edited,
+        'updated_edited_hash_ids': updated_edited_hashes,
+        'reopened_edited_hash_ids': reopened_edited_hashes,
         'count_skipped_refusal': skipped_refusal,
         'count_skipped_self_response': skipped_self_response,
         'count_skipped_emitter_bypass': skipped_emitter_bypass,
@@ -2966,6 +3059,20 @@ DEFERRED_NO_FIX_COMMIT = 'no_fix_commit'
 DEFERRED_PR_HEAD_UNREADABLE = 'pr_head_unreadable'
 DEFERRED_NOT_ON_PR_HEAD = 'fix_commit_not_on_pr_head'
 DEFERRED_ANCESTRY_UNREADABLE = 'fix_commit_ancestry_unreadable'
+# The fix commit is on the pull request head, but the head's CI has not passed. A
+# reviewer told "fixed" is pointed at the head, so the reply waits until that head is
+# shown to work: no conclusion yet (``pending``, or ``none`` when no check has
+# registered at the head), a failed conclusion, or a conclusion that could not be read.
+DEFERRED_PR_HEAD_CI_PENDING = 'pr_head_ci_pending'
+DEFERRED_PR_HEAD_CI_FAILED = 'pr_head_ci_failed'
+DEFERRED_PR_HEAD_CI_UNREADABLE = 'pr_head_ci_unreadable'
+
+# The overall CI conclusions ``github_ops._fetch_pr_overall_ci_status`` reports that
+# release a reply, and those that hold it as not yet concluded. ``none`` is no check
+# registered at the head yet — no verdict, so it waits like ``pending``.
+_PR_HEAD_CI_PASSED = 'success'
+_PR_HEAD_CI_FAILED = 'failure'
+_PR_HEAD_CI_NOT_CONCLUDED = frozenset({'pending', 'none'})
 
 # The compare states that say the first commit is reachable from the second: the
 # second is ahead of it, or the two are the same commit.
@@ -3005,12 +3112,13 @@ def _fix_commit_reaches_pr_head(commit_sha: str, pr_head_sha: str) -> bool | Non
 
 
 def _fix_commit_hold_reason(fix_commit_sha: str, pr_head_sha: str, reachable: dict[str, bool | None]) -> str:
-    """Return why a ``fixed`` reply is held, or ``''`` when it may be sent.
+    """Return why a ``fixed`` reply is held on its fix commit, or ``''`` when the commit check passes.
 
-    The reply may be sent only when the finding carries a fix commit AND that commit
-    reaches the pull request head. Every other state holds it, and each has its own
-    reason so the row says which fact is missing. ``reachable`` caches the provider
-    read per commit for the duration of one call.
+    The commit check passes only when the finding carries a fix commit AND that
+    commit reaches the pull request head. Every other state holds the reply, and each
+    has its own reason so the row says which fact is missing. ``reachable`` caches the
+    provider read per commit for the duration of one call. A reply that passes this
+    check is still held on the head's CI (:func:`_pr_head_ci_hold_reason`).
     """
     if not fix_commit_sha:
         return DEFERRED_NO_FIX_COMMIT
@@ -3022,6 +3130,33 @@ def _fix_commit_hold_reason(fix_commit_sha: str, pr_head_sha: str, reachable: di
     if verdict is None:
         return DEFERRED_ANCESTRY_UNREADABLE
     return '' if verdict else DEFERRED_NOT_ON_PR_HEAD
+
+
+def _pr_head_ci_hold_reason(pr_number: int) -> str:
+    """Return why the pull request head's CI holds a ``fixed`` reply, or ``''`` when it passed.
+
+    Asked once per ``post_responses`` call, and only after a stamped ``fixed`` reply
+    has passed the ancestry check: the fix is on the head, and the remaining question
+    is whether that head works. The read is the shared overall-CI read
+    (``github_ops._fetch_pr_overall_ci_status``), reached by attribute access so a
+    test's patch of ``github_ops`` is honoured.
+
+    Only ``success`` releases the reply. ``pending`` and ``none`` (no check has
+    registered at the head yet) hold it as :data:`DEFERRED_PR_HEAD_CI_PENDING`,
+    ``failure`` as :data:`DEFERRED_PR_HEAD_CI_FAILED`. A read that failed — and any
+    conclusion outside those four — holds it as :data:`DEFERRED_PR_HEAD_CI_UNREADABLE`:
+    a conclusion nobody could read is not a pass.
+    """
+    ok, overall = _github._fetch_pr_overall_ci_status(pr_number)
+    if not ok:
+        return DEFERRED_PR_HEAD_CI_UNREADABLE
+    if overall == _PR_HEAD_CI_PASSED:
+        return ''
+    if overall == _PR_HEAD_CI_FAILED:
+        return DEFERRED_PR_HEAD_CI_FAILED
+    if overall in _PR_HEAD_CI_NOT_CONCLUDED:
+        return DEFERRED_PR_HEAD_CI_PENDING
+    return DEFERRED_PR_HEAD_CI_UNREADABLE
 
 
 def _reply_with_fix_commit(reply_body: str, fix_commit_sha: str) -> str:
@@ -3080,30 +3215,36 @@ def cmd_post_responses(args):
     unconditional ``success``.
 
     **A ``fixed`` disposition is held until its fix commit is on the pull
-    request.** Triage records ``fixed`` when the fix is decided, before it is a
-    commit. Such a finding is transmitted only when it carries a ``fix_commit_sha``
-    stamp (``manage-findings stamp-fix-commit``) AND the provider reports that
-    commit as an ancestor of, or identical to, the pull request head. Until then it
-    is listed in ``deferred_until_commit`` with the reason — ``no_fix_commit``,
-    ``pr_head_unreadable``, ``fix_commit_not_on_pr_head`` or
-    ``fix_commit_ancestry_unreadable`` — and gets no reply, no resolve call and no
-    ``responded`` marker, so every later pass looks at it again. A held finding is
-    not a failure: it does not count as untransmitted and does not make the run
-    ``partial``. Once released, the transmitted reply is the stored
+    request and the head's CI has passed.** Triage records ``fixed`` when the fix is
+    decided, before it is a commit. Such a finding is transmitted only when it
+    carries a ``fix_commit_sha`` stamp (``manage-findings stamp-fix-commit``), the
+    provider reports that commit as an ancestor of, or identical to, the pull
+    request head, AND the overall CI conclusion of that head is ``success``. The CI
+    conclusion is read once per call (``github_ops._fetch_pr_overall_ci_status``),
+    and only when at least one stamped ``fixed`` reply passed the ancestry check.
+    Until all three hold the finding is listed in ``deferred_until_commit`` with the
+    reason — ``no_fix_commit``, ``pr_head_unreadable``,
+    ``fix_commit_not_on_pr_head``, ``fix_commit_ancestry_unreadable``,
+    ``pr_head_ci_pending`` (no conclusion yet, or no check registered at the head),
+    ``pr_head_ci_failed`` or ``pr_head_ci_unreadable`` — and gets no reply, no
+    resolve call and no ``responded`` marker, so every later pass looks at it again.
+    A held finding is not a failure: it does not count as untransmitted and does not
+    make the run ``partial``. Once released, the transmitted reply is the stored
     ``resolution_detail`` with the short commit id added, and a thread-bearing
     finding's thread is resolved in the same call. The predicate reads the stamp
     alone, so a fix a task produced and an inline fix are held and released the same
     way. The other four dispositions are transmitted at once.
 
-    **``--send-unstamped-fixed`` lifts the hold for a finding with no stamp.** The
-    hold is the default. A caller that runs no later respond pass passes the flag
-    (``args.send_unstamped_fixed``); a ``fixed`` finding that carries no
-    ``fix_commit_sha`` is then transmitted in this pass like the other four
-    dispositions, with the stored ``resolution_detail`` unchanged and no
+    **``--send-unstamped-fixed`` lifts the hold for a finding with no stamp, and is
+    the only bypass.** The hold is the default. A caller that runs no later respond
+    pass passes the flag (``args.send_unstamped_fixed``); a ``fixed`` finding that
+    carries no ``fix_commit_sha`` is then transmitted in this pass like the other
+    four dispositions, with the stored ``resolution_detail`` unchanged and no
     ``Fix commit:`` line, instead of being listed with ``no_fix_commit``. The flag
     changes nothing for a finding that does carry a stamp: its commit is still
-    checked against the pull request head, it is still held on the other three
-    reasons, and its reply still carries the commit id when it is released.
+    checked against the pull request head, the head's CI is still read, it is still
+    held on every other reason, and its reply still carries the commit id when it is
+    released.
 
     **Idempotent across rounds, keyed on (finding, disposition).** The findings
     store is plan-scoped and persists between passes, and terminality
@@ -3165,6 +3306,10 @@ def cmd_post_responses(args):
     pr_head_sha: str | None = None
     # One provider read per distinct fix commit.
     reachable: dict[str, bool | None] = {}
+    # Why the pull request head's CI holds a reply, read at most once and only when a
+    # stamped ``fixed`` reply has passed the ancestry check; ``None`` means not read
+    # yet, ``''`` means the head's CI passed.
+    pr_head_ci_hold: str | None = None
 
     for finding in findings:
         hash_id = finding.get('hash_id', '')
@@ -3228,12 +3373,20 @@ def cmd_post_responses(args):
         # block and is routed below with its stored reply unchanged — there is no
         # commit to name. A finding that DOES carry a stamp takes the block whatever
         # the flag says: its commit is still checked against the pull request head.
+        #
+        # A stamped reply that passed the ancestry check is held once more until the
+        # head's CI has passed: "fixed" points the reviewer at the head, so the head
+        # has to be shown to work first. The CI conclusion is read once per call.
         if finding.get('resolution') == FIXED_RESOLUTION:
             fix_commit_sha = str(finding.get(FIX_COMMIT_FIELD) or '').strip().lower()
             if fix_commit_sha or not send_unstamped_fixed:
                 if fix_commit_sha and pr_head_sha is None:
                     pr_head_sha = str(_github.fetch_pr_head_sha(pr_number) or '').strip().lower()
                 hold_reason = _fix_commit_hold_reason(fix_commit_sha, pr_head_sha or '', reachable)
+                if not hold_reason:
+                    if pr_head_ci_hold is None:
+                        pr_head_ci_hold = _pr_head_ci_hold_reason(pr_number)
+                    hold_reason = pr_head_ci_hold
                 if hold_reason:
                     fix_task_number = finding.get(FIX_TASK_FIELD)
                     deferred.append(
@@ -3481,7 +3634,7 @@ Examples:
                             'verification-feedback producer except finalize-feedback, whose held replies '
                             'the phase-6-finalize hook transmits after it stamps the fix commit. A finding '
                             'that does carry a stamp is unaffected: its commit is still checked against '
-                            'the pull request head.'
+                            "the pull request head, and its reply still waits for that head's CI to pass."
                         ),
                     },
                 ],

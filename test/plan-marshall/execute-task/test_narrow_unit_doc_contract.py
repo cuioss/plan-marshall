@@ -49,6 +49,21 @@ WHOLE_TREE_BRANCH = '**`divergence_possible: true`**'
 #: The only condition under which Step 5 (b) runs no pytest — both halves.
 NO_PYTEST_BRANCH = '**`divergence_possible: false` and `scoped_modules` is empty**'
 
+#: What Step 5 (b) tells a leaf whose own change list is empty, in order: omit
+#: the flag, resolve from the plan alone, and never hand the resolver an empty list.
+EMPTY_CHANGE_LIST_MARKERS = (
+    'omit `--changed-paths`',
+    'resolve with `--plan-id` alone',
+    'Never pass an empty `--changed-paths`',
+)
+
+#: The refusal Step 5 (b) names for an empty list — the resolver's own error code.
+EMPTY_CHANGE_LIST_REFUSAL = '`empty_changed_paths`'
+
+#: The plan-footprint-only resolve the empty-change-list case runs: the
+#: ``resolve-test-scope`` call carrying ``--plan-id`` and no ``--changed-paths``.
+PLAN_ONLY_RESOLVE = 'resolve-test-scope \\\n        --plan-id "{plan_id}"'
+
 
 def _passage(document: Path, start: str, end: str) -> str:
     """Return the text of ``document`` from ``start`` up to the next ``end``."""
@@ -156,6 +171,64 @@ def test_step_5b_decides_the_whole_tree_before_it_skips_pytest_for_an_empty_scop
     no_pytest = passage.find(NO_PYTEST_BRANCH)
 
     assert -1 < whole_tree < no_pytest
+
+
+def empty_change_list_gaps(passage: str) -> list[str]:
+    """Name every part of the empty-change-list instruction ``passage`` does not state.
+
+    The three markers count only in order, and the refusal and the plan-only
+    resolve must each appear, so a passage that drops or reorders any part
+    reports it.
+    """
+    gaps = []
+    position = 0
+    for marker in EMPTY_CHANGE_LIST_MARKERS:
+        found = passage.find(marker, position)
+        if found == -1:
+            gaps.append(f'instruction: {marker}')
+        else:
+            position = found + len(marker)
+    if EMPTY_CHANGE_LIST_REFUSAL not in passage:
+        gaps.append(f'refusal: {EMPTY_CHANGE_LIST_REFUSAL}')
+    if PLAN_ONLY_RESOLVE not in passage:
+        gaps.append('resolve: plan-only')
+    return gaps
+
+
+def test_step_5b_tells_an_empty_change_list_to_resolve_from_the_plan_footprint() -> None:
+    """Step 5 (b) says: omit the flag, resolve with ``--plan-id`` alone, never pass an empty list."""
+    document, start, end = PASSAGES[0]
+    passage = _passage(document, start, end)
+
+    assert empty_change_list_gaps(passage) == []
+
+
+def test_step_5b_states_the_empty_change_list_instruction_before_it_branches() -> None:
+    """The instruction sits with the resolve, ahead of the branch that runs no pytest.
+
+    A leaf reads the branches in order, so an instruction placed after the
+    no-pytest branch would be read only once that branch had already decided.
+    """
+    document, start, end = PASSAGES[0]
+    passage = _passage(document, start, end)
+
+    instruction = passage.find(EMPTY_CHANGE_LIST_MARKERS[0])
+    no_pytest = passage.find(NO_PYTEST_BRANCH)
+
+    assert -1 < instruction < no_pytest
+
+
+def test_a_passage_that_drops_one_empty_change_list_part_reports_exactly_that_part() -> None:
+    """Matched control: removing any one part of the instruction is reported, and nothing else is."""
+    document, start, end = PASSAGES[0]
+    passage = _passage(document, start, end)
+    removals = [(marker, f'instruction: {marker}') for marker in EMPTY_CHANGE_LIST_MARKERS]
+    removals += [(EMPTY_CHANGE_LIST_REFUSAL, f'refusal: {EMPTY_CHANGE_LIST_REFUSAL}')]
+    removals += [(PLAN_ONLY_RESOLVE, 'resolve: plan-only')]
+
+    reported = [empty_change_list_gaps(passage.replace(needle, '')) for needle, _ in removals]
+
+    assert reported == [[gap] for _, gap in removals]
 
 
 def test_an_empty_scope_alone_does_not_tell_nothing_to_run_from_the_whole_tree() -> None:

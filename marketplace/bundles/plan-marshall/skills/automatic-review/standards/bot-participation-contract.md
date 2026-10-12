@@ -270,7 +270,10 @@ that: a map from a declared publish shape to the literal a comment in that shape
 A comment in a gated shape without the literal is **not evidence** — it is neither credited nor
 reported as a stale publish, because it is not a review artifact at all. The producer applies the gate
 before the currency test (`github_pr._is_participation_evidence`, read through
-`bot_registry.participation_evidence_marker`), so no bot name enters the code.
+`bot_registry.participation_evidence_marker`), so no bot name enters the code. The re-review matcher
+reads the same `issue_comment` entry: a comment in that shape without the literal is no answer to a
+re-review request either, so the wait does not end on a review that has only started
+(`github_re_review._ReReviewStrategy._match_bot_comment`).
 
 **The gate is FAIL-OPEN on an absent declaration.** A shape with no entry — and every shape of a bot
 that declares no map — credits on the shape alone, exactly as it did before the field existed. That
@@ -650,9 +653,11 @@ what credit a review.
 
 Which bodies are acknowledgments is a per-bot registry fact — the `acknowledgment_patterns` list in
 `standards/{bot_kind}.md`, read through `bot_registry.acknowledgment_patterns` and matched as a
-whitespace-normalised substring against that bot's own comments, so no bot name enters the code. A
-bot that declares none has no acknowledgment this pipeline knows of, and nothing is classified one for
-it. The field is separate from `ignore_patterns` and from `refusal_patterns` for the reason those two
+whitespace-normalised, **case-insensitive** substring against that bot's own comments, so no bot name
+enters the code. Both sides of the comparison are normalised alike — the declared literal and the
+comment body — because a bot capitalises the same reply differently by command: a literal declared as
+`Review triggered` also covers `Full review triggered.`, the reply to an escalated command. A bot that
+declares none has no acknowledgment this pipeline knows of, and nothing is classified one for it. The field is separate from `ignore_patterns` and from `refusal_patterns` for the reason those two
 are separate from each other: a section of a successful review, a notice that the bot declined, and a
 confirmation that a command arrived are three different statements.
 

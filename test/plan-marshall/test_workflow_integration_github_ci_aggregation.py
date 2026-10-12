@@ -9,12 +9,16 @@ Locks the canonical conclusion → partition mapping:
                   STALE | STARTUP_FAILURE | <unknown future conclusion>
     wait        : IN_PROGRESS | QUEUED | PENDING | <empty/null>
 
-The aggregation seam appears in three call sites:
+``_classify_check_buckets`` / ``_derive_overall_status`` are the partition
+helpers. The ``gh pr checks`` partition has four read paths, and each one first
+sets the registered review-bot rows aside (``_split_review_bot_rows`` over the
+``_review_bot_check_names`` exclusion seam) and classifies the CI rows only:
 
-    _classify_check_buckets  — the partition helper
-    cmd_ci_status            — sync overall-status read
-    cmd_ci_wait              — wait-loop final_status
-    _fetch_pr_overall_ci_status — used by ci_wait_for_status_flip
+    cmd_ci_status               — sync overall-status read
+    cmd_ci_wait                 — wait-loop partitions and final_status
+    _fetch_pr_overall_ci_status — read by cmd_ci_wait_for_status_flip
+    github_pr.post_responses    — the fixed-reply hold, through
+                                  _fetch_pr_overall_ci_status
 
 The ``mixed`` outcome was deleted as part of the lesson — every input
 must now resolve to one of ``pending | success | failure | none``.
@@ -621,3 +625,56 @@ def test_fetch_pr_overall_returns_none_for_empty(monkeypatch):
 
     assert ok is True
     assert status == 'none'
+
+
+_GREEN_CI_PLUS_PENDING_BOT_STATUS = (
+    '['
+    '{"name":"build","state":"SUCCESS","bucket":"pass","link":"","startedAt":"","completedAt":"","workflow":""},'
+    '{"name":"review-bot-status","state":"PENDING","bucket":"pending","link":"","startedAt":"","completedAt":"","workflow":""}'
+    ']'
+)
+
+
+def _stub_checks(monkeypatch, payload: str) -> None:
+    def run_gh_stub(args, capture_json=False, timeout=60):
+        if args[:2] == ['pr', 'checks']:
+            return 0, payload, ''
+        return 0, '', ''
+
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+
+def test_fetch_pr_overall_sets_the_excluded_review_bot_status_aside(monkeypatch):
+    """Green CI rows plus a pending row named by the exclusion seam → ``success``."""
+    _stub_checks(monkeypatch, _GREEN_CI_PLUS_PENDING_BOT_STATUS)
+    monkeypatch.setattr(github_ops, '_review_bot_check_names', lambda: frozenset({'review-bot-status'}))
+
+    ok, status = github_ops._fetch_pr_overall_ci_status(42)
+
+    assert ok is True
+    assert status == 'success'
+
+
+def test_fetch_pr_overall_counts_the_same_row_when_the_exclusion_set_is_empty(monkeypatch):
+    """Control: the same pending row with an empty exclusion set keeps it ``pending``."""
+    _stub_checks(monkeypatch, _GREEN_CI_PLUS_PENDING_BOT_STATUS)
+    monkeypatch.setattr(github_ops, '_review_bot_check_names', lambda: frozenset())
+
+    ok, status = github_ops._fetch_pr_overall_ci_status(42)
+
+    assert ok is True
+    assert status == 'pending'
+
+
+def test_review_bot_check_names_is_derived_from_the_registry():
+    """The exclusion set is every registered bot's non-empty, stripped completion_check_name."""
+    import bot_registry
+
+    expected = {
+        bot_registry.completion_check_name(kind).strip()
+        for kind in bot_registry.bot_kinds()
+        if bot_registry.completion_check_name(kind).strip()
+    }
+
+    assert github_ops._review_bot_check_names() == frozenset(expected)
+    assert '' not in github_ops._review_bot_check_names()
