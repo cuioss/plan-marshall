@@ -1753,7 +1753,6 @@ _PLAN_INPUT_DEPENDENT_PHASE_6_STEPS = frozenset(
     {
         'push',
         'pre-push-quality-gate',
-        'pre-submission-self-review',
         'functional-review',
         'code-review',
         'finalize-step-simplify',
@@ -2077,8 +2076,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # candidate list. The order is fixed and documented in
     # standards/decision-rules.md:
     #   1. commit_push_disabled — drop push (and pre-push-quality-gate,
-    #      pre-submission-self-review, functional-review and code-review) when no
-    #      push will occur.
+    #      functional-review and code-review) when no push will occur.
     #   2. pre_push_quality_gate_inactive — drop pre-push-quality-gate ONLY on a
     #      positive ``not_necessary`` build verdict. An ``unknown`` verdict (the
     #      footprint is unresolvable) KEEPS the gate and emits a [STATUS] line.
@@ -3577,7 +3575,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help='Resolved commit_and_push from phase-5-execute config (true|false). '
         'When omitted defaults to true. When false, push (and pre-push-quality-gate, '
-        'pre-submission-self-review, functional-review and code-review) is omitted from phase_6.steps.',
+        'functional-review and code-review) is omitted from phase_6.steps.',
     )
 
     read_parser = subparsers.add_parser('read', help='Read execution.toon as TOON', allow_abbrev=False)

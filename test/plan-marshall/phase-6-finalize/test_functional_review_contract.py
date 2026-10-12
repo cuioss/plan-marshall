@@ -291,7 +291,10 @@ def test_body_names_no_extension_point_and_no_surfacer():
     body = _body().lower()
     assert 'ext-point' not in body
     assert not re.search(r'\bsurfac(?:er|ers|ing)\b', body), 'the body names a candidate surfacer'
-    assert 'self_review' not in body
+    review_gates = set(re.findall(r'\b([a-z]+_review)\b', body))
+    assert review_gates == {'functional_review'}, (
+        f'the body must name its own ceremony gate and no other review gate: {sorted(review_gates)}'
+    )
     assert re.search(r'\bsurfac(?:er|ers|ing)\b', 'the candidate surfacer'), 'control: the surfacer scan must match'
     assert 'ext-point' in _text().lower(), 'control: the frontmatter does name its ext-points'
 

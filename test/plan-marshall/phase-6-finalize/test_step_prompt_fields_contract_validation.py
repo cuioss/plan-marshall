@@ -7,8 +7,9 @@ A finalize step is dispatched with a prompt body that carries a **generic**
 five-field contract — ``name``, ``plan_id``, ``skills[]``, one of
 ``workflow``/``instructions``, ``WORKTREE``. Some steps need MORE: a
 workflow-specific runtime input their body reads as a ``{placeholder}`` token.
-``default:pre-submission-self-review`` is the motivating instance — it declares
-its ``candidates`` field **Required** and carries it in its own dispatch body.
+``default:functional-review`` is the anchor instance — it declares its
+``attribution`` and ``verdict_file`` fields **Required** and carries both in its
+own author dispatch body.
 
 The defect this pins is a **producerless contract row**: the declaration (a
 step marks a field Required) and the carriage (that field in the step's dispatch
@@ -30,8 +31,8 @@ module pins that declaration against every surface that can carry or state it:
 (1) The derived declaring population is **non-empty** — checked first and alone,
     because every ∃-direction assertion would pass vacuously against an empty
     derivation.
-(2) It covers the known instance, ``default:pre-submission-self-review``, and its
-    declaration names ``candidates``.
+(2) It covers the anchor instance, ``default:functional-review``, and its
+    declaration names ``attribution`` and ``verdict_file``.
 (3) **No orphan declaration** (∃-direction, over declaring steps that HAVE their
     own ``prompt:`` block): every declared field appears in that block. The
     direction is CONDITIONAL on the step having such a block, because a step
@@ -127,9 +128,11 @@ _DISPATCHER_SUPPLIED_FIELDS = frozenset({'caller_phase', 'iteration', 'producer'
 #: the guard and the workflow contract disagree about ``caller_phase``.
 _EXEMPT_FIELDS = _CONTRACT_FIELDS | _DISPATCHER_SUPPLIED_FIELDS
 
-#: The known step whose candidates field is the motivating instance (n=1 today).
-_KNOWN_STEP = 'default:pre-submission-self-review'
-_KNOWN_FIELD = 'candidates'
+#: The anchor step whose step-specific fields the assertions read off a real doc.
+#: It is ONE member of the declaring population, not its definition — the
+#: population is derived from discovery.
+_KNOWN_STEP = 'default:functional-review'
+_KNOWN_FIELDS = frozenset({'attribution', 'verdict_file'})
 
 #: The control step — carries `instructions` (a contract field), so it has a
 #: non-trivial dispatch block but NO step-specific field. Kept distinct from the
@@ -459,10 +462,10 @@ _SYNTH_INSTRUCTIONS = (
 _SYNTH_CANDIDATES = (
     'Task: plan-marshall:{target}\n'
     '  prompt: |\n'
-    '    name: pre-submission-self-review\n'
+    '    name: some-review\n'
     '    plan_id: {plan_id}\n'
     '    skills: []\n'
-    '    workflow: plan-marshall:phase-6-finalize/workflow/pre-submission-self-review.md\n'
+    '    workflow: plan-marshall:phase-6-finalize/workflow/some-review.md\n'
     '\n'
     '    candidates: |\n'
     '      {candidates_toon}\n'
@@ -540,7 +543,7 @@ def test_no_orphan_prompt_field_declaration():
 
 
 def test_input_table_parser_reads_the_known_instance():
-    """Vacuity guard for (5): the parser must find the one real declaring row.
+    """Vacuity guard for (5): the parser must find the anchor's real declaring rows.
 
     A parser that matched no table would make (5) green over an empty extraction
     for every step — the exact shape that lets a contract guard assert nothing.
@@ -548,13 +551,13 @@ def test_input_table_parser_reads_the_known_instance():
     record = _record_for(_KNOWN_STEP)
     doc_path = Path(record['path'])
 
-    assert _KNOWN_FIELD in _required_table_keys(doc_path), (
-        f"{_KNOWN_STEP}'s input table marks {_KNOWN_FIELD!r} Required, but the "
+    assert _KNOWN_FIELDS <= _required_table_keys(doc_path), (
+        f"{_KNOWN_STEP}'s input table marks {sorted(_KNOWN_FIELDS)} Required, but the "
         f'parser extracted {sorted(_required_table_keys(doc_path))}. Every (5) '
         f'assertion would be over an empty set.'
     )
-    assert _table_step_specific_keys(doc_path) == {_KNOWN_FIELD}, (
-        f'Expected exactly {{{_KNOWN_FIELD!r}}} step-specific in the real table; '
+    assert _table_step_specific_keys(doc_path) == _KNOWN_FIELDS, (
+        f'Expected exactly {sorted(_KNOWN_FIELDS)} step-specific in the real table; '
         f'parsed {sorted(_table_step_specific_keys(doc_path))}.'
     )
 

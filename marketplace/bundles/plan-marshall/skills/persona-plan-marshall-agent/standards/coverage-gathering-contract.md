@@ -1,10 +1,10 @@
 # Coverage-Gathering Contract
 
-> **Type**: Reusable Component Contract | **Gather mechanism**: `AskUserQuestion` | **Expander**: `manage-config coverage expand` | **Implementations**: 5 | **Status**: Active
+> **Type**: Reusable Component Contract | **Gather mechanism**: `AskUserQuestion` | **Expander**: `manage-config coverage expand` | **Implementations**: 4 | **Status**: Active
 
 ## Overview
 
-Coverage is a reusable two-dial contract — **scope** (where the boundary is drawn) and **thoroughness** (how completely in-radius items are covered and how deeply their relationships are traced). Broad-pass components — wide audits, compliance sweeps, simplification and refactor campaigns, and pre-submission review — *implement* this contract: each gathers a `(thoroughness, scope)` cell from the user at invocation, expands it into a canonical operational instruction, persists both, and consumes the **expanded instruction** to govern its own breadth and depth.
+Coverage is a reusable two-dial contract — **scope** (where the boundary is drawn) and **thoroughness** (how completely in-radius items are covered and how deeply their relationships are traced). Broad-pass components — wide audits, compliance sweeps, and simplification and refactor campaigns — *implement* this contract: each gathers a `(thoroughness, scope)` cell from the user at invocation, expands it into a canonical operational instruction, persists both, and consumes the **expanded instruction** to govern its own breadth and depth.
 
 This contract replaces the removed enforcement-gate model (the blocking phase-handshake invariant and the mechanical thoroughness-measurement path) with a **user-gathered, statically-expanded, component-consumed dial**. The quality signal is the floor-graded self-report defined in [`thoroughness.md`](thoroughness.md) — not a blocking gate.
 
@@ -96,7 +96,6 @@ Persisting BOTH the identifier and the expansion (rather than the identifier alo
 | `recipe-plugin-compliance` | `component` → one bundle/skill; `module` → a bundle set; `overall` → all bundles (default). | T1/T2 → frontmatter + enforcement-block surface; T3 → add standards cross-ref tracing; T4/T5 → add cross-skill relation-graph + loop-until-dry. |
 | `recipe-simplify-codebase` | scope rung IS the existing `recipe_scope`. | thoroughness rung IS the existing `recipe_thoroughness`; T4+ triggers the relation-graph pre-deliverable. |
 | `recipe-refactor-to-profile-standards` | scope rung selects the package/module radius in the module filter. | T2 full-read each file; T3 trace callers/tests; T4+ scope-wide relation model before refactor. |
-| `pre-submission-self-review` | scope rung indexes the candidate-count gate and the surfacer `--contract-radius`. Surface-only rule retained at every rung. | `inherit`/T1/T2 → the surface checks as today; T3+ → also trace each surfaced candidate's siblings/cross-refs. |
 | `finalize-step-simplify` | `change-set`/`inherit` → `changeset`; `artifact`+ → `artifact` (each modified file in full). | T1/T2/`inherit` → review anti-patterns at face value; T3+ → trace each deletion candidate's callers/cross-refs before deleting. |
 
 `inherit/inherit` everywhere → the expander's behavior-preserving instruction → today's hardcoded behavior, so default plans are byte-for-byte unchanged.

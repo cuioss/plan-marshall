@@ -159,8 +159,7 @@ declares `22`, between `create-pr` (`20`) and `automatic-review` (`30`). See
 [`../SKILL.md`](../SKILL.md) § "Step Types" for the authority (and the
 central lane/order contract in
 [`../../extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md));
-a hand-maintained copy of the full step list is not kept here, for
-the same reason `pre-submission-self-review.md` removed its own — a second
+a hand-maintained copy of the full step list is not kept here — a second
 enumeration of a registry-derived order has to be re-edited on every step
 added, removed, or reordered, and a copy that falls behind states an order
 the registry does not have.

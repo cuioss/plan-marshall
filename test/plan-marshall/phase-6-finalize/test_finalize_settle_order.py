@@ -13,8 +13,8 @@ cost. The gate's verdict never covered the tree review saw.
 
 The fix is a re-space of the settle sub-cluster (the order band 1-11 carries no
 insertion room, so the remedy is a permutation, not an insertion): the
-code-mutating settle steps sort first, the structural self-review sorts after
-them so it examines the settled tree, the derived-state refresh follows, and
+code-mutating settle steps sort first, the functional and the code review sort
+after them so they examine the settled tree, the derived-state refresh follows, and
 the quality gate sorts LAST — immediately before the push barrier. The gate's
 ``head_at_completion`` is then the single-pass HEAD anchor: no settle step
 ordered after it can advance HEAD again, every ``mutates_source: true`` step
@@ -33,10 +33,9 @@ a re-introduction of the defect goes red:
   push barrier (the only post-gate HEAD moves a pass can see are the gate's
   own trailing auto-fix commit and post-push advances, both of which the
   push reconciliation record and the SHA-equality checks already govern).
-* The self-review sorts strictly after both code-mutating settle steps, so it
-  reviews the final tree rather than a pre-simplification diff.
-* The functional and the code review each sort after the code-mutating settle
-  steps and before the refresh, the gate and the barrier; the code review sorts
+* The functional and the code review each sort strictly after the code-mutating
+  settle steps — so each reviews the final tree rather than a pre-simplification
+  diff — and before the refresh, the gate and the barrier; the code review sorts
   directly after the functional review, and both are head-dependent and
   read-only.
 * The anchor step itself is both head-dependent and source-mutating: it records
@@ -64,10 +63,7 @@ _GATE = 'default:pre-push-quality-gate'
 #: The push barrier the gate anchors.
 _PUSH = 'default:push'
 
-#: The structural review that must see the settled tree.
-_SELF_REVIEW = 'default:pre-submission-self-review'
-
-#: The code-mutating settle steps the review and the gate must follow.
+#: The code-mutating settle steps the reviews and the gate must follow.
 _MUTATORS = (
     'default:finalize-step-simplify',
     'default:finalize-step-security-audit',
@@ -191,29 +187,13 @@ def test_no_mutating_step_sorts_between_gate_and_push():
     )
 
 
-def test_self_review_sorts_after_the_code_mutators():
-    """GATE: the structural review examines the settled tree, not a pre-diff.
-
-    Before the fix the self-review sorted before simplify, so it reviewed a
-    diff a later pass rewrote. After the mutators it reviews the same tree the
-    gate then certifies and the push ships; a loop-back re-fire scopes itself
-    as a delta round via ``--since-ref`` instead of re-sweeping the whole diff.
-    """
-    review_order = _order_of(_SELF_REVIEW)
-    offenders = [f'{name} (order {_order_of(name)})' for name in _MUTATORS if _order_of(name) >= review_order]
-    assert not offenders, (
-        f'These code-mutating settle steps sort at or after {_SELF_REVIEW} '
-        f'(order {review_order}), so the review examines a tree they later '
-        f'rewrite: {offenders}'
-    )
-
-
 @pytest.mark.parametrize('review', _REVIEWS)
 def test_review_sorts_after_the_mutators_and_before_refresh_gate_and_push(review):
     """GATE: each review grades the settled tree before anything certifies it.
 
     Ordered before a code-mutating settle step, the review would grade a diff
-    that step later rewrites; ordered after the derived-state refresh, the quality
+    that step later rewrites — a loop-back re-fire then scopes itself as a delta
+    round instead of re-sweeping the whole diff; ordered after the derived-state refresh, the quality
     gate or the push barrier, a blocking finding would surface after the tree it
     blocks was already refreshed, certified or shipped. Both directions are read
     off discovery, never a literal order.

@@ -7,7 +7,7 @@ def _phase_6_with_every_commit_push_gate() -> str:
     """Candidate CSV carrying every step ``commit_push_disabled`` can drop."""
     steps = list(DEFAULT_PHASE_6_STEPS)
     insert_at = steps.index('push')
-    for extra in ('pre-push-quality-gate', 'pre-submission-self-review', 'functional-review', 'code-review'):
+    for extra in ('pre-push-quality-gate', 'functional-review', 'code-review'):
         if extra not in steps:
             steps.insert(insert_at, extra)
     return ','.join(steps)

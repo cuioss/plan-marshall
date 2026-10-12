@@ -1088,27 +1088,37 @@ def test_find_implementors_project_step_record():
     assert doctor['presets'] == []
 
 
-def test_find_implementors_promoted_self_review_replaces_project_wrapper():
-    """The promoted self-review step is a default-on built-in; the wrapper is gone.
+@pytest.mark.parametrize(
+    ('step_id', 'order'),
+    [('default:functional-review', 6), ('default:code-review', 7)],
+    ids=['functional-review', 'code-review'],
+)
+def test_find_implementors_review_steps_are_default_on_built_ins(step_id, order):
+    """Both review steps surface as default-on built-ins in their settle-band slots.
 
-    Regression guard for the pre-submission-self-review promotion: the built-in
-    ``default:pre-submission-self-review`` (its workflow-body frontmatter flipped
-    to ``default_on: true``) must surface, and the deleted
-    ``project:finalize-step-pre-submission-self-review`` wrapper must NOT surface
-    from any discovery surface (guarding against a stale plugin-cache path that
-    still finds the deleted wrapper).
+    The functional review (order 6) and the code review (order 7) are the two
+    pre-push review steps; each is discovered from its phase-6-finalize workflow
+    body through its ``implements: ext-point-finalize-step`` declaration.
     """
     by_name = _finalize_implementors()
 
-    assert 'default:pre-submission-self-review' in by_name, 'the promoted built-in self-review step must be discovered'
-    self_review = by_name['default:pre-submission-self-review']
-    assert self_review['source'] == 'built-in'
-    assert self_review['default_on'] is True
-    assert self_review['order'] == 8
+    assert step_id in by_name, f'{step_id} must be a discovered built-in finalize step'
+    record = by_name[step_id]
+    assert record['source'] == 'built-in'
+    assert record['default_on'] is True
+    assert record['order'] == order
 
-    assert 'project:finalize-step-pre-submission-self-review' not in by_name, (
-        'the retired project self-review wrapper must not surface after deletion'
-    )
+
+def test_find_implementors_settle_slot_8_is_free():
+    """No discovered finalize step occupies settle-band order 8.
+
+    Slot 8 is the free slot between the code review (7) and architecture-refresh
+    (9); a step claiming it would be a new pre-push step that must be placed
+    deliberately, not one that surfaced by accident.
+    """
+    occupants = [rec['name'] for rec in _discovery.find_implementors(_FINALIZE_STEP_EXT_POINT) if rec['order'] == 8]
+
+    assert occupants == [], f'settle-band slot 8 must be free, found {occupants}'
 
 
 def test_find_implementors_empty_for_unknown_ext_point():

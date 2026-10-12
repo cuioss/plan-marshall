@@ -26,7 +26,7 @@ Bounding this cost has three levers:
 
 | Lever | Bounds | Owner |
 |---|---|---|
-| **Delta-scoping** — a re-run examines only what changed since its own last record | the cost of EACH re-run | the individual gate (e.g. `pre-submission-self-review`'s `--since-ref` anchor) |
+| **Delta-scoping** — a re-run examines only what changed since its own last record | the cost of EACH re-run | the individual gate (e.g. `code-review`'s delta round, measured from its own last record via `review_support attribution --delta-step`) |
 | **Re-stale classification** — an advance that cannot change a verdict does not re-run the gate | the NUMBER of re-runs | this document |
 | **Change-list narrowing** — a step that cannot declare a static surface narrows its own re-fire from the change list since its last `done` record | the cost of EACH re-run | the individual step |
 
@@ -38,10 +38,11 @@ they reach it.
 
 Two properties separate change-list narrowing from delta-scoping:
 
-- **The anchor.** Delta-scoping reads an anchor the gate keeps for itself — the
-  `--since-ref` example above. Change-list narrowing reads the step record the
-  dispatcher writes (`head_at_completion`), through the `changed-paths` verb below.
-  That SHA alone says which tree the record was computed against, not what the step
+- **The anchor.** Delta-scoping reads an anchor through the gate's own seam — the
+  delta-round example above reads it through `review_support attribution`, which also
+  owns the rule for when a delta round may close. Change-list narrowing reads the step
+  record the dispatcher writes (`head_at_completion`), through the `changed-paths` verb
+  below. That SHA alone says which tree the record was computed against, not what the step
   had examined by then. So the step also needs a fact on the same record
   (`classified_at`) to know the anchor is one it may carry results over from.
 - **What is narrowed.** Delta-scoping narrows the changed tracked files a gate

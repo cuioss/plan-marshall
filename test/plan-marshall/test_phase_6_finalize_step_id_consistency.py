@@ -2,12 +2,11 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """The phase-6-finalize step-ID consistency contract.
 
-The failure it guards: ``marshal.json``'s phase-6-finalize manifest lists project steps
-under fully-qualified IDs (``project:finalize-step-pre-submission-
-self-review``, ``project:finalize-step-plugin-doctor``), but the recording
-side was inconsistent — the ``pre-submission-self-review`` workflow doc
-recorded under the bare name, and the ``plugin-doctor`` wrapper did not call
-``mark-step-done`` at all. The ``phase_steps_complete`` handshake invariant
+The failure it guards: ``marshal.json``'s phase-6-finalize manifest lists steps
+under fully-qualified IDs (``default:functional-review``,
+``project:finalize-step-plugin-doctor``), but the recording side was
+inconsistent — a workflow doc recorded under the bare name, and the
+``plugin-doctor`` wrapper did not call ``mark-step-done`` at all. The ``phase_steps_complete`` handshake invariant
 therefore raised ``PhaseStepsIncomplete`` (or the renderer emitted
 ``<missing display_detail>``) at the end of every finalize run that
 exercised those steps, even when every step actually succeeded.
@@ -29,8 +28,8 @@ These tests pin the end-to-end contract:
    renderer is currently a specification (no Python module to import), so
    the test colocates a small helper implementation that mirrors the spec
    and asserts the contract behaviour.
-5. The three finalize-step wrappers carry at least one ``mark-step-done
-   --step project:finalize-step-{name}`` invocation. Removing the calls is
+5. The plugin-doctor wrapper and both review workflows carry at least one
+   ``mark-step-done --step {canonical-id}`` invocation. Removing the calls is
    the failure mode that the recording side originally had.
 """
 
@@ -52,9 +51,7 @@ from conftest import PROJECT_ROOT, get_skill_dir
 # ---------------------------------------------------------------------------
 
 _PROJECT_SKILLS = PROJECT_ROOT / '.claude' / 'skills'
-_PRE_SUBMISSION_WORKFLOW = (
-    get_skill_dir('plan-marshall', 'phase-6-finalize') / 'workflow' / 'pre-submission-self-review.md'
-)
+_PHASE_6_WORKFLOWS = get_skill_dir('plan-marshall', 'phase-6-finalize') / 'workflow'
 
 
 # ---------------------------------------------------------------------------
@@ -71,14 +68,14 @@ def test_required_steps_parser_accepts_prefixed_ids(tmp_path: Path) -> None:
     """
     required = tmp_path / 'required-steps.md'
     required.write_text(
-        '# Required steps\n\n- default:pre-submission-self-review\n- push\n- create-pr\n- default:archive-plan\n',
+        '# Required steps\n\n- default:functional-review\n- push\n- create-pr\n- default:archive-plan\n',
         encoding='utf-8',
     )
 
     parsed = inv._parse_required_steps(required)
 
     assert parsed == [
-        'default:pre-submission-self-review',
+        'default:functional-review',
         'push',
         'create-pr',
         'default:archive-plan',
@@ -100,7 +97,7 @@ def test_phase_steps_complete_matches_manifest_id_when_recorded_prefixed(
     """
     required = tmp_path / 'required-steps.md'
     required.write_text(
-        '- default:pre-submission-self-review\n- push\n',
+        '- default:functional-review\n- push\n',
         encoding='utf-8',
     )
     monkeypatch.setattr(inv, '_resolve_required_steps_path', lambda _p: required)
@@ -108,9 +105,9 @@ def test_phase_steps_complete_matches_manifest_id_when_recorded_prefixed(
     metadata = {
         'phase_steps': {
             '6-finalize': {
-                'default:pre-submission-self-review': {
+                'default:functional-review': {
                     'outcome': 'done',
-                    'display_detail': 'self-review clean',
+                    'display_detail': 'functional review clean',
                 },
                 'push': {
                     'outcome': 'done',
@@ -139,24 +136,20 @@ def test_phase_steps_complete_fails_when_required_prefixed_but_recorded_bare(
 ) -> None:
     """A prefixed requirement recorded under its bare suffix fails the check.
 
-    ``required-steps.md`` lists ``project:finalize-step-pre-submission-self-
-    review`` (prefixed), but the recorded entry on
-    ``metadata.phase_steps['6-finalize']`` is keyed by the bare suffix
-    ``pre-submission-self-review`` (legacy drift). The handshake invariant
-    MUST raise ``PhaseStepsIncomplete`` with the prefixed step in
+    ``required-steps.md`` lists ``default:functional-review`` (prefixed), but
+    the recorded entry on ``metadata.phase_steps['6-finalize']`` is keyed by
+    the bare suffix ``functional-review``. The handshake invariant MUST raise
+    ``PhaseStepsIncomplete`` with the prefixed step in
     ``excinfo.value.missing`` — the bare key is invisible to the
     required-step lookup, so the step counts as missing.
 
-    Reverting the step-id normalization (e.g. restoring the bare
-    ``--step pre-submission-self-review`` invocation in the workflow doc)
-    re-introduces this exact failure: the recorded key drifts to the bare
-    form while the manifest keeps the prefixed form, and the handshake
-    refuses to advance. This test is the regression that would have caught
-    the original defect.
+    A required-steps bullet and a recorded key that disagree on the prefix
+    re-introduce this exact failure: the handshake refuses to advance. This
+    test is the regression that would catch that drift.
     """
     required = tmp_path / 'required-steps.md'
     required.write_text(
-        '- default:pre-submission-self-review\n',
+        '- default:functional-review\n',
         encoding='utf-8',
     )
     monkeypatch.setattr(inv, '_resolve_required_steps_path', lambda _p: required)
@@ -164,9 +157,9 @@ def test_phase_steps_complete_fails_when_required_prefixed_but_recorded_bare(
     metadata = {
         'phase_steps': {
             '6-finalize': {
-                'pre-submission-self-review': {
+                'functional-review': {
                     'outcome': 'done',
-                    'display_detail': 'self-review clean',
+                    'display_detail': 'functional review clean',
                 },
             }
         }
@@ -175,7 +168,7 @@ def test_phase_steps_complete_fails_when_required_prefixed_but_recorded_bare(
     with pytest.raises(inv.PhaseStepsIncomplete) as excinfo:
         inv._capture_phase_steps_complete('pid', metadata, '6-finalize')
 
-    assert excinfo.value.missing == ['default:pre-submission-self-review']
+    assert excinfo.value.missing == ['default:functional-review']
     assert excinfo.value.not_done == []
     assert excinfo.value.legacy_format == []
 
@@ -261,26 +254,23 @@ def test_renderer_lookup_strips_project_prefix_on_miss() -> None:
 
 
 def test_finalize_step_wrappers_mark_step_done_calls_present() -> None:
-    """Both sources carry the canonical ``mark-step-done --step
-    project:finalize-step-{name}`` invocation.
+    """Every source carries its canonical ``mark-step-done --step {id}`` invocation.
 
-    Removing either one makes the renderer emit ``<missing display_detail>``
-    or the handshake raise ``PhaseStepsIncomplete``.
+    Removing one makes the renderer emit ``<missing display_detail>`` or the
+    handshake raise ``PhaseStepsIncomplete``.
 
-    Two sources MUST each carry at least one ``mark-step-done --step
-    project:finalize-step-{name}`` invocation:
+    Three sources MUST each carry at least one ``mark-step-done --step {id}``
+    invocation under the step's canonical id:
 
     - ``.claude/skills/finalize-step-plugin-doctor/SKILL.md`` — recording
-      lives directly in the wrapper.
+      lives directly in the project-local wrapper.
     - ``marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/
-      pre-submission-self-review.md`` — recording lives in the dispatched
-      workflow body, not in the project-local ``.claude/skills/finalize-
-      step-pre-submission-self-review/SKILL.md`` wrapper (the wrapper
-      delegates to this workflow doc per its Workflow section).
+      functional-review.md`` and ``workflow/code-review.md`` — recording lives
+      in the review workflow body, written by the inline dispatcher context.
 
     Each source is checked for both the ``mark-step-done`` script call and
-    the canonical ``--step project:finalize-step-{name}`` argument; missing
-    either signals that the step-id normalization has been reverted.
+    the canonical ``--step {id}`` argument; missing either signals that the
+    step-id normalization has been reverted.
     """
     sources: list[tuple[Path, str]] = [
         (
@@ -288,8 +278,12 @@ def test_finalize_step_wrappers_mark_step_done_calls_present() -> None:
             'project:finalize-step-plugin-doctor',
         ),
         (
-            _PRE_SUBMISSION_WORKFLOW,
-            'default:pre-submission-self-review',
+            _PHASE_6_WORKFLOWS / 'functional-review.md',
+            'default:functional-review',
+        ),
+        (
+            _PHASE_6_WORKFLOWS / 'code-review.md',
+            'default:code-review',
         ),
     ]
 

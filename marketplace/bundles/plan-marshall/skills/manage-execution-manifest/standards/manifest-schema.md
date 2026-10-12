@@ -154,7 +154,7 @@ context may run it. The two values are the closed vocabulary
 The owner is a deterministic property of the step, resolved by `owner_of(step_id)`
 in `_manifest_core.py` against the `ORCHESTRATOR_OWNED_STEPS` registry (the
 sub-dispatching finalize steps: `finalize-step-plugin-doctor`,
-`pre-submission-self-review`, `functional-review`, `code-review`, `automatic-review`,
+`functional-review`, `code-review`, `automatic-review`,
 `finalize-step-simplify`). The classifier strips the leading `default:` prefix
 and, for project-local steps, the `project:` prefix before the membership test —
 `project:finalize-step-plugin-doctor` and a bare `finalize-step-plugin-doctor`
