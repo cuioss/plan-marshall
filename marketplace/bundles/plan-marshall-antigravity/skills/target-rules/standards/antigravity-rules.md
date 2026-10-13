@@ -54,3 +54,9 @@ When plan-marshall is installed into a workspace via `./install.sh --workspace` 
 <workspace>/.agents/rules/plan-marshall-target-rules.md
 ```
 Antigravity automatically discovers and loads workspace rules into assistant context, delivering operational compliance with zero runtime tool calls.
+
+## 7. Standing-Rules Bridge & Drift Detection
+
+- **Bridge source**: the workspace rules file is bridged at project setup from the `CLAUDE.md` baseline (`bridge-version` marker embedded); the baseline stays authoritative.
+- **Drift signal**: re-setup compares the marker and modification times — a marker mismatch or a baseline newer than the bridge reports drift (`marker_mismatch`, `baseline_newer`).
+- **Reconcile path**: the steward upgrade flow re-runs the bridge writer and heals a drifted or missing bridge; a current bridge is left untouched.

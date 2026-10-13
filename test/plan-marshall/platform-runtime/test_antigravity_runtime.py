@@ -95,29 +95,58 @@ def test_layout_bundle_cache_root(runtime: AntigravityRuntime):
 
 
 def test_project_initial_setup(runtime: AntigravityRuntime, tmp_path: Path):
-    """project_initial_setup creates .plan/ and leaves marshal.json unwritten."""
+    """project_initial_setup creates .plan/, seeds marshal.json, and bridges rules."""
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
     assert result['status'] == 'success'
     assert result['target'] == 'antigravity'
-    assert result['marshal_written'] is False
+    assert result['marshal_written'] is True
 
     assert (tmp_path / '.plan' / 'temp').is_dir()
-    assert not (tmp_path / '.plan' / 'marshal.json').exists()
+    marshal_file = tmp_path / '.plan' / 'marshal.json'
+    assert marshal_file.is_file()
+    data = json.loads(marshal_file.read_text(encoding='utf-8'))
+    assert data['runtime']['target'] == 'antigravity'
 
 
 def test_project_initial_setup_preserves_existing_marshal(runtime: AntigravityRuntime, tmp_path: Path):
-    """project_initial_setup leaves existing marshal.json untouched."""
+    """project_initial_setup seeds runtime.target while preserving existing keys."""
     plan_dir = tmp_path / '.plan'
     plan_dir.mkdir(parents=True)
     marshal_file = plan_dir / 'marshal.json'
-    initial = json.dumps({'custom_key': 'custom_value'})
-    marshal_file.write_text(initial, encoding='utf-8')
+    marshal_file.write_text(json.dumps({'custom_key': 'custom_value'}), encoding='utf-8')
 
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
     assert result['status'] == 'success'
-    assert result['marshal_written'] is False
+    assert result['marshal_written'] is True
 
-    assert marshal_file.read_text(encoding='utf-8') == initial
+    data = json.loads(marshal_file.read_text(encoding='utf-8'))
+    assert data['custom_key'] == 'custom_value'
+    assert data['runtime']['target'] == 'antigravity'
+
+
+def test_project_initial_setup_reports_bridge_drift(runtime: AntigravityRuntime, tmp_path: Path):
+    """project_initial_setup reports the standing-rules bridge drift verdict."""
+    from antigravity_runtime import standing_rules_drift_status
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
+    assert 'bridge_drift' in result
+    assert 'bridge_reason' in result
+    status = standing_rules_drift_status(str(tmp_path))
+    assert status['drift'] is False
+
+
+def test_standing_rules_drift_detects_marker_mismatch(runtime: AntigravityRuntime, tmp_path: Path):
+    """A bridge file without the version marker reports drift."""
+    from antigravity_runtime import standing_rules_drift_status
+
+    (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
+    bridge = tmp_path / '.agents' / 'rules' / 'plan-marshall-target-rules.md'
+    bridge.parent.mkdir(parents=True)
+    bridge.write_text('stale foreign content\n', encoding='utf-8')
+
+    status = standing_rules_drift_status(str(tmp_path))
+    assert status['drift'] is True
+    assert status['reason'] == 'marker_mismatch'
 
 
 def test_project_install_hook(runtime: AntigravityRuntime, monkeypatch, tmp_path: Path):
@@ -460,3 +489,157 @@ def test_permission_ensure_defaults_with_error(runtime: AntigravityRuntime):
     res = runtime.permission_ensure_defaults({'error': 'JSON decode error'}, '/tmp/settings.json')
     assert res['applied'] is False
     assert res['error'] == 'JSON decode error'
+
+
+# =============================================================================
+# Standing-rules bridge: seeding, rule copy, and drift detection (D3)
+# =============================================================================
+
+
+def test_standing_rules_drift_baseline_missing_without_bridge(tmp_path: Path):
+    """No baseline and no bridge reports baseline_missing with a needed bridge."""
+    from antigravity_runtime import standing_rules_drift_status
+
+    status = standing_rules_drift_status(str(tmp_path))
+
+    assert status == {'drift': False, 'needs_bridge': True, 'reason': 'baseline_missing'}
+
+
+def test_standing_rules_drift_baseline_missing_with_bridge(tmp_path: Path):
+    """No baseline but a bridge file reports baseline_missing with no needed bridge."""
+    from antigravity_runtime import _bridge_rules_path, standing_rules_drift_status
+
+    bridge = _bridge_rules_path(tmp_path)
+    bridge.parent.mkdir(parents=True)
+    bridge.write_text('bridge-version: 1\n', encoding='utf-8')
+
+    status = standing_rules_drift_status(str(tmp_path))
+
+    assert status == {'drift': False, 'needs_bridge': False, 'reason': 'baseline_missing'}
+
+
+def test_standing_rules_drift_bridge_missing(tmp_path: Path):
+    """A baseline without a bridge reports bridge_missing with a needed bridge."""
+    from antigravity_runtime import standing_rules_drift_status
+
+    (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
+
+    status = standing_rules_drift_status(str(tmp_path))
+
+    assert status == {'drift': False, 'needs_bridge': True, 'reason': 'bridge_missing'}
+
+
+def test_standing_rules_drift_in_sync_after_setup(
+    runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """A setup bridge newer than its baseline reports in_sync."""
+    from antigravity_runtime import standing_rules_drift_status
+
+    (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
+    monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'gemini-config'))
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
+    assert result['bridge_written'] is True
+
+    assert standing_rules_drift_status(str(tmp_path)) == {
+        'drift': False,
+        'needs_bridge': False,
+        'reason': 'in_sync',
+    }
+
+
+def test_standing_rules_drift_baseline_newer(
+    runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """A baseline modified after the bridge was written reports baseline_newer drift."""
+    import os
+
+    from antigravity_runtime import _bridge_rules_path, standing_rules_drift_status
+
+    (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
+    monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'gemini-config'))
+    _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
+
+    past = 1_000_000_000
+    os.utime(_bridge_rules_path(tmp_path), (past, past))
+    os.utime(tmp_path / 'CLAUDE.md', (past + 60, past + 60))
+
+    assert standing_rules_drift_status(str(tmp_path)) == {
+        'drift': True,
+        'needs_bridge': False,
+        'reason': 'baseline_newer',
+    }
+
+
+def test_project_initial_setup_resestup_is_idempotent(
+    runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """A second setup writes neither marshal.json nor the bridge again."""
+    monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'gemini-config'))
+
+    first = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
+    assert first['marshal_written'] is True
+    assert first['bridge_written'] is True
+
+    second = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
+
+    assert second['marshal_written'] is False
+    assert second['bridge_written'] is False
+
+
+def test_bridge_file_carries_version_marker(
+    runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """The bridge file embeds the version marker drift detection reads."""
+    from antigravity_runtime import STANDING_RULES_BRIDGE_MARKER, _bridge_rules_path
+
+    monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'gemini-config'))
+    _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
+
+    body = _bridge_rules_path(tmp_path).read_text(encoding='utf-8')
+
+    assert STANDING_RULES_BRIDGE_MARKER in body
+    assert 'CLAUDE.md' in body
+
+
+def test_resestup_heals_drifted_bridge(
+    runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """Re-setup rewrites a drifted bridge and clears the drift verdict."""
+    from antigravity_runtime import _bridge_rules_path, standing_rules_drift_status
+
+    (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
+    bridge = _bridge_rules_path(tmp_path)
+    bridge.parent.mkdir(parents=True)
+    bridge.write_text('stale foreign content\n', encoding='utf-8')
+    assert standing_rules_drift_status(str(tmp_path))['reason'] == 'marker_mismatch'
+
+    monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'gemini-config'))
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
+
+    assert result['bridge_written'] is True
+    assert standing_rules_drift_status(str(tmp_path))['reason'] == 'in_sync'
+
+
+def test_reconcile_standing_rules_bridge_heals_missing_bridge(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """The steward reconcile heals a missing Antigravity bridge via setup."""
+    from configure_harness import _reconcile_standing_rules_bridge
+
+    from antigravity_runtime import _bridge_rules_path
+
+    (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
+    monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'gemini-config'))
+
+    assert _reconcile_standing_rules_bridge('antigravity', tmp_path) is True
+    assert _bridge_rules_path(tmp_path).is_file()
+
+
+def test_reconcile_standing_rules_bridge_claude_is_baseline_presence(tmp_path: Path):
+    """The steward reconcile for Claude reports whether the CLAUDE.md baseline exists."""
+    from configure_harness import _reconcile_standing_rules_bridge
+
+    assert _reconcile_standing_rules_bridge('claude', tmp_path) is False
+    (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
+    assert _reconcile_standing_rules_bridge('claude', tmp_path) is True

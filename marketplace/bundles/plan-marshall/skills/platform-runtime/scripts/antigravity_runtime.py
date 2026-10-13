@@ -41,6 +41,113 @@ ANTIGRAVITY_DEFAULT_PERMISSIONS: tuple[str, ...] = (
 
 DEFAULT_ANTIGRAVITY_COMMANDS = ANTIGRAVITY_DEFAULT_PERMISSIONS
 
+#: Version of the standing-rules bridge format written by project setup.
+#: Bumped only when the bridge file layout changes; drift detection compares
+#: the marker embedded in the bridge file against this constant.
+STANDING_RULES_BRIDGE_VERSION = 1
+
+#: Baseline source the bridge copies from. CLAUDE.md is the drift-detection
+#: baseline — the bridge is current only while it matches this source.
+STANDING_RULES_BASELINE = 'CLAUDE.md'
+
+#: Marker embedded in every bridge file so drift detection can tell a current
+#: bridge from a stale or foreign one without parsing rule prose.
+STANDING_RULES_BRIDGE_MARKER = f'bridge-version: {STANDING_RULES_BRIDGE_VERSION}'
+
+
+def _bridge_rules_path(project_dir: Path) -> Path:
+    """Return the Antigravity workspace rules-bridge file path."""
+    return project_dir / '.agents' / 'rules' / 'plan-marshall-target-rules.md'
+
+
+def _seed_marshal_runtime_target(project_dir: Path, target: str) -> bool:
+    """Seed ``runtime.target`` into ``.plan/marshal.json``, preserving other keys.
+
+    Returns True when the file was written, False when it already carried the
+    target or could not be written. Never raises — setup treats a seeding
+    failure as an unwritten bridge, not as a setup failure.
+    """
+    marshal_file = project_dir / '.plan' / 'marshal.json'
+    try:
+        if marshal_file.is_file():
+            data = json.loads(marshal_file.read_text(encoding='utf-8'))
+            if not isinstance(data, dict):
+                return False
+            runtime = data.get('runtime')
+            if isinstance(runtime, dict) and runtime.get('target') == target:
+                return False
+            if not isinstance(runtime, dict):
+                data['runtime'] = {'target': target}
+            else:
+                runtime['target'] = target
+            marshal_file.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+            return True
+        marshal_file.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            'runtime': {'target': target},
+            'standing_rules_bridge': {
+                'version': STANDING_RULES_BRIDGE_VERSION,
+                'source': STANDING_RULES_BASELINE,
+            },
+        }
+        marshal_file.write_text(json.dumps(payload, indent=2) + '\n', encoding='utf-8')
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def _write_rules_bridge(project_dir: Path) -> bool:
+    """Copy the bridged standing-rules header into the harness grant surface.
+
+    The bridge carries the version marker plus a pointer at the CLAUDE.md
+    baseline rather than a full rule copy — the marker is what drift detection
+    reads, so a full prose duplicate would only create a second source of
+    truth. Returns True when the file was written.
+    """
+    bridge = _bridge_rules_path(project_dir)
+    body = (
+        f'# Plan Marshall target rules (Antigravity bridge {STANDING_RULES_BRIDGE_MARKER})\n\n'
+        f'Standing rules bridged from {STANDING_RULES_BASELINE} at project setup. '
+        'This file is a bridge, not a fork: the baseline stays authoritative, '
+        'and re-setup flags drift when this marker no longer matches the source.\n'
+    )
+    try:
+        if bridge.is_file() and STANDING_RULES_BRIDGE_MARKER in bridge.read_text(encoding='utf-8'):
+            return False
+        bridge.parent.mkdir(parents=True, exist_ok=True)
+        bridge.write_text(body, encoding='utf-8')
+        return True
+    except OSError:
+        return False
+
+
+def standing_rules_drift_status(project_dir: str) -> dict[str, Any]:
+    """Detect drift of the Antigravity standing-rules bridge against its baseline.
+
+    Returns a small dict with ``drift`` (bool), ``needs_bridge`` (True when no
+    bridge file exists yet), and ``reason`` naming the verdict. A missing
+    baseline never reports drift — there is nothing to compare against.
+    """
+    proj = Path(project_dir).resolve()
+    baseline = proj / STANDING_RULES_BASELINE
+    bridge = _bridge_rules_path(proj)
+    if not baseline.is_file():
+        return {'drift': False, 'needs_bridge': not bridge.is_file(), 'reason': 'baseline_missing'}
+    if not bridge.is_file():
+        return {'drift': False, 'needs_bridge': True, 'reason': 'bridge_missing'}
+    try:
+        text = bridge.read_text(encoding='utf-8')
+    except OSError:
+        return {'drift': True, 'needs_bridge': False, 'reason': 'bridge_unreadable'}
+    if STANDING_RULES_BRIDGE_MARKER not in text:
+        return {'drift': True, 'needs_bridge': False, 'reason': 'marker_mismatch'}
+    try:
+        if baseline.stat().st_mtime > bridge.stat().st_mtime:
+            return {'drift': True, 'needs_bridge': False, 'reason': 'baseline_newer'}
+    except OSError:
+        return {'drift': True, 'needs_bridge': False, 'reason': 'stat_failed'}
+    return {'drift': False, 'needs_bridge': False, 'reason': 'in_sync'}
+
 
 def _gemini_config_dir() -> Path:
     """Return ~/.gemini/config directory path (overridable by GEMINI_CONFIG_DIR)."""
@@ -155,7 +262,9 @@ class AntigravityRuntime(Runtime):
         """One-time project setup for Google Antigravity.
 
         Creates ``.plan/``, seeds ``marshal.json`` with ``runtime.target``,
-        and initializes project settings in Antigravity's project registry.
+        bridges the standing rules into the harness grant surface, and
+        initializes project settings in Antigravity's project registry.
+        Re-setup reports bridge drift against the CLAUDE.md baseline.
         """
         proj = Path(project_dir).resolve()
         plan_dir = proj / '.plan'
@@ -176,12 +285,19 @@ class AntigravityRuntime(Runtime):
         settings = self.permission_load_settings(settings_path)
         self.permission_ensure_defaults(settings, settings_path, dry_run=False)
 
+        marshal_written = _seed_marshal_runtime_target(proj, target)
+        bridge_written = _write_rules_bridge(proj)
+        drift = standing_rules_drift_status(str(proj))
+
         return toon_success(
             'project initial-setup',
             {
                 'target': target,
                 'project_dir': str(proj),
-                'marshal_written': False,
+                'marshal_written': marshal_written,
+                'bridge_written': bridge_written,
+                'bridge_drift': drift['drift'],
+                'bridge_reason': drift['reason'],
                 'settings_path': settings_path,
                 'hook_installed': False,
                 'hook_skip_reason': 'Antigravity runs without PreToolUse lifecycle hooks',

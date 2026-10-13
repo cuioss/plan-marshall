@@ -35,6 +35,37 @@ from target_context import SOURCE_EXPLICIT, resolve_target
 from toon_parser import serialize_toon
 
 
+def _reconcile_standing_rules_bridge(harness: str, project_dir: Path) -> bool:
+    """Reconcile standing-rules bridge writes through the steward upgrade path.
+
+    Re-runs the active target's bridge writer so steward-driven upgrades heal a
+    drifted or missing bridge for all three harnesses. Claude carries no bridge
+    file — its CLAUDE.md baseline is authoritative — so the reconcile is a
+    no-op success there. Returns True when a bridge file exists afterwards.
+    """
+    proj = project_dir.resolve()
+    if harness == 'claude':
+        return (proj / 'CLAUDE.md').is_file()
+    try:
+        from platform_runtime import _make_runtime
+
+        rt = _make_runtime(harness)
+        writer = getattr(rt, 'project_initial_setup', None)
+        if callable(writer):
+            writer(str(proj), harness)
+    except Exception:
+        pass
+    if harness == 'antigravity':
+        return (proj / '.agents' / 'rules' / 'plan-marshall-target-rules.md').is_file() or (
+            proj / 'AGENTS.md'
+        ).is_file()
+    if harness == 'opencode':
+        return (proj / '.opencode' / 'rules' / 'plan-marshall-target-rules.md').is_file() or (
+            proj / 'AGENTS.md'
+        ).is_file()
+    return (proj / 'AGENTS.md').is_file() or (proj / 'CLAUDE.md').is_file()
+
+
 def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> bool:
     """Dispatch the active target's platform-runtime setup hooks and verify rule emission.
 
@@ -70,6 +101,9 @@ def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> bool:
         rules_emitted = (proj / 'CLAUDE.md').is_file()
     else:
         rules_emitted = (proj / 'AGENTS.md').is_file() or (proj / 'CLAUDE.md').is_file()
+
+    reconciled = _reconcile_standing_rules_bridge(harness, proj)
+    rules_emitted = bool(rules_emitted or reconciled)
 
     return rules_emitted
 

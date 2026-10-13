@@ -190,6 +190,11 @@ python3 .plan/execute-script.py plan-marshall:untrusted-ingestion:validate_struc
 - Build commands (`mvn`, `./mvnw`, `npm`, etc.)
 - Operations that truly require shell execution
 
+Build and format commands are never hard-coded on any harness: resolve them
+via `plan-marshall:manage-architecture:architecture resolve` first and run the
+returned `executable`, so a non-Claude agent builds with the same command the
+architecture declares for the module.
+
 For complete patterns including file operations, content search, Bash safety rules, and env-var dispatch (the `VAR=val cmd` anti-pattern and safe alternatives), see `tool-usage-patterns.md`. The env-var dispatch rule is documented in [`tool-usage-patterns.md` § Env-var dispatch in Bash](tool-usage-patterns.md#env-var-dispatch-in-bash).
 
 ### Principle 5: Don't Proliferate Documents

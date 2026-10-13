@@ -29,6 +29,11 @@ mode: knowledge
    - All `.plan/` operations run exclusively through `python3 .plan/execute-script.py`. Never read, write, or edit `.plan/` files directly.
    - Store all temporary files in `.plan/temp/`.
 
+4. **Standing-Rules Bridge & Drift**:
+   - The standing rules are bridged at project setup from the `CLAUDE.md` baseline into the workspace rules file; the baseline stays authoritative and this bridge is never edited by hand.
+   - Re-setup detects drift: a missing version marker or a baseline newer than the bridge reports drift, and the steward upgrade path reconciles the bridge back to current.
+   - Subagent dispatch is conditional: the `task` tool fires only when available in the envelope, otherwise take the explicit logged inline branch with usage unknown.
+
 ## Available Standards
 
 **File**: `standards/opencode-rules.md`

@@ -51,3 +51,10 @@ When plan-marshall is installed into an OpenCode workspace via `./install.sh --w
 <workspace>/.opencode/rules/plan-marshall-target-rules.md
 ```
 OpenCode automatically discovers and loads workspace rules into assistant context, delivering operational compliance with zero runtime tool calls.
+
+## 5. Standing-Rules Bridge & Drift Detection
+
+- **Bridge source**: the workspace rules file is bridged at project setup from the `CLAUDE.md` baseline (`bridge-version` marker embedded); the baseline stays authoritative.
+- **Drift signal**: re-setup compares the marker and modification times — a marker mismatch or a baseline newer than the bridge reports drift (`marker_mismatch`, `baseline_newer`).
+- **Reconcile path**: the steward upgrade flow re-runs the bridge writer and heals a drifted or missing bridge; a current bridge is left untouched.
+- **Dispatch conditional**: the `task`-tool subagent dispatch fires only when the tool is available in the envelope; otherwise take the explicit logged inline branch with usage unknown.
