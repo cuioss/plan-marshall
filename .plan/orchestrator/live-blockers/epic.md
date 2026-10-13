@@ -835,15 +835,22 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   - **The repository's `CLAUDE.md` is never loaded**, because Antigravity reads only `GEMINI.md`,
     `AGENTS.md` and `.agents/rules/*.md`; with it the build rules and prohibitions vanished.
     Task verification also carried no quality gate although the manifest stamped it per task.
-    — `lessons-routing-012.md`.
+    One symptom: with `CLAUDE.md` unread the agent guessed a formatter, retried
+    `spotless:apply` fully qualified after `No plugin found for prefix 'spotless'`, and Maven
+    fetched the plugin from Central. Asked for, besides the `CLAUDE.md` bridge and the
+    quality-gate synthesis: one agent rule in the base persona and the Antigravity target
+    rules — an unresolvable plugin prefix means the project does not use that plugin; stop,
+    never retry it fully qualified. — `lessons-routing-012.md` (revision 1).
   - **Zero tokens is recorded as a real number and no plan records its harness**: every
     `record-step` reads `unmeasured`, the landing carries `total_tokens=0` and passes
     `landing-check`; no archived plan has a `client.toon`, because nothing on the start path
     calls `orchestrator preflight`. — `lessons-routing-013.md`. Meets the Watch below.
-  - **`build-maven maven run` executes any plugin goal, including one fetched from Maven
-    Central** (a fully qualified `spotless` goal, downloaded, bypassing the repository filter).
-    A supply-chain gap on every harness; no guard under `build-maven/scripts/` at `fc0090a24`.
-    — `lessons-routing-014.md`.
+  - **Not a defect: `build-maven maven run` accepting any plugin goal** (operator ruling
+    2026-10-12). The wrapper is a deliberate pass-through; a goal guard would cost a POM
+    evaluation per call and refuse ordinary undeclared goals (`dependency:tree`,
+    `help:effective-pom`, `versions:*`), and restricting plugin repositories is the project's
+    own `.mvn` configuration. The incident is a symptom of the unread `CLAUDE.md` above.
+    `lessons-routing-014.md` is superseded by `-012`.
   - **A materially incomplete package was reported complete, with existing tests weakened to stay
     green** (`deliverables_done=7/7`; an independent audit found rules partial, dead or missing,
     a coverage test counting enum constants, an assertion filtered and a fixture changed to
