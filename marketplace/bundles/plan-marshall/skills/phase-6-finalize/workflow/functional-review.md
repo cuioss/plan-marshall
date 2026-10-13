@@ -49,13 +49,13 @@ The exit-code contract for every `python3 .plan/execute-script.py` call in this 
 
 ## Shell-safe free text in command templates
 
-Several command templates below interpolate free text into a shell argument — an advisory's title and ref, a verifier's reason, a rendered verdict line. The review writes that text, not this document, and it routinely carries backticks, `$` and quotes. Every `manage-logging` `--message`, every `manage-findings` `--title` and `--detail`, and every `manage-status mark-step-done` `--display-detail` in this document is therefore written as ONE single-quoted shell argument, and the text is substituted into it by these rules:
+Several command templates below interpolate free text into a shell argument — a finding's or an advisory's title and ref, a verifier's reason, a rendered verdict line. The review writes that text, not this document, and it routinely carries backticks, `$` and quotes. This section is the one statement of the rule for both review steps: it governs the command templates of this document and of [`code-review.md`](code-review.md), which cites it rather than restating it. Every `manage-logging` `--message`, every `manage-findings` `--title` and `--detail`, and every `manage-status mark-step-done` `--display-detail` in either document is therefore written as ONE single-quoted shell argument, and the text is substituted into it by these rules:
 
 1. **Single-quote the argument**: `--message '… {title}'`. Between single quotes the shell expands nothing — no backtick command, no `$(…)`, no `$VAR` — so the text reaches the verb byte for byte.
 2. **Escape each embedded single quote as `'\''`** before substituting the value: close the quoted run, add an escaped quote, reopen the run. A title `don't` is substituted as `don'\''t`.
 3. **Never put interpolated text in double quotes.** Inside double quotes the shell still runs a backtick or `$(…)` substitution and expands `$VAR`, and an embedded double quote ends the argument early, so a rendered command can run a substitution or break before the decision-log line or the finding is recorded.
 
-None of the verbs these templates call — `manage-logging decision`, `manage-findings qgate add` and `qgate resolve-by-rule`, `manage-status mark-step-done` — takes the text from a file (each verb's `--help` lists the text only as an argument), so the single-quoted argument is the one safe form, and every template below uses it. Each template that interpolates text names this section.
+None of the verbs these templates call — `manage-logging decision`, `manage-findings qgate add` and `qgate resolve-by-rule`, `manage-status mark-step-done` — takes the text from a file (each verb's `--help` lists the text only as an argument), so the single-quoted argument is the one safe form, and every template in both documents uses it. Each template that interpolates text names this section.
 
 ## Activation
 
@@ -473,6 +473,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message '(plan-marshall:phase-6-finalize:functional-review) Advisory {kind} at {ref} — {title}'
 ```
 
+On a non-`success` return from any advisory line — a `status: error` TOON or a non-zero exit — do NOT record `done`: surface the returned error and halt. The decision log is the only place an advisory reaches the reader, so a close recorded over a line that was not written would drop the advisory without trace.
+
 Then record the close, with `--display-detail` quoted per [§ Shell-safe free text](#shell-safe-free-text-in-command-templates):
 
 ```bash
@@ -525,6 +527,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO \
   --message '(plan-marshall:phase-6-finalize:functional-review) Advisory {kind} at {ref} — {title}'
 ```
+
+On a non-`success` return from any advisory line — a `status: error` TOON or a non-zero exit — do NOT record the loop-back: surface the returned error and halt. The decision log is the only place an advisory reaches the reader, so a loop-back recorded over a line that was not written would drop the advisory without trace.
 
 **When the verifier did not accept**, also file one state finding naming which situation it was — `verdict_refused` (`verifier: declined`), `verifier_unavailable` (`verifier: absent` or `malformed`). The fixed rule key is what lets the closing round, or an operator close, resolve it. `{reason}` is the verifier's free text, quoted per [§ Shell-safe free text](#shell-safe-free-text-in-command-templates):
 

@@ -15,10 +15,15 @@ each assertion below pins one clause of it against an independent source:
 * the inputs — every script call is a ``manage-*`` verb or the step's own
   ``review_support`` helper, and every other command is ``git``;
 * the body has no language- or build-system-conditional step;
-* the shell-quoting rule for free text is stated once, every command template
-  that interpolates free text names it, and no template puts a placeholder in a
-  double-quoted ``--message`` / ``--title`` / ``--detail`` /
-  ``--display-detail`` argument;
+* the shell-quoting rule for free text is stated once, in the functional-review
+  step document, and this document cites it rather than restating it; every
+  command template that interpolates free text names it there, and every
+  placeholder in a ``--message`` / ``--title`` / ``--detail`` /
+  ``--display-detail`` argument sits inside one single-quoted shell word —
+  never bare, never partly quoted, never double-quoted;
+* every advisory decision-log template in the recording step is followed by a
+  halt rule before the ``mark-step-done`` that records the outcome, so a line
+  that was not written is never recorded over;
 * the rule-source selection the body states — the profiles it reads and the
   skills it excludes — applied to the real domain declarations through the
   real ``get-skills-by-profile`` resolver: a Python-only plan of this
@@ -121,9 +126,12 @@ def _fields(*keys: str) -> dict:
     return extension_discovery._read_frontmatter_fields(_doc_path(), keys)
 
 
-def _section(heading: str) -> str:
-    """The text of one ``##`` / ``###`` section, up to the next heading of the same or higher level."""
-    body = _body()
+def _section(heading: str, body: str | None = None) -> str:
+    """The text of one ``##`` / ``###`` section of ``body`` (this document's by default).
+
+    The section runs up to the next heading of the same or higher level.
+    """
+    body = _body() if body is None else body
     level = len(heading) - len(heading.lstrip('#'))
     start = body.index(heading + '\n')
     rest = body[start + len(heading) + 1 :]
@@ -358,12 +366,19 @@ def test_body_names_both_skills_it_must_not_be_confused_with():
 # ---------------------------------------------------------------------------
 
 _QUOTING_RULE_HEADING = '## Shell-safe free text in command templates'
-_QUOTING_RULE_ANCHOR = '(#shell-safe-free-text-in-command-templates)'
+#: The rule is stated once, in the functional-review step document; this
+#: document's templates cite it there.
+_QUOTING_RULE_OWNER = 'default:functional-review'
+_QUOTING_RULE_ANCHOR = '(functional-review.md#shell-safe-free-text-in-command-templates)'
 #: The arguments through which a template carries free text into a command.
 _FREE_TEXT_FLAGS = ('--message', '--title', '--detail', '--display-detail')
 _FREE_TEXT_FLAG = r'--(?:message|title|detail|display-detail)'
 _DOUBLE_QUOTED_PLACEHOLDER_RE = re.compile(rf'{_FREE_TEXT_FLAG}\s+"[^"\n]*\{{')
 _SINGLE_QUOTED_PLACEHOLDER_RE = re.compile(rf"{_FREE_TEXT_FLAG}\s+'[^'\n]*\{{")
+#: A free-text flag and the separator before its argument.
+_FREE_TEXT_ARGUMENT_RE = re.compile(rf'(?<![\w-]){_FREE_TEXT_FLAG}(?:\s+|=)')
+#: The one safe form: the whole argument is a single single-quoted shell word.
+_ONE_SINGLE_QUOTED_WORD_RE = re.compile(r"'[^'\n]*'")
 #: A fence at any indentation — a template inside a list item is indented.
 _ANY_FENCE_RE = re.compile(r'^\s*```(\w*)\s*$')
 
@@ -401,12 +416,80 @@ def _free_text_lines(block: str, pattern: re.Pattern[str]) -> list[str]:
     return [line.strip() for line in block.splitlines() if pattern.search(line)]
 
 
-def test_the_quoting_rule_is_stated_once_and_covers_every_free_text_flag():
-    assert _body().count(_QUOTING_RULE_HEADING + '\n') == 1
-    rule = _section(_QUOTING_RULE_HEADING)
+def _shell_word(text: str) -> str:
+    """The shell word ``text`` starts with: everything up to the first whitespace outside quotes."""
+    quote = ''
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if quote:
+            quote = '' if char == quote else quote
+        elif char == '\\':
+            index += 1
+        elif char in ('"', "'"):
+            quote = char
+        elif char.isspace():
+            return text[:index]
+        index += 1
+    return text
+
+
+def _unquoted_free_text_arguments(line: str) -> list[str]:
+    """Every free-text argument on ``line`` that carries a placeholder but is not one single-quoted word."""
+    offenders: list[str] = []
+    for flag in _FREE_TEXT_ARGUMENT_RE.finditer(line):
+        word = _shell_word(line[flag.end() :])
+        if '{' in word and not _ONE_SINGLE_QUOTED_WORD_RE.fullmatch(word):
+            offenders.append(line[flag.start() : flag.end()] + word)
+    return offenders
+
+
+def _owner_body() -> str:
+    """The body of the step document that owns the quoting rule."""
+    for record in find_implementors(_EXT_POINT):
+        if record.get('name') == _QUOTING_RULE_OWNER:
+            text = Path(record['path']).read_text(encoding='utf-8')
+            return text[text.index('\n---\n', 4) + 5 :]
+    raise AssertionError(f'{_QUOTING_RULE_OWNER} is not a discovered {_EXT_POINT} implementor.')
+
+
+def test_the_quoting_rule_is_stated_once_in_its_owner_and_covers_every_free_text_flag():
+    owner = _owner_body()
+    assert owner.count(_QUOTING_RULE_HEADING + '\n') == 1
+    rule = _section(_QUOTING_RULE_HEADING, owner)
     assert "'\\''" in rule, 'the rule must say how an embedded single quote is escaped'
     missing = [flag for flag in _FREE_TEXT_FLAGS if f'`{flag}`' not in rule]
     assert not missing, f'the rule does not cover these free-text arguments: {missing}'
+    assert '(code-review.md)' in rule, 'the owner must say its rule governs this document too'
+
+
+def test_this_document_cites_the_quoting_rule_instead_of_restating_it():
+    pointer = _section(_QUOTING_RULE_HEADING)
+    assert _QUOTING_RULE_ANCHOR in pointer, 'the section must cite the rule where it is stated'
+    body = _body()
+    assert "'\\''" not in body, 'the escape rule is restated here instead of cited'
+    assert '**Single-quote the argument**' not in body, 'the rule is restated here instead of cited'
+
+
+def test_no_template_passes_free_text_outside_one_single_quoted_argument():
+    blocks = [block for _lead_in, block in _bash_blocks_with_lead_in(_body())]
+    lines = [line for block in blocks for line in block.splitlines() if _FREE_TEXT_ARGUMENT_RE.search(line)]
+    assert lines, 'control: the body must carry free-text arguments, or the scan below reads nothing'
+    unquoted = [argument for line in lines for argument in _unquoted_free_text_arguments(line)]
+    assert not unquoted, f'a template passes free text outside one single-quoted argument: {unquoted}'
+
+
+def test_the_unquoted_argument_scan_matches_what_it_targets():
+    """Control: the scan flags a bare, partly quoted or double-quoted placeholder and passes the safe form."""
+    assert _unquoted_free_text_arguments('--detail {title}') == ['--detail {title}']
+    assert _unquoted_free_text_arguments('  --message x{title} \\') == ['--message x{title}']
+    assert _unquoted_free_text_arguments('--message={title}') == ['--message={title}']
+    assert _unquoted_free_text_arguments("--title 'code finding at {ref}'x{title}")
+    assert _unquoted_free_text_arguments('--display-detail "{verdict}"')
+    assert not _unquoted_free_text_arguments(
+        "--title 'code finding at {ref}' --detail '{title} [fix_kind {fix_kind}]' \\"
+    )
+    assert not _unquoted_free_text_arguments('--title not_run --fact acceptance={verifier}')
 
 
 def test_no_template_interpolates_free_text_in_a_double_quoted_argument():
@@ -435,6 +518,81 @@ def test_every_free_text_template_names_the_quoting_rule():
         if _QUOTING_RULE_ANCHOR not in lead_in
     ]
     assert not unreferenced, f'these templates interpolate free text without naming the quoting rule: {unreferenced}'
+
+
+# ---------------------------------------------------------------------------
+# An advisory line that was not written halts the record
+# ---------------------------------------------------------------------------
+
+#: The halt rule that must sit between an advisory decision-log template and the
+#: ``mark-step-done`` that records the outcome after it.
+_ADVISORY_HALT_RE = re.compile(
+    r'On a non-`success` return from any advisory line[^\n]*do NOT record[^\n]*surface the returned error and halt'
+)
+
+
+def _is_advisory_template(block: str) -> bool:
+    return 'manage-logging' in block and 'decision' in block and ') Advisory ' in block
+
+
+def _unhalted_advisory_templates(text: str) -> list[str]:
+    """Every advisory template in ``text`` followed by a ``mark-step-done`` with no halt rule in between.
+
+    An advisory template after which no ``mark-step-done`` follows records
+    nothing over the line, so it is not read.
+    """
+    items: list[tuple[str, str]] = []
+    block: list[str] | None = None
+    for line in text.splitlines():
+        if _ANY_FENCE_RE.match(line):
+            if block is None:
+                block = []
+            else:
+                items.append(('block', '\n'.join(block)))
+                block = None
+            continue
+        if block is not None:
+            block.append(line)
+        else:
+            items.append(('prose', line))
+
+    unhalted: list[str] = []
+    for index, (kind, content) in enumerate(items):
+        if kind != 'block' or not _is_advisory_template(content):
+            continue
+        prose: list[str] = []
+        for later_kind, later in items[index + 1 :]:
+            if later_kind == 'block' and 'mark-step-done' in later:
+                if not _ADVISORY_HALT_RE.search(' '.join(prose)):
+                    unhalted.append(next(line.strip() for line in content.splitlines() if 'Advisory' in line))
+                break
+            if later_kind == 'prose':
+                prose.append(later)
+    return unhalted
+
+
+def test_every_advisory_line_is_followed_by_a_halt_rule_before_the_record():
+    record_step = _section('## Step 6: Record the outcome (inline)')
+    advisories = [block for block in _fenced_blocks(record_step, 'bash') if _is_advisory_template(block)]
+    assert len(advisories) == 2, 'control: Branch A and Branch B must each carry an advisory template'
+    unhalted = _unhalted_advisory_templates(record_step)
+    assert not unhalted, f'an advisory line is followed by a mark-step-done with no halt rule: {unhalted}'
+
+
+def test_the_halt_scan_matches_what_it_targets():
+    """Control: an advisory line straight before the record is flagged; a halt rule in between clears it."""
+    advisory = (
+        '```bash\npython3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \\\n'
+        "  decision --plan-id {plan_id} --level INFO \\\n  --message '(x:code-review) Advisory at {ref} — {title}'\n```"
+    )
+    record = '```bash\npython3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done\n```'
+    halt = (
+        'On a non-`success` return from any advisory line — a `status: error` TOON or a non-zero exit — '
+        'do NOT record `done`: surface the returned error and halt.'
+    )
+    assert _unhalted_advisory_templates(f'{advisory}\n\nThen record.\n\n{record}')
+    assert not _unhalted_advisory_templates(f'{advisory}\n\n{halt}\n\n{record}')
+    assert not _unhalted_advisory_templates(advisory), 'an advisory with no record after it records nothing'
 
 
 # ---------------------------------------------------------------------------

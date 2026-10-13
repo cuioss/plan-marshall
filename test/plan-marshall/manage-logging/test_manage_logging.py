@@ -2,13 +2,14 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for manage-logging.py CLI script.
 
-Write API: manage-log {type} --plan-id {plan_id} --level {level} --message "{message}"
+Write API: manage-log {type} [--plan-id {plan_id}] --level {level} --message "{message}"
 - type: script, work, or decision subcommand
-- --plan-id: plan identifier (required)
+- --plan-id: plan identifier (optional; omitted writes the dated global log)
 - --level: INFO, WARNING, ERROR (required)
 - --message: log message (required)
 
-No stdout output, exit code only.
+A successful write prints nothing. The write-failure outcome is pinned in
+``test_manage_logging_write_outcome.py``.
 """
 
 from pathlib import Path

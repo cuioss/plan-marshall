@@ -285,31 +285,60 @@ VALID_TYPES = VALID_LOG_TYPES
 VALID_LEVELS = VALID_LOG_LEVELS
 
 
-def log_entry(log_type: str, plan_id: str | None, level: str, message: str, store: str = 'plans') -> None:
+def write_log_entry(log_type: str, plan_id: str | None, level: str, message: str, store: str = 'plans') -> None:
     """
-    Write log entry to appropriate log file.
+    Append one log entry to the appropriate log file, raising when it cannot.
+
+    The checked write path: the same append :func:`log_entry` performs, with
+    every failure propagated to the caller instead of swallowed. Only a caller
+    that reports the outcome of the write uses it — the ``manage-logging``
+    ``work`` and ``decision`` CLI verbs. ``LOG_ENABLED = False`` is not a
+    failure: the call returns without writing.
 
     Args:
-        log_type: 'script' or 'work'
+        log_type: 'script', 'work' or 'decision'
+        plan_id: Plan identifier, or None for no plan context (global fallback)
+        level: INFO, WARNING, ERROR
+        message: Log message
+        store: Store name — 'plans' (default) or 'orchestrator'
+
+    Raises:
+        OrchestratorStoreUnavailable: the orchestrator store seam refused
+            (store='orchestrator' only).
+        Exception: any other failure to resolve, create or append to the log
+            file — an ``OSError`` from the filesystem, or the ``ValueError``
+            :func:`get_log_path` raises for an unknown store or a malformed id.
+    """
+    if not LOG_ENABLED:
+        return
+
+    log_file = get_log_path(plan_id, log_type.lower(), store=store)
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+
+    entry = format_log_entry(level.upper(), message)
+
+    with open(log_file, 'a', encoding='utf-8') as f:
+        f.write(entry)
+
+
+def log_entry(log_type: str, plan_id: str | None, level: str, message: str, store: str = 'plans') -> None:
+    """
+    Write log entry to appropriate log file — best-effort.
+
+    Delegates to :func:`write_log_entry` and swallows every failure except the
+    orchestrator store's typed refusal, so an in-process caller that logs as a
+    side effect is never broken by a log write that could not land. A caller
+    that must know whether the entry was written uses :func:`write_log_entry`.
+
+    Args:
+        log_type: 'script', 'work' or 'decision'
         plan_id: Plan identifier, or None for no plan context (global fallback)
         level: INFO, WARNING, ERROR
         message: Log message
         store: Store name — 'plans' (default) or 'orchestrator'
     """
-    if not LOG_ENABLED:
-        return
-
-    log_type_lower = log_type.lower()
-    level = level.upper()
-
     try:
-        log_file = get_log_path(plan_id, log_type_lower, store=store)
-        log_file.parent.mkdir(parents=True, exist_ok=True)
-
-        entry = format_log_entry(level, message)
-
-        with open(log_file, 'a', encoding='utf-8') as f:
-            f.write(entry)
+        write_log_entry(log_type, plan_id, level, message, store=store)
 
     except OrchestratorStoreUnavailable:
         # The orchestrator store seam refused (store='orchestrator' only): a
@@ -739,6 +768,8 @@ if __name__ == '__main__':
     print('- format_log_entry(level, message, **fields) -> str')
     print('- extract_plan_id(args) -> str | None')
     print('- get_log_path(plan_id, log_type) -> Path')
+    print('- write_log_entry(log_type, plan_id, level, message, store) -> None  (raises on failure)')
+    print('- log_entry(log_type, plan_id, level, message, store) -> None  (best-effort)')
     print('- log_script_execution(...)')
     print('- cleanup_old_script_logs(max_age_days) -> int')
     print('- log_work(plan_id, category, message, phase, detail) -> dict')

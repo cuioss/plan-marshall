@@ -290,9 +290,9 @@ def test_commit_and_push_false_with_prefixed_input_drops_commit_push_and_pre_pus
     assert manifest is not None
     steps = manifest['phase_6']['steps']
 
-    # Both gate steps are dropped (the latent bug — they would have
-    # survived as `default:push` / `default:pre-push-quality-gate`
-    # before the boundary normalization landed).
+    # All four steps the pre-filter drops are absent from the manifest —
+    # push, pre-push-quality-gate and the two reviews — none of them
+    # surviving under its `default:`-prefixed id.
     assert 'push' not in steps
     assert 'pre-push-quality-gate' not in steps
     assert 'functional-review' not in steps

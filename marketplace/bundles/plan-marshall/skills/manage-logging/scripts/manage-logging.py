@@ -31,6 +31,12 @@ Arguments (write):
                  under .plan/orchestrator/{slug}/logs/ — the git-ignored logs/
                  subtree of the git-tracked epic store.
 
+Write outcome:
+    A successful write prints nothing and exits 0. When the work or decision
+    entry cannot be written, the verb prints a status: error TOON
+    (error: write_failed) and exits 1. The script verb is best-effort: it
+    prints nothing and exits 0 whether or not its line was written.
+
 Global / no-plan logging:
     Omitting --plan-id writes to .plan/logs/{work,decision,script-execution}-{date}.log.
     marshall-steward uses this path for its STEWARD audit trail with the stable
@@ -67,7 +73,7 @@ from typing import Any
 
 # Direct imports from same directory (local imports)
 from constants import VALID_LOG_LEVELS, VALID_LOG_TYPES
-from file_ops import output_toon, safe_main
+from file_ops import OrchestratorStoreUnavailable, output_toon, safe_main
 from input_validation import (
     add_phase_arg,
     add_plan_id_arg,
@@ -81,10 +87,15 @@ from plan_logging import (
     log_separator,
     read_decision_log,
     read_work_log,
+    write_log_entry,
 )
 
 VALID_TYPES = VALID_LOG_TYPES
 VALID_LEVELS = VALID_LOG_LEVELS
+
+#: The write verbs that report a failed write (status: error, exit 1). The
+#: ``script`` verb stays best-effort and silent.
+CHECKED_WRITE_TYPES = ('work', 'decision')
 
 
 def handle_read(args: argparse.Namespace) -> dict[str, Any]:
@@ -160,7 +171,12 @@ def handle_separator(args: argparse.Namespace) -> dict[str, Any] | None:
 
 
 def handle_write(args: argparse.Namespace) -> dict[str, Any] | None:
-    """Handle write subcommand."""
+    """Handle the work / decision / script write subcommands.
+
+    Returns ``None`` on success (the verb prints nothing). ``work`` and
+    ``decision`` return a ``write_failed`` error dict when the entry could not
+    be written; ``script`` is best-effort and never reports a failed write.
+    """
     log_type = args.log_type
     plan_id = args.plan_id
     level = args.level
@@ -178,11 +194,29 @@ def handle_write(args: argparse.Namespace) -> dict[str, Any] | None:
             'message': '--store orchestrator requires --plan-id (the epic slug)',
         }
 
-    # Log entry — log_entry is best-effort and swallows every write failure
-    # internally, so no guard is needed here. The one exception it lets through
-    # is the orchestrator store seam's typed refusal (store='orchestrator'),
-    # which safe_main renders as its own status: error payload.
-    log_entry(log_type, plan_id, level, message, store=store)
+    if log_type not in CHECKED_WRITE_TYPES:
+        # The script-execution verb stays best-effort: log_entry swallows every
+        # write failure, so the verb is silent and exits 0 whether or not the
+        # line landed.
+        log_entry(log_type, plan_id, level, message, store=store)
+        return None
+
+    # The work and decision verbs report a write that did not land: a caller
+    # that records an outcome after the line must be able to tell. The
+    # orchestrator store seam's typed refusal is not caught here — safe_main
+    # renders it as its own status: error payload, unchanged.
+    try:
+        write_log_entry(log_type, plan_id, level, message, store=store)
+    except OrchestratorStoreUnavailable:
+        raise
+    except Exception as exc:  # every failure write_log_entry raises is a write that did not land
+        return {
+            'status': 'error',
+            'error': 'write_failed',
+            'log_type': log_type,
+            'plan_id': plan_id,
+            'message': f'{log_type} log entry was not written: {exc}',
+        }
     return None
 
 
@@ -261,8 +295,8 @@ def main() -> int:
         output_toon(result)
         if result.get('status') == 'error':
             # Propagate a non-zero exit code so automation reading the exit
-            # status sees the rejection (e.g. handle_write's missing_plan_id
-            # error, handle_read's wrong_parameters error). The TOON is still
+            # status sees the rejection (e.g. handle_write's missing_plan_id and
+            # write_failed errors, handle_read's wrong_parameters error). The TOON is still
             # emitted on stdout above per the manage-* output contract.
             return 1
     return 0

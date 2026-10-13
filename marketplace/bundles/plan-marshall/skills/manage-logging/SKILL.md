@@ -21,7 +21,7 @@ A third, opt-in store exists for orchestrator epics: `--store orchestrator` on t
 > **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error response patterns.
 
 **Skill-specific constraints:**
-- Log entries are fire-and-forget (no output parsing needed)
+- The `work` and `decision` write verbs are silent on success and report a write that did not land as `status: error` with exit 1 (see [Write outcome](#write-outcome)); a workflow that records an outcome after writing a line checks that return. The `script` write verb is fire-and-forget
 - Only valid log levels: `INFO`, `WARNING`, `ERROR`
 - Log type determines the output file (script, work, decision)
 - Work log messages must include `[CATEGORY] (caller)` prefix format
@@ -80,7 +80,18 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 | `--message` | Yes | string | Log message |
 | `--store` | No | `plans` (default), `orchestrator` | Store selection — `work` and `decision` verbs only (`script` has no store flag). `orchestrator` writes to `.plan/orchestrator/{slug}/logs/{work,decision}.log`. |
 
-**Output**: None (exit code only)
+**Output**: None on success — the verb prints nothing and exits 0.
+
+#### Write outcome
+
+| Verb | Entry written | Entry not written |
+|------|---------------|-------------------|
+| `work`, `decision` | Prints nothing, exit 0 | Prints a `status: error` TOON with `error: write_failed` (plus `log_type`, `plan_id` and a `message` carrying the underlying error), exit 1 |
+| `script` | Prints nothing, exit 0 | Prints nothing, exit 0 — best-effort |
+
+"Not written" is any failure to resolve, create or append to the log file: an unwritable `logs/` directory, a log path that is a directory, a full disk. These two verbs write through the checked path `plan_logging.write_log_entry`, which raises instead of swallowing; the change reaches exactly the workflows that run `work` or `decision` through the executor, and no in-process caller — `log_entry` stays best-effort (see [Python Import](#python-import-from-scripts-run-via-executor)).
+
+The `script` verb keeps the best-effort contract because its line is the executor's own audit of a script call, not a record a workflow acts on: failing the verb would turn a lost audit line into a failed step. Three cases are not write failures and are unchanged: logging disabled (`LOG_ENABLED = False`) is a silent exit 0; an orchestrator-store refusal keeps its own payload (see [Error Responses](#error-responses)); `--store orchestrator` without `--plan-id` keeps `missing_plan_id`.
 
 #### Global / no-plan logging path
 
@@ -321,7 +332,7 @@ log_entry('work', 'example-plan', 'INFO', '[ARTIFACT] Created deliverable')
 
 **Note**: IDE warnings about unresolved imports are expected - PYTHONPATH is set at runtime by the executor.
 
-**Error behavior**: Logging calls are fire-and-forget. If the target directory doesn't exist or a write fails, the error is silently swallowed to avoid disrupting the calling script. This is intentional — logging should never cause a script to fail. The one exception is a refusal from the orchestrator store seam on an orchestrator-store write (`OrchestratorStoreUnavailable`, see [`tools-file-ops/SKILL.md`](../tools-file-ops/SKILL.md)): it propagates rather than being swallowed, because swallowing it would report a log write that never landed.
+**Error behavior**: `log_entry` is fire-and-forget. If the target directory doesn't exist or a write fails, the error is silently swallowed to avoid disrupting the calling script. This is intentional — logging as a side effect should never cause a script to fail. A caller that must know whether the entry landed calls `write_log_entry` (same signature) instead: it performs the same append and raises on failure, and `log_entry` delegates to it. Its only callers are the CLI `work` and `decision` verbs. The one exception to the swallow is a refusal from the orchestrator store seam on an orchestrator-store write (`OrchestratorStoreUnavailable`, see [`tools-file-ops/SKILL.md`](../tools-file-ops/SKILL.md)): it propagates rather than being swallowed, because swallowing it would report a log write that never landed.
 
 `plan_id` validity is enforced below this API as well — see the `invalid_plan_id` note under [Error Responses](#error-responses).
 
@@ -384,11 +395,11 @@ log_entry('work', 'example-plan', 'INFO', '[ARTIFACT] Created deliverable')
 | `missing_plan_id` | `--store orchestrator` supplied without `--plan-id` (the epic slug) |
 | `invalid_log_type` | Log type not in: script, work, decision |
 | `invalid_level` | Level not in: INFO, WARNING, ERROR |
-| `write_failed` | File system permission denied or directory missing |
+| `write_failed` | `work` / `decision`: the entry could not be written — the log path could not be resolved, created or appended to (exit 1) |
 
-**Note**: Write operations are fire-and-forget — the Python `log_entry()` function silently swallows errors to avoid disrupting callers. The CLI script (`manage-logging`) returns exit code 1 on validation errors but silently succeeds on I/O failures. A refusal from the orchestrator store seam on a `--store orchestrator` call is not an I/O failure and is not swallowed: it reaches the caller as `status: error` carrying the seam's code, with exit 0.
+**Note**: The Python `log_entry()` function is fire-and-forget and silently swallows errors to avoid disrupting callers. The CLI script (`manage-logging`) returns exit code 1 on validation errors and, for the `work` and `decision` verbs, on a failed write (`write_failed`); the `script` verb silently succeeds on I/O failures. A refusal from the orchestrator store seam on a `--store orchestrator` call is not an I/O failure and is not swallowed: it reaches the caller as `status: error` carrying the seam's code, with exit 0.
 
-**Note**: `invalid_plan_id` is also enforced below the CLI boundary. A malformed `plan_id` handed to the Python API is rejected at `get_log_path` — the shared path resolver — so the entry is **dropped** instead of falling back to the global log; an absent (`None`) `plan_id` remains the first-class global path. The read verbs never reach that resolver with a malformed identifier: their own `is_valid_plan_id` pre-check surfaces it as the `invalid_plan_id` TOON error first. The fire-and-forget write verbs swallow it per the note above.
+**Note**: `invalid_plan_id` is also enforced below the CLI boundary. A malformed `plan_id` handed to the Python API is rejected at `get_log_path` — the shared path resolver — so the entry is **dropped** instead of falling back to the global log; an absent (`None`) `plan_id` remains the first-class global path. The read verbs never reach that resolver with a malformed identifier: their own `is_valid_plan_id` pre-check surfaces it as the `invalid_plan_id` TOON error first. The CLI write verbs never reach it either: `--plan-id` is format-checked at the argument boundary.
 
 ---
 
