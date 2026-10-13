@@ -21,8 +21,8 @@ Build execution and build-result parsing that produce false failures or wrong nu
 | Plan | Status | Notes |
 |------|--------|-------|
 | PLAN-LB-23-verify-builds | staged | A timed-out build stops completely and names its bound; the freshness gate credits the gate's own green builds |
-| PLAN-LB-28-java-consumer-repos | staged | Maven build results are right. Its self-review half moved to PLAN-LB-34 (WS-01) on 2026-10-09 |
-| PLAN-LB-33-leaf-test-scope-and-executor | staged | High priority. A dispatched step can run the tests it changed; the main executor survives a removed worktree (weak merge) |
+| PLAN-LB-28-java-consumer-repos | shipped (#1750) | Maven test ladder, summed counts, literal tags, epilogue not filed; needs discovery re-run per consumer. Its self-review half moved to PLAN-LB-34 on 2026-10-09 (now superseded by PLAN-LB-37). See `landings/PLAN-LB-28.md` |
+| PLAN-LB-33-leaf-test-scope-and-executor | shipped (#1745) | Executor half met; test scope narrowed only inside one bundle; also rebuilt the scope-creep guard. See `landings/PLAN-LB-33.md` |
 | PLAN-LB-12-build-timeout-and-verify-budget | superseded | PLAN-LB-23 (all deliverables) |
 | PLAN-LB-13-maven-build-results | superseded | PLAN-LB-28 (all deliverables) |
 

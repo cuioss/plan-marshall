@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-LB-38",
+  "slug": "review-gate-and-empty-scope",
+  "workstream": "WS-05",
+  "status": "shipped",
+  "plan_marshall_plan_id": "plan-lb-38-review-gate-and-empty-scope",
+  "pr": "1752",
+  "landing": "landings/PLAN-LB-38.md",
+  "seq": 38
+}

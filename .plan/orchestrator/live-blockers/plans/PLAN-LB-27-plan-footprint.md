@@ -41,6 +41,27 @@ Every commit a plan makes — the per-deliverable commits of the execute phase a
 
 ## Deliverables
 
+> ⛔ RE-SCOPED 2026-10-10 by the orchestrator after PLAN-LB-33 landed (#1745, `370f42379`).
+> That plan rebuilt the scope-creep guard in two deliverables the operator added at execute:
+> the finding is filed as type `triage` with rule `scope_creep_warning`; the baseline is
+> merge-base(HEAD, `origin/{base_branch}`) with reason `merge_base_unresolved` when it cannot
+> resolve; the threshold resolves flag → `plan.phase-5-execute.scope_creep_threshold` → 5 and
+> reports `threshold_source`; an accepted or suppressed residual is not re-filed; and
+> `manage-references` no longer captures `plan_creation_sha`. **Deliverables 1, 2 and 4 are
+> therefore done — do not redo them.** Read the shipped guard
+> (`phase-5-execute/scripts/scope_creep_check.py`, Step 6.5 of `phase-5-execute/SKILL.md`, and
+> `test_scope_creep_check.py`, `test_scope_creep_merge_base.py`,
+> `test_scope_creep_threshold.py`, `test_qgate_persist_contract.py`) before outlining.
+> **Deliverable 3 is still open:** `_collect_declared_files` still globs `TASK-*.json` in the
+> plan directory (`scope_creep_check.py:346`). **Deliverable 5 is partly open:** verify at
+> outline which of its rewritten assertions shipped; the finding-type population test was not
+> seen in the merge. Two leftovers from PLAN-LB-33 are not this plan's unless the outline
+> finds them cheap: the uncommitted working-tree half of D2 (verify whether the merge-base
+> diff includes uncommitted edits), and `scope_creep_threshold` is not registered in
+> manage-config defaults. Deliverables 6–10 (the staging allowlist) are untouched by that
+> landing. The claims about `plan_creation_sha` and `_references_core.py` /
+> `_references_crud.py` below are superseded; re-ground the surface before launch.
+
 1. **[PLAN-LB-07 D1]** **An over-threshold run persists its finding.** Close the type gap one way only: either add one
    member to `FINDING_TYPES` for this signal (following the `arch-constraint` precedent recorded in
    the taxonomy comment, and the taxonomy's hyphenated naming), or emit under an existing member and

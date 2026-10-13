@@ -2,9 +2,9 @@
   "id": "PLAN-LB-24",
   "slug": "review-step",
   "workstream": "WS-05",
-  "status": "running",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "plan_marshall_plan_id": "lb-24-review-step",
+  "pr": "1742",
+  "landing": "landings/PLAN-LB-24.md",
   "seq": 24
 }
