@@ -2,9 +2,9 @@
   "id": "PLAN-LB-37",
   "slug": "functional-review",
   "workstream": "WS-01",
-  "status": "running",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "plan_marshall_plan_id": "lb-37-functional-review",
+  "pr": "1759",
+  "landing": "landings/PLAN-LB-37.md",
   "seq": 37
 }
