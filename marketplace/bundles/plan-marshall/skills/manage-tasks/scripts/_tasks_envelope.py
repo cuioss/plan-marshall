@@ -181,15 +181,16 @@ def assign_envelope_at_creation(tasks: list[dict[str, Any]]) -> tuple[int, bool]
         ``True`` exactly when the caller must bump the manifest envelope
         count to the returned id.
     """
-    stamped = [t.get('envelope_id') for t in tasks]
-    stamped = [e for e in stamped if isinstance(e, int) and e >= 1]
-    live = {
-        t.get('envelope_id')
-        for t in tasks
-        if t.get('status') in _LIVE_STATUSES
-        and isinstance(t.get('envelope_id'), int)
-        and t.get('envelope_id') >= 1
-    }
+    stamped: list[int] = []
+    for t in tasks:
+        eid = t.get('envelope_id')
+        if isinstance(eid, int) and eid >= 1:
+            stamped.append(eid)
+    live: set[int] = set()
+    for t in tasks:
+        eid = t.get('envelope_id')
+        if t.get('status') in _LIVE_STATUSES and isinstance(eid, int) and eid >= 1:
+            live.add(eid)
     if live:
         return min(live), False
     if stamped:
