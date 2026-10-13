@@ -315,6 +315,15 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
     - `-021`, `-022`, `-023` — Open Defects.
     - `-024` (Java skill profiles) and `-025` (cui-http-testing guidance) — domain content,
       promoted as `2026-10-13-07-003` and `-07-004`.
+  - Recurrences of the above, from `lessons-routing-028.md` (2026-10-13, 14 pm-mcp-core
+    messages, no new work asked): appended to the Open Defects for `-013`, `-018`, `-019`,
+    `-021`, `-022`, `-023`. `-020` recurred on PLAN-18 (both triage runs; fix tasks left under
+    deliverables 3 and 4) — appended to PLAN-LB-26's OBSERVED line, no surface added. `-024`
+    recurred on PLAN-18 (`java-quarkus` / `java-cdi` attached in a module whose `CLAUDE.md`
+    bans them) — evidence for lesson `2026-10-13-07-003`, not re-filed.
+  - `lessons-routing-026.md` — recurrence of `-015` under opencode with five new mechanisms;
+    appended to the `-015` Open Defect. `lessons-routing-027.md` — new Open Defect (CodeRabbit
+    summary-only concerns dropped as noise), verified at HEAD.
 - **PLAN-LB-38 review-gate-and-empty-scope shipped on 2026-10-11 as #1752 (`4a985a1bf`).**
   Record: `landings/PLAN-LB-38.md`. Nine of ten deliverables shipped (four with deviations);
   D10 dropped under its own clause (no bot declares a size cap). An empty change list is now
@@ -845,6 +854,10 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
     `record-step` reads `unmeasured`, the landing carries `total_tokens=0` and passes
     `landing-check`; no archived plan has a `client.toon`, because nothing on the start path
     calls `orchestrator preflight`. — `lessons-routing-013.md`. Meets the Watch below.
+    Recurred under **opencode** (PLAN-44): `total_tokens=0`, wall time covers 1-init only, no
+    `client.toon`; the five finalize builds' logs are missing from the archived
+    `build-results/`, so the gates on the pushed head cannot be shown (bears on `-016`).
+    — `lessons-routing-028.md` (148).
   - **Not a defect: `build-maven maven run` accepting any plugin goal** (operator ruling
     2026-10-12). The wrapper is a deliberate pass-through; a goal guard would cost a POM
     evaluation per call and refuse ordinary undeclared goals (`dependency:tree`,
@@ -857,6 +870,21 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
     dodge a rule). Nothing in the pipeline caught it on any harness. PLAN-LB-37's functional
     review, which verifies each success criterion against evidence, is the nearest remedy;
     whether it catches a weakened existing test is not established. — `lessons-routing-015.md`.
+    **Recurred under opencode** (pm-mcp-core PLAN-44, PR #38, `6caa663`; operator grade
+    critical as the recurrence, high for the new mechanisms): `deliverables_done=6/6` against a
+    7-deliverable spec, with D2, D4, D6 and D7 unmet and one new test weakening. New mechanisms,
+    none owned: (1) the plan rewrote its own package What/Done-When and ADRs 002–005 to describe
+    the shipped code; (2) an ADR contradicts the specification (Workflow DSL Rule 6) with no spec
+    PR, and a test-catalog entry was reshaped to stay green; (3) an infeasibility verdict was
+    checked against the as-built code and the specified check was then deleted under the
+    verify-first "drop a refuted gap" clause — an infeasibility verdict must name the work-order
+    sentence and deleting a specified check needs an operator decision; (4) task statuses and
+    green builds stood in for the Done-When (no coverage table, a "done" fix task changed no
+    code); (5) pre-push review read shape only and finalize triage was bot-bounded, so the loop
+    exited on an empty bot queue with Done-When criteria open — asked: the Done-When as a
+    standing finalize triage source. Check at PLAN-LB-37's landing whether its functional review
+    catches (1), (2) and (4). Evidence rests on the sender's audit, not re-checked here.
+    — `lessons-routing-026.md`.
   - **The pushed and merged head carries none of the plan's mandated gates** — the Antigravity
     instance, and two Claude Code recurrences where fix commits after the last full gate were
     pushed with only the composed manifest steps re-run. Graded high for Claude Code.
@@ -866,30 +894,54 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   ignores it, and the foreign-PR gate assumes `feature/{plan_id}`
   (`phase-6-finalize/scripts/foreign_pr_gate.py:170-171`), so it both blocks a merged foreign PR
   and misses a missing one. Recurs on every pm-mcp-core plan that changes a specification. Not
-  owned by any staged plan. — `lessons-routing-018.md`.
+  owned by any staged plan. — `lessons-routing-018.md`. Two more plans (PLAN-13, PLAN-18): the
+  retrospective footprint reports every sibling path as declared-but-unrealised, so M6 fails by
+  construction; relative sibling paths break under `use_worktree`; a sibling deliverable has no
+  module name in the architecture. — `lessons-routing-028.md` (168, 175, 176, 181).
 - **A required review bot goes stale after a fix commit** (remainder after #1742 and #1752):
   a commit pushed after the last review by any path (inline finalize fix, merge-queue flow
   without a local rebase) does not re-arm the re-review; a leaf read `re_review_on_loopback`
   from the wrong source; a bot whose path filter excludes the whole diff is not counted as
   expected-absent. The "fixed before the fix exists" item is closed by #1742/#1752. Not owned by
   any staged plan. — `lessons-routing-017.md`.
+- **CodeRabbit concerns raised only in its summary/walkthrough comment are never filed** —
+  security concerns included (high, operator ruling 2026-10-13). Verified at HEAD:
+  `automatic-review/standards/coderabbit.md:60-61` list the summary marker and `## Walkthrough`
+  as `ignore_patterns`, line 127 calls them whole-comment drops "that carry no per-line
+  finding", and `github_pr.py` (`_is_obvious_noise`, line 407) counts them into
+  `count_skipped_noise` only; nothing reads the summary body for actionable, "Outside diff
+  range" or security items. Seen on pm-mcp-core PLAN-18, PR #43. Asked: parse the summary for
+  actionable and security items, or at least report a dropped summary that carried them; a
+  summary-only security fixture pins it. Not owned by any staged plan; nearest PLAN-LB-31 or
+  the `-017` remainder. — `lessons-routing-027.md`.
 - **Red CI has no triage route.** `verification-feedback.md` accepts only `build-runner, sonar,
   pr-comment, plugin-doctor, pr-state, finalize-feedback` (lines 30, 59 at `47d21e1bf`), while
   `ci_verify.py` emits `ci-verify-missing/-build/-policy/-timeout/-cancelled`; every red-CI
   dispatch is refused `unknown_producer`. Five plans (PLAN-LB-25 and four pm-mcp-core plans);
   also a CI check is classed by name tokens, not by what it runs. Lesson `2026-10-11-16-001`.
   Not owned by any staged plan. — `lessons-routing-019.md`, `lb-25-phase-and-merge-gates-001`.
+  Recurrences: PLAN-13 (`ci-verify-policy` refused `unknown_producer`, re-dispatched as
+  `finalize-feedback`); lesson `2026-10-11-07-001` (plan-06) — a SonarCloud gate failure inside
+  the `build / sonar-build` Maven job filed 5 `ci_policy_failure` findings instead of deferring
+  to sonar-roundtrip. — `lessons-routing-028.md` (153, 189).
 - **In a consumer repository a dispatched leaf cannot resolve its workflow document**:
   `agents/execution-context.md:111-112` maps a notation only to `marketplace/bundles/…`
   (`workflow_not_found` otherwise, line 119), so every consumer-repository dispatch improvises,
   some reading a stale built copy. Graded high. Not owned by any staged plan.
-  — `lessons-routing-021.md`.
+  — `lessons-routing-021.md`. Recurred on PLAN-18: the 4-plan leaf and two sonar-roundtrip
+  leaves read the doc from the plan-marshall checkout's `target/claude/` instead.
+  — `lessons-routing-028.md` (182).
 - **The deep-lane outline writes no assessments**, so Q-Gate check 2.2 fails every deliverable
   — one guaranteed operator interruption per deep-lane plan (eight pm-mcp-core plans). Graded
-  high by the operator. Not owned by any staged plan. — `lessons-routing-022.md`.
+  high by the operator. Not owned by any staged plan. — `lessons-routing-022.md`. Ninth to
+  eleventh plans: PLAN-13 (Q-Gate 447991), PLAN-18 (0feabd, accepted by the operator), PLAN-54
+  (affb5d, assessments added after the gate asked). — `lessons-routing-028.md` (162, 174, 191).
 - **The 4-plan Q-Gate skips its validators on the 3-outline hash and reports a pass over zero
   runs**; no verb computes the deliverable hashes, so passes improvise. Graded high by the
-  operator. Not owned by any staged plan. — `lessons-routing-023.md`.
+  operator. Not owned by any staged plan. — `lessons-routing-023.md`. Recurred on PLAN-18: both
+  Q-Gate runs skipped `deliverable-hashes.toon` (16 hashes over 2 runs); the 4-plan leaf had no
+  shell. Asks for a `manage-solution-outline deliverable-hashes` verb.
+  — `lessons-routing-028.md` (185).
 - **A local-only run can still schedule push-related steps.** With
   `phase-5-execute.commit_and_push` false the commit-push filter drops `pre-push-quality-gate`,
   `functional-review` and `code-review`, and the ceremony selection adds them back for a
