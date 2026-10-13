@@ -2,8 +2,8 @@
   "id": "PLAN-LB-26",
   "slug": "execute-loop-triage",
   "workstream": "WS-01",
-  "status": "launched",
-  "plan_marshall_plan_id": "",
+  "status": "running",
+  "plan_marshall_plan_id": "lb-26-execute-loop-triage",
   "pr": "",
   "landing": "",
   "seq": 26
