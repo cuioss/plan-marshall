@@ -292,6 +292,7 @@ def cmd_qgate_resolve(args: argparse.Namespace) -> dict:
         hash_id=args.hash_id,
         resolution=args.resolution,
         detail=args.detail,
+        task_number=getattr(args, 'task_number', None),
     )
 
 
@@ -547,6 +548,7 @@ def main() -> int:
     )
     add_phase_arg(q_resolve_parser, choices=QGATE_PHASES)
     q_resolve_parser.add_argument('--detail', help='Resolution detail')
+    add_task_number_arg(q_resolve_parser, required=False)
     q_resolve_parser.set_defaults(func=cmd_qgate_resolve)
 
     # qgate resolve-evidenced

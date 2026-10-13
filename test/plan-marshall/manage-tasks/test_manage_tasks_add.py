@@ -15,9 +15,11 @@ import pytest
 from _manage_tasks_fixtures import (
     _add_ns,
     _add_task,
+    _update_ns,
     add_basic_task,
     build_task_toon,
     cmd_add,
+    cmd_update,
     parse_stdin_task,
 )
 
@@ -100,6 +102,90 @@ def test_add_accepts_holistic_with_zero_deliverable(plan_context):
 
     assert result['status'] == 'success'
     assert result['file'] == 'TASK-001.json'
+
+
+def test_add_accepts_fix_origin_with_zero_deliverable(plan_context):
+    """deliverable=0 is accepted for the fix origin triage writes (no owning deliverable)."""
+    toon = build_task_toon(
+        title='Fix missing null-guard on external input',
+        deliverable=0,
+        domain='plan-marshall-plugin-dev',
+        description='Finding: missing null-guard on external input at src/main/java/Foo.java',
+        steps=['src/main/java/Foo.java'],
+        origin='fix',
+    )
+    result = cmd_add(_add_ns(plan_id='add-fix-zero-del', content=toon.replace('\n', '\\n')))
+
+    assert result['status'] == 'success'
+    assert result['file'] == 'TASK-001.json'
+
+
+def test_add_assigns_live_envelope_with_cost_fields_on_packed_plan(plan_context):
+    """commit-add on a packed plan joins the live envelope with derived cost fields."""
+    add_basic_task(plan_id='add-packed', title='First', deliverable=1, steps=['src/main/java/First.java'])
+    cmd_update(
+        _update_ns(
+            plan_id='add-packed',
+            number=1,
+            cost_size='M',
+            predicted_cost_tokens=60000,
+            envelope_id=1,
+        )
+    )
+    add_basic_task(plan_id='add-packed', title='Second', deliverable=2, steps=['src/main/java/Second.java'])
+    cmd_update(
+        _update_ns(
+            plan_id='add-packed',
+            number=2,
+            cost_size='S',
+            predicted_cost_tokens=20000,
+            envelope_id=1,
+        )
+    )
+
+    result = add_basic_task(
+        plan_id='add-packed',
+        title='Fix finding',
+        deliverable=0,
+        steps=['src/main/java/Fix.java'],
+        origin='fix',
+    )
+
+    assert result['status'] == 'success'
+    assert result['task']['envelope_id'] == 1
+    assert result['task']['cost_size'] in ('XS', 'S', 'M', 'L', 'XL', 'XXL')
+    assert isinstance(result['task']['predicted_cost_tokens'], int)
+    assert result['task']['predicted_cost_tokens'] >= 0
+    assert result['envelope_assignment']['envelope_id'] == 1
+    assert result['envelope_assignment']['opens_trailing'] is False
+
+
+def test_add_opens_trailing_envelope_when_no_live_envelope(plan_context):
+    """commit-add with no live envelope opens a trailing one and reports the manifest gap."""
+    add_basic_task(plan_id='add-trailing', title='First', deliverable=1, steps=['src/main/java/First.java'])
+    cmd_update(
+        _update_ns(
+            plan_id='add-trailing',
+            number=1,
+            status='done',
+            cost_size='S',
+            predicted_cost_tokens=20000,
+            envelope_id=1,
+        )
+    )
+
+    result = add_basic_task(
+        plan_id='add-trailing',
+        title='Fix finding',
+        deliverable=0,
+        steps=['src/main/java/Fix.java'],
+        origin='fix',
+    )
+
+    assert result['status'] == 'success'
+    assert result['task']['envelope_id'] == 2
+    assert result['envelope_assignment']['opens_trailing'] is True
+    assert result['envelope_assignment']['manifest_updated'] is False
 
 
 def test_add_fails_without_content(plan_context):

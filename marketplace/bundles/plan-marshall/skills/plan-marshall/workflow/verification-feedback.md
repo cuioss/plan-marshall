@@ -52,6 +52,10 @@ Producer-specific additions:
 
 Domain-triage extensions (`{bundle}:ext-triage-{domain}`) are loaded on demand inside Steps 3-6 — they are NOT pre-loaded by the caller.
 
+## Shell-safe free text in command templates
+
+Several command templates below interpolate free text into a shell argument — rule prose and per-violation context, a verifier's refutation rationale. The shell-quoting rule those templates follow is stated once in [`functional-review.md`](../../phase-6-finalize/workflow/functional-review.md) § "Shell-safe free text in command templates" and is not restated here: every `--title` and `--detail` carrying finding text is written as ONE single-quoted shell argument, each embedded single quote is escaped as `'\''` before substitution, and interpolated text is never put in double quotes. Each template that interpolates text names that section.
+
 ## Step 1: Producer-mode branch
 
 ### Guard: `producer` input validation (input boundary)
@@ -100,12 +104,14 @@ Read the runtime `scope` input (one of `agents`, `commands`, `skills`, `scripts`
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings add \
   --plan-id {plan_id} --type triage \
-  --title "{rule_id}: {component_path}" \
+  --title '{rule_id}: {component_path}' \
   --severity {warning|error} \
   --rule {rule_id} \
   --file-path {component_path} \
-  --detail "{rule prose + per-violation context}"
+  --detail '{rule prose + per-violation context}'
 ```
+
+`{component_path}` and the rule prose are finding-derived text, so `--title` and `--detail` are quoted per [§ Shell-safe free text in command templates](#shell-safe-free-text-in-command-templates).
 
 Then fall through to Step 1.4 (batched ingestion), Step 1.5 (optional verify pre-stage), Step 2 (extension load), and Steps 3-6 (per-finding triage). The decision-and-action loop will FIX / SUPPRESS / ACCEPT each emitted finding using the standards in the pm-plugin-development triage extension.
 
@@ -213,8 +219,10 @@ Before the findings reach triage, an OPTIONAL validity-verification pass runs �
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
-     --plan-id {plan_id} --hash-id {hash_id} --resolution rejected --detail "{refutation rationale}"
+     --plan-id {plan_id} --hash-id {hash_id} --resolution rejected --detail '{refutation rationale}'
    ```
+
+   `{refutation rationale}` is the verifier's own free text, so `--detail` is quoted per [§ Shell-safe free text in command templates](#shell-safe-free-text-in-command-templates).
 
    For a Q-Gate finding, use the `qgate resolve` verb with `--resolution rejected --phase {phase}` (see `manage-findings` Canonical invocations → `resolve` / `qgate resolve`).
 
@@ -357,6 +365,8 @@ overflow_deferred: {O}        # only present when overflow fired
 deferred_user_questions: {Q}   # only present when AskUserQuestion fired
 loop_back_target: 5-execute | 6-finalize   # present on every loop_back return, omitted otherwise
 ```
+
+**Short-circuit consumer.** `fix_tasks_created` and `fix_task_numbers[K]` are the structured task reference the orchestrator's short-circuit guard ([`execution.md`](execution.md) § "Verification-feedback triage") matches on before dispatching triage again: a pending finding identical to one already resolved `fixed` against a still-open task in that list is already owned, so no second fix task is allocated for it. The per-finding link is the `fix_task_number` field the `qgate resolve --task-number` call stores — never parsed out of the free-text `resolution_detail`.
 
 `status: loop_back` when `fix_tasks_created > 0` OR `overflow_deferred > 0` OR an inline-fixable disposition (SUPPRESS, narrow-rationale ACCEPT, or single-annotation FIX) requires the calling step to be replayed. The single-annotation FIX is the inline fix of [`triage.md`](triage.md) § 3c: it allocates no task, so it is not counted in `fix_tasks_created`, and under `producer=finalize-feedback` its `fixed` reply is held until its commit is stamped, exactly like a task fix's; under every other producer both are transmitted in Step 8 (Step 8, "Ordering"). Every `loop_back` return carries `loop_back_target`, and every other status omits it; the value is computed by the rule in [`phase-5-execute/standards/operations.md`](../../phase-5-execute/standards/operations.md) § "Verification-feedback loop-back returns (`loop_back_target`)" — `5-execute` when `fix_tasks_created > 0` OR `overflow_deferred > 0`, otherwise `6-finalize`. Manifest-step callers forward it verbatim to `mark-step-done --outcome loop_back --loop-back-target {value}`. The phase-6-finalize unified-triage hook consumes the returned target directly and routes the continuation without creating a phase-step record. `status: ci_failure` is reserved for `producer=pr-state` when the CI wait completed with failed checks AND zero further findings were emitted (the failure itself is the surfaced state). Otherwise `status: success` (every pending finding resolved without requiring a replay).
 

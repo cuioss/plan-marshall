@@ -17,6 +17,11 @@ One test per contract, each grounded in its lesson evidence:
   Step 7 computation rule): ``operations.md`` requires ``loop_back_target``
   on every ``loop_back`` return, omits it on ``success``, and matches the
   ``5-execute`` vs ``6-finalize`` computation rule verbatim in behaviour.
+* (d) At-creation envelope assignment contract: ``execution.md`` states the
+  one at-creation assignment mechanism for post-packing tasks and rules out
+  the null-envelope dispatch alternative, and the phase-5-execute envelope
+  contract states the group read treats the assigned envelope explicitly
+  with fix-task-first ordering.
 """
 
 from __future__ import annotations
@@ -40,6 +45,25 @@ OPERATIONS_MD = (
     / 'phase-5-execute'
     / 'standards'
     / 'operations.md'
+)
+EXECUTION_MD = (
+    REPO_ROOT
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'plan-marshall'
+    / 'workflow'
+    / 'execution.md'
+)
+PHASE_5_SKILL_MD = (
+    REPO_ROOT
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'phase-5-execute'
+    / 'SKILL.md'
 )
 
 PLAN_ID = 'dispatch-envelope-closure'
@@ -139,3 +163,25 @@ def test_loop_back_target_required_on_loop_back_and_omitted_on_success():
     assert has_computation, 'the 5-execute vs 6-finalize computation rule must be stated'
     assert has_five_execute and has_six_finalize, 'both granularity tiers must be named'
     assert has_forwarding, 'callers must forward the field verbatim to mark-step-done'
+
+
+def test_at_creation_assignment_and_fix_first_ordering_wording():
+    """Contract (d): at-creation assignment is the one mechanism; fix runs first."""
+    # Arrange — the orchestration and envelope contracts as shipped.
+    execution = EXECUTION_MD.read_text(encoding='utf-8')
+    phase_5 = PHASE_5_SKILL_MD.read_text(encoding='utf-8')
+
+    # Act — collect the contract sentences the deliverable requires.
+    has_mechanism = 'At-creation envelope assignment is the one mechanism' in execution
+    has_no_null_dispatch = 'null-envelope dispatch is not defined' in execution
+    has_fix_first_execution = 'fix-task-first' in execution
+    has_assigned_envelope = 'carries its assigned envelope explicitly' in phase_5
+    has_fix_first_phase_5 = 'fix-task-first ordering' in phase_5
+
+    # Assert — the mechanism, the ruled-out alternative, and the ordering
+    # agree across both documents.
+    assert has_mechanism, 'execution.md must state the one at-creation assignment mechanism'
+    assert has_no_null_dispatch, 'execution.md must rule out the null-envelope dispatch alternative'
+    assert has_fix_first_execution, 'execution.md must state the fix-task-first ordering'
+    assert has_assigned_envelope, 'phase-5-execute must treat the assigned envelope explicitly'
+    assert has_fix_first_phase_5, 'phase-5-execute must state the fix-task-first ordering'

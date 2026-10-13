@@ -1485,13 +1485,33 @@ def resolve_qgate_finding(
     hash_id: str,
     resolution: str,
     detail: str | None = None,
+    task_number: int | None = None,
 ) -> dict[str, Any]:
-    """Resolve a Q-Gate finding."""
+    """Resolve a Q-Gate finding.
+
+    ``task_number`` carries the structured task reference: the fix task that
+    owns the fix of a ``fixed`` finding. It is stored as ``fix_task_number``
+    and is what the triage short-circuit matches on — a pending finding whose
+    content matches a ``fixed`` record owned by a still-open task is already
+    owned, so no second fix task is allocated. It is refused on every other
+    resolution, mirroring :func:`resolve_finding`. A finding that becomes
+    ``fixed`` without it is an inline fix: it has no task.
+    """
     if phase not in QGATE_PHASES:
         return {'status': 'error', 'message': f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}'}
 
     if resolution not in RESOLUTIONS:
         return {'status': 'error', 'message': f'Invalid resolution: {resolution}. Must be one of {RESOLUTIONS}'}
+
+    if task_number is not None and resolution != FIXED_RESOLUTION:
+        return {
+            'status': 'error',
+            'error': 'fix_task_number_requires_fixed',
+            'message': (
+                f'A fix-task number is accepted only with resolution {FIXED_RESOLUTION}; '
+                f'got resolution {resolution} with fix task {task_number}'
+            ),
+        }
 
     store = resolve_findings_store(plan_id)
     if store_unreached(store):
@@ -1504,15 +1524,19 @@ def resolve_qgate_finding(
     }
     if detail:
         updates['resolution_detail'] = detail
+    if task_number is not None:
+        updates[FIX_TASK_FIELD] = task_number
 
     if update_jsonl(path, hash_id, updates):
-        return {
+        result: dict[str, Any] = {
             'status': 'success',
             'hash_id': hash_id,
             'phase': phase,
             'resolution': resolution,
-            **store_state_fields(store),
         }
+        if task_number is not None:
+            result[FIX_TASK_FIELD] = task_number
+        return {**result, **store_state_fields(store)}
     return {
         'status': 'error',
         'message': f'Q-Gate finding not found: {hash_id}',

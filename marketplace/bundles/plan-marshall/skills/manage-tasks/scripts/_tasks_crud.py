@@ -31,8 +31,10 @@ from pathlib import Path
 
 from _task_artifacts import capture_task_start_sha
 from _tasks_core import (
+    DELIVERABLE_ZERO_ORIGINS,
     find_task_file,
     format_task_file,
+    get_all_tasks,
     get_next_number,
     get_plan_dir,
     get_tasks_dir,
@@ -49,7 +51,8 @@ from _tasks_core import (
     validate_step_intent,
     validate_steps_are_file_paths,
 )
-from _tasks_cost import COST_SIZES
+from _tasks_cost import COST_SIZES, derive_cost_size
+from _tasks_envelope import assign_envelope_at_creation
 from file_ops import atomic_write_file
 from input_validation import (
     LessonInventoryUnavailable,
@@ -200,12 +203,79 @@ def cmd_prepare_add(args) -> dict:
     }
 
 
+def _bump_manifest_envelope_count(plan_id: str, new_envelope_id: int) -> dict:
+    """Raise the manifest ``phase_5.envelope_count`` to cover a trailing envelope.
+
+    A task that opened a new trailing envelope at creation is only dispatched
+    when the manifest envelope count covers it, so the count is raised to
+    ``max(old, new_envelope_id)``. The update is a scoped single-line rewrite
+    of the ``envelope_count`` row inside the top-level ``phase_5:`` block of
+    ``execution.toon`` — never a full TOON round-trip, so the manifest's
+    normalization contracts are untouched.
+
+    Never fails the caller: every non-covering outcome is reported as
+    ``updated: False`` with a ``reason`` (``manifest_missing``,
+    ``no_phase_5_block``, ``envelope_count_absent``,
+    ``envelope_count_ambiguous``, ``already_covers``,
+    ``manifest_unreadable``), and the task itself stays created with its
+    stamped envelope.
+    """
+    try:
+        manifest_path = get_plan_dir(plan_id) / 'execution.toon'
+    except Exception as exc:
+        return {'updated': False, 'reason': f'plan_dir_unresolved: {exc}'}
+    if not manifest_path.exists():
+        return {'updated': False, 'reason': 'manifest_missing'}
+    try:
+        text = manifest_path.read_text(encoding='utf-8')
+    except OSError as exc:
+        return {'updated': False, 'reason': f'manifest_unreadable: {exc}'}
+
+    lines = text.split('\n')
+    in_phase_5 = False
+    seen_phase_5 = False
+    candidates: list[tuple[int, int]] = []
+    for i, line in enumerate(lines):
+        if not line.strip() or line.lstrip().startswith('#'):
+            continue
+        if line == 'phase_5:':
+            in_phase_5 = True
+            seen_phase_5 = True
+            continue
+        if in_phase_5:
+            if line[0] not in (' ', '\t'):
+                break
+            match = re.match(r'^  envelope_count: (\d+)\s*$', line)
+            if match:
+                candidates.append((i, int(match.group(1))))
+    if not seen_phase_5:
+        return {'updated': False, 'reason': 'no_phase_5_block'}
+    if not candidates:
+        return {'updated': False, 'reason': 'envelope_count_absent'}
+    if len(candidates) > 1:
+        return {'updated': False, 'reason': 'envelope_count_ambiguous'}
+
+    index, old_count = candidates[0]
+    if new_envelope_id <= old_count:
+        return {'updated': False, 'reason': 'already_covers'}
+    lines[index] = f'  envelope_count: {new_envelope_id}'
+    atomic_write_file(manifest_path, '\n'.join(lines))
+    return {'updated': True, 'previous': old_count, 'envelope_count': new_envelope_id}
+
+
 def cmd_commit_add(args) -> dict:
     """Read a prepared task file, validate it, and create TASK-NNN.json.
 
     Consumes the scratch file bound to --plan-id (and --slot). The file must
     have been written by the main context between `prepare-add` and this call.
     The scratch file is deleted on success.
+
+    Every created task is assigned to an execution envelope at creation via
+    :func:`_tasks_envelope.assign_envelope_at_creation` and carries the
+    derived cost fields (``cost_size``, ``predicted_cost_tokens``) alongside
+    the ``envelope_id``, so a post-packing task reads back routable
+    immediately. A new trailing envelope additionally bumps the manifest
+    envelope count (see :func:`_bump_manifest_envelope_count`).
     """
     try:
         slot = _resolve_slot(getattr(args, 'slot', None))
@@ -258,6 +328,33 @@ def cmd_commit_add(args) -> dict:
             }
         )
 
+    # At-creation envelope assignment: the task joins the current live
+    # envelope, or opens a new trailing one when none is live. Cost fields
+    # are derived from the task's own signals with the canonical size table.
+    existing_tasks = [task for _path, task in get_all_tasks(task_dir)]
+    envelope_id, opens_trailing = assign_envelope_at_creation(existing_tasks)
+    try:
+        cost_size, predicted_cost_tokens = derive_cost_size(
+            step_count=len(steps),
+            profile=parsed['profile'],
+            skills_count=len(parsed['skills']),
+            target_file_count=len({s['target'] for s in steps}),
+        )
+    except ValueError as e:
+        return output_error(str(e))
+
+    manifest_bump: dict = {'updated': False, 'reason': 'no_trailing_envelope'}
+    if opens_trailing:
+        manifest_bump = _bump_manifest_envelope_count(args.plan_id, envelope_id)
+        if not manifest_bump['updated']:
+            log_entry(
+                'work',
+                args.plan_id,
+                'WARNING',
+                f'[MANAGE-TASKS] TASK-{number:03d} opened trailing envelope {envelope_id} '
+                f"but the manifest envelope count was not raised ({manifest_bump['reason']})",
+            )
+
     task = {
         'number': number,
         'title': parsed['title'],
@@ -272,6 +369,9 @@ def cmd_commit_add(args) -> dict:
         'verification': parsed['verification'],
         'steps': steps,
         'current_step': 1,
+        'cost_size': cost_size,
+        'predicted_cost_tokens': predicted_cost_tokens,
+        'envelope_id': envelope_id,
     }
 
     content = format_task_file(task)
@@ -309,6 +409,15 @@ def cmd_commit_add(args) -> dict:
             'origin': parsed['origin'],
             'status': 'pending',
             'step_count': len(steps),
+            'cost_size': cost_size,
+            'predicted_cost_tokens': predicted_cost_tokens,
+            'envelope_id': envelope_id,
+        },
+        'envelope_assignment': {
+            'envelope_id': envelope_id,
+            'opens_trailing': opens_trailing,
+            'manifest_updated': manifest_bump['updated'],
+            'manifest_reason': manifest_bump.get('reason'),
         },
     }
 
@@ -347,7 +456,7 @@ def _validate_batch_entry(entry: dict, index: int) -> dict:
 
     deliverable_raw = entry.get('deliverable')
     if deliverable_raw is None:
-        # 0 is valid only for holistic tasks; defer to per-field validation.
+        # 0 is valid only for holistic or triage-fix tasks; defer to per-field validation.
         deliverable_raw = 0
 
     raw_steps = entry.get('steps', [])
@@ -433,7 +542,7 @@ def _validate_batch_entry(entry: dict, index: int) -> dict:
                 f'batch entry [{index}]: task contract violation - steps must be file paths:\n' + '\n'.join(step_errors)
             )
 
-    if deliverable == 0 and origin_raw != 'holistic':
+    if deliverable == 0 and origin_raw not in DELIVERABLE_ZERO_ORIGINS:
         raise ValueError(f'batch entry [{index}]: missing required field: deliverable')
 
     return {

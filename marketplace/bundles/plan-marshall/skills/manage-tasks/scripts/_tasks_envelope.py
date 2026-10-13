@@ -143,3 +143,55 @@ def pack_envelopes(
         )
 
     return assignments, envelopes
+
+
+#: Task statuses that keep an envelope live for at-creation assignment. A
+#: task in any other status (``done``, ``failed``, ``blocked``,
+#: ``infeasible``) never runs again, so its envelope is not live.
+_LIVE_STATUSES = frozenset({'pending', 'in_progress'})
+
+
+def assign_envelope_at_creation(tasks: list[dict[str, Any]]) -> tuple[int, bool]:
+    """Assign one post-packing task to an envelope at creation.
+
+    The single at-creation assignment mechanism: ``commit-add`` calls this
+    for every task it creates, so a task allocated after envelope packing
+    (a triage fix task above all) reads a non-null ``envelope_id`` back
+    immediately instead of staying unreachable to the envelope-filtered
+    executor. No second placement path is introduced — the plan-time
+    :func:`pack_envelopes` keeps consuming the stamped
+    ``predicted_cost_tokens`` (including the at-creation values below) with
+    no fix-specific branch.
+
+    Which envelope wins:
+
+    * When some envelope still has live work (a ``pending`` / ``in_progress``
+      task stamped with it) the fix joins the lowest such envelope — the
+      current envelope, whose pending tasks the fix blocks.
+    * Otherwise no live envelope exists, so the fix opens a new trailing
+      envelope one past the highest stamped id (or envelope 1 when nothing
+      is stamped yet) and the caller bumps the manifest envelope count.
+
+    Args:
+        tasks: The plan's existing task records (the new task excluded).
+            Each may carry an ``envelope_id`` and a ``status``.
+
+    Returns:
+        An ``(envelope_id, opens_trailing)`` tuple — ``opens_trailing`` is
+        ``True`` exactly when the caller must bump the manifest envelope
+        count to the returned id.
+    """
+    stamped = [t.get('envelope_id') for t in tasks]
+    stamped = [e for e in stamped if isinstance(e, int) and e >= 1]
+    live = {
+        t.get('envelope_id')
+        for t in tasks
+        if t.get('status') in _LIVE_STATUSES
+        and isinstance(t.get('envelope_id'), int)
+        and t.get('envelope_id') >= 1
+    }
+    if live:
+        return min(live), False
+    if stamped:
+        return max(stamped) + 1, True
+    return 1, True

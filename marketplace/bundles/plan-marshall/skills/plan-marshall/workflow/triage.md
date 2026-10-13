@@ -29,6 +29,10 @@ Triage RECORDS dispositions; it does not talk to the provider. The reviewer-faci
 
 Domain-triage extensions (`{bundle}:ext-triage-{domain}`) are loaded on demand inside this workflow — they are NOT pre-loaded by the caller.
 
+## Shell-safe free text in command templates
+
+The FIX body below interpolates finding-derived text — titles, details, paths — into shell arguments. The shell-quoting rule those templates follow is stated once in [`functional-review.md`](../../phase-6-finalize/workflow/functional-review.md) § "Shell-safe free text in command templates" and is not restated here: every `--detail` carrying finding text is written as ONE single-quoted shell argument, each embedded single quote is escaped as `'\''` before substitution, and interpolated text is never put in double quotes. Each FIX template that interpolates text names that section.
+
 ## Step 1: List the findings store
 
 ```bash
@@ -185,6 +189,8 @@ The action body:
 
   **Shape 1 — task fix.**
 
+  > **Single FIX task shape — `deliverable: 0` with `origin: fix`.** The task fix writes `deliverable: 0` with `origin: fix`, the origin the validator accepts for a task with no owning deliverable (see `plan-marshall:manage-tasks/standards/task-contract.md`). Every triage run writes this same shape, so the fix task reaches the same deliverable placement deterministically instead of each run guessing an owning deliverable. An omitted origin defaults to `plan`, which the validator refuses with `deliverable: 0` — the shape below MUST name `origin: fix` explicitly.
+
   > **Not-done / STOP contract — a task fix allocates a task and STOPS; it never executes that task's fix.** The task fix MUST do exactly three things and then stop: (a) allocate the fix task in a **not-done** state via the `prepare-add` → `commit-add` flow below; (b) resolve the finding `fixed` with the reviewer-ready `resolution_detail`, passing the fix-task number; and (c) then **STOP**. It MUST NOT implement, test, or mark the fix task done inline, and it MUST NOT leave uncommitted edits for that task in the worktree — phase-5-execute, re-entered by the `loop_back` this FIX raises, owns execution and commit. Per finding the return is **either** a not-done task **or** an inline edit without a task (Shape 2) — never a done task with an uncommitted change. Implementing the fix and marking its task done inline strands the change behind a done task and makes the `loop_back` a no-op — the re-entered execute phase finds nothing pending to drive, so the fix never reaches a commit on the branch.
 
   Allocate via the two-step prepare-add → commit-add flow:
@@ -194,7 +200,7 @@ The action body:
     --plan-id {plan_id}
   ```
 
-  Write the task YAML to the returned scratch path (title, deliverable: 0, domain matching the finding, profile: implementation, description quoting the finding, steps targeting `{finding.file_path}`), then:
+  Write the task YAML to the returned scratch path (title, `deliverable: 0` with `origin: fix` per the single FIX task shape above, domain matching the finding, profile: implementation, description quoting the finding, steps targeting `{finding.file_path}`), then:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks commit-add \
@@ -216,8 +222,10 @@ The action body:
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
     --plan-id {plan_id} --hash-id {finding.hash_id} --resolution fixed \
-    --detail "Addressed by an edit to {finding.file_path}; see follow-up commit on this branch"
+    --detail 'Addressed by an edit to {finding.file_path}; see follow-up commit on this branch'
   ```
+
+  `{finding.file_path}` is finding-derived text, so `--detail` is quoted per [§ Shell-safe free text in command templates](#shell-safe-free-text-in-command-templates).
 
   Triage does not commit the edit. In finalize it is committed, pushed and stamped by the hook that dispatched this triage, after this workflow returns `loop_back` (see [`phase-6-finalize/SKILL.md`](../../phase-6-finalize/SKILL.md) Step 3 item 7c). The reply waits for that stamp, exactly as in Shape 1. Under any other producer no hook follows this workflow: the reply is sent in the pass that follows triage, while the edit is in the worktree and not yet in a commit.
 

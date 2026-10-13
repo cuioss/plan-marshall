@@ -132,6 +132,7 @@ def cmd_read(args) -> dict:
             'description': task.get('description', ''),
             'steps': task.get('steps', []),
             'verification': task.get('verification', {}),
+            'envelope_id': task.get('envelope_id'),
         },
     }
 
@@ -187,18 +188,25 @@ def cmd_next(args) -> dict:
             next_task = task
             break
 
-    # If no in_progress, find first pending with satisfied deps
+    # If no in_progress, find pending tasks with satisfied deps. A runnable
+    # fix task (origin ``fix``) is returned ahead of the pending deliverable
+    # tasks whose verification it blocks: triage allocates the fix after
+    # packing, so number order alone would run it behind the deliverables it
+    # gates. Number order is preserved within each class.
     if not next_task:
+        runnable = []
         for _path, task in filtered_tasks:
             if task.get('status') == 'pending':
                 if deps_satisfied(task):
-                    next_task = task
-                    break
+                    runnable.append(task)
                 else:
                     waiting_for = [dep for dep in task.get('depends_on', []) if dep not in done_tasks]
                     blocked_tasks.append(
                         {'number': task['number'], 'title': task['title'], 'waiting_for': ', '.join(waiting_for)}
                     )
+        runnable.sort(key=lambda t: (0 if t.get('origin', 'plan') == 'fix' else 1, t['number']))
+        if runnable:
+            next_task = runnable[0]
 
     if not next_task:
         if blocked_tasks:

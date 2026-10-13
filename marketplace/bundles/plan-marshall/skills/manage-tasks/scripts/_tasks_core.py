@@ -86,6 +86,13 @@ class TaskDict(TypedDict, total=False):
 VALID_ORIGINS = VALID_TASK_ORIGINS
 VALID_FILE_EXTENSIONS = VALID_SOURCE_EXTENSIONS
 
+#: Origins that may own a task with ``deliverable == 0`` (no owning
+#: deliverable): holistic tasks, and the fix tasks triage allocates with
+#: ``deliverable: 0`` and ``origin: fix``. Every other origin — including the
+#: ``plan`` default an omitted origin resolves to — is refused with the
+#: missing-deliverable error.
+DELIVERABLE_ZERO_ORIGINS = frozenset({'holistic', 'fix'})
+
 
 # =============================================================================
 # Basic utilities
@@ -108,7 +115,7 @@ def slugify(title: str, max_length: int = 40) -> str:
 
 
 def validate_deliverable(deliverable_input) -> int:
-    """Validate deliverable number. 0 for holistic tasks, >= 1 for deliverable-linked tasks."""
+    """Validate deliverable number. 0 for holistic or triage-fix tasks, >= 1 for deliverable-linked tasks."""
     if deliverable_input is None:
         raise ValueError('Deliverable is required')
 
@@ -882,7 +889,7 @@ def _build_task_record(parsed: dict[str, Any], raw_items: dict[str, list[_RawLis
     if deliverable_raw is None or (isinstance(deliverable_raw, str) and not deliverable_raw.strip()):
         deliverable_raw = 0
     deliverable = validate_deliverable(deliverable_raw)
-    if deliverable == 0 and origin_raw != 'holistic':
+    if deliverable == 0 and origin_raw not in DELIVERABLE_ZERO_ORIGINS:
         raise ValueError('Missing required field: deliverable')
     if not domain_raw:
         raise ValueError('Missing required field: domain')

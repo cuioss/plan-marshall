@@ -1387,6 +1387,8 @@ The continue-vs-yield clause is therefore a trivial countable check, evaluated i
 
 The packing already encodes the budget decision, so the two short-circuits above are now informational rather than the budget mechanism. The clause runs once after each task completes — between `manage-tasks finalize-step` of the closing step (which fires the canonical `[OUTCOME]`) and the next `manage-tasks next` call. There is no intermediate decision point.
 
+A fix task allocated after packing carries its assigned envelope explicitly (at-creation assignment — the live envelope when the fix blocks pending tasks in it, otherwise a new trailing envelope), so the equality check above treats it exactly like a packed task: a fix assigned to this envelope continues in-dispatch (and `next` already returns it ahead of the envelope's remaining deliverable tasks via the fix-task-first ordering), while a fix in a trailing envelope yields through the group-exhausted path below.
+
 **Group-exhausted yield path** — when the envelope-group read decides to yield because the next pending task's `envelope_id` differs from the assigned group (and the queue is NOT empty), the executor MUST distinguish this legitimate plan-time-packed yield from a forbidden checkpoint by doing BOTH:
 
 1. **Log a `budget_yield` decision** naming the assigned `envelope_id`, the just-completed task, and the next task's differing `envelope_id`:

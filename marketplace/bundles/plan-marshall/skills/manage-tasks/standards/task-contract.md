@@ -291,6 +291,9 @@ Indicates what created the task:
 | `lint` | linting | Lint/format fix |
 | `security` | security scan | Security finding fix |
 | `documentation` | doc review | Documentation fix |
+| `holistic` | holistic review | Bundle-wide task with no owning deliverable (`deliverable: 0`) |
+
+A task with `deliverable: 0` carries no owning deliverable and is accepted only with `origin` `"holistic"` or `"fix"` — the fix-class origin triage writes with `deliverable: 0` (see the single FIX task shape in `plan-marshall:plan-marshall/workflow/triage.md`). Every other origin with `deliverable: 0`, including the `plan` default an omitted origin resolves to, is refused as a missing deliverable.
 
 ## Priority Field (Fix Tasks)
 
@@ -318,7 +321,7 @@ finding:
 
 ## Cost-Sizing Fields
 
-Three optional fields carry the plan-time cost prediction and envelope grouping used by the budget-bounded phase-5-execute task loop. They are stamped during phase-4-plan (`cost_size`, `predicted_cost_tokens`) and the bin-packing pass (`envelope_id`); they are absent on tasks created before sizing runs, and the `next` subcommand surfaces them as `null` in that case.
+Three optional fields carry the plan-time cost prediction and envelope grouping used by the budget-bounded phase-5-execute task loop. They are stamped at creation by `commit-add` (at-creation assignment, so a post-packing task reads back routable immediately) and refreshed during phase-4-plan (`cost_size`, `predicted_cost_tokens`) and the bin-packing pass (`envelope_id`); they are absent only on tasks created before sizing runs by a path that does not assign them (notably `batch-add`), and the `next` subcommand surfaces them as `null` in that case.
 
 ```toon
 cost_size: M
@@ -328,11 +331,11 @@ envelope_id: 2
 
 | Field | Type | Producer | Description |
 |-------|------|----------|-------------|
-| `cost_size` | string | phase-4-plan (`derive-cost-size`) | T-shirt label `S`/`M`/`L`/`XL` |
-| `predicted_cost_tokens` | integer | phase-4-plan (`derive-cost-size`) | Predicted token magnitude for the task |
-| `envelope_id` | integer | bin-packer (`pack-envelopes`) | Group identifier binding the task to one budget envelope |
+| `cost_size` | string | `commit-add` at creation, refreshed by phase-4-plan (`derive-cost-size`) | T-shirt label `S`/`M`/`L`/`XL` |
+| `predicted_cost_tokens` | integer | `commit-add` at creation, refreshed by phase-4-plan (`derive-cost-size`) | Predicted token magnitude for the task |
+| `envelope_id` | integer | `commit-add` at creation, refreshed by the bin-packer (`pack-envelopes`) | Group identifier binding the task to one budget envelope |
 
-**Write path.** `derive-cost-size` and `pack-envelopes` are pure compute verbs — they emit the derived values but never mutate a task record. The single persistence path for all three fields is the `update` subcommand's cost-field flags: `--cost-size`, `--predicted-cost-tokens`, and `--envelope-id`. phase-4-plan stamps `cost_size`/`predicted_cost_tokens` via `update --cost-size … --predicted-cost-tokens …` (Step 6) and stamps `envelope_id` via `update --envelope-id …` (Step 7a). Validation at the write boundary: `--cost-size` must be one of `S`/`M`/`L`/`XL`, `--predicted-cost-tokens` must be non-negative, and `--envelope-id` must be a positive (1-based) integer. The persisted values round-trip back out through the `next` subcommand.
+**Write path.** `commit-add` stamps all three fields at creation: it derives `cost_size`/`predicted_cost_tokens` from the task's own signals with the canonical size table and assigns `envelope_id` via the at-creation rule — the live (lowest unfinished stamped) envelope when one exists, otherwise a new trailing envelope with the manifest envelope count raised to cover it. `derive-cost-size` and `pack-envelopes` are pure compute verbs — they emit the derived values but never mutate a task record. The persistence path for their output is the `update` subcommand's cost-field flags: `--cost-size`, `--predicted-cost-tokens`, and `--envelope-id`. phase-4-plan stamps `cost_size`/`predicted_cost_tokens` via `update --cost-size … --predicted-cost-tokens …` (Step 6) and stamps `envelope_id` via `update --envelope-id …` (Step 7a). Validation at the write boundary: `--cost-size` must be one of `S`/`M`/`L`/`XL`, `--predicted-cost-tokens` must be non-negative, and `--envelope-id` must be a positive (1-based) integer. The persisted values round-trip back out through the `next` and `get` subcommands.
 
 The size label vocabulary, the signal weights, the score thresholds, and the size→token table are owned by the central rubric — see [`../../phase-4-plan/standards/cost-sizing.md`](../../phase-4-plan/standards/cost-sizing.md). This contract does not restate the size-to-token mapping table; it only declares the schema fields that carry the rubric's output.
 
@@ -499,7 +502,7 @@ TOON task definition consumed by `commit-add`. Field types:
 [
   {
     "title": "Implement CacheConfig",                 // string, required
-    "deliverable": 1,                                  // integer, required (0 only for holistic origin)
+    "deliverable": 1,                                  // integer, required (0 only with origin "holistic" or "fix")
     "domain": "java",                                  // string, required
     "profile": "implementation",                       // string, default "implementation"
     "origin": "plan",                                  // string, default "plan"
@@ -525,7 +528,7 @@ TOON task definition consumed by `commit-add`. Field types:
 | Field | Required | Notes |
 |-------|----------|-------|
 | `title` | Yes | Non-empty string |
-| `deliverable` | Yes | Non-negative integer; `0` only valid when `origin == "holistic"` |
+| `deliverable` | Yes | Non-negative integer; `0` only valid when `origin` is `"holistic"` (holistic tasks) or `"fix"` (triage fix tasks with no owning deliverable) |
 | `domain` | Yes | Non-empty string (validated against marshal.json at execution) |
 | `profile` | No (default `implementation`) | Step-path validation is skipped when `profile == "verification"` |
 | `origin` | No (default `plan`) | Must match the standard origin set (`plan`, `fix`, `sonar`, `pr`, `lint`, `security`, `documentation`, `holistic`) |
@@ -745,7 +748,7 @@ The verification block defines how to verify task completion:
 
 1. At least one step is required
 2. `current_step` must be within valid step range (1 to step_count)
-3. `deliverable` must be a positive integer
+3. `deliverable` must be a non-negative integer; `0` is accepted only with origin `holistic` or `fix`
 4. `skills` entries must follow `{bundle}:{skill}` format
 5. `domain` must be a valid domain value
 6. `profile` must be a valid profile value (implementation, module_testing, verification)

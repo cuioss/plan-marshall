@@ -67,7 +67,7 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 | `prepare-add` | `--plan-id [--slot]` | Allocate a scratch path under `<plan>/work/pending-tasks/` (Step 1 of add flow) |
 | `commit-add` | `--plan-id [--slot]` | Read the prepared TOON file, validate, create TASK-NNN.json, delete scratch (Step 3 of add flow) |
 | `batch-add` | `--plan-id (--tasks-file PATH \| --tasks-json JSON \| stdin)` | Atomically create N tasks from a JSON array. Preferred form is `--tasks-file PATH` pointing at a staged plan-relative file (e.g. `work/tasks-batch.json`); `--tasks-json` and stdin remain available for trivial payloads. The two flags are mutually exclusive. All-or-nothing semantics: if any entry fails validation, no `TASK-NNN.json` is written. |
-| `update` | `--plan-id --task-number [--title] [--description] [--depends-on] [--status] [--domain] [--profile] [--skills] [--deliverable] [--cost-size] [--predicted-cost-tokens] [--envelope-id]` | Update task metadata. The three cost-field flags are the sole write path for the T-shirt cost mechanism — they persist `cost_size` (`S`/`M`/`L`/`XL`), `predicted_cost_tokens` (non-negative int), and `envelope_id` (1-based positive int) onto the task record, mirroring the read shape surfaced by `next`. The `derive-cost-size` / `pack-envelopes` compute verbs stay pure; this verb is where their output lands on disk. |
+| `update` | `--plan-id --task-number [--title] [--description] [--depends-on] [--status] [--domain] [--profile] [--skills] [--deliverable] [--cost-size] [--predicted-cost-tokens] [--envelope-id]` | Update task metadata. The three cost-field flags are the refresh path for the T-shirt cost mechanism — they persist `cost_size` (`S`/`M`/`L`/`XL`), `predicted_cost_tokens` (non-negative int), and `envelope_id` (1-based positive int) onto the task record, mirroring the read shape surfaced by `next` and `get`. The `derive-cost-size` / `pack-envelopes` compute verbs stay pure; this verb is where their output lands on disk. `commit-add` stamps the same three fields at creation. |
 | `remove` | `--plan-id --task-number` | Remove a task |
 | `list` | `--plan-id [--status] [--deliverable] [--ready] [--domain] [--profile]` | List all tasks; `--domain` / `--profile` filter the result set |
 | `read` | `--plan-id --task-number` | Read single task details |
@@ -1195,6 +1195,8 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks commit-a
   --plan-id PLAN_ID [--slot SLOT]
 ```
 
+Every created task is assigned to an execution envelope at creation: it joins the current live envelope (the lowest envelope that still has `pending` / `in_progress` work — the envelope whose pending tasks the new task blocks), or opens a new trailing envelope one past the highest stamped id when no envelope is live, raising the manifest envelope count to cover it. The derived cost fields (`cost_size`, `predicted_cost_tokens`) are stamped alongside the `envelope_id` from the task's own signals, so a post-packing fix task reads back routable immediately. The returned `task` block carries all three fields plus an `envelope_assignment` block (`envelope_id`, `opens_trailing`, `manifest_updated`, `manifest_reason`).
+
 ### batch-add
 
 ```bash
@@ -1217,11 +1219,12 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks update \
   [--cost-size {S|M|L|XL}] [--predicted-cost-tokens N] [--envelope-id N]
 ```
 
-The `--cost-size` / `--predicted-cost-tokens` / `--envelope-id` flags are the **only**
+The `--cost-size` / `--predicted-cost-tokens` / `--envelope-id` flags are the refresh
 write path for the cost-sizing fields. The pure compute verbs `derive-cost-size` and
 `pack-envelopes` never mutate task records (their unit tests assert purity); their
-output is persisted onto the task record by this `update` verb. The persisted values
-round-trip back out through `next` (`cost_size`, `predicted_cost_tokens`, `envelope_id`).
+output is persisted onto the task record by this `update` verb. (`commit-add` stamps the
+same three fields at creation via the at-creation assignment rule.) The persisted values
+round-trip back out through `next` and `get` (`cost_size`, `predicted_cost_tokens`, `envelope_id`).
 Validation: `--cost-size` must be one of `S`/`M`/`L`/`XL`; `--predicted-cost-tokens` must be
 non-negative; `--envelope-id` must be a positive (1-based) integer. Each flag is independent —
 supply only the field(s) being written. phase-4-plan Step 6 calls this verb to stamp the
@@ -1256,6 +1259,8 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read \
   --plan-id PLAN_ID --task-number N
 ```
 
+`get` is an accepted alias for `read` (same handler). The returned `task` block carries the `envelope_id` stamped at creation (as `next` already surfaces it), so a task created through `commit-add` on a packed plan reads a non-null `envelope_id` back from `get`.
+
 ### exists
 
 ```bash
@@ -1271,7 +1276,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks next \
   [--include-context] [--ignore-deps]
 ```
 
-The `next` block surfaces three plan-time cost-sizing fields when they are present on the resolved task record — `cost_size` (T-shirt label `S`/`M`/`L`/`XL`), `predicted_cost_tokens` (predicted token magnitude), and `envelope_id` (bin-packer group identifier). They appear as `null` on tasks created before sizing ran. These fields are an integration surface only; the size label vocabulary, signal weights, and size→token mapping are owned by the central rubric — see [`../phase-4-plan/standards/cost-sizing.md`](../phase-4-plan/standards/cost-sizing.md) and the Cost-Sizing Fields section of [`standards/task-contract.md`](standards/task-contract.md). The phase-5-execute budget-bounded task loop consumes `envelope_id` to run only its assigned envelope group.
+The `next` block surfaces three plan-time cost-sizing fields when they are present on the resolved task record — `cost_size` (T-shirt label `S`/`M`/`L`/`XL`), `predicted_cost_tokens` (predicted token magnitude), and `envelope_id` (bin-packer group identifier). They appear as `null` only on tasks created by a path that does not assign them (notably `batch-add`, and tasks created before sizing ran). Among runnable pending tasks a fix task (`origin: fix`) is returned ahead of the pending deliverable tasks whose verification it blocks; number order is preserved within each class, and an `in_progress` task still preempts everything. These fields are an integration surface only; the size label vocabulary, signal weights, and size→token mapping are owned by the central rubric — see [`../phase-4-plan/standards/cost-sizing.md`](../phase-4-plan/standards/cost-sizing.md) and the Cost-Sizing Fields section of [`standards/task-contract.md`](standards/task-contract.md). The phase-5-execute budget-bounded task loop consumes `envelope_id` to run only its assigned envelope group.
 
 ### next-tasks
 

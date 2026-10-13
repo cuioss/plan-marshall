@@ -177,6 +177,8 @@ Inside that single envelope, for each task:
 
 The dispatch unit is the **execution envelope pre-computed at plan time** — neither per-task nor per-deliverable. phase-4-plan's bin-packer (`manage-tasks pack-envelopes`) grouped tasks into envelopes (in `depends_on` order, under `per_envelope_budget_tokens`), stamped each task with an `envelope_id`, and recorded `envelope_count` in the manifest. **The orchestrator drives exactly `envelope_count` phase-5-execute dispatches — one per envelope group — passing each its assigned `envelope_id`.** Each dispatched executor runs only the tasks whose `envelope_id` matches its group and yields at a TASK boundary when its group is exhausted (the next pending task belongs to a different envelope → `budget_yield`), or on `triage_required` / `baseline_drift`. The orchestrator re-dispatches the next envelope group to resume the loop until all tasks are done. There is no runtime cost-summing or budget read inside the envelope — the harness cannot self-measure mid-turn, so the continue-vs-yield decision was fully pre-computed at plan time and the executor only reads its `envelope_id` group.
 
+**At-creation envelope assignment is the one mechanism for tasks allocated after packing.** A triage fix task created mid-run via `prepare-add` → `commit-add` carries its `envelope_id` (and the derived cost fields) from creation: it joins the current live envelope when the fix blocks pending tasks in it, otherwise it opens a new trailing envelope with the manifest envelope count raised to cover it (see `plan-marshall:manage-tasks/standards/task-contract.md` § Cost-Sizing Fields). Every task therefore reads a non-null `envelope_id` back from `get` — a null-envelope dispatch is not defined as an alternative and no dispatch path handles one. When the fix opens a trailing envelope the orchestrator drives one more dispatch for it, exactly as for a packed group.
+
 **The dispatched leaf's verification slice is `per_task`-only.** Before running any whole-tree verification step, the leaf resolves that step's `execution_tier` (`per_task` | `orchestrator`) live via `architecture resolve`. It runs only `per_task`-tier steps inline; every `orchestrator`-tier step is OUTSIDE the leaf's runnable slice and is owned HERE by the main-context orchestrator through the [`await-long-running`](await-long-running.md) detach-and-notify seam — the only component permitted to background a build (see [`../../ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) § "Leaf cannot reap a backgrounded build"). The manifest's `phase_5.step_execution_tier` stamp (composed by `manage-execution-manifest`) records the same field at compose time and is **advisory**: it tells this orchestrator how many orchestrator-tier steps to expect, but because the tier derives from the adaptive learned build duration it drifts between compose and execute, so the leaf's live resolve is what routes. See § "Orchestrator-tier phase-5 verification (await-long-running)" below for the handler.
 
 ### After execution-context returns
@@ -288,6 +290,25 @@ guard in `manage-tasks finalize-step`.
 
 **Trigger**: the just-returned phase-5-execute dispatch carries `triage_required: true` in its terminal payload (the leaf detected a test-failure or lint-issue in Step 11 / Step 11b, persisted each finding to the per-plan Q-Gate store via `manage-findings qgate add`, and returned the signal instead of dispatching). The payload carries `producer` (always `build-runner`) and `finding_type` (`test-failure` or `lint-issue`). The leaf is a **leaf** — it cannot dispatch `verification-feedback` itself; the orchestrator owns that dispatch. See [`../../ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) for the canonical leaf/dispatch-topology contract.
 
+**Short-circuit guard — failures a pending fix task already owns (runs before any dispatch).** A repeated identical build failure re-files pending findings the previous triage already resolved `fixed` against a fix task that is still not done. Dispatching triage again would allocate a second fix task for the same failure. Before resolving the target below, run this deterministic ownership check against the failure store — the per-plan Q-Gate slice for the phase, where the leaf already persisted the failures (`manage-findings qgate add`); the guard reads that slice by reference and files no copy by hand:
+
+1. Read the pending set and the fixed set:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate list \
+     --plan-id {plan_id} --phase 5-execute --resolution pending
+   ```
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate list \
+     --plan-id {plan_id} --phase 5-execute --resolution fixed
+   ```
+
+2. For each pending finding, look for a fixed record with the identical failure identity — the same `(title, detail, file_path, rule)` tuple, mirroring the store's dedup key — that carries the structured task reference `fix_task_number` (never parsed out of the free-text `resolution_detail`). For each matched reference, read the owning task (`manage-tasks get --plan-id {plan_id} --task-number {N}`): the pending finding is owned when the owning task is still not done.
+3. Branch on the verdict:
+   - **All owned (`all-owned-by-TASK-N`)** — every pending finding is owned by a still-open fix task. SKIP the `verification-feedback` dispatch entirely: no second fix task is allocated for a failure a pending fix task already owns. Re-dispatch phase-5-execute instead, so the owning fix task is scheduled and runs. Log the decision naming the owning task.
+   - **New findings (`new-findings`)** — at least one pending finding differs (no identical owned match). Proceed to the handling procedure below and dispatch triage normally.
+
 **Handling procedure** (runs in the orchestrator's main context):
 
 1. **Resolve the verification-feedback target** via the role resolver, passing the dispatch context so the seam emits the standardized `[DISPATCH]` work-log line and its paired decision-log record itself — see [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract. Do NOT hand-write a separate `[DISPATCH]` line; each re-fire of this triage loop re-runs the resolve, so the record is re-emitted per firing:
@@ -325,7 +346,7 @@ guard in `manage-tasks finalize-step`.
 
 3. **Consume the triage return** to drive the branch:
 
-   - If `fix_tasks_created > 0` → increment `verify_iteration` in the verification task's metadata, reset the verification task to `pending`, and re-dispatch the execution-context (fix tasks execute before the re-queued verification task via `depends_on`).
+   - If `fix_tasks_created > 0` → increment `verify_iteration` in the verification task's metadata, reset the verification task to `pending`, and re-dispatch the execution-context (fix tasks execute before the re-queued verification task via `depends_on`, and before the remaining pending deliverable tasks via the fix-task-first `next` ordering).
    - If `fix_tasks_created == 0` AND `overflow_deferred == 0` → mark the verification task complete (all findings suppressed / accepted / `taken_into_account`); resume the normal post-return classification.
    - If `overflow_deferred > 0` → leave the verification task `pending`; re-fire this triage dispatch on the next phase-5-execute entry (the iteration cap is unchanged).
 

@@ -9,6 +9,8 @@ Its sections, in order:
 * Q-Gate Query Command
 """
 
+from argparse import Namespace
+
 from _manage_findings_fixtures import (
     SCRIPT_PATH,
     _qgate_add_ns,
@@ -18,7 +20,6 @@ from _manage_findings_fixtures import (
     cmd_qgate_query,
     cmd_qgate_resolve,
 )
-
 from conftest import run_script
 
 # Plan ids this module's tests file findings against — seeded by the autouse
@@ -34,6 +35,8 @@ PLAN_IDS = (
     'qgate-query-empty',
     'qgate-query-res',
     'qgate-query-src',
+    'qgate-short-owned',
+    'qgate-short-new',
 )
 
 # =============================================================================
@@ -356,3 +359,138 @@ def test_qgate_query_by_source(plan_context):
     )
     assert result['total_count'] == 2
     assert result['filtered_count'] == 1
+
+
+# =============================================================================
+# Test: Q-Gate short-circuit task reference (resolve fixed with task number)
+# =============================================================================
+
+
+def test_qgate_resolve_fixed_stores_structured_task_reference(plan_context):
+    """A repeated identical failure reopens owned: the pending record still names TASK-7."""
+    add_result = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-short-owned',
+            phase='5-execute',
+            source='qgate',
+            type='test-failure',
+            title='FAILED test_login',
+            detail='AssertionError: expected 200',
+            file_path='test/auth.py',
+        )
+    )
+    assert add_result['status'] == 'success'
+    hash_id = str(add_result['hash_id'])
+
+    resolve_result = cmd_qgate_resolve(
+        Namespace(
+            plan_id='qgate-short-owned',
+            phase='5-execute',
+            hash_id=hash_id,
+            resolution='fixed',
+            detail='Will be addressed by TASK-7; see follow-up commit on this branch',
+            task_number=7,
+        )
+    )
+    assert resolve_result['status'] == 'success'
+    assert resolve_result['fix_task_number'] == 7
+
+    # A repeated identical failure reopens the owned record back to pending.
+    reopen_result = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-short-owned',
+            phase='5-execute',
+            source='qgate',
+            type='test-failure',
+            title='FAILED test_login',
+            detail='AssertionError: expected 200',
+            file_path='test/auth.py',
+        )
+    )
+    assert reopen_result['status'] == 'reopened'
+
+    # The short-circuit read-back: the pending record still names its owner,
+    # so the verdict is all-owned-by-TASK-7 and no second fix task is allocated.
+    pending = cmd_qgate_query(
+        _qgate_query_ns(
+            plan_id='qgate-short-owned',
+            phase='5-execute',
+            resolution='pending',
+        )
+    )
+    assert pending['filtered_count'] == 1
+    assert pending['findings'][0]['fix_task_number'] == 7
+
+
+def test_qgate_short_circuit_new_findings_when_one_differs(plan_context):
+    """A pending finding with no identical owned match is new: the dispatch proceeds."""
+    owned_add = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-short-new',
+            phase='5-execute',
+            source='qgate',
+            type='test-failure',
+            title='FAILED test_login',
+            detail='AssertionError: expected 200',
+            file_path='test/auth.py',
+        )
+    )
+    cmd_qgate_resolve(
+        Namespace(
+            plan_id='qgate-short-new',
+            phase='5-execute',
+            hash_id=str(owned_add['hash_id']),
+            resolution='fixed',
+            detail='Will be addressed by TASK-7; see follow-up commit on this branch',
+            task_number=7,
+        )
+    )
+    cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-short-new',
+            phase='5-execute',
+            source='qgate',
+            type='test-failure',
+            title='FAILED test_logout',
+            detail='AssertionError: expected 200',
+            file_path='test/auth.py',
+        )
+    )
+
+    pending = cmd_qgate_query(
+        _qgate_query_ns(
+            plan_id='qgate-short-new',
+            phase='5-execute',
+            resolution='pending',
+        )
+    )
+    assert pending['filtered_count'] == 1
+    # The differing finding carries no structured owner: verdict new-findings.
+    assert pending['findings'][0].get('fix_task_number') is None
+
+
+def test_qgate_resolve_task_number_requires_fixed(plan_context):
+    """A task number with any other resolution is refused and writes nothing."""
+    add_result = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-short-new',
+            phase='5-execute',
+            source='qgate',
+            type='test-failure',
+            title='FAILED test_checkout',
+            detail='Timeout after 30s',
+        )
+    )
+
+    bad = cmd_qgate_resolve(
+        Namespace(
+            plan_id='qgate-short-new',
+            phase='5-execute',
+            hash_id=str(add_result['hash_id']),
+            resolution='accepted',
+            detail='Accepted with task',
+            task_number=7,
+        )
+    )
+    assert bad['status'] == 'error'
+    assert bad['error'] == 'fix_task_number_requires_fixed'
