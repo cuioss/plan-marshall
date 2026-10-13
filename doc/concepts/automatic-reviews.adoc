@@ -5,7 +5,7 @@
 
 xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
 
-Stock review processes ask the LLM to remember every comment, every Sonar issue, every CI failure on its way to merge. That memory is unreliable. Plan Marshall does not lean on it: every quality signal — a Q-Gate finding on the outline, a build error, a CI check that turned red, a Sonar issue, a PR review comment — becomes a row in one append-only store, is resolved through a documented resolution path, and ends in one of four documented resolutions. The next phase boundary actually reads the store before it advances.
+Stock review processes ask the LLM to remember every comment, every Sonar issue, every CI failure on its way to merge. That memory is unreliable. Plan Marshall does not lean on it: every filed finding — a Q-Gate finding on the outline, a build error, a CI check that turned red, a Sonar issue, a PR review comment — becomes a row in one append-only store, is resolved through a documented resolution path, and ends in one of four documented resolutions. The next phase boundary actually reads the store before it advances.
 
 == One mechanism, many producers
 
