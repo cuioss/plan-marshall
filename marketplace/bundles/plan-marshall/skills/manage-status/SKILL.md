@@ -1218,6 +1218,25 @@ A legitimately artifact-free phase uses the explicit exemption form
 decision-logged for retrospectives. An exemption without a reason is refused
 with `missing_exempt_reason`.
 
+**5-execute end-marker post-condition.** Completing `5-execute` additionally
+requires every worktree-branch commit since the branch diverged from its base
+to carry a `kind=change` change-ledger row (the Step 10a settlement
+bookkeeping). The clean-tree guard only reads *uncommitted* state, so a
+committed-but-unrecorded deliverable commit is the silent skip it cannot see —
+this gate closes it. The divergence base is `references.json:base_branch`
+(`main` when absent); an unreadable `references.json`, an unestablishable
+commit range, an empty range, or full coverage all pass (each is a distinct
+unevaluable state, never a clean verdict over an examined store). Refusals are
+fail-closed with errors `phase_end_markers_missing` (the marker store could
+not be read, or holds zero rows while branch commits exist — `recorded_count`
+names which; the unreadable-store shape carries NO `unrecorded_commits` key)
+and `execute_commits_unrecorded` (both sides read, named commits lack rows,
+enumerated in `unrecorded_commits`). Both are members of
+`VERIFY_REFUSAL_ERRORS`, so both block the transition and drive the CLI exit-1
+wrapper. The single source of truth is `_phase_end_marker_refusal` in
+`scripts/_cmd_lifecycle.py` — the refusal codes, payload shapes, and
+pass-through conditions are stated there and not restated here.
+
 #### Refusal surface
 
 No refusal advances the plan: `current_phase` is unchanged and the payload carries **no `mailbox` block**. Two exit codes carry refusals, so a caller branches on `status`, never on the exit code alone:
@@ -1232,6 +1251,8 @@ No refusal advances the plan: `current_phase` is unchanged and the payload carri
 | `error: refine_bare_transition` / `outline_bare_transition` / `plan_bare_transition` | 0 | The phase-completion artifact gate above refused a bare transition. |
 | `error: missing_exempt_reason` | 0 | `--allow-bare-transition` was passed without a `--bare-reason`. |
 | `error: blocking_findings_present` | 0 | Completing `6-finalize` while an actionable finding is still pending. |
+| `error: phase_end_markers_missing` | 1 | Completing `5-execute` while the end-marker store cannot prove recording — either the change-ledger marker store could not be read at all (no `unrecorded_commits` key: nothing was enumerated), or the store holds zero `kind=change` rows while worktree-branch commits exist (the Step 10a bookkeeping never ran). |
+| `error: execute_commits_unrecorded` | 1 | Completing `5-execute` after both sides were read and named worktree-branch commits carry no `kind=change` ledger row, enumerated in `unrecorded_commits` with `recorded_count` / `branch_commit_count`. |
 
 A caller that reads only the exit code sees the exit-0 refusals as success; a caller that reads only an `error` key misses `status: drift`. The [refused-transition halt rule](../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule) is the single statement of what every caller does with any non-`success` result.
 

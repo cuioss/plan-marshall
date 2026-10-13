@@ -21,6 +21,7 @@ legitimately artifact-free phases. Pins:
 
 import json
 from argparse import Namespace
+from typing import Any
 
 from _manage_status_transition_fixtures import cmd_create, cmd_transition, cmd_update_phase
 
@@ -28,6 +29,8 @@ from conftest import load_script_module
 
 _query = load_script_module('plan-marshall', 'manage-status', '_status_query.py', '_status_query_gates')
 cmd_set_phase = _query.cmd_set_phase
+
+_lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_status_cmd_lifecycle_gates')
 
 
 def _seed_at_phase(plan_id: str, phase: str) -> None:
@@ -179,3 +182,129 @@ def test_4_plan_rejects_manifest_directory(plan_context):
     result = cmd_transition(Namespace(plan_id=plan_id, completed='4-plan'))
     assert result['status'] == 'error'
     assert result['error'] == 'plan_bare_transition'
+
+
+# =============================================================================
+# D2 — 5-execute end-marker refusal codes pin the boundary contract.
+#
+# The artifact gates above refuse bare planning-phase transitions at exit 0;
+# the end-marker pair refuses the guarded 5-execute boundary at exit 1. These
+# pins hold the pair to the same disciplines: membership in
+# VERIFY_REFUSAL_ERRORS (the CLI exit-1 lockstep), a pass-through for plans
+# with no worktree in play (no positive evidence, no refusal), and a payload
+# that distinguishes wholly-missing from partially-unrecorded markers.
+# =============================================================================
+
+
+def test_end_marker_codes_are_verify_refusals():
+    """Both D2 codes block via verify_blocks_transition (exit-1 class, not exit-0)."""
+    for code in ('phase_end_markers_missing', 'execute_commits_unrecorded'):
+        assert code in _lifecycle.VERIFY_REFUSAL_ERRORS, (
+            f'{code} must be a VERIFY_REFUSAL_ERRORS member, or the end-marker guard fails open for it.'
+        )
+        assert _lifecycle.verify_blocks_transition({'status': 'error', 'error': code}) is True
+
+
+def test_end_marker_gate_passes_without_a_worktree():
+    """No worktree in play means no positive evidence — the gate passes."""
+    assert _lifecycle._phase_end_marker_refusal('any-plan', {}) is None
+    assert _lifecycle._phase_end_marker_refusal('any-plan', {'metadata': {'use_worktree': False}}) is None
+    assert (
+        _lifecycle._phase_end_marker_refusal(
+            'any-plan', {'metadata': {'use_worktree': True, 'worktree_path': ''}}
+        )
+        is None
+    )
+
+
+# =============================================================================
+# D2 — end-marker pass-through branches (TASK-4).
+#
+# _phase_end_marker_refusal passes (None) on every unevaluable state, and each
+# pass-through is a distinct shape the gate must not confuse with a clean
+# verdict: a missing references.json (legacy plans predate the base-branch
+# record), a non-string base_branch, an unestablishable commit range, and an
+# empty range. Refusing on any of them would block a transition over a range
+# nobody computed. The must-not-run stubs prove the gate returns BEFORE
+# touching the seam each branch skips — the pass-through is structural, not
+# an accident of stubbed-empty data.
+# =============================================================================
+
+
+def _seed_worktree_status(plan_context, plan_id: str) -> dict:
+    """Create a plan through the production create verb and inject worktree metadata."""
+    cmd_create(
+        Namespace(
+            plan_id=plan_id,
+            title='End Marker Pass-Through Test',
+            phases='1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
+            force=False,
+        )
+    )
+    status: dict[str, Any] = json.loads((plan_context.plan_dir_for(plan_id) / 'status.json').read_text(encoding='utf-8'))
+    status['metadata'] = {'use_worktree': True, 'worktree_path': '/tmp/any-worktree'}
+    return status
+
+
+def test_end_marker_gate_passes_without_references_file(plan_context, monkeypatch):
+    """A plan with no references.json carries no divergence base — the gate passes."""
+    plan_id = 'end-marker-no-refs'
+    status = _seed_worktree_status(plan_context, plan_id)
+    (plan_context.plan_dir_for(plan_id) / 'references.json').unlink(missing_ok=True)
+
+    def _must_not_run(_p, _b):
+        raise AssertionError('the commit range must not be computed without a divergence base')
+
+    monkeypatch.setattr(_lifecycle, '_branch_commit_shas', _must_not_run)
+
+    assert _lifecycle._phase_end_marker_refusal(plan_id, status) is None
+
+
+def test_end_marker_gate_passes_on_non_string_base_branch(plan_context, monkeypatch):
+    """A non-string base_branch is no base at all — the gate passes."""
+    plan_id = 'end-marker-bad-base'
+    status = _seed_worktree_status(plan_context, plan_id)
+    (plan_context.plan_dir_for(plan_id) / 'references.json').write_text(
+        json.dumps({'base_branch': 123}), encoding='utf-8'
+    )
+
+    def _must_not_run(_p, _b):
+        raise AssertionError('the commit range must not be computed off a non-string base')
+
+    monkeypatch.setattr(_lifecycle, '_branch_commit_shas', _must_not_run)
+
+    assert _lifecycle._phase_end_marker_refusal(plan_id, status) is None
+
+
+def test_end_marker_gate_passes_when_commit_range_unestablishable(plan_context, monkeypatch):
+    """An unestablished range is not evidence of unrecorded work — the gate passes."""
+    plan_id = 'end-marker-no-range'
+    status = _seed_worktree_status(plan_context, plan_id)
+    (plan_context.plan_dir_for(plan_id) / 'references.json').write_text(
+        json.dumps({'base_branch': 'main'}), encoding='utf-8'
+    )
+    monkeypatch.setattr(_lifecycle, '_branch_commit_shas', lambda _p, _b: None)
+
+    def _must_not_run():
+        raise AssertionError('the ledger must not be read when no range was established')
+
+    monkeypatch.setattr(_lifecycle, '_recorded_change_shas', _must_not_run)
+
+    assert _lifecycle._phase_end_marker_refusal(plan_id, status) is None
+
+
+def test_end_marker_gate_passes_on_empty_branch_range(plan_context, monkeypatch):
+    """Zero branch commits means zero unrecorded work — the gate passes unread."""
+    plan_id = 'end-marker-empty-range'
+    status = _seed_worktree_status(plan_context, plan_id)
+    (plan_context.plan_dir_for(plan_id) / 'references.json').write_text(
+        json.dumps({'base_branch': 'main'}), encoding='utf-8'
+    )
+    monkeypatch.setattr(_lifecycle, '_branch_commit_shas', lambda _p, _b: [])
+
+    def _must_not_run():
+        raise AssertionError('the ledger must not be read for an empty range')
+
+    monkeypatch.setattr(_lifecycle, '_recorded_change_shas', _must_not_run)
+
+    assert _lifecycle._phase_end_marker_refusal(plan_id, status) is None

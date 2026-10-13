@@ -40,6 +40,9 @@ from _manage_status_archive_unexaminable_phases_fixtures import (
 )
 from _manage_status_main_dispatch_fixtures import _PHASES, _parse, _run
 from _manage_status_transition_fixtures import cmd_create, cmd_transition
+from conftest import load_script_module
+
+_lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_status_cmd_lifecycle_shape')
 
 #: The malformed-shape names, bound once. Guarded at module level — an assertion
 #: inside the parametrized test body never runs when the set is empty. The
@@ -131,3 +134,38 @@ def test_the_cli_reports_the_refusal_as_toon_at_exit_zero(plan_context, monkeypa
     data = _parse(out)
     assert data['status'] == 'error', f'stdout must carry the refusal, got {out!r}'
     assert data['error'] == 'phases_unexaminable', f'stdout must carry the refusal code, got {out!r}'
+
+
+def test_end_marker_codes_ride_the_exit_1_boundary_path():
+    """D2 end-marker refusals are blocking-boundary refusals, not operation refusals.
+
+    ``phases_unexaminable`` above is an operation refusal (exit 0: loud via its
+    code on stdout). The D2 pair (``phase_end_markers_missing``,
+    ``execute_commits_unrecorded``) refuses the guarded 5-execute boundary, so
+    each must be a ``VERIFY_REFUSAL_ERRORS`` member driving the CLI exit-1
+    wrapper — the opposite exit class from the shape refusal this module pins.
+    """
+    for code in ('phase_end_markers_missing', 'execute_commits_unrecorded'):
+        assert code in _lifecycle.VERIFY_REFUSAL_ERRORS, (
+            f'{code} must be a VERIFY_REFUSAL_ERRORS member riding the exit-1 boundary path, '
+            'not the exit-0 operation-refusal path this module pins for phases_unexaminable.'
+        )
+        assert code != 'phases_unexaminable'
+        assert _lifecycle.verify_blocks_transition({'status': 'error', 'error': code}) is True
+
+
+def test_operation_refusals_stay_outside_verify_refusal_errors():
+    """``phases_unexaminable`` is an operation refusal (exit 0), not a boundary refusal.
+
+    The CLI arm above proves the exit class end-to-end; this pins the
+    mechanism — the code is absent from VERIFY_REFUSAL_ERRORS, so
+    ``verify_blocks_transition`` stays False for it and the exit-1 wrapper
+    never fires. Adding it there (or dropping a D2 code from there) would move
+    a refusal across exit classes without touching the test that proves the
+    class.
+    """
+    assert 'phases_unexaminable' not in _lifecycle.VERIFY_REFUSAL_ERRORS, (
+        'phases_unexaminable must stay an exit-0 operation refusal — membership '
+        'would route it through the CLI exit-1 wrapper.'
+    )
+    assert _lifecycle.verify_blocks_transition({'status': 'error', 'error': 'phases_unexaminable'}) is False
