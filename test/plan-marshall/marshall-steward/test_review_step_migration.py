@@ -317,6 +317,9 @@ def test_an_unknown_non_empty_lane_is_dropped_and_carried_to_neither_successor()
     assert report['dropped_params'] == ['lane="everything"']
 
 
+assert VALID_LANE_OVERRIDE, 'the supported lane set is empty, so the control below would run no case'
+
+
 @pytest.mark.parametrize('lane', VALID_LANE_OVERRIDE)
 def test_every_supported_lane_is_carried_and_not_dropped(lane):
     """Control for the test above: each member of the supported set reaches both successors."""
