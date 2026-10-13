@@ -584,6 +584,7 @@ _CODE_REVIEW_STEP_ID = 'default:code-review'
 #: The successors, in the order they replace the retired entry.
 _REVIEW_SUCCESSOR_STEP_IDS = (_FUNCTIONAL_REVIEW_STEP_ID, _CODE_REVIEW_STEP_ID)
 _LANE_KEY = 'lane'
+_LANE_OFF = 'off'
 # SHIM(A): the retired structural self-review step and its settings (replaced by the functional and the code review).
 # shim-owner: marshall-steward
 # shim-floor: the split of the pre-submission self-review into default:functional-review and default:code-review, each switched by its own lane
@@ -593,6 +594,7 @@ _LEGACY_SELF_REVIEW_KEY = 'self_review'
 #: A legacy step-owned self_review run-at-all value onto a successor lane; ``auto``
 #: maps to no lane, which leaves the carried lane in force.
 _LEGACY_SELF_REVIEW_TO_LANE = {'never': 'off', 'always': 'minimal'}
+_LEGACY_SELF_REVIEW_AUTO = 'auto'
 
 
 def _bare_step_id(step_id: str) -> str:
@@ -602,24 +604,84 @@ def _bare_step_id(step_id: str) -> str:
 def _carried_review_params(legacy: object) -> tuple[dict, list[str]]:
     """Split the retired entry's params into what both successors inherit and what is dropped.
 
-    The entry's ``lane`` is carried. A legacy ``self_review`` run-at-all value is
-    the same setting in its retired spelling, so ``never`` / ``always`` replace the
-    carried lane with ``off`` / ``minimal``; ``auto`` (or anything else) adds no
-    lane. Every other param — ``drop_review_on_scope_gate`` among them — has no
-    successor and is reported as dropped, ``key=value``.
+    The entry's ``lane`` is carried when it is a supported lane override — a
+    member of ``VALID_LANE_OVERRIDE`` in ``manage-config``'s ``_config_defaults``,
+    the set a successor's stored lane is validated against. A legacy
+    ``self_review`` run-at-all value is the same setting in its retired spelling,
+    so ``never`` / ``always`` map to ``off`` / ``minimal``; ``auto`` adds no lane.
+    When the two disagree, the rule :func:`_merged_review_params` applies across
+    entries holds inside one entry too: ``off`` wins, otherwise the mapped
+    ``self_review`` value wins, and the losing setting is reported as dropped. A
+    ``lane`` outside the supported set — an unknown string, an empty one, or a
+    non-string — a ``self_review`` value other than ``never`` / ``always`` /
+    ``auto``, and every other param — ``drop_review_on_scope_gate`` among them —
+    have no successor and are reported as dropped, ``key=value``.
     """
+    from _config_defaults import VALID_LANE_OVERRIDE
+
     params = legacy if isinstance(legacy, dict) else {}
     carried: dict = {}
+    dropped: list[str] = []
     lane = params.get(_LANE_KEY)
-    if isinstance(lane, str) and lane:
+    if isinstance(lane, str) and lane in VALID_LANE_OVERRIDE:
         carried[_LANE_KEY] = lane
+    elif _LANE_KEY in params:
+        dropped.append(f'{_LANE_KEY}={json.dumps(lane)}')
     legacy_gate = params.get(_LEGACY_SELF_REVIEW_KEY)
     mapped = _LEGACY_SELF_REVIEW_TO_LANE.get(legacy_gate) if isinstance(legacy_gate, str) else None
+    if mapped is None and _LEGACY_SELF_REVIEW_KEY in params and legacy_gate != _LEGACY_SELF_REVIEW_AUTO:
+        dropped.append(f'{_LEGACY_SELF_REVIEW_KEY}={json.dumps(legacy_gate)}')
     if mapped is not None:
-        carried[_LANE_KEY] = mapped
-    dropped = [
+        current = carried.get(_LANE_KEY)
+        if current is None or current == mapped:
+            carried[_LANE_KEY] = mapped
+        elif current == _LANE_OFF:
+            dropped.append(f'{_LEGACY_SELF_REVIEW_KEY}={json.dumps(legacy_gate)}')
+        else:
+            carried[_LANE_KEY] = mapped
+            dropped.append(f'{_LANE_KEY}={json.dumps(current)}')
+    dropped.extend(
         f'{key}={json.dumps(value)}' for key, value in params.items() if key not in (_LANE_KEY, _LEGACY_SELF_REVIEW_KEY)
-    ]
+    )
+    return carried, dropped
+
+
+def _merged_review_params(entries: list[object]) -> tuple[dict, list[str]]:
+    """Merge the carried and dropped params of every retired entry, in key order.
+
+    A config may name the retired step in both spellings; no entry's setting is
+    discarded silently. Each entry's params are derived by
+    :func:`_carried_review_params` and their dropped params united, each listed
+    once. When the entries carry different lanes, ``off`` wins — an operator who
+    switched the review off in either spelling keeps it off — and otherwise the
+    first entry's lane wins; every losing lane is reported in ``dropped_params``.
+    """
+    carried: dict = {}
+    dropped: list[str] = []
+
+    def _drop(item: str) -> None:
+        if item not in dropped:
+            dropped.append(item)
+
+    for entry in entries:
+        params, entry_dropped = _carried_review_params(entry)
+        for item in entry_dropped:
+            _drop(item)
+        lane = params.get(_LANE_KEY)
+        current = carried.get(_LANE_KEY)
+        if lane is None or lane == current:
+            continue
+        if current is None:
+            carried[_LANE_KEY] = lane
+            continue
+        winner, loser = (lane, current) if lane == _LANE_OFF else (current, lane)
+        carried[_LANE_KEY] = winner
+        _drop(f'{_LANE_KEY}={json.dumps(loser)}')
+    # A lane one entry lost may be the lane another entry carried to the win; the
+    # winning value is carried, so it is never also reported as dropped.
+    if _LANE_KEY in carried:
+        kept = f'{_LANE_KEY}={json.dumps(carried[_LANE_KEY])}'
+        dropped = [item for item in dropped if item != kept]
     return carried, dropped
 
 
@@ -632,7 +694,8 @@ def migrate_review_steps(section: dict) -> dict:
     In the ``steps`` map, every key naming the retired step (its ``default:`` or
     bare form) is removed, and the two successors are inserted at the position of
     the first one, functional review first. Both inherit the params
-    :func:`_carried_review_params` derives. A successor the operator already
+    :func:`_merged_review_params` derives from every retired entry — both
+    spellings, when both are present. A successor the operator already
     configured is not inserted again: ITS ENTRY WINS, untouched, wherever it sits.
 
     In the operator ``removed_steps`` list, a retired id is replaced by both
@@ -645,8 +708,10 @@ def migrate_review_steps(section: dict) -> dict:
     Returns:
         A report dict: ``state`` (``migrated`` or ``noop``), and on ``migrated``
         the ``replaced`` legacy keys, the ``added`` successors, the successors
-        ``kept`` as the operator configured them, the ``carried`` params, the
-        ``dropped_params`` and whether ``removed_steps_rewritten``.
+        ``kept`` as the operator configured them, and whether
+        ``removed_steps_rewritten``. The ``carried`` params and the
+        ``dropped_params`` are present only when a retired step entry was
+        replaced, not when only ``removed_steps`` named a retired id.
     """
     from _config_defaults import OPERATOR_REMOVED_STEPS_KEY
 
@@ -661,7 +726,7 @@ def migrate_review_steps(section: dict) -> dict:
 
     report: dict = {'state': 'migrated', 'replaced': legacy_keys, 'added': [], 'kept': []}
     if legacy_keys:
-        carried, dropped = _carried_review_params(steps[legacy_keys[0]])
+        carried, dropped = _merged_review_params([steps[key] for key in legacy_keys])
         present = {_bare_step_id(key) for key in steps}
         rebuilt: dict = {}
         for key, value in steps.items():
@@ -675,8 +740,13 @@ def migrate_review_steps(section: dict) -> dict:
                 continue
             rebuilt[key] = value
         report['kept'] = [s for s in _REVIEW_SUCCESSOR_STEP_IDS if s not in report['added']]
-        # Only an inserted successor inherits anything; a kept one keeps its own params.
+        # Only an inserted successor inherits anything; a kept one keeps its own params,
+        # so with no successor inserted the retired entry's carried settings are dropped.
         report['carried'] = [f'{key}={value}' for key, value in carried.items()] if report['added'] else []
+        if not report['added']:
+            for item in (f'{key}={json.dumps(value)}' for key, value in carried.items()):
+                if item not in dropped:
+                    dropped.append(item)
         report['dropped_params'] = dropped
         section['steps'] = rebuilt
 

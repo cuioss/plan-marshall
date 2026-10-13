@@ -239,7 +239,7 @@ def test_commit_and_push_false_with_recipe_still_drops_commit_push(plan_context)
 
 
 def test_commit_and_push_false_with_prefixed_input_drops_commit_push_and_pre_push(plan_context):
-    """Regression — _apply_commit_push_disabled drops both gates with prefixed input.
+    """Regression — _apply_commit_push_disabled drops the push and every pre-push gate with prefixed input.
 
     ``_apply_commit_push_disabled`` compares candidate entries against its
     bare-name drop set (``push`` plus the pre-push gates).
@@ -251,8 +251,8 @@ def test_commit_and_push_false_with_prefixed_input_drops_commit_push_and_pre_pus
     once at intake, so ``_apply_commit_push_disabled`` sees bare strings
     and the membership check works regardless of how the caller spelled the
     candidate IDs. This test feeds a fully prefixed candidate list to
-    ``cmd_compose`` with ``commit_and_push=false`` and asserts both gate steps
-    are dropped and the manifest output is bare.
+    ``cmd_compose`` with ``commit_and_push=false`` and asserts the push and the
+    three pre-push gate steps are dropped and the manifest output is bare.
     """
     prefixed = [
         'default:functional-review',
@@ -290,9 +290,9 @@ def test_commit_and_push_false_with_prefixed_input_drops_commit_push_and_pre_pus
     assert manifest is not None
     steps = manifest['phase_6']['steps']
 
-    # Both gate steps are dropped (the latent bug — they would have
-    # survived as `default:push` / `default:pre-push-quality-gate`
-    # before the boundary normalization landed).
+    # All four steps the pre-filter drops are absent from the manifest —
+    # push, pre-push-quality-gate and the two reviews — none of them
+    # surviving under its `default:`-prefixed id.
     assert 'push' not in steps
     assert 'pre-push-quality-gate' not in steps
     assert 'functional-review' not in steps

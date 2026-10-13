@@ -10,8 +10,10 @@ here is a migration INPUT, never a live step id or a live gate key.
 
 The fixtures are exhaustive over the input shapes the request names: the retired
 entry with a lane and a retired param, with ``lane: minimal``, with ``lane: off``,
-with a legacy ``self_review`` run-at-all value, absent, already migrated, beside a
-successor the operator already configured, and named only in ``removed_steps``.
+with a lane outside the supported set, with a legacy ``self_review`` run-at-all
+value, in both spellings at once, absent,
+already migrated, beside a successor the operator already configured, and named
+only in ``removed_steps``.
 Exactly two of them — the absent and the already-migrated configuration — are
 no-ops; every other one reports a migration.
 
@@ -31,7 +33,7 @@ from pathlib import Path
 import _manifest_rules
 import pytest
 import upgrade
-from _config_defaults import OPERATOR_REMOVED_STEPS_KEY
+from _config_defaults import OPERATOR_REMOVED_STEPS_KEY, VALID_LANE_OVERRIDE
 from toon_parser import parse_toon
 
 _LEGACY = 'default:pre-submission-self-review'
@@ -67,7 +69,7 @@ def test_the_two_settings_are_owned_by_the_two_successors():
 
 
 # =============================================================================
-# The eight input shapes
+# The input shapes
 # =============================================================================
 
 
@@ -116,7 +118,50 @@ def test_legacy_self_review_never_turns_both_settings_off():
     assert report['state'] == 'migrated'
     assert section['steps'] == {_FUNCTIONAL: {'lane': 'off'}, _CODE: {'lane': 'off'}}
     assert {gate: _resolved_setting(section, gate) for gate in _SETTINGS} == dict.fromkeys(_SETTINGS, 'never')
-    assert report['dropped_params'] == [], 'self_review is mapped, never reported as dropped'
+    assert report['dropped_params'] == ['lane="standard"'], 'the overridden lane is reported, never lost silently'
+
+
+def test_legacy_self_review_agreeing_with_the_lane_reports_nothing():
+    """Control for the test above: a self_review value mapping to the entry's own lane drops nothing."""
+    section = _section({_LEGACY: {'self_review': 'never', 'lane': 'off'}})
+
+    report = upgrade.migrate_review_steps(section)
+
+    assert section['steps'] == {_FUNCTIONAL: {'lane': 'off'}, _CODE: {'lane': 'off'}}
+    assert report['dropped_params'] == []
+
+
+def test_lane_off_wins_over_a_legacy_self_review_always_in_one_entry():
+    """``off`` wins inside one entry as it does across entries; the losing self_review is reported."""
+    section = _section({_LEGACY: {'lane': 'off', 'self_review': 'always'}})
+
+    report = upgrade.migrate_review_steps(section)
+
+    assert section['steps'] == {_FUNCTIONAL: {'lane': 'off'}, _CODE: {'lane': 'off'}}
+    assert {gate: _resolved_setting(section, gate) for gate in _SETTINGS} == dict.fromkeys(_SETTINGS, 'never')
+    assert report['dropped_params'] == ['self_review="always"']
+
+
+def test_lane_off_in_one_spelling_survives_a_legacy_always_beside_it():
+    """The reported failure shape: an entry's off lane must not lose to its own self_review: always."""
+    section = _section(
+        {_LEGACY: {'lane': 'off', 'self_review': 'always'}, _LEGACY_BARE: {'lane': 'standard'}},
+    )
+
+    report = upgrade.migrate_review_steps(section)
+
+    assert section['steps'] == {_FUNCTIONAL: {'lane': 'off'}, _CODE: {'lane': 'off'}}
+    assert sorted(report['dropped_params']) == ['lane="standard"', 'self_review="always"']
+
+
+def test_legacy_self_review_always_replaces_a_non_off_lane_and_reports_it():
+    """Away from ``off`` the mapped self_review value wins, and the lane it replaced is reported."""
+    section = _section({_LEGACY: {'lane': 'standard', 'self_review': 'always'}})
+
+    report = upgrade.migrate_review_steps(section)
+
+    assert section['steps'] == {_FUNCTIONAL: {'lane': 'minimal'}, _CODE: {'lane': 'minimal'}}
+    assert report['dropped_params'] == ['lane="standard"']
 
 
 def test_legacy_self_review_auto_leaves_the_carried_lane_in_force():
@@ -137,6 +182,36 @@ def test_retired_entry_with_lane_off_turns_both_settings_off():
     assert report['replaced'] == [_LEGACY_BARE]
     assert section['steps'] == {_FUNCTIONAL: {'lane': 'off'}, _CODE: {'lane': 'off'}}
     assert {gate: _resolved_setting(section, gate) for gate in _SETTINGS} == dict.fromkeys(_SETTINGS, 'never')
+
+
+@pytest.mark.parametrize(
+    'steps',
+    [
+        {_LEGACY: {'lane': 'standard', 'drop_review_on_scope_gate': True}, _LEGACY_BARE: {'lane': 'off'}},
+        {_LEGACY_BARE: {'lane': 'off'}, _LEGACY: {'lane': 'standard', 'drop_review_on_scope_gate': True}},
+    ],
+    ids=['off-on-second-key', 'off-on-first-key'],
+)
+def test_both_retired_spellings_merge_and_an_off_lane_on_either_wins(steps):
+    """No retired entry's setting is lost: ``off`` wins, the losing lane and every other param are reported."""
+    section = _section(steps)
+
+    report = upgrade.migrate_review_steps(section)
+
+    assert section['steps'] == {_FUNCTIONAL: {'lane': 'off'}, _CODE: {'lane': 'off'}}
+    assert {gate: _resolved_setting(section, gate) for gate in _SETTINGS} == dict.fromkeys(_SETTINGS, 'never')
+    assert sorted(report['replaced']) == sorted([_LEGACY, _LEGACY_BARE])
+    assert sorted(report['dropped_params']) == ['drop_review_on_scope_gate=true', 'lane="standard"']
+
+
+def test_both_retired_spellings_without_a_conflict_carry_the_shared_lane():
+    """Control for the test above: equal lanes are carried once and nothing is reported as dropped."""
+    section = _section({_LEGACY: {'lane': 'minimal'}, _LEGACY_BARE: {'lane': 'minimal'}})
+
+    report = upgrade.migrate_review_steps(section)
+
+    assert section['steps'] == {_FUNCTIONAL: {'lane': 'minimal'}, _CODE: {'lane': 'minimal'}}
+    assert report['dropped_params'] == []
 
 
 def test_absent_retired_entry_is_a_noop():
@@ -186,7 +261,7 @@ def test_operator_configured_successor_wins():
 
 
 def test_both_successors_configured_only_removes_the_retired_entry():
-    """With both successors present nothing is inserted and nothing is reported as carried."""
+    """With both successors present nothing is inserted; the retired lane is reported as dropped, not lost."""
     section = _section({_FUNCTIONAL: {'lane': 'standard'}, _CODE: {'lane': 'standard'}, _LEGACY: {'lane': 'off'}})
 
     report = upgrade.migrate_review_steps(section)
@@ -195,7 +270,103 @@ def test_both_successors_configured_only_removes_the_retired_entry():
     assert report['added'] == []
     assert report['kept'] == [_FUNCTIONAL, _CODE]
     assert report['carried'] == []
+    assert report['dropped_params'] == ['lane="off"']
     assert section['steps'] == {_FUNCTIONAL: {'lane': 'standard'}, _CODE: {'lane': 'standard'}}
+
+
+def test_one_successor_configured_carries_and_drops_nothing_extra():
+    """Control for the test above: with a successor inserted the lane is carried, not reported as dropped."""
+    section = _section({_FUNCTIONAL: {'lane': 'standard'}, _LEGACY: {'lane': 'off'}})
+
+    report = upgrade.migrate_review_steps(section)
+
+    assert report['added'] == [_CODE]
+    assert report['carried'] == ['lane=off']
+    assert report['dropped_params'] == []
+
+
+@pytest.mark.parametrize(
+    ('params', 'expected_dropped'),
+    [
+        ({'self_review': 'off', 'lane': 'standard'}, ['self_review="off"']),
+        ({'lane': 3}, ['lane=3']),
+        ({'lane': ''}, ['lane=""']),
+    ],
+    ids=['unknown-self-review-value', 'non-string-lane', 'empty-lane'],
+)
+def test_unusable_lane_or_self_review_values_are_reported_as_dropped(params, expected_dropped):
+    """A setting the migration cannot map is reported, never discarded silently."""
+    section = _section({_LEGACY: params})
+
+    report = upgrade.migrate_review_steps(section)
+
+    assert report['dropped_params'] == expected_dropped
+
+
+def test_an_unknown_non_empty_lane_is_dropped_and_carried_to_neither_successor():
+    """A non-empty lane outside the supported set is reported, never stored as an invalid lane."""
+    assert 'everything' not in VALID_LANE_OVERRIDE, 'premise: the fixture lane is genuinely unsupported'
+    section = _section({_LEGACY: {'lane': 'everything'}})
+
+    report = upgrade.migrate_review_steps(section)
+
+    assert report['state'] == 'migrated'
+    assert report['added'] == [_FUNCTIONAL, _CODE]
+    assert section['steps'] == {_FUNCTIONAL: {}, _CODE: {}}
+    assert report['carried'] == []
+    assert report['dropped_params'] == ['lane="everything"']
+
+
+assert VALID_LANE_OVERRIDE, 'the supported lane set is empty, so the control below would run no case'
+
+
+@pytest.mark.parametrize('lane', VALID_LANE_OVERRIDE)
+def test_every_supported_lane_is_carried_and_not_dropped(lane):
+    """Control for the test above: each member of the supported set reaches both successors."""
+    section = _section({_LEGACY: {'lane': lane}})
+
+    report = upgrade.migrate_review_steps(section)
+
+    assert section['steps'] == {_FUNCTIONAL: {'lane': lane}, _CODE: {'lane': lane}}
+    assert report['carried'] == [f'lane={lane}']
+    assert report['dropped_params'] == []
+
+
+def test_the_carried_lane_is_never_also_reported_as_dropped():
+    """A lane one entry lost but another carried to the win is carried, not reported as dropped."""
+    section = _section(
+        {_LEGACY: {'lane': 'standard'}, _LEGACY_BARE: {'lane': 'standard', 'self_review': 'always'}},
+    )
+
+    report = upgrade.migrate_review_steps(section)
+
+    assert section['steps'] == {_FUNCTIONAL: {'lane': 'standard'}, _CODE: {'lane': 'standard'}}
+    assert report['dropped_params'] == ['lane="minimal"']
+
+
+def test_both_successors_configured_reports_each_dropped_setting_once():
+    """With both successors configured the carried lane is reported as dropped exactly once."""
+    section = _section(
+        {
+            _FUNCTIONAL: {'lane': 'full'},
+            _CODE: {'lane': 'full'},
+            _LEGACY: {'lane': 'standard'},
+            _LEGACY_BARE: {'lane': 'standard', 'self_review': 'always'},
+        }
+    )
+
+    report = upgrade.migrate_review_steps(section)
+
+    assert sorted(report['dropped_params']) == ['lane="minimal"', 'lane="standard"']
+
+
+def test_legacy_self_review_auto_is_not_reported_as_dropped():
+    """Control for ``test_unusable_lane_or_self_review_values_are_reported_as_dropped``: ``auto`` maps to no lane."""
+    section = _section({_LEGACY: {'self_review': 'auto'}})
+
+    report = upgrade.migrate_review_steps(section)
+
+    assert report['dropped_params'] == []
 
 
 def test_retired_id_in_removed_steps_is_replaced_by_both_new_ids():

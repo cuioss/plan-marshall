@@ -2401,7 +2401,10 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:review_support do
 Read-only. Returns the union of the plan's `references.json` `domains` and every
 configured skill domain whose `file_globs` match the realized footprint, each row
 carrying `provenance: declared | footprint | both`. The footprint is read by the
-script itself, so no path is interpolated into a command line.
+script itself, so no path is interpolated into a command line. When neither the
+live worktree diff nor the captured `references.realized_footprint` can be read,
+the verb fails closed with `status: error` and `error: footprint_unresolved`
+rather than answering with the declared domains alone.
 
 ### review_support — validate
 
@@ -2421,7 +2424,11 @@ carries no `facts`, `findings` or `loop_back_target`. A valid verdict returns th
 graded `findings[]`, `loop_back_target` (`5-execute` when any blocking finding is an
 implementation gap, `6-finalize` when every one is a correction, `none` without a
 blocking finding), `may_close` (no blocking finding AND a verifier answer of
-`accepted`) and the `facts` the step records. An unreadable verdict file or a
+`accepted`) and the `facts` the step records. `verifier` is `accepted` when the
+verifier answered `grading_supported: true` — a `may_close: false` answer on a
+round with a blocking finding is the expected answer, not a refusal — and
+`declined` when it rejected the grading or refused closure on a round without a
+blocking finding. An unreadable verdict file or a
 missing outline returns `status: error`. The command exits `0` on every outcome.
 
 ## Related

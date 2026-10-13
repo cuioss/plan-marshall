@@ -548,7 +548,10 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qg
 
 ### qgate resolve-evidenced
 
-Evidence-gated batch resolution for the review loop-back (D3) of the `functional-review` and `code-review` finalize steps. Transitions
+Evidence-gated batch resolution for Q-Gate findings that carry a `file_path`.
+The `functional-review` and `code-review` finalize steps do NOT use it: they file
+their findings without a `file_path` and resolve their own findings by rule key
+through [`qgate resolve-by-rule`](#qgate-resolve-by-rule). Transitions
 every pending Q-Gate finding of `--phase` whose `file_path` is in the supplied
 `--changed-path` set to `fixed`; leaves every pending finding whose file was NOT
 touched (or that carries no `file_path`) at `pending`. `--changed-path` is the

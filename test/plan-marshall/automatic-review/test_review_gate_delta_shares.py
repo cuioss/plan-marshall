@@ -11,7 +11,7 @@ passed IS a gate escape. No per-finding gate attribution is needed.
 
 **But "the gates passed" is not "the gates saw this tree".** The code-mutating
 settle steps — `finalize-step-simplify` (3) and `finalize-step-security-audit` (5)
-— sort before both gates, so their edits are certified; what still lands after
+— sort before all three gates, so their edits are certified; what still lands after
 certification is the gate's own item-5f commit (10), committed after the tree it
 just certified, and post-push advances such as loop-back fixes. A forward pass never
 returns to order 10 to re-gate those, so the escape claim rests on the gate-certified tree
