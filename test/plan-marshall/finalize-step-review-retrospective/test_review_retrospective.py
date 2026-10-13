@@ -683,8 +683,9 @@ def test_multi_reviewer_coderabbit_vs_sourcery_vs_pr_agent():
     assert sourcery['positives_count'] == 1
     assert sourcery['pct_resolved_as_fixed'] == 100.0
 
-    # PR-Agent posts no inline comments — its findings live in ONE persistent
-    # issue_comment, which the aggregator buckets as META. That record's accepted
+    # PR-Agent posts no inline comments — its findings live in persistent
+    # issue_comments (one per review pass), which the aggregator buckets as META. This
+    # case carries the security Guide only. That record's accepted
     # disposition is an acknowledgement, so it scores in NEITHER quality bucket,
     # and because the record is META it contributes nothing to the resolved
     # actionable denominator either. The reviewer is therefore reported as
@@ -700,6 +701,36 @@ def test_multi_reviewer_coderabbit_vs_sourcery_vs_pr_agent():
     assert pr_agent['false_positives_count'] == 0
     assert pr_agent['positives_count'] == 0
     assert pr_agent['resolved_actionable_count'] == 0
+    assert pr_agent['pct_resolved_as_fixed'] is None
+
+
+def test_pr_agent_two_guides_aggregate_under_one_reviewer_row():
+    # PR-Agent's two passes each publish a persistent issue_comment — the security
+    # Guide and the code-review Guide — under the SAME author. They are one reviewer,
+    # so the aggregator reports one row carrying both records, both META.
+    records = [
+        {
+            'author': 'cuioss-review-bot',
+            'kind': 'issue_comment',
+            'title': 'PR Reviewer Guide',
+            'resolution': 'accepted',
+        },
+        {
+            'author': 'cuioss-review-bot',
+            'kind': 'issue_comment',
+            'title': 'PR Code Review Guide',
+            'resolution': 'accepted',
+        },
+    ]
+
+    result = rr.aggregate(records)
+
+    assert result['reviewer_count'] == 1
+    pr_agent = _reviewer(result, 'cuioss-review-bot')
+    assert pr_agent['raw_total'] == 2
+    assert pr_agent['actionable_count'] == 0
+    assert pr_agent['meta_count'] == 2
+    assert pr_agent['false_positives_count'] == 0
     assert pr_agent['pct_resolved_as_fixed'] is None
 
 

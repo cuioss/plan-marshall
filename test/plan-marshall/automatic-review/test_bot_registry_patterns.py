@@ -453,6 +453,9 @@ def test_module_functions_match_registry_singleton():
         assert bot_registry.contentless_review_markers(bot_kind) == (
             bot_registry.REGISTRY.contentless_review_markers(bot_kind)
         )
+        assert bot_registry.contentless_review_headings(bot_kind) == (
+            bot_registry.REGISTRY.contentless_review_headings(bot_kind)
+        )
         assert bot_registry.actionable_content_markers(bot_kind) == (
             bot_registry.REGISTRY.actionable_content_markers(bot_kind)
         )

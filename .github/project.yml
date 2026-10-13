@@ -33,3 +33,16 @@ cuioss-review-bot:
   # rule sentence naming the mechanism a diff breaks. This repository adds none —
   # its rules reach the reviewer through the derivation, not through this file.
   additional_rules: []
+  # The second, independent review pass: a general code review (not a security
+  # review) under the code-review spine plus the code-review packs listed here,
+  # published as its own persistent `## PR Code Review Guide 🧭` comment and its
+  # own `review / code-review` check. It is selected by `code_review.enabled`
+  # alone — the outer `enabled` above governs only the security pass's charter.
+  # Its pack keys are full `code-review-…` stems and never mix with `packs:` above.
+  code_review:
+    enabled: true
+    packs:
+      - code-review-python
+      - code-review-plan-marshall-plugin-dev
+      - code-review-documentation
+    additional_rules: []

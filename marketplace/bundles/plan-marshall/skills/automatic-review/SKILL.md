@@ -130,7 +130,7 @@ Each entry in either list maps one-to-one to a machine-readable registry doc at
 list in the pipeline. Each registry doc carries a fenced-YAML data block (`bot_kind`,
 `author_login`, `trigger_comment`, `escalated_trigger_comment`, `completion_check_name`, `honors_skip_label`, `ignore_patterns[]`,
 `acknowledgment_patterns[]`, `review_body_summary_patterns[]`, `refusal_patterns[]`, `no_unreviewed_commit_patterns[]`,
-`contentless_review_markers[]`, `actionable_content_markers[]`, `rate_limit_class`,
+`contentless_review_markers[]`, `contentless_review_headings[]`, `actionable_content_markers[]`, `rate_limit_class`,
 `rate_limit_eta_patterns[]`, `severity_map`) plus the
 producer / consumer / trust boundary / disposition rationale for that bot, and links to the org
 signal/noise source-of-truth rather than duplicating it. `acknowledgment_patterns[]` lists the replies
@@ -142,7 +142,7 @@ nothing new is left to review; both read as empty for a bot that declares neithe
 The single generic loader `scripts/bot_registry.py` parses every `standards/{bot_kind}.md` data
 block at runtime and exposes the derived registry (`bot_kinds()`, the login→bot_kind map, each
 bot's `trigger_comment`, `escalated_trigger_comment`, `completion_check_name`, `honors_skip_label`, `ignore_patterns`,
-`acknowledgment_patterns`, `review_body_summary_patterns`, `no_unreviewed_commit_patterns`, `contentless_review_markers`, `actionable_content_markers`,
+`acknowledgment_patterns`, `review_body_summary_patterns`, `no_unreviewed_commit_patterns`, `contentless_review_markers`, `contentless_review_headings`, `actionable_content_markers`,
 `rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map`). The producer
 (`github_pr.py` noise pre-filter), the finding store (`_findings_core.BOT_KINDS`), the re-review
 strategy registry (`github_re_review.py` — both its trigger comments and the `refusal_class` /

@@ -619,6 +619,140 @@ def test_await_does_not_verify_a_comment_naming_no_commit_at_all(monkeypatch):
     assert result['head_sha_verified'] is False
 
 
+def _code_review_guide_body(sha: str) -> str:
+    """The code-review pass's persistent Guide, naming ``sha`` as the reviewed commit.
+
+    The pass publishes a SECOND persistent comment under its own heading and its own
+    update line. Its wording is taken from the publishing workflow's documentation
+    rather than a captured body; the permalink is what the matcher reads either way.
+    """
+    return (
+        '## PR Code Review Guide 🧭 '
+        f'(Code review updated until commit https://github.com/cuioss/plan-marshall/commit/{sha})'
+    )
+
+
+# Two persistent Guides from ONE bot: the security pass's comment, created first,
+# and the code-review pass's, created a minute later. Distinct created_at values
+# give distinct comment ids through ``_comment``.
+_SECURITY_CREATED = '2026-01-01T00:00:00Z'
+_CODE_REVIEW_CREATED = '2026-01-01T00:01:00Z'
+
+
+def test_await_verifies_the_code_review_guide_naming_the_awaited_commit(monkeypatch):
+    """POSITIVE: the code-review Guide alone answers the trigger and verifies the HEAD.
+
+    The pass's update line reads ``(Code review updated until commit …)`` rather
+    than the security Guide's ``(Review updated until commit …)``; the verdict rests
+    on the permalink, so the different wording must not cost the verification.
+    """
+    result = _await_with_comments(
+        monkeypatch,
+        [
+            _comment(
+                _PR_AGENT_LOGIN,
+                created_at=_CODE_REVIEW_CREATED,
+                updated_at='2026-01-01T00:05:00Z',
+                body=_code_review_guide_body(_OBSERVED_REVIEW_BOT_SHA),
+            )
+        ],
+        head_sha=_OBSERVED_REVIEW_BOT_SHA,
+    )
+
+    assert result['matched'] is True
+    assert result['matched_signal'] == 'issue_comment'
+    assert result['head_sha_verified'] is True
+
+
+@pytest.mark.parametrize(
+    'security_first',
+    [
+        pytest.param(True, id='security-guide-first'),
+        pytest.param(False, id='code-review-guide-first'),
+    ],
+)
+def test_await_selects_whichever_guide_names_the_head_in_either_order(security_first, monkeypatch):
+    """Two edited Guides, one naming the HEAD: that one is selected in both list orders.
+
+    Both comments are the same bot's, both edited after the trigger, and neither is a
+    refusal — the only difference is which commit each names. The security Guide
+    naming an older commit must not hide the code-review Guide that verified the
+    HEAD, whichever the provider lists first.
+    """
+    security = _comment(
+        _PR_AGENT_LOGIN,
+        created_at=_SECURITY_CREATED,
+        updated_at='2026-01-01T00:05:00Z',
+        body=_guide_body(_OTHER_SHA),
+    )
+    code_review = _comment(
+        _PR_AGENT_LOGIN,
+        created_at=_CODE_REVIEW_CREATED,
+        updated_at='2026-01-01T00:06:00Z',
+        body=_code_review_guide_body(_OBSERVED_REVIEW_BOT_SHA),
+    )
+    comments = [security, code_review] if security_first else [code_review, security]
+
+    result = _await_with_comments(monkeypatch, comments, head_sha=_OBSERVED_REVIEW_BOT_SHA)
+
+    assert result['matched'] is True
+    assert result['head_sha_verified'] is True
+    assert result['matched_comment']['body'] == code_review['body']
+
+
+def test_an_untouched_guide_never_answers_for_the_other(monkeypatch):
+    """NEGATIVE control: a Guide last written BEFORE the trigger is no answer, even naming the HEAD.
+
+    The code-review Guide names the awaited commit but was last written before the
+    trigger — it answered an earlier request. The security Guide was edited after
+    the trigger but names another commit. The await matches the edited Guide and
+    reports the decline; it never borrows the untouched Guide's reference.
+    """
+    security = _comment(
+        _PR_AGENT_LOGIN,
+        created_at=_SECURITY_CREATED,
+        updated_at='2026-01-01T00:05:00Z',
+        body=_guide_body(_OTHER_SHA),
+    )
+    stale_code_review = _comment(
+        _PR_AGENT_LOGIN,
+        created_at=_CODE_REVIEW_CREATED,
+        updated_at='2026-01-01T00:01:30Z',
+        body=_code_review_guide_body(_OBSERVED_REVIEW_BOT_SHA),
+    )
+
+    result = _await_with_comments(monkeypatch, [stale_code_review, security], head_sha=_OBSERVED_REVIEW_BOT_SHA)
+
+    assert result['matched'] is True
+    assert result['head_sha_verified'] is False
+    assert result['matched_comment']['body'] == security['body']
+
+
+def test_two_untouched_guides_do_not_end_the_wait(monkeypatch):
+    """NEGATIVE control: when neither Guide moved past the trigger, the bot has not answered."""
+    result = _await_with_comments(
+        monkeypatch,
+        [
+            _comment(
+                _PR_AGENT_LOGIN,
+                created_at=_SECURITY_CREATED,
+                updated_at='2026-01-01T00:01:10Z',
+                body=_guide_body(_OBSERVED_REVIEW_BOT_SHA),
+            ),
+            _comment(
+                _PR_AGENT_LOGIN,
+                created_at=_CODE_REVIEW_CREATED,
+                updated_at='2026-01-01T00:01:30Z',
+                body=_code_review_guide_body(_OBSERVED_REVIEW_BOT_SHA),
+            ),
+        ],
+        head_sha=_OBSERVED_REVIEW_BOT_SHA,
+    )
+
+    assert result['matched'] is False
+    assert result['timed_out'] is True
+
+
 def test_await_verifies_a_republished_comment_naming_the_awaited_head(monkeypatch):
     """POSITIVE: a comment whose body links the awaited HEAD reports ``head_sha_verified: true``.
 

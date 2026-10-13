@@ -60,14 +60,23 @@ def guide_row(emoji: str, cell: str) -> str:
     return f'<tr><td>{emoji}&nbsp;{cell}</td></tr>'
 
 
-def guide_body(*rows: str) -> str:
+#: The code-review pass's Guide heading. The pass publishes a SECOND persistent
+#: comment, rendered by PR-Agent's own renderer and re-headed, so its body has the
+#: security Guide's layout under this heading. Taken from the publishing
+#: workflow's documentation — no raw body of it has been captured yet.
+CODE_REVIEW_GUIDE_HEADING = '## PR Code Review Guide 🧭'
+
+
+def guide_body(*rows: str, heading: str = GUIDE_HEADING) -> str:
     """Render a complete Guide body: the heading, then the HTML table of ``rows``.
 
     The double space after the heading and the trailing space after
     ``</table>`` are part of the observed body, not formatting slack — see
     :data:`OBSERVED_CLEAN_GUIDE`, which this function is pinned against.
+    ``heading`` defaults to the security Guide's; pass
+    :data:`CODE_REVIEW_GUIDE_HEADING` for the code-review pass's comment.
     """
-    return f'{GUIDE_HEADING}  <table> ' + ' '.join(rows) + ' </table> '
+    return f'{heading}  <table> ' + ' '.join(rows) + ' </table> '
 
 
 #: The VERBATIM body PR-Agent posts for a clean Guide, copied from a stored
@@ -115,6 +124,43 @@ GUIDE_DEVIATING_ASSERTION = guide_body(
 #: A MISSING required marker: the docs-only shape — the 🔒 clean assertion is
 #: present, the 🧪 one is absent entirely.
 GUIDE_DOCS_ONLY = guide_body(CLEAN_SECURITY_ROW, CLEAN_FOCUS_ROW)
+
+#: The code-review pass's CLEAN Guide: the observed clean rows under the
+#: code-review heading. The shape the heading alternation must drop.
+CODE_REVIEW_CLEAN_GUIDE = guide_body(
+    CLEAN_TESTS_ROW,
+    CLEAN_SECURITY_ROW,
+    CLEAN_FOCUS_ROW,
+    heading=CODE_REVIEW_GUIDE_HEADING,
+)
+
+#: The code-review Guide carrying one focus-area finding — ``<details>`` vetoes
+#: the drop under this heading exactly as under the security one.
+CODE_REVIEW_GUIDE_WITH_FINDING = guide_body(
+    CLEAN_TESTS_ROW,
+    CLEAN_SECURITY_ROW,
+    guide_row(
+        '⚡',
+        assertion('Recommended focus areas for review')
+        + '<details><summary>Duplicated parser</summary>'
+        + assertion('Two helpers parse the same header')
+        + ' They will drift apart on the next format change.'
+        + '</details>',
+    ),
+    heading=CODE_REVIEW_GUIDE_HEADING,
+)
+
+#: The code-review Guide in the docs-only shape — the 🧪 clean assertion absent.
+CODE_REVIEW_GUIDE_DOCS_ONLY = guide_body(CLEAN_SECURITY_ROW, CLEAN_FOCUS_ROW, heading=CODE_REVIEW_GUIDE_HEADING)
+
+#: The clean rows under NO declared heading. Every conjunction marker is present
+#: and nothing actionable is, so only the heading alternation keeps it in place.
+UNHEADED_CLEAN_TABLE = guide_body(
+    CLEAN_TESTS_ROW,
+    CLEAN_SECURITY_ROW,
+    CLEAN_FOCUS_ROW,
+    heading='## PR Code Suggestions ✨',
+)
 
 #: The same clean Guide as GitHub RENDERS it — a markdown table with ``**`` bold
 #: instead of an HTML table with ``<strong>``. PR-Agent has never been observed

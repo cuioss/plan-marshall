@@ -15,6 +15,22 @@ for the org's `reusable-cuioss-review-bot.yml`). Both `required_bots` and `optio
 EMPTY, so `cuioss-review-bot` — like every other bot — is classified per project rather than by a
 shipped default.
 
+The reusable workflow reviews a pull request in **up to two passes**, each a job with its own check
+and its own persistent `issue_comment`, both posted as `cuioss-review-bot`:
+
+| Pass | Check | Persistent comment | Runs |
+|---|---|---|---|
+| Security review | `review / review` | `## PR Reviewer Guide 🔍` | always, subject to the skip rules |
+| Code review | `review / code-review` | `## PR Code Review Guide 🧭` | only where the repository's `.github/project.yml` sets `cuioss-review-bot.code_review.enabled: true`; otherwise the check reports green after skipping the pass |
+
+Both comments are rendered by PR-Agent's own renderer, so they share one body layout — the same
+🧪/🔒/⚡ rows and `<details>` focus-area findings — and each is updated in place by its own pass. The
+two headings share no prefix beyond `## PR `, so neither pass finds or edits the other's comment. A
+plain `/review` comment re-runs both passes; the code-review pass refuses a `/review` carrying
+options. The authoritative description is cuioss-organization →
+[`docs/cuioss-review-bot.adoc`](https://github.com/cuioss/cuioss-organization/blob/main/docs/cuioss-review-bot.adoc)
+§ "Two passes". Everything below that says "the Guide" applies to both comments unless it names one.
+
 ## Grounding source
 
 Every field and every consumer-stage shape below is stated against **two observed reviews**, and
@@ -42,13 +58,19 @@ annotation on that field. Review B verbatim:
 Sample size is **two reviews**, only one of which carried a finding — see "Signal calibration"
 below before generalizing from them.
 
+Both observations are of the security pass. The code-review pass's `## PR Code Review Guide 🧭`
+comment is recorded here from the publishing workflow's documentation, not from a captured body, so
+every statement about it is **UNVERIFIED** against an observation: its heading, its
+`(Code review updated until commit …)` line, and the claim that its rows carry the same clean
+assertions as the security Guide's.
+
 ## Registry data block
 
 The fenced-YAML block below is the machine-readable per-bot record. It is data, not frontmatter.
 Consumers read `bot_kind`, `author_login`, `trigger_comment`, `completion_check_name`,
 `honors_skip_label`, `participation_evidence`, `participation_requires_update`, `ignore_patterns`,
 `review_body_summary_patterns`, `refusal_patterns`, `contentless_review_markers`,
-`actionable_content_markers`, `rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map`
+`contentless_review_headings`, `actionable_content_markers`, `rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map`
 from it; the prose sections carry the rationale. This bot declares no
 `review_body_summary_patterns`.
 
@@ -96,11 +118,14 @@ honors_skip_label: true           # UNVERIFIED — #103 carried no skip label, s
 # observed publish shape — prepending would silently re-point that harness at a different shape
 # without failing any case.
 participation_evidence:
-  - issue_comment                 # the single persistent `## PR Reviewer Guide 🔍` comment
+  - issue_comment                 # the persistent Guide comments: `## PR Reviewer Guide 🔍` (security
+                                  # pass, always) and `## PR Code Review Guide 🧭` (code-review pass,
+                                  # where the repository opts in) — either one is evidence
   - inline                        # `/improve` code suggestions, published as review comments when
                                   # /improve runs (either gating mode — see above)
-participation_requires_update: true   # a re-review EDITS that same comment in place, so continued
-                                  # presence proves only that it reviewed once, at some earlier HEAD.
+participation_requires_update: true   # a re-review EDITS each Guide in place, so continued presence
+                                  # proves only that it reviewed once, at some earlier HEAD. Each
+                                  # Guide is its own comment id, so each is tested on its own.
                                   # Evidence therefore has to clear the currency test. Its arms are
                                   # NOT restated at this annotation — see
                                   # bot-participation-contract.md § "The currency rule", the
@@ -126,15 +151,16 @@ ignore_patterns:
                                   # `## PR Code Suggestions` heading on purpose: that heading is
                                   # ALSO the heading of a suggestion-BEARING result, so ignoring it
                                   # would drop real suggestions published in table form.
-# contentless_review_markers: CORRECTED against #1078 — the three literals the Guide carries when
-# it found nothing: the heading that identifies the review, plus the 🔒 and 🧪 rows' clean
-# assertions, each as BARE INNER TEXT. The bare form is load-bearing, not a style choice: the two
+# contentless_review_markers: CORRECTED against #1078 — the two literals a Guide carries when it
+# found nothing: the 🔒 and 🧪 rows' clean assertions, each as BARE INNER TEXT. The heading that
+# identifies WHICH Guide it is lives in contentless_review_headings below, because the bot
+# publishes the same clean shape under two headings and no single body carries both. The bare form is load-bearing, not a style choice: the two
 # assertions live inside an HTML <table>, where GitHub renders no markdown, so the raw API body
 # carries <strong>No security concerns identified</strong> — never the markdown-bold **…** these
 # entries previously declared. The bare inner text is a substring of BOTH renderings, so the entry
 # holds whichever form the bot emits. The superseded **-wrapped literals matched no observed body
-# at all, which made the whole conjunction dead: two of three required markers could never be
-# found, so the predicate returned False on every real clean Guide. EVERY entry is REQUIRED — the
+# at all, which made the whole conjunction dead: both assertion markers could never be found, so
+# the predicate returned False on every real clean Guide. EVERY entry is REQUIRED — the
 # producer's contentless test is a CONJUNCTION over this whole list, not a disjunction, so a Guide
 # missing any one of them is left in place and hand-triaged. The 🧪 clean assertion in particular
 # MUST NOT be dropped from the list as an anti-noise optimization: per "Consumer stage" the
@@ -143,13 +169,19 @@ ignore_patterns:
 # observed. The ⚡ row's clean literal "No major issues detected" is deliberately NOT a required
 # entry — see "Consumer stage" for why it is recorded but not conjoined.
 contentless_review_markers:
-  - "## PR Reviewer Guide"        # CONFIRMED on #103 and #1078 — the heading that identifies the
-                                  # review. It sits OUTSIDE the table, so it is markdown in the
-                                  # raw body too and needs no rendering-independent form.
   - "No security concerns identified"   # CONFIRMED on #1078 — the 🔒 row's clean assertion, as
                                   # the inner text of <strong>No security concerns identified</strong>
   - "PR contains tests"           # CONFIRMED on #1078 — the 🧪 row's clean assertion, as the
                                   # inner text of <strong>PR contains tests</strong>
+# contentless_review_headings: an ALTERNATION, unlike the conjunction above — the body must carry
+# ANY ONE of these, on top of every contentless_review_markers entry. One entry per persistent
+# Guide, so a clean code-review Guide is dropped by exactly the rule that drops a clean security
+# Guide, and a body carrying neither heading is never dropped. Each heading sits OUTSIDE the table,
+# so it is markdown in the raw body too and needs no rendering-independent form.
+contentless_review_headings:
+  - "## PR Reviewer Guide"        # CONFIRMED on #103 and #1078 — the security pass's Guide
+  - "## PR Code Review Guide"     # UNVERIFIED — the code-review pass's Guide, as the publishing
+                                  # workflow documents it; no captured body yet
 # actionable_content_markers: ANY entry present disqualifies the contentless drop, whatever the
 # list above says.
 actionable_content_markers:
@@ -266,26 +298,30 @@ PR-Agent-specific code anywhere:
   `cuioss-review-bot` → `cuioss-review-bot`, since its login and its kind are the same name — and
   its generic re-review strategy (posting `/review`) from the registry.
 - `github_pr.py` applies this doc's `ignore_patterns` as the per-bot producer filter, and its
-  `contentless_review_markers` / `actionable_content_markers` pair as the content-aware layer
-  beneath it.
+  `contentless_review_markers` / `contentless_review_headings` / `actionable_content_markers`
+  triple as the content-aware layer beneath it.
 
 ## Producer stage — what to DROP before it becomes a finding
 
 The `ignore_patterns` above drop the two comment kinds that are not reviews at all: the `/help`
 commands reference and `/ask` answers.
 
-**The `## PR Reviewer Guide 🔍` comment is dropped conditionally, on content — never by
-`ignore_patterns`.** A bare-heading `ignore_patterns` entry would be wrong: that layer is a
-whole-body substring test whose match drops the entire comment, and this bot has no separate
-marker comment — the header identifies the review *and* carries every finding, so matching on it
-would drop real findings along with the boilerplate.
+**Both Guide comments — `## PR Reviewer Guide 🔍` and `## PR Code Review Guide 🧭` — are dropped
+conditionally, on content — never by `ignore_patterns`.** A bare-heading `ignore_patterns` entry
+would be wrong: that layer is a whole-body substring test whose match drops the entire comment,
+and this bot has no separate marker comment — each heading identifies a review *and* that comment
+carries every finding of its pass, so matching on it would drop real findings along with the
+boilerplate.
 
-The conditional rule the producer applies instead: the Guide is dropped **only** when every
-`contentless_review_markers` entry is present in the body AND no `actionable_content_markers`
-entry is. In every other case it is left untouched and filed as a `pr-comment` finding exactly as
-before — a `<details>` focus-area finding, a 🔒 row naming a concrete concern, a 🧪 row that is
-not the clean assertion, or a missing heading all leave the comment in place. The predicate can
-therefore only ever fail *open*.
+The conditional rule the producer applies instead: a Guide is dropped **only** when every
+`contentless_review_markers` entry is present in the body, ANY ONE `contentless_review_headings`
+entry is present, AND no `actionable_content_markers` entry is. The heading list is an
+alternation rather than part of the conjunction because the two Guides share one clean shape under
+two headings: one rule covers both, and a clean code-review Guide is dropped exactly as a clean
+security Guide is. In every other case the comment is left untouched and filed as a `pr-comment`
+finding — a `<details>` focus-area finding, a 🔒 row naming a concrete concern, a 🧪 row that is
+not the clean assertion, or a body carrying neither heading all leave it in place. The predicate
+can therefore only ever fail *open*.
 
 **Match the assertions on their BARE INNER TEXT, never on a rendering.** The 🔒 and 🧪 assertions
 sit inside an HTML `<table>`, and GitHub renders no markdown inside HTML — so the raw API body the
@@ -352,14 +388,21 @@ The `ignore_patterns` entry `**[Persistent review]` is NOT a refusal: it is a co
 
 ## Consumer stage — classify a surviving PR-Agent finding
 
-**`/review` output is one persistent comment; inline comments come only from `/improve`.**
-CONFIRMED on #103 — `/review` produces exactly one persistent `issue_comment`, headed
-`## PR Reviewer Guide 🔍`, and it is *updated in place* on re-review rather than reposted. Inline
+**`/review` output is one persistent comment per pass; inline comments come only from `/improve`.**
+CONFIRMED on #103 — the security pass produces exactly one persistent `issue_comment`, headed
+`## PR Reviewer Guide 🔍`, and it is *updated in place* on re-review rather than reposted. Where the
+repository opts in, the code-review pass produces a second one, headed `## PR Code Review Guide 🧭`,
+updated in place the same way (UNVERIFIED — see "Grounding source"). Inline
 review comments are published by the separate `/improve` command. Its automatic runs are gated by
 one of the two modes above; an explicit `/improve` comment is a separate, manual trigger that
 neither mode governs. A pipeline stage that counts only inline review comments therefore concludes
-this bot found nothing on any repository where /improve did not run — the Guide, not the inline
-count, is the shape that is always present.
+this bot found nothing on any repository where /improve did not run — the security Guide, not the
+inline count, is the shape that is always present.
+
+The extraction below applies to each Guide alike, since both carry the same rows. A finding keeps
+its source comment's `comment_id`, so the pass that raised it stays readable from the comment it
+came from; the `severity_map` assignment applies to both, because each row means the same in
+either.
 
 **Observed body structure** (#103 and #1078): an HTML `<table>` of `<tr><td>` rows. Each cell is an
 emoji, a `&nbsp;`, and a `<strong>` assertion; the two are separated by nothing else. Each
@@ -403,16 +446,17 @@ never on a markdown rendering — the observed body has no such split, and its e
 Fields suppressed centrally and therefore not expected: intro text, tool-usage help, estimated
 effort, score, ticket compliance, can-be-split, and the security/effort review labels.
 
-Because the comment is persistent, a re-review **replaces** the body rather than appending. Diff
-against the previously triaged body instead of re-triaging identical text.
+Because each comment is persistent, a re-review **replaces** its body rather than appending. Diff
+each Guide against its own previously triaged body — never one Guide against the other — instead of
+re-triaging identical text.
 
 ## Structural constraints and how the pipeline handles them
 
-Two properties of this bot's `/review` output follow from the observed fact that it posts **one
-persistent comment of kind `issue_comment`, and submits no GitHub *review* object**
+Two properties of this bot's `/review` output follow from the observed fact that each pass posts
+**one persistent comment of kind `issue_comment`, and submits no GitHub *review* object**
 (#103: absent from `ci pr reviews`). Both are handled — neither is an open defect.
 
-1. **The Guide has no resolvable review thread.** Its comment's `kind` is `issue_comment` — one of
+1. **A Guide has no resolvable review thread.** Its comment's `kind` is `issue_comment` — one of
    the two genuinely threadless kinds — so GitHub gives it no review thread to reply into or
    resolve. A triaged disposition on the Guide is therefore transmitted by `github_pr
    post_responses` as a **batched PR-level comment** anchored on the source `comment_id`, and
@@ -451,13 +495,27 @@ persistent comment of kind `issue_comment`, and submits no GitHub *review* objec
    [`workflow-integration-github` SKILL.md](../../workflow-integration-github/SKILL.md) § Workflow 3;
    it is not restated here.
 
+   **Two persistent comments answer one trigger.** A plain `/review` re-runs both passes, and each
+   edits its own Guide. The matcher treats each Guide as a separate comment, gated independently:
+   a Guide counts as an answer only when its own `updated_at` (or `created_at`) is after the trigger,
+   so a Guide the other pass left untouched never answers for it. Among the Guides that did answer,
+   the one whose body names the HEAD is preferred — the security Guide's
+   `(Review updated until commit …)` line and the code-review Guide's
+   `(Code review updated until commit …)` line both embed the commit permalink the predicate reads —
+   so a Guide that answered while naming an older commit cannot hide one that verified the HEAD.
+   Either Guide answering ends the wait: the code-review pass runs only where the repository opts
+   in, so waiting for both would time out on every repository that does not. The currency ledger is
+   keyed per `(bot_kind, comment_id)`, so the two Guides keep separate rows and one Guide's edit is
+   never measured against the other's record.
+
 ## Participation evidence — `issue_comment` and `inline`, plus update movement
 
 Getting this bot's evidence wrong is consequential in both directions:
 
 - **`issue_comment` is the unconditional evidence; `inline` is the conditional one.** PR-Agent
-  publishes exactly one persistent `## PR Reviewer Guide 🔍` comment on every `/review`, and
-  publishes inline code suggestions when `/improve` is enabled for the repository. It posts **no
+  publishes one persistent `## PR Reviewer Guide 🔍` comment on every `/review`, a second
+  persistent `## PR Code Review Guide 🧭` comment where the repository opts in to the code-review
+  pass — either Guide is `issue_comment` evidence on its own — and publishes inline code suggestions when `/improve` is enabled for the repository. It posts **no
   check-run** on either path, so **a check-run state is never evidence for this bot** — it produces
   none, and reading one would score it absent on every single run no matter how well it reviewed.
   That is the false-negative direction, and it is why the registry declares the shapes the bot
@@ -470,8 +528,8 @@ Getting this bot's evidence wrong is consequential in both directions:
   fetch_findings` files an inline PR-Agent comment to the ledger exactly as it does for the other
   two bots; the comment's `kind` is the field that records the outcome, and `post_responses`
   already routes on it (see "Structural constraints" below).
-- **Presence alone is not enough — the update must move.** A re-review **edits that same comment in
-  place** rather than posting a new one. Its continued existence therefore proves only that PR-Agent
+- **Presence alone is not enough — the update must move.** A re-review **edits each Guide in
+  place** rather than posting a new one. A Guide's continued existence therefore proves only that PR-Agent
   reviewed *once*, at some earlier HEAD; after a force-push the stale Guide would silently credit
   the bot with reviewing code it never saw. That is the false-positive direction, and
   `participation_requires_update: true` closes it: the credit must clear the currency test, which
@@ -479,7 +537,9 @@ Getting this bot's evidence wrong is consequential in both directions:
   test reads. The credit holds when the SHA the ledger recorded for this comment IS the merge
   candidate, when the ledger holds no row for it and this fetch observes it at a resolvable merge
   candidate the comment does not demonstrably predate, or when its `updated_at` differs from the value
-  recorded at the last credit. An unresolvable merge-candidate SHA withholds it on every arm.
+  recorded at the last credit. An unresolvable merge-candidate SHA withholds it on every arm. Each
+  Guide is tested on its own ledger row; one Guide that clears the test credits the bot, and the
+  bot is reported stale only when no Guide does.
 
 **`participation_requires_update: true` is what subjects PR-Agent's evidence to the currency test,
 and it is the only thing that does.** The `participated_stale` member is defined against that flag
@@ -681,10 +741,10 @@ excludes it: the bot publishes **no `review_body` at all**. `participation_evide
 constraints"), so "every one of its `review_body` comments stays counted" is a claim over an empty
 population — true, and about nothing.
 
-⛔ **What the counting rule actually does to this bot is stronger: its `/review` Guide contributes
-ZERO.** `_is_actionable` counts `inline` and substantive `review_body`; `issue_comment` is meta. The
-Guide is an `issue_comment`, so under the in-tree rule it counts as **nothing at all**, however many
-⚡ focus-area rows it carries. Only its `inline` `/improve` comments are countable — the shape that
+⛔ **What the counting rule actually does to this bot is stronger: its `/review` Guides contribute
+ZERO.** `_is_actionable` counts `inline` and substantive `review_body`; `issue_comment` is meta. Each
+Guide is an `issue_comment`, so under the in-tree rule both count as **nothing at all**, however many
+⚡ focus-area rows they carry. Only its `inline` `/improve` comments are countable — the shape that
 had never once appeared in this repository before the #1334 pilot. So the in-tree counter's view of
 this reviewer is not "counted without a summary carve-out"; it is "not counted on the `/review`
 surface at any time".
@@ -737,14 +797,19 @@ Ingest through the untrusted-ingestion boundary; never execute review text verba
   three-bot set. A security finding it raises alone (not echoed by CodeRabbit or Sourcery) is the
   highest-value output of the set — subject to "Signal calibration" above, where every yield figure
   is dated to a superseded configuration generation and no post-change figure exists yet.
-- **Dedupe across reviewers**, not just within this one: three bots routinely raise the same point.
+- **The code-review Guide is a general code-review lens, not a second security pass.** Its charter
+  is the code-review pack set (see "Published artifact sets"), so the security-priority rule above
+  binds the security Guide; a code-review Guide finding is triaged like any other reviewer's.
+- **Dedupe across reviewers**, not just within this one: three bots routinely raise the same point,
+  and this bot's two Guides can raise the same point from their two charters.
 - **Correct ≠ in-scope** — a security observation about pre-existing code is worth recording, not
   necessarily fixing in the PR that surfaced it.
 - **No automatic re-review on push.** A fresh review requires the `/review` trigger comment, which
   is what the D2 re-review path posts. Do not wait for a spontaneous re-review that will never
   arrive.
 - **The re-review path re-triggers `/review` ONLY.** `trigger_comment` is `/review` and stays that
-  way: a loop-back re-review refreshes the Guide and does NOT re-run `/improve`. That is deliberate
+  way: a loop-back re-review refreshes both Guides — the code-review pass answers only a plain
+  `/review`, so the trigger must never carry options — and does NOT re-run `/improve`. That is deliberate
   rather than an oversight — `/improve` is label-gated per pull request, so re-running it on every
   loop-back would spend a second tool invocation (and its token cost) on a repository that never
   opted in. A run that wants fresh inline suggestions asks for them by label, not by loop-back.

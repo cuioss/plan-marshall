@@ -88,12 +88,49 @@ def test_contentless_review_markers_only_declared_by_pr_agent():
     boundary, and not only in the producer's behavioural suite.
     """
     assert bot_registry.contentless_review_markers('cuioss-review-bot') == [
-        '## PR Reviewer Guide',
         'No security concerns identified',
         'PR contains tests',
     ]
     assert bot_registry.contentless_review_markers('coderabbit') == []
     assert bot_registry.contentless_review_markers('sourcery') == []
+
+
+def test_contentless_review_headings_name_both_pr_agent_guides():
+    """PR-Agent declares one heading per persistent Guide; the other two declare none.
+
+    The heading list is an ALTERNATION — the body must carry any one entry — so
+    the security pass's ``## PR Reviewer Guide`` and the code-review pass's
+    ``## PR Code Review Guide`` can share one clean-shape rule. Exact equality,
+    so a dropped heading (a clean code-review Guide filed as a finding) or a
+    heading moved back into the conjunction (no body could ever satisfy it) turns
+    this red at the data boundary.
+    """
+    assert bot_registry.contentless_review_headings('cuioss-review-bot') == [
+        '## PR Reviewer Guide',
+        '## PR Code Review Guide',
+    ]
+    assert bot_registry.contentless_review_headings('coderabbit') == []
+    assert bot_registry.contentless_review_headings('sourcery') == []
+
+
+def test_no_heading_sits_in_the_conjunction():
+    """Negative control: neither Guide heading is a REQUIRED marker.
+
+    A heading in ``contentless_review_markers`` is required of every body, so a
+    clean Guide under the OTHER heading could never be dropped — and with both
+    headings there no body could. The headings belong to the alternation only.
+    """
+    required = bot_registry.contentless_review_markers('cuioss-review-bot')
+    for heading in bot_registry.contentless_review_headings('cuioss-review-bot'):
+        assert heading not in required
+
+
+def test_contentless_review_headings_unknown_bot_is_empty():
+    """An unregistered bot declares no heading condition."""
+    assert bot_registry.contentless_review_headings('nope') == []
+    assert bot_registry.contentless_review_headings('cuioss-review-bot') == (
+        bot_registry.REGISTRY.contentless_review_headings('cuioss-review-bot')
+    )
 
 
 def test_actionable_content_markers_only_declared_by_pr_agent():
@@ -106,18 +143,21 @@ def test_actionable_content_markers_only_declared_by_pr_agent():
 def test_contentless_markers_survive_inline_comment_stripping():
     """Each marker's trailing ``# CONFIRMED …`` rationale is stripped, the value is not.
 
-    Every entry in PR-Agent's block carries an inline grounding comment, and one
-    of them (``## PR Reviewer Guide``) opens with the very ``#`` character that
-    starts a YAML comment. A reader that stripped from the first ``#`` rather than
-    from the first ``#`` OUTSIDE the quoted span would silently truncate the
-    heading marker to the empty string — which the producer's fail-closed
-    short-circuit would then read as "this bot declared nothing".
+    Every entry in PR-Agent's block carries an inline grounding comment, and each
+    heading (``## PR Reviewer Guide``, ``## PR Code Review Guide``) opens with the
+    very ``#`` character that starts a YAML comment. A reader that stripped from
+    the first ``#`` rather than from the first ``#`` OUTSIDE the quoted span would
+    silently truncate a heading to the empty string — which the producer drops
+    from the alternation, leaving that Guide's clean shape undroppable.
     """
     markers = bot_registry.contentless_review_markers('cuioss-review-bot')
-    for marker in markers:
+    headings = bot_registry.contentless_review_headings('cuioss-review-bot')
+    for marker in markers + headings:
         assert marker
         assert 'CONFIRMED' not in marker
+        assert 'UNVERIFIED' not in marker
         assert marker == marker.strip()
-    # The quoted-``#`` case specifically: the heading keeps its markdown prefix.
-    assert '## PR Reviewer Guide' in markers
+    # The quoted-``#`` case specifically: each heading keeps its markdown prefix.
+    assert '## PR Reviewer Guide' in headings
+    assert '## PR Code Review Guide' in headings
     assert bot_registry.actionable_content_markers('cuioss-review-bot') == ['<details>']
