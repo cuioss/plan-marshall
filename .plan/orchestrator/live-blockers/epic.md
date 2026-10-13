@@ -288,12 +288,17 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
     answered here: the `lessons-routing` ingest runs of 2026-10-09 retired the corpus into
     `lessons-routing/lessons-archive/`. `manage-lessons list` read `total: 1, filtered: 0`
     on 2026-10-10 before this drain's promotions.
-- **PLAN-LB-37 is landing in parts.** Four part-PRs are on `main`: #1754 (`fc0090a24`, rubric,
-  `review_support` helper, harvestable rules), #1755 (`730f37a2f`, the functional-review and
-  code-review steps and the code-review packs), #1757 (`77ef084ad`, every reader moved off the old
-  step) and #1758 (`47d21e1bf`, the old step and the surfacer apparatus retired, configurations
-  migrated). The row stays `running` until its landing message arrives; the post-landing
-  consumer rollout (D9/D10) and the bot settings change (D15) are still to come.
+- **PLAN-LB-37 functional review + code review shipped on 2026-10-13 as a five-PR stack**:
+  #1754 (`fc0090a24`, rubric, `review_support` helper, harvestable rules), #1755 (`730f37a2f`,
+  the two steps and the code-review packs), #1757 (`77ef084ad`, every reader moved off the old
+  step), #1758 (`47d21e1bf`, the old step and the surfacer apparatus retired, configurations
+  migrated), #1759 (`d5c1e869f`, review-step and migration hardening). Record:
+  `landings/PLAN-LB-37.md`. 14 of 16 spec deliverables shipped (D13 partial); D9 (consumer
+  rollout) and D15 (bot settings) OWED by operator decision. Reviews and merge closed by
+  operator override. The stack exists because CodeRabbit's 100-file cap refused the single PR
+  #1753. Its functional review does not catch rewritten criteria or weakened tests — PLAN-LB-39
+  D6 owns that. Inbox `-005` to `-008` promoted as lessons `2026-10-13-14-001` to `-004`;
+  `-009` is the landing.
 - **Inbox drain of 2026-10-13, nineteen messages:**
   - From PLAN-LB-37 (four follow-ups it handed off, none a landing):
     - `-001` (remove the one-shot `migrate-review-steps` steward migration once every consumer is
@@ -845,7 +850,9 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   5 calls the seam; `project_initial_setup` bridges no `CLAUDE.md`; nothing on the start path calls
   `orchestrator preflight`. **Held back** at the first `next`: it shares
   `functional-review.md` and two test directories with the running PLAN-LB-37; the operator
-  declined to run them together. Emit once PLAN-LB-37 lands.
+  declined to run them together. Emit once PLAN-LB-37 lands. **Hold released 2026-10-13**:
+  PLAN-LB-37 landed (#1759, `d5c1e869f`); start from that commit or later. Still overlaps the
+  staged PLAN-LB-26 and PLAN-LB-27 on `phase-5-execute/SKILL.md`, `execution.md`, `triage.md`.
 
 ## Open Defects
 
@@ -899,9 +906,11 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
     green builds stood in for the Done-When (no coverage table, a "done" fix task changed no
     code); (5) pre-push review read shape only and finalize triage was bot-bounded, so the loop
     exited on an empty bot queue with Done-When criteria open — asked: the Done-When as a
-    standing finalize triage source. Check at PLAN-LB-37's landing whether its functional review
-    catches (1), (2) and (4). Evidence rests on the sender's audit, not re-checked here.
-    — `lessons-routing-026.md`.
+    standing finalize triage source. Checked at PLAN-LB-37's landing: its functional review
+    catches neither a rewritten criterion nor a weakened test — it grades the outline's current
+    criteria (`functional-review.md:210-215, 298`) without comparing them to the request, and a
+    test identifier counts as evidence (`review-rubric.md:66`). Owned by PLAN-LB-39 D6. Evidence
+    of the incident rests on the sender's audit, not re-checked here. — `lessons-routing-026.md`.
   - **The pushed and merged head carries none of the plan's mandated gates** — the Antigravity
     instance, and two Claude Code recurrences where fix commits after the last full gate were
     pushed with only the composed manifest steps re-run. Graded high for Claude Code.
@@ -969,8 +978,27 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
 - **Free-text placeholders in workflow command templates are not shell-quoted**: finding titles,
   reasons and refs interpolated into double-quoted arguments break the command or run
   `$(...)`. PLAN-LB-37 fixed `functional-review.md` and `code-review.md`; `triage.md`,
-  `verification-feedback.md` and the remaining `phase-6-finalize` documents are left. Lesson
-  `2026-10-13-07-002`. Not owned by any staged plan. — `lb-37-functional-review-004.md`.
+  `verification-feedback.md` and the remaining `phase-6-finalize` documents are left — confirmed
+  at `7f35dca9a`, e.g. `workflow/create-pr.md:182, 292`, `workflow/adr-propose.md:115`,
+  `workflow/lessons-capture.md:170`, `standards/push.md:168`. Lesson `2026-10-13-07-002`. Not
+  owned by any staged plan. — `lb-37-functional-review-004.md`.
+- **From PLAN-LB-37's landing** (`landings/PLAN-LB-37.md`), none owned by a staged plan:
+  - **A required bot's size refusal loops instead of escalating**, and trigger-B reads
+    staleness from another PR's findings: the structural-refusal branch is keyed on the
+    rate-limit list, CodeRabbit's `refusal_patterns` miss "files exceed the limit", and the
+    selector has no `pr_number` filter. Lesson `2026-10-13-14-003`. Pairs with lesson `-14-001`
+    (check size caps before `create-pr`). Nearest owner PLAN-LB-31.
+  - **The footprint of a stacked landing is the last PR only**, so the retrospective reports
+    confident low recall. Lesson `2026-10-13-14-002`.
+  - **Finalize re-fires leave no execution-log or dispatch-boundary rows.** Lesson
+    `2026-10-13-14-004`.
+  - **`manage-logging` `work`/`decision` now exit 1 on a write failure** (`manage-logging.py:197-220`,
+    since #1759), against the plugin rule of exit 0 with `status: error`
+    (`plugin-architecture/SKILL.md:159`); a caller that treats a non-zero exit as fatal halts on
+    a log-write failure. Low.
+  - **D13 partial**: neither review step's own tests read `review-rubric.md`. Low.
+  - **The plugin-cache sync does not prune**: the installed cache still lists the retired
+    `pm-plugin-development:ext-self-review-plan-marshall`. Low.
 - **Medium and low items are not owned by any staged plan.** They are listed with evidence
   in `backlog.md` (sections 1.12 onward, 2.3 onward, 3.2 onward, 4.7 onward and 5). Promote an
   item into a plan spec when it starts to hurt; re-verify it at HEAD first.
@@ -1312,7 +1340,9 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   `SKILL.md` and `references/upgrade-flow.md`, `test_review_step_migration.py` and cases in
   `test_upgrade.py` / `test_upgrade_flow_stage2.py`, the plugin-doctor shim-marker figures).
   — trigger: PLAN-LB-37's landing reports the rollout complete for every repository, or the
-  operator confirms none still needs it. — source: `lb-37-functional-review-001.md`.
+  operator confirms none still needs it. — source: `lb-37-functional-review-001.md`. PLAN-LB-37
+  landed 2026-10-13 with the rollout (D9) OWED and `blocked` by operator decision; the trigger
+  is not met yet.
 - **The rate-window recovery PLAN-LB-24 shipped has not been seen working live.** Its own
   pull request recovered only by hand (two escalated commands posted by the main context),
   and PLAN-LB-33's leaf ran the earlier text. — trigger: the next landing whose review met a
