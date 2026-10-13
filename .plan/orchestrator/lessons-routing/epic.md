@@ -302,6 +302,21 @@ Checked at `0c87ca07b`: the CodeRabbit summary comment is a whole-comment `ignor
 (`filename_sender_mismatch` — plan messages relayed by file copy under the orchestrator's sender name);
 graded on content and archived.
 
+### 2026-10-13 — fifth `ingest` run (inbox, 13 messages)
+
+Corpus at start: 0. Input: 13 messages (`pm-mcp-core-m2-m4-190`..`-202`) from pm-mcp-core PLAN-54
+(`static-verifier-rule-gaps-completion`, #48, Claude Code), arrived after the fourth run landed (#1762).
+Per-message dispositions: `lessons-archive/INDEX.md` § Sweep 2026-10-13 (second run).
+
+| Disposition | Messages | Where |
+|---|---|---|
+| high recurrence of `-022`, filed | 1 (191) | added to the undrained `live-blockers` message `lessons-routing-028` by `inbox amend` (revision 1) — no new filing |
+| medium, archived | 8 | `lessons-archive/medium/` |
+| low, archived | 4 | `lessons-archive/low/` |
+| stale | 0 | — |
+
+No borderline grade, no operator ruling needed.
+
 ## START HERE
 
 ### Annotations
