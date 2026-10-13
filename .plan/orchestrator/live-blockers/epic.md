@@ -1284,6 +1284,19 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
 
 ## Watches
 
+- **OpenCode runtime quality — PLAN-LB-39, PLAN-LB-31, PLAN-LB-26.** By operator decision,
+  these three run under **OpenCode**, not Claude Code, and the run is an evaluation of
+  OpenCode's quality as well as of the implementations. Each emitted command carries the
+  suffix "Important: Strictly comply to the process / rules. Non compliance is not faster but
+  a complete failure". At every landing, assume the implementation is missing or wrong until
+  ground truth proves otherwise: check each spec deliverable against the merged diff, and
+  check that its tests really test the behaviour (no weakened assertions, no rewritten
+  acceptance criteria). Separately grade process compliance: phase boundaries kept, sub-agent
+  dispatch versus inline, the executor used, CI abstraction used, findings triaged through
+  manage-findings, and the landing-facts block complete with real token and step figures (the
+  opencode `total_tokens=0` recurrence in Open Defects). Record an OpenCode grade per plan in
+  its landing record. — trigger: each of the three landings; retire after all three are
+  analyzed and graded.
 - **Does the regraded self-review converge?** The first plans to finalize on `d8b0284ef` or
   later are the test: read their landing facts for the self-review's firing count, its
   `blocking_count` and `advisory_count`, and whether it closed by verifier or by operator.
