@@ -28,14 +28,18 @@ def _stamp_cost_fields(plan_id, task_number, **fields):
     envelope_id) are stamped onto a task record at creation by `commit-add`
     and refreshed by the upstream phase-4-plan producers (derive-cost-size /
     pack-envelopes). To exercise the ``next`` surfacing of these fields
-    deterministically, this helper reads the persisted task JSON, sets the
-    supplied fields, and writes it back — mirroring the on-disk shape the
-    producers leave behind.
+    deterministically, this helper first clears all three fields to None
+    (removing the creation-stamped defaults) and then sets the supplied
+    fields, before writing it back — mirroring the on-disk shape the
+    producers leave behind for a partially-stamped record.
     """
     task_dir = _core.get_tasks_dir(plan_id)
     task_file = _core.find_task_file(task_dir, task_number)
     assert task_file is not None, f'task file for {plan_id}/{task_number} not found'
     task = _core.parse_task_file(task_file.read_text(encoding='utf-8'))
+    task['cost_size'] = None
+    task['predicted_cost_tokens'] = None
+    task['envelope_id'] = None
     task.update(fields)
     task_file.write_text(_core.format_task_file(task), encoding='utf-8')
 
