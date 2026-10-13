@@ -37,7 +37,7 @@ _PLAN_ID = 'log-write-outcome'
 
 def _init_plan(plan_context) -> Path:
     """An initialized plan dir (status.json sentinel), so the log path is plan-scoped."""
-    plan_dir = plan_context.plan_dir_for(_PLAN_ID)
+    plan_dir: Path = plan_context.plan_dir_for(_PLAN_ID)
     (plan_dir / 'status.json').write_text(json.dumps({'plan_id': _PLAN_ID}), encoding='utf-8')
     return plan_dir
 
