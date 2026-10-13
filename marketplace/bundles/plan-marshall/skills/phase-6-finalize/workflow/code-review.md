@@ -43,6 +43,16 @@ The procedure is the same for every language and build system. What differs betw
 
 The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
 
+## Shell-safe free text in command templates
+
+Several command templates below interpolate free text into a shell argument — a finding's title and ref, a verifier's reason, a rendered verdict line. The review writes that text, not this document, and it routinely carries backticks, `$` and quotes. Every `manage-logging` `--message`, every `manage-findings` `--title` and `--detail`, and every `manage-status mark-step-done` `--display-detail` in this document is therefore written as ONE single-quoted shell argument, and the text is substituted into it by these rules:
+
+1. **Single-quote the argument**: `--message '… {title}'`. Between single quotes the shell expands nothing — no backtick command, no `$(…)`, no `$VAR` — so the text reaches the verb byte for byte.
+2. **Escape each embedded single quote as `'\''`** before substituting the value: close the quoted run, add an escaped quote, reopen the run. A title `don't` is substituted as `don'\''t`.
+3. **Never put interpolated text in double quotes.** Inside double quotes the shell still runs a backtick or `$(…)` substitution and expands `$VAR`, and an embedded double quote ends the argument early, so a rendered command can run a substitution or break before the decision-log line or the finding is recorded.
+
+None of the verbs these templates call — `manage-logging decision`, `manage-findings qgate add` and `qgate resolve-by-rule`, `manage-status mark-step-done` — takes the text from a file (each verb's `--help` lists the text only as an argument), so the single-quoted argument is the one safe form, and every template below uses it. Each template that interpolates text names this section.
+
 ## Activation
 
 This document carries no activation logic. The manifest composer decides whether the step runs (see [`../../manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md)): the `commit_push_disabled` pre-filter drops it when the run will not push, the `scope_gated_finalize` pre-filter drops it on a surgical scope unless the step carries a declared lane, and the `code_review` ceremony gate — this step's own `lane` — forces it out (`off`) or in (`minimal`) independently of every other review. When the dispatcher reaches the step, the step runs to one of the terminal branches of Step 6.
@@ -203,12 +213,12 @@ The list lives in the plan's status metadata rather than only on the step record
 
 ## Step 2: Choose where the author runs (inline)
 
-The author runs inline when the round reviews at most 5 files (`file_count <= 5`) and in a dispatched envelope otherwise. The gate is a cost optimization only: both arrangements write the same findings file in the same schema, and Steps 4-6 do not know which one produced it. Log the decision:
+The author runs inline when the round reviews at most 5 files (`file_count <= 5`) and in a dispatched envelope otherwise. The gate is a cost optimization only: both arrangements write the same findings file in the same schema, and Steps 4-6 do not know which one produced it. Log the decision, quoting the text per [§ Shell-safe free text](#shell-safe-free-text-in-command-templates):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:phase-6-finalize:code-review) Author {INLINE|DISPATCH} — round_kind={round_kind}, files in scope={file_count}"
+  --message '(plan-marshall:phase-6-finalize:code-review) Author {INLINE|DISPATCH} — round_kind={round_kind}, files in scope={file_count}'
 ```
 
 **Inline**: load the author's work identity, run Step 3 in the dispatcher context, then continue with Step 4:
@@ -437,12 +447,12 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:review_support va
   --plan-id {plan_id} --kind code --verdict-file {findings_file} --verifier-file {verifier_file}
 ```
 
-On a dispatch that wrote nothing, omit `--verifier-file`. Capture `verifier` (`accepted` / `declined` / `absent` / `malformed`), `may_close`, `loop_back_target`, `findings` and `facts` from this return — they are the round's final answer. `accepted` follows the verifier's first answer: it confirmed the grading. On a round with a blocking finding its `may_close: false` is the answer question (2) requires, so the round still reads `accepted`; `declined` means the verifier rejected the grading, or refused closure on a round without a blocking finding. Log the verifier's answer on the decision log before Step 6 branches:
+On a dispatch that wrote nothing, omit `--verifier-file`. Capture `verifier` (`accepted` / `declined` / `absent` / `malformed`), `may_close`, `loop_back_target`, `findings` and `facts` from this return — they are the round's final answer. `accepted` follows the verifier's first answer: it confirmed the grading. On a round with a blocking finding its `may_close: false` is the answer question (2) requires, so the round still reads `accepted`; `declined` means the verifier rejected the grading, or refused closure on a round without a blocking finding. Log the verifier's answer on the decision log before Step 6 branches — `{reason}` is the verifier's own free text, quoted per [§ Shell-safe free text](#shell-safe-free-text-in-command-templates):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:phase-6-finalize:code-review) Verifier {verifier}; may_close={may_close} — {reason}"
+  --message '(plan-marshall:phase-6-finalize:code-review) Verifier {verifier}; may_close={may_close} — {reason}'
 ```
 
 ## Step 6: Record the outcome (inline)
@@ -466,38 +476,38 @@ Every branch with a non-empty `{override_heads}` forwards `--fact override_close
 
 ### Branch A — the round closes
 
-Resolve the findings earlier rounds of this review filed, which this round no longer holds as blocking — first the blocking findings, then the state findings:
+Resolve the findings earlier rounds of this review filed, which this round no longer holds as blocking — first the blocking findings, then the state findings, each `--detail` quoted per [§ Shell-safe free text](#shell-safe-free-text-in-command-templates):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate resolve-by-rule \
   --plan-id {plan_id} --phase 6-finalize --rule code-review \
   --resolution taken_into_account \
-  --detail "code review closed at {sha}: the verifier accepted findings with no blocking finding"
+  --detail 'code review closed at {sha}: the verifier accepted findings with no blocking finding'
 ```
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate resolve-by-rule \
   --plan-id {plan_id} --phase 6-finalize --rule code-review-state \
   --resolution taken_into_account \
-  --detail "code review closed at {sha}: the verifier accepted the findings and answered may_close=true"
+  --detail 'code review closed at {sha}: the verifier accepted the findings and answered may_close=true'
 ```
 
 On a non-`success` return from either call, do NOT record `done`: surface the returned error and halt.
 
-Advisory findings are not filed — a pending finding blocks the merge — and reach the reader through the step's facts and the decision log, one line each:
+Advisory findings are not filed — a pending finding blocks the merge — and reach the reader through the step's facts and the decision log, one line each — `{title}` is the review's free text, quoted per [§ Shell-safe free text](#shell-safe-free-text-in-command-templates):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:phase-6-finalize:code-review) Advisory at {ref} — {title}"
+  --message '(plan-marshall:phase-6-finalize:code-review) Advisory at {ref} — {title}'
 ```
 
-Then record the close:
+Then record the close, with `--display-detail` quoted per [§ Shell-safe free text](#shell-safe-free-text-in-command-templates):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step default:code-review --outcome done \
-  --display-detail "code review clean: {files_read} files, {advisory_count} advisory" \
+  --display-detail 'code review clean: {files_read} files, {advisory_count} advisory' \
   --fact acceptance={verifier} --fact may_close=true --fact work_performed=true \
   --fact round_kind={round_kind} \
   --fact domains_reviewed={domains_reviewed} --fact files_read={files_read} \
@@ -513,40 +523,40 @@ Every `{…}` count is the value of the same-named key in the Step 5 validator `
 
 The round does not close. File the blocking findings before the outcome is recorded.
 
-**On a full round**, first resolve the blocking findings earlier rounds filed — this round re-examined every file, so its blocking set is the whole of what still blocks, and a finding it still holds is re-filed below as pending:
+**On a full round**, first resolve the blocking findings earlier rounds filed — this round re-examined every file, so its blocking set is the whole of what still blocks, and a finding it still holds is re-filed below as pending (`--detail` quoted per [§ Shell-safe free text](#shell-safe-free-text-in-command-templates)):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate resolve-by-rule \
   --plan-id {plan_id} --phase 6-finalize --rule code-review \
   --resolution taken_into_account \
-  --detail "superseded by the code review round at {sha}"
+  --detail 'superseded by the code review round at {sha}'
 ```
 
 A delta round resolves nothing: it examined only part of the change, so a finding outside its scope still stands.
 
-File every `findings` entry whose `severity` is `blocking`, one call each:
+File every `findings` entry whose `severity` is `blocking`, one call each — `{ref}` and `{title}` are the review's free text, so `--title` and `--detail` are quoted per [§ Shell-safe free text](#shell-safe-free-text-in-command-templates):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add \
   --plan-id {plan_id} --phase 6-finalize --source qgate --type bug \
-  --title "code finding at {ref}" --detail "{title} [fix_kind {fix_kind}]" \
+  --title 'code finding at {ref}' --detail '{title} [fix_kind {fix_kind}]' \
   --rule code-review --component plan-marshall:phase-6-finalize --severity error
 ```
 
-Advisory findings are not filed — a pending finding blocks the merge — and reach the reader through the step's facts and the decision log, one line each:
+Advisory findings are not filed — a pending finding blocks the merge — and reach the reader through the step's facts and the decision log, one line each, quoted per [§ Shell-safe free text](#shell-safe-free-text-in-command-templates):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:phase-6-finalize:code-review) Advisory at {ref} — {title}"
+  --message '(plan-marshall:phase-6-finalize:code-review) Advisory at {ref} — {title}'
 ```
 
-**When the verifier did not accept**, also file one state finding naming which situation it was — `verdict_refused` (`verifier: declined`), `verifier_unavailable` (`verifier: absent` or `malformed`). The fixed rule key is what lets the closing round, or an operator close, resolve it:
+**When the verifier did not accept**, also file one state finding naming which situation it was — `verdict_refused` (`verifier: declined`), `verifier_unavailable` (`verifier: absent` or `malformed`). The fixed rule key is what lets the closing round, or an operator close, resolve it. `{reason}` is the verifier's free text, quoted per [§ Shell-safe free text](#shell-safe-free-text-in-command-templates):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add \
   --plan-id {plan_id} --phase 6-finalize --source qgate --type bug \
-  --title "{state} at code-review" --detail "{reason}" \
+  --title '{state} at code-review' --detail '{reason}' \
   --rule code-review-state --component plan-marshall:phase-6-finalize --severity warning
 ```
 
@@ -577,13 +587,13 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status set-ph
 
 On target `6-finalize`, make no `set-phase` call — the dispatcher replays this step inline.
 
-Record the loop-back. `{acceptance}` is the validator's `verifier` value:
+Record the loop-back. `{acceptance}` is the validator's `verifier` value, and `--display-detail` is quoted per [§ Shell-safe free text](#shell-safe-free-text-in-command-templates):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step default:code-review --outcome loop_back \
   --loop-back-target {target} \
-  --display-detail "{verdict}" \
+  --display-detail '{verdict}' \
   --fact acceptance={acceptance} --fact may_close=false --fact work_performed=true \
   --fact round_kind={round_kind} \
   --fact domains_reviewed={domains_reviewed} --fact files_read={files_read} \
@@ -605,12 +615,12 @@ Reached when the footprint or the rulebook could not be resolved, the author fai
 
 The outcome is `loop_back` to `6-finalize`, and the choice is load-bearing. A `done` would close a review that never ran. A `failed` leaf record does not stop the dispatcher's step loop, so `push` would run next and ship the change unreviewed. `loop_back` is the outcome that stops the loop advancing past this step and re-fires it on the next entry, bounded by this step's round budget — so an input that stays unreadable halts the run for the operator rather than letting the push through.
 
-File the not-run state first, so the store carries it and an operator close resolves it with the other state findings:
+File the not-run state first, so the store carries it and an operator close resolves it with the other state findings. `{reason}` may be a script's error text, so `--detail` here and `--display-detail` below are quoted per [§ Shell-safe free text](#shell-safe-free-text-in-command-templates):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add \
   --plan-id {plan_id} --phase 6-finalize --source qgate --type bug \
-  --title "not_run at code-review" --detail "{reason}" \
+  --title 'not_run at code-review' --detail '{reason}' \
   --rule code-review-state --component plan-marshall:phase-6-finalize --severity warning
 ```
 
@@ -618,7 +628,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qg
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step default:code-review --outcome loop_back \
   --loop-back-target 6-finalize \
-  --display-detail "code review not run: {reason}" \
+  --display-detail 'code review not run: {reason}' \
   --fact work_performed=false \
   --head-at-completion {sha}
 ```

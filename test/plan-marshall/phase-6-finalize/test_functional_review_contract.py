@@ -15,7 +15,11 @@ each assertion below pins one clause of it against an independent source:
   ``review_support`` helper, and every other command is ``git``;
 * the body names no extension point and no candidate surfacer, and has no
   language- or build-system-conditional step;
-* ``records_facts`` covers every fact ``validate`` derives.
+* ``records_facts`` covers every fact ``validate`` derives;
+* the shell-quoting rule for free text is stated once, every command template
+  that interpolates free text names it, and no template puts a placeholder in a
+  double-quoted ``--message`` / ``--title`` / ``--detail`` /
+  ``--display-detail`` argument.
 
 Every extractor carries a control that proves it finds what it targets, so a
 broken parser fails here instead of passing vacuously.
@@ -304,3 +308,90 @@ def test_body_has_no_language_conditional_step():
     named = [token for token in _LANGUAGE_TOKENS if re.search(rf'\b{token}\b', body)]
     assert not named, f'the body names a language or build system, so a step may branch on it: {named}'
     assert re.search(r'\bpython\b', 'a python change'), 'control: the token scan must match a whole word'
+
+
+# ---------------------------------------------------------------------------
+# Shell-safe free text in command templates
+# ---------------------------------------------------------------------------
+
+_QUOTING_RULE_HEADING = '## Shell-safe free text in command templates'
+_QUOTING_RULE_ANCHOR = '(#shell-safe-free-text-in-command-templates)'
+#: The arguments through which a template carries free text into a command.
+_FREE_TEXT_FLAGS = ('--message', '--title', '--detail', '--display-detail')
+_FREE_TEXT_FLAG = r'--(?:message|title|detail|display-detail)'
+_DOUBLE_QUOTED_PLACEHOLDER_RE = re.compile(rf'{_FREE_TEXT_FLAG}\s+"[^"\n]*\{{')
+_SINGLE_QUOTED_PLACEHOLDER_RE = re.compile(rf"{_FREE_TEXT_FLAG}\s+'[^'\n]*\{{")
+#: A fence at any indentation — a template inside a list item is indented.
+_ANY_FENCE_RE = re.compile(r'^\s*```(\w*)\s*$')
+
+
+def _bash_blocks_with_lead_in(text: str) -> list[tuple[str, str]]:
+    """Every ``bash`` block, indented ones included, paired with the prose that introduces it.
+
+    Blocks separated only by blank lines share one lead-in: the prose before the
+    first of them introduces the whole run.
+    """
+    pairs: list[tuple[str, str]] = []
+    lead_in: list[str] = []
+    block: list[str] | None = None
+    language = ''
+    after_block = False
+    for line in text.splitlines():
+        fence = _ANY_FENCE_RE.match(line)
+        if fence and block is None:
+            block, language = [], fence.group(1)
+            continue
+        if fence and block is not None:
+            if language == 'bash':
+                pairs.append((' '.join(lead_in), '\n'.join(block)))
+            block, after_block = None, True
+            continue
+        if block is not None:
+            block.append(line)
+        elif line.strip():
+            lead_in = [line] if after_block else [*lead_in, line]
+            after_block = False
+    return pairs
+
+
+def _free_text_lines(block: str, pattern: re.Pattern[str]) -> list[str]:
+    return [line.strip() for line in block.splitlines() if pattern.search(line)]
+
+
+def test_the_quoting_rule_is_stated_once_and_covers_every_free_text_flag():
+    assert _body().count(_QUOTING_RULE_HEADING + '\n') == 1
+    rule = _section(_QUOTING_RULE_HEADING)
+    assert "'\\''" in rule, 'the rule must say how an embedded single quote is escaped'
+    missing = [flag for flag in _FREE_TEXT_FLAGS if f'`{flag}`' not in rule]
+    assert not missing, f'the rule does not cover these free-text arguments: {missing}'
+
+
+def test_no_template_interpolates_free_text_in_a_double_quoted_argument():
+    blocks = [block for _lead_in, block in _bash_blocks_with_lead_in(_body())]
+    single = [line for block in blocks for line in _free_text_lines(block, _SINGLE_QUOTED_PLACEHOLDER_RE)]
+    double = [line for block in blocks for line in _free_text_lines(block, _DOUBLE_QUOTED_PLACEHOLDER_RE)]
+    assert single, 'control: the body must carry single-quoted free-text templates, or the scan below reads nothing'
+    assert not double, f'a template interpolates free text inside double quotes, which the shell expands: {double}'
+
+
+def test_the_double_quote_scan_matches_what_it_targets():
+    """Control: the scan flags a double-quoted placeholder and passes its single-quoted form."""
+    assert _DOUBLE_QUOTED_PLACEHOLDER_RE.search('--title "{kind} at {ref}" --detail "{title}"')
+    assert _DOUBLE_QUOTED_PLACEHOLDER_RE.search('  --display-detail "{verdict}" \\')
+    assert not _DOUBLE_QUOTED_PLACEHOLDER_RE.search("--title '{kind} at {ref}' --detail '{title}'")
+    assert not _DOUBLE_QUOTED_PLACEHOLDER_RE.search('--title "not_run at functional-review"')
+
+
+def test_every_free_text_template_names_the_quoting_rule():
+    pairs = _bash_blocks_with_lead_in(_body())
+    governed = [(lead_in, block) for lead_in, block in pairs if _SINGLE_QUOTED_PLACEHOLDER_RE.search(block)]
+    assert governed, 'control: the body must carry free-text templates for the reference check to read'
+    assert any('claimed met without evidence' in block for _lead_in, block in governed), (
+        'control: the Step 4 template, indented inside a list item, must be among the templates read'
+    )
+    unreferenced = [
+        _free_text_lines(block, _SINGLE_QUOTED_PLACEHOLDER_RE)[0]
+        for lead_in, block in governed
+        if _QUOTING_RULE_ANCHOR not in lead_in
+    ]
+    assert not unreferenced, f'these templates interpolate free text without naming the quoting rule: {unreferenced}'
