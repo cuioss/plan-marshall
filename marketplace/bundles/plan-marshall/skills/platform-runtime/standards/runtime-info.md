@@ -97,7 +97,7 @@ reports `marshal_not_found`:
 status: error
 operation: runtime-info
 error: unknown_target
-message: "runtime.target 'unknown-platform' is not in the registry; valid targets are: claude, opencode, antigravity"
+message: "runtime.target 'unknown-platform' is not in the registry; valid targets are: antigravity, claude, opencode"
 ```
 
 ## No-Op

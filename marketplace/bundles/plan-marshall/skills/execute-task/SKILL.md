@@ -70,6 +70,10 @@ Callers (the `phase-5-execute` envelope, itself dispatched as `execution-context
 
 All profiles share the steps below. Profile-specific steps are documented in each profile section.
 
+### Step: Seam-Dispatch Branch (all profiles)
+
+Before any profile work, resolve the harness-native subagent seam live via `platform_runtime subagent dispatch --agent execution-context --context {"plan_id": "{plan_id}"}`. On `status: success`, the task runs dispatched through the returned `invocation.tool` (Claude `Task`, OpenCode `task` where available, Antigravity `invoke_subagent`); on `status: no-op`, the task runs inline in this envelope and the returned `reason` is logged at INFO — the inline branch is explicit and logged, never silent. Before running any verification command that could exceed the leaf ceiling, re-resolve it live via `architecture resolve` and hand back without starting the run when the live tier is `orchestrator` (stamped values are advisory only); usage propagates as `unknown` on every path where no dispatch happened.
+
 ### Step: Resolve Stale Targets
 
 Check if a rename mapping exists and rewrite step targets before loading the task. This handles cases where earlier tasks renamed directories, making subsequent step targets stale.

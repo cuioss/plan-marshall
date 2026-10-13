@@ -197,7 +197,7 @@ def test_d4_fake_target_derives_through_all_three_dicts() -> None:
 def test_d3_fake_target_appears_in_unknown_target_message() -> None:
     """A fake target in _REGISTRY is named by the unknown_target error in project_initial_setup.
 
-    Proves the concrete runtime does not hardcode ``"claude, opencode"`` but
+    Proves the concrete runtime does not hardcode the target list but
     derives the message from the live registry.
     """
     _saved = dict(platform_runtime._REGISTRY)

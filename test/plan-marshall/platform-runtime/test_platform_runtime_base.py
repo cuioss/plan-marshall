@@ -451,3 +451,22 @@ def test_skill_md_operations_table_has_no_per_target_restatements():
         '(decline paths belong in contract.md and ABC docstrings): '
         + '; '.join(f'L{line}: {pat!r} in {text!r}' for line, pat, text in violations)
     )
+
+
+# =============================================================================
+# D1 — subagent_dispatch ABC conformance: verify-first and unknown usage
+# =============================================================================
+
+
+def test_subagent_dispatch_contract_names_verify_first_and_unknown():
+    """The ABC seam contract states the verify-first clause and the unknown rule."""
+    doc = Runtime.subagent_dispatch.__doc__ or ''
+    assert 'Verify-first' in doc
+    assert 'unknown' in doc
+    for implementor in (
+        '_claude_runtime_impl',
+        'claude_runtime',
+        'opencode_runtime',
+        'antigravity_runtime',
+    ):
+        assert implementor in doc, f'{implementor} missing from the ABC seam contract'

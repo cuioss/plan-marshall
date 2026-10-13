@@ -815,7 +815,13 @@ class AntigravityRuntime(Runtime):
         prompt_file: str | None = None,
         context: dict[str, Any] | None = None,
     ) -> str:
-        """Dispatch subagent using Antigravity's invoke_subagent tool."""
+        """Dispatch subagent using Antigravity's invoke_subagent tool.
+
+        Keeps the ``invoke_subagent`` mapping and conforms usage propagation
+        to the Runtime ABC unknown rule: no dispatch has happened yet at this
+        seam — the payload carries invocation parameters, not a run — so
+        ``usage`` reports ``unknown`` rather than a measured zero.
+        """
         if prompt_file is not None and not Path(prompt_file).exists():
             return toon_error(
                 'subagent dispatch',
@@ -842,6 +848,7 @@ class AntigravityRuntime(Runtime):
             'subagent dispatch',
             {
                 'platform': 'antigravity',
+                'usage': 'unknown',
                 'invocation': {
                     'tool': 'invoke_subagent',
                     'description': f'Run {agent}',

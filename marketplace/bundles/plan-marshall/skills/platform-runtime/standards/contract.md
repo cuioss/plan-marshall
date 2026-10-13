@@ -97,7 +97,7 @@ hook_skip_reason: OpenCode does not support a SessionStart hook equivalent (issu
 status: error
 operation: project initial-setup
 error: unknown_target
-message: "Target 'foobar' is not in the registry; valid targets are: claude, opencode"
+message: "Target 'foobar' is not in the registry; valid targets are: antigravity, claude, opencode"
 ```
 
 The seed is a read-modify-write, so it also returns `error: io_error` on three corrupt-input edges, identically on both targets: the directory tree cannot be created; `marshal.json` exists but is unreadable or unparseable; or it parses yet carries a shape the seed cannot mutate — a top-level non-object, or a `runtime` key present with a non-object value. The parse edge and the shape edge are separate, because a successful parse proves the bytes were valid JSON and not that they were an object. Every corrupt edge refuses **before any write**: the operation never falls back to an empty document, since that fallback would destroy exactly the configuration the read exists to preserve.
@@ -1194,11 +1194,43 @@ Return the platform-specific invocation parameters for spawning a focused subage
 
 Every target echoes the requested `--agent` back as `invocation.subagent_type`; no target substitutes an agent of its own choosing, so a caller's selection always reaches the invocation.
 
+The admitted registry is `antigravity, claude, opencode` — derived live from `platform_runtime._REGISTRY` via `describe_targets`, never a hard-coded literal.
+
+Per-harness dispatch outcomes:
+
+- **Claude** — `Task` tool with the agent frontmatter description; unmapped frontmatter tools decline as `no-op`.
+- **OpenCode** — `task` tool, conditional on verify-first clause 1 (tool available in the envelope). A caller passing `task_tool_available: False` in `--context` takes the explicit logged inline branch (`no-op` carrying the inline fallback) instead of a faux success.
+- **Antigravity** — `invoke_subagent` tool, keeping that mapping on every path.
+
+Transcripts vocabulary: no dispatch has happened at this seam — the payload carries invocation parameters, not a run — so every success carries `usage: unknown` rather than a measured zero, and every inline-branch `no-op` propagates usage as unknown the same way. `unknown` here shares the manage-metrics unknown vocabulary: absent measurement is stated, never zero-filled.
+
+**Success (Antigravity)**:
+```toon
+status: success
+operation: subagent dispatch
+platform: antigravity
+usage: unknown
+invocation:
+  tool: invoke_subagent
+  description: Run execution-context-level-3
+  prompt: ...agent body with context merged...
+  subagent_type: execution-context-level-3
+```
+
+**No-op (OpenCode inline branch — tool unavailable)**:
+```toon
+status: no-op
+operation: subagent dispatch
+reason: OpenCode 'task' tool is not available in this envelope — take the explicit logged inline branch instead of dispatching
+alternative: Inline the agent logic in-turn and propagate usage as unknown
+```
+
 **Success (Claude)**:
 ```toon
 status: success
 operation: subagent dispatch
 platform: claude
+usage: unknown
 invocation:
   tool: Task
   description: Run phase-3-outline outline
@@ -1211,6 +1243,7 @@ invocation:
 status: success
 operation: subagent dispatch
 platform: opencode
+usage: unknown
 invocation:
   tool: task
   description: Run execution-context-level-3
@@ -1425,7 +1458,7 @@ build_version: "0.1"
 status: error
 operation: runtime-info
 error: unknown_target
-message: "runtime.target 'antigravity' is not in the registry; valid targets are: claude, opencode"
+message: "runtime.target 'antigravity' is not in the registry; valid targets are: antigravity, claude, opencode"
 ```
 
 **Declining.** A target that cannot collect runtime information returns a

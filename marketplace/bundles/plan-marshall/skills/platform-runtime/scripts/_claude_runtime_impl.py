@@ -1914,6 +1914,7 @@ class ClaudeRuntime(Runtime):
             'subagent dispatch',
             {
                 'platform': 'claude',
+                'usage': 'unknown',
                 'invocation': {
                     'tool': 'Task',
                     'description': task_description,

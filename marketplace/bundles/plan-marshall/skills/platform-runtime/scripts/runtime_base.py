@@ -1305,6 +1305,24 @@ class Runtime(ABC):
         substitutes an agent of its own choosing, so a caller's selection always
         reaches the invocation.
 
+        Verify-first dispatch contract: before returning a dispatch success the
+        implementor verifies (1) the harness exposes the named spawning tool in
+        this envelope and (2) the requested agent's frontmatter tools map onto
+        this target. A clause that fails takes the explicit logged inline
+        branch — a ``no-op`` naming the inline fallback — never a faux success
+        carrying invocation parameters the harness cannot honour.
+
+        Usage propagation: every implementor propagates usage as ``unknown``
+        when no dispatch happened — the inline branch and every ``no-op`` carry
+        ``usage: unknown`` rather than a measured zero, so an unmeasured run
+        stays distinguishable from a measured one (shared with the
+        manage-metrics unknown vocabulary).
+
+        The four implementors this contract migrates together are
+        ``_claude_runtime_impl`` (``Task``), ``claude_runtime`` (``Task`` via
+        the shared impl), ``opencode_runtime`` (``task``, conditional on tool
+        availability), and ``antigravity_runtime`` (``invoke_subagent``).
+
         Returns ``no-op`` when the agent requires tools the target has no
         equivalent for.
 

@@ -2,6 +2,8 @@
 
 Single source of truth for the granularity heuristics that govern when a step earns an LLM dispatch envelope, when it should bundle into a larger dispatch, and when it should stay a deterministic script. Every skill that adds new workflow material — whether it dispatches a subagent or contemplates one — should consult this doc.
 
+**Per-harness dispatch topology.** The envelope is harness-neutral; only the spawning tool differs per harness. Where the harness exposes a real sub-agent tool the envelope runs dispatched through it (Claude `Task`, OpenCode `task` where available, Antigravity `invoke_subagent`); where none exists the same envelope runs inline with an explicit logged reason. Granularity heuristics apply identically on every harness — the topology note decides the tool, never whether the work is justified.
+
 ## 1. What does a dispatch actually cost?
 
 Spawning a subagent is not free. From `manage-metrics/standards/data-format.md`, real plan runs anchor the picture:

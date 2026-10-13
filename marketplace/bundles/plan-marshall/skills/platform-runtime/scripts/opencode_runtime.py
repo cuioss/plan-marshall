@@ -1219,8 +1219,23 @@ class OpenCodeRuntime(Runtime):
         Uses ``task`` (lowercase) as the OpenCode native tool name, and echoes
         the REQUESTED *agent* back as ``subagent_type`` so the caller's
         selection reaches the invocation instead of being discarded.
+
+        Verify-first clause 1: the ``task``-tool dispatch fires only when the
+        tool is available in this envelope. A caller that knows the tool is
+        absent passes ``task_tool_available: False`` inside *context*; the
+        decline takes the explicit logged inline branch — a ``no-op`` carrying
+        ``usage: unknown`` — instead of a faux success the harness cannot
+        honour. The flag is consumed here and never merged into the prompt.
         """
         import pathlib
+
+        if isinstance(context, dict) and context.get('task_tool_available') is False:
+            return toon_noop(
+                'subagent dispatch',
+                "OpenCode 'task' tool is not available in this envelope — "
+                'take the explicit logged inline branch instead of dispatching',
+                'Inline the agent logic in-turn and propagate usage as unknown',
+            )
 
         if prompt_file is not None and not pathlib.Path(prompt_file).exists():
             return toon_error(
@@ -1241,6 +1256,7 @@ class OpenCodeRuntime(Runtime):
                 )
 
         if context:
+            context = {k: v for k, v in context.items() if k != 'task_tool_available'}
             for key, value in context.items():
                 prompt_body = prompt_body.replace(f'{{{key}}}', str(value))
 
@@ -1248,6 +1264,7 @@ class OpenCodeRuntime(Runtime):
             'subagent dispatch',
             {
                 'platform': 'opencode',
+                'usage': 'unknown',
                 'invocation': {
                     'tool': 'task',
                     'description': f'Run {agent}',
