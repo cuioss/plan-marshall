@@ -6,9 +6,9 @@ Pure runtime-information collector owning the client.toon schema.
 Client.toon entries are keyed by human-readable UTC datetime stamp; multiple
 runs append a new timestamped entry instead of overwriting.
 
-Collects the client.toon attributes — one required (`harness`) plus five
-optional (model name/type/version, effort level, and build-version) — on a
-best-effort basis.
+Collects the client.toon attributes — two required (`harness`, `transcripts`)
+plus five optional (model name/type/version, effort level, and build-version) —
+on a best-effort basis.
 Attributes that scripts cannot read are dropped rather than estimated; where
 script access is hard or strange an LLM fallback may fill the gap upstream —
 this module never estimates.
@@ -50,6 +50,18 @@ RUNTIME_INFO_OPERATION = 'runtime-info'
 
 #: Harness identifiers with concrete providers.
 SUPPORTED_HARNESSES: tuple[str, ...] = ('claude', 'opencode', 'antigravity')
+
+#: Transcript-availability capability per harness. `full` means the harness
+#: exposes a session transcript (and subagent transcripts) the normalized-tokens
+#: operation can walk; `none` means it exposes nothing to walk, so every
+#: unmeasured token figure on that harness reports `unknown` rather than zero.
+#: The value is derived from the harness identifier alone — never estimated.
+TRANSCRIPTS_FULL = 'full'
+TRANSCRIPTS_NONE = 'none'
+TRANSCRIPTS_CAPABILITIES: tuple[str, ...] = (TRANSCRIPTS_FULL, TRANSCRIPTS_NONE)
+
+#: Harness identifiers whose transcript surface is walkable.
+_TRANSCRIPTS_FULL_HARNESSES: frozenset[str] = frozenset({'claude'})
 
 _MODEL_NAME_ENV: tuple[str, ...] = (
     'CLAUDE_CODE_MODEL',
@@ -188,6 +200,21 @@ def _find_marketplace_root() -> Path | None:
     return None
 
 
+def read_transcripts_capability(harness: str) -> str:
+    """Return the transcript-availability capability for *harness*.
+
+    Args:
+        harness: Harness identifier — ``claude``, ``opencode``, or
+            ``antigravity``.
+
+    Returns:
+        ``full`` when the harness exposes a walkable session transcript,
+        ``none`` otherwise. An unrecognised harness reads as ``none`` —
+        fail-closed, so no transcript is ever claimed where none exists.
+    """
+    return TRANSCRIPTS_FULL if harness in _TRANSCRIPTS_FULL_HARNESSES else TRANSCRIPTS_NONE
+
+
 def collect_runtime_info(
     harness: str,
     env: Mapping[str, str] | None = None,
@@ -216,11 +243,11 @@ def collect_runtime_info(
         build_version: Explicit build-version override; auto-read when None.
 
     Returns:
-        Attribute dict carrying ``harness`` plus whichever of ``model_name``,
+        Attribute dict carrying ``harness`` and ``transcripts`` plus whichever of ``model_name``,
         ``model_type``, ``model_version``, ``effort``, and ``build_version``
         were readable.
     """
-    info: dict[str, Any] = {'harness': harness}
+    info: dict[str, Any] = {'harness': harness, 'transcripts': read_transcripts_capability(harness)}
     resolved_name = model_name if model_name else read_model_name(env)
     if resolved_name:
         info['model_name'] = resolved_name

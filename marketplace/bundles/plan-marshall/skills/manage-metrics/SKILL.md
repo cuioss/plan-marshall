@@ -592,6 +592,16 @@ the same agent dispatches the on-disk totals are independent of `enrich`'s
 per-phase subagent fields, so double-counting does not occur in the closed-phase
 row (`total_tokens`), which is filled from the accumulator at `end-phase` time.
 
+**Unknown reporting contract.** On a `transcripts: none` run the runtime op
+declines with `transcript_not_found` and `enrich` measures nothing: every phase
+row with no measured figure reports `total_tokens: unknown` — the literal
+`unknown`, never `0` and never absent. `generate` and `record` propagate the
+literal unchanged; a Total fed by an `unknown` row is itself `unknown`, never a
+number with a hole in it. A measured zero stays `0` — only never-measured reads
+as `unknown`. The run's `runtime-info` record carries `transcripts: none` as
+the capability flag explaining why. See [data-format.md](standards/data-format.md)
+§ "Unknown token figures (`unknown`)".
+
 ### reconcile-ledgers
 
 **Read-only.** Reconcile the plan's two ROW ledgers against each other and

@@ -70,7 +70,7 @@ JSON format for storage:
 | `current_phase` | string | Current active phase |
 | `title_token` | object (optional) | Transient title-token record `{owner, state, set_at}`. `state` ∈ `lock-waiting`, `lock-owned` (lock-coordination states surfaced as ⏳/🔒 glyphs), `build-busy` (the orchestration-busy state surfaced as a 🔨 icon-slot override, NOT a glyph). `owner` ∈ `build-hook`, `merge-lock`, `cli`. `set_at` is a UTC ISO-8601 instant and is the input to the 3600-second staleness rule — a record older than that reads as absent, and any writer may then overwrite it. Written by `title-token set` (last writer wins); removed by `title-token clear`, which is owner-scoped. Absent when no token is active. Consumed by the `manage-terminal-title` composer for glyph/icon selection; not a persisted plan field — it is ephemeral session state. `build-busy` is set/cleared by the `build-hook` render assist bracketing a Bash build window — see `platform-runtime/standards/terminal-title-architecture.md` § Channel Delivery Contract ruling (c) for the record contract. |
 | `phases` | list | Phase objects with name and status |
-| `metadata` | table | Key-value metadata (common fields: `change_type`, `confidence`, `domain`, `use_worktree`, `worktree_path`, `worktree_branch`, `session_ids`) |
+| `metadata` | table | Key-value metadata (common fields: `change_type`, `confidence`, `domain`, `harness`, `use_worktree`, `worktree_path`, `worktree_branch`, `session_ids`) |
 | `created` | string | ISO timestamp of creation |
 | `updated` | string | ISO timestamp of last update |
 
@@ -129,6 +129,19 @@ Downstream consumers MUST read these fields via `get-worktree-path`
 rather than re-deriving the path from filesystem layout. Re-derivation
 breaks if the platform-neutral worktree root constant ever changes
 again, and it duplicates logic that `manage-status` already owns.
+
+### Harness Metadata Convention
+
+`status.metadata.harness` names the harness the plan runs on (`claude`,
+`opencode`, `antigravity`), stamped by the phase-1-init Step 8a.6 preflight
+hook. It is the field that tells every downstream reader — metrics,
+landing payload, retrospective — which harness produced the run, and which
+`transcripts` capability (`full` vs `none`, see
+`platform-runtime/standards/runtime-info.md`) explains its token figures:
+
+| Field | Type | When set | Description |
+|-------|------|----------|-------------|
+| `harness` | string | Stamped at phase-1-init Step 8a.6 (absent when the preflight hook could not resolve one) | Harness identifier for this plan's runs. Absent reads as "not stamped", never as a default harness. Consumers MUST NOT guess it from environment or history. |
 
 ### Sibling-worktree resolution (read verbs only)
 

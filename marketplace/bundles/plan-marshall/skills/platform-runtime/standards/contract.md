@@ -1035,6 +1035,13 @@ alternative: "run metrics capture on the Claude target, or wire a shared metrics
 
 OpenCode declines with a `no-op` on **every** input, manual count included. It reaches no persistence boundary — the token-cursor write and the `manage-metrics end-phase` call live in the Claude runtime — so a `success` carrying a manual count would be a report of work that did not happen: a measurement the caller could not distinguish from a stored one, silently lost. `Runtime.metrics_capture` requires an explicit count to be persisted before `success`, or declined with `no-op`; OpenCode chooses the honest decline. The recommended remediation is to relocate the (target-neutral) metrics persistence boundary to a shared home both runtimes reach; until then OpenCode declines rather than lying about a write it cannot perform.
 
+**Unknown vocabulary.** A phase that ran on a `transcripts: none` harness carries no
+measured token figure at all, so downstream `manage-metrics` rows report
+`total_tokens: unknown` — the literal `unknown`, never `0`. A measured zero
+stays `0`; only never-measured reads as `unknown`. The `transcripts`
+capability on the run's `runtime-info` record (`full` vs `none`) is what tells
+a reader which of the two a figure is.
+
 ---
 
 ### `metrics normalized-tokens`
@@ -1074,6 +1081,16 @@ Each observed tool call is classified by its tool name into one of five buckets;
 **Partition invariant.** The three sub-sources sum EXACTLY to `exploration_result_bytes`. They re-cut bytes already counted there and add none. They carry the `_bytes` suffix rather than `_result_bytes` deliberately: they are a byte-only sub-split of ONE bucket and are **not** members of the `{bucket}_{measure}` exploration-counter family, so a consumer deriving that family's key set must not pick them up. There is no matching `_tool_calls` sub-split.
 
 **Absent is not zero.** A target that emits a per-phase bucket at all MUST populate the full counter key set — exploration-share counters, cache-read attribution, and exploration sub-sources alike — so a `0` there is a *measured* zero. A phase recording no `cache_read` still carries all five attributed keys and the residual at a measured zero, and a phase that ran no exploration call still carries all three sub-source keys at a measured zero. A target that declines the primitive — OpenCode, which exposes no transcript — emits no bucket, and its counters are *absent*. Consumers MUST preserve the distinction and MUST NOT substitute `0` for a target that never measured; a zero-initialized bucket on a declining target would make "did not explore" indistinguishable from "was never measured". This is the declinable-primitive posture of ADR-011 and the explicit-unknown rule of ADR-009.
+
+**Unknown outcome vocabulary.** The no-op above is a transcript-availability
+statement, not a token figure: a `transcripts: none` run reports its phase
+token total as the literal `unknown` (see
+`manage-metrics/standards/data-format.md` § unknown vocabulary), and its
+`runtime-info` record carries `transcripts: none` as the capability flag that
+explains why. `unknown` propagates through `enrich`, `generate`, and `record`
+without ever collapsing into a measured zero — a reader that sees `unknown`
+knows no measurement happened, while a reader that sees `0` knows a
+measurement happened and found nothing.
 
 **Success**:
 ```toon

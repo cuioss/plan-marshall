@@ -1,7 +1,8 @@
 # Runtime-Info Extension Point
 
 Logical extension point for runtime information collection. The `runtime-info`
-operation reports the harness/client identifier, model name/type/version,
+operation reports the harness/client identifier, the transcript-availability
+capability, model name/type/version,
 effort level, and build-version on a best-effort basis for the `client.toon`
 pre-flight artifact.
 
@@ -25,16 +26,22 @@ Takes no arguments. Routing is config-driven via `runtime.target` in
 
 ## Client.toon Schema
 
-One required attribute (`harness`) and five optional attributes per run entry. Unreadable attributes are absent rather than estimated.
+One required attribute pair (`harness`, `transcripts`) and five optional attributes per run entry. Unreadable attributes are absent rather than estimated.
 
 | Key | Meaning | Always present |
 |-----|---------|----------------|
 | `harness` | Harness identifier (`claude`, `opencode`, `antigravity`) | Yes |
+| `transcripts` | Transcript-availability capability (`full` on `claude`, `none` on `opencode`/`antigravity`; unrecognised harness reads as `none`) | Yes |
 | `model_name` | Model name as reported by script-accessible sources | No |
 | `model_type` | Model type as reported by script-accessible sources | No |
 | `model_version` | Model version as reported by script-accessible sources | No |
 | `effort` | Effort level as reported by script-accessible sources | No |
 | `build_version` | Build version as reported by script-accessible sources | No |
+
+`transcripts: none` is the capability flag a transcript-less harness carries:
+its token figures report `unknown` rather than zero (see
+`manage-metrics/standards/data-format.md` § unknown vocabulary). The value is
+derived from the harness identifier alone — never estimated, and never absent.
 
 `model_type` and `model_version` are never derived from `model_name`.
 Derivation would be estimation. Where script access is hard or strange, an LLM
@@ -56,6 +63,7 @@ Full attribute set, when every source is readable:
 status: success
 operation: runtime-info
 harness: claude
+transcripts: full
 model_name: claude-sonnet-4-5
 model_type: chat
 model_version: 2026-09-01
@@ -68,7 +76,8 @@ Best-effort drop, when only the harness and build-version are readable:
 ```toon
 status: success
 operation: runtime-info
-harness: claude
+harness: opencode
+transcripts: none
 build_version: "0.1"
 ```
 
@@ -79,9 +88,11 @@ schema_version: 1
 entries:
   2026-09-15 07-00-00 UTC:
     harness: claude
+    transcripts: full
     build_version: "0.1"
   2026-09-15 08-00-00 UTC:
     harness: claude
+    transcripts: full
     model_name: claude-sonnet-4-5
     effort: standard
     build_version: "0.1"

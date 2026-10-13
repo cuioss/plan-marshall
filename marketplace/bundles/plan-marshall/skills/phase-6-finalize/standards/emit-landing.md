@@ -246,8 +246,11 @@ deliverables_total={N}
 deliverables_done={M}
 total_tokens={tokens}
 total_wall_seconds={seconds}
+harness={harness}
 steps={step1}:{outcome1},{step2}:{outcome2},...
 ```
+
+**The harness key.** Always emit `harness={harness}` after `total_wall_seconds` — the value `record-metrics` recorded as its `harness` fact (read from `status.metadata.harness`), or `unknown` when that fact is absent. It is optional, so its absence leaves the landing complete, but the producer always writes it: a `transcripts: none` run whose token figures read `unknown` is only interpretable beside the harness that explains why. Never substitute a settled-looking harness for one the run did not stamp.
 
 **The functional verdict facts.** When `functional-review` recorded its step, transcribe its four
 verdict facts as optional per-step keys after the required ones —

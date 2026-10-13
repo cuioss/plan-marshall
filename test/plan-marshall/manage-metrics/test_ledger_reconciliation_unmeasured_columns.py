@@ -445,3 +445,47 @@ def test_reconciliation_unmeasured_token_matches_writer():
 
     assert _ledger.UNMEASURED_COLUMN_TOKEN == core.UNMEASURED_COLUMN_TOKEN
     assert _ledger.UNMEASURED_COLUMN_TOKEN == manage_metrics.UNMEASURED_COLUMN_TOKEN
+
+
+class TestUnknownTokenColumn:
+    """The phase-level ``unknown`` reads as unmeasured, never as a measured zero.
+
+    Per-dispatch columns carry ``unmeasured`` when the caller forwarded no
+    figure; phase figures carry ``unknown`` for the same absence at their own
+    grain. The reconciliation must read both as the same state — contributing
+    nothing to a sum and reported as unmeasured — so an ``unknown`` figure
+    never collapses into a measured zero.
+    """
+
+    def test_the_unknown_literal_is_the_documented_word(self):
+        assert _ledger.UNKNOWN_TOKEN == 'unknown'
+        assert _ledger.UNKNOWN_TOKEN == manage_metrics.UNKNOWN_TOKEN
+
+    def test_an_unknown_cell_is_unmeasured(self):
+        assert _ledger.read_token_column('unknown') == (0, _ledger.COLUMN_UNMEASURED)
+
+    def test_a_padded_unknown_cell_is_unmeasured(self):
+        assert _ledger.read_token_column('  unknown  ') == (0, _ledger.COLUMN_UNMEASURED)
+
+    def test_an_unknown_cell_is_not_a_measured_zero(self):
+        value, state = _ledger.read_token_column('unknown')
+        assert state != _ledger.COLUMN_MEASURED
+        assert state == _ledger.COLUMN_UNMEASURED
+        assert value == 0
+
+    def test_an_unknown_row_makes_the_sum_unmeasured(self):
+        rows = [
+            {'total_tokens': 4000, 'total_tokens_state': _ledger.COLUMN_MEASURED},
+            {'total_tokens': 0, 'total_tokens_state': _ledger.COLUMN_UNMEASURED},
+        ]
+        assert _ledger.aggregate_token_state(rows) == _ledger.COLUMN_UNMEASURED
+
+    def test_the_state_counts_carry_unknown_as_unmeasured(self):
+        rows = [
+            {'total_tokens_state': _ledger.COLUMN_MEASURED},
+            {'total_tokens_state': _ledger.COLUMN_UNMEASURED},
+        ]
+        counts = _ledger.summarize_token_states(rows)
+        assert counts[_ledger.COLUMN_UNMEASURED] == 1
+        assert counts[_ledger.COLUMN_MEASURED] == 1
+        assert sum(counts.values()) == len(rows)

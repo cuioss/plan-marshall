@@ -89,6 +89,16 @@ EXECUTION_LOG_PHASES = ('5-execute', '6-finalize')
 #: ``test_reconciliation_unmeasured_token_matches_writer``.
 UNMEASURED_COLUMN_TOKEN = 'unmeasured'
 
+#: The phase-level unknown literal (a hand-mirror of
+#: ``manage-metrics.UNKNOWN_TOKEN``). Per-dispatch columns carry ``unmeasured``
+#: when the caller forwarded no figure; phase figures carry ``unknown`` for the
+#: same absence at their own grain (see
+#: ``manage-metrics/standards/data-format.md`` § "Unknown token figures
+#: (`unknown`)"). The reconciliation reads both as the same state —
+#: :data:`COLUMN_UNMEASURED` — so an ``unknown`` figure contributes nothing to a
+#: sum and is reported as unmeasured, never collapsing into a measured zero.
+UNKNOWN_TOKEN = 'unknown'
+
 #: The three states an ``execution_log[]`` token column can be read in. An
 #: unmeasured or unrecognised cell contributes NOTHING to a sum and is reported
 #: as its own state — coercing either to ``0`` is what makes an unmeasured column
@@ -244,6 +254,9 @@ def read_token_column(value: object) -> tuple[int, str]:
       ``rows_unrecognised`` so it cannot subtract from a published sum.)
     * :data:`UNMEASURED_COLUMN_TOKEN` is :data:`COLUMN_UNMEASURED` — the writer
       recorded that nobody measured this column;
+    * :data:`UNKNOWN_TOKEN` is :data:`COLUMN_UNMEASURED` too — the phase-level
+      stated absence at the per-dispatch grain. Same rule, coarser grain: it
+      contributes nothing and reports as unmeasured, never as a measured zero;
     * anything else, including an absent column, is :data:`COLUMN_UNRECOGNISED`.
 
     ⛔ The non-measured states carry ``0`` as their numeric placeholder so the
@@ -258,6 +271,8 @@ def read_token_column(value: object) -> tuple[int, str]:
     if isinstance(value, str):
         stripped = value.strip()
         if stripped == UNMEASURED_COLUMN_TOKEN:
+            return 0, COLUMN_UNMEASURED
+        if stripped == UNKNOWN_TOKEN:
             return 0, COLUMN_UNMEASURED
         if is_int_literal(stripped):
             return int(stripped), COLUMN_MEASURED

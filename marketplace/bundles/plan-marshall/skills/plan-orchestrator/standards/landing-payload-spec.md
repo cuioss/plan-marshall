@@ -95,13 +95,22 @@ the drain consumes. These keys are **required** — a landing missing any of the
 | `cleanup_owed` | Whether the run still owes branch cleanup that nothing re-entering will discharge (`true` / `false`), `n/a`, or `unknown` — the STEP'S claim. `n/a` is the answer when no `branch-cleanup` step ran, a real end state: a plan whose manifest carried no such step owes no cleanup it could record. `unknown` is a `cleanup_owed` fact that could not be read, and asserts only that nothing was observed. Neither collapses into the other. `true` is the only structured carrier of the owed cleanup on a PR the merge queue dequeued, whose `merge_state=closed` otherwise reads complete | `branch-cleanup`'s `cleanup_owed` fact |
 | `deliverables_total` | Total deliverable count from the solution outline | run |
 | `deliverables_done` | Completed deliverable count | run |
-| `total_tokens` | The run's token total (raw integer) | `record-metrics` facts |
+| `total_tokens` | The run's token total (raw integer), or `unknown` when the run carried no measurement — a `transcripts: none` harness run whose token figures were never measured. `unknown` asserts only that nothing was observed and never collapses into `0`; it reads as a gap exactly as `merge_state=unknown` does (see the could-not-read class below) | `record-metrics` facts |
 | `steps` | Comma-joined `{step}:{outcome}` for every finalize step in composed order. **A consumer splits each element on its LAST colon**, never its first: a namespaced step id contains a colon itself (`project:finalize-step-plugin-doctor:done`, `plan-marshall:plan-retrospective:done`), so a first-colon split yields the bare namespace as the step and the rest as the outcome. The split is APPLIED by the one consumer of this key, [`../workflow/analyze.md`](../workflow/analyze.md) § Step 4, which carries the worked example — this row states the rule, that step is its mechanism | `manage-status read` phase_steps |
 
 Optional keys a landing MAY carry (not required, so their absence is not incompleteness): `epic`,
-`total_wall_seconds`, and any per-step typed fact transcribed as `step.{name}.{fact_key}={value}`. The
+`total_wall_seconds`, `harness`, and any per-step typed fact transcribed as `step.{name}.{fact_key}={value}`. The
 functional review's verdict facts and the code review's counts are the named instances of the last
 kind — see § "Functional verdict facts" and § "Code-review counts" below.
+
+`harness` names the harness the plan ran on (`claude` / `opencode` /
+`antigravity`), read from `status.metadata.harness` (stamped at phase-1-init
+Step 8a.6), or `unknown` when the stamp is absent. It stays optional — not
+required — so landings written before the stamp existed stay complete; the
+producer (`emit-landing.md`) always emits it, with the `unknown` fallback
+asserting only that nothing was observed. The `transcripts` capability that
+explains the run's token figures (`full` vs `none`) rides the same
+`runtime-info` record — see `platform-runtime/standards/runtime-info.md`.
 
 **A degraded value is not a fact.** A degraded value comes in TWO classes, and they are rejected on
 different terms because they assert different things.

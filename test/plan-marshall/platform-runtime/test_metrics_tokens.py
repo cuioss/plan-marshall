@@ -1067,3 +1067,45 @@ def test_router_normalized_tokens_invalid_windows_file(tmp_path, monkeypatch, ca
     parsed = parse_toon(out)
     assert parsed['status'] == 'error'
     assert parsed['error'] == 'invalid_argument'
+
+
+# =============================================================================
+# 5. Transcripts capability — which harness can be walked
+# =============================================================================
+
+import runtime_info  # noqa: E402
+
+
+def test_transcripts_capability_is_full_on_claude():
+    """The transcript-capable harness reports `full`."""
+    assert runtime_info.read_transcripts_capability('claude') == 'full'
+
+
+def test_transcripts_capability_is_none_off_claude():
+    """Harnesses exposing no transcript report `none` — never an estimate."""
+    assert runtime_info.read_transcripts_capability('opencode') == 'none'
+    assert runtime_info.read_transcripts_capability('antigravity') == 'none'
+
+
+def test_transcripts_capability_fails_closed_on_an_unknown_harness():
+    """An unrecognised harness claims no transcript rather than a walkable one."""
+    assert runtime_info.read_transcripts_capability('unknown-platform') == 'none'
+
+
+def test_collect_runtime_info_always_stamps_transcripts():
+    """Every collected record carries the capability beside the harness."""
+    assert runtime_info.collect_runtime_info('claude')['transcripts'] == 'full'
+    assert runtime_info.collect_runtime_info('opencode')['transcripts'] == 'none'
+    assert runtime_info.collect_runtime_info('antigravity')['transcripts'] == 'none'
+
+
+def test_transcripts_none_explains_unknown_figures():
+    """The `none` flag is the documented reason a run reports `unknown` tokens.
+
+    A `transcripts: none` run walks no transcript, so its phase token figures
+    report `unknown` rather than zero — the capability flag is what tells a
+    reader which of the two a figure is.
+    """
+    assert runtime_info.TRANSCRIPTS_NONE == 'none'
+    assert runtime_info.TRANSCRIPTS_FULL == 'full'
+    assert set(runtime_info.TRANSCRIPTS_CAPABILITIES) == {'full', 'none'}
