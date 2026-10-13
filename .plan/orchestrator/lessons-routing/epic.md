@@ -277,6 +277,31 @@ accept-set, `deliverable: 0` rejected by `commit-add`, execution-context Step 4 
 ungated Quarkus/Weld skills in `pm-dev-java`, no single-use/loopback rule in `cui-http-testing`. The
 Antigravity findings rest on the sender's verification against the archived PLAN-41.
 
+### 2026-10-13 — fourth `ingest` run (inbox, 46 messages)
+
+Corpus at start: 0. The input was this epic's inbox: 46 messages from the `pm-mcp-core-m2-m4`
+orchestrator (`-144`..`-189`; 36 `candidate-lesson`, 10 `finding`) from PLAN-44 under opencode and
+PLAN-13 / PLAN-18 under Claude Code. Ingest grading of RULING 2026-10-09 applied to the messages;
+each was archived through `inbox archive` after its archive copy existed. Per-message dispositions:
+`lessons-archive/INDEX.md` § Sweep 2026-10-13.
+
+Operator rulings this run: `-171` (CodeRabbit summary-only concerns never filed) **high**; the opencode
+PLAN-44 cluster **critical/high**, as the `lessons-routing-015` recurrence on a second non-Claude harness.
+
+| Disposition | Messages | Where |
+|---|---|---|
+| critical/high, filed to `live-blockers` | 6 in `lessons-routing-026` | `live-blockers/inbox/`; bodies in `lessons-archive/filed-live-blockers/` |
+| high, filed | 1 in `-027` | same |
+| recurrence evidence for `-013`, `-018`..`-024`, filed | 13 in `-028` | same |
+| medium, archived | 16 | `lessons-archive/medium/` |
+| low, archived | 10 | `lessons-archive/low/` |
+| stale | 0 | — |
+
+Checked at `0c87ca07b`: the CodeRabbit summary comment is a whole-comment `ignore_patterns` drop
+(`automatic-review/standards/coderabbit.md` lines 59–61). `-149`..`-152` failed envelope validation
+(`filename_sender_mismatch` — plan messages relayed by file copy under the orchestrator's sender name);
+graded on content and archived.
+
 ## START HERE
 
 ### Annotations
