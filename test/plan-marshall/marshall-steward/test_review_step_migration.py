@@ -331,7 +331,7 @@ def test_both_successors_configured_reports_each_dropped_setting_once():
 
 
 def test_legacy_self_review_auto_is_not_reported_as_dropped():
-    """Control for the test above: ``auto`` is a recognised value that maps to no lane."""
+    """Control for ``test_unusable_lane_or_self_review_values_are_reported_as_dropped``: ``auto`` maps to no lane."""
     section = _section({_LEGACY: {'self_review': 'auto'}})
 
     report = upgrade.migrate_review_steps(section)

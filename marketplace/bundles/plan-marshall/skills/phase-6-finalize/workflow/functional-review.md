@@ -453,7 +453,17 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qg
   --detail "functional review closed at {sha}: the verifier accepted the verdict and answered may_close=true"
 ```
 
-On a non-`success` return from either call, do NOT record `done`: surface the returned error and halt. Then record the close:
+On a non-`success` return from either call, do NOT record `done`: surface the returned error and halt.
+
+Advisory findings are not filed — a pending finding blocks the merge — and reach the reader through the step's facts and the decision log, one line each:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-6-finalize:functional-review) Advisory {kind} at {ref} — {title}"
+```
+
+Then record the close:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
