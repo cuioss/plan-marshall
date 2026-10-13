@@ -215,3 +215,46 @@ Arrived at 13:52Z while the sweep ran; graded in the same run. None filed.
 | 141 | stale | `scope_creep_check` — fixed by #1745; the consumer ran an unsynced plugin |
 | 135, 136, 138, 139, 140, 143 | medium | `trigger-bot --required-bots` (= 069); `resolve --task-number`; executor stale mid-session (`pre_merge_gate` unknown at merge); transient GraphQL read in `wait-for-queue-settle`; leaf self-transition; phase-4-plan Step 8 `qgate add --type warning` |
 | 134, 137, 142 | low | Nine review rounds (widened fix rounds); `--wait-seconds` paraphrase; dispatch-boundary rows |
+
+## Sweep 2026-10-13 — 46 inbox messages from `pm-mcp-core-m2-m4` (`-144`..`-189`)
+
+Input was the epic's own inbox (corpus: 0): 36 `candidate-lesson`, 10 `finding`, from PLAN-44 #38
+(opencode), PLAN-13 #45 and PLAN-18 #43 (Claude Code), and one stored lesson (`2026-10-11-07-001`).
+Operator rulings this run: `-171` **high**; the opencode PLAN-44 cluster **critical/high**. Checked at
+`0c87ca07b`: the CodeRabbit summary drop (`automatic-review/standards/coderabbit.md` lines 59–61, 127).
+The recurrence rows lean on the live-blockers Open Defects, which re-checked `-019` at `47d21e1bf`; the
+opencode findings rest on the sender's audit of pm-mcp-core.
+
+`-149`..`-152` failed validation (`filename_sender_mismatch`): their header sender is
+`plan-44-static-verifier-rule-gaps` under `pm-mcp-core-m2-m4-NNN` names, so the sender relayed them by
+file copy rather than `inbox write`. Their content was graded like the rest.
+
+### `filed-live-blockers/` (20 messages, 3 filings)
+
+| Filing | Level | Messages (`-NNN`) | Subject | Owner today |
+|---|---|---|---|---|
+| `lessons-routing-026` | critical/high | 146, 147, 149, 150, 151, 152 | opencode: work order reported done with 4 of 7 deliverables unmet; Done-When and ADRs rewritten to match the code; check deleted on an as-built infeasibility proof; bot-bounded triage. Recurrence of `-015` | nearest PLAN-LB-37 |
+| `lessons-routing-027` | high | 171 | CodeRabbit summary/walkthrough comment dropped whole as noise; summary-only concerns (security included) never filed (verified) | none |
+| `lessons-routing-028` | inherited | 148 (`-013`), 168, 175, 176, 181 (`-018`), 153, 189 (`-019`), 183 (`-020`), 182 (`-021`), 162, 174 (`-022`), 185 (`-023`), 173 (`-024`) | Recurrence evidence only, no new item | as the earlier filings |
+
+### `medium/` (16)
+
+| Messages | Subject | Earlier sweep |
+|---|---|---|
+| 154, 170 | Incremental pre-push gate reads a stale `target/test-classes` fixture after a rebase; needs `clean` when HEAD moved | — |
+| 155, 187 | Finalize triage builds and `maven run` write no change-ledger build row; push freshness reads stale, build time unmeasurable | — |
+| 156, 172 | Phase leaves self-transition, including before the orchestrator's Q-Gate | = 2026-10-12 medium (018, 026, …) |
+| 163, 164, 167, 177, 178, 179 | Outline authoring: mutate list not derived from an ID search; spec correction scheduled after its code; design fixed before its survey ran; open operator question carried into execute; shared wiring file declared by one deliverable only | = § 1.19 group |
+| 165 | Triage fixes only the flagged site; the bot finds the sibling next round (3 extra rounds, 48% of tokens) | — |
+| 169 | Sourcery review-budget notice not recognised as a refusal | = 2026-10-12 (016, 084, 115) |
+| 186 | `sync-affected-files` only adds, never prunes after an outline revision | = 2026-10-12 (`affected_files` add-only) |
+| 188 | Re-review timeout vs later FIND participation: precedence undefined; `no_unreviewed_commit` replies counted as quota refusals | — |
+
+### `low/` (10)
+
+| Messages | Subject |
+|---|---|
+| 144, 157, 158, 159, 160, 161 | Invented verbs and flags (`qgate query`, `--number`, `architecture search --module` / `--literal false`, `manage-providers` notation, `record-dispatch-boundary`) |
+| 145 | No bulk resolve for a superseded pending findings set (38 calls) |
+| 166, 184 | Loop-back re-fires write no `[DISPATCH]` line, no tokens, no keyed dispatch-boundary row |
+| 180 | `module_mapping_validator` flags a Javadoc-only cross-module step |
