@@ -46,6 +46,11 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   - PLAN-LB-27 plan-footprint — PLAN-LB-07, PLAN-LB-11.
   - PLAN-LB-28 java-consumer-repos — PLAN-LB-13, PLAN-LB-03 (labelled a weak merge in its header).
   - PLAN-LB-29 harness-sync — PLAN-LB-15, PLAN-LB-17.
+- **PLAN-LB-39** (staged 2026-10-13) — sequenced after PLAN-LB-37 by operator decision (shares
+  `functional-review.md` and two test directories). Its D6 builds on 37's functional review;
+  rebase onto 37's final landing. Also overlaps the staged PLAN-LB-26 and PLAN-LB-27 on
+  `phase-5-execute/SKILL.md`, `execution.md` and `triage.md` — the gate will ask when either is
+  emitted alongside it.
   - PLAN-LB-30 org-ci-release — PLAN-LB-16, PLAN-LB-20 D1 to D3.
   - PLAN-LB-31 in-house-reviewer — PLAN-LB-21, PLAN-LB-20 D4 and D5.
   - PLAN-LB-14 launch-gate-scope — unchanged.
@@ -829,13 +834,25 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   (PLAN-LB-24, 32, 33 and 34); the knob now matches what the operator runs. The limit on
   real parallelism is unchanged: plans that share `phase-6-finalize/SKILL.md`,
   `execution.md` or the self-review workflow still run in sequence.
+- 2026-10-13 — **PLAN-LB-39 antigravity-execution-fidelity staged** (WS-04) by operator
+  instruction ("emit the antigravity plan"). Scope by operator decision: ONE plan, seven
+  deliverables, above the ~6 split guard — the recommended split (dispatch + phase integrity vs
+  context + measurement) was declined; and the two harness-agnostic critical items `-015`/`-026`
+  (criteria rewritten, weakened tests) and `-016` (pushed head past its gates) are INCLUDED, over
+  the recommendation to exclude them. Staging-time re-grounding at `71971784f`: the Antigravity
+  `Task` tool maps to `invoke_subagent` and `platform-runtime subagent dispatch` already exists,
+  but the `Task:` dispatch line is preserved verbatim in the generated output and nothing in phase
+  5 calls the seam; `project_initial_setup` bridges no `CLAUDE.md`; nothing on the start path calls
+  `orchestrator preflight`. **Held back** at the first `next`: it shares
+  `functional-review.md` and two test directories with the running PLAN-LB-37; the operator
+  declined to run them together. Emit once PLAN-LB-37 lands.
 
 ## Open Defects
 
 - **Antigravity: critical, by operator ruling of 2026-10-12 (the epic's highest priority).**
   All from pm-mcp-core PLAN-41 (pm-mcp-core PR #34), the first plan of that epic run under
   Antigravity; the ingest verified against the archived plan, not at HEAD here unless noted.
-  None is owned by any staged plan. Full bodies at
+  All five are owned by PLAN-LB-39 (staged 2026-10-13, held behind PLAN-LB-37). Full bodies at
   `lessons-routing/lessons-archive/filed-live-blockers/`.
   - **Phase 5 dispatches no sub-agent.** `Task: plan-marshall:execution-context-{level}` has no
     meaning on Antigravity and `phase-5-execute` has no wiring to its `invoke_subagent` (nor to
