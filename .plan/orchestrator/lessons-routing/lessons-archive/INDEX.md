@@ -258,3 +258,33 @@ file copy rather than `inbox write`. Their content was graded like the rest.
 | 145 | No bulk resolve for a superseded pending findings set (38 calls) |
 | 166, 184 | Loop-back re-fires write no `[DISPATCH]` line, no tokens, no keyed dispatch-boundary row |
 | 180 | `module_mapping_validator` flags a Javadoc-only cross-module step |
+
+## Sweep 2026-10-13 (second run) — 13 inbox messages (`-190`..`-202`, PLAN-54 #48, Claude Code)
+
+Arrived after the first 2026-10-13 run landed. All from the pm-mcp-core plan
+`static-verifier-rule-gaps-completion` (PLAN-54). No borderline grade; nothing re-checked in code — the
+one filed item is a recurrence of an already-verified Open Defect.
+
+### `filed-live-blockers/` (1)
+
+| Message | Level | Subject | Where |
+|---|---|---|---|
+| 191 | high (inherited) | Deep-lane outline written without component assessments — recurrence of `lessons-routing-022` | added to `lessons-routing-028` by `inbox amend` (revision 1); no new filing |
+
+### `medium/` (8)
+
+| Messages | Subject | Earlier sweep |
+|---|---|---|
+| 190, 192, 193, 194 | Outline omits the test file of a new class, and a shared count-pin test from each of three deliverables that change the counted set | = § 1.19 group |
+| 196 | Sourcery review-budget notice not recognised as a refusal | = 169 |
+| 197, 202 | A plan that tightens a contract (verifier, schema, registry default) breaks a sibling plan's fixtures after the rebase; overlap is judged by shared files only, so the two are not sequenced. 197 also: build-wrapper timeout 300 s below the 366 s `verify -Ppre-commit` | — |
+| 198 | Realized footprint keeps only rename destinations; a declared `(delete)` that git pairs as a rename source reads unrealised and fails M6 | — |
+
+### `low/` (4)
+
+| Messages | Subject |
+|---|---|
+| 195 | Scope-creep warning on new fixtures inside the declared surface (accepted) |
+| 199 | `qgate list` has no cross-phase form; callers invent `qgate query` (= 157) |
+| 200 | `compose` defaults `envelope_count` to 1 instead of deriving it from the packed tasks |
+| 201 | Disabled build server logs a WARNING per build (= 031, 046, 109) |

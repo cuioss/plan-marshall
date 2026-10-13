@@ -4,11 +4,13 @@ sender_id=lessons-routing
 epic=live-blockers
 kind=finding
 created=2026-10-13T08:10:58Z
+revision=1
+amended=2026-10-13T08:51:38Z
 
 # Recurrences of earlier filings — new evidence only, no new item
 
 - Severity: each inherits the grade of the filing it adds to.
-- Source: 13 messages from the pm-mcp-core epic (plans PLAN-13 `workflow-engine` #45, PLAN-18 `verify-not-resolve` #43, PLAN-44 #38 under opencode, plus lesson `2026-10-11-07-001`). Full bodies at `lessons-routing/lessons-archive/filed-live-blockers/pm-mcp-core-m2-m4-NNN.md`.
+- Source: 14 messages from the pm-mcp-core epic (plans PLAN-13 `workflow-engine` #45, PLAN-18 `verify-not-resolve` #43, PLAN-44 #38 under opencode, PLAN-54 `static-verifier-rule-gaps-completion` #48, plus lesson `2026-10-11-07-001`). Full bodies at `lessons-routing/lessons-archive/filed-live-blockers/pm-mcp-core-m2-m4-NNN.md`.
 - Asked: append the evidence to the matching Open Defect or staged plan. No new work is requested by this message.
 
 | Earlier filing (Open Defect / owner) | New messages | What is new |
@@ -18,6 +20,6 @@ created=2026-10-13T08:10:58Z
 | `lessons-routing-019` — red CI has no triage route (high) | 153, 189 | PLAN-13 (2026-10-12T19:38Z): `ci-verify-policy` refused `unknown_producer`, re-dispatched as `finalize-feedback`. 189 (lesson `2026-10-11-07-001`, plan-06): a SonarCloud gate failure inside the `build / sonar-build` Maven job filed 5 `ci_policy_failure` findings instead of deferring to sonar-roundtrip. |
 | `lessons-routing-020` — fix task under deliverable 0 rejected by `commit-add` (PLAN-LB-26) | 183 | PLAN-18: both triage runs hit it; leaves filed fix tasks under deliverables 3 and 4 they do not belong to. |
 | `lessons-routing-021` — consumer-repo leaf cannot resolve its workflow doc (high) | 182 | PLAN-18: the 4-plan leaf and two sonar-roundtrip leaves read the doc from `/Users/oliver/git/plan-marshall/target/claude/...` instead. |
-| `lessons-routing-022` — deep-lane outline writes no assessments (high) | 162, 174 | PLAN-13 (Q-Gate 447991) and PLAN-18 (Q-Gate 0feabd, accepted by the operator). Ninth and tenth plans. |
+| `lessons-routing-022` — deep-lane outline writes no assessments (high) | 162, 174, 191 | PLAN-13 (Q-Gate 447991), PLAN-18 (Q-Gate 0feabd, accepted by the operator) and PLAN-54 (Q-Gate affb5d, assessments added after the gate asked). Ninth to eleventh plans. Revision 1 added 191. |
 | `lessons-routing-023` — 4-plan Q-Gate hash skip; no verb computes the hashes (high) | 185 | PLAN-18: both Q-Gate runs skipped `deliverable-hashes.toon` (16 hashes over 2 runs); the 4-plan leaf had no shell at all. Asks for `manage-solution-outline deliverable-hashes`. |
 | `lessons-routing-024` — `pm-dev-java` Quarkus/Weld skills attached ungated (medium, domain) | 173 | PLAN-18: phase-4 persona augmentation attached `java-quarkus` / `java-cdi` in pm-mcp-core, whose `CLAUDE.md` says "No Quarkus, no CDI" and whose enforcer bans them. |
