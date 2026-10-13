@@ -604,21 +604,26 @@ def _bare_step_id(step_id: str) -> str:
 def _carried_review_params(legacy: object) -> tuple[dict, list[str]]:
     """Split the retired entry's params into what both successors inherit and what is dropped.
 
-    The entry's ``lane`` is carried. A legacy ``self_review`` run-at-all value is
-    the same setting in its retired spelling, so ``never`` / ``always`` map to
-    ``off`` / ``minimal``; ``auto`` adds no lane. When the two disagree, the rule
-    :func:`_merged_review_params` applies across entries holds inside one entry
-    too: ``off`` wins, otherwise the mapped ``self_review`` value wins, and the
-    losing setting is reported as dropped. A ``lane`` that is not a non-empty
-    string, a ``self_review`` value other than ``never`` / ``always`` / ``auto``,
-    and every other param — ``drop_review_on_scope_gate`` among them — have no
-    successor and are reported as dropped, ``key=value``.
+    The entry's ``lane`` is carried when it is a supported lane override — a
+    member of ``VALID_LANE_OVERRIDE`` in ``manage-config``'s ``_config_defaults``,
+    the set a successor's stored lane is validated against. A legacy
+    ``self_review`` run-at-all value is the same setting in its retired spelling,
+    so ``never`` / ``always`` map to ``off`` / ``minimal``; ``auto`` adds no lane.
+    When the two disagree, the rule :func:`_merged_review_params` applies across
+    entries holds inside one entry too: ``off`` wins, otherwise the mapped
+    ``self_review`` value wins, and the losing setting is reported as dropped. A
+    ``lane`` outside the supported set — an unknown string, an empty one, or a
+    non-string — a ``self_review`` value other than ``never`` / ``always`` /
+    ``auto``, and every other param — ``drop_review_on_scope_gate`` among them —
+    have no successor and are reported as dropped, ``key=value``.
     """
+    from _config_defaults import VALID_LANE_OVERRIDE
+
     params = legacy if isinstance(legacy, dict) else {}
     carried: dict = {}
     dropped: list[str] = []
     lane = params.get(_LANE_KEY)
-    if isinstance(lane, str) and lane:
+    if isinstance(lane, str) and lane in VALID_LANE_OVERRIDE:
         carried[_LANE_KEY] = lane
     elif _LANE_KEY in params:
         dropped.append(f'{_LANE_KEY}={json.dumps(lane)}')

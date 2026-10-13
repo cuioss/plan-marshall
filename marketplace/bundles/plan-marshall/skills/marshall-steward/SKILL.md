@@ -1007,10 +1007,13 @@ Takes no arguments and operates on the live `marshal.json`. Driven as the FIRST
 sub-step of upgrade Stage 2, before the defaults merge. It replaces the retired
 `default:pre-submission-self-review` finalize step (or its bare form) in
 `plan.phase-6-finalize.steps` by `default:functional-review` followed by
-`default:code-review`, carrying the retired entry's `lane` to both and mapping a
-legacy `self_review` run-at-all value onto both lanes (`never` → `off`,
-`always` → `minimal`, `auto` → no lane); every other param, the retired
-`drop_review_on_scope_gate` among them, is dropped. Within one entry and across
+`default:code-review`, carrying the retired entry's `lane` to both when it is a
+supported lane override (a member of `VALID_LANE_OVERRIDE` in `manage-config`'s
+`_config_defaults.py`) and mapping a legacy `self_review` run-at-all value onto
+both lanes (`never` → `off`, `always` → `minimal`, `auto` → no lane); a `lane`
+outside that set — unknown, empty, or not a string — is carried to neither and
+is dropped, as is every other param, the retired `drop_review_on_scope_gate`
+among them. Within one entry and across
 both spellings alike, a `lane: off` wins over any other setting, and every
 losing setting is reported in `dropped_params`, as is a setting the migration
 cannot map. A successor the operator already configured wins — with both

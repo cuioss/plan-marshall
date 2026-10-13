@@ -351,7 +351,10 @@ This sub-step migrates a configured `marshal.json` onto them. In
 form) is replaced in place by `default:functional-review` followed by
 `default:code-review`, and both inherit its setting:
 
-- its `lane` is carried to both new entries;
+- its `lane` is carried to both new entries when it is a supported lane
+  override (`off`, `minimal`, `standard`, `full` or `ask` — the
+  `VALID_LANE_OVERRIDE` set in `manage-config`'s `_config_defaults.py`, which the
+  migration imports rather than restating);
 - a legacy step-owned `self_review` run-at-all value still on the entry is
   mapped onto both new entries' `lane` — `never` → `off`, `always` → `minimal`,
   `auto` → no lane; when it disagrees with the entry's own `lane`, `off` wins,
@@ -368,9 +371,10 @@ form) is replaced in place by `default:functional-review` followed by
 A new entry the operator already configured WINS: it is left untouched and
 reported in `kept`, and only the missing successor is inserted; when both
 successors are already configured, the retired entry's setting reaches neither
-and is reported in `dropped_params`. A `lane` that is not a non-empty string and
-a `self_review` value other than `never`, `always` or `auto` are reported there
-too. In the
+and is reported in `dropped_params`. A `lane` outside the supported set — an
+unknown string, an empty one, or a non-string — is not carried to either new
+entry and is reported there too, as is a `self_review` value other than `never`,
+`always` or `auto`. In the
 `removed_steps` list, a retired id is replaced by both new ids, so a review the
 operator removed stays removed under its new names.
 

@@ -10,7 +10,8 @@ here is a migration INPUT, never a live step id or a live gate key.
 
 The fixtures are exhaustive over the input shapes the request names: the retired
 entry with a lane and a retired param, with ``lane: minimal``, with ``lane: off``,
-with a legacy ``self_review`` run-at-all value, in both spellings at once, absent,
+with a lane outside the supported set, with a legacy ``self_review`` run-at-all
+value, in both spellings at once, absent,
 already migrated, beside a successor the operator already configured, and named
 only in ``removed_steps``.
 Exactly two of them — the absent and the already-migrated configuration — are
@@ -32,7 +33,7 @@ from pathlib import Path
 import _manifest_rules
 import pytest
 import upgrade
-from _config_defaults import OPERATOR_REMOVED_STEPS_KEY
+from _config_defaults import OPERATOR_REMOVED_STEPS_KEY, VALID_LANE_OVERRIDE
 from toon_parser import parse_toon
 
 _LEGACY = 'default:pre-submission-self-review'
@@ -300,6 +301,32 @@ def test_unusable_lane_or_self_review_values_are_reported_as_dropped(params, exp
     report = upgrade.migrate_review_steps(section)
 
     assert report['dropped_params'] == expected_dropped
+
+
+def test_an_unknown_non_empty_lane_is_dropped_and_carried_to_neither_successor():
+    """A non-empty lane outside the supported set is reported, never stored as an invalid lane."""
+    assert 'everything' not in VALID_LANE_OVERRIDE, 'premise: the fixture lane is genuinely unsupported'
+    section = _section({_LEGACY: {'lane': 'everything'}})
+
+    report = upgrade.migrate_review_steps(section)
+
+    assert report['state'] == 'migrated'
+    assert report['added'] == [_FUNCTIONAL, _CODE]
+    assert section['steps'] == {_FUNCTIONAL: {}, _CODE: {}}
+    assert report['carried'] == []
+    assert report['dropped_params'] == ['lane="everything"']
+
+
+@pytest.mark.parametrize('lane', VALID_LANE_OVERRIDE)
+def test_every_supported_lane_is_carried_and_not_dropped(lane):
+    """Control for the test above: each member of the supported set reaches both successors."""
+    section = _section({_LEGACY: {'lane': lane}})
+
+    report = upgrade.migrate_review_steps(section)
+
+    assert section['steps'] == {_FUNCTIONAL: {'lane': lane}, _CODE: {'lane': lane}}
+    assert report['carried'] == [f'lane={lane}']
+    assert report['dropped_params'] == []
 
 
 def test_the_carried_lane_is_never_also_reported_as_dropped():
