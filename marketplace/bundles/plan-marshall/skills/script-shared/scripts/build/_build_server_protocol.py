@@ -28,7 +28,7 @@ Three concerns live here:
   ``log_file``, ``duration_seconds``) so a terminal result crosses the wire in
   the daemon's status vocabulary (``success|failure|timeout|killed``) without
   either side re-implementing the result contract. The wire vocabulary is
-  four-valued while ``_build_result``'s is five-valued, so the forward
+  four-valued while ``_build_result``'s is six-valued, so the forward
   translation is total but not injective — see
   :data:`_RESULT_STATUS_TO_WIRE`.
 
@@ -159,7 +159,7 @@ else, so this scan sees its own constants and nothing borrowed.
 """
 
 # Map the shared _build_result status vocabulary
-# (success|error|timeout|killed|indeterminate) to the wire vocabulary
+# (success|error|timeout|killed|indeterminate|running) to the wire vocabulary
 # (success|failure|timeout|killed).
 #
 # The table is TOTAL over :data:`_RESULT_STATUSES` — every result status has a
@@ -182,15 +182,22 @@ else, so this scan sees its own constants and nothing borrowed.
 # stop; what it loses is the distinction between "ran and failed" and "could not
 # be established", which the log the result points at still carries. The
 # direction is one-way: see :data:`_WIRE_STATUS_TO_RESULT`.
+#
+# ``running`` maps onto ``failure`` under the same trade. A ``running`` result is
+# a daemon-routed hand-back, not a verdict — the build is still working and the
+# result carries the daemon ``job_id`` for re-attach — so it must never reach
+# the wire as the non-terminal ``running`` string, which a waiting client would
+# re-poll forever. The log the result points at still carries the hand-back.
 _RESULT_STATUS_TO_WIRE = {
     _build_result.STATUS_SUCCESS: STATUS_SUCCESS,
     _build_result.STATUS_ERROR: STATUS_FAILURE,
     _build_result.STATUS_TIMEOUT: STATUS_TIMEOUT,
     _build_result.STATUS_KILLED: STATUS_KILLED,
     _build_result.STATUS_INDETERMINATE: STATUS_FAILURE,
+    _build_result.STATUS_RUNNING: STATUS_FAILURE,
 }
 
-# The inverse is an EXPLICIT table, NOT an inversion of the one above. Two result
+# The inverse is an EXPLICIT table, NOT an inversion of the one above. Three result
 # statuses now map onto ``failure``, so a dict comprehension over
 # ``_RESULT_STATUS_TO_WIRE.items()`` would silently rebind ``failure`` to
 # whichever row came last — making ``result_status_from_wire('failure')`` return
@@ -760,8 +767,9 @@ def wire_status_from_result(result_status: str) -> str:
     """Map a :mod:`_build_result` status to the wire status vocabulary.
 
     ``success`` → ``success``, ``error`` → ``failure``, ``timeout`` →
-    ``timeout``, ``killed`` → ``killed``, ``indeterminate`` → ``failure``. Every
-    one of the five lands on a member of :data:`TERMINAL_STATUSES`, which is the
+    ``timeout``, ``killed`` → ``killed``, ``indeterminate`` → ``failure``,
+    ``running`` → ``failure``. Every
+    one of the six lands on a member of :data:`TERMINAL_STATUSES`, which is the
     property a waiting client depends on to stop polling.
 
     An already-wire status (so the function is idempotent on the wire
@@ -781,7 +789,7 @@ def wire_status_from_result(result_status: str) -> str:
 
     Args:
         result_status: A ``_build_result`` status (``success`` / ``error`` /
-            ``timeout`` / ``killed`` / ``indeterminate``), an already-wire
+            ``timeout`` / ``killed`` / ``indeterminate`` / ``running``), an already-wire
             status, or the empty string.
 
     Returns:
@@ -814,8 +822,8 @@ def result_status_from_wire(wire_status: str) -> str:
     unchanged.
 
     **Not a true inverse of :func:`wire_status_from_result`**, and deliberately
-    named without claiming to be. That function is non-injective — both ``error``
-    and ``indeterminate`` map onto ``failure`` — so ``indeterminate`` has no wire
+    named without claiming to be. That function is non-injective — ``error``,
+    ``indeterminate`` and ``running`` all map onto ``failure`` — so ``indeterminate`` has no wire
     representation to come back from. ``failure`` resolves to ``error``, the
     reading that was true before ``indeterminate`` gained a row and the one every
     caller already depends on; the ``indeterminate`` origin is not recoverable
