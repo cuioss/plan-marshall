@@ -196,6 +196,26 @@ archive-plan
 `ci-verify` sits between `create-pr` and `automated-review` so CI
 verdicts are triaged before the consumer steps that depend on them.
 
+## Composed `phase_5.verification_steps` entries (request/project gates)
+
+Request gates (checks the request mandates) and project gates (checks the
+project mandates) compose into the same `phase_5.verification_steps` list the
+six-row matrix and the execution-tier routing produce — never a parallel
+surface. Each composed entry carries the D4 gate stamp shape:
+
+- the **bare** step id (boundary-normalized, no `default:` prefix), either
+  `verify:{canonical}` for a built-in canonical or the verbatim
+  `project:` / `bundle:skill` notation for an external step;
+- one `phase_5.step_execution_tier` record (`{step_id, tier}`) stamped after
+  composition, advisory at compose time and re-resolved live at execute time;
+- an optional `phase_5.step_params` entry snapshotted from the marshal
+  phase-5 map (absent for a verify step with no params, which snapshots as
+  the empty object).
+
+Composition is additive-only and de-duped: an entry already present under its
+bare key is kept once, and composition never drops a matrix- or routing-seeded
+entry. Phase 5 enforces the stamped list verbatim.
+
 ## Per-producer dispatch fan-out
 
 `ci-verify` is a deterministic finalize-step SCRIPT (`scripts/ci_verify.py`),

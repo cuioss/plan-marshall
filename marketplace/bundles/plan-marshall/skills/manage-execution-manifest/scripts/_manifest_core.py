@@ -601,6 +601,49 @@ def validate_step_owner(owner: str) -> bool:
 
 
 # =============================================================================
+# Request/project gate composition (D7 pushed-head gates)
+# =============================================================================
+
+
+def compose_request_project_gates(
+    request_gates: list[str],
+    project_gates: list[str],
+    existing_steps: list[str] | None = None,
+) -> list[str]:
+    """Compose request and project gates into the D4 gate stamp shape.
+
+    The D4 stamp shape is boundary-normalized (bare, no ``default:`` prefix),
+    de-duped, and ordered downstream by the compose frontmatter sort. This
+    helper performs the normalize-plus-de-dupe half: every incoming gate id is
+    normalized via :func:`canonicalize_step_key`, empty entries are dropped,
+    and the first-seen order is preserved across ``existing_steps`` then
+    ``request_gates`` then ``project_gates``. Frontmatter ordering is NOT
+    applied here; it is applied downstream by the compose
+    ``frontmatter_order_sort`` pass, which is the single ordering authority.
+
+    Args:
+        request_gates: Gate ids from the request surface.
+        project_gates: Gate ids from the project surface.
+        existing_steps: Already-composed ``phase_5.verification_steps`` entries.
+
+    Returns:
+        The composed step-id list in first-seen order, de-duped.
+    """
+    composed: list[str] = []
+    seen: set[str] = set()
+    for source in (existing_steps or [], request_gates, project_gates):
+        for raw in source:
+            if not isinstance(raw, str):
+                continue
+            bare = canonicalize_step_key(raw.strip())
+            if not bare or bare in seen:
+                continue
+            seen.add(bare)
+            composed.append(bare)
+    return composed
+
+
+# =============================================================================
 # File Operations
 # =============================================================================
 

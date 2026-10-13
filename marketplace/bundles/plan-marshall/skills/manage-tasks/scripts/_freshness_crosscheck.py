@@ -473,6 +473,55 @@ def required_coverage(
     )
 
 
+def freshness_inputs_for_composition(
+    footprint: list[str],
+    scoped_modules: tuple[str, ...],
+    divergence_possible: bool,
+) -> dict[str, Any]:
+    """Expose the freshness inputs the D7 gate composition consumes.
+
+    The pre-push gate composes the same coverage derivation the freshness gate
+    enforces, so both read one surface rather than re-deriving the requirement
+    twice. This helper publishes that surface: the live ``footprint``, the
+    resolver-derived ``scoped_modules`` and ``divergence_possible`` verdict,
+    and the derived :class:`RequiredCoverage` (or the
+    ``required_coverage_unknown`` reason token when the vocabulary cannot be
+    loaded and nothing could be derived).
+
+    Args:
+        footprint: The live plan footprint, repo-relative.
+        scoped_modules: The module set ``resolve_test_scope`` derived from it.
+        divergence_possible: ``resolve_test_scope``'s whole-tree verdict.
+
+    Returns:
+        A dict carrying ``footprint``, ``scoped_modules``,
+        ``divergence_possible``, and either ``required`` (the derived
+        :class:`RequiredCoverage` as ``analyses`` / ``whole_tree`` / ``modules``
+        plain values) or ``reason`` (:data:`REASON_REQUIRED_COVERAGE_UNKNOWN`).
+    """
+    vocabulary, reason = load_analysis_vocabulary()
+    if vocabulary is None:
+        return {
+            'footprint': list(footprint),
+            'scoped_modules': list(scoped_modules),
+            'divergence_possible': divergence_possible,
+            'required': None,
+            'reason': reason or REASON_REQUIRED_COVERAGE_UNKNOWN,
+        }
+    required = required_coverage(footprint, scoped_modules, divergence_possible, vocabulary)
+    return {
+        'footprint': list(footprint),
+        'scoped_modules': list(scoped_modules),
+        'divergence_possible': divergence_possible,
+        'required': {
+            'analyses': sorted(required.analyses),
+            'whole_tree': required.whole_tree,
+            'modules': sorted(required.modules),
+        },
+        'reason': None,
+    }
+
+
 def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
     """Read the canonical and scope a ``kind=build`` row records, or ``None``.
 

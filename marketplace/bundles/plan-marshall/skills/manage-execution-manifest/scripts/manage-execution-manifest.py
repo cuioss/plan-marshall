@@ -63,6 +63,7 @@ from _manifest_core import (
     _normalize_step_params_block,  # noqa: F401
     _role_of,
     _strip_template_suffix,
+    compose_request_project_gates,
     get_manifest_path,  # noqa: F401
     read_manifest,
     write_manifest,
@@ -2313,6 +2314,31 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             f'dropped {domain_seeded_dropped} from phase_5.verification_steps '
             '(domain active but no in-scope module wires the command)',
         )
+
+    # Request/project gate composition (D7 pushed-head gates). Runs AFTER the
+    # domain-seeded resolvability filter and BEFORE per-step tier stamping, so
+    # composed gates carry a resolved tier like every other persisted step.
+    # Request gates name checks the request mandates; project gates name checks
+    # the project mandates. Both compose into the same bare ``verify:{canonical}``
+    # stamp shape D4 defines — boundary-normalized and de-duped via
+    # ``compose_request_project_gates`` — rather than a parallel surface, and
+    # phase 5 enforces the stamped list verbatim. Absent both inputs the list is
+    # unchanged; the composition is additive-only and never drops a step.
+    request_gates = marshal_phase_5_map.get('request_gates', [])
+    project_gates = marshal_phase_5_map.get('project_gates', [])
+    if isinstance(request_gates, list) and isinstance(project_gates, list):
+        composed_gates = compose_request_project_gates(
+            [s for s in request_gates if isinstance(s, str)],
+            [s for s in project_gates if isinstance(s, str)],
+            list(body['phase_5'].get('verification_steps', [])),
+        )
+        if len(composed_gates) != len(body['phase_5'].get('verification_steps', [])):
+            _emit_decision_log(
+                plan_id,
+                '(plan-marshall:manage-execution-manifest:compose) [STATUS] request_project_gate_composition — '
+                f'composed request/project gates into phase_5.verification_steps: {composed_gates}',
+            )
+        body['phase_5']['verification_steps'] = composed_gates
 
     # Per-step execution_tier stamping. Runs AFTER the final phase-5 verification
     # list is settled (six-row matrix, execution_tier COMMAND routing, and the
