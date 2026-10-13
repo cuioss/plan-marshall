@@ -83,6 +83,15 @@ The recorded SHA is also what the next firing's delta round is measured from: `r
 
 **Verdict-input surface — deliberately undeclared.** The step declares no `verdict_inputs`. Its inputs are the plan's request, outline, task records and decision log — none of them in the tree difference — plus every file the change touches, which is derived at run time from the plan's own footprint. That is the discovered-input shape [`../standards/verdict-currency.md`](../standards/verdict-currency.md) § "The classification" names as having no sound static subset, so the step keeps the unconditional re-fire on every HEAD advance.
 
+## Verdict-currency freeze — judge against outline approval
+
+The judgment criteria are frozen at outline approval, and the round judges the change against the frozen criteria — never against a later rewrite of them. The frozen record is the outline as approved at the 3-outline transition: each deliverable's success criteria text in outline order, read through `manage-solution-outline read`. Step 3a already reads that verb, so the author compares the criteria text it read against the approved record before grading.
+
+- **Criteria rewrites are blocking.** A success-criterion text that differs from the frozen record — reworded, narrowed, dropped, or replaced after approval — is filed as a blocking finding with `fix_kind: implementation`, one per rewritten criterion. The finding cites the frozen sentence and the rewritten sentence so the loop-back re-authoring restores the approved wording or records an operator decision to re-approve it.
+- **Infeasible verdicts name the work-order sentence.** A deliverable graded `not_met` on the grounds that it cannot be built as written is blocking only when its entry names the work-order sentence that makes it infeasible — the frozen criterion sentence plus the tree fact that blocks it. A bare infeasible claim with no cited sentence is graded `unevidenced`.
+- **Weakened existing tests are blocking.** A recorded test that passed before the change and now asserts less — a removed assertion, a narrowed check, a dropped negative case — is filed as a blocking finding with `fix_kind: implementation`, one per weakened test. The entry names the test and what it no longer checks.
+- **Head capture at step start with compare-and-rerun.** The dispatcher captures `git -C {worktree_path} rev-parse HEAD` at Step 1 alongside the attribution call and holds that SHA as the round's start head. Immediately before every terminal `mark-step-done` call of Step 6 it resolves HEAD again through the same call and compares: on equality it records with the re-resolved SHA; on mismatch the tree moved under the round, so it discards the verdict and re-runs the round from Step 1 against the new HEAD instead of recording a verdict about a tree it never examined.
+
 ## Inputs of the dispatched author
 
 | Prompt-body field | Required | Description |
