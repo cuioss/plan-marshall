@@ -602,6 +602,13 @@ def test_registry_markers_are_stripped_before_matching(monkeypatch):
         'actionable_content_markers',
         lambda bot_kind: ['  <details>  '],
     )
+    # The heading alternation is normalised on the same path — a padded heading
+    # must still satisfy it, or every clean Guide would stop being dropped.
+    monkeypatch.setattr(
+        github_pr.bot_registry,
+        'contentless_review_headings',
+        lambda bot_kind: ['  ## PR Reviewer Guide  ', '  ## PR Code Review Guide  '],
+    )
 
     assert github_pr._is_contentless_boilerplate(OBSERVED_CLEAN_GUIDE, 'cuioss-review-bot') is True
     # The disqualifying marker is stripped on the same path — a padded veto entry

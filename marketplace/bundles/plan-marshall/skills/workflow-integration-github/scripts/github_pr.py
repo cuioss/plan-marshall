@@ -178,9 +178,10 @@ _RESPONDABLE_RESOLUTIONS = frozenset({'fixed', 'suppressed', 'accepted', 'taken_
 #   3. CONTENTLESS BOILERPLATE layer — each bot's ``contentless_review_markers``
 #      and ``actionable_content_markers`` from the same registry. Unlike layer 2
 #      this one is CONDITIONAL on the whole body: it drops a comment only when
-#      EVERY ``contentless_review_markers`` entry is present AND no
-#      ``actionable_content_markers`` entry is. It exists for a bot whose single
-#      review comment carries both its findings and its clean-result assertions,
+#      EVERY ``contentless_review_markers`` entry is present, ANY ONE declared
+#      ``contentless_review_headings`` entry is present, AND no
+#      ``actionable_content_markers`` entry is. It exists for a bot whose review
+#      comments each carry both their findings and their clean-result assertions,
 #      so no unconditional whole-body marker can express "this review found
 #      nothing" without also dropping the reviews that found something. Empty
 #      ``contentless_review_markers`` is the fail-closed default and the state
@@ -307,7 +308,10 @@ def _is_contentless_boilerplate(body: str, bot_kind: str | None) -> bool:
     The predicate is a CONJUNCTION over the bot's registry
     ``contentless_review_markers`` vetoed by ANY ``actionable_content_markers``
     entry: every required marker must be present in the body, and no
-    disqualifying marker may be. Both lists are literal substrings, stripped
+    disqualifying marker may be. When the bot declares
+    ``contentless_review_headings``, the body must ALSO carry any one of them —
+    the alternation that lets one clean shape be recognised under each of the
+    bot's persistent review comments. All three lists are literal substrings, stripped
     before matching so an incidentally-indented registry value still matches the
     raw body (the project's normalize-both-sides-of-a-registry-comparison rule).
 
@@ -323,6 +327,14 @@ def _is_contentless_boilerplate(body: str, bot_kind: str | None) -> bool:
     if not required:
         return False
     if not all(marker in body for marker in required):
+        return False
+    # The heading ALTERNATION: a bot publishing one clean shape under several
+    # persistent review comments (PR-Agent's security and code-review Guides) names
+    # each heading here, and the body must carry ANY ONE of them. An empty list
+    # adds no condition, so the conjunction above stays the whole test for every
+    # bot that has not declared the field.
+    headings = [h.strip() for h in bot_registry.contentless_review_headings(kind) if h.strip()]
+    if headings and not any(heading in body for heading in headings):
         return False
     disqualifying = [m.strip() for m in bot_registry.actionable_content_markers(kind) if m.strip()]
     return not any(marker in body for marker in disqualifying)
@@ -420,9 +432,10 @@ def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
        marketing footer, a no-op review line), so only that bot's own comments are
        dropped.
     3. CONTENTLESS BOILERPLATE — ``_is_contentless_boilerplate``: that same bot's
-       registry ``contentless_review_markers`` (ALL required) vetoed by any
+       registry ``contentless_review_markers`` (ALL required) plus any one declared
+       ``contentless_review_headings`` entry, vetoed by any
        ``actionable_content_markers`` entry. Layer 2 cannot express this case: for
-       a bot whose one comment carries both its findings and its clean-result
+       a bot whose review comment carries both its findings and its clean-result
        assertions, an unconditional whole-body marker would drop the reviews that
        found something too.
 

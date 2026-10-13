@@ -5,11 +5,20 @@
 # skip-bot-review label, fork PRs) are enforced by the reusable workflow's job-level `if:`
 # guard, because PR-Agent's own ignore_pr_* settings are inert in GitHub Action mode.
 #
-# The review charter is NOT declared here. The reusable workflow reads the
-# `cuioss-review-bot:` block of .github/project.yml from the DEFAULT branch; this repository
-# sets `enabled: true` there, so its reviews run on the charter assembled from the spine plus
-# the `python` and `plugin` packs, echoed into the run log as the "Assembled review charter"
-# group.
+# The reusable workflow reviews in TWO independent passes, each its own job, check and
+# persistent comment, both posted as cuioss-review-bot:
+#   - security review — job `review` (check `review / review`), comment
+#     `## PR Reviewer Guide 🔍`; always runs, subject to the skip rules.
+#   - code review — job `code-review` (check `review / code-review`), comment
+#     `## PR Code Review Guide 🧭`; runs only when project.yml sets
+#     `cuioss-review-bot.code_review.enabled: true`, otherwise the check ends green after
+#     one log line. Only a plain `/review` re-runs it — a `/review` carrying options is refused.
+#
+# Neither charter is declared here. The reusable workflow reads the `cuioss-review-bot:`
+# block of .github/project.yml from the DEFAULT branch; this repository sets `enabled: true`
+# there, so the security pass runs on the charter assembled from the spine plus the `python`
+# and `plugin` packs, echoed into the run log as the "Assembled review charter" group, and
+# its nested `code_review:` block selects the code-review pass's packs.
 #
 # See https://github.com/cuioss/cuioss-review-bot/blob/main/README.adoc
 
