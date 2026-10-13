@@ -243,7 +243,7 @@ From Step 4 (executor present) onward, the wizard emits a **STEWARD audit entry*
     --message "[STEWARD] (plan-marshall:marshall-steward) {what happened}"
   ```
 
-This audit trail makes a plan-less steward run reconstructable from `.plan/logs/decision-{date}.log` and `.plan/logs/work-{date}.log`. Each Configuration step below that prompts or auto-decides emits at least one such entry; do NOT pass a fabricated plan id to force a global fallback — the omitted-`--plan-id` path is the supported global path.
+This audit trail makes a plan-less steward run reconstructable from `.plan/local/logs/decision-{date}.log` and `.plan/local/logs/work-{date}.log`. Each Configuration step below that prompts or auto-decides emits at least one such entry; do NOT pass a fabricated plan id to force a global fallback — the omitted-`--plan-id` path is the supported global path.
 
 ## Step 5: Initialize Marshal.json
 
