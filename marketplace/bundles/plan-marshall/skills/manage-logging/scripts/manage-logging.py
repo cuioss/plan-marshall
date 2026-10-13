@@ -19,7 +19,7 @@ Usage:
 
 Arguments (write):
     --plan-id  - Plan identifier (OPTIONAL). When omitted, the entry is written
-                 to the dated global log under .plan/logs/ (the first-class
+                 to the dated global log under .plan/local/logs/ (the first-class
                  global/no-plan path used by plan-less callers such as
                  marshall-steward). When supplied and resolving to an
                  initialized plan, the entry is plan-scoped.
@@ -38,7 +38,7 @@ Write outcome:
     prints nothing and exits 0 whether or not its line was written.
 
 Global / no-plan logging:
-    Omitting --plan-id writes to .plan/logs/{work,decision,script-execution}-{date}.log.
+    Omitting --plan-id writes to .plan/local/logs/{work,decision,script-execution}-{date}.log.
     marshall-steward uses this path for its STEWARD audit trail with the stable
     message prefix "[STEWARD] (plan-marshall:marshall-steward) …" — one entry per
     AskUserQuestion answer and per auto-decision:
@@ -225,13 +225,13 @@ def _add_write_args(parser: argparse.ArgumentParser) -> None:
 
     ``--plan-id`` is OPTIONAL on write subcommands (``work`` / ``decision`` /
     ``script``): when omitted, the entry is written to the dated global log
-    under ``.plan/logs/`` (``work-{date}.log`` / ``decision-{date}.log`` /
+    under ``.plan/local/logs/`` (``work-{date}.log`` / ``decision-{date}.log`` /
     ``script-execution-{date}.log``) instead of a plan-scoped log. This is the
     first-class global/no-plan logging path — plan-less callers such as
     ``marshall-steward`` (which runs before any plan exists) write their
     ``[STEWARD] (plan-marshall:marshall-steward) …`` audit trail through this
     path rather than fabricating a plan id. When ``--plan-id`` IS supplied and
-    resolves to an initialized plan, the entry is plan-scoped as before.
+    resolves to an initialized plan, the entry is plan-scoped.
     """
     add_plan_id_arg(parser, required=False)
     parser.add_argument('--level', required=True, choices=VALID_LEVELS, help='Log level')

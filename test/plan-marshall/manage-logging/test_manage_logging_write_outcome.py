@@ -29,8 +29,8 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-logging', 'manage-logging
 _mod = load_script_module('plan-marshall', 'manage-logging', 'manage-logging.py', 'manage_logging')
 handle_write = _mod.handle_write
 
-#: The verbs that report a failed write.
-CHECKED_VERBS = ('work', 'decision')
+#: The verbs that report a failed write, read from the script's own declaration.
+CHECKED_VERBS: tuple[str, ...] = tuple(_mod.CHECKED_WRITE_TYPES)
 _LOG_FILE = {'work': 'work.log', 'decision': 'decision.log', 'script': 'script-execution.log'}
 _PLAN_ID = 'log-write-outcome'
 
@@ -76,6 +76,13 @@ def _run_cli(plan_context, verb: str):
         f'{verb} entry through the CLI',
         env_overrides={'PLAN_BASE_DIR': str(plan_context.fixture_dir)},
     )
+
+
+def test_checked_verbs_are_a_non_empty_set_of_write_verbs():
+    """Control: the derived parametrization is not vacuous, and the best-effort script verb is outside it."""
+    assert CHECKED_VERBS, 'an empty CHECKED_WRITE_TYPES would skip every parametrized test below'
+    assert set(CHECKED_VERBS) <= set(_LOG_FILE)
+    assert 'script' not in CHECKED_VERBS
 
 
 @pytest.mark.parametrize('verb', CHECKED_VERBS)

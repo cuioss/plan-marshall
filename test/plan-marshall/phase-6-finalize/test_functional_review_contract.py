@@ -20,13 +20,16 @@ each assertion below pins one clause of it against an independent source:
   step documents; every command template that interpolates free text names it,
   and every placeholder in a ``--message`` / ``--title`` / ``--detail`` /
   ``--display-detail`` argument sits inside one single-quoted shell word —
-  never bare, never partly quoted, never double-quoted;
+  never bare, never partly quoted, never double-quoted — and no placeholder
+  rides a bare word after that argument;
 * every advisory decision-log template in the recording step is followed by a
   halt rule before the ``mark-step-done`` that records the outcome, so a line
   that was not written is never recorded over.
 
 Every extractor carries a control that proves it finds what it targets, so a
-broken parser fails here instead of passing vacuously.
+broken parser fails here instead of passing vacuously. The quoting and halt
+scanners are shared with the code-review contract test and live in
+``_review_contract_scanners``.
 """
 
 from __future__ import annotations
@@ -35,6 +38,7 @@ import json
 import re
 from pathlib import Path
 
+import _review_contract_scanners as scan
 import _review_support_validate as _val
 import extension_discovery
 import review_support
@@ -320,78 +324,6 @@ def test_body_has_no_language_conditional_step():
 
 _QUOTING_RULE_HEADING = '## Shell-safe free text in command templates'
 _QUOTING_RULE_ANCHOR = '(#shell-safe-free-text-in-command-templates)'
-#: The arguments through which a template carries free text into a command.
-_FREE_TEXT_FLAGS = ('--message', '--title', '--detail', '--display-detail')
-_FREE_TEXT_FLAG = r'--(?:message|title|detail|display-detail)'
-_DOUBLE_QUOTED_PLACEHOLDER_RE = re.compile(rf'{_FREE_TEXT_FLAG}\s+"[^"\n]*\{{')
-_SINGLE_QUOTED_PLACEHOLDER_RE = re.compile(rf"{_FREE_TEXT_FLAG}\s+'[^'\n]*\{{")
-#: A free-text flag and the separator before its argument.
-_FREE_TEXT_ARGUMENT_RE = re.compile(rf'(?<![\w-]){_FREE_TEXT_FLAG}(?:\s+|=)')
-#: The one safe form: the whole argument is a single single-quoted shell word.
-_ONE_SINGLE_QUOTED_WORD_RE = re.compile(r"'[^'\n]*'")
-#: A fence at any indentation — a template inside a list item is indented.
-_ANY_FENCE_RE = re.compile(r'^\s*```(\w*)\s*$')
-
-
-def _bash_blocks_with_lead_in(text: str) -> list[tuple[str, str]]:
-    """Every ``bash`` block, indented ones included, paired with the prose that introduces it.
-
-    Blocks separated only by blank lines share one lead-in: the prose before the
-    first of them introduces the whole run.
-    """
-    pairs: list[tuple[str, str]] = []
-    lead_in: list[str] = []
-    block: list[str] | None = None
-    language = ''
-    after_block = False
-    for line in text.splitlines():
-        fence = _ANY_FENCE_RE.match(line)
-        if fence and block is None:
-            block, language = [], fence.group(1)
-            continue
-        if fence and block is not None:
-            if language == 'bash':
-                pairs.append((' '.join(lead_in), '\n'.join(block)))
-            block, after_block = None, True
-            continue
-        if block is not None:
-            block.append(line)
-        elif line.strip():
-            lead_in = [line] if after_block else [*lead_in, line]
-            after_block = False
-    return pairs
-
-
-def _free_text_lines(block: str, pattern: re.Pattern[str]) -> list[str]:
-    return [line.strip() for line in block.splitlines() if pattern.search(line)]
-
-
-def _shell_word(text: str) -> str:
-    """The shell word ``text`` starts with: everything up to the first whitespace outside quotes."""
-    quote = ''
-    index = 0
-    while index < len(text):
-        char = text[index]
-        if quote:
-            quote = '' if char == quote else quote
-        elif char == '\\':
-            index += 1
-        elif char in ('"', "'"):
-            quote = char
-        elif char.isspace():
-            return text[:index]
-        index += 1
-    return text
-
-
-def _unquoted_free_text_arguments(line: str) -> list[str]:
-    """Every free-text argument on ``line`` that carries a placeholder but is not one single-quoted word."""
-    offenders: list[str] = []
-    for flag in _FREE_TEXT_ARGUMENT_RE.finditer(line):
-        word = _shell_word(line[flag.end() :])
-        if '{' in word and not _ONE_SINGLE_QUOTED_WORD_RE.fullmatch(word):
-            offenders.append(line[flag.start() : flag.end()] + word)
-    return offenders
 
 
 def test_the_quoting_rule_is_stated_once_and_covers_every_free_text_flag():
@@ -399,55 +331,64 @@ def test_the_quoting_rule_is_stated_once_and_covers_every_free_text_flag():
     assert _body().count(_QUOTING_RULE_HEADING + '\n') == 1
     rule = _section(_QUOTING_RULE_HEADING)
     assert "'\\''" in rule, 'the rule must say how an embedded single quote is escaped'
-    missing = [flag for flag in _FREE_TEXT_FLAGS if f'`{flag}`' not in rule]
+    missing = [flag for flag in scan.FREE_TEXT_FLAGS if f'`{flag}`' not in rule]
     assert not missing, f'the rule does not cover these free-text arguments: {missing}'
     assert '(code-review.md)' in rule, 'the rule must say it governs the code-review document too'
 
 
 def test_no_template_passes_free_text_outside_one_single_quoted_argument():
-    blocks = [block for _lead_in, block in _bash_blocks_with_lead_in(_body())]
-    lines = [line for block in blocks for line in block.splitlines() if _FREE_TEXT_ARGUMENT_RE.search(line)]
-    assert lines, 'control: the body must carry free-text arguments, or the scan below reads nothing'
-    unquoted = [argument for line in lines for argument in _unquoted_free_text_arguments(line)]
+    blocks = [block for _lead_in, block in scan.bash_blocks_with_lead_in(_body())]
+    commands = [
+        command
+        for block in blocks
+        for command in scan.logical_commands(block)
+        if scan.FREE_TEXT_ARGUMENT_RE.search(command)
+    ]
+    assert commands, 'control: the body must carry free-text arguments, or the scan below reads nothing'
+    unquoted = [argument for command in commands for argument in scan.unquoted_free_text_arguments(command)]
     assert not unquoted, f'a template passes free text outside one single-quoted argument: {unquoted}'
 
 
 def test_the_unquoted_argument_scan_matches_what_it_targets():
-    """Control: the scan flags a bare, partly quoted or double-quoted placeholder and passes the safe form."""
-    assert _unquoted_free_text_arguments('--detail {title}') == ['--detail {title}']
-    assert _unquoted_free_text_arguments('  --message x{title} \\') == ['--message x{title}']
-    assert _unquoted_free_text_arguments('--message={title}') == ['--message={title}']
-    assert _unquoted_free_text_arguments("--title '{kind} at {ref}'x{title}")
-    assert _unquoted_free_text_arguments('--display-detail "{verdict}"')
-    assert not _unquoted_free_text_arguments("--title '{kind} at {ref}' --detail '{title} [fix_kind {fix_kind}]' \\")
-    assert not _unquoted_free_text_arguments('--title not_run --fact acceptance={verifier}')
+    """Control: the scan flags every unsafe placeholder form, a later bare word included, and passes the safe form."""
+    assert scan.unquoted_free_text_arguments('--detail {title}') == ['--detail {title}']
+    assert scan.unquoted_free_text_arguments('  --message x{title} \\') == ['--message x{title}']
+    assert scan.unquoted_free_text_arguments('--message={title}') == ['--message={title}']
+    assert scan.unquoted_free_text_arguments("--title '{kind} at {ref}'x{title}")
+    assert scan.unquoted_free_text_arguments('--display-detail "{verdict}"')
+    assert scan.unquoted_free_text_arguments("--detail 'fixed' {title}") == ["--detail 'fixed' {title}"]
+    assert scan.unquoted_free_text_arguments("--detail 'fixed' \\\n  {title}") == ["--detail 'fixed' {title}"]
+    assert not scan.unquoted_free_text_arguments(
+        "--title '{kind} at {ref}' --detail '{title} [fix_kind {fix_kind}]' \\"
+    )
+    assert not scan.unquoted_free_text_arguments('--title not_run --fact acceptance={verifier}')
 
 
 def test_no_template_interpolates_free_text_in_a_double_quoted_argument():
-    blocks = [block for _lead_in, block in _bash_blocks_with_lead_in(_body())]
-    single = [line for block in blocks for line in _free_text_lines(block, _SINGLE_QUOTED_PLACEHOLDER_RE)]
-    double = [line for block in blocks for line in _free_text_lines(block, _DOUBLE_QUOTED_PLACEHOLDER_RE)]
+    blocks = [block for _lead_in, block in scan.bash_blocks_with_lead_in(_body())]
+    single = [line for block in blocks for line in scan.free_text_lines(block, scan.SINGLE_QUOTED_PLACEHOLDER_RE)]
+    double = [line for block in blocks for line in scan.free_text_lines(block, scan.DOUBLE_QUOTED_PLACEHOLDER_RE)]
     assert single, 'control: the body must carry single-quoted free-text templates, or the scan below reads nothing'
     assert not double, f'a template interpolates free text inside double quotes, which the shell expands: {double}'
 
 
 def test_the_double_quote_scan_matches_what_it_targets():
     """Control: the scan flags a double-quoted placeholder and passes its single-quoted form."""
-    assert _DOUBLE_QUOTED_PLACEHOLDER_RE.search('--title "{kind} at {ref}" --detail "{title}"')
-    assert _DOUBLE_QUOTED_PLACEHOLDER_RE.search('  --display-detail "{verdict}" \\')
-    assert not _DOUBLE_QUOTED_PLACEHOLDER_RE.search("--title '{kind} at {ref}' --detail '{title}'")
-    assert not _DOUBLE_QUOTED_PLACEHOLDER_RE.search('--title "not_run at functional-review"')
+    assert scan.DOUBLE_QUOTED_PLACEHOLDER_RE.search('--title "{kind} at {ref}" --detail "{title}"')
+    assert scan.DOUBLE_QUOTED_PLACEHOLDER_RE.search('  --display-detail "{verdict}" \\')
+    assert not scan.DOUBLE_QUOTED_PLACEHOLDER_RE.search("--title '{kind} at {ref}' --detail '{title}'")
+    assert not scan.DOUBLE_QUOTED_PLACEHOLDER_RE.search('--title "not_run at functional-review"')
 
 
 def test_every_free_text_template_names_the_quoting_rule():
-    pairs = _bash_blocks_with_lead_in(_body())
-    governed = [(lead_in, block) for lead_in, block in pairs if _SINGLE_QUOTED_PLACEHOLDER_RE.search(block)]
+    pairs = scan.bash_blocks_with_lead_in(_body())
+    governed = [(lead_in, block) for lead_in, block in pairs if scan.SINGLE_QUOTED_PLACEHOLDER_RE.search(block)]
     assert governed, 'control: the body must carry free-text templates for the reference check to read'
     assert any('claimed met without evidence' in block for _lead_in, block in governed), (
         'control: the Step 4 template, indented inside a list item, must be among the templates read'
     )
     unreferenced = [
-        _free_text_lines(block, _SINGLE_QUOTED_PLACEHOLDER_RE)[0]
+        scan.free_text_lines(block, scan.SINGLE_QUOTED_PLACEHOLDER_RE)[0]
         for lead_in, block in governed
         if _QUOTING_RULE_ANCHOR not in lead_in
     ]
@@ -458,58 +399,12 @@ def test_every_free_text_template_names_the_quoting_rule():
 # An advisory line that was not written halts the record
 # ---------------------------------------------------------------------------
 
-#: The halt rule that must sit between an advisory decision-log template and the
-#: ``mark-step-done`` that records the outcome after it.
-_ADVISORY_HALT_RE = re.compile(
-    r'On a non-`success` return from any advisory line[^\n]*do NOT record[^\n]*surface the returned error and halt'
-)
-
-
-def _is_advisory_template(block: str) -> bool:
-    return 'manage-logging' in block and 'decision' in block and ') Advisory ' in block
-
-
-def _unhalted_advisory_templates(text: str) -> list[str]:
-    """Every advisory template in ``text`` followed by a ``mark-step-done`` with no halt rule in between.
-
-    An advisory template after which no ``mark-step-done`` follows records
-    nothing over the line, so it is not read.
-    """
-    items: list[tuple[str, str]] = []
-    block: list[str] | None = None
-    for line in text.splitlines():
-        if _ANY_FENCE_RE.match(line):
-            if block is None:
-                block = []
-            else:
-                items.append(('block', '\n'.join(block)))
-                block = None
-            continue
-        if block is not None:
-            block.append(line)
-        else:
-            items.append(('prose', line))
-
-    unhalted: list[str] = []
-    for index, (kind, content) in enumerate(items):
-        if kind != 'block' or not _is_advisory_template(content):
-            continue
-        prose: list[str] = []
-        for later_kind, later in items[index + 1 :]:
-            if later_kind == 'block' and 'mark-step-done' in later:
-                if not _ADVISORY_HALT_RE.search(' '.join(prose)):
-                    unhalted.append(next(line.strip() for line in content.splitlines() if 'Advisory' in line))
-                break
-            if later_kind == 'prose':
-                prose.append(later)
-    return unhalted
-
 
 def test_every_advisory_line_is_followed_by_a_halt_rule_before_the_record():
     record_step = _section('## Step 6: Record the outcome (inline)')
-    advisories = [block for block in _fenced_blocks(record_step, 'bash') if _is_advisory_template(block)]
+    advisories = [block for block in _fenced_blocks(record_step, 'bash') if scan.is_advisory_template(block)]
     assert len(advisories) == 2, 'control: Branch A and Branch B must each carry an advisory template'
-    unhalted = _unhalted_advisory_templates(record_step)
+    unhalted = scan.unhalted_advisory_templates(record_step)
     assert not unhalted, f'an advisory line is followed by a mark-step-done with no halt rule: {unhalted}'
 
 
@@ -525,6 +420,6 @@ def test_the_halt_scan_matches_what_it_targets():
         'On a non-`success` return from any advisory line — a `status: error` TOON or a non-zero exit — '
         'do NOT record `done`: surface the returned error and halt.'
     )
-    assert _unhalted_advisory_templates(f'{advisory}\n\nThen record.\n\n{record}')
-    assert not _unhalted_advisory_templates(f'{advisory}\n\n{halt}\n\n{record}')
-    assert not _unhalted_advisory_templates(advisory), 'an advisory with no record after it records nothing'
+    assert scan.unhalted_advisory_templates(f'{advisory}\n\nThen record.\n\n{record}')
+    assert not scan.unhalted_advisory_templates(f'{advisory}\n\n{halt}\n\n{record}')
+    assert not scan.unhalted_advisory_templates(advisory), 'an advisory with no record after it records nothing'

@@ -202,7 +202,8 @@ manage-config (configuration authority)
 manage-findings
 └── manage-lessons (promotion: findings → lessons)
 
-manage-logging (independent, fire-and-forget)
+manage-logging (independent; work/decision report a failed write as status error + exit 1,
+                script and in-process log_entry stay best-effort)
 manage-files (low-level utility, used by other manage-* skills)
 manage-references (independent plan metadata)
 manage-plan-documents (independent request storage)

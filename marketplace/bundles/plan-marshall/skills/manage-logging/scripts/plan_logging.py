@@ -191,9 +191,10 @@ def get_log_path(plan_id: str | None, log_type: str = 'script', store: str = 'pl
             The plan_id guard is the SHARED containment point for the entry
             points in this module that turn a client-supplied identifier into a
             log file path:
-            ``log_entry``, ``log_script_execution``, ``log_separator``,
-            ``log_work``, ``log_decision``, ``read_work_log`` and
-            ``read_decision_log`` all resolve through here, so no caller can
+            ``write_log_entry`` (and ``log_entry`` through it),
+            ``log_script_execution``, ``log_separator``, ``log_work``,
+            ``log_decision``, ``read_work_log`` and ``read_decision_log`` all
+            resolve through here, so no caller can
             reach path resolution with an unvalidated identifier even if it
             performs no check of its own. An out-of-module caller resolving a
             log path directly — the generated executor's build-ledger record is
@@ -289,11 +290,12 @@ def write_log_entry(log_type: str, plan_id: str | None, level: str, message: str
     """
     Append one log entry to the appropriate log file, raising when it cannot.
 
-    The checked write path: the same append :func:`log_entry` performs, with
-    every failure propagated to the caller instead of swallowed. Only a caller
-    that reports the outcome of the write uses it — the ``manage-logging``
-    ``work`` and ``decision`` CLI verbs. ``LOG_ENABLED = False`` is not a
-    failure: the call returns without writing.
+    The checked write path, with every failure propagated to the caller instead
+    of swallowed. It has two callers: the ``manage-logging`` ``work`` and
+    ``decision`` CLI verbs, which report the outcome of the write, and
+    :func:`log_entry`, which delegates its append here and swallows what this
+    raises. ``LOG_ENABLED = False`` is not a failure: the call returns without
+    writing.
 
     Args:
         log_type: 'script', 'work' or 'decision'
