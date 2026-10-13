@@ -2,9 +2,9 @@
   "id": "PLAN-LB-28",
   "slug": "java-consumer-repos",
   "workstream": "WS-02",
-  "status": "staged",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "plan_marshall_plan_id": "lb-28-java-consumer-repos",
+  "pr": "1750",
+  "landing": "landings/PLAN-LB-28.md",
   "seq": 28
 }

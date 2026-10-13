@@ -20,7 +20,8 @@ The review bots and the gate that reads them. The workstream closes when a revie
 
 | Plan | Status | Notes |
 |------|--------|-------|
-| PLAN-LB-24-review-step | staged | Runnable completion poll; CodeRabbit quota recovery that finishes; the gate credits only a review of the merge commit |
+| PLAN-LB-38-review-gate-and-empty-scope | shipped (#1752) | The gate passes only on a finished review of the head; a required bot recovers by itself; acknowledgments are noise. Also carries the empty `--changed-paths` fail-open (WS-02 subject, weak merge) |
+| PLAN-LB-24-review-step | shipped (#1742) | Runnable completion poll; CodeRabbit quota recovery that finishes; the gate credits only a review of the merge commit. Nine review-gate defects left unowned — see `landings/PLAN-LB-24.md` and epic.md Open Defects |
 | PLAN-LB-31-in-house-reviewer | staged | Measure the in-house reviewer, decide its roster place, then finish the fleet enrolment |
 | PLAN-LB-18-coderabbit-quota-recovery | superseded | PLAN-LB-24 (all deliverables) |
 | PLAN-LB-19-review-gate-currency | superseded | PLAN-LB-24 (all deliverables) |

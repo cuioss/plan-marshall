@@ -2,9 +2,9 @@
   "id": "PLAN-LB-25",
   "slug": "phase-and-merge-gates",
   "workstream": "WS-01",
-  "status": "staged",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "plan_marshall_plan_id": "lb-25-phase-and-merge-gates",
+  "pr": "1751",
+  "landing": "landings/PLAN-LB-25.md",
   "seq": 25
 }

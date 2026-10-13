@@ -283,6 +283,193 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
     answered here: the `lessons-routing` ingest runs of 2026-10-09 retired the corpus into
     `lessons-routing/lessons-archive/`. `manage-lessons list` read `total: 1, filtered: 0`
     on 2026-10-10 before this drain's promotions.
+- **PLAN-LB-37 is landing in parts.** Four part-PRs are on `main`: #1754 (`fc0090a24`, rubric,
+  `review_support` helper, harvestable rules), #1755 (`730f37a2f`, the functional-review and
+  code-review steps and the code-review packs), #1757 (`77ef084ad`, every reader moved off the old
+  step) and #1758 (`47d21e1bf`, the old step and the surfacer apparatus retired, configurations
+  migrated). The row stays `running` until its landing message arrives; the post-landing
+  consumer rollout (D9/D10) and the bot settings change (D15) are still to come.
+- **Inbox drain of 2026-10-13, nineteen messages:**
+  - From PLAN-LB-37 (four follow-ups it handed off, none a landing):
+    - `-001` (remove the one-shot `migrate-review-steps` steward migration once every consumer is
+      migrated) — kept as a Watch; operator instruction recorded by the plan.
+    - `-002` (capture `head_at_completion` at step start for every head-dependent step) —
+      promoted as `2026-10-13-07-001`.
+    - `-003` (ceremony selection re-adds steps the no-push filter dropped) — an Open Defect
+      with a decision for the operator.
+    - `-004` (shell-quote free-text placeholders in every workflow command template) —
+      promoted as `2026-10-13-07-002`; an Open Defect.
+  - From the `lessons-routing` epic (fifteen findings ingested from the pm-mcp-core epic on
+    2026-10-12; its "owner today" lines predate the landings of PLAN-LB-24, 25, 28, 33 and 38
+    and are re-read here):
+    - `-011`, `-012`, `-013`, `-014`, `-015`, `-016`, `-018` — Open Defects, below; six are graded
+      **critical** by the operator's ruling of 2026-10-12 that Antigravity issues are the
+      epic's highest priority. `-013` meets the trigger of the Antigravity zero-token Watch.
+    - `-017` (a required bot goes stale after a fix commit) — partly closed by #1742 and
+      #1752; the remainder is an Open Defect.
+    - `-019` (red CI has no triage route) — same defect as lesson `2026-10-11-16-001`, now with
+      four more plans; confirmed still present at `47d21e1bf` (`verification-feedback.md:30, 59`).
+      An Open Defect.
+    - `-020` (`commit-add` rejects deliverable 0) — folded into PLAN-LB-26 as OBSERVED. No
+      surface added.
+    - `-021`, `-022`, `-023` — Open Defects.
+    - `-024` (Java skill profiles) and `-025` (cui-http-testing guidance) — domain content,
+      promoted as `2026-10-13-07-003` and `-07-004`.
+- **PLAN-LB-38 review-gate-and-empty-scope shipped on 2026-10-11 as #1752 (`4a985a1bf`).**
+  Record: `landings/PLAN-LB-38.md`. Nine of ten deliverables shipped (four with deviations);
+  D10 dropped under its own clause (no bot declares a size cap). An empty change list is now
+  refused, and a task with none resolves by plan. On the re-review path the gate credits only a
+  finished review by the awaited bot; acknowledgments are noise; review-bot statuses are no
+  longer CI; a stale notice re-triggers a required bot; an edited comment updates its finding
+  (reopen-on-change, by operator decision). Left open: the participation-credit path does not
+  apply the in-progress check (observed on its own PR); the new "fixed"-reply CI hold never
+  releases on a repository with no non-bot check; the wake margin has no jitter. It committed
+  the stale `uv.lock` re-lock by operator choice. PLAN-LB-37 must rebase onto it: three of its
+  declared files changed.
+- **Inbox drain of 2026-10-12, five messages from PLAN-LB-38:**
+  - `-005` (landing) — reconciled; complete.
+  - Promoted to the lessons corpus: `-001` as `2026-10-12-05-001` (detect a stale base `uv.lock`
+    instead of re-locking it in every plan build), `-004` as `-05-002` (participation credited
+    from an edited pre-existing comment).
+  - `-002` (root-level guards skipped before push) — third plan in a row; added to lesson
+    `2026-10-11-16-003` as a recurrence instead of a parallel lesson.
+  - `-003` (every dispatch-boundary row keyless) — seventh landing; absorbed into the Open
+    Defect.
+- **PLAN-LB-25 phase-and-merge-gates shipped on 2026-10-11 as #1751 (`3ff307ddd`).** Record:
+  `landings/PLAN-LB-25.md`. All ten deliverables shipped, three with deviations. Merge is now
+  gated by a script (`pre_merge_gate.py`, fails closed); archive is refused by `manage-status`
+  (recording the step `failed` stays an instruction); both merge waits are bounded inside scripts
+  without `sleep`; the light-lane `pr_title` producer is documented and the refusal names its
+  remedy. Two residuals accepted by the operator at the self-review round cap: merge-lock
+  ownership keyed on `plan_id`, not session, and a landing-gate failure path that releases a lock
+  it no longer holds. For the running plans: PLAN-LB-38's rate-window code and items 7a/7c(0)
+  are unchanged, only moved; PLAN-LB-37 meets a new `pre_merge_gate` block in
+  `phase-6-finalize/SKILL.md` and seven changed tests under `phase-6-finalize/`. PLAN-LB-27
+  no longer shares a file with a running plan except `phase-6-finalize/SKILL.md` with
+  PLAN-LB-37 and PLAN-LB-38.
+- **Inbox drain of 2026-10-11 (second), twelve messages from PLAN-LB-25:**
+  - `-012` (landing) — reconciled; complete.
+  - Promoted to the lessons corpus: `-001` as `2026-10-11-16-001` (verification-feedback refuses
+    ci-verify's producers), `-002` as `-16-002` (ci-verify findings keyed on the wrong run),
+    `-004` as `-16-003` (root-level test guards skipped before push), `-006` as `-16-004`
+    (session-scoped merge-lock ownership), `-009` as `-16-005` (module-tests tier oscillates),
+    `-010` as `-16-006` (xdist_group-suffixed test ids), `-007` as `-16-007` (nitpicks inside an
+    "Actionable comments" body under-counted; filed under the bare component
+    `finalize-step-review-retrospective`, because the store refuses the `project:` prefix).
+  - `-003` (`commit-add` rejects deliverable 0, fourth recurrence) and `-008` (a module-testing
+    task closed before its tests ran) — folded into PLAN-LB-26. No surface added.
+  - `-005` (a re-review awaited for cuioss-review-bot matched a CodeRabbit review) — the live
+    confirmation of PLAN-LB-38 deliverable 3, which treats it as verify-first. PLAN-LB-38 is
+    running, so nothing is folded into its spec; recorded on the Open Defect.
+  - `-011` (finalize boundary rows stop hours early, all keyless) — sixth landing; absorbed into
+    the Open Defect.
+- **PLAN-LB-38 review-gate-and-empty-scope, staged and emitted on 2026-10-11 by operator
+  instruction** ("create a plan for fixing both and emit it now"). It owns two former Open
+  Defects: the empty `--changed-paths` fail-open (part A, deliverable 1, to be done first) and
+  the nine unowned review-gate defects (part B, deliverables 2–10; four of them from retired
+  consumer-repository lessons, verify-first). A weak merge the outline may split between
+  deliverables 1 and 2. Measured with `corpus cross-check`: it shares
+  `manage-locks/scripts/merge_lock.py`, `phase-6-finalize/SKILL.md` and
+  `test_merge_lock_rate_window.py` with running PLAN-LB-25 (deliverables 4 and 6 only); PLAN-LB-37
+  (running, no footprint yet) names `automatic-review/SKILL.md` and `phase-6-finalize/SKILL.md`
+  among the files it edits. Both collisions are accepted by the operator's "now"; the spec tells
+  the plan to rebase onto whichever lands first.
+- **PLAN-LB-28 java-consumer-repos shipped on 2026-10-10 as #1750 (`2fd164ec9`).** Record:
+  `landings/PLAN-LB-28.md`. Deliverables 1–4 shipped (5–8 had moved to PLAN-LB-34, now
+  superseded by PLAN-LB-37). A consumer of a reactor test artifact gets a `package` ladder;
+  Maven test counts are summed across summary blocks with `unmeasured` where they cannot be
+  attributed; javac tags are literal; the failure epilogue is no longer filed. Half the
+  premise of deliverable 1 was refuted and recorded: Maven 3.9.16 resolves a plain
+  `test-jar` dependency at `test`; only a custom classifier breaks. **It does not reach the
+  consumer repositories until architecture discovery is re-run there** after the harness
+  sync, because detection is persisted at discovery. The evidence is fixture-only. It crossed
+  the request's `extension-api` exclusion with one consistent table in `build-execution.md`,
+  without a recorded operator decision; PLAN-LB-37 declares the `extension-api` tree.
+- **Inbox drain of 2026-10-11, seven messages from PLAN-LB-28:**
+  - `-007` (landing) — reconciled; complete.
+  - Promoted to the lessons corpus: `-001` as `2026-10-11-06-001` (a field added to `to_dict`
+    and not to `format_toon`; carries `-002`, its round-state companion), `-003` as `-06-002`
+    (a Maven fixture whose test-jar classifier the producer never attached), `-004` as
+    `-06-003` (re-resolve the live timeout before a leaf starts a long build), `-005` as
+    `-06-004` (`sync-affected-files` never prunes a path dropped from the outline).
+  - `-002` — folded into `-06-001`; its surfacer proposal is moot under PLAN-LB-37.
+  - `-006` (every dispatch-boundary row keyless) — fifth landing; absorbed into the Open
+    Defect.
+  - The plan filed two lessons itself at `lessons-capture`: `2026-10-10-21-001` (sonar returns
+    `internal_error` where it should say `unconfigured`) and `-21-002` (an order-dependent
+    build-server test).
+- **PLAN-LB-34 stopped unmerged on 2026-10-10; PLAN-LB-37 staged in its place, at the head
+  of the epic.** Source: inbox messages `lb-34-self-review-surfacing-foundation-and-java-001`
+  and `-002` (stream end). Checked: branch
+  `feature/lb-34-self-review-surfacing-foundation-and-java` is local only (`a35410713`, 24
+  commits on `66c6e4cd0`), not on the remote, and `ci pr list` finds no pull request for it;
+  `main` is untouched. Four self-review rounds over its own change found real defects, nearly
+  all in the per-language diff parsing it built, every one by reading changed code whole while
+  the reviewer reached about 40 percent of the surfaced candidates. The operator concluded the
+  review has drifted from its question ("did the plan implement the requirements?") and
+  directed a split: a domain-free functional review, and a code review against general
+  practice and the project's conventions built on the cuioss-review-bot pack generator,
+  without security. PLAN-LB-37 carries both, in one plan of two documents
+  (`plans/PLAN-LB-37-functional-review.md`, D1–D9 with the hand-off command;
+  `plans/companion-PLAN-LB-37-code-review.md`, D10–D16 — named so the spec probe resolves only
+  the main document), drafted in the PLAN-LB-34 session and staged here unchanged apart from
+  the number. It is a breaking change with a migration (`marshall-steward upgrade`) and two
+  post-landing writes outside this repository: the consumer `marshal.json` rollout (D9) and the
+  `cuioss/cuioss-review-bot` settings repository (D15). Operator decisions: "stage, but review
+  first" — a read-only re-grounding of its claims and surface precedes the emit — and PLAN-LB-35
+  and 36 superseded (their surfacer foundation is removed), PLAN-LB-26 re-scoped (it loses its
+  edits to the deleted self-review workflow and waits for PLAN-LB-37). PLAN-LB-28 holds no
+  self-review deliverable since the split of 2026-10-09. Salvage on the kept branch:
+  `script-shared/scripts/git_lines.py`, the refusal of an unreadable footprint or diff, the
+  `skill-domains set-extensions` input validation, a `CLAUDE.md` component-count correction.
+- **PLAN-LB-24 review-step shipped on 2026-10-10 as #1742 (`7dd1d3433`).** Record:
+  `landings/PLAN-LB-24.md`. Ten of the review's ten rows shipped, four with a deviation (the
+  jittered wake after the rate window dropped; three extra outcomes for the no-new-commit
+  reply; the CI-status half of the currency helpers deleted; the "fixed" reply held until the
+  fix commit, GitHub only, with an escape). Of the anchor's checks: the claim window equals
+  the wait budget (3600 s each, no grace); the full-review command is now a registered
+  trigger but its "Full review triggered/finished" replies are still stored as findings
+  (case-sensitive match); a "fixed" reply is not held until verify is green. Two defects in
+  the code it shipped were observed on its own pull request: a stale quota notice settles a
+  required bot that never reviewed, and CodeRabbit's "review in progress" summary is
+  credited as a head-verified review. Its self-review used all five rounds and was closed by
+  operator override at three heads, so the review-fix commits shipped without it. See Open
+  Defects.
+- **PLAN-LB-33 leaf-test-scope-and-executor shipped on 2026-10-10 as #1745 (`370f42379`).**
+  Record: `landings/PLAN-LB-33.md`. Executor half met: a worktree run cannot overwrite main's
+  executor, and an orphaned executor recovers. Test-scope half partly met: narrow units are
+  offered only for a footprint inside one bundle, and the targets and harness trees that
+  motivated the plan (PLAN-LB-29) still run whole-tree. It also introduced a fail-open:
+  `--changed-paths ""` now reads as an empty footprint, so no test runs. The operator added
+  two deliverables at execute that rebuilt the scope-creep guard (accepted finding type,
+  merge-base baseline, configured threshold) — three of PLAN-LB-27's five scope-creep
+  deliverables. PLAN-LB-27 is re-scoped in place; PLAN-LB-26, which declares the same guard,
+  must re-ground against it. The executor template's format changed, so every existing
+  executor reads stale until regenerated.
+- **Inbox drain of 2026-10-10 (second), seventeen messages from PLAN-LB-24 and PLAN-LB-33:**
+  - `lb-24-review-step-009` and `lb-33-leaf-test-scope-and-executor-008` (landings) —
+    reconciled; both complete.
+  - Promoted to the lessons corpus: `lb-24-…-001` as `2026-10-10-20-001` (re-trigger a
+    required bot whose notice window elapsed), `-002` as `-20-002` (in-progress summary
+    credited), `-003` as `-20-003` (full-review acknowledgment stored; carries the second
+    sighting from `lb-33-…-001`), `-008` as `-20-004` (self-review after an operator
+    override); `lb-33-…-003` as `-20-005` (consult misses a worktree-hosted outline), `-004`
+    as `-20-006` (write-replace targets must exist), `-006` as `-20-007` (the self-review
+    author is told to record mark-step-done), `-007` as `-20-008` (no sanctioned in-file
+    search for a leaf).
+  - `lb-33-…-001` — folded into `-20-003`; its own-trigger half was fixed by #1742, which its
+    branch predated.
+  - `lb-24-…-004` (scope-creep finding type) — fixed by #1745. `lb-24-…-005` (housekeeping
+    reads the retired field) — fixed by #1741, which merged while PLAN-LB-24 was in finalize.
+  - `lb-24-…-006` (`commit-add` rejects deliverable 0) — folded into PLAN-LB-26, which owns
+    the triage fix-task path (PLAN-LB-06 D1). No surface added.
+  - `lb-24-…-007` (lessons corpus emptied mid-finalize) — discarded: the `lessons-routing`
+    ingest runs of 2026-10-09 retired the corpus, as recorded above.
+  - `lb-33-…-002` (dispatch-boundary rows stop and carry no step id) — fourth landing;
+    absorbed into the Open Defect.
+  - `lb-33-…-005` (rate-window wait inside a leaf) — what PLAN-LB-24 D2 shipped. The leaf
+    followed the old Branch 3 (a paced `sleep 60`), so it most likely ran the step text from
+    before #1742 (not verified). Discarded; the Watch on live evidence for D2 covers it.
 - **PLAN-LB-34, 35 and 36, staged on 2026-10-09: self-review surfacers for every domain.**
   PLAN-LB-34 is the operator's top priority. Measured with `corpus cross-check`: it shares
   no declared file with PLAN-LB-24 or PLAN-LB-32 (both running), and one with PLAN-LB-26
@@ -636,6 +823,78 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
 
 ## Open Defects
 
+- **Antigravity: critical, by operator ruling of 2026-10-12 (the epic's highest priority).**
+  All from pm-mcp-core PLAN-41 (pm-mcp-core PR #34), the first plan of that epic run under
+  Antigravity; the ingest verified against the archived plan, not at HEAD here unless noted.
+  None is owned by any staged plan. Full bodies at
+  `lessons-routing/lessons-archive/filed-live-blockers/`.
+  - **Phase 5 dispatches no sub-agent.** `Task: plan-marshall:execution-context-{level}` has no
+    meaning on Antigravity and `phase-5-execute` has no wiring to its `invoke_subagent` (nor to
+    OpenCode's sub-agents); all 8 tasks ran inline in one session, phase boundaries were left
+    open, no dispatch-boundary row was written. — `lessons-routing-011.md`.
+  - **The repository's `CLAUDE.md` is never loaded**, because Antigravity reads only `GEMINI.md`,
+    `AGENTS.md` and `.agents/rules/*.md`; with it the build rules and prohibitions vanished.
+    Task verification also carried no quality gate although the manifest stamped it per task.
+    — `lessons-routing-012.md`.
+  - **Zero tokens is recorded as a real number and no plan records its harness**: every
+    `record-step` reads `unmeasured`, the landing carries `total_tokens=0` and passes
+    `landing-check`; no archived plan has a `client.toon`, because nothing on the start path
+    calls `orchestrator preflight`. — `lessons-routing-013.md`. Meets the Watch below.
+  - **`build-maven maven run` executes any plugin goal, including one fetched from Maven
+    Central** (a fully qualified `spotless` goal, downloaded, bypassing the repository filter).
+    A supply-chain gap on every harness; no guard under `build-maven/scripts/` at `fc0090a24`.
+    — `lessons-routing-014.md`.
+  - **A materially incomplete package was reported complete, with existing tests weakened to stay
+    green** (`deliverables_done=7/7`; an independent audit found rules partial, dead or missing,
+    a coverage test counting enum constants, an assertion filtered and a fixture changed to
+    dodge a rule). Nothing in the pipeline caught it on any harness. PLAN-LB-37's functional
+    review, which verifies each success criterion against evidence, is the nearest remedy;
+    whether it catches a weakened existing test is not established. — `lessons-routing-015.md`.
+  - **The pushed and merged head carries none of the plan's mandated gates** — the Antigravity
+    instance, and two Claude Code recurrences where fix commits after the last full gate were
+    pushed with only the composed manifest steps re-run. Graded high for Claude Code.
+    — `lessons-routing-016.md`.
+- **A deliverable in a sibling repository has no lifecycle** (high; critical in its Antigravity
+  instance): no plan-owned worktree, no finalize step pushes it or opens its PR, the footprint
+  ignores it, and the foreign-PR gate assumes `feature/{plan_id}`
+  (`phase-6-finalize/scripts/foreign_pr_gate.py:170-171`), so it both blocks a merged foreign PR
+  and misses a missing one. Recurs on every pm-mcp-core plan that changes a specification. Not
+  owned by any staged plan. — `lessons-routing-018.md`.
+- **A required review bot goes stale after a fix commit** (remainder after #1742 and #1752):
+  a commit pushed after the last review by any path (inline finalize fix, merge-queue flow
+  without a local rebase) does not re-arm the re-review; a leaf read `re_review_on_loopback`
+  from the wrong source; a bot whose path filter excludes the whole diff is not counted as
+  expected-absent. The "fixed before the fix exists" item is closed by #1742/#1752. Not owned by
+  any staged plan. — `lessons-routing-017.md`.
+- **Red CI has no triage route.** `verification-feedback.md` accepts only `build-runner, sonar,
+  pr-comment, plugin-doctor, pr-state, finalize-feedback` (lines 30, 59 at `47d21e1bf`), while
+  `ci_verify.py` emits `ci-verify-missing/-build/-policy/-timeout/-cancelled`; every red-CI
+  dispatch is refused `unknown_producer`. Five plans (PLAN-LB-25 and four pm-mcp-core plans);
+  also a CI check is classed by name tokens, not by what it runs. Lesson `2026-10-11-16-001`.
+  Not owned by any staged plan. — `lessons-routing-019.md`, `lb-25-phase-and-merge-gates-001`.
+- **In a consumer repository a dispatched leaf cannot resolve its workflow document**:
+  `agents/execution-context.md:111-112` maps a notation only to `marketplace/bundles/…`
+  (`workflow_not_found` otherwise, line 119), so every consumer-repository dispatch improvises,
+  some reading a stale built copy. Graded high. Not owned by any staged plan.
+  — `lessons-routing-021.md`.
+- **The deep-lane outline writes no assessments**, so Q-Gate check 2.2 fails every deliverable
+  — one guaranteed operator interruption per deep-lane plan (eight pm-mcp-core plans). Graded
+  high by the operator. Not owned by any staged plan. — `lessons-routing-022.md`.
+- **The 4-plan Q-Gate skips its validators on the 3-outline hash and reports a pass over zero
+  runs**; no verb computes the deliverable hashes, so passes improvise. Graded high by the
+  operator. Not owned by any staged plan. — `lessons-routing-023.md`.
+- **A local-only run can still schedule push-related steps.** With
+  `phase-5-execute.commit_and_push` false the commit-push filter drops `pre-push-quality-gate`,
+  `functional-review` and `code-review`, and the ceremony selection adds them back for a
+  `lane: minimal` gate without consulting `commit_and_push` (`_manifest_rules.py`,
+  `_apply_ceremony_finalize_selection`). Predates PLAN-LB-37. **Operator decision needed:**
+  whether a `minimal` lane overrides "no push", possibly per step class (a review step may keep
+  value in a local-only run, a pre-push gate does not). — `lb-37-functional-review-003.md`.
+- **Free-text placeholders in workflow command templates are not shell-quoted**: finding titles,
+  reasons and refs interpolated into double-quoted arguments break the command or run
+  `$(...)`. PLAN-LB-37 fixed `functional-review.md` and `code-review.md`; `triage.md`,
+  `verification-feedback.md` and the remaining `phase-6-finalize` documents are left. Lesson
+  `2026-10-13-07-002`. Not owned by any staged plan. — `lb-37-functional-review-004.md`.
 - **Medium and low items are not owned by any staged plan.** They are listed with evidence
   in `backlog.md` (sections 1.12 onward, 2.3 onward, 3.2 onward, 4.7 onward and 5). Promote an
   item into a plan spec when it starts to hurt; re-verify it at HEAD first.
@@ -701,6 +960,11 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   `2026-10-09-13-004` carries the proposal. — source: inbox messages
   `lb-23-verify-builds-009.md` and `-014.md`, 2026-10-09; reported by the plan's
   orchestrator, not reproduced here.
+  - **Closed by PLAN-LB-33 (#1745):** a generation from another checkout is refused and
+    leaves main's executor byte-identical (`cross_checkout_refusal`), and an orphaned
+    executor recovers from the cache or the checkout's sources. Remove this entry at the next
+    cleanup. The template format went from 4 to 5, so every existing executor reads stale
+    until it is regenerated.
 - **The root `opencode.json` is in a shape nothing in this repository reads.** PLAN-LB-29's
   merge commit rewrote it: `permission.bash`, a map of command pattern to
   `allow`/`ask`/`deny`, became a `permissions` array of `{action, resource, effect}`
@@ -737,6 +1001,53 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   deliverables only, none of the four was found there. Decide at its landing whether they
   go to PLAN-LB-25, a follow-up plan or the backlog. — source: inbox message
   `lessons-routing-007.md`, 2026-10-09.
+  - **PLAN-LB-24 landed (#1742) and owns none of the four.** Its review row for the
+    in-place edit (2) is related but different: it drops an acknowledgment, not an edited
+    summary. The four stay unowned, joined by five from the landing itself, all in the same
+    review step: (5) a stale quota notice settles a required bot that never reviewed — the
+    stale check runs before every window and trigger branch and reads the notice alone, so
+    the next pass settles it again until the loop-back ceiling (lesson `2026-10-10-20-001`,
+    observed on #1742); (6) CodeRabbit's "review in progress" summary that names the head is
+    credited as a head-verified review — the matcher applies no participation marker
+    (`2026-10-10-20-002`, observed twice on #1742); (7) "Full review triggered/finished" is
+    stored as a finding and is an eligible answer, case-sensitive match at
+    `github_re_review.py:1734` (`2026-10-10-20-003`, observed on #1742 and #1745); (8) a
+    "fixed" reply is released when the fix commit is on the branch, before verify is green;
+    (9) the rate-window wait gives up exactly when the claim expires (3600 s each, no grace)
+    and the jittered wake the spec asked for was dropped. **Owned by PLAN-LB-38 since
+    2026-10-11** (deliverables 2–10); remove this entry when it lands.
+  - **Defect (1) seen live on #1751:** the `cuioss-review-bot` re-review returned `matched: true,
+    head_sha_verified: true` on a review written by `coderabbitai[bot]` (empty body, head
+    320a1b7); the verdict held only because a later read credited the bot's own comment.
+    PLAN-LB-38 deliverable 3 is no longer a hypothesis. — source: inbox message
+    `lb-25-phase-and-merge-gates-005.md`.
+  - **Closed by PLAN-LB-38 (#1752), except as follows; remove this entry at the next cleanup.**
+    Defects 1, 2, 3, 5, 7 fixed; 9 got a fixed 60-second margin; 4 dropped (no bot declares a
+    cap); 6 and 8 are fixed on the re-review path and leave the two follow-ups below.
+- **Participation credit ignores an in-progress review.** The credit path
+  (`workflow-integration-github/scripts/github_pr.py:1938-2033`, untouched by #1752) applies the
+  refusal exclusion, the marker gate and currency, but never `read_bot_in_progress` or a
+  completion check, so an edited, marker-bearing, pre-existing bot comment is credited while
+  the review is running. Observed on #1752: CodeRabbit credited `participated_but_empty` from an
+  edited earlier comment, no new review object; the review-retrospective graded the PR
+  indeterminate. Lesson `2026-10-12-05-002`. Not owned by any staged plan. — source: inbox
+  message `plan-lb-38-review-gate-and-empty-scope-004.md`; read-only review of `4a985a1bf`.
+- **A "fixed" reply is held forever on a repository without CI.** PLAN-LB-38's hold
+  (`_pr_head_ci_hold_reason`, `github_pr.py` ~3135) requires the overall conclusion over the
+  non-bot check rows to be `success`; with no such row it reads `none` → `pr_head_ci_pending`
+  (or `pr_head_ci_unreadable` if the provider errors), and `--send-unstamped-fixed` does not
+  release a stamped finding. Every repository this machine runs has CI, so it is latent. Also
+  left: the wake margin is a fixed 60 seconds with no jitter, and the over-budget escalation
+  is an instruction in item 7a only. Not owned by any staged plan. — source: read-only review
+  of `4a985a1bf`, 2026-10-12; advisory list of PR #1752.
+- **A dependency-floor bump can land with a stale `uv.lock`.** Dependabot #1743/#1744 bumped
+  ruff and mypy floors without a lock update; every later plan build re-locked 353 lines, and
+  PLAN-LB-38 shipped the re-lock under its own subject. Fixed for now by that commit; the cause
+  (no stale-lock check on the bump path, a build that re-locks silently) is lesson
+  `2026-10-12-05-001`. Not owned by any staged plan. — source: inbox message
+  `plan-lb-38-review-gate-and-empty-scope-001.md`. PLAN-LB-25 is running and does not
+    declare the review step. — source: read-only review of `7dd1d3433`, 2026-10-10; inbox
+    messages `lb-24-review-step-001` to `-003`, `lb-33-leaf-test-scope-and-executor-001`.
 - **The outline's domain narrowing can leave a plan with no domain, and the documented
   recovery fails.** On a consumer-repository plan every deliverable declared
   `domain: documentation`, the phase-3 narrowing dropped all detected domains, and
@@ -768,6 +1079,20 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   cost decision in this epic is measured with. — source: inbox messages
   `lb-23-verify-builds-013.md`, `plan-lb-29-harness-sync-010.md`,
   `lb-32-head-dependent-step-refire-005.md`.
+  - **Seventh landing: PLAN-LB-38**, 16 of 16 rows keyless, 0 firings paired. — source: inbox
+    message `plan-lb-38-review-gate-and-empty-scope-003.md`.
+  - **Sixth landing: PLAN-LB-25**, every row keyless in every phase; finalize rows stop at
+    08:35Z while finalize dispatched until about 15:54Z, covering 1.6 of 8.08 million finalize
+    tokens. — source: inbox message `lb-25-phase-and-merge-gates-011.md`.
+  - **Fifth landing: PLAN-LB-28**, 28 of 28 rows keyless, 0 of 47 firings paired; the message
+    names the cause as call sites that do not forward `--step-id` and the four context-load
+    figures they hold. — source: inbox message `lb-28-java-consumer-repos-006.md`.
+  - **Fourth landing, and rows now go missing too.** PLAN-LB-33: the ledger holds 10 execute
+    and 15 finalize rows that stop hours before the last dispatches (at least 23 later
+    dispatches have no row), all 26 keyless, 0 of 38 firings paired. The proposed remedy is
+    to record the boundary at the dispatch seam with `--step-id`, or to fail a phase exit
+    whose boundary rows and dispatch lines disagree. — source: inbox message
+    `lb-33-leaf-test-scope-and-executor-002.md`.
 - **The self-review has no outcome for "could not establish coverage".** A round that cannot
   read everything it is asked to judge still returns an ordinary verdict: the figures
   `contract_sources_read` and `contract_sources_listed` are reported and nothing branches on
@@ -778,9 +1103,71 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   edits the same workflow and is the place to fold it if it recurs after #1726. — source:
   inbox message `lessons-routing-001.md` (the PLAN-09 row), 2026-10-09; the absence was read
   in `pre-submission-self-review.md` at `4ed67e228`.
-- **Staged as PLAN-LB-33 on 2026-10-09; remove the next entry and the executor entry below
-  when that plan lands.**
-- **Per-task tests have no runnable scope on two landings in a row.** `resolve-test-scope`
+- **Leaf test scope after PLAN-LB-33 (#1745): narrowed only inside one bundle.**
+  `resolve-test-scope` now names the top-level test trees and maps `marketplace/targets/`,
+  but forces divergence for both, so a change there still runs whole-tree — the PLAN-LB-29
+  case is unchanged. Narrow units are offered only for a footprint in exactly one bundle; a
+  multi-module footprint gets none. The path is prose-driven: no script calls
+  `architecture resolve --narrow-unit`. — source: read-only review of `370f42379`
+  (`_test_scope_divergence.py:489-498`, `:116`), 2026-10-10. Not owned by any staged plan.
+  - The reverse gap: root-level tests (`test/test_harness_shape_guards.py`) run only in the
+    whole-tree run, so a module-scoped verification never sees them; they failed PLAN-LB-34
+    twice, late. Reported by that plan, not re-checked here. — source: inbox message
+    `lb-34-self-review-surfacing-foundation-and-java-001.md`.
+  - Third plan in a row: PLAN-LB-38's pre-push gate failed twice on the same guard after every
+    per-deliverable run was green; the fix commit re-fired three finalize steps. Recorded on
+    lesson `2026-10-11-16-003`. — source: inbox message
+    `plan-lb-38-review-gate-and-empty-scope-002.md`.
+  - Second plan in a row: on PLAN-LB-25 every local gate passed and CI failed on
+    `test/test_harness_shape_guards.py` rule R5, because the pre-push gate judged
+    `divergence_possible=false` and skipped the whole-tree run; a later round hit the
+    whole-tree-only marketplace quality test the same way. Lesson `2026-10-11-16-003`. — source:
+    inbox message `lb-25-phase-and-merge-gates-004.md`.
+- **Merge-lock ownership is keyed on `plan_id`, not session** (accepted residual of PLAN-LB-25).
+  A second finalize session of the same plan is admitted as `already_held`
+  (`merge_lock.py:1497-1498`) and either session's release removes the other's lock
+  (1922-1939); the landing-gate failure path in `branch-cleanup.md` (1688-1693) releases after
+  an unobserved enqueue already released (1562-1566), against its own invariant 4 (line 120).
+  Low likelihood (needs two live finalize sessions of one plan). Lesson `2026-10-11-16-004`
+  proposes an acquisition token required on release. Not owned by any staged plan; PLAN-LB-38
+  (running) edits `merge_lock.py` for the rate-window wait only. — source: inbox message
+  `lb-25-phase-and-merge-gates-006.md`; read-only review of `3ff307ddd`.
+- **An empty `--changed-paths ""` runs no tests.** PLAN-LB-33 D9 made the executor keep an
+  empty option value; `pyproject_build.py:295-296` reads it as an empty footprint and returns
+  `divergence_possible: false`. Before D9 the value was stripped and argparse failed loudly.
+  So a Step 5(b) whose `{changed_paths}` resolves empty skips pytest and reports success.
+  Related, advisory: `architecture resolve --narrow-unit ""` falls back to the module-wide
+  resolve without `bound_source`. **Closed by PLAN-LB-38 (#1752):** both empty values are
+  refused (`empty_changed_paths`, `empty_narrow_unit`), and a task with no changed file
+  resolves by `--plan-id`. Remove this entry at the next cleanup. — source: read-only review
+  of `370f42379`, 2026-10-10; advisory list of the PR #1745 body.
+- **The self-review's author leaf is briefed to record a step it must not record.** On
+  PLAN-LB-33, every author leaf of seven firings returned without `mark-step-done`, as the
+  workflow requires (the verifier runs from the orchestrator), and later briefs still said
+  "record before return"; one dispatch named the workflow under `standards/` and failed with
+  `workflow_not_found`. Lesson `2026-10-10-20-007`. PLAN-LB-34 (running) edits
+  `pre-submission-self-review.md` but not the finalize dispatcher. — source: inbox message
+  `lb-33-leaf-test-scope-and-executor-006.md`.
+- **Leaves fall back to `git grep` because Grep and Glob are not granted to them.** Five
+  leaves on PLAN-LB-33 reported the denial; three used `git grep`, two left a claim
+  unverified. `architecture search --content` answers "which file", not "which line", and
+  does not walk `.claude/**`. Lesson `2026-10-10-20-008`. Not owned by any staged plan.
+  — source: inbox message `lb-33-leaf-test-scope-and-executor-007.md`.
+- **PLAN-LB-28's test ladder needs discovery re-run in each Maven consumer.** The
+  test-artifact detection is persisted in `metadata.reactor_test_artifacts` at discovery, and
+  the overlay reads persisted data, so a consumer keeps `test -pl X -am` until discovery is
+  re-run there after the harness sync. Detection reads only a module's own `<dependencies>`
+  (not a parent POM, profile or property-interpolated coordinate). Two smaller gaps: a
+  truncated reactor log holding only some summary blocks is summed and stamped `measured`;
+  epilogue header lines (`Failures:`, `COMPILATION ERROR :`, `symbol:`, `location:`) are
+  still filed as issues. Not owned by any staged plan; the re-discovery is an operator step
+  per consumer. — source: read-only review of `2fd164ec9`, 2026-10-11.
+- **Flaky test in the merge group:**
+  `test/plan-marshall/manage-execution-manifest/test_decision_rules_early.py::TestEarlyTerminateTaskQueueGuard::test_falls_through_when_task_queue_in_progress`
+  failed with `FileNotFoundError` on a temp-file rename in a shared scratch directory; a
+  re-enqueue passed. Seen once. — source: PLAN-LB-33 landing residue.
+- **Per-task tests have no runnable scope on two landings in a row** (partly closed by
+  PLAN-LB-33; see the entry above for what is left). `resolve-test-scope`
   maps only paths under `marketplace/bundles/` and test directories named after a bundle;
   everything else returns no target and falls back to a whole-tree run that is too long for
   a dispatched step. On PLAN-LB-29, 11 of 17 execute dispatches stopped to hand that run
@@ -825,14 +1212,36 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
     notes was a real defect was not checked; three of them named the same out-of-scope
     observation in three rounds. — source: inbox message
     `lb-32-head-dependent-step-refire-007.md`.
+  - **PLAN-LB-24: not converged.** All five fix rounds used, each fix right on its target
+    but adding one or two new blocking gaps in the finalize text it rewrote; closed by
+    operator decision, then by override at two later heads, so the CodeRabbit review-fix
+    commits shipped without self-review, and CodeRabbit found a real defect in one of them.
+    About 4.9 million tokens in the five rounds. The override carries forward to every later
+    head; lesson `2026-10-10-20-004` proposes a delta-only review after it. — source: inbox
+    messages `lb-24-review-step-008.md`, `-009.md`.
+  - **PLAN-LB-33: seven firings**, closed (`pre-submission-self-review:done`); whether by
+    verifier is not in its landing facts. — source: inbox message
+    `lb-33-leaf-test-scope-and-executor-008.md`.
 
 - **A landing from the Antigravity harness reported `total_tokens=0`** (PLAN-LB-30) and still
   passed the completeness check, which accepts any value that is not `n/a` or `unknown`.
   — trigger: stage it if a second landing from that harness reports zero.
-- **PLAN-LB-24 must rebase onto PLAN-LB-22's landing** (`6b00815e0`). It changed
-  `phase-6-finalize/SKILL.md`, `automatic-review/SKILL.md`, `triage.md` and
-  `verification-feedback.md`, which PLAN-LB-24 declares. PLAN-LB-23 has landed. — trigger:
-  PLAN-LB-24's pre-merge rebase; retire when it has landed.
+  - **Trigger met on 2026-10-13**: pm-mcp-core PLAN-41, run under Antigravity, landed with
+    `total_tokens=0` and every `record-step` `unmeasured` (`lessons-routing-013.md`). Now part
+    of the critical Antigravity Open Defect; staging is the operator's decision.
+- **The `migrate-review-steps` steward migration is meant to go.** PLAN-LB-37 D8 added it on
+  operator instruction, to be removed by a later plan once every configured repository has been
+  migrated by PLAN-LB-37's post-landing rollout (scope: `marshall-steward/scripts/upgrade.py`
+  `migrate-review-steps` and `_merged_review_params` with its SHIM(A) block, the steward
+  `SKILL.md` and `references/upgrade-flow.md`, `test_review_step_migration.py` and cases in
+  `test_upgrade.py` / `test_upgrade_flow_stage2.py`, the plugin-doctor shim-marker figures).
+  — trigger: PLAN-LB-37's landing reports the rollout complete for every repository, or the
+  operator confirms none still needs it. — source: `lb-37-functional-review-001.md`.
+- **The rate-window recovery PLAN-LB-24 shipped has not been seen working live.** Its own
+  pull request recovered only by hand (two escalated commands posted by the main context),
+  and PLAN-LB-33's leaf ran the earlier text. — trigger: the next landing whose review met a
+  CodeRabbit quota refusal; read whether item 7a waited and re-dispatched without an
+  operator step. Retire on one clean recovery.
 - **Head-dependent finalize steps re-fire in full on every fix commit.** PLAN-LB-22 recorded
   a refusal to declare `verdict_inputs` for the two steps it examined; lessons-housekeeping
   and plugin-doctor fired seven times each with identical results. Lesson
