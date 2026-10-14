@@ -390,9 +390,7 @@ def test_subagent_dispatch_multiline_prompt_parses(runtime: AntigravityRuntime, 
 
 def test_subagent_dispatch_spawning_tool_unavailable_takes_inline_branch(runtime: AntigravityRuntime):
     """An explicit spawning_tool_available=False declines with the inline-branch no-op."""
-    result = _parse(
-        runtime.subagent_dispatch('execution-context-level-3', None, {'spawning_tool_available': False})
-    )
+    result = _parse(runtime.subagent_dispatch('execution-context-level-3', None, {'spawning_tool_available': False}))
     assert result['status'] == 'no-op'
     assert result['operation'] == 'subagent dispatch'
     assert 'invoke_subagent' in result['reason']

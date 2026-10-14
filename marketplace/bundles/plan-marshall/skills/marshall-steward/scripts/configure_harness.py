@@ -95,11 +95,7 @@ def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> bool:
                 setup_result = rt.project_initial_setup(str(proj), harness)
                 if setup_result is not None:
                     try:
-                        setup_payload = (
-                            parse_toon(setup_result)
-                            if isinstance(setup_result, str)
-                            else setup_result
-                        )
+                        setup_payload = parse_toon(setup_result) if isinstance(setup_result, str) else setup_result
                         if isinstance(setup_payload, dict) and setup_payload.get('status') != 'success':
                             setup_ok = False
                     except Exception:
