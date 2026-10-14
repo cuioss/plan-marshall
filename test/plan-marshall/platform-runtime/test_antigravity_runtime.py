@@ -363,6 +363,31 @@ def test_subagent_dispatch(runtime: AntigravityRuntime, tmp_path: Path):
     assert 'test-plan' in result['invocation']['prompt']
 
 
+def test_subagent_dispatch_multiline_prompt_parses(runtime: AntigravityRuntime, tmp_path: Path):
+    """A multi-line prompt carrying example blocks crosses the TOON boundary inert.
+
+    The prompt file embeds a ``status: success | error`` example block that
+    would parse as envelope keys at column zero if emitted as a plain string.
+    The dispatch must wrap it as a block scalar so the envelope parses with
+    ``status: success`` and the prompt round-trips intact.
+    """
+    prompt_file = tmp_path / 'prompt.md'
+    prompt_file.write_text(
+        'Execute task for {plan_id}\n\n```text\nstatus: success | error | loop_back | blocked\n```\n',
+        encoding='utf-8',
+    )
+
+    result = _parse(
+        runtime.subagent_dispatch(
+            'execution-context-level-3',
+            str(prompt_file),
+            {'plan_id': 'test-plan'},
+        )
+    )
+    assert result['status'] == 'success'
+    assert 'status: success | error | loop_back | blocked' in result['invocation']['prompt']
+
+
 def test_metrics_capture(runtime: AntigravityRuntime):
     """metrics_capture captures total_tokens if supplied, else no-op."""
     res_tokens = _parse(runtime.metrics_capture('my-plan', 'phase-1-init', total_tokens=1500))
@@ -652,6 +677,26 @@ def test_reconcile_standing_rules_bridge_heals_missing_bridge(monkeypatch: pytes
 
     assert _reconcile_standing_rules_bridge('antigravity', tmp_path) is True
     assert _bridge_rules_path(tmp_path).is_file()
+
+
+def test_reconcile_standing_rules_bridge_reports_failed_setup(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    """A failed setup never reports a healed bridge, even over a stale file."""
+    from configure_harness import _reconcile_standing_rules_bridge
+
+    (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
+    (tmp_path / 'AGENTS.md').write_text('# stale bridge\n', encoding='utf-8')
+
+    class _FailingRuntime:
+        def project_initial_setup(self, *_args: Any, **_kwargs: Any) -> None:
+            raise OSError('setup failed')
+
+    from configure_harness import _reconcile_standing_rules_bridge
+
+    import platform_runtime
+
+    monkeypatch.setattr(platform_runtime, '_make_runtime', lambda _h: _FailingRuntime())
+
+    assert _reconcile_standing_rules_bridge('antigravity', tmp_path) is False
 
 
 def test_reconcile_standing_rules_bridge_claude_is_baseline_presence(tmp_path: Path):

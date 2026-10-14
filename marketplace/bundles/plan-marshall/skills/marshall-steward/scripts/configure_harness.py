@@ -54,7 +54,10 @@ def _reconcile_standing_rules_bridge(harness: str, project_dir: Path) -> bool:
         if callable(writer):
             writer(str(proj), harness)
     except Exception:
-        pass
+        # A failed setup must not report a healed bridge: the file checks
+        # below read pre-existing state, so without this return a stale
+        # bridge from before the failure would read as healed.
+        return False
     if harness == 'antigravity':
         return (proj / '.agents' / 'rules' / 'plan-marshall-target-rules.md').is_file() or (
             proj / 'AGENTS.md'
