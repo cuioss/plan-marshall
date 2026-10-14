@@ -22,7 +22,6 @@ from pathlib import Path
 from typing import Any, cast
 
 import runtime_info
-from toon_parser import BlockScalar
 from runtime_base import (
     PERMISSION_FIX_OPERATIONS,
     Runtime,
@@ -32,6 +31,7 @@ from runtime_base import (
     toon_noop,
     toon_success,
 )
+from toon_parser import BlockScalar
 
 #: Default executor commands to guarantee in the Antigravity allow list.
 ANTIGRAVITY_DEFAULT_PERMISSIONS: tuple[str, ...] = (

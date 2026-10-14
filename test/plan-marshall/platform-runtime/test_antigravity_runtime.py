@@ -690,9 +690,8 @@ def test_reconcile_standing_rules_bridge_reports_failed_setup(monkeypatch: pytes
         def project_initial_setup(self, *_args: Any, **_kwargs: Any) -> None:
             raise OSError('setup failed')
 
-    from configure_harness import _reconcile_standing_rules_bridge
-
     import platform_runtime
+    from configure_harness import _reconcile_standing_rules_bridge
 
     monkeypatch.setattr(platform_runtime, '_make_runtime', lambda _h: _FailingRuntime())
 
