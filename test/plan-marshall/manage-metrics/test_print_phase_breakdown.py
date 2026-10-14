@@ -86,7 +86,7 @@ class TestPhaseBreakdownRenderingRule:
     """Tests for the symmetric per-cell + Total rendering rule (D1 / Tier 3+4b)."""
 
     def test_all_cells_dash_total_dash(self, plan_context):
-        """All per-phase cells '-' → every Total cell is '-' (never '0')."""
+        """Unmeasured phases render `unknown` Tokens cells — never '-' or '0'."""
         _seed_phases(
             'render-rule-01',
             {
@@ -95,17 +95,25 @@ class TestPhaseBreakdownRenderingRule:
             },
         )
         lines = _render_breakdown('render-rule-01')
+        # Per-phase Tokens cells state the absence (`unknown`, never '-' or '0').
+        for phase in ('1-init', '2-refine'):
+            row = next(ln for ln in lines if phase in ln)
+            assert 'unknown' in row, row
         total_line = next(ln for ln in lines if '**Total**' in ln)
-        # Every numeric cell on the Total row is '-' (no '0', no '0s').
         cells = [c.strip() for c in total_line.split('|') if c.strip()]
-        # cells = ['**Total**', '**-**', '**-**', '**-**', '**-**', '**-**']
-        # (Worked, Reported (wall), Idle, Tokens, Tool Uses)
+        # cells = ['**Total**', '**-**', '**-**', '**-**', '**unknown**', '**-**', '**-**']
+        # (Worked, Reported (wall), Idle, Tokens, Tool Uses, Billing)
         assert cells[0] == '**Total**'
-        for numeric_cell in cells[1:]:
+        # The Tokens Total refuses the hole: `unknown`, never a zero sum.
+        assert cells[4] == '**unknown**'
+        # Every other numeric cell on the Total row is '-' (no '0', no '0s').
+        for i, numeric_cell in enumerate(cells[1:], start=1):
+            if i == 4:
+                continue
             assert numeric_cell == '**-**', f'expected dash, got {numeric_cell!r}'
 
     def test_subset_present_total_marker(self, plan_context):
-        """Subset present → Total cell carries the (n=k/N) marker."""
+        """A subset with an unmeasured hole → Tokens Total is `unknown`, never a partial sum."""
         _seed_phases(
             'render-rule-02',
             {
@@ -116,9 +124,16 @@ class TestPhaseBreakdownRenderingRule:
         )
         lines = _render_breakdown('render-rule-02')
         total_line = next(ln for ln in lines if '**Total**' in ln)
-        # Tokens subset has 2 of the canonical six phases contributing; the
-        # completeness denominator is the canonical six, not the present-row count.
-        assert '3,000 (n=2/6)' in total_line, total_line
+        # The unmeasured 2-refine row makes the Tokens Total `unknown`: a sum
+        # with a hole in it is not a sum (unknown-token reporting). The
+        # measured rows still render their own figures, and the unmeasured row
+        # states its absence in its own cell.
+        assert '**unknown**' in total_line, total_line
+        for phase, figure in (('1-init', '1,000'), ('3-outline', '2,000')):
+            row = next(ln for ln in lines if phase in ln)
+            assert figure in row, row
+        unmeasured_row = next(ln for ln in lines if '2-refine' in ln)
+        assert 'unknown' in unmeasured_row, unmeasured_row
         # Other numeric columns stay '-'.
         cells = [c.strip() for c in total_line.split('|') if c.strip()]
         # Duration cell.

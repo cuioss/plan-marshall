@@ -4191,7 +4191,16 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
         # never select this branch.
         inline_main_context = _inline_main_context_sum(phase_row)
         already_inline = phase_row.get('total_tokens_population') == POPULATION_INLINE
-        if already_inline or not phase_row.get('total_tokens'):
+        # An `unknown` stamp is stated absence, not a measurement: it selects
+        # the inline-only signature exactly as a missing value does, so a
+        # measurement taken since overwrites the stamp rather than reading it
+        # as a dispatched total and mis-stamping the row `mixed`. A measured
+        # zero stays a measurement (explicit-wins) and keeps the other branch.
+        # See `_stamp_unknown_totals` (a later close or enrich that measures
+        # the phase overwrites the stamp) and the `_reconcile_accumulator_into_phase`
+        # precedent, which backfills `unknown`-stamped rows the same way.
+        has_measured_total = isinstance(_coerce_numeric(phase_row.get('total_tokens')), (int, float))
+        if already_inline or not has_measured_total:
             # Inline-only signature: no dispatched total exists to preserve.
             if inline_main_context:
                 phase_row['total_tokens'] = inline_main_context

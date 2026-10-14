@@ -113,7 +113,10 @@ def test_phase_boundary_optional_token_args_omitted(plan_context):
     prev_idx = content.index('[2-refine]')
     next_idx = content.index('[3-outline]') if '[3-outline]' in content else len(content)
     prev_block = content[prev_idx:next_idx]
-    assert 'total_tokens' not in prev_block
+    # An unmeasured close states its absence: the row carries
+    # `total_tokens: unknown`, never a silent omission (unknown-token
+    # reporting). `tool_uses` has no unknown vocabulary and stays absent.
+    assert 'total_tokens: unknown' in prev_block
     assert 'tool_uses' not in prev_block
     # But end_time MUST be present
     assert 'end_time:' in prev_block
