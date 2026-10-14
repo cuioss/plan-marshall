@@ -29,6 +29,8 @@ _NON_PENDING_RESOLUTIONS = tuple(
     resolution for resolution in _constants.VALID_RESOLUTIONS if resolution != _constants.RESOLUTION_PENDING
 )
 
+assert _NON_PENDING_RESOLUTIONS, 'the derived resolution population is empty'
+
 # Plan ids this module's tests file findings against — seeded by the autouse
 # ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py``.
 PLAN_IDS = tuple(f'qe-survives-{resolution}' for resolution in _NON_PENDING_RESOLUTIONS) + (
