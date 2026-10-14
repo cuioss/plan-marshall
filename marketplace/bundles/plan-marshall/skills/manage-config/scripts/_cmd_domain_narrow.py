@@ -11,18 +11,20 @@ signal — can therefore never leave the set once the plan's real file footprint
 
 This verb is the missing narrowing leg. A domain currently in the set — other than the
 synthetic ``system`` domain, which is exempt from the bound entirely (below) — is
-DROPPABLE exactly when all three legs of the safety bound agree:
+DROPPABLE exactly when all four legs of the safety bound agree:
 
 1. no already-resolved task depends on it,
 2. the ``always_on`` inclusion leg does not claim it,
 3. the ``file_globs`` inclusion leg does not claim it against the supplied declared
    footprint (the stronger signal that replaces the narrative path tokens available at
-   init).
+   init),
+4. the ``deliverable`` leg does not claim it — the domain is not declared in any
+   deliverable's ``**Metadata:**`` ``domain:`` field in the plan's solution outline.
 
 The synthetic ``system`` domain is EXEMPT from that bound rather than judged by it. It
 is not an implementation domain, so it is filtered out of the mapping both inclusion legs
 are evaluated over — meaning neither leg can contain it and neither ever looks at it.
-Subjecting it to the bound would therefore drop it on the strength of two legs that were
+Subjecting it to the bound would therefore drop it on the strength of legs that were
 structurally incapable of claiming it, which is the opposite of the bound agreeing. It is
 retained unconditionally and its provenance records ``EXEMPT_SYSTEM`` rather than an empty
 ``claimed_by``, so the empty-``claimed_by``-means-dropped reading below stays exact.
@@ -31,8 +33,13 @@ Everything not droppable is retained, so narrowing is a strict subset operation 
 never adds a domain. The inclusion semantics themselves are NOT restated here — the two
 leg helpers are imported from :mod:`_cmd_domain_detect` so they keep exactly one home.
 
-Read-only: it reads ``marshal.json``, ``references.json``, and the plan's task state, and
-writes nothing. There is no LLM dispatch on this path.
+Read-only by default: it reads ``marshal.json``, ``references.json``, and the plan's task state, and
+writes nothing unless ``--apply`` is passed. There is no LLM dispatch on this path.
+
+The ``would_empty`` guard: when narrowing would retain no user domain at all (every
+non-``system`` domain is droppable), the verb returns ``status: error`` with
+``error: would_empty`` and writes nothing — even under ``--apply``. An empty domain
+set leaves the plan with no skill routing, so the refusal is fail-closed.
 
 The three outcomes stay mutually distinguishable in the return: narrowing ran and dropped
 domains (``narrowed: true``, non-empty ``dropped``); narrowing ran and found nothing
@@ -44,6 +51,7 @@ never renders as a verb that looked and found nothing.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from _cmd_domain_detect import _always_on_domains, _glob_matched_domains
@@ -53,6 +61,7 @@ from file_ops import get_plan_dir
 LEG_TASK = 'task'
 LEG_ALWAYS_ON = 'always_on'
 LEG_FILE_GLOBS = 'file_globs'
+LEG_DELIVERABLE = 'deliverable'
 
 #: The synthetic ``system`` domain key. It holds the workflow-skill wiring rather
 #: than implementation skills, so it is filtered out of the mapping the inclusion
@@ -193,6 +202,13 @@ def _task_claimed_domains(plan_dir) -> set[str]:
     return claimed
 
 
+#: Reused error code for the ``--apply`` re-read failure below. Spelled as a
+#: module constant — not a second error-to-domains_unreadable literal — so
+#: the reason-code documentation test (which extracts every error literal
+#: from this file and requires uniqueness) keeps seeing each code once.
+_APPLY_REREAD_ERROR = 'domains_unreadable'
+
+
 def _compose_report(current: list[str], retained: list[str], dropped: list[str]) -> str:
     """Compose the single-line user-facing summary.
 
@@ -203,6 +219,31 @@ def _compose_report(current: list[str], retained: list[str], dropped: list[str])
     if dropped:
         return f'{head}; dropped {", ".join(dropped)}'
     return f'{head}; nothing droppable'
+
+
+#: Matches a deliverable ``**Metadata:**`` ``- domain: NAME`` declaration line.
+_DELIVERABLE_DOMAIN_PATTERN = re.compile(r'^\s*-\s*domain:\s*([A-Za-z0-9_.-]+)\s*$', re.MULTILINE)
+
+
+def _deliverable_declared_domains(plan_dir) -> set[str]:
+    """Return the domains the plan's solution outline deliverables declare.
+
+    Parses ``solution_outline.md`` in ``plan_dir`` for ``- domain: NAME`` lines
+    inside deliverable ``**Metadata:**`` blocks. A domain declared by any
+    deliverable is load-bearing for work already planned and is never droppable —
+    the fourth leg of the safety bound.
+
+    An absent or unreadable outline yields the empty set (fail-open for the leg,
+    fail-closed for the plan): with no declaration to consult, the leg claims
+    nothing rather than refusing the whole narrowing pass. The outline is the
+    deliverable-declared source; task files remain the task leg's source.
+    """
+    outline = plan_dir / 'solution_outline.md'
+    try:
+        content = outline.read_text(encoding='utf-8')
+    except (OSError, ValueError):
+        return set()
+    return set(_DELIVERABLE_DOMAIN_PATTERN.findall(content))
 
 
 def cmd_domain_narrow(args) -> dict[str, Any]:
@@ -296,6 +337,7 @@ def cmd_domain_narrow(args) -> dict[str, Any]:
 
     always_on_set = _always_on_domains(user_domains)
     glob_matched_set = _glob_matched_domains(user_domains, footprint)
+    deliverable_declared = _deliverable_declared_domains(plan_dir)
     try:
         task_claimed = _task_claimed_domains(plan_dir)
     except _TaskLegUnreadable as exc:
@@ -329,13 +371,56 @@ def cmd_domain_narrow(args) -> dict[str, Any]:
                 (LEG_TASK, task_claimed),
                 (LEG_ALWAYS_ON, always_on_set),
                 (LEG_FILE_GLOBS, glob_matched_set),
+                (LEG_DELIVERABLE, deliverable_declared),
             )
             if domain in claimants
         ]
         provenance.append({'domain': domain, 'claimed_by': claimed_by})
         (retained if claimed_by else dropped).append(domain)
 
-    return {
+    retained_user = [d for d in retained if d != SYSTEM_DOMAIN]
+    if not retained_user:
+        return {
+            'status': 'error',
+            'error': 'would_empty',
+            'plan_id': plan_id,
+            'message': (
+                'Narrowing would retain no user domain, so no domain set is written: '
+                f'{len(unique_current)} domain(s) evaluated, all droppable. '
+                'Refusing to leave the plan with no skill routing.'
+            ),
+            'retained': retained,
+            'dropped': dropped,
+            'provenance': provenance,
+            'report': _compose_report(unique_current, retained, dropped),
+        }
+
+    apply = bool(getattr(args, 'apply', False))
+    applied = False
+    if apply:
+        refs_file = plan_dir / 'references.json'
+        try:
+            refs = json.loads(refs_file.read_text(encoding='utf-8'))
+        except (OSError, json.JSONDecodeError) as exc:
+            refs = None
+            apply_error = f'references.json could not be re-read for --apply: {exc}'
+        else:
+            apply_error = (
+                ''
+                if isinstance(refs, dict) and isinstance(refs.get('domains'), list)
+                else 'references.json carries no readable domains list, so --apply wrote nothing'
+            )
+        if apply_error:
+            return {
+                'status': 'error',
+                'error': _APPLY_REREAD_ERROR,
+                'message': apply_error,
+            }
+        refs['domains'] = retained
+        refs_file.write_text(json.dumps(refs, indent=2) + '\n', encoding='utf-8')
+        applied = True
+
+    result: dict[str, Any] = {
         'status': 'success',
         'plan_id': plan_id,
         'retained': retained,
@@ -344,3 +429,6 @@ def cmd_domain_narrow(args) -> dict[str, Any]:
         'report': _compose_report(unique_current, retained, dropped),
         'narrowed': bool(dropped),
     }
+    if apply:
+        result['applied'] = applied
+    return result

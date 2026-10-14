@@ -593,7 +593,7 @@ This is the one point in the lifecycle where narrowing is both possible and safe
 
    **Branch on `status` BEFORE parsing anything else.** The verb has three outcomes, not two, and on the third none of the success fields exist:
 
-   - **`status: error`** — the verb could not evaluate. The reason codes are `plan_dir_not_found`, `domains_unreadable`, `marshal_not_readable`, `no_skill_domains_configured`, `footprint_unreadable`, `footprint_empty`, and `task_leg_unreadable`; the canonical set with the condition each names is owned by [`manage-config` § Canonical invocations → `domain-narrow`](../manage-config/SKILL.md), which is the source to re-check this list against. `retained`, `dropped`, `provenance`, `report`, and `narrowed` are ABSENT from the payload. STOP the narrowing step here: do NOT parse the success fields, do NOT run steps 3, 3b or 4, and do NOT write `domains` or `domains_provenance`. Surface the returned `error` and `message` instead, via a decision-log entry:
+   - **`status: error`** — the verb could not evaluate. The reason codes are `plan_dir_not_found`, `domains_unreadable`, `marshal_not_readable`, `no_skill_domains_configured`, `footprint_unreadable`, `footprint_empty`, `task_leg_unreadable`, and `would_empty`; the canonical set with the condition each names is owned by [`manage-config` § Canonical invocations → `domain-narrow`](../manage-config/SKILL.md), which is the source to re-check this list against. `retained`, `dropped`, `provenance`, `report`, and `narrowed` are ABSENT from the payload. STOP the narrowing step here: do NOT parse the success fields, do NOT run steps 3, 3b or 4, and do NOT write `domains` or `domains_provenance`. Surface the returned `error` and `message` instead, via a decision-log entry:
 
      ```bash
      python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -630,7 +630,7 @@ This is the one point in the lifecycle where narrowing is both possible and safe
      --plan-id {plan_id} --field domains --values "{retained_csv}"
    ```
 
-   The placeholder is double-quoted because `retained_csv` is legitimately empty when every domain was dropped — `narrowed` is `true` whenever anything was dropped, so an all-dropped run reaches this call with nothing to interpolate. `--values` is REQUIRED and takes no default, so an unquoted empty interpolation renders a bare `--values` and argparse rejects the call; quoted, it passes the empty string, which `set-list` accepts as "clear the list" — the correct outcome for that state.
+   The placeholder is double-quoted because `retained_csv` is legitimately empty when every domain was dropped — `narrowed` is `true` whenever anything was dropped, so an all-dropped run reaches this call with nothing to interpolate. (An all-USER-dropped run never reaches this call: the verb's `would_empty` guard returns `status: error` first.) `--values` is REQUIRED and takes no default, so an unquoted empty interpolation renders a bare `--values` and argparse rejects the call; quoted, it passes the empty string, which `set-list` accepts as "clear the list" — the correct outcome for that state.
 
 3b. **On BOTH outcomes**, persist the provenance — the write is NOT gated on `narrowed`:
 
@@ -659,7 +659,7 @@ This is the one point in the lifecycle where narrowing is both possible and safe
 
 **A `narrowed: false` result is a valid recorded outcome, not a skip.** Nothing was droppable, and both the report (step 4) and the provenance write (step 3b) still fire — so "nothing to narrow" stays distinguishable from "narrowing never ran". Only step 3's `domains` write is conditional on `narrowed: true`, and only because rewriting an unchanged set is a no-op.
 
-**The phase never narrows on its own judgement.** The verb owns the decision through its three-legged safety bound; this phase invokes it, persists its result, and reports it. The safety bound itself — the `always_on` structural exemption, the `file_globs` leg, and the resolved-task leg — is documented in [`manage-config` § Canonical invocations → `domain-narrow`](../manage-config/SKILL.md) and [`manage-config` standards/skill-domains.md § Domain Inclusion](../manage-config/standards/skill-domains.md). Do NOT inline-copy that decision table here.
+**The phase never narrows on its own judgement.** The verb owns the decision through its four-legged safety bound; this phase invokes it, persists its result, and reports it. The safety bound itself — the `always_on` structural exemption, the `file_globs` leg, the resolved-task leg, and the deliverable-declared `domain:` claim leg — is documented in [`manage-config` § Canonical invocations → `domain-narrow`](../manage-config/SKILL.md) and [`manage-config` standards/skill-domains.md § Domain Inclusion](../manage-config/standards/skill-domains.md). Do NOT inline-copy that decision table here. When the verb returns `would_empty`, the phase writes nothing — the guard, not the phase, owns that refusal.
 
 Like the Prospective Lessons Consult above, this step fires on **every** authoring path this phase owns — the deep-lane Complex Track, the Simple-Track authoring procedure, and the [light lane](workflow/light-lane.md), which fires the same narrowing step from its own envelope. No lane is exempt.
 

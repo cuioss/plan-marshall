@@ -672,3 +672,144 @@ def test_help_lists_both_flags(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert '--plan-id' in out
     assert '--affected-files' in out
+
+
+# =============================================================================
+# The deliverable-declared domain leg — a domain a deliverable's Metadata
+# declares is load-bearing for planned work and is never droppable.
+# =============================================================================
+
+
+def _seed_with_outline(plan_context, plan_id, domains, affected_files, outline_body, *, config=None):
+    """Seed a plan whose solution_outline.md declares deliverable domains."""
+    plan_dir = _seed_with_footprint(plan_context, plan_id, domains, affected_files, config=config)
+    (plan_dir / 'solution_outline.md').write_text(outline_body, encoding='utf-8')
+    return plan_dir
+
+
+_OUTLINE_WITH_GENERAL_DEV = """# Solution: Outline Declares general-dev
+
+## Solution Metadata
+
+- scope_estimate: surgical
+
+## Summary
+
+Outline declares general-dev.
+
+## Overview
+
+```
+[A] -> [B]
+```
+
+## Deliverables
+
+### 1. Touch the docs
+
+**Metadata:**
+- change_type: documentation
+- execution_mode: automated
+- domain: general-dev
+- module: docs
+- depends: none
+
+**Profiles:**
+- implementation
+
+**Affected files:**
+- `doc/user/guide.adoc` (write-replace)
+
+**Verification:**
+- Command: `true`
+- Criteria: done
+
+**Success Criteria:**
+- Done
+"""
+
+
+def test_deliverable_declared_domain_is_retained_without_an_inclusion_leg(plan_context):
+    """A deliverable-declared domain survives a footprint no other leg claims."""
+    _seed_with_outline(
+        plan_context, 'dn-deliverable', _CONFIGURED_DOMAINS, [_MD_FOOTPRINT], _OUTLINE_WITH_GENERAL_DEV
+    )
+
+    result = cmd_domain_narrow(_ns('dn-deliverable', _MD_FOOTPRINT))
+
+    assert result['status'] == 'success'
+    assert 'general-dev' in result['retained']
+    assert _claimed_by(result, 'general-dev') == ['deliverable']
+
+
+def test_deliverable_leg_combines_with_the_other_legs_in_order(plan_context):
+    """A domain several legs claim records every one of them, in leg order."""
+    plan_dir = _seed_with_outline(
+        plan_context, 'dn-deliverable-multi', _CONFIGURED_DOMAINS, [_PY_FOOTPRINT], _OUTLINE_WITH_GENERAL_DEV
+    )
+    _write_task(plan_dir, 1, 'general-dev')
+
+    result = cmd_domain_narrow(_ns('dn-deliverable-multi', _PY_FOOTPRINT))
+
+    assert _claimed_by(result, 'general-dev') == ['task', 'deliverable']
+
+
+def test_absent_outline_leaves_the_leg_empty(plan_context):
+    """No solution_outline.md means the leg claims nothing — the pass still runs."""
+    _seed(plan_context, 'dn-no-outline', _CONFIGURED_DOMAINS)
+
+    result = cmd_domain_narrow(_ns('dn-no-outline', _PY_FOOTPRINT))
+
+    assert result['status'] == 'success'
+    assert set(result['dropped']) == {'documentation', 'general-dev'}
+
+
+# =============================================================================
+# The would_empty guard — narrowing that would retain no user domain refuses.
+# =============================================================================
+
+
+def test_narrowing_to_no_user_domain_returns_would_empty(plan_context):
+    """Every user domain droppable is a fail-closed error, never an empty set."""
+    _seed(plan_context, 'dn-would-empty', ['documentation'])
+
+    result = cmd_domain_narrow(_ns('dn-would-empty', _PY_FOOTPRINT))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'would_empty'
+    assert 'narrowed' not in result
+    assert 'dropped' not in result
+
+
+def test_system_only_retained_set_returns_would_empty(plan_context):
+    """A retained set holding only the exempt system domain is still empty."""
+    _seed(plan_context, 'dn-would-empty-system', ['system', 'documentation'])
+
+    result = cmd_domain_narrow(_ns('dn-would-empty-system', _PY_FOOTPRINT))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'would_empty'
+
+
+def test_apply_persists_the_retained_set(plan_context):
+    """--apply writes the retained domains back to references.json."""
+    plan_dir = _seed(plan_context, 'dn-apply', _CONFIGURED_DOMAINS)
+
+    result = cmd_domain_narrow(parse_ns(_BUNDLE, _SKILL, _SCRIPT_NAME, 'domain-narrow', '--plan-id', 'dn-apply', '--affected-files', _PY_FOOTPRINT, '--apply'))
+
+    assert result['status'] == 'success'
+    assert result['applied'] is True
+    persisted = json.loads((plan_dir / 'references.json').read_text(encoding='utf-8'))['domains']
+    assert set(persisted) == set(result['retained'])
+
+
+def test_apply_writes_nothing_on_would_empty(plan_context):
+    """The guard refuses before the write — the stored set is byte-identical."""
+    plan_dir = _seed(plan_context, 'dn-apply-empty', ['documentation'])
+    before = (plan_dir / 'references.json').read_bytes()
+
+    result = cmd_domain_narrow(parse_ns(_BUNDLE, _SKILL, _SCRIPT_NAME, 'domain-narrow', '--plan-id', 'dn-apply-empty', '--affected-files', _PY_FOOTPRINT, '--apply'))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'would_empty'
+    assert (plan_dir / 'references.json').read_bytes() == before
