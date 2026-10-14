@@ -4,12 +4,13 @@
 
 The narrowing counterpart to ``domain-detect``: it removes from a plan's
 ``references.domains`` the domains its declared footprint does not justify. A
-domain is droppable only when all three legs of the safety bound agree — no
-resolved task depends on it, ``always_on`` does not claim it, and ``file_globs``
-does not claim it against the supplied footprint.
+domain is droppable only when all four legs of the safety bound agree — no
+resolved task depends on it, ``always_on`` does not claim it, ``file_globs``
+does not claim it against the supplied footprint, and the ``deliverable`` leg
+does not claim it via a deliverable-declared ``domain:`` field.
 
 The synthetic ``system`` domain is exempt from that bound rather than judged by it:
-both inclusion legs are evaluated over a mapping it is filtered out of, so neither
+the inclusion legs are evaluated over a mapping it is filtered out of, so none
 can ever claim it. It is retained carrying an exemption marker, which is what keeps
 an empty ``claimed_by`` meaning "dropped for want of a claim" and nothing else.
 """
@@ -136,7 +137,7 @@ def _claimed_by(result: dict, domain: str) -> list[str]:
 
 
 # =============================================================================
-# The three legs of the safety bound
+# The four legs of the safety bound
 # =============================================================================
 
 
@@ -299,7 +300,7 @@ def test_a_domain_outside_the_current_set_is_never_added(plan_context):
 
 
 # =============================================================================
-# The three mutually distinguishable outcomes
+# The four mutually distinguishable outcomes
 # =============================================================================
 
 

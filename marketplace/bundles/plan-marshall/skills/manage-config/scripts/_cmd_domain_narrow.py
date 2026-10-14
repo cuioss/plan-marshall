@@ -22,8 +22,8 @@ DROPPABLE exactly when all four legs of the safety bound agree:
    deliverable's ``**Metadata:**`` ``domain:`` field in the plan's solution outline.
 
 The synthetic ``system`` domain is EXEMPT from that bound rather than judged by it. It
-is not an implementation domain, so it is filtered out of the mapping both inclusion legs
-are evaluated over — meaning neither leg can contain it and neither ever looks at it.
+is not an implementation domain, so it is filtered out of the mapping the inclusion legs
+are evaluated over — meaning no leg can contain it and none ever looks at it.
 Subjecting it to the bound would therefore drop it on the strength of legs that were
 structurally incapable of claiming it, which is the opposite of the bound agreeing. It is
 retained unconditionally and its provenance records ``EXEMPT_SYSTEM`` rather than an empty
