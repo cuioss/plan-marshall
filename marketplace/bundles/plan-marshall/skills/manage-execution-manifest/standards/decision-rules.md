@@ -56,6 +56,10 @@ The value actually consumed by the rows and pre-filters is the **effective** cha
 
 The canonical caller (`phase-4-plan` Step 7b) forwards the settled classification when one exists, falling back to the first deliverable's `change_type` only for an unclassified plan; the reconciliation is the guard that catches any caller that forwards the wrong scope.
 
+### Per-task quality gate stamp reconciliation
+
+The per-task quality gate stamp composes deterministically with the change-type scope above: the **effective** change type (settled when present, else supplied) drives both the six-row matrix narrowing and the per-deliverable gate synthesis, so one classification governs the whole `phase_5.verification_steps` list. Request plus project gates compose into the same bare `verify:{canonical}` stamp shape — de-duped, boundary-normalized, frontmatter-ordered — rather than a parallel surface, and the `change_type_scope_conflict` refusal guards the stamp exactly as it guards the matrix: a deliverable-scoped value that contradicts the settled classification composes nothing. Phase 5 enforces the stamped list verbatim; no per-deliverable logic re-derives it at execute time.
+
 ## Phase-aware step source
 
 The composer reads each phase's candidate step list from `marshal.json` via `_read_marshal_phase_steps(phase_key)`. The list-field name read under the phase block is **phase-aware** (resolved by `_marshal_steps_field`):
