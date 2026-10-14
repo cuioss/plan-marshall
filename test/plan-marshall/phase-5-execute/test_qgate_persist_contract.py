@@ -36,8 +36,9 @@ Four contracts:
       from the store as a pending ``triage`` record.
   (d) A residual set the operator already resolved as ``accepted`` or
       ``suppressed`` is not filed again, at the threshold it was filed under or
-      at any other the set still exceeds, while a set resolved any other way, a
-      grown set, and a different set sharing its first ten names all are.
+      at any other the set still exceeds, while a set resolved as ``fixed`` is
+      re-observed as kept — the record stays fixed with nothing pending — and
+      a grown set and a different set sharing its first ten names are filed new.
 
 Every test uses a unique ``plan_id`` (Q-Gate store isolation).
 """
@@ -467,9 +468,16 @@ def test_settled_residual_set_stays_settled_under_a_different_threshold(
     assert _records(plan_id, 'pending') == []
 
 
-def test_residual_set_resolved_as_fixed_is_reopened(plan_context, monkeypatch, capsys):
-    """Control: ``fixed`` claims the residual is gone, so measuring it again reopens it."""
-    plan_id = 'qgate-contract-fixed-is-reopened'
+def test_residual_set_resolved_as_fixed_is_kept_with_reobserved_counts(plan_context, monkeypatch, capsys):
+    """``fixed`` keeps the recorded resolution: measuring the same set again re-observes it.
+
+    ``fixed`` claims the residual is gone, so unlike ``accepted``/``suppressed``
+    the guard does not treat it as settled — it re-emits the identical finding
+    and the primitive answers ``kept``: the record stays ``fixed``, nothing
+    turns pending, and the run reports the re-observation through the
+    re-observed counts rather than a new pending filing.
+    """
+    plan_id = 'qgate-contract-fixed-is-kept'
     _seed_plan(plan_context, plan_id)
     _patch_worktree_reads(monkeypatch)
     filed = _file_and_resolve(plan_id, capsys, 'fixed')
@@ -477,14 +485,21 @@ def test_residual_set_resolved_as_fixed_is_reopened(plan_context, monkeypatch, c
     rc, payload, _out = _run_and_parse(plan_id, capsys)
 
     assert rc == 0
+    assert payload['status'] == 'success'
+    assert payload['residual_count'] == len(_EXCESS_FILES)
     assert payload['finding_emitted'] is True
+    assert payload['reobserved_count'] == 1
+    assert payload['still_detected_but_fixed_count'] == 1
     assert 'finding_resolved_as' not in payload
     assert 'finding_hash_id' not in payload
 
+    # The store is unchanged: one record, still fixed, nothing pending.
     records = _records(plan_id)
     assert len(records) == 1
     assert records[0]['hash_id'] == filed['hash_id']
-    assert records[0]['resolution'] == 'pending'
+    assert records[0]['resolution'] == 'fixed'
+    assert records[0]['detail'] == filed['detail']
+    assert _records(plan_id, 'pending') == []
 
 
 def test_grown_residual_set_is_filed_beside_the_accepted_one(plan_context, monkeypatch, capsys):
