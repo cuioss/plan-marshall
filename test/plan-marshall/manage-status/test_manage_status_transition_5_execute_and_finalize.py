@@ -26,6 +26,7 @@ from _manage_status_transition_fixtures import (
     _stub_metadata,
     cmd_transition,
 )
+
 from conftest import load_script_module
 
 _lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_status_cmd_lifecycle_5exec')
@@ -374,9 +375,7 @@ def test_5_execute_end_markers_pass_without_worktree_metadata(plan_context):
 # =============================================================================
 
 
-def test_end_marker_gate_scoped_to_5_execute_only(
-    plan_context, _stubbed_invariants, _stub_metadata, monkeypatch
-):
+def test_end_marker_gate_scoped_to_5_execute_only(plan_context, _stubbed_invariants, _stub_metadata, monkeypatch):
     """A 4-plan transition with unrecorded branch commits still succeeds.
 
     The end-marker post-condition fires only when the completed phase IS
@@ -402,9 +401,7 @@ def test_end_marker_gate_scoped_to_5_execute_only(
     result = cmd_transition(Namespace(plan_id=plan_id, completed='4-plan'))
 
     assert result is not None
-    assert result['status'] == 'success', (
-        f'The end-marker gate must not fire outside 5-execute, got {result!r}.'
-    )
+    assert result['status'] == 'success', f'The end-marker gate must not fire outside 5-execute, got {result!r}.'
     assert result['next_phase'] == '5-execute'
 
 
@@ -459,9 +456,7 @@ def test_branch_commit_shas_falls_back_to_local_base(git_branch_repo):
 
     shas = _lifecycle._branch_commit_shas(str(git_branch_repo), 'main')
 
-    assert shas == [head], (
-        f'The feature-branch range must hold exactly the one feature commit, got {shas!r}.'
-    )
+    assert shas == [head], f'The feature-branch range must hold exactly the one feature commit, got {shas!r}.'
 
 
 def test_branch_commit_shas_returns_none_when_range_unestablishable(outside_repo_dir: Path):
@@ -506,6 +501,7 @@ def test_recorded_change_shas_returns_none_when_store_unreadable(monkeypatch):
     None refuses as wholly-missing WITHOUT a commit list, while an empty set
     refuses as wholly-missing WITH the enumerated gap.
     """
+
     def _boom():
         raise OSError('ledger locked')
 

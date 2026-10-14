@@ -40,6 +40,7 @@ from _manage_status_archive_unexaminable_phases_fixtures import (
 )
 from _manage_status_main_dispatch_fixtures import _PHASES, _parse, _run
 from _manage_status_transition_fixtures import cmd_create, cmd_transition
+
 from conftest import load_script_module
 
 _lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_status_cmd_lifecycle_shape')

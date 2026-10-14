@@ -210,9 +210,7 @@ def test_end_marker_gate_passes_without_a_worktree():
     assert _lifecycle._phase_end_marker_refusal('any-plan', {}) is None
     assert _lifecycle._phase_end_marker_refusal('any-plan', {'metadata': {'use_worktree': False}}) is None
     assert (
-        _lifecycle._phase_end_marker_refusal(
-            'any-plan', {'metadata': {'use_worktree': True, 'worktree_path': ''}}
-        )
+        _lifecycle._phase_end_marker_refusal('any-plan', {'metadata': {'use_worktree': True, 'worktree_path': ''}})
         is None
     )
 
@@ -241,7 +239,9 @@ def _seed_worktree_status(plan_context, plan_id: str) -> dict:
             force=False,
         )
     )
-    status: dict[str, Any] = json.loads((plan_context.plan_dir_for(plan_id) / 'status.json').read_text(encoding='utf-8'))
+    status: dict[str, Any] = json.loads(
+        (plan_context.plan_dir_for(plan_id) / 'status.json').read_text(encoding='utf-8')
+    )
     status['metadata'] = {'use_worktree': True, 'worktree_path': '/tmp/any-worktree'}
     return status
 
