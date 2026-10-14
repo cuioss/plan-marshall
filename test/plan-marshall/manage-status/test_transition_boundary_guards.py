@@ -437,6 +437,52 @@ def test_fully_recorded_markers_pass_transition(
     assert result['next_phase'] == '6-finalize'
 
 
+def test_abbreviated_ledger_shas_compare_equal_to_full_branch_shas(
+    plan_context, _stubbed_invariants, _stub_metadata, git_worktree, monkeypatch
+):
+    """An abbreviated ledger SHA still proves its full branch commit was recorded."""
+    plan_id = 'end-marker-abbreviated-passes'
+    _seed_end_marker_plan(plan_context, plan_id, git_worktree)
+    full_sha = 'abcdef1234567890abcdef1234567890abcdef12'
+    monkeypatch.setattr(_lifecycle, '_branch_commit_shas', lambda _p, _b: [full_sha])
+    monkeypatch.setattr(_lifecycle, '_recorded_change_shas', lambda: {full_sha[:7]})
+
+    result = cmd_transition(Namespace(plan_id=plan_id, completed='5-execute'))
+
+    assert result is not None
+    assert result['status'] == 'success', (
+        f'An abbreviated ledger SHA must compare equal to its full branch SHA, got {result!r}.'
+    )
+    assert result['next_phase'] == '6-finalize'
+
+
+def test_short_prefix_below_git_floor_does_not_match(plan_context, monkeypatch):
+    """A ledger prefix shorter than git's 7-char floor never counts as recorded."""
+    plan_id = 'end-marker-short-prefix'
+    cmd_create(
+        Namespace(
+            plan_id=plan_id,
+            title='End Marker Test',
+            phases='1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
+            force=False,
+        )
+    )
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}), encoding='utf-8')
+    full_sha = 'abcdef1234567890abcdef1234567890abcdef12'
+    monkeypatch.setattr(_lifecycle, '_branch_commit_shas', lambda _p, _b: [full_sha])
+    monkeypatch.setattr(_lifecycle, '_recorded_change_shas', lambda: {'abc'})
+
+    refusal = _lifecycle._phase_end_marker_refusal(
+        plan_id, {'metadata': {'use_worktree': True, 'worktree_path': '/tmp/any-worktree'}}
+    )
+
+    assert refusal is not None
+    assert refusal['error'] == 'execute_commits_unrecorded', (
+        f'A sub-floor prefix must not satisfy the end-marker guard, got {refusal!r}.'
+    )
+
+
 def test_zero_recorded_rows_refuse_as_markers_missing(plan_context, monkeypatch):
     """Zero kind=change rows with branch commits present is WHOLLY missing, not partial."""
     plan_id = 'end-marker-zero-rows'

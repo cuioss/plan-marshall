@@ -427,6 +427,35 @@ def _branch_commit_shas(worktree_path: str, base_branch: str) -> list[str] | Non
     return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
 
 
+def _sha_is_recorded(branch_sha: str, recorded: set[str]) -> bool:
+    """Return True when a branch SHA has a matching ledger row.
+
+    ``git rev-list`` always yields full 40-character SHAs while a
+    ``kind=change`` row may carry an abbreviated SHA written by an older
+    Step 10a settlement (``git rev-parse --short`` or a short
+    ``--pretty`` form). Exact set membership then reports the commit as
+    unrecorded and the 5-execute boundary refuses with
+    ``execute_commits_unrecorded`` for work that was recorded. A ledger
+    value matches when it equals the branch SHA or when one is a prefix
+    of the other — the abbreviated form is always a leading prefix of
+    the full form. Prefixes shorter than 7 characters never match: git
+    itself refuses to abbreviate below that floor, so a shorter match
+    would be a collision, not evidence of recording.
+    """
+    normalized_branch = branch_sha.strip()
+    if normalized_branch in recorded:
+        return True
+    for candidate in recorded:
+        normalized_candidate = candidate.strip()
+        if len(normalized_branch) < 7 or len(normalized_candidate) < 7:
+            continue
+        if normalized_branch.startswith(normalized_candidate):
+            return True
+        if normalized_candidate.startswith(normalized_branch):
+            return True
+    return False
+
+
 def _recorded_change_shas() -> set[str] | None:
     """Return every ``commit_sha`` carried by a ``kind=change`` ledger row.
 
@@ -434,6 +463,10 @@ def _recorded_change_shas() -> set[str] | None:
     read — so there is one byte-identical reader, not parallel copies. Returns
     ``None`` when the reader cannot be imported or the ledger cannot be read:
     an unreadable store is unevaluable, never an empty store.
+
+    Values are stored verbatim (full or abbreviated) — normalization happens
+    at comparison time in :func:`_sha_is_recorded`, so rows written before
+    the full-SHA writer contract still compare equal.
     """
     try:
         from _ledger_core import read_entries
@@ -446,7 +479,7 @@ def _recorded_change_shas() -> set[str] | None:
     if not isinstance(entries, list):
         return None
     return {
-        entry['commit_sha']
+        str(entry['commit_sha']).strip()
         for entry in entries
         if isinstance(entry, dict) and entry.get('kind') == 'change' and entry.get('commit_sha')
     }
@@ -523,7 +556,7 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
             ),
         }
 
-    unrecorded = [sha for sha in branch_shas if sha not in recorded]
+    unrecorded = [sha for sha in branch_shas if not _sha_is_recorded(sha, recorded)]
     if not unrecorded:
         return None
     if not recorded:
