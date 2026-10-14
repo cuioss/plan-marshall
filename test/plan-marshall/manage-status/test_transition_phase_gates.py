@@ -216,18 +216,19 @@ def test_end_marker_gate_passes_without_a_worktree():
 
 
 # =============================================================================
-# D2 — end-marker pass-through branches (TASK-4) + unresolvable-range refusal.
+# D2 — end-marker fail-closed branches (TASK-4) + unresolvable-range refusal.
 #
-# _phase_end_marker_refusal passes (None) on every unevaluable state WITHOUT a
-# computable comparison, and each pass-through is a distinct shape the gate
-# must not confuse with a clean verdict: a missing references.json (legacy
-# plans predate the base-branch record), a non-string base_branch, and an
-# empty range. Refusing on any of them would block a transition over a range
+# _phase_end_marker_refusal refuses (branch_range_unresolvable) on every
+# unevaluable state WITHOUT a computable comparison, and passes (None) only
+# where no comparison is owed at all: no worktree in play, no persisted path,
+# or an empty range. A missing references.json (no divergence base), a
+# non-string base_branch, and an unestablishable commit range each refuse —
+# refusing on any of them would let unrecorded work reach finalize on a range
 # nobody computed. The must-not-run stubs prove the gate returns BEFORE
-# touching the seam each branch skips — the pass-through is structural, not
+# touching the seam on each refused branch — the refusal is structural, not
 # an accident of stubbed-empty data.
 #
-# An UNESTABLISHABLE commit range is NOT in that set: since TASK-24 it refuses
+# An UNESTABLISHABLE commit range is in that refused set: since TASK-24 it refuses
 # fail-closed as ``branch_range_unresolvable`` (no comparison to run, so entry
 # without it is the silent skip). Its test below pins the refusal shape, the
 # omitted commit list, and the CLI exit-1 lockstep.
