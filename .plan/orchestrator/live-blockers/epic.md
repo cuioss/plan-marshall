@@ -299,6 +299,32 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   #1753. Its functional review does not catch rewritten criteria or weakened tests — PLAN-LB-39
   D6 owns that. Inbox `-005` to `-008` promoted as lessons `2026-10-13-14-001` to `-004`;
   `-009` is the landing.
+- **PLAN-LB-37's owed post-landing work is done (inbox `-010`, verified 2026-10-14).** D9: all
+  nine configured consumer repositories carry the review-step migration on their default branch
+  with `functional-review`, `code-review` and the standard roster (API-Sheriff #441,
+  TokenSheriff #802, cui-http #284, cui-jsf-test-basic #215, cui-open-rewrite #197,
+  cuioss-parent-pom #1515, nifi-extensions #650, plan-marshall-mcp #74, pm-mcp-core #57; read
+  with `git -C` on each clone). D15: cuioss-organization #326 (`d16ff2e`, released v0.42.0, tag
+  commit `711571432`), cuioss-review-bot #69 (`73db31d`) and plan-marshall #1767 (`187f7314a`)
+  are merged. One residue: the phase-3 `qgate` key in cui-jsf-test-basic (read by nothing).
+- **Inbox drain of 2026-10-14, four messages, no landing:**
+  - `lb-37-functional-review-010` (D9 and D15 done) — observed; the entry above.
+  - `lb-37-functional-review-011` (six steward-upgrade defects from the rollout) — staged as
+    PLAN-LB-40 steward-upgrade-integrity, together with the `migrate-review-steps` removal whose
+    Watch trigger the rollout met.
+  - `lb-37-functional-review-012` (ten leftovers) — items 1, 3 to 7 staged as PLAN-LB-41
+    lb-37-review-leftovers; item 2 recorded as a decision; items 8 to 10 an Open Defect
+    (foreign repositories).
+  - `plan-lb-31-in-house-reviewer-001` (running PLAN-LB-31's roster decision) — observed; see
+    the PLAN-LB-31 annotation.
+- **PLAN-LB-31** (running) — its roster decision is in (inbox `-001`, 2026-10-14): the operator
+  kept `cuioss-review-bot` required as is and CodeRabbit required; the measurement does not
+  meet the reopen condition, so the plan proceeds to its enrolment deliverables (PLAN-LB-20 D4
+  and D5 in the carried numbering).
+- **PLAN-LB-40 and PLAN-LB-41** (staged 2026-10-14) — 40 shares no declared file with any
+  running plan. 41 shares `automatic-review/standards/cuioss-review-bot.md` with the running
+  PLAN-LB-31 (different sections); its D5 waits for a live code-review comment on a PR merged
+  after `187f7314a`.
 - **Inbox drain of 2026-10-13, nineteen messages:**
   - From PLAN-LB-37 (four follow-ups it handed off, none a landing):
     - `-001` (remove the one-shot `migrate-review-steps` steward migration once every consumer is
@@ -853,8 +879,29 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   declined to run them together. Emit once PLAN-LB-37 lands. **Hold released 2026-10-13**:
   PLAN-LB-37 landed (#1759, `d5c1e869f`); start from that commit or later. Still overlaps the
   staged PLAN-LB-26 and PLAN-LB-27 on `phase-5-execute/SKILL.md`, `execution.md`, `triage.md`.
+- 2026-10-14 — **Inbox drain: two specs staged, one Watch retired.** PLAN-LB-40
+  steward-upgrade-integrity takes `-011`'s defects and the `migrate-review-steps` removal in one
+  plan because both edit `marshall-steward/scripts/upgrade.py`, `upgrade-flow.md` and the same
+  steward tests; five deliverables after folding `-011` item 6 into D4 and dropping item 4's
+  "add both review steps" half, which the removal makes moot because every configured
+  repository already carries both. PLAN-LB-41 lb-37-review-leftovers takes `-012` items 1, 3 to
+  7. `-012` item 2 (PLAN-LB-37's D12 outline wording drifted from what shipped) is not a file
+  to fix — the outline is archived with the plan; recorded here as an instance of outline drift
+  after in-flight re-scoping. Alternative considered: fold `-011` into a staged plan — no
+  staged plan touches the steward upgrade.
 
 ## Open Defects
+
+- **The two-pass cuioss-review-bot has unverified and unprevented gaps (inbox
+  `lb-37-functional-review-012` items 8 to 10, 2026-10-14; foreign repositories, not owned).**
+  (8) The 65,000-character comment cap is documented in cuioss-review-bot
+  `doc/consumer-guide.adoc` as PR-Agent's truncation, but not verified in the pinned image and
+  not mentioned in cuioss-organization #326 — verify or remove the claim. (9) `/improve` has no
+  fail-closed oracle, and both `/review` passes are still last-write-wins on overlapping
+  comment-triggered runs (detected by the content-match gate, not prevented). (10)
+  `/review -i` now fails the `review / code-review` job by design; operator decision whether
+  maintainers need specific harmless options allowed. Next step: a plan in
+  `cuioss/cuioss-review-bot` / `cuioss/cuioss-organization`, or an operator ruling per item.
 
 - **Antigravity: critical, by operator ruling of 2026-10-12 (the epic's highest priority).**
   All from pm-mcp-core PLAN-41 (pm-mcp-core PR #34), the first plan of that epic run under
@@ -1346,7 +1393,9 @@ PLAN-LB-22 to PLAN-LB-31. PLAN-LB-01 to PLAN-LB-13 and PLAN-LB-15 to PLAN-LB-21 
   - **Trigger met on 2026-10-13**: pm-mcp-core PLAN-41, run under Antigravity, landed with
     `total_tokens=0` and every `record-step` `unmeasured` (`lessons-routing-013.md`). Now part
     of the critical Antigravity Open Defect; staging is the operator's decision.
-- **The `migrate-review-steps` steward migration is meant to go.** PLAN-LB-37 D8 added it on
+- **RETIRED 2026-10-14 — trigger met, now owned by PLAN-LB-40 D5.** The rollout reached every
+  configured repository (see the PLAN-LB-37 annotation).
+  **The `migrate-review-steps` steward migration is meant to go.** PLAN-LB-37 D8 added it on
   operator instruction, to be removed by a later plan once every configured repository has been
   migrated by PLAN-LB-37's post-landing rollout (scope: `marshall-steward/scripts/upgrade.py`
   `migrate-review-steps` and `_merged_review_params` with its SHIM(A) block, the steward
