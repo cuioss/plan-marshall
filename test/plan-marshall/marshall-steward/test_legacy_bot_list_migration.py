@@ -4,22 +4,25 @@
 
 Cross-cutting counterpart to ``test_upgrade.py``, which owns the pure
 :func:`migrate_bot_lists` function's four input states. This suite pins the
-LANDING — that a project which only ever configured the legacy single list still
-has the SAME bots gating the participation quorum after the migration runs, and
-that re-running the upgrade never disturbs a settled value.
+LANDING — that a project which only ever configured the legacy single list
+lands on the standard roster without hand repair after the migration runs,
+and that re-running the upgrade never disturbs a settled value.
 
-Two properties, both end-to-end from a project fixture through the migration and
-into ``review_completeness``:
+Two properties, both end-to-end from a project fixture through the migration
+and into ``review_completeness``:
 
-1. **Semantics survive the migration.** Every bot on the legacy list was awaited,
-   and awaiting is exactly what ``required`` means — so the legacy bots must still
-   gate ``participation_complete`` afterwards, with none silently demoted to
-   optional (where its silence would stop blocking).
+1. **Standard roster seeds the migration.** State 1 seeds
+   ``required_bots: cuioss-review-bot,coderabbit`` and
+   ``optional_bots: sourcery`` (not the legacy value verbatim), reports the
+   legacy value as ``discarded_legacy``, and records provenance ``migrated``.
+   Unknown legacy names are reported by ``validate_bot_lists`` rather than
+   copied.
 2. **The migration is self-disarming.** A second run leaves the migrated values
    untouched, and a subsequent operator answer is never re-seeded over.
 
-Every expectation is DERIVED from the fixture's own legacy value — never a
-literal — so changing the fixture cannot leave a stale expectation passing.
+State-1 required/optional expectations are the standard-roster literals;
+``discarded_legacy`` expectations stay DERIVED from the fixture's own legacy
+value, so changing the fixture cannot leave a stale discard passing.
 """
 
 from __future__ import annotations
@@ -46,9 +49,18 @@ rc = load_script_module('plan-marshall', 'automatic-review', 'review_completenes
 
 _AUTOMATIC_REVIEW_STEP_ID = 'plan-marshall:automatic-review'
 
-# The fixture's legacy configuration. Every expectation below is derived from THIS
-# value rather than restated, so the suite cannot drift away from its own fixture.
+# The fixture's legacy configuration. The ``discarded_legacy`` expectation below is
+# derived from THIS value rather than restated, so the suite cannot drift away
+# from its own fixture. The seeded required/optional expectations are the
+# standard-roster literals the migration guarantees.
 _LEGACY_BOTS = 'coderabbit,sourcery'
+
+# The standard roster state 1 seeds — the contract ``migrate_bot_lists``
+# guarantees for a legacy-only project. Kept as literals mirroring
+# ``upgrade._STANDARD_REQUIRED_BOTS`` / ``_STANDARD_OPTIONAL_BOTS`` so the
+# landing suite pins the exact values a legacy-only config lands on.
+_STANDARD_REQUIRED_BOTS = 'cuioss-review-bot,coderabbit'
+_STANDARD_OPTIONAL_BOTS = 'sourcery'
 
 
 def _legacy_project_config() -> dict:
@@ -72,57 +84,73 @@ def _expected_required() -> list[str]:
     return [b.strip() for b in _LEGACY_BOTS.split(',') if b.strip()]
 
 
+def _expected_standard_required() -> list[str]:
+    """The standard-roster required bots state 1 seeds, derived from literals."""
+    return [b.strip() for b in _STANDARD_REQUIRED_BOTS.split(',') if b.strip()]
+
+
 def _step_params(config: dict) -> dict:
     params: dict = config['plan']['phase-6-finalize']['steps'][_AUTOMATIC_REVIEW_STEP_ID]
     return params
 
 
 class TestLegacySemanticsSurviveTheMigration:
-    """The same bots still gate the quorum after the auto-map runs."""
+    """The legacy-only project lands on the standard roster after the auto-map runs."""
 
     def test_legacy_bots_land_on_required_not_optional(self):
-        """Awaiting is what ``required`` means, so the legacy list seeds required.
+        """State 1 seeds the standard roster, not the legacy value verbatim.
 
-        Seeding OPTIONAL instead would silently drop every legacy bot's gating
-        power — the config would look migrated while the quorum quietly stopped
-        blocking on the bots the project had always awaited.
+        The legacy-only config lands valid without hand repair: required carries
+        the standard roster, optional carries the standard optional bot, the
+        legacy value is reported as ``discarded_legacy`` so no name disappears
+        silently, and provenance records ``migrated``.
         """
         config = _legacy_project_config()
-        report = upgrade.migrate_bot_lists(_step_params(config))
+        params = _step_params(config)
+        report = upgrade.migrate_bot_lists(params)
 
         assert report['state'] == 'migrated'
-        assert report['required_bots'] == _LEGACY_BOTS
-        assert report['optional_bots'] == ''
+        assert report['required_bots'] == _STANDARD_REQUIRED_BOTS
+        assert report['optional_bots'] == _STANDARD_OPTIONAL_BOTS
+        assert report['discarded_legacy'] == _LEGACY_BOTS
+        assert params['required_bots'] == _STANDARD_REQUIRED_BOTS
+        assert params['optional_bots'] == _STANDARD_OPTIONAL_BOTS
+        assert params['bot_lists_provenance'] == 'migrated'
 
     def test_the_same_bots_still_gate_the_quorum_end_to_end(self, plan_context):
         """Drive the migrated values into the real predicate and compare gating.
 
-        The end-to-end assertion: with none of the legacy bots proven, every one
-        of them still blocks after the migration — exactly as it did when the
-        single list awaited them.
+        The end-to-end assertion: with none of the standard-roster required
+        bots proven, every one of them still blocks after the migration — the
+        legacy-only project lands gating on the standard roster.
         """
         plan_id = 'lbm-gating-preserved'
         plan_context.plan_dir_for(plan_id)
 
         config = _legacy_project_config()
         params = _step_params(config)
-        upgrade.migrate_bot_lists(params)
+        report = upgrade.migrate_bot_lists(params)
 
         required = [b.strip() for b in params['required_bots'].split(',') if b.strip()]
         optional = [b.strip() for b in params['optional_bots'].split(',') if b.strip()]
-        assert required == _expected_required()
+        assert required == _expected_standard_required()
+        assert optional == [b.strip() for b in _STANDARD_OPTIONAL_BOTS.split(',') if b.strip()]
+        assert report['discarded_legacy'] == _LEGACY_BOTS
 
         result = rc.check_completeness(plan_id, required, optional_bots=optional)
 
         assert result['participation_complete'] is False
-        assert result['unproven_bots'] == _expected_required()
+        # Visibility contract: unproven_bots spans required UNION optional.
+        assert result['unproven_bots'] == _expected_standard_required() + [b.strip() for b in _STANDARD_OPTIONAL_BOTS.split(',') if b.strip()]
+        # Gating contract: the required subset still blocks.
+        assert set(_expected_standard_required()).issubset(set(result['unproven_bots']))
 
     def test_no_legacy_bot_is_silently_demoted_to_non_gating(self, plan_context):
-        """The counterpart: prove each legacy bot individually still blocks.
+        """The counterpart: prove each seeded required bot individually still blocks.
 
         A per-bot sweep rather than an aggregate, so a migration that demoted ONE
-        bot to optional cannot hide behind a still-false aggregate verdict driven
-        by its siblings.
+        required bot to optional cannot hide behind a still-false aggregate
+        verdict driven by its siblings.
         """
         config = _legacy_project_config()
         params = _step_params(config)
@@ -260,17 +288,19 @@ class TestLiveConfigVerb:
         return self._stage_marshal_json(tmp_path, monkeypatch, _legacy_project_config())
 
     def test_verb_writes_the_migrated_config_back_to_disk(self, legacy_project: Path):
-        """The end-to-end landing: the file on disk carries the two-list model."""
+        """The end-to-end landing: the file on disk carries the standard roster."""
         import argparse
 
         result = upgrade.cmd_migrate_bot_lists(argparse.Namespace())
 
         assert result['status'] == 'success'
         assert result['state'] == 'migrated'
+        assert result['discarded_legacy'] == _LEGACY_BOTS
 
         persisted = _step_params(json.loads(legacy_project.read_text(encoding='utf-8')))
-        assert persisted['required_bots'] == _LEGACY_BOTS
-        assert persisted['optional_bots'] == ''
+        assert persisted['required_bots'] == _STANDARD_REQUIRED_BOTS
+        assert persisted['optional_bots'] == _STANDARD_OPTIONAL_BOTS
+        assert persisted['bot_lists_provenance'] == 'migrated'
         assert 'enabled_bots' not in persisted
 
     def test_verb_is_a_noop_success_on_a_project_without_the_step(

@@ -402,20 +402,27 @@ def test_project_kind_auto_invokes_detector(monkeypatch, capsys: pytest.CaptureF
 
 
 def test_migrate_bot_lists_seeds_required_from_legacy_verbatim():
-    """State 1 — legacy alone seeds required_bots VERBATIM and empties optional.
+    """State 1 — legacy alone seeds the standard roster (not verbatim).
 
-    Seeding REQUIRED (not optional) preserves the legacy semantics: every bot on
-    the retired list was awaited, and awaiting is precisely what ``required``
-    means. Splitting the list across the two new knobs would silently demote a
-    previously-awaited bot to a non-blocking one.
+    The legacy-only config lands valid without hand repair: required carries
+    ``cuioss-review-bot,coderabbit``, optional carries ``sourcery``, the legacy
+    value is reported as ``discarded_legacy`` so no name disappears silently,
+    and provenance records ``migrated``. Unknown legacy names are reported by
+    ``validate_bot_lists`` rather than copied. (Function name is historical: it
+    predates the standard-roster contract and is kept so the five migrated
+    test ids stay stable.)
     """
     params = {'enabled_bots': 'coderabbit,sourcery', 'review_bot_buffer_seconds': 180}
 
     report = upgrade.migrate_bot_lists(params)
 
     assert report['state'] == 'migrated'
-    assert params['required_bots'] == 'coderabbit,sourcery'
-    assert params['optional_bots'] == ''
+    assert report['required_bots'] == 'cuioss-review-bot,coderabbit'
+    assert report['optional_bots'] == 'sourcery'
+    assert report['discarded_legacy'] == 'coderabbit,sourcery'
+    assert params['required_bots'] == 'cuioss-review-bot,coderabbit'
+    assert params['optional_bots'] == 'sourcery'
+    assert params['bot_lists_provenance'] == 'migrated'
     # The legacy key is consumed, and the unrelated knob is untouched.
     assert 'enabled_bots' not in params
     assert params['review_bot_buffer_seconds'] == 180
@@ -480,7 +487,7 @@ def test_migrate_bot_lists_is_self_disarming_on_second_run():
 
     Once the legacy key is consumed, state (4) collapses onto state (3), so the
     verb can sit permanently in the Stage 2 sub-step list without re-migrating
-    or clobbering the values it produced on the first run.
+    or clobbering the standard-roster values it produced on the first run.
     """
     params = {'enabled_bots': 'coderabbit,sourcery'}
 
@@ -489,10 +496,11 @@ def test_migrate_bot_lists_is_self_disarming_on_second_run():
     second = upgrade.migrate_bot_lists(params)
 
     assert first['state'] == 'migrated'
+    assert first['discarded_legacy'] == 'coderabbit,sourcery'
     assert second['state'] == 'noop'
     assert params == after_first
-    assert second['required_bots'] == 'coderabbit,sourcery'
-    assert second['optional_bots'] == ''
+    assert second['required_bots'] == 'cuioss-review-bot,coderabbit'
+    assert second['optional_bots'] == 'sourcery'
 
 
 # =============================================================================

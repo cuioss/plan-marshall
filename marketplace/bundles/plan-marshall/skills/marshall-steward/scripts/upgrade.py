@@ -302,6 +302,27 @@ _LEGACY_BOT_LIST_KEY = 'enabled_bots'
 _REQUIRED_BOTS_KEY = 'required_bots'
 _OPTIONAL_BOTS_KEY = 'optional_bots'
 _PROVENANCE_KEY = 'bot_lists_provenance'
+_STANDARD_REQUIRED_BOTS = 'cuioss-review-bot,coderabbit'
+_STANDARD_OPTIONAL_BOTS = 'sourcery'
+
+
+def _has_operator_answer(params: dict) -> bool:
+    """Return True when the operator has answered the two-list model.
+
+    Only a non-empty value, or an explicit ``bot_lists_provenance: answered``,
+    counts — mere key presence does not. A ``sync-defaults`` back-fill writes
+    empty strings for absent keys, and treating that presence as an answer is
+    what deleted the legacy list without migrating it.
+    """
+    if params.get(_PROVENANCE_KEY) == 'answered':
+        return True
+    required = params.get(_REQUIRED_BOTS_KEY)
+    if isinstance(required, str) and required.strip():
+        return True
+    optional = params.get(_OPTIONAL_BOTS_KEY)
+    if isinstance(optional, str) and optional.strip():
+        return True
+    return False
 
 
 def migrate_bot_lists(params: dict) -> dict:
@@ -312,20 +333,27 @@ def migrate_bot_lists(params: dict) -> dict:
 
     The four states are exhaustive:
 
-    1. **legacy present, neither new key present** — seed ``required_bots`` from
-       the legacy value VERBATIM, leave ``optional_bots`` empty, remove
-       ``enabled_bots``, and record provenance ``migrated``. Seeding required (not
-       optional) preserves the legacy semantics: every bot on the old list was
-       awaited, and awaiting is exactly what ``required`` means.
-    2. **legacy present, either new key already present** — the operator has
-       already answered, so THEIR ANSWER WINS: the new keys are left untouched and
+    1. **legacy present, no operator answer** — seed the standard roster
+       (``required_bots: cuioss-review-bot,coderabbit``,
+       ``optional_bots: sourcery``), remove ``enabled_bots``, and record
+       provenance ``migrated``. Seeding the standard roster (not the legacy
+       value verbatim) is what leaves a legacy-only config valid without hand
+       repair: the legacy value is reported as ``discarded_legacy`` so no name
+       disappears silently, and any unknown name is reported by
+       ``validate_bot_lists`` rather than copied.
+    2. **legacy present, operator answered** — the operator has already
+       answered, so THEIR ANSWER WINS: the new keys are left untouched and
        only the stale legacy key is removed. Both values are reported so the
        operator can see what was discarded. Provenance is NOT downgraded to
        ``migrated`` — an answered value stays ``answered``.
-    3. **legacy absent, neither new key present** — nothing to migrate; a no-op
+    3. **legacy absent, no operator answer** — nothing to migrate; a no-op
        success that leaves the never-asked posture intact.
     4. **already migrated** — indistinguishable from (3) once the legacy key is
        gone. This is what makes the migration self-disarming and re-runnable.
+
+    Only a non-empty value, or ``bot_lists_provenance: answered``, counts as
+    an operator answer — mere key presence does not, because ``sync-defaults``
+    back-fills empty strings for absent keys.
 
     Args:
         params: The ``plan-marshall:automatic-review`` step's param object.
@@ -337,7 +365,7 @@ def migrate_bot_lists(params: dict) -> dict:
     """
     legacy = params.get(_LEGACY_BOT_LIST_KEY)
     has_legacy = legacy is not None
-    has_new = _REQUIRED_BOTS_KEY in params or _OPTIONAL_BOTS_KEY in params
+    has_new = _has_operator_answer(params)
 
     if not has_legacy:
         # States (3) and (4) — nothing to migrate, and deliberately
@@ -359,15 +387,16 @@ def migrate_bot_lists(params: dict) -> dict:
             'discarded_legacy': legacy,
         }
 
-    # State (1) — seed required from the legacy list verbatim.
-    params[_REQUIRED_BOTS_KEY] = legacy
-    params[_OPTIONAL_BOTS_KEY] = ''
+    # State (1) — seed the standard roster; report the legacy value explicitly.
+    params[_REQUIRED_BOTS_KEY] = _STANDARD_REQUIRED_BOTS
+    params[_OPTIONAL_BOTS_KEY] = _STANDARD_OPTIONAL_BOTS
     params[_PROVENANCE_KEY] = 'migrated'
     del params[_LEGACY_BOT_LIST_KEY]
     return {
         'state': 'migrated',
-        'required_bots': legacy,
-        'optional_bots': '',
+        'required_bots': _STANDARD_REQUIRED_BOTS,
+        'optional_bots': _STANDARD_OPTIONAL_BOTS,
+        'discarded_legacy': legacy,
     }
 
 

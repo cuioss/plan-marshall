@@ -494,6 +494,50 @@ def _materialize_finalize_lanes(live: dict, materialized: list[str], added: list
     return live
 
 
+# The standard reviewer roster seeded by the Stage 2 bot-list preservation.
+# Mirrors ``upgrade._STANDARD_REQUIRED_BOTS`` / ``_STANDARD_OPTIONAL_BOTS`` without
+# importing the steward script: the merge must never clobber a present value and
+# back-fills this roster only into an absent automatic-review param block.
+_STANDARD_REQUIRED_BOTS = 'cuioss-review-bot,coderabbit'
+_STANDARD_OPTIONAL_BOTS = 'sourcery'
+_AUTOMATIC_REVIEW_STEP_ID = 'plan-marshall:automatic-review'
+_BOT_LISTS_PROVENANCE_KEY = 'bot_lists_provenance'
+
+
+def _backfill_standard_roster(merged: dict) -> None:
+    """Back-fill the standard roster into an absent automatic-review param block.
+
+    The deep merge never clobbers a present ``required_bots`` / ``optional_bots``
+    value: a present non-empty value, or any value with
+    ``bot_lists_provenance: answered``, is an operator answer and is left
+    untouched. Only a missing key, or an empty value without an answered
+    provenance, is filled with the standard roster. Held/re-added reporting
+    covers the roster step id like any other step id through the standard
+    deep-merge accumulators — this helper only fills params inside a kept step.
+    Mutates ``merged`` in place.
+    """
+    plan = merged.get('plan')
+    if not isinstance(plan, dict):
+        return
+    phase6 = plan.get('phase-6-finalize')
+    if not isinstance(phase6, dict):
+        return
+    steps_map = phase6.get('steps')
+    if not isinstance(steps_map, dict):
+        return
+    params = steps_map.get(_AUTOMATIC_REVIEW_STEP_ID)
+    if not isinstance(params, dict):
+        return
+    if params.get(_BOT_LISTS_PROVENANCE_KEY) == 'answered':
+        return
+    required = params.get('required_bots')
+    if not isinstance(required, str) or not required.strip():
+        params['required_bots'] = _STANDARD_REQUIRED_BOTS
+    optional = params.get('optional_bots')
+    if not isinstance(optional, str) or not optional.strip():
+        params['optional_bots'] = _STANDARD_OPTIONAL_BOTS
+
+
 def cmd_sync_defaults(args) -> dict:
     """Handle sync-defaults command.
 
@@ -570,6 +614,10 @@ def cmd_sync_defaults(args) -> dict:
     held_for_ask: list[str] = []
     re_added: list[str] = []
     merged = _deep_merge_missing(live, defaults, '', added, held_for_ask, re_added)
+
+    # Preserve operator-set reviewer lists through the Stage 2 order: fill the
+    # standard roster only where the automatic-review block carries no answer.
+    _backfill_standard_roster(merged)
 
     # Materialize an explicit lane on every lane-less phase-6-finalize step. Runs
     # AFTER the deep-merge (consumes the populated ``added`` accumulator to
