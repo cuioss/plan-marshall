@@ -51,12 +51,14 @@ from manage_terminal_title import _compose_body, compose, title_token_state  # n
 from marketplace_paths import resolve_home  # noqa: E402
 from runtime_base import (  # noqa: E402,F401
     Runtime,
-    _find_agent_file as _find_agent_file_in_tree,
     _parse_agent_frontmatter,
     extract_project_steps,
     toon_error,
     toon_noop,
     toon_success,
+)
+from runtime_base import (  # noqa: E402
+    _find_agent_file as _find_agent_file_in_tree,
 )
 from toon_parser import parse_toon  # noqa: E402
 
