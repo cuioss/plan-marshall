@@ -16,6 +16,7 @@ records_facts:
   - total_tokens
   - total_wall_seconds
   - any_phase_missing_end_time
+  - harness
 implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 ---
 

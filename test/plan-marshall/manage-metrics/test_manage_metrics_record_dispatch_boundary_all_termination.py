@@ -343,6 +343,7 @@ from _manage_metrics_fixtures import (  # noqa: E402
     ns_generate,
     ns_start_phase,
 )
+
 from conftest import load_script_module as _load_script_module  # noqa: E402
 
 _generate_metrics = _load_script_module(

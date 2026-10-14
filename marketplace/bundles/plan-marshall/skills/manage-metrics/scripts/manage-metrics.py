@@ -206,6 +206,7 @@ def _stamp_unknown_totals(phases_state: dict) -> list[str]:
         stamped.append(phase_name)
     return stamped
 
+
 # ---------------------------------------------------------------------------
 # Cumulative-vs-last-close row scope discriminator
 # ---------------------------------------------------------------------------
