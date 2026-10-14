@@ -63,6 +63,7 @@ from _build_result import (  # noqa: E402
     timeout_result,
 )
 from _build_result import STATUS_KILLED as RESULT_STATUS_KILLED  # noqa: E402
+from _build_result import STATUS_RUNNING as RESULT_STATUS_RUNNING  # noqa: E402
 from _build_server_protocol import (  # noqa: E402
     MARSHALLD_JOB_ENV,
     STATUS_SUCCESS,
@@ -482,6 +483,12 @@ def _append_gate_build_row(
     red-first unit-test path) leaves this one alone. A consumer counting
     ``kind=build`` rows to audit gate coverage MUST deduplicate rather than
     assume one row per build.
+
+    Terminal-only: a daemon-routed running hand-back (``status: running``) is
+    not a verdict — the build is still working on the daemon — so the routed
+    call site skips this append for it. A row for an unfinished build would
+    carry ``ledger_status: unknown`` with exit 0, which an exit-code-only
+    consumer reads as a completed gate.
 
     Best-effort and fail-open: any import, hash, or append failure is swallowed
     so a ledger outage never aborts a build. True daemon failure rows are NOT
@@ -1309,14 +1316,20 @@ def create_execute_handlers(
             routed, reason = _route_to_daemon(config, project_dir, plan_id, explicit_timeout, command_key=command_key)
             if routed is not None:
                 _record_resolution(execution_mode, 'routed', None, notation, plan_id)
-                _append_gate_build_row(
-                    notation=notation,
-                    plan_id=plan_id,
-                    command_args=command_args,
-                    command_str=str(routed.get('command', '')),
-                    result=routed,
-                    route='routed',
-                )
+                # A running hand-back is NOT a verdict — the build is still
+                # working on the daemon — so it takes no ledger row. Only a
+                # terminal routed result appends; otherwise the ledger would
+                # carry an `unknown`-status row for a build that never finished,
+                # and an exit-code-only consumer would read it as gated.
+                if str((routed or {}).get('status', '')) != RESULT_STATUS_RUNNING:
+                    _append_gate_build_row(
+                        notation=notation,
+                        plan_id=plan_id,
+                        command_args=command_args,
+                        command_str=str(routed.get('command', '')),
+                        result=routed,
+                        route='routed',
+                    )
                 return cmd_run_common(
                     result=routed,
                     parser_fn=parse_log_fn,
