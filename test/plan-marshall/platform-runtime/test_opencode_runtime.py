@@ -765,9 +765,7 @@ def test_subagent_dispatch_echoes_requested_agent(runtime: OpenCodeRuntime, agen
     assert result['invocation']['subagent_type'] == agent
 
 
-def test_subagent_dispatch_prompt_crosses_toon_boundary_inert(
-    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
-) -> None:
+def test_subagent_dispatch_prompt_crosses_toon_boundary_inert(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
     """subagent_dispatch wraps prompt as a block scalar for TOON parity.
 
     The prompt body is opaque multi-line text that embeds example blocks
@@ -807,10 +805,7 @@ def test_subagent_dispatch_task_tool_unavailable_takes_inline_branch(runtime: Op
 def test_subagent_dispatch_task_tool_flag_defaults_to_available(runtime: OpenCodeRuntime) -> None:
     """An absent flag (or absent context) fires the dispatch — available is the explicit default."""
     assert _parse(runtime.subagent_dispatch('execution-context-level-3', None, None))['status'] == 'success'
-    assert (
-        _parse(runtime.subagent_dispatch('execution-context-level-3', None, {'plan_id': 'x'}))['status']
-        == 'success'
-    )
+    assert _parse(runtime.subagent_dispatch('execution-context-level-3', None, {'plan_id': 'x'}))['status'] == 'success'
 
 
 # =============================================================================

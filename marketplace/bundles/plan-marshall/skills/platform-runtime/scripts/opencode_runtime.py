@@ -1350,9 +1350,7 @@ class OpenCodeRuntime(Runtime):
         """
         import pathlib
 
-        task_tool_available = (
-            True if not isinstance(context, dict) else context.get('task_tool_available', True)
-        )
+        task_tool_available = True if not isinstance(context, dict) else context.get('task_tool_available', True)
         if task_tool_available is False:
             return toon_noop(
                 'subagent dispatch',
