@@ -251,8 +251,10 @@ def _seed_worktree_status(plan_context, plan_id: str) -> dict:
     return status
 
 
-def test_end_marker_gate_passes_without_references_file(plan_context, monkeypatch):
-    """A plan with no references.json carries no divergence base — the gate passes."""
+def test_end_marker_gate_refuses_without_references_file(plan_context, monkeypatch):
+    """A plan with no references.json carries no divergence base — the gate
+    refuses fail-closed: without a base no range is enumerable, so recording
+    cannot be proven."""
     plan_id = 'end-marker-no-refs'
     status = _seed_worktree_status(plan_context, plan_id)
     (plan_context.plan_dir_for(plan_id) / 'references.json').unlink(missing_ok=True)
@@ -262,11 +264,14 @@ def test_end_marker_gate_passes_without_references_file(plan_context, monkeypatc
 
     monkeypatch.setattr(_lifecycle, '_branch_commit_shas', _must_not_run)
 
-    assert _lifecycle._phase_end_marker_refusal(plan_id, status) is None
+    refusal = _lifecycle._phase_end_marker_refusal(plan_id, status)
+    assert refusal is not None
+    assert refusal['status'] == 'error'
+    assert refusal['error'] == 'branch_range_unresolvable'
 
 
-def test_end_marker_gate_passes_on_non_string_base_branch(plan_context, monkeypatch):
-    """A non-string base_branch is no base at all — the gate passes."""
+def test_end_marker_gate_refuses_on_non_string_base_branch(plan_context, monkeypatch):
+    """A non-string base_branch is no base at all — the gate refuses fail-closed."""
     plan_id = 'end-marker-bad-base'
     status = _seed_worktree_status(plan_context, plan_id)
     (plan_context.plan_dir_for(plan_id) / 'references.json').write_text(
@@ -278,7 +283,10 @@ def test_end_marker_gate_passes_on_non_string_base_branch(plan_context, monkeypa
 
     monkeypatch.setattr(_lifecycle, '_branch_commit_shas', _must_not_run)
 
-    assert _lifecycle._phase_end_marker_refusal(plan_id, status) is None
+    refusal = _lifecycle._phase_end_marker_refusal(plan_id, status)
+    assert refusal is not None
+    assert refusal['status'] == 'error'
+    assert refusal['error'] == 'branch_range_unresolvable'
 
 
 def test_end_marker_gate_refuses_when_commit_range_unestablishable(plan_context, monkeypatch):

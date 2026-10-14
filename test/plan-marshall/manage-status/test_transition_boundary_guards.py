@@ -206,6 +206,11 @@ def test_clean_worktree_passes_transition(plan_context, _stubbed_invariants, _st
     """A clean tree at the guarded boundary transitions normally."""
     plan_id = 'boundary-clean-passes'
     status_path = _seed_boundary_plan(plan_context, plan_id, {'use_worktree': True, 'worktree_path': str(git_worktree)})
+    # The end-marker gate needs a divergence base to establish its (here empty)
+    # range — without references.json it refuses fail-closed.
+    (plan_context.plan_dir_for(plan_id) / 'references.json').write_text(
+        json.dumps({'base_branch': 'main'}), encoding='utf-8'
+    )
 
     result = cmd_transition(Namespace(plan_id=plan_id, completed='5-execute'))
 
@@ -223,6 +228,11 @@ def test_plan_state_under_gitignored_dot_plan_stays_clean(
     the boundary — the porcelain read must not see it."""
     plan_id = 'boundary-plan-state-ignored'
     _seed_boundary_plan(plan_context, plan_id, {'use_worktree': True, 'worktree_path': str(git_worktree)})
+    # The end-marker gate needs a divergence base to establish its (here empty)
+    # range — without references.json it refuses fail-closed.
+    (plan_context.plan_dir_for(plan_id) / 'references.json').write_text(
+        json.dumps({'base_branch': 'main'}), encoding='utf-8'
+    )
     plan_state = git_worktree / '.plan' / 'local' / 'plans' / plan_id
     plan_state.mkdir(parents=True)
     (plan_state / 'status.json').write_text('{}')

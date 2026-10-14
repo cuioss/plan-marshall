@@ -406,7 +406,7 @@ def _branch_commit_shas(worktree_path: str, base_branch: str) -> list[str] | Non
     """Return the worktree-branch commits since the branch diverged from base.
 
     Resolves the divergence point as ``git merge-base HEAD {ref}`` trying
-    ``origin/{base_branch}`` first and the local ``{base_branch}`` second, then
+    the local ``{base_branch}`` first and ``origin/{base_branch}`` second, then
     lists ``git rev-list {merge_base}..HEAD`` (oldest first). Returns ``None``
     when the range cannot be established (no base ref, git failure) — the
     caller treats that as a fail-closed refusal (``branch_range_unresolvable``),
@@ -414,7 +414,12 @@ def _branch_commit_shas(worktree_path: str, base_branch: str) -> list[str] | Non
     of recorded work.
     """
     merge_base: str | None = None
-    for ref in (f'origin/{base_branch}', base_branch):
+    # Local base first: it reflects the landed tree including any rebase the
+    # run performed, while origin/{base} may be stale (no fetch since) and
+    # would then push the divergence point older than the true fork — pulling
+    # already-landed main commits into the range and refusing a fully-recorded
+    # transition. The remote ref stays the fallback for a missing local base.
+    for ref in (base_branch, f'origin/{base_branch}'):
         proc = subprocess.run(
             ['git', '-C', worktree_path, 'merge-base', 'HEAD', ref],
             capture_output=True,
@@ -526,12 +531,14 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
       store holds zero rows at all the markers are wholly missing (the Step 10a
       bookkeeping never ran); when it holds some the recording is partial.
       ``recorded_count`` names which of the two the reader is looking at.
-    - ``None`` (pass) — no worktree in play, no persisted path, an
-      unreadable/absent ``references.json`` (legacy plans predate the
-      base-branch record), an empty range, or full coverage. Each pass-through
-      is a distinct unevaluable state, never a clean verdict over an examined
-      store. An unestablishable commit range is NOT in this set: it refuses
-      under ``branch_range_unresolvable`` above.
+    - ``None`` (pass) — no worktree in play, no persisted path, an empty
+      range, or full coverage. Each pass-through is a distinct unevaluable
+      state, never a clean verdict over an examined store. An unreadable
+      ``references.json`` is NOT in this set: without a divergence base no
+      range is enumerable, so it refuses under
+      ``branch_range_unresolvable`` above. An unestablishable commit range
+      is likewise excluded: it refuses under
+      ``branch_range_unresolvable`` above.
 
     All three refusal codes are members of :data:`VERIFY_REFUSAL_ERRORS`, so all
     block the transition and both drive the CLI exit-1 wrapper.
@@ -550,12 +557,37 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
         references = json.loads((get_plan_dir(plan_id) / 'references.json').read_text(encoding='utf-8'))
         base_branch = references.get('base_branch') or 'main'
     except Exception:
-        # Legacy or malformed references: the divergence base cannot be
-        # established, so no range is enumerable. Pass through rather than
-        # refusing on a range nobody computed.
-        return None
+        # Unreadable or malformed references: the divergence base cannot be
+        # established, so no range is enumerable. Fail closed under
+        # ``branch_range_unresolvable`` — passing through would let unrecorded
+        # execute work reach finalize on a range nobody computed.
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': BRANCH_RANGE_UNRESOLVABLE_ERROR,
+            'phase': '5-execute',
+            'reason': ('references.json could not be read, so the divergence base cannot be established'),
+            'message': (
+                'Cannot prove 5-execute deliverable commits were recorded: '
+                'references.json could not be read, so the worktree-branch '
+                'commit range cannot be established. Repair the plan record, '
+                'then retry the transition.'
+            ),
+        }
     if not isinstance(base_branch, str) or not base_branch.strip():
-        return None
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': BRANCH_RANGE_UNRESOLVABLE_ERROR,
+            'phase': '5-execute',
+            'reason': ('references.json carries no usable base_branch, so the divergence base cannot be established'),
+            'message': (
+                'Cannot prove 5-execute deliverable commits were recorded: '
+                'references.json carries no usable base_branch, so the '
+                'worktree-branch commit range cannot be established. Repair '
+                'the plan record, then retry the transition.'
+            ),
+        }
     base_branch = base_branch.strip()
 
     branch_shas = _branch_commit_shas(worktree_path, base_branch)

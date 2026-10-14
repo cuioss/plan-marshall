@@ -1237,9 +1237,10 @@ to carry a `kind=change` change-ledger row (the Step 10a settlement
 bookkeeping). The clean-tree guard only reads *uncommitted* state, so a
 committed-but-unrecorded deliverable commit is the silent skip it cannot see —
 this gate closes it. The divergence base is `references.json:base_branch`
-(`main` when absent); an unreadable `references.json`, an unestablishable
-commit range, an empty range, or full coverage all pass (each is a distinct
-unevaluable state, never a clean verdict over an examined store). Refusals are
+(`main` when absent); an unestablishable commit range, an empty range, or full
+coverage pass or refuse per the gate (an unreadable `references.json` refuses
+fail-closed under `branch_range_unresolvable` — without a base no range is
+enumerable, so recording cannot be proven). Refusals are
 fail-closed with errors `phase_end_markers_missing` (the marker store could
 not be read, or holds zero rows while branch commits exist — `recorded_count`
 names which; the unreadable-store shape carries NO `unrecorded_commits` key)
