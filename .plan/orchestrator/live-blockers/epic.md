@@ -657,8 +657,12 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   PR #1772** (operator instruction 2026-10-14, outside the plan lifecycle, label
   `skip-bot-review`): catch-alls moved to the front of every rule list (0 effect differences
   against the OpenCode 1 file over 17 agents × 47 commands, 518 before) and `guard.js` guards
-  `shell` as well as `bash`, pinned by `test_opencode_root_config.py`. Retire this entry when #1772
-  is merged. The producers that would re-introduce the OpenCode 1 shape are PLAN-LB-48.
+  `shell` as well as `bash`, pinned by `test_opencode_root_config.py`. **Merged 2026-10-14 as
+  `9011a19bf`** (CI and merge-group green). Residual: PLAN-LB-39's worktree predates the merge, so
+  its OpenCode sessions still load the unfixed `opencode.json` / `guard.js` until it rebases and
+  its sessions restart; the persisted "always allow" approvals in `opencode.db` remain (operator).
+  Retire this entry once PLAN-LB-39 has landed. The producers that would re-introduce the OpenCode 1
+  shape are PLAN-LB-48.
   OpenCode 2 evaluates permission rules last-match-wins (`findLast`, no match = `ask`). The root
   `opencode.json` (OpenCode 2 schema since `35b5589b5`) puts each catch-all LAST — top level
   `{shell,"*",allow}`, every agent `{shell,"*",ask}` — so every deny before it is overridden;
