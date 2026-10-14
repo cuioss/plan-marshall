@@ -130,7 +130,7 @@ A command literal that invokes a BUILD in a `verification`-profile task's `steps
 | `current_step` | integer | Yes | Current step number for execution |
 | `priority` | string | No | Execution priority (fix tasks) |
 | `finding` | object | No | Original finding details (fix tasks only) |
-| `cost_size` | string | No | Predicted T-shirt cost size (`S`/`M`/`L`/`XL`), stamped by phase-4-plan from the cost-sizing rubric (see Cost-Sizing Fields below) |
+| `cost_size` | string | No | Predicted T-shirt cost size (`XS`/`S`/`M`/`L`/`XL`/`XXL`), stamped by phase-4-plan from the cost-sizing rubric (see Cost-Sizing Fields below) |
 | `predicted_cost_tokens` | integer | No | Predicted token cost for the task, stamped alongside `cost_size` (see Cost-Sizing Fields below) |
 | `envelope_id` | integer | No | Bin-packer envelope-group identifier assigned by `manage-tasks pack-envelopes` (see Cost-Sizing Fields below) |
 | `task_start_sha` | string | No | Worktree HEAD recorded as the task's artifact-diff baseline (see Artifact-Baseline Field below) |
@@ -331,11 +331,11 @@ envelope_id: 2
 
 | Field | Type | Producer | Description |
 |-------|------|----------|-------------|
-| `cost_size` | string | `commit-add` at creation, refreshed by phase-4-plan (`derive-cost-size`) | T-shirt label `S`/`M`/`L`/`XL` |
+| `cost_size` | string | `commit-add` at creation, refreshed by phase-4-plan (`derive-cost-size`) | T-shirt label `XS`/`S`/`M`/`L`/`XL`/`XXL` |
 | `predicted_cost_tokens` | integer | `commit-add` at creation, refreshed by phase-4-plan (`derive-cost-size`) | Predicted token magnitude for the task |
 | `envelope_id` | integer | `commit-add` at creation, refreshed by the bin-packer (`pack-envelopes`) | Group identifier binding the task to one budget envelope |
 
-**Write path.** `commit-add` stamps all three fields at creation: it derives `cost_size`/`predicted_cost_tokens` from the task's own signals with the canonical size table and assigns `envelope_id` via the at-creation rule — the live (lowest unfinished stamped) envelope when one exists, otherwise a new trailing envelope with the manifest envelope count raised to cover it. `derive-cost-size` and `pack-envelopes` are pure compute verbs — they emit the derived values but never mutate a task record. The persistence path for their output is the `update` subcommand's cost-field flags: `--cost-size`, `--predicted-cost-tokens`, and `--envelope-id`. phase-4-plan stamps `cost_size`/`predicted_cost_tokens` via `update --cost-size … --predicted-cost-tokens …` (Step 6) and stamps `envelope_id` via `update --envelope-id …` (Step 7a). Validation at the write boundary: `--cost-size` must be one of `S`/`M`/`L`/`XL`, `--predicted-cost-tokens` must be non-negative, and `--envelope-id` must be a positive (1-based) integer. The persisted values round-trip back out through the `next` and `get` subcommands.
+**Write path.** `commit-add` stamps all three fields at creation: it derives `cost_size`/`predicted_cost_tokens` from the task's own signals with the canonical size table and assigns `envelope_id` via the at-creation rule — the live (lowest unfinished stamped) envelope when one exists, otherwise a new trailing envelope with the manifest envelope count raised to cover it. `derive-cost-size` and `pack-envelopes` are pure compute verbs — they emit the derived values but never mutate a task record. The persistence path for their output is the `update` subcommand's cost-field flags: `--cost-size`, `--predicted-cost-tokens`, and `--envelope-id`. phase-4-plan stamps `cost_size`/`predicted_cost_tokens` via `update --cost-size … --predicted-cost-tokens …` (Step 6) and stamps `envelope_id` via `update --envelope-id …` (Step 7a). Validation at the write boundary: `--cost-size` must be one of `XS`/`S`/`M`/`L`/`XL`/`XXL`, `--predicted-cost-tokens` must be non-negative, and `--envelope-id` must be a positive (1-based) integer. The persisted values round-trip back out through the `next` and `get` subcommands.
 
 The size label vocabulary, the signal weights, the score thresholds, and the size→token table are owned by the central rubric — see [`../../phase-4-plan/standards/cost-sizing.md`](../../phase-4-plan/standards/cost-sizing.md). This contract does not restate the size-to-token mapping table; it only declares the schema fields that carry the rubric's output.
 

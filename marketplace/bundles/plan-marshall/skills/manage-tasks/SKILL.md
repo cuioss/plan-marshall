@@ -67,7 +67,7 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 | `prepare-add` | `--plan-id [--slot]` | Allocate a scratch path under `<plan>/work/pending-tasks/` (Step 1 of add flow) |
 | `commit-add` | `--plan-id [--slot]` | Read the prepared TOON file, validate, create TASK-NNN.json, delete scratch (Step 3 of add flow) |
 | `batch-add` | `--plan-id (--tasks-file PATH \| --tasks-json JSON \| stdin)` | Atomically create N tasks from a JSON array. Preferred form is `--tasks-file PATH` pointing at a staged plan-relative file (e.g. `work/tasks-batch.json`); `--tasks-json` and stdin remain available for trivial payloads. The two flags are mutually exclusive. All-or-nothing semantics: if any entry fails validation, no `TASK-NNN.json` is written. |
-| `update` | `--plan-id --task-number [--title] [--description] [--depends-on] [--status] [--domain] [--profile] [--skills] [--deliverable] [--cost-size] [--predicted-cost-tokens] [--envelope-id]` | Update task metadata. The three cost-field flags are the refresh path for the T-shirt cost mechanism — they persist `cost_size` (`S`/`M`/`L`/`XL`), `predicted_cost_tokens` (non-negative int), and `envelope_id` (1-based positive int) onto the task record, mirroring the read shape surfaced by `next` and `get`. The `derive-cost-size` / `pack-envelopes` compute verbs stay pure; this verb is where their output lands on disk. `commit-add` stamps the same three fields at creation. |
+| `update` | `--plan-id --task-number [--title] [--description] [--depends-on] [--status] [--domain] [--profile] [--skills] [--deliverable] [--cost-size] [--predicted-cost-tokens] [--envelope-id]` | Update task metadata. The three cost-field flags are the refresh path for the T-shirt cost mechanism — they persist `cost_size` (`XS`/`S`/`M`/`L`/`XL`/`XXL`), `predicted_cost_tokens` (non-negative int), and `envelope_id` (1-based positive int) onto the task record, mirroring the read shape surfaced by `next` and `get`. The `derive-cost-size` / `pack-envelopes` compute verbs stay pure; this verb is where their output lands on disk. `commit-add` stamps the same three fields at creation. |
 | `remove` | `--plan-id --task-number` | Remove a task |
 | `list` | `--plan-id [--status] [--deliverable] [--ready] [--domain] [--profile]` | List all tasks; `--domain` / `--profile` filter the result set |
 | `read` | `--plan-id --task-number` | Read single task details |
@@ -1254,7 +1254,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks update \
   [--title TEXT] [--description TEXT] [--depends-on REFS ...] \
   [--status {pending|in_progress|done|blocked|infeasible}] \
   [--domain DOMAIN] [--profile PROFILE] [--skills CSV] [--deliverable N] \
-  [--cost-size {S|M|L|XL}] [--predicted-cost-tokens N] [--envelope-id N]
+  [--cost-size {XS|S|M|L|XL|XXL}] [--predicted-cost-tokens N] [--envelope-id N]
 ```
 
 The `--cost-size` / `--predicted-cost-tokens` / `--envelope-id` flags are the refresh
@@ -1263,7 +1263,7 @@ write path for the cost-sizing fields. The pure compute verbs `derive-cost-size`
 output is persisted onto the task record by this `update` verb. (`commit-add` stamps the
 same three fields at creation via the at-creation assignment rule.) The persisted values
 round-trip back out through `next` and `get` (`cost_size`, `predicted_cost_tokens`, `envelope_id`).
-Validation: `--cost-size` must be one of `S`/`M`/`L`/`XL`; `--predicted-cost-tokens` must be
+Validation: `--cost-size` must be one of `XS`/`S`/`M`/`L`/`XL`/`XXL`; `--predicted-cost-tokens` must be
 non-negative; `--envelope-id` must be a positive (1-based) integer. Each flag is independent —
 supply only the field(s) being written. phase-4-plan Step 6 calls this verb to stamp the
 derived cost, and Step 7a calls it to stamp the packed `envelope_id`. The size vocabulary,
@@ -1314,7 +1314,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks next \
   [--include-context] [--ignore-deps]
 ```
 
-The `next` block surfaces three plan-time cost-sizing fields when they are present on the resolved task record — `cost_size` (T-shirt label `S`/`M`/`L`/`XL`), `predicted_cost_tokens` (predicted token magnitude), and `envelope_id` (bin-packer group identifier). They appear as `null` only on tasks created by a path that does not assign them (notably `batch-add`, and tasks created before sizing ran). Among runnable pending tasks a fix task (`origin: fix`) is returned ahead of the pending deliverable tasks whose verification it blocks; number order is preserved within each class, and an `in_progress` task still preempts everything. These fields are an integration surface only; the size label vocabulary, signal weights, and size→token mapping are owned by the central rubric — see [`../phase-4-plan/standards/cost-sizing.md`](../phase-4-plan/standards/cost-sizing.md) and the Cost-Sizing Fields section of [`standards/task-contract.md`](standards/task-contract.md). The phase-5-execute budget-bounded task loop consumes `envelope_id` to run only its assigned envelope group.
+The `next` block surfaces three plan-time cost-sizing fields when they are present on the resolved task record — `cost_size` (T-shirt label `XS`/`S`/`M`/`L`/`XL`/`XXL`), `predicted_cost_tokens` (predicted token magnitude), and `envelope_id` (bin-packer group identifier). They appear as `null` only on tasks created by a path that does not assign them (notably `batch-add`, and tasks created before sizing ran). Among runnable pending tasks a fix task (`origin: fix`) is returned ahead of the pending deliverable tasks whose verification it blocks; number order is preserved within each class, and an `in_progress` task still preempts everything. These fields are an integration surface only; the size label vocabulary, signal weights, and size→token mapping are owned by the central rubric — see [`../phase-4-plan/standards/cost-sizing.md`](../phase-4-plan/standards/cost-sizing.md) and the Cost-Sizing Fields section of [`standards/task-contract.md`](standards/task-contract.md). The phase-5-execute budget-bounded task loop consumes `envelope_id` to run only its assigned envelope group.
 
 ### next-tasks
 

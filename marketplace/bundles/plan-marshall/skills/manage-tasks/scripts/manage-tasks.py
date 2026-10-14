@@ -34,7 +34,7 @@ Subcommands:
                      dispatch ``push`` in phase-6-finalize. Returns
                      ``fresh``, ``stale``, or ``undecidable``; non-``fresh``
                      statuses are gate failures (fail-closed contract)
-  derive-cost-size - Deterministically derive a task's cost_size (S/M/L/XL) and
+  derive-cost-size - Deterministically derive a task's cost_size (XS/S/M/L/XL/XXL) and
                      predicted_cost_tokens from plan-time signals (step count,
                      profile, skills count, distinct target-file count).
                      Implements phase-4-plan/standards/cost-sizing.md
@@ -205,7 +205,7 @@ def build_parser() -> argparse.ArgumentParser:
         '--cost-size',
         dest='cost_size',
         default=None,
-        help='Persist the derived T-shirt cost size (one of S/M/L/XL) onto the task record',
+        help='Persist the derived T-shirt cost size (one of XS/S/M/L/XL/XXL) onto the task record',
     )
     p_update.add_argument(
         '--predicted-cost-tokens',
@@ -499,14 +499,14 @@ def build_parser() -> argparse.ArgumentParser:
     # derive-cost-size
     p_cost = subparsers.add_parser(
         'derive-cost-size',
-        help='Derive a task cost_size (S/M/L/XL) and predicted_cost_tokens from plan-time signals',
+        help='Derive a task cost_size (XS/S/M/L/XL/XXL) and predicted_cost_tokens from plan-time signals',
         description=(
             "Deterministically derive a task's T-shirt cost size and predicted "
             'token cost from the plan-time signals already present on the task '
             'record: --step-count (dominant), --profile, --skills-count, and '
             '--target-file-count. Build count is excluded (builds are '
             'token-cheap). The size->token table may be injected via --size-table '
-            '(JSON object S/M/L/XL -> magnitude); when omitted the canonical '
+            '(JSON object XS/S/M/L/XL/XXL -> magnitude); when omitted the canonical '
             'rubric default is used. Emits {status, cost_size, '
             'predicted_cost_tokens}. Implements '
             'phase-4-plan/standards/cost-sizing.md.'
@@ -528,7 +528,7 @@ def build_parser() -> argparse.ArgumentParser:
         '--size-table',
         dest='size_table',
         default=None,
-        help='Optional JSON object mapping S/M/L/XL to a token magnitude (default: rubric table)',
+        help='Optional JSON object mapping XS/S/M/L/XL/XXL to a token magnitude (default: rubric table)',
     )
 
     # pack-envelopes
