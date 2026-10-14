@@ -113,7 +113,14 @@ def _write_rules_bridge(project_dir: Path) -> bool:
     )
     try:
         if bridge.is_file() and STANDING_RULES_BRIDGE_MARKER in bridge.read_text(encoding='utf-8'):
-            return False
+            try:
+                baseline = project_dir / STANDING_RULES_BASELINE
+                if baseline.is_file() and baseline.stat().st_mtime > bridge.stat().st_mtime:
+                    pass
+                else:
+                    return False
+            except OSError:
+                return False
         bridge.parent.mkdir(parents=True, exist_ok=True)
         bridge.write_text(body, encoding='utf-8')
         return True
