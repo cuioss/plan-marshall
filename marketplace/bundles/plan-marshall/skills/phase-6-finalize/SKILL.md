@@ -341,7 +341,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 The `5-execute → 6-finalize` transition refuses committed-but-unrecorded
 deliverable work (`manage-status` § "5-execute end-marker post-condition":
-`phase_end_markers_missing` / `execute_commits_unrecorded`), but finalize
+`phase_end_markers_missing` / `execute_commits_unrecorded` /
+`branch_range_unresolvable`), but finalize
 must not trust that gate alone — a transition recorded before the guard
 existed, or a loop-back fix commit landed without its Step 10a settlement
 row, reaches this entry holding the same silent skip. Before entering Step 3,
@@ -352,7 +353,11 @@ no row, **fail closed** — do NOT enter the dispatch loop. Either loop back to
 `5-execute` (allocate the settlement bookkeeping as fix tasks and drive them
 through the standard execute pipeline, then re-enter here) or refuse entry
 with the unrecorded commit list. An unreadable marker store fails closed the
-same way: entry without proven recording is the skip, not the gate.
+same way: entry without proven recording is the skip, not the gate. An
+unestablishable commit range fails closed under `branch_range_unresolvable`:
+when neither `origin/{base_branch}` nor the local base ref resolves (or `git
+merge-base` / `git rev-list` fails), there is no comparison to run, so entry
+without the range is refused rather than passed through.
 
 #### Re-fire row pairing
 

@@ -354,7 +354,7 @@ def test_unreadable_tree_refuses_with_its_own_code_and_publishes_no_dirty_files(
 # with no ``kind=change`` ledger row (a skipped Step 10a settlement) is the
 # silent skip it cannot see — ``_phase_end_marker_refusal`` closes it. Pins:
 #
-# (a) BOTH end-marker codes are members of ``VERIFY_REFUSAL_ERRORS``;
+# (a) ALL end-marker codes are members of ``VERIFY_REFUSAL_ERRORS``;
 # (b) both refusal shapes satisfy ``verify_blocks_transition`` (CLI exit-1 lockstep);
 # (c) a partially recorded branch refuses at the transition with
 #     ``execute_commits_unrecorded``, enumerates the gap, and writes nothing;
@@ -365,17 +365,17 @@ def test_unreadable_tree_refuses_with_its_own_code_and_publishes_no_dirty_files(
 
 
 def test_both_end_marker_codes_are_members_of_verify_refusal_errors():
-    """BOTH end-marker codes are in VERIFY_REFUSAL_ERRORS — the single source of
+    """ALL end-marker codes are in VERIFY_REFUSAL_ERRORS — the single source of
     truth that cmd_transition and the CLI exit-code wrapper consume."""
-    for code in ('phase_end_markers_missing', 'execute_commits_unrecorded'):
+    for code in ('phase_end_markers_missing', 'execute_commits_unrecorded', 'branch_range_unresolvable'):
         assert code in _lifecycle.VERIFY_REFUSAL_ERRORS, (
             f'{code} must be a VERIFY_REFUSAL_ERRORS member, or the end-marker guard fails open for it.'
         )
 
 
 def test_end_marker_refusals_block_transition_for_cli_wrapper():
-    """Both end-marker refusal shapes satisfy ``verify_blocks_transition``."""
-    for error in ('phase_end_markers_missing', 'execute_commits_unrecorded'):
+    """All end-marker refusal shapes satisfy ``verify_blocks_transition``."""
+    for error in ('phase_end_markers_missing', 'execute_commits_unrecorded', 'branch_range_unresolvable'):
         assert _lifecycle.verify_blocks_transition({'status': 'error', 'error': error}) is True, (
             f'{error} must block via verify_blocks_transition — otherwise the CLI wrapper '
             'exits 0 while the in-process guard refuses.'

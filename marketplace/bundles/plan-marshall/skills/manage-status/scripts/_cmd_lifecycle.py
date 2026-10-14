@@ -74,6 +74,7 @@ VERIFY_REFUSAL_ERRORS = frozenset(
         'main_capture_read_the_worktree',
         'phase_end_markers_missing',
         'execute_commits_unrecorded',
+        'branch_range_unresolvable',
     }
 )
 
@@ -89,6 +90,15 @@ PHASE_END_MARKERS_MISSING_ERROR = 'phase_end_markers_missing'
 #: carry no ``kind=change`` row. The payload enumerates them in
 #: ``unrecorded_commits`` alongside ``recorded_count`` / ``branch_commit_count``.
 EXECUTE_COMMITS_UNRECORDED_ERROR = 'execute_commits_unrecorded'
+
+#: Refusal code when the worktree-branch commit range itself could not be
+#: established (no base ref resolves, ``git merge-base`` / ``git rev-list``
+#: failed). Fail-closed: an unestablished range cannot prove every deliverable
+#: commit was recorded, so entry without the comparison is the silent skip.
+#: The payload carries NO ``unrecorded_commits`` key — nothing was enumerated
+#: from the git side, so an empty list there would be a measured-zero claim
+#: about a range nobody computed, byte-identical to full coverage.
+BRANCH_RANGE_UNRESOLVABLE_ERROR = 'branch_range_unresolvable'
 
 # Phases whose COMPLETION arms the finalize blocking-findings state assertion
 # (:func:`_finalize_findings_refusal`).
@@ -399,9 +409,9 @@ def _branch_commit_shas(worktree_path: str, base_branch: str) -> list[str] | Non
     ``origin/{base_branch}`` first and the local ``{base_branch}`` second, then
     lists ``git rev-list {merge_base}..HEAD`` (oldest first). Returns ``None``
     when the range cannot be established (no base ref, git failure) — the
-    caller treats that as unevaluable and passes through, mirroring the
-    handshake verify ``skipped`` contract: an unestablished range is not
-    evidence of unrecorded work.
+    caller treats that as a fail-closed refusal (``branch_range_unresolvable``),
+    never as unevaluable pass-through: an unestablished range is not evidence
+    of recorded work.
     """
     merge_base: str | None = None
     for ref in (f'origin/{base_branch}', base_branch):
@@ -500,6 +510,12 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
       could not be read. Fail-closed: an unreadable store cannot prove full
       recording. No ``unrecorded_commits`` key is published, because nothing
       was enumerated from the store side.
+    - ``branch_range_unresolvable`` — the worktree-branch commit range itself
+      could not be established (no base ref resolves, ``git merge-base`` /
+      ``git rev-list`` failed). Fail-closed: without the range there is no
+      comparison to run, so entry without it is the silent skip. No
+      ``unrecorded_commits`` key is published, because nothing was enumerated
+      from the git side.
     - ``execute_commits_unrecorded`` — both sides were read and named branch
       commits carry no row, enumerated in ``unrecorded_commits``. When the
       store holds zero rows at all the markers are wholly missing (the Step 10a
@@ -507,11 +523,12 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
       ``recorded_count`` names which of the two the reader is looking at.
     - ``None`` (pass) — no worktree in play, no persisted path, an
       unreadable/absent ``references.json`` (legacy plans predate the
-      base-branch record), an unestablishable commit range, an empty range, or
-      full coverage. Each pass-through is a distinct unevaluable state, never a
-      clean verdict over an examined store.
+      base-branch record), an empty range, or full coverage. Each pass-through
+      is a distinct unevaluable state, never a clean verdict over an examined
+      store. An unestablishable commit range is NOT in this set: it refuses
+      under ``branch_range_unresolvable`` above.
 
-    Both refusal codes are members of :data:`VERIFY_REFUSAL_ERRORS`, so both
+    All three refusal codes are members of :data:`VERIFY_REFUSAL_ERRORS`, so all
     block the transition and both drive the CLI exit-1 wrapper.
     """
     metadata = normalize_metadata(status)
@@ -538,7 +555,24 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
 
     branch_shas = _branch_commit_shas(worktree_path, base_branch)
     if branch_shas is None:
-        return None
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': BRANCH_RANGE_UNRESOLVABLE_ERROR,
+            'phase': '5-execute',
+            'base_branch': base_branch,
+            'reason': (
+                'the worktree-branch commit range could not be established, '
+                'so recording cannot be proven'
+            ),
+            'message': (
+                'Cannot prove 5-execute deliverable commits were recorded: the '
+                f'worktree-branch commit range since diverging from {base_branch} '
+                'could not be established (no base ref resolves, git merge-base / '
+                'rev-list failed). Repair the base ref and worktree git state, '
+                'then retry the transition.'
+            ),
+        }
     if not branch_shas:
         return None
 

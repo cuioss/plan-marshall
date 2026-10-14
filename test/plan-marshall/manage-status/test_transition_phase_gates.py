@@ -197,8 +197,8 @@ def test_4_plan_rejects_manifest_directory(plan_context):
 
 
 def test_end_marker_codes_are_verify_refusals():
-    """Both D2 codes block via verify_blocks_transition (exit-1 class, not exit-0)."""
-    for code in ('phase_end_markers_missing', 'execute_commits_unrecorded'):
+    """All D2 codes block via verify_blocks_transition (exit-1 class, not exit-0)."""
+    for code in ('phase_end_markers_missing', 'execute_commits_unrecorded', 'branch_range_unresolvable'):
         assert code in _lifecycle.VERIFY_REFUSAL_ERRORS, (
             f'{code} must be a VERIFY_REFUSAL_ERRORS member, or the end-marker guard fails open for it.'
         )
@@ -216,16 +216,21 @@ def test_end_marker_gate_passes_without_a_worktree():
 
 
 # =============================================================================
-# D2 — end-marker pass-through branches (TASK-4).
+# D2 — end-marker pass-through branches (TASK-4) + unresolvable-range refusal.
 #
-# _phase_end_marker_refusal passes (None) on every unevaluable state, and each
-# pass-through is a distinct shape the gate must not confuse with a clean
-# verdict: a missing references.json (legacy plans predate the base-branch
-# record), a non-string base_branch, an unestablishable commit range, and an
+# _phase_end_marker_refusal passes (None) on every unevaluable state WITHOUT a
+# computable comparison, and each pass-through is a distinct shape the gate
+# must not confuse with a clean verdict: a missing references.json (legacy
+# plans predate the base-branch record), a non-string base_branch, and an
 # empty range. Refusing on any of them would block a transition over a range
 # nobody computed. The must-not-run stubs prove the gate returns BEFORE
 # touching the seam each branch skips — the pass-through is structural, not
 # an accident of stubbed-empty data.
+#
+# An UNESTABLISHABLE commit range is NOT in that set: since TASK-24 it refuses
+# fail-closed as ``branch_range_unresolvable`` (no comparison to run, so entry
+# without it is the silent skip). Its test below pins the refusal shape, the
+# omitted commit list, and the CLI exit-1 lockstep.
 # =============================================================================
 
 
@@ -276,8 +281,8 @@ def test_end_marker_gate_passes_on_non_string_base_branch(plan_context, monkeypa
     assert _lifecycle._phase_end_marker_refusal(plan_id, status) is None
 
 
-def test_end_marker_gate_passes_when_commit_range_unestablishable(plan_context, monkeypatch):
-    """An unestablished range is not evidence of unrecorded work — the gate passes."""
+def test_end_marker_gate_refuses_when_commit_range_unestablishable(plan_context, monkeypatch):
+    """An unestablished range refuses fail-closed — entry without the comparison is the skip."""
     plan_id = 'end-marker-no-range'
     status = _seed_worktree_status(plan_context, plan_id)
     (plan_context.plan_dir_for(plan_id) / 'references.json').write_text(
@@ -290,7 +295,19 @@ def test_end_marker_gate_passes_when_commit_range_unestablishable(plan_context, 
 
     monkeypatch.setattr(_lifecycle, '_recorded_change_shas', _must_not_run)
 
-    assert _lifecycle._phase_end_marker_refusal(plan_id, status) is None
+    refusal = _lifecycle._phase_end_marker_refusal(plan_id, status)
+
+    assert refusal is not None
+    assert refusal['error'] == 'branch_range_unresolvable', (
+        f'An unestablished range must refuse, not pass through; got {refusal!r}.'
+    )
+    assert 'unrecorded_commits' not in refusal, (
+        f'A range that was never computed must publish no commit list at all; got {refusal!r}.'
+    )
+    assert refusal['base_branch'] == 'main'
+    assert refusal['reason'], 'the refusal must name why the git side went unread'
+    assert refusal['message'], 'the refusal must carry a human-readable message'
+    assert _lifecycle.verify_blocks_transition(refusal) is True
 
 
 def test_end_marker_gate_passes_on_empty_branch_range(plan_context, monkeypatch):
