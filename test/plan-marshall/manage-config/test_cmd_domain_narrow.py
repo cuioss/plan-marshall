@@ -21,6 +21,7 @@ import json
 import sys
 from argparse import Namespace
 from pathlib import Path
+from typing import cast
 
 import pytest
 from _manage_config_fixtures import create_marshal_json
@@ -1035,16 +1036,19 @@ def test_apply_writes_nothing_on_would_empty(plan_context):
 
 def _apply_ns(plan_id: str, affected_files: str) -> Namespace:
     """Args for ``domain-narrow --apply``, built by the script's own parser."""
-    return parse_ns(
-        _BUNDLE,
-        _SKILL,
-        _SCRIPT_NAME,
-        'domain-narrow',
-        '--plan-id',
-        plan_id,
-        '--affected-files',
-        affected_files,
-        '--apply',
+    return cast(
+        Namespace,
+        parse_ns(
+            _BUNDLE,
+            _SKILL,
+            _SCRIPT_NAME,
+            'domain-narrow',
+            '--plan-id',
+            plan_id,
+            '--affected-files',
+            affected_files,
+            '--apply',
+        ),
     )
 
 
