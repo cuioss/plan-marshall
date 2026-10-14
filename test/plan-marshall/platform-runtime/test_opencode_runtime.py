@@ -120,9 +120,7 @@ def test_project_initial_setup_leaves_existing_marshal_untouched(
     assert data['runtime']['target'] == 'opencode'
 
 
-def test_project_initial_setup_refuses_corrupt_marshal(
-    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
-) -> None:
+def test_project_initial_setup_refuses_corrupt_marshal(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
     """project_initial_setup answers io_error on a corrupt marshal.json.
 
     A seed that cannot parse the file must not report success with

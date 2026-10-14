@@ -97,11 +97,7 @@ def _marshal_target_present(project_dir: Path, target: str) -> bool:
         data = json.loads((project_dir / '.plan' / 'marshal.json').read_text(encoding='utf-8'))
     except (OSError, ValueError):
         return False
-    return (
-        isinstance(data, dict)
-        and isinstance(data.get('runtime'), dict)
-        and data['runtime'].get('target') == target
-    )
+    return isinstance(data, dict) and isinstance(data.get('runtime'), dict) and data['runtime'].get('target') == target
 
 
 def _seed_marshal_runtime_target(project_dir: Path, target: str) -> bool:
