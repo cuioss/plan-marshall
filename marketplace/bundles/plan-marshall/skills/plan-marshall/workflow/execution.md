@@ -290,25 +290,20 @@ guard in `manage-tasks finalize-step`.
 
 **Trigger**: the just-returned phase-5-execute dispatch carries `triage_required: true` in its terminal payload (the leaf detected a test-failure or lint-issue in Step 11 / Step 11b, persisted each finding to the per-plan Q-Gate store via `manage-findings qgate add`, and returned the signal instead of dispatching). The payload carries `producer` (always `build-runner`) and `finding_type` (`test-failure` or `lint-issue`). The leaf is a **leaf** — it cannot dispatch `verification-feedback` itself; the orchestrator owns that dispatch. See [`../../ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) for the canonical leaf/dispatch-topology contract.
 
-**Short-circuit guard — failures a pending fix task already owns (runs before any dispatch).** A repeated identical build failure re-files pending findings the previous triage already resolved `fixed` against a fix task that is still not done. Dispatching triage again would allocate a second fix task for the same failure. Before resolving the target below, run this deterministic ownership check against the failure store — the per-plan Q-Gate slice for the phase, where the leaf already persisted the failures (`manage-findings qgate add`); the guard reads that slice by reference and files no copy by hand:
+**Short-circuit guard — failures a pending fix task already owns (runs before any dispatch).** A repeated identical build failure re-files pending findings the previous triage already resolved `fixed` against a fix task that is still not done. Dispatching triage again would allocate a second fix task for the same failure. Before resolving the target below, run this deterministic ownership check against the failure store — the per-plan Q-Gate slice for the phase, where the leaf already persisted the failures (`manage-findings qgate add --reopen`, so a recurrence reopens the fixed record back to `pending` instead of being kept); the guard reads that slice by reference and files no copy by hand:
 
-1. Read the pending set and the fixed set:
+1. Read the pending set:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate list \
      --plan-id {plan_id} --phase 5-execute --resolution pending
    ```
 
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate list \
-     --plan-id {plan_id} --phase 5-execute --resolution fixed
-   ```
-
-2. For each pending finding, look for a fixed record with the identical failure identity — the same `(title, detail, file_path, rule)` tuple, mirroring the store's dedup key — that carries the structured task reference `fix_task_number` (never parsed out of the free-text `resolution_detail`). For each matched reference, read the owning task (`manage-tasks get --plan-id {plan_id} --task-number {N}`): the pending finding is owned when the owning task is still not done.
+2. For each pending finding, read its own structured task reference `fix_task_number` (never parsed out of the free-text `resolution_detail`) and read the owning task (`manage-tasks get --plan-id {plan_id} --task-number {N}`): the pending finding is owned when the referenced task exists and is still not done. A pending finding with no `fix_task_number`, or whose referenced task is already done, is new — not owned. Ownership is decided from the pending record itself because under the kept/reopen dedup there is no separate identical `fixed` record left to match: the reopened recurrence IS the pending record, carrying its `fix_task_number` forward.
 3. Branch on the verdict:
    - **All owned (`all-owned-by-TASK-N`)** (requires a non-empty pending set) — every pending finding is owned by a still-open fix task. SKIP the `verification-feedback` dispatch entirely: no second fix task is allocated for a failure a pending fix task already owns. Re-dispatch phase-5-execute instead, so the owning fix task is scheduled and runs. Log the decision naming the owning task and the spent iteration. An empty pending set never takes this branch: vacuous truth is not ownership, so a zero pending count resumes the normal post-return classification without re-dispatching phase-5-execute, and every skip on a non-empty owned set increments `verify_iteration` on the blocked verification task so the Step 11 iteration cap bounds skipped rounds exactly as dispatched rounds.
    - **Empty pending set (`no-pending`)** (a zero pending count owns nothing: vacuous truth is not ownership, so resume the normal post-return classification without re-dispatching phase-5-execute).
-    - **New findings (`new-findings`)** — at least one pending finding differs (no identical owned match). Proceed to the handling procedure below and dispatch triage normally.
+   - **New findings (`new-findings`)** — at least one pending finding is new (no owned match). Proceed to the handling procedure below and dispatch triage normally.
 
 **Handling procedure** (runs in the orchestrator's main context):
 

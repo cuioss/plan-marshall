@@ -1037,12 +1037,12 @@ The infeasible task itself stays `infeasible`. It is terminal and is never reset
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
-  qgate add --plan-id {plan_id} --phase 5-execute \
+  qgate add --plan-id {plan_id} --phase 5-execute --reopen \
   --source qgate --type test-failure --severity {severity} \
   --title "{finding_message}" --detail "{file}:{line}"
 ```
 
-(One `qgate add` call per finding; the verification task's structured `findings[]` output drives this loop.)
+(One `qgate add` call per finding; the verification task's structured `findings[]` output drives this loop. `--reopen` re-arms a recurrence: a re-filed failure matching a record the previous triage resolved `fixed` returns to `pending` instead of being kept, so the orchestrator's repeated-failure short-circuit guard observes the recurrence in the pending set rather than dropping it through the no-pending branch.)
 
 **Readback gate (mandatory).** A `qgate add` that the primitive REJECTS still exits `0` — per the Operation-failure carve-out above, a zero exit is not evidence the record landed. Because §11d's `triage_required` return is a **by-reference referral** ("the findings are in the store, go read them"), the referral MUST NOT be emitted until the store is observed to hold them. After the `qgate add` loop, read the store back:
 
