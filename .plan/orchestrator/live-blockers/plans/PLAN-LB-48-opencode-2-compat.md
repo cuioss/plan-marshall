@@ -1,4 +1,4 @@
-# PLAN-LB-48: OpenCode 2 applies this repository's permission rules and guard
+# PLAN-LB-48: plan-marshall emits and edits OpenCode 2 configuration
 
 epic: live-blockers
 workstream: WS-04
@@ -11,129 +11,134 @@ workstream: WS-04
 > See `persona-plan-orchestrator/standards/orchestration-model.md` for the tier and
 > hand-off contract.
 
-> Staged from the Open Defect "The root `opencode.json` is in a shape nothing in this repository
-> reads" and the OpenCode 1 → 2 switch on this machine (OpenCode 2.0.25 from 2026-10-08, 2.0.28
-> from 2026-10-13). Every OBSERVED claim was read at `501aeb313`, in the installed `opencode`
-> 2.0.28 binary, or read-only in `~/.local/share/opencode/opencode.db`. The orchestrator re-checked
-> `guard.js:264`, the rule order of `opencode.json` and the completed `gh pr comment` calls.
+> Staged from the OpenCode 1 → 2 switch on this machine (OpenCode 2.0.25 from 2026-10-08, 2.0.28
+> from 2026-10-13) and the Non-Claude-Code Failure "OpenCode 2: no deny rule applies". **Re-scoped
+> 2026-10-14 by operator decision**: the live harm in this repository — the root `opencode.json`
+> rule order and the guard plugin's tool name — was hot-fixed outside the plan lifecycle in PR
+> #1772 (`fix/opencode-2-permission-order`), with `test/plan-marshall/platform-runtime/test_opencode_root_config.py`
+> pinning it. This plan makes plan-marshall itself **emit and edit OpenCode 2 configuration**, so
+> no producer re-introduces the OpenCode 1 shape and consumer projects get correct files.
 
 ## Objective
 
-Under OpenCode 2 none of this repository's shell deny rules apply, and the guard plugin blocks
-nothing.
+Everything plan-marshall generates or edits for OpenCode is written for OpenCode 1. OpenCode 2
+still accepts most of it through a normalizer, which is why nothing failed loudly — but the
+normalizer's ordering is what turned this repository's deny rules into dead letters, and the
+same trap waits in every file plan-marshall emits or edits:
 
-- The root `opencode.json` has the shape OpenCode 2 expects, but its rules are in the wrong order
-  for how OpenCode 2 evaluates them: the last matching rule wins, and each list ends with its
-  catch-all, which overrides every deny before it.
-- The guard plugin checks for a tool named `bash`; OpenCode 2 names its shell tool `shell`.
+- the target emitter writes the global `opencode.json` with OpenCode 1 keys (`skills.paths`,
+  `agent`) and a skills path (`./skill`) the sync never creates;
+- emitted agents carry an OpenCode 1 `permission:` map with `bash:` keys;
+- the tool mapping names OpenCode 1 tools (`bash`, `task`) and the skill directive passes
+  `{ name }` where OpenCode 2's `skill` tool takes `{ id }`;
+- the permission tooling (`opencode_runtime.py`, `permission_fix.py`) reads and writes the
+  OpenCode 1 `permission` map, so a rule it adds beside an OpenCode 2 list lands before the list
+  and is overridden by its catch-all;
+- the sub-agent dispatch seam returns OpenCode 1's `task` / `subagent_type`.
 
-The effect is on record: since 2026-10-13 plan sessions ran 120 `gh` calls (one posted a PR
-comment from a dispatched sub-agent), `rm` from a sub-agent and `rm -rf` from the main session —
-all configured `deny`.
-
-This plan restores the deny/ask/allow rules the repository had under OpenCode 1, makes the guard
-see the shell tool, makes the permission tooling read and write the shape the file actually has,
-and makes the sub-agent dispatch seam and the skill-load directive use OpenCode 2's tool names.
+This plan moves every one of those to OpenCode 2's native schema and tool names, with
+catch-all-first ordering wherever a rule list is written, and adds a version check so a future
+OpenCode major cannot drift silently again.
 
 ## Deliverables
 
-1. **The root `opencode.json` rules take effect under OpenCode 2's last-match-wins evaluation.**
-   - The catch-all rule goes first and every specific rule after it, in the top-level
-     `permissions` list and in each `agents.*.permissions` list.
-   - The rule set and effects stay those of the OpenCode 1 file at `35b5589b5^`.
-   - A test evaluates the file the way OpenCode 2 does — project rules, then the agent's rules,
-     last match wins, no match means `ask` — over fixed probes for `build` and every
-     `execution-context*` agent: `gh pr view 1`, `rm x`, `git stash`, `git restore x` and
-     `mvn verify` resolve to `deny`; `python3 .plan/execute-script.py a:b:c` resolves to `allow`;
-     each probe's effect equals its effect under the `35b5589b5^` file.
+1. **The OpenCode target emits OpenCode 2 configuration.**
+   - `target/opencode/opencode.json` uses `skills` as a list naming the directory the sync really
+     installs, and `agents` instead of `agent`.
+   - Emitted agent frontmatter carries an OpenCode 2 `permissions` list of
+     `{action, resource, effect}` rules (shell action `shell`), with any catch-all first.
+   - Emitted command frontmatter uses OpenCode 2 fields (`subagent`, not the deprecated
+     `subtask`, if the emitter sets it).
+   - The emitter's docstrings and `doc/developer/opencode.adoc` describe the OpenCode 2 shape.
 
-   *Done when:* the test exists and passes. At `501aeb313` it fails: `gh pr view 1` resolves to
-   `ask` for `build` and for `execution-context-level-5`.
+   *Done when:* an emitter test asserts the global config's top-level keys are a subset of the
+   OpenCode 2 `Config.Info` keys and its `skills` entry names an installed directory; an
+   emitted-agent test evaluates the `permissions` list last-match-wins and gets the same effect
+   per tool as the source agent's tool grants; no emitted file contains a top-level `permission:`
+   map or a `bash:` permission key. At `501aeb313` all three fail.
 
-2. **The guard plugin guards OpenCode 2's shell tool.**
-   - `.opencode/plugin/guard.js` applies R1/R2/R4 to tool `shell` as well as `bash`; its header
-     comment about the plugin load path is corrected.
-   - `test_opencode_enforcement.py`, which mirrors the decision table, asserts that the guarded
-     shell-tool set contains `shell`.
+2. **Tool names and directives match OpenCode 2.**
+   - `marketplace/targets/opencode/mapping.json`: `Bash` → `shell`, `Task` → `subagent`, and the
+     `skill_directive` template becomes `{ id: "{bundle}-{skill}" }`.
+   - `OpenCodeRuntime.subagent_dispatch` returns `tool: subagent` with `agent`, `description` and
+     `prompt`.
 
-   *Done when:* the mirror test fails at `501aeb313` and passes after; the PR records one live
-   OpenCode call `rm .plan/temp/guard-probe` refused with an R2 message.
+   *Done when:* the emitted body for a `Skill: a:b` line reads `{ id: "a-b" }`; a test reads
+   `tool: subagent` and `agent: execution-context-level-5` from `subagent dispatch`. At
+   `501aeb313` the output is `{ name: … }`, `task` and `subagent_type`.
 
-3. **OpenCode permission tooling reads and writes the shape the file has.**
-   - Every `opencode_runtime.py` operation that reads or writes the `permission` map (configure,
-     analyze, fix, protect-path, the web ops, ensure-defaults, the settings skeleton, the health
-     `_has_exec` check) and the OpenCode branches of `permission_fix.py`: when the target file has
-     a `permissions` list they read it and write into it, specific rules after the catch-all, and
-     never add a `permission` map beside it. A file in the OpenCode 1 shape keeps today's
-     behaviour.
+3. **The permission tooling reads and writes the shape the file has.**
+   - Every `opencode_runtime.py` operation that reads or writes permissions (configure, analyze,
+     fix, protect-path, the web ops, ensure-defaults, the settings skeleton, the health
+     `_has_exec` check) and the OpenCode branches of `permission_fix.py` read the `permissions`
+     list when present and write into it — specific rules after the catch-all — never adding a
+     `permission` map beside it. New files are created in the OpenCode 2 shape.
 
    *Done when:* a fixture in the OpenCode 2 shape run through ensure-defaults gains the executor
    `allow` inside `permissions`, after the catch-all, and no `permission` key; analyze over a copy
-   of the root file reports its deny rules. At `501aeb313` ensure-defaults writes
-   `permission.bash` and analyze reads `{}`.
+   of the root `opencode.json` reports its deny rules; a fresh skeleton is OpenCode 2-shaped. At
+   `501aeb313` ensure-defaults writes `permission.bash` and analyze reads `{}`.
 
-4. **The sub-agent dispatch seam and the emitted skill-load directive use OpenCode 2's tool names.**
-   - `OpenCodeRuntime.subagent_dispatch` returns `tool: subagent` with `agent: {agent}`,
-     `description` and `prompt`.
-   - In `marketplace/targets/opencode/mapping.json` the `skill_directive` template becomes
-     `{ id: "{bundle}-{skill}" }`, and `Task` maps to `subagent` if the outline confirms the
-     normalizer accepts it as a permission action.
+4. **The installed OpenCode version is checked against the emitted schema.**
+   - The OpenCode runtime's health/doctor path reads the installed major version
+     (`opencode --version`) and reports a mismatch with the schema major the emitter targets,
+     instead of emitting silently for the wrong major.
+   - `script-shared/scripts/target_context.py` drops the `OPENCODE_PID` probe OpenCode 2 never
+     sets (detection stays on `OPENCODE`).
 
-   *Done when:* a test reads `tool: subagent` and `agent: execution-context-level-5` from
-   `subagent dispatch`; the emitted body for a `Skill: a:b` line reads `{ id: "a-b" }`. At
-   `501aeb313` the output is `task`, `subagent_type` and `{ name: … }`.
+   *Done when:* a test with a stubbed `opencode --version` of `1.x` reports the mismatch and `2.x`
+   reports none; an absent binary reports "not checkable", never "ok".
 
-Split guard: four deliverables, all on what OpenCode 2 lets a session do. The measurement half is
-PLAN-LB-49.
+Split guard: four deliverables, all on what plan-marshall writes for OpenCode. The measurement
+half is PLAN-LB-49.
 
 ## Claim Labels
 
-- OBSERVED: installed OpenCode is `v2.0.28` (`opencode --version`, binary `~/.opencode/bin/opencode`); `opencode.db` `session_v2.version` is `2.0.25` for 5 sessions on 2026-10-08 and `2.0.28` for 202 sessions from 2026-10-13 17:57Z.
-- OBSERVED: the 2.0.28 config schema `Config.Info` declares `permissions` ("Ordered tool permission rules applied to agent tool use"), `agents`, `skills` (string list), `commands`, `instructions`, `plugins`; `Config.Agent` declares `model, request, system, description, mode, hidden, color, steps, disabled, permissions` — read in the binary's schema strings.
-- OBSERVED: 2.0.28 evaluates permission rules last-match-wins (`rules.flat().findLast(…) ?? {effect: "ask"}`), read in the binary's Permission service.
-- OBSERVED: 2.0.28 still accepts the OpenCode 1 keys through a normalizer that concatenates `[...tools, ...permission, ...permissions]`; `permission.bash` becomes action `shell`; `skills.paths` becomes a plain list.
-- OBSERVED: the root `opencode.json` at `501aeb313`: top-level `permissions` has 35 rules, first `{shell, "gh *", deny}`, last `{shell, "*", allow}`; each `agents.*.permissions` list ends `{shell, "*", ask}`. At `35b5589b5^` the OpenCode 1 map put `"*"` first. The 35b5589b5 commit body calls the change "operator-authored … transported from `main`" (orchestrator re-checked the order).
-- OBSERVED: `opencode debug agents` for this repository merges rules defaults → project → agent; the last shell rule is `{shell,*,ask}` for `build` (index 70 of 72) and `execution-context-level-5` (73 of 75), so `gh`, `rm` and `git stash` resolve to `ask`, not `deny`.
-- OBSERVED: completed calls in `opencode.db`, all configured `deny`: 120 `gh` calls from 2026-10-13, among them `gh pr comment 1065 --repo cuioss/plan-marshall --body /review` from an `execution-context-level-5` sub-agent (`ses_ec94bfe08ffetY3k2BZkwSs6Nq`, PLAN-LB-31); `rm test/plan-marshall/manage-metrics/test_probe_inline_debug.py` from a sub-agent (`ses_ec836f0e9ffet1EYb40mNtxnw7`, PLAN-LB-39); `rm -rf …/antigravity-execution-fidelity/.plan/local/worktrees` from the build agent (`ses_ec9968164ffeRdYIgaux9dNEOC`).
-- OBSERVED: the root file is hand-maintained; `emitter.py` `_generate_opencode_json` (`:520-527`) writes only `target/opencode/opencode.json` in the OpenCode 1 shape, which `sync.py` (`:288-296`, `:618-631`) copies to `~/.config/opencode/`. `opencode debug config` lists the root file as a config source.
-- OBSERVED: `.opencode/plugin/guard.js:264` reads `if (tool !== "bash") return` (orchestrator re-checked); OpenCode 2's shell tool id is `shell` (binary; 9,149 completed `shell` calls and 0 `bash` calls in the DB); `opencode plugin list` loads `plan-marshall-guard`, so the plugin is discovered but never matches.
-- HYPOTHESIS: the `execute.before` event carries `tool: "shell"` — confirm with the live refused `rm` of deliverable 2 (verify-at-outline).
-- OBSERVED: `opencode_runtime.py` reads and writes `permission` at `:507, :586, :646, :766, :878, :913, :1034-1050, :1317` and the skeletons at `:956-961, :983-988`; `permission_fix.py` writes `permission.bash` at `:393-413, :750-769, :1332-1355`. Because the normalizer orders `permission` before `permissions`, a rule these tools add beside an OpenCode 2 list is overridden by its trailing catch-alls.
-- OBSERVED: `opencode_runtime.py:1252` returns `'tool': 'task'`, `:1255` `'subagent_type'`; OpenCode 2's sub-agent tool is `subagent` with input `{agent, description, prompt}` (198 calls in the DB); the skill tool input is `{id}` (881 calls); `mapping.json:12` maps `Task` → `task`, `:22` uses `{ name: "{bundle}-{skill}" }`.
-- HYPOTHESIS: no emitted agent declares a `Task` tool, so the `mapping.json` `Task` entry changes no emitted file — confirm with `test/marketplace/targets/opencode/test_frontmatter.py` (verify-at-outline).
-- OBSERVED (operator action, not code): `opencode.db` `permission` holds persisted "always allow" approvals for this project (`python3 *`, `grep *`, `head *`, `ls *`, `git -C *`, `node *`, `opencode *`, `ps *`). Where they sit in evaluation order is not verified; if after config, `python3 *` overrides the `python3 -m pytest *` deny. Report in the PR; the operator clears them.
-- Verify-first clause (deliverable 1): keep the OpenCode 2 shape with corrected order (recommended: native schema) or revert to the OpenCode 1 shape (accepted by the normalizer). Record the choice; the evaluation test must pass either way.
-- Verify-first clause (deliverable 4): PLAN-LB-39 (running) D1 wires phase 5 through this seam. If LB-39 has already changed `subagent_dispatch`, drop that half and keep only the `mapping.json` template.
+- OBSERVED: installed OpenCode is `v2.0.28` (`opencode --version`); `opencode.db` `session_v2.version` shows 2.0.25 from 2026-10-08 and 2.0.28 from 2026-10-13.
+- OBSERVED: the 2.0.28 config schema `Config.Info` declares `permissions` (ordered `{action, resource, effect}` rules), `agents`, `skills` (string list), `commands`, `instructions`, `plugins`; `Config.Agent` declares `model, request, system, description, mode, hidden, color, steps, disabled, permissions`; commands take `template, description, agent, model, subagent` (`subtask` deprecated) — read in the binary.
+- OBSERVED: 2.0.28 evaluates rules last-match-wins (`findLast`, default `ask`); its normalizer concatenates `[...tools, ...permission, ...permissions]`, maps `permission.bash` to action `shell` and `skills.paths` to a list.
+- OBSERVED (hotfix, PR #1772): reordering the root `opencode.json` catch-alls to the front gives 0 effect differences against the OpenCode 1 file at `35b5589b5^` over 17 agents × 47 commands (518 before); `guard.js` now guards `shell` and `bash`.
+- OBSERVED: `marketplace/targets/opencode/emitter.py` `_generate_opencode_json` (`:505-530`) writes `{'$schema', 'skills': {'paths': ['./skill']}, 'agent': {…}}`; the sync installs skills under `skills/` (`sync.py` `_deploy_skill`, ~`:589`), so `./skill` names a directory that does not exist.
+- OBSERVED: emitted agents (`target/opencode/agent/execution-context-level-5.md`) carry `mode: subagent` and an OpenCode 1 `permission:` map (`bash: allow`, `edit`, `glob`, `grep`, `read`, `skill`).
+- OBSERVED: `mapping.json` `tool_permissions` maps `Bash` → `bash`, `Task` → `task`; `skill_directive.template` is ``Call the `skill` tool with `{ name: "{bundle}-{skill}" }` before continuing.``; OpenCode 2's skill tool input is `{id}` (881 calls in `opencode.db`), its sub-agent tool is `subagent` with `{agent, description, prompt}` (198 calls).
+- OBSERVED: `opencode_runtime.py` reads and writes `permission` at `:507, :586, :646, :766, :878, :913, :1034-1050, :1317`, skeletons at `:956-961, :983-988`; `permission_fix.py` writes `permission.bash` at `:393-413, :750-769, :1332-1355`; `subagent_dispatch` returns `'tool': 'task'` (`:1252`) and `'subagent_type'` (`:1255`).
+- OBSERVED: OpenCode 2.0.28 sets `OPENCODE=1` and `OPENCODE_SESSION_ID` in the shell environment and no `OPENCODE_PID`; `target_context.py:167` still checks `OPENCODE_PID`.
+- HYPOTHESIS: emitted variant agents carry no `model:` line although the variants pin a model/effort level — confirm at `marketplace/targets/opencode/variant_emitter.py` and `mapping.json` `model_map`; if a model pin is intended and missing, record it in the PR, do not widen this plan (verify-at-outline).
+- HYPOTHESIS: on OpenCode the hand-off `/plan-marshall …` is not a registered command (the emitted one is `plan-marshall-plan-marshall`, `target/opencode/bundle-components.json`), so it reaches the model as prose — confirm with `opencode debug` command listing; report in the PR whether an alias command is cheap (verify-at-outline).
+- Verify-first clause: decide whether the emitter supports OpenCode 1 at all after this change. Recommended: OpenCode 2 only, with deliverable 4's check reporting a 1.x install; keep a dual shape only if a machine still runs 1.x.
+- Verify-first clause (deliverable 2): PLAN-LB-39 (running) D1 wires phase 5 through `subagent dispatch`. If LB-39 has already changed it, keep LB-39's shape and drop that half.
 
 ## Expected Surface
 
-- OBSERVED: `opencode.json` — rule order (D1)
-- HYPOTHESIS: `test/plan-marshall/platform-runtime/test_opencode_root_config.py` — new evaluation test (verify-at-outline) (D1)
-- OBSERVED: `.opencode/plugin/guard.js` — guarded tool set, header (D2)
-- OBSERVED: `test/plan-marshall/platform-runtime/test_opencode_enforcement.py` (D2)
-- OBSERVED: `marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/opencode_runtime.py` — permission ops, `subagent_dispatch` (D3, D4)
+- OBSERVED: `marketplace/targets/opencode/emitter.py` — global config, agent frontmatter (D1)
+- OBSERVED: `marketplace/targets/opencode/variant_emitter.py` — variant agent frontmatter (D1)
+- OBSERVED: `marketplace/targets/opencode/mapping.json` (D1, D2)
+- OBSERVED: `test/marketplace/targets/opencode/test_emitter.py` (D1)
+- OBSERVED: `test/marketplace/targets/opencode/test_variant_emitter.py` (D1)
+- HYPOTHESIS: `test/marketplace/targets/opencode/test_frontmatter.py` (verify-at-outline) (D1)
+- HYPOTHESIS: `test/marketplace/targets/opencode/test_body_transforms.py` — skill directive template (verify-at-outline) (D2)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/opencode_runtime.py` — `subagent_dispatch`, permission ops, health (D2, D3, D4)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/tools-permission-fix/scripts/permission_fix.py` (D3)
-- OBSERVED: `test/plan-marshall/platform-runtime/test_opencode_runtime.py` (D3, D4)
+- OBSERVED: `test/plan-marshall/platform-runtime/test_opencode_runtime.py` (D2, D3, D4)
 - OBSERVED: `test/plan-marshall/platform-runtime/test_permission_ops.py` (D3)
 - HYPOTHESIS: `test/plan-marshall/tools-permission-fix/test_runtime_dsl.py` — only if it pins the OpenCode write shape (verify-at-outline) (D3)
-- OBSERVED: `marketplace/targets/opencode/mapping.json` (D4)
-- HYPOTHESIS: `test/marketplace/targets/opencode/test_body_transforms.py` — only if it pins the skill directive template (verify-at-outline) (D4)
-- HYPOTHESIS: `doc/developer/opencode.adoc` — only where it states the OpenCode 1 permission shape or `bash` tool name (verify-at-outline)
-- HYPOTHESIS: `marketplace/bundles/plan-marshall-opencode/skills/target-rules/standards/opencode-rules.md` — only if it names `task` / `bash` (verify-at-outline)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/script-shared/scripts/target_context.py` (D4)
+- OBSERVED: `test/plan-marshall/script-shared/test_target_context.py` (D4)
+- HYPOTHESIS: `doc/developer/opencode.adoc` — OpenCode 2 shape (verify-at-outline) (D1)
+- HYPOTHESIS: `marketplace/bundles/plan-marshall-opencode/skills/target-rules/standards/opencode-rules.md` — only if it names `task` / `bash` (verify-at-outline) (D2)
 
 ## Dependencies and Sequencing
 
-- Depends on: none. **Highest priority in WS-04**: deny rules are not applied in any OpenCode
-  session of this repository today.
-- Overlaps with: PLAN-LB-39 (running) on the `test/plan-marshall/platform-runtime/` and
-  `test/marketplace/targets/` directories and its HYPOTHESIS `marketplace/targets/opencode/`; its
-  D1 consumes the `subagent dispatch` seam deliverable 4 reshapes (`opencode_runtime.py` is not in
-  its surface). PLAN-LB-45 (staged) on its HYPOTHESIS `opencode_runtime.py` (runtime_info only).
-  PLAN-LB-49 on `opencode_runtime.py` and `test_opencode_runtime.py` — this plan goes first.
-  PLAN-LB-43 / PLAN-LB-47: no declared file shared.
-- Adjacent to: the emitted global `target/opencode/opencode.json` (OpenCode 1 shape, accepted by
-  the normalizer, no harm observed) and `script-shared/scripts/target_context.py` (OpenCode 2
-  still sets `OPENCODE=1`) — untouched.
+- Depends on: PR #1772 (the hotfix) merged — this plan starts from its root `opencode.json` and
+  regression test, and does not edit either.
+- Overlaps with: PLAN-LB-39 (running) on the `test/marketplace/targets/` and
+  `test/plan-marshall/platform-runtime/` directories and its `marketplace/targets/opencode/`
+  entry; its D1 consumes the `subagent dispatch` seam deliverable 2 reshapes. PLAN-LB-43 (staged)
+  on `test/marketplace/targets/opencode/test_variant_emitter.py`. PLAN-LB-45 (staged) on its
+  HYPOTHESIS `opencode_runtime.py` (runtime_info only). PLAN-LB-49 on `opencode_runtime.py` and
+  `test_opencode_runtime.py` — this plan goes first. PLAN-LB-47: none.
+- Adjacent to: the root `opencode.json` and `.opencode/plugin/guard.js` (hot-fixed in #1772, not
+  edited here); OpenCode token measurement (PLAN-LB-49).
 
 ## Hand-Off Command
 

@@ -85,8 +85,12 @@ derive, for rows still live.
   `triage.md` with the running PLAN-LB-39; the gate will ask. Emit it ahead of the other staged
   WS-01 plans.
 
-- **PLAN-LB-48 and PLAN-LB-49** (staged 2026-10-14) — LB-48 first (live safety harm; shares
-  `opencode_runtime.py` and `test_opencode_runtime.py` with LB-49). LB-49 also waits for
+- **PLAN-LB-48 and PLAN-LB-49** (staged 2026-10-14) — LB-48 re-scoped the same day by operator
+  instruction ("adapt plan-marshall to emit the correct versions"): its first two deliverables
+  (root `opencode.json`, guard plugin) shipped as hotfix PR #1772; it now moves the OpenCode target
+  emitter, tool mapping, permission tooling and dispatch seam to OpenCode 2, plus a version check.
+  Emit it after #1772 merges. LB-48 before LB-49 (shares `opencode_runtime.py` and
+  `test_opencode_runtime.py`). LB-49 also waits for
   PLAN-LB-39 (D5 `unknown` rule). LB-48 D4 reshapes the `subagent dispatch` seam LB-39 D1
   consumes — re-read LB-39's state at outline.
 
@@ -630,7 +634,12 @@ Defects ("Antigravity: critical …"), owned by PLAN-LB-39.
 OpenCode on this machine is **2.x** (2.0.25 from 2026-10-08, 2.0.28 from 2026-10-13). Several
 entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
 
-- **OpenCode 2: no deny rule applies and the guard plugin blocks nothing — CRITICAL, live.**
+- **OpenCode 2: no deny rule applies and the guard plugin blocks nothing — CRITICAL; hot-fixed in
+  PR #1772** (operator instruction 2026-10-14, outside the plan lifecycle, label
+  `skip-bot-review`): catch-alls moved to the front of every rule list (0 effect differences
+  against the OpenCode 1 file over 17 agents × 47 commands, 518 before) and `guard.js` guards
+  `shell` as well as `bash`, pinned by `test_opencode_root_config.py`. Retire this entry when #1772
+  is merged. The producers that would re-introduce the OpenCode 1 shape are PLAN-LB-48.
   OpenCode 2 evaluates permission rules last-match-wins (`findLast`, no match = `ask`). The root
   `opencode.json` (OpenCode 2 schema since `35b5589b5`) puts each catch-all LAST — top level
   `{shell,"*",allow}`, every agent `{shell,"*",ask}` — so every deny before it is overridden;
