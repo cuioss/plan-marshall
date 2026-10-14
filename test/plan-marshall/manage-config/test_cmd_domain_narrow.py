@@ -850,6 +850,37 @@ def test_absent_outline_leaves_the_leg_empty(plan_context):
     assert set(result['dropped']) == {'documentation', 'general-dev'}
 
 
+def test_unreadable_outline_is_refused_not_skipped(plan_context):
+    """A deliverable leg that could not be evaluated must not render as one that found nothing."""
+    plan_dir = _seed(plan_context, 'dn-bad-outline', _CONFIGURED_DOMAINS)
+    (plan_dir / 'solution_outline.md').write_text('# outline placeholder', encoding='utf-8')
+    (plan_dir / 'solution_outline.md').unlink()
+    (plan_dir / 'solution_outline.md').mkdir()
+
+    result = cmd_domain_narrow(_ns('dn-bad-outline', _PY_FOOTPRINT))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'deliverable_leg_unreadable'
+    # The fail-open this replaces would have returned success with the
+    # deliverable-declared domain dropped and an empty claimed_by — "no leg
+    # claimed it" for a leg that never ran.
+    assert 'dropped' not in result
+    assert 'narrowed' not in result
+
+
+def test_undecodable_outline_is_refused_not_skipped(plan_context):
+    """Undecodable outline bytes are the same could-not-evaluate failure as an I/O error."""
+    plan_dir = _seed(plan_context, 'dn-undecodable-outline', _CONFIGURED_DOMAINS)
+    (plan_dir / 'solution_outline.md').write_bytes(b'\xff\xfe\x00not-utf8')
+
+    result = cmd_domain_narrow(_ns('dn-undecodable-outline', _PY_FOOTPRINT))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'deliverable_leg_unreadable'
+    assert 'dropped' not in result
+    assert 'narrowed' not in result
+
+
 def test_domain_line_outside_a_metadata_block_claims_nothing(plan_context):
     """A ``- domain:`` line outside any ``**Metadata:**`` block is not a declaration.
 

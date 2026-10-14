@@ -102,6 +102,33 @@ class _TaskLegUnreadable(Exception):
         super().__init__(f'{task_file}: {cause}')
 
 
+class _DeliverableLegUnreadable(Exception):
+    """The solution outline could not be read, so the deliverable leg is unevaluable.
+
+    An outline that exists but cannot be read — a permission denial, a path
+    that is a directory, undecodable bytes — is the same failure as the task
+    leg's unreadable file: the leg names deliverables whose domains it was
+    supposed to evaluate, and it came away with nothing from the document.
+    Raised rather than skipped: a skipped outline silently removes every
+    deliverable-declared claim from the leg, and the run then reports
+    ``status: success`` with those domains dropped and an empty ``claimed_by``
+    — which the return contract reads as "no leg claimed it". That publishes a
+    looked-and-found-nothing verdict for a leg that never looked, so the only
+    honest outcome is the could-not-evaluate error.
+
+    An ABSENT outline (``FileNotFoundError``) is not this failure: it returns
+    the empty set, preserving the long-standing absence support the
+    non-outline test seeds rely on. Absence at the end-of-outline narrowing
+    site should not happen — the outline was just written — so the empty set
+    there only ever reflects a test convenience, never a runtime verdict.
+    """
+
+    def __init__(self, outline_path, cause: Exception) -> None:
+        self.outline_path = outline_path
+        self.cause = cause
+        super().__init__(f'{outline_path}: {cause}')
+
+
 def _read_affected_files(plan_dir) -> list[str] | None:
     """Return ``references.affected_files`` as a list, or ``None`` when unreadable.
 
@@ -286,15 +313,23 @@ def _deliverable_declared_domains(plan_dir, user_domains) -> set[str]:
     resolution. The outline is the deliverable-declared source; task files
     remain the task leg's source.
 
-    An absent or unreadable outline yields the empty set (fail-open for the leg,
-    fail-closed for the plan): with no declaration to consult, the leg claims
-    nothing rather than refusing the whole narrowing pass.
+    An ABSENT outline (``FileNotFoundError``) yields the empty set, preserving
+    absence support: with no document to consult, the leg claims nothing
+    rather than refusing the whole narrowing pass. An outline that EXISTS but
+    cannot be read — any other ``OSError`` (a permission denial, a path that
+    is a directory) or a ``ValueError`` (undecodable bytes) — raises
+    :class:`_DeliverableLegUnreadable` instead. Returning the empty set there
+    would empty the leg while another leg still retains a user domain, so
+    narrowing would succeed having never consulted deliverable declarations —
+    a fail-open leg inside a fail-closed bound.
     """
     outline = plan_dir / 'solution_outline.md'
     try:
         content = outline.read_text(encoding='utf-8')
-    except (OSError, ValueError):
+    except FileNotFoundError:
         return set()
+    except (OSError, ValueError) as exc:
+        raise _DeliverableLegUnreadable(outline, exc) from exc
     return _metadata_block_domains(content) & set(user_domains)
 
 
@@ -389,7 +424,18 @@ def cmd_domain_narrow(args) -> dict[str, Any]:
 
     always_on_set = _always_on_domains(user_domains)
     glob_matched_set = _glob_matched_domains(user_domains, footprint)
-    deliverable_declared = _deliverable_declared_domains(plan_dir, user_domains)
+    try:
+        deliverable_declared = _deliverable_declared_domains(plan_dir, user_domains)
+    except _DeliverableLegUnreadable as exc:
+        return {
+            'status': 'error',
+            'error': 'deliverable_leg_unreadable',
+            'message': (
+                f'Solution outline {exc.outline_path} could not be read, '
+                'so the deliverable leg of the safety bound could not be evaluated and no domain '
+                f'may be dropped on it: {exc.cause}'
+            ),
+        }
     try:
         task_claimed = _task_claimed_domains(plan_dir)
     except _TaskLegUnreadable as exc:
