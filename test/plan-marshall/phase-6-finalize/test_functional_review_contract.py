@@ -429,7 +429,7 @@ def test_the_halt_scan_matches_what_it_targets():
 # Verdict-currency freeze and compare contract
 # ---------------------------------------------------------------------------
 
-_FREEZE_HEADING = '## Verdict-currency freeze'
+_FREEZE_HEADING = '## Verdict-currency freeze — judge against outline approval'
 
 
 def test_freeze_section_names_outline_approval():
