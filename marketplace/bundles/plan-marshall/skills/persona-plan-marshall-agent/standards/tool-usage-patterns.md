@@ -223,10 +223,10 @@ Use the tool's native cwd flag instead:
 | ruff | `ruff check <path>` (positional) |
 
 ```text
-# BAD — every one of these violates one-command-per-call (cd && X shape)
-Bash(command="cd /path/to/worktree && git log --oneline -5")
-Bash(command="cd /path/to/worktree && uv run ruff check src/")
-Bash(command="cd /path/to/worktree && pytest test/")
+# BAD Anti-pattern — Do NOT use any of these; every one violates one-command-per-call (cd && X shape, Forbidden)
+Bash(command="cd /path/to/worktree && git log --oneline -5")  # Forbidden anti-pattern — Do NOT use
+Bash(command="cd /path/to/worktree && uv run ruff check src/")  # Forbidden anti-pattern — Do NOT use
+Bash(command="cd /path/to/worktree && pytest test/")  # Forbidden anti-pattern — Do NOT use
 Bash(command="cd /path/to/repo && mvn verify")
 Bash(command="cd /path/to/project && npm test")
 

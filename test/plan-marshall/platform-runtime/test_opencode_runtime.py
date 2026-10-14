@@ -1030,7 +1030,6 @@ def test_resestup_heals_drifted_bridge(runtime: OpenCodeRuntime, tmp_path: pathl
 def test_reconcile_standing_rules_bridge_heals_missing_bridge(tmp_path: pathlib.Path) -> None:
     """The steward reconcile heals a missing OpenCode bridge via setup."""
     from configure_harness import _reconcile_standing_rules_bridge
-
     from opencode_runtime import _bridge_rules_path
 
     (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')

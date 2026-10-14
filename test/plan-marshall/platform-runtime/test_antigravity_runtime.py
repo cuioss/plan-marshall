@@ -602,9 +602,7 @@ def test_bridge_file_carries_version_marker(
     assert 'CLAUDE.md' in body
 
 
-def test_resestup_heals_drifted_bridge(
-    runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-):
+def test_resestup_heals_drifted_bridge(runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     """Re-setup rewrites a drifted bridge and clears the drift verdict."""
     from antigravity_runtime import _bridge_rules_path, standing_rules_drift_status
 
@@ -621,13 +619,10 @@ def test_resestup_heals_drifted_bridge(
     assert standing_rules_drift_status(str(tmp_path))['reason'] == 'in_sync'
 
 
-def test_reconcile_standing_rules_bridge_heals_missing_bridge(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-):
+def test_reconcile_standing_rules_bridge_heals_missing_bridge(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     """The steward reconcile heals a missing Antigravity bridge via setup."""
-    from configure_harness import _reconcile_standing_rules_bridge
-
     from antigravity_runtime import _bridge_rules_path
+    from configure_harness import _reconcile_standing_rules_bridge
 
     (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
     monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'gemini-config'))
