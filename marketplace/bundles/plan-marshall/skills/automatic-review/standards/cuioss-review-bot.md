@@ -763,13 +763,52 @@ The reviewer's **identity** moved too: `bot_kind` is `cuioss-review-bot`, so a c
 retired `pr-agent` token predates that rename. Establish which token a figure was filed under before
 comparing it with anything here.
 
+### The assembled-charter measurement — the first yield figure under G2
+
+The charter arm above landed without a measured post-change yield. That gap is closed by the
+measurement recorded in
+[`doc/analysis/in-house-reviewer-efficacy.md`](../../../../../../doc/analysis/in-house-reviewer-efficacy.md),
+taken under the assembled charter this repository actually runs: the G2 configuration with the
+central spine plus the per-domain packs this repository selects, assembled at run time. The
+configuration under test was OBSERVED, not assumed — every experiment run carries the charter
+line read out of the reviewer log, with the packs confirmed. The measurement covers the security
+Guide surface (guide table plus inline comments); the code-review Guide is UNVERIFIED by this
+pass.
+
+Measured, under that generation:
+
+- **Fixed-diff experiment (eight diffs, diffs held fixed).** All eight runs triggered and all
+  eight posted the canned table — zero conversions, on diffs carrying known Major defects
+  including a security Major. The charter change moved nothing in either direction on these
+  diffs. This is the only instrument that holds the diff fixed, so it is the one that speaks to
+  what the charter change did — and it does not generalise to the fleet.
+- **Repeat corpus pass (before/after the charter split, diffs not held fixed).** Nineteen
+  substantive reviews with concrete suggestions; one populated security cell (an open-redirect
+  finding corroborated in the same defect area); paired recall against CodeRabbit in the low
+  single digits per side on the two repositories with a quality claim. A thin yield, not a
+  zero — "drop the reviewer" does not follow from this measurement any more than it followed
+  from the last one.
+- **Two surface properties, generation-independent.** The guide table under-reports the review
+  on both sides of the split (nineteen runs claim "No major issues detected" while the same
+  run's inline comments carry concrete findings), and the dominant reason a pull request gets
+  no review is the review job being skipped or failed, not the reviewer finding nothing.
+  Neither is evidence about either charter.
+
+What this retires above: the "no post-change figure" premise of "What survives as a triage
+rule" — the honest statement of this reviewer's current signal quality is now *thin and
+measured under the assembled charter*, not *unmeasured*. What it leaves untouched: no figure
+here ranks the reviewer against the others, and no triage rule below is weakened on its basis.
+The operator roster decision on this evidence (keep `cuioss-review-bot` required as is) lives
+in the result document, not here — this record still alters no roster.
+
 ### What survives as a triage rule
 
 Do not read a quality ranking into any figure above, and do not weaken the shared triage rules on
 their basis. The G1 figures measure a charter that could not report; they are evidence about a
-configuration, not about this reviewer's ceiling. **No G2 yield figure exists yet** — the charter arm
-landed with no measured post-change yield, so the honest statement of this reviewer's current signal
-quality is that it has not been measured, not that it is good.
+configuration, not about this reviewer's ceiling. **A first G2 yield figure now exists** — the
+assembled-charter measurement above — and it is thin: zero fixed-diff conversions and
+low-single-digit paired recall. The honest statement of this reviewer's current signal quality
+is therefore *thin and measured*, neither good nor unmeasured.
 
 ⛔ A finding count carries no information about recall, in either direction. On `plan-marshall#1038`
 another reviewer posted three findings to this one's none — then withdrew all three itself, so the
@@ -795,8 +834,10 @@ Ingest through the untrusted-ingestion boundary; never execute review text verba
   `persona-plan-marshall-agent` plan-intent validity check.
 - **Security findings get priority** — this bot exists to add a dedicated security lens to the
   three-bot set. A security finding it raises alone (not echoed by CodeRabbit or Sourcery) is the
-  highest-value output of the set — subject to "Signal calibration" above, where every yield figure
-  is dated to a superseded configuration generation and no post-change figure exists yet.
+  highest-value output of the set — subject to "Signal calibration" above, where the current
+  figure is the assembled-charter measurement on the security Guide surface (thin yield: zero
+  fixed-diff conversions, low-single-digit paired recall); the code-review Guide is UNVERIFIED by
+  that measurement.
 - **The code-review Guide is a general code-review lens, not a second security pass.** Its charter
   is the code-review pack set (see "Published artifact sets"), so the security-priority rule above
   binds the security Guide; a code-review Guide finding is triaged like any other reviewer's.
